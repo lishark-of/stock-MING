@@ -1154,20 +1154,26 @@ export default function CandidateRadar() {
   const quantProjectionInterpretationReplay =
     String(searchQuantProjectionInterpretation.result_replay_label ?? "") ||
     "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
-  const quantProjectionOrdinaryResultReadbackRows = rows(searchQuantProjectionInterpretation.ordinary_result_readback_rows).map((row) => ({
+  const quantProjectionOrdinaryResultReadbackRows = rows(
+    cache.ordinary_result_readback_rows ?? searchQuantProjectionInterpretation.ordinary_result_readback_rows
+  ).map((row) => ({
     回放项: ordinaryResultSurfaceLabel(row.surface),
     当前状态: displayText(row.ordinary_label ?? row.status),
     来源: displayText(row.readback_source, "cache / ledger / packet"),
     边界: displayText(row.boundary, quantProjectionOrdinaryResultBoundary)
   }));
-  const quantProjectionOrdinaryResultQuickReadRows = rows(searchQuantProjectionInterpretation.ordinary_result_quick_read_rows).map((row) => ({
+  const quantProjectionOrdinaryResultQuickReadRows = rows(
+    cache.ordinary_result_quick_read_rows ?? searchQuantProjectionInterpretation.ordinary_result_quick_read_rows
+  ).map((row) => ({
     结论: displayText(row["结论"] ?? row.quick_read_item),
     当前状态: displayText(row["当前状态"] ?? row.ordinary_label ?? row.status),
     用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionOrdinaryResultNext),
     证据: displayText(row["证据"] ?? row.evidence, quantProjectionOrdinaryResultEvidence),
     边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
   }));
-  const quantProjectionOrdinaryResultHandoffRows = rows(searchQuantProjectionInterpretation.ordinary_result_handoff_rows).map((row) => ({
+  const quantProjectionOrdinaryResultHandoffRows = rows(
+    cache.ordinary_result_handoff_rows ?? searchQuantProjectionInterpretation.ordinary_result_handoff_rows
+  ).map((row) => ({
     入口: displayText(row["入口"] ?? row.entry ?? row.handoff_key),
     当前状态: displayText(row["当前状态"] ?? row.status),
     用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionOrdinaryResultNext),
@@ -1176,7 +1182,7 @@ export default function CandidateRadar() {
     边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
   }));
   const quantProjectionOrdinaryResultCheckpointPacketRows = rows(
-    cache.search_quant_projection_result_checkpoint_rows ?? searchQuantProjectionInterpretation.ordinary_result_checkpoint_rows
+    cache.ordinary_result_checkpoint_rows ?? cache.search_quant_projection_result_checkpoint_rows ?? searchQuantProjectionInterpretation.ordinary_result_checkpoint_rows
   ).map((row) => ({
     检查点: displayText(row["检查点"] ?? row.checkpoint_key),
     当前状态: displayText(row["当前状态"] ?? row.status, quantProjectionOrdinaryResultSummary),

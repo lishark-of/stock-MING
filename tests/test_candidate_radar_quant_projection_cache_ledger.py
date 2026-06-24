@@ -760,6 +760,58 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(interpretation["ordinary_result_handoff_rows_create_task"])
         self.assertFalse(interpretation["ordinary_result_handoff_rows_use_model_output"])
         self.assertTrue(interpretation["ordinary_result_handoff_rows_are_not_trade_signals"])
+        self.assertEqual(
+            packet["ordinary_result_quick_read_rows"],
+            interpretation["ordinary_result_quick_read_rows"],
+        )
+        self.assertEqual(
+            packet["ordinary_result_handoff_rows"],
+            interpretation["ordinary_result_handoff_rows"],
+        )
+        self.assertEqual(
+            packet["ordinary_result_readback_rows"],
+            interpretation["ordinary_result_readback_rows"],
+        )
+        self.assertEqual(
+            packet["ordinary_result_action_rows"],
+            interpretation["ordinary_result_action_rows"],
+        )
+        self.assertEqual(
+            packet["ordinary_result_checkpoint_rows"],
+            interpretation["ordinary_result_checkpoint_rows"],
+        )
+        self.assertEqual(packet["ordinary_result_quick_read_row_count"], 4)
+        self.assertEqual(packet["ordinary_result_handoff_row_count"], 4)
+        self.assertEqual(packet["ordinary_result_readback_row_count"], 4)
+        self.assertEqual(packet["ordinary_result_action_row_count"], 4)
+        self.assertEqual(packet["ordinary_result_checkpoint_row_count"], 4)
+        self.assertEqual(packet["counts"]["ordinary_result_quick_read_row_count"], 4)
+        self.assertEqual(packet["counts"]["ordinary_result_handoff_row_count"], 4)
+        self.assertEqual(packet["counts"]["ordinary_result_readback_row_count"], 4)
+        self.assertEqual(packet["counts"]["ordinary_result_action_row_count"], 4)
+        self.assertEqual(packet["counts"]["ordinary_result_checkpoint_row_count"], 4)
+        self.assertTrue(packet["policy"]["ordinary_result_quick_read_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["ordinary_result_quick_read_rows_create_task"])
+        self.assertFalse(packet["policy"]["ordinary_result_quick_read_rows_call_model"])
+        self.assertFalse(packet["policy"]["ordinary_result_quick_read_rows_use_model_output"])
+        self.assertTrue(packet["policy"]["ordinary_result_quick_read_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["ordinary_result_handoff_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["ordinary_result_handoff_rows_create_task"])
+        self.assertFalse(packet["policy"]["ordinary_result_handoff_rows_call_model"])
+        self.assertFalse(packet["policy"]["ordinary_result_handoff_rows_use_model_output"])
+        self.assertTrue(packet["policy"]["ordinary_result_handoff_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["ordinary_result_readback_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["ordinary_result_readback_rows_create_task"])
+        self.assertFalse(packet["policy"]["ordinary_result_readback_rows_call_model"])
+        self.assertTrue(packet["policy"]["ordinary_result_readback_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["ordinary_result_action_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["ordinary_result_action_rows_create_task"])
+        self.assertFalse(packet["policy"]["ordinary_result_action_rows_call_model"])
+        self.assertTrue(packet["policy"]["ordinary_result_action_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["ordinary_result_checkpoint_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["ordinary_result_checkpoint_rows_create_task"])
+        self.assertFalse(packet["policy"]["ordinary_result_checkpoint_rows_call_model"])
+        self.assertTrue(packet["policy"]["ordinary_result_checkpoint_rows_are_not_trade_signals"])
         self.assertEqual(interpretation["ordinary_deepseek_governed_executor_checklist_row_count"], 5)
         self.assertTrue(interpretation["ordinary_deepseek_governed_executor_checklist_rows_are_cache_only"])
         self.assertFalse(interpretation["ordinary_deepseek_governed_executor_checklist_rows_create_task"])
@@ -1145,6 +1197,22 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
                 "include_tushare": True,
                 "include_deepseek": False,
                 "user_approved": True,
+                "p0_confirm_gate_evidence": {
+                    "schema_version": "candidate_radar_p0_confirm_gate.v1",
+                    "p0_ready": True,
+                    "fastapi_cache_get_ready": True,
+                    "bootstrap_runtime_mode_ready": True,
+                    "desktop_preflight_ready": True,
+                    "p0_stability_check_ready": True,
+                    "candidate_cache_ready": True,
+                    "candidate_cache_status": "ready",
+                    "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+                    "desktop_preflight_packet_key": "command_center_3_desktop_shell_preflight_cache",
+                    "creates_task_only_after_button": True,
+                    "react_render_external_calls": False,
+                    "get_cache_external_calls": False,
+                    "contains_secret": False,
+                },
                 "token": "SHOULD_DROP",
             },
         ).json()

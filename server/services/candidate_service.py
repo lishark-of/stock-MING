@@ -18263,10 +18263,38 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
         0,
     )
     result_checkpoint = _as_dict(summary.get("ordinary_result_checkpoint_contract"))
-    view["search_quant_projection_result_checkpoint"] = result_checkpoint
-    view["search_quant_projection_result_checkpoint_rows"] = [
+    ordinary_result_quick_read_rows = [
+        row for row in _as_list(summary.get("ordinary_result_quick_read_rows")) if isinstance(row, dict)
+    ]
+    ordinary_result_handoff_rows = [
+        row for row in _as_list(summary.get("ordinary_result_handoff_rows")) if isinstance(row, dict)
+    ]
+    ordinary_result_readback_rows = [
+        row for row in _as_list(summary.get("ordinary_result_readback_rows")) if isinstance(row, dict)
+    ]
+    ordinary_result_action_rows = [
+        row for row in _as_list(summary.get("ordinary_result_action_rows")) if isinstance(row, dict)
+    ]
+    ordinary_result_checkpoint_rows = [
         row for row in _as_list(summary.get("ordinary_result_checkpoint_rows")) if isinstance(row, dict)
     ]
+    view["ordinary_result_quick_read_rows"] = ordinary_result_quick_read_rows
+    view["ordinary_result_handoff_rows"] = ordinary_result_handoff_rows
+    view["ordinary_result_readback_rows"] = ordinary_result_readback_rows
+    view["ordinary_result_action_rows"] = ordinary_result_action_rows
+    view["ordinary_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
+    view["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
+    view["ordinary_result_handoff_row_count"] = len(ordinary_result_handoff_rows)
+    view["ordinary_result_readback_row_count"] = len(ordinary_result_readback_rows)
+    view["ordinary_result_action_row_count"] = len(ordinary_result_action_rows)
+    view["ordinary_result_checkpoint_row_count"] = len(ordinary_result_checkpoint_rows)
+    view["search_quant_projection_result_checkpoint"] = result_checkpoint
+    view["search_quant_projection_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
+    counts["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
+    counts["ordinary_result_handoff_row_count"] = len(ordinary_result_handoff_rows)
+    counts["ordinary_result_readback_row_count"] = len(ordinary_result_readback_rows)
+    counts["ordinary_result_action_row_count"] = len(ordinary_result_action_rows)
+    counts["ordinary_result_checkpoint_row_count"] = len(ordinary_result_checkpoint_rows)
     counts["search_quant_projection_result_checkpoint_missing_evidence_count"] = result_checkpoint.get(
         "missing_evidence_count",
         0,
@@ -18319,6 +18347,28 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_result_checkpoint_rows_create_task"] = False
     policy["search_quant_projection_result_checkpoint_rows_call_model"] = False
     policy["search_quant_projection_result_checkpoint_rows_are_not_trade_signals"] = True
+    policy["ordinary_result_quick_read_rows_are_cache_only"] = True
+    policy["ordinary_result_quick_read_rows_create_task"] = False
+    policy["ordinary_result_quick_read_rows_call_model"] = False
+    policy["ordinary_result_quick_read_rows_use_model_output"] = False
+    policy["ordinary_result_quick_read_rows_are_not_trade_signals"] = True
+    policy["ordinary_result_handoff_rows_are_cache_only"] = True
+    policy["ordinary_result_handoff_rows_create_task"] = False
+    policy["ordinary_result_handoff_rows_call_model"] = False
+    policy["ordinary_result_handoff_rows_use_model_output"] = False
+    policy["ordinary_result_handoff_rows_are_not_trade_signals"] = True
+    policy["ordinary_result_readback_rows_are_cache_only"] = True
+    policy["ordinary_result_readback_rows_create_task"] = False
+    policy["ordinary_result_readback_rows_call_model"] = False
+    policy["ordinary_result_readback_rows_are_not_trade_signals"] = True
+    policy["ordinary_result_action_rows_are_cache_only"] = True
+    policy["ordinary_result_action_rows_create_task"] = False
+    policy["ordinary_result_action_rows_call_model"] = False
+    policy["ordinary_result_action_rows_are_not_trade_signals"] = True
+    policy["ordinary_result_checkpoint_rows_are_cache_only"] = True
+    policy["ordinary_result_checkpoint_rows_create_task"] = False
+    policy["ordinary_result_checkpoint_rows_call_model"] = False
+    policy["ordinary_result_checkpoint_rows_are_not_trade_signals"] = True
     view["policy"] = policy
     return view
 
