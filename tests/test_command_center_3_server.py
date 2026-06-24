@@ -719,6 +719,32 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             p2_checkpoint["p2_next_gate"],
             "durable_sqlite_or_storage_visibility_plus_provider_worker_evidence_where_applicable",
         )
+        p3_checkpoint = current_checkpoint_rows["P3"]
+        self.assertIn(
+            "candidate_radar/quant_projection/next_session explainable readback is visible",
+            p3_checkpoint["current_evidence_scope"],
+        )
+        self.assertEqual(p3_checkpoint["result_surfaces"], "candidate_radar/quant_projection/next_session")
+        self.assertEqual(
+            p3_checkpoint["result_readback_source"],
+            "ordinary_result_quick_read_rows + ordinary_result_handoff_rows + next_session_ordinary_result_replay_rows",
+        )
+        self.assertEqual(
+            p3_checkpoint["result_evidence_boundary"],
+            "ordinary_result_rows_are_cache_only_not_provider_browser_or_production_replacement",
+        )
+        self.assertEqual(
+            p3_checkpoint["research_only_boundary"],
+            "candidate_not_buy_instruction_factor_scores_research_only_operation_zones_not_orders",
+        )
+        self.assertEqual(
+            p3_checkpoint["action_mutation_boundary"],
+            "does_not_trade_does_not_modify_strategy_action_or_operation_zones",
+        )
+        self.assertEqual(
+            p3_checkpoint["p3_next_gate"],
+            "provider_backed_factor_radar_evidence_plus_echarts_browser_performance_review",
+        )
         self.assertFalse(
             any(row["can_close_ltg_from_current_checkpoint"] for row in current_checkpoint_rows.values())
         )
