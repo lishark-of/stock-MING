@@ -682,18 +682,20 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("确认按钮", current_checkpoint_rows["P1"]["ordinary_user_meaning"])
         p1_checkpoint = current_checkpoint_rows["P1"]
         self.assertIn("button-gated", p1_checkpoint["current_evidence_scope"])
-        self.assertIn("fake-provider ledger is local shape evidence only", p1_checkpoint["current_evidence_scope"])
+        self.assertIn("confirmed chain can write safe Tushare call_ledger", p1_checkpoint["current_evidence_scope"])
+        self.assertIn("without credentials it writes a local blocker", p1_checkpoint["current_evidence_scope"])
+        self.assertIn("production acceptance remains pending", p1_checkpoint["current_evidence_scope"])
         self.assertEqual(
             p1_checkpoint["ordinary_confirm_scope"],
-            "creates_or_replays_tushare_first_local_task_contract",
+            "creates_or_replays_tushare_first_post_task_chain",
         )
         self.assertEqual(
             p1_checkpoint["provider_evidence_boundary"],
-            "fake_provider_ledger_is_shape_only_real_tushare_call_ledger_pending",
+            "real_tushare_call_ledger_only_from_confirmed_post_task_not_render_or_get_cache",
         )
         self.assertEqual(
             p1_checkpoint["real_provider_next_gate"],
-            "explicit_user_approved_provider_acceptance_task_with_safe_call_ledger",
+            "server_tushare_credentials_plus_confirmed_post_task_with_safe_call_ledger",
         )
         self.assertEqual(p1_checkpoint["post_task_route"], "POST /api/candidate-radar/quant-projection")
         self.assertEqual(p1_checkpoint["external_call_gate"], "user_confirmed_post_task_only")
@@ -701,7 +703,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(p1_checkpoint["confirm_button_can_create_task"])
         self.assertEqual(
             p1_checkpoint["provider_execution_claim"],
-            "fake_provider_shape_only_not_real_tushare_or_production_acceptance",
+            "confirmed_post_task_may_call_tushare_when_credentials_present_not_production_acceptance",
         )
         self.assertIn(
             "test_confirm_tushare_first_writes_provider_ledger_to_cache_envelope",

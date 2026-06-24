@@ -1184,10 +1184,14 @@ def _build_usable_path_current_checkpoint_rows(
         },
         "P1": {
             "ordinary_user_meaning": "输入股票代码后，由确认按钮触发 Tushare-first 数据链。",
-            "current_next_action": "普通确认先走 button-gated POST task 和本地回放；真实 Tushare call_ledger 仍需显式 provider 验收步骤。",
+            "current_next_action": (
+                "普通确认按钮会创建 POST /api/candidate-radar/quant-projection，并按服务端凭据状态串联 "
+                "dry-run、execution request、Tushare-first provider acceptance；缺凭据时只写本地阻断。"
+            ),
             "current_evidence_scope": (
-                "button-gated POST task and ordinary replay are wired; fake-provider ledger is local "
-                "shape evidence only; real Tushare call_ledger and production acceptance are still pending"
+                "button-gated POST task and ordinary replay are wired; with server Tushare credentials the "
+                "confirmed chain can write safe Tushare call_ledger to cache/call_ledger/packet; without "
+                "credentials it writes a local blocker; production acceptance remains pending"
             ),
             "post_task_route": "POST /api/candidate-radar/quant-projection",
             "current_test_evidence": (
@@ -1195,10 +1199,10 @@ def _build_usable_path_current_checkpoint_rows(
                 "CandidateRadarQuantProjectionCacheLedgerTests."
                 "test_confirm_tushare_first_writes_provider_ledger_to_cache_envelope"
             ),
-            "ordinary_confirm_scope": "creates_or_replays_tushare_first_local_task_contract",
-            "provider_evidence_boundary": "fake_provider_ledger_is_shape_only_real_tushare_call_ledger_pending",
-            "real_provider_next_gate": "explicit_user_approved_provider_acceptance_task_with_safe_call_ledger",
-            "provider_execution_claim": "fake_provider_shape_only_not_real_tushare_or_production_acceptance",
+            "ordinary_confirm_scope": "creates_or_replays_tushare_first_post_task_chain",
+            "provider_evidence_boundary": "real_tushare_call_ledger_only_from_confirmed_post_task_not_render_or_get_cache",
+            "real_provider_next_gate": "server_tushare_credentials_plus_confirmed_post_task_with_safe_call_ledger",
+            "provider_execution_claim": "confirmed_post_task_may_call_tushare_when_credentials_present_not_production_acceptance",
             "external_call_gate": "user_confirmed_post_task_only",
         },
         "P2": {
