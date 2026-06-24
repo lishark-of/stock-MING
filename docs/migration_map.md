@@ -6,7 +6,7 @@
 
 ## Current Usable-Path Scope
 
-当前执行目标是 `Command Center 3.0 使用者可用化最短路径`，不是 `14 LTG strict closeout`。14 个 LTG 继续作为长期路线图和验收背板保留，但日常切片优先让普通用户能可靠打开 3.0、确认股票代码、看到 Tushare-first / cache / ledger / packet / pending 状态，并把工程审计噪音下沉。任何 P0-P5 进展都不能被报告为 14 个 LTG 全部完成，也不能绕过 Legacy Bug / UX Audit。
+当前执行目标是 `Command Center 3.0 使用者可用化最短路径`，不是 `14 LTG strict closeout`。14 个 LTG 继续作为长期路线图和验收背板保留，但日常切片优先让普通用户能可靠打开 3.0、确认股票代码、看到 Tushare-first / cache / ledger / packet / pending 状态，并把工程审计噪音下沉。任何 P0-P5 进展都不能被报告为 14 个 LTG 全部完成，也不能绕过 Legacy Bug / UX Audit；当前 API/UI 的 P0-P6 checkpoint 只表示 P0-P5 可用化路径加上 P6 strict-closeout 回归门已可见，同样不能关闭任何 LTG。
 
 | usable-path priority | current execution meaning | legacy-audit / evidence boundary | not allowed to claim |
 |---|---|---|---|

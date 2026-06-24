@@ -638,7 +638,7 @@ export default function MigrationStatus() {
           { label: "review blockers", value: Number(linkageReviewReceipt.blocking_row_count ?? 0), tone: Number(linkageReviewReceipt.blocking_row_count ?? 0) ? "warn" : "good" },
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length },
-          { label: "P0-P5 checkpoint rows", value: usablePathCurrentCheckpointRows.length, tone: usablePathCurrentCheckpointRows.length ? "good" : "warn" },
+          { label: "P0-P6 checkpoint rows", value: usablePathCurrentCheckpointRows.length, tone: usablePathCurrentCheckpointRows.length ? "good" : "warn" },
           { label: "planning baseline", value: baselinePolicy?.use_as_planning_baseline === true, tone: baselinePolicy?.use_as_planning_baseline === true ? "good" : "warn" },
           { label: "cache only", value: policy?.cache_only === true, tone: policy?.cache_only === true ? "good" : "warn" },
           { label: "external calls", value: policy?.external_calls_triggered === true ? "存在" : "无", tone: policy?.external_calls_triggered === true ? "bad" : "good" },
@@ -649,7 +649,7 @@ export default function MigrationStatus() {
       <h3>固定进度表</h3>
       <DataLineageTable rows={progress} />
       <div aria-label="usable path current checkpoint quick read">
-        <h3>P0-P5 当前可用化 checkpoint 速读</h3>
+        <h3>P0-P6 当前可用化 checkpoint 速读</h3>
         <p className="risk-note">这张表只说明普通用户当前能先做什么和下一步去哪；它只读本地状态，不创建 task、不调用外部服务，也不能关闭 14 LTG。</p>
         <DataLineageTable rows={usablePathCurrentCheckpointRows} />
       </div>
@@ -672,7 +672,7 @@ export default function MigrationStatus() {
       />
       <div aria-label="usable path strict closeout handoff">
         <h3>P6 可用化到 14 LTG strict closeout 交接</h3>
-        <p className="risk-note">这张表把 P0-P5 可用化 checkpoint 对应回 14 LTG 的 direct evidence 下一步；它只读本地状态，不创建 task、不调用外部服务，也不能关闭任何 LTG。</p>
+        <p className="risk-note">这张表把 P0-P6 当前 checkpoint 对应回 14 LTG 的 direct evidence 下一步；P0-P5 是可用化路径，P6 是 strict closeout 回归门；它只读本地状态，不创建 task、不调用外部服务，也不能关闭任何 LTG。</p>
         <DataLineageTable rows={usablePathStrictCloseoutHandoffRows} />
       </div>
       <div aria-label="p6 direct evidence reentry gates">

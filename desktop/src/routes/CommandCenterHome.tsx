@@ -721,16 +721,16 @@ export default function CommandCenterHome() {
       当前状态: "re-entry gate visible；strict closeout 仍是 0/14",
       用户下一步: "按 LTG next acceptance action rows 逐项补 current-head direct evidence",
       证据: "usable_path_strict_closeout_handoff_rows.P6",
-      边界: "P0-P5 可用化 checkpoint 不是 14 LTG 完成；mock、matrix、sanitizer、local receipt 不能关闭 LTG"
+      边界: "P0-P6 当前 checkpoint 不是 14 LTG 完成；P0-P5 可用化 checkpoint 不是 14 LTG 完成；mock、matrix、sanitizer、local receipt 不能关闭 LTG"
     }
   ];
   const dailyCommandP6StrictCloseoutReentryRows = [
     {
       回归项: "1. 可用化 checkpoint",
-      当前状态: "P0-P5 ordinary path 已前置给使用者",
+      当前状态: "P0-P6 当前 checkpoint 已前置给使用者；P0-P5 ordinary path 是可用路径，P6 是 strict closeout 回归门",
       用户下一步: "继续按一键启动、搜票确认、小数据写回和基础图谱使用",
       入口: "今日作战台 / 下一票雷达 / 股票量化推演",
-      边界: "P0-P5 可用化 checkpoint 不是 14 LTG 完成"
+      边界: "P0-P6 当前 checkpoint 不是 14 LTG 完成；P0-P5 可用化 checkpoint 不是 14 LTG 完成"
     },
     {
       回归项: "2. strict closeout 入口",
@@ -1127,7 +1127,7 @@ export default function CommandCenterHome() {
         </div>
         <div aria-label="daily command p6 strict closeout reentry">
           <h3>P6 strict closeout 回归入口</h3>
-          <p className="risk-note">P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence、CI、浏览器、provider、worker、storage 和 package gate 逐项补证；P4 将它下沉到开发详情，不压过 P0-P3 普通路径。</p>
+          <p className="risk-note">P0-P6 是当前使用者可用化 checkpoint；P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence、CI、浏览器、provider、worker、storage 和 package gate 逐项补证；P6 只是 strict closeout 回归门；P4 将它下沉到开发详情，不压过 P0-P3 普通路径。</p>
           <DataLineageTable rows={dailyCommandP6StrictCloseoutReentryRows} />
           <div className="actions" aria-label="daily command p6 reentry links">
             <a href="#migration" title="切换到迁移状态页；只读查看 14 LTG direct evidence 缺口" aria-label="open migration status for strict closeout reentry">查看 14 LTG 迁移状态</a>
