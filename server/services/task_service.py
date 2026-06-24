@@ -3741,11 +3741,16 @@ def build_task_record(
 
 def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] | None:
     try:
-        from . import packet_service
+        from . import candidate_service
 
-        packet = packet_service.read_packet("command_center_3_candidate_radar_cache")
+        packet = candidate_service.read_candidate_radar_cache()
     except Exception:
-        return None
+        try:
+            from . import packet_service
+
+            packet = packet_service.read_packet("command_center_3_candidate_radar_cache")
+        except Exception:
+            return None
     if not isinstance(packet, dict) or packet.get("status") == "cache_missing":
         return None
     receipt = packet.get("search_quant_projection_receipt") if isinstance(packet.get("search_quant_projection_receipt"), dict) else {}

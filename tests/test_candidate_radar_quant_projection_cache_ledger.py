@@ -1901,6 +1901,21 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(replay["data"]["does_not_execute_trades"])
         self.assertTrue(replay["data"]["does_not_modify_strategy_action"])
 
+        task_index = self.client.get("/api/tasks").json()
+        self.assertTrue(task_index["ok"])
+        self.assertEqual(task_index["data"]["latest_task_id"], provider_task_id)
+        self.assertEqual(
+            task_index["data"]["latest_task_type"],
+            "run_candidate_radar_quant_projection_provider_model_acceptance",
+        )
+        self.assertEqual(task_index["data"]["latest_task_status"], "success")
+        self.assertEqual(task_index["data"]["persistence"]["candidate_cache_replay_task_count"], 1)
+        self.assertFalse(task_index["data"]["external_calls_triggered"])
+        self.assertFalse(task_index["data"]["deepseek_called"])
+        self.assertFalse(task_index["data"]["github_called"])
+        self.assertTrue(task_index["data"]["does_not_execute_trades"])
+        self.assertTrue(task_index["data"]["does_not_modify_strategy_action"])
+
 
 if __name__ == "__main__":
     unittest.main()
