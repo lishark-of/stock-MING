@@ -672,12 +672,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["ltg_acceptance_runway_rows"]), 14)
         self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 14)
-        self.assertEqual(migration["usable_path_current_checkpoint_row_count"], 6)
-        self.assertEqual(len(migration["usable_path_current_checkpoint_rows"]), 6)
+        self.assertEqual(migration["usable_path_current_checkpoint_row_count"], 7)
+        self.assertEqual(len(migration["usable_path_current_checkpoint_rows"]), 7)
         current_checkpoint_rows = {
             row["phase"]: row for row in migration["usable_path_current_checkpoint_rows"]
         }
-        self.assertEqual(set(current_checkpoint_rows), {"P0", "P1", "P2", "P3", "P4", "P5"})
+        self.assertEqual(set(current_checkpoint_rows), {"P0", "P1", "P2", "P3", "P4", "P5", "P6"})
         self.assertIn("一键启动", current_checkpoint_rows["P0"]["usable_checkpoint"])
         self.assertIn("确认按钮", current_checkpoint_rows["P1"]["ordinary_user_meaning"])
         p1_checkpoint = current_checkpoint_rows["P1"]
@@ -811,6 +811,30 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             p5_checkpoint["p5_next_gate"],
             "redacted_model_ledger_plus_provider_response_format_bounded_retry_repair_cost_accounting_and_output_acceptance",
         )
+        p6_checkpoint = current_checkpoint_rows["P6"]
+        self.assertIn("re-entry checkpoint only", p6_checkpoint["current_evidence_scope"])
+        self.assertIn("strict closeout stays blocked", p6_checkpoint["current_evidence_scope"])
+        self.assertEqual(
+            p6_checkpoint["p6_reentry_gate"],
+            "p6_requires_current_head_direct_evidence_matrix_before_any_ltg_closeout",
+        )
+        self.assertEqual(
+            p6_checkpoint["p6_first_reentry_action"],
+            "select_one_ltg_from_ltg_next_acceptance_action_rows_and_collect_safe_direct_evidence_for_current_head",
+        )
+        self.assertEqual(
+            p6_checkpoint["p6_accepted_evidence_classes"],
+            "current_head_local_gate/remote_ci_review/provider_call_ledger/model_ledger/"
+            "browser_qa/worker_storage_package_evidence/safe_legacy_ux_observation",
+        )
+        self.assertEqual(
+            p6_checkpoint["p6_forbidden_closeout_sources"],
+            "usable_path_checkpoint/mock/matrix/sanitizer/local_receipt/docs_config_only",
+        )
+        self.assertEqual(
+            p6_checkpoint["p6_next_gate"],
+            "one_ltg_current_head_direct_evidence_checkpoint_before_any_strict_closeout_claim",
+        )
         self.assertFalse(
             any(row["can_close_ltg_from_current_checkpoint"] for row in current_checkpoint_rows.values())
         )
@@ -818,7 +842,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(any(row["search_input_creates_task"] for row in current_checkpoint_rows.values()))
         self.assertEqual(
             {phase: row["confirm_button_can_create_task"] for phase, row in current_checkpoint_rows.items()},
-            {"P0": False, "P1": True, "P2": False, "P3": False, "P4": False, "P5": False},
+            {"P0": False, "P1": True, "P2": False, "P3": False, "P4": False, "P5": False, "P6": False},
         )
         self.assertFalse(any(row["creates_task_from_get"] for row in current_checkpoint_rows.values()))
         self.assertFalse(any(row["creates_task_from_render"] for row in current_checkpoint_rows.values()))
@@ -832,7 +856,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(all(row["does_not_modify_strategy_action"] for row in current_checkpoint_rows.values()))
         self.assertTrue(
             all(
-                row["evidence_boundary"] == "p0_p5_usable_path_checkpoint_is_not_14_ltg_completion"
+                row["evidence_boundary"] == "p0_p6_usable_path_checkpoint_is_not_14_ltg_completion"
                 for row in current_checkpoint_rows.values()
             )
         )
@@ -33420,8 +33444,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_next_acceptance_action_rows"]), 14)
-        self.assertEqual(migration["data"]["usable_path_current_checkpoint_row_count"], 6)
-        self.assertEqual(len(migration["data"]["usable_path_current_checkpoint_rows"]), 6)
+        self.assertEqual(migration["data"]["usable_path_current_checkpoint_row_count"], 7)
+        self.assertEqual(len(migration["data"]["usable_path_current_checkpoint_rows"]), 7)
         self.assertEqual(migration["data"]["usable_path_strict_closeout_handoff_row_count"], 7)
         self.assertEqual(len(migration["data"]["usable_path_strict_closeout_handoff_rows"]), 7)
         self.assertEqual(migration["data"]["p6_direct_evidence_reentry_row_count"], 4)

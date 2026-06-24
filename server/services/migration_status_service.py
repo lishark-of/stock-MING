@@ -1275,6 +1275,28 @@ def _build_usable_path_current_checkpoint_rows(
                 "redacted_model_ledger_plus_provider_response_format_bounded_retry_repair_cost_accounting_and_output_acceptance"
             ),
         },
+        "P6": {
+            "ordinary_user_meaning": "可用化路径稳定后，回到 14 LTG direct evidence / strict closeout。",
+            "current_next_action": (
+                "只从 ltg_next_acceptance_action_rows 选择一个 LTG，补 current-head direct evidence；"
+                "不能从 P0-P5 可用化 checkpoint、旧 run 或 local-only gate 直接关闭 LTG。"
+            ),
+            "current_evidence_scope": (
+                "P6 is a re-entry checkpoint only; strict closeout stays blocked until current-head "
+                "direct evidence, durable receipts, CI/browser/provider/worker/storage/package proof, "
+                "and domain-specific gates pass"
+            ),
+            "p6_reentry_gate": "p6_requires_current_head_direct_evidence_matrix_before_any_ltg_closeout",
+            "p6_first_reentry_action": (
+                "select_one_ltg_from_ltg_next_acceptance_action_rows_and_collect_safe_direct_evidence_for_current_head"
+            ),
+            "p6_accepted_evidence_classes": (
+                "current_head_local_gate/remote_ci_review/provider_call_ledger/model_ledger/"
+                "browser_qa/worker_storage_package_evidence/safe_legacy_ux_observation"
+            ),
+            "p6_forbidden_closeout_sources": "usable_path_checkpoint/mock/matrix/sanitizer/local_receipt/docs_config_only",
+            "p6_next_gate": "one_ltg_current_head_direct_evidence_checkpoint_before_any_strict_closeout_claim",
+        },
     }
     rows: list[dict[str, Any]] = []
     for handoff_row in handoff_rows:
@@ -1318,6 +1340,11 @@ def _build_usable_path_current_checkpoint_rows(
                 "forbidden_model_output_targets": checkpoint_scope.get("forbidden_model_output_targets", ""),
                 "p5_nonblocking_boundary": checkpoint_scope.get("p5_nonblocking_boundary", ""),
                 "p5_next_gate": checkpoint_scope.get("p5_next_gate", ""),
+                "p6_reentry_gate": checkpoint_scope.get("p6_reentry_gate", ""),
+                "p6_first_reentry_action": checkpoint_scope.get("p6_first_reentry_action", ""),
+                "p6_accepted_evidence_classes": checkpoint_scope.get("p6_accepted_evidence_classes", ""),
+                "p6_forbidden_closeout_sources": checkpoint_scope.get("p6_forbidden_closeout_sources", ""),
+                "p6_next_gate": checkpoint_scope.get("p6_next_gate", ""),
                 "provider_execution_claim": checkpoint_scope.get(
                     "provider_execution_claim",
                     "local_checkpoint_not_provider_execution_evidence",
@@ -1339,7 +1366,7 @@ def _build_usable_path_current_checkpoint_rows(
                 "contains_secret": False,
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
-                "evidence_boundary": "p0_p5_usable_path_checkpoint_is_not_14_ltg_completion",
+                "evidence_boundary": "p0_p6_usable_path_checkpoint_is_not_14_ltg_completion",
             }
         )
     return rows
