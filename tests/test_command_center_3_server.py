@@ -48060,6 +48060,66 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg14["does_not_execute_trades"])
         self.assertFalse(ltg14["can_close_from_observed_row"])
 
+    def test_factor_quant_cache_falls_back_from_failed_persisted_packet(self):
+        db_path = self._with_meta_store()
+        self._with_snapshot_cache({})
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_factor_quant_hub_packet",
+            {
+                "packet_key": "command_center_factor_quant_hub_packet",
+                "status": "failed",
+                "task_type": "refresh_factor_data",
+                "mode": "provider_refresh",
+                "selected_apis": ["daily"],
+                "error": "token=SHOULD_DROP provider refresh failed",
+                "call_ledger": [
+                    {
+                        "api": "tushare_daily",
+                        "call_status": "failed",
+                        "token": "SHOULD_DROP",
+                    }
+                ],
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+        )
+
+        direct = packet_service.read_packet("command_center_factor_quant_hub_packet")
+        self.assertNotEqual(direct.get("status"), "failed")
+        self.assertEqual(direct["mode"], "cache_only")
+        self.assertEqual(direct["cache_source"], "local_builder")
+        self.assertTrue(direct["cache_fallback_from_failed_factor_quant_packet"])
+        failed_summary = direct["failed_factor_quant_cache_summary"]
+        self.assertEqual(failed_summary["status"], "failed")
+        self.assertEqual(failed_summary["task_type"], "refresh_factor_data")
+        self.assertEqual(failed_summary["call_ledger_count"], 1)
+        self.assertEqual(failed_summary["error_message_safe"], "[redacted_sensitive_text]")
+        self.assertFalse(failed_summary["raw_failed_packet_returned"])
+        self.assertFalse(direct["external_calls_triggered"])
+        self.assertFalse(direct["tushare_called"])
+        self.assertFalse(direct["deepseek_called"])
+        self.assertFalse(direct["github_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(direct, ensure_ascii=False))
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        self.assertTrue(factor["ok"])
+        self.assertEqual(factor["data"]["mode"], "light")
+        self.assertEqual(factor["data"]["cache_source"], "local_builder")
+        self.assertTrue(factor["data"]["cache_fallback_from_failed_factor_quant_packet"])
+        self.assertEqual(factor["data"]["failed_factor_quant_cache_summary"]["status"], "failed")
+        self.assertFalse(factor["data"]["external_calls_triggered"])
+        self.assertFalse(factor["data"]["tushare_called"])
+        self.assertFalse(factor["data"]["deepseek_called"])
+        self.assertFalse(factor["data"]["github_called"])
+        self.assertTrue(factor["data"]["does_not_execute_trades"])
+        self.assertTrue(factor["data"]["does_not_modify_strategy_action"])
+        self.assertEqual(factor["call_ledger"][0]["call_status"], "cache_read")
+        self.assertNotIn("SHOULD_DROP", json.dumps(factor, ensure_ascii=False))
+
     def test_run_light_endpoint_writes_factor_cache(self):
         self._with_meta_store()
         self._with_parquet_root()

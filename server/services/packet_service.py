@@ -839,6 +839,33 @@ def _read_persisted_packet(packet_key: str) -> dict[str, Any] | None:
     return _normalize_cached_packet(packet_key, packet, source="sqlite_meta", source_key=packet_key)
 
 
+def _is_failed_factor_quant_cache_packet(packet: dict[str, Any] | None) -> bool:
+    if not isinstance(packet, dict):
+        return False
+    status = str(packet.get("status") or "").lower()
+    return status in {"failed", "error"} or status.endswith("_failed")
+
+
+def _factor_quant_failed_cache_summary(packet: dict[str, Any]) -> dict[str, Any]:
+    call_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
+    warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
+    selected_apis = packet.get("selected_apis") if isinstance(packet.get("selected_apis"), list) else []
+    return {
+        "available": True,
+        "status": _safe_text(packet.get("status"), limit=80),
+        "task_type": _safe_text(packet.get("task_type"), limit=120),
+        "mode": _safe_text(packet.get("mode"), limit=80),
+        "cache_source": _safe_text(packet.get("cache_source"), limit=120),
+        "source_cache_key": _safe_text(packet.get("source_cache_key"), limit=120),
+        "selected_api_count": len(selected_apis),
+        "call_ledger_count": len(call_ledger),
+        "warning_count": len(warnings),
+        "error_message_safe": _safe_text(packet.get("error") or packet.get("error_message_safe"), limit=240),
+        "raw_failed_packet_returned": False,
+        "fallback_reason": "failed_factor_quant_cache_packet_does_not_block_cache_only_local_builder",
+    }
+
+
 def _sqlite_metadata() -> dict[str, Any]:
     status = storage_service.sqlite_meta_status()
     packet = dict(status) if isinstance(status, dict) else {}
@@ -887,14 +914,24 @@ def build_packet_registry_cache() -> dict[str, Any]:
 
 
 def build_factor_quant_cache() -> dict[str, Any]:
+    failed_cache_summary: dict[str, Any] | None = None
     persisted = _read_persisted_packet("command_center_factor_quant_hub_packet")
     if persisted:
-        return persisted
-    cached = _read_snapshot_packet("command_center_factor_quant_hub_packet")
-    if cached:
-        return cached
-    now = _now_iso()
+        if _is_failed_factor_quant_cache_packet(persisted):
+            failed_cache_summary = _factor_quant_failed_cache_summary(persisted)
+        else:
+            return persisted
     snapshot = load_snapshot_cache()
+    cached = _read_snapshot_packet("command_center_factor_quant_hub_packet", snapshot)
+    if cached:
+        if _is_failed_factor_quant_cache_packet(cached):
+            failed_cache_summary = failed_cache_summary or _factor_quant_failed_cache_summary(cached)
+        else:
+            if failed_cache_summary:
+                cached["cache_fallback_from_failed_factor_quant_packet"] = True
+                cached["failed_factor_quant_cache_summary"] = failed_cache_summary
+            return cached
+    now = _now_iso()
     library = factor_research.build_factor_library_packet(now=now)
     ledger = factor_research.build_factor_data_ledger_packet(factor_library=library, now=now)
     packet = json_safe(
@@ -917,6 +954,15 @@ def build_factor_quant_cache() -> dict[str, Any]:
             source_key="command_center_latest.json" if snapshot else None,
         )
     )
+    packet.setdefault("external_calls_triggered", False)
+    packet.setdefault("deepseek_called", False)
+    packet.setdefault("tushare_called", False)
+    packet.setdefault("github_called", False)
+    packet.setdefault("does_not_execute_trades", True)
+    packet.setdefault("does_not_modify_strategy_action", True)
+    if failed_cache_summary:
+        packet["cache_fallback_from_failed_factor_quant_packet"] = True
+        packet["failed_factor_quant_cache_summary"] = failed_cache_summary
     packet["source_snapshot_available"] = bool(snapshot)
     packet["linked_snapshot_keys"] = sorted(
         key
@@ -1129,6 +1175,8 @@ def list_packets() -> dict[str, Any]:
 
 
 def read_packet(packet_key: str) -> dict[str, Any]:
+    if str(packet_key) == "command_center_factor_quant_hub_packet":
+        return build_factor_quant_cache()
     persisted = _read_persisted_packet(str(packet_key))
     if persisted:
         return persisted
