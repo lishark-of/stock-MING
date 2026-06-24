@@ -733,6 +733,48 @@ export default function FactorQuantHub() {
   const ordinaryQuantRefreshButtonLabel = "手动刷新数据会创建按钮门控 POST task；不从 React render 直连 provider/model";
   const ordinaryQuantRunLightButtonLabel = "运行轻量推演会创建按钮门控 POST task；DeepSeek 整理仍在高级开关";
   const ordinaryQuantStatusLabel = empty ? "等待量化缓存" : "量化缓存可用";
+  const ordinaryQuantPrimarySummaryItems: MetricItem[] = [
+    { label: "下一步", value: ordinaryQuantNextClick },
+    { label: "数据链", value: ordinaryQuantTushareSourceLabel },
+    { label: "P2 三面回放", value: ordinaryQuantUpstreamP2WritebackLabel, tone: candidateRadarWritebackSurfaceRows.length ? "good" : "warn" },
+    { label: "P3 可读结论", value: ordinaryQuantP3ReadableConclusion, tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn" },
+    { label: "P3 下一步", value: ordinaryQuantP3NextStep },
+    { label: "解释状态", value: ordinaryQuantDeepSeekSourceLabel },
+    { label: "仅供研究", value: "量化推演不是买卖指令；不真实交易、不下单、不改交易策略或操作区", tone: "good" }
+  ];
+  const ordinaryQuantExpandedSummaryItems: MetricItem[] = [
+    { label: "主下一步", value: ordinaryQuantPrimaryActionLabel },
+    { label: "主下一步边界", value: ordinaryQuantPrimaryActionBoundary, tone: "good" },
+    { label: "换标的入口", value: ordinaryQuantSymbolEntryBoundary, tone: "good" },
+    { label: "运行模式", value: ordinaryQuantRuntimeModeLabel },
+    { label: "本地缓存", value: ordinaryQuantCacheSourceLabel },
+    { label: "待补证据", value: ordinaryQuantPendingStateLabel, tone: ordinaryQuantPendingStateLabel.includes("待补") || ordinaryQuantPendingStateLabel.includes("等待") ? "warn" : "good" },
+    { label: "降级提示", value: ordinaryQuantDegradedSourceLabel, tone: ordinaryQuantDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
+    { label: "最近成功回放", value: ordinaryQuantLastCache },
+    { label: "雷达搜票回放", value: ordinaryQuantRadarHandoffState, tone: empty ? "warn" : "good" },
+    { label: "上游确认链", value: ordinaryQuantUpstreamOneScreenLabel, tone: candidateRadarOneScreenRows.length ? "good" : "warn" },
+    { label: "确认结果链", value: ordinaryQuantUpstreamConfirmOutcomeLabel, tone: candidateRadarConfirmOutcomeRows.length ? "good" : "warn" },
+    { label: "最近搜票结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
+    { label: "回放位置", value: ordinaryQuantReplayLocation, tone: "good" },
+    { label: "结果位置", value: ordinaryQuantResultLocation, tone: "good" },
+    { label: "回放入口边界", value: ordinaryQuantRouteHandoffBoundary, tone: "good" },
+    { label: "完整图谱入口", value: ordinaryQuantFullNextSessionHandoff, tone: "good" },
+    { label: "完整图谱边界", value: ordinaryQuantFullNextSessionBoundary, tone: "good" },
+    { label: "查看顺序", value: ordinaryQuantReviewOrder },
+    { label: "结果组成", value: ordinaryQuantResultComposition },
+    { label: "P3 边界", value: ordinaryQuantP3Boundary, tone: "good" },
+    { label: "数据来源状态", value: ordinaryQuantSourceState },
+    { label: "交接清单", value: ordinaryQuantHandoffLocation, tone: "good" },
+    { label: "调用记录", value: ordinaryQuantLedgerSourceLabel, tone: ordinaryQuantLedgerSourceLabel.includes("等待") ? "warn" : "good" },
+    { label: "结果包", value: ordinaryQuantPacketSourceLabel, tone: ordinaryQuantPacketSourceLabel.includes("等待") ? "warn" : "good" },
+    { label: "P5 解释治理", value: ordinaryDeepSeekGovernedExecutorState, tone: deepseek.called === true ? "warn" : "good" },
+    { label: "补证方式", value: ordinaryQuantEvidenceTaskState, tone: ordinaryQuantEvidenceTaskState.includes("等待") || ordinaryQuantEvidenceTaskState.includes("待补") || ordinaryQuantEvidenceTaskState.includes("未知") ? "warn" : "good" },
+    { label: "缺少证据", value: ordinaryQuantMissingEvidence, tone: ordinaryQuantMissingEvidence.includes("待补") || ordinaryQuantMissingEvidence.includes("待确认") ? "warn" : "good" },
+    { label: "阻断/降级", value: ordinaryQuantBlockedState, tone: ordinaryQuantBlockedState.includes("未标记") ? "good" : "warn" },
+    { label: "最近可用缓存", value: ordinaryQuantLastCache },
+    { label: "任务边界", value: ordinaryQuantTaskBoundary },
+    { label: "结果边界", value: ordinaryQuantResultBoundary, tone: "good" }
+  ];
 
   return (
     <PacketCard title="股票量化推演" subtitle="因子、次日图谱和模型解释状态一屏看清；只做研究预览，不修改交易动作" status={ordinaryQuantStatusLabel}>
@@ -749,48 +791,12 @@ export default function FactorQuantHub() {
           <p className="risk-note">最近一只票的 task id、P1 确认、P2 三面和 P3 可读结论在量化页首屏先读；本 checkpoint 只读 CandidateRadar cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
           <MetricGrid items={ordinaryQuantLatestCandidateCheckpointItems} />
         </div>
-        <MetricGrid
-          items={[
-            { label: "下一步", value: ordinaryQuantNextClick },
-            { label: "主下一步", value: ordinaryQuantPrimaryActionLabel },
-            { label: "主下一步边界", value: ordinaryQuantPrimaryActionBoundary, tone: "good" },
-            { label: "换标的入口", value: ordinaryQuantSymbolEntryBoundary, tone: "good" },
-            { label: "运行模式", value: ordinaryQuantRuntimeModeLabel },
-            { label: "本地缓存", value: ordinaryQuantCacheSourceLabel },
-            { label: "数据链", value: ordinaryQuantTushareSourceLabel },
-            { label: "解释状态", value: ordinaryQuantDeepSeekSourceLabel },
-            { label: "待补证据", value: ordinaryQuantPendingStateLabel, tone: ordinaryQuantPendingStateLabel.includes("待补") || ordinaryQuantPendingStateLabel.includes("等待") ? "warn" : "good" },
-            { label: "降级提示", value: ordinaryQuantDegradedSourceLabel, tone: ordinaryQuantDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
-            { label: "最近成功回放", value: ordinaryQuantLastCache },
-            { label: "雷达搜票回放", value: ordinaryQuantRadarHandoffState, tone: empty ? "warn" : "good" },
-            { label: "上游确认链", value: ordinaryQuantUpstreamOneScreenLabel, tone: candidateRadarOneScreenRows.length ? "good" : "warn" },
-            { label: "确认结果链", value: ordinaryQuantUpstreamConfirmOutcomeLabel, tone: candidateRadarConfirmOutcomeRows.length ? "good" : "warn" },
-            { label: "P2 三面回放", value: ordinaryQuantUpstreamP2WritebackLabel, tone: candidateRadarWritebackSurfaceRows.length ? "good" : "warn" },
-            { label: "最近搜票结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
-            { label: "回放位置", value: ordinaryQuantReplayLocation, tone: "good" },
-            { label: "结果位置", value: ordinaryQuantResultLocation, tone: "good" },
-            { label: "回放入口边界", value: ordinaryQuantRouteHandoffBoundary, tone: "good" },
-            { label: "完整图谱入口", value: ordinaryQuantFullNextSessionHandoff, tone: "good" },
-            { label: "完整图谱边界", value: ordinaryQuantFullNextSessionBoundary, tone: "good" },
-            { label: "查看顺序", value: ordinaryQuantReviewOrder },
-            { label: "结果组成", value: ordinaryQuantResultComposition },
-            { label: "P3 可读结论", value: ordinaryQuantP3ReadableConclusion, tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn" },
-            { label: "P3 下一步", value: ordinaryQuantP3NextStep },
-            { label: "P3 边界", value: ordinaryQuantP3Boundary, tone: "good" },
-            { label: "数据来源状态", value: ordinaryQuantSourceState },
-            { label: "交接清单", value: ordinaryQuantHandoffLocation, tone: "good" },
-            { label: "调用记录", value: ordinaryQuantLedgerSourceLabel, tone: ordinaryQuantLedgerSourceLabel.includes("等待") ? "warn" : "good" },
-            { label: "结果包", value: ordinaryQuantPacketSourceLabel, tone: ordinaryQuantPacketSourceLabel.includes("等待") ? "warn" : "good" },
-            { label: "P5 解释治理", value: ordinaryDeepSeekGovernedExecutorState, tone: deepseek.called === true ? "warn" : "good" },
-            { label: "补证方式", value: ordinaryQuantEvidenceTaskState, tone: ordinaryQuantEvidenceTaskState.includes("等待") || ordinaryQuantEvidenceTaskState.includes("待补") || ordinaryQuantEvidenceTaskState.includes("未知") ? "warn" : "good" },
-            { label: "缺少证据", value: ordinaryQuantMissingEvidence, tone: ordinaryQuantMissingEvidence.includes("待补") || ordinaryQuantMissingEvidence.includes("待确认") ? "warn" : "good" },
-            { label: "阻断/降级", value: ordinaryQuantBlockedState, tone: ordinaryQuantBlockedState.includes("未标记") ? "good" : "warn" },
-            { label: "最近可用缓存", value: ordinaryQuantLastCache },
-            { label: "任务边界", value: ordinaryQuantTaskBoundary },
-            { label: "结果边界", value: ordinaryQuantResultBoundary, tone: "good" },
-            { label: "仅供研究", value: "量化推演不是买卖指令；不真实交易、不下单、不改交易策略或操作区", tone: "good" }
-          ]}
-        />
+        <MetricGrid items={ordinaryQuantPrimarySummaryItems} />
+        <details className="developer-audit-details" aria-label="stock quant ordinary summary extra details">
+          <summary>更多量化摘要字段</summary>
+          <p className="risk-note">普通首屏只保留下一步、P2 三面、P3 结论和安全边界；运行模式、回放位置、缺口和补证方式默认收起。</p>
+          <MetricGrid items={ordinaryQuantExpandedSummaryItems} />
+        </details>
         <StateClarityRail
           label="stock quant ordinary result replay status"
           state={ordinaryQuantResultRailState}
