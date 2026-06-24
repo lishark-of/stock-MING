@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getBootstrapStatus, getCandidateRadarCache, getDesktopPreflightCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -93,6 +93,8 @@ export default function CandidateRadar() {
   const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
   const [bootstrapEnvelopeLedger, setBootstrapEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [bootstrapEnvelopeWarnings, setBootstrapEnvelopeWarnings] = useState<Array<string>>([]);
+  const [desktopPreflight, setDesktopPreflight] = useState<Record<string, unknown>>({});
+  const [desktopPreflightEnvelopeLedger, setDesktopPreflightEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [quantProjectionSubmitting, setQuantProjectionSubmitting] = useState(false);
@@ -113,7 +115,7 @@ export default function CandidateRadar() {
     include_deepseek: false,
     deepseek_policy: "skipped_until_governed_executor",
     requires_p0_gate_ready: true,
-    p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "candidate_cache_ready"],
+    p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "candidate_cache_ready"],
     writeback_surfaces: ["cache", "call_ledger", "packet"],
     does_not_execute_trades: true,
     does_not_modify_strategy_action: true,
@@ -139,6 +141,12 @@ export default function CandidateRadar() {
       setBootstrapEnvelopeWarnings(res.warnings ?? []);
     });
   };
+  const refreshDesktopPreflight = () => {
+    void getDesktopPreflightCache().then((res) => {
+      setDesktopPreflight(res.data);
+      setDesktopPreflightEnvelopeLedger(res.call_ledger ?? []);
+    });
+  };
   const launchQuickScan = () =>
     void postCandidateRadarQuickScan({ scan_mode: "quick_cache_scan", universe_mode: "cache_snapshot" }).then((res) => {
       setTaskReceipt(res);
@@ -160,9 +168,11 @@ export default function CandidateRadar() {
         p0_ready: quantProjectionP0Ready,
         fastapi_cache_get_ready: !loading && !error,
         bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady,
+        desktop_preflight_ready: desktopPreflightReady,
         candidate_cache_ready: candidateRadarCacheReady,
         candidate_cache_status: String(cache.status ?? "missing"),
         bootstrap_packet_key: String(bootstrapStatus.packet_key ?? "missing"),
+        desktop_preflight_packet_key: String(desktopPreflight.packet_key ?? "missing"),
         creates_task_only_after_button: true,
         react_render_external_calls: false,
         get_cache_external_calls: false,
@@ -259,6 +269,7 @@ export default function CandidateRadar() {
   useEffect(() => {
     refreshCache();
     refreshBootstrapStatus();
+    refreshDesktopPreflight();
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -541,10 +552,14 @@ export default function CandidateRadar() {
   const candidateRadarCacheReady = cache.status === "ready";
   const bootstrapRuntimeModeReady =
     bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet";
+  const desktopPreflightReady =
+    desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache" &&
+    (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined)?.status === "local_one_click_launcher_ready";
   const quantProjectionP0Ready =
     !loading &&
     !error &&
     bootstrapRuntimeModeReady &&
+    desktopPreflightReady &&
     candidateRadarCacheReady;
   const ordinaryCacheSourceLabel = candidateRadarCacheReady ? "本地候选缓存可用" : "等待本地候选缓存";
   const ordinaryTushareSourceLabel = bootstrapLiveLight.tushare_on_open === true ? "live_light 已配置；仍需确认按钮触发 Tushare-first task" : "手动触发或关闭";
@@ -634,13 +649,20 @@ export default function CandidateRadar() {
       联通项: "bootstrap runtime-mode",
       当前状态: bootstrapRuntimeModeReady ? "runtime-mode packet 已回读" : "等待 bootstrap status",
       证据: "GET /api/bootstrap/status",
-      下一步: bootstrapRuntimeModeReady ? "进入 P1 输入股票代码" : "先让 bootstrap status 变绿",
+      下一步: bootstrapRuntimeModeReady ? "继续确认一键启动预检 packet" : "先让 bootstrap status 变绿",
       边界: "bootstrap GET 只读展示模式；不调用 provider/model、不写 cache/config"
+    },
+    {
+      联通项: "一键启动预检",
+      当前状态: desktopPreflightReady ? "desktop preflight one-click packet 已回读" : "等待 desktop preflight cache",
+      证据: "GET /api/desktop/preflight-cache",
+      下一步: desktopPreflightReady ? "进入 P1 输入股票代码" : "先回一键启动预检恢复四段联通",
+      边界: "desktop preflight GET 只读回放一键启动 packet；不启动服务、不创建 task、不外联"
     },
     {
       联通项: "进入 P1 闸门",
       当前状态: quantProjectionP0Ready ? "ready：输入保持静默，确认按钮才创建 task" : "blocked：P0 未联通时不要点击确认",
-      证据: `frontend_call_ledger=${cacheEnvelopeLedger.some((row) => row.frontend_backend_auto_link_attempted === true)}`,
+      证据: `frontend_call_ledger=${cacheEnvelopeLedger.some((row) => row.frontend_backend_auto_link_attempted === true)} / desktop_preflight_ledger=${desktopPreflightEnvelopeLedger.length}`,
       下一步: quantProjectionP0Ready ? "输入代码后点击确认并生成 3.0 量化推演" : "先恢复 P0，再回到下一票雷达",
       边界: "P0 只证明本地前后端联通；不代表 Tushare、DeepSeek、release 或 14 LTG 完成"
     }
@@ -669,7 +691,7 @@ export default function CandidateRadar() {
   const quantProjectionDisabledReason = quantProjectionSubmitting
     ? "任务提交中：正在创建 Tushare-first POST task；请等待本地任务编号回写，避免重复提交。"
     : !quantProjectionP0Ready
-    ? "按钮不可用原因：P0 前后端联通未通过；先让 FastAPI、bootstrap status 和 candidate cache 变绿。"
+    ? "按钮不可用原因：P0 前后端联通未通过；先让 FastAPI、bootstrap status、desktop preflight 和 candidate cache 变绿。"
     : quantProjectionTaskAlreadyAcceptedForInput
     ? "按钮不可用原因：当前标的已有本地 task id；先看 TaskStatusPanel，成功后刷新 cache 回放。"
     : quantProjectionCanSubmit
@@ -706,7 +728,7 @@ export default function CandidateRadar() {
     ? "确认代码后点击生成 3.0 量化推演；按钮门控 Tushare-first POST task / worker 推进，DeepSeek 等 governed executor"
     : "先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演";
   const quantProjectionSubmitHint = !quantProjectionP0Ready
-    ? "P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status 和 candidate cache；本页不会从输入或渲染创建 Tushare-first task。"
+    ? "P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight 和 candidate cache；本页不会从输入或渲染创建 Tushare-first task。"
     : quantProjectionSubmitting
       ? "正在提交 Tushare-first 后台链；请等待本地 task id，页面不会重复创建第二个 task。"
       : quantProjectionTaskReceiptInputMismatch
@@ -1901,7 +1923,7 @@ export default function CandidateRadar() {
         />
         <div aria-label="candidate radar ordinary p0 frontend backend readiness">
           <h3>P0 前后端联通闸门</h3>
-          <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
+          <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode、desktop preflight 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
           <DataLineageTable rows={candidateRadarP0AutoLinkRows} />
         </div>
         <p className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>

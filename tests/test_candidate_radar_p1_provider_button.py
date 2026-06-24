@@ -52,7 +52,7 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("quantProjectionSubmitFailureMessage", source)
         self.assertIn("quantProjectionP1ConfirmGateRows", source)
         self.assertIn("requires_p0_gate_ready: true", source)
-        self.assertIn('p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "candidate_cache_ready"]', source)
+        self.assertIn('p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "candidate_cache_ready"]', source)
         self.assertIn(
             'aria-label="quant projection ordinary p1 p2 engineering details"',
             ordinary_quant_slice,
@@ -277,9 +277,11 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("p0_ready: quantProjectionP0Ready", submit_slice)
         self.assertIn("fastapi_cache_get_ready: !loading && !error", submit_slice)
         self.assertIn("bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady", submit_slice)
+        self.assertIn("desktop_preflight_ready: desktopPreflightReady", submit_slice)
         self.assertIn("candidate_cache_ready: candidateRadarCacheReady", submit_slice)
         self.assertIn('candidate_cache_status: String(cache.status ?? "missing")', submit_slice)
         self.assertIn('bootstrap_packet_key: String(bootstrapStatus.packet_key ?? "missing")', submit_slice)
+        self.assertIn('desktop_preflight_packet_key: String(desktopPreflight.packet_key ?? "missing")', submit_slice)
         self.assertIn("creates_task_only_after_button: true", submit_slice)
         self.assertIn("react_render_external_calls: false", submit_slice)
         self.assertIn("get_cache_external_calls: false", submit_slice)
