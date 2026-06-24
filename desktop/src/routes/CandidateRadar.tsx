@@ -1076,8 +1076,16 @@ export default function CandidateRadar() {
   const quantProjectionAcceptedTaskId = String(taskReceipt?.data?.task_id ?? quantProjectionAcceptedTask?.task_id ?? quantProjectionPersistedTaskId ?? "");
   const quantProjectionAcceptedTaskStep = String(quantProjectionAcceptedTask?.current_step ?? quantProjectionPersistedTaskStep ?? "");
   const quantProjectionAcceptedTaskStatus = String(quantProjectionAcceptedTask?.status ?? (quantProjectionAcceptedTaskId ? "cache_replay" : "waiting_confirm"));
-  const quantProjectionTaskPanelVisible = quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId);
-  const quantProjectionTaskPanelTaskId = quantProjectionTaskVisible && taskId ? taskId : quantProjectionPersistedTaskId;
+  const quantProjectionTaskPanelStaleForCurrentInput = quantProjectionSubmitting || quantProjectionTaskReceiptInputMismatch;
+  const quantProjectionTaskPanelStaleNotice = quantProjectionSubmitting
+    ? "正在创建当前代码的新 Tushare-first task；旧任务面板暂不显示，避免把旧 task 当成当前输入的回放。"
+    : quantProjectionTaskReceiptInputMismatch
+      ? `当前输入 ${quantProjectionSymbolValidation.normalized} 与最近任务 ${quantProjectionAcceptedTaskSymbol} 不一致；旧任务面板暂不显示，需重新点击确认。`
+      : "";
+  const quantProjectionTaskPanelVisible =
+    (quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId)) && !quantProjectionTaskPanelStaleForCurrentInput;
+  const quantProjectionTaskPanelTaskId =
+    quantProjectionTaskPanelStaleForCurrentInput ? "" : quantProjectionTaskVisible && taskId ? taskId : quantProjectionPersistedTaskId;
   const quantProjectionSubmitRecoveryRows = [
     {
       场景: "后端离线或请求失败",
@@ -2031,6 +2039,9 @@ export default function CandidateRadar() {
               <TaskLaunchReceipt receipt={taskReceipt} />
               <TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshCache} />
             </div>
+          ) : null}
+          {quantProjectionTaskPanelStaleNotice ? (
+            <p className="ordinary-status-note" aria-live="polite">{quantProjectionTaskPanelStaleNotice}</p>
           ) : null}
           <p className="risk-note">普通入口只保留确认按钮、任务状态和结果回放；确认链路、cache packet、provider ledger 等工程说明默认收起。</p>
           <details className="developer-audit-details" aria-label="quant projection confirm chain explanation details">

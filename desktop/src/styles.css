@@ -1123,6 +1123,11 @@ pre {
   padding-left: 10px;
 }
 
+.ordinary-status-note {
+  border-left: 3px solid #2563eb;
+  padding-left: 10px;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     display: block;
