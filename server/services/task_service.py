@@ -3739,6 +3739,118 @@ def build_task_record(
     return record
 
 
+def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] | None:
+    try:
+        from . import packet_service
+
+        packet = packet_service.read_packet("command_center_3_candidate_radar_cache")
+    except Exception:
+        return None
+    if not isinstance(packet, dict) or packet.get("status") == "cache_missing":
+        return None
+    receipt = packet.get("search_quant_projection_receipt") if isinstance(packet.get("search_quant_projection_receipt"), dict) else {}
+    task_ids = [
+        _safe_text(packet.get("task_id"), limit=120),
+        _safe_text(receipt.get("latest_task_id"), limit=120),
+        _safe_text(receipt.get("task_id"), limit=120),
+    ]
+    task_ids = [item for item in task_ids if item]
+    if not task_ids:
+        return None
+    selected_task_id = _safe_text(task_id, limit=120) if task_id else task_ids[0]
+    if selected_task_id not in task_ids:
+        return None
+
+    call_ledger: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in list(packet.get("call_ledger") or []) + list(receipt.get("call_ledger") or []):
+        if not isinstance(row, dict):
+            continue
+        safe_row = _safe_value("call_ledger", row)
+        if not isinstance(safe_row, dict):
+            continue
+        fingerprint = json.dumps(safe_row, ensure_ascii=False, sort_keys=True, default=str)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        call_ledger.append(safe_row)
+
+    latest_status = _safe_text(receipt.get("latest_task_status"), limit=32)
+    status = latest_status if latest_status in TASK_STATUSES else "success"
+    current_step = _safe_text(
+        receipt.get("latest_task_current_step")
+        or receipt.get("status")
+        or packet.get("search_quant_projection_status")
+        or "candidate_radar_quant_projection_cache_replay",
+        limit=160,
+    )
+    loaded_at = _safe_text(
+        packet.get("search_quant_projection_completed_at")
+        or packet.get("loaded_at")
+        or packet.get("cache_api_loaded_at")
+        or _now_iso(),
+        limit=80,
+    )
+    record = build_task_record(
+        "run_candidate_radar_quant_projection",
+        task_id=selected_task_id,
+        output_packet_key="command_center_3_candidate_radar_cache",
+        payload={
+            "source": "candidate_cache_replay",
+            "source_packet_key": "command_center_3_candidate_radar_cache",
+            "symbol": receipt.get("symbol"),
+            "cache_replay_only": True,
+            "readback_route": "GET /api/candidate-radar/cache",
+            "does_not_create_task": True,
+            "does_not_call_provider_from_readback": True,
+        },
+        status=status,
+        progress=1.0 if status in TASK_TERMINAL_STATUSES else 0.5,
+        current_step=current_step,
+        warnings=[
+            "该任务状态来自 CandidateRadar cache / packet 的只读回放；GET /api/tasks 不创建任务、不调用 Tushare、DeepSeek 或 GitHub。",
+            "cache replay task 只帮助普通用户在任务目录看到最近搜票确认链；它不是新的生产验收证据。",
+        ],
+        call_ledger=call_ledger,
+    )
+    record.update(
+        {
+            "created_at": loaded_at,
+            "started_at": loaded_at,
+            "finished_at": loaded_at if status in TASK_TERMINAL_STATUSES else None,
+            "backend": "candidate_cache_replay",
+            "storage_source": "candidate_cache_replay",
+            "cache_replay_only": True,
+            "task_created_by_get": False,
+            "readback_source": "command_center_3_candidate_radar_cache",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "status_history": [
+                _status_event(
+                    status,
+                    progress=1.0 if status in TASK_TERMINAL_STATUSES else 0.5,
+                    current_step=current_step,
+                    at=loaded_at,
+                )
+            ],
+            "task_log": [
+                _task_log_event(
+                    "task_cache_replayed",
+                    status=status,
+                    current_step=current_step,
+                    message="candidate radar task id replayed from local cache without creating a task",
+                    at=loaded_at,
+                )
+            ],
+        }
+    )
+    return record
+
+
 def _active_duplicate_task(idempotency_key: str, *, exclude_task_id: str = "") -> dict[str, Any] | None:
     active_duplicates, _ = _idempotency_duplicates(idempotency_key, exclude_task_id=exclude_task_id)
     if not active_duplicates:
@@ -4090,6 +4202,9 @@ def read_task_status(task_id: str) -> dict[str, Any] | None:
         row = dict(persisted_task)
         row["storage_source"] = "sqlite_meta"
         return row
+    replay_task = _candidate_cache_replay_task(task_key)
+    if replay_task is not None:
+        return replay_task
     return None
 
 
@@ -4111,6 +4226,13 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
         row = dict(task)
         row["storage_source"] = "memory_and_sqlite" if str(task_id) in persisted_ids else "memory"
         merged[str(task_id)] = row
+    replay_task = _candidate_cache_replay_task()
+    replay_task_count = 0
+    if replay_task is not None:
+        replay_task_id = str(replay_task.get("task_id") or "")
+        if replay_task_id and replay_task_id not in merged:
+            merged[replay_task_id] = replay_task
+            replay_task_count = 1
 
     sorted_tasks = sorted(
         merged.values(),
@@ -4186,6 +4308,7 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
         "memory_only_task_count": len(memory_ids - persisted_ids),
         "sqlite_only_task_count": len(persisted_ids - memory_ids),
         "memory_and_sqlite_task_count": len(shared_ids),
+        "candidate_cache_replay_task_count": replay_task_count,
         "task_rows_include_storage_source": True,
         "cache_read_external_calls": False,
         "does_not_execute_trades": True,
@@ -4232,12 +4355,25 @@ def build_task_status_index() -> dict[str, Any]:
             {"source": "memory", "task_count": persistence["memory_task_count"], "external": False},
             {"source": "sqlite_meta", "task_count": persistence["sqlite_task_count"], "external": False},
             {"source": "deduplicated", "task_count": persistence["deduplicated_task_count"], "external": False},
-        ],
+        ] + (
+            [
+                {
+                    "source": "candidate_cache_replay",
+                    "task_count": persistence["candidate_cache_replay_task_count"],
+                    "external": False,
+                }
+            ]
+            if persistence.get("candidate_cache_replay_task_count")
+            else []
+        ),
         "policy": {
             "get_tasks_cache_only": True,
             "does_not_create_tasks": True,
             "does_not_call_external_sources": True,
             "reads_memory_and_sqlite_fallback": True,
+            "reads_candidate_cache_task_replay": True,
+            "candidate_cache_replay_creates_task": False,
+            "candidate_cache_replay_calls_external_sources": False,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "contains_secret": False,

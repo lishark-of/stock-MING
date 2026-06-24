@@ -10230,6 +10230,96 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(index["does_not_modify_strategy_action"])
         self.assertEqual(index["call_ledger"][0]["api"], "local_task_status_index")
 
+    def test_task_status_index_replays_candidate_cache_task_without_creating_task(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "command_center_3_candidate_radar_cache": {
+                    "packet_key": "command_center_3_candidate_radar_cache",
+                    "schema_version": "candidate_radar_cache.v1",
+                    "status": "ready",
+                    "loaded_at": "2026-06-24T10:00:00",
+                    "task_id": "local-cache-replay-quant",
+                    "search_quant_projection_completed_at": "2026-06-24T10:00:01",
+                    "search_quant_projection_receipt": {
+                        "schema_version": "candidate_radar_search_quant_projection_receipt.v1",
+                        "status": "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
+                        "symbol": "002008.SZ",
+                        "latest_task_status": "success",
+                        "latest_task_current_step": "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+                        "call_ledger": [
+                            {
+                                "api": "local_candidate_radar_quant_projection",
+                                "request_params_safe": {"symbol": "002008.SZ", "token": "SHOULD_DROP"},
+                                "call_status": "local_receipt_ready",
+                                "external_calls_triggered": False,
+                                "tushare_called": False,
+                                "deepseek_called": False,
+                                "github_called": False,
+                                "does_not_execute_trades": True,
+                                "does_not_modify_strategy_action": True,
+                            }
+                        ],
+                    },
+                    "call_ledger": [
+                        {
+                            "api": "daily",
+                            "request_params_safe": {"ts_code": "002008.SZ", "api_key": "SHOULD_DROP"},
+                            "call_status": "success",
+                            "external_calls_triggered": True,
+                            "tushare_called": True,
+                            "deepseek_called": False,
+                            "github_called": False,
+                            "does_not_execute_trades": True,
+                            "does_not_modify_strategy_action": True,
+                        }
+                    ],
+                }
+            }
+        )
+
+        replay = task_service.read_task_status("local-cache-replay-quant")
+        self.assertIsNotNone(replay)
+        assert replay is not None
+        self.assertEqual(replay["task_id"], "local-cache-replay-quant")
+        self.assertEqual(replay["task_type"], "run_candidate_radar_quant_projection")
+        self.assertEqual(replay["status"], "success")
+        self.assertEqual(replay["storage_source"], "candidate_cache_replay")
+        self.assertEqual(replay["backend"], "candidate_cache_replay")
+        self.assertTrue(replay["cache_replay_only"])
+        self.assertFalse(replay["task_created_by_get"])
+        self.assertEqual(replay["output_packet_key"], "command_center_3_candidate_radar_cache")
+        self.assertEqual(
+            replay["current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+        )
+        self.assertFalse(replay["external_calls_triggered"])
+        self.assertFalse(replay["tushare_called"])
+        self.assertFalse(replay["deepseek_called"])
+        self.assertFalse(replay["github_called"])
+        self.assertTrue(any(row["api"] == "daily" and row["tushare_called"] is True for row in replay["call_ledger"]))
+        self.assertNotIn("SHOULD_DROP", json.dumps(replay, ensure_ascii=False))
+
+        index = task_service.build_task_status_index()
+        self.assertEqual(index["task_count"], 1)
+        self.assertEqual(index["latest_task_id"], "local-cache-replay-quant")
+        self.assertEqual(index["tasks"][0]["storage_source"], "candidate_cache_replay")
+        self.assertEqual(index["persistence"]["memory_task_count"], 0)
+        self.assertEqual(index["persistence"]["sqlite_task_count"], 0)
+        self.assertEqual(index["persistence"]["candidate_cache_replay_task_count"], 1)
+        self.assertIn("candidate_cache_replay", {row["source"] for row in index["persistence_source_rows"]})
+        self.assertTrue(index["policy"]["reads_candidate_cache_task_replay"])
+        self.assertFalse(index["policy"]["candidate_cache_replay_creates_task"])
+        self.assertFalse(index["policy"]["candidate_cache_replay_calls_external_sources"])
+        self.assertFalse(index["external_calls_triggered"])
+        self.assertFalse(index["tushare_called"])
+        self.assertFalse(index["deepseek_called"])
+        self.assertFalse(index["github_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(index, ensure_ascii=False))
+
+        self.assertIsNone(task_service.read_task_status("local-missing-task"))
+
     def test_tushare_refresh_task_records_call_ledger_and_local_parquet(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()
