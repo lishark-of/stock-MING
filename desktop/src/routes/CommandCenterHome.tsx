@@ -281,6 +281,7 @@ export default function CommandCenterHome() {
   const workerRuntimeState = workerRuntime.runtime as Record<string, unknown> | undefined;
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
+  const candidatePolicy = (candidates.policy as Record<string, unknown> | undefined) ?? {};
   const candidateQuantSmallDataWriteback = (candidates.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateQuantOneScreenActionRows = (candidateQuantSmallDataWriteback.ordinary_one_screen_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantWritebackSurfaceRows = (candidateQuantSmallDataWriteback.ordinary_writeback_surface_summary_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -369,6 +370,36 @@ export default function CommandCenterHome() {
   const dailyCommandP3CheckpointLabel = candidateQuantCheckpointRows.length
     ? `P3 检查点 ${String(candidateQuantCheckpointRows.length)} 项可回放`
     : "等待 CandidateRadar P3 结果检查点";
+  const dailyCommandP2P3ReplayChecklistRows = [
+    {
+      回放入口: "1. 确认回执",
+      当前状态: Number(candidateCounts?.search_quant_projection_confirmed_task_receipt_row_count ?? 0) ? "可回放确认任务接收回执" : "等待确认按钮写入回执",
+      用户下一步: "点击确认后看本地 task receipt，再等 TaskStatusPanel success",
+      证据: "CandidateRadar ordinary_confirmed_task_receipt_rows",
+      边界: candidatePolicy.search_quant_projection_confirmed_task_receipt_rows_are_cache_only === false ? "待复核，只能回雷达详情排查" : "首页只读回放；不创建第二个 task"
+    },
+    {
+      回放入口: "2. 任务状态",
+      当前状态: Number(candidateCounts?.search_quant_projection_task_readback_row_count ?? 0) ? "可回放 task id / safe current_step" : "等待本地 task id 写入 packet",
+      用户下一步: "只看任务编号和安全步骤；成功后刷新本地 cache",
+      证据: "CandidateRadar ordinary_task_readback_rows",
+      边界: candidatePolicy.search_quant_projection_task_readback_rows_are_cache_only === false ? "待复核，只能回雷达详情排查" : "首页只读 packet；不展示 raw log、token/key 或 provider error"
+    },
+    {
+      回放入口: "3. P2 写回三面",
+      当前状态: dailyCommandSmallDataWritebackState,
+      用户下一步: "按 cache、call_ledger、packet 三面确认是否可回放",
+      证据: "ordinary_writeback_surface_summary_rows",
+      边界: dailyCommandSmallDataWritebackBoundary
+    },
+    {
+      回放入口: "4. P3 结果",
+      当前状态: dailyCommandExplainableResultLabel,
+      用户下一步: dailyCommandExplainableResultNext,
+      证据: "ordinary_result_quick_read_rows / ordinary_result_checkpoint_rows",
+      边界: dailyCommandExplainableResultBoundary
+    }
+  ];
   const dailyCommandP3CheckpointRows = candidateQuantCheckpointRows.length
     ? candidateQuantCheckpointRows.map((row) => ({
         检查点: String(row["检查点"] ?? row.checkpoint_key ?? "P3 检查点"),
@@ -991,6 +1022,7 @@ export default function CommandCenterHome() {
             { label: "P0 可继续", value: dailyCommandP0LocalReadinessLabel, tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
             { label: "一屏行动", value: dailyCommandOneScreenActionLabel || "等待 CandidateRadar 一屏行动回放", tone: candidateQuantOneScreenActionRows.length ? "good" : "warn" },
+            { label: "确认后回放", value: "确认回执 -> 任务状态 -> P2 写回 -> P3 结果", tone: "good" },
             { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
             { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
@@ -1068,6 +1100,11 @@ export default function CommandCenterHome() {
           <h3>今日搜票一屏行动</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成首页速读；首页只读回放，不创建 task、不调用模型。</p>
           <DataLineageTable rows={dailyCommandOneScreenActionRows} />
+        </div>
+        <div aria-label="daily command p2 p3 replay checklist">
+          <h3>确认后回放清单</h3>
+          <p className="risk-note">确认按钮返回 task 后，按确认回执、任务状态、P2 写回三面、P3 结果顺序回放；首页只读 CandidateRadar cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
+          <DataLineageTable rows={dailyCommandP2P3ReplayChecklistRows} />
         </div>
         <div aria-label="daily command p0 quick action handoff">
           <h3>P0 到 P1 快速行动</h3>
