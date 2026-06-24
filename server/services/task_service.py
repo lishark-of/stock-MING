@@ -3790,9 +3790,10 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
 
     latest_status = _safe_text(receipt.get("latest_task_status"), limit=32)
     status = latest_status if latest_status in TASK_STATUSES else "success"
+    provider_ledger_ready = provider_receipt.get("tushare_call_ledger_evidence_done") is True
     current_step_source = (
         provider_receipt.get("status")
-        if selected_provider_acceptance
+        if selected_provider_acceptance or provider_ledger_ready
         else receipt.get("latest_task_current_step") or receipt.get("status")
     )
     current_step = _safe_text(
@@ -3848,6 +3849,11 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
             "cache_replay_only": True,
             "task_created_by_get": False,
             "readback_source": "command_center_3_candidate_radar_cache",
+            "candidate_cache_replay_step_source": (
+                "search_quant_provider_model_acceptance_receipt"
+                if selected_provider_acceptance or provider_ledger_ready
+                else "search_quant_projection_receipt"
+            ),
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
