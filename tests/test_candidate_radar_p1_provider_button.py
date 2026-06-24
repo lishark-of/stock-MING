@@ -52,7 +52,13 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("quantProjectionSubmitFailureMessage", source)
         self.assertIn("quantProjectionP1ConfirmGateRows", source)
         self.assertIn("requires_p0_gate_ready: true", source)
-        self.assertIn('p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "candidate_cache_ready"]', source)
+        self.assertIn('p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "p0_stability_check", "candidate_cache_ready"]', source)
+        self.assertIn("const desktopP0StabilityReady =", source)
+        self.assertIn("desktopP0StabilityReady &&", source)
+        self.assertIn("p0_stability_check_ready: desktopP0StabilityReady", source)
+        self.assertIn("P0 stability check", source)
+        self.assertIn("P0 stability dwell 已通过", source)
+        self.assertIn("stability check 只读回放启动器复读结果", source)
         self.assertIn(
             'aria-label="quant projection ordinary p1 p2 engineering details"',
             ordinary_quant_slice,
@@ -278,6 +284,7 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("fastapi_cache_get_ready: !loading && !error", submit_slice)
         self.assertIn("bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady", submit_slice)
         self.assertIn("desktop_preflight_ready: desktopPreflightReady", submit_slice)
+        self.assertIn("p0_stability_check_ready: desktopP0StabilityReady", submit_slice)
         self.assertIn("candidate_cache_ready: candidateRadarCacheReady", submit_slice)
         self.assertIn('candidate_cache_status: String(cache.status ?? "missing")', submit_slice)
         self.assertIn('bootstrap_packet_key: String(bootstrapStatus.packet_key ?? "missing")', submit_slice)
@@ -286,7 +293,7 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("react_render_external_calls: false", submit_slice)
         self.assertIn("get_cache_external_calls: false", submit_slice)
         self.assertIn("contains_secret: false", submit_slice)
-        self.assertIn("refreshCache();", submit_slice)
+        self.assertIn("refreshQuantProjectionReadback();", submit_slice)
         self.assertIn("任务接收后立即回读本地 cache receipt", ordinary_quant_slice)
         self.assertNotIn("fetch(", source)
         self.assertNotIn("TUSHARE_TOKEN", source)

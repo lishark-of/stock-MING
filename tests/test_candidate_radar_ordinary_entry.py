@@ -379,7 +379,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
         submit_slice = self.page[submit_start:submit_end]
         self.assertEqual(submit_slice.count('setTaskId("");'), 3)
-        self.assertIn("P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight 和 candidate cache", self.page)
+        self.assertIn("P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight、P0 stability 和 candidate cache", self.page)
+        self.assertIn("P0 stability check", self.page)
+        self.assertIn("p0_stability=${desktopP0StabilityReady}", self.page)
+        self.assertIn("stability check 只读回放启动器复读结果", self.page)
         self.assertIn("本页不会从输入或渲染创建 Tushare-first task", self.page)
         self.assertIn("正在提交 Tushare-first 后台链；请等待本地 task id，页面不会重复创建第二个 task。", self.page)
         self.assertIn("当前输入与最近任务不一致：先重新点击确认创建当前代码的 task，旧回执只作为历史回放。", self.page)
