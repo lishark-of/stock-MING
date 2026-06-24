@@ -644,19 +644,23 @@ export default function NextSessionMap() {
         <p className="risk-note">普通用户先按路径、参考线、操作区的顺序读；operation_zones 只是条件区间和复核提示，不是买卖、下单或 strategy action。优先读取本地缓存里的条件速读；旧缓存缺字段时才使用前端 fallback。</p>
         <DataLineageTable rows={nextSessionOperationZoneQuickReadRows} />
       </div>
-      <h3>三段结果回放</h3>
-      <p className="risk-note">三段结果回放优先读取服务端 ordinary_result_replay_rows；旧 packet 缺字段时才使用前端 fallback，且两者都只读 cache。</p>
-      <DataLineageTable rows={ordinaryResultReplayRows} />
-      <div aria-label="next session ordinary interpretation actions">
-        <h3>解释性行动清单</h3>
-        <p className="risk-note">先确认图谱是否可绘制，再读路径/参考线、操作区和缺口；这些行动只解释本地 cache，不生成交易动作。</p>
-        <DataLineageTable rows={ordinaryInterpretationActionRows} />
-      </div>
-      <div aria-label="next session ordinary chart review checklist">
-        <h3>图谱复核清单</h3>
-        <p className="risk-note">按图表路径、参考线、操作区、缺少证据复核；优先读取服务端 ordinary_chart_review_rows，只读取本地 chart cache，不触发刷新或交易动作。</p>
-        <DataLineageTable rows={ordinaryChartReviewRows} />
-      </div>
+      <details className="developer-audit-details" aria-label="next session ordinary expanded chart replay details">
+        <summary>更多图谱回放明细</summary>
+        <p className="risk-note">普通主视图保留 P3 一分钟读图、结果交接和操作区速读；三段回放、解释行动和图谱复核清单默认收起。</p>
+        <h3>三段结果回放</h3>
+        <p className="risk-note">三段结果回放优先读取服务端 ordinary_result_replay_rows；旧 packet 缺字段时才使用前端 fallback，且两者都只读 cache。</p>
+        <DataLineageTable rows={ordinaryResultReplayRows} />
+        <div aria-label="next session ordinary interpretation actions">
+          <h3>解释性行动清单</h3>
+          <p className="risk-note">先确认图谱是否可绘制，再读路径/参考线、操作区和缺口；这些行动只解释本地 cache，不生成交易动作。</p>
+          <DataLineageTable rows={ordinaryInterpretationActionRows} />
+        </div>
+        <div aria-label="next session ordinary chart review checklist">
+          <h3>图谱复核清单</h3>
+          <p className="risk-note">按图表路径、参考线、操作区、缺少证据复核；优先读取服务端 ordinary_chart_review_rows，只读取本地 chart cache，不触发刷新或交易动作。</p>
+          <DataLineageTable rows={ordinaryChartReviewRows} />
+        </div>
+      </details>
       <details className="developer-audit-details" aria-label="next session ordinary p5 governance details">
         <summary>P5 解释治理单独补证状态</summary>
         <p className="risk-note">普通主线先复核 P3 图谱来源、路径、参考线和 operation_zones；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
