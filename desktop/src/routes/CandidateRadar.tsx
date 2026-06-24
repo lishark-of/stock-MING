@@ -2149,16 +2149,20 @@ export default function CandidateRadar() {
           <p className="risk-note">P2 三面之后直接看这里：可读结论、来源、下一步和安全边界都来自本地 cache / ledger / packet；本速读不创建 task、不调用 DeepSeek、不生成交易动作。</p>
           <MetricGrid items={quantProjectionP3ResultSummaryItems} />
         </div>
-        <div aria-label="candidate radar ordinary p0 frontend backend readiness">
-          <h3>P0 前后端联通闸门</h3>
-          <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode、desktop preflight 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
-          <DataLineageTable rows={candidateRadarP0AutoLinkRows} />
-        </div>
-        <div aria-label="candidate radar p0 to p1 preflight handoff">
-          <h3>P0 到 P1 交接回读</h3>
-          <p className="risk-note">优先读取 desktop preflight 的 p0_to_p1_ordinary_handoff_rows：四段 ready 后只切到搜票量化推演卡；输入保持静默，确认按钮才创建 Tushare-first POST task。</p>
-          <DataLineageTable rows={candidateRadarP0HandoffRows} />
-        </div>
+        <details className="developer-audit-details" aria-label="candidate radar ordinary p0 local connection diagnostics">
+          <summary>P0 本地联通诊断</summary>
+          <p className="risk-note">首页已经提供本地 FastAPI 接线速读；普通主线默认收起 P0 联通表，需要排查按钮不可用或启动异常时再展开。</p>
+          <div aria-label="candidate radar ordinary p0 frontend backend readiness">
+            <h3>P0 前后端联通闸门</h3>
+            <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode、desktop preflight 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
+            <DataLineageTable rows={candidateRadarP0AutoLinkRows} />
+          </div>
+          <div aria-label="candidate radar p0 to p1 preflight handoff">
+            <h3>P0 到 P1 交接回读</h3>
+            <p className="risk-note">优先读取 desktop preflight 的 p0_to_p1_ordinary_handoff_rows：四段 ready 后只切到搜票量化推演卡；输入保持静默，确认按钮才创建 Tushare-first POST task。</p>
+            <DataLineageTable rows={candidateRadarP0HandoffRows} />
+          </div>
+        </details>
         <p id={quantProjectionSummaryInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p id={quantProjectionSummarySubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
         {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
