@@ -92,6 +92,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar p1 direct confirmation handoff"', self.page)
         self.assertIn("P1 直接确认入口", self.page)
         self.assertIn("这个入口只做本地锚点跳转", self.page)
+        self.assertIn('aria-label="candidate radar p2 three surface quick status"', self.page)
+        self.assertIn("P2 三面速读", self.page)
+        self.assertIn("cache、call_ledger、packet 是否进入本地回放", self.page)
         self.assertIn("P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task", self.page)
         self.assertIn("P1 主路径：先输入股票代码；输入只做本地校验，确认按钮才创建 Tushare-first task", self.page)
         self.assertIn("P1 主路径只允许确认按钮创建 Tushare-first task", self.page)
@@ -117,8 +120,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         action_slice_end = self.page.index('aria-label="candidate radar ordinary audit shortcuts"', next_user_actions_index)
         action_slice = self.page[primary_action_index:action_slice_end]
         direct_handoff_index = self.page.index('aria-label="candidate radar p1 direct confirmation handoff"')
+        p2_quick_status_index = self.page.index('aria-label="candidate radar p2 three surface quick status"')
         self.assertLess(p0_gate_index, p0_handoff_index)
         self.assertLess(direct_handoff_index, p0_gate_index)
+        self.assertLess(direct_handoff_index, p2_quick_status_index)
+        self.assertLess(p2_quick_status_index, p0_gate_index)
         self.assertLess(p0_handoff_index, p1_to_p3_rail_index)
         self.assertLess(p0_gate_index, p1_to_p3_rail_index)
         self.assertLess(p1_to_p3_rail_index, primary_action_index)
@@ -318,6 +324,27 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", direct)
         self.assertNotIn("postCandidateRadarQuantProjection", direct)
         self.assertNotIn("launchQuantProjection", direct)
+
+    def test_candidate_radar_p2_three_surface_quick_status_is_read_only(self):
+        summary_start = self.page.index('aria-label="candidate radar p2 three surface quick status"')
+        summary_end = self.page.index('aria-label="candidate radar ordinary p0 frontend backend readiness"', summary_start)
+        quick = self.page[summary_start:summary_end]
+
+        self.assertIn("P2 三面速读", quick)
+        self.assertIn("确认按钮完成后先看这里", quick)
+        self.assertIn("cache、call_ledger、packet 是否进入本地回放", quick)
+        self.assertIn("不创建 task、不补调 Tushare/DeepSeek", quick)
+        self.assertIn('label: "三面状态"', quick)
+        self.assertIn("quantProjectionSmallDataStageLabel", quick)
+        self.assertIn('label: "三面组成"', quick)
+        self.assertIn("quantProjectionSmallDataWritebackSurfaces", quick)
+        self.assertIn('label: "完整度"', quick)
+        self.assertIn("quantProjectionWritebackCheckpointLabel", quick)
+        self.assertIn('label: "边界"', quick)
+        self.assertIn("quantProjectionSmallDataReadbackContract", quick)
+        self.assertNotIn("onClick=", quick)
+        self.assertNotIn("postCandidateRadarQuantProjection", quick)
+        self.assertNotIn("launchQuantProjection", quick)
 
     def test_candidate_radar_p1_to_p3_stage_rail_is_read_only_before_tables(self):
         summary_start = self.page.index('title="普通用户雷达摘要"')

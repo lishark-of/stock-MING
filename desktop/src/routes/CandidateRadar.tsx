@@ -2131,6 +2131,19 @@ export default function CandidateRadar() {
             <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress from candidate radar p1 handoff">查看任务进度</a>
           </div>
         </div>
+        <div aria-label="candidate radar p2 three surface quick status">
+          <h3>P2 三面速读</h3>
+          <p className="risk-note">确认按钮完成后先看这里：cache、call_ledger、packet 是否进入本地回放；本速读只读取现有 cache，不创建 task、不补调 Tushare/DeepSeek。</p>
+          <MetricGrid
+            items={[
+              { label: "三面状态", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+              { label: "三面组成", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+              { label: "完整度", value: quantProjectionWritebackCheckpointLabel, tone: quantProjectionWritebackReadableSurfaceCount === quantProjectionWritebackSurfaceCount ? "good" : "warn" },
+              { label: "下一步", value: quantProjectionSmallDataNextStep },
+              { label: "边界", value: quantProjectionSmallDataReadbackContract, tone: "good" }
+            ]}
+          />
+        </div>
         <div aria-label="candidate radar ordinary p0 frontend backend readiness">
           <h3>P0 前后端联通闸门</h3>
           <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode、desktop preflight 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
