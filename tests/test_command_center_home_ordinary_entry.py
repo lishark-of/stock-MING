@@ -14,6 +14,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
 
         self.assertIn("<h1>今日作战台</h1>", source)
         self.assertIn("先看下一步、数据来源、缺少证据和仅供研究边界", source)
+        self.assertIn('title="本地 FastAPI 接线速读"', source)
+        self.assertLess(source.index('title="本地 FastAPI 接线速读"'), source.index('title="今日作战台摘要"'))
         self.assertIn('title="今日作战台摘要"', source)
         self.assertIn("下一步、来源、缺口、边界和最近可用缓存", source)
         self.assertIn('label: "下一步"', source)
@@ -237,6 +239,33 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         ):
             self.assertNotIn(hidden_label, summary_slice)
         self.assertNotIn('{ label: "今日作战台"', source)
+
+    def test_local_fastapi_connection_card_is_first_screen_and_read_only(self):
+        source = self.source
+        card_start = source.index('title="本地 FastAPI 接线速读"')
+        card_end = source.index('title="今日作战台摘要"', card_start)
+        card = source[card_start:card_end]
+
+        self.assertIn("打开软件后先看这张卡", card)
+        self.assertIn('label: "本地后端"', card)
+        self.assertIn("dailyCommandFrontendBackendAutoLinkLabel", card)
+        self.assertIn('label: "当前页面"', card)
+        self.assertIn("FastAPI、bootstrap、desktop preflight 和 React 已接上", card)
+        self.assertIn('label: "投研入口"', card)
+        self.assertIn("去下一票雷达输入代码并确认", card)
+        self.assertIn('label: "安全边界"', card)
+        self.assertIn("打开页面和输入代码不外联；确认按钮才触发 Tushare-first", card)
+        self.assertIn('aria-label="daily command fastapi connected user actions"', card)
+        self.assertIn('href={dailyCommandPrimaryActionHref}', card)
+        self.assertIn('href="#tasks"', card)
+        self.assertIn('href="#desktop"', card)
+        self.assertIn("只读 FastAPI health、bootstrap status 和 desktop preflight cache", card)
+        self.assertIn("不会启动服务、不会创建 task、不会调用 Tushare/DeepSeek/GitHub", card)
+        self.assertIn("不会暴露 token/key", card)
+        self.assertNotIn("onClick=", card)
+        self.assertNotIn("fetch(", card)
+        self.assertNotIn("postTask", card)
+        self.assertNotIn("postBootstrapLiveStartup", card)
 
     def test_daily_command_center_source_and_boundary_are_visible(self):
         source = self.source

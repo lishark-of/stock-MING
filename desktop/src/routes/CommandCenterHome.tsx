@@ -1081,6 +1081,22 @@ export default function CommandCenterHome() {
         emptyTitle="暂无今日作战台本地缓存"
         emptyDetail="首页只读取本地只读缓存；不会自动刷新外部数据。若为空，请先确认本地服务已启动。"
       />
+      <PacketCard title="本地 FastAPI 接线速读" subtitle="打开软件后先看这张卡；入口只做本地跳转" status={health.status === "ok" ? "connected" : "checking"}>
+        <MetricGrid
+          items={[
+            { label: "本地后端", value: dailyCommandFrontendBackendAutoLinkLabel, tone: health.status === "ok" ? "good" : "warn" },
+            { label: "当前页面", value: dailyCommandP0LocalReadinessReady ? "FastAPI、bootstrap、desktop preflight 和 React 已接上" : "等待本地四段联通回读", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+            { label: "投研入口", value: dailyCommandNeedsStartupRecovery ? "先看一键启动预检" : "去下一票雷达输入代码并确认", tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+            { label: "安全边界", value: "打开页面和输入代码不外联；确认按钮才触发 Tushare-first", tone: "good" }
+          ]}
+        />
+        <div className="actions" aria-label="daily command fastapi connected user actions">
+          <a href={dailyCommandPrimaryActionHref} aria-label="open primary action after local fastapi connection">{dailyCommandPrimaryActionLabel}</a>
+          <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after local fastapi connection">查看任务进度</a>
+          <a href="#desktop" title="切换到桌面壳预检；只读查看本地连接诊断" aria-label="open desktop preflight after local fastapi connection">查看本地预检</a>
+        </div>
+        <p className="risk-note">这张卡只读 FastAPI health、bootstrap status 和 desktop preflight cache；不会启动服务、不会创建 task、不会调用 Tushare/DeepSeek/GitHub，也不会暴露 token/key。</p>
+      </PacketCard>
       <PacketCard title="今日作战台摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={dailyCommandStatusLabel}>
         <MetricGrid
           items={[
