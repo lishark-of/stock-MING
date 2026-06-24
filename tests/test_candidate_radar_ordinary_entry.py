@@ -82,19 +82,20 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         p1_to_p3_rail_index = self.page.index('aria-label="candidate radar ordinary p1 to p3 stage rail"', p0_gate_index)
         p5_detail_index = self.page.index('aria-label="candidate radar ordinary p5 governance details"', p0_gate_index)
         p6_detail_index = self.page.index('aria-label="candidate radar ordinary p6 strict closeout handoff"', p0_gate_index)
-        early_action_slice = self.page[primary_action_index:p1_to_p3_rail_index]
-        self.assertLess(p0_gate_index, primary_action_index)
+        action_slice_end = self.page.index('aria-label="candidate radar ordinary audit shortcuts"', next_user_actions_index)
+        action_slice = self.page[primary_action_index:action_slice_end]
+        self.assertLess(p0_gate_index, p1_to_p3_rail_index)
+        self.assertLess(p1_to_p3_rail_index, p5_detail_index)
+        self.assertLess(p5_detail_index, p6_detail_index)
+        self.assertLess(p6_detail_index, primary_action_index)
         self.assertLess(primary_action_index, next_user_actions_index)
-        self.assertLess(next_user_actions_index, p1_to_p3_rail_index)
-        self.assertLess(next_user_actions_index, p5_detail_index)
-        self.assertLess(next_user_actions_index, p6_detail_index)
-        self.assertIn('aria-label="radar summary quant projection symbol"', early_action_slice)
-        self.assertIn('onClick={launchQuantProjection}', early_action_slice)
-        self.assertIn("确认并生成 3.0 量化推演", early_action_slice)
-        self.assertIn('href="#factor"', early_action_slice)
-        self.assertIn('href="#next"', early_action_slice)
-        self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", early_action_slice)
-        self.assertNotIn("launchQuantProjectionAcceptanceDryRun", early_action_slice)
+        self.assertIn('aria-label="radar summary quant projection symbol"', action_slice)
+        self.assertIn('onClick={launchQuantProjection}', action_slice)
+        self.assertIn("确认并生成 3.0 量化推演", action_slice)
+        self.assertIn('href="#factor"', action_slice)
+        self.assertIn('href="#next"', action_slice)
+        self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", action_slice)
+        self.assertNotIn("launchQuantProjectionAcceptanceDryRun", action_slice)
         self.assertIn("quantProjectionOneScreenPacketRows", self.page)
         self.assertIn("searchQuantProjectionSmallDataWriteback.ordinary_one_screen_action_rows", self.page)
         self.assertIn("quantProjectionOneScreenActionRows", self.page)
@@ -194,7 +195,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("普通主线先停在 P1 确认、P2 三面回放和 P3 结果速读；DeepSeek governed executor 状态默认收起，只作为高级补证参考。", self.page)
         self.assertLess(self.page.index('aria-label="candidate radar ordinary p3 result handoff index"'), self.page.index('aria-label="candidate radar ordinary p5 governance details"'))
         self.assertLess(self.page.index('aria-label="candidate radar ordinary p5 governance details"'), self.page.index('aria-label="candidate radar ordinary p6 strict closeout handoff"'))
-        self.assertLess(self.page.index('aria-label="candidate radar primary next action"'), self.page.index('aria-label="candidate radar ordinary p5 governance details"'))
+        self.assertLess(self.page.index('aria-label="candidate radar ordinary p6 strict closeout handoff"'), self.page.index('aria-label="candidate radar primary next action"'))
         self.assertLess(
             self.page.index('aria-label="candidate radar ordinary p1 to p3 stage rail"'),
             self.page.index('aria-label="candidate radar ordinary one screen actions"'),
@@ -204,8 +205,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             self.page.index('aria-label="candidate radar ordinary p3 explainable result quick read"'),
         )
         self.assertLess(
-            self.page.index('aria-label="candidate radar ordinary p3 result handoff index"'),
             self.page.index('aria-label="candidate radar ordinary p1 p2 detail readback"'),
+            self.page.index('aria-label="candidate radar ordinary p3 result handoff index"'),
         )
         self.assertLess(
             self.page.index('aria-label="candidate radar ordinary p1 p2 detail readback"'),
@@ -623,7 +624,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("把可读结论、量化推演、次日图谱和候选池绑定到同一个本地来源任务", self.page)
         self.assertIn("链接只切换入口，不创建 task", self.page)
         self.assertIn('来源任务: displayText(row["来源任务"] ?? row.source_task_id, "waiting_confirm_task")', self.page)
-        self.assertIn("先看可读结论、回放来源和待补证据", self.page)
+        self.assertIn("先看可读结论、来源组成、回放来源和待补证据", self.page)
         self.assertIn("不会从结果速读创建 task 或调用模型", self.page)
         self.assertIn("P5 DeepSeek 治理状态", self.page)
         self.assertIn("优先读取服务端 ordinary_model_governance_rows", self.page)
@@ -826,14 +827,15 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar primary next action"', summary_slice)
         self.assertIn('aria-label="candidate radar next user actions"', summary_slice)
         self.assertLess(summary_slice.index('aria-label="candidate radar primary next action"'), summary_slice.index('aria-label="candidate radar next user actions"'))
-        self.assertLess(summary_slice.index('aria-label="candidate radar next user actions"'), summary_slice.index('aria-label="candidate radar ordinary p1 to p3 stage rail"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 to p3 stage rail"'), summary_slice.index('aria-label="candidate radar ordinary one screen actions"'))
-        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary one screen actions"'), summary_slice.index('aria-label="candidate radar ordinary p3 explainable result quick read"'))
-        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p3 result handoff index"'), summary_slice.index('aria-label="candidate radar ordinary p1 p2 detail readback"'))
+        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary one screen actions"'), summary_slice.index('aria-label="candidate radar ordinary p1 p2 detail readback"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 p2 detail readback"'), summary_slice.index('aria-label="candidate radar ordinary p1 confirm path"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 confirm path"'), summary_slice.index('aria-label="candidate radar ordinary p2 writeback rail"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p2 writeback rail"'), summary_slice.index('aria-label="candidate radar ordinary p2 writeback surfaces"'))
-        self.assertLess(summary_slice.index('aria-label="candidate radar next user actions"'), summary_slice.index("{quantProjectionSummaryGuidance}"))
+        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 p2 detail readback"'), summary_slice.index('aria-label="candidate radar ordinary p3 explainable result quick read"'))
+        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p3 explainable result quick read"'), summary_slice.index('aria-label="candidate radar ordinary p3 result handoff index"'))
+        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p6 strict closeout handoff"'), summary_slice.index('aria-label="candidate radar primary next action"'))
+        self.assertLess(summary_slice.index("{quantProjectionSummaryGuidance}"), summary_slice.index('aria-label="candidate radar next user actions"'))
         self.assertNotIn("launchQuantProjectionAcceptanceDryRun", summary_slice)
         self.assertNotIn("launchQuantProjectionExecutionRequest", summary_slice)
         self.assertNotIn("launchProviderParityDryRun", summary_slice)

@@ -39450,8 +39450,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(interpretation["ordinary_result_quick_read_rows_create_task"])
         self.assertFalse(interpretation["ordinary_result_quick_read_rows_use_model_output"])
         self.assertTrue(interpretation["ordinary_result_quick_read_rows_are_not_trade_signals"])
-        self.assertEqual(interpretation["ordinary_result_quick_read_row_count"], 3)
-        self.assertEqual(packet["counts"]["search_quant_projection_interpretation_quick_read_row_count"], 3)
+        self.assertEqual(interpretation["ordinary_result_quick_read_row_count"], 4)
+        self.assertEqual(packet["counts"]["search_quant_projection_interpretation_quick_read_row_count"], 4)
         self.assertTrue(packet["policy"]["search_quant_projection_interpretation_quick_read_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_interpretation_quick_read_rows_create_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_interpretation_quick_read_rows_use_model_output"])
@@ -39459,9 +39459,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         quick_read = {
             row["quick_read_item"]: row for row in interpretation["ordinary_result_quick_read_rows"]
         }
-        self.assertEqual(set(quick_read), {"conclusion", "replay_scope", "remaining_gap"})
+        self.assertEqual(set(quick_read), {"conclusion", "replay_scope", "source_map", "remaining_gap"})
         self.assertIn("Tushare-first 账本已回放", quick_read["conclusion"]["当前状态"])
         self.assertEqual(quick_read["replay_scope"]["证据"], "cache / call_ledger / packet")
+        self.assertIn("Tushare ledger -> 本地量化推演 -> 次日图谱 -> 候选池复核", quick_read["source_map"]["当前状态"])
+        self.assertEqual(quick_read["source_map"]["readback_source"], "ordinary_result_handoff_rows")
+        self.assertIn("不调用 DeepSeek", quick_read["source_map"]["边界"])
         self.assertIn("DeepSeek governed executor 单独补", quick_read["remaining_gap"]["边界"])
         self.assertFalse(
             any(row["creates_task_from_readback"] for row in interpretation["ordinary_result_quick_read_rows"])

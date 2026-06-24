@@ -16931,6 +16931,36 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "candidate_is_not_buy_instruction": True,
         },
         {
+            "quick_read_item": "source_map",
+            "结论": "结果来源组成",
+            "当前状态": (
+                "Tushare ledger -> 本地量化推演 -> 次日图谱 -> 候选池复核"
+                if small_data_ready
+                else "等待 Tushare-first ledger 后串联本地量化推演、次日图谱和候选池复核"
+            ),
+            "用户下一步": (
+                "按 P3 结果入口索引依次回放量化推演、次日图谱和候选池；只把它当研究线索。"
+                if small_data_ready
+                else "先完成确认按钮链路；输入和结果速读不会创建 task。"
+            ),
+            "证据": (
+                f"source_task_id={latest_task_id or 'waiting_confirm_task'}; "
+                f"next_session_map_state={'local_map_ready' if factor_next_ready else 'pending_local_cache_refresh'}"
+            ),
+            "边界": "来源组成只解释本地链路；不调用 DeepSeek，不覆盖 operation_zones 或 strategy action。",
+            "readback_source": "ordinary_result_handoff_rows",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
             "quick_read_item": "remaining_gap",
             "结论": "还缺什么",
             "当前状态": f"待补证据：{missing_evidence_label}",

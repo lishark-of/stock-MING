@@ -1595,7 +1595,7 @@ export default function CandidateRadar() {
     {
       回放清单: "P3 结果速读",
       可回放项: Number(counts.search_quant_projection_interpretation_quick_read_row_count ?? 0),
-      当前状态: Number(counts.search_quant_projection_interpretation_quick_read_row_count ?? 0) ? "可回放可读结论 / 来源 / 缺口" : "等待小数据写入后生成结果速读",
+      当前状态: Number(counts.search_quant_projection_interpretation_quick_read_row_count ?? 0) ? "可回放可读结论 / 来源组成 / 缺口" : "等待小数据写入后生成结果速读",
       只读边界: policy.search_quant_projection_interpretation_quick_read_rows_are_cache_only === false ? "待复核" : "只读回放",
       边界: "结果速读不创建 task、不调用模型、不生成交易动作"
     }
@@ -1905,7 +1905,7 @@ export default function CandidateRadar() {
         </details>
         <div aria-label="candidate radar ordinary p3 explainable result quick read">
           <h3>P3 可解释结果速读</h3>
-          <p className="risk-note">普通用户确认后直接看这张 P3 表：可读结论、回放来源和待补证据都来自本地 cache / ledger / packet；不会从速读表创建 task 或调用模型。</p>
+          <p className="risk-note">普通用户确认后直接看这张 P3 表：可读结论、来源组成、回放来源和待补证据都来自本地 cache / ledger / packet；不会从速读表创建 task 或调用模型。</p>
           <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
         </div>
         <div aria-label="candidate radar ordinary p3 result handoff index">
@@ -2123,7 +2123,7 @@ export default function CandidateRadar() {
             </div>
             <div aria-label="quant projection ordinary explainable result quick read">
               <h3>P3 结果速读</h3>
-              <p className="risk-note">优先读取服务端 ordinary_result_quick_read_rows：先看可读结论、回放来源和待补证据；不会从结果速读创建 task 或调用模型。</p>
+              <p className="risk-note">优先读取服务端 ordinary_result_quick_read_rows：先看可读结论、来源组成、回放来源和待补证据；不会从结果速读创建 task 或调用模型。</p>
               {quantProjectionOrdinaryResultHandoffRows.length ? (
                 <div aria-label="quant projection ordinary result handoff index">
                   <h3>P3 结果入口索引</h3>
