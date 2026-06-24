@@ -868,6 +868,38 @@ export default function CandidateRadar() {
       : searchQuantProjectionReceipt.model_execution_implemented === true ? "DeepSeek 解释有本地记录" : "DeepSeek 待 governed executor";
   const quantProjectionTaskBoundary =
     "输入不触发外联；点击确认后只经 POST task / worker 后台运行，React 渲染不直连 Tushare 或 DeepSeek";
+  const quantProjectionConfirmRouteRows = [
+    {
+      链路项: "普通确认按钮",
+      当前状态: quantProjectionCanSubmit ? "ready：点击后创建按钮门控 POST task" : quantProjectionDisabledReason,
+      用户下一步: quantProjectionCanSubmit ? "点击确认并生成 3.0 量化推演" : "先让输入和 P0 联通闸门通过",
+      证据: "POST /api/candidate-radar/quant-projection",
+      边界: "只有按钮点击会 POST；页面打开、输入和 GET cache 不创建 task"
+    },
+    {
+      链路项: "Tushare-first",
+      当前状态: quantProjectionProviderLedgerReady
+        ? `已回放：Tushare ${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}`
+        : "点击确认后由后端 task 串联；凭据缺失时只写本地阻断",
+      用户下一步: quantProjectionProviderLedgerReady ? "回放量化推演和次日图谱" : "等待 TaskStatusPanel 和 cache 回放",
+      证据: "task call_ledger / search_quant_provider_model_acceptance_receipt",
+      边界: "Tushare 只允许在 POST task / worker 内执行；React render 不直连 provider"
+    },
+    {
+      链路项: "DeepSeek",
+      当前状态: quantProjectionDeepSeekSkipped ? "skipped：等待 governed executor" : "pending：本轮不调用模型",
+      用户下一步: "先使用 Tushare-first 和本地图谱；DeepSeek 留到 P5 单独补",
+      证据: "include_deepseek=false / governed executor pending",
+      边界: "DeepSeek 不作为数据源，不覆盖价格、因子、operation_zones 或 strategy action"
+    },
+    {
+      链路项: "交易隔离",
+      当前状态: "research-only：不下单、不改持仓、不改 strategy action",
+      用户下一步: "把结果当研究线索，只读回放 cache / ledger / packet",
+      证据: "does_not_execute_trades=true / does_not_modify_strategy_action=true",
+      边界: "Radar candidate 和量化推演都不是买入、卖出或加仓指令"
+    }
+  ];
   const quantProjectionProviderModelReplayState = quantProjectionProviderLedgerReady
     ? "GET cache 已回放 Tushare provider ledger；DeepSeek skipped/pending，不改 action"
     : "等待确认按钮创建 Tushare-first task；GET cache 只显示 pending";
@@ -2272,6 +2304,11 @@ export default function CandidateRadar() {
           </div>
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionConfirmChainState}</p>
+          <div aria-label="candidate radar p1 confirm actual route">
+            <h3>确认按钮实际链路</h3>
+            <p className="risk-note">这张表只说明当前按钮会走哪条本地后端链路；输入和页面渲染仍保持静默。</p>
+            <DataLineageTable rows={quantProjectionConfirmRouteRows} />
+          </div>
           {quantProjectionTaskPanelVisible ? (
             <div aria-label="candidate radar first screen task status">
               <TaskLaunchReceipt receipt={taskReceipt} />
