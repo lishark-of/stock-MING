@@ -141,6 +141,10 @@ export default function CandidateRadar() {
       setBootstrapEnvelopeWarnings(res.warnings ?? []);
     });
   };
+  const refreshQuantProjectionReadback = () => {
+    refreshCache();
+    refreshBootstrapStatus();
+  };
   const refreshDesktopPreflight = () => {
     void getDesktopPreflightCache().then((res) => {
       setDesktopPreflight(res.data);
@@ -185,7 +189,7 @@ export default function CandidateRadar() {
         setTaskReceipt(res);
         setQuantProjectionSubmitError("");
         setTaskId(acceptedTaskId);
-        refreshCache();
+        refreshQuantProjectionReadback();
       } else if (res.ok) {
         setTaskId("");
         setTaskReceipt(null);
@@ -2363,7 +2367,7 @@ export default function CandidateRadar() {
           {quantProjectionTaskPanelVisible ? (
             <div aria-label="quant projection tushare-first task status">
               <TaskLaunchReceipt receipt={taskReceipt} />
-              <TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshCache} />
+              <TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />
             </div>
           ) : null}
           {quantProjectionTaskPanelStaleNotice ? (

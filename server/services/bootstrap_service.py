@@ -8691,10 +8691,13 @@ def _runtime_frontend_enablement_gate_contract(
             "gate_key": "frontend_code_wiring_implemented",
             "gate_order": 12,
             "gate_type": "frontend_implementation",
-            "passed": False,
+            "passed": frontend_wiring_contract.get("manual_button_frontend_wiring_implemented") is True
+            and frontend_wiring_contract.get("manual_button_task_launch_receipt_bound") is True
+            and frontend_wiring_contract.get("manual_button_task_status_polling_bound") is True
+            and frontend_wiring_contract.get("manual_button_success_refresh_bound") is True,
             "required_before_enable": True,
             "evidence_required": "CandidateRadar_task_receipt_task_status_panel_wiring",
-            "pending_reason": "frontend_wiring_implementation_pending",
+            "pending_reason": "",
         },
     ]
     common_gate_flags = {
@@ -8725,7 +8728,7 @@ def _runtime_frontend_enablement_gate_contract(
     blocking_rows = [row for row in gate_rows if row["blocks_enablement"]]
     return {
         "schema_version": BOOTSTRAP_FRONTEND_ENABLEMENT_GATE_SCHEMA_VERSION,
-        "status": "frontend_enablement_blocked_browser_and_wiring_evidence_pending"
+        "status": "frontend_enablement_blocked_browser_evidence_pending"
         if live_light_enabled
         else "frontend_enablement_blocked_until_live_light_mode",
         "mode": active_mode,
@@ -8752,7 +8755,6 @@ def _runtime_frontend_enablement_gate_contract(
         "linked_frontend_wiring_schema_version": frontend_wiring_contract.get("schema_version"),
         "linked_external_silence_schema_version": external_silence_contract.get("schema_version"),
         "next_required_evidence": [
-            "frontend_task_receipt_and_status_panel_wiring",
             "browser_network_trace",
             "failure_recovery_browser_trace",
             "research_only_boundary_visual_check",
@@ -9077,10 +9079,33 @@ def _runtime_frontend_wiring_manifest_contract(
         "does_not_modify_strategy_action": True,
         "does_not_modify_prices_positions_or_operation_zones": True,
     }
-    manifest_rows = [{**row, **common_manifest_flags} for row in manifest_rows]
+    manual_button_manifest_done_keys = {
+        "bootstrap_status_mode_gate",
+        "cache_first_initial_render_guard",
+        "safe_submit_handler",
+        "task_launch_receipt_binding",
+        "task_status_panel_polling",
+        "success_refresh_cache_and_status",
+        "provider_model_pending_boundary",
+    }
+    manifest_rows = [
+        {
+            **row,
+            **common_manifest_flags,
+            "implementation_done": row["manifest_key"] in manual_button_manifest_done_keys,
+            "implementation_scope": (
+                "manual_button_path_ready_browser_evidence_pending"
+                if row["manifest_key"] in manual_button_manifest_done_keys
+                else "pending_browser_or_failure_recovery_evidence"
+            ),
+        }
+        for row in manifest_rows
+    ]
+    implementation_done_row_count = sum(1 for row in manifest_rows if row["implementation_done"])
+    pending_manifest_row_count = len(manifest_rows) - implementation_done_row_count
     return {
         "schema_version": BOOTSTRAP_FRONTEND_WIRING_MANIFEST_SCHEMA_VERSION,
-        "status": "frontend_wiring_manifest_visible_implementation_pending"
+        "status": "frontend_wiring_manifest_manual_button_ready_browser_evidence_pending"
         if live_light_enabled
         else "frontend_wiring_manifest_inactive_until_live_light_mode",
         "mode": active_mode,
@@ -9088,8 +9113,10 @@ def _runtime_frontend_wiring_manifest_contract(
         "target_frontend_route": "desktop/src/routes/CandidateRadar.tsx",
         "manifest_rows": manifest_rows,
         "manifest_row_count": len(manifest_rows),
-        "implementation_done_row_count": 0,
-        "pending_manifest_row_count": len(manifest_rows),
+        "implementation_done_row_count": implementation_done_row_count,
+        "pending_manifest_row_count": pending_manifest_row_count,
+        "manual_button_manifest_implemented": implementation_done_row_count >= len(manual_button_manifest_done_keys),
+        "manual_button_manifest_done_keys": sorted(manual_button_manifest_done_keys),
         "required_manifest_keys": [row["manifest_key"] for row in manifest_rows],
         "target_components": ["TaskLaunchReceipt", "TaskStatusPanel"],
         "target_client_helpers": ["postCandidateRadarQuantProjection"],
@@ -12944,8 +12971,14 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "runtime_frontend_wiring_manifest_row_count": runtime_frontend_wiring_manifest_contract[
                 "manifest_row_count"
             ],
+            "runtime_frontend_wiring_manifest_done_row_count": runtime_frontend_wiring_manifest_contract[
+                "implementation_done_row_count"
+            ],
             "runtime_frontend_wiring_manifest_pending_row_count": runtime_frontend_wiring_manifest_contract[
                 "pending_manifest_row_count"
+            ],
+            "runtime_frontend_wiring_manifest_manual_button_implemented": runtime_frontend_wiring_manifest_contract[
+                "manual_button_manifest_implemented"
             ],
             "runtime_frontend_wiring_manifest_implemented": False,
             "runtime_frontend_wiring_manifest_is_production_evidence": False,
@@ -13874,8 +13907,14 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "runtime_frontend_wiring_manifest_row_count": runtime_frontend_wiring_manifest_contract[
                 "manifest_row_count"
             ],
+            "runtime_frontend_wiring_manifest_done_row_count": runtime_frontend_wiring_manifest_contract[
+                "implementation_done_row_count"
+            ],
             "runtime_frontend_wiring_manifest_pending_row_count": runtime_frontend_wiring_manifest_contract[
                 "pending_manifest_row_count"
+            ],
+            "runtime_frontend_wiring_manifest_manual_button_implemented": runtime_frontend_wiring_manifest_contract[
+                "manual_button_manifest_implemented"
             ],
             "runtime_frontend_wiring_manifest_implemented": False,
             "runtime_frontend_wiring_manifest_is_production_evidence": False,
@@ -14554,8 +14593,14 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "runtime_frontend_wiring_manifest_row_count": runtime_frontend_wiring_manifest_contract[
                 "manifest_row_count"
             ],
+            "runtime_frontend_wiring_manifest_done_row_count": runtime_frontend_wiring_manifest_contract[
+                "implementation_done_row_count"
+            ],
             "runtime_frontend_wiring_manifest_pending_row_count": runtime_frontend_wiring_manifest_contract[
                 "pending_manifest_row_count"
+            ],
+            "runtime_frontend_wiring_manifest_manual_button_implemented": runtime_frontend_wiring_manifest_contract[
+                "manual_button_manifest_implemented"
             ],
             "runtime_frontend_wiring_manifest_implemented": False,
             "runtime_frontend_wiring_manifest_is_production_evidence": False,
@@ -14710,8 +14755,14 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
                 "runtime_frontend_wiring_manifest_row_count": runtime_frontend_wiring_manifest_contract[
                     "manifest_row_count"
                 ],
+                "runtime_frontend_wiring_manifest_done_row_count": runtime_frontend_wiring_manifest_contract[
+                    "implementation_done_row_count"
+                ],
                 "runtime_frontend_wiring_manifest_pending_row_count": runtime_frontend_wiring_manifest_contract[
                     "pending_manifest_row_count"
+                ],
+                "runtime_frontend_wiring_manifest_manual_button_implemented": runtime_frontend_wiring_manifest_contract[
+                    "manual_button_manifest_implemented"
                 ],
                 "runtime_frontend_wiring_manifest_is_production_evidence": False,
                 "runtime_frontend_acceptance_runbook_row_count": runtime_frontend_acceptance_runbook_contract[

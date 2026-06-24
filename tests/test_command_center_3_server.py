@@ -25150,14 +25150,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(
             frontend_enablement_gate["status"],
-            "frontend_enablement_blocked_browser_and_wiring_evidence_pending",
+            "frontend_enablement_blocked_browser_evidence_pending",
         )
         self.assertEqual(frontend_enablement_gate["mode"], "live_light")
         self.assertEqual(frontend_enablement_gate["target_stage_key"], "stage_04_frontend_nonblocking_wiring")
         self.assertEqual(frontend_enablement_gate["target_frontend_route"], "desktop/src/routes/CandidateRadar.tsx")
         self.assertEqual(frontend_enablement_gate["gate_row_count"], 12)
-        self.assertEqual(frontend_enablement_gate["passed_gate_count"], 5)
-        self.assertEqual(frontend_enablement_gate["blocking_row_count"], 7)
+        self.assertEqual(frontend_enablement_gate["passed_gate_count"], 6)
+        self.assertEqual(frontend_enablement_gate["blocking_row_count"], 6)
         self.assertFalse(frontend_enablement_gate["frontend_enablement_allowed"])
         self.assertFalse(frontend_enablement_gate["frontend_submit_autostart_wiring_can_be_enabled"])
         self.assertTrue(frontend_enablement_gate["browser_network_trace_required"])
@@ -25217,8 +25217,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(frontend_gate_rows["frontend_provider_model_silence_browser_trace"]["blocks_enablement"])
         self.assertFalse(frontend_gate_rows["research_only_boundaries_visible_browser_trace"]["passed"])
         self.assertTrue(frontend_gate_rows["research_only_boundaries_visible_browser_trace"]["blocks_enablement"])
-        self.assertFalse(frontend_gate_rows["frontend_code_wiring_implemented"]["passed"])
-        self.assertTrue(frontend_gate_rows["frontend_code_wiring_implemented"]["blocks_enablement"])
+        self.assertTrue(frontend_gate_rows["frontend_code_wiring_implemented"]["passed"])
+        self.assertFalse(frontend_gate_rows["frontend_code_wiring_implemented"]["blocks_enablement"])
         self.assertEqual(
             frontend_enablement_gate["blocking_gate_keys"],
             [
@@ -25228,13 +25228,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "failure_recovery_last_good_cache_browser_trace",
                 "frontend_provider_model_silence_browser_trace",
                 "research_only_boundaries_visible_browser_trace",
-                "frontend_code_wiring_implemented",
             ],
         )
         self.assertEqual(
             frontend_enablement_gate["next_required_evidence"],
             [
-                "frontend_task_receipt_and_status_panel_wiring",
                 "browser_network_trace",
                 "failure_recovery_browser_trace",
                 "research_only_boundary_visual_check",
@@ -25271,7 +25269,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(frontend_enablement_gate["does_not_modify_strategy_action"])
         self.assertTrue(packet["live_light"]["runtime_frontend_enablement_gate_contract_visible"])
         self.assertFalse(packet["live_light"]["runtime_frontend_enablement_allowed"])
-        self.assertEqual(packet["live_light"]["runtime_frontend_enablement_blocking_row_count"], 7)
+        self.assertEqual(packet["live_light"]["runtime_frontend_enablement_blocking_row_count"], 6)
         self.assertEqual(
             packet["live_light"]["runtime_frontend_enablement_target_stage_key"],
             "stage_04_frontend_nonblocking_wiring",
@@ -25280,7 +25278,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["live_light"]["runtime_frontend_enablement_is_production_evidence"])
         self.assertTrue(packet["policy"]["runtime_frontend_enablement_gate_contract_visible"])
         self.assertFalse(packet["policy"]["runtime_frontend_enablement_allowed"])
-        self.assertEqual(packet["policy"]["runtime_frontend_enablement_blocking_row_count"], 7)
+        self.assertEqual(packet["policy"]["runtime_frontend_enablement_blocking_row_count"], 6)
         self.assertEqual(
             packet["policy"]["runtime_frontend_enablement_target_stage_key"],
             "stage_04_frontend_nonblocking_wiring",
@@ -25314,7 +25312,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             browser_evidence["linked_frontend_enablement_gate_schema_version"],
             "command_center_live_light_frontend_enablement_gate.v1",
         )
-        self.assertEqual(browser_evidence["linked_frontend_enablement_blocking_row_count"], 7)
+        self.assertEqual(browser_evidence["linked_frontend_enablement_blocking_row_count"], 6)
         self.assertEqual(
             browser_evidence["linked_cache_first_polling_schema_version"],
             "command_center_runtime_cache_first_polling_contract.v1",
@@ -25426,14 +25424,27 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(
             frontend_wiring_manifest["status"],
-            "frontend_wiring_manifest_visible_implementation_pending",
+            "frontend_wiring_manifest_manual_button_ready_browser_evidence_pending",
         )
         self.assertEqual(frontend_wiring_manifest["mode"], "live_light")
         self.assertEqual(frontend_wiring_manifest["target_stage_key"], "stage_04_frontend_nonblocking_wiring")
         self.assertEqual(frontend_wiring_manifest["target_frontend_route"], "desktop/src/routes/CandidateRadar.tsx")
         self.assertEqual(frontend_wiring_manifest["manifest_row_count"], 9)
-        self.assertEqual(frontend_wiring_manifest["implementation_done_row_count"], 0)
-        self.assertEqual(frontend_wiring_manifest["pending_manifest_row_count"], 9)
+        self.assertEqual(frontend_wiring_manifest["implementation_done_row_count"], 7)
+        self.assertEqual(frontend_wiring_manifest["pending_manifest_row_count"], 2)
+        self.assertTrue(frontend_wiring_manifest["manual_button_manifest_implemented"])
+        self.assertEqual(
+            frontend_wiring_manifest["manual_button_manifest_done_keys"],
+            [
+                "bootstrap_status_mode_gate",
+                "cache_first_initial_render_guard",
+                "provider_model_pending_boundary",
+                "safe_submit_handler",
+                "success_refresh_cache_and_status",
+                "task_launch_receipt_binding",
+                "task_status_panel_polling",
+            ],
+        )
         self.assertEqual(frontend_wiring_manifest["target_components"], ["TaskLaunchReceipt", "TaskStatusPanel"])
         self.assertEqual(frontend_wiring_manifest["target_client_helpers"], ["postCandidateRadarQuantProjection"])
         self.assertEqual(
@@ -25523,9 +25534,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             frontend_manifest_rows["browser_evidence_hook"]["required_state"],
         )
         self.assertEqual(frontend_wiring_manifest["required_manifest_keys"], list(frontend_manifest_rows))
+        manual_manifest_done_keys = set(frontend_wiring_manifest["manual_button_manifest_done_keys"])
         for row in frontend_manifest_rows.values():
             self.assertTrue(row["required_before_frontend_enablement"])
-            self.assertFalse(row["implementation_done"])
+            self.assertEqual(row["implementation_done"], row["manifest_key"] in manual_manifest_done_keys)
             self.assertTrue(row["browser_evidence_required"])
             self.assertFalse(row["creates_task_from_render"])
             self.assertFalse(row["creates_task_from_typing"])
@@ -25558,12 +25570,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(frontend_wiring_manifest["does_not_modify_strategy_action"])
         self.assertTrue(packet["live_light"]["runtime_frontend_wiring_manifest_contract_visible"])
         self.assertEqual(packet["live_light"]["runtime_frontend_wiring_manifest_row_count"], 9)
-        self.assertEqual(packet["live_light"]["runtime_frontend_wiring_manifest_pending_row_count"], 9)
+        self.assertEqual(packet["live_light"]["runtime_frontend_wiring_manifest_done_row_count"], 7)
+        self.assertEqual(packet["live_light"]["runtime_frontend_wiring_manifest_pending_row_count"], 2)
+        self.assertTrue(packet["live_light"]["runtime_frontend_wiring_manifest_manual_button_implemented"])
         self.assertFalse(packet["live_light"]["runtime_frontend_wiring_manifest_implemented"])
         self.assertFalse(packet["live_light"]["runtime_frontend_wiring_manifest_is_production_evidence"])
         self.assertTrue(packet["policy"]["runtime_frontend_wiring_manifest_contract_visible"])
         self.assertEqual(packet["policy"]["runtime_frontend_wiring_manifest_row_count"], 9)
-        self.assertEqual(packet["policy"]["runtime_frontend_wiring_manifest_pending_row_count"], 9)
+        self.assertEqual(packet["policy"]["runtime_frontend_wiring_manifest_done_row_count"], 7)
+        self.assertEqual(packet["policy"]["runtime_frontend_wiring_manifest_pending_row_count"], 2)
+        self.assertTrue(packet["policy"]["runtime_frontend_wiring_manifest_manual_button_implemented"])
         self.assertFalse(packet["policy"]["runtime_frontend_wiring_manifest_implemented"])
         self.assertFalse(packet["policy"]["runtime_frontend_wiring_manifest_is_production_evidence"])
         frontend_acceptance_runbook = packet["runtime_frontend_acceptance_runbook_contract"]
@@ -25621,7 +25637,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             frontend_acceptance_runbook["linked_frontend_wiring_manifest_schema_version"],
             "command_center_live_light_frontend_wiring_manifest.v1",
         )
-        self.assertEqual(frontend_acceptance_runbook["linked_frontend_wiring_manifest_pending_row_count"], 9)
+        self.assertEqual(frontend_acceptance_runbook["linked_frontend_wiring_manifest_pending_row_count"], 2)
         frontend_runbook_rows = {
             row["runbook_key"]: row for row in frontend_acceptance_runbook["runbook_rows"]
         }
@@ -25883,7 +25899,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             frontend_enablement_promotion["linked_frontend_wiring_manifest_schema_version"],
             "command_center_live_light_frontend_wiring_manifest.v1",
         )
-        self.assertEqual(frontend_enablement_promotion["linked_frontend_wiring_manifest_pending_row_count"], 9)
+        self.assertEqual(frontend_enablement_promotion["linked_frontend_wiring_manifest_pending_row_count"], 2)
         self.assertEqual(
             frontend_enablement_promotion["linked_frontend_acceptance_runbook_schema_version"],
             "command_center_live_light_frontend_acceptance_runbook.v1",
