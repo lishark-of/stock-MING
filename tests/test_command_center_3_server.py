@@ -774,6 +774,36 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             p4_checkpoint["p4_next_gate"],
             "legacy_bug_ux_audit_direct_observation_plus_safe_evidence_attachment_before_keep_or_retirement",
         )
+        p5_checkpoint = current_checkpoint_rows["P5"]
+        self.assertIn("governed executor checkpoint is cache-only", p5_checkpoint["current_evidence_scope"])
+        self.assertEqual(
+            p5_checkpoint["governed_executor_scope"],
+            "p5_deepseek_governed_executor_separate_nonblocking",
+        )
+        self.assertEqual(
+            p5_checkpoint["real_model_call_gate"],
+            "explicit_post_task_with_model_ledger_sanitizer_redaction_review_cost_accounting_output_acceptance",
+        )
+        self.assertEqual(
+            p5_checkpoint["model_ledger_boundary"],
+            "missing_model_ledger_blocks_real_deepseek_evidence_not_tushare_first_factor_light_next_session",
+        )
+        self.assertEqual(
+            p5_checkpoint["allowed_model_output_fields"],
+            "summary/support_notes/suppress_notes/conflict_notes/missing_data_notes/discipline_notes",
+        )
+        self.assertEqual(
+            p5_checkpoint["forbidden_model_output_targets"],
+            "price/holding/factor/operation_zones/strategy_action/trade_order",
+        )
+        self.assertEqual(
+            p5_checkpoint["p5_nonblocking_boundary"],
+            "deepseek_pending_does_not_block_tushare_first_factor_light_or_next_session_maps",
+        )
+        self.assertEqual(
+            p5_checkpoint["p5_next_gate"],
+            "redacted_model_ledger_plus_provider_response_format_bounded_retry_repair_cost_accounting_and_output_acceptance",
+        )
         self.assertFalse(
             any(row["can_close_ltg_from_current_checkpoint"] for row in current_checkpoint_rows.values())
         )

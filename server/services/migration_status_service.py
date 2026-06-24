@@ -1231,8 +1231,32 @@ def _build_usable_path_current_checkpoint_rows(
         },
         "P5": {
             "ordinary_user_meaning": "DeepSeek governed executor 单独补，不阻塞 Tushare 和基础图谱。",
-            "current_next_action": "先保持 DeepSeek 真实调用关闭，等 model ledger、脱敏、限频、缓存完成后再接。",
-            "current_evidence_scope": "governance placeholder only; DeepSeek is not a data source and is not called",
+            "current_next_action": (
+                "保持 DeepSeek 真实调用关闭；普通页先展示 governed executor pending、非阻塞边界和真实调用前置条件。"
+            ),
+            "current_evidence_scope": (
+                "governed executor checkpoint is cache-only; DeepSeek is not a data source, "
+                "not an action writer, and is not called"
+            ),
+            "governed_executor_scope": "p5_deepseek_governed_executor_separate_nonblocking",
+            "real_model_call_gate": (
+                "explicit_post_task_with_model_ledger_sanitizer_redaction_review_cost_accounting_output_acceptance"
+            ),
+            "model_ledger_boundary": (
+                "missing_model_ledger_blocks_real_deepseek_evidence_not_tushare_first_factor_light_next_session"
+            ),
+            "allowed_model_output_fields": (
+                "summary/support_notes/suppress_notes/conflict_notes/missing_data_notes/discipline_notes"
+            ),
+            "forbidden_model_output_targets": (
+                "price/holding/factor/operation_zones/strategy_action/trade_order"
+            ),
+            "p5_nonblocking_boundary": (
+                "deepseek_pending_does_not_block_tushare_first_factor_light_or_next_session_maps"
+            ),
+            "p5_next_gate": (
+                "redacted_model_ledger_plus_provider_response_format_bounded_retry_repair_cost_accounting_and_output_acceptance"
+            ),
         },
     }
     rows: list[dict[str, Any]] = []
@@ -1270,6 +1294,13 @@ def _build_usable_path_current_checkpoint_rows(
                 "ordinary_decision_fields": checkpoint_scope.get("ordinary_decision_fields", ""),
                 "audit_evidence_boundary": checkpoint_scope.get("audit_evidence_boundary", ""),
                 "p4_next_gate": checkpoint_scope.get("p4_next_gate", ""),
+                "governed_executor_scope": checkpoint_scope.get("governed_executor_scope", ""),
+                "real_model_call_gate": checkpoint_scope.get("real_model_call_gate", ""),
+                "model_ledger_boundary": checkpoint_scope.get("model_ledger_boundary", ""),
+                "allowed_model_output_fields": checkpoint_scope.get("allowed_model_output_fields", ""),
+                "forbidden_model_output_targets": checkpoint_scope.get("forbidden_model_output_targets", ""),
+                "p5_nonblocking_boundary": checkpoint_scope.get("p5_nonblocking_boundary", ""),
+                "p5_next_gate": checkpoint_scope.get("p5_next_gate", ""),
                 "provider_execution_claim": checkpoint_scope.get(
                     "provider_execution_claim",
                     "local_checkpoint_not_provider_execution_evidence",
