@@ -700,7 +700,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "React/Vite URL 必须是本机地址",
         "打开页面 URL 必须是本机地址",
         "不打印 query/hash/username/password",
-        "URL safety: displayed launcher URLs are sanitized; simple local open routes like #home may be shown, while query/userinfo and non-local API/frontend/open URLs are blocked before any probe.",
+        "URL safety: displayed and opened launcher URLs are sanitized; simple local open routes like #home may be shown, while query/userinfo are stripped and non-local API/frontend/open URLs are blocked before any probe.",
         "STOCK_MING_FASTAPI_RELOAD=0",
         "no Tushare, DeepSeek, GitHub, or trading call",
     )
