@@ -88,6 +88,14 @@ url_contains() {
   /usr/bin/curl -fsS --max-time 2 "\$url" 2>/dev/null | /usr/bin/grep -q "\$marker"
 }
 
+local_stack_ready() {
+  url_contains "http://127.0.0.1:8710/health" '"service":"stock-MING Command Center 3.0"' \\
+    && url_contains "http://127.0.0.1:8710/health" '"external_calls_on_startup":false' \\
+    && url_contains "http://127.0.0.1:8710/api/bootstrap/status" "command_center_3_bootstrap_runtime_mode_packet" \\
+    && url_contains "http://127.0.0.1:8710/api/desktop/preflight-cache" "command_center_3_desktop_shell_preflight_cache" \\
+    && url_contains "http://127.0.0.1:5173" "stock-MING Command Center 3.0"
+}
+
 open_ready_page() {
   if /usr/bin/open "\$APP_URL"; then
     echo "stock-MING app wrapper opened ready local page: \$APP_URL"
@@ -114,16 +122,12 @@ fi
 cd "\$PROJECT_ROOT"
 mkdir -p "\$LOG_DIR" >/dev/null 2>&1 || true
 
-if url_contains "http://127.0.0.1:8710/health" '"service":"stock-MING Command Center 3.0"' \\
-  && url_contains "http://127.0.0.1:8710/health" '"external_calls_on_startup":false' \\
-  && url_contains "http://127.0.0.1:8710/api/bootstrap/status" "command_center_3_bootstrap_runtime_mode_packet" \\
-  && url_contains "http://127.0.0.1:8710/api/desktop/preflight-cache" "command_center_3_desktop_shell_preflight_cache" \\
-  && url_contains "http://127.0.0.1:5173" "stock-MING Command Center 3.0"; then
+if local_stack_ready; then
   {
     echo "stock-MING app wrapper online fast path ready."
     echo "FastAPI/Vite already online; wrapper opened page without reading project .venv or external launcher."
-  } >"\$WRAPPER_LOG"
-  open_ready_page >>"\$WRAPPER_LOG" 2>&1
+    open_ready_page
+  } >"\$WRAPPER_LOG" 2>&1
   exit 0
 fi
 
@@ -137,6 +141,13 @@ if ! COMMAND_CENTER_BOOTSTRAP_MODE="\${COMMAND_CENTER_BOOTSTRAP_MODE:-cache_only
   COMMAND_CENTER_3_PROJECT_ROOT="\$PROJECT_ROOT" \\
   COMMAND_CENTER_3_APP_URL="\$APP_URL" \\
   /bin/bash "\$BUNDLED_LAUNCHER" >"\$WRAPPER_LOG" 2>&1; then
+  if local_stack_ready; then
+    {
+      echo "stock-MING app wrapper launcher returned nonzero, but local stack is ready after fallback readback."
+      open_ready_page
+    } >>"\$WRAPPER_LOG" 2>&1
+    exit 0
+  fi
   if [ -s "\$WRAPPER_LOG" ]; then
     tail -n 30 "\$WRAPPER_LOG" || true
   fi

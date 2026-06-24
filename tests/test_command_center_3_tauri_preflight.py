@@ -365,11 +365,21 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn('cp "${LAUNCHER}" "${RESOURCES_DIR}/start_command_center_3.command"', source)
         self.assertIn('BUNDLED_LAUNCHER="\\$(cd "\\$(dirname "\\$0")/../Resources" && pwd)/start_command_center_3.command"', source)
         self.assertIn("url_contains", source)
+        self.assertIn("local_stack_ready()", source)
         self.assertIn("stock-MING app wrapper online fast path ready.", source)
         self.assertIn("without reading project .venv or external launcher", source)
+        self.assertIn("launcher returned nonzero, but local stack is ready after fallback readback", source)
         self.assertIn('COMMAND_CENTER_3_PROJECT_ROOT="\\$PROJECT_ROOT"', source)
         self.assertIn('/bin/bash "\\$BUNDLED_LAUNCHER" >"\\$WRAPPER_LOG" 2>&1', source)
         self.assertIn("command_center_3_app_wrapper.log", source)
+        self.assertLess(
+            source.index("if local_stack_ready; then"),
+            source.index('/bin/bash "\\$BUNDLED_LAUNCHER" >"\\$WRAPPER_LOG" 2>&1'),
+        )
+        self.assertLess(
+            source.index("launcher returned nonzero, but local stack is ready after fallback readback"),
+            source.index("本地 FastAPI / React 联通检查失败"),
+        )
         self.assertIn('COMMAND_CENTER_BOOTSTRAP_MODE="\\${COMMAND_CENTER_BOOTSTRAP_MODE:-cache_only}"', source)
         self.assertIn(
             'COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="\\${COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN:-false}"',
