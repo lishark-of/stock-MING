@@ -605,7 +605,7 @@ export default function FactorQuantHub() {
             { label: "交接清单", value: ordinaryQuantHandoffLocation, tone: "good" },
             { label: "ledger", value: ordinaryQuantLedgerSourceLabel, tone: ordinaryQuantLedgerSourceLabel.includes("等待") ? "warn" : "good" },
             { label: "packet", value: ordinaryQuantPacketSourceLabel, tone: ordinaryQuantPacketSourceLabel.includes("等待") ? "warn" : "good" },
-            { label: "P5 DeepSeek", value: ordinaryDeepSeekGovernedExecutorState, tone: deepseek.called === true ? "warn" : "good" },
+            { label: "P5 解释治理", value: ordinaryDeepSeekGovernedExecutorState, tone: deepseek.called === true ? "warn" : "good" },
             { label: "补证方式", value: ordinaryQuantEvidenceTaskState, tone: ordinaryQuantEvidenceTaskState.includes("等待") || ordinaryQuantEvidenceTaskState.includes("待补") || ordinaryQuantEvidenceTaskState.includes("未知") ? "warn" : "good" },
             { label: "缺少证据", value: ordinaryQuantMissingEvidence, tone: ordinaryQuantMissingEvidence.includes("待补") || ordinaryQuantMissingEvidence.includes("待确认") ? "warn" : "good" },
             { label: "阻断/降级", value: ordinaryQuantBlockedState, tone: ordinaryQuantBlockedState.includes("未标记") ? "good" : "warn" },
@@ -647,7 +647,7 @@ export default function FactorQuantHub() {
           <DataLineageTable rows={ordinaryFactorReviewRows} />
         </div>
         <details className="developer-audit-details" aria-label="stock quant ordinary p5 governance details">
-          <summary>P5 DeepSeek 单独补证状态</summary>
+          <summary>P5 解释治理单独补证状态</summary>
           <p className="risk-note">普通主线先复核 P3 支持/压制、次日图谱预览和缺失证据；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
           <div aria-label="stock quant ordinary deepseek governance">
             <h3>DeepSeek 单独治理状态</h3>
