@@ -755,6 +755,9 @@ export default function CandidateRadar() {
   const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionP0Ready;
   const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;
   const quantProjectionCanLaunch = !quantProjectionSubmitDisabled;
+  const quantProjectionConnectionReadyLabel = quantProjectionP0Ready
+    ? "本地 FastAPI 已接上：可以输入股票代码；只有确认按钮会创建 Tushare-first 后台 task。"
+    : "本地 FastAPI 尚未完全接上：先回一键启动预检；输入保持静默，确认按钮不可用。";
   const quantProjectionDisabledReason = quantProjectionSubmitting
     ? "任务提交中：正在创建 Tushare-first POST task；请等待本地任务编号回写，避免重复提交。"
     : !quantProjectionP0Ready
@@ -2302,6 +2305,7 @@ export default function CandidateRadar() {
             <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar first screen confirmation">股票量化推演</a>
             <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session replay from candidate radar first screen confirmation">次日图谱</a>
           </div>
+          <p className="ordinary-status-note" aria-live="polite">{quantProjectionConnectionReadyLabel}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionConfirmChainState}</p>
           <div aria-label="candidate radar p1 confirm actual route">
@@ -2598,6 +2602,7 @@ export default function CandidateRadar() {
             >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
+          <p className="ordinary-status-note" aria-live="polite">{quantProjectionConnectionReadyLabel}</p>
           <p id={quantProjectionFactorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
           <p id={quantProjectionFactorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
           {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}

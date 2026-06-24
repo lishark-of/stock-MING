@@ -118,6 +118,9 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("quantProjectionSubmitAriaLabel", source)
         self.assertIn("quantProjectionInputBoundaryLabel", source)
         self.assertIn("quantProjectionSubmitButtonLabel", source)
+        self.assertIn("quantProjectionConnectionReadyLabel", source)
+        self.assertIn("本地 FastAPI 已接上：可以输入股票代码；只有确认按钮会创建 Tushare-first 后台 task。", source)
+        self.assertIn("本地 FastAPI 尚未完全接上：先回一键启动预检；输入保持静默，确认按钮不可用。", source)
         self.assertIn("quantProjectionConfirmRouteRows", source)
         self.assertIn('aria-label="candidate radar p1 confirm actual route"', radar_summary_slice)
         self.assertIn("确认按钮实际链路", radar_summary_slice)
@@ -132,6 +135,11 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("aria-label={quantProjectionSubmitAriaLabel}", ordinary_quant_slice)
         self.assertIn("disabled={quantProjectionSubmitDisabled}", radar_summary_slice)
         self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', radar_summary_slice)
+        self.assertIn('{quantProjectionConnectionReadyLabel}', radar_summary_slice)
+        self.assertLess(
+            radar_summary_slice.index("aria-label={quantProjectionSubmitAriaLabel}"),
+            radar_summary_slice.index("{quantProjectionConnectionReadyLabel}"),
+        )
         self.assertIn('<a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>', radar_summary_slice)
         self.assertIn('<a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>', radar_summary_slice)
         self.assertLess(
@@ -141,6 +149,7 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache", source)
         self.assertIn("disabled={quantProjectionSubmitDisabled}", ordinary_quant_slice)
         self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', ordinary_quant_slice)
+        self.assertIn('{quantProjectionConnectionReadyLabel}', ordinary_quant_slice)
         self.assertIn("点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；DeepSeek skipped，成功后通过 GET cache 回放", source)
         self.assertIn("按钮不可用原因：先输入股票代码；输入本身不会创建 task", source)
         self.assertIn("search_quant_projection_small_data_writeback_summary", source)
