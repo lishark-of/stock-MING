@@ -293,6 +293,7 @@ export default function CandidateRadar() {
   const searchQuantProjectionWritebackCheckpoint = (searchQuantProjectionSmallDataWriteback.ordinary_writeback_checkpoint_contract as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionInterpretation = (cache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionResultCheckpoint =
+    (cache.search_quant_projection_result_checkpoint as Record<string, unknown> | undefined) ??
     (searchQuantProjectionInterpretation.ordinary_result_checkpoint_contract as Record<string, unknown> | undefined) ?? {};
   const providerParityDryRun = (cache.provider_parity_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
@@ -1151,7 +1152,9 @@ export default function CandidateRadar() {
     证据: displayText(row["证据"] ?? row.evidence, quantProjectionOrdinaryResultEvidence),
     边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
   }));
-  const quantProjectionOrdinaryResultCheckpointPacketRows = rows(searchQuantProjectionInterpretation.ordinary_result_checkpoint_rows).map((row) => ({
+  const quantProjectionOrdinaryResultCheckpointPacketRows = rows(
+    cache.search_quant_projection_result_checkpoint_rows ?? searchQuantProjectionInterpretation.ordinary_result_checkpoint_rows
+  ).map((row) => ({
     检查点: displayText(row["检查点"] ?? row.checkpoint_key),
     当前状态: displayText(row["当前状态"] ?? row.status, quantProjectionOrdinaryResultSummary),
     用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionOrdinaryResultNext),

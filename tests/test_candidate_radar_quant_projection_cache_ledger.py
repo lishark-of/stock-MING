@@ -784,6 +784,11 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertTrue(contract_row["candidate_is_not_buy_instruction"])
             self.assertFalse(contract_row["production_deepseek_complete"])
         result_checkpoint = interpretation["ordinary_result_checkpoint_contract"]
+        self.assertEqual(packet["search_quant_projection_result_checkpoint"], result_checkpoint)
+        self.assertEqual(
+            packet["search_quant_projection_result_checkpoint_rows"],
+            interpretation["ordinary_result_checkpoint_rows"],
+        )
         self.assertEqual(
             result_checkpoint["schema_version"],
             "candidate_radar_search_quant_projection_result_checkpoint.v1",
@@ -1323,6 +1328,11 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(interpretation["ordinary_result_action_rows_use_model_output"])
         self.assertTrue(interpretation["ordinary_result_action_rows_are_not_trade_signals"])
         result_checkpoint = interpretation["ordinary_result_checkpoint_contract"]
+        self.assertEqual(packet["search_quant_projection_result_checkpoint"], result_checkpoint)
+        self.assertEqual(
+            packet["search_quant_projection_result_checkpoint_rows"],
+            interpretation["ordinary_result_checkpoint_rows"],
+        )
         self.assertEqual(
             result_checkpoint["schema_version"],
             "candidate_radar_search_quant_projection_result_checkpoint.v1",

@@ -18052,6 +18052,10 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
         0,
     )
     result_checkpoint = _as_dict(summary.get("ordinary_result_checkpoint_contract"))
+    view["search_quant_projection_result_checkpoint"] = result_checkpoint
+    view["search_quant_projection_result_checkpoint_rows"] = [
+        row for row in _as_list(summary.get("ordinary_result_checkpoint_rows")) if isinstance(row, dict)
+    ]
     counts["search_quant_projection_result_checkpoint_missing_evidence_count"] = result_checkpoint.get(
         "missing_evidence_count",
         0,
