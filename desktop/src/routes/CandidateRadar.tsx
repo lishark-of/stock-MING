@@ -2144,6 +2144,11 @@ export default function CandidateRadar() {
             ]}
           />
         </div>
+        <div aria-label="candidate radar p3 first screen result quick read">
+          <h3>P3 结果首屏速读</h3>
+          <p className="risk-note">P2 三面之后直接看这里：可读结论、来源、下一步和安全边界都来自本地 cache / ledger / packet；本速读不创建 task、不调用 DeepSeek、不生成交易动作。</p>
+          <MetricGrid items={quantProjectionP3ResultSummaryItems} />
+        </div>
         <div aria-label="candidate radar ordinary p0 frontend backend readiness">
           <h3>P0 前后端联通闸门</h3>
           <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode、desktop preflight 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
