@@ -89,18 +89,34 @@ export default function DesktopShellPreflight() {
         {
           速读项: "2. 四段联通",
           当前状态: p0ConnectionReady ? "4/4 ready" : "check",
-          用户下一步: p0ConnectionReady ? "进入下一票雷达。" : "按失败段处理。",
+          用户下一步: p0ConnectionReady ? "进入下一票雷达。" : "少于 4/4 时按失败段处理；4/4 时进入下一票雷达。",
           证据: "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
           入口: "#desktop",
           边界: "GET preflight 和 React render 不启动服务、不创建 task。"
         },
         {
-          速读项: "3. 现在下一步",
+          速读项: "3. 失败先看哪里",
+          当前状态: p0ConnectionReady ? "无失败段；四段联通均为 ready" : "按 FastAPI / bootstrap status / desktop preflight cache / React/Vite 失败段排障",
+          用户下一步: String(oneClickStartupSummary.blocked_next_action ?? "按启动器诊断定位失败段。"),
+          证据: "p0_failure_diagnostic_rows + .stock_ming_3/logs + 8710/5173",
+          入口: ".stock_ming_3/logs",
+          边界: "失败定位不读取 token/key，不调用 Tushare/DeepSeek/GitHub，不执行真实交易。"
+        },
+        {
+          速读项: "4. 现在下一步",
           当前状态: p0ConnectionReady ? "ready：进入 P1 搜票确认" : "check：继续 P0 恢复",
           用户下一步: p0ConnectionReady ? "输入股票代码；确认按钮才创建 Tushare-first POST task。" : "先恢复 P0 四段联通。",
           证据: "p0_current_next_action_rows",
           入口: p0ConnectionReady ? "#candidates" : "#desktop",
           边界: "输入股票代码保持静默；确认按钮之前不调用 provider/model。"
+        },
+        {
+          速读项: "5. 本轮边界",
+          当前状态: "只读预检回放",
+          用户下一步: "把 P0 当作本地联通 checkpoint；不要当 release ready 或 14 LTG strict closeout。",
+          证据: "p0_startup_30s_quick_read_rows",
+          入口: "ordinary_p0_summary",
+          边界: "不启用 live_light，不调用 provider/model，不写 cache，不交易，不改 strategy action。"
         }
       ];
   const p0RecoverySteps = rows(cache.p0_recovery_steps).length
