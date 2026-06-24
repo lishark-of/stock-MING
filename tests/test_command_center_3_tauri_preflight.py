@@ -513,10 +513,13 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertTrue(packet["policy"]["p0_ordinary_quick_action_rows_are_cache_only"])
         self.assertTrue(packet["policy"]["p0_to_p1_ordinary_handoff_rows_do_not_create_task"])
         self.assertTrue(packet["policy"]["p0_ordinary_quick_action_rows_do_not_create_task"])
+        self.assertIn("搜票量化推演卡", handoff_rows[1]["下一步"])
+        self.assertIn("搜票量化推演卡", quick_rows[1]["用户下一步"])
 
         for row in handoff_rows + quick_rows:
             self.assertEqual(row["frontend_backend_auto_link_scope"], "local_fastapi_only")
             self.assertIn("四段 ready 后只切换到 #candidates", row["P0交接证据"])
+            self.assertIn("搜票量化推演卡", row["P0交接证据"])
             self.assertIn("输入股票代码保持静默", row["P0交接证据"])
             self.assertIn("确认按钮才创建 Tushare-first POST task", row["P0交接证据"])
             self.assertIn("FastAPI health + bootstrap status", row["成功信号"])

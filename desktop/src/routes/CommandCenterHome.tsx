@@ -525,24 +525,16 @@ export default function CommandCenterHome() {
     ? "先查看一键启动预检，恢复本地 FastAPI / React 联通"
     : dailyCommandP0QuickAction
     ? dailyCommandP0QuickAction
-    : Number(candidateCounts?.candidate_count ?? 0)
-    ? "先看下一票雷达；需要单票推演时输入代码并生成 3.0 量化推演"
-    : "先确认数据健康和最近可用缓存，再运行候选雷达快扫";
+    : "进入下一票雷达，输入代码并点击确认按钮生成 3.0 量化推演";
   const dailyCommandPrimaryActionLabel = dailyCommandNeedsStartupRecovery
     ? "查看一键启动预检"
-    : Number(candidateCounts?.candidate_count ?? 0)
-    ? "查看下一票雷达"
-    : "查看数据健康";
+    : "进入下一票雷达确认代码";
   const dailyCommandPrimaryActionHref = dailyCommandNeedsStartupRecovery
     ? "#desktop"
-    : Number(candidateCounts?.candidate_count ?? 0)
-    ? "#candidates"
-    : "#dataHealth";
+    : "#candidates";
   const dailyCommandPrimaryActionBoundary = dailyCommandNeedsStartupRecovery
     ? "主下一步只打开桌面壳预检，不启动服务、不创建 task、不刷新 provider/model"
-    : Number(candidateCounts?.candidate_count ?? 0)
-    ? "主下一步只切换到下一票雷达；不创建 task、不刷新 provider/model"
-    : "主下一步只查看本地数据健康；运行快扫仍需进入下一票雷达手动点击";
+    : "主下一步只切换到下一票雷达；输入保持静默，确认按钮才创建 Tushare-first POST task";
   const dailyCommandCacheSourceLabel = snapshotAvailable ? "本地缓存可用" : "等待本地缓存";
   const dailyCommandTushareSourceLabel = liveLight.tushare_on_open === true
     ? "live_light 已配置；仍需确认按钮触发 Tushare-first task"
@@ -941,7 +933,7 @@ export default function CommandCenterHome() {
   ];
   const dailyCommandReviewOrder = error
     ? "先看一键启动预检恢复本地联通，再回今日作战台"
-    : "先确认最近缓存和数据健康，再看下一票雷达，最后看股票量化推演结果";
+    : "先确认 P0 本地联通，再进入下一票雷达确认代码，之后回放股票量化推演和次日图谱结果";
   const dailyCommandResultComposition = [
     `候选：${Number(candidateCounts?.candidate_count ?? 0) ? String(candidateCounts?.candidate_count) : "等待缓存"}`,
     `量化：${String(factor.status ?? factor.mode ?? "等待缓存")}`,
@@ -1191,7 +1183,7 @@ export default function CommandCenterHome() {
           <a href="#dataHealth" title="切换到数据健康模块；只读 cache，不刷新外部数据源" aria-label="open data health from daily command">查看数据健康</a>
           <a href="#desktop" title="切换到桌面壳预检模块；只读恢复指引，不启动服务" aria-label="open one click startup preflight from daily command">查看一键启动预检</a>
         </div>
-        <p className="risk-note">今日先按“最近缓存/数据健康 → 下一票雷达 → 股票量化推演”复核；缺数据就看 pending 和缺少证据，不把空结果当成无风险。</p>
+        <p className="risk-note">今日先按“P0 本地联通 → 下一票雷达确认代码 → 股票量化推演 / 次日图谱回放”复核；缺数据就看 pending 和缺少证据，不把空结果当成无风险。</p>
         <p className="risk-note">{dailyCommandExternalTriggerBoundary}</p>
         <p className="risk-note">{dailyCommandResultLocation}</p>
         <p className="risk-note">如果本地联通异常，先去 <a href="#desktop">桌面壳预检</a> 查看本地快捷入口；这个跳转只切换页面，不启动 FastAPI/Vite/浏览器。</p>
