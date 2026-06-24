@@ -191,6 +191,7 @@ export default function NextSessionMap() {
   const packetOrdinaryConditionQuickReadRows = rowsFromArray(packet.ordinary_condition_quick_read_rows);
   const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarOneScreenRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
+  const candidateRadarConfirmOutcomeRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
   const ordinaryResultReplayStatus = String(
     packet.ordinary_result_replay_status ??
       (chartSummary.has_drawable_data === true ? "ready_cache_replay" : "waiting_for_cache_or_manual_task")
@@ -331,6 +332,40 @@ export default function NextSessionMap() {
       ];
   const nextSessionUpstreamOneScreenLabel = nextSessionUpstreamOneScreenRows
     .map((row) => `${row.行动}: ${row.当前状态}`)
+    .join(" / ");
+  const nextSessionUpstreamConfirmOutcomeRows = candidateRadarConfirmOutcomeRows.length
+    ? candidateRadarConfirmOutcomeRows.map((row) => ({
+        确认结果: String(row["速读项"] ?? row.outcome_key ?? "确认结果"),
+        当前状态: String(row["当前状态"] ?? row.status ?? "等待 CandidateRadar 确认结果回放"),
+        用户下一步: String(row["用户下一步"] ?? row.next_step ?? nextSessionChartReviewOrder),
+        入口: String(row["入口"] ?? row.entry ?? "下一票雷达 / 股票量化推演 / 次日图谱"),
+        边界: String(row["边界"] ?? row.boundary ?? "次日图谱只读回放确认结果；不创建 task、不调用 provider/model。")
+      }))
+    : [
+        {
+          确认结果: "P1 确认结果",
+          当前状态: "等待下一票雷达确认任务回放",
+          用户下一步: "回下一票雷达输入代码并点击确认按钮。",
+          入口: "#candidates",
+          边界: "图谱页不接收代码输入；确认按钮之前不创建 Tushare-first task。"
+        },
+        {
+          确认结果: "P2 写回结果",
+          当前状态: ordinaryResultReplayStatus,
+          用户下一步: "确认 cache / call_ledger / packet 已能支撑图谱回放。",
+          入口: "cache / call_ledger / packet",
+          边界: "只读本地回放；不补调 Tushare、DeepSeek 或 GitHub。"
+        },
+        {
+          确认结果: "P3 回放结果",
+          当前状态: nextSessionLastResultLabel,
+          用户下一步: nextSessionChartReviewOrder,
+          入口: "次日图谱路径 / 参考线 / operation_zones",
+          边界: nextSessionResearchOnlyLabel
+        }
+      ];
+  const nextSessionUpstreamConfirmOutcomeLabel = nextSessionUpstreamConfirmOutcomeRows
+    .map((row) => `${row.确认结果}: ${row.当前状态}`)
     .join(" / ");
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
   const nextSessionOrdinaryReplayBoundaryBlocked =
@@ -527,6 +562,7 @@ export default function NextSessionMap() {
           { label: "查看顺序", value: nextSessionChartReviewOrder },
           { label: "回放来源", value: nextSessionReplayOrigin, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "上游确认链", value: nextSessionUpstreamOneScreenLabel, tone: candidateRadarOneScreenRows.length ? "good" : "warn" },
+          { label: "确认结果链", value: nextSessionUpstreamConfirmOutcomeLabel, tone: candidateRadarConfirmOutcomeRows.length ? "good" : "warn" },
           { label: "回放路径", value: nextSessionReplayPath, tone: "good" },
           { label: "回放入口边界", value: nextSessionReplayDestinationBoundary, tone: "good" },
           { label: "操作区边界", value: nextSessionOperationZoneBoundary, tone: "good" },
@@ -548,6 +584,11 @@ export default function NextSessionMap() {
         <h3>上游确认一屏行动</h3>
         <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成图谱页上游速读；本页只读回放，不创建 task、不调用模型。</p>
         <DataLineageTable rows={nextSessionUpstreamOneScreenRows} />
+      </div>
+      <div aria-label="next session upstream confirm outcome readback">
+        <h3>上游确认结果速读</h3>
+        <p className="risk-note">优先读取 CandidateRadar 的 ordinary_confirm_outcome_rows：确认任务是否接收、P2 三面是否回放、P3 图谱入口是否可读；本页只读回放，不创建第二个 task。</p>
+        <DataLineageTable rows={nextSessionUpstreamConfirmOutcomeRows} />
       </div>
       <div aria-label="next session p3 one minute read">
         <h3>P3 一分钟读图</h3>
