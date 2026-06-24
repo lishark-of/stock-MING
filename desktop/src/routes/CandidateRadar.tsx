@@ -1636,6 +1636,38 @@ export default function CandidateRadar() {
       边界: "href #candidate-pool 是本页候选池锚点；Radar candidate 不是交易指令；真实交易路径继续隔离"
     }
   ];
+  const quantProjectionPostConfirmOneScreenItems: MetricItem[] = [
+    {
+      label: "任务接收",
+      value: quantProjectionLatestTaskState,
+      tone: taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : quantProjectionSubmitError ? "bad" : "warn"
+    },
+    {
+      label: "当前阶段",
+      value: quantProjectionConfirmReplayStage,
+      tone: quantProjectionSmallDataReady || taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : quantProjectionSubmitError ? "bad" : "warn"
+    },
+    {
+      label: "P2 三面",
+      value: quantProjectionSmallDataStageLabel,
+      tone: quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "P3 结论",
+      value: quantProjectionOrdinaryResultSummary,
+      tone: quantProjectionInterpretationReady ? "good" : "warn"
+    },
+    {
+      label: "下一步入口",
+      value: quantProjectionReplayDestinationNextStep,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "只读边界",
+      value: "只读回放 task receipt / cache / ledger / packet；不创建第二个 task、不交易、不改 action",
+      tone: "good"
+    }
+  ];
   const quantProjectionConfirmedChainQuickRows = [
     {
       链路节点: "1. 点击确认",
@@ -2225,6 +2257,11 @@ export default function CandidateRadar() {
           {quantProjectionTaskPanelStaleNotice ? (
             <p className="ordinary-status-note" aria-live="polite">{quantProjectionTaskPanelStaleNotice}</p>
           ) : null}
+          <div aria-label="candidate radar post confirm one screen outcome">
+            <h3>确认后一屏结果</h3>
+            <p className="risk-note">点击确认后先看这条结果：任务是否接收、P2 三面是否回放、P3 结论是否可读和下一步入口都在一屏内；这条结果条只读本地 task receipt 与 cache / ledger / packet，不创建第二个 task。</p>
+            <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
+          </div>
           <div aria-label="candidate radar first screen post confirm readback guide">
             <h3>确认后看什么</h3>
             <p className="risk-note">点击确认后按这张清单走：先看任务编号，再看任务进度，success 后刷新本地 cache，最后回放量化推演和次日图谱；这张清单只读页面状态，不创建第二个 task。</p>
