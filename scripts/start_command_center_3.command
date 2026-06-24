@@ -346,6 +346,7 @@ print_startup_diagnostics() {
     echo "  - React/Vite：${VITE_URL_DISPLAY} 未返回 Command Center 3.0 前端 HTML；可能 5173 被占用，或 npm run dev 启动失败。"
   fi
   echo "下一步：先关闭占用 8710/5173 的本地进程，或查看上面的 FastAPI / React/Vite 日志。"
+  echo "安全自检命令：scripts/check_command_center_3.command（check-only；不启动 FastAPI/Vite、不探测 URL、不打开浏览器）。"
   echo "普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。"
   echo "日志定位：FastAPI=${FASTAPI_LOG}；React/Vite=${VITE_LOG}。"
   echo "安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。"
@@ -432,6 +433,7 @@ echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/ch
 
 if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
   echo "Check-only mode: resolved launcher configuration without starting FastAPI, starting React/Vite, probing URLs, writing logs, opening a browser, creating tasks, calling providers/models, or touching trading paths."
+  echo "Check-only wrapper command: scripts/check_command_center_3.command"
   echo "Check-only dependency boundary: does not require desktop/node_modules or npm because it only prints sanitized local launcher configuration."
   echo "Check-only endpoints: health=${API_HEALTH_DISPLAY}; bootstrap=${BOOTSTRAP_STATUS_DISPLAY}; desktop_preflight=${DESKTOP_PREFLIGHT_DISPLAY}; frontend=${VITE_URL_DISPLAY}; open_route=${APP_URL_DISPLAY}"
   echo "Check-only next action: unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher to start or reuse local FastAPI/Vite, wait for all four readiness checks plus P0 stability dwell, then open ${APP_URL_DISPLAY}."

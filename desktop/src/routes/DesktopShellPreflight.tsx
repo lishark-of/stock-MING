@@ -107,7 +107,7 @@ export default function DesktopShellPreflight() {
     ? rows(cache.p0_recovery_steps)
     : [
         { step: "1", title: "打开本地一键入口", action: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。" },
-        { step: "2", title: "按启动器诊断定位失败段", action: "先看 FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪一段没有 ready。" },
+        { step: "2", title: "按启动器诊断定位失败段", action: "先运行 scripts/check_command_center_3.command 做 check-only 安全自检，再看 FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪一段没有 ready。" },
         { step: "3", title: "刷新健康页确认联通", action: "确认 P0 front/back、P0 receipt 和 one-click launcher 都为 ready。" }
       ];
   const p0PostStartupReadbackRows = rows(cache.p0_post_startup_readback_rows).length
@@ -470,7 +470,8 @@ export default function DesktopShellPreflight() {
         </div>
         <p>下一步：{String(oneClickStartupSummary.what_user_should_click_next ?? "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。")}</p>
         <p>成功条件：{String(oneClickStartupSummary.success_condition ?? "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，/api/desktop/preflight-cache 必须返回一键启动 packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。")}</p>
-        <p>如果失败：{String(oneClickStartupSummary.blocked_next_action ?? "先看启动器的可操作诊断：FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。")}</p>
+        <p>如果失败：{String(oneClickStartupSummary.blocked_next_action ?? "先运行 scripts/check_command_center_3.command 做 check-only 安全自检，再看启动器的可操作诊断：FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。")}</p>
+        <p>安全自检：{String(oneClickStartupSummary.safe_check_command ?? "scripts/check_command_center_3.command")}；{String(oneClickStartupSummary.safe_check_boundary ?? "check-only 安全自检只解析本地启动配置；不启动 FastAPI/Vite、不探测 URL、不打开浏览器、不创建 task、不调用 provider/model。")}</p>
         <p>诊断分段：{Array.isArray(oneClickStartupSummary.diagnostic_surfaces) ? oneClickStartupSummary.diagnostic_surfaces.join(" / ") : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / desktop preflight cache one-click packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance"}</p>
         <p>安全边界：GET preflight 和 React render 不启动服务、不外联、不启用 provider/model executor、不执行真实交易。</p>
         <p>当前联通：{p0ConnectionReady ? "ready" : "check"}；需要处理：{p0BlockerCount === 0 ? "无" : `${p0BlockerCount} 项，按失败诊断处理`}。</p>

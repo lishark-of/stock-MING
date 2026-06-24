@@ -1869,10 +1869,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertIn("可操作诊断", one_click["blocked_next_action"])
         self.assertIn("FastAPI、bootstrap status、desktop preflight cache、React/Vite", one_click["blocked_next_action"])
+        self.assertIn("scripts/check_command_center_3.command", one_click["blocked_next_action"])
         self.assertIn("8710/5173", one_click["blocked_next_action"])
         self.assertIn("进入桌面壳预检查看 P0 四段联通", one_click["blocked_next_action"])
         self.assertIn("P0 未 ready 时不要进入 P1 确认按钮", one_click["blocked_next_action"])
         self.assertIn(".stock_ming_3/logs/command_center_3_fastapi.log", one_click["blocked_next_action"])
+        self.assertEqual(one_click["safe_check_command"], "scripts/check_command_center_3.command")
+        self.assertIn("check-only 安全自检只解析本地启动配置", one_click["safe_check_boundary"])
+        self.assertIn("不启动 FastAPI/Vite", one_click["safe_check_boundary"])
+        self.assertIn("不探测 URL", one_click["safe_check_boundary"])
         self.assertEqual(
             one_click["diagnostic_surfaces"],
             [
@@ -2158,6 +2163,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(desktop["counts"]["p0_ordinary_reconnect_visible_count"], 4)
         self.assertIn("stock-MING Command Center 3.command", desktop["runtime"]["p0_ordinary_reconnect_next"])
         self.assertIn("scripts/start_command_center_3.command", desktop["runtime"]["p0_ordinary_reconnect_entry"])
+        self.assertIn("scripts/check_command_center_3.command", one_click["ordinary_recovery_steps"][1]["action"])
+        self.assertIn("check-only 不启动 FastAPI/Vite", one_click["ordinary_recovery_steps"][1]["checks"])
         self.assertEqual(p0_reconnect_rows[2]["入口"], "#candidates")
         self.assertIn("确认按钮之前不创建 POST task", p0_reconnect_rows[2]["边界"])
         self.assertTrue(p0_reconnect_rows[3]["may_create_task_after_confirm"])
