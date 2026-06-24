@@ -77,6 +77,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("dailyCommandUsablePathStageRailSteps", source)
         self.assertIn('aria-label="daily command local connection readback"', source)
         self.assertIn('aria-label="daily command usable path stage rail"', source)
+        self.assertIn('aria-label="daily command p6 strict closeout reentry details"', source)
         self.assertIn('aria-label="daily command p6 strict closeout reentry"', source)
         self.assertIn('aria-label="daily command p6 reentry links"', source)
         self.assertIn('aria-label="daily command p0 launcher check-only readback"', source)
@@ -87,6 +88,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="daily command p0 quick action handoff"', source)
         self.assertIn('aria-label="daily command factor cache fallback readback"', source)
         self.assertIn("本地联通四段回读", source)
+        self.assertIn("P6 / 14 LTG strict closeout 审计入口", source)
         self.assertIn("P6 strict closeout 回归入口", source)
         self.assertIn("一键启动只读自检", source)
         self.assertIn("P0 进入 P1 闸门", source)
@@ -124,6 +126,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("P0-P5 可用化 checkpoint 不是 14 LTG 完成", source)
         self.assertIn("mock、matrix、sanitizer、local receipt 不能关闭 LTG", source)
         self.assertIn("P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence", source)
+        self.assertIn("P6 留作工程审计和 strict closeout 回归；普通主线先看 P0 联通、P1 确认、P2 写回和 P3 结果", source)
         self.assertIn("先看 FastAPI、bootstrap runtime-mode packet、desktop preflight cache、React/Vite 前端四段是否变绿", source)
         self.assertIn("优先读取 desktop preflight 的 p0_launcher_check_only_rows", source)
         self.assertIn("check-only 只打印配置，不启动 FastAPI/Vite、不探测 URL、不打开浏览器、不创建 task", source)
@@ -540,22 +543,29 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postBootstrapLiveStartup", rail)
         self.assertNotIn("postTask", rail)
 
-    def test_p6_strict_closeout_reentry_is_read_only_before_audit_details(self):
+    def test_p6_strict_closeout_reentry_is_collapsed_read_only_audit_detail(self):
         source = self.source
         summary_start = source.index('title="今日作战台摘要"')
         summary_end = source.index("<summary>开发 / 审计详情</summary>", summary_start)
         summary = source[summary_start:summary_end]
-        p6_start = summary.index('aria-label="daily command p6 strict closeout reentry"')
+        p6_details_label_start = summary.index('aria-label="daily command p6 strict closeout reentry details"')
+        p6_details_start = summary.rindex("<details", 0, p6_details_label_start)
+        p6_start = summary.index('aria-label="daily command p6 strict closeout reentry"', p6_details_start)
         p6_end = summary.index('aria-label="daily command local connection readback"', p6_start)
+        p6_details = summary[p6_details_start:p6_end]
         p6 = summary[p6_start:p6_end]
 
         self.assertIn("dailyCommandP6StrictCloseoutReentryRows", source)
+        self.assertIn('<details className="developer-audit-details" aria-label="daily command p6 strict closeout reentry details">', p6_details)
+        self.assertIn("<summary>P6 / 14 LTG strict closeout 审计入口</summary>", p6_details)
+        self.assertIn("普通主线先看 P0 联通、P1 确认、P2 写回和 P3 结果", p6_details)
         self.assertIn("P6 strict closeout 回归入口", p6)
         self.assertIn("P0-P5 是使用者可用化 checkpoint", p6)
         self.assertIn("current-head direct evidence", p6)
         self.assertIn("CI、浏览器、provider、worker、storage 和 package gate", p6)
         self.assertIn('href="#migration"', p6)
         self.assertIn('href="#tasks"', p6)
+        self.assertLess(summary.index('aria-label="daily command usable path stage rail"'), p6_details_start)
         self.assertLess(summary.index("P6 strict closeout 回归入口"), summary.index('aria-label="daily command local connection readback"'))
         self.assertNotIn("onClick=", p6)
         self.assertNotIn("fetch(", p6)
