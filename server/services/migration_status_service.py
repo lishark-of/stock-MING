@@ -1211,8 +1211,23 @@ def _build_usable_path_current_checkpoint_rows(
         },
         "P4": {
             "ordinary_user_meaning": "普通用户页面减少工程审计噪音，保留需要时可追溯的证据入口。",
-            "current_next_action": "区分普通入口和工程审计入口，保持审计证据只读可查。",
-            "current_evidence_scope": "UX placement and cache-visible evidence only; not legacy retirement proof",
+            "current_next_action": (
+                "普通页先看 next click、source state、缺失证据和 research-only 边界；工程合同、receipt、runbook、LTG audit 默认下沉。"
+            ),
+            "current_evidence_scope": (
+                "ordinary summaries appear before developer/audit detail across Daily/Candidate/Quant/Next; "
+                "audit placement is UX evidence only, not legacy retirement proof"
+            ),
+            "ordinary_summary_surfaces": "daily_command/candidate_radar/factor_quant/next_session",
+            "audit_demotion_boundary": "developer_audit_details_default_collapsed_settings_developer_audit_link_visible",
+            "audit_detail_exception_rule": (
+                "engineering_detail_allowed_only_for_current_decision_surface_or_explicit_troubleshooting"
+            ),
+            "ordinary_decision_fields": (
+                "next_click/source_state/missing_evidence/research_boundary/blocked_degraded/last_successful_result"
+            ),
+            "audit_evidence_boundary": "audit_placement_is_ux_checkpoint_not_legacy_retirement_or_production_evidence",
+            "p4_next_gate": "legacy_bug_ux_audit_direct_observation_plus_safe_evidence_attachment_before_keep_or_retirement",
         },
         "P5": {
             "ordinary_user_meaning": "DeepSeek governed executor 单独补，不阻塞 Tushare 和基础图谱。",
@@ -1249,6 +1264,12 @@ def _build_usable_path_current_checkpoint_rows(
                 "research_only_boundary": checkpoint_scope.get("research_only_boundary", ""),
                 "action_mutation_boundary": checkpoint_scope.get("action_mutation_boundary", ""),
                 "p3_next_gate": checkpoint_scope.get("p3_next_gate", ""),
+                "ordinary_summary_surfaces": checkpoint_scope.get("ordinary_summary_surfaces", ""),
+                "audit_demotion_boundary": checkpoint_scope.get("audit_demotion_boundary", ""),
+                "audit_detail_exception_rule": checkpoint_scope.get("audit_detail_exception_rule", ""),
+                "ordinary_decision_fields": checkpoint_scope.get("ordinary_decision_fields", ""),
+                "audit_evidence_boundary": checkpoint_scope.get("audit_evidence_boundary", ""),
+                "p4_next_gate": checkpoint_scope.get("p4_next_gate", ""),
                 "provider_execution_claim": checkpoint_scope.get(
                     "provider_execution_claim",
                     "local_checkpoint_not_provider_execution_evidence",

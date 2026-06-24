@@ -745,6 +745,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             p3_checkpoint["p3_next_gate"],
             "provider_backed_factor_radar_evidence_plus_echarts_browser_performance_review",
         )
+        p4_checkpoint = current_checkpoint_rows["P4"]
+        self.assertIn(
+            "ordinary summaries appear before developer/audit detail",
+            p4_checkpoint["current_evidence_scope"],
+        )
+        self.assertEqual(
+            p4_checkpoint["ordinary_summary_surfaces"],
+            "daily_command/candidate_radar/factor_quant/next_session",
+        )
+        self.assertEqual(
+            p4_checkpoint["audit_demotion_boundary"],
+            "developer_audit_details_default_collapsed_settings_developer_audit_link_visible",
+        )
+        self.assertEqual(
+            p4_checkpoint["audit_detail_exception_rule"],
+            "engineering_detail_allowed_only_for_current_decision_surface_or_explicit_troubleshooting",
+        )
+        self.assertEqual(
+            p4_checkpoint["ordinary_decision_fields"],
+            "next_click/source_state/missing_evidence/research_boundary/blocked_degraded/last_successful_result",
+        )
+        self.assertEqual(
+            p4_checkpoint["audit_evidence_boundary"],
+            "audit_placement_is_ux_checkpoint_not_legacy_retirement_or_production_evidence",
+        )
+        self.assertEqual(
+            p4_checkpoint["p4_next_gate"],
+            "legacy_bug_ux_audit_direct_observation_plus_safe_evidence_attachment_before_keep_or_retirement",
+        )
         self.assertFalse(
             any(row["can_close_ltg_from_current_checkpoint"] for row in current_checkpoint_rows.values())
         )
