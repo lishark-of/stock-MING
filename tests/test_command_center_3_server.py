@@ -39332,6 +39332,32 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(
             all(row["does_not_modify_strategy_action"] for row in small_data["ordinary_writeback_surface_summary_rows"])
         )
+        self.assertTrue(small_data["ordinary_writeback_receipt_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_writeback_receipt_rows_create_task"])
+        self.assertTrue(small_data["ordinary_writeback_receipt_rows_are_not_trade_signals"])
+        self.assertEqual(small_data["ordinary_writeback_receipt_row_count"], 3)
+        self.assertEqual(packet["counts"]["search_quant_projection_writeback_receipt_row_count"], 3)
+        self.assertTrue(packet["policy"]["search_quant_projection_writeback_receipt_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_writeback_receipt_rows_create_task"])
+        self.assertTrue(packet["policy"]["search_quant_projection_writeback_receipt_rows_are_not_trade_signals"])
+        writeback_receipts = {row["receipt_key"]: row for row in small_data["ordinary_writeback_receipt_rows"]}
+        self.assertEqual(set(writeback_receipts), {"cache_receipt", "call_ledger_receipt", "packet_receipt"})
+        self.assertEqual(writeback_receipts["cache_receipt"]["readback_source"], "GET /api/candidate-radar/cache")
+        self.assertIn("cache 已写入", writeback_receipts["cache_receipt"]["当前状态"])
+        self.assertIn("Tushare 4/4", writeback_receipts["call_ledger_receipt"]["当前状态"])
+        self.assertEqual(writeback_receipts["call_ledger_receipt"]["provider_task_call_source"], "post_task_call_ledger")
+        self.assertTrue(writeback_receipts["call_ledger_receipt"]["provider_task_tushare_ledger_ready"])
+        self.assertIn(task["task_id"], writeback_receipts["packet_receipt"]["当前状态"])
+        self.assertIn("readable_surface_count=3", writeback_receipts["packet_receipt"]["证据"])
+        self.assertFalse(any(row["creates_task_from_readback"] for row in small_data["ordinary_writeback_receipt_rows"]))
+        self.assertFalse(
+            any(row["readback_external_calls_triggered"] for row in small_data["ordinary_writeback_receipt_rows"])
+        )
+        self.assertFalse(any(row["contains_secret"] for row in small_data["ordinary_writeback_receipt_rows"]))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in small_data["ordinary_writeback_receipt_rows"]))
+        self.assertTrue(
+            all(row["does_not_modify_strategy_action"] for row in small_data["ordinary_writeback_receipt_rows"])
+        )
         self.assertTrue(small_data["ordinary_tushare_first_chain_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_tushare_first_chain_rows_create_task"])
         self.assertFalse(small_data["ordinary_tushare_first_chain_rows_call_provider_from_get"])
@@ -41577,6 +41603,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(any(row["tushare_called"] for row in small_data["ordinary_writeback_recovery_rows"]))
         self.assertFalse(any(row["deepseek_called"] for row in small_data["ordinary_writeback_recovery_rows"]))
         self.assertTrue(all(row["does_not_execute_trades"] for row in small_data["ordinary_writeback_recovery_rows"]))
+        receipt_rows = {row["receipt_key"]: row for row in small_data["ordinary_writeback_receipt_rows"]}
+        self.assertEqual(set(receipt_rows), {"cache_receipt", "call_ledger_receipt", "packet_receipt"})
+        self.assertEqual(receipt_rows["call_ledger_receipt"]["provider_task_call_source"], "not_called_missing_credentials_local_block")
+        self.assertIn("缺少服务端 Tushare 凭据", receipt_rows["call_ledger_receipt"]["当前状态"])
+        self.assertFalse(any(row["creates_task_from_readback"] for row in small_data["ordinary_writeback_receipt_rows"]))
+        self.assertFalse(any(row["readback_external_calls_triggered"] for row in small_data["ordinary_writeback_receipt_rows"]))
+        self.assertFalse(any(row["contains_secret"] for row in small_data["ordinary_writeback_receipt_rows"]))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in small_data["ordinary_writeback_receipt_rows"]))
 
     def test_candidate_radar_full_pool_local_scan_endpoint_writes_local_receipt_only(self):
         self._with_meta_store()

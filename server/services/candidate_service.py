@@ -15195,6 +15195,90 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         or "",
         limit=160,
     )
+    ordinary_writeback_receipt_rows = [
+        {
+            "receipt_key": "cache_receipt",
+            "surface": "cache",
+            "凭证": "cache 回放凭证",
+            "当前状态": "cache 已写入，可从本地 GET cache 回放" if cache_packet_written else "等待确认按钮写入 cache",
+            "读回来源": "GET /api/candidate-radar/cache",
+            "证据": f"packet_key={PACKET_KEY}; cache_written={cache_packet_written}",
+            "边界": "GET cache 只读本地 packet；不创建 task、不补调 provider/model。",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "receipt_key": "call_ledger_receipt",
+            "surface": "call_ledger",
+            "凭证": "call_ledger 回放凭证",
+            "当前状态": call_ledger_surface_status,
+            "读回来源": "search_quant_provider_model_acceptance_receipt.provider_call_ledger",
+            "证据": (
+                f"provider_call_source={provider_call_source}; "
+                f"provider_api_success={provider_api_success_count}/{provider_api_call_count}; "
+                f"provider_task_observed={provider_external_call_observed}"
+            ),
+            "边界": "call_ledger 只由确认按钮后的 POST task / worker 写入；GET cache 和 React render 不调用 Tushare。",
+            "readback_source": "search_quant_provider_model_acceptance_receipt.provider_call_ledger",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "provider_task_tushare_ledger_ready": provider_ready,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "receipt_key": "packet_receipt",
+            "surface": "packet",
+            "凭证": "packet 回放凭证",
+            "当前状态": (
+                f"packet={PACKET_KEY} 已写入；task_id={latest_task_id}"
+                if latest_task_id
+                else f"packet={PACKET_KEY} 已写入" if cache_packet_written else "等待确认任务写入 packet"
+            ),
+            "读回来源": "command_center_3_candidate_radar_cache",
+            "证据": (
+                f"schema={QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION}; "
+                f"checkpoint_surface_count={ordinary_writeback_checkpoint_contract['surface_count']}; "
+                f"readable_surface_count={ordinary_writeback_checkpoint_contract['readable_surface_count']}"
+            ),
+            "边界": "packet 不包含凭据、raw log 或交易动作；不覆盖 strategy action。",
+            "readback_source": "command_center_3_candidate_radar_cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     if provider_ready:
         recovery_status = "无 P2 阻断：Tushare-first ledger 已回放。"
         recovery_next = "直接回放股票量化推演和次日图谱；缺口只作为待补证据。"
@@ -16350,6 +16434,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_writeback_integrity_rows_are_cache_only": True,
         "ordinary_writeback_integrity_rows_create_task": False,
         "ordinary_writeback_integrity_rows_are_not_trade_signals": True,
+        "ordinary_writeback_receipt_rows": ordinary_writeback_receipt_rows,
+        "ordinary_writeback_receipt_row_count": len(ordinary_writeback_receipt_rows),
+        "ordinary_writeback_receipt_rows_are_cache_only": True,
+        "ordinary_writeback_receipt_rows_create_task": False,
+        "ordinary_writeback_receipt_rows_are_not_trade_signals": True,
         "ordinary_writeback_recovery_rows": ordinary_writeback_recovery_rows,
         "ordinary_writeback_recovery_row_count": len(ordinary_writeback_recovery_rows),
         "ordinary_writeback_recovery_rows_are_cache_only": True,
@@ -16512,6 +16601,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_writeback_integrity_row_count"] = summary.get(
         "ordinary_writeback_integrity_row_count", 0
     )
+    counts["search_quant_projection_writeback_receipt_row_count"] = summary.get(
+        "ordinary_writeback_receipt_row_count", 0
+    )
     counts["search_quant_projection_writeback_recovery_row_count"] = summary.get(
         "ordinary_writeback_recovery_row_count", 0
     )
@@ -16575,6 +16667,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_writeback_integrity_rows_are_cache_only"] = True
     policy["search_quant_projection_writeback_integrity_rows_create_task"] = False
     policy["search_quant_projection_writeback_integrity_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_writeback_receipt_rows_are_cache_only"] = True
+    policy["search_quant_projection_writeback_receipt_rows_create_task"] = False
+    policy["search_quant_projection_writeback_receipt_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_writeback_recovery_rows_are_cache_only"] = True
     policy["search_quant_projection_writeback_recovery_rows_create_task"] = False
     policy["search_quant_projection_writeback_recovery_rows_are_not_trade_signals"] = True

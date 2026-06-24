@@ -858,6 +858,22 @@ export default function CandidateRadar() {
           边界: "packet 不含凭据、raw log 或交易动作；不覆盖 strategy action"
         }
       ];
+  const quantProjectionWritebackReceiptPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_receipt_rows).map((row) => ({
+    凭证: displayText(row["凭证"] ?? row.receipt_key ?? row.surface),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    读回来源: displayText(row["读回来源"] ?? row.readback_source, "GET /api/candidate-radar/cache"),
+    证据: displayText(row["证据"] ?? row.evidence),
+    边界: displayText(row["边界"] ?? row.boundary, quantProjectionSmallDataReadbackContract)
+  }));
+  const quantProjectionP2WritebackReceiptRows = quantProjectionWritebackReceiptPacketRows.length
+    ? quantProjectionWritebackReceiptPacketRows
+    : quantProjectionWritebackIntegrityRows.map((row) => ({
+        凭证: displayText(row.检查项, "cache / call_ledger / packet 回放凭证"),
+        当前状态: displayText(row.当前状态),
+        读回来源: "GET /api/candidate-radar/cache",
+        证据: displayText(row.证据),
+        边界: displayText(row.边界, quantProjectionSmallDataReadbackContract)
+      }));
   const quantProjectionWritebackRecoveryRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_recovery_rows).map((row) => ({
     恢复项: displayText(row["恢复项"] ?? row.recovery_key),
     当前状态: displayText(row["当前状态"] ?? row.status),
@@ -1870,6 +1886,11 @@ export default function CandidateRadar() {
           <h3>P2 三面完整性检查</h3>
           <p className="risk-note">普通用户再看这张完整性表：cache、call_ledger、packet 是否齐备；它优先读取服务端 ordinary_writeback_integrity_rows，只做本地回放。</p>
           <DataLineageTable rows={quantProjectionWritebackIntegrityRows} />
+        </div>
+        <div aria-label="candidate radar ordinary p2 writeback receipt">
+          <h3>P2 三面回放凭证</h3>
+          <p className="risk-note">需要排查时看这张凭证：cache、call_ledger、packet 三面是否由本地回放读出；它优先读取服务端 ordinary_writeback_receipt_rows，不创建 task、不补调 Tushare/DeepSeek。</p>
+          <DataLineageTable rows={quantProjectionP2WritebackReceiptRows} />
         </div>
         <div aria-label="candidate radar ordinary p2 writeback recovery">
           <h3>P2 阻断恢复速读</h3>
