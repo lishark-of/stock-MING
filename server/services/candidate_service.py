@@ -1414,6 +1414,22 @@ def _quant_projection_confirm_chain_contract(payload: Mapping[str, Any]) -> dict
     }
 
 
+def _quant_projection_p0_confirm_gate_ready(p0_gate: Mapping[str, Any]) -> bool:
+    return bool(
+        p0_gate.get("schema_version") == "candidate_radar_p0_confirm_gate.v1"
+        and p0_gate.get("p0_ready") is True
+        and p0_gate.get("fastapi_cache_get_ready") is True
+        and p0_gate.get("bootstrap_runtime_mode_ready") is True
+        and p0_gate.get("desktop_preflight_ready") is True
+        and p0_gate.get("p0_stability_check_ready") is True
+        and p0_gate.get("candidate_cache_ready") is True
+        and p0_gate.get("creates_task_only_after_button") is True
+        and p0_gate.get("react_render_external_calls") is False
+        and p0_gate.get("get_cache_external_calls") is False
+        and p0_gate.get("contains_sensitive_material") is False
+    )
+
+
 def _quant_projection_task_payload(payload: Any) -> Any:
     if not isinstance(payload, Mapping):
         return payload
@@ -14176,6 +14192,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         "get_cache_external_calls": p0_gate_payload.get("get_cache_external_calls") is True,
         "contains_sensitive_material": False,
     }
+    p0_confirm_gate_ready = _quant_projection_p0_confirm_gate_ready(p0_confirm_gate_evidence)
     request_params_safe = {
         "scan_mode": QUANT_PROJECTION_SCAN_MODE,
         "symbol": projection_receipt.get("symbol"),
@@ -14185,6 +14202,8 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         "include_deepseek_requested": payload_safe.get("include_deepseek") is True,
         "selected_light_apis": projection_receipt.get("selected_light_apis") or [],
         "external_sources_allowed": False,
+        "p0_confirm_gate_ready": p0_confirm_gate_ready,
+        "p0_confirm_gate_required_for_tushare_first": True,
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
         "production_quant_projection_complete": False,
@@ -14248,65 +14267,69 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
             or _coerce_bool(payload_safe.get("operator_approved"), False)
         )
         if auto_chain_requested and payload_safe.get("include_tushare") is True:
-            tushare_first_chain_requested = True
-            chain_payload = {
-                "scan_mode": QUANT_PROJECTION_SCAN_MODE,
-                "symbol": projection_receipt.get("symbol"),
-                "include_tushare": True,
-                "include_deepseek": False,
-                "user_approved": True,
-                "selected_apis": list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS),
-                "requested_by": "candidate_radar_quant_projection_confirm_chain",
-            }
-            run_candidate_quant_projection_acceptance_dry_run_task(chain_payload)
-            latest_packet = read_candidate_radar_cache()
-            latest_dry_run = _as_dict(latest_packet.get("search_quant_projection_acceptance_dry_run_receipt"))
-            scope_hash = _safe_text(latest_dry_run.get("acceptance_scope_hash") or "", limit=128)
-            if scope_hash:
-                run_candidate_quant_projection_execution_request_task(
-                    {
-                        "scan_mode": "quant_projection_execution_request",
-                        "operator_approved": True,
-                        "acceptance_scope_hash": scope_hash,
-                        "requested_by": "candidate_radar_quant_projection_confirm_chain",
-                    }
-                )
+            if not p0_confirm_gate_ready:
+                final_step = "candidate_radar_quant_projection_tushare_first_chain_blocked_p0_confirm_gate"
+                final_warning = final_step
+            else:
+                tushare_first_chain_requested = True
+                chain_payload = {
+                    "scan_mode": QUANT_PROJECTION_SCAN_MODE,
+                    "symbol": projection_receipt.get("symbol"),
+                    "include_tushare": True,
+                    "include_deepseek": False,
+                    "user_approved": True,
+                    "selected_apis": list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS),
+                    "requested_by": "candidate_radar_quant_projection_confirm_chain",
+                }
+                run_candidate_quant_projection_acceptance_dry_run_task(chain_payload)
                 latest_packet = read_candidate_radar_cache()
-                latest_dry_run = _as_dict(
-                    latest_packet.get("search_quant_projection_acceptance_dry_run_receipt")
-                )
-                latest_request = _as_dict(latest_packet.get("search_quant_projection_execution_request_receipt"))
-                request_ready = (
-                    latest_request.get("local_execution_request_ready") is True
-                    and latest_dry_run.get("ready_for_user_approved_real_acceptance") is True
-                    and int(latest_dry_run.get("credential_missing_provider_count") or 0) == 0
-                )
-                if request_ready:
-                    run_candidate_quant_projection_provider_model_acceptance_task(
+                latest_dry_run = _as_dict(latest_packet.get("search_quant_projection_acceptance_dry_run_receipt"))
+                scope_hash = _safe_text(latest_dry_run.get("acceptance_scope_hash") or "", limit=128)
+                if scope_hash:
+                    run_candidate_quant_projection_execution_request_task(
                         {
+                            "scan_mode": "quant_projection_execution_request",
                             "operator_approved": True,
                             "acceptance_scope_hash": scope_hash,
-                            "include_deepseek": False,
                             "requested_by": "candidate_radar_quant_projection_confirm_chain",
                         }
                     )
                     latest_packet = read_candidate_radar_cache()
-                    latest_provider = _as_dict(latest_packet.get("search_quant_provider_model_acceptance_receipt"))
-                    if (
-                        latest_provider.get("tushare_call_ledger_evidence_done") is True
-                        and latest_provider.get("deepseek_skipped_by_request") is True
-                    ):
-                        final_step = "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
-                    else:
-                        final_step = (
-                            "candidate_radar_quant_projection_tushare_first_chain_blocked_provider_ledger_missing"
+                    latest_dry_run = _as_dict(
+                        latest_packet.get("search_quant_projection_acceptance_dry_run_receipt")
+                    )
+                    latest_request = _as_dict(latest_packet.get("search_quant_projection_execution_request_receipt"))
+                    request_ready = (
+                        latest_request.get("local_execution_request_ready") is True
+                        and latest_dry_run.get("ready_for_user_approved_real_acceptance") is True
+                        and int(latest_dry_run.get("credential_missing_provider_count") or 0) == 0
+                    )
+                    if request_ready:
+                        run_candidate_quant_projection_provider_model_acceptance_task(
+                            {
+                                "operator_approved": True,
+                                "acceptance_scope_hash": scope_hash,
+                                "include_deepseek": False,
+                                "requested_by": "candidate_radar_quant_projection_confirm_chain",
+                            }
                         )
-                    final_warning = final_step
-                elif latest_dry_run.get("credential_missing_provider_count"):
-                    final_step = "candidate_radar_quant_projection_tushare_first_chain_blocked_missing_credentials"
-                    final_warning = final_step
-                else:
-                    final_step = "candidate_radar_quant_projection_tushare_first_chain_blocked_execution_request"
+                        latest_packet = read_candidate_radar_cache()
+                        latest_provider = _as_dict(latest_packet.get("search_quant_provider_model_acceptance_receipt"))
+                        if (
+                            latest_provider.get("tushare_call_ledger_evidence_done") is True
+                            and latest_provider.get("deepseek_skipped_by_request") is True
+                        ):
+                            final_step = "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
+                        else:
+                            final_step = (
+                                "candidate_radar_quant_projection_tushare_first_chain_blocked_provider_ledger_missing"
+                            )
+                        final_warning = final_step
+                    elif latest_dry_run.get("credential_missing_provider_count"):
+                        final_step = "candidate_radar_quant_projection_tushare_first_chain_blocked_missing_credentials"
+                        final_warning = final_step
+                    else:
+                        final_step = "candidate_radar_quant_projection_tushare_first_chain_blocked_execution_request"
                     final_warning = final_step
     latest_packet_for_task_ledger: Mapping[str, Any] = packet
     try:
@@ -14866,6 +14889,9 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         or "",
         limit=160,
     )
+    p0_confirm_gate_blocked = (
+        latest_task_current_step == "candidate_radar_quant_projection_tushare_first_chain_blocked_p0_confirm_gate"
+    )
     execution_request_ready = execution_request.get("local_execution_request_ready") is True
     writeback_surfaces = ["cache", "call_ledger", "packet"] if cache_packet_written else []
     if provider_external_call_observed:
@@ -14890,6 +14916,14 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         )
         ordinary_readback_next_step = "先看本地量化推演和次日图谱回放；Factor/Next/ECharts 缺口只作为待补证据。"
         ordinary_readback_stage_label = "已回放 Tushare POST task ledger；当前页面只读 cache / ledger / packet。"
+    elif p0_confirm_gate_blocked:
+        status = "small_data_writeback_blocked_p0_confirm_gate"
+        summary_label = "cache / ledger / packet 已写入本地阻断：P0 本地联通闸门未通过；未调用 provider。"
+        next_action = "先恢复一键启动和本地 FastAPI/预检联通，再重新点击确认；页面不会补调 provider。"
+        ordinary_readback_status = "blocked_p0_confirm_gate"
+        ordinary_readback_summary = "小数据已写入 P0 gate 阻断：确认链路没有进入 Tushare-first provider task。"
+        ordinary_readback_next_step = "回系统健康/一键启动预检确认 P0 ready 后，再重新点击确认按钮。"
+        ordinary_readback_stage_label = "P0 确认闸门未通过；本地阻断已写入，页面不会补调 provider。"
     elif credential_missing_count:
         status = "small_data_writeback_blocked_missing_credentials"
         summary_label = "cache / ledger / packet 已写入本地阻断：缺少服务端 Tushare 凭据；未调用 provider。"

@@ -6,8 +6,10 @@ PROJECT_ROOT="${COMMAND_CENTER_3_PROJECT_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 DESKTOP_ROOT="${PROJECT_ROOT}/desktop"
 LOG_DIR="${PROJECT_ROOT}/.stock_ming_3/logs"
 FASTAPI_LOG="${LOG_DIR}/command_center_3_fastapi.log"
+FASTAPI_LAUNCHD_LOG="${COMMAND_CENTER_3_FASTAPI_LAUNCHD_LOG:-${TMPDIR:-/tmp}/command_center_3_fastapi.launchd.log}"
 VITE_LOG="${LOG_DIR}/command_center_3_vite.log"
 API_BASE="${VITE_API_BASE_URL:-http://127.0.0.1:8710}"
+FASTAPI_LAUNCH_LABEL="${COMMAND_CENTER_3_FASTAPI_LAUNCH_LABEL:-com.stockming.commandcenter.fastapi.dev}"
 VITE_URL="${COMMAND_CENTER_3_VITE_URL:-http://127.0.0.1:5173}"
 APP_URL="${COMMAND_CENTER_3_APP_URL:-${VITE_URL%/}/#home}"
 LAUNCHER_CHECK_ONLY="${COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY:-0}"
@@ -98,6 +100,34 @@ except Exception:
     sys.exit(1)
 host = (parsed.hostname or "").lower()
 sys.exit(0 if host in {"127.0.0.1", "localhost", "::1"} else 1)
+PY
+}
+
+api_bind_host() {
+  local url="$1"
+  "$PYTHON_BIN" - "$url" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+parsed = urlsplit(sys.argv[1])
+host = (parsed.hostname or "127.0.0.1").lower()
+print("127.0.0.1" if host in {"localhost", "::1"} else host)
+PY
+}
+
+api_bind_port() {
+  local url="$1"
+  "$PYTHON_BIN" - "$url" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+parsed = urlsplit(sys.argv[1])
+if parsed.port:
+    print(parsed.port)
+elif parsed.scheme == "https":
+    print(443)
+else:
+    print(80)
 PY
 }
 
@@ -352,6 +382,23 @@ print_startup_diagnostics() {
   echo "安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。"
 }
 
+start_fastapi_backend() {
+  echo "Starting FastAPI..."
+  if command -v launchctl >/dev/null 2>&1; then
+    /bin/launchctl remove "$FASTAPI_LAUNCH_LABEL" >/dev/null 2>&1 || true
+    /bin/launchctl submit \
+      -l "$FASTAPI_LAUNCH_LABEL" \
+      -o "$FASTAPI_LAUNCHD_LOG" \
+      -e "$FASTAPI_LAUNCHD_LOG" \
+      -- /bin/bash -c 'cd "$1" && exec "$2" -m uvicorn server.main:app --host "$3" --port "$4"' \
+      stockming-fastapi "$PROJECT_ROOT" "$PYTHON_BIN" "$API_BIND_HOST" "$API_BIND_PORT"
+    echo "FastAPI handed to macOS launchd: ${FASTAPI_LAUNCH_LABEL}"
+    echo "FastAPI launchd log: ${FASTAPI_LAUNCHD_LOG}"
+  else
+    STOCK_MING_FASTAPI_RELOAD=0 PYTHON_BIN="$PYTHON_BIN" nohup "${PROJECT_ROOT}/scripts/dev_server.sh" >"$FASTAPI_LOG" 2>&1 &
+  fi
+}
+
 print_post_startup_readback_checklist() {
   echo "启动后复核清单："
   echo "  1. FastAPI health：${API_HEALTH_DISPLAY} 已返回 Command Center 3.0 JSON，且 external_calls_on_startup=false。"
@@ -387,6 +434,8 @@ APP_URL_DISPLAY="$APP_OPEN_URL"
 API_HEALTH_DISPLAY="$(safe_display_url "${API_BASE%/}/health")"
 BOOTSTRAP_STATUS_DISPLAY="$(safe_display_url "${API_BASE%/}/api/bootstrap/status")"
 DESKTOP_PREFLIGHT_DISPLAY="$(safe_display_url "${API_BASE%/}/api/desktop/preflight-cache")"
+API_BIND_HOST="$(api_bind_host "$API_BASE")"
+API_BIND_PORT="$(api_bind_port "$API_BASE")"
 
 if ! url_is_local "$API_BASE"; then
   echo "Command Center 3.0 启动失败：FastAPI API base 必须是本机地址：${API_BASE_DISPLAY}"
@@ -448,8 +497,7 @@ else
   if url_ready "${API_BASE%/}/health"; then
     echo "FastAPI port has a response, but it is not Command Center 3.0 health JSON."
   fi
-  echo "Starting FastAPI..."
-  STOCK_MING_FASTAPI_RELOAD=0 PYTHON_BIN="$PYTHON_BIN" nohup "${PROJECT_ROOT}/scripts/dev_server.sh" >"$FASTAPI_LOG" 2>&1 &
+  start_fastapi_backend
 fi
 
 if vite_command_center_ready "$VITE_URL"; then

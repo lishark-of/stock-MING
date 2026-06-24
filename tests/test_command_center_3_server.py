@@ -16508,6 +16508,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn('"$PYTHON_BIN" -m uvicorn server.main:app --reload --host 127.0.0.1 --port 8710', script)
         self.assertIn('"$PYTHON_BIN" -m uvicorn server.main:app --host 127.0.0.1 --port 8710', script)
         launcher = Path("scripts/start_command_center_3.command").read_text(encoding="utf-8")
+        self.assertIn("FASTAPI_LAUNCHD_LOG", launcher)
+        self.assertIn("FASTAPI_LAUNCH_LABEL", launcher)
+        self.assertIn("start_fastapi_backend", launcher)
+        self.assertIn("/bin/launchctl submit", launcher)
+        self.assertIn('exec "$2" -m uvicorn server.main:app --host "$3" --port "$4"', launcher)
         self.assertIn('STOCK_MING_FASTAPI_RELOAD=0 PYTHON_BIN="$PYTHON_BIN" nohup "${PROJECT_ROOT}/scripts/dev_server.sh"', launcher)
 
     def test_one_click_launcher_rejects_nonlocal_urls_without_leaking_secrets(self):
@@ -39510,6 +39515,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "run_tushare_refresh_task",
             original_run_tushare,
         )
+        p0_confirm_gate_evidence = {
+            "schema_version": "candidate_radar_p0_confirm_gate.v1",
+            "p0_ready": True,
+            "fastapi_cache_get_ready": True,
+            "bootstrap_runtime_mode_ready": True,
+            "desktop_preflight_ready": True,
+            "p0_stability_check_ready": True,
+            "candidate_cache_ready": True,
+            "candidate_cache_status": "ready",
+            "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+            "desktop_preflight_packet_key": "command_center_3_desktop_shell_preflight_cache",
+            "creates_task_only_after_button": True,
+            "react_render_external_calls": False,
+            "get_cache_external_calls": False,
+            "contains_secret": False,
+        }
 
         response = self.client.post(
             "/api/candidate-radar/quant-projection",
@@ -39518,6 +39539,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "include_tushare": True,
                 "include_deepseek": False,
                 "user_approved": True,
+                "p0_confirm_gate_evidence": p0_confirm_gate_evidence,
                 "token": "SHOULD_DROP",
             },
         ).json()
@@ -39889,6 +39911,106 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("DEEPSEEK_API_KEY", json.dumps(cache, ensure_ascii=False))
+
+    def test_candidate_radar_quant_projection_confirm_requires_p0_gate_before_tushare_first_chain(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        provider_calls = []
+        original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
+
+        def fake_run_tushare_refresh_task(payload, **_kwargs):
+            provider_calls.append(payload)
+            raise AssertionError("Tushare-first provider task must stay blocked when P0 gate is not ready")
+
+        candidate_service.tushare_task_service.run_tushare_refresh_task = fake_run_tushare_refresh_task
+        self.addCleanup(
+            setattr,
+            candidate_service.tushare_task_service,
+            "run_tushare_refresh_task",
+            original_run_tushare,
+        )
+
+        response = self.client.post(
+            "/api/candidate-radar/quant-projection",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": False,
+                "user_approved": True,
+                "p0_confirm_gate_evidence": {
+                    "schema_version": "candidate_radar_p0_confirm_gate.v1",
+                    "p0_ready": False,
+                    "fastapi_cache_get_ready": True,
+                    "bootstrap_runtime_mode_ready": True,
+                    "desktop_preflight_ready": True,
+                    "p0_stability_check_ready": False,
+                    "candidate_cache_ready": True,
+                    "candidate_cache_status": "ready",
+                    "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+                    "desktop_preflight_packet_key": "command_center_3_desktop_shell_preflight_cache",
+                    "creates_task_only_after_button": True,
+                    "react_render_external_calls": False,
+                    "get_cache_external_calls": False,
+                    "contains_secret": False,
+                },
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(
+            task["current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_blocked_p0_confirm_gate",
+        )
+        self.assertEqual(provider_calls, [])
+        self.assertEqual(len(task["call_ledger"]), 1)
+        self.assertEqual(task["call_ledger"][0]["api"], "local_candidate_radar_quant_projection")
+        request_params = task["call_ledger"][0]["request_params_safe"]
+        self.assertFalse(request_params["p0_confirm_gate_ready"])
+        self.assertTrue(request_params["p0_confirm_gate_required_for_tushare_first"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        quant_receipt = packet["search_quant_projection_receipt"]
+        self.assertEqual(quant_receipt["latest_task_id"], task["task_id"])
+        self.assertEqual(
+            quant_receipt["latest_task_current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_blocked_p0_confirm_gate",
+        )
+        self.assertFalse(packet["search_quant_provider_model_acceptance_receipt"])
+        self.assertFalse(packet["counts"]["search_quant_provider_model_acceptance_direct_evidence_verified"])
+        self.assertEqual(packet["counts"]["search_quant_provider_model_acceptance_provider_api_success_count"], 0)
+        small_data = packet["search_quant_projection_small_data_writeback_summary"]
+        self.assertEqual(
+            small_data["status"],
+            "small_data_writeback_blocked_p0_confirm_gate",
+        )
+        self.assertEqual(small_data["ordinary_readback_status"], "blocked_p0_confirm_gate")
+        self.assertIn("P0 gate", small_data["ordinary_readback_summary"])
+        self.assertEqual(small_data["provider_call_source"], "pending_no_provider_call")
+        self.assertFalse(small_data["provider_call_observed_only_from_post_task"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
 
     def test_bootstrap_provider_model_latest_status_keeps_deepseek_requested_output_acceptance_pending(self):
         self._with_meta_store()
