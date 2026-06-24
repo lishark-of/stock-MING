@@ -5,7 +5,7 @@ import ChartSafetyStrip from "../components/ChartSafetyStrip";
 import DataLineageTable from "../components/DataLineageTable";
 import EChartPanel from "../components/EChartPanel";
 import JsonDetails from "../components/JsonDetails";
-import MetricGrid from "../components/MetricGrid";
+import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import StateClarityRail from "../components/StateClarityRail";
@@ -89,6 +89,28 @@ export default function FactorQuantHub() {
   const candidateRadarWritebackSurfaceRows = toRows(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
   const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarLatestTaskId = String(
+    candidateRadarReceipt.latest_task_id ??
+      candidateRadarReceipt.task_id ??
+      candidateRadarSmallDataWriteback.latest_task_id ??
+      ""
+  );
+  const candidateRadarLatestTaskStep = String(
+    candidateRadarReceipt.latest_task_current_step ??
+      candidateRadarSmallDataWriteback.latest_task_current_step ??
+      candidateRadarReceipt.status ??
+      "waiting_confirm"
+  );
+  const candidateRadarConfirmChainStatus = String(
+    candidateRadarCache.search_quant_projection_confirm_chain_status ??
+      candidateRadarReceipt.p1_confirm_chain_status ??
+      candidateRadarLatestTaskStep
+  );
+  const candidateRadarSmallDataStateLabel = String(
+    candidateRadarSmallDataWriteback.ordinary_readback_stage_label ??
+      candidateRadarSmallDataWriteback.summary_label ??
+      "等待确认按钮后的 cache / ledger / packet 回放"
+  );
   const candidateRadarResultQuickRows = toRows(candidateRadarInterpretation.ordinary_result_quick_read_rows);
   const candidateRadarResultCheckpointRows = toRows(candidateRadarInterpretation.ordinary_result_checkpoint_rows);
   const candidateRadarReadableResult = String(
@@ -385,6 +407,45 @@ export default function FactorQuantHub() {
   const ordinaryQuantP3Boundary = ordinaryQuantCandidateRadarP3Ready
     ? `P3 边界：${candidateRadarReadableBoundary}`
     : "P3 边界：普通摘要只读 Factor cache、Next Session preview 和 DeepSeek status；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
+  const ordinaryQuantLatestCandidateCheckpointItems: MetricItem[] = [
+    {
+      label: "确认标的",
+      value: String(candidateRadarReceipt.symbol ?? "--"),
+      tone: candidateRadarReceipt.symbol ? "good" : "warn"
+    },
+    {
+      label: "任务编号",
+      value: candidateRadarLatestTaskId ? `task_id=${candidateRadarLatestTaskId}` : "等待 CandidateRadar 确认任务",
+      tone: candidateRadarLatestTaskId ? "good" : "warn"
+    },
+    {
+      label: "P1 确认",
+      value: candidateRadarConfirmChainStatus || "等待确认按钮",
+      tone: candidateRadarLatestTaskId ? "good" : "warn"
+    },
+    {
+      label: "P2 三面",
+      value: candidateRadarSmallDataWriteback.small_data_writeback_ready === true
+        ? "cache / call_ledger / packet 已回放"
+        : candidateRadarSmallDataStateLabel,
+      tone: candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn"
+    },
+    {
+      label: "P3 结论",
+      value: ordinaryQuantP3ReadableConclusion,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: ordinaryQuantP3NextStep,
+      tone: "neutral"
+    },
+    {
+      label: "边界",
+      value: "本 checkpoint 只读 CandidateRadar cache / ledger / packet；不创建 task、不补调 Tushare/DeepSeek、不改 action",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantResultBoundary =
     "结果只用于研究复核；支持/压制、次日图谱和模型解释都不能直接变成买卖指令";
   const ordinaryDeepSeekGovernedExecutorState =
@@ -493,11 +554,7 @@ export default function FactorQuantHub() {
   const ordinaryQuantUpstreamConfirmOutcomeLabel = ordinaryQuantUpstreamConfirmOutcomeRows
     .map((row) => `${row.确认结果}: ${row.当前状态}`)
     .join(" / ");
-  const ordinaryQuantSmallDataWritebackState = String(
-    candidateRadarSmallDataWriteback.ordinary_readback_stage_label ??
-      candidateRadarSmallDataWriteback.summary_label ??
-      "等待确认按钮后的 cache / ledger / packet 回放"
-  );
+  const ordinaryQuantSmallDataWritebackState = candidateRadarSmallDataStateLabel;
   const ordinaryQuantP2WritebackBoundary =
     "P2 小数据只从 CandidateRadar cache / call_ledger / packet 回放；Factor 页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示 token/key 或 raw log。";
   const ordinaryQuantUpstreamP2WritebackRows = candidateRadarWritebackSurfaceRows.length
@@ -677,6 +734,11 @@ export default function FactorQuantHub() {
         emptyDetail="本页只读取本地缓存；不会自动刷新外部数据。若需要更新，请手动点击任务按钮。"
       />
       <PacketCard title="普通用户量化推演摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={ordinaryQuantStatusLabel}>
+        <div aria-label="stock quant latest candidate post confirm checkpoint">
+          <h3>确认后量化 checkpoint</h3>
+          <p className="risk-note">最近一只票的 task id、P1 确认、P2 三面和 P3 可读结论在量化页首屏先读；本 checkpoint 只读 CandidateRadar cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
+          <MetricGrid items={ordinaryQuantLatestCandidateCheckpointItems} />
+        </div>
         <MetricGrid
           items={[
             { label: "下一步", value: ordinaryQuantNextClick },
