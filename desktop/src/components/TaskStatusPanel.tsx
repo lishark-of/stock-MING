@@ -59,6 +59,14 @@ function stateForTaskStep(status: TaskRecord["status"], step: "queued" | "runnin
   return "waiting";
 }
 
+function taskLedgerApi(row: Record<string, unknown>) {
+  return String(row.api ?? "");
+}
+
+function isTushareProviderLedgerRow(row: Record<string, unknown>) {
+  return row.tushare_called === true || (row.external_calls_triggered === true && taskLedgerApi(row).startsWith("tushare_"));
+}
+
 export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const [task, setTask] = useState<TaskRecord | null>(null);
   const [lookupError, setLookupError] = useState<TaskLookupError | null>(null);
@@ -130,6 +138,10 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     return <p className="panel-loading">正在读取任务状态：{taskId}</p>;
   }
   const callLedger = task.call_ledger ?? [];
+  const tushareProviderRows = callLedger.filter(isTushareProviderLedgerRow);
+  const tushareProviderSuccessCount = tushareProviderRows.filter((row) => String(row.call_status ?? "") === "success").length;
+  const taskDeepSeekCalled = task.deepseek_called === true || callLedger.some((row) => row.deepseek_called === true);
+  const taskGithubCalled = task.github_called === true || callLedger.some((row) => row.github_called === true);
   const statusHistory = task.status_history ?? [];
   const cancellable = task.status === "pending" || task.status === "running";
   const taskStatusLabel = labelForStatus(task.status);
@@ -137,6 +149,16 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     task.status === "success" && onSuccess
       ? "任务成功后已通知页面刷新本地回放；这不会创建新 task、不调用 Tushare、DeepSeek 或 GitHub、不执行真实交易。"
       : "";
+  const callLedgerQuickStatus = tushareProviderRows.length
+    ? `Tushare ${tushareProviderSuccessCount}/${tushareProviderRows.length} 个接口已写入主任务 call_ledger`
+    : callLedger.length
+      ? `已回放 ${callLedger.length} 条本地审计记录`
+      : "等待任务写入本地审计记录";
+  const callLedgerQuickNext = tushareProviderRows.length
+    ? "刷新本地 cache 后查看股票量化推演和次日图谱"
+    : callLedger.length
+      ? "普通用户只看数量和边界；明细在审计详情中展开"
+      : "任务完成后再看审计记录数量";
   const p2WritebackQuickRows = [
     {
       写回面: "cache",
@@ -147,8 +169,8 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     },
     {
       写回面: "call_ledger",
-      当前状态: callLedger.length ? `已回放 ${callLedger.length} 条本地审计记录` : "等待任务写入本地审计记录",
-      用户下一步: callLedger.length ? "普通用户只看数量和边界；明细在审计详情中展开" : "任务完成后再看审计记录数量",
+      当前状态: callLedgerQuickStatus,
+      用户下一步: callLedgerQuickNext,
       证据: "task.call_ledger",
       边界: "审计记录默认收起；不展示凭据值、raw log 或交易动作。"
     },
@@ -163,6 +185,33 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const candidateRadarResultReplay =
     task.output_packet_key === "command_center_3_candidate_radar_cache" ||
     task.task_type.includes("candidate_radar_quant_projection");
+  const taskTushareFirstQuickRows = [
+    {
+      回放项: "Tushare-first ledger",
+      当前状态: tushareProviderRows.length
+        ? `Tushare ${tushareProviderSuccessCount}/${tushareProviderRows.length} 个接口已写入 task.call_ledger`
+        : "等待确认任务写入 Tushare provider ledger",
+      用户下一步: tushareProviderRows.length ? "打开股票量化推演和次日图谱回放本地结果" : "继续等待任务完成或查看阻断原因",
+      证据: `task.call_ledger; total=${callLedger.length}`,
+      边界: "TaskStatusPanel 只读当前 task.call_ledger；不补调 Tushare、DeepSeek 或 GitHub。"
+    },
+    {
+      回放项: "DeepSeek",
+      当前状态: taskDeepSeekCalled ? "检测到 DeepSeek ledger；需查看治理详情" : "DeepSeek skipped / 未调用；P1/P2/P3 不等待模型",
+      用户下一步: "DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱",
+      证据: "task.deepseek_called + task.call_ledger",
+      边界: "模型输出不能覆盖价格、factor、operation_zones 或 strategy action。"
+    },
+    {
+      回放项: "交易边界",
+      当前状态: task.does_not_execute_trades === false || task.does_not_modify_strategy_action === false
+        ? "阻断：任务 ledger 标记交易或 action 边界异常"
+        : "不交易、不改 strategy action",
+      用户下一步: taskGithubCalled ? "先查看审计详情里的外部调用来源" : "把结果当研究线索，不当买入指令",
+      证据: "task safety flags",
+      边界: "真实交易路径继续隔离；Radar candidate 不是买入指令。"
+    }
+  ];
   const p3ResultReplayRows = candidateRadarResultReplay
     ? [
         {
@@ -271,6 +320,12 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
         <p className="risk-note">P2 写回速读：普通用户先看 cache、call_ledger、packet 三面是否有本地回放信号；这张表只读任务状态，不创建新 task。</p>
         <DataLineageTable rows={p2WritebackQuickRows} />
       </div>
+      {candidateRadarResultReplay ? (
+        <div aria-label="task status tushare first ledger quick read">
+          <p className="risk-note">Tushare-first 速读：普通用户先看主任务是否已回放接口级 ledger；这张表只读当前任务状态，不创建新 task。</p>
+          <DataLineageTable rows={taskTushareFirstQuickRows} />
+        </div>
+      ) : null}
       <div aria-label="task status p3 result replay quick read">
         <p className="risk-note">P3 结果入口速读：任务写回后按本地入口回放可解释结果；这些链接只切换本地页面，不创建 task、不调用 provider/model。</p>
         <DataLineageTable rows={p3ResultReplayRows} />

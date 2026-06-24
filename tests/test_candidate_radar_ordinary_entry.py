@@ -11,6 +11,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.handoff = (self.root / "docs" / "codex_handoff_protocol.md").read_text(
             encoding="utf-8"
         )
+        self.task_status_panel = (
+            self.root / "desktop" / "src" / "components" / "TaskStatusPanel.tsx"
+        ).read_text(encoding="utf-8")
 
     def test_candidate_radar_has_ordinary_user_summary_before_audit_details(self):
         self.assertIn("<h1>下一票雷达</h1>", self.page)
@@ -1020,6 +1023,21 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("page open, search typing, React render, and GET cache stay silent", self.handoff)
         self.assertNotIn("DeepSeek is requested into the explanation ledger/governance path", self.handoff)
         self.assertNotIn("automatic v4/pro execution", self.handoff)
+
+    def test_task_status_panel_surfaces_tushare_first_ledger_for_ordinary_users(self):
+        panel = self.task_status_panel
+        self.assertIn("const tushareProviderRows = callLedger.filter(isTushareProviderLedgerRow)", panel)
+        self.assertIn("const tushareProviderSuccessCount", panel)
+        self.assertIn("Tushare ${tushareProviderSuccessCount}/${tushareProviderRows.length} 个接口已写入主任务 call_ledger", panel)
+        self.assertIn('aria-label="task status tushare first ledger quick read"', panel)
+        self.assertIn("Tushare-first 速读：普通用户先看主任务是否已回放接口级 ledger", panel)
+        self.assertIn("Tushare ${tushareProviderSuccessCount}/${tushareProviderRows.length} 个接口已写入 task.call_ledger", panel)
+        self.assertIn("DeepSeek skipped / 未调用；P1/P2/P3 不等待模型", panel)
+        self.assertIn("DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱", panel)
+        self.assertIn("TaskStatusPanel 只读当前 task.call_ledger；不补调 Tushare、DeepSeek 或 GitHub。", panel)
+        self.assertIn("不交易、不改 strategy action", panel)
+        self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", panel)
+        self.assertNotIn("launchQuantProjectionProviderModelAcceptance", panel)
 
     def test_candidate_radar_page_does_not_embed_provider_or_trade_calls(self):
         forbidden_fragments = (
