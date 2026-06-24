@@ -1135,6 +1135,19 @@ def _build_usable_path_strict_closeout_handoff_rows(
             "strict_closeout_handoff": "逐项使用 ltg_next_acceptance_action_rows 和 future_handoff_preview_rows 推进，不能从可用化 checkpoint 直接关闭。",
             "required_direct_evidence": "current-head direct evidence per LTG, durable receipts, CI/browser/provider/worker/storage/package proof as applicable",
             "next_ltg_focus": "all_14_ltg",
+            "strict_closeout_reentry_gate": "p6_requires_current_head_direct_evidence_matrix_before_any_ltg_closeout",
+            "reentry_evidence_order": (
+                "ltg_next_acceptance_action_rows_then_current_head_direct_evidence_then_durable_receipts_then_release_gate"
+            ),
+            "accepted_evidence_classes": (
+                "current_head_local_gate/remote_ci_review/provider_call_ledger/model_ledger/"
+                "browser_qa/worker_storage_package_evidence/safe_legacy_ux_observation"
+            ),
+            "forbidden_closeout_sources": "usable_path_checkpoint/mock/matrix/sanitizer/local_receipt/docs_config_only",
+            "first_reentry_action": (
+                "select_one_ltg_from_ltg_next_acceptance_action_rows_and_collect_safe_direct_evidence_for_current_head"
+            ),
+            "p6_current_status": "reentry_gate_visible_no_ltg_strict_closeout_claim",
         },
     ]
     for row in handoff_rows:

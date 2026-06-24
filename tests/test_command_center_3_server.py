@@ -836,6 +836,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(handoff_rows["P6"]["strict_closeout"], "0/14")
         self.assertEqual(handoff_rows["P6"]["strict_closeout_remaining_count"], 14)
         self.assertIn("不能从可用化 checkpoint 直接关闭", handoff_rows["P6"]["strict_closeout_handoff"])
+        self.assertEqual(
+            handoff_rows["P6"]["strict_closeout_reentry_gate"],
+            "p6_requires_current_head_direct_evidence_matrix_before_any_ltg_closeout",
+        )
+        self.assertEqual(
+            handoff_rows["P6"]["reentry_evidence_order"],
+            "ltg_next_acceptance_action_rows_then_current_head_direct_evidence_then_durable_receipts_then_release_gate",
+        )
+        self.assertEqual(
+            handoff_rows["P6"]["accepted_evidence_classes"],
+            "current_head_local_gate/remote_ci_review/provider_call_ledger/model_ledger/"
+            "browser_qa/worker_storage_package_evidence/safe_legacy_ux_observation",
+        )
+        self.assertEqual(
+            handoff_rows["P6"]["forbidden_closeout_sources"],
+            "usable_path_checkpoint/mock/matrix/sanitizer/local_receipt/docs_config_only",
+        )
+        self.assertEqual(
+            handoff_rows["P6"]["first_reentry_action"],
+            "select_one_ltg_from_ltg_next_acceptance_action_rows_and_collect_safe_direct_evidence_for_current_head",
+        )
+        self.assertEqual(
+            handoff_rows["P6"]["p6_current_status"],
+            "reentry_gate_visible_no_ltg_strict_closeout_claim",
+        )
         self.assertFalse(any(row["can_close_ltg_from_handoff"] for row in handoff_rows.values()))
         self.assertTrue(all(row["cache_only_readback"] for row in handoff_rows.values()))
         self.assertFalse(any(row["creates_task_from_get"] for row in handoff_rows.values()))
