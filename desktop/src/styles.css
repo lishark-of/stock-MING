@@ -1118,6 +1118,34 @@ pre {
   margin-bottom: 8px;
 }
 
+.developer-audit-details {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin: 12px 0;
+  padding: 8px 10px;
+}
+
+.developer-audit-details:not([open]) {
+  opacity: 0.78;
+}
+
+.developer-audit-details summary {
+  color: #475569;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.developer-audit-details[open] {
+  opacity: 1;
+}
+
+.developer-audit-details[open] summary {
+  margin-bottom: 8px;
+}
+
 .risk-note {
   border-left: 3px solid #2563eb;
   padding-left: 10px;

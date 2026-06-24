@@ -2280,14 +2280,14 @@ export default function CandidateRadar() {
           <p className="risk-note">优先读取服务端 ordinary_tushare_first_chain_rows：输入只做本地校验，确认按钮才创建 Tushare-first POST task，回放只读 cache / ledger / packet。</p>
           <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
         </div>
-        <div aria-label="candidate radar ordinary p2 p3 replay checklist">
-          <h3>P2/P3 回放清单</h3>
-          <p className="risk-note">确认后先看这张只读索引：确认回执、任务回放、数据接口和 P3 结果速读都来自本地 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek。</p>
-          <DataLineageTable rows={quantProjectionReadbackIndexRows} />
-        </div>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p1 p2 detail readback">
           <summary>P1/P2 细节回放</summary>
           <p className="risk-note">一屏行动摘要已经覆盖普通下一步；确认链路、P1 路径和 P2 三面核对默认收起，需要排查时再展开。</p>
+        <div aria-label="candidate radar ordinary p2 p3 replay checklist">
+          <h3>P2/P3 回放清单</h3>
+          <p className="risk-note">确认后这张只读索引仅作为排查材料：确认回执、任务回放、数据接口和 P3 结果速读都来自本地 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek。</p>
+          <DataLineageTable rows={quantProjectionReadbackIndexRows} />
+        </div>
         <div aria-label="candidate radar ordinary confirmed chain quick read">
           <h3>确认后链路速读</h3>
           <p className="risk-note">普通用户先看这张确认后链路速读：确认按钮、Tushare-first、P2 三面、P3 结果入口按同一条本地链路回放。</p>
@@ -2558,11 +2558,11 @@ export default function CandidateRadar() {
           <div id="next" aria-label="quant projection ordinary explainable result readback">
             <h3>解释结果清单</h3>
             <p className="risk-note">普通入口只回放数据来源、量化推演、次日图谱和安全边界；原始 receipt、prompt 或审计字段仍下沉在详情中。</p>
-            <div aria-label="quant projection ordinary readback index">
-              <h3>P2/P3 回放清单</h3>
+            <details className="developer-audit-details" aria-label="quant projection ordinary readback index">
+              <summary>P2/P3 回放索引</summary>
               <p className="risk-note">读取本地 packet 回放索引：确认回执、任务回放、数据接口和 P3 结果速读都只做本地回放，不创建 task。</p>
               <DataLineageTable rows={quantProjectionReadbackIndexRows} />
-            </div>
+            </details>
             <div aria-label="quant projection ordinary explainable result quick read">
               <h3>P3 结果速读</h3>
               <div aria-label="quant projection ordinary p3 result summary strip">
