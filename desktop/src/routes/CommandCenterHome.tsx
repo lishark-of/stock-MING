@@ -325,6 +325,7 @@ export default function CommandCenterHome() {
         }
       ];
   const candidateQuantInterpretation = (candidates.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantResultCheckpoint = (candidates.search_quant_projection_result_checkpoint as Record<string, unknown> | undefined) ?? {};
   const candidateQuantQuickRows = (candidateQuantInterpretation.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantCheckpointRows = (candidateQuantInterpretation.ordinary_result_checkpoint_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const dailyCommandExplainableResultLabel = String(
@@ -371,6 +372,18 @@ export default function CommandCenterHome() {
   const dailyCommandP3CheckpointLabel = candidateQuantCheckpointRows.length
     ? `P3 检查点 ${String(candidateQuantCheckpointRows.length)} 项可回放`
     : "等待 CandidateRadar P3 结果检查点";
+  const dailyCommandP3OneGlanceStatus = String(
+    candidateQuantResultCheckpoint.status ?? candidateQuantInterpretation.ordinary_result_status ?? "waiting_confirm"
+  );
+  const dailyCommandP3OneGlanceSource = String(
+    candidateQuantResultCheckpoint.evidence_source ?? "CandidateRadar cache / ledger / packet"
+  );
+  const dailyCommandP3OneGlanceMissingEvidence = Array.isArray(candidateQuantResultCheckpoint.missing_evidence)
+    ? candidateQuantResultCheckpoint.missing_evidence.map(String).join(" / ")
+    : String(candidateQuantResultCheckpoint.missing_evidence ?? "等待 P3 checkpoint 回放待补缺口");
+  const dailyCommandP3OneGlanceSafeFields = Array.isArray(candidateQuantResultCheckpoint.safe_explanation_fields)
+    ? candidateQuantResultCheckpoint.safe_explanation_fields.map(String).join(" / ")
+    : "source / gap / next_step / safety_summary";
   const dailyCommandConfirmOutcomeRows = candidateQuantConfirmOutcomeRows.length
     ? candidateQuantConfirmOutcomeRows.map((row) => ({
         确认结果: String(row["速读项"] ?? row.outcome_key ?? "确认结果"),
@@ -1175,6 +1188,24 @@ export default function CommandCenterHome() {
         </div>
         {dailyCommandLatestTaskId ? <TaskStatusPanel taskId={dailyCommandLatestTaskId} /> : null}
         <p className="risk-note">本卡只读 `/api/tasks` 和具体 task 状态；不会补调 Tushare、DeepSeek 或 GitHub，也不会真实交易或修改 strategy action。</p>
+      </PacketCard>
+      <PacketCard title="P3 可解释结果一眼读懂" subtitle="结论、来源、缺口、下一步和安全边界；只读 CandidateRadar checkpoint" status={dailyCommandP3OneGlanceStatus}>
+        <MetricGrid
+          items={[
+            { label: "可读结论", value: dailyCommandExplainableResultLabel, tone: candidateQuantResultCheckpoint.ordinary_result_readable === true ? "good" : "warn" },
+            { label: "数据来源", value: dailyCommandP3OneGlanceSource, tone: candidateQuantResultCheckpoint.provider_data_source_verified === true ? "good" : "warn" },
+            { label: "待补缺口", value: dailyCommandP3OneGlanceMissingEvidence || "暂无额外缺口", tone: dailyCommandP3OneGlanceMissingEvidence ? "warn" : "good" },
+            { label: "下一步", value: dailyCommandExplainableResultNext },
+            { label: "安全字段", value: dailyCommandP3OneGlanceSafeFields, tone: "good" },
+            { label: "边界", value: dailyCommandExplainableResultBoundary, tone: "good" }
+          ]}
+        />
+        <div className="actions" aria-label="daily command p3 one glance actions">
+          <a href="#candidates" title="切换到下一票雷达；只读查看 P3 结果速读" aria-label="open candidate radar p3 one glance">下一票雷达结果</a>
+          <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor p3 one glance">股票量化推演</a>
+          <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session p3 one glance">次日图谱</a>
+        </div>
+        <p className="risk-note">这张卡只读 `search_quant_projection_result_checkpoint` 和 CandidateRadar 本地 cache；不会创建 task、不会调用 DeepSeek、不会交易或修改 strategy action。</p>
       </PacketCard>
       <PacketCard title="今日作战台摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={dailyCommandStatusLabel}>
         <MetricGrid
