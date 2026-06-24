@@ -99,11 +99,23 @@ class BackendOfflineNoticeGuidanceTests(unittest.TestCase):
             root / "desktop" / "src" / "components" / "PageStateBanner.tsx"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('import { BACKEND_OFFLINE_ERROR } from "../api/client";', page_state)
-        self.assertIn("const isBackendOffline = error.includes(BACKEND_OFFLINE_ERROR)", page_state)
+        self.assertIn('import { useEffect, useState } from "react";', page_state)
+        self.assertIn('import { BACKEND_OFFLINE_ERROR, getHealth } from "../api/client";', page_state)
+        self.assertIn("const isBackendOffline = Boolean(error?.includes(BACKEND_OFFLINE_ERROR))", page_state)
         self.assertIn("本地后端未连接；请按上方步骤使用本地启动器恢复连接。", page_state)
+        self.assertIn("const BACKEND_RECONNECT_POLL_MS = 3000", page_state)
+        self.assertIn("const BACKEND_RECONNECT_MAX_ATTEMPTS = 20", page_state)
+        self.assertIn("command_center_3_backend_reconnect_once", page_state)
+        self.assertIn("void getHealth()", page_state)
+        self.assertIn('String(res.data?.status ?? "") === "ok"', page_state)
+        self.assertIn("window.location.reload()", page_state)
+        self.assertIn('data-backend-reconnect-status={reconnectStatus}', page_state)
+        self.assertIn("每 3 秒只读检查本机 FastAPI /health", page_state)
+        self.assertIn("external_calls_triggered=false，不创建 task", page_state)
         self.assertIn(": error}</p>", page_state)
         self.assertNotIn("<p>{error}</p>", page_state)
+        self.assertNotIn("postBootstrapLiveStartup", page_state)
+        self.assertNotIn("postCandidateRadarQuantProjection", page_state)
 
     def test_p0_health_and_desktop_pages_surface_backend_offline_recovery(self):
         root = Path(__file__).resolve().parents[1]
