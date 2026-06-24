@@ -51,6 +51,8 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("quantProjectionSubmitErrorLabel", ordinary_quant_slice)
         self.assertIn("quantProjectionSubmitFailureMessage", source)
         self.assertIn("quantProjectionP1ConfirmGateRows", source)
+        self.assertIn("requires_p0_gate_ready: true", source)
+        self.assertIn('p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "candidate_cache_ready"]', source)
         self.assertIn(
             'aria-label="quant projection ordinary p1 p2 engineering details"',
             ordinary_quant_slice,
@@ -270,6 +272,18 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertNotIn("operator_approved", submit_slice)
         self.assertIn("include_deepseek: false", submit_slice)
         self.assertIn("user_approved: true", submit_slice)
+        self.assertIn("p0_confirm_gate_evidence", submit_slice)
+        self.assertIn('schema_version: "candidate_radar_p0_confirm_gate.v1"', submit_slice)
+        self.assertIn("p0_ready: quantProjectionP0Ready", submit_slice)
+        self.assertIn("fastapi_cache_get_ready: !loading && !error", submit_slice)
+        self.assertIn("bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady", submit_slice)
+        self.assertIn("candidate_cache_ready: candidateRadarCacheReady", submit_slice)
+        self.assertIn('candidate_cache_status: String(cache.status ?? "missing")', submit_slice)
+        self.assertIn('bootstrap_packet_key: String(bootstrapStatus.packet_key ?? "missing")', submit_slice)
+        self.assertIn("creates_task_only_after_button: true", submit_slice)
+        self.assertIn("react_render_external_calls: false", submit_slice)
+        self.assertIn("get_cache_external_calls: false", submit_slice)
+        self.assertIn("contains_secret: false", submit_slice)
         self.assertIn("refreshCache();", submit_slice)
         self.assertIn("任务接收后立即回读本地 cache receipt", ordinary_quant_slice)
         self.assertNotIn("fetch(", source)

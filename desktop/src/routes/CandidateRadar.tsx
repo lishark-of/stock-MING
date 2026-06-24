@@ -111,6 +111,8 @@ export default function CandidateRadar() {
     include_tushare_first: true,
     include_deepseek: false,
     deepseek_policy: "skipped_until_governed_executor",
+    requires_p0_gate_ready: true,
+    p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "candidate_cache_ready"],
     writeback_surfaces: ["cache", "call_ledger", "packet"],
     does_not_execute_trades: true,
     does_not_modify_strategy_action: true,
@@ -152,6 +154,19 @@ export default function CandidateRadar() {
       include_deepseek: false,
       user_approved: true,
       requested_by: "candidate_radar_page",
+      p0_confirm_gate_evidence: {
+        schema_version: "candidate_radar_p0_confirm_gate.v1",
+        p0_ready: quantProjectionP0Ready,
+        fastapi_cache_get_ready: !loading && !error,
+        bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady,
+        candidate_cache_ready: candidateRadarCacheReady,
+        candidate_cache_status: String(cache.status ?? "missing"),
+        bootstrap_packet_key: String(bootstrapStatus.packet_key ?? "missing"),
+        creates_task_only_after_button: true,
+        react_render_external_calls: false,
+        get_cache_external_calls: false,
+        contains_secret: false
+      },
       ordinary_confirm_chain_contract: quantProjectionP1ConfirmPayloadContract
     }).then((res) => {
       const acceptedTaskId = String(res.data?.task_id ?? res.data?.task?.task_id ?? "");
