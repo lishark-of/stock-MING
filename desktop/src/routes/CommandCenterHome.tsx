@@ -689,6 +689,29 @@ export default function CommandCenterHome() {
       边界: "P0-P5 可用化 checkpoint 不是 14 LTG 完成；mock、matrix、sanitizer、local receipt 不能关闭 LTG"
     }
   ];
+  const dailyCommandP6StrictCloseoutReentryRows = [
+    {
+      回归项: "1. 可用化 checkpoint",
+      当前状态: "P0-P5 ordinary path 已前置给使用者",
+      用户下一步: "继续按一键启动、搜票确认、小数据写回和基础图谱使用",
+      入口: "今日作战台 / 下一票雷达 / 股票量化推演",
+      边界: "P0-P5 可用化 checkpoint 不是 14 LTG 完成"
+    },
+    {
+      回归项: "2. strict closeout 入口",
+      当前状态: "strict closeout 仍是 0/14；只按 current-head direct evidence 关闭",
+      用户下一步: "打开迁移状态页，按 LTG next acceptance action rows 逐项补证",
+      入口: "#migration",
+      边界: "mock、matrix、sanitizer、local receipt 不能关闭 LTG"
+    },
+    {
+      回归项: "3. 任务证据回放",
+      当前状态: "cache / ledger / packet 可作为可审计回放，不等于 production acceptance",
+      用户下一步: "查看任务目录和回放，只确认本地证据是否完整",
+      入口: "#tasks",
+      边界: "不声明 release ready、不触发 provider/model、不改变 strategy action"
+    }
+  ];
   const dailyCommandUsablePathStageRailSteps = [
     {
       key: "p0",
@@ -951,6 +974,15 @@ export default function CommandCenterHome() {
             ))}
           </div>
           <DataLineageTable rows={dailyCommandUsableShortestPathRows} />
+        </div>
+        <div aria-label="daily command p6 strict closeout reentry">
+          <h3>P6 strict closeout 回归入口</h3>
+          <p className="risk-note">P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence、CI、浏览器、provider、worker、storage 和 package gate 逐项补证。</p>
+          <DataLineageTable rows={dailyCommandP6StrictCloseoutReentryRows} />
+          <div className="actions" aria-label="daily command p6 reentry links">
+            <a href="#migration" title="切换到迁移状态页；只读查看 14 LTG direct evidence 缺口" aria-label="open migration status for strict closeout reentry">查看 14 LTG 迁移状态</a>
+            <a href="#tasks" title="切换到任务目录；只读回放 task/cache/ledger/packet 证据" aria-label="open task catalog for evidence replay">查看任务和证据回放</a>
+          </div>
         </div>
         <div aria-label="daily command local connection readback">
           <h3>本地联通四段回读</h3>
