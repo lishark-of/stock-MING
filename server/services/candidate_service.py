@@ -14232,6 +14232,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
 
     final_step = "candidate_radar_quant_projection_ready"
     final_warning = "candidate_radar_quant_projection_ready_no_external_call"
+    tushare_first_chain_requested = False
     if projection_receipt.get("symbol_valid") is not True:
         final_step = "candidate_radar_quant_projection_blocked_invalid_symbol"
         final_warning = "candidate_radar_quant_projection_blocked_invalid_symbol_no_external_call"
@@ -14241,6 +14242,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
             or _coerce_bool(payload_safe.get("operator_approved"), False)
         )
         if auto_chain_requested and payload_safe.get("include_tushare") is True:
+            tushare_first_chain_requested = True
             chain_payload = {
                 "scan_mode": QUANT_PROJECTION_SCAN_MODE,
                 "symbol": projection_receipt.get("symbol"),
@@ -14300,8 +14302,10 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                 else:
                     final_step = "candidate_radar_quant_projection_tushare_first_chain_blocked_execution_request"
                     final_warning = final_step
+    latest_packet_for_task_ledger: Mapping[str, Any] = packet
     try:
         latest_packet = _read_persisted_packet() or packet
+        latest_packet_for_task_ledger = latest_packet
         original_quant_receipt = _as_dict(packet.get("search_quant_projection_receipt"))
         original_quant_ledger = [
             row for row in _as_list(original_quant_receipt.get("call_ledger")) if isinstance(row, dict)
@@ -14333,12 +14337,36 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
     except Exception:
         ledger["task_readback_write_failed"] = True
         ledger["error_message_safe"] = "candidate_radar_quant_projection_task_readback_write_failed"
+    task_call_ledger = [ledger]
+    if tushare_first_chain_requested:
+        seen_ledger_rows = {
+            json.dumps(_safe_value(ledger), ensure_ascii=False, sort_keys=True, default=str)
+        }
+        delegated_call_ledger = [
+            row
+            for row in _as_list(latest_packet_for_task_ledger.get("call_ledger"))
+            if isinstance(row, dict)
+        ]
+        for row in delegated_call_ledger:
+            row_fingerprint = json.dumps(_safe_value(row), ensure_ascii=False, sort_keys=True, default=str)
+            if row_fingerprint in seen_ledger_rows:
+                continue
+            task_call_ledger.append(dict(row))
+            seen_ledger_rows.add(row_fingerprint)
+        provider_success_count = sum(
+            1
+            for row in task_call_ledger
+            if row.get("tushare_called") is True and row.get("call_status") == "success"
+        )
+        ledger["delegated_tushare_first_call_ledger_replayed"] = len(task_call_ledger) > 1
+        ledger["delegated_tushare_first_call_ledger_count"] = max(0, len(task_call_ledger) - 1)
+        ledger["delegated_tushare_first_provider_api_success_count"] = provider_success_count
     return task_service.update_task_status(
         task["task_id"],
         status="success",
         progress=1.0,
         current_step=final_step,
-        call_ledger=[ledger],
+        call_ledger=task_call_ledger,
         warning=final_warning,
     ) or task
 

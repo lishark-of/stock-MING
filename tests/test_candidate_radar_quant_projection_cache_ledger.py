@@ -144,6 +144,26 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             task["current_step"],
             "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
         )
+        expected_apis = ["trade_cal", "daily", "daily_basic", "moneyflow"]
+        task_provider_ledger = [
+            row for row in task["call_ledger"] if row.get("api") in expected_apis
+        ]
+        self.assertEqual([row["api"] for row in task_provider_ledger], expected_apis)
+        self.assertTrue(task["call_ledger"][0]["delegated_tushare_first_call_ledger_replayed"])
+        self.assertEqual(task["call_ledger"][0]["delegated_tushare_first_call_ledger_count"], 5)
+        self.assertEqual(task["call_ledger"][0]["delegated_tushare_first_provider_api_success_count"], 4)
+        self.assertTrue(
+            any(
+                row["api"] == "local_candidate_radar_quant_projection_provider_model_acceptance"
+                for row in task["call_ledger"]
+            )
+        )
+        self.assertTrue(task["external_calls_triggered"])
+        self.assertTrue(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
         confirm_contract = task["payload_safe"]["ordinary_confirm_chain_contract"]
         self.assertEqual(
             confirm_contract["schema_version"],
@@ -180,7 +200,6 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(receipt["deepseek_called"])
         self.assertFalse(receipt["production_quant_projection_complete"])
 
-        expected_apis = ["trade_cal", "daily", "daily_basic", "moneyflow"]
         packet_provider_ledger = [
             row for row in packet["call_ledger"] if row.get("api") in expected_apis
         ]
