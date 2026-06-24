@@ -47,6 +47,34 @@ export default function DesktopShellPreflight() {
   const frontendBackendAutoLinkRows = rows(cache.frontend_backend_auto_link_rows);
   const p0LocalConnectionRows = rows(cache.p0_local_connection_rows);
   const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
+  const p0OrdinaryOneScreenRows = rows(cache.p0_ordinary_one_screen_rows).length
+    ? rows(cache.p0_ordinary_one_screen_rows)
+    : [
+        {
+          行动: "1. 打开或恢复一键入口",
+          当前状态: p0ConnectionReady ? "ready：启动器合同完整" : "check：先恢复启动器入口",
+          用户下一步: "页面未打开时双击本地一键入口；页面已打开时继续看四段联通。",
+          证据: String(oneClickStartupSummary.what_user_should_click_next ?? "scripts/start_command_center_3.command"),
+          入口: "scripts/start_command_center_3.command",
+          边界: "用户运行本地启动器才会启动或复用 FastAPI/Vite；GET preflight 和 React render 不启动服务。"
+        },
+        {
+          行动: "2. 看四段联通",
+          当前状态: p0ConnectionReady ? "4/4 ready" : "check",
+          用户下一步: "4/4 ready 后进入下一票雷达；少于 4/4 时按失败段看日志和端口。",
+          证据: "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
+          入口: "#desktop",
+          边界: "本行只读 desktop preflight cache；不探测当前运行时、不创建 task、不调用 provider/model。"
+        },
+        {
+          行动: "3. 进入 P1 确认",
+          当前状态: p0ConnectionReady ? "ready：可以进入下一票雷达" : "blocked：P0 未 ready，先留在预检页",
+          用户下一步: p0ConnectionReady ? "进入下一票雷达，输入股票代码；确认按钮才触发 Tushare-first。" : "留在桌面壳预检，按四段恢复。",
+          证据: "p0_current_next_action_rows",
+          入口: p0ConnectionReady ? "#candidates" : "#desktop",
+          边界: "页面切换和输入保持静默；只有确认按钮创建 Tushare-first POST task，DeepSeek 继续 governed/skipped。"
+        }
+      ];
   const p0Startup30sQuickReadRows = rows(cache.p0_startup_30s_quick_read_rows).length
     ? rows(cache.p0_startup_30s_quick_read_rows)
     : [
@@ -419,6 +447,11 @@ export default function DesktopShellPreflight() {
         <div aria-label="p0 ordinary one click readiness">
           <h3>一键启动就绪</h3>
           <MetricGrid items={p0StartupReadyMetrics} />
+        </div>
+        <div aria-label="p0 ordinary one screen action readback">
+          <h3>P0 一屏行动</h3>
+          <p className="risk-note">普通用户先看这 3 行：打开或恢复一键入口、确认四段联通、再去下一票雷达；这张表只读回放，不启动服务、不创建 task。</p>
+          <DataLineageTable rows={p0OrdinaryOneScreenRows} />
         </div>
         <div aria-label="p0 startup 30s quick read">
           <h3>启动后 30 秒速读</h3>
