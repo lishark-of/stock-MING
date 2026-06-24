@@ -115,7 +115,7 @@ export default function CandidateRadar() {
     include_deepseek: false,
     deepseek_policy: "skipped_until_governed_executor",
     requires_p0_gate_ready: true,
-    p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "p0_stability_check", "candidate_cache_ready"],
+    p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "p0_stability_check", "candidate_cache_get_readable"],
     writeback_surfaces: ["cache", "call_ledger", "packet"],
     does_not_execute_trades: true,
     does_not_modify_strategy_action: true,
@@ -174,7 +174,7 @@ export default function CandidateRadar() {
         bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady,
         desktop_preflight_ready: desktopPreflightReady,
         p0_stability_check_ready: desktopP0StabilityReady,
-        candidate_cache_ready: candidateRadarCacheReady,
+        candidate_cache_ready: candidateRadarCacheGetReadable,
         candidate_cache_status: String(cache.status ?? "missing"),
         bootstrap_packet_key: String(bootstrapStatus.packet_key ?? "missing"),
         desktop_preflight_packet_key: String(desktopPreflight.packet_key ?? "missing"),
@@ -552,6 +552,7 @@ export default function CandidateRadar() {
     live_full: "深度实时投研预留"
   }[String(bootstrapStatus.mode ?? "cache_only")] ?? "未知运行模式";
   const candidateRadarCacheReady = cache.status === "ready";
+  const candidateRadarCacheGetReadable = !loading && !error && Boolean(cache.status);
   const bootstrapRuntimeModeReady =
     bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet";
   const desktopOneClickStartupSummary =
@@ -570,8 +571,12 @@ export default function CandidateRadar() {
     bootstrapRuntimeModeReady &&
     desktopPreflightReady &&
     desktopP0StabilityReady &&
-    candidateRadarCacheReady;
-  const ordinaryCacheSourceLabel = candidateRadarCacheReady ? "本地候选缓存可用" : "等待本地候选缓存";
+    candidateRadarCacheGetReadable;
+  const ordinaryCacheSourceLabel = candidateRadarCacheReady
+    ? "本地候选缓存可用"
+    : candidateRadarCacheGetReadable
+      ? `候选 cache GET 可读：${String(cache.status)}`
+      : "等待本地候选 cache GET";
   const ordinaryTushareSourceLabel = bootstrapLiveLight.tushare_on_open === true ? "live_light 已配置；仍需确认按钮触发 Tushare-first task" : "手动触发或关闭";
   const ordinaryDeepSeekSourceLabel =
     bootstrapLiveLight.deepseek_on_open === true ? "待 governed executor；不作为数据源或动作" : "手动触发或关闭";
@@ -646,13 +651,15 @@ export default function CandidateRadar() {
         ? "本地 FastAPI 未联通；先停在 P0 恢复"
         : candidateRadarCacheReady
           ? "GET candidate radar cache ready"
+          : candidateRadarCacheGetReadable
+            ? `GET candidate radar cache reachable: ${String(cache.status)}`
           : loading
             ? "正在读取本地 cache"
             : cache.status
               ? `candidate cache 未 ready：${String(cache.status)}`
               : "等待本地 cache",
       证据: `candidates=${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ") || API_BASE_DISPLAY_URL}`,
-      下一步: error || !candidateRadarCacheReady ? "打开一键启动预检或系统健康页，按四段 ready 恢复" : "继续确认 bootstrap runtime-mode packet",
+      下一步: error || !candidateRadarCacheGetReadable ? "打开一键启动预检或系统健康页，按四段 ready 恢复" : "继续确认 bootstrap runtime-mode packet",
       边界: "前端只尝试本机 FastAPI 候选地址；失败只显示离线保护，不启动服务、不创建 task"
     },
     {
@@ -673,7 +680,7 @@ export default function CandidateRadar() {
       联通项: "P0 stability check",
       当前状态: desktopP0StabilityReady ? "P0 stability dwell 已通过" : "等待 P0 stability check",
       证据: "one_click_startup_summary + p0_local_connection_receipt",
-      下一步: desktopP0StabilityReady ? "继续确认 candidate cache" : "先回一键启动预检恢复四段 ready + P0 stability dwell",
+      下一步: desktopP0StabilityReady ? "继续确认 candidate cache GET 可读" : "先回一键启动预检恢复四段 ready + P0 stability dwell",
       边界: "stability check 只读回放启动器复读结果；不启动服务、不创建 task、不调用 provider/model"
     },
     {
@@ -740,7 +747,7 @@ export default function CandidateRadar() {
   const quantProjectionDisabledReason = quantProjectionSubmitting
     ? "任务提交中：正在创建 Tushare-first POST task；请等待本地任务编号回写，避免重复提交。"
     : !quantProjectionP0Ready
-    ? "按钮不可用原因：P0 前后端联通未通过；先让 FastAPI、bootstrap status、desktop preflight、P0 stability 和 candidate cache 变绿。"
+    ? "按钮不可用原因：P0 前后端联通未通过；先让 FastAPI、bootstrap status、desktop preflight、P0 stability 和 candidate cache GET 可读。"
     : quantProjectionTaskAlreadyAcceptedForInput
     ? "按钮不可用原因：当前标的已有本地 task id；先看 TaskStatusPanel，成功后刷新 cache 回放。"
     : quantProjectionCanSubmit
@@ -781,7 +788,7 @@ export default function CandidateRadar() {
     ? "确认代码后点击生成 3.0 量化推演；按钮门控 Tushare-first POST task / worker 推进，DeepSeek 等 governed executor"
     : "先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演";
   const quantProjectionSubmitHint = !quantProjectionP0Ready
-    ? "P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight、P0 stability 和 candidate cache；本页不会从输入或渲染创建 Tushare-first task。"
+    ? "P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight、P0 stability 和 candidate cache GET；本页不会从输入或渲染创建 Tushare-first task。"
     : quantProjectionSubmitting
       ? "正在提交 Tushare-first 后台链；请等待本地 task id，页面不会重复创建第二个 task。"
       : quantProjectionTaskReceiptInputMismatch
@@ -1419,7 +1426,7 @@ export default function CandidateRadar() {
           {
             恢复步骤: "P0 本地联通恢复",
             当前状态: "确认任务未创建；需要先恢复本地后端连接",
-            用户下一步: "先打开一键启动预检或运行 check-only 诊断，确认 FastAPI、bootstrap status、desktop preflight、candidate cache 四段 ready 后，再回到本页重新点击确认。",
+            用户下一步: "先打开一键启动预检或运行 check-only 诊断，确认 FastAPI、bootstrap status、desktop preflight 和 candidate cache GET 可读后，再回到本页重新点击确认。",
             候选地址: API_BASE_CANDIDATE_DISPLAY_URLS.join(" / "),
             "check-only": "scripts/check_command_center_3.command",
             启动器: "scripts/start_command_center_3.command",
