@@ -332,6 +332,22 @@ export default function DesktopShellPreflight() {
   const p0OrdinaryPrimaryActionBoundary = p0ConnectionReady
     ? "只切换到下一票雷达；输入代码不外联，点击确认才创建 Tushare-first POST task。"
     : "只查看本页恢复步骤和日志指引；React render 不启动 FastAPI/Vite、不创建 task、不调用 provider/model。";
+  const p0OrdinaryReadyGateRows = [
+    {
+      闸门: "P0 可继续",
+      当前状态: p0ConnectionReady ? "ready：四段联通完成，可以进入 P1 搜票确认" : "check：先留在一键启动预检恢复四段联通",
+      用户下一步: p0ConnectionReady ? "点击“去下一票雷达确认代码”，输入股票代码后再点确认按钮" : "按 FastAPI / bootstrap status / desktop preflight cache / React/Vite 失败段排障",
+      证据: "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
+      边界: "这只是本地前后端联通闸门；不调用 Tushare/DeepSeek/GitHub，不创建 task，不代表 release ready 或 14 LTG 完成。"
+    },
+    {
+      闸门: "P1 进入条件",
+      当前状态: p0ConnectionReady ? "允许切换到下一票雷达" : "未满足：不要进入 P1 投研入口",
+      用户下一步: p0ConnectionReady ? "页面切换和输入保持静默；只有确认按钮触发 Tushare-first POST task" : "先让四段联通 ready，再回到今日作战台或下一票雷达",
+      证据: "p0_local_connection_receipt + one_click_startup_summary",
+      边界: "预检页只读 GET /api/desktop/preflight-cache；不会启动 FastAPI/Vite、写配置、写 cache 或真实交易。"
+    }
+  ];
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -357,6 +373,11 @@ export default function DesktopShellPreflight() {
         <div aria-label="p0 ordinary one click readiness">
           <h3>一键启动就绪</h3>
           <MetricGrid items={p0StartupReadyMetrics} />
+        </div>
+        <div aria-label="p0 ordinary ready gate">
+          <h3>P0 可继续闸门</h3>
+          <p className="risk-note">普通用户先看这个闸门：四段联通 ready 才去下一票雷达；未 ready 就留在预检页按失败段恢复。</p>
+          <DataLineageTable rows={p0OrdinaryReadyGateRows} />
         </div>
         <p>下一步：{String(oneClickStartupSummary.what_user_should_click_next ?? "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。")}</p>
         <p>成功条件：{String(oneClickStartupSummary.success_condition ?? "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，/api/desktop/preflight-cache 必须返回一键启动 packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。")}</p>
