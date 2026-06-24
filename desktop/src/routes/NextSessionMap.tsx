@@ -153,6 +153,7 @@ export default function NextSessionMap() {
   const nextSessionCacheSourceLabel = packet.status === "cache_missing" ? "暂无缓存" : String(packet.cache_source ?? "本地缓存");
   const nextSessionTushareSourceLabel = chartSummary.uses_real_daily_close === true ? "真实 daily close 已在本地缓存" : "待 Tushare/cache 补证";
   const nextSessionDeepSeekSourceLabel = chartPayload?.deepseek_status === "success" ? "已有本地解释记录" : "未调用或待 governed executor";
+  const nextSessionP5GovernanceLabel = "P5 解释治理：DeepSeek 单独补证，不阻塞 P3 图谱复核";
   const nextSessionPendingSourceLabel = Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "生产替代证据仍有 pending" : "当前图谱摘要未标记 pending";
   const nextSessionDegradedSourceLabel = chartSummary.is_exact_next_session_packet === true ? "精确 packet 可用" : "非精确 packet 时只显示 legacy/cache 投影";
   const nextSessionMissingEvidence = [
@@ -518,6 +519,7 @@ export default function NextSessionMap() {
           { label: "本地缓存", value: nextSessionCacheSourceLabel },
           { label: "数据链", value: nextSessionTushareSourceLabel },
           { label: "解释状态", value: nextSessionDeepSeekSourceLabel },
+          { label: "P5 解释治理", value: nextSessionP5GovernanceLabel, tone: "good" },
           { label: "待补证据", value: nextSessionPendingSourceLabel, tone: Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "warn" : "good" },
           { label: "降级提示", value: nextSessionDegradedSourceLabel, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "缺少证据", value: nextSessionMissingEvidence, tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn" },
@@ -541,7 +543,7 @@ export default function NextSessionMap() {
         state={nextSessionOrdinaryReplayRailState}
         steps={nextSessionOrdinaryReplayRailSteps}
       />
-      <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek，DeepSeek governed executor 继续收起为 P5 单独补证。</p>
+      <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek，P5 解释治理继续收起为单独补证。</p>
       <div aria-label="next session upstream one screen actions">
         <h3>上游确认一屏行动</h3>
         <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成图谱页上游速读；本页只读回放，不创建 task、不调用模型。</p>
@@ -571,10 +573,10 @@ export default function NextSessionMap() {
         <DataLineageTable rows={ordinaryInterpretationActionRows} />
       </div>
       <details className="developer-audit-details" aria-label="next session ordinary p5 governance details">
-        <summary>P5 DeepSeek 单独补证状态</summary>
+        <summary>P5 解释治理单独补证状态</summary>
         <p className="risk-note">普通主线先复核 P3 图谱来源、路径、参考线和 operation_zones；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
         <div aria-label="next session ordinary deepseek governance">
-          <h3>DeepSeek 单独治理状态</h3>
+          <h3>解释治理单独补证状态</h3>
           <p className="risk-note">DeepSeek 解释单独补证；基础图谱先按本地 cache 回放，普通页不展示 prompt/output，也不让模型改写图谱或动作。</p>
           <DataLineageTable rows={ordinaryDeepSeekGovernanceRows} />
         </div>

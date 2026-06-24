@@ -53,8 +53,11 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "本地缓存"', summary_metric_slice)
         self.assertIn('label: "数据链"', summary_metric_slice)
         self.assertIn('label: "解释状态"', summary_metric_slice)
+        self.assertIn('label: "P5 解释治理"', summary_metric_slice)
         self.assertIn('label: "待补证据"', summary_metric_slice)
         self.assertIn('label: "降级提示"', summary_metric_slice)
+        self.assertIn("nextSessionP5GovernanceLabel", source_before_audit)
+        self.assertIn("P5 解释治理：DeepSeek 单独补证，不阻塞 P3 图谱复核", source_before_audit)
         for engineering_label in (
             'label: "cache"',
             'label: "Tushare"',
@@ -69,7 +72,7 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         handoff_start = ordinary_slice.index('aria-label="next session p3 result handoff quick read"')
         rail_slice = ordinary_slice[rail_start:handoff_start]
         self.assertIn("普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界", rail_slice)
-        self.assertIn("DeepSeek governed executor 继续收起为 P5 单独补证", rail_slice)
+        self.assertIn("P5 解释治理继续收起为单独补证", rail_slice)
         self.assertNotIn("DeepSeek 状态", rail_slice)
         upstream_start = ordinary_slice.index('aria-label="next session upstream one screen actions"')
         one_minute_start = ordinary_slice.index('aria-label="next session p3 one minute read"')
@@ -134,10 +137,10 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("先确认图谱是否可绘制，再读路径/参考线、操作区和缺口", ordinary_slice)
         self.assertIn("DataLineageTable rows={ordinaryInterpretationActionRows}", ordinary_slice)
         self.assertIn('aria-label="next session ordinary p5 governance details"', ordinary_slice)
-        self.assertIn("<summary>P5 DeepSeek 单独补证状态</summary>", ordinary_slice)
+        self.assertIn("<summary>P5 解释治理单独补证状态</summary>", ordinary_slice)
         self.assertIn("普通主线先复核 P3 图谱来源、路径、参考线和 operation_zones；DeepSeek governed executor 状态默认收起，只作为高级补证参考。", ordinary_slice)
         self.assertIn('aria-label="next session ordinary deepseek governance"', ordinary_slice)
-        self.assertIn("DeepSeek 单独治理状态", ordinary_slice)
+        self.assertIn("解释治理单独补证状态", ordinary_slice)
         self.assertIn("DeepSeek 解释单独补证；基础图谱先按本地 cache 回放", ordinary_slice)
         self.assertIn("DataLineageTable rows={ordinaryDeepSeekGovernanceRows}", ordinary_slice)
         self.assertIn('aria-label="next session ordinary chart review checklist"', ordinary_slice)
@@ -220,9 +223,9 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(ordinary_slice.index("三段结果回放"), ordinary_slice.index("图谱复核清单"))
         self.assertLess(ordinary_slice.index("三段结果回放"), ordinary_slice.index("解释性行动清单"))
         self.assertLess(ordinary_slice.index("解释性行动清单"), ordinary_slice.index('aria-label="next session ordinary p5 governance details"'))
-        self.assertLess(ordinary_slice.index('aria-label="next session ordinary p5 governance details"'), ordinary_slice.index("DeepSeek 单独治理状态"))
+        self.assertLess(ordinary_slice.index('aria-label="next session ordinary p5 governance details"'), ordinary_slice.index("解释治理单独补证状态"))
         self.assertLess(ordinary_slice.index('aria-label="next session ordinary p5 governance details"'), ordinary_slice.index("图谱复核清单"))
-        self.assertLess(ordinary_slice.index("DeepSeek 单独治理状态"), ordinary_slice.index("图谱复核清单"))
+        self.assertLess(ordinary_slice.index("解释治理单独补证状态"), ordinary_slice.index("图谱复核清单"))
         self.assertLess(ordinary_slice.index("解释性行动清单"), ordinary_slice.index("图谱复核清单"))
         self.assertLess(ordinary_slice.index("图谱复核清单"), ordinary_slice.index('aria-label="next session replay handoff actions"'))
 
