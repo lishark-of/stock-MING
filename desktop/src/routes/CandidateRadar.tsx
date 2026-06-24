@@ -2120,6 +2120,17 @@ export default function CandidateRadar() {
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
+        <div aria-label="candidate radar p1 direct confirmation handoff">
+          <h3>P1 直接确认入口</h3>
+          <p className="risk-note">先确认本地 FastAPI 已接上，然后跳到搜票确认区输入代码；这个入口只做本地锚点跳转，输入仍然静默，只有确认按钮会创建 Tushare-first POST task。</p>
+          <div className="actions" aria-label="candidate radar p1 direct confirmation actions">
+            <a
+              href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"}
+              aria-label="open p1 direct confirmation from radar first screen"
+            >{ordinaryPrimaryActionLabel}</a>
+            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress from candidate radar p1 handoff">查看任务进度</a>
+          </div>
+        </div>
         <div aria-label="candidate radar ordinary p0 frontend backend readiness">
           <h3>P0 前后端联通闸门</h3>
           <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode、desktop preflight 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>

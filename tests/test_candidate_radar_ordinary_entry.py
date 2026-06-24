@@ -89,6 +89,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinaryP1ConfirmPathRows", self.page)
         self.assertIn("ordinaryP1ToP3StageRailState", self.page)
         self.assertIn("ordinaryP1ToP3StageRailSteps", self.page)
+        self.assertIn('aria-label="candidate radar p1 direct confirmation handoff"', self.page)
+        self.assertIn("P1 直接确认入口", self.page)
+        self.assertIn("这个入口只做本地锚点跳转", self.page)
         self.assertIn("P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task", self.page)
         self.assertIn("P1 主路径：先输入股票代码；输入只做本地校验，确认按钮才创建 Tushare-first task", self.page)
         self.assertIn("P1 主路径只允许确认按钮创建 Tushare-first task", self.page)
@@ -113,7 +116,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         p6_detail_index = self.page.index('aria-label="candidate radar ordinary p6 strict closeout handoff"', p0_gate_index)
         action_slice_end = self.page.index('aria-label="candidate radar ordinary audit shortcuts"', next_user_actions_index)
         action_slice = self.page[primary_action_index:action_slice_end]
+        direct_handoff_index = self.page.index('aria-label="candidate radar p1 direct confirmation handoff"')
         self.assertLess(p0_gate_index, p0_handoff_index)
+        self.assertLess(direct_handoff_index, p0_gate_index)
         self.assertLess(p0_handoff_index, p1_to_p3_rail_index)
         self.assertLess(p0_gate_index, p1_to_p3_rail_index)
         self.assertLess(p1_to_p3_rail_index, primary_action_index)
@@ -295,6 +300,24 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("轻量实时后台任务", summary_slice)
         self.assertIn('{ label: "解释状态", value: ordinaryDeepSeekSourceLabel }', summary_slice)
         self.assertNotIn('DeepSeek", value: bootstrapLiveLight.deepseek_on_open === true ? "轻量实时后台任务"', summary_slice)
+
+    def test_candidate_radar_p1_direct_handoff_is_local_navigation_only(self):
+        summary_start = self.page.index('title="普通用户雷达摘要"')
+        summary_end = self.page.index('aria-label="candidate radar ordinary p0 frontend backend readiness"', summary_start)
+        direct = self.page[summary_start:summary_end]
+
+        self.assertIn('aria-label="candidate radar p1 direct confirmation handoff"', direct)
+        self.assertIn("P1 直接确认入口", direct)
+        self.assertIn("先确认本地 FastAPI 已接上", direct)
+        self.assertIn("跳到搜票确认区输入代码", direct)
+        self.assertIn("输入仍然静默", direct)
+        self.assertIn("只有确认按钮会创建 Tushare-first POST task", direct)
+        self.assertIn('aria-label="candidate radar p1 direct confirmation actions"', direct)
+        self.assertIn('href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"}', direct)
+        self.assertIn('href="#tasks"', direct)
+        self.assertNotIn("onClick=", direct)
+        self.assertNotIn("postCandidateRadarQuantProjection", direct)
+        self.assertNotIn("launchQuantProjection", direct)
 
     def test_candidate_radar_p1_to_p3_stage_rail_is_read_only_before_tables(self):
         summary_start = self.page.index('title="普通用户雷达摘要"')
