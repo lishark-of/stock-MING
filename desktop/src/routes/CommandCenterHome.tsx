@@ -350,6 +350,27 @@ export default function CommandCenterHome() {
     candidateQuantInterpretation.ordinary_result_boundary ??
       "可解释结果只从本地 cache / ledger / packet 回放；不会从首页创建 task、调用模型或生成交易动作。"
   );
+  const dailyCommandP3OneGlanceReadable =
+    candidateQuantResultCheckpoint.ordinary_result_readable === true ||
+    candidateQuantInterpretation.interpretation_ready === true ||
+    candidateQuantQuickRows.length > 0;
+  const dailyCommandP3OneGlanceProviderVerified =
+    candidateQuantResultCheckpoint.provider_data_source_verified === true ||
+    candidateQuantResultCheckpoint.uses_tushare_ledger === true ||
+    candidateQuantInterpretation.uses_tushare_ledger === true;
+  const dailyCommandP3OneGlanceEvidence = String(
+    candidateQuantInterpretation.ordinary_result_evidence ??
+      `source=${String(candidateQuantResultCheckpoint.evidence_source ?? "CandidateRadar cache / ledger / packet")}; missing=${String(candidateQuantResultCheckpoint.missing_evidence_count ?? 0)}`
+  );
+  const dailyCommandP3OneGlanceModelState =
+    candidateQuantResultCheckpoint.uses_deepseek_output === true ||
+    candidateQuantInterpretation.uses_deepseek_output === true
+      ? "检测到模型输出；需回 P5 governed executor 审核后再展示"
+      : String(
+          candidateQuantResultCheckpoint.deepseek_state ??
+            candidateQuantInterpretation.deepseek_governed_executor_status ??
+            "DeepSeek 未参与；等待 governed executor 单独补"
+        );
   const dailyCommandExplainableResultRows = candidateQuantQuickRows.length
     ? candidateQuantQuickRows.map((row) => ({
         速读项: String(row["结论"] ?? row.quick_read_item ?? "结果速读"),
@@ -385,7 +406,9 @@ export default function CommandCenterHome() {
     ? `P3 检查点 ${String(candidateQuantCheckpointRows.length)} 项可回放`
     : "等待 CandidateRadar P3 结果检查点";
   const dailyCommandP3OneGlanceStatus = String(
-    candidateQuantResultCheckpoint.status ?? candidateQuantInterpretation.ordinary_result_status ?? "waiting_confirm"
+    candidateQuantResultCheckpoint.status ??
+      candidateQuantInterpretation.ordinary_result_status ??
+      (dailyCommandP3OneGlanceReadable ? "readable_cache_replay" : "waiting_confirm")
   );
   const dailyCommandP3OneGlanceSource = String(
     candidateQuantResultCheckpoint.evidence_source ?? "CandidateRadar cache / ledger / packet"
@@ -1249,10 +1272,12 @@ export default function CommandCenterHome() {
       <PacketCard title="P3 可解释结果一眼读懂" subtitle="结论、来源、缺口、下一步和安全边界；只读 CandidateRadar checkpoint" status={dailyCommandP3OneGlanceStatus}>
         <MetricGrid
           items={[
-            { label: "可读结论", value: dailyCommandExplainableResultLabel, tone: candidateQuantResultCheckpoint.ordinary_result_readable === true ? "good" : "warn" },
-            { label: "数据来源", value: dailyCommandP3OneGlanceSource, tone: candidateQuantResultCheckpoint.provider_data_source_verified === true ? "good" : "warn" },
+            { label: "可读结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+            { label: "数据来源", value: dailyCommandP3OneGlanceSource, tone: dailyCommandP3OneGlanceProviderVerified ? "good" : "warn" },
+            { label: "结果证据", value: dailyCommandP3OneGlanceEvidence, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
             { label: "待补缺口", value: dailyCommandP3OneGlanceMissingEvidence || "暂无额外缺口", tone: dailyCommandP3OneGlanceMissingEvidence ? "warn" : "good" },
             { label: "下一步", value: dailyCommandExplainableResultNext },
+            { label: "模型状态", value: dailyCommandP3OneGlanceModelState, tone: dailyCommandP3OneGlanceModelState.includes("检测到模型输出") ? "warn" : "good" },
             { label: "安全字段", value: dailyCommandP3OneGlanceSafeFields, tone: "good" },
             { label: "边界", value: dailyCommandExplainableResultBoundary, tone: "good" }
           ]}
