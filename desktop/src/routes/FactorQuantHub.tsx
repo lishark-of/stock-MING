@@ -315,6 +315,26 @@ export default function FactorQuantHub() {
     "完整次日图谱入口：从量化推演摘要打开 #next 本地模块路由，复核路径、参考线和操作区；只做本地页面切换";
   const ordinaryQuantFullNextSessionBoundary =
     "打开完整次日图谱不创建 task、不刷新 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
+  const ordinaryQuantFullNextSessionRows = [
+    {
+      交接项: "预览状态",
+      当前状态: String(bridge.status ?? bridge.bridge_status ?? (empty ? "等待本地量化缓存" : "等待 next-session bridge cache")),
+      用户下一步: empty ? "先回下一票雷达确认代码并生成推演" : "先读本页次日图谱预览，再按需打开完整图谱",
+      边界: "预览只读本地 bridge cache；不会补调 Tushare/DeepSeek，也不会写 operation_zones"
+    },
+    {
+      交接项: "完整图谱入口",
+      当前状态: ordinaryQuantFullNextSessionHandoff,
+      用户下一步: "点击“打开完整次日图谱”只切换到 #next，本地复核路径、参考线和操作区",
+      边界: ordinaryQuantFullNextSessionBoundary
+    },
+    {
+      交接项: "阅读顺序",
+      当前状态: "支持/压制 -> 次日图谱预览 -> 完整次日图谱 -> 缺少证据",
+      用户下一步: "完整图谱页继续按路径、参考线、操作区、缺口边界复核",
+      边界: "完整图谱仍是研究回放，不是买卖、下单或 strategy action"
+    }
+  ];
   const ordinaryQuantReviewOrder = empty
     ? "先回下一票雷达输入代码并确认生成；本页只等本地结果回放"
     : "先看支持/压制，再看次日图谱预览，最后看模型解释状态；不要从工程审计表开始";
@@ -560,6 +580,11 @@ export default function FactorQuantHub() {
           <h3>三段可解释结果</h3>
           <p className="risk-note">普通结果先按支持/压制、次日图谱预览、模型解释状态阅读；每段只回放本地 cache，不把解释变成交易动作。</p>
           <DataLineageTable rows={ordinaryQuantResultReplayRows} />
+        </div>
+        <div aria-label="stock quant ordinary full next session handoff">
+          <h3>完整次日图谱交接</h3>
+          <p className="ordinary-status-note">从本页打开完整次日图谱只切换 #next 本地模块；先看本页预览，再去完整图谱复核路径、参考线、操作区和缺口边界。</p>
+          <DataLineageTable rows={ordinaryQuantFullNextSessionRows} />
         </div>
         <div aria-label="stock quant ordinary factor review checklist">
           <h3>因子复核清单</h3>
