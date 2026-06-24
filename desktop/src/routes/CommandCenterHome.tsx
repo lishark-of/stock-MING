@@ -663,6 +663,36 @@ export default function CommandCenterHome() {
       边界: dailyCommandP0LocalReadinessBoundary
     }
   ];
+  const dailyCommandP0EntryGateRows = [
+    {
+      闸门项: "1. FastAPI health",
+      当前状态: health.status === "ok" ? "通过：本地后端可达" : "未通过：先恢复本地后端",
+      用户下一步: health.status === "ok" ? "继续看 bootstrap status" : "打开一键启动预检，按 FastAPI 诊断恢复",
+      证据: "GET /health external_calls_on_startup=false",
+      边界: "只读健康回读；不启动服务、不创建 task、不调用 provider/model"
+    },
+    {
+      闸门项: "2. Bootstrap runtime",
+      当前状态: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "通过：运行模式 packet 可读" : "未通过：等待 bootstrap status",
+      用户下一步: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "继续看 desktop preflight cache" : "回一键启动预检查 bootstrap status",
+      证据: "GET /api/bootstrap/status command_center_3_bootstrap_runtime_mode_packet",
+      边界: "只读运行模式；不写配置、不创建 live_light task、不改外联口径"
+    },
+    {
+      闸门项: "3. Desktop preflight",
+      当前状态: desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache" ? "通过：一键启动 packet 可读" : "未通过：等待桌面预检 cache",
+      用户下一步: desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache" ? "继续确认 React/Vite 页面" : "回桌面壳预检查本地快捷入口",
+      证据: "GET /api/desktop/preflight-cache command_center_3_desktop_shell_preflight_cache",
+      边界: "首页只读预检 packet；不启动 FastAPI/Vite、不打开浏览器"
+    },
+    {
+      闸门项: "4. 进入 P1",
+      当前状态: dailyCommandP0LocalReadinessReady ? "P0 ready：可以进入下一票雷达" : "P0 未 ready：不要进入 P1",
+      用户下一步: dailyCommandP0LocalReadinessReady ? "进入下一票雷达，输入代码；输入静默，确认按钮才创建 Tushare-first task" : "先把前三段变绿，再进入下一票雷达",
+      证据: "health + bootstrap packet + desktop preflight packet + current React page",
+      边界: "P0 ready 不代表 Tushare/DeepSeek 已调用，也不是 release ready 或 14 LTG 完成"
+    }
+  ];
   const dailyCommandOneScreenActionRows = candidateQuantOneScreenActionRows.length
     ? candidateQuantOneScreenActionRows.map((row) => ({
         行动: String(row["行动"] ?? row.action_key ?? "行动"),
@@ -1020,6 +1050,7 @@ export default function CommandCenterHome() {
             { label: "自动联通", value: dailyCommandFrontendBackendAutoLinkLabel, tone: health.status === "ok" ? "good" : "warn" },
             { label: "自动联通边界", value: dailyCommandFrontendBackendAutoLinkBoundary, tone: "good" },
             { label: "P0 可继续", value: dailyCommandP0LocalReadinessLabel, tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+            { label: "P0 进入 P1 闸门", value: dailyCommandP0LocalReadinessReady ? "四段已通过；可进入下一票雷达" : "先让 health / bootstrap / preflight / React 四段变绿", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
             { label: "一屏行动", value: dailyCommandOneScreenActionLabel || "等待 CandidateRadar 一屏行动回放", tone: candidateQuantOneScreenActionRows.length ? "good" : "warn" },
             { label: "确认后回放", value: "确认回执 -> 任务状态 -> P2 写回 -> P3 结果", tone: "good" },
@@ -1090,6 +1121,11 @@ export default function CommandCenterHome() {
           <h3>P0 前后端自动联通回读</h3>
           <p className="risk-note">前端 API client 会在本地 FastAPI 候选地址内自动联通并回读 health；失败时只显示离线恢复，不启动服务、不创建 task。</p>
           <DataLineageTable rows={dailyCommandFrontendBackendAutoLinkRows} />
+        </div>
+        <div aria-label="daily command p0 p1 entry gate">
+          <h3>P0 进入 P1 闸门</h3>
+          <p className="risk-note">普通用户先看这张清单：health、bootstrap status、desktop preflight 和当前 React 页面四段通过后，才进入下一票雷达；输入仍保持静默，只有确认按钮创建 Tushare-first POST task。</p>
+          <DataLineageTable rows={dailyCommandP0EntryGateRows} />
         </div>
         <div aria-label="daily command p0 current next action">
           <h3>P0 当前下一步</h3>
