@@ -367,15 +367,24 @@ export default function CommandCenterHome() {
     candidateQuantInterpretation.ordinary_result_evidence ??
       `source=${String(candidateQuantResultCheckpoint.evidence_source ?? "CandidateRadar cache / ledger / packet")}; missing=${String(candidateQuantResultCheckpoint.missing_evidence_count ?? 0)}`
   );
-  const dailyCommandP3OneGlanceModelState =
+  const dailyCommandP3OneGlanceModelStateRaw = String(
+    candidates.ordinary_result_deepseek_governed_executor_status ??
+      candidateQuantResultCheckpoint.deepseek_state ??
+      candidateQuantInterpretation.deepseek_governed_executor_status ??
+      "governed_executor_pending_not_requested"
+  );
+  const dailyCommandP3OneGlanceUsesModelOutput =
     candidateQuantResultCheckpoint.uses_deepseek_output === true ||
-    candidateQuantInterpretation.uses_deepseek_output === true
-      ? "检测到模型输出；需回 P5 governed executor 审核后再展示"
-      : String(
-          candidateQuantResultCheckpoint.deepseek_state ??
-            candidateQuantInterpretation.deepseek_governed_executor_status ??
-            "DeepSeek 未参与；等待 governed executor 单独补"
-        );
+    candidateQuantResultCheckpoint.uses_model_output === true ||
+    candidateQuantInterpretation.uses_deepseek_output === true ||
+    candidateQuantInterpretation.uses_model_output === true;
+  const dailyCommandP3OneGlanceModelState = dailyCommandP3OneGlanceUsesModelOutput
+    ? "检测到模型输出；需回 P5 governed executor 审核后再展示"
+    : dailyCommandP3OneGlanceModelStateRaw.includes("skipped")
+      ? "DeepSeek 不用等：Tushare-first 和基础图谱可先看；P5 governed executor 单独补"
+      : dailyCommandP3OneGlanceModelStateRaw.includes("pending")
+        ? "DeepSeek 待治理：不阻塞 Tushare-first、P2 写入或 P3 基础图谱"
+        : "DeepSeek governed executor 单独补；普通结果只读本地 cache / ledger / packet";
   const dailyCommandExplainableResultRows = candidateQuantQuickRows.length
     ? candidateQuantQuickRows.map((row) => ({
         速读项: String(row["结论"] ?? row.quick_read_item ?? "结果速读"),
@@ -1298,7 +1307,7 @@ export default function CommandCenterHome() {
             { label: "结果入口", value: dailyCommandP3OneGlanceResultEntrances, tone: candidateQuantHandoffRows.length ? "good" : "warn" },
             { label: "待补缺口", value: dailyCommandP3OneGlanceMissingEvidence || "暂无额外缺口", tone: dailyCommandP3OneGlanceMissingEvidence ? "warn" : "good" },
             { label: "下一步", value: dailyCommandExplainableResultNext },
-            { label: "模型状态", value: dailyCommandP3OneGlanceModelState, tone: dailyCommandP3OneGlanceModelState.includes("检测到模型输出") ? "warn" : "good" },
+            { label: "模型状态", value: dailyCommandP3OneGlanceModelState, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
             { label: "安全字段", value: dailyCommandP3OneGlanceSafeFields, tone: "good" },
             { label: "边界", value: dailyCommandExplainableResultBoundary, tone: "good" }
           ]}
