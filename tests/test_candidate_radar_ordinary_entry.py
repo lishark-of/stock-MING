@@ -76,6 +76,17 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('"POST task ready"', self.page)
         self.assertIn('"cache/ledger/packet"', self.page)
         self.assertIn('"可解释结果"', self.page)
+        self.assertIn("quantProjectionConfirmedChainQuickRows", self.page)
+        self.assertIn('aria-label="candidate radar ordinary confirmed chain quick read"', self.page)
+        self.assertIn("确认后链路速读", self.page)
+        self.assertIn("普通用户先看这张确认后链路速读", self.page)
+        self.assertIn('链路节点: "1. 点击确认"', self.page)
+        self.assertIn('链路节点: "2. Tushare-first"', self.page)
+        self.assertIn('链路节点: "3. P2 三面写回"', self.page)
+        self.assertIn('链路节点: "4. P3 可解释结果"', self.page)
+        self.assertIn('链路节点: "5. 结果入口"', self.page)
+        self.assertIn("只有确认按钮会创建 POST task；页面打开、搜索输入、React render 和 GET cache 不外联", self.page)
+        self.assertIn("Tushare 只允许在 POST task / worker 内调用；DeepSeek 默认 skipped，等 governed executor", self.page)
         self.assertIn('aria-label="candidate radar ordinary p1 confirm path"', self.page)
         self.assertIn("P1 普通确认路径", self.page)
         self.assertIn("普通用户先看这条 P1 路径", self.page)
@@ -148,6 +159,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(self.page.index('aria-label="candidate radar ordinary p3 result handoff index"'), self.page.index('aria-label="candidate radar ordinary p5 governance details"'))
         self.assertLess(self.page.index('aria-label="candidate radar ordinary p5 governance details"'), self.page.index('aria-label="candidate radar ordinary p6 strict closeout handoff"'))
         self.assertLess(self.page.index('aria-label="candidate radar ordinary p5 governance details"'), self.page.index('aria-label="candidate radar primary next action"'))
+        self.assertLess(
+            self.page.index('aria-label="candidate radar ordinary p1 to p3 stage rail"'),
+            self.page.index('aria-label="candidate radar ordinary confirmed chain quick read"'),
+        )
+        self.assertLess(
+            self.page.index('aria-label="candidate radar ordinary confirmed chain quick read"'),
+            self.page.index('aria-label="candidate radar ordinary p1 confirm path"'),
+        )
         self.assertNotIn(
             '工程审计明细默认收起；完整 call ledger、release gate 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。',
             self.page,
@@ -179,6 +198,22 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", rail)
         self.assertNotIn("postCandidateRadarQuantProjection", rail)
         self.assertNotIn("launchQuantProjection", rail)
+
+    def test_candidate_radar_confirmed_chain_quick_read_is_read_only_before_p1_details(self):
+        summary_start = self.page.index('title="普通用户雷达摘要"')
+        summary_end = self.page.index('title="下一票候选池"', summary_start)
+        summary = self.page[summary_start:summary_end]
+        quick_start = summary.index('aria-label="candidate radar ordinary confirmed chain quick read"')
+        p1_table_start = summary.index('aria-label="candidate radar ordinary p1 confirm path"')
+        quick = summary[quick_start:p1_table_start]
+
+        self.assertLess(quick_start, p1_table_start)
+        self.assertIn("确认后链路速读", quick)
+        self.assertIn("quantProjectionConfirmedChainQuickRows", quick)
+        self.assertIn("<DataLineageTable", quick)
+        self.assertNotIn("onClick=", quick)
+        self.assertNotIn("postCandidateRadarQuantProjection", quick)
+        self.assertNotIn("launchQuantProjection", quick)
 
     def test_three_ordinary_entrances_show_summaries_before_developer_audit(self):
         pages = {

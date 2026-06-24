@@ -1262,7 +1262,7 @@ export default function CandidateRadar() {
   const quantProjectionPostConfirmWaitLabel =
     "确认后等待顺序：先看 task id，再看 TaskStatusPanel，等待 success 后刷新 cache，最后回放 #factor/#next";
   const quantProjectionReplayBoundary =
-    "回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache";
+    "回放链接只切换本地页面或锚点；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache；回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池";
   const quantProjectionReplayDestinationState = quantProjectionSubmitError
     ? "结果入口暂停：确认任务未创建；先恢复本地后端连接，再重新点击确认"
     : quantProjectionFactorNextReady || quantProjectionProviderLedgerReady
@@ -1298,6 +1298,47 @@ export default function CandidateRadar() {
       当前状态: "可随时返回候选池复核来源、分组和缺口",
       下一步: "把推演结果当研究线索，不当买入指令",
       边界: "href #candidate-pool 是本页候选池锚点；Radar candidate 不是交易指令；真实交易路径继续隔离"
+    }
+  ];
+  const quantProjectionConfirmedChainQuickRows = [
+    {
+      链路节点: "1. 点击确认",
+      当前状态: quantProjectionConfirmChainState,
+      用户下一步: quantProjectionCanSubmit || taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? "点击一次确认后看 task id 和 TaskStatusPanel；不要从输入框或刷新页面期待自动补数"
+        : "先输入有效 A 股代码；输入本身保持静默",
+      证据: taskReceipt?.ok || quantProjectionPersistedTaskId ? "task receipt / candidate_radar_cache_packet" : "local input validation",
+      边界: "只有确认按钮会创建 POST task；页面打开、搜索输入、React render 和 GET cache 不外联"
+    },
+    {
+      链路节点: "2. Tushare-first",
+      当前状态: quantProjectionProviderLedgerReady
+        ? `Tushare-first ledger 已回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口`
+        : "等待按钮门控 POST task 写入 provider ledger 或本地阻断",
+      用户下一步: quantProjectionProviderLedgerReady ? "继续回放 P2 三面和 P3 结果" : "先看任务状态；凭据缺失时按本地阻断处理",
+      证据: `provider_call_source=${quantProjectionProviderCallSource}`,
+      边界: "Tushare 只允许在 POST task / worker 内调用；DeepSeek 默认 skipped，等 governed executor"
+    },
+    {
+      链路节点: "3. P2 三面写回",
+      当前状态: quantProjectionSmallDataStageLabel,
+      用户下一步: quantProjectionSmallDataNextStep,
+      证据: quantProjectionSmallDataWritebackSurfaces,
+      边界: quantProjectionSmallDataReadbackContract
+    },
+    {
+      链路节点: "4. P3 可解释结果",
+      当前状态: quantProjectionOrdinaryResultSummary,
+      用户下一步: quantProjectionOrdinaryResultNext,
+      证据: quantProjectionOrdinaryResultEvidence,
+      边界: quantProjectionOrdinaryResultBoundary
+    },
+    {
+      链路节点: "5. 结果入口",
+      当前状态: quantProjectionReplayDestinationState,
+      用户下一步: quantProjectionReplayDestinationNextStep,
+      证据: "股票量化推演 / 次日图谱 / 候选池本地入口",
+      边界: quantProjectionReplayBoundary
     }
   ];
   const quantProjectionPostConfirmPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_post_confirm_action_rows);
@@ -1733,6 +1774,11 @@ export default function CandidateRadar() {
             state={ordinaryP1ToP3StageRailState}
             steps={ordinaryP1ToP3StageRailSteps}
           />
+        </div>
+        <div aria-label="candidate radar ordinary confirmed chain quick read">
+          <h3>确认后链路速读</h3>
+          <p className="risk-note">普通用户先看这张确认后链路速读：确认按钮、Tushare-first、P2 三面、P3 结果入口按同一条本地链路回放。</p>
+          <DataLineageTable rows={quantProjectionConfirmedChainQuickRows} />
         </div>
         <div aria-label="candidate radar ordinary p1 confirm path">
           <h3>P1 普通确认路径</h3>
