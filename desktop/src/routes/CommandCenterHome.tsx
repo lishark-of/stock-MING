@@ -327,8 +327,19 @@ export default function CommandCenterHome() {
       ];
   const candidateQuantInterpretation = (candidates.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const candidateQuantResultCheckpoint = (candidates.search_quant_projection_result_checkpoint as Record<string, unknown> | undefined) ?? {};
-  const candidateQuantQuickRows = (candidateQuantInterpretation.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ?? [];
-  const candidateQuantCheckpointRows = (candidateQuantInterpretation.ordinary_result_checkpoint_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const candidateQuantQuickRows =
+    (candidates.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidateQuantInterpretation.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ??
+    [];
+  const candidateQuantHandoffRows =
+    (candidates.ordinary_result_handoff_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidateQuantInterpretation.ordinary_result_handoff_rows as Array<Record<string, unknown>> | undefined) ??
+    [];
+  const candidateQuantCheckpointRows =
+    (candidates.ordinary_result_checkpoint_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidates.search_quant_projection_result_checkpoint_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidateQuantInterpretation.ordinary_result_checkpoint_rows as Array<Record<string, unknown>> | undefined) ??
+    [];
   const dailyCommandExplainableResultLabel = String(
     candidateQuantInterpretation.ordinary_result_summary ?? "等待搜票确认后的可解释结果"
   );
@@ -1093,29 +1104,37 @@ export default function CommandCenterHome() {
     "结果位置：今日作战台看总览，下一票雷达看候选，股票量化推演看单票结果，次日图谱看路径；入口都只读跳转";
   const dailyCommandMissingDataBoundary =
     "缺数据先看 pending / 缺少证据；不能把空缓存当成无风险，也不能当成生产验收完成";
-  const dailyCommandP3ReplayActionRows = [
-    {
-      结果入口: "下一票雷达",
-      当前状态: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待候选缓存",
-      用户下一步: "复核候选、确认任务状态和结果回放位置；换标的仍需点击确认按钮",
-      入口: "#candidates",
-      边界: "只读跳转到雷达模块；不会从首页创建 task，搜索输入仍保持静默"
-    },
-    {
-      结果入口: "股票量化推演",
-      当前状态: String(factor.status ?? factor.mode ?? "等待量化缓存"),
-      用户下一步: "复核支持/压制、数据来源和缺少证据，再回到次日图谱看路径",
-      入口: "#factor",
-      边界: "只读跳转到量化推演模块；不会补调 Tushare、DeepSeek 或写 strategy action"
-    },
-    {
-      结果入口: "次日图谱",
-      当前状态: String(next.status ?? "等待次日图谱缓存"),
-      用户下一步: "按路径、参考线、operation_zones 和缺少证据顺序复核",
-      入口: "#next",
-      边界: "只读跳转到次日图谱模块；不创建生成任务、不调用 Tushare/DeepSeek、不下单"
-    }
-  ];
+  const dailyCommandP3ReplayActionRows = candidateQuantHandoffRows.length
+    ? candidateQuantHandoffRows.map((row) => ({
+        结果入口: String(row["入口"] ?? row.handoff_key ?? "P3 结果入口"),
+        当前状态: String(row["当前状态"] ?? row.status ?? "等待 CandidateRadar P3 handoff 回放"),
+        用户下一步: String(row["用户下一步"] ?? row.next_step ?? dailyCommandExplainableResultNext),
+        入口: String(row.href ?? row["href"] ?? row.entry ?? "#candidates"),
+        边界: String(row["边界"] ?? row.boundary ?? "只读切换本地入口；不创建 task、不调用 provider/model。")
+      }))
+    : [
+        {
+          结果入口: "下一票雷达",
+          当前状态: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待候选缓存",
+          用户下一步: "复核候选、确认任务状态和结果回放位置；换标的仍需点击确认按钮",
+          入口: "#candidates",
+          边界: "只读跳转到雷达模块；不会从首页创建 task，搜索输入仍保持静默"
+        },
+        {
+          结果入口: "股票量化推演",
+          当前状态: String(factor.status ?? factor.mode ?? "等待量化缓存"),
+          用户下一步: "复核支持/压制、数据来源和缺少证据，再回到次日图谱看路径",
+          入口: "#factor",
+          边界: "只读跳转到量化推演模块；不会补调 Tushare、DeepSeek 或写 strategy action"
+        },
+        {
+          结果入口: "次日图谱",
+          当前状态: String(next.status ?? "等待次日图谱缓存"),
+          用户下一步: "按路径、参考线、operation_zones 和缺少证据顺序复核",
+          入口: "#next",
+          边界: "只读跳转到次日图谱模块；不创建生成任务、不调用 Tushare/DeepSeek、不下单"
+        }
+      ];
 
   const launchLiveBootstrap = () => {
     const mode = String(bootstrapStatus.mode ?? "cache_only");
