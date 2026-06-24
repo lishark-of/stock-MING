@@ -561,11 +561,11 @@ export default function CommandCenterHome() {
           ? "任务路由覆盖缺口见下方明细"
           : "当前缓存未标记阻断或降级";
   const dailyCommandPendingSourceLabel = dailyCommandMissingEvidence.includes("核心缓存已可见")
-    ? "pending：当前摘要未标记新增待补"
-    : `pending：${dailyCommandMissingEvidence}`;
+    ? "待补：当前摘要未标记新增待补"
+    : `待补：${dailyCommandMissingEvidence}`;
   const dailyCommandDegradedSourceLabel = dailyCommandBlockedState.includes("未标记")
-    ? "degraded：未标记降级"
-    : `degraded：${dailyCommandBlockedState}`;
+    ? "降级：未标记降级"
+    : `降级：${dailyCommandBlockedState}`;
   const dailyCommandLastCache = String(
     packets.loaded_at ?? market.loaded_at ?? factor.loaded_at ?? next.loaded_at ?? dataHealth.loaded_at ?? "暂无最近可用缓存"
   );
@@ -780,7 +780,7 @@ export default function CommandCenterHome() {
     },
     {
       key: "p5",
-      label: "P5 DeepSeek",
+      label: "P5 解释治理",
       state: "active",
       detail: "governed"
     },
@@ -1003,15 +1003,15 @@ export default function CommandCenterHome() {
             { label: "P3 下一步", value: dailyCommandExplainableResultNext },
             { label: "P3 边界", value: dailyCommandExplainableResultBoundary, tone: "good" },
             { label: "P3 检查点", value: dailyCommandP3CheckpointLabel, tone: candidateQuantCheckpointRows.length ? "good" : "warn" },
-            { label: "P5 DeepSeek", value: dailyCommandDeepSeekGovernanceState, tone: candidateQuantInterpretation.deepseek_model_ledger_ready === true ? "warn" : "good" },
+            { label: "P5 解释治理", value: dailyCommandDeepSeekGovernanceState, tone: candidateQuantInterpretation.deepseek_model_ledger_ready === true ? "warn" : "good" },
             { label: "P5 边界", value: dailyCommandDeepSeekGovernanceBoundary, tone: "good" },
-            { label: "cache", value: dailyCommandCacheSourceLabel },
-            { label: "Tushare", value: dailyCommandTushareSourceLabel },
-            { label: "DeepSeek", value: dailyCommandDeepSeekSourceLabel },
+            { label: "本地缓存", value: dailyCommandCacheSourceLabel },
+            { label: "数据链", value: dailyCommandTushareSourceLabel },
+            { label: "解释状态", value: dailyCommandDeepSeekSourceLabel },
             { label: "外联触发边界", value: dailyCommandExternalTriggerBoundary, tone: "good" },
-            { label: "pending", value: dailyCommandPendingSourceLabel, tone: dailyCommandPendingSourceLabel.includes("待补") || dailyCommandPendingSourceLabel.includes("验收") || dailyCommandPendingSourceLabel.includes("缓存") ? "warn" : "good" },
-            { label: "degraded", value: dailyCommandDegradedSourceLabel, tone: dailyCommandDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
-            { label: "last_successful_cache/result", value: dailyCommandLastCache },
+            { label: "待补证据", value: dailyCommandPendingSourceLabel, tone: dailyCommandPendingSourceLabel.includes("待补") || dailyCommandPendingSourceLabel.includes("验收") || dailyCommandPendingSourceLabel.includes("缓存") ? "warn" : "good" },
+            { label: "降级提示", value: dailyCommandDegradedSourceLabel, tone: dailyCommandDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
+            { label: "最近成功回放", value: dailyCommandLastCache },
             { label: "数据来源", value: dailyCommandSourceState },
             { label: "补证状态", value: dailyCommandBackgroundTaskState, tone: dailyCommandBackgroundTaskTone },
             { label: "缺少证据", value: dailyCommandMissingEvidence, tone: dailyCommandMissingEvidence.includes("缓存") || dailyCommandMissingEvidence.includes("验收") || dailyCommandMissingEvidence.includes("收口") ? "warn" : "good" },

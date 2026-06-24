@@ -64,7 +64,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "P2 小数据"', source)
         self.assertIn('label: "P3 可解释结果"', source)
         self.assertIn('label: "P4 审计下沉"', source)
-        self.assertIn('label: "P5 DeepSeek"', source)
+        self.assertIn('label: "P5 解释治理"', source)
         self.assertIn('label: "P6 LTG 证据"', source)
         self.assertIn('detail: "Tushare-first"', source)
         self.assertIn('"cache/ledger/packet"', source)
@@ -107,13 +107,13 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "下一票雷达"', source)
         self.assertIn('label: "今日查看顺序"', source)
         self.assertIn('label: "今日结果组成"', source)
-        self.assertIn('label: "cache"', source)
-        self.assertIn('label: "Tushare"', source)
-        self.assertIn('label: "DeepSeek"', source)
+        self.assertIn('label: "本地缓存"', source)
+        self.assertIn('label: "数据链"', source)
+        self.assertIn('label: "解释状态"', source)
         self.assertIn('label: "外联触发边界"', source)
-        self.assertIn('label: "pending"', source)
-        self.assertIn('label: "degraded"', source)
-        self.assertIn('label: "last_successful_cache/result"', source)
+        self.assertIn('label: "待补证据"', source)
+        self.assertIn('label: "降级提示"', source)
+        self.assertIn('label: "最近成功回放"', source)
         self.assertIn('label: "数据来源"', source)
         self.assertIn('label: "缺少证据"', source)
         self.assertIn('label: "阻断/降级"', source)
@@ -139,11 +139,22 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index("P0 到 P1 快速行动"), source.index("开发 / 审计详情"))
         self.assertLess(source.index("P6 strict closeout 回归入口"), source.index("开发 / 审计详情"))
         self.assertLess(source.index('aria-label="daily command p6 reentry links"'), source.index("开发 / 审计详情"))
-        self.assertLess(source.index('label: "cache"', source.index("今日作战台摘要")), source.index("开发 / 审计详情"))
-        self.assertLess(source.index('label: "last_successful_cache/result"', source.index("今日作战台摘要")), source.index("开发 / 审计详情"))
+        self.assertLess(source.index('label: "本地缓存"', source.index("今日作战台摘要")), source.index("开发 / 审计详情"))
+        self.assertLess(source.index('label: "最近成功回放"', source.index("今日作战台摘要")), source.index("开发 / 审计详情"))
         self.assertLess(source.index('label: "今日查看顺序"', source.index("今日作战台摘要")), source.index("开发 / 审计详情"))
         self.assertLess(source.index('label: "今日结果组成"', source.index("今日作战台摘要")), source.index("开发 / 审计详情"))
         self.assertLess(source.index('label: "缺数据口径"', source.index("今日作战台摘要")), source.index("开发 / 审计详情"))
+        summary_slice = source[source.index('title="今日作战台摘要"') : source.index("开发 / 审计详情")]
+        for hidden_label in (
+            'label: "cache"',
+            'label: "Tushare"',
+            'label: "DeepSeek"',
+            'label: "pending"',
+            'label: "degraded"',
+            'label: "last_successful_cache/result"',
+            'label: "P5 DeepSeek"',
+        ):
+            self.assertNotIn(hidden_label, summary_slice)
         self.assertNotIn('{ label: "今日作战台"', source)
 
     def test_daily_command_center_source_and_boundary_are_visible(self):
@@ -253,8 +264,10 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("待授权解释", summary_slice)
         self.assertIn("dailyCommandPendingSourceLabel", source)
         self.assertIn("dailyCommandDegradedSourceLabel", source)
-        self.assertIn("pending：", source)
-        self.assertIn("degraded：未标记降级", source)
+        self.assertIn("待补：", source)
+        self.assertIn("降级：未标记降级", source)
+        self.assertNotIn("pending：", summary_slice)
+        self.assertNotIn("degraded：", summary_slice)
         self.assertIn("首页 GET cache 只读；live_light 手动补证只允许创建后台 POST task", source)
         self.assertIn("不在 React 渲染中直连 Tushare 或 DeepSeek", source)
         self.assertIn("今日摘要只组织投研证据；不买卖、不下单、不改交易策略", source)
