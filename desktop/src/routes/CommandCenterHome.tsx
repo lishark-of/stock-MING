@@ -659,7 +659,11 @@ export default function CommandCenterHome() {
     ...(taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).map((row) => ({ scope: "task_status_index", ...row }))
   ];
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(packets).length;
-  const dailyCommandNeedsStartupRecovery = Boolean(error) || (!loading && String(health.status ?? "") !== "ok");
+  const dailyCommandHealthOk = String(health.status ?? "") === "ok";
+  const dailyCommandHealthChecked = Object.keys(health).length > 0;
+  const dailyCommandCacheWarning = dailyCommandHealthOk && error ? `本地 cache 回读提示：${error}` : "";
+  const dailyCommandNeedsStartupRecovery =
+    !dailyCommandHealthOk && (loading || Boolean(error) || !dailyCommandHealthChecked);
   const dailyCommandP0QuickAction = String(
     desktopRuntime?.p0_ordinary_quick_action_next ?? p0OrdinaryQuickActionRows[0]?.["用户下一步"] ?? ""
   );
@@ -742,10 +746,10 @@ export default function CommandCenterHome() {
   const dailyCommandExternalTriggerBoundary =
     "页面打开、搜索输入、React render 和 GET cache 不自动外联；只有下一票雷达确认按钮可创建 Tushare-first POST task，DeepSeek 等 governed executor。";
   const dailyCommandResearchOnlyLabel = "今日摘要只组织投研证据；不买卖、不下单、不改交易策略";
-  const dailyCommandStatusLabel = health.status === "ok" ? "只读入口可用" : "等待只读入口";
+  const dailyCommandStatusLabel = dailyCommandHealthOk ? "只读入口可用" : "等待只读入口";
   const dailyCommandConnectionState = error
-    ? "本地前后端未联通；请使用桌面快捷方式或本地启动器重新打开"
-    : health.status === "ok"
+    ? dailyCommandCacheWarning || "本地前后端未联通；请使用桌面快捷方式或本地启动器重新打开"
+    : dailyCommandHealthOk
       ? "本地前后端已联通"
       : "正在确认本地连接";
   const dailyCommandFrontendBackendSelectedApiBase = String(
@@ -756,13 +760,13 @@ export default function CommandCenterHome() {
         typeof row.api_base === "string"
     )?.api_base ?? API_BASE_DISPLAY_URL
   );
-  const dailyCommandFrontendBackendAutoLinkLabel = health.status === "ok"
+  const dailyCommandFrontendBackendAutoLinkLabel = dailyCommandHealthOk
     ? `已联通本地后端：${dailyCommandFrontendBackendSelectedApiBase}`
     : `自动尝试本地 FastAPI：${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")}`;
   const dailyCommandFrontendBackendAutoLinkBoundary =
     "前端 API client 只在本地 FastAPI 候选地址内自动联通；失败显示离线提示，不启动服务、不创建 task、不调用 provider/model、不读取 token/key";
   const dailyCommandP0LocalReadinessReady =
-    health.status === "ok" &&
+    dailyCommandHealthOk &&
     bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" &&
     desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache";
   const dailyCommandP0LocalReadinessLabel = dailyCommandP0LocalReadinessReady
@@ -773,23 +777,23 @@ export default function CommandCenterHome() {
   const dailyCommandFrontendBackendAutoLinkRows = [
     {
       联通项: "前端 API client",
-      当前状态: health.status === "ok" ? "GET /health 已从本地后端回读" : "等待本地后端可达",
+      当前状态: dailyCommandHealthOk ? "GET /health 已从本地后端回读" : "等待本地后端可达",
       证据: `configured=${CONFIGURED_API_BASE_DISPLAY_URL}; selected=${dailyCommandFrontendBackendSelectedApiBase}; candidates=${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")}`,
-      下一步: health.status === "ok" ? "继续看 bootstrap runtime-mode packet" : "使用一键启动入口恢复本地 FastAPI / React 联通",
+      下一步: dailyCommandHealthOk ? "继续看 bootstrap runtime-mode packet" : "使用一键启动入口恢复本地 FastAPI / React 联通",
       边界: dailyCommandFrontendBackendAutoLinkBoundary
     },
     {
       联通项: "后端身份",
-      当前状态: health.status === "ok" ? String(health.service ?? "Command Center 3.0 health ok") : "等待 Command Center 3.0 health JSON",
+      当前状态: dailyCommandHealthOk ? String(health.service ?? "Command Center 3.0 health ok") : "等待 Command Center 3.0 health JSON",
       证据: "GET /health external_calls_on_startup=false",
-      下一步: health.status === "ok" ? "继续确认本地 runtime-mode packet" : "查看桌面壳预检里的 FastAPI 诊断",
+      下一步: dailyCommandHealthOk ? "继续确认本地 runtime-mode packet" : "查看桌面壳预检里的 FastAPI 诊断",
       边界: "health 回读只验证本地服务身份；不刷新 provider/model、不写 cache/config"
     },
     {
       联通项: "失败回退",
-      当前状态: error ? "显示本地后端离线提示" : "无前端联通错误",
+      当前状态: dailyCommandCacheWarning ? "本地后端已联通；普通 cache 回读提示不阻断 P0" : error ? "显示本地后端离线提示" : "无前端联通错误",
       证据: "frontend_backend_auto_link_scope=local_fastapi_only",
-      下一步: error ? "打开一键启动预检，按 FastAPI / bootstrap / desktop preflight / React 四段恢复" : "联通正常时进入下一票雷达",
+      下一步: dailyCommandCacheWarning ? "继续进入下一票雷达；普通 cache 提示留在待补证据里" : error ? "打开一键启动预检，按 FastAPI / bootstrap / desktop preflight / React 四段恢复" : "联通正常时进入下一票雷达",
       边界: "离线提示只帮助恢复 P0；不会绕过确认按钮触发 Tushare，也不会调用 DeepSeek"
     },
     {
@@ -803,8 +807,8 @@ export default function CommandCenterHome() {
   const dailyCommandP0EntryGateRows = [
     {
       闸门项: "1. FastAPI health",
-      当前状态: health.status === "ok" ? "通过：本地后端可达" : "未通过：先恢复本地后端",
-      用户下一步: health.status === "ok" ? "继续看 bootstrap status" : "打开一键启动预检，按 FastAPI 诊断恢复",
+      当前状态: dailyCommandHealthOk ? "通过：本地后端可达" : "未通过：先恢复本地后端",
+      用户下一步: dailyCommandHealthOk ? "继续看 bootstrap status" : "打开一键启动预检，按 FastAPI 诊断恢复",
       证据: "GET /health external_calls_on_startup=false",
       边界: "只读健康回读；不启动服务、不创建 task、不调用 provider/model"
     },
@@ -1014,8 +1018,8 @@ export default function CommandCenterHome() {
     ? oneClickStartupSummary.diagnostic_surfaces.join(" / ")
     : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / desktop preflight cache one-click packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance";
   const dailyCommandStartupReadbackLabel = error
-    ? "重启后刷新本页；FastAPI、bootstrap、desktop preflight cache、React/Vite 变绿才继续投研"
-    : health.status === "ok"
+    ? dailyCommandCacheWarning || "重启后刷新本页；FastAPI、bootstrap、desktop preflight cache、React/Vite 变绿才继续投研"
+    : dailyCommandHealthOk
       ? "联通已由 GET /health 回读；可继续看缓存和投研入口"
       : "正在等待 GET /health 和 desktop preflight cache 回读";
   const dailyCommandStartupReadbackOrder =
@@ -1025,10 +1029,10 @@ export default function CommandCenterHome() {
   const dailyCommandStartupReadbackRows = [
     {
       回读项: "FastAPI health",
-      当前状态: health.status === "ok" ? "已联通" : "等待联通",
+      当前状态: dailyCommandHealthOk ? "已联通" : "等待联通",
       证据: "GET /health",
       通过条件: "Command Center 3.0 health JSON 且 external_calls_on_startup=false",
-      下一步: health.status === "ok" ? "继续看 bootstrap runtime-mode packet" : "回桌面壳预检查看 FastAPI 启动诊断",
+      下一步: dailyCommandHealthOk ? "继续看 bootstrap runtime-mode packet" : "回桌面壳预检查看 FastAPI 启动诊断",
       边界: "只读健康检查，不启动服务、不创建 task"
     },
     {
@@ -1157,7 +1161,7 @@ export default function CommandCenterHome() {
           <h1>今日作战台</h1>
           <p>先看下一步、数据来源、缺少证据和仅供研究边界。</p>
         </div>
-        <StatusBadge label={dailyCommandStatusLabel} tone={health.status === "ok" ? "good" : "warn"} />
+        <StatusBadge label={dailyCommandStatusLabel} tone={dailyCommandHealthOk ? "good" : "warn"} />
       </div>
       <PageStateBanner
         loading={loading}
@@ -1166,10 +1170,10 @@ export default function CommandCenterHome() {
         emptyTitle="暂无今日作战台本地缓存"
         emptyDetail="首页只读取本地只读缓存；不会自动刷新外部数据。若为空，请先确认本地服务已启动。"
       />
-      <PacketCard title="本地 FastAPI 接线速读" subtitle="打开软件后先看这张卡；入口只做本地跳转" status={health.status === "ok" ? "connected" : "checking"}>
+      <PacketCard title="本地 FastAPI 接线速读" subtitle="打开软件后先看这张卡；入口只做本地跳转" status={dailyCommandHealthOk ? "connected" : "checking"}>
         <MetricGrid
           items={[
-            { label: "本地后端", value: dailyCommandFrontendBackendAutoLinkLabel, tone: health.status === "ok" ? "good" : "warn" },
+            { label: "本地后端", value: dailyCommandFrontendBackendAutoLinkLabel, tone: dailyCommandHealthOk ? "good" : "warn" },
             { label: "当前页面", value: dailyCommandP0LocalReadinessReady ? "FastAPI、bootstrap、desktop preflight 和 React 已接上" : "等待本地四段联通回读", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "投研入口", value: dailyCommandNeedsStartupRecovery ? "先看一键启动预检" : "去下一票雷达输入代码并确认", tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "安全边界", value: "打开页面和输入代码不外联；确认按钮才触发 Tushare-first", tone: "good" }
@@ -1217,7 +1221,10 @@ export default function CommandCenterHome() {
           <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session map from latest local task">次日图谱</a>
           <a href="#tasks" title="切换到任务目录；只读查看完整任务列表" aria-label="open task monitor from latest local task">任务目录</a>
         </div>
-        {dailyCommandLatestTaskId ? <TaskStatusPanel taskId={dailyCommandLatestTaskId} /> : null}
+        {dailyCommandLatestTaskId && !dailyCommandLatestTaskIsReplay ? <TaskStatusPanel taskId={dailyCommandLatestTaskId} /> : null}
+        {dailyCommandLatestTaskId && dailyCommandLatestTaskIsReplay ? (
+          <p className="risk-note">最近任务来自 CandidateRadar cache 只读回放，不启动 TaskStatusPanel 轮询；看上方 cache / ledger / packet 状态即可。</p>
+        ) : null}
         <p className="risk-note">本卡只读 `/api/tasks` 和具体 task 状态；不会补调 Tushare、DeepSeek 或 GitHub，也不会真实交易或修改 strategy action。</p>
       </PacketCard>
       <PacketCard title="P3 可解释结果一眼读懂" subtitle="结论、来源、缺口、下一步和安全边界；只读 CandidateRadar checkpoint" status={dailyCommandP3OneGlanceStatus}>
@@ -1244,7 +1251,7 @@ export default function CommandCenterHome() {
             { label: "下一步", value: dailyCommandNextClick },
             { label: "主下一步", value: dailyCommandPrimaryActionLabel },
             { label: "主下一步边界", value: dailyCommandPrimaryActionBoundary, tone: "good" },
-            { label: "本地联通", value: dailyCommandConnectionState, tone: error ? "warn" : health.status === "ok" ? "good" : "warn" },
+            { label: "本地联通", value: dailyCommandConnectionState, tone: dailyCommandHealthOk ? "good" : "warn" },
             { label: "联通优先级", value: dailyCommandConnectivityPriority, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "一键启动", value: dailyCommandLauncherState, tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
             { label: "启动恢复", value: dailyCommandStartupRecoveryLabel, tone: error || desktopLauncherContract.launcher_executable !== true ? "warn" : "good" },
@@ -1256,7 +1263,7 @@ export default function CommandCenterHome() {
             { label: "回读顺序", value: dailyCommandStartupReadbackOrder, tone: "good" },
             { label: "回读边界", value: dailyCommandStartupReadbackBoundary, tone: "good" },
             { label: "只读自检", value: dailyCommandP0CheckOnlyNext, tone: p0LauncherCheckOnlyRows.length ? "good" : "warn" },
-            { label: "自动联通", value: dailyCommandFrontendBackendAutoLinkLabel, tone: health.status === "ok" ? "good" : "warn" },
+            { label: "自动联通", value: dailyCommandFrontendBackendAutoLinkLabel, tone: dailyCommandHealthOk ? "good" : "warn" },
             { label: "自动联通边界", value: dailyCommandFrontendBackendAutoLinkBoundary, tone: "good" },
             { label: "P0 可继续", value: dailyCommandP0LocalReadinessLabel, tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "P0 进入 P1 闸门", value: dailyCommandP0LocalReadinessReady ? "四段已通过；可进入下一票雷达" : "先让 health / bootstrap / preflight / React 四段变绿", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
@@ -1435,7 +1442,7 @@ export default function CommandCenterHome() {
         <PacketCard title="开发状态速览" subtitle="工程指标默认收进开发详情，不压过三入口" status="audit">
           <MetricGrid
             items={[
-              { label: "FastAPI", value: String(health.status ?? "unknown"), tone: health.status === "ok" ? "good" : "warn" },
+              { label: "FastAPI", value: String(health.status ?? "unknown"), tone: dailyCommandHealthOk ? "good" : "warn" },
               { label: "runtime mode", value: String(bootstrapStatus.mode ?? "cache_only"), tone: bootstrapStatus.mode === "live_light" ? "warn" : "good" },
               { label: "外部启动调用", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
               { label: "manual bootstrap", value: liveBootstrapManualStatus, tone: liveBootstrapManualStatus.includes("failed") ? "bad" : liveBootstrapManualStatus.includes("disabled") || liveBootstrapManualStatus.includes("skipped") ? "good" : "warn" },
