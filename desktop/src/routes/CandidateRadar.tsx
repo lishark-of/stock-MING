@@ -522,7 +522,15 @@ export default function CandidateRadar() {
     live_light: "轻量实时投研模式",
     live_full: "深度实时投研预留"
   }[String(bootstrapStatus.mode ?? "cache_only")] ?? "未知运行模式";
-  const ordinaryCacheSourceLabel = cache.status === "ready" ? "本地候选缓存可用" : "等待本地候选缓存";
+  const candidateRadarCacheReady = cache.status === "ready";
+  const bootstrapRuntimeModeReady =
+    bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet";
+  const quantProjectionP0Ready =
+    !loading &&
+    !error &&
+    bootstrapRuntimeModeReady &&
+    candidateRadarCacheReady;
+  const ordinaryCacheSourceLabel = candidateRadarCacheReady ? "本地候选缓存可用" : "等待本地候选缓存";
   const ordinaryTushareSourceLabel = bootstrapLiveLight.tushare_on_open === true ? "live_light 已配置；仍需确认按钮触发 Tushare-first task" : "手动触发或关闭";
   const ordinaryDeepSeekSourceLabel =
     bootstrapLiveLight.deepseek_on_open === true ? "待 governed executor；不作为数据源或动作" : "手动触发或关闭";
@@ -593,32 +601,36 @@ export default function CandidateRadar() {
   const candidateRadarP0AutoLinkRows = [
     {
       联通项: "前端 API 自动联通",
-      当前状态: error ? "本地 FastAPI 未联通；先停在 P0 恢复" : cache.status ? "GET candidate radar cache 已回读" : loading ? "正在读取本地 cache" : "等待本地 cache",
+      当前状态: error
+        ? "本地 FastAPI 未联通；先停在 P0 恢复"
+        : candidateRadarCacheReady
+          ? "GET candidate radar cache ready"
+          : loading
+            ? "正在读取本地 cache"
+            : cache.status
+              ? `candidate cache 未 ready：${String(cache.status)}`
+              : "等待本地 cache",
       证据: `candidates=${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ") || API_BASE_DISPLAY_URL}`,
-      下一步: error ? "打开一键启动预检或系统健康页，按四段 ready 恢复" : "继续确认 bootstrap runtime-mode packet",
+      下一步: error || !candidateRadarCacheReady ? "打开一键启动预检或系统健康页，按四段 ready 恢复" : "继续确认 bootstrap runtime-mode packet",
       边界: "前端只尝试本机 FastAPI 候选地址；失败只显示离线保护，不启动服务、不创建 task"
     },
     {
       联通项: "bootstrap runtime-mode",
-      当前状态: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "runtime-mode packet 已回读" : "等待 bootstrap status",
+      当前状态: bootstrapRuntimeModeReady ? "runtime-mode packet 已回读" : "等待 bootstrap status",
       证据: "GET /api/bootstrap/status",
-      下一步: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "进入 P1 输入股票代码" : "先让 bootstrap status 变绿",
+      下一步: bootstrapRuntimeModeReady ? "进入 P1 输入股票代码" : "先让 bootstrap status 变绿",
       边界: "bootstrap GET 只读展示模式；不调用 provider/model、不写 cache/config"
     },
     {
       联通项: "进入 P1 闸门",
-      当前状态: error ? "blocked：未联通时不要点击确认" : "ready/check：输入保持静默，确认按钮才创建 task",
+      当前状态: quantProjectionP0Ready ? "ready：输入保持静默，确认按钮才创建 task" : "blocked：P0 未联通时不要点击确认",
       证据: `frontend_call_ledger=${cacheEnvelopeLedger.some((row) => row.frontend_backend_auto_link_attempted === true)}`,
-      下一步: error ? "先恢复 P0，再回到下一票雷达" : "输入代码后点击确认并生成 3.0 量化推演",
+      下一步: quantProjectionP0Ready ? "输入代码后点击确认并生成 3.0 量化推演" : "先恢复 P0，再回到下一票雷达",
       边界: "P0 只证明本地前后端联通；不代表 Tushare、DeepSeek、release 或 14 LTG 完成"
     }
   ];
   const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
   const quantProjectionSymbolReady = quantProjectionSymbolValidation.valid;
-  const quantProjectionP0Ready =
-    !loading &&
-    !error &&
-    bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet";
   const quantProjectionPersistedTaskId = String(searchQuantProjectionReceipt.latest_task_id ?? searchQuantProjectionReceipt.task_id ?? cache.task_id ?? "");
   const quantProjectionPersistedTaskStep = String(searchQuantProjectionReceipt.latest_task_current_step ?? searchQuantProjectionReceipt.status ?? "");
   const quantProjectionTaskReceiptPayload = (taskReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
