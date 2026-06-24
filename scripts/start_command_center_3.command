@@ -12,6 +12,7 @@ VITE_URL="${COMMAND_CENTER_3_VITE_URL:-http://127.0.0.1:5173}"
 APP_URL="${COMMAND_CENTER_3_APP_URL:-${VITE_URL%/}/#home}"
 LAUNCHER_CHECK_ONLY="${COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY:-0}"
 LAUNCHER_SKIP_OPEN="${COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN:-0}"
+P0_STABILITY_DWELL_SECONDS="${COMMAND_CENTER_3_P0_STABILITY_DWELL_SECONDS:-2}"
 
 resolve_python() {
   if [ -n "${STOCK_MING_PYTHON:-}" ]; then
@@ -302,6 +303,34 @@ wait_for_desktop_preflight_cache() {
   return 1
 }
 
+verify_p0_startup_stability() {
+  echo "P0 stability check: waiting ${P0_STABILITY_DWELL_SECONDS}s, then re-reading health, bootstrap status, desktop preflight cache, and React/Vite before success handoff."
+  sleep "$P0_STABILITY_DWELL_SECONDS"
+  local failed=0
+  if ! command_center_health_ready "${API_BASE%/}/health"; then
+    FASTAPI_READY=0
+    failed=1
+  fi
+  if ! bootstrap_status_ready "${API_BASE%/}/api/bootstrap/status"; then
+    API_STATUS_READY=0
+    failed=1
+  fi
+  if ! desktop_preflight_cache_ready "${API_BASE%/}/api/desktop/preflight-cache"; then
+    DESKTOP_PREFLIGHT_READY=0
+    failed=1
+  fi
+  if ! vite_command_center_ready "$VITE_URL"; then
+    VITE_READY=0
+    failed=1
+  fi
+  if [ "$failed" = "0" ]; then
+    echo "P0 stability check passed: local backend/frontend stayed ready after the dwell; browser handoff remains safe."
+  else
+    echo "P0 stability check failed: a local readiness endpoint stopped responding before handoff; browser will not open."
+  fi
+  return "$failed"
+}
+
 print_startup_diagnostics() {
   echo "可操作诊断："
   if [ "$FASTAPI_READY" != "1" ]; then
@@ -462,13 +491,20 @@ if wait_for_vite_command_center "$VITE_URL" 40; then
   VITE_READY=1
 fi
 
-if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$DESKTOP_PREFLIGHT_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then
-  echo "Command Center 3.0 启动未完成：FastAPI ready=${FASTAPI_READY}, API status ready=${API_STATUS_READY}, desktop preflight ready=${DESKTOP_PREFLIGHT_READY}, React/Vite ready=${VITE_READY}"
+P0_STABILITY_READY=0
+if [ "$FASTAPI_READY" = "1" ] && [ "$API_STATUS_READY" = "1" ] && [ "$DESKTOP_PREFLIGHT_READY" = "1" ] && [ "$VITE_READY" = "1" ]; then
+  if verify_p0_startup_stability; then
+    P0_STABILITY_READY=1
+  fi
+fi
+
+if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$DESKTOP_PREFLIGHT_READY" != "1" ] || [ "$VITE_READY" != "1" ] || [ "$P0_STABILITY_READY" != "1" ]; then
+  echo "Command Center 3.0 启动未完成：FastAPI ready=${FASTAPI_READY}, API status ready=${API_STATUS_READY}, desktop preflight ready=${DESKTOP_PREFLIGHT_READY}, React/Vite ready=${VITE_READY}, P0 stability ready=${P0_STABILITY_READY}"
   echo "请查看日志："
   echo "  FastAPI log: ${FASTAPI_LOG}"
   echo "  React/Vite log: ${VITE_LOG}"
   print_startup_diagnostics
-  echo "本地入口不会在前后端未联通或 Vite 端口不是 Command Center 3.0 页面时自动打开页面。"
+  echo "本地入口不会在前后端未联通、Vite 端口不是 Command Center 3.0 页面或 P0 稳定性复核失败时自动打开页面。"
   exit 1
 fi
 
