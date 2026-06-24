@@ -534,8 +534,8 @@ def _frontend_backend_auto_link_contract(api_base_info: dict[str, Any], client_s
         {
             "检查项": "离线下一步",
             "当前状态": "ready" if "frontend_backend_auto_link_next_action" in client_source else "check",
-            "用户看法": "后端未联通时，提示双击本地启动器或运行 check-only 命令。",
-            "证据": "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command",
+            "用户看法": "后端未联通时，提示双击本地启动器或运行 check-only wrapper。",
+            "证据": "scripts/check_command_center_3.command",
             "边界": "提示本身不执行命令、不写 cache、不创建 POST task。",
         },
     ]
@@ -561,7 +561,10 @@ def _frontend_backend_auto_link_contract(api_base_info: dict[str, Any], client_s
         "configured_api_base_display": api_base_info.get("configured_api_base_display"),
         "candidate_display_urls": candidates,
         "candidate_count": len(candidates),
-        "offline_next_action": "双击 stock-MING Command Center 3.command；或运行 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 scripts/start_command_center_3.command 做安全诊断。",
+        "offline_next_action": "双击 stock-MING Command Center 3.command；或先运行 scripts/check_command_center_3.command 做安全自检。",
+        "offline_check_only_command": "scripts/check_command_center_3.command",
+        "offline_next_action_uses_check_only_wrapper": True,
+        "offline_check_only_command_creates_task": False,
         "current_runtime_probe_executed_by_get_cache": False,
         "get_cache_starts_services": False,
         "react_render_starts_services": False,
