@@ -1007,6 +1007,26 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("小数据回放只读取本地 cache / ledger / packet", self.page)
         self.assertIn("推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", self.page)
 
+    def test_p1_symbol_input_is_shared_and_silent_until_confirm(self):
+        self.assertIn(
+            "const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionP0Ready && !quantProjectionTaskAlreadyAcceptedForInput;",
+            self.page,
+        )
+        self.assertIn("const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;", self.page)
+        self.assertEqual(self.page.count("setSearchSymbol(event.target.value);"), 3)
+        self.assertEqual(self.page.count("onClick={launchQuantProjection}"), 3)
+        self.assertIn('aria-label="candidate radar first screen quant projection symbol"', self.page)
+        self.assertIn('aria-label="radar summary quant projection symbol"', self.page)
+        self.assertIn('aria-label="search quant projection symbol"', self.page)
+        self.assertIn("输入股票代码只做本地校验；不会创建任务，也不会调用 Tushare 或 DeepSeek", self.page)
+        self.assertIn("点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task", self.page)
+        submit_start = self.page.index("const launchQuantProjection = () =>")
+        submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
+        submit_slice = self.page[submit_start:submit_end]
+        self.assertIn("if (!quantProjectionCanSubmit || quantProjectionSubmitting) return;", submit_slice)
+        self.assertIn("void postCandidateRadarQuantProjection({", submit_slice)
+        self.assertNotIn("setSearchSymbol(event.target.value);", submit_slice)
+
     def test_ordinary_quant_projection_submit_does_not_auto_chain_provider_model(self):
         submit_start = self.page.index("const launchQuantProjection = () =>")
         submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
