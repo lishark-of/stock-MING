@@ -468,15 +468,22 @@ export default function CandidateRadar() {
     Number(counts.result_delta_clarity_visible_gap_count ?? 0) ? "result_delta_gap" : "result_delta_clear",
     Number(counts.degraded_mode_active_count ?? 0) ? "degraded" : "steady"
   ].join(" ");
-  const ordinaryNextClick = Number(counts.candidate_count ?? 0)
-    ? "先查看本地候选摘要"
-    : "先点击运行本地快扫";
-  const ordinaryPrimaryActionLabel = Number(counts.candidate_count ?? 0)
-    ? "查看本地候选池"
-    : "运行本地快扫";
-  const ordinaryPrimaryActionBoundary = Number(counts.candidate_count ?? 0)
-    ? "主下一步只跳转本地候选池，不创建 task、不刷新外部数据或模型"
-    : "主下一步只创建按钮门控本地快扫 POST task，不直连 Tushare/DeepSeek";
+  const candidateRadarP0Blocked = Boolean(error);
+  const ordinaryNextClick = candidateRadarP0Blocked
+    ? "先恢复 P0 本地联通"
+    : Number(counts.candidate_count ?? 0)
+      ? "先查看本地候选摘要"
+      : "先点击运行本地快扫";
+  const ordinaryPrimaryActionLabel = candidateRadarP0Blocked
+    ? "回一键启动预检恢复联通"
+    : Number(counts.candidate_count ?? 0)
+      ? "查看本地候选池"
+      : "运行本地快扫";
+  const ordinaryPrimaryActionBoundary = candidateRadarP0Blocked
+    ? "P0 未联通时主下一步只跳转一键启动预检；不创建快扫 task、不调用 provider/model"
+    : Number(counts.candidate_count ?? 0)
+      ? "主下一步只跳转本地候选池，不创建 task、不刷新外部数据或模型"
+      : "主下一步只创建按钮门控本地快扫 POST task，不直连 Tushare/DeepSeek";
   const ordinaryOptionalNextClick = Number(counts.candidate_count ?? 0)
     ? "需要更新时再运行本地快扫；搜单票时输入代码后点击生成 3.0 量化推演"
     : "也可以输入自选股票池后扫描；搜单票时走生成 3.0 量化推演";
@@ -1741,7 +1748,9 @@ export default function CandidateRadar() {
           <p className="risk-note">当前只是使用者可用化 checkpoint，不是 14 LTG 全部完成；后续必须回到 direct evidence、CI、browser/provider/worker/storage/package 等逐项严格验收。</p>
         </details>
         <div className="actions" aria-label="candidate radar primary next action">
-          {Number(counts.candidate_count ?? 0) ? (
+          {candidateRadarP0Blocked ? (
+            <a href="#desktop" aria-label="open p0 desktop preflight from radar summary">{ordinaryPrimaryActionLabel}</a>
+          ) : Number(counts.candidate_count ?? 0) ? (
             <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>
           ) : (
             <button onClick={launchQuickScan}>{ordinaryPrimaryActionLabel}</button>
