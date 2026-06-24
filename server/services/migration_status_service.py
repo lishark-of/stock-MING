@@ -1171,10 +1171,10 @@ def _build_usable_path_current_checkpoint_rows(
         },
         "P1": {
             "ordinary_user_meaning": "输入股票代码后，由确认按钮触发 Tushare-first 数据链。",
-            "current_next_action": "稳住已接通的 button-gated POST task，再把真实 provider 验收拆成显式确认步骤。",
+            "current_next_action": "普通确认先走 button-gated POST task 和本地回放；真实 Tushare call_ledger 仍需显式 provider 验收步骤。",
             "current_evidence_scope": (
-                "button-gated POST task wired; fake-provider ledger proves cache/call_ledger/packet "
-                "writeback; real Tushare production acceptance still pending"
+                "button-gated POST task and ordinary replay are wired; fake-provider ledger is local "
+                "shape evidence only; real Tushare call_ledger and production acceptance are still pending"
             ),
             "post_task_route": "POST /api/candidate-radar/quant-projection",
             "current_test_evidence": (
@@ -1182,7 +1182,10 @@ def _build_usable_path_current_checkpoint_rows(
                 "CandidateRadarQuantProjectionCacheLedgerTests."
                 "test_confirm_tushare_first_writes_provider_ledger_to_cache_envelope"
             ),
-            "provider_execution_claim": "fake_provider_test_only_not_production_acceptance",
+            "ordinary_confirm_scope": "creates_or_replays_tushare_first_local_task_contract",
+            "provider_evidence_boundary": "fake_provider_ledger_is_shape_only_real_tushare_call_ledger_pending",
+            "real_provider_next_gate": "explicit_user_approved_provider_acceptance_task_with_safe_call_ledger",
+            "provider_execution_claim": "fake_provider_shape_only_not_real_tushare_or_production_acceptance",
             "external_call_gate": "user_confirmed_post_task_only",
         },
         "P2": {
@@ -1221,6 +1224,9 @@ def _build_usable_path_current_checkpoint_rows(
                 "current_evidence_scope": checkpoint_scope["current_evidence_scope"],
                 "post_task_route": checkpoint_scope.get("post_task_route", ""),
                 "current_test_evidence": checkpoint_scope.get("current_test_evidence", ""),
+                "ordinary_confirm_scope": checkpoint_scope.get("ordinary_confirm_scope", ""),
+                "provider_evidence_boundary": checkpoint_scope.get("provider_evidence_boundary", ""),
+                "real_provider_next_gate": checkpoint_scope.get("real_provider_next_gate", ""),
                 "provider_execution_claim": checkpoint_scope.get(
                     "provider_execution_claim",
                     "local_checkpoint_not_provider_execution_evidence",
