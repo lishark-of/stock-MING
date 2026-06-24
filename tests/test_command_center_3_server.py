@@ -38458,6 +38458,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                     "does_not_execute_trades": True,
                     "does_not_modify_strategy_action": True,
                 },
+                "p0_confirm_gate_evidence": {
+                    "schema_version": "candidate_radar_p0_confirm_gate.v1",
+                    "p0_ready": True,
+                    "fastapi_cache_get_ready": True,
+                    "bootstrap_runtime_mode_ready": True,
+                    "candidate_cache_ready": True,
+                    "candidate_cache_status": "ready",
+                    "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+                    "creates_task_only_after_button": True,
+                    "react_render_external_calls": False,
+                    "get_cache_external_calls": False,
+                    "contains_secret": False,
+                },
                 "token": "SHOULD_DROP",
             },
         ).json()
@@ -38488,6 +38501,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(confirm_contract["get_cache_external_calls"])
         self.assertEqual(confirm_contract["deepseek_policy"], "skipped_until_governed_executor")
         self.assertEqual(confirm_contract["writeback_surfaces"], ["cache", "call_ledger", "packet"])
+        p0_gate = task["call_ledger"][0]["request_params_safe"]["p0_confirm_gate_evidence"]
+        self.assertEqual(p0_gate["schema_version"], "candidate_radar_p0_confirm_gate.v1")
+        self.assertTrue(p0_gate["p0_ready"])
+        self.assertTrue(p0_gate["fastapi_cache_get_ready"])
+        self.assertTrue(p0_gate["bootstrap_runtime_mode_ready"])
+        self.assertTrue(p0_gate["candidate_cache_ready"])
+        self.assertEqual(p0_gate["candidate_cache_status"], "ready")
+        self.assertEqual(p0_gate["bootstrap_packet_key"], "command_center_3_bootstrap_runtime_mode_packet")
+        self.assertTrue(p0_gate["creates_task_only_after_button"])
+        self.assertFalse(p0_gate["react_render_external_calls"])
+        self.assertFalse(p0_gate["get_cache_external_calls"])
+        self.assertFalse(p0_gate["contains_sensitive_material"])
         self.assert_local_ledger_boundary(task["call_ledger"][0])
         self.assertFalse(task["external_calls_triggered"])
         self.assertFalse(task["tushare_called"])
@@ -38528,6 +38553,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt_confirm_contract["trigger"], "explicit_user_click")
         self.assertFalse(receipt_confirm_contract["input_before_confirm_creates_task"])
         self.assertEqual(receipt_confirm_contract["deepseek_policy"], "skipped_until_governed_executor")
+        receipt_p0_gate = receipt["call_ledger"][0]["request_params_safe"]["p0_confirm_gate_evidence"]
+        self.assertTrue(receipt_p0_gate["p0_ready"])
+        self.assertTrue(receipt_p0_gate["candidate_cache_ready"])
+        self.assertFalse(receipt_p0_gate["contains_sensitive_material"])
         self.assertTrue(packet["counts"]["search_quant_projection_task_readback_visible"])
         self.assertTrue(packet["policy"]["search_quant_projection_task_readback_is_cache_replay"])
         self.assertFalse(packet["policy"]["search_quant_projection_task_readback_cache_get_external_calls"])
@@ -38567,6 +38596,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "DeepSeek skipped",
             confirmed_receipt_rows["p1_confirm_contract"]["boundary"],
         )
+        self.assertEqual(confirmed_receipt_rows["p0_confirm_gate"]["status"], "p0_gate_ready")
+        self.assertTrue(confirmed_receipt_rows["p0_confirm_gate"]["p0_ready"])
+        self.assertTrue(confirmed_receipt_rows["p0_confirm_gate"]["fastapi_cache_get_ready"])
+        self.assertTrue(confirmed_receipt_rows["p0_confirm_gate"]["bootstrap_runtime_mode_ready"])
+        self.assertTrue(confirmed_receipt_rows["p0_confirm_gate"]["candidate_cache_ready"])
+        self.assertEqual(confirmed_receipt_rows["p0_confirm_gate"]["candidate_cache_status"], "ready")
+        self.assertFalse(confirmed_receipt_rows["p0_confirm_gate"]["creates_task_from_readback"])
+        self.assertFalse(confirmed_receipt_rows["p0_confirm_gate"]["contains_secret"])
         self.assertEqual(
             activation["schema_version"],
             "candidate_radar_search_quant_projection_activation_receipt.v1",

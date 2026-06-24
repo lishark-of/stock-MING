@@ -14147,6 +14147,20 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
     projection_snapshot, projection_receipt, projection_rows = _snapshot_with_quant_projection(snapshot_map, payload_safe)
+    p0_gate_payload = _as_dict(payload_safe.get("p0_confirm_gate_evidence"))
+    p0_confirm_gate_evidence = {
+        "schema_version": _safe_text(p0_gate_payload.get("schema_version") or "", limit=120),
+        "p0_ready": p0_gate_payload.get("p0_ready") is True,
+        "fastapi_cache_get_ready": p0_gate_payload.get("fastapi_cache_get_ready") is True,
+        "bootstrap_runtime_mode_ready": p0_gate_payload.get("bootstrap_runtime_mode_ready") is True,
+        "candidate_cache_ready": p0_gate_payload.get("candidate_cache_ready") is True,
+        "candidate_cache_status": _safe_text(p0_gate_payload.get("candidate_cache_status") or "missing", limit=80),
+        "bootstrap_packet_key": _safe_text(p0_gate_payload.get("bootstrap_packet_key") or "missing", limit=160),
+        "creates_task_only_after_button": p0_gate_payload.get("creates_task_only_after_button") is True,
+        "react_render_external_calls": p0_gate_payload.get("react_render_external_calls") is True,
+        "get_cache_external_calls": p0_gate_payload.get("get_cache_external_calls") is True,
+        "contains_sensitive_material": False,
+    }
     request_params_safe = {
         "scan_mode": QUANT_PROJECTION_SCAN_MODE,
         "symbol": projection_receipt.get("symbol"),
@@ -14159,6 +14173,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
         "production_quant_projection_complete": False,
+        "p0_confirm_gate_evidence": p0_confirm_gate_evidence,
         "ordinary_confirm_chain_contract": payload_safe.get("ordinary_confirm_chain_contract") or {},
     }
     packet = _build_candidate_radar_packet(
@@ -14176,13 +14191,16 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         call_status=str(projection_receipt.get("status") or "quant_projection_local_receipt_ready_provider_model_pending"),
         request_params_safe=request_params_safe,
     )
+    original_projection_receipt_ledger = [
+        row for row in _as_list(projection_receipt.get("call_ledger")) if isinstance(row, dict)
+    ]
+    projection_receipt = dict(projection_receipt)
+    projection_receipt["call_ledger"] = [ledger]
     packet["task_id"] = task["task_id"]
     packet["search_quant_projection_completed_at"] = _now_iso()
     packet["search_quant_projection_receipt"] = projection_receipt
     packet["search_quant_projection_rows"] = projection_rows
-    packet["call_ledger"] = [ledger] + [
-        row for row in _as_list(projection_receipt.get("call_ledger")) if isinstance(row, dict)
-    ]
+    packet["call_ledger"] = [ledger] + original_projection_receipt_ledger
     packet["warnings"] = [
         "搜票量化推演已写入本地回执；真实 Tushare / Factor / Next Session / DeepSeek / ECharts 证据仍待后续显式任务补齐。"
     ] + [warning for warning in _as_list(packet.get("warnings")) if "搜票量化推演" not in str(warning)]
@@ -14275,6 +14293,26 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                     final_warning = final_step
     try:
         latest_packet = _read_persisted_packet() or packet
+        original_quant_receipt = _as_dict(packet.get("search_quant_projection_receipt"))
+        original_quant_ledger = [
+            row for row in _as_list(original_quant_receipt.get("call_ledger")) if isinstance(row, dict)
+        ]
+        latest_quant_receipt = dict(_as_dict(latest_packet.get("search_quant_projection_receipt")))
+        latest_quant_ledger = [
+            row for row in _as_list(latest_quant_receipt.get("call_ledger")) if isinstance(row, dict)
+        ]
+        latest_quant_params = _as_dict(
+            latest_quant_ledger[0].get("request_params_safe") if latest_quant_ledger else {}
+        )
+        original_quant_params = _as_dict(
+            original_quant_ledger[0].get("request_params_safe") if original_quant_ledger else {}
+        )
+        if original_quant_params and (
+            not latest_quant_params.get("ordinary_confirm_chain_contract")
+            or not latest_quant_params.get("p0_confirm_gate_evidence")
+        ):
+            latest_quant_receipt["call_ledger"] = original_quant_ledger
+            latest_packet["search_quant_projection_receipt"] = latest_quant_receipt
         latest_packet = _attach_search_quant_projection_task_readback(
             latest_packet,
             task_id=str(task["task_id"]),
@@ -15383,6 +15421,14 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
     ordinary_confirm_chain_contract_visible = bool(
         ordinary_confirm_chain_contract.get("schema_version")
     )
+    p0_confirm_gate_evidence = _as_dict(quant_request_params.get("p0_confirm_gate_evidence"))
+    p0_confirm_gate_ready = p0_confirm_gate_evidence.get("p0_ready") is True
+    p0_confirm_gate_status = "p0_gate_ready" if p0_confirm_gate_ready else "p0_gate_missing_or_blocked"
+    p0_confirm_gate_label = (
+        "P0 gate ready：FastAPI cache GET、bootstrap runtime-mode、candidate cache 均已满足。"
+        if p0_confirm_gate_ready
+        else "P0 gate 未完整回放：等待 FastAPI cache GET、bootstrap runtime-mode 和 candidate cache ready。"
+    )
     confirmed_include_tushare = (
         quant_request_params.get("include_tushare") is True
         or dry_run.get("include_tushare") is True
@@ -15726,6 +15772,30 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             ),
             "readback_source": "search_quant_projection_receipt.call_ledger.request_params_safe.ordinary_confirm_chain_contract",
             "boundary": "合同只记录按钮点击、输入静默、DeepSeek skipped 和 cache/ledger/packet 回放面；不含 token/key/raw log。",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "receipt_item": "p0_confirm_gate",
+            "status": p0_confirm_gate_status,
+            "ordinary_label": p0_confirm_gate_label,
+            "readback_source": "search_quant_projection_receipt.call_ledger.request_params_safe.p0_confirm_gate_evidence",
+            "boundary": "P0 gate 只回放安全布尔状态和本地 packet key；不含凭据、不启动服务、不创建第二个 task。",
+            "p0_ready": p0_confirm_gate_ready,
+            "fastapi_cache_get_ready": p0_confirm_gate_evidence.get("fastapi_cache_get_ready") is True,
+            "bootstrap_runtime_mode_ready": p0_confirm_gate_evidence.get("bootstrap_runtime_mode_ready") is True,
+            "candidate_cache_ready": p0_confirm_gate_evidence.get("candidate_cache_ready") is True,
+            "candidate_cache_status": _safe_text(
+                p0_confirm_gate_evidence.get("candidate_cache_status") or "missing",
+                limit=80,
+            ),
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,

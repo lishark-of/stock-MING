@@ -35,6 +35,7 @@ function ordinaryResultSurfaceLabel(surface: unknown) {
 function confirmedTaskReceiptLabel(item: unknown) {
   const key = String(item ?? "");
   if (key === "task_id") return "task_id";
+  if (key === "p0_confirm_gate") return "P0 联通闸门";
   if (key === "p1_confirm_contract") return "P1 确认合同";
   if (key === "tushare_first_chain") return "Tushare-first 链路";
   if (key === "safe_current_step") return "安全步骤";

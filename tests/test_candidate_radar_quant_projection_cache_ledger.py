@@ -118,6 +118,19 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
                 "include_tushare": True,
                 "include_deepseek": False,
                 "user_approved": True,
+                "p0_confirm_gate_evidence": {
+                    "schema_version": "candidate_radar_p0_confirm_gate.v1",
+                    "p0_ready": True,
+                    "fastapi_cache_get_ready": True,
+                    "bootstrap_runtime_mode_ready": True,
+                    "candidate_cache_ready": True,
+                    "candidate_cache_status": "ready",
+                    "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+                    "creates_task_only_after_button": True,
+                    "react_render_external_calls": False,
+                    "get_cache_external_calls": False,
+                    "contains_secret": False,
+                },
                 "token": "SHOULD_DROP",
             },
         ).json()
@@ -228,7 +241,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(small_data["ordinary_confirm_replay_stage_rows_create_task"])
         self.assertFalse(small_data["ordinary_confirm_replay_stage_rows_use_model_output"])
         self.assertTrue(small_data["ordinary_confirm_replay_stage_rows_are_not_trade_signals"])
-        self.assertEqual(small_data["ordinary_confirmed_task_receipt_row_count"], 4)
+        self.assertEqual(small_data["ordinary_confirmed_task_receipt_row_count"], 6)
         self.assertTrue(small_data["ordinary_confirmed_task_receipt_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_confirmed_task_receipt_rows_create_task"])
         self.assertEqual(small_data["ordinary_provider_api_row_count"], 4)
@@ -509,10 +522,27 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertTrue(integrity_row["does_not_modify_strategy_action"])
             self.assertTrue(integrity_row["candidate_is_not_buy_instruction"])
         receipt_rows = {row["receipt_item"]: row for row in small_data["ordinary_confirmed_task_receipt_rows"]}
-        self.assertEqual(set(receipt_rows), {"task_id", "tushare_first_chain", "safe_current_step", "result_destinations"})
+        self.assertEqual(
+            set(receipt_rows),
+            {
+                "task_id",
+                "tushare_first_chain",
+                "p1_confirm_contract",
+                "p0_confirm_gate",
+                "safe_current_step",
+                "result_destinations",
+            },
+        )
         self.assertIn(response["data"]["task_id"], receipt_rows["task_id"]["ordinary_label"])
         self.assertEqual(receipt_rows["tushare_first_chain"]["status"], "tushare_first_confirmed")
         self.assertIn("include_tushare=true / include_deepseek=false", receipt_rows["tushare_first_chain"]["ordinary_label"])
+        self.assertEqual(receipt_rows["p1_confirm_contract"]["status"], "confirm_contract_visible")
+        self.assertEqual(receipt_rows["p0_confirm_gate"]["status"], "p0_gate_ready")
+        self.assertTrue(receipt_rows["p0_confirm_gate"]["p0_ready"])
+        self.assertTrue(receipt_rows["p0_confirm_gate"]["fastapi_cache_get_ready"])
+        self.assertTrue(receipt_rows["p0_confirm_gate"]["bootstrap_runtime_mode_ready"])
+        self.assertTrue(receipt_rows["p0_confirm_gate"]["candidate_cache_ready"])
+        self.assertFalse(receipt_rows["p0_confirm_gate"]["creates_task_from_readback"])
         self.assertIn(
             "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
             receipt_rows["safe_current_step"]["ordinary_label"],
