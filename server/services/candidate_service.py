@@ -16883,6 +16883,43 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     view = dict(packet)
     summary = _search_quant_projection_small_data_writeback_summary(view)
     view["search_quant_projection_small_data_writeback_summary"] = summary
+    ordinary_readback_alias_keys = [
+        "ordinary_one_screen_action_rows",
+        "ordinary_one_screen_action_row_count",
+        "ordinary_one_screen_action_rows_are_cache_only",
+        "ordinary_one_screen_action_rows_create_task",
+        "ordinary_one_screen_action_rows_call_provider_from_readback",
+        "ordinary_one_screen_action_rows_use_model_output",
+        "ordinary_one_screen_action_rows_are_not_trade_signals",
+        "ordinary_confirm_outcome_rows",
+        "ordinary_confirm_outcome_row_count",
+        "ordinary_confirm_outcome_rows_are_cache_only",
+        "ordinary_confirm_outcome_rows_create_task",
+        "ordinary_confirm_outcome_rows_call_provider_from_readback",
+        "ordinary_confirm_outcome_rows_use_model_output",
+        "ordinary_confirm_outcome_rows_are_not_trade_signals",
+        "ordinary_writeback_surface_summary_rows",
+        "ordinary_writeback_surface_summary_row_count",
+        "ordinary_writeback_surface_summary_rows_are_cache_only",
+        "ordinary_writeback_surface_summary_rows_create_task",
+        "ordinary_writeback_surface_summary_rows_are_not_trade_signals",
+        "ordinary_confirmed_task_receipt_rows",
+        "ordinary_confirmed_task_receipt_row_count",
+        "ordinary_confirmed_task_receipt_rows_are_cache_only",
+        "ordinary_confirmed_task_receipt_rows_create_task",
+        "ordinary_task_readback_rows",
+        "ordinary_task_readback_row_count",
+        "ordinary_task_readback_rows_are_cache_only",
+        "ordinary_task_readback_rows_create_task",
+        "ordinary_tushare_first_chain_rows",
+        "ordinary_tushare_first_chain_row_count",
+        "ordinary_tushare_first_chain_rows_are_cache_only",
+        "ordinary_tushare_first_chain_rows_create_task",
+        "ordinary_tushare_first_chain_rows_call_provider_from_get",
+    ]
+    for key in ordinary_readback_alias_keys:
+        if key in summary:
+            view[key] = summary[key]
     latest_task_id = _safe_text(summary.get("latest_task_id") or "", limit=128)
     if latest_task_id:
         receipt = dict(_as_dict(view.get("search_quant_projection_receipt")))

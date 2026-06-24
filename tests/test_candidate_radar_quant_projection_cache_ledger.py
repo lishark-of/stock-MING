@@ -608,6 +608,34 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["policy"]["search_quant_projection_confirm_outcome_rows_call_provider_from_readback"])
         self.assertFalse(packet["policy"]["search_quant_projection_confirm_outcome_rows_use_model_output"])
         self.assertTrue(packet["policy"]["search_quant_projection_confirm_outcome_rows_are_not_trade_signals"])
+        self.assertEqual(
+            packet["ordinary_one_screen_action_rows"],
+            small_data["ordinary_one_screen_action_rows"],
+        )
+        self.assertEqual(
+            packet["ordinary_confirm_outcome_rows"],
+            small_data["ordinary_confirm_outcome_rows"],
+        )
+        self.assertEqual(
+            packet["ordinary_writeback_surface_summary_rows"],
+            small_data["ordinary_writeback_surface_summary_rows"],
+        )
+        self.assertEqual(
+            packet["ordinary_tushare_first_chain_rows"],
+            small_data["ordinary_tushare_first_chain_rows"],
+        )
+        self.assertEqual(packet["ordinary_one_screen_action_row_count"], 4)
+        self.assertEqual(packet["ordinary_confirm_outcome_row_count"], 3)
+        self.assertTrue(packet["ordinary_one_screen_action_rows_are_cache_only"])
+        self.assertFalse(packet["ordinary_one_screen_action_rows_create_task"])
+        self.assertFalse(packet["ordinary_one_screen_action_rows_call_provider_from_readback"])
+        self.assertFalse(packet["ordinary_one_screen_action_rows_use_model_output"])
+        self.assertTrue(packet["ordinary_one_screen_action_rows_are_not_trade_signals"])
+        self.assertTrue(packet["ordinary_confirm_outcome_rows_are_cache_only"])
+        self.assertFalse(packet["ordinary_confirm_outcome_rows_create_task"])
+        self.assertFalse(packet["ordinary_confirm_outcome_rows_call_provider_from_readback"])
+        self.assertFalse(packet["ordinary_confirm_outcome_rows_use_model_output"])
+        self.assertTrue(packet["ordinary_confirm_outcome_rows_are_not_trade_signals"])
         readback_rows = {row["surface"]: row for row in small_data["ordinary_readback_rows"]}
         self.assertEqual(set(readback_rows), {"cache", "call_ledger", "packet"})
         self.assertEqual(readback_rows["cache"]["status"], "written")
