@@ -243,6 +243,45 @@ export default function NextSessionMap() {
       边界: "operation_zones 不是买卖指令，不下单，不写 strategy action。"
     }
   ];
+  const nextSessionP3OneMinuteReadRows = [
+    {
+      读图顺序: "1. 来源",
+      当前状态: nextSessionReplayOrigin,
+      用户下一步: "确认来源来自下一票雷达 / 股票量化推演后的本地回放。",
+      证据: "next-session cache / chart_summary",
+      边界: "GET cache 只读；不创建 task、不调用 Tushare/DeepSeek/GitHub。"
+    },
+    {
+      读图顺序: "2. 可读结论",
+      当前状态: nextSessionLastResultLabel,
+      用户下一步: chartSummary.has_drawable_data === true ? "先读图表路径和参考线，再读操作区。" : "先查看缓存状态或手动生成按钮任务。",
+      证据: "chart_summary",
+      边界: nextSessionResearchOnlyLabel
+    },
+    {
+      读图顺序: "3. 操作区",
+      当前状态: Number(chartSummary.operation_zone_count ?? 0) > 0
+        ? `operation_zones ${String(chartSummary.operation_zone_count ?? 0)} 个；只表示条件区间和复核提示`
+        : "等待 operation_zones cache；不能把空操作区解释成无风险",
+      用户下一步: "把 operation_zones 当条件区间复核。",
+      证据: "chart_payload.operation_zones",
+      边界: nextSessionOperationZoneBoundary
+    },
+    {
+      读图顺序: "4. 缺口",
+      当前状态: nextSessionMissingEvidence,
+      用户下一步: "缺口回到下一票雷达或股票量化推演补证。",
+      证据: "production_stage_scope / browser QA / real close evidence",
+      边界: "缺口只提示下一步；GET cache 和 React render 不补调 provider/model。"
+    },
+    {
+      读图顺序: "5. 回流",
+      当前状态: nextSessionChartReviewOrder,
+      用户下一步: "需要换标的回下一票雷达；需要支持/压制回股票量化推演。",
+      证据: "local route handoff #candidates/#factor",
+      边界: nextSessionReplayDestinationBoundary
+    }
+  ];
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
   const nextSessionOrdinaryReplayBoundaryBlocked =
     packet.does_not_modify_action === false || packet.does_not_modify_operation_zones === false;
@@ -453,6 +492,11 @@ export default function NextSessionMap() {
         steps={nextSessionOrdinaryReplayRailSteps}
       />
       <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek，DeepSeek governed executor 继续收起为 P5 单独补证。</p>
+      <div aria-label="next session p3 one minute read">
+        <h3>P3 一分钟读图</h3>
+        <p className="risk-note">普通用户先看这张表：用一分钟确认来源、可读结论、operation_zones、缺口和回流入口；它只读本地 next-session cache。</p>
+        <DataLineageTable rows={nextSessionP3OneMinuteReadRows} />
+      </div>
       <div aria-label="next session p3 result handoff quick read">
         <h3>P3 结果交接速读</h3>
         <p className="risk-note">先看来源、结论、缺口和操作区边界；这张表只做本地结果交接，不展开 QA、promotion 或 raw packet 审计。</p>
