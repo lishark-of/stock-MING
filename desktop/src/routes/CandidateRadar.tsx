@@ -2384,6 +2384,9 @@ export default function CandidateRadar() {
             <DataLineageTable rows={quantProjectionP0SubmitRecoveryRows} />
           </div>
         ) : null}
+        <details className="developer-audit-details" aria-label="candidate radar ordinary expanded p1 p3 readback details">
+          <summary>更多回放明细</summary>
+          <p className="risk-note">普通主视图保留 P1 确认、任务状态、P2 三面速读和 P3 首屏结果；重复的阶段轨、恢复表、回放索引和 checkpoint 默认收起。</p>
         <div aria-label="candidate radar ordinary p1 to p3 stage rail">
           <h3>P1 到 P3 阶段速览</h3>
           <p className="risk-note">这条状态轨只读本地输入、task receipt 和 cache 回放：输入保持静默，只有确认按钮创建 Tushare-first POST task，P2/P3 只回放本地结果。</p>
@@ -2484,6 +2487,7 @@ export default function CandidateRadar() {
           <p className="risk-note">普通用户按这张索引回放可读结论、量化推演、次日图谱和候选池；它只读取服务端 ordinary_result_handoff_rows，不创建 task、不补调模型。</p>
           <DataLineageTable rows={quantProjectionOrdinaryResultHandoffRows} />
         </div>
+        </details>
         <div className="actions" aria-label="candidate radar primary next action">
           {candidateRadarP0Blocked ? (
             <a href="#desktop" aria-label="open p0 desktop preflight from radar summary">{ordinaryPrimaryActionLabel}</a>
