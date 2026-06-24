@@ -1159,6 +1159,19 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", panel)
         self.assertNotIn("launchQuantProjectionProviderModelAcceptance", panel)
 
+    def test_candidate_radar_does_not_poll_empty_or_replayed_task_ids(self):
+        self.assertIn(
+            "不启动 TaskStatusPanel 轮询，避免把过期任务记录显示成本地后端错误",
+            self.page,
+        )
+        self.assertIn("quantProjectionTaskVisible && Boolean(taskId)", self.page)
+        self.assertNotIn("quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId)", self.page)
+        self.assertIn("const manualTaskPanelVisible = Boolean(taskId);", self.page)
+        self.assertIn(
+            "暂无可轮询任务；点击确认按钮或手动任务后才显示 TaskStatusPanel",
+            self.page,
+        )
+
     def test_candidate_radar_page_does_not_embed_provider_or_trade_calls(self):
         forbidden_fragments = (
             "tushare.pro_api",

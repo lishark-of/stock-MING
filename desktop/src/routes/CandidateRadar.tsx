@@ -1387,11 +1387,15 @@ export default function CandidateRadar() {
     ? "正在创建当前代码的新 Tushare-first task；旧任务面板暂不显示，避免把旧 task 当成当前输入的回放。"
     : quantProjectionTaskReceiptInputMismatch
       ? `当前输入 ${quantProjectionSymbolValidation.normalized} 与最近任务 ${quantProjectionAcceptedTaskSymbol} 不一致；旧任务面板暂不显示，需重新点击确认。`
-      : "";
+      : !taskId && quantProjectionPersistedTaskId
+        ? `最近任务 ${quantProjectionPersistedTaskId} 来自本地 cache 回放；不启动 TaskStatusPanel 轮询，避免把过期任务记录显示成本地后端错误。`
+        : "";
   const quantProjectionTaskPanelVisible =
-    (quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId)) && !quantProjectionTaskPanelStaleForCurrentInput;
+    quantProjectionTaskVisible && Boolean(taskId) && !quantProjectionTaskPanelStaleForCurrentInput;
   const quantProjectionTaskPanelTaskId =
-    quantProjectionTaskPanelStaleForCurrentInput ? "" : quantProjectionTaskVisible && taskId ? taskId : quantProjectionPersistedTaskId;
+    quantProjectionTaskPanelStaleForCurrentInput ? "" : quantProjectionTaskVisible && taskId ? taskId : "";
+  const manualTaskPanelVisible = Boolean(taskId);
+  const manualTaskPanelEmptyNotice = "暂无可轮询任务；点击确认按钮或手动任务后才显示 TaskStatusPanel，不把空 task 当成后端错误。";
   const quantProjectionP1ProgressItems: MetricItem[] = [
     {
       label: "输入状态",
@@ -2818,7 +2822,11 @@ export default function CandidateRadar() {
           <details className="developer-audit-details">
             <summary>最近操作记录</summary>
             <TaskLaunchReceipt receipt={taskReceipt} />
-            <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+            {manualTaskPanelVisible ? (
+              <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+            ) : (
+              <p className="ordinary-status-note" aria-live="polite">{manualTaskPanelEmptyNotice}</p>
+            )}
           </details>
           <details className="developer-audit-details">
             <summary>快速扫描覆盖详情</summary>
@@ -2892,7 +2900,11 @@ export default function CandidateRadar() {
             <p>该按钮只在 execution request 有 scope hash 后可点；它通过 POST task 触发 Tushare light provider ledger，DeepSeek 保持 skipped，仍不交易、不改 strategy action。</p>
             <p>点击后本区域会显示任务创建记录和状态；成功后自动刷新本地 cache，下一轮 GET 只回放 search_quant_provider_model_acceptance_receipt / call_ledger / packet，不在 React render 里补调 provider。</p>
             <TaskLaunchReceipt receipt={taskReceipt} />
-            <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+            {manualTaskPanelVisible ? (
+              <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+            ) : (
+              <p className="ordinary-status-note" aria-live="polite">{manualTaskPanelEmptyNotice}</p>
+            )}
             <DataLineageTable rows={objectRow(searchQuantProjectionExecutionRequest)} />
             <DataLineageTable rows={searchQuantProjectionExecutionRequestRows} />
           </PacketCard>
