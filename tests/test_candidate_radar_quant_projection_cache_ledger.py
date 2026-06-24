@@ -189,8 +189,22 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(cache["ok"])
         packet = cache["data"]
         receipt = packet["search_quant_provider_model_acceptance_receipt"]
+        quant_receipt = packet["search_quant_projection_receipt"]
         small_data = packet["search_quant_projection_small_data_writeback_summary"]
         interpretation = packet["search_quant_projection_interpretation_summary"]
+        self.assertEqual(
+            quant_receipt["p1_confirm_chain_status"],
+            "p1_confirm_chain_tushare_first_replayed",
+        )
+        self.assertTrue(quant_receipt["p1_tushare_first_provider_ledger_ready"])
+        self.assertEqual(quant_receipt["p1_provider_call_source"], "post_task_call_ledger")
+        self.assertEqual(quant_receipt["p1_provider_api_call_count"], 4)
+        self.assertEqual(quant_receipt["p1_provider_api_success_count"], 4)
+        self.assertTrue(quant_receipt["p1_deepseek_skipped_by_request"])
+        self.assertFalse(quant_receipt["p1_cache_readback_external_calls"])
+        self.assertFalse(quant_receipt["p1_react_render_external_calls"])
+        self.assertTrue(quant_receipt["p1_does_not_execute_trades"])
+        self.assertTrue(quant_receipt["p1_does_not_modify_strategy_action"])
         self.assertEqual(
             receipt["status"],
             "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",

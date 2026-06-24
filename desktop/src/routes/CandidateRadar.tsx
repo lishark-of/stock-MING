@@ -845,6 +845,7 @@ export default function CandidateRadar() {
     : "0";
   const quantProjectionProviderLedgerReady =
     searchQuantProviderModelAcceptance.tushare_call_ledger_evidence_done === true ||
+    searchQuantProjectionReceipt.p1_tushare_first_provider_ledger_ready === true ||
     quantProjectionProviderApiSuccessCount > 0;
   const quantProjectionDeepSeekSkipped =
     searchQuantProviderModelAcceptance.deepseek_skipped_by_request === true ||
@@ -1335,7 +1336,9 @@ export default function CandidateRadar() {
     `运行模式：${candidateRadarRuntimeModeLabel}`
   ].join(" / ");
   const quantProjectionMissingEvidence = [
-    searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true ? "" : "真实数据回放待补",
+    quantProjectionProviderLedgerReady || searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
+      ? ""
+      : "Tushare-first 数据回放待补",
     searchQuantProjectionReceipt.production_quant_projection_complete === true ? "" : "完整推演结果待补",
     searchQuantProjectionActivation.local_activation_receipt_ready === true ? "" : "本地推演准备记录待补",
     searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true ? "" : "后台补证申请待准备",
@@ -1343,6 +1346,8 @@ export default function CandidateRadar() {
   ].filter(Boolean).join(" / ") || "本地推演记录已显示；当前摘要未标记阻断";
   const quantProjectionBlockedState = searchQuantProjectionReceipt.symbol_valid === false
     ? "输入代码未通过本地校验；不会创建真实数据或模型补证"
+    : quantProjectionProviderLedgerReady
+      ? "Tushare-first 已回放；Factor/Next/完整推演和 DeepSeek governed executor 仍按后续步骤补齐"
     : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
       ? "可创建按钮门控补证请求；页面显示仍不自动外联"
       : "等待确认按钮创建 Tushare-first task；DeepSeek governed executor 未完成前保持 skipped";

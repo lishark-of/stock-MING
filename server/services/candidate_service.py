@@ -18225,12 +18225,48 @@ def _attach_search_quant_projection_task_readback(
     receipt = dict(_as_dict(view.get("search_quant_projection_receipt")))
     if not receipt:
         return view
+    provider_receipt = _as_dict(view.get("search_quant_provider_model_acceptance_receipt"))
+    provider_ledger_ready = (
+        provider_receipt.get("tushare_call_ledger_evidence_done") is True
+        and current_step == "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
+    )
+    credential_missing_count = int(provider_receipt.get("credential_missing_provider_count") or 0)
+    if provider_ledger_ready:
+        p1_readback_status = "p1_confirm_chain_tushare_first_replayed"
+    elif credential_missing_count > 0:
+        p1_readback_status = "p1_confirm_chain_blocked_missing_tushare_credentials"
+    elif task_id:
+        p1_readback_status = "p1_confirm_chain_task_accepted"
+    else:
+        p1_readback_status = "p1_confirm_chain_waiting_confirm"
+    provider_api_call_count = int(provider_receipt.get("provider_api_call_count") or 0)
+    provider_api_success_count = int(provider_receipt.get("provider_api_success_count") or 0)
+    if provider_ledger_ready:
+        p1_provider_call_source = "post_task_call_ledger"
+    elif credential_missing_count > 0:
+        p1_provider_call_source = "not_called_missing_credentials_local_block"
+    elif provider_api_success_count > 0:
+        p1_provider_call_source = "partial_post_task_call_ledger"
+    else:
+        p1_provider_call_source = "pending_no_provider_call"
     receipt.update(
         {
             "task_id": task_id,
             "latest_task_id": task_id,
             "latest_task_status": task_status,
             "latest_task_current_step": current_step,
+            "p1_confirm_chain_status": p1_readback_status,
+            "p1_confirm_chain_current_step": current_step,
+            "p1_tushare_first_provider_ledger_ready": provider_ledger_ready,
+            "p1_provider_call_source": p1_provider_call_source,
+            "p1_provider_api_call_count": provider_api_call_count,
+            "p1_provider_api_success_count": provider_api_success_count,
+            "p1_deepseek_skipped_by_request": provider_receipt.get("deepseek_skipped_by_request") is True,
+            "p1_readback_source": "search_quant_provider_model_acceptance_receipt",
+            "p1_cache_readback_external_calls": False,
+            "p1_react_render_external_calls": False,
+            "p1_does_not_execute_trades": True,
+            "p1_does_not_modify_strategy_action": True,
             "task_status_visible_in_cache": True,
             "task_readback_source": "candidate_radar_cache_packet",
             "task_readback_cache_get_external_calls": False,
