@@ -9,6 +9,7 @@ from server.services import desktop_service
 
 SCRIPT = Path("scripts/check_tauri_env.sh")
 LAUNCHER = Path("scripts/start_command_center_3.command")
+SOFTWARE_ENTRY = Path("scripts/start_stock_ming_desktop.command")
 DESKTOP_PREFLIGHT_PAGE = Path("desktop/src/routes/DesktopShellPreflight.tsx")
 HEALTH_PAGE = Path("desktop/src/routes/HealthStatus.tsx")
 HOME_PAGE = Path("desktop/src/routes/CommandCenterHome.tsx")
@@ -273,6 +274,30 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("open_route=http://127.0.0.1:5173/#home", output)
         self.assertNotIn("SHOULD_NOT_SHOW", output)
         self.assertNotIn("raw_payload", output)
+
+    def test_stock_ming_software_entry_delegates_to_command_center_3_launcher(self):
+        source = SOFTWARE_ENTRY.read_text(encoding="utf-8")
+
+        self.assertIn("stock-MING Command Center 3.0 software entry", source)
+        self.assertIn('LAUNCHER="${PROJECT_ROOT}/scripts/start_command_center_3.command"', source)
+        self.assertIn("Default entry: local FastAPI + React/Vite Command Center 3.0.", source)
+        self.assertIn("Boundary: this entry delegates to the local 3.0 launcher", source)
+        self.assertIn('COMMAND_CENTER_BOOTSTRAP_MODE="${COMMAND_CENTER_BOOTSTRAP_MODE:-cache_only}"', source)
+        self.assertIn('COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="${COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN:-false}"', source)
+        self.assertIn('COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="${COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN:-false}"', source)
+        self.assertIn('COMMAND_CENTER_LIVE_STARTUP_AUTOSTART="${COMMAND_CENTER_LIVE_STARTUP_AUTOSTART:-false}"', source)
+        self.assertIn('COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART="${COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART:-false}"', source)
+        self.assertIn('COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE="${COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE:-plan_only}"', source)
+        self.assertIn('COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE="${COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE:-bootstrap_only}"', source)
+        self.assertIn('COMMAND_CENTER_3_PROJECT_ROOT="$PROJECT_ROOT"', source)
+        self.assertIn('COMMAND_CENTER_3_APP_URL="$APP_URL"', source)
+        self.assertIn('exec "$LAUNCHER"', source)
+        self.assertNotIn("desktop_app.py", source)
+        self.assertNotIn("pywebview", source)
+        self.assertNotIn("streamlit run", source)
+        self.assertNotIn("TUSHARE_TOKEN", source)
+        self.assertNotIn("DEEPSEEK_API_KEY", source)
+        self.assertNotIn("GITHUB_TOKEN", source)
 
     def test_command_center_3_shortcut_installer_is_safe_and_verifiable(self):
         source = Path("scripts/install_command_center_3_desktop_shortcut.sh").read_text(encoding="utf-8")
