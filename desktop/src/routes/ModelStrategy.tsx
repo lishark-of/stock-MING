@@ -184,6 +184,32 @@ export default function ModelStrategy() {
       边界: "真实调用只能走受控 POST task / executor，不从 GET cache 或 React render 触发。"
     }
   ];
+  const governedExecutorScopeTicketReadbackRows = [
+    {
+      回读项: "scope ticket 状态",
+      当前状态: String(governedExecutor.provider_benchmark_scope_ticket_status ?? "deepseek_provider_benchmark_scope_ticket_missing"),
+      用户下一步: governedExecutor.provider_benchmark_scope_ticket_ready === true ? "保留本地 scope ticket，继续补 model_ledger / sanitizer / output acceptance" : "需要时点击下方按钮生成本地 scope ticket",
+      边界: "GET model strategy cache 只读回放已存在的 factor quant packet，不初始化 scope ticket。"
+    },
+    {
+      回读项: "scope hash",
+      当前状态: String(governedExecutor.provider_benchmark_scope_hash_short ?? "pending"),
+      用户下一步: "后续真实 provider benchmark 必须绑定这个本地 scope hash。",
+      边界: "hash 是 scope 绑定证据，不是 provider benchmark 或模型正确性证据。"
+    },
+    {
+      回读项: "model call 状态",
+      当前状态: String(governedExecutor.provider_benchmark_scope_ticket_model_call_status ?? "not_called"),
+      用户下一步: "真实 DeepSeek 调用继续等待受控 executor。",
+      边界: "scope ticket 和 GET cache 都不调用 DeepSeek。"
+    },
+    {
+      回读项: "readback 边界",
+      当前状态: governedExecutor.provider_benchmark_scope_ticket_cache_read_initializes_ticket === true ? "异常：需要审计" : "cache read 不初始化票据",
+      用户下一步: "继续 P1/P2/P3；P5 只按按钮门控推进。",
+      边界: "不创建 task、不读取 token/key、不阻塞 Tushare-first 或基础图谱。"
+    }
+  ];
   const governedExecutorRailState = [
     governedExecutor.scope_ticket_ready === true || governedExecutor.provider_benchmark_scope_ticket_ready === true ? "scope_ticket_ready" : "scope_ticket_pending",
     governedExecutor.sanitizer_ready === true && governedExecutor.redaction_review_ready === true ? "sanitizer_redaction_ready" : "sanitizer_redaction_pending",
@@ -262,6 +288,11 @@ export default function ModelStrategy() {
             <h3>P5 普通用户速读</h3>
             <p className="risk-note">先看现在能做什么、DeepSeek 还等什么、不会改哪些数据；这张表不展开执行路由、raw policy 或模型输出。</p>
             <DataLineageTable rows={governedExecutorOrdinaryQuickReadRows} />
+          </div>
+          <div aria-label="deepseek governed executor scope ticket readback">
+            <h3>P5 scope ticket 回读</h3>
+            <p className="risk-note">刷新后优先看这里：它只读已持久化的本地 scope ticket 状态，不从 GET cache 创建票据、不调用 DeepSeek。</p>
+            <DataLineageTable rows={governedExecutorScopeTicketReadbackRows} />
           </div>
           <div aria-label="deepseek governed executor output contract">
             <h3>P5 安全输出白名单</h3>
