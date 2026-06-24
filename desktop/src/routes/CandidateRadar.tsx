@@ -1805,6 +1805,40 @@ export default function CandidateRadar() {
           <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
           <DataLineageTable rows={candidateRadarP0AutoLinkRows} />
         </div>
+        <div className="actions" aria-label="candidate radar primary next action">
+          {candidateRadarP0Blocked ? (
+            <a href="#desktop" aria-label="open p0 desktop preflight from radar summary">{ordinaryPrimaryActionLabel}</a>
+          ) : Number(counts.candidate_count ?? 0) ? (
+            <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>
+          ) : (
+            <button onClick={launchQuickScan}>{ordinaryPrimaryActionLabel}</button>
+          )}
+        </div>
+        <div className="actions" aria-label="candidate radar next user actions">
+          <button onClick={refreshCache}>查看本地缓存</button>
+          {Number(counts.candidate_count ?? 0) ? <button onClick={launchQuickScan}>运行本地快扫</button> : null}
+          <input
+            value={searchSymbol}
+            onChange={(event) => {
+              setSearchSymbol(event.target.value);
+              setQuantProjectionSubmitError("");
+            }}
+            placeholder="002008.SZ 或 002008"
+            aria-label="radar summary quant projection symbol"
+            title={quantProjectionInputBoundaryLabel}
+          />
+          <button
+            disabled={quantProjectionSubmitDisabled}
+            onClick={launchQuantProjection}
+            title={quantProjectionSubmitButtonLabel}
+            aria-label={quantProjectionSubmitAriaLabel}
+          >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+          <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
+          <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
+        </div>
+        <p className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
+        <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
         <div aria-label="candidate radar ordinary p1 to p3 stage rail">
           <h3>P1 到 P3 阶段速览</h3>
           <p className="risk-note">这条状态轨只读本地输入、task receipt 和 cache 回放：输入保持静默，只有确认按钮创建 Tushare-first POST task，P2/P3 只回放本地结果。</p>
@@ -1890,40 +1924,6 @@ export default function CandidateRadar() {
           <summary>P6 14 LTG strict closeout 交接</summary>
           <p className="risk-note">当前只是使用者可用化 checkpoint，不是 14 LTG 全部完成；后续必须回到 direct evidence、CI、browser/provider/worker/storage/package 等逐项严格验收。</p>
         </details>
-        <div className="actions" aria-label="candidate radar primary next action">
-          {candidateRadarP0Blocked ? (
-            <a href="#desktop" aria-label="open p0 desktop preflight from radar summary">{ordinaryPrimaryActionLabel}</a>
-          ) : Number(counts.candidate_count ?? 0) ? (
-            <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>
-          ) : (
-            <button onClick={launchQuickScan}>{ordinaryPrimaryActionLabel}</button>
-          )}
-        </div>
-        <div className="actions" aria-label="candidate radar next user actions">
-          <button onClick={refreshCache}>查看本地缓存</button>
-          {Number(counts.candidate_count ?? 0) ? <button onClick={launchQuickScan}>运行本地快扫</button> : null}
-          <input
-            value={searchSymbol}
-            onChange={(event) => {
-              setSearchSymbol(event.target.value);
-              setQuantProjectionSubmitError("");
-            }}
-            placeholder="002008.SZ 或 002008"
-            aria-label="radar summary quant projection symbol"
-            title={quantProjectionInputBoundaryLabel}
-          />
-          <button
-            disabled={quantProjectionSubmitDisabled}
-            onClick={launchQuantProjection}
-            title={quantProjectionSubmitButtonLabel}
-            aria-label={quantProjectionSubmitAriaLabel}
-          >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
-          <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
-          <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
-        </div>
-        <p className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
-        <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
-        {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
         <div aria-label="quant projection submit recovery quick read">
           <h3>P1 确认失败恢复</h3>
           <p className="risk-note">确认按钮失败、服务端凭据缺失或任务已接收但未回放时，先看这张表；它只读页面状态和 cache，不自动重试、不创建第二个 task。</p>
