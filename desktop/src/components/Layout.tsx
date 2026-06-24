@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { getHealth } from "../api/client";
 
 export type RouteKey =
   | "home"
@@ -32,6 +33,7 @@ export type RouteKey =
 
 const ORDINARY_NAVIGATION_BOUNDARY =
   "普通用户先用三入口；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、审计、设置或回退。";
+const LOCAL_FASTAPI_HEALTH_POLL_MS = 15000;
 
 const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; routes: Array<{ key: RouteKey; label: string }> }> = [
   {
@@ -98,6 +100,44 @@ export default function Layout({
   onNavigate: (route: RouteKey) => void;
   children: ReactNode;
 }) {
+  const [localFastapiStatus, setLocalFastapiStatus] = useState<"checking" | "online" | "offline">("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkLocalFastapi = () => {
+      void getHealth()
+        .then((res) => {
+          if (cancelled) return;
+          const ready = res.ok === true && String(res.data?.status ?? "") === "ok";
+          setLocalFastapiStatus(ready ? "online" : "offline");
+        })
+        .catch(() => {
+          if (!cancelled) setLocalFastapiStatus("offline");
+        });
+    };
+
+    checkLocalFastapi();
+    const timer = window.setInterval(checkLocalFastapi, LOCAL_FASTAPI_HEALTH_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const localFastapiLabel =
+    localFastapiStatus === "online"
+      ? "本地已接上"
+      : localFastapiStatus === "offline"
+        ? "本地未接上"
+        : "正在确认本机连接";
+  const localFastapiDetail =
+    localFastapiStatus === "online"
+      ? "FastAPI /health ready，只读本机状态"
+      : localFastapiStatus === "offline"
+        ? "去一键启动预检恢复"
+        : "只读检查 /health";
+
   const routeButtons = (routes: Array<{ key: RouteKey; label: string }>) => (
     <>
       {routes.map((route) => (
@@ -118,6 +158,27 @@ export default function Layout({
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">stock-MING 3.0</div>
+        <div
+          className="local-link-status"
+          data-local-fastapi-status={localFastapiStatus}
+          data-local-fastapi-boundary="local_health_only_no_provider_model_task"
+          role="status"
+          aria-label="local fastapi connection status"
+        >
+          <span className="local-link-dot" aria-hidden="true" />
+          <span className="local-link-copy">
+            <strong>{localFastapiLabel}</strong>
+            <small>{localFastapiDetail}</small>
+          </span>
+          <button
+            type="button"
+            className="local-link-action"
+            onClick={() => onNavigate(localFastapiStatus === "online" ? "health" : "desktop")}
+            aria-label={localFastapiStatus === "online" ? "open local health status" : "open one click startup preflight"}
+          >
+            {localFastapiStatus === "online" ? "健康" : "预检"}
+          </button>
+        </div>
         <nav>
           {ROUTE_GROUPS.map((group) => (
             group.primary ? (

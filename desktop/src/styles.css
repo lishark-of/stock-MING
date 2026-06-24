@@ -435,7 +435,78 @@ textarea:focus {
 .brand {
   font-size: 20px;
   font-weight: 700;
-  margin-bottom: 24px;
+  margin-bottom: 12px;
+}
+
+.local-link-status {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.58);
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 8px;
+  box-sizing: border-box;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  margin-bottom: 18px;
+  min-height: 56px;
+  padding: 10px;
+}
+
+.local-link-dot {
+  background: #f59e0b;
+  border-radius: 999px;
+  height: 9px;
+  width: 9px;
+}
+
+.local-link-status[data-local-fastapi-status="online"] .local-link-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+}
+
+.local-link-status[data-local-fastapi-status="offline"] .local-link-dot {
+  background: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
+}
+
+.local-link-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.local-link-copy strong,
+.local-link-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-link-copy strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.local-link-copy small {
+  color: #cbd5e1;
+  font-size: 11px;
+  opacity: 0.82;
+}
+
+.sidebar .local-link-action {
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(147, 197, 253, 0.28);
+  color: #dbeafe;
+  min-height: 32px;
+  padding: 6px 9px;
+  text-align: center;
+  width: auto;
+}
+
+.sidebar .local-link-action::before,
+.sidebar .local-link-action::after {
+  display: none;
 }
 
 .sidebar nav {
