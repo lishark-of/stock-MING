@@ -1374,6 +1374,45 @@ export default function CandidateRadar() {
       边界: "只切换 #factor/#next 锚点，不重新创建 task、不改 strategy action"
     }
   ];
+  const quantProjectionOneScreenPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_one_screen_action_rows).map((row) => ({
+    行动: displayText(row["行动"] ?? row.action_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionSmallDataNextStep),
+    入口: displayText(row["入口"] ?? row.entry),
+    边界: displayText(row["边界"] ?? row.boundary, "只读回放本地 cache / ledger / packet；不会从摘要创建 task 或调用模型")
+  }));
+  const quantProjectionOneScreenActionRows = quantProjectionOneScreenPacketRows.length ? quantProjectionOneScreenPacketRows : [
+    {
+      行动: "1. 确认",
+      当前状态: quantProjectionConfirmChainState,
+      用户下一步: quantProjectionCanSubmit ? "点击确认并生成 3.0 量化推演" : "先输入有效股票代码并确认本地后端联通",
+      入口: "确认并生成 3.0 量化推演",
+      边界: "只有确认按钮可创建 Tushare-first POST task；输入、搜索、GET cache 和 React render 不外联"
+    },
+    {
+      行动: "2. 任务",
+      当前状态: (taskId || quantProjectionAcceptedTaskId || quantProjectionPersistedTaskId)
+        ? "TaskStatusPanel 可本地轮询"
+        : "等待确认按钮返回 task id",
+      用户下一步: "看本地任务状态；success 后刷新 cache 回放",
+      入口: "TaskStatusPanel",
+      边界: "任务状态只轮询本地 FastAPI；不调用 Tushare、DeepSeek、GitHub 或交易路径"
+    },
+    {
+      行动: "3. 写回",
+      当前状态: quantProjectionSmallDataStageLabel,
+      用户下一步: quantProjectionSmallDataNextStep,
+      入口: "cache / call_ledger / packet",
+      边界: quantProjectionSmallDataReadbackContract
+    },
+    {
+      行动: "4. 结果",
+      当前状态: quantProjectionOrdinaryResultSummary,
+      用户下一步: quantProjectionReplayDestinationNextStep,
+      入口: "股票量化推演 / 次日图谱",
+      边界: "结果只是研究回放；不调用 DeepSeek、不覆盖 strategy action、不生成交易指令"
+    }
+  ];
   const ordinaryP1ConfirmPathLabel = quantProjectionCanSubmit
     ? `P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task`
     : "P1 主路径：先输入股票代码；输入只做本地校验，确认按钮才创建 Tushare-first task";
@@ -1775,6 +1814,24 @@ export default function CandidateRadar() {
             steps={ordinaryP1ToP3StageRailSteps}
           />
         </div>
+        <div aria-label="candidate radar ordinary one screen actions">
+          <h3>一屏行动摘要</h3>
+          <p className="risk-note">优先读取服务端 ordinary_one_screen_action_rows：确认、任务、写回、结果合成一张普通用户表；只读回放本地状态，不从摘要创建 task。</p>
+          <DataLineageTable rows={quantProjectionOneScreenActionRows} />
+        </div>
+        <div aria-label="candidate radar ordinary p3 explainable result quick read">
+          <h3>P3 可解释结果速读</h3>
+          <p className="risk-note">普通用户确认后直接看这张 P3 表：可读结论、回放来源和待补证据都来自本地 cache / ledger / packet；不会从速读表创建 task 或调用模型。</p>
+          <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
+        </div>
+        <div aria-label="candidate radar ordinary p3 result handoff index">
+          <h3>P3 结果入口索引</h3>
+          <p className="risk-note">普通用户按这张索引回放可读结论、量化推演、次日图谱和候选池；它只读取服务端 ordinary_result_handoff_rows，不创建 task、不补调模型。</p>
+          <DataLineageTable rows={quantProjectionOrdinaryResultHandoffRows} />
+        </div>
+        <details className="developer-audit-details" aria-label="candidate radar ordinary p1 p2 detail readback">
+          <summary>P1/P2 细节回放</summary>
+          <p className="risk-note">一屏行动摘要已经覆盖普通下一步；确认链路、P1 路径和 P2 三面核对默认收起，需要排查时再展开。</p>
         <div aria-label="candidate radar ordinary confirmed chain quick read">
           <h3>确认后链路速读</h3>
           <p className="risk-note">普通用户先看这张确认后链路速读：确认按钮、Tushare-first、P2 三面、P3 结果入口按同一条本地链路回放。</p>
@@ -1814,16 +1871,7 @@ export default function CandidateRadar() {
           <p className="risk-note">点击确认后先看 task id 和 TaskStatusPanel；success 后刷新本地 cache，再读 cache、call_ledger、packet 三面。</p>
           <DataLineageTable rows={quantProjectionPostConfirmActionRows} />
         </div>
-        <div aria-label="candidate radar ordinary p3 explainable result quick read">
-          <h3>P3 可解释结果速读</h3>
-          <p className="risk-note">普通用户确认后直接看这张 P3 表：可读结论、回放来源和待补证据都来自本地 cache / ledger / packet；不会从速读表创建 task 或调用模型。</p>
-          <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
-        </div>
-        <div aria-label="candidate radar ordinary p3 result handoff index">
-          <h3>P3 结果入口索引</h3>
-          <p className="risk-note">普通用户按这张索引回放可读结论、量化推演、次日图谱和候选池；它只读取服务端 ordinary_result_handoff_rows，不创建 task、不补调模型。</p>
-          <DataLineageTable rows={quantProjectionOrdinaryResultHandoffRows} />
-        </div>
+        </details>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p5 governance details">
           <summary>P5 DeepSeek 单独补证状态</summary>
           <p className="risk-note">普通主线先停在 P1 确认、P2 三面回放和 P3 结果速读；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
