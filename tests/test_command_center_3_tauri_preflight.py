@@ -321,6 +321,46 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
             self.assertIn("desktop target already exists and is not a symlink", result.stdout)
             self.assertIn("Boundary: installer stopped before changing files", result.stdout)
 
+    def test_macos_app_wrapper_generator_delegates_to_command_center_3_launcher(self):
+        source = Path("scripts/create_macos_app_wrapper.sh").read_text(encoding="utf-8")
+
+        self.assertIn("Command Center 3.0 macOS app wrapper generator", source)
+        self.assertIn("scripts/start_command_center_3.command", source)
+        self.assertIn("generated app only delegates to the local Command Center 3.0 launcher", source)
+        self.assertIn('COMMAND_CENTER_BOOTSTRAP_MODE="\\${COMMAND_CENTER_BOOTSTRAP_MODE:-cache_only}"', source)
+        self.assertIn(
+            'COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="\\${COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN:-false}"',
+            source,
+        )
+        self.assertIn(
+            'COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="\\${COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN:-false}"',
+            source,
+        )
+        self.assertIn(
+            'COMMAND_CENTER_LIVE_STARTUP_AUTOSTART="\\${COMMAND_CENTER_LIVE_STARTUP_AUTOSTART:-false}"',
+            source,
+        )
+        self.assertIn(
+            'COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART="\\${COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART:-false}"',
+            source,
+        )
+        self.assertIn(
+            'COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE="\\${COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE:-plan_only}"',
+            source,
+        )
+        self.assertIn(
+            'COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE="\\${COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE:-bootstrap_only}"',
+            source,
+        )
+        self.assertIn("Double-click behavior: waits for local FastAPI health", source)
+        self.assertIn("default mode is cache_only", source)
+        self.assertIn("本地 FastAPI / React 联通检查失败", source)
+        self.assertNotIn("desktop_app.py", source)
+        self.assertNotIn("pywebview", source)
+        self.assertNotIn("streamlit run", source)
+        self.assertNotIn("TUSHARE_TOKEN", source)
+        self.assertNotIn("DEEPSEEK_API_KEY", source)
+
     def test_p0_startup_diagnostics_are_consistent_across_launcher_and_ordinary_pages(self):
         sources = {
             "launcher": LAUNCHER.read_text(encoding="utf-8"),

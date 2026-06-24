@@ -10,29 +10,16 @@ MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 EXECUTABLE_PATH="${MACOS_DIR}/${APP_NAME}"
 ICON_SOURCE="${PROJECT_ROOT}/assets/stock_ming_icon.svg"
+LAUNCHER="${PROJECT_ROOT}/scripts/start_command_center_3.command"
 
-resolve_python() {
-  if [ -n "${STOCK_MING_PYTHON:-}" ]; then
-    "${STOCK_MING_PYTHON}" -c 'import sys; print(sys.executable)'
-    return
-  fi
-  if command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import sys; print(sys.executable)'
-    return
-  fi
-  echo "stock-MING wrapper 生成失败：未找到 python3。请先安装 Python，或设置 STOCK_MING_PYTHON。" >&2
-  exit 1
-}
+echo "Command Center 3.0 macOS app wrapper generator"
+echo "Project: ${PROJECT_ROOT}"
+echo "Launcher: ${LAUNCHER}"
+echo "Output: ${APP_DIR}"
+echo "Boundary: generated app only delegates to the local Command Center 3.0 launcher; it does not call Tushare, DeepSeek, GitHub, or trading paths."
 
-PYTHON_BIN="$(resolve_python)"
-
-if [ ! -e "${PYTHON_BIN}" ]; then
-  echo "stock-MING wrapper 生成失败：Python 不存在：${PYTHON_BIN}" >&2
-  exit 1
-fi
-
-if [ ! -x "${PYTHON_BIN}" ]; then
-  echo "stock-MING wrapper 生成失败：Python 不可执行：${PYTHON_BIN}" >&2
+if [ ! -x "${LAUNCHER}" ]; then
+  echo "stock-MING wrapper 生成失败：找不到可执行的 3.0 本地启动器：${LAUNCHER}" >&2
   exit 1
 fi
 
@@ -76,69 +63,49 @@ printf "APPL????" > "${CONTENTS_DIR}/PkgInfo"
 
 cat > "${EXECUTABLE_PATH}" <<APP
 #!/bin/bash
+set -euo pipefail
+
 PROJECT_ROOT="${PROJECT_ROOT}"
-PYTHON_BIN="${PYTHON_BIN}"
+LAUNCHER="\${PROJECT_ROOT}/scripts/start_command_center_3.command"
+APP_URL="\${COMMAND_CENTER_3_APP_URL:-http://127.0.0.1:5173/#home}"
 
-cd "${PROJECT_ROOT}" || exit 1
-
-if [ ! -f "\${PROJECT_ROOT}/desktop_app.py" ]; then
-  MESSAGE="stock-MING 启动失败：项目目录中缺少 desktop_app.py。
-项目目录：\${PROJECT_ROOT}"
-  echo "\${MESSAGE}"
+show_message() {
+  local message="\$1"
+  echo "\$message"
   if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
+    osascript -e "display dialog \"\${message}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
   fi
+}
+
+if [ ! -d "\$PROJECT_ROOT" ]; then
+  show_message "stock-MING Command Center 启动失败：找不到项目目录：\${PROJECT_ROOT}"
   exit 1
 fi
 
-if [ ! -f "\${PROJECT_ROOT}/app.py" ]; then
-  MESSAGE="stock-MING 启动失败：项目目录中缺少 app.py。
-项目目录：\${PROJECT_ROOT}"
-  echo "\${MESSAGE}"
-  if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
-  fi
+if [ ! -x "\$LAUNCHER" ]; then
+  show_message "stock-MING Command Center 启动失败：找不到本地 3.0 一键启动器：\${LAUNCHER}"
   exit 1
 fi
 
-if [ ! -e "\${PYTHON_BIN}" ]; then
-  MESSAGE="stock-MING 启动失败：未找到 Python 解释器：\${PYTHON_BIN}
-请重新生成 .app wrapper，或设置 STOCK_MING_PYTHON 后再生成。"
-  echo "\${MESSAGE}"
-  if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
-  fi
-  exit 1
-fi
+cd "\$PROJECT_ROOT"
 
-if [ ! -x "\${PYTHON_BIN}" ]; then
-  MESSAGE="stock-MING 启动失败：Python 解释器不可执行：\${PYTHON_BIN}
-请修复权限，或重新生成 .app wrapper。"
-  echo "\${MESSAGE}"
-  if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
-  fi
+COMMAND_CENTER_BOOTSTRAP_MODE="\${COMMAND_CENTER_BOOTSTRAP_MODE:-cache_only}" \\
+COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="\${COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN:-false}" \\
+COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="\${COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN:-false}" \\
+COMMAND_CENTER_LIVE_STARTUP_AUTOSTART="\${COMMAND_CENTER_LIVE_STARTUP_AUTOSTART:-false}" \\
+COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART="\${COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART:-false}" \\
+COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE="\${COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE:-plan_only}" \\
+COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE="\${COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE:-bootstrap_only}" \\
+COMMAND_CENTER_3_APP_URL="\$APP_URL" \\
+"\$LAUNCHER" || {
+  show_message "stock-MING Command Center 启动未完成：本地 FastAPI / React 联通检查失败。请查看项目 .stock_ming_3/logs 下的 fastapi/vite 日志。"
   exit 1
-fi
-
-"\${PYTHON_BIN}" -c "import webview" 2>/tmp/stock-ming-pywebview-error.log
-if [ \$? -ne 0 ]; then
-  MESSAGE="stock-MING 启动失败：pywebview 未安装或无法导入。
-请运行：
-\${PYTHON_BIN} -m pip install pywebview"
-  echo "\${MESSAGE}"
-  cat /tmp/stock-ming-pywebview-error.log
-  if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display dialog \"\${MESSAGE}\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
-  fi
-  exit 1
-fi
-
-exec "\${PYTHON_BIN}" "\${PROJECT_ROOT}/desktop_app.py"
+}
 APP
 
 chmod +x "${EXECUTABLE_PATH}"
 
+echo "Command Center 3.0 .app wrapper created."
 echo "Created ${APP_DIR}"
-echo "Python: ${PYTHON_BIN}"
-echo "启动方式：open ${APP_DIR}"
+echo "Double-click behavior: waits for local FastAPI health, bootstrap status, desktop preflight cache, and React/Vite before opening #home."
+echo "Safety: default mode is cache_only; live_light/provider/model execution remains disabled unless explicitly configured elsewhere."
