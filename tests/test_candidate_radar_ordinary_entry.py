@@ -534,6 +534,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("本页不会从输入或渲染创建 Tushare-first task", self.page)
         self.assertIn("正在提交 Tushare-first 后台链；请等待本地 task id，页面不会重复创建第二个 task。", self.page)
         self.assertIn("当前输入与最近任务不一致：先重新点击确认创建当前代码的 task，旧回执只作为历史回放。", self.page)
+        self.assertIn("当前输入已有历史 task 回放", self.page)
+        self.assertIn("再次点击确认会创建新的 Tushare-first POST task，旧回放只作为参考。", self.page)
+        self.assertIn("当前代码已有历史回放；再次点击确认会创建新的 Tushare-first 后台链，旧回放保留为参考。", self.page)
         self.assertIn("当前代码已在本地显示；按钮未启用时先看不可用原因，输入本身不会创建 task 或调用 Tushare/DeepSeek。", self.page)
         self.assertIn("旧 task 属于 ${quantProjectionAcceptedTaskSymbol}", self.page)
         self.assertIn("当前输入 ${quantProjectionSymbolValidation.normalized} 需重新点击确认", self.page)
@@ -1009,9 +1012,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
 
     def test_p1_symbol_input_is_shared_and_silent_until_confirm(self):
         self.assertIn(
-            "const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionP0Ready && !quantProjectionTaskAlreadyAcceptedForInput;",
+            "const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionP0Ready;",
             self.page,
         )
+        self.assertIn("const quantProjectionHistoricalTaskMatchesInput =", self.page)
+        self.assertNotIn("quantProjectionTaskAlreadyAcceptedForInput", self.page)
         self.assertIn("const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;", self.page)
         self.assertEqual(self.page.count("setSearchSymbol(event.target.value);"), 3)
         self.assertEqual(self.page.count("onClick={launchQuantProjection}"), 3)

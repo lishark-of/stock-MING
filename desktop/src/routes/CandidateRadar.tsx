@@ -743,22 +743,26 @@ export default function CandidateRadar() {
     quantProjectionAcceptedTaskSymbol !== quantProjectionSymbolValidation.normalized;
   const quantProjectionInputSessionState = quantProjectionTaskReceiptInputMismatch
     ? `已切换输入：旧 task 属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新点击确认。`
+    : quantProjectionSymbolReady &&
+      Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
+      quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized
+    ? `当前输入已有历史 task 回放：${quantProjectionAcceptedTaskSymbol}；再次点击确认会创建新的 Tushare-first POST task，旧回放只作为参考。`
     : "修改输入只切换本地输入会话；不会取消已创建后台 task、不创建新 task、不调用 Tushare/DeepSeek。";
-  const quantProjectionTaskAlreadyAcceptedForInput =
+  const quantProjectionHistoricalTaskMatchesInput =
     quantProjectionSymbolReady &&
     Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
     quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized;
-  const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionP0Ready && !quantProjectionTaskAlreadyAcceptedForInput;
+  const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionP0Ready;
   const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;
   const quantProjectionCanLaunch = !quantProjectionSubmitDisabled;
   const quantProjectionDisabledReason = quantProjectionSubmitting
     ? "任务提交中：正在创建 Tushare-first POST task；请等待本地任务编号回写，避免重复提交。"
     : !quantProjectionP0Ready
     ? "按钮不可用原因：P0 前后端联通未通过；先让 FastAPI、bootstrap status、desktop preflight、P0 stability 和 candidate cache GET 可读。"
-    : quantProjectionTaskAlreadyAcceptedForInput
-    ? "按钮不可用原因：当前标的已有本地 task id；先看 TaskStatusPanel，成功后刷新 cache 回放。"
     : quantProjectionCanSubmit
-    ? `按钮已启用：确认后创建 Tushare-first 按钮门控 POST task；DeepSeek 保持 skipped；已确认 ${quantProjectionSymbolValidation.normalized}`
+    ? quantProjectionHistoricalTaskMatchesInput
+      ? `按钮已启用：${quantProjectionSymbolValidation.normalized} 已有历史回放；再次确认会创建新的 Tushare-first POST task，DeepSeek 保持 skipped。`
+      : `按钮已启用：确认后创建 Tushare-first 按钮门控 POST task；DeepSeek 保持 skipped；已确认 ${quantProjectionSymbolValidation.normalized}`
     : searchSymbol.trim()
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
@@ -801,7 +805,9 @@ export default function CandidateRadar() {
       : quantProjectionTaskReceiptInputMismatch
         ? "当前输入与最近任务不一致：先重新点击确认创建当前代码的 task，旧回执只作为历史回放。"
         : quantProjectionCanSubmit
-          ? "点击确认后提交 Tushare-first 后台链；服务端凭据缺失时只写本地阻断，DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
+          ? quantProjectionHistoricalTaskMatchesInput
+            ? "当前代码已有历史回放；再次点击确认会创建新的 Tushare-first 后台链，旧回放保留为参考。"
+            : "点击确认后提交 Tushare-first 后台链；服务端凭据缺失时只写本地阻断，DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
           : quantProjectionDisplaySymbol
             ? "当前代码已在本地显示；按钮未启用时先看不可用原因，输入本身不会创建 task 或调用 Tushare/DeepSeek。"
             : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
