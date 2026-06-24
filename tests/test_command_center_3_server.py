@@ -49918,6 +49918,39 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("scope ticket as provider benchmark evidence", receipt["not_allowed_next_steps"])
         self.assertNotIn("SHOULD_DROP", json.dumps(factor, ensure_ascii=False))
 
+        model_strategy = self.client.get("/api/model-strategy/cache").json()
+        self.assertTrue(model_strategy["ok"])
+        governed_executor = model_strategy["data"]["governed_executor"]
+        self.assertEqual(
+            governed_executor["status"],
+            "governed_executor_scope_ticket_ready_model_ledger_pending",
+        )
+        self.assertTrue(governed_executor["scope_ticket_ready"])
+        self.assertTrue(governed_executor["provider_benchmark_scope_ticket_ready"])
+        self.assertEqual(
+            governed_executor["provider_benchmark_scope_ticket_status"],
+            task["current_step"],
+        )
+        self.assertTrue(governed_executor["provider_benchmark_scope_ticket_source_packet_present"])
+        self.assertEqual(
+            governed_executor["provider_benchmark_scope_ticket_model_call_status"],
+            "not_called",
+        )
+        self.assertFalse(governed_executor["provider_benchmark_scope_ticket_cache_read_initializes_ticket"])
+        self.assertFalse(governed_executor["provider_benchmark_done"])
+        self.assertFalse(governed_executor["model_ledger_ready"])
+        self.assertFalse(governed_executor["deepseek_called"])
+        self.assertFalse(model_strategy["data"]["external_calls_triggered"])
+        self.assertFalse(model_strategy["data"]["deepseek_called"])
+        self.assertFalse(model_strategy["data"]["contains_secret"])
+        self.assertIn("scope ticket 已本地回读", governed_executor["ordinary_status_label"])
+        self.assertIn("model_ledger", governed_executor["ordinary_next_allowed_action"])
+        self.assertIn(
+            "scope_ticket_ready_model_ledger_pending_not_blocking_tushare_or_basic_maps",
+            governed_executor["ordinary_blocking_state"],
+        )
+        self.assertNotIn("SHOULD_DROP", json.dumps(model_strategy, ensure_ascii=False))
+
     def test_deepseek_explain_endpoint_is_guarded_and_sanitized(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)

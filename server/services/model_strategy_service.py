@@ -73,18 +73,56 @@ def _purpose_row(purpose: str) -> dict[str, Any]:
     return build_deepseek_model_strategy_ref(purpose)
 
 
+def _latest_provider_benchmark_scope_ticket_receipt() -> dict[str, Any]:
+    try:
+        from server.services import factor_service
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        if not factor_service.SQLITE_META_PATH.exists():
+            return {}
+        packet = SQLiteMetaStore(factor_service.SQLITE_META_PATH).read_packet(
+            "command_center_factor_quant_hub_packet"
+        )
+    except Exception:
+        return {}
+    if not isinstance(packet, dict):
+        return {}
+    receipt = packet.get("deepseek_provider_benchmark_scope_ticket_receipt")
+    return dict(receipt) if isinstance(receipt, dict) else {}
+
+
 def read_deepseek_model_strategy_cache() -> dict[str, Any]:
     rows = [_purpose_row(purpose) for purpose in MODEL_PURPOSES]
     configured_count = sum(1 for row in rows if row["uses_configured_value"])
     fast_purposes = [row["purpose"] for row in rows if row["purpose"] in {"fast", "healthcheck", "feeder"}]
     explain_purposes = [row["purpose"] for row in rows if row["purpose"] in {"default", "explain", "projection", "factor_explain"}]
     loaded_at = _now_iso()
+    scope_ticket_receipt = _latest_provider_benchmark_scope_ticket_receipt()
+    scope_ticket_ready = scope_ticket_receipt.get("local_scope_ticket_ready") is True
+    scope_ticket_status = str(
+        scope_ticket_receipt.get("status") or "deepseek_provider_benchmark_scope_ticket_missing"
+    )
+    scope_ticket_hash_short = str(scope_ticket_receipt.get("benchmark_scope_hash_short") or "")
     governed_executor = {
         "schema_version": "deepseek_governed_executor_status.v1",
-        "status": "governed_executor_pending_model_ledger",
+        "status": "governed_executor_scope_ticket_ready_model_ledger_pending"
+        if scope_ticket_ready
+        else "governed_executor_pending_model_ledger",
         "execution_route": "POST /api/factor-quant/deepseek-explain",
         "scope_ticket_route": "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
         "model_call_default": "off",
+        "scope_ticket_ready": scope_ticket_ready,
+        "provider_benchmark_scope_ticket_ready": scope_ticket_ready,
+        "provider_benchmark_scope_ticket_status": scope_ticket_status,
+        "provider_benchmark_scope_ticket_source_packet_present": bool(scope_ticket_receipt),
+        "provider_benchmark_scope_hash_short": scope_ticket_hash_short,
+        "provider_benchmark_scope_ticket_model_call_status": str(
+            scope_ticket_receipt.get("model_call_status") or "not_called"
+        ),
+        "provider_benchmark_scope_ticket_cache_read_initializes_ticket": False,
+        "provider_benchmark_done": scope_ticket_receipt.get("provider_benchmark_done") is True,
+        "model_ledger_ready": False,
+        "model_ledger_evidence_done": False,
         "real_call_requires": [
             "explicit_post_task",
             "model_ledger",
@@ -103,12 +141,18 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "does_not_override_factors": True,
         "does_not_override_operation_zones": True,
         "does_not_modify_strategy_action": True,
-        "ordinary_status_label": "DeepSeek 等 governed executor；Tushare-first 和基础图谱可先走。",
-        "ordinary_next_allowed_action": "先继续 Tushare-first、Factor light 和 Next Session 本地回放；DeepSeek 真实解释等 governed executor 单独验收。",
+        "ordinary_status_label": "P5 scope ticket 已本地回读；真实 DeepSeek 调用仍等 model_ledger / sanitizer / output acceptance。"
+        if scope_ticket_ready
+        else "DeepSeek 等 governed executor；Tushare-first 和基础图谱可先走。",
+        "ordinary_next_allowed_action": "保留 Tushare-first / Factor light / Next Session 先走；下一步只可做 model_ledger 与输出验收，不从 GET cache 调模型。"
+        if scope_ticket_ready
+        else "先继续 Tushare-first、Factor light 和 Next Session 本地回放；DeepSeek 真实解释等 governed executor 单独验收。",
         "ordinary_required_before_real_call": "需要 model_ledger / sanitizer / redaction review / cost accounting / output acceptance 全部就绪。",
         "ordinary_nonblocking_boundary": "DeepSeek 状态只解释已有证据，不作为数据源、不替代价格/持仓/因子/operation_zones，也不生成买卖动作。",
         "ordinary_safe_to_ignore_for_basic_maps": True,
-        "ordinary_blocking_state": "pending_model_ledger_not_blocking_tushare_or_basic_maps",
+        "ordinary_blocking_state": "scope_ticket_ready_model_ledger_pending_not_blocking_tushare_or_basic_maps"
+        if scope_ticket_ready
+        else "pending_model_ledger_not_blocking_tushare_or_basic_maps",
         "ordinary_allowed_output_fields": list(SAFE_EXPLANATION_FIELDS),
         "ordinary_forbidden_output_targets": list(FORBIDDEN_OUTPUT_TARGETS),
         "ordinary_output_contract_label": "仅允许安全解释字段；禁止覆盖价格、持仓、factor、operation_zones、strategy action 或交易动作。",
@@ -164,7 +208,7 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "call_ledger": [
             {
                 "api": "local_deepseek_model_strategy_cache",
-                "source": "config.get_deepseek_model and DEEPSEEK_*_MODEL names",
+                "source": "config.get_deepseek_model and optional persisted factor quant DeepSeek scope ticket receipt",
                 "row_count": len(rows),
                 "local_fetched_at": loaded_at,
                 "call_status": "cache_read",
