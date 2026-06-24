@@ -181,6 +181,7 @@ export default function NextSessionMap() {
   const nextSessionOperationZoneBoundary = "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
   const packetOrdinaryResultReplayRows = rowsFromArray(packet.ordinary_result_replay_rows);
   const packetOrdinaryChartReviewRows = rowsFromArray(packet.ordinary_chart_review_rows);
+  const packetOrdinaryConditionQuickReadRows = rowsFromArray(packet.ordinary_condition_quick_read_rows);
   const ordinaryResultReplayStatus = String(
     packet.ordinary_result_replay_status ??
       (chartSummary.has_drawable_data === true ? "ready_cache_replay" : "waiting_for_cache_or_manual_task")
@@ -245,7 +246,7 @@ export default function NextSessionMap() {
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
   const nextSessionOrdinaryReplayBoundaryBlocked =
     packet.does_not_modify_action === false || packet.does_not_modify_operation_zones === false;
-  const nextSessionOperationZoneQuickReadRows = [
+  const fallbackNextSessionOperationZoneQuickReadRows = [
     {
       速读项: "1. 先读路径",
       当前状态: chartSummary.has_drawable_data === true ? nextSessionLastResultLabel : "暂无可绘制路径；先看缓存状态或手动生成任务",
@@ -267,6 +268,9 @@ export default function NextSessionMap() {
       边界: "次日图谱不下单、不写 strategy action；DeepSeek 也不能覆盖 operation_zones。"
     }
   ];
+  const nextSessionOperationZoneQuickReadRows = packetOrdinaryConditionQuickReadRows.length
+    ? packetOrdinaryConditionQuickReadRows
+    : fallbackNextSessionOperationZoneQuickReadRows;
   const ordinaryInterpretationActionRows = [
     {
       行动: "1. 确认图谱状态",
@@ -456,7 +460,7 @@ export default function NextSessionMap() {
       </div>
       <div aria-label="next session ordinary operation zone quick read">
         <h3>操作区解释速读</h3>
-        <p className="risk-note">普通用户先按路径、参考线、操作区的顺序读；operation_zones 只是条件区间和复核提示，不是买卖、下单或 strategy action。</p>
+        <p className="risk-note">普通用户先按路径、参考线、操作区的顺序读；operation_zones 只是条件区间和复核提示，不是买卖、下单或 strategy action。优先读取本地缓存里的条件速读；旧缓存缺字段时才使用前端 fallback。</p>
         <DataLineageTable rows={nextSessionOperationZoneQuickReadRows} />
       </div>
       <h3>三段结果回放</h3>

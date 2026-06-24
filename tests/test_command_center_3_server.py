@@ -3720,6 +3720,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(ordinary_replay["source"], "GET /api/next-session/cache")
         self.assertEqual(ordinary_replay["row_count"], 3)
         self.assertEqual(ordinary_replay["chart_review_row_count"], 4)
+        self.assertEqual(ordinary_replay["condition_quick_read_row_count"], 4)
         self.assertTrue(ordinary_replay["rows_are_cache_only"])
         self.assertFalse(ordinary_replay["rows_create_task"])
         self.assertFalse(ordinary_replay["rows_call_provider_or_model"])
@@ -3729,10 +3730,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(service_packet["ordinary_result_replay_status"], "ready_cache_replay")
         self.assertEqual(service_packet["counts"]["next_session_ordinary_result_replay_row_count"], 3)
         self.assertEqual(service_packet["counts"]["next_session_ordinary_chart_review_row_count"], 4)
+        self.assertEqual(service_packet["counts"]["next_session_ordinary_condition_quick_read_row_count"], 4)
         self.assertTrue(service_packet["policy"]["next_session_ordinary_result_replay_rows_are_cache_only"])
         self.assertFalse(service_packet["policy"]["next_session_ordinary_result_replay_rows_create_task"])
         self.assertFalse(service_packet["policy"]["next_session_ordinary_result_replay_rows_call_provider_or_model"])
         self.assertTrue(service_packet["policy"]["next_session_ordinary_result_replay_rows_are_not_trade_signals"])
+        self.assertTrue(service_packet["policy"]["next_session_ordinary_condition_quick_read_rows_are_cache_only"])
+        self.assertFalse(service_packet["policy"]["next_session_ordinary_condition_quick_read_rows_call_provider_or_model"])
+        self.assertTrue(service_packet["policy"]["next_session_ordinary_condition_quick_read_rows_are_not_trade_signals"])
         ordinary_rows = {row["surface"]: row for row in service_packet["ordinary_result_replay_rows"]}
         self.assertEqual(set(ordinary_rows), {"下一票雷达", "股票量化推演", "次日图谱"})
         self.assertIn("Tushare daily close", ordinary_rows["股票量化推演"]["readable_result"])
@@ -3740,7 +3745,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         chart_review_rows = {row["复核项"]: row for row in service_packet["ordinary_chart_review_rows"]}
         self.assertEqual(set(chart_review_rows), {"图表路径", "参考线", "操作区", "缺少证据"})
         self.assertIn("latest close=10.4", chart_review_rows["参考线"]["证据"])
-        for row in list(ordinary_rows.values()) + list(chart_review_rows.values()):
+        condition_rows = {row["速读项"]: row for row in service_packet["ordinary_condition_quick_read_rows"]}
+        self.assertEqual(set(condition_rows), {"1. 来源", "2. 条件", "3. 失效", "4. 动作隔离"})
+        self.assertIn("精确 next-session cache 可回放", condition_rows["1. 来源"]["当前状态"])
+        self.assertIn("operation_zones 1 个", condition_rows["2. 条件"]["当前状态"])
+        self.assertIn("当前摘要未标记关键缺口", condition_rows["3. 失效"]["当前状态"])
+        self.assertIn("前端只读，不改 action 或 operation_zones", condition_rows["4. 动作隔离"]["当前状态"])
+        self.assertIn("React render 不创建 task", condition_rows["1. 来源"]["边界"])
+        self.assertIn("DeepSeek 也不能覆盖 operation_zones", condition_rows["4. 动作隔离"]["边界"])
+        for row in list(ordinary_rows.values()) + list(chart_review_rows.values()) + list(condition_rows.values()):
             self.assertTrue(row["cache_only_readback"])
             self.assertFalse(row["creates_task_from_readback"])
             self.assertFalse(row["contains_secret"])

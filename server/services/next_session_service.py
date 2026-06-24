@@ -2776,12 +2776,63 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
             **_local_ledger_boundary(),
         },
     ]
+    boundary_normal = (
+        packet.get("does_not_modify_action") is not False
+        and packet.get("does_not_modify_operation_zones") is not False
+    )
+    condition_quick_read_rows = [
+        {
+            "速读项": "1. 来源",
+            "当前状态": "精确 next-session cache 可回放" if exact_packet and has_drawable_data else "等待精确 next-session cache 或按钮任务结果",
+            "用户下一步": "先确认来源来自雷达/量化后的本地回放，再进入图表路径。",
+            "边界": "只读 GET cache；页面打开、普通链接和 React render 不创建 task。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+        {
+            "速读项": "2. 条件",
+            "当前状态": (
+                f"operation_zones {operation_zone_count} 个；只表示条件区间、触发条件和风险提示"
+                if has_drawable_data
+                else "等待 operation_zones cache；不能把空操作区解释成无风险"
+            ),
+            "用户下一步": "把操作区当人工复核条件，结合参考线和最新收盘锚点判断。",
+            "边界": "operation_zones 不是买卖指令，不写交易动作，不改 strategy action。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+        {
+            "速读项": "3. 失效",
+            "当前状态": "当前摘要未标记关键缺口" if exact_packet and has_drawable_data else "真实 close、精确 packet 或 operation_zones cache 待补齐",
+            "用户下一步": "缺口回到下一票雷达或股票量化推演补证；不要把空图谱解释成无风险。",
+            "边界": "失效提示不自动重试、不补调 Tushare/DeepSeek/GitHub、不写 cache。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+        {
+            "速读项": "4. 动作隔离",
+            "当前状态": "边界正常：前端只读，不改 action 或 operation_zones" if boundary_normal else "边界异常：先停在审计检查",
+            "用户下一步": "继续人工复核；需要刷新时只用按钮门控 POST task。",
+            "边界": "次日图谱不下单、不写 strategy action；DeepSeek 也不能覆盖 operation_zones。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+    ]
     return {
         "schema_version": "next_session_ordinary_result_replay.v1",
         "status": result_status,
         "source": "GET /api/next-session/cache",
         "row_count": len(result_rows),
         "chart_review_row_count": len(chart_review_rows),
+        "condition_quick_read_row_count": len(condition_quick_read_rows),
         "rows_are_cache_only": True,
         "rows_create_task": False,
         "rows_call_provider_or_model": False,
@@ -2790,6 +2841,7 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         "production_evidence": False,
         "result_rows": result_rows,
         "chart_review_rows": chart_review_rows,
+        "condition_quick_read_rows": condition_quick_read_rows,
         **_local_ledger_boundary(),
     }
 
@@ -2895,6 +2947,7 @@ def read_next_session_cache() -> dict[str, Any]:
     packet["ordinary_result_replay_status"] = ordinary_result_replay["status"]
     packet["ordinary_result_replay_rows"] = ordinary_result_replay["result_rows"]
     packet["ordinary_chart_review_rows"] = ordinary_result_replay["chart_review_rows"]
+    packet["ordinary_condition_quick_read_rows"] = ordinary_result_replay["condition_quick_read_rows"]
     counts = _as_dict(packet.get("counts"))
     counts.update(
         {
@@ -2918,6 +2971,9 @@ def read_next_session_cache() -> dict[str, Any]:
             ],
             "next_session_ordinary_result_replay_row_count": ordinary_result_replay["row_count"],
             "next_session_ordinary_chart_review_row_count": ordinary_result_replay["chart_review_row_count"],
+            "next_session_ordinary_condition_quick_read_row_count": ordinary_result_replay[
+                "condition_quick_read_row_count"
+            ],
         }
     )
     packet["counts"] = counts
@@ -2938,6 +2994,9 @@ def read_next_session_cache() -> dict[str, Any]:
             "next_session_ordinary_result_replay_rows_create_task": False,
             "next_session_ordinary_result_replay_rows_call_provider_or_model": False,
             "next_session_ordinary_result_replay_rows_are_not_trade_signals": True,
+            "next_session_ordinary_condition_quick_read_rows_are_cache_only": True,
+            "next_session_ordinary_condition_quick_read_rows_call_provider_or_model": False,
+            "next_session_ordinary_condition_quick_read_rows_are_not_trade_signals": True,
         }
     )
     packet["policy"] = policy
