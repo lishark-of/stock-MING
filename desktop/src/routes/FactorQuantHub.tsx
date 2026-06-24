@@ -87,6 +87,22 @@ export default function FactorQuantHub() {
   const candidateRadarOneScreenRows = toRows(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
   const candidateRadarConfirmOutcomeRows = toRows(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
   const candidateRadarWritebackSurfaceRows = toRows(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
+  const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarResultQuickRows = toRows(candidateRadarInterpretation.ordinary_result_quick_read_rows);
+  const candidateRadarResultCheckpointRows = toRows(candidateRadarInterpretation.ordinary_result_checkpoint_rows);
+  const candidateRadarReadableResult = String(
+    candidateRadarInterpretation.ordinary_result_summary ??
+      "等待下一票雷达确认后的可读结论"
+  );
+  const candidateRadarReadableNextStep = String(
+    candidateRadarInterpretation.ordinary_result_next_step ??
+      "先回下一票雷达输入代码并点击确认按钮"
+  );
+  const candidateRadarReadableBoundary = String(
+    candidateRadarInterpretation.ordinary_result_boundary ??
+      "量化页只读 CandidateRadar cache / ledger / packet 的可读结论；不创建 task、不调用 Tushare/DeepSeek、不改交易动作。"
+  );
   const runtime = packet.runtime ?? {};
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
@@ -670,6 +686,7 @@ export default function FactorQuantHub() {
             { label: "上游确认链", value: ordinaryQuantUpstreamOneScreenLabel, tone: candidateRadarOneScreenRows.length ? "good" : "warn" },
             { label: "确认结果链", value: ordinaryQuantUpstreamConfirmOutcomeLabel, tone: candidateRadarConfirmOutcomeRows.length ? "good" : "warn" },
             { label: "P2 三面回放", value: ordinaryQuantUpstreamP2WritebackLabel, tone: candidateRadarWritebackSurfaceRows.length ? "good" : "warn" },
+            { label: "最近搜票结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
             { label: "回放位置", value: ordinaryQuantReplayLocation, tone: "good" },
             { label: "结果位置", value: ordinaryQuantResultLocation, tone: "good" },
             { label: "回放入口边界", value: ordinaryQuantRouteHandoffBoundary, tone: "good" },
@@ -700,6 +717,22 @@ export default function FactorQuantHub() {
           steps={ordinaryQuantResultRailSteps}
         />
         <p className="risk-note">普通结果状态：雷达确认 / Factor cache / 次日图谱 / DeepSeek 状态；这条状态轨只读本地 cache，不创建 task、不补调 Tushare 或 DeepSeek。</p>
+        <div aria-label="stock quant latest candidate readable result">
+          <h3>最近搜票可读结论</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_interpretation_summary：确认后的 Tushare-first、P2 三面和 P3 结论在量化页首屏直接回放；本卡不创建 task、不补调数据源或模型。</p>
+          <MetricGrid
+            items={[
+              { label: "标的", value: String(candidateRadarReceipt.symbol ?? "--"), tone: candidateRadarReceipt.symbol ? "good" : "warn" },
+              { label: "可读结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
+              { label: "下一步", value: candidateRadarReadableNextStep },
+              { label: "P2 小数据", value: String(candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "已回放" : "等待回放"), tone: candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+              { label: "DeepSeek", value: String(candidateRadarInterpretation.deepseek_governed_executor_status ?? "governed_executor_pending"), tone: "good" },
+              { label: "边界", value: candidateRadarReadableBoundary, tone: "good" }
+            ]}
+          />
+          {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
+          {candidateRadarResultCheckpointRows.length ? <DataLineageTable rows={candidateRadarResultCheckpointRows} /> : null}
+        </div>
         <div aria-label="stock quant ordinary upstream one screen actions">
           <h3>上游确认一屏行动</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成量化页上游速读；本页只读回放，不创建 task、不调用模型。</p>
