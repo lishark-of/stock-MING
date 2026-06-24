@@ -26430,6 +26430,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_task_catalog_covered"])
         self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_latest_status_lookup_creates_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_manual_button_frontend_wiring_implemented"])
+        self.assertTrue(packet["policy"]["search_quant_projection_manual_button_task_status_polling_bound"])
+        self.assertFalse(packet["policy"]["search_quant_projection_manual_button_path_is_production_evidence"])
+        self.assertFalse(
+            packet["policy"]["search_quant_projection_manual_button_path_calls_provider_or_model_from_frontend"]
+        )
         self.assertTrue(packet["policy"]["search_quant_projection_frontend_wiring_acceptance_contract_visible"])
         self.assertTrue(packet["policy"]["search_quant_projection_frontend_wiring_mode_matrix_visible"])
         self.assertEqual(
@@ -29459,6 +29465,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(frontend_wiring_contract["status_replay_route"], "GET /api/bootstrap/status")
         self.assertEqual(frontend_wiring_contract["cache_refresh_route"], "GET /api/candidate-radar/cache")
         self.assertTrue(frontend_wiring_contract["manual_button_path_available"])
+        self.assertTrue(frontend_wiring_contract["manual_button_frontend_wiring_implemented"])
+        self.assertTrue(frontend_wiring_contract["manual_button_task_launch_receipt_bound"])
+        self.assertTrue(frontend_wiring_contract["manual_button_task_status_polling_bound"])
+        self.assertTrue(frontend_wiring_contract["manual_button_success_refresh_bound"])
+        self.assertFalse(frontend_wiring_contract["manual_button_path_is_production_evidence"])
+        self.assertFalse(frontend_wiring_contract["manual_button_path_calls_provider_or_model_from_frontend"])
         mode_rows = {row["mode"]: row for row in frontend_wiring_contract["mode_acceptance_rows"]}
         self.assertEqual(frontend_wiring_contract["mode_acceptance_row_count"], 4)
         self.assertTrue(frontend_wiring_contract["mode_acceptance_matrix_visible"])
@@ -29603,6 +29615,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(frontend_wiring_contract["does_not_execute_trades"])
         self.assertTrue(frontend_wiring_contract["does_not_modify_strategy_action"])
         self.assertTrue(packet["live_light"]["search_quant_projection_frontend_wiring_acceptance_contract_visible"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_manual_button_frontend_wiring_implemented"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_manual_button_task_status_polling_bound"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_manual_button_path_is_production_evidence"])
+        self.assertFalse(
+            packet["live_light"]["search_quant_projection_manual_button_path_calls_provider_or_model_from_frontend"]
+        )
         self.assertEqual(
             packet["live_light"]["search_quant_projection_frontend_wiring_status"],
             "frontend_wiring_acceptance_pending_backend_ready",

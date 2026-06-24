@@ -6982,6 +6982,12 @@ def _search_quant_projection_frontend_wiring_acceptance_contract(
         "status_replay_route": BOOTSTRAP_STATUS_ROUTE,
         "cache_refresh_route": "GET /api/candidate-radar/cache",
         "manual_button_path_available": True,
+        "manual_button_frontend_wiring_implemented": True,
+        "manual_button_task_launch_receipt_bound": True,
+        "manual_button_task_status_polling_bound": True,
+        "manual_button_success_refresh_bound": True,
+        "manual_button_path_is_production_evidence": False,
+        "manual_button_path_calls_provider_or_model_from_frontend": False,
         "mode_acceptance_rows": mode_acceptance_rows,
         "mode_acceptance_row_count": len(mode_acceptance_rows),
         "mode_acceptance_matrix_visible": True,
@@ -13233,6 +13239,18 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "search_quant_projection_submit_autostart_task_catalog_covered": True,
             "search_quant_projection_submit_autostart_provider_model_pending": True,
             "search_quant_projection_submit_autostart_is_production_evidence": False,
+            "search_quant_projection_manual_button_frontend_wiring_implemented": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "manual_button_frontend_wiring_implemented"
+                ]
+            ),
+            "search_quant_projection_manual_button_task_status_polling_bound": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "manual_button_task_status_polling_bound"
+                ]
+            ),
+            "search_quant_projection_manual_button_path_is_production_evidence": False,
+            "search_quant_projection_manual_button_path_calls_provider_or_model_from_frontend": False,
             "search_quant_projection_frontend_wiring_acceptance_contract_visible": True,
             "search_quant_projection_frontend_wiring_status": search_quant_projection_frontend_wiring_acceptance_contract[
                 "status"
@@ -14095,6 +14113,18 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "search_quant_projection_submit_autostart_task_catalog_covered": True,
             "search_quant_projection_submit_autostart_latest_status_lookup_creates_task": False,
             "search_quant_projection_submit_autostart_is_production_evidence": False,
+            "search_quant_projection_manual_button_frontend_wiring_implemented": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "manual_button_frontend_wiring_implemented"
+                ]
+            ),
+            "search_quant_projection_manual_button_task_status_polling_bound": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "manual_button_task_status_polling_bound"
+                ]
+            ),
+            "search_quant_projection_manual_button_path_is_production_evidence": False,
+            "search_quant_projection_manual_button_path_calls_provider_or_model_from_frontend": False,
             "search_quant_projection_frontend_wiring_acceptance_contract_visible": True,
             "search_quant_projection_frontend_wiring_mode_matrix_visible": True,
             "search_quant_projection_frontend_wiring_active_mode_behavior": (
@@ -14802,6 +14832,12 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
                 "search_quant_projection_submit_autostart_backend_ready": True,
                 "search_quant_projection_submit_autostart_frontend_wiring_implemented": False,
                 "search_quant_projection_submit_autostart_calls_provider_model": False,
+                "search_quant_projection_manual_button_frontend_wiring_implemented": (
+                    search_quant_projection_frontend_wiring_acceptance_contract[
+                        "manual_button_frontend_wiring_implemented"
+                    ]
+                ),
+                "search_quant_projection_manual_button_path_calls_provider_or_model_from_frontend": False,
                 "search_quant_projection_frontend_wiring_implemented": False,
                 "search_quant_projection_frontend_wiring_browser_evidence_complete": False,
                 "activation_receipt_status": activation_receipt["status"],
