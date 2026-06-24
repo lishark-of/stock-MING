@@ -684,6 +684,38 @@ export default function CandidateRadar() {
       边界: "P0 只证明本地前后端联通；不代表 Tushare、DeepSeek、release 或 14 LTG 完成"
     }
   ];
+  const candidateRadarP0HandoffPacketRows = rows(desktopPreflight.p0_to_p1_ordinary_handoff_rows).map((row) => ({
+    交接项: displayText(row["步骤"] ?? row.step),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    用户下一步: displayText(row["下一步"] ?? row["用户下一步"] ?? row.next_step),
+    入口: displayText(row["入口"] ?? row.entry, displayText(row["用户动作"], "#candidates")),
+    证据: displayText(row["P0交接证据"] ?? row["证据"] ?? row.evidence, "desktop preflight p0_to_p1_ordinary_handoff_rows"),
+    边界: displayText(row["边界"] ?? row.boundary, "只读交接回放；确认按钮之前不创建 task")
+  }));
+  const candidateRadarP0HandoffRows = candidateRadarP0HandoffPacketRows.length ? candidateRadarP0HandoffPacketRows : [
+    {
+      交接项: "1. 当前主入口",
+      当前状态: quantProjectionP0Ready ? "ready：进入 P1 搜票确认" : "check：先恢复 P0 本地联通",
+      用户下一步: quantProjectionP0Ready
+        ? "进入下一票雷达的搜票量化推演卡，输入股票代码；输入保持静默，确认按钮才触发 Tushare-first。"
+        : "留在一键启动预检，按 FastAPI / bootstrap status / desktop preflight cache / React/Vite 四段恢复。",
+      入口: quantProjectionP0Ready ? "#candidate-radar-search-quant-projection" : "#desktop",
+      证据: "fallback from candidateRadarP0AutoLinkRows",
+      边界: "只读本地交接提示；页面打开和输入不创建 task，确认按钮才是 P1 工作入口"
+    },
+    {
+      交接项: "2. P1 确认按钮",
+      当前状态: quantProjectionP0Ready ? "可进入搜票确认" : "暂不进入 P1",
+      用户下一步: "代码通过本地校验后点击确认按钮，才创建 Tushare-first POST task；DeepSeek skipped。",
+      入口: "下一票雷达确认按钮",
+      证据: "fallback from candidateRadarP0AutoLinkRows",
+      边界: "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker"
+    }
+  ];
+  const candidateRadarP0HandoffLabel = displayText(
+    candidateRadarP0HandoffRows[0]?.["用户下一步"],
+    quantProjectionP0Ready ? "进入下一票雷达搜票确认区" : "先恢复 P0 本地联通"
+  );
   const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
   const quantProjectionSymbolReady = quantProjectionSymbolValidation.valid;
   const quantProjectionPersistedTaskId = String(searchQuantProjectionReceipt.latest_task_id ?? searchQuantProjectionReceipt.task_id ?? cache.task_id ?? "");
@@ -2036,6 +2068,7 @@ export default function CandidateRadar() {
             { label: "下一步", value: ordinaryNextClick },
             { label: "主下一步", value: ordinaryPrimaryActionLabel },
             { label: "主下一步边界", value: ordinaryPrimaryActionBoundary, tone: "good" },
+            { label: "P0 交接", value: candidateRadarP0HandoffLabel, tone: quantProjectionP0Ready ? "good" : "warn" },
             { label: "P1 主路径", value: ordinaryP1ConfirmPathLabel, tone: quantProjectionCanSubmit ? "good" : "warn" },
             { label: "P1 主路径边界", value: ordinaryP1ConfirmPathBoundary, tone: "good" },
             { label: "候选分组", value: ordinaryCandidateGroupLabel },
@@ -2070,6 +2103,11 @@ export default function CandidateRadar() {
           <h3>P0 前后端联通闸门</h3>
           <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode、desktop preflight 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
           <DataLineageTable rows={candidateRadarP0AutoLinkRows} />
+        </div>
+        <div aria-label="candidate radar p0 to p1 preflight handoff">
+          <h3>P0 到 P1 交接回读</h3>
+          <p className="risk-note">优先读取 desktop preflight 的 p0_to_p1_ordinary_handoff_rows：四段 ready 后只切到搜票量化推演卡；输入保持静默，确认按钮才创建 Tushare-first POST task。</p>
+          <DataLineageTable rows={candidateRadarP0HandoffRows} />
         </div>
         <p id={quantProjectionSummaryInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p id={quantProjectionSummarySubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>

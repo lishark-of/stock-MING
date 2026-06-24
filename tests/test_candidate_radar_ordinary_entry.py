@@ -23,6 +23,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "下一步"',
             'label: "主下一步"',
             'label: "主下一步边界"',
+            'label: "P0 交接"',
             'label: "P1 主路径"',
             'label: "P1 主路径边界"',
             'label: "P2 三面"',
@@ -72,6 +73,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("本地快扫和输入股票池保留为可选补证；主路径走搜票确认", self.page)
         self.assertIn('href="#candidate-radar-search-quant-projection"', self.page)
         self.assertIn('id="candidate-radar-search-quant-projection"', self.page)
+        self.assertIn("candidateRadarP0HandoffPacketRows", self.page)
+        self.assertIn("desktopPreflight.p0_to_p1_ordinary_handoff_rows", self.page)
+        self.assertIn("candidateRadarP0HandoffRows", self.page)
+        self.assertIn("candidateRadarP0HandoffLabel", self.page)
+        self.assertIn('aria-label="candidate radar p0 to p1 preflight handoff"', self.page)
+        self.assertIn("P0 到 P1 交接回读", self.page)
+        self.assertIn("优先读取 desktop preflight 的 p0_to_p1_ordinary_handoff_rows", self.page)
+        self.assertIn("四段 ready 后只切到搜票量化推演卡；输入保持静默，确认按钮才创建 Tushare-first POST task", self.page)
         self.assertIn("ordinaryP1ConfirmPathLabel", self.page)
         self.assertIn("ordinaryP1ConfirmPathBoundary", self.page)
         self.assertIn("ordinaryP1ConfirmPathRows", self.page)
@@ -93,6 +102,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('"cache/ledger/packet"', self.page)
         self.assertIn('"可解释结果"', self.page)
         p0_gate_index = self.page.index('aria-label="candidate radar ordinary p0 frontend backend readiness"')
+        p0_handoff_index = self.page.index('aria-label="candidate radar p0 to p1 preflight handoff"', p0_gate_index)
         primary_action_index = self.page.index('aria-label="candidate radar primary next action"', p0_gate_index)
         next_user_actions_index = self.page.index('aria-label="candidate radar next user actions"', primary_action_index)
         p1_to_p3_rail_index = self.page.index('aria-label="candidate radar ordinary p1 to p3 stage rail"', p0_gate_index)
@@ -100,6 +110,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         p6_detail_index = self.page.index('aria-label="candidate radar ordinary p6 strict closeout handoff"', p0_gate_index)
         action_slice_end = self.page.index('aria-label="candidate radar ordinary audit shortcuts"', next_user_actions_index)
         action_slice = self.page[primary_action_index:action_slice_end]
+        self.assertLess(p0_gate_index, p0_handoff_index)
+        self.assertLess(p0_handoff_index, p1_to_p3_rail_index)
         self.assertLess(p0_gate_index, p1_to_p3_rail_index)
         self.assertLess(p1_to_p3_rail_index, primary_action_index)
         self.assertLess(primary_action_index, next_user_actions_index)
