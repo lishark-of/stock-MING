@@ -324,6 +324,7 @@ export default function CommandCenterHome() {
       ];
   const candidateQuantInterpretation = (candidates.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const candidateQuantQuickRows = (candidateQuantInterpretation.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const candidateQuantCheckpointRows = (candidateQuantInterpretation.ordinary_result_checkpoint_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const dailyCommandExplainableResultLabel = String(
     candidateQuantInterpretation.ordinary_result_summary ?? "等待搜票确认后的可解释结果"
   );
@@ -363,6 +364,40 @@ export default function CommandCenterHome() {
           用户下一步: "先完成 Tushare-first 和基础图谱；DeepSeek governed executor 单独补",
           证据: "local_evidence_gap_summary",
           边界: "不把缺口、候选或解释结果当买卖指令。"
+        }
+      ];
+  const dailyCommandP3CheckpointLabel = candidateQuantCheckpointRows.length
+    ? `P3 检查点 ${String(candidateQuantCheckpointRows.length)} 项可回放`
+    : "等待 CandidateRadar P3 结果检查点";
+  const dailyCommandP3CheckpointRows = candidateQuantCheckpointRows.length
+    ? candidateQuantCheckpointRows.map((row) => ({
+        检查点: String(row["检查点"] ?? row.checkpoint_key ?? "P3 检查点"),
+        当前状态: String(row["当前状态"] ?? row.status ?? dailyCommandExplainableResultLabel),
+        用户下一步: String(row["用户下一步"] ?? row.next_action ?? dailyCommandExplainableResultNext),
+        证据: String(row["证据"] ?? row.evidence ?? "CandidateRadar ordinary_result_checkpoint_rows"),
+        边界: String(row["边界"] ?? row.boundary ?? dailyCommandExplainableResultBoundary)
+      }))
+    : [
+        {
+          检查点: "1. 可读结论",
+          当前状态: dailyCommandExplainableResultLabel,
+          用户下一步: dailyCommandExplainableResultNext,
+          证据: "CandidateRadar search_quant_projection_interpretation_summary",
+          边界: dailyCommandExplainableResultBoundary
+        },
+        {
+          检查点: "2. 来源状态",
+          当前状态: "等待 cache / ledger / packet 三面回放",
+          用户下一步: "任务完成后刷新本地 cache，再从下一票雷达、股票量化推演和次日图谱复核",
+          证据: "ordinary_result_checkpoint_rows pending",
+          边界: "首页只读 P3 检查点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache。"
+        },
+        {
+          检查点: "3. 缺口和安全字段",
+          当前状态: "缺口只作为待补证据；安全字段只允许 source / gap / next_step / safety_summary",
+          用户下一步: "把结果当研究线索；DeepSeek governed executor 和 14 LTG strict closeout 后续单独补",
+          证据: "local_result_checkpoint_fallback",
+          边界: "不真实交易、不下单、不改价格、持仓、因子、operation_zones 或 strategy action。"
         }
       ];
   const candidateQuantModelGovernanceRows = (candidateQuantInterpretation.ordinary_model_governance_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -967,6 +1002,7 @@ export default function CommandCenterHome() {
             { label: "P3 可读结论", value: dailyCommandExplainableResultLabel, tone: candidateQuantInterpretation.interpretation_ready === true ? "good" : "warn" },
             { label: "P3 下一步", value: dailyCommandExplainableResultNext },
             { label: "P3 边界", value: dailyCommandExplainableResultBoundary, tone: "good" },
+            { label: "P3 检查点", value: dailyCommandP3CheckpointLabel, tone: candidateQuantCheckpointRows.length ? "good" : "warn" },
             { label: "P5 DeepSeek", value: dailyCommandDeepSeekGovernanceState, tone: candidateQuantInterpretation.deepseek_model_ledger_ready === true ? "warn" : "good" },
             { label: "P5 边界", value: dailyCommandDeepSeekGovernanceBoundary, tone: "good" },
             { label: "cache", value: dailyCommandCacheSourceLabel },
@@ -1047,6 +1083,11 @@ export default function CommandCenterHome() {
           <h3>P3 可解释结果速读</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows：普通入口只看可读结论、来源组成、回放来源和待补证据；不会从首页创建 task、调用 DeepSeek 或展开 raw packet。</p>
           <DataLineageTable rows={dailyCommandExplainableResultRows} />
+        </div>
+        <div aria-label="daily command p3 result checkpoint">
+          <h3>P3 结果检查点</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_checkpoint_rows：把可读结论、来源状态、待补缺口和安全字段合成首页检查点；只读本地 cache / ledger / packet，不创建 task、不调用模型。</p>
+          <DataLineageTable rows={dailyCommandP3CheckpointRows} />
         </div>
         <div aria-label="daily command p3 replay handoff">
           <h3>P3 结果回放入口</h3>
