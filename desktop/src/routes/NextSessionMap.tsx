@@ -192,6 +192,22 @@ export default function NextSessionMap() {
   const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarOneScreenRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
   const candidateRadarConfirmOutcomeRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
+  const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarResultQuickRows = rowsFromArray(candidateRadarInterpretation.ordinary_result_quick_read_rows);
+  const candidateRadarResultHandoffRows = rowsFromArray(candidateRadarInterpretation.ordinary_result_handoff_rows);
+  const candidateRadarReadableResult = String(
+    candidateRadarInterpretation.ordinary_result_summary ??
+      "等待下一票雷达确认后的可读结论"
+  );
+  const candidateRadarReadableNextStep = String(
+    candidateRadarInterpretation.ordinary_result_next_step ??
+      "先回下一票雷达输入代码并点击确认按钮"
+  );
+  const candidateRadarReadableBoundary = String(
+    candidateRadarInterpretation.ordinary_result_boundary ??
+      "次日图谱只读 CandidateRadar cache / ledger / packet 的可读结论；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。"
+  );
   const ordinaryResultReplayStatus = String(
     packet.ordinary_result_replay_status ??
       (chartSummary.has_drawable_data === true ? "ready_cache_replay" : "waiting_for_cache_or_manual_task")
@@ -563,6 +579,7 @@ export default function NextSessionMap() {
           { label: "回放来源", value: nextSessionReplayOrigin, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "上游确认链", value: nextSessionUpstreamOneScreenLabel, tone: candidateRadarOneScreenRows.length ? "good" : "warn" },
           { label: "确认结果链", value: nextSessionUpstreamConfirmOutcomeLabel, tone: candidateRadarConfirmOutcomeRows.length ? "good" : "warn" },
+          { label: "最近搜票结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
           { label: "回放路径", value: nextSessionReplayPath, tone: "good" },
           { label: "回放入口边界", value: nextSessionReplayDestinationBoundary, tone: "good" },
           { label: "操作区边界", value: nextSessionOperationZoneBoundary, tone: "good" },
@@ -580,6 +597,22 @@ export default function NextSessionMap() {
         steps={nextSessionOrdinaryReplayRailSteps}
       />
       <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek，P5 解释治理继续收起为单独补证。</p>
+      <div aria-label="next session latest candidate readable result">
+        <h3>最近搜票可读结论</h3>
+        <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_interpretation_summary：确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放；本卡不创建 task、不补调数据源或模型，也不改 operation_zones。</p>
+        <MetricGrid
+          items={[
+            { label: "标的", value: String(candidateRadarReceipt.symbol ?? "--"), tone: candidateRadarReceipt.symbol ? "good" : "warn" },
+            { label: "可读结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
+            { label: "下一步", value: candidateRadarReadableNextStep },
+            { label: "P2 小数据", value: String(candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "已回放" : "等待回放"), tone: candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+            { label: "DeepSeek", value: String(candidateRadarInterpretation.deepseek_governed_executor_status ?? "governed_executor_pending"), tone: "good" },
+            { label: "边界", value: candidateRadarReadableBoundary, tone: "good" }
+          ]}
+        />
+        {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
+        {candidateRadarResultHandoffRows.length ? <DataLineageTable rows={candidateRadarResultHandoffRows} /> : null}
+      </div>
       <div aria-label="next session upstream one screen actions">
         <h3>上游确认一屏行动</h3>
         <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成图谱页上游速读；本页只读回放，不创建 task、不调用模型。</p>
