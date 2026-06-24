@@ -2993,6 +2993,38 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             panel.index('aria-label="task status p3 result replay quick read"'),
             panel.index('aria-label="task status audit details"'),
         )
+        self.assertIn("showTaskFailureRecovery", panel)
+        self.assertIn('task.status === "failed" || task.status === "cancelled"', panel)
+        self.assertIn("taskFailureRecoveryRows", panel)
+        self.assertIn("taskFailureRecoveryLinks", panel)
+        self.assertIn('aria-label="task status failed recovery quick read"', panel)
+        self.assertIn('aria-label="task status failed recovery links"', panel)
+        self.assertIn("失败/取消恢复速读：先回 P0 确认前后端联通", panel)
+        self.assertIn("这里不自动重试、不调用 provider/model、不执行真实交易", panel)
+        self.assertIn('恢复项: "P0 一键启动预检"', panel)
+        self.assertIn('恢复项: "手动回到原入口"', panel)
+        self.assertIn('恢复项: "保留本地证据"', panel)
+        self.assertIn('入口: "#desktop"', panel)
+        self.assertIn("只有用户再次点击确认按钮才会创建任务；搜索输入和页面切换不外联", panel)
+        self.assertIn("不展示凭据值、错误原文或交易动作", panel)
+        self.assertIn("DeepSeek 仍需 governed executor", panel)
+        self.assertIn('href: "#desktop"', panel)
+        self.assertIn("查看一键启动预检", panel)
+        self.assertLess(
+            panel.index('aria-label="task status p3 result replay quick read"'),
+            panel.index('aria-label="task status failed recovery quick read"'),
+        )
+        self.assertLess(
+            panel.index('aria-label="task status failed recovery quick read"'),
+            panel.index("<TaskBoundarySummary task={task} />"),
+        )
+        failed_recovery_slice = panel[
+            panel.index('aria-label="task status failed recovery quick read"') : panel.index("<TaskBoundarySummary task={task} />")
+        ]
+        self.assertNotIn("postTask", failed_recovery_slice)
+        self.assertNotIn("retryTask", failed_recovery_slice)
+        self.assertNotIn("cancelTask", failed_recovery_slice)
+        self.assertNotIn("onClick", failed_recovery_slice)
         self.assertIn('aria-label="task status audit details"', panel)
         self.assertIn("<summary>任务审计详情</summary>", panel)
         self.assertIn("普通用户先看状态轨、当前步骤、本地回放提示和取消按钮", panel)

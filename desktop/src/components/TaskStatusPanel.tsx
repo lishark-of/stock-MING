@@ -213,6 +213,35 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
         { href: "#packets", label: "查看 Packet", title: "切换到 Packet 注册表；只读本地输出", aria: "open packet registry from task status" },
         { href: "#tasks", label: "查看任务列表", title: "切换到 Task Monitor；只读任务状态", aria: "open task monitor from task status" }
       ];
+  const showTaskFailureRecovery = task.status === "failed" || task.status === "cancelled";
+  const taskFailureRecoveryRows = [
+    {
+      恢复项: "P0 一键启动预检",
+      当前状态: task.status === "failed" ? "任务未成功；先确认前后端联通" : "任务已取消；先确认本地服务仍可读",
+      用户下一步: "回到一键启动预检，确认后端、storage、cache 状态",
+      入口: "#desktop",
+      边界: "只读本地预检，不自动重试、不创建新 task。"
+    },
+    {
+      恢复项: "手动回到原入口",
+      当前状态: candidateRadarResultReplay ? "可回下一票雷达重新确认标的" : "可回任务列表或 Packet 注册表定位入口",
+      用户下一步: candidateRadarResultReplay ? "核对股票代码后再点确认一次" : "从任务列表查看来源，再回原页面手动操作",
+      入口: candidateRadarResultReplay ? "#candidates" : "#tasks",
+      边界: "只有用户再次点击确认按钮才会创建任务；搜索输入和页面切换不外联。"
+    },
+    {
+      恢复项: "保留本地证据",
+      当前状态: "失败或取消只保留本地状态、审计数量和安全摘要",
+      用户下一步: "不要把失败 packet 或审计明细当生产证据",
+      入口: "#tasks",
+      边界: "不展示凭据值、错误原文或交易动作；DeepSeek 仍需 governed executor。"
+    }
+  ];
+  const taskFailureRecoveryLinks = [
+    { href: "#desktop", label: "查看一键启动预检", title: "回到桌面预检；只读确认前后端联通", aria: "open desktop preflight from failed task status" },
+    { href: candidateRadarResultReplay ? "#candidates" : "#tasks", label: candidateRadarResultReplay ? "回到下一票雷达" : "查看任务列表", title: "回到本地入口；再次确认前不会创建任务", aria: "open local recovery entry from failed task status" },
+    { href: "#packets", label: "查看 Packet", title: "打开 Packet 注册表；只读查看本地输出", aria: "open packet registry from failed task status" }
+  ];
 
   return (
     <div className={`task-panel task-panel--${task.status} motion-surface`} data-task-state={task.status} data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
@@ -251,6 +280,17 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
           ))}
         </div>
       </div>
+      {showTaskFailureRecovery ? (
+        <div aria-label="task status failed recovery quick read">
+          <p className="risk-note">失败/取消恢复速读：先回 P0 确认前后端联通，再由用户手动回到原入口；这里不自动重试、不调用 provider/model、不执行真实交易。</p>
+          <DataLineageTable rows={taskFailureRecoveryRows} />
+          <div className="actions" aria-label="task status failed recovery links">
+            {taskFailureRecoveryLinks.map((link) => (
+              <a key={`${link.href}-${link.label}`} href={link.href} title={link.title} aria-label={link.aria}>{link.label}</a>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <TaskBoundarySummary task={task} />
       <button
         disabled={!cancellable}
