@@ -535,22 +535,16 @@ export default function CandidateRadar() {
   const candidateRadarP0Blocked = Boolean(error);
   const ordinaryNextClick = candidateRadarP0Blocked
     ? "先恢复 P0 本地联通"
-    : Number(counts.candidate_count ?? 0)
-      ? "先查看本地候选摘要"
-      : "先点击运行本地快扫";
+    : "输入股票代码并点击确认";
   const ordinaryPrimaryActionLabel = candidateRadarP0Blocked
     ? "回一键启动预检恢复联通"
-    : Number(counts.candidate_count ?? 0)
-      ? "查看本地候选池"
-      : "运行本地快扫";
+    : "输入代码并确认";
   const ordinaryPrimaryActionBoundary = candidateRadarP0Blocked
     ? "P0 未联通时主下一步只跳转一键启动预检；不创建快扫 task、不调用 provider/model"
-    : Number(counts.candidate_count ?? 0)
-      ? "主下一步只跳转本地候选池，不创建 task、不刷新外部数据或模型"
-      : "主下一步只创建按钮门控本地快扫 POST task，不直连 Tushare/DeepSeek";
+    : "主下一步跳到搜票确认区；输入只做本地校验，只有确认按钮创建 Tushare-first POST task";
   const ordinaryOptionalNextClick = Number(counts.candidate_count ?? 0)
     ? "需要更新时再运行本地快扫；搜单票时输入代码后点击生成 3.0 量化推演"
-    : "也可以输入自选股票池后扫描；搜单票时走生成 3.0 量化推演";
+    : "本地快扫和输入股票池保留为可选补证；主路径走搜票确认";
   const candidateRadarRuntimeModeLabel = {
     cache_only: "只读缓存模式",
     manual: "手动任务模式",
@@ -2151,13 +2145,11 @@ export default function CandidateRadar() {
         <div className="actions" aria-label="candidate radar primary next action">
           {candidateRadarP0Blocked ? (
             <a href="#desktop" aria-label="open p0 desktop preflight from radar summary">{ordinaryPrimaryActionLabel}</a>
-          ) : Number(counts.candidate_count ?? 0) ? (
-            <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>
           ) : (
-            <button onClick={launchQuickScan}>{ordinaryPrimaryActionLabel}</button>
+            <a href="#candidate-radar-search-quant-projection" aria-label="jump to searched symbol confirmation from radar summary">{ordinaryPrimaryActionLabel}</a>
           )}
         </div>
-        <div className="actions" aria-label="candidate radar next user actions">
+        <div id="candidate-radar-search-quant-projection" className="actions" aria-label="candidate radar next user actions">
           <button onClick={refreshCache}>查看本地缓存</button>
           {Number(counts.candidate_count ?? 0) ? <button onClick={launchQuickScan}>运行本地快扫</button> : null}
           <input
