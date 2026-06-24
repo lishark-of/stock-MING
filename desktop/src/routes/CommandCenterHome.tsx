@@ -1035,6 +1035,15 @@ export default function CommandCenterHome() {
           </div>
           <DataLineageTable rows={dailyCommandUsableShortestPathRows} />
         </div>
+        <div aria-label="daily command p6 strict closeout reentry">
+          <h3>P6 strict closeout 回归入口</h3>
+          <p className="risk-note">P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence、CI、浏览器、provider、worker、storage 和 package gate 逐项补证；P6 只是 strict closeout 回归门，不是 14 LTG 完成声明；P4 下沉的是工程审计明细，不压过 P0-P3 普通路径。</p>
+          <DataLineageTable rows={dailyCommandP6StrictCloseoutReentryRows} />
+          <div className="actions" aria-label="daily command p6 reentry links">
+            <a href="#migration" title="切换到迁移状态页；只读查看 14 LTG direct evidence 缺口" aria-label="open migration status for strict closeout reentry">查看 14 LTG 迁移状态</a>
+            <a href="#tasks" title="切换到任务目录；只读回放 task/cache/ledger/packet 证据" aria-label="open task catalog for evidence replay">查看任务和证据回放</a>
+          </div>
+        </div>
         <div aria-label="daily command local connection readback">
           <h3>本地联通四段回读</h3>
           <p className="risk-note">先看 FastAPI、bootstrap runtime-mode packet、desktop preflight cache、React/Vite 前端四段是否变绿；这张表只读本地 GET 结果，不启动服务。</p>
@@ -1124,15 +1133,6 @@ export default function CommandCenterHome() {
           <h3>审计入口下沉规则</h3>
           <p className="risk-note">普通用户先看摘要和三入口；只有排障、验收或补证时展开开发详情。</p>
           <DataLineageTable rows={dailyCommandAuditDemotionRows} />
-        </div>
-        <div aria-label="daily command p6 strict closeout reentry">
-          <h3>P6 strict closeout 回归入口</h3>
-          <p className="risk-note">P0-P6 是当前使用者可用化 checkpoint；P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence、CI、浏览器、provider、worker、storage 和 package gate 逐项补证；P6 只是 strict closeout 回归门；P4 将它下沉到开发详情，不压过 P0-P3 普通路径。</p>
-          <DataLineageTable rows={dailyCommandP6StrictCloseoutReentryRows} />
-          <div className="actions" aria-label="daily command p6 reentry links">
-            <a href="#migration" title="切换到迁移状态页；只读查看 14 LTG direct evidence 缺口" aria-label="open migration status for strict closeout reentry">查看 14 LTG 迁移状态</a>
-            <a href="#tasks" title="切换到任务目录；只读回放 task/cache/ledger/packet 证据" aria-label="open task catalog for evidence replay">查看任务和证据回放</a>
-          </div>
         </div>
         <PacketCard title="开发状态速览" subtitle="工程指标默认收进开发详情，不压过三入口" status="audit">
           <MetricGrid
