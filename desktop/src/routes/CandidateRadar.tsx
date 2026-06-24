@@ -826,6 +826,36 @@ export default function CandidateRadar() {
           边界: "packet 不含凭据、raw log 或交易动作；不覆盖 strategy action"
         }
       ];
+  const quantProjectionP2WritebackRailState = [
+    quantProjectionSmallDataReady || searchQuantProjectionReceipt.status ? "cache_visible" : "cache_waiting",
+    quantProjectionProviderLedgerReady
+      ? "call_ledger_visible"
+      : taskReceipt?.ok || quantProjectionPersistedTaskId ? "call_ledger_waiting_task" : "call_ledger_waiting_confirm",
+    searchQuantProjectionReceipt.status ? "packet_visible" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "packet_waiting_task" : "packet_waiting_confirm",
+    "read_only_boundary"
+  ].join(" ");
+  const quantProjectionP2WritebackRailSteps = [
+    {
+      label: "cache",
+      state: quantProjectionSmallDataReady || searchQuantProjectionReceipt.status ? ("done" as const) : taskReceipt?.ok || quantProjectionPersistedTaskId ? ("active" as const) : ("waiting" as const),
+      detail: quantProjectionSmallDataStageLabel
+    },
+    {
+      label: "call_ledger",
+      state: quantProjectionProviderLedgerReady ? ("done" as const) : taskReceipt?.ok || quantProjectionPersistedTaskId ? ("active" as const) : ("waiting" as const),
+      detail: quantProjectionProviderLedgerReady ? `Tushare ${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}` : "等待 POST task ledger 或本地阻断"
+    },
+    {
+      label: "packet",
+      state: searchQuantProjectionReceipt.status ? ("done" as const) : taskReceipt?.ok || quantProjectionPersistedTaskId ? ("active" as const) : ("waiting" as const),
+      detail: searchQuantProjectionReceipt.status ? `packet=${String(searchQuantProjectionReceipt.status)}` : "等待 task receipt 写入 packet"
+    },
+    {
+      label: "只读边界",
+      state: "done" as const,
+      detail: "GET cache / React render 不补调 provider/model"
+    }
+  ];
   const quantProjectionFactorNextReady =
     searchQuantProviderModelAcceptance.factor_refresh_executed === true ||
     searchQuantProviderModelAcceptance.next_session_refresh_executed === true ||
@@ -1649,6 +1679,15 @@ export default function CandidateRadar() {
           <h3>P1 普通确认路径</h3>
           <p className="risk-note">普通用户先看这条 P1 路径：输入只做本地校验，确认按钮才创建 Tushare-first 后台任务，随后只读回放 cache / ledger / packet。</p>
           <DataLineageTable rows={ordinaryP1ConfirmPathRows} />
+        </div>
+        <div aria-label="candidate radar ordinary p2 writeback rail">
+          <h3>P2 三面状态轨</h3>
+          <p className="risk-note">先扫 cache、call_ledger、packet 三面是否可读；这条状态轨只读本地回放，不展示接口级 raw log，不创建 task、不补调 Tushare/DeepSeek。</p>
+          <StateClarityRail
+            label="candidate radar ordinary p2 writeback rail"
+            state={quantProjectionP2WritebackRailState}
+            steps={quantProjectionP2WritebackRailSteps}
+          />
         </div>
         <div aria-label="candidate radar ordinary p2 writeback surfaces">
           <h3>P2 小数据三面回放</h3>
