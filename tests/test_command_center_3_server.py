@@ -26779,6 +26779,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_latest_status_lookup_creates_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_is_production_evidence"])
         self.assertTrue(packet["policy"]["search_quant_projection_manual_button_frontend_wiring_implemented"])
+        self.assertTrue(packet["policy"]["search_quant_projection_manual_confirm_button_frontend_wiring_implemented"])
+        self.assertTrue(packet["policy"]["search_quant_projection_manual_confirm_button_runtime_ready"])
+        self.assertEqual(
+            packet["policy"]["search_quant_projection_manual_confirm_button_status"],
+            "ready_explicit_confirm_button_posts_quant_projection_task",
+        )
+        self.assertTrue(packet["policy"]["search_quant_projection_frontend_runtime_wiring_implemented"])
+        self.assertEqual(
+            packet["policy"]["search_quant_projection_frontend_runtime_wiring_scope"],
+            "manual_confirm_button_ready_autostart_and_browser_acceptance_pending",
+        )
         self.assertTrue(packet["policy"]["search_quant_projection_manual_button_task_status_polling_bound"])
         self.assertFalse(packet["policy"]["search_quant_projection_manual_button_path_is_production_evidence"])
         self.assertFalse(
@@ -29814,6 +29825,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(frontend_wiring_contract["cache_refresh_route"], "GET /api/candidate-radar/cache")
         self.assertTrue(frontend_wiring_contract["manual_button_path_available"])
         self.assertTrue(frontend_wiring_contract["manual_button_frontend_wiring_implemented"])
+        self.assertTrue(frontend_wiring_contract["manual_confirm_button_frontend_wiring_implemented"])
+        self.assertTrue(frontend_wiring_contract["manual_confirm_button_runtime_ready"])
+        self.assertEqual(
+            frontend_wiring_contract["manual_confirm_button_status"],
+            "ready_explicit_confirm_button_posts_quant_projection_task",
+        )
+        self.assertEqual(frontend_wiring_contract["manual_confirm_button_scope"], "P1 searched-symbol confirm button only")
         self.assertTrue(frontend_wiring_contract["manual_button_task_launch_receipt_bound"])
         self.assertTrue(frontend_wiring_contract["manual_button_task_status_polling_bound"])
         self.assertTrue(frontend_wiring_contract["manual_button_success_refresh_bound"])
@@ -29918,6 +29936,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("unbounded local task queue", failure_rows["queue_boundaries_visible"]["expected"])
         self.assertTrue(all(row["required_before_wiring_done"] for row in failure_rows.values()))
         self.assertFalse(frontend_wiring_contract["frontend_submit_autostart_wiring_implemented"])
+        self.assertTrue(frontend_wiring_contract["frontend_runtime_wiring_implemented"])
+        self.assertEqual(
+            frontend_wiring_contract["frontend_runtime_wiring_scope"],
+            "manual_confirm_button_ready_autostart_and_browser_acceptance_pending",
+        )
         self.assertFalse(frontend_wiring_contract["frontend_acceptance_test_implemented"])
         self.assertFalse(frontend_wiring_contract["browser_runtime_evidence_complete"])
         self.assertTrue(frontend_wiring_contract["live_light_wiring_allowed"])
@@ -29964,6 +29987,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(frontend_wiring_contract["does_not_modify_strategy_action"])
         self.assertTrue(packet["live_light"]["search_quant_projection_frontend_wiring_acceptance_contract_visible"])
         self.assertTrue(packet["live_light"]["search_quant_projection_manual_button_frontend_wiring_implemented"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_manual_confirm_button_frontend_wiring_implemented"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_manual_confirm_button_runtime_ready"])
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_manual_confirm_button_status"],
+            "ready_explicit_confirm_button_posts_quant_projection_task",
+        )
+        self.assertTrue(packet["live_light"]["search_quant_projection_frontend_runtime_wiring_implemented"])
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_frontend_runtime_wiring_scope"],
+            "manual_confirm_button_ready_autostart_and_browser_acceptance_pending",
+        )
         self.assertTrue(packet["live_light"]["search_quant_projection_manual_button_task_status_polling_bound"])
         self.assertFalse(packet["live_light"]["search_quant_projection_manual_button_path_is_production_evidence"])
         self.assertFalse(
