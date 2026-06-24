@@ -2715,7 +2715,7 @@ export default function CandidateRadar() {
 
       <details id="audit" className="developer-audit-details" aria-label="candidate radar developer audit details">
         <summary>开发 / 审计指标</summary>
-        <p>Provider、worker、receipt、browser QA、retained coverage 和 production blocker 明细默认收起；普通用户先看上方雷达摘要、候选池和搜票量化推演。</p>
+        <p>Provider、worker、receipt、browser QA、retained coverage 和 production blocker 明细默认收起；普通用户先看上方雷达摘要、候选池和搜票量化推演；也就是先查看本地候选摘要，再继续搜票量化推演。</p>
         <MetricGrid
           items={[
           { label: "mode", value: cache.mode as string | undefined },

@@ -86,6 +86,7 @@ export default function FactorQuantHub() {
   const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarOneScreenRows = toRows(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
   const candidateRadarConfirmOutcomeRows = toRows(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
+  const candidateRadarWritebackSurfaceRows = toRows(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
   const runtime = packet.runtime ?? {};
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
@@ -468,6 +469,47 @@ export default function FactorQuantHub() {
   const ordinaryQuantUpstreamConfirmOutcomeLabel = ordinaryQuantUpstreamConfirmOutcomeRows
     .map((row) => `${row.确认结果}: ${row.当前状态}`)
     .join(" / ");
+  const ordinaryQuantSmallDataWritebackState = String(
+    candidateRadarSmallDataWriteback.ordinary_readback_stage_label ??
+      candidateRadarSmallDataWriteback.summary_label ??
+      "等待确认按钮后的 cache / ledger / packet 回放"
+  );
+  const ordinaryQuantP2WritebackBoundary =
+    "P2 小数据只从 CandidateRadar cache / call_ledger / packet 回放；Factor 页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示 token/key 或 raw log。";
+  const ordinaryQuantUpstreamP2WritebackRows = candidateRadarWritebackSurfaceRows.length
+    ? candidateRadarWritebackSurfaceRows.map((row) => ({
+        写入面: String(row["写入面"] ?? row.surface ?? "writeback"),
+        当前状态: String(row["当前状态"] ?? row.status ?? ordinaryQuantSmallDataWritebackState),
+        回放来源: String(row["回放来源"] ?? row.readback_source ?? "GET /api/candidate-radar/cache"),
+        下一步: String(row["下一步"] ?? row.next_action ?? "确认任务完成后刷新本地 cache 回放"),
+        边界: String(row["边界"] ?? row.boundary ?? ordinaryQuantP2WritebackBoundary)
+      }))
+    : [
+        {
+          写入面: "cache",
+          当前状态: ordinaryQuantSmallDataWritebackState,
+          回放来源: "search_quant_projection_small_data_writeback_summary",
+          下一步: "先去下一票雷达输入代码并点击确认",
+          边界: ordinaryQuantP2WritebackBoundary
+        },
+        {
+          写入面: "call_ledger",
+          当前状态: ordinaryQuantLedgerSourceLabel,
+          回放来源: "ordinary_writeback_surface_summary_rows pending",
+          下一步: "任务完成后只读查看 ledger 状态；接口明细留在雷达高级状态",
+          边界: "call_ledger 只由按钮门控后台任务产生；Factor 页不补调 provider/model。"
+        },
+        {
+          写入面: "packet",
+          当前状态: ordinaryQuantPacketSourceLabel,
+          回放来源: "command_center_3_candidate_radar_cache",
+          下一步: "刷新 cache 后回放股票量化推演和次日图谱",
+          边界: "packet 不含凭据、不生成交易动作、不覆盖 strategy action。"
+        }
+      ];
+  const ordinaryQuantUpstreamP2WritebackLabel = ordinaryQuantUpstreamP2WritebackRows
+    .map((row) => `${row.写入面}: ${row.当前状态}`)
+    .join(" / ");
   const ordinaryQuantResultReplayRows = [
     {
       结果段: "支持/压制",
@@ -627,6 +669,7 @@ export default function FactorQuantHub() {
             { label: "雷达搜票回放", value: ordinaryQuantRadarHandoffState, tone: empty ? "warn" : "good" },
             { label: "上游确认链", value: ordinaryQuantUpstreamOneScreenLabel, tone: candidateRadarOneScreenRows.length ? "good" : "warn" },
             { label: "确认结果链", value: ordinaryQuantUpstreamConfirmOutcomeLabel, tone: candidateRadarConfirmOutcomeRows.length ? "good" : "warn" },
+            { label: "P2 三面回放", value: ordinaryQuantUpstreamP2WritebackLabel, tone: candidateRadarWritebackSurfaceRows.length ? "good" : "warn" },
             { label: "回放位置", value: ordinaryQuantReplayLocation, tone: "good" },
             { label: "结果位置", value: ordinaryQuantResultLocation, tone: "good" },
             { label: "回放入口边界", value: ordinaryQuantRouteHandoffBoundary, tone: "good" },
@@ -666,6 +709,11 @@ export default function FactorQuantHub() {
           <h3>上游确认结果速读</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_confirm_outcome_rows：确认任务是否接收、P2 三面是否回放、P3 量化结果是否可读；本页只读回放，不创建第二个 task。</p>
           <DataLineageTable rows={ordinaryQuantUpstreamConfirmOutcomeRows} />
+        </div>
+        <div aria-label="stock quant upstream p2 writeback quick read">
+          <h3>P2 小数据三面写回速读</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_writeback_surface_summary_rows：普通入口只看 cache、call_ledger、packet 三个写入面是否可回放；Factor 页只读回放，不创建 task、不补调 Tushare/DeepSeek。</p>
+          <DataLineageTable rows={ordinaryQuantUpstreamP2WritebackRows} />
         </div>
         <div aria-label="stock quant ordinary cache ledger packet handoff">
           <h3>cache / ledger / packet 交接清单</h3>
