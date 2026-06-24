@@ -282,6 +282,7 @@ export default function CommandCenterHome() {
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
   const candidatePolicy = (candidates.policy as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantReceipt = (candidates.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const candidateQuantSmallDataWriteback = (candidates.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateQuantOneScreenActionRows = (candidateQuantSmallDataWriteback.ordinary_one_screen_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantConfirmOutcomeRows = (candidateQuantSmallDataWriteback.ordinary_confirm_outcome_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -572,16 +573,46 @@ export default function CommandCenterHome() {
   const chokepointPayloadLedger = (chokepoint.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskCatalogPayloadLedger = (taskCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskIndexPayloadLedger = taskIndex?.call_ledger ?? [];
-  const dailyCommandLatestTask = tasks[0] ?? {};
-  const dailyCommandLatestTaskId = String(dailyCommandLatestTask.task_id ?? taskIndex?.latest_task_id ?? "");
-  const dailyCommandLatestTaskType = String(dailyCommandLatestTask.task_type ?? taskIndex?.latest_task_type ?? "--");
-  const dailyCommandLatestTaskStatus = String(dailyCommandLatestTask.status ?? taskIndex?.latest_task_status ?? "waiting");
-  const dailyCommandLatestTaskStep = String(dailyCommandLatestTask.current_step ?? "等待本地任务状态回放");
-  const dailyCommandLatestTaskSource = String(dailyCommandLatestTask.storage_source ?? "memory_or_sqlite_fallback");
+  const dailyCommandCandidateLatestTaskId = String(
+    candidateQuantSmallDataWriteback.latest_task_id ??
+      candidateQuantReceipt.latest_task_id ??
+      candidateQuantReceipt.task_id ??
+      candidates.task_id ??
+      ""
+  );
+  const dailyCommandCandidateLatestTask = dailyCommandCandidateLatestTaskId
+    ? tasks.find((task) => String(task.task_id ?? "") === dailyCommandCandidateLatestTaskId) ?? {}
+    : {};
+  const dailyCommandLatestTask = dailyCommandCandidateLatestTaskId ? dailyCommandCandidateLatestTask : tasks[0] ?? {};
+  const dailyCommandLatestTaskId = String(dailyCommandCandidateLatestTaskId || dailyCommandLatestTask.task_id || taskIndex?.latest_task_id || "");
+  const dailyCommandLatestTaskType = String(
+    dailyCommandLatestTask.task_type ??
+      (dailyCommandCandidateLatestTaskId ? "run_candidate_radar_quant_projection_provider_model_acceptance" : taskIndex?.latest_task_type) ??
+      "--"
+  );
+  const dailyCommandLatestTaskStatus = String(
+    dailyCommandLatestTask.status ??
+      candidateQuantSmallDataWriteback.latest_task_status ??
+      candidateQuantReceipt.latest_task_status ??
+      taskIndex?.latest_task_status ??
+      "waiting"
+  );
+  const dailyCommandLatestTaskStep = String(
+    dailyCommandLatestTask.current_step ??
+      candidateQuantSmallDataWriteback.latest_task_current_step ??
+      candidateQuantReceipt.latest_task_current_step ??
+      "等待本地任务状态回放"
+  );
+  const dailyCommandLatestTaskSource = String(
+    dailyCommandCandidateLatestTaskId
+      ? candidateQuantSmallDataWriteback.task_readback_source ?? candidateQuantReceipt.task_readback_source ?? "candidate_radar_cache_latest_task"
+      : dailyCommandLatestTask.storage_source ?? "memory_or_sqlite_fallback"
+  );
   const dailyCommandLatestTaskIsCandidate =
+    Boolean(dailyCommandCandidateLatestTaskId) ||
     String(dailyCommandLatestTask.output_packet_key ?? "") === "command_center_3_candidate_radar_cache" ||
     dailyCommandLatestTaskType.includes("candidate_radar_quant_projection");
-  const dailyCommandLatestTaskIsReplay = dailyCommandLatestTask.cache_replay_only === true;
+  const dailyCommandLatestTaskIsReplay = dailyCommandLatestTask.cache_replay_only === true || Boolean(dailyCommandCandidateLatestTaskId && !dailyCommandLatestTask.task_id);
   const dailyCommandLatestTaskLabel = dailyCommandLatestTaskId
     ? `${dailyCommandLatestTaskStatus}: ${dailyCommandLatestTaskType}`
     : "暂无本地任务；先去下一票雷达输入代码并确认";

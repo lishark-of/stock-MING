@@ -321,9 +321,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn('DeepSeek", value: bootstrapLiveLight.deepseek_on_open === true ? "轻量实时后台任务"', summary_slice)
 
     def test_candidate_radar_p1_direct_handoff_is_local_navigation_only(self):
-        summary_start = self.page.index('title="普通用户雷达摘要"')
-        summary_end = self.page.index('aria-label="candidate radar ordinary p0 frontend backend readiness"', summary_start)
-        direct = self.page[summary_start:summary_end]
+        direct_start = self.page.index('aria-label="candidate radar p1 direct confirmation handoff"')
+        direct_end = self.page.index('aria-label="candidate radar p2 three surface quick status"', direct_start)
+        direct = self.page[direct_start:direct_end]
 
         self.assertIn('aria-label="candidate radar p1 direct confirmation handoff"', direct)
         self.assertIn("P1 直接确认入口", direct)
@@ -438,6 +438,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
                 self.assertIn("不在 React 渲染中直连 Tushare 或 DeepSeek", text)
                 if name == "daily":
                     self.assertIn("dailyCommandUsableShortestPathRows", text)
+                    self.assertIn("dailyCommandCandidateLatestTaskId", text)
+                    self.assertIn("candidateQuantSmallDataWriteback.latest_task_id", text)
+                    self.assertIn("candidateQuantReceipt.latest_task_id", text)
+                    self.assertIn("candidate_radar_cache_latest_task", text)
+                    self.assertIn("dailyCommandLatestTaskIsReplay = dailyCommandLatestTask.cache_replay_only === true || Boolean(dailyCommandCandidateLatestTaskId && !dailyCommandLatestTask.task_id)", text)
+                    self.assertIn("<TaskStatusPanel taskId={dailyCommandLatestTaskId} />", text)
                     self.assertIn('aria-label="daily command usable shortest path"', text)
                     self.assertIn("使用者可用化最短路径", text)
                     self.assertIn("当前执行目标是 Command Center 3.0 使用者可用化最短路径，不是 14 LTG strict closeout 完成声明", text)

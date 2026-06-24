@@ -342,7 +342,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
         </div>
         {candidateRadarResultReplay ? (
           <div aria-label="task status tushare first ledger quick read">
-            <p className="risk-note">Tushare-first 速读：主任务是否已回放接口级 ledger；这张表只读当前任务状态，不创建新 task。</p>
+            <p className="risk-note">Tushare-first 速读：普通用户先看主任务是否已回放接口级 ledger；这张表只读当前任务状态，不创建新 task。</p>
             <DataLineageTable rows={taskTushareFirstQuickRows} />
           </div>
         ) : null}
