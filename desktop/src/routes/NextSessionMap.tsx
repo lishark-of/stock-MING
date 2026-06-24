@@ -619,16 +619,6 @@ export default function NextSessionMap() {
         {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
         {candidateRadarResultHandoffRows.length ? <DataLineageTable rows={candidateRadarResultHandoffRows} /> : null}
       </div>
-      <div aria-label="next session upstream one screen actions">
-        <h3>上游确认一屏行动</h3>
-        <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成图谱页上游速读；本页只读回放，不创建 task、不调用模型。</p>
-        <DataLineageTable rows={nextSessionUpstreamOneScreenRows} />
-      </div>
-      <div aria-label="next session upstream confirm outcome readback">
-        <h3>上游确认结果速读</h3>
-        <p className="risk-note">优先读取 CandidateRadar 的 ordinary_confirm_outcome_rows：确认任务是否接收、P2 三面是否回放、P3 图谱入口是否可读；本页只读回放，不创建第二个 task。</p>
-        <DataLineageTable rows={nextSessionUpstreamConfirmOutcomeRows} />
-      </div>
       <div aria-label="next session p3 one minute read">
         <h3>P3 一分钟读图</h3>
         <p className="risk-note">普通用户先看这张表：用一分钟确认来源、可读结论、operation_zones、缺口和回流入口；它只读本地 next-session cache。</p>
@@ -644,6 +634,20 @@ export default function NextSessionMap() {
         <p className="risk-note">普通用户先按路径、参考线、操作区的顺序读；operation_zones 只是条件区间和复核提示，不是买卖、下单或 strategy action。优先读取本地缓存里的条件速读；旧缓存缺字段时才使用前端 fallback。</p>
         <DataLineageTable rows={nextSessionOperationZoneQuickReadRows} />
       </div>
+      <details className="developer-audit-details" aria-label="next session upstream readback details">
+        <summary>上游确认链路详情</summary>
+        <p className="risk-note">普通首屏先读 P3 图谱；上游确认、任务、P2 写回和结果入口的链路回放默认收起，需要排查来源时再展开。</p>
+        <div aria-label="next session upstream one screen actions">
+          <h3>上游确认一屏行动</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成图谱页上游速读；本页只读回放，不创建 task、不调用模型。</p>
+          <DataLineageTable rows={nextSessionUpstreamOneScreenRows} />
+        </div>
+        <div aria-label="next session upstream confirm outcome readback">
+          <h3>上游确认结果速读</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_confirm_outcome_rows：确认任务是否接收、P2 三面是否回放、P3 图谱入口是否可读；本页只读回放，不创建第二个 task。</p>
+          <DataLineageTable rows={nextSessionUpstreamConfirmOutcomeRows} />
+        </div>
+      </details>
       <details className="developer-audit-details" aria-label="next session ordinary expanded chart replay details">
         <summary>更多图谱回放明细</summary>
         <p className="risk-note">普通主视图保留 P3 一分钟读图、结果交接和操作区速读；三段回放、解释行动和图谱复核清单默认收起。</p>
