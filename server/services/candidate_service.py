@@ -14843,6 +14843,29 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         or provider_receipt.get("provider_execution_implemented") is True
     )
     cache_packet_written = bool(quant_receipt or dry_run or execution_request or provider_receipt)
+    provider_acceptance_task_id = _safe_text(provider_receipt.get("task_id") or "", limit=128)
+    latest_task_id = _safe_text(
+        quant_receipt.get("latest_task_id")
+        or quant_receipt.get("task_id")
+        or packet.get("task_id")
+        or provider_acceptance_task_id
+        or "",
+        limit=128,
+    )
+    latest_task_status = _safe_text(
+        quant_receipt.get("latest_task_status")
+        or provider_receipt.get("task_status")
+        or ("success" if provider_ready else "")
+        or "",
+        limit=64,
+    )
+    latest_task_current_step = _safe_text(
+        quant_receipt.get("latest_task_current_step")
+        or provider_receipt.get("status")
+        or quant_receipt.get("status")
+        or "",
+        limit=160,
+    )
     execution_request_ready = execution_request.get("local_execution_request_ready") is True
     writeback_surfaces = ["cache", "call_ledger", "packet"] if cache_packet_written else []
     if provider_external_call_observed:
@@ -15261,21 +15284,6 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "candidate_is_not_buy_instruction": True,
         "production_quant_projection_complete": False,
     }
-    latest_task_id = _safe_text(
-        quant_receipt.get("latest_task_id")
-        or quant_receipt.get("task_id")
-        or packet.get("task_id")
-        or "",
-        limit=128,
-    )
-    latest_task_status = _safe_text(quant_receipt.get("latest_task_status") or "", limit=64)
-    latest_task_current_step = _safe_text(
-        quant_receipt.get("latest_task_current_step")
-        or quant_receipt.get("status")
-        or status
-        or "",
-        limit=160,
-    )
     ordinary_writeback_receipt_rows = [
         {
             "receipt_key": "cache_receipt",
@@ -16721,6 +16729,17 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "provider_call_observed_only_from_post_task": provider_external_call_observed,
         "ordinary_readback_provider_task_call_source": provider_call_source,
         "ordinary_readback_provider_task_external_call_observed": provider_external_call_observed,
+        "latest_task_id": latest_task_id,
+        "latest_task_status": latest_task_status,
+        "latest_task_current_step": latest_task_current_step,
+        "provider_acceptance_task_id": provider_acceptance_task_id,
+        "task_readback_source": (
+            "search_quant_projection_receipt"
+            if quant_receipt.get("latest_task_id") or quant_receipt.get("task_id") or packet.get("task_id")
+            else "search_quant_provider_model_acceptance_receipt"
+            if provider_acceptance_task_id
+            else "waiting_confirm_task"
+        ),
         "readback_contract": "GET cache replays stored packet only; React render does not call provider/model.",
         "symbol": (
             provider_receipt.get("symbol")
@@ -16763,6 +16782,45 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     view = dict(packet)
     summary = _search_quant_projection_small_data_writeback_summary(view)
     view["search_quant_projection_small_data_writeback_summary"] = summary
+    latest_task_id = _safe_text(summary.get("latest_task_id") or "", limit=128)
+    if latest_task_id:
+        receipt = dict(_as_dict(view.get("search_quant_projection_receipt")))
+        if receipt and not receipt.get("latest_task_id"):
+            provider_receipt = _as_dict(view.get("search_quant_provider_model_acceptance_receipt"))
+            provider_ready = provider_receipt.get("tushare_call_ledger_evidence_done") is True
+            provider_api_call_count = int(provider_receipt.get("provider_api_call_count") or 0)
+            provider_api_success_count = int(provider_receipt.get("provider_api_success_count") or 0)
+            receipt.update(
+                {
+                    "latest_task_id": latest_task_id,
+                    "latest_task_status": summary.get("latest_task_status") or ("success" if provider_ready else ""),
+                    "latest_task_current_step": (
+                        summary.get("latest_task_current_step")
+                        or provider_receipt.get("status")
+                        or ""
+                    ),
+                    "p1_confirm_chain_status": (
+                        "p1_confirm_chain_tushare_first_replayed"
+                        if provider_ready
+                        else receipt.get("p1_confirm_chain_status") or "p1_confirm_chain_task_accepted"
+                    ),
+                    "p1_tushare_first_provider_ledger_ready": provider_ready,
+                    "p1_provider_call_source": summary.get("provider_call_source") or "pending_no_provider_call",
+                    "p1_provider_api_call_count": provider_api_call_count,
+                    "p1_provider_api_success_count": provider_api_success_count,
+                    "p1_deepseek_skipped_by_request": provider_receipt.get("deepseek_skipped_by_request") is True,
+                    "p1_readback_source": summary.get("task_readback_source") or "search_quant_provider_model_acceptance_receipt",
+                    "p1_cache_readback_external_calls": False,
+                    "p1_react_render_external_calls": False,
+                    "p1_does_not_execute_trades": True,
+                    "p1_does_not_modify_strategy_action": True,
+                    "task_status_visible_in_cache": True,
+                    "task_readback_source": summary.get("task_readback_source") or "search_quant_provider_model_acceptance_receipt",
+                    "task_readback_cache_get_external_calls": False,
+                    "task_readback_react_render_external_calls": False,
+                }
+            )
+            view["search_quant_projection_receipt"] = receipt
     counts = dict(_as_dict(view.get("counts")))
     counts["search_quant_projection_small_data_writeback_ready"] = (
         summary.get("small_data_writeback_ready") is True

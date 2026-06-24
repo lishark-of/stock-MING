@@ -3749,10 +3749,17 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
     if not isinstance(packet, dict) or packet.get("status") == "cache_missing":
         return None
     receipt = packet.get("search_quant_projection_receipt") if isinstance(packet.get("search_quant_projection_receipt"), dict) else {}
+    provider_receipt = (
+        packet.get("search_quant_provider_model_acceptance_receipt")
+        if isinstance(packet.get("search_quant_provider_model_acceptance_receipt"), dict)
+        else {}
+    )
+    provider_task_id = _safe_text(provider_receipt.get("task_id"), limit=120)
     task_ids = [
         _safe_text(packet.get("task_id"), limit=120),
         _safe_text(receipt.get("latest_task_id"), limit=120),
         _safe_text(receipt.get("task_id"), limit=120),
+        provider_task_id,
     ]
     task_ids = [item for item in task_ids if item]
     if not task_ids:
@@ -3760,10 +3767,16 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
     selected_task_id = _safe_text(task_id, limit=120) if task_id else task_ids[0]
     if selected_task_id not in task_ids:
         return None
+    selected_provider_acceptance = bool(provider_task_id and selected_task_id == provider_task_id)
 
     call_ledger: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for row in list(packet.get("call_ledger") or []) + list(receipt.get("call_ledger") or []):
+    provider_call_ledger = provider_receipt.get("provider_call_ledger") if isinstance(provider_receipt, dict) else []
+    for row in (
+        list(packet.get("call_ledger") or [])
+        + list(receipt.get("call_ledger") or [])
+        + list(provider_call_ledger or [])
+    ):
         if not isinstance(row, dict):
             continue
         safe_row = _safe_value("call_ledger", row)
@@ -3777,9 +3790,14 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
 
     latest_status = _safe_text(receipt.get("latest_task_status"), limit=32)
     status = latest_status if latest_status in TASK_STATUSES else "success"
+    current_step_source = (
+        provider_receipt.get("status")
+        if selected_provider_acceptance
+        else receipt.get("latest_task_current_step") or receipt.get("status")
+    )
     current_step = _safe_text(
-        receipt.get("latest_task_current_step")
-        or receipt.get("status")
+        current_step_source
+        or provider_receipt.get("status")
         or packet.get("search_quant_projection_status")
         or "candidate_radar_quant_projection_cache_replay",
         limit=160,
@@ -3792,15 +3810,22 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
         limit=80,
     )
     record = build_task_record(
-        "run_candidate_radar_quant_projection",
+        "run_candidate_radar_quant_projection_provider_model_acceptance"
+        if selected_provider_acceptance
+        else "run_candidate_radar_quant_projection",
         task_id=selected_task_id,
         output_packet_key="command_center_3_candidate_radar_cache",
         payload={
             "source": "candidate_cache_replay",
             "source_packet_key": "command_center_3_candidate_radar_cache",
-            "symbol": receipt.get("symbol"),
+            "symbol": receipt.get("symbol") or provider_receipt.get("symbol"),
             "cache_replay_only": True,
             "readback_route": "GET /api/candidate-radar/cache",
+            "replay_source_receipt": (
+                "search_quant_provider_model_acceptance_receipt"
+                if selected_provider_acceptance
+                else "search_quant_projection_receipt"
+            ),
             "does_not_create_task": True,
             "does_not_call_provider_from_readback": True,
         },

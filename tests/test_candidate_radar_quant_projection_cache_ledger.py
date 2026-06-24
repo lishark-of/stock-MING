@@ -9,6 +9,7 @@ from pathlib import Path
 
 from server.services import candidate_service, packet_service, task_service, tushare_task_service
 from server.services.task_service import clear_task_statuses_for_tests
+from storage.sqlite_meta import SQLiteMetaStore
 
 
 @unittest.skipIf(importlib.util.find_spec("fastapi") is None, "FastAPI is not installed")
@@ -1515,6 +1516,96 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", dumped)
         self.assertNotIn("TUSHARE_TOKEN", dumped)
         self.assertNotIn("DEEPSEEK_API_KEY", dumped)
+
+    def test_provider_receipt_task_id_replays_when_task_status_rows_are_cleared(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        provider_task_id = "local-provider-replay-task"
+        provider_rows = [
+            {
+                "api": api,
+                "request_params_safe": {"ts_code": "002008.SZ"},
+                "row_count": 3,
+                "data_date": "20260612",
+                "local_fetched_at": "2026-06-19T10:00:00",
+                "call_status": "success",
+                "error_message_safe": "",
+                "external": True,
+                "external_calls_triggered": True,
+                "tushare_called": True,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+            for api in ["trade_cal", "daily", "daily_basic", "moneyflow"]
+        ]
+        SQLiteMetaStore(candidate_service.SQLITE_META_PATH).write_packet(
+            candidate_service.PACKET_KEY,
+            {
+                "packet_key": candidate_service.PACKET_KEY,
+                "schema_version": "candidate_radar_cache.v1",
+                "status": "ready",
+                "scan_mode": "quant_projection_provider_model_acceptance",
+                "source_snapshot_hash": "provider-replay-fixture",
+                "search_quant_projection_receipt": {
+                    "schema_version": "candidate_radar_search_quant_projection_receipt.v1",
+                    "status": "quant_projection_local_receipt_ready_provider_model_pending",
+                    "symbol": "002008.SZ",
+                    "symbol_valid": True,
+                    "call_ledger": [],
+                },
+                "search_quant_provider_model_acceptance_receipt": {
+                    "schema_version": "candidate_radar_search_quant_provider_model_acceptance.v1",
+                    "task_id": provider_task_id,
+                    "status": "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
+                    "symbol": "002008.SZ",
+                    "provider_api_call_count": 4,
+                    "provider_api_success_count": 4,
+                    "provider_call_ledger": provider_rows,
+                    "tushare_call_ledger_evidence_done": True,
+                    "external_calls_triggered_by_task": True,
+                    "provider_execution_implemented": True,
+                    "deepseek_skipped_by_request": True,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "contains_secret": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                },
+                "call_ledger": provider_rows,
+                "counts": {},
+                "policy": {},
+            },
+        )
+
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        quant_receipt = packet["search_quant_projection_receipt"]
+        small_data = packet["search_quant_projection_small_data_writeback_summary"]
+        self.assertEqual(quant_receipt["latest_task_id"], provider_task_id)
+        self.assertEqual(quant_receipt["task_readback_source"], "search_quant_provider_model_acceptance_receipt")
+        self.assertEqual(small_data["latest_task_id"], provider_task_id)
+        self.assertEqual(small_data["provider_acceptance_task_id"], provider_task_id)
+        self.assertEqual(small_data["task_readback_source"], "search_quant_provider_model_acceptance_receipt")
+        self.assertTrue(small_data["small_data_writeback_ready"])
+
+        replay = self.client.get(f"/api/tasks/{provider_task_id}").json()
+        self.assertTrue(replay["ok"])
+        self.assertEqual(replay["data"]["task_id"], provider_task_id)
+        self.assertEqual(
+            replay["data"]["task_type"],
+            "run_candidate_radar_quant_projection_provider_model_acceptance",
+        )
+        self.assertEqual(
+            replay["data"]["payload_safe"]["replay_source_receipt"],
+            "search_quant_provider_model_acceptance_receipt",
+        )
+        self.assertTrue(any(row.get("tushare_called") is True for row in replay["data"]["call_ledger"]))
+        self.assertFalse(any(row.get("deepseek_called") is True for row in replay["data"]["call_ledger"]))
+        self.assertTrue(replay["data"]["does_not_execute_trades"])
+        self.assertTrue(replay["data"]["does_not_modify_strategy_action"])
 
 
 if __name__ == "__main__":
