@@ -1190,8 +1190,13 @@ def _build_usable_path_current_checkpoint_rows(
         },
         "P2": {
             "ordinary_user_meaning": "小数据能落到 cache、ledger、packet，刷新后仍可解释来源。",
-            "current_next_action": "先打通最小 cache/ledger/packet 写入与读回，不升级为生产存储证明。",
-            "current_evidence_scope": "small local persistence and readback only; not durable production storage closeout",
+            "current_next_action": "普通页先看 cache、call_ledger、packet 三面是否可回放；durable storage / worker / provider promotion 另行验收。",
+            "current_evidence_scope": "cache/call_ledger/packet ordinary replay is visible; local packet visibility is not durable production storage closeout",
+            "writeback_surfaces": "cache/call_ledger/packet",
+            "readback_route": "GET /api/candidate-radar/cache",
+            "writeback_evidence_boundary": "ordinary_writeback_surface_summary_rows_are_cache_only_not_provider_or_storage_production",
+            "durable_storage_claim": "local_packet_visibility_only_not_ltg05_ltg06_storage_worker_closeout",
+            "p2_next_gate": "durable_sqlite_or_storage_visibility_plus_provider_worker_evidence_where_applicable",
         },
         "P3": {
             "ordinary_user_meaning": "候选雷达、量化推演、次日图谱先能显示可解释结果。",
@@ -1227,6 +1232,11 @@ def _build_usable_path_current_checkpoint_rows(
                 "ordinary_confirm_scope": checkpoint_scope.get("ordinary_confirm_scope", ""),
                 "provider_evidence_boundary": checkpoint_scope.get("provider_evidence_boundary", ""),
                 "real_provider_next_gate": checkpoint_scope.get("real_provider_next_gate", ""),
+                "writeback_surfaces": checkpoint_scope.get("writeback_surfaces", ""),
+                "readback_route": checkpoint_scope.get("readback_route", ""),
+                "writeback_evidence_boundary": checkpoint_scope.get("writeback_evidence_boundary", ""),
+                "durable_storage_claim": checkpoint_scope.get("durable_storage_claim", ""),
+                "p2_next_gate": checkpoint_scope.get("p2_next_gate", ""),
                 "provider_execution_claim": checkpoint_scope.get(
                     "provider_execution_claim",
                     "local_checkpoint_not_provider_execution_evidence",

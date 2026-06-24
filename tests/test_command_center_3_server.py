@@ -703,6 +703,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             p1_checkpoint["current_test_evidence"],
         )
         self.assertIn("DeepSeek is not a data source", current_checkpoint_rows["P5"]["current_evidence_scope"])
+        p2_checkpoint = current_checkpoint_rows["P2"]
+        self.assertIn("cache/call_ledger/packet ordinary replay is visible", p2_checkpoint["current_evidence_scope"])
+        self.assertEqual(p2_checkpoint["writeback_surfaces"], "cache/call_ledger/packet")
+        self.assertEqual(p2_checkpoint["readback_route"], "GET /api/candidate-radar/cache")
+        self.assertEqual(
+            p2_checkpoint["writeback_evidence_boundary"],
+            "ordinary_writeback_surface_summary_rows_are_cache_only_not_provider_or_storage_production",
+        )
+        self.assertEqual(
+            p2_checkpoint["durable_storage_claim"],
+            "local_packet_visibility_only_not_ltg05_ltg06_storage_worker_closeout",
+        )
+        self.assertEqual(
+            p2_checkpoint["p2_next_gate"],
+            "durable_sqlite_or_storage_visibility_plus_provider_worker_evidence_where_applicable",
+        )
         self.assertFalse(
             any(row["can_close_ltg_from_current_checkpoint"] for row in current_checkpoint_rows.values())
         )
