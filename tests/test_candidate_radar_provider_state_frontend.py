@@ -103,7 +103,10 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("run_candidate_radar_quant_projection_provider_model_acceptance", self.page)
         self.assertIn('aria-label="quant projection tushare-first task status"', search_panel)
         self.assertIn("<TaskLaunchReceipt receipt={taskReceipt} />", search_panel)
-        self.assertIn("<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshCache} />", search_panel)
+        self.assertIn(
+            "<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />",
+            search_panel,
+        )
         self.assertIn("后台补证申请待准备", self.page)
         self.assertIn("普通页只看回放状态", self.page)
         self.assertIn("不额外刷新外部数据或模型", self.page)
