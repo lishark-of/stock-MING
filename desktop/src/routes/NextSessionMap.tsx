@@ -499,10 +499,14 @@ export default function NextSessionMap() {
     </PacketCard>
 
     <PacketCard title="次日操作图谱" subtitle="缓存查看不触发外部刷新" status={String(packet.status ?? "cache")}>
-      <TaskLaunchReceipt receipt={taskReceipt} />
-      <TaskLaunchReceipt receipt={browserQaReceipt} />
-      <TaskLaunchReceipt receipt={streamlitParityReceipt} />
-      <TaskLaunchReceipt receipt={productionPromotionReceipt} />
+      <details className="developer-audit-details" aria-label="next session task receipt details">
+        <summary>任务回执详情</summary>
+        <p className="ordinary-status-note">普通用户先看任务状态和图谱；本地 POST task 回执、QA 审查回执和 promotion 审查回执默认收起，只作为审计参考。</p>
+        <TaskLaunchReceipt receipt={taskReceipt} />
+        <TaskLaunchReceipt receipt={browserQaReceipt} />
+        <TaskLaunchReceipt receipt={streamlitParityReceipt} />
+        <TaskLaunchReceipt receipt={productionPromotionReceipt} />
+      </details>
       <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <MetricGrid
         items={[
