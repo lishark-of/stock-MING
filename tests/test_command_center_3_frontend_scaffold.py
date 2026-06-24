@@ -1554,7 +1554,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('aria-label="daily command p3 explainable result quick read"', home_source)
         self.assertIn("P3 可解释结果速读", home_source)
         self.assertIn("优先读取 CandidateRadar 的 ordinary_result_quick_read_rows", home_source)
-        self.assertIn("普通入口只看可读结论、回放来源和待补证据", home_source)
+        self.assertIn("普通入口只看可读结论、来源组成、回放来源和待补证据", home_source)
         self.assertIn("不会从首页创建 task、调用 DeepSeek 或展开 raw packet", home_source)
         self.assertIn("rows={dailyCommandExplainableResultRows}", home_source)
         self.assertIn("candidateQuantModelGovernanceRows", home_source)

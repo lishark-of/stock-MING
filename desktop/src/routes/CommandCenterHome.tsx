@@ -1021,7 +1021,7 @@ export default function CommandCenterHome() {
         </div>
         <div aria-label="daily command p3 explainable result quick read">
           <h3>P3 可解释结果速读</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows：普通入口只看可读结论、回放来源和待补证据；不会从首页创建 task、调用 DeepSeek 或展开 raw packet。</p>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows：普通入口只看可读结论、来源组成、回放来源和待补证据；不会从首页创建 task、调用 DeepSeek 或展开 raw packet。</p>
           <DataLineageTable rows={dailyCommandExplainableResultRows} />
         </div>
         <div aria-label="daily command p5 deepseek governance quick read">
