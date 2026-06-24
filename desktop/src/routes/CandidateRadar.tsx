@@ -648,9 +648,17 @@ export default function CandidateRadar() {
   const quantProjectionNextClick = quantProjectionDisplaySymbol
     ? "确认代码后点击生成 3.0 量化推演；按钮门控 Tushare-first POST task / worker 推进，DeepSeek 等 governed executor"
     : "先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演";
-  const quantProjectionSubmitHint = quantProjectionDisplaySymbol
-    ? "点击确认后提交 Tushare-first 后台链；服务端凭据缺失时只写本地阻断，DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
-    : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
+  const quantProjectionSubmitHint = !quantProjectionP0Ready
+    ? "P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status 和 candidate cache；本页不会从输入或渲染创建 Tushare-first task。"
+    : quantProjectionSubmitting
+      ? "正在提交 Tushare-first 后台链；请等待本地 task id，页面不会重复创建第二个 task。"
+      : quantProjectionTaskReceiptInputMismatch
+        ? "当前输入与最近任务不一致：先重新点击确认创建当前代码的 task，旧回执只作为历史回放。"
+        : quantProjectionCanSubmit
+          ? "点击确认后提交 Tushare-first 后台链；服务端凭据缺失时只写本地阻断，DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
+          : quantProjectionDisplaySymbol
+            ? "当前代码已在本地显示；按钮未启用时先看不可用原因，输入本身不会创建 task 或调用 Tushare/DeepSeek。"
+            : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
   const quantProjectionConfirmChainState = quantProjectionSubmitError
     ? "确认任务创建失败：未生成 task id；请检查本地后端连接后重试，页面不会补调 provider/model"
     : quantProjectionSubmitting
