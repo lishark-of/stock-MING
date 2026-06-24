@@ -637,11 +637,12 @@ export default function NextSessionMap() {
         <summary>开发 / 审计指标</summary>
         <p className="risk-note">普通用户先看上方次日图谱摘要和图表；QA、coverage、promotion、cache ledger 和原始 packet 默认收起。</p>
         <p className="risk-note">审计索引：图表合同、交互审计、交互阻断、信号/能力覆盖、替代激活收据、替代阻断、缺失证据、local_activation_receipt_ready、production_blocker_count、missing_evidence_count、cache envelope ledger、cache warnings。</p>
-        <div className="actions">
+        <div className="actions" aria-label="next session developer audit gated review actions">
           <button onClick={reviewBrowserQa}>审查本地 QA</button>
           <button onClick={reviewStreamlitParity}>审查信号/能力覆盖</button>
           <button onClick={reviewProductionPromotion}>审查 promotion</button>
         </div>
+        <p className="risk-note">这些按钮只创建本地审计 review task；不触发 Tushare、DeepSeek、GitHub、浏览器运行或交易路径。</p>
       <h3>ECharts 图表摘要</h3>
       <DataLineageTable rows={[chartSummary]} />
       <h3>ECharts 交互成熟度审计 / 交互审计 / 交互阻断</h3>
