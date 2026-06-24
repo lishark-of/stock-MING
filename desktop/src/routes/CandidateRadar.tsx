@@ -2308,11 +2308,6 @@ export default function CandidateRadar() {
           <p className="ordinary-status-note" aria-live="polite">{quantProjectionConnectionReadyLabel}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionConfirmChainState}</p>
-          <div aria-label="candidate radar p1 confirm actual route">
-            <h3>确认按钮实际链路</h3>
-            <p className="risk-note">这张表只说明当前按钮会走哪条本地后端链路；输入和页面渲染仍保持静默。</p>
-            <DataLineageTable rows={quantProjectionConfirmRouteRows} />
-          </div>
           {quantProjectionTaskPanelVisible ? (
             <div aria-label="candidate radar first screen task status">
               <TaskLaunchReceipt receipt={taskReceipt} />
@@ -2327,11 +2322,20 @@ export default function CandidateRadar() {
             <p className="risk-note">点击确认后先看这条结果：任务是否接收、P2 三面是否回放、P3 结论是否可读和下一步入口都在一屏内；这条结果条只读本地 task receipt 与 cache / ledger / packet，不创建第二个 task。</p>
             <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
           </div>
-          <div aria-label="candidate radar first screen post confirm readback guide">
-            <h3>确认后看什么</h3>
-            <p className="risk-note">点击确认后按这张清单走：先看任务编号，再看任务进度，success 后刷新本地 cache，最后回放量化推演和次日图谱；这张清单只读页面状态，不创建第二个 task。</p>
-            <DataLineageTable rows={quantProjectionPostConfirmActionRows} />
-          </div>
+          <details className="developer-audit-details" aria-label="candidate radar first screen p1 chain details">
+            <summary>P1 链路与确认后清单</summary>
+            <p className="risk-note">普通首屏只保留确认按钮、任务状态和一屏结果；按钮路由、回放清单和链路排障默认收起。</p>
+            <div aria-label="candidate radar p1 confirm actual route">
+              <h3>确认按钮实际链路</h3>
+              <p className="risk-note">这张表只说明当前按钮会走哪条本地后端链路；输入和页面渲染仍保持静默。</p>
+              <DataLineageTable rows={quantProjectionConfirmRouteRows} />
+            </div>
+            <div aria-label="candidate radar first screen post confirm readback guide">
+              <h3>确认后看什么</h3>
+              <p className="risk-note">点击确认后按这张清单走：先看任务编号，再看任务进度，success 后刷新本地 cache，最后回放量化推演和次日图谱；这张清单只读页面状态，不创建第二个 task。</p>
+              <DataLineageTable rows={quantProjectionPostConfirmActionRows} />
+            </div>
+          </details>
         </div>
         <div aria-label="candidate radar p1 direct confirmation handoff">
           <h3>P1 直接确认入口</h3>
