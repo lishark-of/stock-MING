@@ -35,6 +35,7 @@ function ordinaryResultSurfaceLabel(surface: unknown) {
 function confirmedTaskReceiptLabel(item: unknown) {
   const key = String(item ?? "");
   if (key === "task_id") return "task_id";
+  if (key === "p1_confirm_contract") return "P1 确认合同";
   if (key === "tushare_first_chain") return "Tushare-first 链路";
   if (key === "safe_current_step") return "安全步骤";
   if (key === "result_destinations") return "结果去向";
@@ -96,6 +97,21 @@ export default function CandidateRadar() {
   const [searchSymbol, setSearchSymbol] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const quantProjectionP1ConfirmPayloadContract = {
+    schema_version: "candidate_radar_p1_confirm_button_contract.v1",
+    source: "candidate_radar_confirm_button",
+    trigger: "explicit_user_click",
+    input_before_confirm_creates_task: false,
+    search_input_external_calls: false,
+    react_render_external_calls: false,
+    get_cache_external_calls: false,
+    include_tushare_first: true,
+    include_deepseek: false,
+    deepseek_policy: "skipped_until_governed_executor",
+    writeback_surfaces: ["cache", "call_ledger", "packet"],
+    does_not_execute_trades: true,
+    does_not_modify_strategy_action: true,
+  };
 
   const refreshCache = () => {
     setLoading(true);
@@ -132,7 +148,8 @@ export default function CandidateRadar() {
       include_tushare: true,
       include_deepseek: false,
       user_approved: true,
-      requested_by: "candidate_radar_page"
+      requested_by: "candidate_radar_page",
+      ordinary_confirm_chain_contract: quantProjectionP1ConfirmPayloadContract
     }).then((res) => {
       setTaskReceipt(res);
       if (res.ok) {
@@ -1262,7 +1279,7 @@ export default function CandidateRadar() {
   const quantProjectionPostConfirmWaitLabel =
     "确认后等待顺序：先看 task id，再看 TaskStatusPanel，等待 success 后刷新 cache，最后回放 #factor/#next";
   const quantProjectionReplayBoundary =
-    "回放链接只切换本地页面或锚点；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache；回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池";
+    "回放链接只切换本地页面或锚点；回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache";
   const quantProjectionReplayDestinationState = quantProjectionSubmitError
     ? "结果入口暂停：确认任务未创建；先恢复本地后端连接，再重新点击确认"
     : quantProjectionFactorNextReady || quantProjectionProviderLedgerReady
@@ -1805,37 +1822,6 @@ export default function CandidateRadar() {
           <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
           <DataLineageTable rows={candidateRadarP0AutoLinkRows} />
         </div>
-        <div className="actions" aria-label="candidate radar primary next action">
-          {candidateRadarP0Blocked ? (
-            <a href="#desktop" aria-label="open p0 desktop preflight from radar summary">{ordinaryPrimaryActionLabel}</a>
-          ) : Number(counts.candidate_count ?? 0) ? (
-            <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>
-          ) : (
-            <button onClick={launchQuickScan}>{ordinaryPrimaryActionLabel}</button>
-          )}
-        </div>
-        <div className="actions" aria-label="candidate radar next user actions">
-          <button onClick={refreshCache}>查看本地缓存</button>
-          {Number(counts.candidate_count ?? 0) ? <button onClick={launchQuickScan}>运行本地快扫</button> : null}
-          <input
-            value={searchSymbol}
-            onChange={(event) => {
-              setSearchSymbol(event.target.value);
-              setQuantProjectionSubmitError("");
-            }}
-            placeholder="002008.SZ 或 002008"
-            aria-label="radar summary quant projection symbol"
-            title={quantProjectionInputBoundaryLabel}
-          />
-          <button
-            disabled={quantProjectionSubmitDisabled}
-            onClick={launchQuantProjection}
-            title={quantProjectionSubmitButtonLabel}
-            aria-label={quantProjectionSubmitAriaLabel}
-          >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
-          <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
-          <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
-        </div>
         <p className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
         {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
@@ -1852,16 +1838,6 @@ export default function CandidateRadar() {
           <h3>一屏行动摘要</h3>
           <p className="risk-note">优先读取服务端 ordinary_one_screen_action_rows：确认、任务、写回、结果合成一张普通用户表；只读回放本地状态，不从摘要创建 task。</p>
           <DataLineageTable rows={quantProjectionOneScreenActionRows} />
-        </div>
-        <div aria-label="candidate radar ordinary p3 explainable result quick read">
-          <h3>P3 可解释结果速读</h3>
-          <p className="risk-note">普通用户确认后直接看这张 P3 表：可读结论、回放来源和待补证据都来自本地 cache / ledger / packet；不会从速读表创建 task 或调用模型。</p>
-          <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
-        </div>
-        <div aria-label="candidate radar ordinary p3 result handoff index">
-          <h3>P3 结果入口索引</h3>
-          <p className="risk-note">普通用户按这张索引回放可读结论、量化推演、次日图谱和候选池；它只读取服务端 ordinary_result_handoff_rows，不创建 task、不补调模型。</p>
-          <DataLineageTable rows={quantProjectionOrdinaryResultHandoffRows} />
         </div>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p1 p2 detail readback">
           <summary>P1/P2 细节回放</summary>
@@ -1906,6 +1882,16 @@ export default function CandidateRadar() {
           <DataLineageTable rows={quantProjectionPostConfirmActionRows} />
         </div>
         </details>
+        <div aria-label="candidate radar ordinary p3 explainable result quick read">
+          <h3>P3 可解释结果速读</h3>
+          <p className="risk-note">普通用户确认后直接看这张 P3 表：可读结论、回放来源和待补证据都来自本地 cache / ledger / packet；不会从速读表创建 task 或调用模型。</p>
+          <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
+        </div>
+        <div aria-label="candidate radar ordinary p3 result handoff index">
+          <h3>P3 结果入口索引</h3>
+          <p className="risk-note">普通用户按这张索引回放可读结论、量化推演、次日图谱和候选池；它只读取服务端 ordinary_result_handoff_rows，不创建 task、不补调模型。</p>
+          <DataLineageTable rows={quantProjectionOrdinaryResultHandoffRows} />
+        </div>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p5 governance details">
           <summary>P5 DeepSeek 单独补证状态</summary>
           <p className="risk-note">普通主线先停在 P1 确认、P2 三面回放和 P3 结果速读；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
@@ -1938,6 +1924,37 @@ export default function CandidateRadar() {
           <h3>P1 Tushare-first 链路速读</h3>
           <p className="risk-note">优先读取服务端 ordinary_tushare_first_chain_rows：输入只做本地校验，确认按钮才创建 Tushare-first POST task，回放只读 cache / ledger / packet。</p>
           <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
+        </div>
+        <div className="actions" aria-label="candidate radar primary next action">
+          {candidateRadarP0Blocked ? (
+            <a href="#desktop" aria-label="open p0 desktop preflight from radar summary">{ordinaryPrimaryActionLabel}</a>
+          ) : Number(counts.candidate_count ?? 0) ? (
+            <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>
+          ) : (
+            <button onClick={launchQuickScan}>{ordinaryPrimaryActionLabel}</button>
+          )}
+        </div>
+        <div className="actions" aria-label="candidate radar next user actions">
+          <button onClick={refreshCache}>查看本地缓存</button>
+          {Number(counts.candidate_count ?? 0) ? <button onClick={launchQuickScan}>运行本地快扫</button> : null}
+          <input
+            value={searchSymbol}
+            onChange={(event) => {
+              setSearchSymbol(event.target.value);
+              setQuantProjectionSubmitError("");
+            }}
+            placeholder="002008.SZ 或 002008"
+            aria-label="radar summary quant projection symbol"
+            title={quantProjectionInputBoundaryLabel}
+          />
+          <button
+            disabled={quantProjectionSubmitDisabled}
+            onClick={launchQuantProjection}
+            title={quantProjectionSubmitButtonLabel}
+            aria-label={quantProjectionSubmitAriaLabel}
+          >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+          <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
+          <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
         </div>
         <p className="risk-note">{ordinaryRadarResultLocation}</p>
         <p className="risk-note">候选池按 Top / Watch / Excluded 分组帮助复核优先级；分组结果不是买卖建议，也不会修改 strategy action。</p>

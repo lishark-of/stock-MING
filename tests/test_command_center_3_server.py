@@ -38386,6 +38386,21 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "include_tushare": True,
                 "include_deepseek": True,
                 "run_provider_model_now": True,
+                "ordinary_confirm_chain_contract": {
+                    "schema_version": "candidate_radar_p1_confirm_button_contract.v1",
+                    "source": "candidate_radar_confirm_button",
+                    "trigger": "explicit_user_click",
+                    "input_before_confirm_creates_task": False,
+                    "search_input_external_calls": False,
+                    "react_render_external_calls": False,
+                    "get_cache_external_calls": False,
+                    "include_tushare_first": True,
+                    "include_deepseek": False,
+                    "deepseek_policy": "skipped_until_governed_executor",
+                    "writeback_surfaces": ["cache", "call_ledger", "packet"],
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                },
                 "token": "SHOULD_DROP",
             },
         ).json()
@@ -38403,6 +38418,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(task["call_ledger"][0]["request_params_safe"]["external_sources_allowed"])
         self.assertFalse(task["call_ledger"][0]["request_params_safe"]["provider_execution_implemented"])
         self.assertFalse(task["call_ledger"][0]["request_params_safe"]["model_execution_implemented"])
+        confirm_contract = task["call_ledger"][0]["request_params_safe"]["ordinary_confirm_chain_contract"]
+        self.assertEqual(
+            confirm_contract["schema_version"],
+            "candidate_radar_p1_confirm_button_contract.v1",
+        )
+        self.assertEqual(confirm_contract["source"], "candidate_radar_confirm_button")
+        self.assertEqual(confirm_contract["trigger"], "explicit_user_click")
+        self.assertFalse(confirm_contract["input_before_confirm_creates_task"])
+        self.assertFalse(confirm_contract["search_input_external_calls"])
+        self.assertFalse(confirm_contract["react_render_external_calls"])
+        self.assertFalse(confirm_contract["get_cache_external_calls"])
+        self.assertEqual(confirm_contract["deepseek_policy"], "skipped_until_governed_executor")
+        self.assertEqual(confirm_contract["writeback_surfaces"], ["cache", "call_ledger", "packet"])
         self.assert_local_ledger_boundary(task["call_ledger"][0])
         self.assertFalse(task["external_calls_triggered"])
         self.assertFalse(task["tushare_called"])
@@ -38434,6 +38462,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt["task_readback_source"], "candidate_radar_cache_packet")
         self.assertFalse(receipt["task_readback_cache_get_external_calls"])
         self.assertFalse(receipt["task_readback_react_render_external_calls"])
+        receipt_confirm_contract = receipt["call_ledger"][0]["request_params_safe"]["ordinary_confirm_chain_contract"]
+        self.assertEqual(
+            receipt_confirm_contract["schema_version"],
+            "candidate_radar_p1_confirm_button_contract.v1",
+        )
+        self.assertEqual(receipt_confirm_contract["source"], "candidate_radar_confirm_button")
+        self.assertEqual(receipt_confirm_contract["trigger"], "explicit_user_click")
+        self.assertFalse(receipt_confirm_contract["input_before_confirm_creates_task"])
+        self.assertEqual(receipt_confirm_contract["deepseek_policy"], "skipped_until_governed_executor")
         self.assertTrue(packet["counts"]["search_quant_projection_task_readback_visible"])
         self.assertTrue(packet["policy"]["search_quant_projection_task_readback_is_cache_replay"])
         self.assertFalse(packet["policy"]["search_quant_projection_task_readback_cache_get_external_calls"])
@@ -38456,6 +38493,23 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["search_quant_projection_is_not_trade_signal"])
         self.assertTrue(packet["policy"]["search_quant_projection_provider_model_pending"])
         self.assertTrue(packet["policy"]["search_quant_projection_does_not_call_provider_or_model"])
+        writeback_summary = packet["search_quant_projection_small_data_writeback_summary"]
+        confirmed_receipt_rows = {
+            row["receipt_item"]: row
+            for row in writeback_summary["ordinary_confirmed_task_receipt_rows"]
+        }
+        self.assertEqual(
+            confirmed_receipt_rows["p1_confirm_contract"]["status"],
+            "confirm_contract_visible",
+        )
+        self.assertIn(
+            "candidate_radar_p1_confirm_button_contract.v1",
+            confirmed_receipt_rows["p1_confirm_contract"]["ordinary_label"],
+        )
+        self.assertIn(
+            "DeepSeek skipped",
+            confirmed_receipt_rows["p1_confirm_contract"]["boundary"],
+        )
         self.assertEqual(
             activation["schema_version"],
             "candidate_radar_search_quant_projection_activation_receipt.v1",

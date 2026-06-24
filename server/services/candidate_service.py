@@ -1166,6 +1166,7 @@ def _build_quant_projection_receipt(
                     "include_tushare": payload_safe.get("include_tushare") is True,
                     "include_deepseek": payload_safe.get("include_deepseek") is True,
                     "scan_mode": QUANT_PROJECTION_SCAN_MODE,
+                    "ordinary_confirm_chain_contract": payload_safe.get("ordinary_confirm_chain_contract") or {},
                 },
                 "row_count": len(rows),
                 "call_status": "local_quant_projection_receipt_ready_no_external_call"
@@ -15292,6 +15293,12 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
     quant_request_params = (
         _as_dict(quant_receipt_ledger[0].get("request_params_safe")) if quant_receipt_ledger else {}
     )
+    ordinary_confirm_chain_contract = _as_dict(
+        quant_request_params.get("ordinary_confirm_chain_contract")
+    )
+    ordinary_confirm_chain_contract_visible = bool(
+        ordinary_confirm_chain_contract.get("schema_version")
+    )
     confirmed_include_tushare = (
         quant_request_params.get("include_tushare") is True
         or dry_run.get("include_tushare") is True
@@ -15614,6 +15621,27 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             ),
             "readback_source": "search_quant_projection_receipt.call_ledger.request_params_safe",
             "boundary": "只有 POST task / worker 可调用 Tushare；React render、搜索输入、GET cache 不外联",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "receipt_item": "p1_confirm_contract",
+            "status": "confirm_contract_visible" if ordinary_confirm_chain_contract_visible else "waiting_confirm_contract",
+            "ordinary_label": (
+                f"{ordinary_confirm_chain_contract.get('schema_version')}; "
+                f"source={ordinary_confirm_chain_contract.get('source')}; "
+                f"trigger={ordinary_confirm_chain_contract.get('trigger')}; "
+                f"deepseek_policy={ordinary_confirm_chain_contract.get('deepseek_policy')}"
+                if ordinary_confirm_chain_contract_visible
+                else "等待确认按钮写入 P1 安全合同"
+            ),
+            "readback_source": "search_quant_projection_receipt.call_ledger.request_params_safe.ordinary_confirm_chain_contract",
+            "boundary": "合同只记录按钮点击、输入静默、DeepSeek skipped 和 cache/ledger/packet 回放面；不含 token/key/raw log。",
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
