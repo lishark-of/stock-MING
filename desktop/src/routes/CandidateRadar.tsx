@@ -2306,6 +2306,8 @@ export default function CandidateRadar() {
           <h3>P3 结果首屏速读</h3>
           <p className="risk-note">P2 三面之后直接看这里：可读结论、来源、下一步和安全边界都来自本地 cache / ledger / packet；本速读不创建 task、不调用 DeepSeek、不生成交易动作。</p>
           <MetricGrid items={quantProjectionP3ResultSummaryItems} />
+          <p className="risk-note">首屏直接回放服务端 ordinary_result_quick_read_rows：现在能读什么、结果从哪里来、还缺什么都只来自本地 cache / ledger / packet。</p>
+          <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
         </div>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p0 local connection diagnostics">
           <summary>P0 本地联通诊断</summary>

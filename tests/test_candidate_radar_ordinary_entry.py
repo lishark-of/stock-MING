@@ -102,6 +102,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar p3 first screen result quick read"', self.page)
         self.assertIn("P3 结果首屏速读", self.page)
         self.assertIn("本速读不创建 task、不调用 DeepSeek、不生成交易动作", self.page)
+        self.assertIn("首屏直接回放服务端 ordinary_result_quick_read_rows", self.page)
         self.assertIn("P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task", self.page)
         self.assertIn("P1 主路径：先输入股票代码；输入只做本地校验，确认按钮才创建 Tushare-first task", self.page)
         self.assertIn("P1 主路径只允许确认按钮创建 Tushare-first task", self.page)
@@ -130,6 +131,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         direct_handoff_index = self.page.index('aria-label="candidate radar p1 direct confirmation handoff"')
         p2_quick_status_index = self.page.index('aria-label="candidate radar p2 three surface quick status"')
         p3_first_screen_index = self.page.index('aria-label="candidate radar p3 first screen result quick read"')
+        p3_first_screen_slice = self.page[p3_first_screen_index:p0_diagnostics_index]
+        self.assertIn("rows={quantProjectionOrdinaryResultQuickRows}", p3_first_screen_slice)
+        self.assertIn("现在能读什么、结果从哪里来、还缺什么", p3_first_screen_slice)
         self.assertLess(p0_gate_index, p0_handoff_index)
         self.assertLess(direct_handoff_index, p0_gate_index)
         self.assertLess(direct_handoff_index, p2_quick_status_index)
