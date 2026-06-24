@@ -298,6 +298,12 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet["github_called"] = False
     packet["does_not_execute_trades"] = True
     packet["does_not_modify_strategy_action"] = True
+    packet["status"] = packet.get("status") or "ready"
+    packet["ordinary_status_label"] = (
+        "本地量化 cache 可读；Factor 页只读回放，不调用 Tushare/DeepSeek/GitHub。"
+    )
+    packet["status_is_cache_only_readback"] = True
+    packet["status_is_not_production_evidence"] = True
     packet["deepseek_explain_governance"] = _deepseek_explain_governance()
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
     packet, universe_rank_ledger = _attach_factor_universe_local_rank_zscore_dry_run(packet, now)

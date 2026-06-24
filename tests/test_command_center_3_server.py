@@ -48456,6 +48456,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         factor = self.client.get("/api/factor-quant/cache").json()
         self.assertTrue(factor["ok"])
+        self.assertEqual(factor["data"]["status"], "ready")
+        self.assertEqual(
+            factor["data"]["ordinary_status_label"],
+            "本地量化 cache 可读；Factor 页只读回放，不调用 Tushare/DeepSeek/GitHub。",
+        )
+        self.assertTrue(factor["data"]["status_is_cache_only_readback"])
+        self.assertTrue(factor["data"]["status_is_not_production_evidence"])
         self.assertEqual(factor["data"]["mode"], "light")
         self.assertEqual(factor["data"]["cache_source"], "local_builder")
         self.assertTrue(factor["data"]["cache_fallback_from_failed_factor_quant_packet"])
@@ -48466,6 +48473,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(factor["data"]["github_called"])
         self.assertTrue(factor["data"]["does_not_execute_trades"])
         self.assertTrue(factor["data"]["does_not_modify_strategy_action"])
+        self.assertEqual(factor["call_ledger"][0]["request_params_safe"]["status"], "ready")
         self.assertEqual(factor["call_ledger"][0]["call_status"], "cache_read")
         self.assertNotIn("SHOULD_DROP", json.dumps(factor, ensure_ascii=False))
 
