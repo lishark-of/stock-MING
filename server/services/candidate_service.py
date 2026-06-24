@@ -14153,9 +14153,15 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         "p0_ready": p0_gate_payload.get("p0_ready") is True,
         "fastapi_cache_get_ready": p0_gate_payload.get("fastapi_cache_get_ready") is True,
         "bootstrap_runtime_mode_ready": p0_gate_payload.get("bootstrap_runtime_mode_ready") is True,
+        "desktop_preflight_ready": p0_gate_payload.get("desktop_preflight_ready") is True,
+        "p0_stability_check_ready": p0_gate_payload.get("p0_stability_check_ready") is True,
         "candidate_cache_ready": p0_gate_payload.get("candidate_cache_ready") is True,
         "candidate_cache_status": _safe_text(p0_gate_payload.get("candidate_cache_status") or "missing", limit=80),
         "bootstrap_packet_key": _safe_text(p0_gate_payload.get("bootstrap_packet_key") or "missing", limit=160),
+        "desktop_preflight_packet_key": _safe_text(
+            p0_gate_payload.get("desktop_preflight_packet_key") or "missing",
+            limit=160,
+        ),
         "creates_task_only_after_button": p0_gate_payload.get("creates_task_only_after_button") is True,
         "react_render_external_calls": p0_gate_payload.get("react_render_external_calls") is True,
         "get_cache_external_calls": p0_gate_payload.get("get_cache_external_calls") is True,
@@ -15422,12 +15428,19 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         ordinary_confirm_chain_contract.get("schema_version")
     )
     p0_confirm_gate_evidence = _as_dict(quant_request_params.get("p0_confirm_gate_evidence"))
-    p0_confirm_gate_ready = p0_confirm_gate_evidence.get("p0_ready") is True
+    p0_confirm_gate_ready = (
+        p0_confirm_gate_evidence.get("p0_ready") is True
+        and p0_confirm_gate_evidence.get("fastapi_cache_get_ready") is True
+        and p0_confirm_gate_evidence.get("bootstrap_runtime_mode_ready") is True
+        and p0_confirm_gate_evidence.get("desktop_preflight_ready") is True
+        and p0_confirm_gate_evidence.get("p0_stability_check_ready") is True
+        and p0_confirm_gate_evidence.get("candidate_cache_ready") is True
+    )
     p0_confirm_gate_status = "p0_gate_ready" if p0_confirm_gate_ready else "p0_gate_missing_or_blocked"
     p0_confirm_gate_label = (
-        "P0 gate ready：FastAPI cache GET、bootstrap runtime-mode、candidate cache 均已满足。"
+        "P0 gate ready：FastAPI cache GET、bootstrap runtime-mode、desktop preflight、P0 stability、candidate cache 均已满足。"
         if p0_confirm_gate_ready
-        else "P0 gate 未完整回放：等待 FastAPI cache GET、bootstrap runtime-mode 和 candidate cache ready。"
+        else "P0 gate 未完整回放：等待 FastAPI cache GET、bootstrap runtime-mode、desktop preflight、P0 stability 和 candidate cache ready。"
     )
     confirmed_include_tushare = (
         quant_request_params.get("include_tushare") is True
@@ -15789,10 +15802,20 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "p0_ready": p0_confirm_gate_ready,
             "fastapi_cache_get_ready": p0_confirm_gate_evidence.get("fastapi_cache_get_ready") is True,
             "bootstrap_runtime_mode_ready": p0_confirm_gate_evidence.get("bootstrap_runtime_mode_ready") is True,
+            "desktop_preflight_ready": p0_confirm_gate_evidence.get("desktop_preflight_ready") is True,
+            "p0_stability_check_ready": p0_confirm_gate_evidence.get("p0_stability_check_ready") is True,
             "candidate_cache_ready": p0_confirm_gate_evidence.get("candidate_cache_ready") is True,
             "candidate_cache_status": _safe_text(
                 p0_confirm_gate_evidence.get("candidate_cache_status") or "missing",
                 limit=80,
+            ),
+            "bootstrap_packet_key": _safe_text(
+                p0_confirm_gate_evidence.get("bootstrap_packet_key") or "missing",
+                limit=160,
+            ),
+            "desktop_preflight_packet_key": _safe_text(
+                p0_confirm_gate_evidence.get("desktop_preflight_packet_key") or "missing",
+                limit=160,
             ),
             "cache_only_readback": True,
             "creates_task_from_readback": False,

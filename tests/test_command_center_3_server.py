@@ -38501,9 +38501,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                     "p0_ready": True,
                     "fastapi_cache_get_ready": True,
                     "bootstrap_runtime_mode_ready": True,
+                    "desktop_preflight_ready": True,
+                    "p0_stability_check_ready": True,
                     "candidate_cache_ready": True,
                     "candidate_cache_status": "ready",
                     "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+                    "desktop_preflight_packet_key": "command_center_3_desktop_shell_preflight_cache",
                     "creates_task_only_after_button": True,
                     "react_render_external_calls": False,
                     "get_cache_external_calls": False,
@@ -38544,9 +38547,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(p0_gate["p0_ready"])
         self.assertTrue(p0_gate["fastapi_cache_get_ready"])
         self.assertTrue(p0_gate["bootstrap_runtime_mode_ready"])
+        self.assertTrue(p0_gate["desktop_preflight_ready"])
+        self.assertTrue(p0_gate["p0_stability_check_ready"])
         self.assertTrue(p0_gate["candidate_cache_ready"])
         self.assertEqual(p0_gate["candidate_cache_status"], "ready")
         self.assertEqual(p0_gate["bootstrap_packet_key"], "command_center_3_bootstrap_runtime_mode_packet")
+        self.assertEqual(p0_gate["desktop_preflight_packet_key"], "command_center_3_desktop_shell_preflight_cache")
         self.assertTrue(p0_gate["creates_task_only_after_button"])
         self.assertFalse(p0_gate["react_render_external_calls"])
         self.assertFalse(p0_gate["get_cache_external_calls"])
@@ -38593,6 +38599,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt_confirm_contract["deepseek_policy"], "skipped_until_governed_executor")
         receipt_p0_gate = receipt["call_ledger"][0]["request_params_safe"]["p0_confirm_gate_evidence"]
         self.assertTrue(receipt_p0_gate["p0_ready"])
+        self.assertTrue(receipt_p0_gate["desktop_preflight_ready"])
+        self.assertTrue(receipt_p0_gate["p0_stability_check_ready"])
         self.assertTrue(receipt_p0_gate["candidate_cache_ready"])
         self.assertFalse(receipt_p0_gate["contains_sensitive_material"])
         self.assertTrue(packet["counts"]["search_quant_projection_task_readback_visible"])
@@ -38638,8 +38646,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(confirmed_receipt_rows["p0_confirm_gate"]["p0_ready"])
         self.assertTrue(confirmed_receipt_rows["p0_confirm_gate"]["fastapi_cache_get_ready"])
         self.assertTrue(confirmed_receipt_rows["p0_confirm_gate"]["bootstrap_runtime_mode_ready"])
+        self.assertTrue(confirmed_receipt_rows["p0_confirm_gate"]["desktop_preflight_ready"])
+        self.assertTrue(confirmed_receipt_rows["p0_confirm_gate"]["p0_stability_check_ready"])
         self.assertTrue(confirmed_receipt_rows["p0_confirm_gate"]["candidate_cache_ready"])
         self.assertEqual(confirmed_receipt_rows["p0_confirm_gate"]["candidate_cache_status"], "ready")
+        self.assertEqual(
+            confirmed_receipt_rows["p0_confirm_gate"]["desktop_preflight_packet_key"],
+            "command_center_3_desktop_shell_preflight_cache",
+        )
+        self.assertIn("P0 stability", confirmed_receipt_rows["p0_confirm_gate"]["ordinary_label"])
         self.assertFalse(confirmed_receipt_rows["p0_confirm_gate"]["creates_task_from_readback"])
         self.assertFalse(confirmed_receipt_rows["p0_confirm_gate"]["contains_secret"])
         self.assertEqual(

@@ -123,9 +123,12 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
                     "p0_ready": True,
                     "fastapi_cache_get_ready": True,
                     "bootstrap_runtime_mode_ready": True,
+                    "desktop_preflight_ready": True,
+                    "p0_stability_check_ready": True,
                     "candidate_cache_ready": True,
                     "candidate_cache_status": "ready",
                     "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+                    "desktop_preflight_packet_key": "command_center_3_desktop_shell_preflight_cache",
                     "creates_task_only_after_button": True,
                     "react_render_external_calls": False,
                     "get_cache_external_calls": False,
@@ -541,7 +544,14 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(receipt_rows["p0_confirm_gate"]["p0_ready"])
         self.assertTrue(receipt_rows["p0_confirm_gate"]["fastapi_cache_get_ready"])
         self.assertTrue(receipt_rows["p0_confirm_gate"]["bootstrap_runtime_mode_ready"])
+        self.assertTrue(receipt_rows["p0_confirm_gate"]["desktop_preflight_ready"])
+        self.assertTrue(receipt_rows["p0_confirm_gate"]["p0_stability_check_ready"])
         self.assertTrue(receipt_rows["p0_confirm_gate"]["candidate_cache_ready"])
+        self.assertEqual(
+            receipt_rows["p0_confirm_gate"]["desktop_preflight_packet_key"],
+            "command_center_3_desktop_shell_preflight_cache",
+        )
+        self.assertIn("P0 stability", receipt_rows["p0_confirm_gate"]["ordinary_label"])
         self.assertFalse(receipt_rows["p0_confirm_gate"]["creates_task_from_readback"])
         self.assertIn(
             "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
