@@ -17516,6 +17516,93 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "candidate_is_not_buy_instruction": True,
         "production_quant_projection_complete": False,
     }
+    ordinary_result_checkpoint_rows = [
+        {
+            "checkpoint_key": "readable_result",
+            "检查点": "1. 可读结论",
+            "当前状态": ordinary_result_summary,
+            "用户下一步": ordinary_result_next_step,
+            "证据": f"ordinary_result_readable={ordinary_result_checkpoint_contract['ordinary_result_readable']}",
+            "边界": ordinary_result_boundary,
+            "readback_source": "ordinary_result_checkpoint_contract",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_model_from_readback": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+            "production_quant_projection_complete": False,
+        },
+        {
+            "checkpoint_key": "data_source",
+            "检查点": "2. 来源状态",
+            "当前状态": data_source_label,
+            "用户下一步": result_replay_label,
+            "证据": (
+                f"data_source_state={data_source_status}; "
+                f"evidence_source={ordinary_result_checkpoint_contract['evidence_source']}"
+            ),
+            "边界": "来源只从本地 cache / ledger / packet 回放；GET cache 和 React render 不补调 provider/model。",
+            "readback_source": "ordinary_result_checkpoint_contract",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_model_from_readback": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+            "production_quant_projection_complete": False,
+        },
+        {
+            "checkpoint_key": "gap_and_next_step",
+            "检查点": "3. 缺口和下一步",
+            "当前状态": f"待补证据：{missing_evidence_label}",
+            "用户下一步": next_action,
+            "证据": (
+                f"missing_evidence_count={ordinary_result_checkpoint_contract['missing_evidence_count']}; "
+                f"next_session_map_state={ordinary_result_checkpoint_contract['next_session_map_state']}"
+            ),
+            "边界": "缺口只作为待补证据；不会从检查点创建 task、刷新图谱或调用模型。",
+            "readback_source": "ordinary_result_checkpoint_contract",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_model_from_readback": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+            "production_quant_projection_complete": False,
+        },
+        {
+            "checkpoint_key": "safety_boundary",
+            "检查点": "4. 安全边界",
+            "当前状态": "只解释 source / gap / next_step / safety_summary；DeepSeek governed executor 单独补。",
+            "用户下一步": "把结果当研究线索；P5 前不展示模型输出，P6 前不声明 14 LTG 完成。",
+            "证据": (
+                "safe_explanation_fields="
+                + "/".join(str(item) for item in ordinary_result_checkpoint_contract["safe_explanation_fields"])
+            ),
+            "边界": "不真实交易、不改 strategy action、不覆盖价格/持仓/factor/operation_zones。",
+            "readback_source": "ordinary_result_checkpoint_contract",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_model_from_readback": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+            "production_quant_projection_complete": False,
+        },
+    ]
     return {
         "schema_version": QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION,
         "status": status,
@@ -17574,6 +17661,12 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_action_rows_use_model_output": False,
         "ordinary_result_action_rows_are_not_trade_signals": True,
         "ordinary_result_checkpoint_contract": ordinary_result_checkpoint_contract,
+        "ordinary_result_checkpoint_rows": ordinary_result_checkpoint_rows,
+        "ordinary_result_checkpoint_row_count": len(ordinary_result_checkpoint_rows),
+        "ordinary_result_checkpoint_rows_are_cache_only": True,
+        "ordinary_result_checkpoint_rows_create_task": False,
+        "ordinary_result_checkpoint_rows_call_model": False,
+        "ordinary_result_checkpoint_rows_are_not_trade_signals": True,
         "ordinary_result_checkpoint_is_cache_only": True,
         "ordinary_result_checkpoint_creates_task": False,
         "ordinary_result_checkpoint_calls_model": False,
@@ -17644,6 +17737,10 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["search_quant_projection_result_checkpoint_readable"] = (
         result_checkpoint.get("ordinary_result_readable") is True
     )
+    counts["search_quant_projection_result_checkpoint_row_count"] = summary.get(
+        "ordinary_result_checkpoint_row_count",
+        0,
+    )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_interpretation_is_cache_replay"] = True
@@ -17677,6 +17774,10 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_result_checkpoint_creates_task"] = False
     policy["search_quant_projection_result_checkpoint_calls_model"] = False
     policy["search_quant_projection_result_checkpoint_is_not_trade_signal"] = True
+    policy["search_quant_projection_result_checkpoint_rows_are_cache_only"] = True
+    policy["search_quant_projection_result_checkpoint_rows_create_task"] = False
+    policy["search_quant_projection_result_checkpoint_rows_call_model"] = False
+    policy["search_quant_projection_result_checkpoint_rows_are_not_trade_signals"] = True
     view["policy"] = policy
     return view
 

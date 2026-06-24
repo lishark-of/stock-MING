@@ -291,6 +291,8 @@ export default function CandidateRadar() {
   const searchQuantProviderModelAcceptance = (cache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionSmallDataWriteback = (cache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionInterpretation = (cache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionResultCheckpoint =
+    (searchQuantProjectionInterpretation.ordinary_result_checkpoint_contract as Record<string, unknown> | undefined) ?? {};
   const providerParityDryRun = (cache.provider_parity_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
@@ -1103,6 +1105,48 @@ export default function CandidateRadar() {
     证据: displayText(row["证据"] ?? row.evidence, quantProjectionOrdinaryResultEvidence),
     边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
   }));
+  const quantProjectionOrdinaryResultCheckpointPacketRows = rows(searchQuantProjectionInterpretation.ordinary_result_checkpoint_rows).map((row) => ({
+    检查点: displayText(row["检查点"] ?? row.checkpoint_key),
+    当前状态: displayText(row["当前状态"] ?? row.status, quantProjectionOrdinaryResultSummary),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionOrdinaryResultNext),
+    证据: displayText(row["证据"] ?? row.evidence, quantProjectionOrdinaryResultEvidence),
+    边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
+  }));
+  const quantProjectionSafeExplanationFields = Array.isArray(searchQuantProjectionResultCheckpoint.safe_explanation_fields)
+    ? searchQuantProjectionResultCheckpoint.safe_explanation_fields.map((item) => displayText(item)).join(" / ")
+    : "source / gap / next_step / safety_summary";
+  const quantProjectionOrdinaryResultCheckpointRows = quantProjectionOrdinaryResultCheckpointPacketRows.length
+    ? quantProjectionOrdinaryResultCheckpointPacketRows
+    : [
+        {
+          检查点: "1. 可读结论",
+          当前状态: quantProjectionOrdinaryResultSummary,
+          用户下一步: quantProjectionOrdinaryResultNext,
+          证据: `ordinary_result_readable=${String(searchQuantProjectionResultCheckpoint.ordinary_result_readable ?? false)}`,
+          边界: quantProjectionOrdinaryResultBoundary
+        },
+        {
+          检查点: "2. 来源状态",
+          当前状态: displayText(searchQuantProjectionResultCheckpoint.data_source_state, quantProjectionInterpretationReplay),
+          用户下一步: quantProjectionInterpretationReplay,
+          证据: `evidence_source=${displayText(searchQuantProjectionResultCheckpoint.evidence_source, "local_blocker_or_task_status")}`,
+          边界: "来源只从本地 cache / ledger / packet 回放；GET cache 和 React render 不补调 provider/model。"
+        },
+        {
+          检查点: "3. 缺口和下一步",
+          当前状态: `missing_evidence_count=${String(searchQuantProjectionResultCheckpoint.missing_evidence_count ?? searchQuantProjectionInterpretation.missing_evidence_count ?? 0)}`,
+          用户下一步: displayText(searchQuantProjectionInterpretation.next_action, quantProjectionOrdinaryResultNext),
+          证据: `next_session_map_state=${displayText(searchQuantProjectionResultCheckpoint.next_session_map_state, "pending_local_cache_refresh")}`,
+          边界: "缺口只作为待补证据；不会从检查点创建 task、刷新图谱或调用模型。"
+        },
+        {
+          检查点: "4. 安全边界",
+          当前状态: "只解释 source / gap / next_step / safety_summary；DeepSeek governed executor 单独补。",
+          用户下一步: "把结果当研究线索；P5 前不展示模型输出，P6 前不声明 14 LTG 完成。",
+          证据: `safe_explanation_fields=${quantProjectionSafeExplanationFields}`,
+          边界: "不真实交易、不改 strategy action、不覆盖价格/持仓/factor/operation_zones。"
+        }
+      ];
   const quantProjectionOrdinaryResultQuickRows = quantProjectionOrdinaryResultQuickReadRows.length
     ? quantProjectionOrdinaryResultQuickReadRows
     : [
@@ -2057,6 +2101,11 @@ export default function CandidateRadar() {
           <p className="risk-note">普通用户确认后直接看这张 P3 表：可读结论、来源组成、回放来源和待补证据都来自本地 cache / ledger / packet；不会从速读表创建 task 或调用模型。</p>
           <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
         </div>
+        <div aria-label="candidate radar ordinary p3 result checkpoint">
+          <h3>P3 结果检查点</h3>
+          <p className="risk-note">这张检查点表把可读结论、来源状态、待补缺口和安全字段合成普通用户可读口径；它只读本地 result checkpoint，不创建 task、不调用模型。</p>
+          <DataLineageTable rows={quantProjectionOrdinaryResultCheckpointRows} />
+        </div>
         <div aria-label="candidate radar ordinary p3 result handoff index">
           <h3>P3 结果入口索引</h3>
           <p className="risk-note">普通用户按这张索引回放可读结论、量化推演、次日图谱和候选池；它只读取服务端 ordinary_result_handoff_rows，不创建 task、不补调模型。</p>
@@ -2280,6 +2329,11 @@ export default function CandidateRadar() {
             <div aria-label="quant projection ordinary explainable result quick read">
               <h3>P3 结果速读</h3>
               <p className="risk-note">优先读取服务端 ordinary_result_quick_read_rows：先看可读结论、来源组成、回放来源和待补证据；不会从结果速读创建 task 或调用模型。</p>
+              <div aria-label="quant projection ordinary result checkpoint">
+                <h3>P3 结果检查点</h3>
+                <p className="risk-note">优先读取服务端 ordinary_result_checkpoint_rows：确认可读结论、来源、缺口和安全字段；这张检查点表只读本地 cache，不创建 task、不调用模型。</p>
+                <DataLineageTable rows={quantProjectionOrdinaryResultCheckpointRows} />
+              </div>
               {quantProjectionOrdinaryResultHandoffRows.length ? (
                 <div aria-label="quant projection ordinary result handoff index">
                   <h3>P3 结果入口索引</h3>

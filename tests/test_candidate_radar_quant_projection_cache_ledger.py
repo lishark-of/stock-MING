@@ -700,10 +700,37 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(interpretation["ordinary_result_checkpoint_is_not_trade_signal"])
         self.assertEqual(packet["counts"]["search_quant_projection_result_checkpoint_missing_evidence_count"], 1)
         self.assertTrue(packet["counts"]["search_quant_projection_result_checkpoint_readable"])
+        self.assertEqual(packet["counts"]["search_quant_projection_result_checkpoint_row_count"], 4)
         self.assertTrue(packet["policy"]["search_quant_projection_result_checkpoint_is_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_result_checkpoint_creates_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_result_checkpoint_calls_model"])
         self.assertTrue(packet["policy"]["search_quant_projection_result_checkpoint_is_not_trade_signal"])
+        self.assertTrue(packet["policy"]["search_quant_projection_result_checkpoint_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_result_checkpoint_rows_create_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_result_checkpoint_rows_call_model"])
+        self.assertTrue(packet["policy"]["search_quant_projection_result_checkpoint_rows_are_not_trade_signals"])
+        checkpoint_rows = {
+            row["checkpoint_key"]: row
+            for row in interpretation["ordinary_result_checkpoint_rows"]
+        }
+        self.assertEqual(
+            set(checkpoint_rows),
+            {"readable_result", "data_source", "gap_and_next_step", "safety_boundary"},
+        )
+        self.assertIn("可读结论", checkpoint_rows["readable_result"]["检查点"])
+        self.assertIn("Tushare-first", checkpoint_rows["data_source"]["当前状态"])
+        self.assertIn("missing_evidence_count=1", checkpoint_rows["gap_and_next_step"]["证据"])
+        self.assertIn("safe_explanation_fields=source/gap/next_step/safety_summary", checkpoint_rows["safety_boundary"]["证据"])
+        for checkpoint_row in checkpoint_rows.values():
+            self.assertTrue(checkpoint_row["cache_only_readback"])
+            self.assertFalse(checkpoint_row["creates_task_from_readback"])
+            self.assertFalse(checkpoint_row["calls_model_from_readback"])
+            self.assertFalse(checkpoint_row["uses_deepseek_output"])
+            self.assertFalse(checkpoint_row["contains_secret"])
+            self.assertTrue(checkpoint_row["does_not_execute_trades"])
+            self.assertTrue(checkpoint_row["does_not_modify_strategy_action"])
+            self.assertTrue(checkpoint_row["candidate_is_not_buy_instruction"])
+            self.assertFalse(checkpoint_row["production_quant_projection_complete"])
         self.assertEqual(interpretation["ordinary_result_action_row_count"], 4)
         self.assertTrue(interpretation["ordinary_result_action_rows_are_cache_only"])
         self.assertFalse(interpretation["ordinary_result_action_rows_create_task"])
