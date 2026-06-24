@@ -1847,6 +1847,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         p0_reconnect_rows = desktop["p0_ordinary_reconnect_rows"]
         p0_check_only_rows = desktop["p0_launcher_check_only_rows"]
         p0_quick_action_rows = desktop["p0_ordinary_quick_action_rows"]
+        p0_current_next_action_rows = desktop["p0_current_next_action_rows"]
         self.assertEqual(one_click["schema_version"], "command_center_3_one_click_startup_summary.v1")
         self.assertEqual(one_click["priority"], "P0")
         self.assertEqual(one_click["status"], "one_click_frontend_backend_ready")
@@ -2235,6 +2236,46 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(quick_row["contains_secret"])
             self.assertTrue(quick_row["does_not_execute_trades"])
             self.assertTrue(quick_row["does_not_modify_strategy_action"])
+        self.assertEqual(
+            [row["行动项"] for row in p0_current_next_action_rows],
+            ["1. 当前主入口", "2. P1 确认按钮"],
+        )
+        self.assertEqual(desktop["counts"]["p0_current_next_action_row_count"], 2)
+        self.assertEqual(desktop["counts"]["p0_current_next_action_visible_count"], 2)
+        self.assertEqual(desktop["runtime"]["p0_current_next_action_entry"], "#candidates")
+        self.assertIn("下一票雷达", desktop["runtime"]["p0_current_next_action_next"])
+        self.assertTrue(desktop["runtime"]["p0_current_next_action_p1_enabled"])
+        self.assertTrue(desktop["policy"]["p0_current_next_action_rows_are_cache_only"])
+        self.assertTrue(desktop["policy"]["p0_current_next_action_rows_do_not_create_task"])
+        self.assertTrue(desktop["policy"]["p0_current_next_action_rows_do_not_call_provider_model"])
+        self.assertTrue(desktop["policy"]["p0_current_next_action_rows_require_confirm_button_for_tushare"])
+        self.assertEqual(p0_current_next_action_rows[0]["入口"], "#candidates")
+        self.assertTrue(p0_current_next_action_rows[0]["p0_ready_now"])
+        self.assertTrue(p0_current_next_action_rows[0]["p1_entry_enabled"])
+        self.assertIn("确认按钮才触发 Tushare-first", p0_current_next_action_rows[0]["用户下一步"])
+        self.assertIn("只有确认按钮可进入 P1 task / worker", p0_current_next_action_rows[1]["边界"])
+        for current_action_row in p0_current_next_action_rows:
+            self.assertTrue(current_action_row["ordinary_user_visible"])
+            self.assertTrue(current_action_row["cache_only_readback"])
+            self.assertTrue(current_action_row["p0_ready_required"])
+            self.assertTrue(current_action_row["confirm_button_required_for_tushare_task"])
+            self.assertFalse(current_action_row["page_open_creates_task"])
+            self.assertFalse(current_action_row["react_render_creates_task"])
+            self.assertFalse(current_action_row["get_cache_creates_task"])
+            self.assertFalse(current_action_row["search_input_external_calls"])
+            self.assertFalse(current_action_row["creates_task_from_readback"])
+            self.assertFalse(current_action_row["provider_model_called_from_readback"])
+            self.assertFalse(current_action_row["live_light_or_deepseek_enabled_by_p0"])
+            self.assertFalse(current_action_row["external_calls_triggered"])
+            self.assertFalse(current_action_row["tushare_called"])
+            self.assertFalse(current_action_row["deepseek_called"])
+            self.assertFalse(current_action_row["github_called"])
+            self.assertFalse(current_action_row["loads_token_or_key"])
+            self.assertFalse(current_action_row["contains_secret"])
+            self.assertTrue(current_action_row["does_not_execute_trades"])
+            self.assertTrue(current_action_row["does_not_modify_strategy_action"])
+            self.assertFalse(current_action_row["strict_closeout_evidence"])
+            self.assertFalse(current_action_row["release_ready_evidence"])
         self.assertIn("local_one_click_startup_summary", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_frontend_backend_connection_receipt", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_ordinary_connection_rows", {row["api"] for row in desktop["call_ledger"]})
@@ -2244,6 +2285,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("local_p0_ordinary_reconnect_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_launcher_check_only_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_ordinary_quick_action_rows", {row["api"] for row in desktop["call_ledger"]})
+        self.assertIn("local_p0_current_next_action_rows", {row["api"] for row in desktop["call_ledger"]})
         launcher = desktop["desktop_launcher_contract"]
         launcher_rows = {row["criterion"]: row for row in desktop["desktop_launcher_rows"]}
         self.assertEqual(launcher["schema_version"], "command_center_3_local_launcher_contract.v1")

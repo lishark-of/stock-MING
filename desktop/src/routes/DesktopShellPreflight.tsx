@@ -348,6 +348,24 @@ export default function DesktopShellPreflight() {
       边界: "预检页只读 GET /api/desktop/preflight-cache；不会启动 FastAPI/Vite、写配置、写 cache 或真实交易。"
     }
   ];
+  const p0CurrentNextActionRows = rows(cache.p0_current_next_action_rows).length
+    ? rows(cache.p0_current_next_action_rows)
+    : [
+        {
+          行动项: "1. 当前主入口",
+          当前状态: p0ConnectionReady ? "ready：进入 P1 搜票确认" : "check：先恢复 P0 本地联通",
+          用户下一步: p0ConnectionReady ? "进入下一票雷达，输入股票代码；输入保持静默，确认按钮才触发 Tushare-first。" : "留在桌面壳预检，按四段恢复。",
+          入口: p0OrdinaryPrimaryActionHref,
+          边界: p0OrdinaryPrimaryActionBoundary
+        },
+        {
+          行动项: "2. P1 确认按钮",
+          当前状态: p0ConnectionReady ? "可点击前必须先满足 P0 ready" : "暂不进入 P1",
+          用户下一步: "代码通过本地校验后点击确认按钮，才创建 Tushare-first POST task；DeepSeek skipped。",
+          入口: "下一票雷达确认按钮",
+          边界: "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker。"
+        }
+      ];
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -378,6 +396,11 @@ export default function DesktopShellPreflight() {
           <h3>P0 可继续闸门</h3>
           <p className="risk-note">普通用户先看这个闸门：四段联通 ready 才去下一票雷达；未 ready 就留在预检页按失败段恢复。</p>
           <DataLineageTable rows={p0OrdinaryReadyGateRows} />
+        </div>
+        <div aria-label="p0 current next action readback">
+          <h3>当前下一步</h3>
+          <p className="risk-note">优先读取 desktop preflight 的 p0_current_next_action_rows：未 ready 留在预检恢复；ready 后只切到下一票雷达，确认按钮才触发 Tushare-first。</p>
+          <DataLineageTable rows={p0CurrentNextActionRows} />
         </div>
         <p>下一步：{String(oneClickStartupSummary.what_user_should_click_next ?? "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。")}</p>
         <p>成功条件：{String(oneClickStartupSummary.success_condition ?? "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，/api/desktop/preflight-cache 必须返回一键启动 packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。")}</p>

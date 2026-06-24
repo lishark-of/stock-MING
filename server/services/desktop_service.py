@@ -1912,6 +1912,79 @@ def _p0_ordinary_quick_action_rows(
     ]
 
 
+def _p0_current_next_action_rows(
+    one_click_startup_summary: dict[str, Any],
+    p0_to_p1_ordinary_handoff_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    connection_ready = one_click_startup_summary.get("frontend_backend_connection_ready") is True
+    primary_entry = "#candidates" if connection_ready else "#desktop"
+    primary_next = "进入下一票雷达，输入股票代码；输入保持静默，确认按钮才触发 Tushare-first。" if connection_ready else "留在桌面壳预检，按 FastAPI / bootstrap status / desktop preflight cache / React/Vite 四段恢复。"
+
+    def row(
+        action_key: str,
+        status: str,
+        user_next_step: str,
+        entry: str,
+        boundary: str,
+        *,
+        p1_enabled: bool,
+        handoff_step_index: int,
+    ) -> dict[str, Any]:
+        handoff_step = p0_to_p1_ordinary_handoff_rows[handoff_step_index]
+        return {
+            "行动项": action_key,
+            "当前状态": status,
+            "用户下一步": user_next_step,
+            "入口": entry,
+            "证据": handoff_step["步骤"],
+            "边界": boundary,
+            "p0_ready_required": True,
+            "p0_ready_now": connection_ready,
+            "p1_entry_enabled": p1_enabled,
+            "confirm_button_required_for_tushare_task": True,
+            "page_open_creates_task": False,
+            "react_render_creates_task": False,
+            "get_cache_creates_task": False,
+            "search_input_external_calls": False,
+            "creates_task_from_readback": False,
+            "provider_model_called_from_readback": False,
+            "live_light_or_deepseek_enabled_by_p0": False,
+            "ordinary_user_visible": True,
+            "cache_only_readback": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "strict_closeout_evidence": False,
+            "release_ready_evidence": False,
+        }
+
+    return [
+        row(
+            "1. 当前主入口",
+            "ready：进入 P1 搜票确认" if connection_ready else "check：先恢复 P0 本地联通",
+            primary_next,
+            primary_entry,
+            "只切换本地页面；GET cache 和 React render 不启动服务、不创建 task、不调用 provider/model。",
+            p1_enabled=connection_ready,
+            handoff_step_index=0,
+        ),
+        row(
+            "2. P1 确认按钮",
+            "可点击前必须先满足 P0 ready" if connection_ready else "暂不进入 P1",
+            "代码通过本地校验后点击确认按钮，才创建 Tushare-first POST task；DeepSeek skipped。",
+            "下一票雷达确认按钮",
+            "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker。",
+            p1_enabled=connection_ready,
+            handoff_step_index=2,
+        ),
+    ]
+
+
 def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
     return [
         {
@@ -5431,6 +5504,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         one_click_startup_summary,
         p0_to_p1_ordinary_handoff_rows,
     )
+    p0_current_next_action_rows = _p0_current_next_action_rows(
+        one_click_startup_summary,
+        p0_to_p1_ordinary_handoff_rows,
+    )
     p0_ordinary_connection_ready_count = sum(1 for row in p0_ordinary_connection_rows if row["当前状态"] == "ready")
     production_runtime_contract = _production_runtime_contract(api_base_info, tauri_config)
     tauri_build_artifact = _tauri_build_artifact_summary()
@@ -5519,6 +5596,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "p0_ordinary_reconnect_rows": p0_ordinary_reconnect_rows,
         "p0_launcher_check_only_rows": p0_launcher_check_only_rows,
         "p0_ordinary_quick_action_rows": p0_ordinary_quick_action_rows,
+        "p0_current_next_action_rows": p0_current_next_action_rows,
         "desktop_launcher_contract": desktop_launcher_contract,
         "desktop_launcher_rows": desktop_launcher_contract["rows"],
         "dev_launch_plan": _dev_launch_plan(api_base),
@@ -5571,6 +5649,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_ordinary_quick_action_visible_count": sum(
                 1 for row in p0_ordinary_quick_action_rows if row["ordinary_user_visible"]
             ),
+            "p0_current_next_action_row_count": len(p0_current_next_action_rows),
+            "p0_current_next_action_visible_count": sum(
+                1 for row in p0_current_next_action_rows if row["ordinary_user_visible"]
+            ),
             "frontend_backend_auto_link_candidate_count": frontend_backend_auto_link_contract["candidate_count"],
             "frontend_backend_auto_link_row_count": frontend_backend_auto_link_contract["row_count"],
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
@@ -5615,6 +5697,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_ordinary_reconnect_entry": p0_ordinary_reconnect_rows[0]["入口"],
             "p0_launcher_check_only_next": p0_launcher_check_only_rows[0]["用户动作"],
             "p0_ordinary_quick_action_next": p0_ordinary_quick_action_rows[0]["用户下一步"],
+            "p0_current_next_action_entry": p0_current_next_action_rows[0]["入口"],
+            "p0_current_next_action_next": p0_current_next_action_rows[0]["用户下一步"],
+            "p0_current_next_action_p1_enabled": p0_current_next_action_rows[0]["p1_entry_enabled"],
             "p0_current_runtime_live_connection_verified": p0_local_connection_receipt[
                 "current_runtime_live_connection_verified"
             ],
@@ -5714,6 +5799,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_ordinary_quick_action_rows_are_cache_only": True,
             "p0_ordinary_quick_action_rows_do_not_create_task": True,
             "p0_ordinary_quick_action_rows_do_not_call_provider_model": True,
+            "p0_current_next_action_rows_are_cache_only": True,
+            "p0_current_next_action_rows_do_not_create_task": True,
+            "p0_current_next_action_rows_do_not_call_provider_model": True,
+            "p0_current_next_action_rows_require_confirm_button_for_tushare": True,
             "desktop_shortcut_installer_contract_is_local": True,
             "desktop_shortcut_installer_does_not_run_from_get_cache": True,
             "desktop_shortcut_installer_does_not_start_services": True,
@@ -5834,6 +5923,19 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
                 "row_count": len(p0_ordinary_quick_action_rows),
                 "local_fetched_at": _now_iso(),
                 "call_status": "local_p0_quick_action_rows_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            {
+                "api": "local_p0_current_next_action_rows",
+                "source": "one_click_startup_summary and p0_to_p1_ordinary_handoff_rows",
+                "row_count": len(p0_current_next_action_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_p0_current_next_action_rows_read",
                 "external": False,
                 "tushare_called": False,
                 "deepseek_called": False,

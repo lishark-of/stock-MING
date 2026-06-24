@@ -250,6 +250,25 @@ export default function CommandCenterHome() {
   ];
   const p0OrdinaryQuickActionRows = (desktopPreflight.p0_ordinary_quick_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const p0LauncherCheckOnlyRows = (desktopPreflight.p0_launcher_check_only_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const p0CurrentNextActionSourceRows = (desktopPreflight.p0_current_next_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const p0CurrentNextActionRows = p0CurrentNextActionSourceRows.length
+    ? p0CurrentNextActionSourceRows
+    : [
+        {
+          行动项: "1. 当前主入口",
+          当前状态: "等待 desktop preflight 当前下一步回读",
+          用户下一步: "先看一键启动预检；四段 ready 后再进入下一票雷达",
+          入口: "#desktop",
+          边界: "首页只读展示 fallback；不启动服务、不创建 task、不调用 provider/model。"
+        },
+        {
+          行动项: "2. P1 确认按钮",
+          当前状态: "等待 P0 ready",
+          用户下一步: "代码通过本地校验后点击确认按钮，才创建 Tushare-first POST task；DeepSeek skipped。",
+          入口: "下一票雷达确认按钮",
+          边界: "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker。"
+        }
+      ];
   const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const recoveryCounts = recovery.counts as Record<string, unknown> | undefined;
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
@@ -904,6 +923,11 @@ export default function CommandCenterHome() {
           <h3>P0 前后端自动联通回读</h3>
           <p className="risk-note">前端 API client 会在本地 FastAPI 候选地址内自动联通并回读 health；失败时只显示离线恢复，不启动服务、不创建 task。</p>
           <DataLineageTable rows={dailyCommandFrontendBackendAutoLinkRows} />
+        </div>
+        <div aria-label="daily command p0 current next action">
+          <h3>P0 当前下一步</h3>
+          <p className="risk-note">优先读取 desktop preflight 的 p0_current_next_action_rows：未 ready 回预检恢复，ready 后只切到下一票雷达；确认按钮之前不创建 Tushare-first task。</p>
+          <DataLineageTable rows={p0CurrentNextActionRows} />
         </div>
         <div aria-label="daily command p0 quick action handoff">
           <h3>P0 到 P1 快速行动</h3>
