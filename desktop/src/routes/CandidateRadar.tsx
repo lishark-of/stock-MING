@@ -115,7 +115,7 @@ export default function CandidateRadar() {
     include_deepseek: false,
     deepseek_policy: "skipped_until_governed_executor",
     requires_p0_gate_ready: true,
-    p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "p0_stability_check", "candidate_cache_get_readable"],
+    p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "p0_stability_or_local_link_evidence", "candidate_cache_get_readable"],
     writeback_surfaces: ["cache", "call_ledger", "packet"],
     does_not_execute_trades: true,
     does_not_modify_strategy_action: true,
@@ -174,6 +174,9 @@ export default function CandidateRadar() {
         bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady,
         desktop_preflight_ready: desktopPreflightReady,
         p0_stability_check_ready: desktopP0StabilityReady,
+        p0_local_link_ready: desktopP0LocalLinkReady,
+        p0_connection_evidence_ready: desktopP0ConnectionEvidenceReady,
+        p0_local_link_is_ui_gate_only_not_release_evidence: desktopP0LocalLinkReady && !desktopP0StabilityReady,
         candidate_cache_ready: candidateRadarCacheGetReadable,
         candidate_cache_status: String(cache.status ?? "missing"),
         bootstrap_packet_key: String(bootstrapStatus.packet_key ?? "missing"),
@@ -572,12 +575,21 @@ export default function CandidateRadar() {
   const desktopP0StabilityReady =
     desktopOneClickStartupSummary.p0_stability_check_before_open === true &&
     desktopP0LocalConnectionReceipt.p0_stability_check_before_open === true;
+  const desktopP0LocalLinkReady =
+    desktopOneClickStartupSummary.frontend_backend_connection_ready === true &&
+    desktopP0LocalConnectionReceipt.status === "p0_local_connection_receipt_ready";
+  const desktopP0ConnectionEvidenceReady = desktopP0StabilityReady || desktopP0LocalLinkReady;
+  const desktopP0ConnectionEvidenceLabel = desktopP0StabilityReady
+    ? "P0 stability dwell 已通过"
+    : desktopP0LocalLinkReady
+      ? "本机 FastAPI / desktop preflight 已接上；缺少启动前 stability receipt，仅作为 P1 UI 闸门，不作 release evidence"
+      : "等待 P0 stability check 或本机连接回读";
   const quantProjectionP0Ready =
     !loading &&
     !error &&
     bootstrapRuntimeModeReady &&
     desktopPreflightReady &&
-    desktopP0StabilityReady &&
+    desktopP0ConnectionEvidenceReady &&
     candidateRadarCacheGetReadable;
   const ordinaryCacheSourceLabel = candidateRadarCacheReady
     ? "本地候选缓存可用"
@@ -685,15 +697,15 @@ export default function CandidateRadar() {
     },
     {
       联通项: "P0 stability check",
-      当前状态: desktopP0StabilityReady ? "P0 stability dwell 已通过" : "等待 P0 stability check",
+      当前状态: desktopP0ConnectionEvidenceLabel,
       证据: "one_click_startup_summary + p0_local_connection_receipt",
-      下一步: desktopP0StabilityReady ? "继续确认 candidate cache GET 可读" : "先回一键启动预检恢复四段 ready + P0 stability dwell",
-      边界: "stability check 只读回放启动器复读结果；不启动服务、不创建 task、不调用 provider/model"
+      下一步: desktopP0ConnectionEvidenceReady ? "继续确认 candidate cache GET 可读" : "先回一键启动预检恢复四段 ready + P0 stability dwell",
+      边界: "stability check 或本机连接回读只作为 P1 UI 闸门证据；不启动服务、不创建 task、不调用 provider/model，也不是 release evidence"
     },
     {
       联通项: "进入 P1 闸门",
       当前状态: quantProjectionP0Ready ? "ready：输入保持静默，确认按钮才创建 task" : "blocked：P0 未联通时不要点击确认",
-      证据: `frontend_call_ledger=${cacheEnvelopeLedger.some((row) => row.frontend_backend_auto_link_attempted === true)} / desktop_preflight_ledger=${desktopPreflightEnvelopeLedger.length} / p0_stability=${desktopP0StabilityReady}`,
+      证据: `frontend_call_ledger=${cacheEnvelopeLedger.some((row) => row.frontend_backend_auto_link_attempted === true)} / desktop_preflight_ledger=${desktopPreflightEnvelopeLedger.length} / p0_stability=${desktopP0StabilityReady} / p0_local_link=${desktopP0LocalLinkReady} / p0_connection_evidence=${desktopP0ConnectionEvidenceReady}`,
       下一步: quantProjectionP0Ready ? "输入代码后点击确认并生成 3.0 量化推演" : "先恢复 P0，再回到下一票雷达",
       边界: "P0 只证明本地前后端联通；不代表 Tushare、DeepSeek、release 或 14 LTG 完成"
     }
@@ -761,7 +773,7 @@ export default function CandidateRadar() {
   const quantProjectionDisabledReason = quantProjectionSubmitting
     ? "任务提交中：正在创建 Tushare-first POST task；请等待本地任务编号回写，避免重复提交。"
     : !quantProjectionP0Ready
-    ? "按钮不可用原因：P0 前后端联通未通过；先让 FastAPI、bootstrap status、desktop preflight、P0 stability 和 candidate cache GET 可读。"
+    ? "按钮不可用原因：P0 前后端联通未通过；先让 FastAPI、bootstrap status、desktop preflight、本机连接证据和 candidate cache GET 可读。"
     : quantProjectionCanSubmit
     ? quantProjectionHistoricalTaskMatchesInput
       ? `按钮已启用：${quantProjectionSymbolValidation.normalized} 已有历史回放；再次确认会创建新的 Tushare-first POST task，DeepSeek 保持 skipped。`
@@ -802,7 +814,7 @@ export default function CandidateRadar() {
     ? "确认代码后点击生成 3.0 量化推演；按钮门控 Tushare-first POST task / worker 推进，DeepSeek 等 governed executor"
     : "先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演";
   const quantProjectionSubmitHint = !quantProjectionP0Ready
-    ? "P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight、P0 stability 和 candidate cache GET；本页不会从输入或渲染创建 Tushare-first task。"
+    ? "P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight、本机连接证据和 candidate cache GET；本页不会从输入或渲染创建 Tushare-first task。"
     : quantProjectionSubmitting
       ? "正在提交 Tushare-first 后台链；请等待本地 task id，页面不会重复创建第二个 task。"
       : quantProjectionTaskReceiptInputMismatch
