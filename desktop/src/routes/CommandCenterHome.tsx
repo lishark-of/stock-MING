@@ -1390,6 +1390,25 @@ export default function CommandCenterHome() {
           </div>
           <DataLineageTable rows={dailyCommandUsableShortestPathRows} />
         </div>
+        <div className="actions" aria-label="daily command primary next action">
+          <a href={dailyCommandPrimaryActionHref} aria-label="open daily command primary next action">{dailyCommandPrimaryActionLabel}</a>
+        </div>
+        <div className="actions" aria-label="daily command next user actions">
+          <a href="#candidates" title="切换到下一票雷达模块；输入代码后仍需确认按钮" aria-label="open candidate radar from daily command">查看下一票雷达</a>
+          <a href="#factor" title="切换到股票量化推演模块；只回放缓存结果，不创建 task" aria-label="open stock quant projection from daily command">查看股票量化推演</a>
+          <a href="#next" title="切换到次日图谱模块；只回放本地次日图谱缓存，不创建 task" aria-label="open next session map from daily command">查看次日图谱</a>
+          <a href="#dataHealth" title="切换到数据健康模块；只读 cache，不刷新外部数据源" aria-label="open data health from daily command">查看数据健康</a>
+          <a href="#desktop" title="切换到桌面壳预检模块；只读恢复指引，不启动服务" aria-label="open one click startup preflight from daily command">查看一键启动预检</a>
+        </div>
+        <p className="risk-note">今日先按“P0 本地联通 → 下一票雷达确认代码 → 股票量化推演 / 次日图谱回放”复核；缺数据就看 pending 和缺少证据，不把空结果当成无风险。</p>
+        <p className="risk-note">{dailyCommandExternalTriggerBoundary}</p>
+        <p className="risk-note">{dailyCommandResultLocation}</p>
+        <p className="risk-note">如果本地联通异常，先去 <a href="#desktop">桌面壳预检</a> 查看本地快捷入口；这个跳转只切换页面，不启动 FastAPI/Vite/浏览器。</p>
+        <p className="risk-note">这些入口链接只切换本地页面（本地模块路由）；不会创建 task、调用 Tushare/DeepSeek/GitHub、写 cache/config 或改变交易策略。</p>
+        <p className="risk-note">live_light 补证入口下沉在开发详情；普通路径只看本地缓存、雷达和量化入口。</p>
+        <details className="developer-audit-details" aria-label="daily command ordinary readback details">
+          <summary>本地回放明细</summary>
+          <p className="risk-note">确认链、P2 写回、P3 检查点和恢复表默认收起；普通用户先用上方主按钮进入下一票雷达、股票量化推演和次日图谱。</p>
         <details className="developer-audit-details" aria-label="daily command p6 strict closeout reentry details">
           <summary>P6 / 14 LTG strict closeout 审计入口</summary>
           <p className="risk-note">P6 留作工程审计和 strict closeout 回归；普通主线先看 P0 联通、P1 确认、P2 写回和 P3 结果，不把 P6 当今日可用化完成。</p>
@@ -1487,22 +1506,7 @@ export default function CommandCenterHome() {
         <p className="risk-note">启动诊断来自 desktop preflight cache：FastAPI /health、bootstrap status、desktop preflight cache 和 React/Vite 前端 HTML 分段检查；首页只展示，不执行。</p>
         <p className="risk-note">恢复回读只看本地 GET health/bootstrap/preflight 结果；如果没有变绿，继续回一键启动预检，不进入投研入口。</p>
         <p className="risk-note">主下一步会在联通异常时优先打开桌面壳预检；这个链接只读本地 health/preflight cache，不启动服务。</p>
-        <div className="actions" aria-label="daily command primary next action">
-          <a href={dailyCommandPrimaryActionHref} aria-label="open daily command primary next action">{dailyCommandPrimaryActionLabel}</a>
-        </div>
-        <div className="actions" aria-label="daily command next user actions">
-          <a href="#candidates" title="切换到下一票雷达模块；输入代码后仍需确认按钮" aria-label="open candidate radar from daily command">查看下一票雷达</a>
-          <a href="#factor" title="切换到股票量化推演模块；只回放缓存结果，不创建 task" aria-label="open stock quant projection from daily command">查看股票量化推演</a>
-          <a href="#next" title="切换到次日图谱模块；只回放本地次日图谱缓存，不创建 task" aria-label="open next session map from daily command">查看次日图谱</a>
-          <a href="#dataHealth" title="切换到数据健康模块；只读 cache，不刷新外部数据源" aria-label="open data health from daily command">查看数据健康</a>
-          <a href="#desktop" title="切换到桌面壳预检模块；只读恢复指引，不启动服务" aria-label="open one click startup preflight from daily command">查看一键启动预检</a>
-        </div>
-        <p className="risk-note">今日先按“P0 本地联通 → 下一票雷达确认代码 → 股票量化推演 / 次日图谱回放”复核；缺数据就看 pending 和缺少证据，不把空结果当成无风险。</p>
-        <p className="risk-note">{dailyCommandExternalTriggerBoundary}</p>
-        <p className="risk-note">{dailyCommandResultLocation}</p>
-        <p className="risk-note">如果本地联通异常，先去 <a href="#desktop">桌面壳预检</a> 查看本地快捷入口；这个跳转只切换页面，不启动 FastAPI/Vite/浏览器。</p>
-        <p className="risk-note">这些入口链接只切换本地页面（本地模块路由）；不会创建 task、调用 Tushare/DeepSeek/GitHub、写 cache/config 或改变交易策略。</p>
-        <p className="risk-note">live_light 补证入口下沉在开发详情；普通路径只看本地缓存、雷达和量化入口。</p>
+        </details>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate、runtime mode 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
       <details className="developer-audit-details">
