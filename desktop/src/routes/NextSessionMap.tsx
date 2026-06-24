@@ -242,6 +242,31 @@ export default function NextSessionMap() {
       边界: "operation_zones 不是买卖指令，不下单，不写 strategy action。"
     }
   ];
+  const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
+  const nextSessionOrdinaryReplayBoundaryBlocked =
+    packet.does_not_modify_action === false || packet.does_not_modify_operation_zones === false;
+  const nextSessionOperationZoneQuickReadRows = [
+    {
+      速读项: "1. 先读路径",
+      当前状态: chartSummary.has_drawable_data === true ? nextSessionLastResultLabel : "暂无可绘制路径；先看缓存状态或手动生成任务",
+      用户下一步: "先看图表路径和参考线，再看 operation_zones 对哪些条件敏感。",
+      边界: "只读 chart cache；不重算价格、不调用 Tushare/DeepSeek、不写 cache。"
+    },
+    {
+      速读项: "2. 再读操作区",
+      当前状态: Number(chartSummary.operation_zone_count ?? 0) > 0
+        ? `operation_zones ${String(chartSummary.operation_zone_count ?? 0)} 个；只表示条件区间和复核提示`
+        : "等待 operation_zones cache；不能把空操作区解释成无风险",
+      用户下一步: "把操作区当作人工复核条件，回到证据和风险来源确认。",
+      边界: nextSessionOperationZoneBoundary
+    },
+    {
+      速读项: "3. 动作隔离",
+      当前状态: nextSessionOrdinaryReplayBoundaryBlocked ? "边界异常：先停在审计检查" : "边界正常：前端只读，不改 action 或 operation_zones",
+      用户下一步: nextSessionOrdinaryReplayBoundaryBlocked ? "不要继续解释图谱；先看开发审计里的边界异常" : "继续按缺口和仅供研究边界复核。",
+      边界: "次日图谱不下单、不写 strategy action；DeepSeek 也不能覆盖 operation_zones。"
+    }
+  ];
   const ordinaryInterpretationActionRows = [
     {
       行动: "1. 确认图谱状态",
@@ -353,9 +378,6 @@ export default function NextSessionMap() {
     { boundary: "is_exact_next_session_packet", value: String(chartPayload?.is_exact_next_session_packet === true), note: "非精确 packet 时只显示 legacy/cache 投影。" },
     { boundary: "uses_real_daily_close", value: String(chartPayload?.uses_real_daily_close === true), note: "未验证真实 close 时必须展示风险提示。" }
   ];
-  const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
-  const nextSessionOrdinaryReplayBoundaryBlocked =
-    packet.does_not_modify_action === false || packet.does_not_modify_operation_zones === false;
   const nextSessionOrdinaryReplayRailState = [
     chartSummary.has_drawable_data === true ? "chart_cache_visible" : "chart_cache_waiting",
     chartSummary.is_exact_next_session_packet === true ? "exact_packet_visible" : "legacy_projection_or_missing",
@@ -431,6 +453,11 @@ export default function NextSessionMap() {
         <h3>P3 结果交接速读</h3>
         <p className="risk-note">先看来源、结论、缺口和操作区边界；这张表只做本地结果交接，不展开 QA、promotion 或 raw packet 审计。</p>
         <DataLineageTable rows={nextSessionResultHandoffRows} />
+      </div>
+      <div aria-label="next session ordinary operation zone quick read">
+        <h3>操作区解释速读</h3>
+        <p className="risk-note">普通用户先按路径、参考线、操作区的顺序读；operation_zones 只是条件区间和复核提示，不是买卖、下单或 strategy action。</p>
+        <DataLineageTable rows={nextSessionOperationZoneQuickReadRows} />
       </div>
       <h3>三段结果回放</h3>
       <p className="risk-note">三段结果回放优先读取服务端 ordinary_result_replay_rows；旧 packet 缺字段时才使用前端 fallback，且两者都只读 cache。</p>
