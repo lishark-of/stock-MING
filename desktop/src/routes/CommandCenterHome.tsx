@@ -341,13 +341,18 @@ export default function CommandCenterHome() {
     (candidateQuantInterpretation.ordinary_result_checkpoint_rows as Array<Record<string, unknown>> | undefined) ??
     [];
   const dailyCommandExplainableResultLabel = String(
-    candidateQuantInterpretation.ordinary_result_summary ?? "等待搜票确认后的可解释结果"
+    candidates.ordinary_result_summary ??
+      candidateQuantInterpretation.ordinary_result_summary ??
+      "等待搜票确认后的可解释结果"
   );
   const dailyCommandExplainableResultNext = String(
-    candidateQuantInterpretation.ordinary_result_next_step ?? "先进入下一票雷达输入代码并点击确认"
+    candidates.ordinary_result_next_step ??
+      candidateQuantInterpretation.ordinary_result_next_step ??
+      "先进入下一票雷达输入代码并点击确认"
   );
   const dailyCommandExplainableResultBoundary = String(
-    candidateQuantInterpretation.ordinary_result_boundary ??
+    candidates.ordinary_result_boundary ??
+      candidateQuantInterpretation.ordinary_result_boundary ??
       "可解释结果只从本地 cache / ledger / packet 回放；不会从首页创建 task、调用模型或生成交易动作。"
   );
   const dailyCommandP3OneGlanceReadable =

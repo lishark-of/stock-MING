@@ -18328,11 +18328,23 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     ordinary_result_checkpoint_rows = [
         row for row in _as_list(summary.get("ordinary_result_checkpoint_rows")) if isinstance(row, dict)
     ]
+    view["ordinary_result_status"] = summary.get("ordinary_result_status")
+    view["ordinary_result_summary"] = summary.get("ordinary_result_summary")
+    view["ordinary_result_next_step"] = summary.get("ordinary_result_next_step")
+    view["ordinary_result_boundary"] = summary.get("ordinary_result_boundary")
+    view["ordinary_result_evidence"] = summary.get("ordinary_result_evidence")
+    view["ordinary_result_missing_evidence"] = summary.get("missing_evidence")
+    view["ordinary_result_deepseek_governed_executor_status"] = summary.get(
+        "deepseek_governed_executor_status"
+    )
     view["ordinary_result_quick_read_rows"] = ordinary_result_quick_read_rows
     view["ordinary_result_handoff_rows"] = ordinary_result_handoff_rows
     view["ordinary_result_readback_rows"] = ordinary_result_readback_rows
     view["ordinary_result_action_rows"] = ordinary_result_action_rows
     view["ordinary_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
+    view["search_quant_projection_result_quick_read_rows"] = ordinary_result_quick_read_rows
+    view["search_quant_projection_result_handoff_rows"] = ordinary_result_handoff_rows
+    view["search_quant_projection_result_action_rows"] = ordinary_result_action_rows
     view["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
     view["ordinary_result_handoff_row_count"] = len(ordinary_result_handoff_rows)
     view["ordinary_result_readback_row_count"] = len(ordinary_result_readback_rows)

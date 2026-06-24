@@ -928,6 +928,16 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertIn("解释只基于本地 cache / ledger / packet", interpretation["ordinary_result_boundary"])
         self.assertIn("Tushare 接口 4/4", interpretation["ordinary_result_evidence"])
         self.assertIn("DeepSeek 未参与", interpretation["ordinary_result_evidence"])
+        self.assertEqual(packet["ordinary_result_status"], interpretation["ordinary_result_status"])
+        self.assertEqual(packet["ordinary_result_summary"], interpretation["ordinary_result_summary"])
+        self.assertEqual(packet["ordinary_result_next_step"], interpretation["ordinary_result_next_step"])
+        self.assertEqual(packet["ordinary_result_boundary"], interpretation["ordinary_result_boundary"])
+        self.assertEqual(packet["ordinary_result_evidence"], interpretation["ordinary_result_evidence"])
+        self.assertEqual(packet["ordinary_result_missing_evidence"], interpretation["missing_evidence"])
+        self.assertEqual(
+            packet["ordinary_result_deepseek_governed_executor_status"],
+            interpretation["deepseek_governed_executor_status"],
+        )
         self.assertEqual(interpretation["ordinary_result_readback_row_count"], 4)
         self.assertTrue(interpretation["ordinary_result_readback_rows_are_cache_only"])
         self.assertFalse(interpretation["ordinary_result_readback_rows_create_task"])
@@ -945,6 +955,18 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(
             packet["ordinary_result_handoff_rows"],
             interpretation["ordinary_result_handoff_rows"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_result_quick_read_rows"],
+            interpretation["ordinary_result_quick_read_rows"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_result_handoff_rows"],
+            interpretation["ordinary_result_handoff_rows"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_result_action_rows"],
+            interpretation["ordinary_result_action_rows"],
         )
         self.assertEqual(
             packet["ordinary_result_readback_rows"],

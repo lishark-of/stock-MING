@@ -203,15 +203,18 @@ export default function NextSessionMap() {
       candidateRadarInterpretation.ordinary_result_handoff_rows
   );
   const candidateRadarReadableResult = String(
-    candidateRadarInterpretation.ordinary_result_summary ??
+    candidateRadarCache.ordinary_result_summary ??
+      candidateRadarInterpretation.ordinary_result_summary ??
       "等待下一票雷达确认后的可读结论"
   );
   const candidateRadarReadableNextStep = String(
-    candidateRadarInterpretation.ordinary_result_next_step ??
+    candidateRadarCache.ordinary_result_next_step ??
+      candidateRadarInterpretation.ordinary_result_next_step ??
       "先回下一票雷达输入代码并点击确认按钮"
   );
   const candidateRadarReadableBoundary = String(
-    candidateRadarInterpretation.ordinary_result_boundary ??
+    candidateRadarCache.ordinary_result_boundary ??
+      candidateRadarInterpretation.ordinary_result_boundary ??
       "次日图谱只读 CandidateRadar cache / ledger / packet 的可读结论；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。"
   );
   const ordinaryResultReplayStatus = String(
