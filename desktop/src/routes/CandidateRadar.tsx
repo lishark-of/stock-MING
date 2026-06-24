@@ -1250,6 +1250,40 @@ export default function CandidateRadar() {
     (quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId)) && !quantProjectionTaskPanelStaleForCurrentInput;
   const quantProjectionTaskPanelTaskId =
     quantProjectionTaskPanelStaleForCurrentInput ? "" : quantProjectionTaskVisible && taskId ? taskId : quantProjectionPersistedTaskId;
+  const quantProjectionFailedSubmitLedgerRows = quantProjectionSubmitError
+    ? (taskReceipt?.call_ledger ?? []).filter((row) => row.frontend_backend_auto_link_attempted === true)
+    : [];
+  const quantProjectionP0SubmitRecoveryRows = quantProjectionFailedSubmitLedgerRows.length
+    ? quantProjectionFailedSubmitLedgerRows.map((row) => ({
+        恢复步骤: "P0 本地联通恢复",
+        当前状态: row.frontend_backend_auto_link_success === true ? "本地 FastAPI 已联通" : "确认请求未连上本地 FastAPI",
+        用户下一步: displayText(
+          row.frontend_backend_auto_link_next_action,
+          "先运行 scripts/check_command_center_3.command 做 check-only 安全自检；需要启动时再双击 stock-MING Command Center 3.command 或运行 scripts/start_command_center_3.command；联通后刷新页面并重新点击确认。"
+        ),
+        候选地址: Array.isArray(row.attempted_api_bases)
+          ? row.attempted_api_bases.map((item) => displayText(item)).join(" / ")
+          : API_BASE_CANDIDATE_DISPLAY_URLS.join(" / "),
+        "check-only": displayText(row.frontend_backend_check_only_command, "scripts/check_command_center_3.command"),
+        启动器: displayText(row.frontend_backend_start_command, "scripts/start_command_center_3.command"),
+        边界: displayText(
+          row.frontend_backend_check_only_boundary,
+          "check-only 不启动 FastAPI/Vite、不创建 task；确认失败提示不自动重试、不调用 Tushare/DeepSeek。"
+        )
+      }))
+    : quantProjectionSubmitError
+      ? [
+          {
+            恢复步骤: "P0 本地联通恢复",
+            当前状态: "确认任务未创建；需要先恢复本地后端连接",
+            用户下一步: "先打开一键启动预检或运行 check-only 诊断，确认 FastAPI、bootstrap status、desktop preflight、candidate cache 四段 ready 后，再回到本页重新点击确认。",
+            候选地址: API_BASE_CANDIDATE_DISPLAY_URLS.join(" / "),
+            "check-only": "scripts/check_command_center_3.command",
+            启动器: "scripts/start_command_center_3.command",
+            边界: "恢复表只读展示本地联通建议；不自动启动服务、不创建 task、不调用 provider/model。"
+          }
+        ]
+      : [];
   const quantProjectionSubmitRecoveryRows = [
     {
       场景: "后端离线或请求失败",
@@ -1929,6 +1963,13 @@ export default function CandidateRadar() {
         <p className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
         {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
+        {quantProjectionP0SubmitRecoveryRows.length ? (
+          <div aria-label="candidate radar p0 submit failure recovery">
+            <h3>确认失败恢复</h3>
+            <p className="risk-note">优先读取 POST 失败 envelope 里的 frontend_backend_auto_link ledger；先做 check-only，再用一键启动恢复四段 ready。恢复提示只读展示，不自动重试、不创建 task。</p>
+            <DataLineageTable rows={quantProjectionP0SubmitRecoveryRows} />
+          </div>
+        ) : null}
         <div aria-label="candidate radar ordinary p1 to p3 stage rail">
           <h3>P1 到 P3 阶段速览</h3>
           <p className="risk-note">这条状态轨只读本地输入、task receipt 和 cache 回放：输入保持静默，只有确认按钮创建 Tushare-first POST task，P2/P3 只回放本地结果。</p>
@@ -2122,6 +2163,13 @@ export default function CandidateRadar() {
           <p className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
           {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
+          {quantProjectionP0SubmitRecoveryRows.length ? (
+            <div aria-label="quant projection p0 submit failure recovery">
+              <h3>P0 恢复提示</h3>
+              <p className="risk-note">确认按钮失败后先看本地联通恢复包：check-only 不启动服务，启动器只在用户运行时恢复 FastAPI/Vite；页面不会补调 provider/model。</p>
+              <DataLineageTable rows={quantProjectionP0SubmitRecoveryRows} />
+            </div>
+          ) : null}
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionTushareFirstState}</p>
           <StateClarityRail
