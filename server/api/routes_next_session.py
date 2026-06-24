@@ -19,6 +19,7 @@ def get_next_session_cache() -> dict:
         packet,
         route="GET /api/next-session/cache",
         missing_message="当前没有精确次日操作图谱缓存；请通过按钮任务生成后再查看。",
+        include_missing_data=True,
     )
 
 

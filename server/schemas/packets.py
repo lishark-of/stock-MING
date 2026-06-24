@@ -50,12 +50,13 @@ def cache_envelope(
     missing_message: str,
     call_ledger: list[dict[str, Any]] | None = None,
     warnings: list[str] | None = None,
+    include_missing_data: bool = False,
 ) -> dict[str, Any]:
     ledger = list(call_ledger if call_ledger is not None else packet.get("call_ledger") or [])
     route_warnings = list(warnings if warnings is not None else packet.get("warnings") or [])
     if packet.get("status") == "cache_missing":
         return envelope(
-            None,
+            packet if include_missing_data else None,
             ok=False,
             error=cache_error(
                 "cache_missing",

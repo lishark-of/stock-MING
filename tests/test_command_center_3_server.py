@@ -21751,12 +21751,50 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ):
             response = self.client.get(route).json()
             self.assertFalse(response["ok"], route)
-            self.assertIsNone(response["data"], route)
+            if route == "/api/next-session/cache":
+                self.assertIsInstance(response["data"], dict, route)
+                self.assertEqual(response["data"]["status"], "cache_missing")
+            else:
+                self.assertIsNone(response["data"], route)
             self.assertEqual(response["error"]["code"], "cache_missing")
             self.assertIn("message", response["error"])
             self.assertEqual(response["call_ledger"][0]["api"], expected_api)
             self.assertIn(response["call_ledger"][0]["call_status"], {"cache_missing", "cache_ready"})
             self.assertFalse(response["call_ledger"][0]["external"])
+
+    def test_next_session_cache_missing_exposes_ordinary_empty_state_without_external_calls(self):
+        self._with_meta_store()
+        self._with_snapshot_cache({})
+
+        response = self.client.get("/api/next-session/cache").json()
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "cache_missing")
+        packet = response["data"]
+        self.assertIsInstance(packet, dict)
+        self.assertEqual(packet["status"], "cache_missing")
+        self.assertEqual(packet["ordinary_result_replay_status"], "waiting_for_cache_or_manual_task")
+        self.assertEqual(packet["ordinary_result_replay_summary"]["source"], "GET /api/next-session/cache")
+        self.assertGreaterEqual(len(packet["ordinary_result_replay_rows"]), 1)
+        self.assertGreaterEqual(len(packet["ordinary_condition_quick_read_rows"]), 1)
+        self.assertTrue(
+            any(
+                "等待" in row["readable_result"] or "暂无" in row["readable_result"]
+                for row in packet["ordinary_result_replay_rows"]
+            )
+        )
+        self.assertTrue(packet["policy"]["next_session_ordinary_result_replay_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["next_session_ordinary_result_replay_rows_create_task"])
+        self.assertFalse(packet["policy"]["next_session_ordinary_result_replay_rows_call_provider_or_model"])
+        self.assertTrue(packet["policy"]["next_session_ordinary_result_replay_rows_are_not_trade_signals"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_next_session_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertFalse(response["call_ledger"][0]["external_calls_triggered"])
+        self.assertFalse(response["call_ledger"][0]["tushare_called"])
+        self.assertFalse(response["call_ledger"][0]["deepseek_called"])
+        self.assertFalse(response["call_ledger"][0]["github_called"])
+        self.assertTrue(response["call_ledger"][0]["does_not_execute_trades"])
+        self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
 
     def test_trade_cal_provider_acceptance_dry_run_creates_scope_ticket_without_provider_call(self):
         self._with_meta_store()
@@ -33372,7 +33410,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         if next_session["ok"]:
             self.assertFalse(next_session["data"]["external_calls_triggered"])
         else:
-            self.assertIsNone(next_session["data"])
+            self.assertIsInstance(next_session["data"], dict)
+            self.assertEqual(next_session["data"]["status"], "cache_missing")
             self.assertEqual(next_session["error"]["code"], "cache_missing")
         self.assertEqual(next_session["call_ledger"][0]["api"], "local_next_session_cache")
         self.assertFalse(next_session["call_ledger"][0]["external"])
