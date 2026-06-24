@@ -61,7 +61,7 @@ export default function PageStateBanner({
           if (healthReady) {
             setReconnectStatus("local_fastapi_ready_reloading_once");
             if (markReconnectReloaded()) {
-              window.setTimeout(() => window.location.reload(), 250);
+              void Promise.resolve().then(() => window.location.reload());
             } else {
               setReconnectStatus("local_fastapi_ready_refresh_manually");
             }

@@ -337,7 +337,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <details className="developer-audit-details" aria-label="task status ordinary replay details">
         <summary>任务回放详情</summary>
         <div aria-label="task status p2 writeback quick read">
-          <p className="risk-note">P2 写回速读：cache、call_ledger、packet 三面是否有本地回放信号；这张表只读任务状态，不创建新 task。</p>
+          <p className="risk-note">P2 写回速读：普通用户先看 cache、call_ledger、packet 三面是否有本地回放信号；这张表只读任务状态，不创建新 task。</p>
           <DataLineageTable rows={p2WritebackQuickRows} />
         </div>
         {candidateRadarResultReplay ? (

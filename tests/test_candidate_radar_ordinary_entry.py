@@ -60,6 +60,25 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "last_successful_cache/result"',
         ):
             self.assertNotIn(engineering_label, summary_slice)
+        self.assertIn('aria-label="candidate radar ordinary summary extra details"', summary_slice)
+        self.assertIn("<summary>摘要细节</summary>", summary_slice)
+        summary_extra_start = summary_slice.index('aria-label="candidate radar ordinary summary extra details"')
+        summary_extra_end = summary_slice.index('aria-label="candidate radar first screen quant projection confirmation"', summary_extra_start)
+        summary_primary_slice = summary_slice[:summary_extra_start]
+        summary_extra_slice = summary_slice[summary_extra_start:summary_extra_end]
+        for downshifted_label in (
+            'label: "候选来源"',
+            'label: "评分说明"',
+            'label: "P1 回放顺序"',
+            'label: "P1 确认后等待"',
+            'label: "P2 checkpoint"',
+            'label: "P2 写入边界"',
+            'label: "结果位置"',
+        ):
+            self.assertNotIn(downshifted_label, summary_primary_slice)
+            self.assertIn(downshifted_label, summary_extra_slice)
+        self.assertIn('label: "任务边界"', summary_primary_slice)
+        self.assertIn("候选来源、评分说明、P1 回放顺序、P2 checkpoint 和结果位置默认收起", summary_extra_slice)
 
         self.assertLess(self.page.index('title="普通用户雷达摘要"'), self.page.index("<summary>开发 / 审计指标</summary>"))
         self.assertLess(self.page.index('title="下一票候选池"'), self.page.index("<summary>扫描覆盖 / 验收审计</summary>"))
@@ -1188,13 +1207,16 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", panel)
         self.assertNotIn("launchQuantProjectionProviderModelAcceptance", panel)
 
-    def test_candidate_radar_does_not_poll_empty_or_replayed_task_ids(self):
+    def test_candidate_radar_restores_persisted_task_panel_without_creating_new_task(self):
         self.assertIn(
-            "不启动 TaskStatusPanel 轮询，避免把过期任务记录显示成本地后端错误",
+            "TaskStatusPanel 可恢复本地状态轮询，不创建新 task、不补调 Tushare/DeepSeek",
             self.page,
         )
-        self.assertIn("quantProjectionTaskVisible && Boolean(taskId)", self.page)
-        self.assertNotIn("quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId)", self.page)
+        self.assertIn("(quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId)) && !quantProjectionTaskPanelStaleForCurrentInput", self.page)
+        self.assertIn(
+            'quantProjectionTaskPanelStaleForCurrentInput ? "" : quantProjectionTaskVisible && taskId ? taskId : quantProjectionPersistedTaskId',
+            self.page,
+        )
         self.assertIn("const manualTaskPanelVisible = Boolean(taskId);", self.page)
         self.assertIn(
             "暂无可轮询任务；点击确认按钮或手动任务后才显示 TaskStatusPanel",

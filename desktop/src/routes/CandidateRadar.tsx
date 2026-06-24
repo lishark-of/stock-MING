@@ -1394,12 +1394,12 @@ export default function CandidateRadar() {
     : quantProjectionTaskReceiptInputMismatch
       ? `当前输入 ${quantProjectionSymbolValidation.normalized} 与最近任务 ${quantProjectionAcceptedTaskSymbol} 不一致；旧任务面板暂不显示，需重新点击确认。`
       : !taskId && quantProjectionPersistedTaskId
-        ? `最近任务 ${quantProjectionPersistedTaskId} 来自本地 cache 回放；不启动 TaskStatusPanel 轮询，避免把过期任务记录显示成本地后端错误。`
+        ? `最近任务 ${quantProjectionPersistedTaskId} 来自本地 cache 回放；TaskStatusPanel 可恢复本地状态轮询，不创建新 task、不补调 Tushare/DeepSeek。`
         : "";
   const quantProjectionTaskPanelVisible =
-    quantProjectionTaskVisible && Boolean(taskId) && !quantProjectionTaskPanelStaleForCurrentInput;
+    (quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId)) && !quantProjectionTaskPanelStaleForCurrentInput;
   const quantProjectionTaskPanelTaskId =
-    quantProjectionTaskPanelStaleForCurrentInput ? "" : quantProjectionTaskVisible && taskId ? taskId : "";
+    quantProjectionTaskPanelStaleForCurrentInput ? "" : quantProjectionTaskVisible && taskId ? taskId : quantProjectionPersistedTaskId;
   const manualTaskPanelVisible = Boolean(taskId);
   const manualTaskPanelEmptyNotice = "暂无可轮询任务；点击确认按钮或手动任务后才显示 TaskStatusPanel，不把空 task 当成后端错误。";
   const quantProjectionP1ProgressItems: MetricItem[] = [
@@ -2200,38 +2200,46 @@ export default function CandidateRadar() {
           items={[
             { label: "下一步", value: ordinaryNextClick },
             { label: "主下一步", value: ordinaryPrimaryActionLabel },
-            { label: "主下一步边界", value: ordinaryPrimaryActionBoundary, tone: "good" },
             { label: "P0 交接", value: candidateRadarP0HandoffLabel, tone: quantProjectionP0Ready ? "good" : "warn" },
             { label: "P1 主路径", value: ordinaryP1ConfirmPathLabel, tone: quantProjectionCanSubmit ? "good" : "warn" },
-            { label: "P1 主路径边界", value: ordinaryP1ConfirmPathBoundary, tone: "good" },
-            { label: "候选分组", value: ordinaryCandidateGroupLabel },
-            { label: "候选解读", value: ordinaryCandidateReviewOrder },
-            { label: "分组边界", value: ordinaryCandidateGroupBoundary, tone: "good" },
-            { label: "扫描范围", value: ordinaryScanScopeLabel },
-            { label: "候选来源", value: ordinaryCandidateSourceLabel },
-            { label: "评分说明", value: ordinaryScoringReasonLabel },
-            { label: "可选补证", value: ordinaryOptionalNextClick },
-            { label: "本地缓存", value: ordinaryCacheSourceLabel },
             { label: "数据链", value: ordinaryTushareSourceLabel },
             { label: "解释状态", value: ordinaryDeepSeekSourceLabel },
             { label: "待补证据", value: ordinaryPendingSourceLabel, tone: ordinaryPendingSourceLabel.includes("待补") ? "warn" : "good" },
-            { label: "降级提示", value: ordinaryDegradedSourceLabel, tone: ordinaryDegradedSourceLabel.includes("降级") && !ordinaryDegradedSourceLabel.includes("未标记") ? "warn" : "good" },
-            { label: "最近成功回放", value: ordinaryLastCache },
-            { label: "结果位置", value: ordinaryRadarResultLocation, tone: "good" },
-            { label: "缺少证据", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") || ordinaryMissingEvidence.includes("验收") ? "warn" : "good" },
-            { label: "阻断/降级", value: ordinaryBlockedState, tone: ordinaryBlockedState.includes("未标记") ? "good" : "warn" },
-            { label: "最近可用缓存", value: ordinaryLastCache },
-            { label: "P1 Tushare-first", value: quantProjectionTushareFirstState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
-            { label: "P1 回放顺序", value: quantProjectionReplayOrder, tone: taskReceipt?.ok || quantProjectionProviderLedgerReady ? "good" : "warn" },
-            { label: "P1 确认后等待", value: quantProjectionPostConfirmWaitLabel, tone: taskReceipt?.ok || quantProjectionPersistedTaskId || quantProjectionProviderLedgerReady ? "good" : "warn" },
             { label: "P2 小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
             { label: "P2 三面", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
-            { label: "P2 checkpoint", value: quantProjectionWritebackCheckpointLabel, tone: quantProjectionWritebackReadableSurfaceCount === quantProjectionWritebackSurfaceCount ? "good" : "warn" },
-            { label: "P2 写入边界", value: quantProjectionSmallDataReadbackContract, tone: "good" },
             { label: "任务边界", value: ordinaryTaskBoundary },
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
+        <details className="developer-audit-details" aria-label="candidate radar ordinary summary extra details">
+          <summary>摘要细节</summary>
+          <p className="risk-note">候选来源、评分说明、P1 回放顺序、P2 checkpoint 和结果位置默认收起；普通用户先看上方主行动和 P3 结果速读。</p>
+          <MetricGrid
+            items={[
+              { label: "主下一步边界", value: ordinaryPrimaryActionBoundary, tone: "good" },
+              { label: "P1 主路径边界", value: ordinaryP1ConfirmPathBoundary, tone: "good" },
+              { label: "候选分组", value: ordinaryCandidateGroupLabel },
+              { label: "候选解读", value: ordinaryCandidateReviewOrder },
+              { label: "分组边界", value: ordinaryCandidateGroupBoundary, tone: "good" },
+              { label: "扫描范围", value: ordinaryScanScopeLabel },
+              { label: "候选来源", value: ordinaryCandidateSourceLabel },
+              { label: "评分说明", value: ordinaryScoringReasonLabel },
+              { label: "可选补证", value: ordinaryOptionalNextClick },
+              { label: "本地缓存", value: ordinaryCacheSourceLabel },
+              { label: "降级提示", value: ordinaryDegradedSourceLabel, tone: ordinaryDegradedSourceLabel.includes("降级") && !ordinaryDegradedSourceLabel.includes("未标记") ? "warn" : "good" },
+              { label: "最近成功回放", value: ordinaryLastCache },
+              { label: "结果位置", value: ordinaryRadarResultLocation, tone: "good" },
+              { label: "缺少证据", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") || ordinaryMissingEvidence.includes("验收") ? "warn" : "good" },
+              { label: "阻断/降级", value: ordinaryBlockedState, tone: ordinaryBlockedState.includes("未标记") ? "good" : "warn" },
+              { label: "最近可用缓存", value: ordinaryLastCache },
+              { label: "P1 Tushare-first", value: quantProjectionTushareFirstState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
+              { label: "P1 回放顺序", value: quantProjectionReplayOrder, tone: taskReceipt?.ok || quantProjectionProviderLedgerReady ? "good" : "warn" },
+              { label: "P1 确认后等待", value: quantProjectionPostConfirmWaitLabel, tone: taskReceipt?.ok || quantProjectionPersistedTaskId || quantProjectionProviderLedgerReady ? "good" : "warn" },
+              { label: "P2 checkpoint", value: quantProjectionWritebackCheckpointLabel, tone: quantProjectionWritebackReadableSurfaceCount === quantProjectionWritebackSurfaceCount ? "good" : "warn" },
+              { label: "P2 写入边界", value: quantProjectionSmallDataReadbackContract, tone: "good" }
+            ]}
+          />
+        </details>
         <div aria-label="candidate radar first screen quant projection confirmation">
           <h3>P1 搜票确认</h3>
           <div className="actions" aria-label="candidate radar first screen quant projection actions">
