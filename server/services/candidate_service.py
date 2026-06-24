@@ -13496,14 +13496,32 @@ def _build_candidate_radar_packet(
     counts["priority_explanation_data_gap_visible_count"] = candidate_priority_explanation_contract["data_gap_visible_count"]
     counts["priority_explanation_missing_score_count"] = candidate_priority_explanation_contract["missing_score_count"]
 
+    search_quant_projection_replay_visible = bool(
+        search_quant_projection_receipt
+        or search_quant_projection_acceptance_dry_run_receipt
+        or search_quant_projection_execution_request_receipt
+        or search_quant_provider_model_acceptance_receipt
+    )
     if candidate_rows:
         status = "ready"
+    elif search_quant_projection_replay_visible:
+        status = "search_quant_projection_replay_ready"
     elif radar_packet:
         status = "partial"
     elif snapshot:
         status = "cache_missing"
     else:
         status = "cache_missing"
+    summary = radar_packet.get("summary") or "候选雷达 cache 只读展示；无缓存时不自动扫描。"
+    manual_required_text = (
+        radar_packet.get("manual_required_text")
+        or "下一票候选来自本地缓存或手动扫描结果；页面打开不会自动全市场扫描。"
+    )
+    if search_quant_projection_replay_visible and not candidate_rows:
+        summary = "已有搜票量化推演本地回放；候选池为空时仍可先看 P1/P2/P3 回放区。"
+        manual_required_text = (
+            "搜票量化推演回放来自本地 cache / ledger / packet；GET cache 不补调 Tushare/DeepSeek。"
+        )
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -13531,9 +13549,8 @@ def _build_candidate_radar_packet(
             "candidate_execution_evidence_overview",
             "local_candidate_pool_audit",
         ],
-        "summary": radar_packet.get("summary") or "候选雷达 cache 只读展示；无缓存时不自动扫描。",
-        "manual_required_text": radar_packet.get("manual_required_text")
-        or "下一票候选来自本地缓存或手动扫描结果；页面打开不会自动全市场扫描。",
+        "summary": summary,
+        "manual_required_text": manual_required_text,
         "counts": counts,
         "scan_coverage": coverage,
         "coverage_detail_summary": coverage["coverage_detail_summary"],

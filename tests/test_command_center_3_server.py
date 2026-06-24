@@ -38896,6 +38896,66 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertIn("GET /api/candidate-radar/cache", cache["warnings"][0])
 
+    def test_candidate_radar_cache_status_stays_ready_when_quant_projection_replay_exists_without_candidates(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        cache_path = self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        response = self.client.post(
+            "/api/candidate-radar/quant-projection",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": False,
+                "user_approved": False,
+                "requested_by": "unit_test_replay_status",
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+        self.assertTrue(response["ok"])
+
+        persisted = self.client.get("/api/candidate-radar/cache").json()["data"]
+        SQLiteMetaStore(candidate_service.SQLITE_META_PATH).write_packet(
+            candidate_service.PACKET_KEY,
+            {
+                "packet_key": candidate_service.PACKET_KEY,
+                "schema_version": persisted["schema_version"],
+                "search_quant_projection_receipt": persisted["search_quant_projection_receipt"],
+                "search_quant_projection_rows": persisted["search_quant_projection_rows"],
+            },
+        )
+        cache_path.write_text("{}", encoding="utf-8")
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        self.assertEqual(packet["status"], "search_quant_projection_replay_ready")
+        self.assertEqual(
+            packet["summary"],
+            "已有搜票量化推演本地回放；候选池为空时仍可先看 P1/P2/P3 回放区。",
+        )
+        self.assertEqual(
+            packet["manual_required_text"],
+            "搜票量化推演回放来自本地 cache / ledger / packet；GET cache 不补调 Tushare/DeepSeek。",
+        )
+        self.assertEqual(packet["scan_mode"], "cache_only")
+        self.assertFalse(packet["candidate_rows"])
+        self.assertTrue(packet["search_quant_projection_receipt"])
+        self.assertTrue(packet["search_quant_projection_small_data_writeback_summary"])
+        self.assertTrue(packet["search_quant_projection_confirm_chain_checkpoint"])
+        self.assertGreater(packet["counts"]["search_quant_projection_confirm_outcome_row_count"], 0)
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
+
     def test_candidate_radar_quant_projection_acceptance_dry_run_is_button_gated_local_preflight(self):
         self._with_meta_store()
         self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")
