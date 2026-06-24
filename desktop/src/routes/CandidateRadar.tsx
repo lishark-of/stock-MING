@@ -722,6 +722,10 @@ export default function CandidateRadar() {
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
   const quantProjectionInputBoundaryLabel = "输入股票代码只做本地校验；不会创建任务，也不会调用 Tushare 或 DeepSeek";
+  const quantProjectionSummaryInputHelpId = "candidate-radar-summary-symbol-help";
+  const quantProjectionSummarySubmitHelpId = "candidate-radar-summary-confirm-help";
+  const quantProjectionFactorInputHelpId = "candidate-radar-factor-symbol-help";
+  const quantProjectionFactorSubmitHelpId = "candidate-radar-factor-confirm-help";
   const quantProjectionSubmitButtonLabel = quantProjectionSubmitting
     ? "正在提交 Tushare-first 后台任务；请等待本地 task id"
     : quantProjectionCanSubmit
@@ -2032,8 +2036,8 @@ export default function CandidateRadar() {
           <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode、desktop preflight 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
           <DataLineageTable rows={candidateRadarP0AutoLinkRows} />
         </div>
-        <p className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
-        <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        <p id={quantProjectionSummaryInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
+        <p id={quantProjectionSummarySubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
         {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
         {quantProjectionP0SubmitRecoveryRows.length ? (
           <div aria-label="candidate radar p0 submit failure recovery">
@@ -2154,6 +2158,7 @@ export default function CandidateRadar() {
             }}
             placeholder="002008.SZ 或 002008"
             aria-label="radar summary quant projection symbol"
+            aria-describedby={quantProjectionSummaryInputHelpId}
             title={quantProjectionInputBoundaryLabel}
           />
           <button
@@ -2161,6 +2166,7 @@ export default function CandidateRadar() {
             onClick={launchQuantProjection}
             title={quantProjectionSubmitButtonLabel}
             aria-label={quantProjectionSubmitAriaLabel}
+            aria-describedby={quantProjectionSummarySubmitHelpId}
           >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
           <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
           <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
@@ -2232,6 +2238,7 @@ export default function CandidateRadar() {
               }}
               placeholder="002008.SZ 或 002008"
               aria-label="search quant projection symbol"
+              aria-describedby={quantProjectionFactorInputHelpId}
               title={quantProjectionInputBoundaryLabel}
             />
             <button
@@ -2239,11 +2246,12 @@ export default function CandidateRadar() {
               onClick={launchQuantProjection}
               title={quantProjectionSubmitButtonLabel}
               aria-label={quantProjectionSubmitAriaLabel}
+              aria-describedby={quantProjectionFactorSubmitHelpId}
             >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
-          <p className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
-          <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
+          <p id={quantProjectionFactorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
+          <p id={quantProjectionFactorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
           {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
           {quantProjectionP0SubmitRecoveryRows.length ? (
             <div aria-label="quant projection p0 submit failure recovery">
