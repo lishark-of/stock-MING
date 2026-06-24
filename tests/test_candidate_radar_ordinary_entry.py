@@ -240,6 +240,18 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         )
         self.assertLess(
             self.page.index('aria-label="candidate radar ordinary one screen actions"'),
+            self.page.index('aria-label="quant projection submit recovery quick read"'),
+        )
+        self.assertLess(
+            self.page.index('aria-label="quant projection submit recovery quick read"'),
+            self.page.index('aria-label="quant projection ordinary confirm outcome quick read"'),
+        )
+        self.assertLess(
+            self.page.index('aria-label="quant projection ordinary confirm outcome quick read"'),
+            self.page.index('aria-label="candidate radar p1 tushare first chain quick read"'),
+        )
+        self.assertLess(
+            self.page.index('aria-label="candidate radar p1 tushare first chain quick read"'),
             self.page.index('aria-label="candidate radar ordinary p3 explainable result quick read"'),
         )
         self.assertLess(
@@ -963,6 +975,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar next user actions"', summary_slice)
         self.assertLess(summary_slice.index('aria-label="candidate radar primary next action"'), summary_slice.index('aria-label="candidate radar next user actions"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 to p3 stage rail"'), summary_slice.index('aria-label="candidate radar ordinary one screen actions"'))
+        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary one screen actions"'), summary_slice.index('aria-label="quant projection submit recovery quick read"'))
+        self.assertLess(summary_slice.index('aria-label="quant projection submit recovery quick read"'), summary_slice.index('aria-label="quant projection ordinary confirm outcome quick read"'))
+        self.assertLess(summary_slice.index('aria-label="quant projection ordinary confirm outcome quick read"'), summary_slice.index('aria-label="candidate radar p1 tushare first chain quick read"'))
+        self.assertLess(summary_slice.index('aria-label="candidate radar p1 tushare first chain quick read"'), summary_slice.index('aria-label="candidate radar ordinary p2 p3 replay checklist"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary one screen actions"'), summary_slice.index('aria-label="candidate radar ordinary p2 p3 replay checklist"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p2 p3 replay checklist"'), summary_slice.index('aria-label="candidate radar ordinary p1 p2 detail readback"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 p2 detail readback"'), summary_slice.index('aria-label="candidate radar ordinary p1 confirm path"'))

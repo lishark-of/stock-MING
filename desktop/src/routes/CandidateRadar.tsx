@@ -2133,6 +2133,21 @@ export default function CandidateRadar() {
           <p className="risk-note">优先读取服务端 ordinary_one_screen_action_rows：确认、任务、写回、结果合成一张普通用户表；只读回放本地状态，不从摘要创建 task。</p>
           <DataLineageTable rows={quantProjectionOneScreenActionRows} />
         </div>
+        <div aria-label="quant projection submit recovery quick read">
+          <h3>P1 确认失败恢复</h3>
+          <p className="risk-note">确认按钮失败、服务端凭据缺失或任务已接收但未回放时，先看这张表；它只读页面状态和 cache，不自动重试、不创建第二个 task。</p>
+          <DataLineageTable rows={quantProjectionSubmitRecoveryRows} />
+        </div>
+        <div aria-label="quant projection ordinary confirm outcome quick read">
+          <h3>P1 确认结果速读</h3>
+          <p className="risk-note">优先读取服务端 ordinary_confirm_outcome_rows：点击确认后先看任务是否接收、P2 三面是否回放、P3 入口是否可读；这张速读表不创建第二个任务。</p>
+          <DataLineageTable rows={quantProjectionOrdinaryConfirmOutcomeRows} />
+        </div>
+        <div aria-label="candidate radar p1 tushare first chain quick read">
+          <h3>P1 Tushare-first 链路速读</h3>
+          <p className="risk-note">优先读取服务端 ordinary_tushare_first_chain_rows：输入只做本地校验，确认按钮才创建 Tushare-first POST task，回放只读 cache / ledger / packet。</p>
+          <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
+        </div>
         <div aria-label="candidate radar ordinary p2 p3 replay checklist">
           <h3>P2/P3 回放清单</h3>
           <p className="risk-note">确认后先看这张只读索引：确认回执、任务回放、数据接口和 P3 结果速读都来自本地 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek。</p>
@@ -2200,21 +2215,6 @@ export default function CandidateRadar() {
           <h3>P3 结果入口索引</h3>
           <p className="risk-note">普通用户按这张索引回放可读结论、量化推演、次日图谱和候选池；它只读取服务端 ordinary_result_handoff_rows，不创建 task、不补调模型。</p>
           <DataLineageTable rows={quantProjectionOrdinaryResultHandoffRows} />
-        </div>
-        <div aria-label="quant projection submit recovery quick read">
-          <h3>P1 确认失败恢复</h3>
-          <p className="risk-note">确认按钮失败、服务端凭据缺失或任务已接收但未回放时，先看这张表；它只读页面状态和 cache，不自动重试、不创建第二个 task。</p>
-          <DataLineageTable rows={quantProjectionSubmitRecoveryRows} />
-        </div>
-        <div aria-label="quant projection ordinary confirm outcome quick read">
-          <h3>P1 确认结果速读</h3>
-          <p className="risk-note">优先读取服务端 ordinary_confirm_outcome_rows：点击确认后先看任务是否接收、P2 三面是否回放、P3 入口是否可读；这张速读表不创建第二个任务。</p>
-          <DataLineageTable rows={quantProjectionOrdinaryConfirmOutcomeRows} />
-        </div>
-        <div aria-label="candidate radar p1 tushare first chain quick read">
-          <h3>P1 Tushare-first 链路速读</h3>
-          <p className="risk-note">优先读取服务端 ordinary_tushare_first_chain_rows：输入只做本地校验，确认按钮才创建 Tushare-first POST task，回放只读 cache / ledger / packet。</p>
-          <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
         </div>
         <div className="actions" aria-label="candidate radar primary next action">
           {candidateRadarP0Blocked ? (
