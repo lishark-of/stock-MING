@@ -194,8 +194,14 @@ export default function NextSessionMap() {
   const candidateRadarConfirmOutcomeRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
   const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
-  const candidateRadarResultQuickRows = rowsFromArray(candidateRadarInterpretation.ordinary_result_quick_read_rows);
-  const candidateRadarResultHandoffRows = rowsFromArray(candidateRadarInterpretation.ordinary_result_handoff_rows);
+  const candidateRadarResultQuickRows = rowsFromArray(
+    candidateRadarCache.ordinary_result_quick_read_rows ??
+      candidateRadarInterpretation.ordinary_result_quick_read_rows
+  );
+  const candidateRadarResultHandoffRows = rowsFromArray(
+    candidateRadarCache.ordinary_result_handoff_rows ??
+      candidateRadarInterpretation.ordinary_result_handoff_rows
+  );
   const candidateRadarReadableResult = String(
     candidateRadarInterpretation.ordinary_result_summary ??
       "等待下一票雷达确认后的可读结论"
@@ -599,7 +605,7 @@ export default function NextSessionMap() {
       <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek，P5 解释治理继续收起为单独补证。</p>
       <div aria-label="next session latest candidate readable result">
         <h3>最近搜票可读结论</h3>
-        <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_interpretation_summary：确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放；本卡不创建 task、不补调数据源或模型，也不改 operation_zones。</p>
+        <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放；本卡不创建 task、不补调数据源或模型，也不改 operation_zones。</p>
         <MetricGrid
           items={[
             { label: "标的", value: String(candidateRadarReceipt.symbol ?? "--"), tone: candidateRadarReceipt.symbol ? "good" : "warn" },

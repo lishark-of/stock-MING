@@ -6353,6 +6353,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("setCandidateRadarCache(res.data ?? {})", page)
         self.assertIn("candidateRadarInterpretation", page)
         self.assertIn("search_quant_projection_interpretation_summary", page)
+        self.assertIn("candidateRadarCache.ordinary_result_quick_read_rows", page)
+        self.assertIn("candidateRadarCache.ordinary_result_handoff_rows", page)
         self.assertIn("ordinary_result_quick_read_rows", page)
         self.assertIn("ordinary_result_handoff_rows", page)
         self.assertIn("candidateRadarSmallDataWriteback", page)
@@ -6370,7 +6372,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         latest_candidate_result_start = page.index('aria-label="next session latest candidate readable result"')
         latest_candidate_result_end = page.index('aria-label="next session upstream one screen actions"', latest_candidate_result_start)
         latest_candidate_result_slice = page[latest_candidate_result_start:latest_candidate_result_end]
-        self.assertIn("CandidateRadar 的 search_quant_projection_interpretation_summary", latest_candidate_result_slice)
+        self.assertIn("CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows", latest_candidate_result_slice)
+        self.assertIn("旧 cache 再回退 search_quant_projection_interpretation_summary", latest_candidate_result_slice)
         self.assertIn("candidateRadarReadableResult", latest_candidate_result_slice)
         self.assertIn("candidateRadarReadableNextStep", latest_candidate_result_slice)
         self.assertIn("candidateRadarReadableBoundary", latest_candidate_result_slice)
