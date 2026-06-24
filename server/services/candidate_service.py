@@ -15194,6 +15194,98 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         or "",
         limit=160,
     )
+    if provider_ready:
+        recovery_status = "无 P2 阻断：Tushare-first ledger 已回放。"
+        recovery_next = "直接回放股票量化推演和次日图谱；缺口只作为待补证据。"
+        recovery_evidence = f"provider_call_source={provider_call_source}; provider_ready=True"
+    elif credential_missing_count:
+        recovery_status = "服务端 Tushare 凭据缺失；这是本地阻断，不是页面或输入框故障。"
+        recovery_next = "配置服务端凭据后重新点击确认按钮；页面刷新和 GET cache 不会自动补调 provider。"
+        recovery_evidence = "credential_missing_provider_count>0; provider_not_called"
+    elif provider_ledger_visible:
+        recovery_status = "部分 Tushare ledger 已回放；仍有接口待补齐。"
+        recovery_next = "补齐 Tushare light ledger 后再回放量化推演和次日图谱。"
+        recovery_evidence = f"provider_api_success={provider_api_success_count}/{provider_api_call_count}"
+    elif latest_task_id:
+        recovery_status = "确认任务已接收；等待 TaskStatusPanel 完成后刷新本地 cache。"
+        recovery_next = "先看任务状态；success 后刷新本地 cache，再看三面回放。"
+        recovery_evidence = f"task_id={latest_task_id}; current_step={latest_task_current_step}"
+    elif quant_receipt:
+        recovery_status = "已有本地搜票记录；等待点击确认创建 Tushare-first task。"
+        recovery_next = "点击确认并生成 3.0 量化推演；不要从输入框或回放行期待自动补数。"
+        recovery_evidence = "search_quant_projection_receipt"
+    else:
+        recovery_status = "等待有效股票代码和确认按钮。"
+        recovery_next = "先输入 6 位 A 股代码，再点击确认并生成 3.0 量化推演。"
+        recovery_evidence = "waiting_symbol_confirm"
+    ordinary_writeback_recovery_rows = [
+        {
+            "recovery_key": "current_p2_blocker",
+            "恢复项": "当前阻断",
+            "当前状态": recovery_status,
+            "用户下一步": recovery_next,
+            "证据": recovery_evidence,
+            "边界": "这张速读表只解释本地 cache / ledger / packet 状态；不会创建 task、不调用 provider/model。",
+            "readback_source": "search_quant_projection_small_data_writeback_summary",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "recovery_key": "allowed_user_action",
+            "恢复项": "允许动作",
+            "当前状态": "确认按钮是唯一可创建 Tushare-first 后台链路的普通入口。",
+            "用户下一步": recovery_next,
+            "证据": "POST /api/candidate-radar/quant-projection",
+            "边界": "输入、搜索、React render、GET cache 和结果链接都不能创建第二个 task 或补调 Tushare/DeepSeek。",
+            "readback_source": "local_task_contract",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "recovery_key": "deepseek_not_blocking",
+            "恢复项": "DeepSeek 状态",
+            "当前状态": "DeepSeek governed executor 单独补；P2 阻断恢复不等待模型。",
+            "用户下一步": "先恢复 Tushare-first / cache / ledger / packet 回放；模型解释留到 P5。",
+            "证据": "deepseek_skipped_or_governed_pending",
+            "边界": "DeepSeek 不是数据源，不能覆盖价格、factor、operation_zones 或 strategy action。",
+            "readback_source": "local_governance_policy",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     quant_receipt_ledger = [
         row for row in _as_list(quant_receipt.get("call_ledger")) if isinstance(row, dict)
     ]
@@ -16112,6 +16204,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_writeback_integrity_rows_are_cache_only": True,
         "ordinary_writeback_integrity_rows_create_task": False,
         "ordinary_writeback_integrity_rows_are_not_trade_signals": True,
+        "ordinary_writeback_recovery_rows": ordinary_writeback_recovery_rows,
+        "ordinary_writeback_recovery_row_count": len(ordinary_writeback_recovery_rows),
+        "ordinary_writeback_recovery_rows_are_cache_only": True,
+        "ordinary_writeback_recovery_rows_create_task": False,
+        "ordinary_writeback_recovery_rows_are_not_trade_signals": True,
         "ordinary_writeback_checkpoint_contract": ordinary_writeback_checkpoint_contract,
         "ordinary_writeback_checkpoint_is_cache_only": True,
         "ordinary_writeback_checkpoint_creates_task": False,
@@ -16259,6 +16356,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_writeback_integrity_row_count"] = summary.get(
         "ordinary_writeback_integrity_row_count", 0
     )
+    counts["search_quant_projection_writeback_recovery_row_count"] = summary.get(
+        "ordinary_writeback_recovery_row_count", 0
+    )
     writeback_checkpoint = _as_dict(summary.get("ordinary_writeback_checkpoint_contract"))
     counts["search_quant_projection_writeback_checkpoint_surface_count"] = writeback_checkpoint.get("surface_count", 0)
     counts["search_quant_projection_writeback_checkpoint_readable_surface_count"] = writeback_checkpoint.get(
@@ -16314,6 +16414,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_writeback_integrity_rows_are_cache_only"] = True
     policy["search_quant_projection_writeback_integrity_rows_create_task"] = False
     policy["search_quant_projection_writeback_integrity_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_writeback_recovery_rows_are_cache_only"] = True
+    policy["search_quant_projection_writeback_recovery_rows_create_task"] = False
+    policy["search_quant_projection_writeback_recovery_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_writeback_checkpoint_is_cache_only"] = True
     policy["search_quant_projection_writeback_checkpoint_creates_task"] = False
     policy["search_quant_projection_writeback_checkpoint_is_not_trade_signal"] = True

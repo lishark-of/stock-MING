@@ -841,6 +841,42 @@ export default function CandidateRadar() {
           边界: "packet 不含凭据、raw log 或交易动作；不覆盖 strategy action"
         }
       ];
+  const quantProjectionWritebackRecoveryRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_recovery_rows).map((row) => ({
+    恢复项: displayText(row["恢复项"] ?? row.recovery_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionSmallDataNextStep),
+    证据: displayText(row["证据"] ?? row.evidence),
+    边界: displayText(row["边界"] ?? row.boundary, quantProjectionSmallDataReadbackContract)
+  }));
+  const quantProjectionWritebackRecoveryDisplayRows = quantProjectionWritebackRecoveryRows.length
+    ? quantProjectionWritebackRecoveryRows
+    : [
+        {
+          恢复项: "当前阻断",
+          当前状态: quantProjectionProviderLedgerReady
+            ? "无 P2 阻断：Tushare-first ledger 已回放。"
+            : "等待确认任务或本地阻断写入；不是页面自动补数。",
+          用户下一步: quantProjectionProviderLedgerReady
+            ? "直接回放股票量化推演和次日图谱。"
+            : quantProjectionSmallDataNextStep,
+          证据: `provider_call_source=${quantProjectionProviderCallSource}`,
+          边界: "只解释本地 cache / ledger / packet 状态；不会创建 task、不调用 provider/model。"
+        },
+        {
+          恢复项: "允许动作",
+          当前状态: "确认按钮是唯一可创建 Tushare-first 后台链路的普通入口。",
+          用户下一步: "需要更新时重新点击确认按钮；输入、GET cache 和回放链接保持静默。",
+          证据: "POST /api/candidate-radar/quant-projection",
+          边界: "回放行不创建第二个 task，不补调 Tushare/DeepSeek。"
+        },
+        {
+          恢复项: "DeepSeek 状态",
+          当前状态: "DeepSeek governed executor 单独补；P2 阻断恢复不等待模型。",
+          用户下一步: "先恢复 Tushare-first / cache / ledger / packet 回放；模型解释留到 P5。",
+          证据: "deepseek_skipped_or_governed_pending",
+          边界: "DeepSeek 不是数据源，不能覆盖价格、factor、operation_zones 或 strategy action。"
+        }
+      ];
   const quantProjectionP2WritebackRailState = [
     quantProjectionSmallDataReady || searchQuantProjectionReceipt.status ? "cache_visible" : "cache_waiting",
     quantProjectionProviderLedgerReady
@@ -1721,6 +1757,11 @@ export default function CandidateRadar() {
           <h3>P2 三面完整性检查</h3>
           <p className="risk-note">普通用户再看这张完整性表：cache、call_ledger、packet 是否齐备；它优先读取服务端 ordinary_writeback_integrity_rows，只做本地回放。</p>
           <DataLineageTable rows={quantProjectionWritebackIntegrityRows} />
+        </div>
+        <div aria-label="candidate radar ordinary p2 writeback recovery">
+          <h3>P2 阻断恢复速读</h3>
+          <p className="risk-note">如果 Tushare-first 没有回放，先看这张表区分任务等待、服务端凭据阻断和 DeepSeek 单独补；它只读本地 cache，不创建任务。</p>
+          <DataLineageTable rows={quantProjectionWritebackRecoveryDisplayRows} />
         </div>
         <div aria-label="candidate radar ordinary p2 post confirm cache handoff">
           <h3>P2 确认后缓存回放交接</h3>

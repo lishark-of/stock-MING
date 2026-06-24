@@ -39134,6 +39134,26 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(small_data["ordinary_writeback_surface_summary_rows_create_task"])
         self.assertTrue(small_data["ordinary_writeback_surface_summary_rows_are_not_trade_signals"])
         self.assertEqual(small_data["ordinary_writeback_surface_summary_row_count"], 3)
+        self.assertTrue(small_data["ordinary_writeback_recovery_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_writeback_recovery_rows_create_task"])
+        self.assertTrue(small_data["ordinary_writeback_recovery_rows_are_not_trade_signals"])
+        self.assertEqual(small_data["ordinary_writeback_recovery_row_count"], 3)
+        self.assertEqual(packet["counts"]["search_quant_projection_writeback_recovery_row_count"], 3)
+        self.assertTrue(packet["policy"]["search_quant_projection_writeback_recovery_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_writeback_recovery_rows_create_task"])
+        self.assertTrue(packet["policy"]["search_quant_projection_writeback_recovery_rows_are_not_trade_signals"])
+        recovery_rows = {row["recovery_key"]: row for row in small_data["ordinary_writeback_recovery_rows"]}
+        self.assertEqual(set(recovery_rows), {"current_p2_blocker", "allowed_user_action", "deepseek_not_blocking"})
+        self.assertIn("无 P2 阻断", recovery_rows["current_p2_blocker"]["当前状态"])
+        self.assertIn("确认按钮是唯一可创建 Tushare-first", recovery_rows["allowed_user_action"]["当前状态"])
+        self.assertIn("P2 阻断恢复不等待模型", recovery_rows["deepseek_not_blocking"]["当前状态"])
+        self.assertFalse(any(row["creates_task_from_readback"] for row in small_data["ordinary_writeback_recovery_rows"]))
+        self.assertFalse(any(row["readback_external_calls_triggered"] for row in small_data["ordinary_writeback_recovery_rows"]))
+        self.assertFalse(any(row["contains_secret"] for row in small_data["ordinary_writeback_recovery_rows"]))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in small_data["ordinary_writeback_recovery_rows"]))
+        self.assertTrue(
+            all(row["does_not_modify_strategy_action"] for row in small_data["ordinary_writeback_recovery_rows"])
+        )
         self.assertEqual(packet["counts"]["search_quant_projection_writeback_surface_summary_row_count"], 3)
         self.assertTrue(packet["policy"]["search_quant_projection_writeback_surface_summary_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_writeback_surface_summary_rows_create_task"])
@@ -41363,6 +41383,46 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertIn("GET /api/candidate-radar/cache", cache["warnings"][0])
+
+    def test_candidate_radar_quant_projection_p2_recovery_rows_explain_missing_credentials(self):
+        small_data = candidate_service._search_quant_projection_small_data_writeback_summary(
+            {
+                "search_quant_projection_receipt": {
+                    "status": "quant_projection_local_receipt_ready_provider_model_pending",
+                    "symbol": "002008.SZ",
+                    "task_id": "local_task_1",
+                    "latest_task_id": "local_task_1",
+                    "latest_task_current_step": "candidate_radar_quant_projection_ready",
+                },
+                "search_quant_projection_acceptance_dry_run_receipt": {
+                    "credential_missing_provider_count": 1,
+                    "symbol": "002008.SZ",
+                    "include_tushare": True,
+                    "include_deepseek": False,
+                },
+            }
+        )
+
+        self.assertEqual(small_data["status"], "small_data_writeback_blocked_missing_credentials")
+        self.assertEqual(small_data["provider_call_source"], "not_called_missing_credentials_local_block")
+        self.assertTrue(small_data["ordinary_writeback_recovery_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_writeback_recovery_rows_create_task"])
+        self.assertTrue(small_data["ordinary_writeback_recovery_rows_are_not_trade_signals"])
+        recovery_rows = {row["recovery_key"]: row for row in small_data["ordinary_writeback_recovery_rows"]}
+        self.assertIn("不是页面或输入框故障", recovery_rows["current_p2_blocker"]["当前状态"])
+        self.assertIn("配置服务端凭据后重新点击确认按钮", recovery_rows["current_p2_blocker"]["用户下一步"])
+        self.assertEqual(
+            recovery_rows["current_p2_blocker"]["证据"],
+            "credential_missing_provider_count>0; provider_not_called",
+        )
+        self.assertIn("输入、搜索、React render、GET cache", recovery_rows["allowed_user_action"]["边界"])
+        self.assertIn("DeepSeek governed executor 单独补", recovery_rows["deepseek_not_blocking"]["当前状态"])
+        self.assertFalse(any(row["creates_task_from_readback"] for row in small_data["ordinary_writeback_recovery_rows"]))
+        self.assertFalse(any(row["readback_external_calls_triggered"] for row in small_data["ordinary_writeback_recovery_rows"]))
+        self.assertFalse(any(row["contains_secret"] for row in small_data["ordinary_writeback_recovery_rows"]))
+        self.assertFalse(any(row["tushare_called"] for row in small_data["ordinary_writeback_recovery_rows"]))
+        self.assertFalse(any(row["deepseek_called"] for row in small_data["ordinary_writeback_recovery_rows"]))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in small_data["ordinary_writeback_recovery_rows"]))
 
     def test_candidate_radar_full_pool_local_scan_endpoint_writes_local_receipt_only(self):
         self._with_meta_store()
