@@ -559,6 +559,47 @@ export default function CommandCenterHome() {
   const chokepointPayloadLedger = (chokepoint.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskCatalogPayloadLedger = (taskCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskIndexPayloadLedger = taskIndex?.call_ledger ?? [];
+  const dailyCommandLatestTask = tasks[0] ?? {};
+  const dailyCommandLatestTaskId = String(dailyCommandLatestTask.task_id ?? taskIndex?.latest_task_id ?? "");
+  const dailyCommandLatestTaskType = String(dailyCommandLatestTask.task_type ?? taskIndex?.latest_task_type ?? "--");
+  const dailyCommandLatestTaskStatus = String(dailyCommandLatestTask.status ?? taskIndex?.latest_task_status ?? "waiting");
+  const dailyCommandLatestTaskStep = String(dailyCommandLatestTask.current_step ?? "等待本地任务状态回放");
+  const dailyCommandLatestTaskSource = String(dailyCommandLatestTask.storage_source ?? "memory_or_sqlite_fallback");
+  const dailyCommandLatestTaskIsCandidate =
+    String(dailyCommandLatestTask.output_packet_key ?? "") === "command_center_3_candidate_radar_cache" ||
+    dailyCommandLatestTaskType.includes("candidate_radar_quant_projection");
+  const dailyCommandLatestTaskIsReplay = dailyCommandLatestTask.cache_replay_only === true;
+  const dailyCommandLatestTaskLabel = dailyCommandLatestTaskId
+    ? `${dailyCommandLatestTaskStatus}: ${dailyCommandLatestTaskType}`
+    : "暂无本地任务；先去下一票雷达输入代码并确认";
+  const dailyCommandLatestTaskNext = dailyCommandLatestTaskId
+    ? dailyCommandLatestTaskIsCandidate
+      ? "看下方任务状态；成功后进入股票量化推演和次日图谱回放"
+      : "看下方任务状态；按任务输出 packet 回放结果"
+    : "进入下一票雷达，输入股票代码，点击确认并生成 3.0 量化推演";
+  const dailyCommandLatestTaskRows = [
+    {
+      速读项: "最近任务",
+      当前状态: dailyCommandLatestTaskLabel,
+      用户下一步: dailyCommandLatestTaskNext,
+      证据: dailyCommandLatestTaskId || "GET /api/tasks",
+      边界: "首页只读任务目录；不会创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
+    },
+    {
+      速读项: "任务来源",
+      当前状态: dailyCommandLatestTaskIsReplay ? "来自 CandidateRadar cache 只读回放" : dailyCommandLatestTaskSource,
+      用户下一步: dailyCommandLatestTaskIsReplay ? "把它当最近确认链的进度回放，不当新的生产验收证据" : "继续看任务状态和输出 packet",
+      证据: dailyCommandLatestTaskSource,
+      边界: "cache replay 不创建任务、不补调 provider/model；只帮助普通用户看到已有进度。"
+    },
+    {
+      速读项: "当前步骤",
+      当前状态: dailyCommandLatestTaskStep,
+      用户下一步: dailyCommandLatestTaskStatus === "success" ? "刷新本地结果页回放" : "等待状态变化或回到下一票雷达重新确认",
+      证据: "task.current_step",
+      边界: "TaskStatusPanel 只轮询本地 FastAPI；不会自动重试、不会下单、不改 strategy action。"
+    }
+  ];
   const envelopeLedgerRows = [
     ...healthEnvelopeLedger.map((row) => ({ scope: "health", ...row })),
     ...bootstrapEnvelopeLedger.map((row) => ({ scope: "bootstrap_status", ...row })),
@@ -1113,6 +1154,27 @@ export default function CommandCenterHome() {
           <a href="#candidates" title="切换到下一票雷达；输入仍保持静默，确认按钮才创建 Tushare-first task" aria-label="open candidate radar from p0 usable card">下一票雷达</a>
         </div>
         <p className="risk-note">P0 ready 只说明本机前后端已接上；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。</p>
+      </PacketCard>
+      <PacketCard title="最近本地任务" subtitle="打开软件后直接看进度；只读回放 task/cache/ledger/packet" status={dailyCommandLatestTaskStatus}>
+        <MetricGrid
+          items={[
+            { label: "任务数", value: taskIndex?.task_count ?? tasks.length, tone: (taskIndex?.task_count ?? tasks.length) ? "good" : "warn" },
+            { label: "最近任务", value: dailyCommandLatestTaskId || "暂无", tone: dailyCommandLatestTaskId ? "good" : "warn" },
+            { label: "状态", value: dailyCommandLatestTaskStatus, tone: dailyCommandLatestTaskStatus === "success" ? "good" : dailyCommandLatestTaskStatus === "failed" ? "bad" : "warn" },
+            { label: "来源", value: dailyCommandLatestTaskIsReplay ? "cache 只读回放" : dailyCommandLatestTaskSource, tone: "good" },
+            { label: "下一步", value: dailyCommandLatestTaskNext },
+            { label: "边界", value: "首页只读任务状态；确认按钮之前不创建 task", tone: "good" }
+          ]}
+        />
+        <DataLineageTable rows={dailyCommandLatestTaskRows} />
+        <div className="actions" aria-label="daily command latest local task actions">
+          <a href="#candidates" title="切换到下一票雷达；输入代码后仍需确认按钮" aria-label="open candidate radar from latest local task">下一票雷达确认代码</a>
+          <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor projection from latest local task">股票量化推演</a>
+          <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session map from latest local task">次日图谱</a>
+          <a href="#tasks" title="切换到任务目录；只读查看完整任务列表" aria-label="open task monitor from latest local task">任务目录</a>
+        </div>
+        {dailyCommandLatestTaskId ? <TaskStatusPanel taskId={dailyCommandLatestTaskId} /> : null}
+        <p className="risk-note">本卡只读 `/api/tasks` 和具体 task 状态；不会补调 Tushare、DeepSeek 或 GitHub，也不会真实交易或修改 strategy action。</p>
       </PacketCard>
       <PacketCard title="今日作战台摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={dailyCommandStatusLabel}>
         <MetricGrid
