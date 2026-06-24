@@ -994,9 +994,17 @@ def _one_click_startup_summary(
         and desktop_launcher_contract.get("launcher_blocks_nonlocal_urls_before_probe") is True
     )
     open_is_gated = (
-        'if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$DESKTOP_PREFLIGHT_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then'
+        'if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$DESKTOP_PREFLIGHT_READY" != "1" ] || [ "$VITE_READY" != "1" ] || [ "$P0_STABILITY_READY" != "1" ]; then'
         in launcher_source
         and 'open "$APP_OPEN_URL"' in launcher_source
+    )
+    p0_stability_check_ready = (
+        "verify_p0_startup_stability" in launcher_source
+        and "P0 stability check: waiting ${P0_STABILITY_DWELL_SECONDS}s" in launcher_source
+        and "P0_STABILITY_READY=0" in launcher_source
+        and "P0_STABILITY_READY=1" in launcher_source
+        and "P0 stability ready=${P0_STABILITY_READY}" in launcher_source
+        and "P0 stability check failed" in launcher_source
     )
     success_handoff_visible = (
         "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
@@ -1039,6 +1047,11 @@ def _one_click_startup_summary(
             "vite_wait_before_open",
             vite_identity_ready,
             f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} waits for http://127.0.0.1:5173 to serve stock-MING Command Center 3.0 index HTML",
+        ),
+        row(
+            "p0_stability_check_before_open",
+            p0_stability_check_ready,
+            "launcher waits a short dwell, re-reads health/bootstrap/preflight/Vite, and blocks browser handoff unless P0_STABILITY_READY=1",
         ),
         row(
             "startup_failure_diagnostics_visible",
@@ -1169,6 +1182,7 @@ def _one_click_startup_summary(
         "desktop_preflight_cache_json_validated_before_open": desktop_preflight_wait_ready,
         "vite_wait_before_open": vite_identity_ready,
         "vite_frontend_identity_validated_before_open": vite_identity_ready,
+        "p0_stability_check_before_open": p0_stability_check_ready,
         "startup_failure_diagnostics_visible": startup_diagnostics_visible,
         "startup_diagnostic_urls_sanitized": startup_diagnostic_urls_sanitized,
         "launcher_display_urls_sanitized": desktop_launcher_contract.get("launcher_display_urls_sanitized") is True,
@@ -1278,6 +1292,11 @@ def _p0_local_connection_receipt(
             "launcher exits before opening the page when FastAPI health, bootstrap status, desktop preflight cache, or Vite identity is not ready",
         ),
         row(
+            "p0_stability_gate_before_page_open",
+            one_click_startup_summary.get("p0_stability_check_before_open") is True,
+            "launcher re-reads all four local readiness surfaces after a short dwell and blocks handoff if P0 stability fails",
+        ),
+        row(
             "ordinary_recovery_guidance_visible",
             bool(one_click_startup_summary.get("blocked_next_action"))
             and bool(one_click_startup_summary.get("diagnostic_surfaces")),
@@ -1319,6 +1338,7 @@ def _p0_local_connection_receipt(
         "ordinary_recovery_step_count": one_click_startup_summary.get("ordinary_recovery_step_count"),
         "ordinary_recovery_steps_are_read_only": True,
         "ordinary_recovery_steps_create_task": False,
+        "p0_stability_check_before_open": one_click_startup_summary.get("p0_stability_check_before_open") is True,
         "connection_contract_ready": ready,
         "current_runtime_live_connection_verified": False,
         "current_runtime_probe_executed_by_get_cache": False,
@@ -1580,6 +1600,13 @@ def _p0_post_startup_readback_rows(one_click_startup_summary: dict[str, Any]) ->
             "Vite 返回 Command Center 3.0 HTML，且页面入口可点击到预检、健康、雷达和量化推演。",
             "回启动器日志看 React/Vite 诊断，再检查 5173 是否被占用。",
             "只读前端入口，不调用 Tushare/DeepSeek/GitHub、不执行真实交易。",
+        ),
+        row(
+            "P0 stability check",
+            "启动器打开页面前已做短暂 dwell 后的四段复读。",
+            "FastAPI health、bootstrap status、desktop preflight cache 和 React/Vite 在 dwell 后仍 ready，且 P0_STABILITY_READY=1。",
+            "如果这里 check，回启动器看 P0 stability check failed，再按失败段重新恢复。",
+            "稳定性复核仍只读本地 GET/HTML；不创建 task、不调用 provider/model、不执行交易。",
         ),
     ]
 

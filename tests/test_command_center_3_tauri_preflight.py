@@ -128,7 +128,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("Check-only dependency boundary: does not require desktop/node_modules or npm", source)
         self.assertIn("probing URLs, writing logs, opening a browser, creating tasks", source)
         self.assertIn("unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher", source)
-        self.assertIn("wait for all four readiness checks", source)
+        self.assertIn("wait for all four readiness checks plus P0 stability dwell", source)
         self.assertLess(
             source.index('if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then'),
             source.index('mkdir -p "$LOG_DIR"'),
@@ -173,6 +173,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("Bootstrap status：${BOOTSTRAP_STATUS_DISPLAY} 已返回 runtime-mode packet", source)
         self.assertIn("Desktop preflight cache：${DESKTOP_PREFLIGHT_DISPLAY} 已返回一键启动 packet", source)
         self.assertIn("React/Vite 前端：${VITE_URL_DISPLAY} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL_DISPLAY}", source)
+        self.assertIn("P0 stability check：短暂 dwell 后复读 health、bootstrap status、desktop preflight cache 和 React/Vite 仍 ready，P0_STABILITY_READY=1。", source)
         self.assertIn("联通后下一步：打开下一票雷达（#candidates），输入股票代码", source)
         self.assertIn("只有确认按钮会创建 Tushare-first POST task", source)
         self.assertIn("DeepSeek 仍保持 governed/pending", source)
@@ -232,7 +233,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("frontend=http://127.0.0.1:5173", output)
         self.assertIn("open_route=http://127.0.0.1:5173/#home", output)
         self.assertIn("unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher", output)
-        self.assertIn("wait for all four readiness checks", output)
+        self.assertIn("wait for all four readiness checks plus P0 stability dwell", output)
         self.assertNotIn("Starting FastAPI...", output)
         self.assertNotIn("Starting React/Vite...", output)
         self.assertNotIn("Command Center 3.0 入口已启动", output)

@@ -361,8 +361,9 @@ print_post_startup_readback_checklist() {
   else
     echo "  4. React/Vite 前端：${VITE_URL_DISPLAY} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL_DISPLAY}，先看今日作战台的一键启动预检。"
   fi
-  echo "  5. 联通后下一步：打开下一票雷达（#candidates），输入股票代码；只有确认按钮会创建 Tushare-first POST task，DeepSeek 仍保持 governed/pending。"
-  echo "  6. P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
+  echo "  5. P0 stability check：短暂 dwell 后复读 health、bootstrap status、desktop preflight cache 和 React/Vite 仍 ready，P0_STABILITY_READY=1。"
+  echo "  6. 联通后下一步：打开下一票雷达（#candidates），输入股票代码；只有确认按钮会创建 Tushare-first POST task，DeepSeek 仍保持 governed/pending。"
+  echo "  7. P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
   echo "边界：启动后复核只读本地 GET 结果；不创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
 }
 
@@ -433,7 +434,7 @@ if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
   echo "Check-only mode: resolved launcher configuration without starting FastAPI, starting React/Vite, probing URLs, writing logs, opening a browser, creating tasks, calling providers/models, or touching trading paths."
   echo "Check-only dependency boundary: does not require desktop/node_modules or npm because it only prints sanitized local launcher configuration."
   echo "Check-only endpoints: health=${API_HEALTH_DISPLAY}; bootstrap=${BOOTSTRAP_STATUS_DISPLAY}; desktop_preflight=${DESKTOP_PREFLIGHT_DISPLAY}; frontend=${VITE_URL_DISPLAY}; open_route=${APP_URL_DISPLAY}"
-  echo "Check-only next action: unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher to start or reuse local FastAPI/Vite, wait for all four readiness checks, then open ${APP_URL_DISPLAY}."
+  echo "Check-only next action: unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher to start or reuse local FastAPI/Vite, wait for all four readiness checks plus P0 stability dwell, then open ${APP_URL_DISPLAY}."
   exit 0
 fi
 
