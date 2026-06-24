@@ -879,6 +879,56 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(any(row["contains_secret"] for row in handoff_rows.values()))
         self.assertTrue(all(row["does_not_execute_trades"] for row in handoff_rows.values()))
         self.assertTrue(all(row["does_not_modify_strategy_action"] for row in handoff_rows.values()))
+        self.assertEqual(migration["p6_direct_evidence_reentry_row_count"], 4)
+        self.assertEqual(len(migration["p6_direct_evidence_reentry_rows"]), 4)
+        p6_reentry_rows = {
+            row["gate_id"]: row for row in migration["p6_direct_evidence_reentry_rows"]
+        }
+        self.assertEqual(
+            set(p6_reentry_rows),
+            {
+                "current_head_direct_evidence_gate",
+                "remote_ci_review_gate",
+                "domain_specific_evidence_gate",
+                "production_boundary_guard",
+            },
+        )
+        self.assertIn(
+            "before changing any production_complete claim",
+            p6_reentry_rows["current_head_direct_evidence_gate"]["required_evidence"],
+        )
+        self.assertIn(
+            "local green alone is not release evidence",
+            p6_reentry_rows["remote_ci_review_gate"]["required_evidence"],
+        )
+        self.assertIn(
+            "provider call_ledger",
+            p6_reentry_rows["domain_specific_evidence_gate"]["required_evidence"],
+        )
+        self.assertIn(
+            "real-trading isolation",
+            p6_reentry_rows["production_boundary_guard"]["required_evidence"],
+        )
+        self.assertTrue(all(row["phase"] == "P6" for row in p6_reentry_rows.values()))
+        self.assertFalse(
+            any(row["can_close_ltg_from_reentry_row"] for row in p6_reentry_rows.values())
+        )
+        self.assertTrue(all(row["cache_only_readback"] for row in p6_reentry_rows.values()))
+        self.assertFalse(any(row["creates_task_from_get"] for row in p6_reentry_rows.values()))
+        self.assertFalse(any(row["creates_task_from_render"] for row in p6_reentry_rows.values()))
+        self.assertFalse(any(row["external_calls_triggered"] for row in p6_reentry_rows.values()))
+        self.assertFalse(any(row["tushare_called"] for row in p6_reentry_rows.values()))
+        self.assertFalse(any(row["deepseek_called"] for row in p6_reentry_rows.values()))
+        self.assertFalse(any(row["github_called"] for row in p6_reentry_rows.values()))
+        self.assertFalse(any(row["contains_secret"] for row in p6_reentry_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in p6_reentry_rows.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in p6_reentry_rows.values()))
+        self.assertTrue(
+            all(
+                row["evidence_boundary"] == "p6_reentry_rows_are_gates_not_14_ltg_closeout"
+                for row in p6_reentry_rows.values()
+            )
+        )
         runway_rows = {row["id"]: row for row in migration["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
         self.assertIn("P1", runway_rows["LTG-01"]["priority"])
@@ -33374,6 +33424,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(len(migration["data"]["usable_path_current_checkpoint_rows"]), 6)
         self.assertEqual(migration["data"]["usable_path_strict_closeout_handoff_row_count"], 7)
         self.assertEqual(len(migration["data"]["usable_path_strict_closeout_handoff_rows"]), 7)
+        self.assertEqual(migration["data"]["p6_direct_evidence_reentry_row_count"], 4)
+        self.assertEqual(len(migration["data"]["p6_direct_evidence_reentry_rows"]), 4)
         self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 14)
         runway_rows = {row["id"]: row for row in migration["data"]["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["data"]["ltg_next_acceptance_action_rows"]}

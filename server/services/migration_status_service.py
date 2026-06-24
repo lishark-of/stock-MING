@@ -1345,6 +1345,94 @@ def _build_usable_path_current_checkpoint_rows(
     return rows
 
 
+def _build_p6_direct_evidence_reentry_rows(
+    long_term_goal_summary: Mapping[str, Any],
+    handoff_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    p6_handoff = next((row for row in handoff_rows if row.get("phase") == "P6"), {})
+    remaining_count = int(long_term_goal_summary.get("strict_closeout_remaining_count") or 14)
+    closeout_state = str(long_term_goal_summary.get("strict_closeout") or "0/14")
+    rows = [
+        {
+            "gate_id": "current_head_direct_evidence_gate",
+            "gate": "current-head direct evidence before any LTG closeout",
+            "required_evidence": (
+                "select one LTG from ltg_next_acceptance_action_rows and collect current-head direct "
+                "evidence before changing any production_complete claim"
+            ),
+            "accepted_source": "current_head_local_gate + LTG-scoped direct observation",
+            "blocked_source": "usable_path_checkpoint/mock/matrix/sanitizer/local_receipt/docs_config_only",
+            "next_action": p6_handoff.get("first_reentry_action")
+            or "select_one_ltg_and_collect_safe_direct_evidence_for_current_head",
+        },
+        {
+            "gate_id": "remote_ci_review_gate",
+            "gate": "matching remote CI or safe failure review",
+            "required_evidence": (
+                "pair a fresh local gate with reviewed remote CI status or a safe failure excerpt; "
+                "local green alone is not release evidence"
+            ),
+            "accepted_source": "fresh_local_gate + remote_ci_review",
+            "blocked_source": "local_only_green_without_matching_remote_ci_review",
+            "next_action": "review_remote_ci_status_before_release_or_keep_as_blocker",
+        },
+        {
+            "gate_id": "domain_specific_evidence_gate",
+            "gate": "provider/browser/worker/storage/package proof by LTG scope",
+            "required_evidence": (
+                "collect provider call_ledger, model_ledger, browser QA, worker/storage, or package proof "
+                "according to the specific LTG"
+            ),
+            "accepted_source": p6_handoff.get("accepted_evidence_classes")
+            or "provider_call_ledger/model_ledger/browser_qa/worker_storage_package_evidence",
+            "blocked_source": "receipt_shape_without_domain_execution_or_direct_observation",
+            "next_action": "map_the_selected_ltg_to_its_required_evidence_class_before_execution",
+        },
+        {
+            "gate_id": "production_boundary_guard",
+            "gate": "strict closeout cannot mutate strategy action or trading paths",
+            "required_evidence": (
+                "durable receipts and release decision must preserve research-only boundaries, secret hygiene, "
+                "and real-trading isolation"
+            ),
+            "accepted_source": "durable_receipts + release_gate + safety_scan",
+            "blocked_source": "strategy_action_change/trade_execution/secret_leak/model_output_overwrite",
+            "next_action": "keep_candidate_radar_as_research_signal_until_explicit_trading_scope_exists",
+        },
+    ]
+    for index, row in enumerate(rows, start=1):
+        row.update(
+            {
+                "phase": "P6",
+                "order": index,
+                "status": "pending_current_head_direct_evidence",
+                "strict_closeout": closeout_state,
+                "strict_closeout_remaining_count": remaining_count,
+                "strict_closeout_reentry_gate": p6_handoff.get(
+                    "strict_closeout_reentry_gate",
+                    "p6_requires_current_head_direct_evidence_matrix_before_any_ltg_closeout",
+                ),
+                "reentry_evidence_order": p6_handoff.get(
+                    "reentry_evidence_order",
+                    "ltg_next_acceptance_action_rows_then_current_head_direct_evidence_then_durable_receipts_then_release_gate",
+                ),
+                "can_close_ltg_from_reentry_row": False,
+                "cache_only_readback": True,
+                "creates_task_from_get": False,
+                "creates_task_from_render": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "evidence_boundary": "p6_reentry_rows_are_gates_not_14_ltg_closeout",
+            }
+        )
+    return rows
+
+
 def _build_ltg_acceptance_runway_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     runway_rows: list[dict[str, Any]] = []
     for row in rows:
@@ -8461,6 +8549,10 @@ def build_migration_status() -> dict[str, Any]:
     usable_path_current_checkpoint_rows = _build_usable_path_current_checkpoint_rows(
         usable_path_strict_closeout_handoff_rows
     )
+    p6_direct_evidence_reentry_rows = _build_p6_direct_evidence_reentry_rows(
+        long_term_goal_summary,
+        usable_path_strict_closeout_handoff_rows,
+    )
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
     tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(
@@ -8491,6 +8583,8 @@ def build_migration_status() -> dict[str, Any]:
         "usable_path_current_checkpoint_row_count": len(usable_path_current_checkpoint_rows),
         "usable_path_strict_closeout_handoff_rows": usable_path_strict_closeout_handoff_rows,
         "usable_path_strict_closeout_handoff_row_count": len(usable_path_strict_closeout_handoff_rows),
+        "p6_direct_evidence_reentry_rows": p6_direct_evidence_reentry_rows,
+        "p6_direct_evidence_reentry_row_count": len(p6_direct_evidence_reentry_rows),
         "ltg_stage_scope_observed_rows": ltg_stage_scope_observed_rows,
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
         "tushare_deepseek_linkage_rows": tushare_deepseek_linkage_rows,
@@ -8531,6 +8625,7 @@ def build_migration_status() -> dict[str, Any]:
                 + len(ltg_next_acceptance_action_rows)
                 + len(usable_path_current_checkpoint_rows)
                 + len(usable_path_strict_closeout_handoff_rows)
+                + len(p6_direct_evidence_reentry_rows)
                 + len(ltg_stage_scope_observed_rows)
                 + len(tushare_deepseek_linkage_rows)
                 + len(tushare_deepseek_mode_layer_rows)
@@ -8552,6 +8647,7 @@ def build_migration_status() -> dict[str, Any]:
                 "usable_path_strict_closeout_handoff_row_count": len(
                     usable_path_strict_closeout_handoff_rows
                 ),
+                "p6_direct_evidence_reentry_row_count": len(p6_direct_evidence_reentry_rows),
                 "tushare_deepseek_linkage_row_count": len(tushare_deepseek_linkage_rows),
                 "tushare_deepseek_mode_layer_row_count": len(tushare_deepseek_mode_layer_rows),
                 "latest_tushare_deepseek_linkage_review_found": bool(

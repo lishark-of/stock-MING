@@ -349,6 +349,7 @@ export default function MigrationStatus() {
   const packetAcceptanceRunwayRows = (packet.ltg_acceptance_runway_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const usablePathCurrentCheckpointRows = (packet.usable_path_current_checkpoint_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const usablePathStrictCloseoutHandoffRows = (packet.usable_path_strict_closeout_handoff_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const p6DirectEvidenceReentryRows = (packet.p6_direct_evidence_reentry_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgNextAcceptanceActionRows = (packet.ltg_next_acceptance_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgNextAcceptanceReceiptRows = ltgNextAcceptanceActionRows.map((row) => ({
     queue_id: row.queue_id,
@@ -661,6 +662,7 @@ export default function MigrationStatus() {
           { label: "goals total", value: Number(longTermGoalSummary.strict_closeout_total_count ?? 14) },
           { label: "goals remaining", value: Number(longTermGoalSummary.strict_closeout_remaining_count ?? 14), tone: Number(longTermGoalSummary.strict_closeout_remaining_count ?? 14) ? "warn" : "good" },
           { label: "P6 handoff rows", value: usablePathStrictCloseoutHandoffRows.length, tone: usablePathStrictCloseoutHandoffRows.length ? "good" : "warn" },
+          { label: "P6 direct evidence gates", value: p6DirectEvidenceReentryRows.length, tone: p6DirectEvidenceReentryRows.length ? "warn" : "good" },
           { label: "mostly stable guardrails", value: Number(longTermBucketCounts.mostly_stable_guardrail ?? 0) },
           { label: "real validation required", value: Number(longTermBucketCounts.real_validation_required ?? 0) },
           { label: "productionization required", value: Number(longTermBucketCounts.productionization_required ?? 0) },
@@ -672,6 +674,11 @@ export default function MigrationStatus() {
         <h3>P6 可用化到 14 LTG strict closeout 交接</h3>
         <p className="risk-note">这张表把 P0-P5 可用化 checkpoint 对应回 14 LTG 的 direct evidence 下一步；它只读本地状态，不创建 task、不调用外部服务，也不能关闭任何 LTG。</p>
         <DataLineageTable rows={usablePathStrictCloseoutHandoffRows} />
+      </div>
+      <div aria-label="p6 direct evidence reentry gates">
+        <h3>P6 direct evidence 回归门禁</h3>
+        <p className="risk-note">这张表只列出回到 14 LTG strict closeout 前必须满足的 current-head direct evidence 门禁；它不是完成声明，也不会从页面渲染、搜索输入或 GET cache 创建 task。</p>
+        <DataLineageTable rows={p6DirectEvidenceReentryRows} />
       </div>
       <h3>14 LTG acceptance runway</h3>
       <p className="risk-note">这张表把每个长期目标的优先级、下一步验收动作和 observed pending 数集中到一处；它只读已有 roadmap/cache 合同，不创建任务、不调用外部服务，也不能关闭目标。</p>
