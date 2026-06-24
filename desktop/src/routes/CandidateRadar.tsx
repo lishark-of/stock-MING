@@ -587,6 +587,14 @@ export default function CandidateRadar() {
   const quantProjectionPersistedTaskStep = String(searchQuantProjectionReceipt.latest_task_current_step ?? searchQuantProjectionReceipt.status ?? "");
   const quantProjectionTaskReceiptPayload = (taskReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
   const quantProjectionAcceptedTaskSymbol = String(quantProjectionTaskReceiptPayload.symbol ?? searchQuantProjectionReceipt.symbol ?? "");
+  const quantProjectionTaskReceiptInputMismatch =
+    quantProjectionSymbolReady &&
+    Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
+    Boolean(quantProjectionAcceptedTaskSymbol) &&
+    quantProjectionAcceptedTaskSymbol !== quantProjectionSymbolValidation.normalized;
+  const quantProjectionInputSessionState = quantProjectionTaskReceiptInputMismatch
+    ? `已切换输入：旧 task 属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新点击确认。`
+    : "修改输入只切换本地输入会话；不会取消已创建后台 task、不创建新 task、不调用 Tushare/DeepSeek。";
   const quantProjectionTaskAlreadyAcceptedForInput =
     quantProjectionSymbolReady &&
     Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
@@ -640,6 +648,8 @@ export default function CandidateRadar() {
     ? "确认任务创建失败：未生成 task id；请检查本地后端连接后重试，页面不会补调 provider/model"
     : quantProjectionSubmitting
     ? "确认任务正在提交：按钮已暂时禁用；等待本地 FastAPI 返回 task id，避免重复创建后台链"
+    : quantProjectionTaskReceiptInputMismatch
+    ? `已切换输入：旧 task 属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新点击确认，页面不会把旧回执归属到新代码`
     : taskReceipt?.ok
     ? "确认任务已接收：先看 TaskStatusPanel，再通过 GET cache 回放 Tushare ledger、量化推演和次日图谱"
     : quantProjectionCanSubmit
@@ -1020,13 +1030,15 @@ export default function CandidateRadar() {
     ? `任务回放：${quantProjectionPersistedTaskId} / ${String(searchQuantProjectionReceipt.latest_task_status ?? "cache")} / ${quantProjectionPersistedTaskStep || "等待状态"}`
     : "任务回放：暂无；确认任务完成后写入本地 cache / packet";
   const quantProjectionLatestTaskState = taskReceipt
-    ? `最近任务：${String(taskReceipt.data?.task_id ?? taskReceipt.data?.task?.task_id ?? "--")} / ${taskReceipt.ok ? "已接收" : "创建失败"} / ${String(taskReceipt.data?.task?.current_step ?? taskReceipt.error ?? "等待状态轮询")}`
+    ? quantProjectionTaskReceiptInputMismatch
+      ? `最近任务属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认`
+      : `最近任务：${String(taskReceipt.data?.task_id ?? taskReceipt.data?.task?.task_id ?? "--")} / ${taskReceipt.ok ? "已接收" : "创建失败"} / ${String(taskReceipt.data?.task?.current_step ?? taskReceipt.error ?? "等待状态轮询")}`
     : quantProjectionPersistedTaskId
       ? `最近任务：${quantProjectionPersistedTaskId} / cache 回放 / ${quantProjectionPersistedTaskStep || "等待状态"}`
       : "最近任务：暂无；点击确认按钮后显示本地任务编号";
   const quantProjectionOrdinaryTaskRailState = [
     quantProjectionCanSubmit || quantProjectionDisplaySymbol ? "input_ready" : "input_waiting",
-    quantProjectionSubmitError ? "task_failed" : quantProjectionSubmitting ? "submitting" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "task_visible" : "task_waiting",
+    quantProjectionTaskReceiptInputMismatch ? "task_receipt_stale_for_input" : quantProjectionSubmitError ? "task_failed" : quantProjectionSubmitting ? "submitting" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "task_visible" : "task_waiting",
     quantProjectionSmallDataReady ? "cache_replay_ready" : "cache_replay_waiting"
   ].join(" ");
   const quantProjectionAcceptedTask = taskReceipt?.data?.task;
@@ -1070,7 +1082,7 @@ export default function CandidateRadar() {
     },
     {
       label: "任务接收",
-      state: quantProjectionSubmitError ? ("blocked" as const) : quantProjectionSubmitting ? ("active" as const) : (taskReceipt?.ok || quantProjectionAcceptedTaskId) ? ("done" as const) : ("waiting" as const),
+      state: quantProjectionSubmitError ? ("blocked" as const) : quantProjectionSubmitting ? ("active" as const) : quantProjectionTaskReceiptInputMismatch ? ("waiting" as const) : (taskReceipt?.ok || quantProjectionAcceptedTaskId) ? ("done" as const) : ("waiting" as const),
       detail: quantProjectionLatestTaskState
     },
     {
@@ -1710,6 +1722,7 @@ export default function CandidateRadar() {
           <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
           <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
         </div>
+        <p className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
         {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
         <div aria-label="quant projection submit recovery quick read">
@@ -1781,6 +1794,7 @@ export default function CandidateRadar() {
             >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
+          <p className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
           {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
