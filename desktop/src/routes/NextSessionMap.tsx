@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getNextSessionCache, postTask, type TaskCreationEnvelope } from "../api/client";
+import { getCandidateRadarCache, getNextSessionCache, postTask, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -26,6 +26,7 @@ function isCacheMissingError(message: string | null | undefined): boolean {
 
 export default function NextSessionMap() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
+  const [candidateRadarCache, setCandidateRadarCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [cacheMissingMessage, setCacheMissingMessage] = useState("");
@@ -77,9 +78,14 @@ export default function NextSessionMap() {
       setProductionPromotionReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const refreshCandidateRadarCache = () =>
+    void getCandidateRadarCache().then((res) => {
+      if (res.ok !== false) setCandidateRadarCache(res.data ?? {});
+    });
 
   useEffect(() => {
     refreshCache();
+    refreshCandidateRadarCache();
   }, []);
 
   const legacy = packet.legacy_projection_cache as Record<string, unknown> | undefined;
@@ -182,6 +188,8 @@ export default function NextSessionMap() {
   const packetOrdinaryResultReplayRows = rowsFromArray(packet.ordinary_result_replay_rows);
   const packetOrdinaryChartReviewRows = rowsFromArray(packet.ordinary_chart_review_rows);
   const packetOrdinaryConditionQuickReadRows = rowsFromArray(packet.ordinary_condition_quick_read_rows);
+  const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarOneScreenRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
   const ordinaryResultReplayStatus = String(
     packet.ordinary_result_replay_status ??
       (chartSummary.has_drawable_data === true ? "ready_cache_replay" : "waiting_for_cache_or_manual_task")
@@ -282,6 +290,47 @@ export default function NextSessionMap() {
       边界: nextSessionReplayDestinationBoundary
     }
   ];
+  const nextSessionUpstreamOneScreenRows = candidateRadarOneScreenRows.length
+    ? candidateRadarOneScreenRows.map((row) => ({
+        行动: String(row["行动"] ?? row.action_key ?? "行动"),
+        当前状态: String(row["当前状态"] ?? row.status ?? "等待上游回放"),
+        用户下一步: String(row["用户下一步"] ?? row.next_action ?? nextSessionChartReviewOrder),
+        入口: String(row["入口"] ?? row.entry ?? "下一票雷达"),
+        边界: String(row["边界"] ?? row.boundary ?? "次日图谱页只读回放 CandidateRadar packet；不会从图谱页创建 task 或调用模型。")
+      }))
+    : [
+        {
+          行动: "1. 确认",
+          当前状态: chartSummary.has_drawable_data === true ? "上游确认链等待 CandidateRadar packet 回放" : "等待下一票雷达确认代码",
+          用户下一步: chartSummary.has_drawable_data === true ? nextSessionChartReviewOrder : "回下一票雷达输入代码并点击确认按钮",
+          入口: "#candidates",
+          边界: "图谱页不接收代码输入；换标的必须回下一票雷达确认按钮，链接只做本地切换。"
+        },
+        {
+          行动: "2. 任务",
+          当前状态: "等待 CandidateRadar task id / TaskStatusPanel 回放",
+          用户下一步: "确认任务完成后刷新本地 cache，再回到次日图谱读路径和操作区",
+          入口: "下一票雷达确认按钮 / TaskStatusPanel",
+          边界: "只有下一票雷达确认按钮可创建 Tushare-first POST task；图谱页不提交上游 task。"
+        },
+        {
+          行动: "3. 写回",
+          当前状态: ordinaryResultReplayStatus,
+          用户下一步: "确认 cache、call_ledger、packet 已经能支撑图谱回放",
+          入口: "next-session cache / call_ledger / packet",
+          边界: "写回只读本地 cache / ledger / packet；不补调 provider/model、不展示 token/key。"
+        },
+        {
+          行动: "4. 结果",
+          当前状态: nextSessionLastResultLabel,
+          用户下一步: nextSessionChartReviewOrder,
+          入口: "图表路径 / 参考线 / operation_zones",
+          边界: nextSessionResearchOnlyLabel
+        }
+      ];
+  const nextSessionUpstreamOneScreenLabel = nextSessionUpstreamOneScreenRows
+    .map((row) => `${row.行动}: ${row.当前状态}`)
+    .join(" / ");
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
   const nextSessionOrdinaryReplayBoundaryBlocked =
     packet.does_not_modify_action === false || packet.does_not_modify_operation_zones === false;
@@ -475,6 +524,7 @@ export default function NextSessionMap() {
           { label: "最近结果", value: nextSessionLastResultLabel },
           { label: "查看顺序", value: nextSessionChartReviewOrder },
           { label: "回放来源", value: nextSessionReplayOrigin, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
+          { label: "上游确认链", value: nextSessionUpstreamOneScreenLabel, tone: candidateRadarOneScreenRows.length ? "good" : "warn" },
           { label: "回放路径", value: nextSessionReplayPath, tone: "good" },
           { label: "回放入口边界", value: nextSessionReplayDestinationBoundary, tone: "good" },
           { label: "操作区边界", value: nextSessionOperationZoneBoundary, tone: "good" },
@@ -492,6 +542,11 @@ export default function NextSessionMap() {
         steps={nextSessionOrdinaryReplayRailSteps}
       />
       <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek，DeepSeek governed executor 继续收起为 P5 单独补证。</p>
+      <div aria-label="next session upstream one screen actions">
+        <h3>上游确认一屏行动</h3>
+        <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成图谱页上游速读；本页只读回放，不创建 task、不调用模型。</p>
+        <DataLineageTable rows={nextSessionUpstreamOneScreenRows} />
+      </div>
       <div aria-label="next session p3 one minute read">
         <h3>P3 一分钟读图</h3>
         <p className="risk-note">普通用户先看这张表：用一分钟确认来源、可读结论、operation_zones、缺口和回流入口；它只读本地 next-session cache。</p>
