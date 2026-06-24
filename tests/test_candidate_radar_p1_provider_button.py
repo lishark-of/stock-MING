@@ -102,6 +102,7 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("setTaskId(acceptedTaskId);", submit_slice)
         self.assertIn('setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage("missing_task_id"));', submit_slice)
         self.assertIn("setTaskReceipt(null);", submit_slice)
+        self.assertEqual(submit_slice.count('setTaskId("");'), 3)
         self.assertIn("本地 FastAPI 后端未连接；请先用一键启动器恢复连接。", source)
         self.assertIn("本地任务接口返回失败；请稍后重试或查看系统健康页。", source)
         self.assertIn("quantProjectionSubmitAriaLabel", source)

@@ -161,13 +161,16 @@ export default function CandidateRadar() {
         setTaskId(acceptedTaskId);
         refreshCache();
       } else if (res.ok) {
+        setTaskId("");
         setTaskReceipt(null);
         setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage("missing_task_id"));
       } else {
+        setTaskId("");
         setTaskReceipt(res);
         setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage(res.error));
       }
     }).catch(() => {
+      setTaskId("");
       setTaskReceipt(null);
       setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage("frontend_submit_exception"));
     }).finally(() => setQuantProjectionSubmitting(false));

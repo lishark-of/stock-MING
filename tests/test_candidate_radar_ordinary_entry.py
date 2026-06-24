@@ -363,6 +363,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("setTaskId(acceptedTaskId);", self.page)
         self.assertIn('setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage("missing_task_id"));', self.page)
         self.assertIn("setTaskReceipt(null);", self.page)
+        submit_start = self.page.index("const launchQuantProjection = () =>")
+        submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
+        submit_slice = self.page[submit_start:submit_end]
+        self.assertEqual(submit_slice.count('setTaskId("");'), 3)
         self.assertIn("P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status 和 candidate cache", self.page)
         self.assertIn("本页不会从输入或渲染创建 Tushare-first task", self.page)
         self.assertIn("正在提交 Tushare-first 后台链；请等待本地 task id，页面不会重复创建第二个 task。", self.page)
