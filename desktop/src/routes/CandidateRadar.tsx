@@ -2220,6 +2220,11 @@ export default function CandidateRadar() {
           {quantProjectionTaskPanelStaleNotice ? (
             <p className="ordinary-status-note" aria-live="polite">{quantProjectionTaskPanelStaleNotice}</p>
           ) : null}
+          <div aria-label="candidate radar first screen post confirm readback guide">
+            <h3>确认后看什么</h3>
+            <p className="risk-note">点击确认后按这张清单走：先看任务编号，再看任务进度，success 后刷新本地 cache，最后回放量化推演和次日图谱；这张清单只读页面状态，不创建第二个 task。</p>
+            <DataLineageTable rows={quantProjectionPostConfirmActionRows} />
+          </div>
         </div>
         <div aria-label="candidate radar p1 direct confirmation handoff">
           <h3>P1 直接确认入口</h3>
