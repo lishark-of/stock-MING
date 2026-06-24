@@ -31,12 +31,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "候选来源"',
             'label: "评分说明"',
             'label: "可选补证"',
-            'label: "cache"',
-            'label: "Tushare"',
-            'label: "DeepSeek"',
-            'label: "pending"',
-            'label: "degraded"',
-            'label: "last_successful_cache/result"',
+            'label: "本地缓存"',
+            'label: "数据链"',
+            'label: "解释状态"',
+            'label: "待补证据"',
+            'label: "降级提示"',
+            'label: "最近成功回放"',
             'label: "缺少证据"',
             'label: "阻断/降级"',
             'label: "最近可用缓存"',
@@ -44,6 +44,18 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "仅供研究"',
         ):
             self.assertIn(required_label, self.page)
+        summary_start = self.page.index('title="普通用户雷达摘要"')
+        summary_end = self.page.index('title="下一票候选池"', summary_start)
+        summary_slice = self.page[summary_start:summary_end]
+        for engineering_label in (
+            'label: "cache"',
+            'label: "Tushare"',
+            'label: "DeepSeek"',
+            'label: "pending"',
+            'label: "degraded"',
+            'label: "last_successful_cache/result"',
+        ):
+            self.assertNotIn(engineering_label, summary_slice)
 
         self.assertLess(self.page.index('title="普通用户雷达摘要"'), self.page.index("<summary>开发 / 审计指标</summary>"))
         self.assertLess(self.page.index('title="下一票候选池"'), self.page.index("<summary>扫描覆盖 / 验收审计</summary>"))
@@ -235,7 +247,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("待 governed executor；不作为数据源或动作", deepseek_label_slice)
         self.assertNotIn("轻量实时后台任务", deepseek_label_slice)
         self.assertNotIn("轻量实时后台任务", summary_slice)
-        self.assertIn('{ label: "DeepSeek", value: ordinaryDeepSeekSourceLabel }', summary_slice)
+        self.assertIn('{ label: "解释状态", value: ordinaryDeepSeekSourceLabel }', summary_slice)
         self.assertNotIn('DeepSeek", value: bootstrapLiveLight.deepseek_on_open === true ? "轻量实时后台任务"', summary_slice)
 
     def test_candidate_radar_p1_to_p3_stage_rail_is_read_only_before_tables(self):
