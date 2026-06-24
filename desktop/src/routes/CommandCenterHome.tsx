@@ -1097,6 +1097,23 @@ export default function CommandCenterHome() {
         </div>
         <p className="risk-note">这张卡只读 FastAPI health、bootstrap status 和 desktop preflight cache；不会启动服务、不会创建 task、不会调用 Tushare/DeepSeek/GitHub，也不会暴露 token/key。</p>
       </PacketCard>
+      <PacketCard title="P0 现在能不能用" subtitle="普通用户打开软件后的 10 秒判断" status={dailyCommandP0LocalReadinessReady ? "ready" : "check"}>
+        <MetricGrid
+          items={[
+            { label: "结论", value: dailyCommandP0LocalReadinessReady ? "可以用：本地四段已接上" : "先恢复：本地四段还没全部 ready", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+            { label: "现在点哪里", value: dailyCommandPrimaryActionLabel, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+            { label: "失败看哪里", value: "桌面壳预检里的 FastAPI / bootstrap / preflight / React 分段诊断", tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+            { label: "进入 P1 条件", value: "health、bootstrap、desktop preflight、React 四段 ready 后再确认股票代码", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+            { label: "边界", value: "这张卡只读本地状态；不启动服务、不创建 task、不调用 provider/model", tone: "good" }
+          ]}
+        />
+        <div className="actions" aria-label="daily command p0 now usable actions">
+          <a href={dailyCommandPrimaryActionHref} aria-label="open p0 recommended next action">{dailyCommandPrimaryActionLabel}</a>
+          <a href="#desktop" title="切换到桌面壳预检；只读查看本地四段诊断" aria-label="open p0 diagnostics from now usable card">查看四段诊断</a>
+          <a href="#candidates" title="切换到下一票雷达；输入仍保持静默，确认按钮才创建 Tushare-first task" aria-label="open candidate radar from p0 usable card">下一票雷达</a>
+        </div>
+        <p className="risk-note">P0 ready 只说明本机前后端已接上；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。</p>
+      </PacketCard>
       <PacketCard title="今日作战台摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={dailyCommandStatusLabel}>
         <MetricGrid
           items={[

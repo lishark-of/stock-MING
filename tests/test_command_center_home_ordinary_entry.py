@@ -16,6 +16,9 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("先看下一步、数据来源、缺少证据和仅供研究边界", source)
         self.assertIn('title="本地 FastAPI 接线速读"', source)
         self.assertLess(source.index('title="本地 FastAPI 接线速读"'), source.index('title="今日作战台摘要"'))
+        self.assertIn('title="P0 现在能不能用"', source)
+        self.assertLess(source.index('title="本地 FastAPI 接线速读"'), source.index('title="P0 现在能不能用"'))
+        self.assertLess(source.index('title="P0 现在能不能用"'), source.index('title="今日作战台摘要"'))
         self.assertIn('title="今日作战台摘要"', source)
         self.assertIn("下一步、来源、缺口、边界和最近可用缓存", source)
         self.assertIn('label: "下一步"', source)
@@ -243,7 +246,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
     def test_local_fastapi_connection_card_is_first_screen_and_read_only(self):
         source = self.source
         card_start = source.index('title="本地 FastAPI 接线速读"')
-        card_end = source.index('title="今日作战台摘要"', card_start)
+        card_end = source.index('title="P0 现在能不能用"', card_start)
         card = source[card_start:card_end]
 
         self.assertIn("打开软件后先看这张卡", card)
@@ -266,6 +269,36 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("fetch(", card)
         self.assertNotIn("postTask", card)
         self.assertNotIn("postBootstrapLiveStartup", card)
+
+    def test_p0_now_usable_card_is_short_read_only_status(self):
+        source = self.source
+        card_start = source.index('title="P0 现在能不能用"')
+        card_end = source.index('title="今日作战台摘要"', card_start)
+        card = source[card_start:card_end]
+
+        self.assertIn("普通用户打开软件后的 10 秒判断", card)
+        self.assertIn('status={dailyCommandP0LocalReadinessReady ? "ready" : "check"}', card)
+        self.assertIn('label: "结论"', card)
+        self.assertIn("可以用：本地四段已接上", card)
+        self.assertIn("先恢复：本地四段还没全部 ready", card)
+        self.assertIn('label: "现在点哪里"', card)
+        self.assertIn("dailyCommandPrimaryActionLabel", card)
+        self.assertIn('label: "失败看哪里"', card)
+        self.assertIn("桌面壳预检里的 FastAPI / bootstrap / preflight / React 分段诊断", card)
+        self.assertIn('label: "进入 P1 条件"', card)
+        self.assertIn("health、bootstrap、desktop preflight、React 四段 ready 后再确认股票代码", card)
+        self.assertIn('aria-label="daily command p0 now usable actions"', card)
+        self.assertIn('href={dailyCommandPrimaryActionHref}', card)
+        self.assertIn('href="#desktop"', card)
+        self.assertIn('href="#candidates"', card)
+        self.assertIn("输入仍保持静默，确认按钮才创建 Tushare-first task", card)
+        self.assertIn("这张卡只读本地状态；不启动服务、不创建 task、不调用 provider/model", card)
+        self.assertIn("不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成", card)
+        self.assertNotIn("onClick=", card)
+        self.assertNotIn("fetch(", card)
+        self.assertNotIn("postTask", card)
+        self.assertNotIn("postBootstrapLiveStartup", card)
+        self.assertNotIn("launchLiveBootstrap", card)
 
     def test_daily_command_center_source_and_boundary_are_visible(self):
         source = self.source
