@@ -2642,14 +2642,14 @@ export default function CandidateRadar() {
             <p className="risk-note">点确认后先看这里：任务是否接收、最近 task、Tushare-first 和 P2 回放状态会直接出现在普通视图，不需要展开工程明细。</p>
             <MetricGrid items={quantProjectionP1ProgressItems} />
           </div>
+          <details className="developer-audit-details" aria-label="quant projection ordinary p1 p2 engineering details">
+            <summary>P1/P2 任务与写入详情</summary>
+            <p className="risk-note">普通主视图先保留状态轨、可读结论和回放入口；确认门控、task receipt、cache / ledger / packet 写入面默认收起，不影响确认按钮动作。</p>
           <div aria-label="quant projection ordinary confirm trigger boundary">
             <h3>P1 触发边界</h3>
             <p className="risk-note">优先读取服务端 ordinary_confirm_trigger_boundary_rows：输入只校验，确认按钮才创建 Tushare-first POST task，GET cache 和 React render 只回放本地结果。</p>
             <DataLineageTable rows={quantProjectionConfirmTriggerBoundaryRows} />
           </div>
-          <details className="developer-audit-details" aria-label="quant projection ordinary p1 p2 engineering details">
-            <summary>P1/P2 任务与写入详情</summary>
-            <p className="risk-note">普通主视图先保留状态轨、可读结论和回放入口；确认门控、task receipt、cache / ledger / packet 写入面默认收起，不影响确认按钮动作。</p>
           <div aria-label="quant projection p1 confirm gate checklist">
             <h3>P1 确认门控清单</h3>
             <p className="risk-note">优先读取服务端 ordinary_confirm_button_readiness_rows；先看代码是否通过本地校验，再点击一次确认按钮；提交后看 task id 和 TaskStatusPanel，失败先回 P0 联通恢复。这张表只读页面状态，不创建 task。</p>
