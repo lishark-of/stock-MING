@@ -438,6 +438,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertIn("Tushare provider ledger 已写入", readback_rows["call_ledger"]["ordinary_label"])
         self.assertEqual(readback_rows["packet"]["status"], "written")
         self.assertIn("packet=command_center_3_candidate_radar_cache", readback_rows["packet"]["ordinary_label"])
+
         for readback_row in readback_rows.values():
             self.assertFalse(readback_row["external_calls_triggered"])
             self.assertFalse(readback_row["tushare_called"])
@@ -1131,6 +1132,54 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", dumped)
         self.assertNotIn("TUSHARE_TOKEN", dumped)
         self.assertNotIn("DEEPSEEK_API_KEY", dumped)
+
+    def test_ready_provider_receipt_without_call_ledger_does_not_complete_p2_writeback(self):
+        packet = candidate_service._attach_search_quant_projection_small_data_writeback_summary(
+            {
+                "search_quant_projection_receipt": {
+                    "schema_version": "candidate_radar_search_quant_projection_receipt.v1",
+                    "status": "quant_projection_local_receipt_ready_provider_model_pending",
+                    "symbol": "002008.SZ",
+                    "symbol_valid": True,
+                    "task_id": "local-confirm-task",
+                },
+                "search_quant_provider_model_acceptance_receipt": {
+                    "schema_version": "candidate_radar_search_quant_provider_model_acceptance.v1",
+                    "status": "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
+                    "symbol": "002008.SZ",
+                    "tushare_call_ledger_evidence_done": True,
+                    "provider_api_call_count": 4,
+                    "provider_api_success_count": 4,
+                    "provider_call_ledger": [],
+                    "deepseek_skipped_by_request": True,
+                },
+                "counts": {},
+                "policy": {},
+            }
+        )
+
+        small_data = packet["search_quant_projection_small_data_writeback_summary"]
+        self.assertEqual(
+            small_data["status"],
+            "small_data_writeback_blocked_missing_provider_call_ledger",
+        )
+        self.assertEqual(small_data["provider_call_source"], "provider_receipt_ready_without_call_ledger")
+        self.assertFalse(small_data["small_data_writeback_ready"])
+        self.assertFalse(small_data["provider_call_ledger_written"])
+        self.assertEqual(small_data["provider_call_ledger_api_count"], 0)
+        self.assertEqual(packet["search_quant_projection_small_data_writeback_ready"], False)
+
+        checkpoint = packet["search_quant_projection_writeback_checkpoint"]
+        self.assertFalse(checkpoint["provider_ledger_ready"])
+        self.assertEqual(checkpoint["call_ledger_state"], "provider_receipt_ready_missing_call_ledger")
+        self.assertLess(checkpoint["complete_surface_count"], checkpoint["surface_count"])
+
+        confirm_checkpoint = packet["search_quant_projection_confirm_chain_checkpoint"]
+        self.assertEqual(
+            confirm_checkpoint["status"],
+            "p1_confirm_chain_task_accepted",
+        )
+        self.assertFalse(confirm_checkpoint["provider_ledger_ready"])
 
     def test_confirm_tushare_first_blocks_missing_credentials_without_provider_call(self):
         self._with_meta_store()

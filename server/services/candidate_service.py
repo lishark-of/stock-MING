@@ -14876,11 +14876,19 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
     provider_api_call_count = int(provider_receipt.get("provider_api_call_count") or len(provider_ledger) or 0)
     provider_api_success_count = int(provider_receipt.get("provider_api_success_count") or 0)
     credential_missing_count = int(dry_run.get("credential_missing_provider_count") or 0)
-    provider_ready = provider_receipt.get("tushare_call_ledger_evidence_done") is True
-    provider_ledger_visible = provider_ready or provider_api_success_count > 0
+    provider_receipt_ready = provider_receipt.get("tushare_call_ledger_evidence_done") is True
+    provider_ledger_external_call_observed = any(
+        row.get("external_calls_triggered") is True
+        or row.get("external") is True
+        or row.get("tushare_called") is True
+        for row in provider_ledger
+    )
+    provider_ready = bool(provider_receipt_ready and provider_ledger and provider_api_success_count > 0)
+    provider_ledger_visible = bool(provider_ledger and (provider_ready or provider_api_success_count > 0))
     provider_external_call_observed = (
-        provider_receipt.get("external_calls_triggered_by_task") is True
-        or provider_receipt.get("provider_execution_implemented") is True
+        provider_ledger_external_call_observed
+        or (provider_receipt.get("external_calls_triggered_by_task") is True and bool(provider_ledger))
+        or (provider_receipt.get("provider_execution_implemented") is True and bool(provider_ledger))
     )
     cache_packet_written = bool(quant_receipt or dry_run or execution_request or provider_receipt)
     provider_acceptance_task_id = _safe_text(provider_receipt.get("task_id") or "", limit=128)
@@ -14915,6 +14923,8 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         provider_call_source = "post_task_call_ledger"
     elif credential_missing_count:
         provider_call_source = "not_called_missing_credentials_local_block"
+    elif provider_receipt_ready and not provider_ledger:
+        provider_call_source = "provider_receipt_ready_without_call_ledger"
     elif provider_ledger_visible:
         provider_call_source = "partial_post_task_call_ledger"
     else:
@@ -14941,6 +14951,14 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         ordinary_readback_summary = "小数据已写入 P0 gate 阻断：确认链路没有进入 Tushare-first provider task。"
         ordinary_readback_next_step = "回系统健康/一键启动预检确认 P0 ready 后，再重新点击确认按钮。"
         ordinary_readback_stage_label = "P0 确认闸门未通过；本地阻断已写入，页面不会补调 provider。"
+    elif provider_receipt_ready and not provider_ledger:
+        status = "small_data_writeback_blocked_missing_provider_call_ledger"
+        summary_label = "cache / packet 已回放 provider receipt，但缺少接口级 call_ledger；不能算 P2 三面完成。"
+        next_action = "重新点击确认按钮生成 Tushare-first POST task ledger；GET cache 不会补调 provider。"
+        ordinary_readback_status = "blocked_missing_provider_call_ledger"
+        ordinary_readback_summary = "小数据回放缺少 Tushare provider call_ledger；只显示本地 receipt，不能当作已完成账本。"
+        ordinary_readback_next_step = "重新点击确认按钮，让 POST task 写入接口级 call_ledger 后再回放量化推演。"
+        ordinary_readback_stage_label = "provider receipt 可见但接口级 call_ledger 缺失；P2 仍未完成。"
     elif credential_missing_count:
         status = "small_data_writeback_blocked_missing_credentials"
         summary_label = "cache / ledger / packet 已写入本地阻断：缺少服务端 Tushare 凭据；未调用 provider。"
@@ -15136,6 +15154,9 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             f"部分 provider ledger 可回放：Tushare {provider_api_success_count}/{provider_api_call_count} 个接口"
         )
         call_ledger_surface_next = "补齐 Tushare light ledger 后再回放本地结果。"
+    elif provider_receipt_ready and not provider_ledger:
+        call_ledger_surface_status = "provider receipt 显示 ready，但接口级 call_ledger 缺失"
+        call_ledger_surface_next = "重新点击确认按钮，让 POST task 写入 Tushare call_ledger；GET cache 不会补调 provider。"
     elif execution_request_ready:
         call_ledger_surface_status = "执行申请已 ready；等待按钮门控 provider task 写入 ledger"
         call_ledger_surface_next = "运行显式 Tushare-first provider task；DeepSeek 仍保持 skipped。"
@@ -15305,6 +15326,8 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         if credential_missing_count
         else "partial_post_task_ledger"
         if provider_ledger_visible
+        else "provider_receipt_ready_missing_call_ledger"
+        if provider_receipt_ready and not provider_ledger
         else "waiting_provider_ledger"
         if execution_request
         else "waiting_confirm_task"
