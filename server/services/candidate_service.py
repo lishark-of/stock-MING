@@ -70,6 +70,9 @@ QUANT_PROJECTION_DEEPSEEK_GOVERNED_EXECUTOR_CONTRACT_SCHEMA_VERSION = (
 QUANT_PROJECTION_CONFIRM_CHAIN_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_confirm_chain.v1"
 )
+QUANT_PROJECTION_CONFIRM_CHAIN_CHECKPOINT_SCHEMA_VERSION = (
+    "candidate_radar_search_quant_projection_confirm_chain_checkpoint.v1"
+)
 QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE = (
     "run_candidate_radar_quant_projection_provider_model_acceptance"
 )
@@ -16826,6 +16829,63 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         "complete_surface_count",
         0,
     )
+    confirm_stage_rows = [
+        row for row in _as_list(summary.get("ordinary_confirm_replay_stage_rows")) if isinstance(row, dict)
+    ]
+    confirm_stage = _as_dict(confirm_stage_rows[0] if confirm_stage_rows else {})
+    confirmed_receipt_rows = [
+        row for row in _as_list(summary.get("ordinary_confirmed_task_receipt_rows")) if isinstance(row, dict)
+    ]
+    confirm_task_written = any(
+        row.get("receipt_item") == "task_id" and row.get("status") == "written"
+        for row in confirmed_receipt_rows
+    )
+    if summary.get("small_data_writeback_ready") is True:
+        confirm_chain_status = "p1_confirm_chain_tushare_first_replayed"
+    elif int(summary.get("credential_missing_provider_count") or 0) > 0:
+        confirm_chain_status = "p1_confirm_chain_blocked_missing_tushare_credentials"
+    elif confirm_task_written:
+        confirm_chain_status = "p1_confirm_chain_task_accepted"
+    elif summary.get("local_receipt_written") is True:
+        confirm_chain_status = "p1_confirm_chain_waiting_confirm"
+    else:
+        confirm_chain_status = "p1_confirm_chain_waiting_symbol"
+    confirm_chain_checkpoint = {
+        "schema_version": QUANT_PROJECTION_CONFIRM_CHAIN_CHECKPOINT_SCHEMA_VERSION,
+        "status": confirm_chain_status,
+        "ordinary_status": confirm_stage.get("当前状态") or "",
+        "ordinary_next_step": confirm_stage.get("用户下一步") or summary.get("next_action") or "",
+        "ordinary_evidence": confirm_stage.get("证据") or "",
+        "symbol": summary.get("symbol") or "",
+        "confirm_task_written": confirm_task_written,
+        "acceptance_dry_run_written": summary.get("acceptance_dry_run_written") is True,
+        "execution_request_written": summary.get("execution_request_written") is True,
+        "provider_acceptance_written": summary.get("provider_acceptance_written") is True,
+        "provider_ledger_ready": writeback_checkpoint.get("provider_ledger_ready") is True,
+        "provider_call_source": summary.get("provider_call_source") or "",
+        "provider_api_call_count": summary.get("provider_api_call_count", 0),
+        "provider_api_success_count": summary.get("provider_api_success_count", 0),
+        "credential_missing_provider_count": summary.get("credential_missing_provider_count", 0),
+        "cache_only_readback": True,
+        "search_input_creates_task": False,
+        "confirm_button_creates_task": True,
+        "creates_task_from_readback": False,
+        "readback_external_calls_triggered": False,
+        "react_render_external_calls": False,
+        "get_cache_external_calls": False,
+        "deepseek_called_from_confirm_chain": False,
+        "uses_deepseek_output": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+    view["search_quant_projection_confirm_chain_checkpoint"] = confirm_chain_checkpoint
+    view["search_quant_projection_confirm_chain_status"] = confirm_chain_checkpoint["status"]
+    view["search_quant_projection_confirm_task_written"] = confirm_chain_checkpoint["confirm_task_written"]
+    counts["search_quant_projection_confirm_chain_checkpoint_visible"] = True
+    counts["search_quant_projection_confirm_chain_checkpoint_ready"] = (
+        confirm_chain_checkpoint["provider_ledger_ready"] is True
+    )
     small_data_readback_checkpoint = {
         "schema_version": QUANT_PROJECTION_SMALL_DATA_READBACK_CHECKPOINT_SCHEMA_VERSION,
         "status": summary.get("status") or "",
@@ -16885,6 +16945,10 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_confirm_replay_stage_rows_create_task"] = False
     policy["search_quant_projection_confirm_replay_stage_rows_use_model_output"] = False
     policy["search_quant_projection_confirm_replay_stage_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_confirm_chain_checkpoint_is_cache_only"] = True
+    policy["search_quant_projection_confirm_chain_checkpoint_creates_task"] = False
+    policy["search_quant_projection_confirm_chain_checkpoint_readback_external_calls"] = False
+    policy["search_quant_projection_confirm_chain_checkpoint_is_not_trade_signal"] = True
     policy["search_quant_projection_confirmed_task_receipt_rows_are_cache_only"] = True
     policy["search_quant_projection_confirmed_task_receipt_rows_create_task"] = False
     policy["search_quant_projection_confirmed_task_receipt_rows_are_not_trade_signals"] = True

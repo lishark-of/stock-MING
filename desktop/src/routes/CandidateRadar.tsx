@@ -290,6 +290,8 @@ export default function CandidateRadar() {
   const searchQuantProjectionExecutionRequest = (cache.search_quant_projection_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProviderModelAcceptance = (cache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionSmallDataWriteback = (cache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionConfirmChainCheckpoint =
+    (cache.search_quant_projection_confirm_chain_checkpoint as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionSmallDataReadbackCheckpoint =
     (cache.search_quant_projection_small_data_readback_checkpoint as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionWritebackCheckpoint =
@@ -803,12 +805,17 @@ export default function CandidateRadar() {
           : quantProjectionDisplaySymbol
             ? "当前代码已在本地显示；按钮未启用时先看不可用原因，输入本身不会创建 task 或调用 Tushare/DeepSeek。"
             : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
+  const quantProjectionConfirmChainCheckpointLabel =
+    String(searchQuantProjectionConfirmChainCheckpoint.ordinary_status ?? "") ||
+    String(searchQuantProjectionConfirmChainCheckpoint.status ?? "");
   const quantProjectionConfirmChainState = quantProjectionSubmitError
     ? "确认任务创建失败：未生成 task id；请检查本地后端连接后重试，页面不会补调 provider/model"
     : quantProjectionSubmitting
     ? "确认任务正在提交：按钮已暂时禁用；等待本地 FastAPI 返回 task id，避免重复创建后台链"
     : quantProjectionTaskReceiptInputMismatch
     ? `已切换输入：旧 task 属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新点击确认，页面不会把旧回执归属到新代码`
+    : quantProjectionConfirmChainCheckpointLabel
+    ? quantProjectionConfirmChainCheckpointLabel
     : taskReceipt?.ok
     ? "确认任务已接收：先看 TaskStatusPanel，再通过 GET cache 回放 Tushare ledger、量化推演和次日图谱"
     : quantProjectionCanSubmit
@@ -1390,6 +1397,13 @@ export default function CandidateRadar() {
       label: "确认状态",
       value: quantProjectionConfirmChainState,
       tone: taskReceipt?.ok || quantProjectionCanSubmit ? "good" : quantProjectionSubmitError ? "bad" : "warn"
+    },
+    {
+      label: "P1 checkpoint",
+      value: String(searchQuantProjectionConfirmChainCheckpoint.status ?? "等待确认按钮"),
+      tone: searchQuantProjectionConfirmChainCheckpoint.provider_ledger_ready === true
+        ? "good"
+        : searchQuantProjectionConfirmChainCheckpoint.confirm_task_written === true ? "warn" : "neutral"
     },
     {
       label: "最近任务",

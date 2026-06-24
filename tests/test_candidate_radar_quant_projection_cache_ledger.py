@@ -314,6 +314,31 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(writeback_checkpoint["does_not_modify_strategy_action"])
         self.assertFalse(writeback_checkpoint["production_quant_projection_complete"])
         self.assertEqual(packet["search_quant_projection_writeback_checkpoint"], writeback_checkpoint)
+        confirm_checkpoint = packet["search_quant_projection_confirm_chain_checkpoint"]
+        self.assertEqual(
+            confirm_checkpoint["schema_version"],
+            "candidate_radar_search_quant_projection_confirm_chain_checkpoint.v1",
+        )
+        self.assertEqual(confirm_checkpoint["status"], "p1_confirm_chain_tushare_first_replayed")
+        self.assertTrue(confirm_checkpoint["confirm_task_written"])
+        self.assertTrue(confirm_checkpoint["acceptance_dry_run_written"])
+        self.assertTrue(confirm_checkpoint["execution_request_written"])
+        self.assertTrue(confirm_checkpoint["provider_acceptance_written"])
+        self.assertTrue(confirm_checkpoint["provider_ledger_ready"])
+        self.assertEqual(confirm_checkpoint["provider_call_source"], "post_task_call_ledger")
+        self.assertEqual(confirm_checkpoint["provider_api_success_count"], 4)
+        self.assertTrue(confirm_checkpoint["cache_only_readback"])
+        self.assertFalse(confirm_checkpoint["search_input_creates_task"])
+        self.assertTrue(confirm_checkpoint["confirm_button_creates_task"])
+        self.assertFalse(confirm_checkpoint["creates_task_from_readback"])
+        self.assertFalse(confirm_checkpoint["readback_external_calls_triggered"])
+        self.assertFalse(confirm_checkpoint["deepseek_called_from_confirm_chain"])
+        self.assertFalse(confirm_checkpoint["uses_deepseek_output"])
+        self.assertTrue(confirm_checkpoint["does_not_execute_trades"])
+        self.assertTrue(confirm_checkpoint["does_not_modify_strategy_action"])
+        self.assertTrue(confirm_checkpoint["candidate_is_not_buy_instruction"])
+        self.assertEqual(packet["search_quant_projection_confirm_chain_status"], confirm_checkpoint["status"])
+        self.assertTrue(packet["search_quant_projection_confirm_task_written"])
         small_data_checkpoint = packet["search_quant_projection_small_data_readback_checkpoint"]
         self.assertEqual(
             small_data_checkpoint["schema_version"],
@@ -351,6 +376,8 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["search_quant_projection_confirm_button_readiness_row_count"], 4)
         self.assertEqual(packet["counts"]["search_quant_projection_confirm_replay_stage_row_count"], 4)
         self.assertEqual(packet["counts"]["search_quant_projection_confirm_outcome_row_count"], 3)
+        self.assertTrue(packet["counts"]["search_quant_projection_confirm_chain_checkpoint_visible"])
+        self.assertTrue(packet["counts"]["search_quant_projection_confirm_chain_checkpoint_ready"])
         self.assertEqual(packet["counts"]["search_quant_projection_one_screen_action_row_count"], 4)
         self.assertTrue(packet["policy"]["search_quant_projection_small_data_writeback_action_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_small_data_writeback_action_rows_create_task"])
@@ -380,6 +407,10 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["policy"]["search_quant_projection_confirm_replay_stage_rows_create_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_confirm_replay_stage_rows_use_model_output"])
         self.assertTrue(packet["policy"]["search_quant_projection_confirm_replay_stage_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["search_quant_projection_confirm_chain_checkpoint_is_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_confirm_chain_checkpoint_creates_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_confirm_chain_checkpoint_readback_external_calls"])
+        self.assertTrue(packet["policy"]["search_quant_projection_confirm_chain_checkpoint_is_not_trade_signal"])
         self.assertTrue(packet["policy"]["search_quant_projection_confirm_outcome_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_confirm_outcome_rows_create_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_confirm_outcome_rows_call_provider_from_readback"])
@@ -1199,6 +1230,29 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(writeback_checkpoint["deepseek_called_from_readback"])
         self.assertFalse(writeback_checkpoint["production_quant_projection_complete"])
         self.assertEqual(packet["search_quant_projection_writeback_checkpoint"], writeback_checkpoint)
+        confirm_checkpoint = packet["search_quant_projection_confirm_chain_checkpoint"]
+        self.assertEqual(
+            confirm_checkpoint["schema_version"],
+            "candidate_radar_search_quant_projection_confirm_chain_checkpoint.v1",
+        )
+        self.assertEqual(confirm_checkpoint["status"], "p1_confirm_chain_blocked_missing_tushare_credentials")
+        self.assertTrue(confirm_checkpoint["confirm_task_written"])
+        self.assertTrue(confirm_checkpoint["acceptance_dry_run_written"])
+        self.assertTrue(confirm_checkpoint["execution_request_written"])
+        self.assertFalse(confirm_checkpoint["provider_acceptance_written"])
+        self.assertFalse(confirm_checkpoint["provider_ledger_ready"])
+        self.assertEqual(confirm_checkpoint["credential_missing_provider_count"], 1)
+        self.assertTrue(confirm_checkpoint["cache_only_readback"])
+        self.assertFalse(confirm_checkpoint["search_input_creates_task"])
+        self.assertTrue(confirm_checkpoint["confirm_button_creates_task"])
+        self.assertFalse(confirm_checkpoint["creates_task_from_readback"])
+        self.assertFalse(confirm_checkpoint["readback_external_calls_triggered"])
+        self.assertFalse(confirm_checkpoint["deepseek_called_from_confirm_chain"])
+        self.assertFalse(confirm_checkpoint["uses_deepseek_output"])
+        self.assertTrue(confirm_checkpoint["does_not_execute_trades"])
+        self.assertTrue(confirm_checkpoint["does_not_modify_strategy_action"])
+        self.assertEqual(packet["search_quant_projection_confirm_chain_status"], confirm_checkpoint["status"])
+        self.assertTrue(packet["search_quant_projection_confirm_task_written"])
         small_data_checkpoint = packet["search_quant_projection_small_data_readback_checkpoint"]
         self.assertEqual(
             small_data_checkpoint["schema_version"],
@@ -1219,6 +1273,8 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["search_quant_projection_small_data_writeback_ready"])
         self.assertEqual(packet["search_quant_projection_small_data_writeback_status"], small_data["status"])
         self.assertEqual(packet["search_quant_projection_writeback_surfaces"], ["cache", "call_ledger", "packet"])
+        self.assertTrue(packet["counts"]["search_quant_projection_confirm_chain_checkpoint_visible"])
+        self.assertFalse(packet["counts"]["search_quant_projection_confirm_chain_checkpoint_ready"])
         readback_rows = {row["surface"]: row for row in small_data["ordinary_readback_rows"]}
         self.assertEqual(readback_rows["cache"]["status"], "written")
         self.assertEqual(readback_rows["call_ledger"]["status"], "not_called_missing_credentials_local_block")
