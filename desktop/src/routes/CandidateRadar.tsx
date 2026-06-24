@@ -290,7 +290,11 @@ export default function CandidateRadar() {
   const searchQuantProjectionExecutionRequest = (cache.search_quant_projection_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProviderModelAcceptance = (cache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionSmallDataWriteback = (cache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
-  const searchQuantProjectionWritebackCheckpoint = (searchQuantProjectionSmallDataWriteback.ordinary_writeback_checkpoint_contract as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionSmallDataReadbackCheckpoint =
+    (cache.search_quant_projection_small_data_readback_checkpoint as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionWritebackCheckpoint =
+    (cache.search_quant_projection_writeback_checkpoint as Record<string, unknown> | undefined) ??
+    (searchQuantProjectionSmallDataWriteback.ordinary_writeback_checkpoint_contract as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionInterpretation = (cache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionResultCheckpoint =
     (cache.search_quant_projection_result_checkpoint as Record<string, unknown> | undefined) ??
@@ -854,6 +858,7 @@ export default function CandidateRadar() {
     ? "GET cache 已回放 Tushare provider ledger；DeepSeek skipped/pending，不改 action"
     : "等待确认按钮创建 Tushare-first task；GET cache 只显示 pending";
   const quantProjectionSmallDataExplicitReady =
+    searchQuantProjectionSmallDataReadbackCheckpoint.ready === true ||
     searchQuantProjectionSmallDataWriteback.small_data_writeback_ready === true;
   const quantProjectionSmallDataPartialLedgerReady =
     !quantProjectionSmallDataExplicitReady && quantProjectionProviderLedgerReady;
@@ -862,6 +867,7 @@ export default function CandidateRadar() {
   const quantProjectionSmallDataTargetRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows);
   const quantProjectionProviderApiRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_provider_api_rows);
   const quantProjectionSmallDataReplayState =
+    String(searchQuantProjectionSmallDataReadbackCheckpoint.ordinary_readback_summary ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_summary ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.summary_label ?? "") ||
     (quantProjectionSmallDataReady
@@ -872,9 +878,12 @@ export default function CandidateRadar() {
         ? `cache / ledger / packet 等待 Tushare-first 回放；本地记录=${String(searchQuantProjectionReceipt.status)}`
         : "cache / ledger / packet 等待确认按钮创建 task");
   const quantProjectionSmallDataStageLabel =
+    String(searchQuantProjectionSmallDataReadbackCheckpoint.ordinary_readback_status ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_stage_label ?? "") ||
     quantProjectionSmallDataReplayState;
-  const quantProjectionSmallDataWritebackSurfaces = Array.isArray(searchQuantProjectionSmallDataWriteback.writeback_surfaces)
+  const quantProjectionSmallDataWritebackSurfaces = Array.isArray(searchQuantProjectionSmallDataReadbackCheckpoint.writeback_surfaces)
+    ? String(searchQuantProjectionSmallDataReadbackCheckpoint.writeback_surfaces.join(" / "))
+    : Array.isArray(searchQuantProjectionSmallDataWriteback.writeback_surfaces)
     ? String(searchQuantProjectionSmallDataWriteback.ordinary_readback_surfaces_label ?? searchQuantProjectionSmallDataWriteback.writeback_surfaces.join(" / "))
     : "等待写入 cache / call_ledger / packet";
   const quantProjectionSmallDataReadbackContract =

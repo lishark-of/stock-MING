@@ -52,6 +52,9 @@ QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION = (
 QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_small_data_writeback.v1"
 )
+QUANT_PROJECTION_SMALL_DATA_READBACK_CHECKPOINT_SCHEMA_VERSION = (
+    "candidate_radar_search_quant_projection_small_data_readback_checkpoint.v1"
+)
 QUANT_PROJECTION_WRITEBACK_CHECKPOINT_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_writeback_checkpoint.v1"
 )
@@ -16823,6 +16826,41 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         "complete_surface_count",
         0,
     )
+    small_data_readback_checkpoint = {
+        "schema_version": QUANT_PROJECTION_SMALL_DATA_READBACK_CHECKPOINT_SCHEMA_VERSION,
+        "status": summary.get("status") or "",
+        "ready": summary.get("small_data_writeback_ready") is True,
+        "ordinary_readback_status": summary.get("ordinary_readback_status") or "",
+        "ordinary_readback_summary": summary.get("ordinary_readback_summary") or summary.get("summary_label") or "",
+        "ordinary_readback_next_step": summary.get("ordinary_readback_next_step") or summary.get("next_action") or "",
+        "writeback_surfaces": summary.get("writeback_surfaces") or [],
+        "surface_count": writeback_checkpoint.get("surface_count", 0),
+        "readable_surface_count": writeback_checkpoint.get("readable_surface_count", 0),
+        "complete_surface_count": writeback_checkpoint.get("complete_surface_count", 0),
+        "packet_key": summary.get("packet_key") or PACKET_KEY,
+        "provider_call_source": summary.get("provider_call_source") or "",
+        "call_ledger_state": writeback_checkpoint.get("call_ledger_state") or "",
+        "provider_ledger_ready": writeback_checkpoint.get("provider_ledger_ready") is True,
+        "provider_api_call_count": summary.get("provider_api_call_count", 0),
+        "provider_api_success_count": summary.get("provider_api_success_count", 0),
+        "cache_packet_written": summary.get("cache_packet_written") is True,
+        "provider_call_ledger_written": summary.get("provider_call_ledger_written") is True,
+        "packet_written": writeback_checkpoint.get("packet_written") is True,
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "readback_external_calls_triggered": False,
+        "uses_deepseek_output": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+    view["search_quant_projection_small_data_readback_checkpoint"] = small_data_readback_checkpoint
+    view["search_quant_projection_small_data_writeback_ready"] = small_data_readback_checkpoint["ready"]
+    view["search_quant_projection_small_data_writeback_status"] = small_data_readback_checkpoint["status"]
+    view["search_quant_projection_writeback_surfaces"] = small_data_readback_checkpoint["writeback_surfaces"]
+    counts["search_quant_projection_small_data_readback_checkpoint_ready"] = small_data_readback_checkpoint[
+        "ready"
+    ]
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_small_data_writeback_is_cache_replay"] = True
