@@ -85,6 +85,7 @@ export default function FactorQuantHub() {
   const score = packet.score ?? {};
   const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarOneScreenRows = toRows(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
+  const candidateRadarConfirmOutcomeRows = toRows(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
   const runtime = packet.runtime ?? {};
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
@@ -433,6 +434,40 @@ export default function FactorQuantHub() {
   const ordinaryQuantUpstreamOneScreenLabel = ordinaryQuantUpstreamOneScreenRows
     .map((row) => `${row.行动}: ${row.当前状态}`)
     .join(" / ");
+  const ordinaryQuantUpstreamConfirmOutcomeRows = candidateRadarConfirmOutcomeRows.length
+    ? candidateRadarConfirmOutcomeRows.map((row) => ({
+        确认结果: String(row["速读项"] ?? row.outcome_key ?? "确认结果"),
+        当前状态: String(row["当前状态"] ?? row.status ?? "等待 CandidateRadar 确认结果回放"),
+        用户下一步: String(row["用户下一步"] ?? row.next_step ?? ordinaryQuantP3NextStep),
+        入口: String(row["入口"] ?? row.entry ?? "下一票雷达 / 股票量化推演"),
+        边界: String(row["边界"] ?? row.boundary ?? "量化页只读回放确认结果；不创建 task、不调用 provider/model。")
+      }))
+    : [
+        {
+          确认结果: "P1 确认结果",
+          当前状态: "等待下一票雷达确认任务回放",
+          用户下一步: "回下一票雷达输入代码并点击确认按钮。",
+          入口: "#candidates",
+          边界: "量化页不接收换标的输入；确认按钮之前不创建 Tushare-first task。"
+        },
+        {
+          确认结果: "P2 写回结果",
+          当前状态: `${ordinaryQuantLedgerSourceLabel} / ${ordinaryQuantPacketSourceLabel}`,
+          用户下一步: "确认 cache / call_ledger / packet 已能支撑量化推演回放。",
+          入口: "Factor cache / call_ledger / packet",
+          边界: "只读本地回放；不补调 Tushare、DeepSeek 或 GitHub。"
+        },
+        {
+          确认结果: "P3 回放结果",
+          当前状态: ordinaryQuantP3ReadableConclusion,
+          用户下一步: ordinaryQuantP3NextStep,
+          入口: "支持/压制 / 次日图谱预览 / DeepSeek 状态",
+          边界: ordinaryQuantP3Boundary
+        }
+      ];
+  const ordinaryQuantUpstreamConfirmOutcomeLabel = ordinaryQuantUpstreamConfirmOutcomeRows
+    .map((row) => `${row.确认结果}: ${row.当前状态}`)
+    .join(" / ");
   const ordinaryQuantResultReplayRows = [
     {
       结果段: "支持/压制",
@@ -591,6 +626,7 @@ export default function FactorQuantHub() {
             { label: "最近成功回放", value: ordinaryQuantLastCache },
             { label: "雷达搜票回放", value: ordinaryQuantRadarHandoffState, tone: empty ? "warn" : "good" },
             { label: "上游确认链", value: ordinaryQuantUpstreamOneScreenLabel, tone: candidateRadarOneScreenRows.length ? "good" : "warn" },
+            { label: "确认结果链", value: ordinaryQuantUpstreamConfirmOutcomeLabel, tone: candidateRadarConfirmOutcomeRows.length ? "good" : "warn" },
             { label: "回放位置", value: ordinaryQuantReplayLocation, tone: "good" },
             { label: "结果位置", value: ordinaryQuantResultLocation, tone: "good" },
             { label: "回放入口边界", value: ordinaryQuantRouteHandoffBoundary, tone: "good" },
@@ -625,6 +661,11 @@ export default function FactorQuantHub() {
           <h3>上游确认一屏行动</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成量化页上游速读；本页只读回放，不创建 task、不调用模型。</p>
           <DataLineageTable rows={ordinaryQuantUpstreamOneScreenRows} />
+        </div>
+        <div aria-label="stock quant upstream confirm outcome readback">
+          <h3>上游确认结果速读</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_confirm_outcome_rows：确认任务是否接收、P2 三面是否回放、P3 量化结果是否可读；本页只读回放，不创建第二个 task。</p>
+          <DataLineageTable rows={ordinaryQuantUpstreamConfirmOutcomeRows} />
         </div>
         <div aria-label="stock quant ordinary cache ledger packet handoff">
           <h3>cache / ledger / packet 交接清单</h3>
