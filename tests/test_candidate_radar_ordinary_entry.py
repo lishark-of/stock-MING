@@ -524,6 +524,15 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("quantProjectionWritebackRecoveryDisplayRows", self.page)
         self.assertIn("quantProjectionP2WritebackRailState", self.page)
         self.assertIn("quantProjectionP2WritebackRailSteps", self.page)
+        self.assertIn("const quantProjectionSmallDataExplicitReady", self.page)
+        self.assertIn("const quantProjectionSmallDataPartialLedgerReady", self.page)
+        self.assertIn("const quantProjectionSmallDataReady = quantProjectionSmallDataExplicitReady", self.page)
+        self.assertIn("cache / packet 仍等待小数据三面 ready", self.page)
+        self.assertIn("部分恢复：call_ledger 已回放，cache / packet 仍等待小数据三面 ready。", self.page)
+        self.assertNotIn(
+            "small_data_writeback_ready === true || quantProjectionProviderLedgerReady",
+            self.page,
+        )
         self.assertIn("ordinary_writeback_target_rows", self.page)
         self.assertIn("ordinary_writeback_action_rows", self.page)
         self.assertIn("ordinary_writeback_surface_summary_rows", self.page)

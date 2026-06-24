@@ -742,16 +742,21 @@ export default function CandidateRadar() {
   const quantProjectionProviderModelReplayState = quantProjectionProviderLedgerReady
     ? "GET cache 已回放 Tushare provider ledger；DeepSeek skipped/pending，不改 action"
     : "等待确认按钮创建 Tushare-first task；GET cache 只显示 pending";
-  const quantProjectionSmallDataReady =
-    searchQuantProjectionSmallDataWriteback.small_data_writeback_ready === true || quantProjectionProviderLedgerReady;
+  const quantProjectionSmallDataExplicitReady =
+    searchQuantProjectionSmallDataWriteback.small_data_writeback_ready === true;
+  const quantProjectionSmallDataPartialLedgerReady =
+    !quantProjectionSmallDataExplicitReady && quantProjectionProviderLedgerReady;
+  const quantProjectionSmallDataReady = quantProjectionSmallDataExplicitReady;
   const quantProjectionSmallDataRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_readback_rows);
   const quantProjectionSmallDataTargetRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows);
   const quantProjectionProviderApiRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_provider_api_rows);
   const quantProjectionSmallDataReplayState =
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_summary ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.summary_label ?? "") ||
-    (quantProjectionProviderLedgerReady
-      ? `cache / ledger / packet 已回放：Tushare ${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口；packet=command_center_3_candidate_radar_cache`
+    (quantProjectionSmallDataReady
+      ? `cache / ledger / packet 已回放：小数据三面由本地 cache 确认；packet=command_center_3_candidate_radar_cache`
+      : quantProjectionSmallDataPartialLedgerReady
+        ? `call_ledger 已回放：Tushare ${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口；cache / packet 仍等待小数据三面 ready`
       : searchQuantProjectionReceipt.status
         ? `cache / ledger / packet 等待 Tushare-first 回放；本地记录=${String(searchQuantProjectionReceipt.status)}`
         : "cache / ledger / packet 等待确认按钮创建 task");
@@ -898,12 +903,16 @@ export default function CandidateRadar() {
     : [
         {
           恢复项: "当前阻断",
-          当前状态: quantProjectionProviderLedgerReady
-            ? "无 P2 阻断：Tushare-first ledger 已回放。"
-            : "等待确认任务或本地阻断写入；不是页面自动补数。",
-          用户下一步: quantProjectionProviderLedgerReady
+          当前状态: quantProjectionSmallDataReady
+            ? "无 P2 阻断：cache、call_ledger、packet 三面已回放。"
+            : quantProjectionSmallDataPartialLedgerReady
+              ? "部分恢复：call_ledger 已回放，cache / packet 仍等待小数据三面 ready。"
+              : "等待确认任务或本地阻断写入；不是页面自动补数。",
+          用户下一步: quantProjectionSmallDataReady
             ? "直接回放股票量化推演和次日图谱。"
-            : quantProjectionSmallDataNextStep,
+            : quantProjectionSmallDataPartialLedgerReady
+              ? "继续看 TaskStatusPanel 或刷新本地 cache，等 packet 与 cache 回放齐备。"
+              : quantProjectionSmallDataNextStep,
           证据: `provider_call_source=${quantProjectionProviderCallSource}`,
           边界: "只解释本地 cache / ledger / packet 状态；不会创建 task、不调用 provider/model。"
         },
