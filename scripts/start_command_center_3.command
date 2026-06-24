@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="${COMMAND_CENTER_3_PROJECT_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 DESKTOP_ROOT="${PROJECT_ROOT}/desktop"
 LOG_DIR="${PROJECT_ROOT}/.stock_ming_3/logs"
 FASTAPI_LOG="${LOG_DIR}/command_center_3_fastapi.log"
@@ -440,17 +440,6 @@ if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
   exit 0
 fi
 
-if [ ! -d "${DESKTOP_ROOT}/node_modules" ]; then
-  echo "Command Center 3.0 启动失败：desktop/node_modules 不存在。"
-  echo "请先运行：cd \"${DESKTOP_ROOT}\" && npm install"
-  exit 1
-fi
-
-if ! command -v npm >/dev/null 2>&1; then
-  echo "Command Center 3.0 启动失败：未找到 npm。"
-  exit 1
-fi
-
 mkdir -p "$LOG_DIR"
 
 if command_center_health_ready "${API_BASE%/}/health"; then
@@ -464,8 +453,18 @@ else
 fi
 
 if vite_command_center_ready "$VITE_URL"; then
-  echo "Vite already running."
+  echo "Vite already running; npm is only required when React/Vite must be started."
 else
+  if [ ! -d "${DESKTOP_ROOT}/node_modules" ]; then
+    echo "Command Center 3.0 启动失败：desktop/node_modules 不存在，且 React/Vite 尚未运行。"
+    echo "请先运行：cd \"${DESKTOP_ROOT}\" && npm install"
+    exit 1
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "Command Center 3.0 启动失败：未找到 npm，且 React/Vite 尚未运行。"
+    echo "如果是从 .app 双击进入，已运行的 React/Vite 会被复用；否则请先从终端运行 scripts/start_command_center_3.command 或把 npm 加入 PATH。"
+    exit 1
+  fi
   if url_ready "$VITE_URL"; then
     echo "React/Vite port has a response, but it is not the Command Center 3.0 frontend."
   fi
@@ -515,7 +514,11 @@ if [ "$LAUNCHER_SKIP_OPEN" = "1" ]; then
   echo "Skip-open mode: FastAPI, bootstrap status, desktop preflight cache, and React/Vite are ready; browser was not opened automatically."
   echo "请在浏览器打开：${APP_URL_DISPLAY}"
 elif command -v open >/dev/null 2>&1; then
-  open "$APP_OPEN_URL"
+  if open "$APP_OPEN_URL"; then
+    echo "Browser handoff opened: ${APP_URL_DISPLAY}"
+  else
+    echo "Browser handoff could not open automatically after local readiness passed; please open manually: ${APP_URL_DISPLAY}"
+  fi
 else
   echo "请在浏览器打开：${APP_URL_DISPLAY}"
 fi

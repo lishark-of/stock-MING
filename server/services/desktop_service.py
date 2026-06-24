@@ -689,6 +689,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "npm run dev",
         "VITE_API_BASE_URL",
         "STOCK_MING_ALLOW_SYSTEM_PYTHON",
+        "COMMAND_CENTER_3_PROJECT_ROOT",
         "desktop/node_modules",
         ".stock_ming_3/logs",
         "open \"$APP_OPEN_URL\"",
@@ -697,6 +698,8 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN",
         "Browser open:",
         "Skip-open mode: FastAPI, bootstrap status, desktop preflight cache, and React/Vite are ready",
+        "Browser handoff could not open automatically after local readiness passed",
+        "Vite already running; npm is only required when React/Vite must be started.",
         "safe_display_url",
         "url_is_local",
         "API_BASE_DISPLAY",
@@ -930,6 +933,14 @@ def _one_click_startup_summary(
     client_source = _read_source_safe(FRONTEND_API_CLIENT)
     offline_notice_source = _read_source_safe(FRONTEND_BACKEND_OFFLINE_NOTICE)
     node_modules_present = (DESKTOP_ROOT / "node_modules").exists()
+    launcher_reuses_running_vite_without_npm_path = (
+        "Vite already running; npm is only required when React/Vite must be started." in launcher_source
+        and "未找到 npm，且 React/Vite 尚未运行" in launcher_source
+        and launcher_source.find('if vite_command_center_ready "$VITE_URL"; then') >= 0
+        and launcher_source.find("if ! command -v npm >/dev/null 2>&1; then") >= 0
+        and launcher_source.find('if vite_command_center_ready "$VITE_URL"; then')
+        < launcher_source.find("if ! command -v npm >/dev/null 2>&1; then")
+    )
 
     def row(
         criterion: str,
@@ -998,6 +1009,10 @@ def _one_click_startup_summary(
         in launcher_source
         and 'open "$APP_OPEN_URL"' in launcher_source
     )
+    browser_handoff_failure_nonfatal = (
+        'if open "$APP_OPEN_URL"; then' in launcher_source
+        and "Browser handoff could not open automatically after local readiness passed" in launcher_source
+    )
     p0_stability_check_ready = (
         "verify_p0_startup_stability" in launcher_source
         and "P0 stability check: waiting ${P0_STABILITY_DWELL_SECONDS}s" in launcher_source
@@ -1026,7 +1041,12 @@ def _one_click_startup_summary(
         row(
             "frontend_dependencies_present",
             node_modules_present,
-            "desktop/node_modules present; launcher will stop with a clear message if missing",
+            "desktop/node_modules present; launcher only requires npm/node_modules when React/Vite must be started",
+        ),
+        row(
+            "running_vite_reused_without_npm_path",
+            launcher_reuses_running_vite_without_npm_path,
+            "launcher reuses an already-running Command Center React/Vite page before checking npm PATH",
         ),
         row(
             "fastapi_health_wait_before_open",
@@ -1067,6 +1087,11 @@ def _one_click_startup_summary(
             "browser_opens_only_after_frontend_backend_ready",
             open_is_gated,
             "launcher exits before opening the page when FastAPI health, bootstrap status, desktop preflight cache, or Vite identity is not ready",
+        ),
+        row(
+            "browser_handoff_failure_nonfatal_after_readiness",
+            browser_handoff_failure_nonfatal,
+            "after P0 readiness passes, a failed OS browser handoff prints a manual local URL instead of failing FastAPI linkage",
         ),
         row(
             "p0_success_handoff_to_p1_confirm_visible",
@@ -1176,6 +1201,7 @@ def _one_click_startup_summary(
         "launcher_ready": desktop_launcher_contract.get("status") == "local_one_click_launcher_ready",
         "launcher_executable": desktop_launcher_contract.get("launcher_executable") is True,
         "frontend_dependencies_present": node_modules_present,
+        "running_vite_reused_without_npm_path": launcher_reuses_running_vite_without_npm_path,
         "fastapi_health_wait_before_open": health_identity_ready,
         "fastapi_health_identity_validated_before_open": health_identity_ready,
         "fastapi_status_api_wait_before_open": api_status_wait_ready,
@@ -1192,6 +1218,7 @@ def _one_click_startup_summary(
         is True,
         "launcher_diagnostic_urls_contain_secret": False,
         "browser_opens_only_after_frontend_backend_ready": open_is_gated,
+        "browser_handoff_failure_nonfatal_after_readiness": browser_handoff_failure_nonfatal,
         "frontend_api_client_uses_local_fastapi": frontend_api_client_local,
         "backend_offline_notice_available": offline_notice_ready,
         "starts_fastapi_when_user_runs": desktop_launcher_contract.get("starts_fastapi_when_user_runs") is True,

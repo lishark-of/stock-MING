@@ -1992,6 +1992,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(one_click["launcher_ready"])
         self.assertTrue(one_click["launcher_executable"])
         self.assertTrue(one_click["frontend_dependencies_present"])
+        self.assertTrue(one_click["running_vite_reused_without_npm_path"])
         self.assertTrue(one_click["fastapi_health_wait_before_open"])
         self.assertTrue(one_click["fastapi_health_identity_validated_before_open"])
         self.assertTrue(one_click["fastapi_status_api_wait_before_open"])
@@ -2007,6 +2008,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(one_click["launcher_blocks_nonlocal_urls_before_probe"])
         self.assertFalse(one_click["launcher_diagnostic_urls_contain_secret"])
         self.assertTrue(one_click["browser_opens_only_after_frontend_backend_ready"])
+        self.assertTrue(one_click["browser_handoff_failure_nonfatal_after_readiness"])
         self.assertTrue(one_click["frontend_api_client_uses_local_fastapi"])
         self.assertTrue(one_click["backend_offline_notice_available"])
         self.assertTrue(one_click["starts_fastapi_when_user_runs"])
@@ -2041,8 +2043,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(desktop["runtime"]["one_click_startup_status"], "one_click_frontend_backend_ready")
         self.assertIn("stock-MING Command Center 3.command", desktop["runtime"]["one_click_startup_next_action"])
         self.assertIn("startup_failure_diagnostics_visible", one_click_rows)
+        self.assertIn("running_vite_reused_without_npm_path", one_click_rows)
         self.assertIn("p0_stability_check_before_open", one_click_rows)
         self.assertIn("p0_success_handoff_to_p1_confirm_visible", one_click_rows)
+        self.assertIn("browser_handoff_failure_nonfatal_after_readiness", one_click_rows)
+        self.assertIn(
+            "before checking npm PATH",
+            one_click_rows["running_vite_reused_without_npm_path"]["evidence"],
+        )
+        self.assertIn(
+            "manual local URL",
+            one_click_rows["browser_handoff_failure_nonfatal_after_readiness"]["evidence"],
+        )
         self.assertIn("Command Center 3.0 health JSON", one_click_rows["fastapi_health_wait_before_open"]["evidence"])
         self.assertIn("desktop_preflight_cache_wait_before_open", one_click_rows)
         self.assertIn("command_center_3_desktop_shell_preflight_cache", one_click_rows["desktop_preflight_cache_wait_before_open"]["evidence"])
