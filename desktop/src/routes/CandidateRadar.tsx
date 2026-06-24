@@ -1756,7 +1756,15 @@ export default function CandidateRadar() {
     证据: displayText(row["证据"] ?? row.evidence),
     边界: displayText(row["边界"] ?? row.boundary, "GET cache 只读回放；不创建 task、不补调 provider/model")
   }));
-  const quantProjectionOrdinaryConfirmOutcomeRows = quantProjectionConfirmReplayStageRows.length ? quantProjectionConfirmReplayStageRows : [
+  const quantProjectionConfirmOutcomePacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_confirm_outcome_rows).map((row) => ({
+    速读项: displayText(row["速读项"] ?? row.outcome_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_step),
+    入口: displayText(row["入口"] ?? row.entry),
+    证据: displayText(row["证据"] ?? row.evidence),
+    边界: displayText(row["边界"] ?? row.boundary, "GET cache 只读回放；不创建 task、不补调 provider/model")
+  }));
+  const quantProjectionOrdinaryConfirmOutcomeRows = quantProjectionConfirmOutcomePacketRows.length ? quantProjectionConfirmOutcomePacketRows : quantProjectionConfirmReplayStageRows.length ? quantProjectionConfirmReplayStageRows : [
     {
       速读项: "P1/P2 当前阶段",
       当前状态: quantProjectionConfirmReplayStage,
@@ -2162,7 +2170,7 @@ export default function CandidateRadar() {
         </div>
         <div aria-label="quant projection ordinary confirm outcome quick read">
           <h3>P1 确认结果速读</h3>
-          <p className="risk-note">点击确认后先看这里：任务是否接收、task id 是否可见、cache / ledger / packet 是否可回放；这张速读表不创建第二个任务。</p>
+          <p className="risk-note">优先读取服务端 ordinary_confirm_outcome_rows：点击确认后先看任务是否接收、P2 三面是否回放、P3 入口是否可读；这张速读表不创建第二个任务。</p>
           <DataLineageTable rows={quantProjectionOrdinaryConfirmOutcomeRows} />
         </div>
         <div aria-label="candidate radar p1 tushare first chain quick read">

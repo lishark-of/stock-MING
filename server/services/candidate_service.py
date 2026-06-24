@@ -15931,6 +15931,77 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
     else:
         post_confirm_result_state = "结果入口待确认：当前只是本地导航；不会创建 task 或刷新 provider/model。"
         post_confirm_result_next = "输入有效代码并点击确认；不要从链接期待自动补数。"
+    ordinary_confirm_outcome_rows = [
+        {
+            "outcome_key": "p1_confirm_result",
+            "速读项": "P1 确认结果",
+            "当前状态": f"确认任务已接收：task_id={latest_task_id}" if latest_task_id else "等待确认按钮创建 task id",
+            "用户下一步": "看 TaskStatusPanel，再刷新本地 cache" if latest_task_id else "输入有效代码并点击确认按钮",
+            "入口": "确认并生成 3.0 量化推演 / TaskStatusPanel",
+            "证据": f"task_id={latest_task_id}" if latest_task_id else "button_not_clicked",
+            "边界": "确认结果只回放按钮门控 POST task；GET cache 和 React render 不创建 task。",
+            "readback_source": "candidate_radar_cache_packet",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "readback_calls_provider": False,
+            "uses_model_output": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "outcome_key": "p2_writeback_result",
+            "速读项": "P2 写回结果",
+            "当前状态": summary_label,
+            "用户下一步": ordinary_readback_next_step,
+            "入口": "cache / call_ledger / packet",
+            "证据": f"writeback_surfaces={'/'.join(writeback_surfaces) if writeback_surfaces else 'waiting_confirm'}",
+            "边界": "P2 只读回放 cache / ledger / packet；不会从速读行补调 Tushare 或 DeepSeek。",
+            "readback_source": "search_quant_projection_small_data_writeback_summary",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "readback_calls_provider": False,
+            "uses_model_output": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "outcome_key": "p3_replay_result",
+            "速读项": "P3 回放结果",
+            "当前状态": post_confirm_result_state,
+            "用户下一步": post_confirm_result_next,
+            "入口": "股票量化推演 / 次日图谱",
+            "证据": f"provider_call_source={provider_call_source}; provider_ready={provider_ready}",
+            "边界": "结果入口只切换本地模块；不创建第二个 task、不调用模型、不交易、不改 strategy action。",
+            "readback_source": "local_navigation_and_cache_replay",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "readback_calls_provider": False,
+            "uses_model_output": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     ordinary_post_confirm_action_rows = [
         {
             "action_key": "check_task_id",
@@ -16560,6 +16631,13 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_task_readback_row_count": len(ordinary_task_readback_rows),
         "ordinary_task_readback_rows_are_cache_only": True,
         "ordinary_task_readback_rows_create_task": False,
+        "ordinary_confirm_outcome_rows": ordinary_confirm_outcome_rows,
+        "ordinary_confirm_outcome_row_count": len(ordinary_confirm_outcome_rows),
+        "ordinary_confirm_outcome_rows_are_cache_only": True,
+        "ordinary_confirm_outcome_rows_create_task": False,
+        "ordinary_confirm_outcome_rows_call_provider_from_readback": False,
+        "ordinary_confirm_outcome_rows_use_model_output": False,
+        "ordinary_confirm_outcome_rows_are_not_trade_signals": True,
         "ordinary_post_confirm_action_rows": ordinary_post_confirm_action_rows,
         "ordinary_post_confirm_action_row_count": len(ordinary_post_confirm_action_rows),
         "ordinary_post_confirm_action_rows_are_cache_only": True,
@@ -16679,6 +16757,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_task_readback_row_count"] = summary.get(
         "ordinary_task_readback_row_count", 0
     )
+    counts["search_quant_projection_confirm_outcome_row_count"] = summary.get(
+        "ordinary_confirm_outcome_row_count", 0
+    )
     counts["search_quant_projection_replay_destination_row_count"] = summary.get(
         "ordinary_replay_destination_row_count", 0
     )
@@ -16743,6 +16824,11 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_task_readback_rows_are_cache_only"] = True
     policy["search_quant_projection_task_readback_rows_create_task"] = False
     policy["search_quant_projection_task_readback_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_confirm_outcome_rows_are_cache_only"] = True
+    policy["search_quant_projection_confirm_outcome_rows_create_task"] = False
+    policy["search_quant_projection_confirm_outcome_rows_call_provider_from_readback"] = False
+    policy["search_quant_projection_confirm_outcome_rows_use_model_output"] = False
+    policy["search_quant_projection_confirm_outcome_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_replay_destination_rows_are_cache_only"] = True
     policy["search_quant_projection_replay_destination_rows_create_task"] = False
     policy["search_quant_projection_replay_destination_rows_are_not_trade_signals"] = True
