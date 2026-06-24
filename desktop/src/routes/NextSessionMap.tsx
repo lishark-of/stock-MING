@@ -217,6 +217,21 @@ export default function NextSessionMap() {
       candidateRadarInterpretation.ordinary_result_boundary ??
       "次日图谱只读 CandidateRadar cache / ledger / packet 的可读结论；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。"
   );
+  const candidateRadarDeepSeekStateRaw = String(
+    candidateRadarCache.ordinary_result_deepseek_governed_executor_status ??
+      candidateRadarInterpretation.deepseek_governed_executor_status ??
+      "governed_executor_pending"
+  );
+  const candidateRadarUsesModelOutput =
+    candidateRadarInterpretation.uses_deepseek_output === true ||
+    candidateRadarInterpretation.uses_model_output === true;
+  const candidateRadarOrdinaryDeepSeekState = candidateRadarUsesModelOutput
+    ? "检测到模型输出；需回 P5 governed executor 审核后再展示"
+    : candidateRadarDeepSeekStateRaw.includes("skipped")
+      ? "DeepSeek 不用等：Tushare-first 和次日图谱可先看"
+      : candidateRadarDeepSeekStateRaw.includes("pending")
+        ? "DeepSeek 待治理：不阻塞 Tushare-first、P2 写入或 P3 图谱"
+        : "DeepSeek governed executor 单独补；普通结果只读本地 cache / ledger / packet";
   const ordinaryResultReplayStatus = String(
     packet.ordinary_result_replay_status ??
       (chartSummary.has_drawable_data === true ? "ready_cache_replay" : "waiting_for_cache_or_manual_task")
@@ -615,7 +630,7 @@ export default function NextSessionMap() {
             { label: "可读结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
             { label: "下一步", value: candidateRadarReadableNextStep },
             { label: "P2 小数据", value: String(candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "已回放" : "等待回放"), tone: candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
-            { label: "DeepSeek", value: String(candidateRadarInterpretation.deepseek_governed_executor_status ?? "governed_executor_pending"), tone: "good" },
+            { label: "DeepSeek", value: candidateRadarOrdinaryDeepSeekState, tone: candidateRadarUsesModelOutput ? "warn" : "good" },
             { label: "边界", value: candidateRadarReadableBoundary, tone: "good" }
           ]}
         />
