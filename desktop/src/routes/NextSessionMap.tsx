@@ -190,6 +190,21 @@ export default function NextSessionMap() {
   const packetOrdinaryChartReviewRows = rowsFromArray(packet.ordinary_chart_review_rows);
   const packetOrdinaryConditionQuickReadRows = rowsFromArray(packet.ordinary_condition_quick_read_rows);
   const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarWritebackSurfaceRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
+  const candidateRadarWritebackSurfaceReady =
+    candidateRadarWritebackSurfaceRows.length >= 3 &&
+    candidateRadarSmallDataWriteback.cache_packet_written === true &&
+    candidateRadarSmallDataWriteback.provider_call_ledger_written === true &&
+    candidateRadarSmallDataWriteback.small_data_writeback_ready === true;
+  const candidateRadarWritebackSurfaceStatus = candidateRadarWritebackSurfaceReady
+    ? "P2 三面已回放：cache / call_ledger / packet 都可读"
+    : `P2 三面等待：${String(
+        candidateRadarSmallDataWriteback.ordinary_readback_stage_label ??
+          candidateRadarSmallDataWriteback.summary_label ??
+          "等待确认按钮后的本地写回"
+      )}`;
+  const candidateRadarWritebackSurfaceBoundary =
+    "P2 三面只读 CandidateRadar cache / call_ledger / packet；图谱页不创建 task、不补调 Tushare/DeepSeek。";
   const candidateRadarOneScreenRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
   const candidateRadarConfirmOutcomeRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
   const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
@@ -629,7 +644,8 @@ export default function NextSessionMap() {
             { label: "标的", value: String(candidateRadarReceipt.symbol ?? "--"), tone: candidateRadarReceipt.symbol ? "good" : "warn" },
             { label: "可读结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
             { label: "下一步", value: candidateRadarReadableNextStep },
-            { label: "P2 小数据", value: String(candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "已回放" : "等待回放"), tone: candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+            { label: "P2 小数据", value: candidateRadarWritebackSurfaceStatus, tone: candidateRadarWritebackSurfaceReady ? "good" : "warn" },
+            { label: "P2 边界", value: candidateRadarWritebackSurfaceBoundary, tone: "good" },
             { label: "DeepSeek", value: candidateRadarOrdinaryDeepSeekState, tone: candidateRadarUsesModelOutput ? "warn" : "good" },
             { label: "边界", value: candidateRadarReadableBoundary, tone: "good" }
           ]}
