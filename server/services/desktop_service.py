@@ -680,6 +680,9 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "external_calls_on_startup",
         "可操作诊断",
         "下一步：先关闭占用 8710/5173 的本地进程",
+        "普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。",
+        "日志定位：FastAPI=${FASTAPI_LOG}；React/Vite=${VITE_LOG}。",
+        "安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。",
         "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped.",
         "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution.",
         "scripts/dev_server.sh",
@@ -876,6 +879,12 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "skip_open_mode_opens_browser": False,
         "launcher_display_urls_sanitized": launcher_display_urls_sanitized,
         "launcher_blocks_nonlocal_urls_before_probe": launcher_blocks_nonlocal_urls_before_probe,
+        "ordinary_failure_recovery_visible": "普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。"
+        in source,
+        "failure_diagnostics_point_to_preflight_and_logs": "日志定位：FastAPI=${FASTAPI_LOG}；React/Vite=${VITE_LOG}。"
+        in source,
+        "failure_diagnostics_do_not_retry_or_call_provider_model": "安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。"
+        in source,
         "launcher_diagnostic_urls_contain_secret": False,
         "launcher_prints_raw_query_hash_username_password": False,
         "writes_ignored_local_logs_when_user_runs": ".stock_ming_3/logs" in source,
@@ -1127,7 +1136,7 @@ def _one_click_startup_summary(
         "headline": "一键启动会启动或复用本地 FastAPI 与 React/Vite，并在后端状态 API 与页面都联通后打开页面。",
         "what_user_should_click_next": "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
         "success_condition": "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，/api/desktop/preflight-cache 必须返回一键启动 packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。",
-        "blocked_next_action": "若未打开页面，先看启动器的可操作诊断：FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。",
+        "blocked_next_action": "若未打开页面，先看启动器的可操作诊断：FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或进入桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮；日志在 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。",
         "diagnostic_surfaces": [
             "FastAPI /health Command Center 3.0 JSON",
             "bootstrap status runtime-mode packet",

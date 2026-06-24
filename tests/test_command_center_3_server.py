@@ -1868,6 +1868,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("可操作诊断", one_click["blocked_next_action"])
         self.assertIn("FastAPI、bootstrap status、desktop preflight cache、React/Vite", one_click["blocked_next_action"])
         self.assertIn("8710/5173", one_click["blocked_next_action"])
+        self.assertIn("进入桌面壳预检查看 P0 四段联通", one_click["blocked_next_action"])
+        self.assertIn("P0 未 ready 时不要进入 P1 确认按钮", one_click["blocked_next_action"])
         self.assertIn(".stock_ming_3/logs/command_center_3_fastapi.log", one_click["blocked_next_action"])
         self.assertEqual(
             one_click["diagnostic_surfaces"],
@@ -2423,6 +2425,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(launcher["skip_open_mode_opens_browser"])
         self.assertTrue(launcher["launcher_display_urls_sanitized"])
         self.assertTrue(launcher["launcher_blocks_nonlocal_urls_before_probe"])
+        self.assertTrue(launcher["ordinary_failure_recovery_visible"])
+        self.assertTrue(launcher["failure_diagnostics_point_to_preflight_and_logs"])
+        self.assertTrue(launcher["failure_diagnostics_do_not_retry_or_call_provider_model"])
         self.assertFalse(launcher["launcher_diagnostic_urls_contain_secret"])
         self.assertFalse(launcher["launcher_prints_raw_query_hash_username_password"])
         self.assertTrue(launcher["writes_ignored_local_logs_when_user_runs"])
@@ -2456,6 +2461,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertTrue(launcher_rows["launcher_marker:safe_display_url"]["passed"])
         self.assertTrue(launcher_rows["launcher_marker:url_is_local"]["passed"])
+        self.assertTrue(
+            launcher_rows[
+                "launcher_marker:普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。"
+            ]["passed"]
+        )
+        self.assertTrue(
+            launcher_rows[
+                "launcher_marker:安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。"
+            ]["passed"]
+        )
         self.assertTrue(launcher_rows["launcher_marker:不打印 query/hash/username/password"]["passed"])
         self.assertTrue(launcher_rows["check_only_launcher_marker:Command Center 3.0 check-only launcher"]["passed"])
         self.assertTrue(launcher_rows["check_only_launcher_marker:COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1"]["passed"])
@@ -16309,6 +16324,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn('open "$APP_URL"', launcher)
         self.assertIn("displayed and opened launcher URLs are sanitized", launcher)
         self.assertIn("query/userinfo are stripped", launcher)
+        self.assertIn("普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。", launcher)
+        self.assertIn("日志定位：FastAPI=${FASTAPI_LOG}；React/Vite=${VITE_LOG}。", launcher)
+        self.assertIn("安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。", launcher)
         self.assertLess(
             launcher.index('if ! url_is_local "$API_BASE"; then'),
             launcher.index('if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then'),

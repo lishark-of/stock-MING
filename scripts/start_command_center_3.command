@@ -317,6 +317,9 @@ print_startup_diagnostics() {
     echo "  - React/Vite：${VITE_URL_DISPLAY} 未返回 Command Center 3.0 前端 HTML；可能 5173 被占用，或 npm run dev 启动失败。"
   fi
   echo "下一步：先关闭占用 8710/5173 的本地进程，或查看上面的 FastAPI / React/Vite 日志。"
+  echo "普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。"
+  echo "日志定位：FastAPI=${FASTAPI_LOG}；React/Vite=${VITE_LOG}。"
+  echo "安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。"
 }
 
 print_post_startup_readback_checklist() {
