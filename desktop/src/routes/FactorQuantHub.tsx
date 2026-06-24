@@ -103,6 +103,9 @@ export default function FactorQuantHub() {
     candidateRadarInterpretation.ordinary_result_boundary ??
       "量化页只读 CandidateRadar cache / ledger / packet 的可读结论；不创建 task、不调用 Tushare/DeepSeek、不改交易动作。"
   );
+  const ordinaryQuantCandidateRadarP3Ready =
+    candidateRadarInterpretation.interpretation_ready === true &&
+    Boolean(String(candidateRadarInterpretation.ordinary_result_summary ?? "").trim());
   const runtime = packet.runtime ?? {};
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
@@ -369,14 +372,19 @@ export default function FactorQuantHub() {
     `次日图谱：${String(bridge.status ?? bridge.bridge_status ?? "等待本地缓存")}`,
     `模型解释：${ordinaryQuantDeepSeekSourceLabel}`
   ].join(" / ");
-  const ordinaryQuantP3ReadableConclusion = empty
-    ? "P3 可读结论：暂无本地量化推演；先回下一票雷达确认代码"
-    : `P3 可读结论：${ordinaryQuantResultComposition}`;
-  const ordinaryQuantP3NextStep = empty
-    ? "P3 下一步：回下一票雷达输入代码并点击确认；输入股票代码本身不创建 task"
-    : "P3 下一步：按支持/压制 -> 次日图谱预览 -> DeepSeek 状态复核；需要更新才点击按钮创建 POST task";
-  const ordinaryQuantP3Boundary =
-    "P3 边界：普通摘要只读 Factor cache、Next Session preview 和 DeepSeek status；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
+  const ordinaryQuantP3ReadableConclusion = ordinaryQuantCandidateRadarP3Ready
+    ? `P3 可读结论：${candidateRadarReadableResult}`
+    : empty
+      ? "P3 可读结论：暂无本地量化推演；先回下一票雷达确认代码"
+      : `P3 可读结论：${ordinaryQuantResultComposition}`;
+  const ordinaryQuantP3NextStep = ordinaryQuantCandidateRadarP3Ready
+    ? `P3 下一步：${candidateRadarReadableNextStep}`
+    : empty
+      ? "P3 下一步：回下一票雷达输入代码并点击确认；输入股票代码本身不创建 task"
+      : "P3 下一步：按支持/压制 -> 次日图谱预览 -> DeepSeek 状态复核；需要更新才点击按钮创建 POST task";
+  const ordinaryQuantP3Boundary = ordinaryQuantCandidateRadarP3Ready
+    ? `P3 边界：${candidateRadarReadableBoundary}`
+    : "P3 边界：普通摘要只读 Factor cache、Next Session preview 和 DeepSeek status；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
   const ordinaryQuantResultBoundary =
     "结果只用于研究复核；支持/压制、次日图谱和模型解释都不能直接变成买卖指令";
   const ordinaryDeepSeekGovernedExecutorState =
@@ -694,7 +702,7 @@ export default function FactorQuantHub() {
             { label: "完整图谱边界", value: ordinaryQuantFullNextSessionBoundary, tone: "good" },
             { label: "查看顺序", value: ordinaryQuantReviewOrder },
             { label: "结果组成", value: ordinaryQuantResultComposition },
-            { label: "P3 可读结论", value: ordinaryQuantP3ReadableConclusion, tone: empty ? "warn" : "good" },
+            { label: "P3 可读结论", value: ordinaryQuantP3ReadableConclusion, tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn" },
             { label: "P3 下一步", value: ordinaryQuantP3NextStep },
             { label: "P3 边界", value: ordinaryQuantP3Boundary, tone: "good" },
             { label: "数据来源状态", value: ordinaryQuantSourceState },
@@ -726,7 +734,7 @@ export default function FactorQuantHub() {
               { label: "可读结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
               { label: "下一步", value: candidateRadarReadableNextStep },
               { label: "P2 小数据", value: String(candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "已回放" : "等待回放"), tone: candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
-              { label: "DeepSeek", value: String(candidateRadarInterpretation.deepseek_governed_executor_status ?? "governed_executor_pending"), tone: "good" },
+              { label: "模型解释", value: String(candidateRadarInterpretation.deepseek_governed_executor_status ?? "governed_executor_pending"), tone: "good" },
               { label: "边界", value: candidateRadarReadableBoundary, tone: "good" }
             ]}
           />
