@@ -248,6 +248,12 @@ export default function ModelStrategy() {
             <p className="risk-note">DeepSeek governed executor 未完成前，普通用户仍可先看 Tushare-first、Factor light 和 Next Session 本地回放。</p>
             <DataLineageTable rows={governedExecutorNonblockingRows} />
           </div>
+          <div className="actions" aria-label="deepseek governed executor nonblocking handoff links">
+            <a href="#candidates" title="回到下一票雷达；确认按钮才创建 Tushare-first task" aria-label="continue tushare first candidate radar while deepseek pending">继续下一票雷达</a>
+            <a href="#factor" title="打开股票量化推演；只读 Factor cache 和本地结果" aria-label="continue factor light replay while deepseek pending">查看股票量化推演</a>
+            <a href="#next" title="打开次日图谱；只读本地 next-session cache" aria-label="continue next session map while deepseek pending">查看次日图谱</a>
+          </div>
+          <p className="risk-note">这些入口只切换本地页面；不会创建 DeepSeek task、不会调用模型，也不会把 pending 状态当生产验收。</p>
           <details className="developer-audit-details">
             <summary>P5 执行路由详情</summary>
             <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}。</p>
