@@ -813,41 +813,45 @@ export default function FactorQuantHub() {
           {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
           {candidateRadarResultCheckpointRows.length ? <DataLineageTable rows={candidateRadarResultCheckpointRows} /> : null}
         </div>
-        <div aria-label="stock quant ordinary upstream one screen actions">
-          <h3>上游确认一屏行动</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成量化页上游速读；本页只读回放，不创建 task、不调用模型。</p>
-          <DataLineageTable rows={ordinaryQuantUpstreamOneScreenRows} />
-        </div>
-        <div aria-label="stock quant upstream confirm outcome readback">
-          <h3>上游确认结果速读</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_confirm_outcome_rows：确认任务是否接收、P2 三面是否回放、P3 量化结果是否可读；本页只读回放，不创建第二个 task。</p>
-          <DataLineageTable rows={ordinaryQuantUpstreamConfirmOutcomeRows} />
-        </div>
-        <div aria-label="stock quant upstream p2 writeback quick read">
-          <h3>P2 小数据三面写回速读</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_writeback_surface_summary_rows：普通入口只看 cache、call_ledger、packet 三个写入面是否可回放；Factor 页只读回放，不创建 task、不补调 Tushare/DeepSeek。</p>
-          <DataLineageTable rows={ordinaryQuantUpstreamP2WritebackRows} />
-        </div>
-        <div aria-label="stock quant ordinary cache ledger packet handoff">
-          <h3>cache / ledger / packet 交接清单</h3>
-          <p className="risk-note">确认按钮之后的轻量结果按 cache、ledger、packet、次日图谱预览回放；普通页只看交接状态，完整审计留在下方。</p>
-          <DataLineageTable rows={ordinaryQuantHandoffRows} />
-        </div>
-        <div aria-label="stock quant ordinary explainable result replay">
-          <h3>三段可解释结果</h3>
-          <p className="risk-note">普通结果先按支持/压制、次日图谱预览、模型解释状态阅读；每段只回放本地 cache，不把解释变成交易动作。</p>
-          <DataLineageTable rows={ordinaryQuantResultReplayRows} />
-        </div>
-        <div aria-label="stock quant ordinary full next session handoff">
-          <h3>完整次日图谱交接</h3>
-          <p className="ordinary-status-note">从本页打开完整次日图谱只切换 #next 本地模块；先看本页预览，再去完整图谱复核路径、参考线、操作区和缺口边界。</p>
-          <DataLineageTable rows={ordinaryQuantFullNextSessionRows} />
-        </div>
-        <div aria-label="stock quant ordinary factor review checklist">
-          <h3>因子复核清单</h3>
-          <p className="risk-note">按支持、压制、冲突、缺失四类复核；普通页只读本地 score cache，不重新排序、不补调 provider/model。</p>
-          <DataLineageTable rows={ordinaryFactorReviewRows} />
-        </div>
+        <details className="developer-audit-details" aria-label="stock quant ordinary expanded replay details">
+          <summary>更多量化回放明细</summary>
+          <p className="risk-note">普通主视图保留确认后 checkpoint、P3 可读结论和下一步入口；上游确认、P2 三面、三段解释、完整图谱交接和因子复核默认收起。</p>
+          <div aria-label="stock quant ordinary upstream one screen actions">
+            <h3>上游确认一屏行动</h3>
+            <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成量化页上游速读；本页只读回放，不创建 task、不调用模型。</p>
+            <DataLineageTable rows={ordinaryQuantUpstreamOneScreenRows} />
+          </div>
+          <div aria-label="stock quant upstream confirm outcome readback">
+            <h3>上游确认结果速读</h3>
+            <p className="risk-note">优先读取 CandidateRadar 的 ordinary_confirm_outcome_rows：确认任务是否接收、P2 三面是否回放、P3 量化结果是否可读；本页只读回放，不创建第二个 task。</p>
+            <DataLineageTable rows={ordinaryQuantUpstreamConfirmOutcomeRows} />
+          </div>
+          <div aria-label="stock quant upstream p2 writeback quick read">
+            <h3>P2 小数据三面写回速读</h3>
+            <p className="risk-note">优先读取 CandidateRadar 的 ordinary_writeback_surface_summary_rows：普通入口只看 cache、call_ledger、packet 三个写入面是否可回放；Factor 页只读回放，不创建 task、不补调 Tushare/DeepSeek。</p>
+            <DataLineageTable rows={ordinaryQuantUpstreamP2WritebackRows} />
+          </div>
+          <div aria-label="stock quant ordinary cache ledger packet handoff">
+            <h3>cache / ledger / packet 交接清单</h3>
+            <p className="risk-note">确认按钮之后的轻量结果按 cache、ledger、packet、次日图谱预览回放；普通页只看交接状态，完整审计留在下方。</p>
+            <DataLineageTable rows={ordinaryQuantHandoffRows} />
+          </div>
+          <div aria-label="stock quant ordinary explainable result replay">
+            <h3>三段可解释结果</h3>
+            <p className="risk-note">普通结果先按支持/压制、次日图谱预览、模型解释状态阅读；每段只回放本地 cache，不把解释变成交易动作。</p>
+            <DataLineageTable rows={ordinaryQuantResultReplayRows} />
+          </div>
+          <div aria-label="stock quant ordinary full next session handoff">
+            <h3>完整次日图谱交接</h3>
+            <p className="ordinary-status-note">从本页打开完整次日图谱只切换 #next 本地模块；先看本页预览，再去完整图谱复核路径、参考线、操作区和缺口边界。</p>
+            <DataLineageTable rows={ordinaryQuantFullNextSessionRows} />
+          </div>
+          <div aria-label="stock quant ordinary factor review checklist">
+            <h3>因子复核清单</h3>
+            <p className="risk-note">按支持、压制、冲突、缺失四类复核；普通页只读本地 score cache，不重新排序、不补调 provider/model。</p>
+            <DataLineageTable rows={ordinaryFactorReviewRows} />
+          </div>
+        </details>
         <details className="developer-audit-details" aria-label="stock quant ordinary p5 governance details">
           <summary>P5 解释治理单独补证状态</summary>
           <p className="risk-note">普通主线先复核 P3 支持/压制、次日图谱预览和缺失证据；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
