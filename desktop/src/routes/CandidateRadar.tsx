@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getBootstrapStatus, getCandidateRadarCache, getDesktopPreflightCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
-import MetricGrid from "../components/MetricGrid";
+import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import PageStateBanner from "../components/PageStateBanner";
 import StateClarityRail from "../components/StateClarityRail";
@@ -1361,6 +1361,38 @@ export default function CandidateRadar() {
     (quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId)) && !quantProjectionTaskPanelStaleForCurrentInput;
   const quantProjectionTaskPanelTaskId =
     quantProjectionTaskPanelStaleForCurrentInput ? "" : quantProjectionTaskVisible && taskId ? taskId : quantProjectionPersistedTaskId;
+  const quantProjectionP1ProgressItems: MetricItem[] = [
+    {
+      label: "输入状态",
+      value: quantProjectionInputValidation,
+      tone: quantProjectionSymbolReady ? "good" : searchSymbol.trim() ? "warn" : "neutral"
+    },
+    {
+      label: "确认状态",
+      value: quantProjectionConfirmChainState,
+      tone: taskReceipt?.ok || quantProjectionCanSubmit ? "good" : quantProjectionSubmitError ? "bad" : "warn"
+    },
+    {
+      label: "最近任务",
+      value: quantProjectionLatestTaskState,
+      tone: taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : quantProjectionSubmitError ? "bad" : "warn"
+    },
+    {
+      label: "Tushare-first",
+      value: quantProjectionTushareFirstState,
+      tone: quantProjectionProviderLedgerReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "P2 回放",
+      value: quantProjectionSmallDataStageLabel,
+      tone: quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "输入不外联；确认按钮才创建 POST task；DeepSeek skipped；不交易、不改 action",
+      tone: "good"
+    }
+  ];
   const quantProjectionFailedSubmitLedgerRows = quantProjectionSubmitError
     ? (taskReceipt?.call_ledger ?? []).filter((row) => row.frontend_backend_auto_link_attempted === true)
     : [];
@@ -2437,6 +2469,11 @@ export default function CandidateRadar() {
             steps={quantProjectionOrdinaryTaskRailSteps}
           />
           <p className="risk-note">普通确认状态：等待输入 / 任务接收 / 任务轮询 / cache 回放；这条状态轨只读本地 task receipt 和 cache，不补调 Tushare、DeepSeek 或 GitHub。</p>
+          <div aria-label="quant projection p1 visible progress summary">
+            <h3>P1 进度速读</h3>
+            <p className="risk-note">点确认后先看这里：任务是否接收、最近 task、Tushare-first 和 P2 回放状态会直接出现在普通视图，不需要展开工程明细。</p>
+            <MetricGrid items={quantProjectionP1ProgressItems} />
+          </div>
           <div aria-label="quant projection ordinary confirm trigger boundary">
             <h3>P1 触发边界</h3>
             <p className="risk-note">优先读取服务端 ordinary_confirm_trigger_boundary_rows：输入只校验，确认按钮才创建 Tushare-first POST task，GET cache 和 React render 只回放本地结果。</p>
