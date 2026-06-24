@@ -290,6 +290,7 @@ export default function CandidateRadar() {
   const searchQuantProjectionExecutionRequest = (cache.search_quant_projection_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProviderModelAcceptance = (cache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionSmallDataWriteback = (cache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionWritebackCheckpoint = (searchQuantProjectionSmallDataWriteback.ordinary_writeback_checkpoint_contract as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionInterpretation = (cache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionResultCheckpoint =
     (searchQuantProjectionInterpretation.ordinary_result_checkpoint_contract as Record<string, unknown> | undefined) ?? {};
@@ -846,6 +847,14 @@ export default function CandidateRadar() {
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_boundary ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.readback_contract ?? "") ||
     "小数据回放只读取本地 cache / ledger / packet；GET cache 和 React render 不补调 provider/model，不生成交易动作。";
+  const quantProjectionWritebackSurfaceCount = Number(searchQuantProjectionWritebackCheckpoint.surface_count ?? 3);
+  const quantProjectionWritebackReadableSurfaceCount = Number(searchQuantProjectionWritebackCheckpoint.readable_surface_count ?? 0);
+  const quantProjectionWritebackCompleteSurfaceCount = Number(searchQuantProjectionWritebackCheckpoint.complete_surface_count ?? 0);
+  const quantProjectionWritebackCheckpointLabel = [
+    `readable ${quantProjectionWritebackReadableSurfaceCount}/${quantProjectionWritebackSurfaceCount}`,
+    `complete ${quantProjectionWritebackCompleteSurfaceCount}/${quantProjectionWritebackSurfaceCount}`,
+    String(searchQuantProjectionWritebackCheckpoint.call_ledger_state ?? "waiting_confirm_task")
+  ].join(" / ");
   const quantProjectionSmallDataProvenance =
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_provenance_summary ?? "") ||
     "当前读回来自 GET cache 的本地 packet；provider 证据只由 POST task call_ledger 证明，React render 不补调 provider/model。";
@@ -2026,6 +2035,7 @@ export default function CandidateRadar() {
             { label: "P1 确认后等待", value: quantProjectionPostConfirmWaitLabel, tone: taskReceipt?.ok || quantProjectionPersistedTaskId || quantProjectionProviderLedgerReady ? "good" : "warn" },
             { label: "P2 小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
             { label: "P2 三面", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+            { label: "P2 checkpoint", value: quantProjectionWritebackCheckpointLabel, tone: quantProjectionWritebackReadableSurfaceCount === quantProjectionWritebackSurfaceCount ? "good" : "warn" },
             { label: "P2 写入边界", value: quantProjectionSmallDataReadbackContract, tone: "good" },
             { label: "任务边界", value: ordinaryTaskBoundary },
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
