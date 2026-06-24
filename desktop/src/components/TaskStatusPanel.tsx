@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { cancelTask, getTask, type ApiEnvelope, type TaskRecord } from "../api/client";
 import DataLineageTable from "./DataLineageTable";
 import DeepSeekModelStrategyLedger from "./DeepSeekModelStrategyLedger";
+import MetricGrid, { type MetricItem } from "./MetricGrid";
 import StateClarityRail from "./StateClarityRail";
 import StatusBadge from "./StatusBadge";
 import TaskBoundarySummary from "./TaskBoundarySummary";
@@ -17,7 +18,7 @@ type TaskLookupError = {
   warnings: unknown[];
 };
 
-function toneForStatus(status: TaskRecord["status"]) {
+function toneForStatus(status: TaskRecord["status"]): MetricItem["tone"] {
   if (status === "success") return "good";
   if (status === "failed" || status === "cancelled") return "bad";
   return "warn";
@@ -291,6 +292,14 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     { href: candidateRadarResultReplay ? "#candidates" : "#tasks", label: candidateRadarResultReplay ? "回到下一票雷达" : "查看任务列表", title: "回到本地入口；再次确认前不会创建任务", aria: "open local recovery entry from failed task status" },
     { href: "#packets", label: "查看 Packet", title: "打开 Packet 注册表；只读查看本地输出", aria: "open packet registry from failed task status" }
   ];
+  const taskOrdinarySummaryItems: MetricItem[] = [
+    { label: "状态", value: taskStatusLabel, tone: toneForStatus(task.status) },
+    { label: "当前步骤", value: task.current_step, tone: task.status === "success" ? "good" as const : "warn" as const },
+    { label: "P2 写回", value: callLedgerQuickStatus, tone: callLedger.length ? "good" as const : "warn" as const },
+    { label: "Tushare-first", value: tushareProviderRows.length ? `${tushareProviderSuccessCount}/${tushareProviderRows.length}` : "等待 ledger", tone: tushareProviderRows.length ? "good" as const : "warn" as const },
+    { label: "P3 结果", value: candidateRadarResultReplay ? "可回放到量化/图谱" : "按输出 packet 回放", tone: task.status === "success" ? "good" as const : "warn" as const },
+    { label: "安全边界", value: "不交易、不改 action", tone: "good" as const }
+  ];
 
   return (
     <div className={`task-panel task-panel--${task.status} motion-surface`} data-task-state={task.status} data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
@@ -316,25 +325,32 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <p>开始时间：{task.started_at ?? "--"}</p>
       <p>结束时间：{task.finished_at ?? "--"}</p>
       {successRefreshMessage ? <p className="panelSuccessRefresh">{successRefreshMessage}</p> : null}
-      <div aria-label="task status p2 writeback quick read">
-        <p className="risk-note">P2 写回速读：普通用户先看 cache、call_ledger、packet 三面是否有本地回放信号；这张表只读任务状态，不创建新 task。</p>
-        <DataLineageTable rows={p2WritebackQuickRows} />
+      <div aria-label="task status ordinary summary">
+        <p className="risk-note">任务速读：普通用户先看状态、写回、Tushare-first、结果入口和安全边界；工程明细默认收起。</p>
+        <MetricGrid items={taskOrdinarySummaryItems} />
       </div>
-      {candidateRadarResultReplay ? (
-        <div aria-label="task status tushare first ledger quick read">
-          <p className="risk-note">Tushare-first 速读：普通用户先看主任务是否已回放接口级 ledger；这张表只读当前任务状态，不创建新 task。</p>
-          <DataLineageTable rows={taskTushareFirstQuickRows} />
-        </div>
-      ) : null}
-      <div aria-label="task status p3 result replay quick read">
-        <p className="risk-note">P3 结果入口速读：任务写回后按本地入口回放可解释结果；这些链接只切换本地页面，不创建 task、不调用 provider/model。</p>
-        <DataLineageTable rows={p3ResultReplayRows} />
-        <div className="actions" aria-label="task status p3 result replay links">
-          {p3ResultReplayLinks.map((link) => (
-            <a key={link.href} href={link.href} title={link.title} aria-label={link.aria}>{link.label}</a>
-          ))}
-        </div>
+      <div className="actions" aria-label="task status p3 result replay links">
+        {p3ResultReplayLinks.map((link) => (
+          <a key={link.href} href={link.href} title={link.title} aria-label={link.aria}>{link.label}</a>
+        ))}
       </div>
+      <details className="developer-audit-details" aria-label="task status ordinary replay details">
+        <summary>任务回放详情</summary>
+        <div aria-label="task status p2 writeback quick read">
+          <p className="risk-note">P2 写回速读：cache、call_ledger、packet 三面是否有本地回放信号；这张表只读任务状态，不创建新 task。</p>
+          <DataLineageTable rows={p2WritebackQuickRows} />
+        </div>
+        {candidateRadarResultReplay ? (
+          <div aria-label="task status tushare first ledger quick read">
+            <p className="risk-note">Tushare-first 速读：主任务是否已回放接口级 ledger；这张表只读当前任务状态，不创建新 task。</p>
+            <DataLineageTable rows={taskTushareFirstQuickRows} />
+          </div>
+        ) : null}
+        <div aria-label="task status p3 result replay quick read">
+          <p className="risk-note">P3 结果入口速读：任务写回后按本地入口回放可解释结果；这些链接只切换本地页面，不创建 task、不调用 provider/model。</p>
+          <DataLineageTable rows={p3ResultReplayRows} />
+        </div>
+      </details>
       {showTaskFailureRecovery ? (
         <div aria-label="task status failed recovery quick read">
           <p className="risk-note">失败/取消恢复速读：先回 P0 确认前后端联通，再由用户手动回到原入口；这里不自动重试、不调用 provider/model、不执行真实交易。</p>
