@@ -1608,6 +1608,29 @@ export default function CandidateRadar() {
       边界: "只切换 #factor/#next 锚点，不重新创建 task、不改 strategy action"
     }
   ];
+  const quantProjectionTaskSuccessRefreshRows = [
+    {
+      回读项: "1. TaskStatusPanel success",
+      当前状态: quantProjectionTaskPanelTaskId ? "可轮询本地任务状态" : "等待 task id",
+      成功后动作: "调用 refreshQuantProjectionReadback，回读 CandidateRadar cache 和 bootstrap status",
+      用户下一步: quantProjectionSmallDataReady ? "继续打开量化推演和次日图谱回放" : "等待 success 后确认 P2 三面是否可回放",
+      边界: "TaskStatusPanel 只轮询本地 FastAPI；success 回调不创建第二个 task、不补调 Tushare/DeepSeek"
+    },
+    {
+      回读项: "2. cache / ledger / packet",
+      当前状态: quantProjectionSmallDataReady ? "P2 三面已可回放" : "等待本地 cache 刷新后回放",
+      成功后动作: "refreshCache() 只读取 GET /api/candidate-radar/cache",
+      用户下一步: "看 P2 小数据三面回放和 P3 结果速读",
+      边界: "GET cache 只读；不展示 raw log、token/key 或 provider error"
+    },
+    {
+      回读项: "3. 结果入口",
+      当前状态: quantProjectionReplayDestinationState,
+      成功后动作: "结果入口只切换 #factor / #next 本地模块",
+      用户下一步: quantProjectionReplayDestinationNextStep,
+      边界: "回放链接不重新创建 task、不调用模型、不交易、不改 strategy action"
+    }
+  ];
   const quantProjectionOneScreenPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_one_screen_action_rows).map((row) => ({
     行动: displayText(row["行动"] ?? row.action_key),
     当前状态: displayText(row["当前状态"] ?? row.status),
@@ -2472,6 +2495,11 @@ export default function CandidateRadar() {
           {quantProjectionTaskPanelVisible ? (
             <div aria-label="quant projection tushare-first task status">
               <TaskLaunchReceipt receipt={taskReceipt} />
+              <div aria-label="quant projection task success refresh checklist">
+                <h3>任务成功后自动回读</h3>
+                <p className="risk-note">TaskStatusPanel success 后调用 refreshQuantProjectionReadback：只回读 CandidateRadar cache 和 bootstrap status，再让用户看 P2 三面与 P3 结果入口；不会创建第二个 task。</p>
+                <DataLineageTable rows={quantProjectionTaskSuccessRefreshRows} />
+              </div>
               <TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />
             </div>
           ) : null}
