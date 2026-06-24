@@ -133,6 +133,10 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const statusHistory = task.status_history ?? [];
   const cancellable = task.status === "pending" || task.status === "running";
   const taskStatusLabel = labelForStatus(task.status);
+  const successRefreshMessage =
+    task.status === "success" && onSuccess
+      ? "任务成功后已通知页面刷新本地回放；这不会创建新 task、不调用 Tushare、DeepSeek 或 GitHub、不执行真实交易。"
+      : "";
 
   return (
     <div className={`task-panel task-panel--${task.status} motion-surface`} data-task-state={task.status} data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
@@ -157,6 +161,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <p>创建时间：{task.created_at ?? "--"}</p>
       <p>开始时间：{task.started_at ?? "--"}</p>
       <p>结束时间：{task.finished_at ?? "--"}</p>
+      {successRefreshMessage ? <p className="panelSuccessRefresh">{successRefreshMessage}</p> : null}
       <TaskBoundarySummary task={task} />
       <p>审计记录：{callLedger.length}</p>
       <button
