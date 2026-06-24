@@ -61,6 +61,128 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
 
         self.addCleanup(restore)
 
+    def test_p0_confirm_gate_requires_stability_or_local_link_evidence(self):
+        gate = {
+            "schema_version": "candidate_radar_p0_confirm_gate.v1",
+            "p0_ready": True,
+            "fastapi_cache_get_ready": True,
+            "bootstrap_runtime_mode_ready": True,
+            "desktop_preflight_ready": True,
+            "p0_stability_check_ready": False,
+            "p0_local_link_ready": False,
+            "p0_connection_evidence_ready": False,
+            "candidate_cache_ready": True,
+            "creates_task_only_after_button": True,
+            "react_render_external_calls": False,
+            "get_cache_external_calls": False,
+            "contains_sensitive_material": False,
+        }
+
+        self.assertFalse(candidate_service._quant_projection_p0_confirm_gate_ready(gate))
+        gate["p0_local_link_ready"] = True
+        gate["p0_connection_evidence_ready"] = True
+        self.assertTrue(candidate_service._quant_projection_p0_confirm_gate_ready(gate))
+
+    def test_confirm_tushare_first_accepts_local_fastapi_link_without_stability_receipt(self):
+        self._with_meta_store()
+        self._with_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "candidate cache"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
+
+        def fake_run_tushare_refresh_task(payload, **_kwargs):
+            return {
+                "task_id": "fake-tushare-local-link-ledger",
+                "status": "success",
+                "current_step": "tushare_refresh_completed",
+                "call_ledger": [
+                    {
+                        "api": api,
+                        "request_params_safe": {"ts_code": payload["ts_code"]},
+                        "row_count": 1,
+                        "call_status": "success",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                    for api in payload["apis"]
+                ],
+            }
+
+        candidate_service.tushare_task_service.run_tushare_refresh_task = fake_run_tushare_refresh_task
+        self.addCleanup(
+            setattr,
+            candidate_service.tushare_task_service,
+            "run_tushare_refresh_task",
+            original_run_tushare,
+        )
+
+        response = self.client.post(
+            "/api/candidate-radar/quant-projection",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": False,
+                "user_approved": True,
+                "p0_confirm_gate_evidence": {
+                    "schema_version": "candidate_radar_p0_confirm_gate.v1",
+                    "p0_ready": True,
+                    "fastapi_cache_get_ready": True,
+                    "bootstrap_runtime_mode_ready": True,
+                    "desktop_preflight_ready": True,
+                    "p0_stability_check_ready": False,
+                    "p0_local_link_ready": True,
+                    "p0_connection_evidence_ready": True,
+                    "p0_local_link_is_ui_gate_only_not_release_evidence": True,
+                    "candidate_cache_ready": True,
+                    "candidate_cache_status": "ready",
+                    "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+                    "desktop_preflight_packet_key": "command_center_3_desktop_shell_preflight_cache",
+                    "creates_task_only_after_button": True,
+                    "react_render_external_calls": False,
+                    "get_cache_external_calls": False,
+                    "contains_secret": False,
+                },
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(
+            task["current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+        )
+        self.assertTrue(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        receipt_rows = {
+            row["receipt_item"]: row
+            for row in packet["search_quant_projection_small_data_writeback_summary"][
+                "ordinary_confirmed_task_receipt_rows"
+            ]
+        }
+        self.assertEqual(receipt_rows["p0_confirm_gate"]["status"], "p0_gate_ready")
+        self.assertFalse(receipt_rows["p0_confirm_gate"]["p0_stability_check_ready"])
+        self.assertTrue(receipt_rows["p0_confirm_gate"]["p0_local_link_ready"])
+        self.assertTrue(receipt_rows["p0_confirm_gate"]["p0_connection_evidence_ready"])
+        self.assertTrue(
+            receipt_rows["p0_confirm_gate"]["p0_local_link_is_ui_gate_only_not_release_evidence"]
+        )
+        self.assertIn("P0 stability/local link", receipt_rows["p0_confirm_gate"]["ordinary_label"])
+
     def test_confirm_tushare_first_writes_provider_ledger_to_cache_envelope(self):
         self._with_meta_store()
         self._with_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")
