@@ -163,7 +163,6 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <p>结束时间：{task.finished_at ?? "--"}</p>
       {successRefreshMessage ? <p className="panelSuccessRefresh">{successRefreshMessage}</p> : null}
       <TaskBoundarySummary task={task} />
-      <p>审计记录：{callLedger.length}</p>
       <button
         disabled={!cancellable}
         onClick={() =>
@@ -177,14 +176,19 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       </button>
       {cancelMessage ? <p className="risk-note">{cancelMessage}</p> : null}
       {task.warnings?.length ? <p className="risk-note">{task.warnings[0]}</p> : null}
-      <DeepSeekModelStrategyLedger callLedger={callLedger} />
-      {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无任务审计记录。</p>}
-      {statusHistory.length ? (
-        <>
-          <p>状态变化记录：{statusHistory.length}</p>
-          <DataLineageTable rows={statusHistory} />
-        </>
-      ) : null}
+      <details className="developer-audit-details" aria-label="task status audit details">
+        <summary>任务审计详情</summary>
+        <p>普通用户先看状态轨、当前步骤、本地回放提示和取消按钮；call ledger、model ledger 和状态历史默认收起。</p>
+        <p>审计记录：{callLedger.length}</p>
+        <DeepSeekModelStrategyLedger callLedger={callLedger} />
+        {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无任务审计记录。</p>}
+        {statusHistory.length ? (
+          <>
+            <p>状态变化记录：{statusHistory.length}</p>
+            <DataLineageTable rows={statusHistory} />
+          </>
+        ) : null}
+      </details>
     </div>
   );
 }
