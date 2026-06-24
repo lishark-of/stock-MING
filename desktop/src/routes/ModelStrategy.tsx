@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { getModelStrategyCache } from "../api/client";
+import { getModelStrategyCache, postDeepseekProviderBenchmarkScopeTicket, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import StateClarityRail from "../components/StateClarityRail";
 import StatusBadge from "../components/StatusBadge";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 
 function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
@@ -20,14 +21,43 @@ export default function ModelStrategy() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
+  const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [scopeTicketSubmitting, setScopeTicketSubmitting] = useState(false);
+  const [scopeTicketError, setScopeTicketError] = useState("");
 
-  useEffect(() => {
+  const refreshModelStrategyCache = () => {
     void getModelStrategyCache().then((res) => {
       setCache(res.data);
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
     });
+  };
+
+  useEffect(() => {
+    refreshModelStrategyCache();
   }, []);
+
+  const launchScopeTicket = () => {
+    if (scopeTicketSubmitting) return;
+    setScopeTicketSubmitting(true);
+    setScopeTicketError("");
+    void postDeepseekProviderBenchmarkScopeTicket({
+      approved_by_user: true,
+      sample_count: 40,
+      response_format: "json_schema",
+      max_retry_per_sample: 2,
+      requested_by: "model_strategy_page"
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (!res.ok) {
+        setScopeTicketError(res.error ?? "deepseek_scope_ticket_task_failed");
+      }
+      refreshModelStrategyCache();
+    }).catch(() => {
+      setTaskReceipt(null);
+      setScopeTicketError("deepseek_scope_ticket_submit_exception");
+    }).finally(() => setScopeTicketSubmitting(false));
+  };
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
@@ -254,6 +284,25 @@ export default function ModelStrategy() {
             <a href="#next" title="打开次日图谱；只读本地 next-session cache" aria-label="continue next session map while deepseek pending">查看次日图谱</a>
           </div>
           <p className="risk-note">这些入口只切换本地页面；不会创建 DeepSeek task、不会调用模型，也不会把 pending 状态当生产验收。</p>
+          <div aria-label="deepseek governed executor scope ticket action">
+            <h3>P5 本地 scope ticket</h3>
+            <p className="risk-note">这个按钮只创建本地 provider benchmark scope ticket，写入本地任务回执；不调用 DeepSeek、不读取 token/key、不阻塞 Tushare-first 或基础图谱。</p>
+            <div className="actions">
+              <button onClick={launchScopeTicket} disabled={scopeTicketSubmitting}>
+                {scopeTicketSubmitting ? "生成中" : "生成 P5 本地 scope ticket"}
+              </button>
+            </div>
+            {scopeTicketError && <p className="risk-note">{scopeTicketError}</p>}
+            <MetricGrid
+              items={[
+                { label: "任务", value: taskReceipt?.data?.task_id ?? "等待点击", tone: taskReceipt?.ok ? "good" : "warn" },
+                { label: "DeepSeek call", value: taskReceipt?.data?.task?.deepseek_called === true ? "已调用" : "未调用", tone: taskReceipt?.data?.task?.deepseek_called === true ? "bad" : "good" },
+                { label: "外联", value: taskReceipt?.data?.task?.external_calls_triggered === true ? "存在" : "无", tone: taskReceipt?.data?.task?.external_calls_triggered === true ? "bad" : "good" },
+                { label: "真实交易", value: taskReceipt?.data?.task?.does_not_execute_trades === false ? "可能" : "禁止", tone: taskReceipt?.data?.task?.does_not_execute_trades === false ? "bad" : "good" }
+              ]}
+            />
+            <TaskLaunchReceipt receipt={taskReceipt} />
+          </div>
           <details className="developer-audit-details">
             <summary>P5 执行路由详情</summary>
             <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}。</p>
