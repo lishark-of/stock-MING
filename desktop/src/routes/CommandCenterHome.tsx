@@ -282,6 +282,7 @@ export default function CommandCenterHome() {
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
   const candidateQuantSmallDataWriteback = (candidates.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantOneScreenActionRows = (candidateQuantSmallDataWriteback.ordinary_one_screen_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantWritebackSurfaceRows = (candidateQuantSmallDataWriteback.ordinary_writeback_surface_summary_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const dailyCommandSmallDataWritebackState = String(
     candidateQuantSmallDataWriteback.ordinary_readback_stage_label ??
@@ -596,6 +597,47 @@ export default function CommandCenterHome() {
       边界: dailyCommandP0LocalReadinessBoundary
     }
   ];
+  const dailyCommandOneScreenActionRows = candidateQuantOneScreenActionRows.length
+    ? candidateQuantOneScreenActionRows.map((row) => ({
+        行动: String(row["行动"] ?? row.action_key ?? "行动"),
+        当前状态: String(row["当前状态"] ?? row.status ?? "等待本地回放"),
+        用户下一步: String(row["用户下一步"] ?? row.next_action ?? "先完成 P0 联通，再去下一票雷达确认代码"),
+        入口: String(row["入口"] ?? row.entry ?? "下一票雷达"),
+        边界: String(row["边界"] ?? row.boundary ?? "首页只读回放 CandidateRadar packet；不会从首页创建 task 或调用模型。")
+      }))
+    : [
+        {
+          行动: "1. 确认",
+          当前状态: dailyCommandP0LocalReadinessReady ? "P0 ready：可以进入下一票雷达确认代码" : "P0 check：先恢复本地联通",
+          用户下一步: dailyCommandP0LocalReadinessReady ? "进入下一票雷达，输入股票代码并点击确认按钮" : "先打开一键启动预检恢复四段联通",
+          入口: dailyCommandP0LocalReadinessReady ? "#candidates" : "#desktop",
+          边界: "首页只提供本地导航；页面打开、输入和 GET cache 不创建 Tushare-first task。"
+        },
+        {
+          行动: "2. 任务",
+          当前状态: "等待下一票雷达确认按钮返回 task id",
+          用户下一步: "确认后看 TaskStatusPanel，本地任务完成后刷新 cache",
+          入口: "下一票雷达确认按钮 / TaskStatusPanel",
+          边界: "只有确认按钮可创建 Tushare-first POST task；首页不提交 task。"
+        },
+        {
+          行动: "3. 写回",
+          当前状态: dailyCommandSmallDataWritebackState,
+          用户下一步: "回放 cache / call_ledger / packet 三面",
+          入口: "CandidateRadar cache / ledger / packet",
+          边界: dailyCommandSmallDataWritebackBoundary
+        },
+        {
+          行动: "4. 结果",
+          当前状态: String(candidateQuantInterpretation.ordinary_result_summary ?? "等待搜票确认后的可解释结果"),
+          用户下一步: String(candidateQuantInterpretation.ordinary_result_next_step ?? "确认任务完成后看股票量化推演和次日图谱"),
+          入口: "股票量化推演 / 次日图谱",
+          边界: "结果只是研究回放；不调用 DeepSeek、不覆盖 strategy action、不生成交易指令。"
+        }
+      ];
+  const dailyCommandOneScreenActionLabel = dailyCommandOneScreenActionRows
+    .map((row) => `${row.行动}: ${row.当前状态}`)
+    .join(" / ");
   const dailyCommandUsableShortestPathRows = [
     {
       阶段: "P0 一键启动和本地联通",
@@ -867,6 +909,7 @@ export default function CommandCenterHome() {
             { label: "自动联通边界", value: dailyCommandFrontendBackendAutoLinkBoundary, tone: "good" },
             { label: "P0 可继续", value: dailyCommandP0LocalReadinessLabel, tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
+            { label: "一屏行动", value: dailyCommandOneScreenActionLabel || "等待 CandidateRadar 一屏行动回放", tone: candidateQuantOneScreenActionRows.length ? "good" : "warn" },
             { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
             { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
@@ -928,6 +971,11 @@ export default function CommandCenterHome() {
           <h3>P0 当前下一步</h3>
           <p className="risk-note">优先读取 desktop preflight 的 p0_current_next_action_rows：未 ready 回预检恢复，ready 后只切到下一票雷达；确认按钮之前不创建 Tushare-first task。</p>
           <DataLineageTable rows={p0CurrentNextActionRows} />
+        </div>
+        <div aria-label="daily command one screen search actions">
+          <h3>今日搜票一屏行动</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成首页速读；首页只读回放，不创建 task、不调用模型。</p>
+          <DataLineageTable rows={dailyCommandOneScreenActionRows} />
         </div>
         <div aria-label="daily command p0 quick action handoff">
           <h3>P0 到 P1 快速行动</h3>
