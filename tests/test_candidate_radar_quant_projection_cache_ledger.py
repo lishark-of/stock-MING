@@ -662,6 +662,49 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_call_model"])
         self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_use_model_output"])
         self.assertTrue(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_are_not_trade_signals"])
+        self.assertEqual(packet["counts"]["search_quant_projection_deepseek_governed_executor_contract_row_count"], 4)
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_governed_executor_contract_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_contract_rows_create_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_contract_rows_call_model"])
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_governed_executor_contract_rows_are_not_trade_signals"])
+        deepseek_contract = interpretation["ordinary_deepseek_governed_executor_contract"]
+        self.assertEqual(
+            deepseek_contract["schema_version"],
+            "candidate_radar_search_quant_projection_deepseek_governed_executor_contract.v1",
+        )
+        self.assertEqual(deepseek_contract["status"], "waiting_p5_governed_executor_task")
+        self.assertFalse(deepseek_contract["task_route_implemented"])
+        self.assertFalse(deepseek_contract["blocks_p1_p2_p3"])
+        self.assertTrue(deepseek_contract["model_ledger_required"])
+        self.assertTrue(deepseek_contract["sanitizer_required"])
+        self.assertFalse(deepseek_contract["deepseek_real_call_allowed_now"])
+        self.assertFalse(deepseek_contract["deepseek_called"])
+        self.assertFalse(deepseek_contract["contains_secret"])
+        self.assertFalse(deepseek_contract["production_deepseek_complete"])
+        contract_rows = {
+            row["contract_key"]: row
+            for row in interpretation["ordinary_deepseek_governed_executor_contract_rows"]
+        }
+        self.assertEqual(
+            set(contract_rows),
+            {"standalone_p5_task", "ledger_and_sanitizer", "safe_output_scope", "nonblocking_fallback"},
+        )
+        self.assertIn("未来单独 P5 governed executor task", contract_rows["standalone_p5_task"]["当前状态"])
+        self.assertIn("model_ledger", contract_rows["ledger_and_sanitizer"]["合同项"])
+        self.assertIn("source/gap/next_step/safety_summary", contract_rows["safe_output_scope"]["证据"])
+        self.assertFalse(contract_rows["nonblocking_fallback"]["blocks_p1_p2_p3"])
+        for contract_row in contract_rows.values():
+            self.assertTrue(contract_row["cache_only_readback"])
+            self.assertFalse(contract_row["creates_task_from_readback"])
+            self.assertFalse(contract_row["calls_model_from_readback"])
+            self.assertFalse(contract_row["deepseek_called"])
+            self.assertFalse(contract_row["uses_model_output"])
+            self.assertFalse(contract_row["contains_secret"])
+            self.assertFalse(contract_row["blocks_p1_p2_p3"])
+            self.assertTrue(contract_row["does_not_execute_trades"])
+            self.assertTrue(contract_row["does_not_modify_strategy_action"])
+            self.assertTrue(contract_row["candidate_is_not_buy_instruction"])
+            self.assertFalse(contract_row["production_deepseek_complete"])
         result_checkpoint = interpretation["ordinary_result_checkpoint_contract"]
         self.assertEqual(
             result_checkpoint["schema_version"],

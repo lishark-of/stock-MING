@@ -1195,6 +1195,14 @@ export default function CandidateRadar() {
     证据: displayText(row["证据"] ?? row.evidence),
     边界: displayText(row["边界"] ?? row.boundary, "不创建 task、不调用模型、不覆盖 action")
   }));
+  const quantProjectionDeepSeekContractRows = rows(searchQuantProjectionInterpretation.ordinary_deepseek_governed_executor_contract_rows).map((row) => ({
+    合同项: displayText(row["合同项"] ?? row.contract_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    允许动作: displayText(row["允许动作"] ?? row.allowed_action, "未来单独按钮门控 POST task；当前只读回放"),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, "先使用 P1/P2/P3，本轮不调用模型"),
+    证据: displayText(row["证据"] ?? row.evidence),
+    边界: displayText(row["边界"] ?? row.boundary, "不创建 task、不调用模型、不覆盖 action")
+  }));
   const quantProjectionDeepSeekGovernanceRows = quantProjectionModelGovernanceRows.length
     ? quantProjectionModelGovernanceRows
     : [
@@ -2175,6 +2183,11 @@ export default function CandidateRadar() {
             <p className="risk-note">DeepSeek 只作为 governed executor 单独补证；P1 Tushare-first、P2 小数据写入和 P3 基础图谱继续先走本地回放，不等待模型。</p>
             <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
           </div>
+          <div aria-label="candidate radar ordinary p5 governed executor contract">
+            <h3>P5 DeepSeek 单独补证合同</h3>
+            <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：未来 DeepSeek 只能作为单独 P5 按钮任务，必须有 model_ledger、sanitizer 和安全摘要字段；本表只读回放，不创建 task、不调用模型。</p>
+            <DataLineageTable rows={quantProjectionDeepSeekContractRows} />
+          </div>
           <div aria-label="candidate radar ordinary p5 governed executor readiness">
             <h3>P5 governed executor readiness</h3>
             <p className="risk-note">普通用户只看 P5 是否具备单独补证条件：model_ledger、sanitizer、fallback 和 promotion 边界；这张表只读回放，不创建 task、不调用模型。</p>
@@ -2346,6 +2359,13 @@ export default function CandidateRadar() {
             <details className="developer-audit-details" aria-label="quant projection ordinary deepseek governance status">
               <summary>P5 DeepSeek 治理状态</summary>
               <p className="risk-note">优先读取服务端 ordinary_model_governance_rows：只看执行门控、输出范围和是否阻塞基础图谱；不会从治理状态创建 task 或调用模型。</p>
+              {quantProjectionDeepSeekContractRows.length ? (
+                <div aria-label="quant projection ordinary deepseek governed executor contract">
+                  <h3>P5 DeepSeek 单独补证合同</h3>
+                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：明确未来单独 P5 task、model_ledger、sanitizer、安全字段和不阻塞 P1/P2/P3；这张表只读回放，不创建 task、不调用模型。</p>
+                  <DataLineageTable rows={quantProjectionDeepSeekContractRows} />
+                </div>
+              ) : null}
               {quantProjectionDeepSeekReadinessRows.length ? (
                 <div aria-label="quant projection ordinary deepseek governed executor readiness">
                   <h3>P5 governed executor readiness</h3>
