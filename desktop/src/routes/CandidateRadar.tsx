@@ -43,6 +43,9 @@ function confirmedTaskReceiptLabel(item: unknown) {
 }
 
 function quantProjectionSubmitFailureMessage(error?: string | null) {
+  if (error === "missing_task_id") {
+    return "未生成 task id";
+  }
   if (error?.includes("backend_offline_or_unreachable")) {
     return "本地 FastAPI 后端未连接；请先用一键启动器恢复连接。";
   }
@@ -151,15 +154,21 @@ export default function CandidateRadar() {
       requested_by: "candidate_radar_page",
       ordinary_confirm_chain_contract: quantProjectionP1ConfirmPayloadContract
     }).then((res) => {
-      setTaskReceipt(res);
-      if (res.ok) {
+      const acceptedTaskId = String(res.data?.task_id ?? res.data?.task?.task_id ?? "");
+      if (res.ok && acceptedTaskId) {
+        setTaskReceipt(res);
         setQuantProjectionSubmitError("");
-        setTaskId(res.data.task_id);
+        setTaskId(acceptedTaskId);
         refreshCache();
+      } else if (res.ok) {
+        setTaskReceipt(null);
+        setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage("missing_task_id"));
       } else {
+        setTaskReceipt(res);
         setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage(res.error));
       }
     }).catch(() => {
+      setTaskReceipt(null);
       setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage("frontend_submit_exception"));
     }).finally(() => setQuantProjectionSubmitting(false));
   };
