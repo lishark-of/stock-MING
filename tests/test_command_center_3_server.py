@@ -2048,6 +2048,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("command_center_3_desktop_shell_preflight_cache", one_click_rows["desktop_preflight_cache_wait_before_open"]["evidence"])
         self.assertIn("Command Center 3.0 index HTML", one_click_rows["vite_wait_before_open"]["evidence"])
         self.assertIn("P0_STABILITY_READY=1", one_click_rows["p0_stability_check_before_open"]["evidence"])
+        self.assertIn("#home by default", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
         self.assertIn("#candidates", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
         self.assertIn("Tushare-first POST task", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
         self.assertTrue(desktop["policy"]["one_click_startup_summary_is_local"])

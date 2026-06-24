@@ -683,7 +683,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。",
         "日志定位：FastAPI=${FASTAPI_LOG}；React/Vite=${VITE_LOG}。",
         "安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。",
-        "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped.",
+        "P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped.",
         "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution.",
         "scripts/dev_server.sh",
         "npm run dev",
@@ -1007,7 +1007,7 @@ def _one_click_startup_summary(
         and "P0 stability check failed" in launcher_source
     )
     success_handoff_visible = (
-        "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
+        "P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
         in launcher_source
     )
     frontend_api_client_local = "http://127.0.0.1:8710" in client_source and bool(api_base_info.get("is_localhost"))
@@ -1071,7 +1071,7 @@ def _one_click_startup_summary(
         row(
             "p0_success_handoff_to_p1_confirm_visible",
             success_handoff_visible,
-            "launcher prints the next ordinary action after readiness: open #candidates, type silently, confirm to create the Tushare-first POST task, and keep DeepSeek governed/skipped",
+            "launcher prints the next ordinary action after readiness: open #home by default, let the user open #candidates next, type silently, confirm to create the Tushare-first POST task, and keep DeepSeek governed/skipped",
         ),
         row(
             "frontend_api_client_uses_local_fastapi",

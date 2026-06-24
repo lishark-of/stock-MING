@@ -364,7 +364,7 @@ print_post_startup_readback_checklist() {
   fi
   echo "  5. P0 stability check：短暂 dwell 后复读 health、bootstrap status、desktop preflight cache 和 React/Vite 仍 ready，P0_STABILITY_READY=1。"
   echo "  6. 联通后下一步：打开下一票雷达（#candidates），输入股票代码；只有确认按钮会创建 Tushare-first POST task，DeepSeek 仍保持 governed/pending。"
-  echo "  7. P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
+  echo "  7. P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
   echo "边界：启动后复核只读本地 GET 结果；不创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
 }
 
@@ -425,7 +425,7 @@ echo "Bootstrap check: /api/bootstrap/status must return command_center_3_bootst
 echo "Desktop preflight check: /api/desktop/preflight-cache must return command_center_3_desktop_shell_preflight_cache JSON before the page opens."
 echo "Frontend check: Vite must serve stock-MING Command Center 3.0 index HTML before the page opens."
 echo "Open target: ordinary Command Center home route (#home), so startup does not land on developer/audit details from localStorage."
-echo "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
+echo "P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
 echo "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution."
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
 echo "URL safety: displayed and opened launcher URLs are sanitized; simple local open routes like #home may be shown, while query/userinfo are stripped and non-local API/frontend/open URLs are blocked before any probe."
