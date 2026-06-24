@@ -160,6 +160,59 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       边界: "packet 只作为本地回放目标；不代表生产验收或 14 LTG closeout。"
     }
   ];
+  const candidateRadarResultReplay =
+    task.output_packet_key === "command_center_3_candidate_radar_cache" ||
+    task.task_type.includes("candidate_radar_quant_projection");
+  const p3ResultReplayRows = candidateRadarResultReplay
+    ? [
+        {
+          结果入口: "股票量化推演",
+          当前状态: task.status === "success" ? "可刷新后回放本地量化推演摘要" : "等待任务完成后回放",
+          用户下一步: "打开股票量化推演，先看 P3 可读结论、支持/压制和缺失证据",
+          入口: "#factor",
+          边界: "只切换本地模块路由；不创建 task、不调用 Tushare/DeepSeek、不写交易动作。"
+        },
+        {
+          结果入口: "次日图谱",
+          当前状态: task.status === "success" ? "可复核本地 next-session cache" : "等待 cache / packet 回放",
+          用户下一步: "打开次日图谱，复核路径、参考线和 operation_zones 来源",
+          入口: "#next",
+          边界: "只读本地图谱；不生成交易指令、不覆盖 strategy action。"
+        },
+        {
+          结果入口: "下一票雷达",
+          当前状态: "可回到候选页复核候选来源、分组和一屏行动",
+          用户下一步: "把结果当研究线索，不当买入指令",
+          入口: "#candidates",
+          边界: "Radar candidate 不是买入指令；真实交易路径继续隔离。"
+        }
+      ]
+    : [
+        {
+          结果入口: "Packet 回放",
+          当前状态: task.output_packet_key ? `可按 ${task.output_packet_key} 查本地 packet` : "等待输出 packet",
+          用户下一步: "打开 Packet 注册表，只读查看本地输出",
+          入口: "#packets",
+          边界: "Packet 回放不是生产验收，也不会触发 provider/model。"
+        },
+        {
+          结果入口: "Task Monitor",
+          当前状态: "可回到任务列表复核状态",
+          用户下一步: "只读查看任务列表和本地状态",
+          入口: "#tasks",
+          边界: "任务列表只读轮询本地 FastAPI；不创建外部工作。"
+        }
+      ];
+  const p3ResultReplayLinks = candidateRadarResultReplay
+    ? [
+        { href: "#factor", label: "查看股票量化推演", title: "切换到股票量化推演模块；只读 cache / ledger / packet", aria: "open stock quant result from task status" },
+        { href: "#next", label: "查看次日图谱", title: "切换到次日图谱模块；只读本地 next-session cache", aria: "open next session map from task status" },
+        { href: "#candidates", label: "回到下一票雷达", title: "切换到下一票雷达；复核候选来源和确认链路", aria: "open candidate radar from task status" }
+      ]
+    : [
+        { href: "#packets", label: "查看 Packet", title: "切换到 Packet 注册表；只读本地输出", aria: "open packet registry from task status" },
+        { href: "#tasks", label: "查看任务列表", title: "切换到 Task Monitor；只读任务状态", aria: "open task monitor from task status" }
+      ];
 
   return (
     <div className={`task-panel task-panel--${task.status} motion-surface`} data-task-state={task.status} data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
@@ -188,6 +241,15 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <div aria-label="task status p2 writeback quick read">
         <p className="risk-note">P2 写回速读：普通用户先看 cache、call_ledger、packet 三面是否有本地回放信号；这张表只读任务状态，不创建新 task。</p>
         <DataLineageTable rows={p2WritebackQuickRows} />
+      </div>
+      <div aria-label="task status p3 result replay quick read">
+        <p className="risk-note">P3 结果入口速读：任务写回后按本地入口回放可解释结果；这些链接只切换本地页面，不创建 task、不调用 provider/model。</p>
+        <DataLineageTable rows={p3ResultReplayRows} />
+        <div className="actions" aria-label="task status p3 result replay links">
+          {p3ResultReplayLinks.map((link) => (
+            <a key={link.href} href={link.href} title={link.title} aria-label={link.aria}>{link.label}</a>
+          ))}
+        </div>
       </div>
       <TaskBoundarySummary task={task} />
       <button

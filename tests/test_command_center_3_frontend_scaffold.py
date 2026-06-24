@@ -2793,6 +2793,39 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             panel.index('aria-label="task status p2 writeback quick read"'),
             panel.index('aria-label="task status audit details"'),
         )
+        self.assertIn("candidateRadarResultReplay", panel)
+        self.assertIn("p3ResultReplayRows", panel)
+        self.assertIn("p3ResultReplayLinks", panel)
+        self.assertIn('aria-label="task status p3 result replay quick read"', panel)
+        self.assertIn('aria-label="task status p3 result replay links"', panel)
+        self.assertIn("P3 结果入口速读：任务写回后按本地入口回放可解释结果", panel)
+        self.assertIn("这些链接只切换本地页面，不创建 task、不调用 provider/model", panel)
+        self.assertIn('task.output_packet_key === "command_center_3_candidate_radar_cache"', panel)
+        self.assertIn('task.task_type.includes("candidate_radar_quant_projection")', panel)
+        self.assertIn('结果入口: "股票量化推演"', panel)
+        self.assertIn('结果入口: "次日图谱"', panel)
+        self.assertIn('结果入口: "下一票雷达"', panel)
+        self.assertIn('入口: "#factor"', panel)
+        self.assertIn('入口: "#next"', panel)
+        self.assertIn('入口: "#candidates"', panel)
+        self.assertIn('href: "#factor"', panel)
+        self.assertIn('href: "#next"', panel)
+        self.assertIn('href: "#candidates"', panel)
+        self.assertIn("Radar candidate 不是买入指令", panel)
+        self.assertIn("不生成交易指令、不覆盖 strategy action", panel)
+        self.assertIn('结果入口: "Packet 回放"', panel)
+        self.assertIn('结果入口: "Task Monitor"', panel)
+        self.assertIn('href: "#packets"', panel)
+        self.assertIn('href: "#tasks"', panel)
+        self.assertIn("Packet 回放不是生产验收，也不会触发 provider/model", panel)
+        self.assertLess(
+            panel.index('aria-label="task status p2 writeback quick read"'),
+            panel.index('aria-label="task status p3 result replay quick read"'),
+        )
+        self.assertLess(
+            panel.index('aria-label="task status p3 result replay quick read"'),
+            panel.index('aria-label="task status audit details"'),
+        )
         self.assertIn('aria-label="task status audit details"', panel)
         self.assertIn("<summary>任务审计详情</summary>", panel)
         self.assertIn("普通用户先看状态轨、当前步骤、本地回放提示和取消按钮", panel)
