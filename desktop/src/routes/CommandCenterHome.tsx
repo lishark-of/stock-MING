@@ -619,6 +619,13 @@ export default function CommandCenterHome() {
       用户下一步: "先使用 Tushare-first、小数据写入和基础图谱；DeepSeek 作为单独补证",
       证据: "ordinary_model_governance_rows + governed executor checklist",
       边界: "governed executor 完成前不真实调用 DeepSeek；之后也不能覆盖价格、持仓、factor、operation_zones 或 strategy action"
+    },
+    {
+      阶段: "P6 回到 14 LTG direct evidence",
+      当前状态: "re-entry gate visible；strict closeout 仍是 0/14",
+      用户下一步: "按 LTG next acceptance action rows 逐项补 current-head direct evidence",
+      证据: "usable_path_strict_closeout_handoff_rows.P6",
+      边界: "P0-P5 可用化 checkpoint 不是 14 LTG 完成；mock、matrix、sanitizer、local receipt 不能关闭 LTG"
     }
   ];
   const dailyCommandUsablePathStageRailSteps = [
@@ -657,6 +664,12 @@ export default function CommandCenterHome() {
       label: "P5 DeepSeek",
       state: "active",
       detail: "governed"
+    },
+    {
+      key: "p6",
+      label: "P6 LTG 证据",
+      state: "waiting",
+      detail: "0/14"
     }
   ];
   const dailyCommandConnectivityPriority = dailyCommandNeedsStartupRecovery

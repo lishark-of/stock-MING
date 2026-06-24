@@ -214,9 +214,13 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
                     self.assertIn('阶段: "P3 候选、量化推演、次日图谱"', text)
                     self.assertIn('阶段: "P4 工程审计噪音下沉"', text)
                     self.assertIn('阶段: "P5 DeepSeek governed executor 单独补"', text)
+                    self.assertIn('阶段: "P6 回到 14 LTG direct evidence"', text)
                     self.assertIn("页面打开、React render 和 GET cache 只读；不启动服务、不外联、不读取 token/key", text)
                     self.assertIn("只有确认按钮创建 POST task / worker，DeepSeek skipped", text)
                     self.assertIn("governed executor 完成前不真实调用 DeepSeek", text)
+                    self.assertIn("strict closeout 仍是 0/14", text)
+                    self.assertIn("P0-P5 可用化 checkpoint 不是 14 LTG 完成", text)
+                    self.assertIn("mock、matrix、sanitizer、local receipt 不能关闭 LTG", text)
                     self.assertLess(
                         text.index('aria-label="daily command usable shortest path"'),
                         text.index(config["audit"]),
