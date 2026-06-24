@@ -125,12 +125,21 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY", source)
         self.assertIn("Check only: ${LAUNCHER_CHECK_ONLY}", source)
         self.assertIn("Check-only mode: resolved launcher configuration without starting FastAPI", source)
+        self.assertIn("Check-only dependency boundary: does not require desktop/node_modules or npm", source)
         self.assertIn("probing URLs, writing logs, opening a browser, creating tasks", source)
         self.assertIn("unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher", source)
         self.assertIn("wait for all four readiness checks", source)
         self.assertLess(
             source.index('if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then'),
             source.index('mkdir -p "$LOG_DIR"'),
+        )
+        self.assertLess(
+            source.index('if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then'),
+            source.index('if [ ! -d "${DESKTOP_ROOT}/node_modules" ]; then'),
+        )
+        self.assertLess(
+            source.index('if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then'),
+            source.index("if ! command -v npm >/dev/null 2>&1; then"),
         )
         self.assertIn("COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN", source)
         self.assertIn("Browser open:", source)
@@ -202,6 +211,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("Check only: 1", output)
         self.assertIn("Browser open: skipped", output)
         self.assertIn("Check-only mode: resolved launcher configuration without starting FastAPI", output)
+        self.assertIn("Check-only dependency boundary: does not require desktop/node_modules or npm", output)
         self.assertIn("starting React/Vite", output)
         self.assertIn("probing URLs", output)
         self.assertIn("opening a browser", output)

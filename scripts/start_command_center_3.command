@@ -372,17 +372,6 @@ if ! url_is_local "$APP_URL"; then
   exit 1
 fi
 
-if [ ! -d "${DESKTOP_ROOT}/node_modules" ]; then
-  echo "Command Center 3.0 启动失败：desktop/node_modules 不存在。"
-  echo "请先运行：cd \"${DESKTOP_ROOT}\" && npm install"
-  exit 1
-fi
-
-if ! command -v npm >/dev/null 2>&1; then
-  echo "Command Center 3.0 启动失败：未找到 npm。"
-  exit 1
-fi
-
 cd "$PROJECT_ROOT"
 
 echo "Command Center 3.0 local launcher"
@@ -410,9 +399,21 @@ echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/ch
 
 if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
   echo "Check-only mode: resolved launcher configuration without starting FastAPI, starting React/Vite, probing URLs, writing logs, opening a browser, creating tasks, calling providers/models, or touching trading paths."
+  echo "Check-only dependency boundary: does not require desktop/node_modules or npm because it only prints sanitized local launcher configuration."
   echo "Check-only endpoints: health=${API_HEALTH_DISPLAY}; bootstrap=${BOOTSTRAP_STATUS_DISPLAY}; desktop_preflight=${DESKTOP_PREFLIGHT_DISPLAY}; frontend=${VITE_URL_DISPLAY}; open_route=${APP_URL_DISPLAY}"
   echo "Check-only next action: unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher to start or reuse local FastAPI/Vite, wait for all four readiness checks, then open ${APP_URL_DISPLAY}."
   exit 0
+fi
+
+if [ ! -d "${DESKTOP_ROOT}/node_modules" ]; then
+  echo "Command Center 3.0 启动失败：desktop/node_modules 不存在。"
+  echo "请先运行：cd \"${DESKTOP_ROOT}\" && npm install"
+  exit 1
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "Command Center 3.0 启动失败：未找到 npm。"
+  exit 1
 fi
 
 mkdir -p "$LOG_DIR"
