@@ -885,6 +885,7 @@ export default function FactorQuantHub() {
       <details className="developer-audit-details">
         <summary>模型解释 / 高级开关</summary>
         <p className="risk-note">DeepSeek governed executor 单独补；这里的按钮只走受控任务，不在页面渲染中调用模型，也不覆盖价格、因子、持仓、操作区或交易策略。</p>
+        <p className="risk-note">模型解释默认手动触发；勾选自动整理后，轻量推演完成可继续整理解释。</p>
         <div className="actions">
           <label className="inline-toggle">
             <input
@@ -908,7 +909,6 @@ export default function FactorQuantHub() {
           <button onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-scope-ticket", { approved_by_user: true, sample_count: 40, response_format: "json_schema", max_retry_per_sample: 2 })}>DeepSeek benchmark 预检</button>
         </div>
       </details>
-      <p className="risk-note">模型解释默认手动触发；勾选自动整理后，轻量推演完成可继续整理解释。</p>
       <p className="risk-note">多因子量化不是交易建议；不真实交易、不下单，不改价格、持仓、操作区或交易策略。</p>
       <details className="developer-audit-details">
         <summary>最近任务回执</summary>

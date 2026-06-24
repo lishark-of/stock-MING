@@ -347,6 +347,16 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index("普通路径只保留查看缓存、手动刷新和轻量推演"), source.index("模型解释 / 高级开关"))
         self.assertLess(source.index("模型解释 / 高级开关"), source.index("整理模型解释</button>"))
         self.assertLess(source.index("模型解释 / 高级开关"), source.index("轻量推演完成后自动整理解释"))
+        model_switch_start = source.index("模型解释 / 高级开关")
+        model_switch_end = source.index("</details>", model_switch_start)
+        model_switch_slice = source[model_switch_start:model_switch_end]
+        self.assertIn("模型解释默认手动触发", model_switch_slice)
+        self.assertIn("勾选自动整理后，轻量推演完成可继续整理解释", model_switch_slice)
+        advanced_tasks_start = source.index("高级验收任务")
+        self.assertNotIn(
+            "模型解释默认手动触发",
+            source[model_switch_end:advanced_tasks_start],
+        )
         ordinary_actions_start = source.rindex(
             '<div className="actions">',
             0,

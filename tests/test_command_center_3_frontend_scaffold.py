@@ -576,8 +576,15 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertLess(source.index("高级验收任务"), source.index("DeepSeek benchmark 预检"))
         self.assertIn("autoAfterTask", source)
         self.assertIn("{ auto_after_task: autoAfterTask }", source)
-        self.assertIn("模型解释默认手动触发", source)
-        self.assertIn("勾选自动整理后，轻量推演完成可继续整理解释", source)
+        model_switch_start = source.index("模型解释 / 高级开关")
+        model_switch_end = source.index("</details>", model_switch_start)
+        model_switch_slice = source[model_switch_start:model_switch_end]
+        self.assertIn("模型解释默认手动触发", model_switch_slice)
+        self.assertIn("勾选自动整理后，轻量推演完成可继续整理解释", model_switch_slice)
+        self.assertNotIn(
+            "模型解释默认手动触发",
+            source[model_switch_end:source.index("高级验收任务")],
+        )
         self.assertNotIn("DeepSeek 解释模式", source)
         self.assertNotIn("auto_after_task 默认关闭", source)
         self.assertNotIn("自动解释已关闭", source)
