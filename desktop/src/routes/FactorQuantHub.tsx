@@ -834,6 +834,12 @@ export default function FactorQuantHub() {
               { label: "边界", value: candidateRadarReadableBoundary, tone: "good" }
             ]}
           />
+          <div className="actions" aria-label="stock quant readable result local actions">
+            <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="open factor support suppress from readable result">查看支持/压制</a>
+            <a href="#next" title="切换到完整次日图谱模块；只读本地 next-session cache" aria-label="open full next session from readable result">打开完整次日图谱</a>
+            <a href="#candidates" title="切换到下一票雷达模块；换标的仍需输入代码并确认" aria-label="return candidate radar from readable result">回下一票雷达</a>
+          </div>
+          <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变 strategy action。</p>
           {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
           {candidateRadarResultCheckpointRows.length ? <DataLineageTable rows={candidateRadarResultCheckpointRows} /> : null}
         </div>
