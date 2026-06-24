@@ -39667,6 +39667,34 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(
             all(row["does_not_modify_strategy_action"] for row in interpretation["ordinary_model_governance_rows"])
         )
+        checklist_rows = {
+            row["check_key"]: row for row in interpretation["ordinary_deepseek_governed_executor_checklist_rows"]
+        }
+        self.assertIn("output_acceptance", checklist_rows)
+        self.assertIn("output acceptance", checklist_rows["output_acceptance"]["检查项"])
+        self.assertIn("model_output_acceptance_implemented=False", checklist_rows["output_acceptance"]["证据"])
+        self.assertIn("不是模型正确性或生产验收证明", checklist_rows["output_acceptance"]["边界"])
+        self.assertTrue(interpretation["ordinary_deepseek_governed_executor_checklist_rows_are_cache_only"])
+        self.assertFalse(interpretation["ordinary_deepseek_governed_executor_checklist_rows_create_task"])
+        self.assertFalse(interpretation["ordinary_deepseek_governed_executor_checklist_rows_call_model"])
+        self.assertFalse(interpretation["ordinary_deepseek_governed_executor_checklist_rows_use_model_output"])
+        readiness_rows = {
+            row["readiness_key"]: row for row in interpretation["ordinary_deepseek_governed_executor_readiness_rows"]
+        }
+        self.assertIn("output_acceptance_gate", readiness_rows)
+        self.assertIn("blocked_until_output_acceptance", readiness_rows["output_acceptance_gate"]["当前状态"])
+        self.assertFalse(readiness_rows["output_acceptance_gate"]["calls_model_from_readback"])
+        self.assertFalse(readiness_rows["output_acceptance_gate"]["uses_model_output"])
+        contract = interpretation["ordinary_deepseek_governed_executor_contract"]
+        self.assertTrue(contract["output_acceptance_required"])
+        self.assertFalse(contract["model_output_acceptance_implemented"])
+        contract_rows = {
+            row["contract_key"]: row for row in interpretation["ordinary_deepseek_governed_executor_contract_rows"]
+        }
+        self.assertIn("output_acceptance_gate", contract_rows)
+        self.assertFalse(contract_rows["output_acceptance_gate"]["calls_model_from_readback"])
+        self.assertFalse(contract_rows["output_acceptance_gate"]["blocks_p1_p2_p3"])
+        self.assertIn("不能覆盖价格", contract_rows["output_acceptance_gate"]["边界"])
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))

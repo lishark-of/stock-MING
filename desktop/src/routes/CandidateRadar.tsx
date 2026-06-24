@@ -2201,12 +2201,12 @@ export default function CandidateRadar() {
           </div>
           <div aria-label="candidate radar ordinary p5 governed executor contract">
             <h3>P5 DeepSeek 单独补证合同</h3>
-            <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：未来 DeepSeek 只能作为单独 P5 按钮任务，必须有 model_ledger、sanitizer 和安全摘要字段；本表只读回放，不创建 task、不调用模型。</p>
+            <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：未来 DeepSeek 只能作为单独 P5 按钮任务，必须有 model_ledger、sanitizer、output acceptance 和安全摘要字段；本表只读回放，不创建 task、不调用模型。</p>
             <DataLineageTable rows={quantProjectionDeepSeekContractRows} />
           </div>
           <div aria-label="candidate radar ordinary p5 governed executor readiness">
             <h3>P5 governed executor readiness</h3>
-            <p className="risk-note">普通用户只看 P5 是否具备单独补证条件：model_ledger、sanitizer、fallback 和 promotion 边界；这张表只读回放，不创建 task、不调用模型。</p>
+            <p className="risk-note">普通用户只看 P5 是否具备单独补证条件：model_ledger、sanitizer、output acceptance、fallback 和 promotion 边界；这张表只读回放，不创建 task、不调用模型。</p>
             <DataLineageTable rows={quantProjectionDeepSeekReadinessRows} />
           </div>
         </details>
@@ -2380,7 +2380,7 @@ export default function CandidateRadar() {
               {quantProjectionDeepSeekContractRows.length ? (
                 <div aria-label="quant projection ordinary deepseek governed executor contract">
                   <h3>P5 DeepSeek 单独补证合同</h3>
-                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：明确未来单独 P5 task、model_ledger、sanitizer、安全字段和不阻塞 P1/P2/P3；这张表只读回放，不创建 task、不调用模型。</p>
+                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：明确未来单独 P5 task、model_ledger、sanitizer、output acceptance、安全字段和不阻塞 P1/P2/P3；这张表只读回放，不创建 task、不调用模型。</p>
                   <DataLineageTable rows={quantProjectionDeepSeekContractRows} />
                 </div>
               ) : null}
@@ -2395,7 +2395,7 @@ export default function CandidateRadar() {
               {quantProjectionDeepSeekChecklistRows.length ? (
                 <div aria-label="quant projection ordinary deepseek governed executor checklist">
                   <h3>P5 governed executor 补证清单</h3>
-                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_checklist_rows：model_ledger、sanitizer/redaction、安全回退和不覆盖 action 都必须先满足；这张清单不创建 task、不调用模型。</p>
+                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_checklist_rows：model_ledger、sanitizer/redaction、output acceptance、安全回退和不覆盖 action 都必须先满足；这张清单不创建 task、不调用模型。</p>
                   <DataLineageTable rows={quantProjectionDeepSeekChecklistRows} />
                 </div>
               ) : null}
