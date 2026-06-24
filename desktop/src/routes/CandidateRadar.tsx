@@ -2120,6 +2120,42 @@ export default function CandidateRadar() {
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
+        <div aria-label="candidate radar first screen quant projection confirmation">
+          <h3>P1 搜票确认</h3>
+          <div className="actions" aria-label="candidate radar first screen quant projection actions">
+            <input
+              value={searchSymbol}
+              onChange={(event) => {
+                setSearchSymbol(event.target.value);
+                setQuantProjectionSubmitError("");
+              }}
+              placeholder="002008.SZ 或 002008"
+              aria-label="candidate radar first screen quant projection symbol"
+              aria-describedby={quantProjectionSummaryInputHelpId}
+              title={quantProjectionInputBoundaryLabel}
+            />
+            <button
+              disabled={quantProjectionSubmitDisabled}
+              onClick={launchQuantProjection}
+              title={quantProjectionSubmitButtonLabel}
+              aria-label={quantProjectionSubmitAriaLabel}
+              aria-describedby={quantProjectionSummarySubmitHelpId}
+            >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+            <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar first screen confirmation">股票量化推演</a>
+            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session replay from candidate radar first screen confirmation">次日图谱</a>
+          </div>
+          <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
+          <p className="risk-note" aria-live="polite">{quantProjectionConfirmChainState}</p>
+          {quantProjectionTaskPanelVisible ? (
+            <div aria-label="candidate radar first screen task status">
+              <TaskLaunchReceipt receipt={taskReceipt} />
+              <TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />
+            </div>
+          ) : null}
+          {quantProjectionTaskPanelStaleNotice ? (
+            <p className="ordinary-status-note" aria-live="polite">{quantProjectionTaskPanelStaleNotice}</p>
+          ) : null}
+        </div>
         <div aria-label="candidate radar p1 direct confirmation handoff">
           <h3>P1 直接确认入口</h3>
           <p className="risk-note">先确认本地 FastAPI 已接上，然后跳到搜票确认区输入代码；这个入口只做本地锚点跳转，输入仍然静默，只有确认按钮会创建 Tushare-first POST task。</p>
