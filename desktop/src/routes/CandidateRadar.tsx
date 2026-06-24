@@ -2064,6 +2064,11 @@ export default function CandidateRadar() {
           <p className="risk-note">优先读取服务端 ordinary_one_screen_action_rows：确认、任务、写回、结果合成一张普通用户表；只读回放本地状态，不从摘要创建 task。</p>
           <DataLineageTable rows={quantProjectionOneScreenActionRows} />
         </div>
+        <div aria-label="candidate radar ordinary p2 p3 replay checklist">
+          <h3>P2/P3 回放清单</h3>
+          <p className="risk-note">确认后先看这张只读索引：确认回执、任务回放、数据接口和 P3 结果速读都来自本地 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek。</p>
+          <DataLineageTable rows={quantProjectionReadbackIndexRows} />
+        </div>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p1 p2 detail readback">
           <summary>P1/P2 细节回放</summary>
           <p className="risk-note">一屏行动摘要已经覆盖普通下一步；确认链路、P1 路径和 P2 三面核对默认收起，需要排查时再展开。</p>

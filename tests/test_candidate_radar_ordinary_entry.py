@@ -122,6 +122,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("确认、任务、写回、结果合成一张普通用户表", self.page)
         self.assertIn("只读回放本地状态，不从摘要创建 task", self.page)
         self.assertIn("rows={quantProjectionOneScreenActionRows}", self.page)
+        self.assertIn('aria-label="candidate radar ordinary p2 p3 replay checklist"', self.page)
+        self.assertIn("确认后先看这张只读索引", self.page)
+        self.assertIn("确认回执、任务回放、数据接口和 P3 结果速读都来自本地 cache / ledger / packet", self.page)
+        self.assertIn("不会创建 task、不会补调 Tushare/DeepSeek", self.page)
+        self.assertIn("rows={quantProjectionReadbackIndexRows}", self.page)
         self.assertIn('行动: "1. 确认"', self.page)
         self.assertIn('行动: "2. 任务"', self.page)
         self.assertIn('行动: "3. 写回"', self.page)
@@ -224,6 +229,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(
             self.page.index('aria-label="candidate radar ordinary one screen actions"'),
             self.page.index('aria-label="candidate radar ordinary p3 explainable result quick read"'),
+        )
+        self.assertLess(
+            self.page.index('aria-label="candidate radar ordinary one screen actions"'),
+            self.page.index('aria-label="candidate radar ordinary p2 p3 replay checklist"'),
+        )
+        self.assertLess(
+            self.page.index('aria-label="candidate radar ordinary p2 p3 replay checklist"'),
+            self.page.index('aria-label="candidate radar ordinary p1 p2 detail readback"'),
         )
         self.assertLess(
             self.page.index('aria-label="candidate radar ordinary p1 p2 detail readback"'),
@@ -885,6 +898,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("一屏行动摘要", summary_slice)
         self.assertIn("确认、任务、写回、结果合成一张普通用户表", summary_slice)
         self.assertIn("rows={quantProjectionOneScreenActionRows}", summary_slice)
+        self.assertIn('aria-label="candidate radar ordinary p2 p3 replay checklist"', summary_slice)
+        self.assertIn("确认后先看这张只读索引", summary_slice)
+        self.assertIn("确认回执、任务回放、数据接口和 P3 结果速读都来自本地 cache / ledger / packet", summary_slice)
+        self.assertIn("不会创建 task、不会补调 Tushare/DeepSeek", summary_slice)
+        self.assertIn("rows={quantProjectionReadbackIndexRows}", summary_slice)
         self.assertIn('aria-label="candidate radar ordinary p1 p2 detail readback"', summary_slice)
         self.assertIn("<summary>P1/P2 细节回放</summary>", summary_slice)
         self.assertIn("确认链路、P1 路径和 P2 三面核对默认收起", summary_slice)
@@ -913,7 +931,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar next user actions"', summary_slice)
         self.assertLess(summary_slice.index('aria-label="candidate radar primary next action"'), summary_slice.index('aria-label="candidate radar next user actions"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 to p3 stage rail"'), summary_slice.index('aria-label="candidate radar ordinary one screen actions"'))
-        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary one screen actions"'), summary_slice.index('aria-label="candidate radar ordinary p1 p2 detail readback"'))
+        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary one screen actions"'), summary_slice.index('aria-label="candidate radar ordinary p2 p3 replay checklist"'))
+        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p2 p3 replay checklist"'), summary_slice.index('aria-label="candidate radar ordinary p1 p2 detail readback"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 p2 detail readback"'), summary_slice.index('aria-label="candidate radar ordinary p1 confirm path"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 confirm path"'), summary_slice.index('aria-label="candidate radar ordinary p2 writeback rail"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p2 writeback rail"'), summary_slice.index('aria-label="candidate radar ordinary p2 writeback surfaces"'))
