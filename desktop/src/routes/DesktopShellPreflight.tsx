@@ -47,6 +47,34 @@ export default function DesktopShellPreflight() {
   const frontendBackendAutoLinkRows = rows(cache.frontend_backend_auto_link_rows);
   const p0LocalConnectionRows = rows(cache.p0_local_connection_rows);
   const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
+  const p0Startup30sQuickReadRows = rows(cache.p0_startup_30s_quick_read_rows).length
+    ? rows(cache.p0_startup_30s_quick_read_rows)
+    : [
+        {
+          速读项: "1. 页面是否应该打开",
+          当前状态: p0ConnectionReady ? "ready：启动器可打开普通首页" : "check：启动器不应自动打开页面",
+          用户下一步: "如果页面没有打开，先留在启动器诊断；如果已打开，继续看四段联通。",
+          证据: String(oneClickStartupSummary.success_condition ?? "FastAPI / bootstrap status / desktop preflight cache / React/Vite"),
+          入口: String(oneClickStartupSummary.what_user_should_click_next ?? "scripts/start_command_center_3.command"),
+          边界: "启动器只在四段 ready 后打开页面；本表只读回放，不启动服务、不创建 task。"
+        },
+        {
+          速读项: "2. 四段联通",
+          当前状态: p0ConnectionReady ? "4/4 ready" : "check",
+          用户下一步: p0ConnectionReady ? "进入下一票雷达。" : "按失败段处理。",
+          证据: "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
+          入口: "#desktop",
+          边界: "GET preflight 和 React render 不启动服务、不创建 task。"
+        },
+        {
+          速读项: "3. 现在下一步",
+          当前状态: p0ConnectionReady ? "ready：进入 P1 搜票确认" : "check：继续 P0 恢复",
+          用户下一步: p0ConnectionReady ? "输入股票代码；确认按钮才创建 Tushare-first POST task。" : "先恢复 P0 四段联通。",
+          证据: "p0_current_next_action_rows",
+          入口: p0ConnectionReady ? "#candidates" : "#desktop",
+          边界: "输入股票代码保持静默；确认按钮之前不调用 provider/model。"
+        }
+      ];
   const p0RecoverySteps = rows(cache.p0_recovery_steps).length
     ? rows(cache.p0_recovery_steps)
     : [
@@ -391,6 +419,11 @@ export default function DesktopShellPreflight() {
         <div aria-label="p0 ordinary one click readiness">
           <h3>一键启动就绪</h3>
           <MetricGrid items={p0StartupReadyMetrics} />
+        </div>
+        <div aria-label="p0 startup 30s quick read">
+          <h3>启动后 30 秒速读</h3>
+          <p className="risk-note">普通用户打开后先看这张表：页面是否应该打开、四段联通是否 ready、失败先看哪段，以及 P0 ready 后如何进入 P1 确认按钮。</p>
+          <DataLineageTable rows={p0Startup30sQuickReadRows} />
         </div>
         <div aria-label="p0 ordinary ready gate">
           <h3>P0 可继续闸门</h3>
