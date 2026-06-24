@@ -284,6 +284,7 @@ export default function CommandCenterHome() {
   const candidatePolicy = (candidates.policy as Record<string, unknown> | undefined) ?? {};
   const candidateQuantSmallDataWriteback = (candidates.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateQuantOneScreenActionRows = (candidateQuantSmallDataWriteback.ordinary_one_screen_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const candidateQuantConfirmOutcomeRows = (candidateQuantSmallDataWriteback.ordinary_confirm_outcome_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantWritebackSurfaceRows = (candidateQuantSmallDataWriteback.ordinary_writeback_surface_summary_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const dailyCommandSmallDataWritebackState = String(
     candidateQuantSmallDataWriteback.ordinary_readback_stage_label ??
@@ -370,6 +371,40 @@ export default function CommandCenterHome() {
   const dailyCommandP3CheckpointLabel = candidateQuantCheckpointRows.length
     ? `P3 检查点 ${String(candidateQuantCheckpointRows.length)} 项可回放`
     : "等待 CandidateRadar P3 结果检查点";
+  const dailyCommandConfirmOutcomeRows = candidateQuantConfirmOutcomeRows.length
+    ? candidateQuantConfirmOutcomeRows.map((row) => ({
+        确认结果: String(row["速读项"] ?? row.outcome_key ?? "确认结果"),
+        当前状态: String(row["当前状态"] ?? row.status ?? "等待 CandidateRadar 确认结果回放"),
+        用户下一步: String(row["用户下一步"] ?? row.next_step ?? dailyCommandExplainableResultNext),
+        入口: String(row["入口"] ?? row.entry ?? "下一票雷达 / 股票量化推演 / 次日图谱"),
+        边界: String(row["边界"] ?? row.boundary ?? "首页只读回放确认结果；不创建 task、不调用 provider/model。")
+      }))
+    : [
+        {
+          确认结果: "P1 确认结果",
+          当前状态: "等待下一票雷达确认任务回放",
+          用户下一步: "回下一票雷达输入代码并点击确认按钮。",
+          入口: "#candidates",
+          边界: "首页不接收股票代码输入；确认按钮之前不创建 Tushare-first task。"
+        },
+        {
+          确认结果: "P2 写回结果",
+          当前状态: dailyCommandSmallDataWritebackState,
+          用户下一步: "确认 cache / call_ledger / packet 已能支撑首页、量化页和图谱回放。",
+          入口: "CandidateRadar cache / call_ledger / packet",
+          边界: "只读本地回放；不补调 Tushare、DeepSeek 或 GitHub。"
+        },
+        {
+          确认结果: "P3 回放结果",
+          当前状态: dailyCommandExplainableResultLabel,
+          用户下一步: dailyCommandExplainableResultNext,
+          入口: "下一票雷达 / 股票量化推演 / 次日图谱",
+          边界: dailyCommandExplainableResultBoundary
+        }
+      ];
+  const dailyCommandConfirmOutcomeLabel = dailyCommandConfirmOutcomeRows
+    .map((row) => `${row.确认结果}: ${row.当前状态}`)
+    .join(" / ");
   const dailyCommandP2P3ReplayChecklistRows = [
     {
       回放入口: "1. 确认回执",
@@ -1045,6 +1080,7 @@ export default function CommandCenterHome() {
             { label: "P0 进入 P1 闸门", value: dailyCommandP0LocalReadinessReady ? "四段已通过；可进入下一票雷达" : "先让 health / bootstrap / preflight / React 四段变绿", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
             { label: "一屏行动", value: dailyCommandOneScreenActionLabel || "等待 CandidateRadar 一屏行动回放", tone: candidateQuantOneScreenActionRows.length ? "good" : "warn" },
+            { label: "确认结果链", value: dailyCommandConfirmOutcomeLabel, tone: candidateQuantConfirmOutcomeRows.length ? "good" : "warn" },
             { label: "确认后回放", value: "确认回执 -> 任务状态 -> P2 写回 -> P3 结果", tone: "good" },
             { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
@@ -1128,6 +1164,11 @@ export default function CommandCenterHome() {
           <h3>今日搜票一屏行动</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成首页速读；首页只读回放，不创建 task、不调用模型。</p>
           <DataLineageTable rows={dailyCommandOneScreenActionRows} />
+        </div>
+        <div aria-label="daily command confirm outcome readback">
+          <h3>确认结果链速读</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_confirm_outcome_rows：确认任务是否接收、P2 三面是否回放、P3 结果入口是否可读；首页只读回放，不创建第二个 task。</p>
+          <DataLineageTable rows={dailyCommandConfirmOutcomeRows} />
         </div>
         <div aria-label="daily command p2 p3 replay checklist">
           <h3>确认后回放清单</h3>
