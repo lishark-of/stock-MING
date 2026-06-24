@@ -529,6 +529,31 @@ export default function CommandCenterHome() {
   const marketPayloadLedger = (market.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const disciplinePayloadLedger = (discipline.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const factorPayloadLedger = (factor.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const factorFailedCacheSummary = (factor.failed_factor_quant_cache_summary as Record<string, unknown> | undefined) ?? {};
+  const dailyCommandFactorCacheFallbackActive = factor.cache_fallback_from_failed_factor_quant_packet === true;
+  const dailyCommandFactorCacheFallbackLabel = dailyCommandFactorCacheFallbackActive
+    ? `量化缓存已降级为本地可读：上次 ${String(factorFailedCacheSummary.task_type ?? "provider task")} ${String(factorFailedCacheSummary.status ?? "failed")}；继续按 cache-only 回放`
+    : "量化缓存直接可读；未检测到失败持久化 packet 降级";
+  const dailyCommandFactorCacheFallbackBoundary =
+    "量化缓存降级只返回安全摘要和本地 builder 结果；首页不展开 raw failed packet、provider error、token/key 或 call_ledger。";
+  const dailyCommandFactorCacheFallbackRows = [
+    {
+      回放项: "当前量化缓存",
+      当前状态: String(factor.status ?? factor.mode ?? "等待缓存"),
+      用户下一步: "打开股票量化推演只读回放支持/压制、次日图谱预览和模型治理状态",
+      证据: "GET /api/factor-quant/cache",
+      边界: "GET cache 不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache"
+    },
+    {
+      回放项: "失败持久化降级",
+      当前状态: dailyCommandFactorCacheFallbackLabel,
+      用户下一步: dailyCommandFactorCacheFallbackActive
+        ? "继续按 P3 回放；需要更新时回下一票雷达确认按钮重新生成"
+        : "继续按 P3 回放；无需展开工程审计",
+      证据: dailyCommandFactorCacheFallbackActive ? "failed_factor_quant_cache_summary 安全摘要" : "cache_source / mode",
+      边界: dailyCommandFactorCacheFallbackBoundary
+    }
+  ];
   const nextPayloadLedger = (next.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const serenityPayloadLedger = (serenity.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const chokepointPayloadLedger = (chokepoint.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -1083,6 +1108,7 @@ export default function CommandCenterHome() {
             { label: "确认结果链", value: dailyCommandConfirmOutcomeLabel, tone: candidateQuantConfirmOutcomeRows.length ? "good" : "warn" },
             { label: "确认后回放", value: "确认回执 -> 任务状态 -> P2 写回 -> P3 结果", tone: "good" },
             { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
+            { label: "量化缓存回放", value: dailyCommandFactorCacheFallbackLabel, tone: dailyCommandFactorCacheFallbackActive ? "warn" : "good" },
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
             { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
             { label: "今日结果组成", value: dailyCommandResultComposition },
@@ -1199,6 +1225,11 @@ export default function CommandCenterHome() {
           <h3>P3 结果回放入口</h3>
           <p className="risk-note">普通用户按下一票雷达、股票量化推演、次日图谱三步回放；这些入口只切换本地模块，不创建任务、不刷新 provider/model。</p>
           <DataLineageTable rows={dailyCommandP3ReplayActionRows} />
+        </div>
+        <div aria-label="daily command factor cache fallback readback">
+          <h3>量化缓存降级回放</h3>
+          <p className="risk-note">如果上次持久化量化 packet 是失败态，首页只读展示安全摘要，并继续使用本地 cache-only 回放；不展开 raw failed packet、provider error、token/key 或 call_ledger。</p>
+          <DataLineageTable rows={dailyCommandFactorCacheFallbackRows} />
         </div>
         <div aria-label="daily command p5 deepseek governance quick read">
           <h3>P5 DeepSeek 单独治理</h3>
