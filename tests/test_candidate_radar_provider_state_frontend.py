@@ -50,6 +50,15 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("quantProjectionOrdinaryResultEvidence", self.page)
         self.assertIn("quantProjectionOrdinaryResultActionRows", self.page)
         self.assertIn("ordinary_result_action_rows", self.page)
+        self.assertIn("const quantProjectionInterpretationExplicitReady", self.page)
+        self.assertIn("const quantProjectionInterpretationPartialLedgerReady", self.page)
+        self.assertIn("const quantProjectionInterpretationReady = quantProjectionInterpretationExplicitReady", self.page)
+        self.assertIn("等待小数据三面 ready 后再开放 P3 速读", self.page)
+        self.assertIn("不要把单独 call_ledger 当作 P3 结果完成", self.page)
+        self.assertNotIn(
+            "searchQuantProjectionInterpretation.interpretation_ready === true || quantProjectionProviderLedgerReady",
+            self.page,
+        )
         self.assertIn("量化推演 / Next Session 图谱等待本地 cache 写入", self.page)
         self.assertIn("查看量化推演结果，再看次日图谱预览", self.page)
         self.assertIn("解释只基于本地 cache / ledger / packet", self.page)

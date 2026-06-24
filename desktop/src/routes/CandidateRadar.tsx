@@ -968,22 +968,31 @@ export default function CandidateRadar() {
     searchQuantProjectionReceipt.factor_refresh_executed === true ||
     searchQuantProjectionReceipt.next_session_refresh_executed === true ||
     searchQuantProjectionReceipt.echarts_payload_refreshed === true;
-  const quantProjectionResearchMapState = quantProjectionProviderLedgerReady
+  const quantProjectionInterpretationExplicitReady =
+    searchQuantProjectionInterpretation.interpretation_ready === true;
+  const quantProjectionInterpretationPartialLedgerReady =
+    !quantProjectionInterpretationExplicitReady && quantProjectionProviderLedgerReady;
+  const quantProjectionInterpretationReady = quantProjectionInterpretationExplicitReady;
+  const quantProjectionResearchMapState = quantProjectionInterpretationReady
     ? quantProjectionFactorNextReady
       ? "量化推演 / Next Session 图谱已有本地回放；DeepSeek skipped/pending，只解释不改 action"
       : "Tushare 已回放；量化推演 / Next Session 图谱等待本地 cache 写入；DeepSeek skipped"
+    : quantProjectionInterpretationPartialLedgerReady
+      ? "call_ledger 已回放；等待小数据三面 ready 后再开放 P3 速读"
     : searchQuantProjectionReceipt.status
       ? "本地搜票记录已生成；等待 Tushare-first 后再联动量化推演 / Next Session 图谱"
       : "等待确认按钮创建搜票任务后联动量化推演 / Next Session 图谱";
-  const quantProjectionMapNextStep = quantProjectionProviderLedgerReady
+  const quantProjectionMapNextStep = quantProjectionFactorNextReady
     ? "查看量化推演结果，再看次日图谱预览；链接只读回放，不额外刷新外部数据或模型"
+    : quantProjectionInterpretationReady
+      ? "先读 P3 可解释结果速读里的来源和缺口；Factor/Next/ECharts 等待本地 cache 回放"
     : "先点击确认并生成 3.0 量化推演，再回放量化推演 / Next Session 图谱";
-  const quantProjectionInterpretationReady =
-    searchQuantProjectionInterpretation.interpretation_ready === true || quantProjectionProviderLedgerReady;
   const quantProjectionInterpretationState =
     String(searchQuantProjectionInterpretation.summary_label ?? "") ||
-    (quantProjectionProviderLedgerReady
-      ? "可解释结果：Tushare ledger 已回放；等待 Factor/Next/ECharts 本地图谱补齐"
+    (quantProjectionInterpretationReady
+      ? "可解释结果：小数据三面已回放；等待 Factor/Next/ECharts 本地图谱补齐"
+      : quantProjectionInterpretationPartialLedgerReady
+        ? "可解释结果等待小数据三面 ready：call_ledger 已回放，但 cache / packet 未齐备"
       : "解释结果等待 Tushare-first 账本");
   const quantProjectionOrdinaryResultSummary =
     String(searchQuantProjectionInterpretation.ordinary_result_summary ?? "") ||
@@ -1299,7 +1308,7 @@ export default function CandidateRadar() {
       ];
   const quantProjectionResultReplayState =
     "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
-  const quantProjectionReplayOrder = quantProjectionProviderLedgerReady
+  const quantProjectionReplayOrder = quantProjectionInterpretationReady
     ? "回放顺序：先看 Tushare ledger，再看股票量化推演，最后看次日图谱；DeepSeek 只看 skipped/pending 状态"
     : taskReceipt?.ok
       ? "任务已接收：先等 TaskStatusPanel 完成，再刷新本地缓存查看量化推演和次日图谱"
@@ -1319,15 +1328,23 @@ export default function CandidateRadar() {
     "回放链接只切换本地页面或锚点；回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache";
   const quantProjectionReplayDestinationState = quantProjectionSubmitError
     ? "结果入口暂停：确认任务未创建；先恢复本地后端连接，再重新点击确认"
-    : quantProjectionFactorNextReady || quantProjectionProviderLedgerReady
+    : quantProjectionFactorNextReady
       ? "结果入口可回放：读取本地 cache / ledger / packet，不额外刷新外部数据或模型"
+      : quantProjectionInterpretationReady
+        ? "P3 可读结论可回放；量化推演 / 次日图谱入口等待本地 cache 刷新"
+      : quantProjectionInterpretationPartialLedgerReady
+        ? "结果入口等待小数据三面：call_ledger 已回放，cache / packet 未齐备"
       : taskReceipt?.ok || quantProjectionPersistedTaskId
         ? "结果入口等待缓存：先看 TaskStatusPanel，任务完成并刷新 cache 后再回放"
         : "结果入口待确认：当前只是本地导航；不会创建 task 或刷新 provider/model";
   const quantProjectionReplayDestinationNextStep = quantProjectionSubmitError
     ? "检查一键启动和本地后端连接，再重新点击确认按钮"
-    : quantProjectionFactorNextReady || quantProjectionProviderLedgerReady
+    : quantProjectionFactorNextReady
       ? "先回放股票量化推演，再打开次日图谱复核图谱"
+      : quantProjectionInterpretationReady
+        ? "先读 P3 结果速读里的来源、缺口和边界；等待本地 Factor/Next/ECharts 回放"
+      : quantProjectionInterpretationPartialLedgerReady
+        ? "继续等待小数据三面 ready；不要把单独 call_ledger 当作 P3 结果完成"
       : taskReceipt?.ok || quantProjectionPersistedTaskId
         ? "等待后台任务完成，刷新本地缓存后再使用两个入口"
         : "输入有效代码并点击确认；不要从链接期待自动补数";
