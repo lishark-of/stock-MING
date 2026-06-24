@@ -75,6 +75,9 @@ export type StorageQueryParams = {
 
 const DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:8710";
 const DEFAULT_LOCALHOST_API_BASE = "http://localhost:8710";
+const COMMAND_CENTER_3_CHECK_ONLY_COMMAND = "scripts/check_command_center_3.command";
+const COMMAND_CENTER_3_START_COMMAND = "scripts/start_command_center_3.command";
+const COMMAND_CENTER_3_DESKTOP_SHORTCUT = "stock-MING Command Center 3.command";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? DEFAULT_LOCAL_API_BASE;
 export const API_BASE_URL = API_BASE;
 export const DEFAULT_LOCAL_API_BASE_URL = DEFAULT_LOCAL_API_BASE;
@@ -202,10 +205,14 @@ function failedRequestEnvelope<T>(
         frontend_backend_auto_link_success: false,
         frontend_backend_auto_link_scope: "local_fastapi_only",
         frontend_backend_auto_link_next_action:
-          "双击 stock-MING Command Center 3.command，或先运行 scripts/check_command_center_3.command 做安全自检；联通后刷新页面。",
-        frontend_backend_check_only_command:
-          "scripts/check_command_center_3.command",
+          `先运行 ${COMMAND_CENTER_3_CHECK_ONLY_COMMAND} 做 check-only 安全自检；确认失败段后，再双击 ${COMMAND_CENTER_3_DESKTOP_SHORTCUT} 或运行 ${COMMAND_CENTER_3_START_COMMAND}；联通后刷新页面。`,
+        frontend_backend_check_only_first: true,
+        frontend_backend_check_only_command: COMMAND_CENTER_3_CHECK_ONLY_COMMAND,
         frontend_backend_check_only_creates_task: false,
+        frontend_backend_check_only_boundary:
+          "check-only 只打印本机 API/Vite/open route，不启动 FastAPI/Vite、不探测 URL、不打开浏览器、不创建 task。",
+        frontend_backend_start_command: COMMAND_CENTER_3_START_COMMAND,
+        frontend_backend_start_after_check_only: true,
         call_status: callStatus,
         error_message_safe: safeMessage,
         external: false,
@@ -221,7 +228,8 @@ function failedRequestEnvelope<T>(
     ],
     warnings: [
       `本地 FastAPI 后端暂未连接；已尝试本机地址：${attemptedApiBases.join(" / ")}。`,
-      "下一步：双击 stock-MING Command Center 3.command，或运行 scripts/start_command_center_3.command，然后刷新页面。",
+      `下一步：先运行 ${COMMAND_CENTER_3_CHECK_ONLY_COMMAND} 做 check-only 安全自检；它不启动 FastAPI/Vite、不探测 URL、不打开浏览器、不创建 task。`,
+      `需要启动时，再双击 ${COMMAND_CENTER_3_DESKTOP_SHORTCUT} 或运行 ${COMMAND_CENTER_3_START_COMMAND}；启动器等待四段 ready 后再打开页面。`,
       "此离线提示不会调用 Tushare、DeepSeek、GitHub，也不会执行真实交易。",
     ],
   };
