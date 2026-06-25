@@ -16963,7 +16963,7 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     latest_task_id = _safe_text(summary.get("latest_task_id") or "", limit=128)
     if latest_task_id:
         receipt = dict(_as_dict(view.get("search_quant_projection_receipt")))
-        if receipt and not receipt.get("latest_task_id"):
+        if receipt:
             provider_receipt = _as_dict(view.get("search_quant_provider_model_acceptance_receipt"))
             provider_ready = provider_receipt.get("tushare_call_ledger_evidence_done") is True
             provider_api_call_count = int(provider_receipt.get("provider_api_call_count") or 0)
@@ -16987,17 +16987,38 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
                     "p1_provider_api_call_count": provider_api_call_count,
                     "p1_provider_api_success_count": provider_api_success_count,
                     "p1_deepseek_skipped_by_request": provider_receipt.get("deepseek_skipped_by_request") is True,
-                    "p1_readback_source": summary.get("task_readback_source") or "search_quant_provider_model_acceptance_receipt",
+                    "p1_readback_source": (
+                        receipt.get("p1_readback_source")
+                        or summary.get("task_readback_source")
+                        or "search_quant_provider_model_acceptance_receipt"
+                    ),
                     "p1_cache_readback_external_calls": False,
                     "p1_react_render_external_calls": False,
                     "p1_does_not_execute_trades": True,
                     "p1_does_not_modify_strategy_action": True,
                     "task_status_visible_in_cache": True,
-                    "task_readback_source": summary.get("task_readback_source") or "search_quant_provider_model_acceptance_receipt",
+                    "task_readback_source": (
+                        receipt.get("task_readback_source")
+                        or summary.get("task_readback_source")
+                        or "search_quant_provider_model_acceptance_receipt"
+                    ),
                     "task_readback_cache_get_external_calls": False,
                     "task_readback_react_render_external_calls": False,
                 }
             )
+            if provider_ready:
+                receipt.update(
+                    {
+                        "provider_execution_implemented": True,
+                        "provider_execution_readback_source": "search_quant_provider_model_acceptance_receipt",
+                        "tushare_call_ledger_evidence_done": True,
+                        "provider_api_call_count": provider_api_call_count,
+                        "provider_api_success_count": provider_api_success_count,
+                        "direct_evidence_verified": provider_receipt.get("direct_evidence_verified") is True,
+                        "model_execution_implemented": False,
+                        "production_quant_projection_complete": False,
+                    }
+                )
             view["search_quant_projection_receipt"] = receipt
     counts = dict(_as_dict(view.get("counts")))
     counts["search_quant_projection_small_data_writeback_ready"] = (

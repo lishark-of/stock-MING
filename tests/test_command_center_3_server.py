@@ -39925,6 +39925,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(quant_receipt["task_status_visible_in_cache"])
         self.assertEqual(quant_receipt["task_readback_source"], "candidate_radar_cache_packet")
         self.assertFalse(quant_receipt["task_readback_cache_get_external_calls"])
+        self.assertTrue(quant_receipt["provider_execution_implemented"])
+        self.assertEqual(
+            quant_receipt["provider_execution_readback_source"],
+            "search_quant_provider_model_acceptance_receipt",
+        )
+        self.assertTrue(quant_receipt["tushare_call_ledger_evidence_done"])
+        self.assertEqual(quant_receipt["provider_api_success_count"], 4)
+        self.assertEqual(quant_receipt["provider_api_call_count"], 4)
+        self.assertTrue(quant_receipt["direct_evidence_verified"])
+        self.assertFalse(quant_receipt["model_execution_implemented"])
+        self.assertFalse(quant_receipt["production_quant_projection_complete"])
         self.assertEqual(
             provider_receipt["status"],
             "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
