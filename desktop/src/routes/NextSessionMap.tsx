@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getCandidateRadarCache, getNextSessionCache, postTask, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
-import MetricGrid from "../components/MetricGrid";
+import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import NextSessionChart from "../components/NextSessionChart";
 import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
@@ -305,6 +305,52 @@ export default function NextSessionMap() {
     does_not_execute_trades: true,
     does_not_modify_operation_zones: true
   };
+  const nextSessionOrdinaryProgressCheckpointAnchor = chartSummary.has_drawable_data === true
+    ? "#next-session-chart"
+    : candidateRadarReadableResultReady
+      ? "#next-session-generate-actions"
+      : "#candidates";
+  const nextSessionOrdinaryProgressCheckpointLabel = chartSummary.has_drawable_data === true
+    ? "查看完整图谱"
+    : candidateRadarReadableResultReady
+      ? "去生成完整图谱"
+      : "回下一票雷达确认";
+  const nextSessionOrdinaryProgressCheckpointItems: MetricItem[] = [
+    {
+      label: "当前 checkpoint",
+      value: chartSummary.has_drawable_data === true
+        ? "完整次日图谱可读：先看图表路径、参考线和操作区"
+        : candidateRadarReadableResultReady
+          ? "上游搜票结论可读：完整图谱等待手动生成"
+          : "等待下一票雷达确认标的",
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "确认标的",
+      value: candidateRadarConfirmedSymbolLabel,
+      tone: candidateRadarConfirmedSymbol ? "good" : "warn"
+    },
+    {
+      label: "来源 task",
+      value: candidateRadarSourceTaskLabel,
+      tone: candidateRadarSourceTaskLabel.includes("等待") ? "warn" : "good"
+    },
+    {
+      label: "上游结论",
+      value: candidateRadarReadableResult,
+      tone: candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "图谱状态",
+      value: nextSessionReadableStatusLabel,
+      tone: chartSummary.has_drawable_data === true ? "good" : candidateRadarReadableResultReady ? "warn" : "neutral"
+    },
+    {
+      label: "安全边界",
+      value: "只读回放；生成必须手动按钮；不调用 DeepSeek、不交易、不改 operation_zones",
+      tone: "good"
+    }
+  ];
   const ordinaryResultReplayStatus = String(
     packet.ordinary_result_replay_status ??
       (
@@ -696,6 +742,16 @@ export default function NextSessionMap() {
           { label: "P3 边界", value: nextSessionResearchOnlyLabel, tone: "good" }
         ]}
       />
+      <div aria-label="next session ordinary progress checkpoint">
+        <h3>当前图谱 checkpoint</h3>
+        <MetricGrid items={nextSessionOrdinaryProgressCheckpointItems} />
+        <div className="actions" aria-label="next session ordinary progress checkpoint actions">
+          <a href={nextSessionOrdinaryProgressCheckpointAnchor} aria-label="open next session ordinary progress checkpoint next step">{nextSessionOrdinaryProgressCheckpointLabel}</a>
+          <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地 next-session cache" aria-label="open chart area from next session checkpoint">图谱区域</a>
+          <a href="#candidates" title="切换到下一票雷达模块；换标的仍需确认按钮" aria-label="return candidate radar from next session checkpoint">下一票雷达</a>
+        </div>
+        <p className="risk-note">checkpoint 只汇总 CandidateRadar 上游结论、来源 task、图谱状态和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek，也不改 operation_zones 或 strategy action。</p>
+      </div>
       <StateClarityRail
         label="next session ordinary replay status"
         state={nextSessionOrdinaryReplayRailState}
@@ -785,7 +841,7 @@ export default function NextSessionMap() {
         <a href="#candidates" title="切换到下一票雷达模块；换标的仍需确认按钮" aria-label="return to candidate radar confirmed symbol entry">回到下一票雷达</a>
         <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant projection replay">查看股票量化推演</a>
       </div>
-      <div className="actions">
+      <div id="next-session-generate-actions" className="actions" aria-label="next session manual generate actions">
         <button onClick={refreshCache} title={nextSessionCacheButtonLabel} aria-label={nextSessionCacheButtonLabel}>查看缓存</button>
         <button onClick={launchTask} title={nextSessionGenerateButtonLabel} aria-label={nextSessionGenerateButtonLabel}>生成任务</button>
       </div>

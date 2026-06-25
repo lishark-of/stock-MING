@@ -950,10 +950,19 @@ def build_contract() -> dict[str, Any]:
         _row(
             "react_echarts_frontend_uses_api_client_and_read_only_display",
             "getNextSessionCache" in next_page
-            and 'postTask("/api/next-session/generate")' in next_page
+            and (
+                'postTask("/api/next-session/generate")' in next_page
+                or 'postTask("/api/next-session/generate", nextSessionGeneratePayload)' in next_page
+            )
             and 'postTask("/api/next-session/browser-qa-review"' in next_page
             and 'postTask("/api/next-session/streamlit-parity-review"' in next_page
             and 'postTask("/api/next-session/production-promotion-review"' in next_page
+            and "nextSessionGeneratePayload" in next_page
+            and "nextSessionOrdinaryProgressCheckpointItems" in next_page
+            and "nextSessionOrdinaryProgressCheckpointAnchor" in next_page
+            and 'aria-label="next session ordinary progress checkpoint"' in next_page
+            and 'id="next-session-generate-actions"' in next_page
+            and "链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek" in next_page
             and "next_session_browser_qa_evidence_summary" in next_page
             and "next_session_browser_qa_review_contract" in next_page
             and "next_session_streamlit_parity_review_contract" in next_page
