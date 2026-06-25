@@ -16,6 +16,7 @@ PACKET_KEY = "command_center_3_desktop_shell_preflight_cache"
 SCHEMA_VERSION = "desktop_shell_preflight_cache.v1"
 DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:8710"
 DEFAULT_LOCALHOST_API_BASE = "http://localhost:8710"
+CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 DESKTOP_ROOT = PROJECT_ROOT / "desktop"
@@ -683,7 +684,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。",
         "日志定位：FastAPI=${FASTAPI_LOG}；React/Vite=${VITE_LOG}。",
         "安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。",
-        "P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped.",
+        "P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped.",
         "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution.",
         "scripts/dev_server.sh",
         "npm run dev",
@@ -1022,7 +1023,7 @@ def _one_click_startup_summary(
         and "P0 stability check failed" in launcher_source
     )
     success_handoff_visible = (
-        "P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
+        "P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
         in launcher_source
     )
     frontend_api_client_local = "http://127.0.0.1:8710" in client_source and bool(api_base_info.get("is_localhost"))
@@ -1096,7 +1097,7 @@ def _one_click_startup_summary(
         row(
             "p0_success_handoff_to_p1_confirm_visible",
             success_handoff_visible,
-            "launcher prints the next ordinary action after readiness: open #home by default, let the user open #candidates next, type silently, confirm to create the Tushare-first POST task, and keep DeepSeek governed/skipped",
+            "launcher prints the next ordinary action after readiness: open #home by default, let the user open #candidates/candidate-radar-search-quant-projection next, type silently, confirm to create the Tushare-first POST task, and keep DeepSeek governed/skipped",
         ),
         row(
             "frontend_api_client_uses_local_fastapi",
@@ -1186,8 +1187,8 @@ def _one_click_startup_summary(
         ],
         "safe_fallback_path": "后端离线时页面显示本地离线提示；GET preflight 只读展示状态。",
         "success_handoff_visible": success_handoff_visible,
-        "success_handoff_label": "联通成功后打开下一票雷达，输入股票代码；只有确认按钮创建 Tushare-first POST task，DeepSeek 保持 governed/skipped。",
-        "success_handoff_href": "#candidates",
+        "success_handoff_label": "联通成功后打开下一票雷达确认输入区，输入股票代码；只有确认按钮创建 Tushare-first POST task，DeepSeek 保持 governed/skipped。",
+        "success_handoff_href": CANDIDATE_CONFIRM_HREF,
         "success_handoff_boundary": "启动器和预检页只暴露下一步；页面切换和输入不外联，确认按钮才进入 P1 task。",
         "ordinary_recovery_steps": ordinary_recovery_steps,
         "ordinary_recovery_step_count": len(ordinary_recovery_steps),
@@ -1645,7 +1646,7 @@ def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -
 
     def boundary_fields() -> dict[str, Any]:
         return {
-            "P0交接证据": "四段 ready 后只切换到 #candidates，并进入搜票量化推演卡；输入股票代码保持静默；确认按钮才创建 Tushare-first POST task。",
+            "P0交接证据": f"四段 ready 后只切换到 {CANDIDATE_CONFIRM_HREF}，并进入搜票量化推演确认输入区；输入股票代码保持静默；确认按钮才创建 Tushare-first POST task。",
             "成功信号": "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
             "frontend_backend_auto_link_scope": "local_fastapi_only",
             "page_open_creates_task": False,
@@ -1663,7 +1664,7 @@ def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -
             "步骤": "1. 确认本地联通",
             "用户动作": "先看 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 四段是否 ready。",
             "当前状态": "ready：可以进入普通投研入口" if connection_ready else "check：先恢复本地一键入口",
-            "下一步": "打开下一票雷达的搜票量化推演卡，输入股票代码。" if connection_ready else "回到启动器诊断或桌面壳预检。",
+            "下一步": "打开下一票雷达确认输入区，输入股票代码。" if connection_ready else "回到启动器诊断或桌面壳预检。",
             "边界": "只读 GET health / preflight cache；不启动服务、不创建 task。",
             "ordinary_user_visible": True,
             "cache_only_readback": True,
@@ -1678,9 +1679,9 @@ def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -
         },
         {
             "步骤": "2. 进入下一票雷达",
-            "用户动作": "去下一票雷达的搜票量化推演卡片。",
+            "用户动作": "去下一票雷达的搜票量化推演确认输入区。",
             "当前状态": "只读导航提示",
-            "下一步": "在搜票量化推演卡输入 6 位 A 股代码或带后缀代码。",
+            "下一步": "在搜票量化推演卡的确认输入区输入 6 位 A 股代码或带后缀代码。",
             "边界": "页面切换和输入不会调用 Tushare、DeepSeek 或 GitHub。",
             "ordinary_user_visible": True,
             "cache_only_readback": True,
@@ -1796,8 +1797,8 @@ def _p0_ordinary_reconnect_rows(
         ),
         row(
             "四段联通变绿",
-            "打开下一票雷达的搜票量化推演卡，输入股票代码。",
-            "#candidates",
+            "打开下一票雷达确认输入区，输入股票代码。",
+            CANDIDATE_CONFIRM_HREF,
             "P0 联通 ready 后才进入普通投研入口。",
             "页面切换和输入代码不外联；确认按钮之前不创建 POST task。",
             source_step_index=1,
@@ -1917,7 +1918,7 @@ def _p0_ordinary_quick_action_rows(
             "用户下一步": user_next_step,
             "入口": entry,
             "证据": handoff_step["步骤"],
-            "P0交接证据": "四段 ready 后只切换到 #candidates，并进入搜票量化推演卡；输入股票代码保持静默；确认按钮才创建 Tushare-first POST task。",
+            "P0交接证据": f"四段 ready 后只切换到 {CANDIDATE_CONFIRM_HREF}，并进入搜票量化推演确认输入区；输入股票代码保持静默；确认按钮才创建 Tushare-first POST task。",
             "成功信号": "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
             "边界": boundary,
             "source_handoff_step": handoff_step["步骤"],
@@ -1985,8 +1986,8 @@ def _p0_current_next_action_rows(
     p0_to_p1_ordinary_handoff_rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     connection_ready = one_click_startup_summary.get("frontend_backend_connection_ready") is True
-    primary_entry = "#candidates" if connection_ready else "#desktop"
-    primary_next = "进入下一票雷达的搜票量化推演卡，输入股票代码；输入保持静默，确认按钮才触发 Tushare-first。" if connection_ready else "留在桌面壳预检，按 FastAPI / bootstrap status / desktop preflight cache / React/Vite 四段恢复。"
+    primary_entry = CANDIDATE_CONFIRM_HREF if connection_ready else "#desktop"
+    primary_next = "进入下一票雷达确认输入区，输入股票代码；输入保持静默，确认按钮才触发 Tushare-first。" if connection_ready else "留在桌面壳预检，按 FastAPI / bootstrap status / desktop preflight cache / React/Vite 四段恢复。"
 
     def row(
         action_key: str,
@@ -2116,7 +2117,7 @@ def _p0_startup_30s_quick_read_rows(
         row(
             "2. 四段联通",
             f"{ready_count}/4 ready",
-            "少于 4/4 时按失败段处理；4/4 时进入下一票雷达。",
+            "少于 4/4 时按失败段处理；4/4 时进入下一票雷达确认输入区。",
             "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
             "这里只读 packet 状态；GET preflight 和 React render 不启动服务、不创建 task。",
             "#desktop",
@@ -2143,7 +2144,7 @@ def _p0_startup_30s_quick_read_rows(
             next_action,
             "p0_current_next_action_rows",
             "只切换本地页面；输入股票代码保持静默，确认按钮才创建 Tushare-first POST task。",
-            "#candidates" if connection_ready else "#desktop",
+            CANDIDATE_CONFIRM_HREF if connection_ready else "#desktop",
         ),
         row(
             "6. 本轮边界",
@@ -2171,7 +2172,7 @@ def _p0_ordinary_one_screen_rows(
     ]
     failed_segment_label = " / ".join(failed_segments) if failed_segments else "无失败段；四段联通均为 ready"
     current_next = str(p0_current_next_action_rows[0].get("用户下一步") or "") if p0_current_next_action_rows else ""
-    fallback_entry = "#candidates" if connection_ready else "#desktop"
+    fallback_entry = CANDIDATE_CONFIRM_HREF if connection_ready else "#desktop"
     current_entry = (
         str(p0_current_next_action_rows[0].get("入口") or fallback_entry)
         if p0_current_next_action_rows
@@ -2225,14 +2226,14 @@ def _p0_ordinary_one_screen_rows(
         row(
             "2. 看四段联通",
             f"{ready_count}/4 ready；{failed_segment_label}",
-            "4/4 ready 后进入下一票雷达；少于 4/4 时按失败段看日志和端口。",
+            "4/4 ready 后进入下一票雷达确认输入区；少于 4/4 时按失败段看日志和端口。",
             "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
             "#desktop",
             "本行只读 desktop preflight cache；不探测当前运行时、不创建 task、不调用 provider/model。",
         ),
         row(
             "3. 进入 P1 确认",
-            "ready：可以进入下一票雷达" if connection_ready else "blocked：P0 未 ready，先留在预检页",
+            "ready：可以进入下一票雷达确认输入区" if connection_ready else "blocked：P0 未 ready，先留在预检页",
             current_next or ("进入下一票雷达，输入股票代码；确认按钮才触发 Tushare-first。" if connection_ready else "留在桌面壳预检，按四段恢复。"),
             "p0_current_next_action_rows",
             current_entry,
