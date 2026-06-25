@@ -83,6 +83,31 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         gate["p0_connection_evidence_ready"] = True
         self.assertTrue(candidate_service._quant_projection_p0_confirm_gate_ready(gate))
 
+    def test_p0_confirm_gate_accepts_runtime_packet_contract_evidence(self):
+        gate = {
+            "schema_version": "candidate_radar_p0_confirm_gate.v1",
+            "p0_ready": True,
+            "fastapi_cache_get_ready": True,
+            "bootstrap_runtime_mode_ready": True,
+            "desktop_preflight_ready": True,
+            "p0_runtime_packets_ready": True,
+            "p0_stability_check_ready": False,
+            "p0_local_link_ready": False,
+            "p0_connection_evidence_ready": False,
+            "p0_quick_action_ready": True,
+            "p0_contract_evidence_ready": True,
+            "candidate_cache_ready": True,
+            "creates_task_only_after_button": True,
+            "react_render_external_calls": False,
+            "get_cache_external_calls": False,
+            "contains_sensitive_material": False,
+        }
+
+        self.assertTrue(candidate_service._quant_projection_p0_confirm_gate_ready(gate))
+        gate["p0_contract_evidence_ready"] = False
+        gate["p0_quick_action_ready"] = False
+        self.assertFalse(candidate_service._quant_projection_p0_confirm_gate_ready(gate))
+
     def test_legacy_provider_ledger_without_p0_gate_does_not_show_p2_as_blocked(self):
         packet = {
             "search_quant_projection_receipt": {

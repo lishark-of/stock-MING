@@ -204,9 +204,12 @@ export default function CandidateRadar() {
         fastapi_cache_get_ready: !loading && !error,
         bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady,
         desktop_preflight_ready: desktopPreflightReady,
+        p0_runtime_packets_ready: desktopP0RuntimePacketsReady,
         p0_stability_check_ready: desktopP0StabilityReady,
         p0_local_link_ready: desktopP0LocalLinkReady,
         p0_connection_evidence_ready: desktopP0ConnectionEvidenceReady,
+        p0_quick_action_ready: desktopP0QuickActionReady,
+        p0_contract_evidence_ready: desktopP0ContractEvidenceReady,
         p0_local_link_is_ui_gate_only_not_release_evidence: desktopP0LocalLinkReady && !desktopP0StabilityReady,
         candidate_cache_ready: candidateRadarCacheGetReadable,
         candidate_cache_status: String(cache.status ?? "missing"),
@@ -621,6 +624,8 @@ export default function CandidateRadar() {
     (desktopPreflight.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
   const desktopP0LocalConnectionReceipt =
     (desktopPreflight.p0_local_connection_receipt as Record<string, unknown> | undefined) ?? {};
+  const desktopP0CurrentNextActionRows =
+    (desktopPreflight.p0_current_next_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const desktopPreflightReady =
     desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache" &&
     (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined)?.status === "local_one_click_launcher_ready";
@@ -631,17 +636,29 @@ export default function CandidateRadar() {
     desktopOneClickStartupSummary.frontend_backend_connection_ready === true &&
     desktopP0LocalConnectionReceipt.status === "p0_local_connection_receipt_ready";
   const desktopP0ConnectionEvidenceReady = desktopP0StabilityReady || desktopP0LocalLinkReady;
+  const desktopP0RuntimePacketsReady =
+    !loading &&
+    !error &&
+    bootstrapRuntimeModeReady &&
+    desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache";
+  const desktopP0QuickActionReady = desktopP0CurrentNextActionRows.some(
+    (row) => row.p1_entry_enabled === true || row.p0_ready_now === true
+  );
+  const desktopP0ContractEvidenceReady =
+    desktopP0ConnectionEvidenceReady ||
+    desktopOneClickStartupSummary.status === "one_click_frontend_backend_ready" ||
+    desktopP0LocalConnectionReceipt.status === "p0_local_connection_receipt_ready" ||
+    desktopP0QuickActionReady;
   const desktopP0ConnectionEvidenceLabel = desktopP0StabilityReady
     ? "P0 stability dwell 已通过"
     : desktopP0LocalLinkReady
       ? "本机 FastAPI / desktop preflight 已接上；缺少启动前 stability receipt，仅作为 P1 UI 闸门，不作 release evidence"
+      : desktopP0RuntimePacketsReady && desktopP0ContractEvidenceReady
+        ? "本机 runtime packet 与 P1 快速入口已接上；旧 stability receipt 可后补"
       : "等待 P0 stability check 或本机连接回读";
   const quantProjectionP0Ready =
-    !loading &&
-    !error &&
-    bootstrapRuntimeModeReady &&
-    desktopPreflightReady &&
-    desktopP0ConnectionEvidenceReady &&
+    desktopP0RuntimePacketsReady &&
+    desktopP0ContractEvidenceReady &&
     candidateRadarCacheGetReadable;
   const ordinaryCacheSourceLabel = candidateRadarCacheReady
     ? "本地候选缓存可用"

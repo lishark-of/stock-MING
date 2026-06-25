@@ -1404,6 +1404,29 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("void postCandidateRadarQuantProjection({", submit_slice)
         self.assertNotIn("setSearchSymbol(event.target.value);", submit_slice)
 
+    def test_p1_confirm_gate_uses_runtime_packet_contract_evidence(self):
+        gate_start = self.page.index("const desktopP0RuntimePacketsReady =")
+        gate_end = self.page.index("const ordinaryCacheSourceLabel =", gate_start)
+        gate = self.page[gate_start:gate_end]
+
+        self.assertIn("bootstrapRuntimeModeReady", gate)
+        self.assertIn('desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache"', gate)
+        self.assertIn("const desktopP0QuickActionReady = desktopP0CurrentNextActionRows.some", gate)
+        self.assertIn("row.p1_entry_enabled === true || row.p0_ready_now === true", gate)
+        self.assertIn("const desktopP0ContractEvidenceReady =", gate)
+        self.assertIn('desktopOneClickStartupSummary.status === "one_click_frontend_backend_ready"', gate)
+        self.assertIn('desktopP0LocalConnectionReceipt.status === "p0_local_connection_receipt_ready"', gate)
+        self.assertIn("desktopP0RuntimePacketsReady &&", gate)
+        self.assertIn("desktopP0ContractEvidenceReady &&", gate)
+        self.assertNotIn("desktopPreflightReady &&\n    desktopP0ConnectionEvidenceReady", gate)
+
+        submit_start = self.page.index("const launchQuantProjection = () =>")
+        submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
+        submit_slice = self.page[submit_start:submit_end]
+        self.assertIn("p0_runtime_packets_ready: desktopP0RuntimePacketsReady", submit_slice)
+        self.assertIn("p0_quick_action_ready: desktopP0QuickActionReady", submit_slice)
+        self.assertIn("p0_contract_evidence_ready: desktopP0ContractEvidenceReady", submit_slice)
+
     def test_ordinary_quant_projection_submit_does_not_auto_chain_provider_model(self):
         submit_start = self.page.index("const launchQuantProjection = () =>")
         submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)

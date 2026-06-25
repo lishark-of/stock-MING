@@ -1456,11 +1456,27 @@ def _quant_projection_post_confirm_replay_contract(payload: Mapping[str, Any]) -
 
 
 def _quant_projection_p0_confirm_gate_ready(p0_gate: Mapping[str, Any]) -> bool:
+    runtime_packets_ready = (
+        p0_gate.get("p0_runtime_packets_ready") is True
+        or (
+            p0_gate.get("fastapi_cache_get_ready") is True
+            and p0_gate.get("bootstrap_runtime_mode_ready") is True
+            and p0_gate.get("desktop_preflight_ready") is True
+        )
+    )
+    p0_contract_evidence_ready = (
+        p0_gate.get("p0_contract_evidence_ready") is True
+        or p0_gate.get("p0_quick_action_ready") is True
+    )
     p0_connection_evidence_ready = (
         p0_gate.get("p0_stability_check_ready") is True
         or (
             p0_gate.get("p0_local_link_ready") is True
             and p0_gate.get("p0_connection_evidence_ready") is True
+        )
+        or (
+            runtime_packets_ready
+            and p0_contract_evidence_ready
         )
     )
     contains_sensitive_material = p0_gate.get("contains_sensitive_material")
@@ -1469,9 +1485,7 @@ def _quant_projection_p0_confirm_gate_ready(p0_gate: Mapping[str, Any]) -> bool:
     return bool(
         p0_gate.get("schema_version") == "candidate_radar_p0_confirm_gate.v1"
         and p0_gate.get("p0_ready") is True
-        and p0_gate.get("fastapi_cache_get_ready") is True
-        and p0_gate.get("bootstrap_runtime_mode_ready") is True
-        and p0_gate.get("desktop_preflight_ready") is True
+        and runtime_packets_ready
         and p0_connection_evidence_ready
         and p0_gate.get("candidate_cache_ready") is True
         and p0_gate.get("creates_task_only_after_button") is True
@@ -14251,9 +14265,12 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         "fastapi_cache_get_ready": p0_gate_payload.get("fastapi_cache_get_ready") is True,
         "bootstrap_runtime_mode_ready": p0_gate_payload.get("bootstrap_runtime_mode_ready") is True,
         "desktop_preflight_ready": p0_gate_payload.get("desktop_preflight_ready") is True,
+        "p0_runtime_packets_ready": p0_gate_payload.get("p0_runtime_packets_ready") is True,
         "p0_stability_check_ready": p0_gate_payload.get("p0_stability_check_ready") is True,
         "p0_local_link_ready": p0_gate_payload.get("p0_local_link_ready") is True,
         "p0_connection_evidence_ready": p0_gate_payload.get("p0_connection_evidence_ready") is True,
+        "p0_quick_action_ready": p0_gate_payload.get("p0_quick_action_ready") is True,
+        "p0_contract_evidence_ready": p0_gate_payload.get("p0_contract_evidence_ready") is True,
         "p0_local_link_is_ui_gate_only_not_release_evidence": (
             p0_gate_payload.get("p0_local_link_is_ui_gate_only_not_release_evidence") is True
         ),
@@ -15695,7 +15712,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         p0_confirm_gate_status = "p0_gate_ready"
         p0_confirm_gate_label = (
             "P0 gate ready：FastAPI cache GET、bootstrap runtime-mode、desktop preflight、"
-            "P0 stability/local link、candidate cache 均已满足。"
+            "P0 stability/local link 或 runtime/contract evidence、candidate cache 均已满足。"
         )
     elif p0_confirm_gate_missing_not_blocking_replay:
         p0_confirm_gate_status = "p0_gate_legacy_missing_not_blocking_replay"
@@ -15707,7 +15724,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         p0_confirm_gate_status = "p0_gate_missing_or_blocked"
         p0_confirm_gate_label = (
             "P0 gate 未完整回放：等待 FastAPI cache GET、bootstrap runtime-mode、desktop preflight、"
-            "P0 stability 或本机联通证据，以及 candidate cache ready。"
+            "P0 stability / 本机联通证据 / runtime contract evidence，以及 candidate cache ready。"
         )
     confirmed_include_tushare = (
         quant_request_params.get("include_tushare") is True
@@ -16143,9 +16160,12 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "fastapi_cache_get_ready": p0_confirm_gate_evidence.get("fastapi_cache_get_ready") is True,
             "bootstrap_runtime_mode_ready": p0_confirm_gate_evidence.get("bootstrap_runtime_mode_ready") is True,
             "desktop_preflight_ready": p0_confirm_gate_evidence.get("desktop_preflight_ready") is True,
+            "p0_runtime_packets_ready": p0_confirm_gate_evidence.get("p0_runtime_packets_ready") is True,
             "p0_stability_check_ready": p0_confirm_gate_evidence.get("p0_stability_check_ready") is True,
             "p0_local_link_ready": p0_local_link_ready,
             "p0_connection_evidence_ready": p0_connection_evidence_ready,
+            "p0_quick_action_ready": p0_confirm_gate_evidence.get("p0_quick_action_ready") is True,
+            "p0_contract_evidence_ready": p0_confirm_gate_evidence.get("p0_contract_evidence_ready") is True,
             "p0_local_link_is_ui_gate_only_not_release_evidence": (
                 p0_confirm_gate_evidence.get("p0_local_link_is_ui_gate_only_not_release_evidence") is True
             ),
