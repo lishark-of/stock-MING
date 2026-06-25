@@ -1069,6 +1069,21 @@ export default function CommandCenterHome() {
     : "P0 check：先让 health、bootstrap status、desktop preflight cache 变绿；未 ready 不进入 P1";
   const dailyCommandP0LocalReadinessBoundary =
     "P0 ready 只证明本地前后端联通；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。";
+  const bootstrapPolicy = (bootstrapStatus.policy as Record<string, unknown> | undefined) ?? {};
+  const homeP1ManualConfirmReady =
+    bootstrapPolicy.search_quant_projection_manual_confirm_button_runtime_ready === true &&
+    bootstrapPolicy.search_quant_projection_frontend_runtime_wiring_implemented === true;
+  const homeP1ManualConfirmStatus = String(
+    bootstrapPolicy.search_quant_projection_manual_confirm_button_status ??
+      (homeP1ManualConfirmReady ? "ready_explicit_confirm_button_posts_quant_projection_task" : "waiting_p1_manual_confirm_runtime")
+  );
+  const homeP1ManualConfirmLabel = homeP1ManualConfirmReady
+    ? "已接：按钮 -> POST task -> TaskStatusPanel -> cache 回放"
+    : "待确认：P1 手动按钮 runtime 状态未回读";
+  const homeP1BrowserEvidenceLabel =
+    bootstrapPolicy.search_quant_projection_frontend_wiring_browser_evidence_complete === true
+      ? "浏览器证据已完成"
+      : "浏览器网络证据未补；不阻塞手动确认使用";
   const homeQuantSymbolValidation = normalizeHomeAshareSymbolInput(homeQuantSymbol);
   const homeQuantCanSubmit = dailyCommandP0LocalReadinessReady && homeQuantSymbolValidation.valid && !homeQuantSubmitting;
   const homeQuantSubmitDisabledReason = homeQuantSubmitting
@@ -1108,8 +1123,11 @@ export default function CommandCenterHome() {
   const homeQuantConfirmItems: MetricItem[] = [
     { label: "输入代码", value: homeQuantSymbolValidation.valid ? homeQuantSymbolValidation.normalized : homeQuantSubmitDisabledReason, tone: homeQuantSymbolValidation.valid ? "good" : "warn" },
     { label: "P0 闸门", value: dailyCommandP0LocalReadinessReady ? "ready：可点击确认" : "check：先恢复本地联通", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+    { label: "P1 手动确认", value: homeP1ManualConfirmLabel, tone: homeP1ManualConfirmReady ? "good" : "warn" },
+    { label: "P1 runtime", value: homeP1ManualConfirmStatus, tone: homeP1ManualConfirmReady ? "good" : "warn" },
     { label: "任务状态", value: homeQuantReadbackStatus, tone: homeQuantTaskPanelTaskId ? "good" : "warn" },
     { label: "Tushare-first", value: "确认按钮才 POST；DeepSeek skipped，成功后通过 GET cache 回放", tone: "good" },
+    { label: "浏览器验收", value: homeP1BrowserEvidenceLabel, tone: "warn" },
     { label: "P2/P3 回放", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
     { label: "边界", value: "首页输入静默；不从页面打开、输入、React render 或 GET cache 外联；不交易、不改 action", tone: "good" }
   ];
@@ -1844,7 +1862,7 @@ export default function CommandCenterHome() {
               <TaskLaunchReceipt receipt={homeQuantReceipt} />
             </details>
           ) : null}
-          <p className="risk-note">首页确认按钮复用 POST /api/candidate-radar/quant-projection：P0 gate 通过后才启用；成功后只从 CandidateRadar cache / call_ledger / packet 回放 P2/P3。页面打开、输入、React render 和 GET cache 不外联，不调用 DeepSeek，不交易、不改 strategy action。</p>
+          <p className="risk-note">首页确认按钮复用 POST /api/candidate-radar/quant-projection：P0 gate 通过后才启用；成功后只从 CandidateRadar cache / call_ledger / packet 回放 P2/P3。P1 手动确认链路已接入本地 runtime；浏览器网络证据和自动提交仍单独补，不当作生产验收。页面打开、输入、React render 和 GET cache 不外联，不调用 DeepSeek，不交易、不改 strategy action。</p>
         </div>
       </PacketCard>
       <PacketCard title="P1 Tushare-first 链路速读" subtitle="确认按钮、Tushare ledger、DeepSeek skipped 和回放边界" status={dailyCommandTushareFirstLedgerReady ? "ledger_ready" : "waiting_confirm"}>
