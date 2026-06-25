@@ -1075,11 +1075,49 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertIn("解释只基于本地 cache / ledger / packet", interpretation["ordinary_result_boundary"])
         self.assertIn("Tushare 接口 4/4", interpretation["ordinary_result_evidence"])
         self.assertIn("DeepSeek 未参与", interpretation["ordinary_result_evidence"])
+        self.assertTrue(interpretation["ordinary_result_readable"])
+        self.assertTrue(interpretation["p3_explainable_result_ready"])
+        self.assertTrue(interpretation["p3_explainable_result_readable"])
+        safe_explanation = interpretation["ordinary_result_safe_explanation"]
+        self.assertEqual(
+            safe_explanation["schema_version"],
+            "candidate_radar_p3_safe_explanation.v1",
+        )
+        self.assertEqual(
+            safe_explanation["safe_explanation_fields"],
+            ["source", "gap", "next_step", "safety_summary"],
+        )
+        self.assertIn("Tushare-first", safe_explanation["source"])
+        self.assertIn("Factor/Next/ECharts", safe_explanation["gap"])
+        self.assertEqual(safe_explanation["next_step"], interpretation["ordinary_result_next_step"])
+        self.assertEqual(safe_explanation["safety_summary"], interpretation["ordinary_result_boundary"])
+        self.assertTrue(safe_explanation["ordinary_result_readable"])
+        self.assertTrue(safe_explanation["provider_data_source_verified"])
+        self.assertTrue(safe_explanation["uses_tushare_ledger"])
+        self.assertFalse(safe_explanation["uses_deepseek_output"])
+        self.assertFalse(safe_explanation["uses_model_output"])
+        self.assertTrue(safe_explanation["cache_only_readback"])
+        self.assertFalse(safe_explanation["creates_task_from_readback"])
+        self.assertFalse(safe_explanation["calls_model_from_readback"])
+        self.assertFalse(safe_explanation["readback_external_calls_triggered"])
+        self.assertFalse(safe_explanation["contains_secret"])
+        self.assertTrue(safe_explanation["does_not_execute_trades"])
+        self.assertTrue(safe_explanation["does_not_modify_strategy_action"])
+        self.assertFalse(safe_explanation["claims_14_ltg_complete"])
         self.assertEqual(packet["ordinary_result_status"], interpretation["ordinary_result_status"])
         self.assertEqual(packet["ordinary_result_summary"], interpretation["ordinary_result_summary"])
         self.assertEqual(packet["ordinary_result_next_step"], interpretation["ordinary_result_next_step"])
         self.assertEqual(packet["ordinary_result_boundary"], interpretation["ordinary_result_boundary"])
         self.assertEqual(packet["ordinary_result_evidence"], interpretation["ordinary_result_evidence"])
+        self.assertTrue(packet["ordinary_result_readable"])
+        self.assertEqual(packet["ordinary_result_safe_explanation"], safe_explanation)
+        self.assertTrue(packet["search_quant_projection_p3_explainable_result_ready"])
+        self.assertTrue(packet["search_quant_projection_p3_explainable_result_readable"])
+        self.assertEqual(packet["search_quant_projection_p3_safe_explanation"], safe_explanation)
+        self.assertEqual(
+            packet["search_quant_projection_p3_safe_explanation_fields"],
+            ["source", "gap", "next_step", "safety_summary"],
+        )
         self.assertEqual(packet["ordinary_result_missing_evidence"], interpretation["missing_evidence"])
         self.assertEqual(
             packet["ordinary_result_deepseek_governed_executor_status"],
@@ -1336,6 +1374,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(p3_checkpoint["evidence_source"], "Tushare-first ledger")
         self.assertEqual(p3_checkpoint["missing_evidence_count"], 1)
         self.assertEqual(p3_checkpoint["safe_explanation_fields"], ["source", "gap", "next_step", "safety_summary"])
+        self.assertEqual(p3_checkpoint["safe_explanation"], safe_explanation)
         self.assertTrue(p3_checkpoint["uses_tushare_ledger"])
         self.assertFalse(p3_checkpoint["uses_deepseek_output"])
         self.assertFalse(p3_checkpoint["uses_model_output"])
@@ -1357,6 +1396,8 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(packet["counts"]["search_quant_projection_p3_explainable_result_checkpoint_visible"])
         self.assertTrue(packet["counts"]["search_quant_projection_p3_explainable_result_checkpoint_readable"])
         self.assertTrue(packet["counts"]["search_quant_projection_p3_explainable_result_checkpoint_ready"])
+        self.assertTrue(packet["counts"]["search_quant_projection_p3_explainable_result_ready"])
+        self.assertTrue(packet["counts"]["search_quant_projection_p3_explainable_result_readable"])
         self.assertEqual(
             packet["counts"]["search_quant_projection_p3_explainable_result_checkpoint_missing_evidence_count"],
             1,
@@ -1366,6 +1407,11 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["policy"]["search_quant_projection_p3_explainable_result_checkpoint_calls_model"])
         self.assertFalse(packet["policy"]["search_quant_projection_p3_explainable_result_checkpoint_uses_model_output"])
         self.assertTrue(packet["policy"]["search_quant_projection_p3_explainable_result_checkpoint_is_not_trade_signal"])
+        self.assertTrue(packet["policy"]["search_quant_projection_p3_safe_explanation_is_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_p3_safe_explanation_creates_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_p3_safe_explanation_calls_model"])
+        self.assertFalse(packet["policy"]["search_quant_projection_p3_safe_explanation_uses_model_output"])
+        self.assertTrue(packet["policy"]["search_quant_projection_p3_safe_explanation_is_not_trade_signal"])
         self.assertEqual(packet["counts"]["search_quant_projection_result_checkpoint_missing_evidence_count"], 1)
         self.assertTrue(packet["counts"]["search_quant_projection_result_checkpoint_readable"])
         self.assertEqual(packet["counts"]["search_quant_projection_result_checkpoint_row_count"], 4)
@@ -2072,6 +2118,13 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(p3_checkpoint["data_source_state"], "blocked_missing_credentials")
         self.assertEqual(p3_checkpoint["evidence_source"], "local_blocker_or_task_status")
         self.assertGreaterEqual(p3_checkpoint["missing_evidence_count"], 2)
+        self.assertEqual(p3_checkpoint["safe_explanation_fields"], ["source", "gap", "next_step", "safety_summary"])
+        self.assertEqual(p3_checkpoint["safe_explanation"]["schema_version"], "candidate_radar_p3_safe_explanation.v1")
+        self.assertIn("凭据缺失", p3_checkpoint["safe_explanation"]["source"])
+        self.assertTrue(p3_checkpoint["safe_explanation"]["ordinary_result_readable"])
+        self.assertFalse(p3_checkpoint["safe_explanation"]["provider_data_source_verified"])
+        self.assertFalse(p3_checkpoint["safe_explanation"]["uses_deepseek_output"])
+        self.assertFalse(p3_checkpoint["safe_explanation"]["creates_task_from_readback"])
         self.assertFalse(p3_checkpoint["uses_tushare_ledger"])
         self.assertFalse(p3_checkpoint["uses_deepseek_output"])
         self.assertTrue(p3_checkpoint["cache_only_readback"])
@@ -2086,6 +2139,10 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(packet["counts"]["search_quant_projection_p3_explainable_result_checkpoint_visible"])
         self.assertTrue(packet["counts"]["search_quant_projection_p3_explainable_result_checkpoint_readable"])
         self.assertFalse(packet["counts"]["search_quant_projection_p3_explainable_result_checkpoint_ready"])
+        self.assertFalse(packet["counts"]["search_quant_projection_p3_explainable_result_ready"])
+        self.assertTrue(packet["counts"]["search_quant_projection_p3_explainable_result_readable"])
+        self.assertFalse(packet["search_quant_projection_p3_explainable_result_ready"])
+        self.assertTrue(packet["search_quant_projection_p3_explainable_result_readable"])
         self.assertTrue(packet["policy"]["search_quant_projection_p3_explainable_result_checkpoint_is_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_p3_explainable_result_checkpoint_creates_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_p3_explainable_result_checkpoint_calls_model"])

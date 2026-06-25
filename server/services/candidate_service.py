@@ -18473,6 +18473,34 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "candidate_is_not_buy_instruction": True,
         "production_quant_projection_complete": False,
     }
+    ordinary_result_safe_explanation = {
+        "schema_version": "candidate_radar_p3_safe_explanation.v1",
+        "source": data_source_label,
+        "gap": missing_evidence_label,
+        "next_step": ordinary_result_next_step,
+        "safety_summary": ordinary_result_boundary,
+        "safe_explanation_fields": ordinary_result_checkpoint_contract["safe_explanation_fields"],
+        "ordinary_result_readable": ordinary_result_checkpoint_contract["ordinary_result_readable"],
+        "provider_data_source_verified": small_data_ready,
+        "uses_tushare_ledger": small_data_ready,
+        "uses_deepseek_output": False,
+        "uses_model_output": False,
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "calls_model_from_readback": False,
+        "readback_external_calls_triggered": False,
+        "get_cache_external_calls": False,
+        "react_render_external_calls": False,
+        "search_input_external_calls": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "does_not_modify_prices": True,
+        "candidate_is_not_buy_instruction": True,
+        "production_quant_projection_complete": False,
+        "claims_14_ltg_complete": False,
+    }
     if small_data_ready:
         p3_checkpoint_status = (
             "p3_explainable_result_ready_local_map"
@@ -18510,6 +18538,7 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_boundary": ordinary_result_boundary,
         "ordinary_result_evidence": ordinary_result_evidence,
         "ordinary_result_readable": ordinary_result_checkpoint_contract["ordinary_result_readable"],
+        "safe_explanation": ordinary_result_safe_explanation,
         "provider_data_source_verified": small_data_ready,
         "blocker_explanation_visible": ordinary_result_checkpoint_contract["blocker_explanation_visible"],
         "data_source_state": data_source_status,
@@ -18763,6 +18792,10 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_action_rows_use_model_output": False,
         "ordinary_result_action_rows_are_not_trade_signals": True,
         "ordinary_result_checkpoint_contract": ordinary_result_checkpoint_contract,
+        "ordinary_result_safe_explanation": ordinary_result_safe_explanation,
+        "ordinary_result_readable": ordinary_result_checkpoint_contract["ordinary_result_readable"],
+        "p3_explainable_result_ready": p3_checkpoint_status.startswith("p3_explainable_result_ready"),
+        "p3_explainable_result_readable": ordinary_result_checkpoint_contract["ordinary_result_readable"],
         "ordinary_result_checkpoint_rows": ordinary_result_checkpoint_rows,
         "ordinary_result_checkpoint_row_count": len(ordinary_result_checkpoint_rows),
         "ordinary_result_checkpoint_rows_are_cache_only": True,
@@ -18875,6 +18908,8 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["ordinary_result_next_step"] = summary.get("ordinary_result_next_step")
     view["ordinary_result_boundary"] = summary.get("ordinary_result_boundary")
     view["ordinary_result_evidence"] = summary.get("ordinary_result_evidence")
+    view["ordinary_result_readable"] = summary.get("ordinary_result_readable") is True
+    view["ordinary_result_safe_explanation"] = _as_dict(summary.get("ordinary_result_safe_explanation"))
     view["ordinary_result_missing_evidence"] = summary.get("missing_evidence")
     view["ordinary_result_deepseek_governed_executor_status"] = summary.get(
         "deepseek_governed_executor_status"
@@ -18902,6 +18937,18 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["search_quant_projection_result_checkpoint"] = result_checkpoint
     view["search_quant_projection_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
     view["search_quant_projection_p3_explainable_result_checkpoint"] = p3_explainable_result_checkpoint
+    view["search_quant_projection_p3_explainable_result_ready"] = (
+        summary.get("p3_explainable_result_ready") is True
+    )
+    view["search_quant_projection_p3_explainable_result_readable"] = (
+        summary.get("p3_explainable_result_readable") is True
+    )
+    view["search_quant_projection_p3_safe_explanation"] = _as_dict(
+        summary.get("ordinary_result_safe_explanation")
+    )
+    view["search_quant_projection_p3_safe_explanation_fields"] = _as_list(
+        view["search_quant_projection_p3_safe_explanation"].get("safe_explanation_fields")
+    )
     counts["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
     counts["ordinary_result_handoff_row_count"] = len(ordinary_result_handoff_rows)
     counts["ordinary_result_readback_row_count"] = len(ordinary_result_readback_rows)
@@ -18931,6 +18978,12 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     ).startswith("p3_explainable_result_ready")
     counts["search_quant_projection_p3_explainable_result_checkpoint_missing_evidence_count"] = (
         p3_explainable_result_checkpoint.get("missing_evidence_count", 0)
+    )
+    counts["search_quant_projection_p3_explainable_result_ready"] = (
+        summary.get("p3_explainable_result_ready") is True
+    )
+    counts["search_quant_projection_p3_explainable_result_readable"] = (
+        summary.get("p3_explainable_result_readable") is True
     )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
@@ -18978,6 +19031,11 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_p3_explainable_result_checkpoint_calls_model"] = False
     policy["search_quant_projection_p3_explainable_result_checkpoint_uses_model_output"] = False
     policy["search_quant_projection_p3_explainable_result_checkpoint_is_not_trade_signal"] = True
+    policy["search_quant_projection_p3_safe_explanation_is_cache_only"] = True
+    policy["search_quant_projection_p3_safe_explanation_creates_task"] = False
+    policy["search_quant_projection_p3_safe_explanation_calls_model"] = False
+    policy["search_quant_projection_p3_safe_explanation_uses_model_output"] = False
+    policy["search_quant_projection_p3_safe_explanation_is_not_trade_signal"] = True
     policy["search_quant_projection_post_confirm_one_glance_items_are_cache_only"] = True
     policy["search_quant_projection_post_confirm_one_glance_items_create_task"] = False
     policy["search_quant_projection_post_confirm_one_glance_items_use_model_output"] = False

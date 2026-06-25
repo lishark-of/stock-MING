@@ -40268,6 +40268,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             row["quick_read_item"]: row for row in interpretation["ordinary_result_quick_read_rows"]
         }
         self.assertEqual(set(quick_read), {"conclusion", "replay_scope", "source_map", "remaining_gap"})
+        self.assertTrue(packet["search_quant_projection_p3_explainable_result_ready"])
+        self.assertTrue(packet["search_quant_projection_p3_explainable_result_readable"])
+        safe_explanation = packet["search_quant_projection_p3_safe_explanation"]
+        self.assertEqual(safe_explanation["schema_version"], "candidate_radar_p3_safe_explanation.v1")
+        self.assertEqual(safe_explanation["safe_explanation_fields"], ["source", "gap", "next_step", "safety_summary"])
+        self.assertTrue(safe_explanation["cache_only_readback"])
+        self.assertFalse(safe_explanation["creates_task_from_readback"])
+        self.assertFalse(safe_explanation["calls_model_from_readback"])
+        self.assertFalse(safe_explanation["uses_deepseek_output"])
+        self.assertFalse(safe_explanation["contains_secret"])
         self.assertIn("Tushare-first 账本已回放", quick_read["conclusion"]["当前状态"])
         self.assertEqual(quick_read["replay_scope"]["证据"], "cache / call_ledger / packet")
         self.assertIn("Tushare ledger -> 本地量化推演 -> 次日图谱 -> 候选池复核", quick_read["source_map"]["当前状态"])
