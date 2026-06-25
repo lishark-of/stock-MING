@@ -86,6 +86,8 @@ export default function FactorQuantHub() {
   }, []);
 
   const score = packet.score ?? {};
+  const factorPacketCandidateHandoff = (packet.candidate_radar_quant_projection_handoff as Record<string, unknown> | undefined) ?? {};
+  const factorPacketCandidateHandoffRows = toRows(packet.ordinary_quant_candidate_handoff_rows);
   const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarOneScreenRows = toRows(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
   const candidateRadarConfirmOutcomeRows = toRows(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
@@ -107,6 +109,7 @@ export default function FactorQuantHub() {
       candidateRadarReceipt.latest_task_id ??
       candidateRadarReceipt.task_id ??
       candidateRadarSmallDataWriteback.latest_task_id ??
+      factorPacketCandidateHandoff.source_task_id ??
       ""
   );
   const candidateRadarConfirmedTaskReceiptRows = toRows(
@@ -120,46 +123,55 @@ export default function FactorQuantHub() {
   const candidateRadarLatestTaskStep = String(
     candidateRadarReceipt.latest_task_current_step ??
       candidateRadarSmallDataWriteback.latest_task_current_step ??
+      factorPacketCandidateHandoff.status ??
       candidateRadarReceipt.status ??
       "waiting_confirm"
   );
   const candidateRadarConfirmChainStatus = String(
     candidateRadarCache.search_quant_projection_confirm_chain_status ??
       candidateRadarReceipt.p1_confirm_chain_status ??
+      factorPacketCandidateHandoff.status ??
       candidateRadarLatestTaskStep
   );
   const candidateRadarSmallDataStateLabel = String(
     candidateRadarSmallDataWriteback.ordinary_readback_stage_label ??
       candidateRadarSmallDataWriteback.summary_label ??
+      factorPacketCandidateHandoff.status ??
       "等待确认按钮后的 cache / ledger / packet 回放"
   );
   const candidateRadarResultQuickRows = toRows(
     candidateRadarCache.ordinary_result_quick_read_rows ??
-      candidateRadarInterpretation.ordinary_result_quick_read_rows
+      candidateRadarInterpretation.ordinary_result_quick_read_rows ??
+      packet.ordinary_quant_candidate_handoff_rows
   );
   const candidateRadarResultCheckpointRows = toRows(
     candidateRadarCache.ordinary_result_checkpoint_rows ??
       candidateRadarCache.search_quant_projection_result_checkpoint_rows ??
-      candidateRadarInterpretation.ordinary_result_checkpoint_rows
+      candidateRadarInterpretation.ordinary_result_checkpoint_rows ??
+      packet.ordinary_quant_candidate_handoff_rows
   );
   const candidateRadarReadableResult = String(
     candidateRadarCache.ordinary_result_summary ??
       candidateRadarInterpretation.ordinary_result_summary ??
+      factorPacketCandidateHandoff.ordinary_result_summary ??
       "等待下一票雷达确认后的可读结论"
   );
   const candidateRadarReadableNextStep = String(
     candidateRadarCache.ordinary_result_next_step ??
       candidateRadarInterpretation.ordinary_result_next_step ??
+      factorPacketCandidateHandoff.ordinary_result_next_step ??
       "先回下一票雷达确认输入区输入代码并点击确认按钮"
   );
   const candidateRadarReadableBoundary = String(
     candidateRadarCache.ordinary_result_boundary ??
       candidateRadarInterpretation.ordinary_result_boundary ??
+      factorPacketCandidateHandoff.ordinary_result_boundary ??
       "量化页只读 CandidateRadar cache / ledger / packet 的可读结论；不创建 task、不调用 Tushare/DeepSeek、不改交易动作。"
   );
   const candidateRadarDeepSeekStateRaw = String(
     candidateRadarCache.ordinary_result_deepseek_governed_executor_status ??
       candidateRadarInterpretation.deepseek_governed_executor_status ??
+      factorPacketCandidateHandoff.deepseek_governed_executor_status ??
       "governed_executor_pending"
   );
   const candidateRadarUsesModelOutput =
@@ -174,6 +186,7 @@ export default function FactorQuantHub() {
         : "DeepSeek governed executor 单独补；普通结果只读本地 cache / ledger / packet";
   const ordinaryQuantCandidateRadarP3Ready =
     candidateRadarResultQuickRows.length > 0 ||
+    factorPacketCandidateHandoff.p3_readable_result_ready === true ||
     (
       candidateRadarInterpretation.interpretation_ready === true &&
       Boolean(String(candidateRadarInterpretation.ordinary_result_summary ?? "").trim())
@@ -982,6 +995,7 @@ export default function FactorQuantHub() {
           <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变 strategy action。</p>
           {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
           {candidateRadarResultCheckpointRows.length ? <DataLineageTable rows={candidateRadarResultCheckpointRows} /> : null}
+          {factorPacketCandidateHandoffRows.length ? <DataLineageTable rows={factorPacketCandidateHandoffRows} /> : null}
         </div>
         <details className="developer-audit-details" aria-label="stock quant ordinary expanded replay details">
           <summary>更多量化回放明细</summary>

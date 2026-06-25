@@ -18,6 +18,7 @@ from . import model_strategy_service, packet_service, storage_service, tushare_t
 from .task_service import create_task_record, create_task_stub, update_task_status
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
+CANDIDATE_RADAR_PACKET_KEY = "command_center_3_candidate_radar_cache"
 DEEPSEEK_FACTOR_PROMPT_VERSION = "factor_deepseek_explanation_prompt.v1"
 DEEPSEEK_DURABLE_EVIDENCE_SCHEMA_VERSION = "factor_deepseek_durable_evidence_recipe.v1"
 DEEPSEEK_DURABLE_EVIDENCE_KEYS = (
@@ -276,6 +277,15 @@ def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _safe_text(value: Any, *, limit: int = 240) -> str:
+    text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
+    return text[:limit]
+
+
 def _safe_float(value: Any, *, default: float = 0.0) -> float:
     try:
         number = float(value)
@@ -306,6 +316,40 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet["status_is_not_production_evidence"] = True
     packet["deepseek_explain_governance"] = _deepseek_explain_governance()
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
+    candidate_handoff = _read_candidate_radar_quant_projection_handoff(now)
+    candidate_handoff_ledger: list[dict[str, Any]] = []
+    if candidate_handoff:
+        candidate_handoff_rows = _factor_quant_candidate_handoff_rows(packet, candidate_handoff)
+        packet["candidate_radar_quant_projection_handoff"] = candidate_handoff
+        packet["ordinary_quant_candidate_handoff_rows"] = candidate_handoff_rows
+        packet["ordinary_quant_candidate_handoff_status"] = candidate_handoff["status"]
+        counts = _dict(packet.get("counts"))
+        counts.update(
+            {
+                "factor_quant_candidate_radar_handoff_ready": True,
+                "factor_quant_candidate_handoff_row_count": len(candidate_handoff_rows),
+                "factor_quant_candidate_handoff_provider_api_success_count": candidate_handoff[
+                    "provider_api_success_count"
+                ],
+                "factor_quant_candidate_handoff_provider_api_call_count": candidate_handoff[
+                    "provider_api_call_count"
+                ],
+            }
+        )
+        packet["counts"] = counts
+        policy = _dict(packet.get("policy"))
+        policy.update(
+            {
+                "factor_quant_candidate_handoff_is_cache_only": True,
+                "factor_quant_candidate_handoff_creates_task": False,
+                "factor_quant_candidate_handoff_calls_provider_or_model": False,
+                "factor_quant_candidate_handoff_is_not_trade_signal": True,
+            }
+        )
+        packet["policy"] = policy
+        candidate_handoff_ledger = [
+            row for row in _list(candidate_handoff.get("call_ledger")) if isinstance(row, dict)
+        ]
     packet, universe_rank_ledger = _attach_factor_universe_local_rank_zscore_dry_run(packet, now)
     packet = _attach_factor_universe_execution_readiness(packet)
     packet, universe_execution_receipt_ledger = _attach_factor_universe_execution_readiness_receipt(packet, now)
@@ -355,6 +399,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + provider_small_pool_recipe_ledger
         + provider_small_pool_request_ledger
         + factor_test_durable_recipe_ledger
+        + candidate_handoff_ledger
         + list(existing_ledger)
     )
     cache_warning = "GET /api/factor-quant/cache 只读取本地多因子图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
@@ -377,6 +422,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     provider_small_pool_recipe_warning = "Factor Test provider small-pool execution recipe 只固定未来真实小股票池验收顺序；不会调用 Tushare、计算生产 IC 或标记生产完成。"
     provider_small_pool_request_warning = "Factor Test provider small-pool execution request ticket 只绑定 dry-run scope hash 和后续手工 provider task 请求；不会调用 Tushare、创建 provider task 或标记生产完成。"
     factor_test_durable_recipe_warning = "Factor Test durable evidence recipe 只固定 LTG-03 生产验收直接证据清单；不会调用 Tushare/DeepSeek/GitHub、计算生产 IC 或标记生产完成。"
+    candidate_handoff_warning = "Factor Quant CandidateRadar handoff 只读本地搜票确认结果和 Tushare-first 回放摘要；不会创建 task、调用 Tushare/DeepSeek、修改 operation_zones 或标记生产完成。"
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
     owned_warnings = {
         cache_warning,
@@ -399,6 +445,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_small_pool_recipe_warning,
         provider_small_pool_request_warning,
         factor_test_durable_recipe_warning,
+        candidate_handoff_warning,
     }
     packet["warnings"] = [
         cache_warning,
@@ -421,12 +468,219 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_small_pool_recipe_warning,
         provider_small_pool_request_warning,
         factor_test_durable_recipe_warning,
+        candidate_handoff_warning,
     ] + [
         item
         for item in existing_warnings
         if item not in owned_warnings
     ]
     return packet
+
+
+def _read_candidate_radar_quant_projection_handoff(now: str) -> dict[str, Any]:
+    try:
+        candidate_packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(CANDIDATE_RADAR_PACKET_KEY)
+    except Exception:
+        return {}
+    if not isinstance(candidate_packet, dict):
+        return {}
+    small_data = _dict(candidate_packet.get("search_quant_projection_small_data_writeback_summary"))
+    interpretation = _dict(candidate_packet.get("search_quant_projection_interpretation_summary"))
+    receipt = _dict(candidate_packet.get("search_quant_projection_receipt"))
+    if (
+        candidate_packet.get("contains_secret") is True
+        or small_data.get("contains_secret") is True
+        or interpretation.get("contains_secret") is True
+        or interpretation.get("uses_model_output") is True
+        or interpretation.get("uses_deepseek_output") is True
+        or interpretation.get("model_output_used") is True
+    ):
+        return {}
+
+    p2_ready = small_data.get("small_data_writeback_ready") is True
+    p3_summary = (
+        interpretation.get("ordinary_result_summary")
+        or candidate_packet.get("ordinary_result_summary")
+        or small_data.get("ordinary_readback_summary")
+        or ""
+    )
+    p3_ready = interpretation.get("interpretation_ready") is True or bool(str(p3_summary).strip())
+    if not (p2_ready or p3_ready):
+        return {}
+
+    symbol = _safe_text(
+        receipt.get("symbol")
+        or small_data.get("symbol")
+        or interpretation.get("symbol")
+        or candidate_packet.get("symbol"),
+        limit=32,
+    )
+    source_task_id = _safe_text(
+        candidate_packet.get("search_quant_projection_latest_task_id")
+        or receipt.get("latest_task_id")
+        or receipt.get("task_id")
+        or small_data.get("latest_task_id")
+        or candidate_packet.get("task_id"),
+        limit=128,
+    )
+    provider_success_count = int(small_data.get("provider_api_success_count") or 0)
+    provider_call_count = int(small_data.get("provider_api_call_count") or 0)
+    status = (
+        "factor_quant_candidate_handoff_ready_tushare_first_p3_readable"
+        if p3_ready
+        else "factor_quant_candidate_handoff_ready_p2_small_data"
+    )
+    result_summary = _safe_text(
+        p3_summary or "上游 Tushare-first 小数据已回放；Factor 支持/压制仍按本地 cache 只读展示。",
+        limit=360,
+    )
+    result_next_step = _safe_text(
+        interpretation.get("ordinary_result_next_step")
+        or candidate_packet.get("ordinary_result_next_step")
+        or small_data.get("ordinary_readback_next_step")
+        or "先看本页支持/压制和次日图谱预览；需要换标的时回下一票雷达确认。",
+        limit=320,
+    )
+    result_boundary = _safe_text(
+        interpretation.get("ordinary_result_boundary")
+        or candidate_packet.get("ordinary_result_boundary")
+        or "量化页只读 CandidateRadar cache / ledger / packet；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。",
+        limit=360,
+    )
+    ledger = {
+        "api": "local_factor_quant_candidate_radar_handoff",
+        "request_params_safe": {
+            "source_packet_key": CANDIDATE_RADAR_PACKET_KEY,
+            "source_task_id": source_task_id,
+            "symbol": symbol,
+            "p2_small_data_ready": p2_ready,
+            "p3_readable_result_ready": p3_ready,
+            "provider_api_success_count": provider_success_count,
+            "provider_api_call_count": provider_call_count,
+            "does_not_include_token_or_raw_log": True,
+        },
+        "row_count": len(_list(interpretation.get("ordinary_result_quick_read_rows"))),
+        "data_date": small_data.get("data_date") or candidate_packet.get("trade_date"),
+        "local_fetched_at": now,
+        "call_status": status,
+        "error_message_safe": "",
+        **_local_ledger_boundary(),
+        "does_not_modify_operation_zones": True,
+    }
+    return {
+        "schema_version": "factor_quant_candidate_radar_handoff.v1",
+        "status": status,
+        "source_packet_key": CANDIDATE_RADAR_PACKET_KEY,
+        "source_task_id": source_task_id,
+        "symbol": symbol,
+        "p2_small_data_ready": p2_ready,
+        "p3_readable_result_ready": p3_ready,
+        "ordinary_result_summary": result_summary,
+        "ordinary_result_next_step": result_next_step,
+        "ordinary_result_boundary": result_boundary,
+        "provider_api_success_count": provider_success_count,
+        "provider_api_call_count": provider_call_count,
+        "provider_call_source": _safe_text(small_data.get("provider_call_source") or "candidate_radar_cache"),
+        "deepseek_governed_executor_status": _safe_text(
+            interpretation.get("deepseek_governed_executor_status")
+            or candidate_packet.get("ordinary_result_deepseek_governed_executor_status")
+            or "skipped_or_pending_governed_executor"
+        ),
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "calls_provider_or_model": False,
+        "uses_model_output": False,
+        "uses_deepseek_output": False,
+        "contains_secret": False,
+        "candidate_is_not_buy_instruction": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "call_ledger": [ledger],
+    }
+
+
+def _factor_quant_candidate_handoff_rows(
+    packet: dict[str, Any],
+    handoff: dict[str, Any],
+) -> list[dict[str, Any]]:
+    score = _dict(packet.get("score"))
+    bridge = _dict(packet.get("next_session_bridge"))
+    support_count = len(_list(score.get("support_factors")))
+    suppress_count = len(_list(score.get("suppress_factors")))
+    missing_count = len(_list(score.get("missing_factors")))
+    return [
+        {
+            "handoff_step": "1. 确认来源",
+            "当前状态": f"{handoff.get('symbol') or '已确认标的'} / task={handoff.get('source_task_id') or 'waiting'}",
+            "用户下一步": "先确认这条量化推演来自哪次下一票雷达确认任务。",
+            "证据": handoff.get("source_packet_key"),
+            "边界": "本行只读 CandidateRadar packet；不创建 task、不补调 provider/model。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_operation_zones": True,
+        },
+        {
+            "handoff_step": "2. Tushare-first",
+            "当前状态": f"Tushare ledger {handoff.get('provider_api_success_count')}/{handoff.get('provider_api_call_count')} 已回放",
+            "用户下一步": "只把 ledger 当数据来源证据；支持/压制仍需结合本页 cache 和缺失项读。",
+            "证据": handoff.get("provider_call_source"),
+            "边界": "GET Factor cache 不调用 Tushare；外联只能来自此前按钮任务的 call_ledger。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_operation_zones": True,
+        },
+        {
+            "handoff_step": "3. 支持/压制",
+            "当前状态": f"支持 {support_count} / 压制 {suppress_count} / 缺失 {missing_count}",
+            "用户下一步": "先看支持、压制、冲突、缺失四类，再决定是否需要手动刷新。",
+            "证据": packet.get("packet_key") or "command_center_factor_quant_hub_packet",
+            "边界": "因子桶只作研究复核，不生成买卖指令、不写 strategy action。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_operation_zones": True,
+        },
+        {
+            "handoff_step": "4. 次日图谱",
+            "当前状态": str(bridge.get("status") or bridge.get("bridge_status") or "等待本地 next-session cache"),
+            "用户下一步": "打开 #next 只读复核路径、参考线、操作区和缺口。",
+            "证据": bridge.get("source_packet") or "next_session_bridge",
+            "边界": "不改 operation_zones、不下单、不覆盖 strategy action。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_operation_zones": True,
+        },
+        {
+            "handoff_step": "5. 可读结论",
+            "当前状态": handoff.get("ordinary_result_summary"),
+            "用户下一步": handoff.get("ordinary_result_next_step"),
+            "证据": "CandidateRadar ordinary_result_summary",
+            "边界": handoff.get("ordinary_result_boundary"),
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_operation_zones": True,
+        },
+    ]
 
 
 def _factor_universe_local_rank_zscore_dry_run(now: str) -> dict[str, Any]:
