@@ -332,6 +332,12 @@ export default function CommandCenterHome() {
   const candidatePolicy = (candidates.policy as Record<string, unknown> | undefined) ?? {};
   const candidateQuantReceipt = (candidates.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const candidateQuantSmallDataWriteback = (candidates.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantSmallDataReadbackCheckpoint =
+    (candidates.search_quant_projection_small_data_readback_checkpoint as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantP2ThreeSurfaceCheckpoint =
+    (candidates.ordinary_p2_three_surface_checkpoint as Record<string, unknown> | undefined) ??
+    (candidateQuantSmallDataWriteback.ordinary_p2_three_surface_checkpoint as Record<string, unknown> | undefined) ??
+    {};
   const candidateQuantOneScreenActionRows = (candidateQuantSmallDataWriteback.ordinary_one_screen_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantConfirmOutcomeRows = (candidateQuantSmallDataWriteback.ordinary_confirm_outcome_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantTushareFirstRows =
@@ -412,6 +418,38 @@ export default function CommandCenterHome() {
       candidateQuantSmallDataWriteback.summary_label ??
       "等待确认按钮后的 cache / ledger / packet 回放"
   );
+  const dailyCommandP2SurfaceCount = Number(
+    candidateQuantP2ThreeSurfaceCheckpoint.surface_count ??
+      candidateQuantSmallDataReadbackCheckpoint.surface_count ??
+      3
+  );
+  const dailyCommandP2ReadableSurfaceCount = Number(
+    candidateQuantP2ThreeSurfaceCheckpoint.readable_surface_count ??
+      candidateQuantSmallDataReadbackCheckpoint.readable_surface_count ??
+      0
+  );
+  const dailyCommandP2CompleteSurfaceCount = Number(
+    candidateQuantP2ThreeSurfaceCheckpoint.complete_surface_count ??
+      candidateQuantSmallDataReadbackCheckpoint.complete_surface_count ??
+      0
+  );
+  const dailyCommandP2CheckpointLabel = String(
+    candidateQuantP2ThreeSurfaceCheckpoint.ordinary_label ??
+      candidateQuantSmallDataReadbackCheckpoint.ordinary_readback_summary ??
+      dailyCommandSmallDataWritebackState
+  );
+  const dailyCommandP2CallLedgerState = String(
+    candidateQuantP2ThreeSurfaceCheckpoint.call_ledger_state ??
+      candidateQuantSmallDataReadbackCheckpoint.call_ledger_state ??
+      candidateQuantSmallDataWriteback.provider_call_source ??
+      "waiting_provider_ledger"
+  );
+  const dailyCommandP2SurfaceCompletionLabel =
+    `${dailyCommandP2ReadableSurfaceCount}/${dailyCommandP2SurfaceCount} 面可读，${dailyCommandP2CompleteSurfaceCount}/${dailyCommandP2SurfaceCount} 面完整`;
+  const dailyCommandP2ThreeSurfaceReady =
+    candidateQuantP2ThreeSurfaceCheckpoint.status === "p2_three_surface_ready" ||
+    candidateQuantSmallDataReadbackCheckpoint.p2_three_surface_ready === true ||
+    candidateQuantSmallDataWriteback.p2_three_surface_ready === true;
   const dailyCommandSmallDataWritebackBoundary =
     "P2 小数据只从 CandidateRadar cache / call_ledger / packet 回放；首页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示 token/key 或 raw log。";
   const dailyCommandSmallDataWritebackRows = candidateQuantWritebackSurfaceRows.length
@@ -1914,6 +1952,9 @@ export default function CommandCenterHome() {
           items={[
             { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
             { label: "三面状态", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+            { label: "三面完整度", value: dailyCommandP2SurfaceCompletionLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+            { label: "P2 checkpoint", value: dailyCommandP2CheckpointLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+            { label: "call_ledger", value: dailyCommandP2CallLedgerState, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
             { label: "写入面", value: "cache / call_ledger / packet", tone: "good" },
             { label: "来源任务", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
             { label: "下一步", value: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "打开股票量化推演和次日图谱回放" : "确认任务完成后刷新本地 cache / ledger / packet", tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
