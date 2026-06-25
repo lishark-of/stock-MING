@@ -33,7 +33,7 @@ export type RouteKey =
 
 const ORDINARY_NAVIGATION_BOUNDARY =
   "普通用户先用三入口；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、审计、设置或回退。";
-const LOCAL_FASTAPI_HEALTH_POLL_MS = 15000;
+const LOCAL_FASTAPI_HEALTH_POLL_MS = 3000;
 type LocalFastapiStatus = "checking" | "online" | "offline";
 
 const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; routes: Array<{ key: RouteKey; label: string }> }> = [
