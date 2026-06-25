@@ -175,8 +175,24 @@ export default function NextSessionMap() {
   const packetCandidateRadarP3HandoffDeepSeekState = String(
     packetCandidateRadarP3Handoff.deepseek_governed_executor_status ?? ""
   );
-  const packetCandidateRadarProviderSuccessCount = Number(packetCandidateRadarP3Handoff.provider_api_success_count ?? 0);
-  const packetCandidateRadarProviderCallCount = Number(packetCandidateRadarP3Handoff.provider_api_call_count ?? 0);
+  const candidateRadarP1ShortestPathCheckpoint = (candidateRadarCache.ordinary_p1_shortest_path_checkpoint as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const packetCandidateRadarProviderSuccessFromHandoff = Number(packetCandidateRadarP3Handoff.provider_api_success_count ?? 0);
+  const packetCandidateRadarProviderSuccessFromCandidateCache = Number(
+    candidateRadarSmallDataWriteback.provider_api_success_count ??
+      candidateRadarP1ShortestPathCheckpoint.provider_api_success_count ??
+      0
+  );
+  const packetCandidateRadarProviderSuccessCount =
+    packetCandidateRadarProviderSuccessFromHandoff > 0 ? packetCandidateRadarProviderSuccessFromHandoff : packetCandidateRadarProviderSuccessFromCandidateCache;
+  const packetCandidateRadarProviderCallFromHandoff = Number(packetCandidateRadarP3Handoff.provider_api_call_count ?? 0);
+  const packetCandidateRadarProviderCallFromCandidateCache = Number(
+    candidateRadarSmallDataWriteback.provider_api_call_count ??
+      candidateRadarP1ShortestPathCheckpoint.provider_api_call_count ??
+      packetCandidateRadarProviderSuccessCount
+  );
+  const packetCandidateRadarProviderCallCount =
+    packetCandidateRadarProviderCallFromHandoff > 0 ? packetCandidateRadarProviderCallFromHandoff : packetCandidateRadarProviderCallFromCandidateCache;
   const packetCandidateRadarProviderLedgerLabel = packetCandidateRadarProviderSuccessCount > 0
     ? `${String(packetCandidateRadarProviderSuccessCount)}/${String(packetCandidateRadarProviderCallCount || packetCandidateRadarProviderSuccessCount)} 个接口`
     : "本地 ledger 可读";
@@ -222,7 +238,6 @@ export default function NextSessionMap() {
   const nextSessionPacketHandoffLabel = packetCandidateRadarP3HandoffReady
     ? `本地次日图谱数据已接上 ${packetCandidateRadarP3HandoffSymbol || "当前标的"} / task=${packetCandidateRadarP3HandoffSourceTask || "本地回放"}`
     : "本地次日图谱数据等待 CandidateRadar P3 结果";
-  const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarWritebackSurfaceRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
   const candidateRadarWritebackSurfaceReady =
     packetCandidateRadarP2HandoffReady ||
