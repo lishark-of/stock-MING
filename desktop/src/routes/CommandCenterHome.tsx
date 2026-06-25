@@ -1529,6 +1529,11 @@ export default function CommandCenterHome() {
     : dailyCommandP0LocalReadinessReady
       ? "在首页输入股票代码，并点击确认按钮创建 Tushare-first task"
       : "先恢复 FastAPI、bootstrap、desktop preflight 和 React 四段联通";
+  const dailyCommandResearchWorkflowReadableSentence = dailyCommandResearchWorkflowReady
+    ? `${dailyCommandConfirmedSymbolLabel} 已完成 P1/P2/P3 本地回放；P3 结论：${dailyCommandExplainableResultLabel}；下一步看股票量化推演和次日图谱。`
+    : dailyCommandP0LocalReadinessReady
+      ? `本地联通已 ready；${dailyCommandConfirmedSymbol ? `${dailyCommandConfirmedSymbolLabel} 等待 P2/P3 回放补齐` : "先输入股票代码并点击确认按钮"}；下一步：${dailyCommandResearchWorkflowNext}。`
+      : `P0 尚未 ready；下一步：${dailyCommandResearchWorkflowNext}。`;
   const dailyCommandResearchWorkflowRows = [
     {
       链路段: "P0 本地联通",
@@ -1808,6 +1813,7 @@ export default function CommandCenterHome() {
         <p className="risk-note">P1 速读只回放已写入的 POST task / call_ledger / packet 证据；不会从首页回放卡创建第二个 task、补调 Tushare/DeepSeek、读取 token/key、执行交易或修改 strategy action。</p>
       </PacketCard>
       <PacketCard title="当前可用投研链路" subtitle="当前标的、P1 确认、P2 三面、P3 结论和下一步" status={dailyCommandResearchWorkflowStatus}>
+        <p className="ordinary-status-note" aria-label="daily command current research workflow readable result" aria-live="polite">{dailyCommandResearchWorkflowReadableSentence}</p>
         <MetricGrid
           items={[
             { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },

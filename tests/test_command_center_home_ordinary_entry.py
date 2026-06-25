@@ -415,6 +415,31 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postBootstrapLiveStartup", card)
         self.assertNotIn("postCandidateRadar", card)
 
+    def test_current_research_workflow_has_readable_sentence_before_tables(self):
+        source = self.source
+        card_start = source.index('title="当前可用投研链路"')
+        card_end = source.index('title="P2 小数据三面速读"', card_start)
+        card = source[card_start:card_end]
+
+        self.assertIn("dailyCommandResearchWorkflowReadableSentence", source)
+        self.assertIn("已完成 P1/P2/P3 本地回放", source)
+        self.assertIn("P3 结论：${dailyCommandExplainableResultLabel}", source)
+        self.assertIn("本地联通已 ready", source)
+        self.assertIn('aria-label="daily command current research workflow readable result"', card)
+        self.assertIn("{dailyCommandResearchWorkflowReadableSentence}", card)
+        self.assertIn("DataLineageTable rows={dailyCommandResearchWorkflowRows}", card)
+        self.assertLess(
+            card.index('aria-label="daily command current research workflow readable result"'),
+            card.index("<MetricGrid"),
+        )
+        self.assertLess(
+            card.index('aria-label="daily command current research workflow readable result"'),
+            card.index("DataLineageTable rows={dailyCommandResearchWorkflowRows}"),
+        )
+        self.assertNotIn("onClick=", card)
+        self.assertNotIn("fetch(", card)
+        self.assertNotIn("postCandidateRadar", card)
+
     def test_p0_now_usable_card_is_short_read_only_status(self):
         source = self.source
         card_start = source.index('title="P0 现在能不能用"')
