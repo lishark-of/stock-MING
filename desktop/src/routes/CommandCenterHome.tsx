@@ -2630,20 +2630,7 @@ export default function CommandCenterHome() {
         <p className="risk-note">live_light 补证入口下沉在开发详情；普通路径只看本地缓存、雷达和量化入口。</p>
         <details className="developer-audit-details" aria-label="daily command ordinary readback details">
           <summary>本地回放明细</summary>
-          <p className="risk-note">确认链、P2 写回、P3 检查点和恢复表默认收起；普通用户先用上方主按钮在首页确认股票代码，再看股票量化推演和次日图谱。</p>
-        <details className="developer-audit-details" aria-label="daily command engineering audit and strict closeout details">
-          <summary>工程审计 / P6 strict closeout 明细</summary>
-          <p className="risk-note">普通路径已经在上方 P1 确认、P2 三面和 P3 可解释结果；普通用户先看上方 P1 确认、P2 三面和 P3 可解释结果。这里仅供排障、验收和 14 LTG 回归，不把 P6 当今日可用化完成。</p>
-          <div aria-label="daily command p6 strict closeout reentry">
-            <h3>P6 strict closeout 回归入口</h3>
-            <p className="risk-note">P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence、CI、浏览器、provider、worker、storage 和 package gate 逐项补证；P6 只是 strict closeout 回归门，不是 14 LTG 完成声明；P4 下沉的是工程审计明细，不压过 P0-P3 普通路径。</p>
-            <DataLineageTable rows={dailyCommandP6StrictCloseoutReentryRows} />
-            <div className="actions" aria-label="daily command p6 reentry links">
-              <a href="#migration" title="切换到迁移状态页；只读查看 14 LTG direct evidence 缺口" aria-label="open migration status for strict closeout reentry">查看 14 LTG 迁移状态</a>
-              <a href="#tasks" title="切换到任务目录；只读回放 task/cache/ledger/packet 证据" aria-label="open task catalog for evidence replay">查看任务和证据回放</a>
-            </div>
-          </div>
-        </details>
+          <p className="risk-note">确认链、P2 写回、P3 检查点和恢复表默认收起；普通用户先用上方主按钮在首页确认股票代码，再看股票量化推演和次日图谱。P6 strict closeout 和完整工程审计在下一层折叠区，不混入普通回放明细。</p>
         <div aria-label="daily command local connection readback">
           <h3>本地联通四段回读</h3>
           <p className="risk-note">先看 FastAPI、bootstrap runtime-mode packet、desktop preflight cache、React/Vite 前端四段是否变绿；这张表只读本地 GET 结果，不启动服务。</p>
@@ -2734,9 +2721,22 @@ export default function CommandCenterHome() {
         <p className="risk-note">恢复回读只看本地 GET health/bootstrap/preflight 结果；如果没有变绿，继续回一键启动预检，不进入投研入口。</p>
         <p className="risk-note">主下一步会在联通异常时优先打开桌面壳预检；这个链接只读本地 health/preflight cache，不启动服务。</p>
         </details>
+        <details className="developer-audit-details" aria-label="daily command engineering audit and strict closeout details">
+          <summary>工程审计 / P6 strict closeout 明细</summary>
+          <p className="risk-note">普通路径已经在上方 P1 确认、P2 三面和 P3 可解释结果；这里仅供排障、验收和 14 LTG 回归，不把 P6 当今日可用化完成。</p>
+          <div aria-label="daily command p6 strict closeout reentry">
+            <h3>P6 strict closeout 回归入口</h3>
+            <p className="risk-note">P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence、CI、浏览器、provider、worker、storage 和 package gate 逐项补证；P6 只是 strict closeout 回归门，不是 14 LTG 完成声明；P4 下沉的是工程审计明细，不压过 P0-P3 普通路径。</p>
+            <DataLineageTable rows={dailyCommandP6StrictCloseoutReentryRows} />
+            <div className="actions" aria-label="daily command p6 reentry links">
+              <a href="#migration" title="切换到迁移状态页；只读查看 14 LTG direct evidence 缺口" aria-label="open migration status for strict closeout reentry">查看 14 LTG 迁移状态</a>
+              <a href="#tasks" title="切换到任务目录；只读回放 task/cache/ledger/packet 证据" aria-label="open task catalog for evidence replay">查看任务和证据回放</a>
+            </div>
+          </div>
+        </details>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate、runtime mode 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
-      <details className="developer-audit-details">
+      <details className="developer-audit-details" aria-label="daily command full developer audit details">
         <summary>开发 / 审计详情</summary>
         <p>详细验收记录、开发表格和排障明细默认收起；普通用户先看上方今日作战台摘要、P1 确认、P2 三面和 P3 可解释结果。</p>
         <div aria-label="daily command engineering audit demotion rules">

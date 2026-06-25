@@ -697,6 +697,15 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
                         text.index('aria-label="daily command usable shortest path"'),
                         text.index(config["audit"]),
                     )
+                    ordinary_readback_start = text.index('aria-label="daily command ordinary readback details"')
+                    strict_closeout_start = text.index('aria-label="daily command engineering audit and strict closeout details"')
+                    ordinary_readback_slice = text[ordinary_readback_start:strict_closeout_start]
+                    self.assertLess(ordinary_readback_start, strict_closeout_start)
+                    self.assertLess(strict_closeout_start, text.index(config["audit"]))
+                    self.assertIn("P2 小数据写入速读", ordinary_readback_slice)
+                    self.assertIn("P3 可解释结果速读", ordinary_readback_slice)
+                    self.assertNotIn("P6 strict closeout 回归入口", ordinary_readback_slice)
+                    self.assertIn("P6 strict closeout 回归入口", text[strict_closeout_start:text.index(config["audit"])])
 
     def test_search_quant_projection_keeps_task_boundary_visible(self):
         self.assertIn("normalizeAshareSymbolInput", self.page)
