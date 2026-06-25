@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { EChartsOption } from "echarts";
 import { getBootstrapStatus, getCandidateRadarCache, getFactorQuantCache, postTask, type TaskCreationEnvelope } from "../api/client";
+import { getTasks, type TaskStatusIndex } from "../api/client";
 import ChartSafetyStrip from "../components/ChartSafetyStrip";
 import DataLineageTable from "../components/DataLineageTable";
 import EChartPanel from "../components/EChartPanel";
@@ -47,6 +48,7 @@ export default function FactorQuantHub() {
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
+  const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [autoAfterTask, setAutoAfterTask] = useState(false);
@@ -73,16 +75,22 @@ export default function FactorQuantHub() {
     void getCandidateRadarCache().then((res) => {
       if (res.ok !== false) setCandidateRadarCache(res.data ?? {});
     });
+  const refreshTaskIndex = () =>
+    void getTasks().then((res) => setTaskIndex(res.data));
   const launchTask = (path: string, payload: Record<string, unknown> = {}) =>
     void postTask(path, payload).then((res) => {
       setTaskReceipt(res);
-      if (res.ok) setTaskId(res.data.task_id);
+      if (res.ok) {
+        setTaskId(res.data.task_id);
+        refreshTaskIndex();
+      }
     });
 
   useEffect(() => {
     refreshCache();
     refreshBootstrapStatus();
     refreshCandidateRadarCache();
+    refreshTaskIndex();
   }, []);
 
   const score = packet.score ?? {};
@@ -141,6 +149,82 @@ export default function FactorQuantHub() {
       candidateRadarReceipt.status ??
       "waiting_confirm"
   );
+  const taskIndexLatestTask = taskIndex?.tasks?.[0];
+  const taskIndexLatestConfirmedSymbol = String(
+    taskIndex?.latest_confirmed_symbol ??
+      (taskIndexLatestTask?.payload_safe as Record<string, unknown> | undefined)?.symbol ??
+      ""
+  );
+  const taskIndexLatestConfirmedTaskId = String(
+    taskIndex?.latest_confirmed_task_id ??
+      taskIndex?.latest_task_id ??
+      taskIndexLatestTask?.task_id ??
+      ""
+  );
+  const taskIndexLatestConfirmedStatus = String(
+    taskIndex?.latest_confirmed_task_status ??
+      taskIndex?.latest_task_status ??
+      taskIndexLatestTask?.status ??
+      ""
+  );
+  const taskIndexLatestConfirmedStep = String(
+    taskIndex?.latest_confirmed_task_current_step ??
+      taskIndexLatestTask?.current_step ??
+      ""
+  );
+  const taskIndexReadbackSafe =
+    taskIndex !== null &&
+    taskIndex.external_calls_triggered !== true &&
+    taskIndex.readback_external_calls_triggered !== true &&
+    taskIndex.latest_confirmed_symbol_readback_external_calls_triggered !== true &&
+    taskIndex.latest_confirmed_symbol_creates_task_from_readback !== true;
+  const ordinaryQuantProgressWatchTaskId = taskIndexLatestConfirmedTaskId || candidateRadarLatestTaskId;
+  const ordinaryQuantProgressWatchSymbol = taskIndexLatestConfirmedSymbol || candidateRadarConfirmedSymbol;
+  const ordinaryQuantProgressWatchStatus =
+    taskIndexLatestConfirmedStatus ||
+    (candidateRadarLatestTaskId ? "cache_replay" : "waiting_confirm");
+  const ordinaryQuantProgressWatchStep =
+    taskIndexLatestConfirmedStep ||
+    candidateRadarLatestTaskStep ||
+    "等待确认按钮后的本地任务状态";
+  const ordinaryQuantProgressWatchLabel = ordinaryQuantProgressWatchTaskId
+    ? `${ordinaryQuantProgressWatchSymbol || "当前标的"} / ${ordinaryQuantProgressWatchStatus}`
+    : "等待确认按钮后的任务进度";
+  const ordinaryQuantProgressWatchNext = ordinaryQuantProgressWatchTaskId
+    ? "查看任务目录；成功后继续读支持/压制和次日图谱"
+    : "先回下一票雷达输入股票代码并点击确认按钮；输入本身保持静默";
+  const ordinaryQuantTaskIndexProgressItems: MetricItem[] = [
+    {
+      label: "边用边看",
+      value: ordinaryQuantProgressWatchLabel,
+      tone: ordinaryQuantProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "最新确认标的",
+      value: ordinaryQuantProgressWatchSymbol || "等待确认股票代码",
+      tone: ordinaryQuantProgressWatchSymbol ? "good" : "neutral"
+    },
+    {
+      label: "最新任务",
+      value: ordinaryQuantProgressWatchTaskId || "等待确认按钮",
+      tone: ordinaryQuantProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "当前步骤",
+      value: ordinaryQuantProgressWatchStep,
+      tone: ordinaryQuantProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "只读来源",
+      value: "GET /api/tasks + Factor cache + CandidateRadar cache",
+      tone: "good"
+    },
+    {
+      label: "安全边界",
+      value: taskIndexReadbackSafe ? "任务索引回读未触发外联、未创建 task" : "等待任务索引只读边界回放",
+      tone: taskIndexReadbackSafe ? "good" : "warn"
+    }
+  ];
   const candidateRadarConfirmChainStatus = String(
     candidateRadarCache.search_quant_projection_confirm_chain_status ??
       candidateRadarReceipt.p1_confirm_chain_status ??
@@ -964,6 +1048,16 @@ export default function FactorQuantHub() {
           <h3>确认后量化 checkpoint</h3>
           <p className="risk-note">最近一只票的 task id、P1 确认、P2 三面和 P3 可读结论在量化页首屏先读；本 checkpoint 只读 CandidateRadar cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
           <MetricGrid items={ordinaryQuantLatestCandidateCheckpointItems} />
+        </div>
+        <div aria-label="stock quant local task index progress watch">
+          <h3>本地任务进度</h3>
+          <MetricGrid items={ordinaryQuantTaskIndexProgressItems} />
+          <div className="actions" aria-label="stock quant local task index progress actions">
+            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from stock quant progress watch">任务目录</a>
+            <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="open factor support suppress from stock quant progress watch">支持/压制</a>
+            <a href="#next" title="切换到完整次日图谱模块；只读本地 next-session cache" aria-label="open next session from stock quant progress watch">次日图谱</a>
+          </div>
+          <p className="risk-note">边用边看：{ordinaryQuantProgressWatchNext}；这只来自 GET /api/tasks、Factor cache 和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易。</p>
         </div>
         <div aria-label="stock quant p1 task source readback">
           <h3>P1 任务来源回放</h3>
