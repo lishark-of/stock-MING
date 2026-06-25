@@ -324,10 +324,20 @@ export default function FactorQuantHub() {
   };
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
   const ordinaryQuantNextClick = empty
-    ? "先从下一票雷达确认输入区输入股票代码并生成 3.0 量化推演；本页查看本地缓存，不自动刷新外部数据或模型解释"
+    ? ordinaryQuantCandidateRadarP3Ready
+      ? "先读最近搜票可读结论；支持/压制缓存待刷新，必要时再手动运行轻量推演"
+      : "先从下一票雷达确认输入区输入股票代码并生成 3.0 量化推演；本页查看本地缓存，不自动刷新外部数据或模型解释"
     : "先看支持/压制与次日图谱预览；换标的从下一票雷达确认输入区点生成 3.0 量化推演；需要更新时再手动刷新数据、运行轻量推演或整理模型解释";
-  const ordinaryQuantPrimaryActionLabel = empty ? "去下一票雷达生成推演" : "查看支持/压制";
-  const ordinaryQuantPrimaryActionHref = empty ? CANDIDATE_CONFIRM_HREF : "#factor-score";
+  const ordinaryQuantPrimaryActionLabel = empty
+    ? ordinaryQuantCandidateRadarP3Ready
+      ? "查看最近搜票结论"
+      : "去下一票雷达生成推演"
+    : "查看支持/压制";
+  const ordinaryQuantPrimaryActionHref = empty
+    ? ordinaryQuantCandidateRadarP3Ready
+      ? "#stock-quant-readable-result"
+      : CANDIDATE_CONFIRM_HREF
+    : "#factor-score";
   const ordinaryQuantPrimaryActionBoundary = empty
     ? "主下一步直达下一票雷达确认输入区；输入代码和生成推演仍需按钮确认"
     : "主下一步只跳转本地支持/压制摘要；不刷新 provider/model、不写 cache";
@@ -830,7 +840,11 @@ export default function FactorQuantHub() {
   const ordinaryQuantCacheButtonLabel = "查看本地缓存只读取 GET cache；不会创建 task、不会调用 Tushare 或 DeepSeek";
   const ordinaryQuantRefreshButtonLabel = "手动刷新数据会创建按钮门控 POST task；不从 React render 直连 provider/model";
   const ordinaryQuantRunLightButtonLabel = "运行轻量推演会创建按钮门控 POST task；DeepSeek 整理仍在高级开关";
-  const ordinaryQuantStatusLabel = empty ? "等待量化缓存" : "量化缓存可用";
+  const ordinaryQuantStatusLabel = empty
+    ? ordinaryQuantCandidateRadarP3Ready
+      ? "已回放搜票结论，量化缓存待刷新"
+      : "等待量化缓存"
+    : "量化缓存可用";
   const ordinaryQuantPrimarySummaryItems: MetricItem[] = [
     { label: "下一步", value: ordinaryQuantNextClick },
     { label: "数据链", value: ordinaryQuantTushareFirstDataChainLabel },
@@ -889,11 +903,11 @@ export default function FactorQuantHub() {
           <p className="risk-note">最近一只票的 task id、P1 确认、P2 三面和 P3 可读结论在量化页首屏先读；本 checkpoint 只读 CandidateRadar cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
           <MetricGrid items={ordinaryQuantLatestCandidateCheckpointItems} />
         </div>
-        <div aria-label="stock quant post confirm backend replay contract">
-          <h3>后端回放合同</h3>
+        <details className="developer-audit-details" aria-label="stock quant post confirm backend replay contract">
+          <summary>后端回放合同</summary>
           <p className="risk-note">优先读取 CandidateRadar call_ledger safe params 里的 ordinary_post_confirm_replay_contract：量化页按同一条确认后合同回放任务、P2 三面和结果入口；本卡只读 cache / ledger / packet，不创建 task。</p>
           <DataLineageTable rows={ordinaryQuantPostConfirmReplayContractRows} />
-        </div>
+        </details>
         <MetricGrid items={ordinaryQuantPrimarySummaryItems} />
         <details className="developer-audit-details" aria-label="stock quant ordinary summary extra details">
           <summary>更多量化摘要字段</summary>
@@ -906,7 +920,7 @@ export default function FactorQuantHub() {
           steps={ordinaryQuantResultRailSteps}
         />
         <p className="risk-note">普通结果状态：雷达确认 / Factor cache / 次日图谱 / DeepSeek 状态；这条状态轨只读本地 cache，不创建 task、不补调 Tushare 或 DeepSeek。</p>
-        <div aria-label="stock quant latest candidate readable result">
+        <div id="stock-quant-readable-result" aria-label="stock quant latest candidate readable result">
           <h3>最近搜票可读结论</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_checkpoint_rows，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在量化页首屏直接回放；本卡不创建 task、不补调数据源或模型。</p>
           <MetricGrid
