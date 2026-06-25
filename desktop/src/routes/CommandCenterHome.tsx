@@ -310,7 +310,79 @@ export default function CommandCenterHome() {
   const candidateQuantSmallDataWriteback = (candidates.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateQuantOneScreenActionRows = (candidateQuantSmallDataWriteback.ordinary_one_screen_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantConfirmOutcomeRows = (candidateQuantSmallDataWriteback.ordinary_confirm_outcome_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const candidateQuantTushareFirstRows =
+    (candidates.ordinary_tushare_first_chain_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidateQuantSmallDataWriteback.ordinary_tushare_first_chain_rows as Array<Record<string, unknown>> | undefined) ??
+    [];
   const candidateQuantWritebackSurfaceRows = (candidateQuantSmallDataWriteback.ordinary_writeback_surface_summary_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const candidateQuantConfirmChainCheckpoint = (candidates.search_quant_projection_confirm_chain_checkpoint as Record<string, unknown> | undefined) ?? {};
+  const dailyCommandTushareFirstLedgerReady =
+    candidateQuantConfirmChainCheckpoint.provider_ledger_ready === true ||
+    candidateQuantReceipt.p1_tushare_first_provider_ledger_ready === true;
+  const dailyCommandTushareFirstApiCount = Number(
+    candidateQuantConfirmChainCheckpoint.provider_api_call_count ??
+      candidateQuantSmallDataWriteback.provider_call_ledger_api_count ??
+      0
+  );
+  const dailyCommandTushareFirstSuccessCount = Number(
+    candidateQuantConfirmChainCheckpoint.provider_api_success_count ??
+      candidateQuantSmallDataWriteback.provider_api_success_count ??
+      0
+  );
+  const dailyCommandTushareFirstStatus = String(
+    candidateQuantConfirmChainCheckpoint.ordinary_status ??
+      candidateQuantConfirmChainCheckpoint.status ??
+      candidateQuantReceipt.p1_confirm_chain_status ??
+      "等待确认按钮创建 Tushare-first task"
+  );
+  const dailyCommandTushareFirstLedgerLabel = dailyCommandTushareFirstLedgerReady
+    ? `Tushare-first ledger 已回放：${dailyCommandTushareFirstSuccessCount}/${dailyCommandTushareFirstApiCount} 个接口`
+    : "等待确认按钮后的 Tushare-first provider ledger";
+  const dailyCommandTushareFirstDeepSeekLabel =
+    candidateQuantConfirmChainCheckpoint.deepseek_called_from_confirm_chain === false ||
+    candidateQuantReceipt.p1_deepseek_skipped_by_request === true
+      ? "DeepSeek skipped：P5 governed executor 单独补"
+      : "DeepSeek 等 governed executor；不阻塞 P1/P2/P3";
+  const dailyCommandTushareFirstBoundary =
+    "P1 只允许首页或下一票雷达确认按钮创建 Tushare-first POST task；首页回放卡只读 cache / ledger / packet，不创建第二个 task。";
+  const dailyCommandTushareFirstRows = candidateQuantTushareFirstRows.length
+    ? candidateQuantTushareFirstRows.map((row) => ({
+        链路段: String(row["步骤"] ?? row.chain_step ?? row["链路段"] ?? "Tushare-first"),
+        当前状态: String(row["当前状态"] ?? row.status ?? dailyCommandTushareFirstStatus),
+        用户下一步: String(row["用户下一步"] ?? row.next_step ?? "按任务状态和本地回放继续复核"),
+        证据: String(row["证据"] ?? row.evidence ?? "ordinary_tushare_first_chain_rows"),
+        边界: String(row["边界"] ?? row.boundary ?? dailyCommandTushareFirstBoundary)
+      }))
+    : [
+        {
+          链路段: "1. 输入静默",
+          当前状态: "等待本地格式校验",
+          用户下一步: "输入 6 位 A 股代码；输入本身不创建 task",
+          证据: "home symbol input local validation",
+          边界: "页面打开、输入和 React render 不调用 Tushare/DeepSeek。"
+        },
+        {
+          链路段: "2. 确认按钮",
+          当前状态: dailyCommandTushareFirstStatus,
+          用户下一步: "点击首页或下一票雷达确认按钮创建 Tushare-first POST task",
+          证据: "POST /api/candidate-radar/quant-projection",
+          边界: dailyCommandTushareFirstBoundary
+        },
+        {
+          链路段: "3. Tushare ledger",
+          当前状态: dailyCommandTushareFirstLedgerLabel,
+          用户下一步: "ledger 可回放后继续看 P2 三面和 P3 结论",
+          证据: "post_task_call_ledger",
+          边界: "Tushare 只允许按钮门控 task / worker 调用；GET cache 只读回放。"
+        },
+        {
+          链路段: "4. DeepSeek",
+          当前状态: dailyCommandTushareFirstDeepSeekLabel,
+          用户下一步: "先使用 Tushare-first 和基础图谱；DeepSeek 后续单独补证",
+          证据: "deepseek_skipped_by_request",
+          边界: "DeepSeek 不作为数据源，不覆盖价格、持仓、factor、operation_zones 或 strategy action。"
+        }
+      ];
   const dailyCommandSmallDataWritebackState = String(
     candidateQuantSmallDataWriteback.ordinary_readback_stage_label ??
       candidateQuantSmallDataWriteback.summary_label ??
@@ -1525,6 +1597,29 @@ export default function CommandCenterHome() {
           {homeQuantTaskPanelTaskId ? <TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} /> : null}
           <p className="risk-note">首页确认按钮复用 POST /api/candidate-radar/quant-projection：P0 gate 通过后才启用；成功后只从 CandidateRadar cache / call_ledger / packet 回放 P2/P3。页面打开、输入、React render 和 GET cache 不外联，不调用 DeepSeek，不交易、不改 strategy action。</p>
         </div>
+      </PacketCard>
+      <PacketCard title="P1 Tushare-first 链路速读" subtitle="确认按钮、Tushare ledger、DeepSeek skipped 和回放边界" status={dailyCommandTushareFirstLedgerReady ? "ledger_ready" : "waiting_confirm"}>
+        <MetricGrid
+          items={[
+            { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
+            { label: "确认链", value: dailyCommandTushareFirstStatus, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
+            { label: "Tushare ledger", value: dailyCommandTushareFirstLedgerLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
+            { label: "DeepSeek", value: dailyCommandTushareFirstDeepSeekLabel, tone: "good" },
+            { label: "下一步", value: dailyCommandTushareFirstLedgerReady ? "继续看 P2 三面和 P3 结论" : "先在首页或下一票雷达点击确认按钮", tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
+            { label: "边界", value: dailyCommandTushareFirstBoundary, tone: "good" }
+          ]}
+        />
+        <div aria-label="daily command p1 tushare first front row">
+          <h3>P1 链路四步</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_tushare_first_chain_rows：普通用户只看输入是否静默、确认按钮是否创建 task、Tushare ledger 是否回放、DeepSeek 是否 skipped；工程明细继续下沉。</p>
+          <DataLineageTable rows={dailyCommandTushareFirstRows} />
+        </div>
+        <div className="actions" aria-label="daily command p1 tushare first front actions">
+          <a href={dailyCommandCandidateConfirmHref} title="回到下一票雷达确认输入区；输入静默，确认按钮才创建 Tushare-first task" aria-label="open candidate confirm from p1 tushare first front row">确认或换一只票</a>
+          <a href="#factor" title="切换到股票量化推演；只读回放 Tushare-first 后的本地结果" aria-label="open factor after p1 tushare first front row">股票量化推演</a>
+          <a href="#next" title="切换到次日图谱；只读回放 Tushare-first 后的本地图谱" aria-label="open next session after p1 tushare first front row">次日图谱</a>
+        </div>
+        <p className="risk-note">P1 速读只回放已写入的 POST task / call_ledger / packet 证据；不会从首页回放卡创建第二个 task、补调 Tushare/DeepSeek、读取 token/key、执行交易或修改 strategy action。</p>
       </PacketCard>
       <PacketCard title="当前可用投研链路" subtitle="当前标的、P1 确认、P2 三面、P3 结论和下一步" status={dailyCommandResearchWorkflowStatus}>
         <MetricGrid
