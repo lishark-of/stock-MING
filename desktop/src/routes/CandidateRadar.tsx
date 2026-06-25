@@ -2693,6 +2693,14 @@ export default function CandidateRadar() {
               { label: "边界", value: quantProjectionSmallDataReadbackContract, tone: "good" }
             ]}
           />
+          <div aria-label="candidate radar p2 first screen three surface rail">
+            <p className="risk-note">cache、call_ledger、packet 三面状态直接在首屏显示；这条状态轨只读本地回放，不创建 task、不补调 provider/model。</p>
+            <StateClarityRail
+              label="candidate radar p2 first screen three surface rail"
+              state={quantProjectionP2WritebackRailState}
+              steps={quantProjectionP2WritebackRailSteps}
+            />
+          </div>
           <div className="actions" aria-label="candidate radar p2 three surface local replay actions">
             <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress from p2 three surface status">查看任务进度</a>
             <a href="#factor" title="切换到股票量化推演；只读回放 cache / ledger / packet" aria-label="open factor replay from p2 three surface status">查看量化推演</a>
