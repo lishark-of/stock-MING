@@ -33,6 +33,11 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
                 "provider_api_success_count": 4,
                 "provider_api_call_count": 4,
                 "provider_call_source": "post_task_call_ledger",
+                "source_task_external_calls_triggered": True,
+                "source_task_tushare_called": True,
+                "source_task_tushare_provider_ledger_ready": True,
+                "readback_external_calls_triggered": False,
+                "readback_tushare_called": False,
                 "ordinary_readback_summary": "Tushare-first 小数据已写入 cache / ledger / packet。",
             },
             "search_quant_projection_interpretation_summary": {
@@ -65,6 +70,13 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
         self.assertTrue(handoff["p3_readable_result_ready"])
         self.assertEqual(handoff["provider_api_success_count"], 4)
         self.assertEqual(handoff["provider_api_call_count"], 4)
+        self.assertTrue(handoff["provider_call_ledger_replayed_from_source_task"])
+        self.assertTrue(handoff["source_task_external_calls_triggered"])
+        self.assertTrue(handoff["source_task_tushare_called"])
+        self.assertTrue(handoff["source_task_tushare_provider_ledger_ready"])
+        self.assertFalse(handoff["readback_external_calls_triggered"])
+        self.assertFalse(handoff["readback_tushare_called"])
+        self.assertIn("provider 证据只由 POST task call_ledger 证明", handoff["ordinary_readback_provenance_summary"])
         self.assertFalse(handoff["creates_task_from_readback"])
         self.assertFalse(handoff["calls_provider_or_model"])
         self.assertFalse(handoff["contains_secret"])
@@ -85,7 +97,13 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
         self.assertTrue(p3_summary["p3_readable_result_ready"])
         self.assertEqual(p3_summary["provider_api_success_count"], 4)
         self.assertEqual(p3_summary["provider_api_call_count"], 4)
-        self.assertIn("Tushare-first", p3_summary["result_summary"])
+        self.assertIn("源任务 Tushare-first", p3_summary["result_summary"])
+        self.assertIn("本次 GET cache 未外联", p3_summary["result_summary"])
+        self.assertTrue(p3_summary["provider_call_ledger_replayed_from_source_task"])
+        self.assertTrue(p3_summary["source_task_tushare_called"])
+        self.assertTrue(p3_summary["source_task_tushare_provider_ledger_ready"])
+        self.assertFalse(p3_summary["readback_external_calls_triggered"])
+        self.assertFalse(p3_summary["readback_tushare_called"])
         self.assertFalse(p3_summary["creates_task"])
         self.assertFalse(p3_summary["calls_provider_or_model"])
         self.assertFalse(p3_summary["uses_model_output"])
@@ -105,7 +123,8 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
         self.assertFalse(packet["policy"]["factor_quant_p3_one_screen_uses_model_output"])
         self.assertFalse(packet["policy"]["factor_quant_p3_one_screen_uses_deepseek_output"])
         self.assertTrue(packet["policy"]["factor_quant_p3_one_screen_is_not_trade_signal"])
-        self.assertIn("Tushare-first", packet["ordinary_quant_p3_readable_summary"])
+        self.assertIn("源任务 Tushare-first", packet["ordinary_quant_p3_readable_summary"])
+        self.assertIn("本次 GET cache 未外联", packet["ordinary_quant_p3_readable_summary"])
         self.assertIn("先看支持/压制", packet["ordinary_quant_p3_readable_next_step"])
         self.assertIn("不调用 DeepSeek", packet["ordinary_quant_p3_readable_boundary"])
 
@@ -133,6 +152,8 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
         handoff_ledger = ledger["local_factor_quant_candidate_radar_handoff"]
         self.assertFalse(handoff_ledger["external"])
         self.assertFalse(handoff_ledger["tushare_called"])
+        self.assertTrue(handoff_ledger["request_params_safe"]["source_task_tushare_called"])
+        self.assertFalse(handoff_ledger["request_params_safe"]["readback_tushare_called"])
         self.assertFalse(handoff_ledger["deepseek_called"])
         self.assertFalse(handoff_ledger["github_called"])
         self.assertTrue(handoff_ledger["does_not_execute_trades"])

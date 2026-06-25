@@ -286,6 +286,21 @@ def _safe_text(value: Any, *, limit: int = 240) -> str:
     return text[:limit]
 
 
+def _source_task_readback_text(value: Any, *, source_task_tushare_called: bool, limit: int = 360) -> str:
+    text = _safe_text(value, limit=limit)
+    if not source_task_tushare_called or not text or "本次 GET cache 未外联" in text:
+        return text
+    text = text.replace("可读结论：Tushare-first", "可读结论：源任务 Tushare-first")
+    text = text.replace("Tushare-first 账本", "源任务 Tushare-first 账本", 1) if "源任务" not in text else text
+    if "个接口；" in text:
+        text = text.replace("个接口；", "个接口；本次 GET cache 未外联；", 1)
+    elif "个接口。" in text:
+        text = text.replace("个接口。", "个接口；本次 GET cache 未外联。", 1)
+    else:
+        text = f"{text}；本次 GET cache 未外联。"
+    return _safe_text(text, limit=limit)
+
+
 def _safe_float(value: Any, *, default: float = 0.0) -> float:
     try:
         number = float(value)
@@ -539,13 +554,13 @@ def _read_candidate_radar_quant_projection_handoff(now: str) -> dict[str, Any]:
         return {}
 
     p2_ready = small_data.get("small_data_writeback_ready") is True
-    p3_summary = (
+    p3_summary_raw = (
         interpretation.get("ordinary_result_summary")
         or candidate_packet.get("ordinary_result_summary")
         or small_data.get("ordinary_readback_summary")
         or ""
     )
-    p3_ready = interpretation.get("interpretation_ready") is True or bool(str(p3_summary).strip())
+    p3_ready = interpretation.get("interpretation_ready") is True or bool(str(p3_summary_raw).strip())
     if not (p2_ready or p3_ready):
         return {}
 
@@ -582,6 +597,29 @@ def _read_candidate_radar_quant_projection_handoff(now: str) -> dict[str, Any]:
     )
     provider_success_count = int(small_data.get("provider_api_success_count") or 0)
     provider_call_count = int(small_data.get("provider_api_call_count") or 0)
+    provider_call_source = _safe_text(small_data.get("provider_call_source") or "candidate_radar_cache")
+    source_task_external_calls_triggered = (
+        small_data.get("source_task_external_calls_triggered") is True
+        or (provider_call_source == "post_task_call_ledger" and provider_success_count > 0)
+    )
+    source_task_tushare_called = (
+        small_data.get("source_task_tushare_called") is True
+        or source_task_external_calls_triggered
+    )
+    source_task_tushare_provider_ledger_ready = (
+        small_data.get("source_task_tushare_provider_ledger_ready") is True
+        or bool(p2_ready and provider_success_count > 0)
+    )
+    p3_summary = _source_task_readback_text(
+        p3_summary_raw,
+        source_task_tushare_called=source_task_tushare_called,
+        limit=360,
+    )
+    ordinary_readback_provenance_summary = _safe_text(
+        small_data.get("ordinary_readback_provenance_summary")
+        or "当前读回来自 GET cache 的本地 packet；provider 证据只由 POST task call_ledger 证明，React render 不补调 provider/model。",
+        limit=360,
+    )
     status = (
         "factor_quant_candidate_handoff_ready_tushare_first_p3_readable"
         if p3_ready
@@ -614,6 +652,8 @@ def _read_candidate_radar_quant_projection_handoff(now: str) -> dict[str, Any]:
             "p3_readable_result_ready": p3_ready,
             "provider_api_success_count": provider_success_count,
             "provider_api_call_count": provider_call_count,
+            "source_task_tushare_called": source_task_tushare_called,
+            "readback_tushare_called": False,
             "does_not_include_token_or_raw_log": True,
         },
         "row_count": len(_list(interpretation.get("ordinary_result_quick_read_rows"))),
@@ -639,7 +679,14 @@ def _read_candidate_radar_quant_projection_handoff(now: str) -> dict[str, Any]:
         "ordinary_result_boundary": result_boundary,
         "provider_api_success_count": provider_success_count,
         "provider_api_call_count": provider_call_count,
-        "provider_call_source": _safe_text(small_data.get("provider_call_source") or "candidate_radar_cache"),
+        "provider_call_source": provider_call_source,
+        "provider_call_ledger_replayed_from_source_task": source_task_tushare_provider_ledger_ready,
+        "source_task_external_calls_triggered": source_task_external_calls_triggered,
+        "source_task_tushare_called": source_task_tushare_called,
+        "source_task_tushare_provider_ledger_ready": source_task_tushare_provider_ledger_ready,
+        "readback_external_calls_triggered": False,
+        "readback_tushare_called": False,
+        "ordinary_readback_provenance_summary": ordinary_readback_provenance_summary,
         "deepseek_governed_executor_status": _safe_text(
             interpretation.get("deepseek_governed_executor_status")
             or candidate_packet.get("ordinary_result_deepseek_governed_executor_status")
@@ -685,13 +732,18 @@ def _factor_quant_candidate_handoff_rows(
         },
         {
             "handoff_step": "2. Tushare-first",
-            "当前状态": f"Tushare ledger {handoff.get('provider_api_success_count')}/{handoff.get('provider_api_call_count')} 已回放",
+            "当前状态": (
+                f"源任务 Tushare ledger {handoff.get('provider_api_success_count')}/{handoff.get('provider_api_call_count')} 已回放；"
+                "本次 GET Factor cache 未外联"
+            ),
             "用户下一步": "只把 ledger 当数据来源证据；支持/压制仍需结合本页 cache 和缺失项读。",
             "证据": handoff.get("provider_call_source"),
             "边界": "GET Factor cache 不调用 Tushare；外联只能来自此前按钮任务的 call_ledger。",
             "cache_only_readback": True,
             "creates_task_from_readback": False,
             "external_calls_triggered": False,
+            "source_task_tushare_called": handoff.get("source_task_tushare_called") is True,
+            "readback_tushare_called": False,
             "contains_secret": False,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -758,6 +810,8 @@ def _factor_quant_p3_one_screen_summary(
     )
     provider_success_count = int(_safe_float(safe_handoff.get("provider_api_success_count")))
     provider_call_count = int(_safe_float(safe_handoff.get("provider_api_call_count")))
+    source_task_tushare_called = safe_handoff.get("source_task_tushare_called") is True
+    source_task_tushare_provider_ledger_ready = safe_handoff.get("source_task_tushare_provider_ledger_ready") is True
     support_count = len(_list(score.get("support_factors")))
     suppress_count = len(_list(score.get("suppress_factors")))
     conflict_count = len(_list(score.get("conflict_factors")))
@@ -808,6 +862,13 @@ def _factor_quant_p3_one_screen_summary(
         "result_boundary": result_boundary,
         "provider_api_success_count": provider_success_count,
         "provider_api_call_count": provider_call_count,
+        "provider_call_ledger_replayed_from_source_task": source_task_tushare_provider_ledger_ready,
+        "source_task_external_calls_triggered": safe_handoff.get("source_task_external_calls_triggered") is True,
+        "source_task_tushare_called": source_task_tushare_called,
+        "source_task_tushare_provider_ledger_ready": source_task_tushare_provider_ledger_ready,
+        "readback_external_calls_triggered": False,
+        "readback_tushare_called": False,
+        "ordinary_readback_provenance_summary": safe_handoff.get("ordinary_readback_provenance_summary") or "",
         "support_count": support_count,
         "suppress_count": suppress_count,
         "conflict_count": conflict_count,
@@ -846,7 +907,7 @@ def _factor_quant_p3_one_screen_summary(
         {
             "label": "Tushare-first",
             "value": (
-                f"ledger 已回放 {provider_success_count}/{provider_call_count} 个接口"
+                f"源任务 ledger 已回放 {provider_success_count}/{provider_call_count} 个接口；本次 GET 未外联"
                 if provider_call_count
                 else "等待 Tushare-first ledger"
             ),

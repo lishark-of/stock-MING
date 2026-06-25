@@ -22052,6 +22052,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                     "provider_call_source": "post_task_call_ledger",
                     "provider_api_success_count": 4,
                     "provider_api_call_count": 4,
+                    "source_task_external_calls_triggered": True,
+                    "source_task_tushare_called": True,
+                    "source_task_tushare_provider_ledger_ready": True,
+                    "readback_external_calls_triggered": False,
+                    "readback_tushare_called": False,
                     "ordinary_readback_summary": "Tushare-first 账本已回放 4/4 个接口。",
                     "ordinary_readback_next_step": "打开次日图谱生成本地 cache。",
                     "contains_secret": False,
@@ -22098,6 +22103,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertTrue(handoff["p2_small_data_ready"])
         self.assertTrue(handoff["p3_readable_result_ready"])
+        self.assertIn("源任务 Tushare-first", handoff["ordinary_result_summary"])
+        self.assertIn("本次 GET cache 未外联", handoff["ordinary_result_summary"])
+        self.assertTrue(handoff["provider_call_ledger_replayed_from_source_task"])
+        self.assertTrue(handoff["source_task_external_calls_triggered"])
+        self.assertTrue(handoff["source_task_tushare_called"])
+        self.assertTrue(handoff["source_task_tushare_provider_ledger_ready"])
+        self.assertFalse(handoff["readback_external_calls_triggered"])
+        self.assertFalse(handoff["readback_tushare_called"])
+        self.assertIn("provider 证据只由 POST task call_ledger 证明", handoff["ordinary_readback_provenance_summary"])
         self.assertFalse(handoff["chart_payload_generated"])
         self.assertFalse(handoff["operation_zones_generated"])
         self.assertTrue(handoff["manual_next_session_generate_required"])
@@ -22117,6 +22131,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ordinary_rows = {row["surface"]: row for row in packet["ordinary_result_replay_rows"]}
         self.assertIn("上游结果可读", ordinary_rows["下一票雷达"]["readable_result"])
         self.assertIn("Tushare-first 账本已回放", ordinary_rows["股票量化推演"]["readable_result"])
+        self.assertIn("本次 GET cache 未外联", ordinary_rows["股票量化推演"]["readable_result"])
         self.assertIn("完整 next-session 图谱待手动生成", ordinary_rows["次日图谱"]["readable_result"])
         condition_rows = {row["速读项"]: row for row in packet["ordinary_condition_quick_read_rows"]}
         self.assertIn("上游搜票结论可读", condition_rows["1. 来源"]["当前状态"])
@@ -22146,6 +22161,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("local_next_session_candidate_radar_p3_handoff", ledger_by_api)
         self.assertFalse(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["external"])
         self.assertFalse(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["tushare_called"])
+        self.assertTrue(
+            ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["request_params_safe"][
+                "source_task_tushare_called"
+            ]
+        )
+        self.assertFalse(
+            ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["request_params_safe"][
+                "readback_tushare_called"
+            ]
+        )
         self.assertFalse(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["deepseek_called"])
         self.assertTrue(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["does_not_execute_trades"])
         self.assertTrue(
@@ -40162,7 +40187,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(small_data["provider_call_source"], "post_task_call_ledger")
         self.assertEqual(
             small_data["ordinary_readback_stage_label"],
-            "已回放 Tushare POST task ledger；当前页面只读 cache / ledger / packet。",
+            "已回放源任务 Tushare POST task ledger；当前页面只读 cache / ledger / packet。",
         )
         self.assertTrue(small_data["cache_ready"])
         self.assertTrue(small_data["ledger_ready"])
