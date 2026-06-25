@@ -2594,6 +2594,12 @@ export default function CandidateRadar() {
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
+        <div aria-label="candidate radar ordinary p3 one minute result">
+          <h3>最近搜票 P3 一分钟结果</h3>
+          <p className="ordinary-status-note" aria-label="candidate radar summary p3 readable sentence">{quantProjectionP3OrdinaryReadableSentence}</p>
+          <MetricGrid items={quantProjectionP3ResultSummaryItems} />
+          <p className="risk-note">这条结果只读最近确认 task 的本地 cache / call_ledger / packet；不创建第二个 task、不调用 Tushare/DeepSeek、不生成买卖动作。</p>
+        </div>
         <div aria-label="candidate radar ordinary usable now strip">
           <h3>现在可用状态</h3>
           <MetricGrid items={quantProjectionUsableNowItems} />
