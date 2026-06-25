@@ -355,6 +355,23 @@ export default function CommandCenterHome() {
       candidateQuantInterpretation.ordinary_result_boundary ??
       "可解释结果只从本地 cache / ledger / packet 回放；不会从首页创建 task、调用模型或生成交易动作。"
   );
+  const dailyCommandConfirmedSymbol = String(
+    candidateQuantReceipt.symbol ??
+      candidateQuantSmallDataWriteback.symbol ??
+      candidateQuantInterpretation.symbol ??
+      ""
+  );
+  const dailyCommandConfirmedSymbolLabel = dailyCommandConfirmedSymbol
+    ? `当前确认标的：${dailyCommandConfirmedSymbol}`
+    : "等待下一票雷达确认标的";
+  const dailyCommandConfirmedSourceTaskLabel = String(
+    candidateQuantResultCheckpoint.source_task_id ??
+      candidateQuantInterpretation.source_task_id ??
+      candidateQuantSmallDataWriteback.latest_task_id ??
+      candidateQuantReceipt.latest_task_id ??
+      candidateQuantReceipt.task_id ??
+      "等待下一票雷达确认 task"
+  );
   const dailyCommandP3OneGlanceReadable =
     candidateQuantResultCheckpoint.ordinary_result_readable === true ||
     candidateQuantInterpretation.interpretation_ready === true ||
@@ -428,6 +445,9 @@ export default function CommandCenterHome() {
   const dailyCommandP3OneGlanceSourceTask = String(
     candidateQuantResultCheckpoint.source_task_id ??
       candidateQuantInterpretation.source_task_id ??
+      candidateQuantSmallDataWriteback.latest_task_id ??
+      candidateQuantReceipt.latest_task_id ??
+      candidateQuantReceipt.task_id ??
       "等待确认任务"
   );
   const dailyCommandP3OneGlanceResultEntrances = candidateQuantHandoffRows.length
@@ -1280,8 +1300,10 @@ export default function CommandCenterHome() {
         <MetricGrid
           items={[
             { label: "任务数", value: taskIndex?.task_count ?? tasks.length, tone: (taskIndex?.task_count ?? tasks.length) ? "good" : "warn" },
+            { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
             { label: "最近任务", value: dailyCommandLatestTaskId || "暂无", tone: dailyCommandLatestTaskId ? "good" : "warn" },
             { label: "状态", value: dailyCommandLatestTaskStatus, tone: dailyCommandLatestTaskStatus === "success" ? "good" : dailyCommandLatestTaskStatus === "failed" ? "bad" : "warn" },
+            { label: "来源任务", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
             { label: "来源", value: dailyCommandLatestTaskIsReplay ? "cache 只读回放" : dailyCommandLatestTaskSource, tone: "good" },
             { label: "下一步", value: dailyCommandLatestTaskNext },
             { label: "边界", value: "首页只读任务状态；确认按钮之前不创建 task", tone: "good" }
@@ -1303,6 +1325,7 @@ export default function CommandCenterHome() {
       <PacketCard title="P3 可解释结果一眼读懂" subtitle="结论、来源、缺口、下一步和安全边界；只读 CandidateRadar checkpoint" status={dailyCommandP3OneGlanceStatus}>
         <MetricGrid
           items={[
+            { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
             { label: "可读结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
             { label: "数据来源", value: dailyCommandP3OneGlanceSource, tone: dailyCommandP3OneGlanceProviderVerified ? "good" : "warn" },
             { label: "结果证据", value: dailyCommandP3OneGlanceEvidence, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
