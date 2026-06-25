@@ -82,6 +82,7 @@ export default function CommandCenterHome() {
   const [liveBootstrapTaskId, setLiveBootstrapTaskId] = useState("");
   const [liveBootstrapManualStatus, setLiveBootstrapManualStatus] = useState("not_checked");
   const [homeQuantSymbol, setHomeQuantSymbol] = useState("");
+  const [homeQuantSymbolTouched, setHomeQuantSymbolTouched] = useState(false);
   const [homeQuantSubmitting, setHomeQuantSubmitting] = useState(false);
   const [homeQuantReceipt, setHomeQuantReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [homeQuantTaskId, setHomeQuantTaskId] = useState("");
@@ -608,6 +609,12 @@ export default function CommandCenterHome() {
       candidateQuantInterpretation.symbol ??
       ""
   );
+  useEffect(() => {
+    if (homeQuantSymbolTouched) return;
+    if (homeQuantSymbol.trim()) return;
+    if (!dailyCommandConfirmedSymbol) return;
+    setHomeQuantSymbol(dailyCommandConfirmedSymbol);
+  }, [dailyCommandConfirmedSymbol, homeQuantSymbol, homeQuantSymbolTouched]);
   const dailyCommandConfirmedSymbolLabel = dailyCommandConfirmedSymbol
     ? `当前确认标的：${dailyCommandConfirmedSymbol}`
     : "等待下一票雷达确认标的";
@@ -2258,6 +2265,7 @@ export default function CommandCenterHome() {
             <input
               value={homeQuantSymbol}
               onChange={(event) => {
+                setHomeQuantSymbolTouched(true);
                 setHomeQuantSymbol(event.target.value);
                 setHomeQuantSubmitError("");
               }}
@@ -2268,6 +2276,7 @@ export default function CommandCenterHome() {
             <button
               disabled={!dailyCommandConfirmedSymbol}
               onClick={() => {
+                setHomeQuantSymbolTouched(true);
                 setHomeQuantSymbol(dailyCommandConfirmedSymbol);
                 setHomeQuantSubmitError("");
               }}
@@ -2282,6 +2291,7 @@ export default function CommandCenterHome() {
             >{homeQuantSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
             <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达详情页；同一条 P1 确认链路" aria-label="open candidate radar detail from home p1 confirm">下一票雷达详情</a>
           </div>
+          <p className="risk-note" aria-label="daily command home p1 symbol autofill boundary">当前标的自动填入只来自 CandidateRadar cache；不会自动点击确认、不创建 task、不调用 Tushare/DeepSeek，手动修改后不再覆盖输入。</p>
           {homeQuantSubmitError ? <p className="risk-note" aria-live="polite">首页确认任务创建失败：{homeQuantSubmitError}</p> : null}
           {homeQuantVisibleTaskId ? (
             <div aria-label="daily command home post confirm handoff">
