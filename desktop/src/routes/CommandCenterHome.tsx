@@ -864,12 +864,12 @@ export default function CommandCenterHome() {
   const dailyCommandLatestTaskIsReplay = dailyCommandLatestTask.cache_replay_only === true || Boolean(dailyCommandCandidateLatestTaskId && !dailyCommandLatestTask.task_id);
   const dailyCommandLatestTaskLabel = dailyCommandLatestTaskId
     ? `${dailyCommandLatestTaskStatus}: ${dailyCommandLatestTaskType}`
-    : "暂无本地任务；先去下一票雷达确认输入区输入代码并确认";
+    : "暂无本地任务；先在首页确认股票代码，需要详情再进下一票雷达";
   const dailyCommandLatestTaskNext = dailyCommandLatestTaskId
     ? dailyCommandLatestTaskIsCandidate
       ? "看下方任务状态；成功后进入股票量化推演和次日图谱回放"
       : "看下方任务状态；按任务输出 packet 回放结果"
-    : "进入下一票雷达，输入股票代码，点击确认并生成 3.0 量化推演";
+    : "在首页输入股票代码，点击确认并生成 3.0 量化推演";
   const dailyCommandLatestTaskRows = [
     {
       速读项: "最近任务",
@@ -913,9 +913,12 @@ export default function CommandCenterHome() {
   const dailyCommandCacheWarning = dailyCommandHealthOk && error ? `本地 cache 回读提示：${error}` : "";
   const dailyCommandNeedsStartupRecovery =
     !dailyCommandHealthOk && (loading || Boolean(error) || !dailyCommandHealthChecked);
-  const dailyCommandP0QuickAction = String(
+  const dailyCommandP0QuickActionPacket = String(
     desktopRuntime?.p0_ordinary_quick_action_next ?? p0OrdinaryQuickActionRows[0]?.["用户下一步"] ?? ""
   );
+  const dailyCommandP0QuickAction = dailyCommandNeedsStartupRecovery
+    ? dailyCommandP0QuickActionPacket
+    : "联通已通过，先在首页确认股票代码；需要详情再进下一票雷达";
   const dailyCommandP0CheckOnlyNext = String(
     desktopRuntime?.p0_launcher_check_only_next ?? p0LauncherCheckOnlyRows[0]?.["用户动作"] ?? "scripts/check_command_center_3.command"
   );
@@ -1031,7 +1034,7 @@ export default function CommandCenterHome() {
     desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache" &&
     dailyCommandP0ConnectionEvidenceReady;
   const dailyCommandP0LocalReadinessLabel = dailyCommandP0LocalReadinessReady
-    ? `P0 ready：${dailyCommandFrontendBackendSelectedApiBase} 已联通，当前 React 页面已加载；可进入下一票雷达`
+    ? `P0 ready：${dailyCommandFrontendBackendSelectedApiBase} 已联通，当前 React 页面已加载；可在首页确认股票代码`
     : "P0 check：先让 health、bootstrap status、desktop preflight cache 变绿；未 ready 不进入 P1";
   const dailyCommandP0LocalReadinessBoundary =
     "P0 ready 只证明本地前后端联通；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。";
@@ -1128,14 +1131,14 @@ export default function CommandCenterHome() {
       联通项: "失败回退",
       当前状态: dailyCommandCacheWarning ? "本地后端已联通；普通 cache 回读提示不阻断 P0" : error ? "显示本地后端离线提示" : "无前端联通错误",
       证据: "frontend_backend_auto_link_scope=local_fastapi_only",
-      下一步: dailyCommandCacheWarning ? "继续进入下一票雷达；普通 cache 提示留在待补证据里" : error ? "打开一键启动预检，按 FastAPI / bootstrap / desktop preflight / React 四段恢复" : "联通正常时进入下一票雷达",
+      下一步: dailyCommandCacheWarning ? "继续在首页确认股票代码；普通 cache 提示留在待补证据里" : error ? "打开一键启动预检，按 FastAPI / bootstrap / desktop preflight / React 四段恢复" : "联通正常时在首页确认股票代码",
       边界: "离线提示只帮助恢复 P0；不会绕过确认按钮触发 Tushare，也不会调用 DeepSeek"
     },
     {
       联通项: "P0 可继续闸门",
       当前状态: dailyCommandP0LocalReadinessLabel,
       证据: "health ok + bootstrap runtime-mode packet + desktop preflight one-click packet + current React page",
-      下一步: dailyCommandP0LocalReadinessReady ? "进入下一票雷达确认输入区；输入保持静默，确认按钮才触发 Tushare-first" : "回到一键启动预检；不要进入 P1 投研入口",
+      下一步: dailyCommandP0LocalReadinessReady ? "在首页确认股票代码；输入保持静默，确认按钮才触发 Tushare-first" : "回到一键启动预检；不要进入 P1 投研入口",
       边界: dailyCommandP0LocalReadinessBoundary
     }
   ];
@@ -1163,8 +1166,8 @@ export default function CommandCenterHome() {
     },
     {
       闸门项: "4. 进入 P1",
-      当前状态: dailyCommandP0LocalReadinessReady ? "P0 ready：可以进入下一票雷达" : "P0 未 ready：不要进入 P1",
-      用户下一步: dailyCommandP0LocalReadinessReady ? "进入下一票雷达，输入代码；输入静默，确认按钮才创建 Tushare-first task" : "先把前三段变绿，再进入下一票雷达",
+      当前状态: dailyCommandP0LocalReadinessReady ? "P0 ready：可以在首页确认股票代码" : "P0 未 ready：不要进入 P1",
+      用户下一步: dailyCommandP0LocalReadinessReady ? "在首页输入代码；输入静默，确认按钮才创建 Tushare-first task，需要详情再进下一票雷达" : "先把前三段变绿，再回首页确认股票代码",
       证据: "health + bootstrap packet + desktop preflight packet + current React page",
       边界: "P0 ready 不代表 Tushare/DeepSeek 已调用，也不是 release ready 或 14 LTG 完成"
     }
@@ -1187,9 +1190,9 @@ export default function CommandCenterHome() {
         },
         {
           行动: "2. 任务",
-          当前状态: "等待下一票雷达确认按钮返回 task id",
+          当前状态: "等待首页或下一票雷达确认按钮返回 task id",
           用户下一步: "确认后看 TaskStatusPanel，本地任务完成后刷新 cache",
-          入口: "下一票雷达确认按钮 / TaskStatusPanel",
+          入口: "首页确认按钮 / 下一票雷达确认按钮 / TaskStatusPanel",
           边界: "只有首页或下一票雷达确认按钮可创建 Tushare-first POST task；回放清单不提交 task。"
         },
         {
@@ -1214,13 +1217,13 @@ export default function CommandCenterHome() {
     {
       阶段: "P0 一键启动和本地联通",
       当前状态: dailyCommandConnectionState,
-      用户下一步: dailyCommandNeedsStartupRecovery ? "先打开一键启动预检，按四段回读恢复本地联通" : "联通已通过，进入下一票雷达输入股票代码",
+      用户下一步: dailyCommandNeedsStartupRecovery ? "先打开一键启动预检，按四段回读恢复本地联通" : "联通已通过，先在首页输入股票代码",
       证据: "GET /health + bootstrap status + desktop preflight cache",
       边界: "页面打开、React render 和 GET cache 只读；不启动服务、不外联、不读取 token/key"
     },
     {
       阶段: "P1 确认按钮触发 Tushare-first",
-      当前状态: "等待用户在下一票雷达输入代码并点击确认",
+      当前状态: "等待用户在首页或下一票雷达输入代码并点击确认",
       用户下一步: "输入 6 位 A 股代码，点击“确认并生成 3.0 量化推演”",
       证据: "CandidateRadar 搜票确认 POST task contract",
       边界: "搜索输入只做本地校验；只有确认按钮创建 POST task / worker，DeepSeek skipped"
@@ -1330,7 +1333,7 @@ export default function CommandCenterHome() {
   ];
   const dailyCommandConnectivityPriority = dailyCommandNeedsStartupRecovery
     ? "先恢复本地联通；缓存和投研入口等 health/preflight 变绿后再看"
-    : "本地联通可用；按最近缓存、数据健康、下一票雷达、股票量化推演复核";
+    : "本地联通可用；先在首页确认股票代码，再按最近缓存、数据健康、下一票雷达、股票量化推演复核";
   const dailyCommandLauncherState = desktopLauncherContract.launcher_executable === true
     ? "一键启动入口可用；启动器会等 FastAPI 和页面 ready"
     : "一键启动入口待检查；可先使用本地启动器恢复";
@@ -1391,7 +1394,7 @@ export default function CommandCenterHome() {
       当前状态: desktopLauncherContract.launcher_executable === true ? "一键启动入口可验证前端" : "等待桌面壳预检",
       证据: "desktop preflight cache launcher_readback",
       通过条件: "本地启动器可检查 Command Center 3.0 前端 HTML",
-      下一步: dailyCommandNeedsStartupRecovery ? "先打开一键启动预检" : "继续进入下一票雷达和股票量化推演",
+      下一步: dailyCommandNeedsStartupRecovery ? "先打开一键启动预检" : "继续在首页确认股票代码，再看股票量化推演",
       边界: "首页只展示预检结果，不启动 FastAPI/Vite/浏览器"
     }
   ];
@@ -1472,13 +1475,13 @@ export default function CommandCenterHome() {
   const dailyCommandResearchWorkflowNext = dailyCommandResearchWorkflowReady
     ? "直接看 P3 结果速读，再切到股票量化推演和次日图谱复核"
     : dailyCommandP0LocalReadinessReady
-      ? "进入下一票雷达输入股票代码，并点击确认按钮创建 Tushare-first task"
+      ? "在首页输入股票代码，并点击确认按钮创建 Tushare-first task"
       : "先恢复 FastAPI、bootstrap、desktop preflight 和 React 四段联通";
   const dailyCommandResearchWorkflowRows = [
     {
       链路段: "P0 本地联通",
       当前状态: dailyCommandP0LocalReadinessReady ? "ready：本地四段已接上" : "check：先恢复本地四段",
-      用户下一步: dailyCommandP0LocalReadinessReady ? "可以进入下一票雷达" : "打开桌面壳预检恢复本地后端/前端",
+      用户下一步: dailyCommandP0LocalReadinessReady ? "可以在首页确认股票代码" : "打开桌面壳预检恢复本地后端/前端",
       证据: "health + bootstrap packet + desktop preflight packet + current React page",
       边界: "P0 只证明本地可用；不代表 Tushare/DeepSeek 已调用，也不是 14 LTG 完成。"
     },
@@ -1642,7 +1645,7 @@ export default function CommandCenterHome() {
             { label: "接线地址", value: dailyCommandFrontendBackendSelectedApiBase, tone: dailyCommandHealthOk ? "good" : "warn" },
             { label: "候选地址", value: API_BASE_CANDIDATE_DISPLAY_URLS.join(" / "), tone: "good" },
             { label: "当前页面", value: dailyCommandP0LocalReadinessReady ? "FastAPI、bootstrap、desktop preflight 和 React 已接上" : "等待本地四段联通回读", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
-            { label: "投研入口", value: dailyCommandNeedsStartupRecovery ? "先看一键启动预检" : "去下一票雷达确认输入区输入代码并确认", tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+            { label: "投研入口", value: dailyCommandNeedsStartupRecovery ? "先看一键启动预检" : "在首页确认股票代码；需要详情再进下一票雷达", tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "安全边界", value: "打开页面和输入代码不外联；确认按钮才触发 Tushare-first", tone: "good" }
           ]}
         />
@@ -1868,7 +1871,7 @@ export default function CommandCenterHome() {
             { label: "自动联通", value: dailyCommandFrontendBackendAutoLinkLabel, tone: dailyCommandHealthOk ? "good" : "warn" },
             { label: "自动联通边界", value: dailyCommandFrontendBackendAutoLinkBoundary, tone: "good" },
             { label: "P0 可继续", value: dailyCommandP0LocalReadinessLabel, tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
-            { label: "P0 进入 P1 闸门", value: dailyCommandP0LocalReadinessReady ? "四段已通过；可进入下一票雷达" : "先让 health / bootstrap / preflight / React 四段变绿", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+            { label: "P0 进入 P1 闸门", value: dailyCommandP0LocalReadinessReady ? "四段已通过；可在首页确认股票代码" : "先让 health / bootstrap / preflight / React 四段变绿", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
             { label: "一屏行动", value: dailyCommandOneScreenActionLabel || "等待 CandidateRadar 一屏行动回放", tone: candidateQuantOneScreenActionRows.length ? "good" : "warn" },
             { label: "确认结果链", value: dailyCommandConfirmOutcomeLabel, tone: candidateQuantConfirmOutcomeRows.length ? "good" : "warn" },
@@ -1936,7 +1939,7 @@ export default function CommandCenterHome() {
         <p className="risk-note">live_light 补证入口下沉在开发详情；普通路径只看本地缓存、雷达和量化入口。</p>
         <details className="developer-audit-details" aria-label="daily command ordinary readback details">
           <summary>本地回放明细</summary>
-          <p className="risk-note">确认链、P2 写回、P3 检查点和恢复表默认收起；普通用户先用上方主按钮进入下一票雷达、股票量化推演和次日图谱。</p>
+          <p className="risk-note">确认链、P2 写回、P3 检查点和恢复表默认收起；普通用户先用上方主按钮在首页确认股票代码，再看股票量化推演和次日图谱。</p>
         <details className="developer-audit-details" aria-label="daily command engineering audit and strict closeout details">
           <summary>工程审计 / P6 strict closeout 明细</summary>
           <p className="risk-note">普通路径已经在上方 P1 确认、P2 三面和 P3 可解释结果；这里仅供排障、验收和 14 LTG 回归，不把 P6 当今日可用化完成。</p>
@@ -1967,12 +1970,12 @@ export default function CommandCenterHome() {
         </div>
         <div aria-label="daily command p0 p1 entry gate">
           <h3>P0 进入 P1 闸门</h3>
-          <p className="risk-note">普通用户先看这张清单：health、bootstrap status、desktop preflight 和当前 React 页面四段通过后，才进入下一票雷达；输入仍保持静默，只有确认按钮创建 Tushare-first POST task。</p>
+          <p className="risk-note">普通用户先看这张清单：health、bootstrap status、desktop preflight 和当前 React 页面四段通过后，才进入首页确认卡；输入仍保持静默，只有确认按钮创建 Tushare-first POST task。</p>
           <DataLineageTable rows={dailyCommandP0EntryGateRows} />
         </div>
         <div aria-label="daily command p0 current next action">
           <h3>P0 当前下一步</h3>
-          <p className="risk-note">优先读取 desktop preflight 的 p0_current_next_action_rows：未 ready 回预检恢复，ready 后只切到下一票雷达；确认按钮之前不创建 Tushare-first task。</p>
+          <p className="risk-note">优先读取 desktop preflight 的 p0_current_next_action_rows：未 ready 回预检恢复，ready 后先到首页确认卡；确认按钮之前不创建 Tushare-first task。</p>
           <DataLineageTable rows={p0CurrentNextActionRows} />
         </div>
         <div aria-label="daily command one screen search actions">
@@ -1992,7 +1995,7 @@ export default function CommandCenterHome() {
         </div>
         <div aria-label="daily command p0 quick action handoff">
           <h3>P0 到 P1 快速行动</h3>
-          <p className="risk-note">优先读取 desktop preflight 的 p0_ordinary_quick_action_rows：联通通过后进入下一票雷达，输入代码，再由确认按钮触发 Tushare-first 任务。</p>
+          <p className="risk-note">优先读取 desktop preflight 的 p0_ordinary_quick_action_rows：联通通过后先在首页输入代码并确认；需要详情再进下一票雷达，同样只有确认按钮触发 Tushare-first 任务。</p>
           <DataLineageTable rows={p0OrdinaryQuickActionRows} />
         </div>
         <div aria-label="daily command p2 small data writeback quick read">
