@@ -367,15 +367,18 @@ export default function CommandCenterHome() {
     [];
   const candidateQuantConfirmChainCheckpoint = (candidates.search_quant_projection_confirm_chain_checkpoint as Record<string, unknown> | undefined) ?? {};
   const dailyCommandTushareFirstLedgerReady =
+    candidates.search_quant_projection_p1_shortest_path_ready === true ||
     candidateQuantConfirmChainCheckpoint.provider_ledger_ready === true ||
     candidateQuantReceipt.p1_tushare_first_provider_ledger_ready === true;
   const dailyCommandTushareFirstApiCount = Number(
-    candidateQuantConfirmChainCheckpoint.provider_api_call_count ??
+    candidates.search_quant_projection_p1_provider_api_call_count ??
+      candidateQuantConfirmChainCheckpoint.provider_api_call_count ??
       candidateQuantSmallDataWriteback.provider_call_ledger_api_count ??
       0
   );
   const dailyCommandTushareFirstSuccessCount = Number(
-    candidateQuantConfirmChainCheckpoint.provider_api_success_count ??
+    candidates.search_quant_projection_p1_provider_api_success_count ??
+      candidateQuantConfirmChainCheckpoint.provider_api_success_count ??
       candidateQuantSmallDataWriteback.provider_api_success_count ??
       0
   );
@@ -395,23 +398,30 @@ export default function CommandCenterHome() {
       : "DeepSeek 等 governed executor；不阻塞 P1/P2/P3";
   const dailyCommandTushareFirstBoundary =
     "P1 只允许首页或下一票雷达确认按钮创建 Tushare-first POST task；首页回放卡只读 cache / ledger / packet，不创建第二个 task。";
-  const dailyCommandP1ShortestPathReady = candidateQuantP1ShortestPathCheckpoint.tushare_first_ledger_ready === true;
+  const dailyCommandP1ShortestPathReady =
+    candidates.search_quant_projection_p1_shortest_path_ready === true ||
+    candidateQuantP1ShortestPathCheckpoint.tushare_first_ledger_ready === true;
   const dailyCommandP1ShortestPathStatus = String(
-    candidateQuantP1ShortestPathCheckpoint.status ??
+    candidates.search_quant_projection_p1_shortest_path_status ??
+      candidateQuantP1ShortestPathCheckpoint.status ??
       (dailyCommandP1ShortestPathReady ? "tushare_first_ledger_replayed" : "waiting_symbol_confirm")
   );
   const dailyCommandP1ShortestPathLabel = String(
-    candidateQuantP1ShortestPathCheckpoint.ordinary_label ??
+    candidates.search_quant_projection_p1_shortest_path_summary ??
+      candidateQuantP1ShortestPathCheckpoint.ordinary_label ??
       (dailyCommandP1ShortestPathReady ? dailyCommandTushareFirstLedgerLabel : "P1 等待输入股票代码并点击确认。")
   );
   const dailyCommandP1ShortestPathNext = String(
-    candidateQuantP1ShortestPathCheckpoint.next_action ??
+    candidates.search_quant_projection_p1_shortest_path_next_step ??
+      candidateQuantP1ShortestPathCheckpoint.next_action ??
       (dailyCommandP1ShortestPathReady
         ? "直接回放股票量化推演和次日图谱；DeepSeek 仍等 P5 governed executor。"
         : "先输入股票代码并点击确认按钮；输入本身保持静默。")
   );
-  const dailyCommandP1ShortestPathBoundary =
-    "P1 最短路径 checkpoint 只读 CandidateRadar cache；不创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key、不交易。";
+  const dailyCommandP1ShortestPathBoundary = String(
+    candidates.search_quant_projection_p1_shortest_path_boundary ??
+      "P1 最短路径 checkpoint 只读 CandidateRadar cache；不创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key、不交易。"
+  );
   const dailyCommandTushareFirstRows = candidateQuantTushareFirstRows.length
     ? candidateQuantTushareFirstRows.map((row) => ({
         链路段: String(row["步骤"] ?? row.chain_step ?? row["链路段"] ?? "Tushare-first"),

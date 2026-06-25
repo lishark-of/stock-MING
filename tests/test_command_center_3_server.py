@@ -40195,6 +40195,38 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(small_data["packet_ready"])
         self.assertTrue(small_data["p2_three_surface_ready"])
         self.assertTrue(small_data["p2_three_surface_readable"])
+        p1_checkpoint = packet["ordinary_p1_shortest_path_checkpoint"]
+        self.assertTrue(packet["search_quant_projection_p1_shortest_path_ready"])
+        self.assertEqual(
+            packet["search_quant_projection_p1_shortest_path_status"],
+            p1_checkpoint["status"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_p1_shortest_path_summary"],
+            p1_checkpoint["ordinary_label"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_p1_shortest_path_next_step"],
+            p1_checkpoint["next_action"],
+        )
+        self.assertIn(
+            "只有确认按钮可创建 Tushare-first POST task",
+            packet["search_quant_projection_p1_shortest_path_boundary"],
+        )
+        self.assertEqual(packet["search_quant_projection_p1_provider_call_source"], "post_task_call_ledger")
+        self.assertEqual(packet["search_quant_projection_p1_provider_api_call_count"], 4)
+        self.assertEqual(packet["search_quant_projection_p1_provider_api_success_count"], 4)
+        self.assertTrue(packet["search_quant_projection_p1_confirm_button_creates_task"])
+        self.assertFalse(packet["search_quant_projection_p1_search_input_creates_task"])
+        self.assertFalse(packet["search_quant_projection_p1_cache_get_external_calls"])
+        self.assertFalse(packet["search_quant_projection_p1_react_render_external_calls"])
+        self.assertFalse(packet["search_quant_projection_p1_readback_creates_task"])
+        self.assertFalse(packet["search_quant_projection_p1_uses_model_output"])
+        self.assertTrue(packet["search_quant_projection_p1_deepseek_skipped_until_governed_executor"])
+        self.assertFalse(packet["search_quant_projection_p1_contains_secret"])
+        self.assertTrue(packet["search_quant_projection_p1_does_not_execute_trades"])
+        self.assertTrue(packet["search_quant_projection_p1_does_not_modify_strategy_action"])
+        self.assertTrue(packet["search_quant_projection_p1_is_not_trade_signal"])
         p2_checkpoint = packet["ordinary_p2_three_surface_checkpoint"]
         self.assertTrue(packet["search_quant_projection_p2_three_surface_ready"])
         self.assertEqual(
@@ -40224,6 +40256,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(policy["search_quant_projection_p2_three_surface_calls_provider_from_readback"])
         self.assertFalse(policy["search_quant_projection_p2_three_surface_uses_model_output"])
         self.assertTrue(policy["search_quant_projection_p2_three_surface_is_not_trade_signal"])
+        self.assertTrue(policy["search_quant_projection_p1_shortest_path_is_cache_only"])
+        self.assertTrue(policy["search_quant_projection_p1_shortest_path_confirm_button_creates_task"])
+        self.assertFalse(policy["search_quant_projection_p1_shortest_path_search_input_creates_task"])
+        self.assertFalse(policy["search_quant_projection_p1_shortest_path_readback_creates_task"])
+        self.assertFalse(policy["search_quant_projection_p1_shortest_path_cache_get_external_calls"])
+        self.assertFalse(policy["search_quant_projection_p1_shortest_path_react_render_external_calls"])
+        self.assertFalse(policy["search_quant_projection_p1_shortest_path_uses_model_output"])
+        self.assertTrue(policy["search_quant_projection_p1_shortest_path_is_not_trade_signal"])
         self.assertIn(
             "provider 证据只由 POST task call_ledger 证明",
             small_data["ordinary_readback_provenance_summary"],

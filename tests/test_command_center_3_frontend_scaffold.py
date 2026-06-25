@@ -1958,6 +1958,19 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("candidates.ordinary_p1_shortest_path_checkpoint", home_source)
         self.assertIn("dailyCommandP1ShortestPathLabel", home_source)
         self.assertIn("dailyCommandP1ShortestPathBoundary", home_source)
+        self.assertIn("candidates.search_quant_projection_p1_shortest_path_ready", home_source)
+        self.assertIn("candidates.search_quant_projection_p1_shortest_path_status", home_source)
+        self.assertIn("candidates.search_quant_projection_p1_shortest_path_summary", home_source)
+        self.assertIn("candidates.search_quant_projection_p1_shortest_path_next_step", home_source)
+        self.assertIn("candidates.search_quant_projection_p1_shortest_path_boundary", home_source)
+        self.assertLess(
+            home_source.index("candidates.search_quant_projection_p1_shortest_path_summary"),
+            home_source.index("candidateQuantP1ShortestPathCheckpoint.ordinary_label"),
+        )
+        self.assertLess(
+            home_source.index("candidates.search_quant_projection_p1_shortest_path_ready"),
+            home_source.index("candidateQuantP1ShortestPathCheckpoint.tushare_first_ledger_ready"),
+        )
         self.assertIn('aria-label="daily command p1 shortest path checkpoint"', home_source)
         self.assertIn("P1 最短路径 checkpoint", home_source)
         self.assertIn("优先读取 CandidateRadar 的 ordinary_p1_shortest_path_checkpoint", home_source)

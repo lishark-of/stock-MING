@@ -17270,11 +17270,10 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_confirmed_task_receipt_row_count"] = summary.get(
         "ordinary_confirmed_task_receipt_row_count", 0
     )
-    counts["search_quant_projection_p1_shortest_path_checkpoint_visible"] = bool(
-        summary.get("ordinary_p1_shortest_path_checkpoint")
-    )
+    p1_shortest_path_checkpoint = _as_dict(summary.get("ordinary_p1_shortest_path_checkpoint"))
+    counts["search_quant_projection_p1_shortest_path_checkpoint_visible"] = bool(p1_shortest_path_checkpoint)
     counts["search_quant_projection_p1_shortest_path_tushare_ready"] = (
-        _as_dict(summary.get("ordinary_p1_shortest_path_checkpoint")).get("tushare_first_ledger_ready") is True
+        p1_shortest_path_checkpoint.get("tushare_first_ledger_ready") is True
     )
     p2_three_surface_checkpoint = _as_dict(summary.get("ordinary_p2_three_surface_checkpoint"))
     counts["search_quant_projection_p2_three_surface_checkpoint_visible"] = bool(p2_three_surface_checkpoint)
@@ -17391,6 +17390,53 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     view["search_quant_projection_confirm_chain_checkpoint"] = confirm_chain_checkpoint
     view["search_quant_projection_confirm_chain_status"] = confirm_chain_checkpoint["status"]
     view["search_quant_projection_confirm_task_written"] = confirm_chain_checkpoint["confirm_task_written"]
+    view["search_quant_projection_p1_shortest_path_ready"] = (
+        p1_shortest_path_checkpoint.get("tushare_first_ledger_ready") is True
+    )
+    view["search_quant_projection_p1_shortest_path_status"] = (
+        p1_shortest_path_checkpoint.get("status") or confirm_chain_checkpoint["status"] or ""
+    )
+    view["search_quant_projection_p1_shortest_path_summary"] = (
+        p1_shortest_path_checkpoint.get("ordinary_label")
+        or confirm_chain_checkpoint.get("ordinary_status")
+        or ""
+    )
+    view["search_quant_projection_p1_shortest_path_next_step"] = (
+        p1_shortest_path_checkpoint.get("next_action")
+        or confirm_chain_checkpoint.get("ordinary_next_step")
+        or ""
+    )
+    view["search_quant_projection_p1_shortest_path_boundary"] = (
+        p1_shortest_path_checkpoint.get("boundary")
+        or "P1 最短路径只读 CandidateRadar cache / call_ledger / packet；只有确认按钮创建 Tushare-first POST task，"
+        "GET cache 和 React render 不创建第二个 task、不补调 provider/model、不交易。"
+    )
+    view["search_quant_projection_p1_provider_call_source"] = (
+        p1_shortest_path_checkpoint.get("provider_call_source")
+        or confirm_chain_checkpoint.get("provider_call_source")
+        or ""
+    )
+    view["search_quant_projection_p1_provider_api_call_count"] = (
+        p1_shortest_path_checkpoint.get("provider_api_call_count")
+        or confirm_chain_checkpoint.get("provider_api_call_count")
+        or 0
+    )
+    view["search_quant_projection_p1_provider_api_success_count"] = (
+        p1_shortest_path_checkpoint.get("provider_api_success_count")
+        or confirm_chain_checkpoint.get("provider_api_success_count")
+        or 0
+    )
+    view["search_quant_projection_p1_confirm_button_creates_task"] = True
+    view["search_quant_projection_p1_search_input_creates_task"] = False
+    view["search_quant_projection_p1_cache_get_external_calls"] = False
+    view["search_quant_projection_p1_react_render_external_calls"] = False
+    view["search_quant_projection_p1_readback_creates_task"] = False
+    view["search_quant_projection_p1_uses_model_output"] = False
+    view["search_quant_projection_p1_deepseek_skipped_until_governed_executor"] = True
+    view["search_quant_projection_p1_contains_secret"] = False
+    view["search_quant_projection_p1_does_not_execute_trades"] = True
+    view["search_quant_projection_p1_does_not_modify_strategy_action"] = True
+    view["search_quant_projection_p1_is_not_trade_signal"] = True
     counts["search_quant_projection_confirm_chain_checkpoint_visible"] = True
     counts["search_quant_projection_confirm_chain_checkpoint_ready"] = (
         confirm_chain_checkpoint["provider_ledger_ready"] is True
@@ -17503,6 +17549,14 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_p1_shortest_path_checkpoint_creates_task"] = False
     policy["search_quant_projection_p1_shortest_path_checkpoint_calls_provider_from_readback"] = False
     policy["search_quant_projection_p1_shortest_path_checkpoint_is_not_trade_signal"] = True
+    policy["search_quant_projection_p1_shortest_path_is_cache_only"] = True
+    policy["search_quant_projection_p1_shortest_path_confirm_button_creates_task"] = True
+    policy["search_quant_projection_p1_shortest_path_search_input_creates_task"] = False
+    policy["search_quant_projection_p1_shortest_path_readback_creates_task"] = False
+    policy["search_quant_projection_p1_shortest_path_cache_get_external_calls"] = False
+    policy["search_quant_projection_p1_shortest_path_react_render_external_calls"] = False
+    policy["search_quant_projection_p1_shortest_path_uses_model_output"] = False
+    policy["search_quant_projection_p1_shortest_path_is_not_trade_signal"] = True
     policy["search_quant_projection_p2_three_surface_checkpoint_is_cache_only"] = True
     policy["search_quant_projection_p2_three_surface_checkpoint_creates_task"] = False
     policy["search_quant_projection_p2_three_surface_checkpoint_calls_provider_from_readback"] = False
