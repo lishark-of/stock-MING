@@ -1116,6 +1116,19 @@ export default function CommandCenterHome() {
     }
   ];
   const nextPayloadLedger = (next.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const dailyCommandNextSessionStatusRaw = String(next.status ?? "");
+  const dailyCommandNextSessionReadableStatus =
+    dailyCommandNextSessionStatusRaw === "ready"
+      ? "完整次日图谱可读"
+      : dailyCommandNextSessionStatusRaw === "candidate_readable_result_replay_chart_pending"
+        ? "P3 结果已接上，完整图谱待生成/刷新"
+        : dailyCommandNextSessionStatusRaw
+          ? `次日图谱状态：${dailyCommandNextSessionStatusRaw}`
+          : "等待次日图谱缓存";
+  const dailyCommandNextSessionTone: MetricItem["tone"] =
+    dailyCommandNextSessionStatusRaw === "ready" || dailyCommandNextSessionStatusRaw === "candidate_readable_result_replay_chart_pending"
+      ? "good"
+      : "warn";
   const serenityPayloadLedger = (serenity.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const chokepointPayloadLedger = (chokepoint.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskCatalogPayloadLedger = (taskCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -1598,7 +1611,7 @@ export default function CommandCenterHome() {
     },
     {
       交接项: "次日图谱",
-      当前状态: String(next.status ?? "等待次日图谱本地缓存"),
+      当前状态: dailyCommandNextSessionReadableStatus,
       用户下一步: "打开次日图谱，复核路径、参考线和 operation_zones",
       入口: "#next",
       边界: "operation_zones 只是复核区间；不是买卖、下单或 strategy action。"
@@ -1999,7 +2012,7 @@ export default function CommandCenterHome() {
   const dailyCommandResultComposition = [
     `候选：${Number(candidateCounts?.candidate_count ?? 0) ? String(candidateCounts?.candidate_count) : "等待缓存"}`,
     `量化：${String(factor.status ?? factor.mode ?? "等待缓存")}`,
-    `次日图谱：${String(next.status ?? "等待缓存")}`,
+    `次日图谱：${dailyCommandNextSessionReadableStatus}`,
     `风险：${String(riskCounts?.active_risk_count ?? riskCounts?.risk_count ?? 0)} 项`
   ].join(" / ");
   const dailyCommandResultLocation =
@@ -2031,7 +2044,7 @@ export default function CommandCenterHome() {
         },
         {
           结果入口: "次日图谱",
-          当前状态: String(next.status ?? "等待次日图谱缓存"),
+          当前状态: dailyCommandNextSessionReadableStatus,
           用户下一步: "按路径、参考线、operation_zones 和缺少证据顺序复核",
           入口: "#next",
           边界: "只读跳转到次日图谱模块；不创建生成任务、不调用 Tushare/DeepSeek、不下单"
@@ -2132,7 +2145,7 @@ export default function CommandCenterHome() {
     { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
     { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
     { label: "今日结果组成", value: dailyCommandResultComposition },
-    { label: "次日图谱", value: String(next.status ?? "等待缓存"), tone: next.status === "ready" ? "good" : "warn" },
+    { label: "次日图谱", value: dailyCommandNextSessionReadableStatus, tone: dailyCommandNextSessionTone },
     { label: "P2 边界", value: dailyCommandSmallDataWritebackBoundary, tone: "good" },
     { label: "P3 下一步", value: dailyCommandExplainableResultNext },
     { label: "P3 边界", value: dailyCommandExplainableResultBoundary, tone: "good" },
