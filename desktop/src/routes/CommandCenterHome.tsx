@@ -1107,6 +1107,42 @@ export default function CommandCenterHome() {
     : "P0 check：先让 health、bootstrap status、desktop preflight cache 变绿；未 ready 不进入 P1";
   const dailyCommandP0LocalReadinessBoundary =
     "P0 ready 只证明本地前后端联通；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。";
+  const dailyCommandOpenFastApiProofItems: MetricItem[] = [
+    {
+      label: "FastAPI health",
+      value: dailyCommandHealthOk ? "已接上：health ok，启动不外联" : "等待本地 health",
+      tone: dailyCommandHealthOk && health.external_calls_on_startup !== true ? "good" : "warn"
+    },
+    {
+      label: "运行模式",
+      value: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet"
+        ? `已回读：${dailyCommandRuntimeModeLabel}`
+        : "等待 bootstrap runtime-mode packet",
+      tone: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "good" : "warn"
+    },
+    {
+      label: "一键预检",
+      value: desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache"
+        ? "已回读：desktop preflight 一键启动 packet"
+        : "等待 desktop preflight packet",
+      tone: desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache" ? "good" : "warn"
+    },
+    {
+      label: "当前页面",
+      value: "React 页面已加载；只读 GET 回读中",
+      tone: "good"
+    },
+    {
+      label: "继续入口",
+      value: dailyCommandP0LocalReadinessReady ? "可以确认股票代码" : "先看一键启动预检",
+      tone: dailyCommandP0LocalReadinessReady ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只显示本地 GET 回读；不启动服务、不创建 task、不调用 Tushare/DeepSeek",
+      tone: "good"
+    }
+  ];
   const bootstrapPolicy = (bootstrapStatus.policy as Record<string, unknown> | undefined) ?? {};
   const homeP1ManualConfirmReady =
     bootstrapPolicy.search_quant_projection_manual_confirm_button_runtime_ready === true &&
@@ -1862,6 +1898,11 @@ export default function CommandCenterHome() {
             { label: "安全边界", value: "打开页面和输入代码不外联；确认按钮才触发 Tushare-first", tone: "good" }
           ]}
         />
+        <div aria-label="daily command local fastapi open proof">
+          <h3>打开后接线证明</h3>
+          <MetricGrid items={dailyCommandOpenFastApiProofItems} />
+          <p className="risk-note">这条证明只合成当前页面已拿到的 health、bootstrap、desktop preflight 和 React 状态；它不启动 FastAPI/Vite、不创建 task、不调用 Tushare/DeepSeek/GitHub，也不读取或展示 token/key。</p>
+        </div>
         <div className="actions" aria-label="daily command fastapi connected user actions">
           <a href={dailyCommandPrimaryActionHref} aria-label="open primary action after local fastapi connection">{dailyCommandPrimaryActionLabel}</a>
           <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after local fastapi connection">查看任务进度</a>

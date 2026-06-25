@@ -315,10 +315,14 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("打开软件后先看这张卡", card)
         self.assertIn('label: "本地后端"', card)
         self.assertIn("dailyCommandFrontendBackendAutoLinkLabel", card)
+        self.assertIn("dailyCommandOpenFastApiProofItems", card)
+        self.assertIn('aria-label="daily command local fastapi open proof"', card)
+        open_proof_start = card.index('aria-label="daily command local fastapi open proof"')
         technical_detail_start = card.index(
             '<details className="developer-audit-details" aria-label="daily command local fastapi technical connection details">'
         )
         ordinary_connection_slice = card[:technical_detail_start]
+        open_proof_slice = card[open_proof_start:technical_detail_start]
         technical_detail_slice = card[technical_detail_start:]
         self.assertNotIn('label: "接线地址"', ordinary_connection_slice)
         self.assertNotIn('label: "候选地址"', ordinary_connection_slice)
@@ -338,6 +342,21 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("去下一票雷达确认输入区输入代码并确认", card)
         self.assertIn('label: "安全边界"', card)
         self.assertIn("打开页面和输入代码不外联；确认按钮才触发 Tushare-first", card)
+        self.assertIn("打开后接线证明", open_proof_slice)
+        self.assertIn("MetricGrid items={dailyCommandOpenFastApiProofItems}", open_proof_slice)
+        self.assertIn('label: "FastAPI health"', source)
+        self.assertIn("已接上：health ok，启动不外联", source)
+        self.assertIn('label: "运行模式"', source)
+        self.assertIn("等待 bootstrap runtime-mode packet", source)
+        self.assertIn('label: "一键预检"', source)
+        self.assertIn("已回读：desktop preflight 一键启动 packet", source)
+        self.assertIn('label: "当前页面"', source)
+        self.assertIn("React 页面已加载；只读 GET 回读中", source)
+        self.assertIn('label: "继续入口"', source)
+        self.assertIn("可以确认股票代码", source)
+        self.assertIn("这条证明只合成当前页面已拿到的 health、bootstrap、desktop preflight 和 React 状态", open_proof_slice)
+        self.assertIn("不启动 FastAPI/Vite、不创建 task、不调用 Tushare/DeepSeek/GitHub", open_proof_slice)
+        self.assertIn("不读取或展示 token/key", open_proof_slice)
         self.assertIn('aria-label="daily command fastapi connected user actions"', card)
         self.assertIn('href={dailyCommandPrimaryActionHref}', card)
         self.assertIn('href="#tasks"', card)
