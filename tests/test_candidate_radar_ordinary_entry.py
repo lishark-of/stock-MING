@@ -160,6 +160,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         p2_quick_status_index = self.page.index('aria-label="candidate radar p2 three surface quick status"')
         p3_first_screen_index = self.page.index('aria-label="candidate radar p3 first screen result quick read"')
         p3_first_screen_slice = self.page[p3_first_screen_index:p0_diagnostics_index]
+        self.assertIn('aria-label="candidate radar p3 one minute decision brief"', p3_first_screen_slice)
+        self.assertIn("P3 一分钟决策速读", p3_first_screen_slice)
+        self.assertIn("ordinary_result_decision_brief_rows", p3_first_screen_slice)
+        self.assertIn("先看结论、再看来源、最后看下一步和边界", p3_first_screen_slice)
+        self.assertIn("rows={quantProjectionP3DecisionBriefRows}", p3_first_screen_slice)
         self.assertIn("rows={quantProjectionOrdinaryResultQuickRows}", p3_first_screen_slice)
         self.assertIn("现在能读什么、结果从哪里来、还缺什么", p3_first_screen_slice)
         self.assertLess(p0_gate_index, p0_handoff_index)

@@ -1017,6 +1017,10 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             interpretation["ordinary_result_quick_read_rows"],
         )
         self.assertEqual(
+            packet["ordinary_result_decision_brief_rows"],
+            interpretation["ordinary_result_decision_brief_rows"],
+        )
+        self.assertEqual(
             packet["ordinary_result_handoff_rows"],
             interpretation["ordinary_result_handoff_rows"],
         )
@@ -1045,11 +1049,13 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             interpretation["ordinary_result_checkpoint_rows"],
         )
         self.assertEqual(packet["ordinary_result_quick_read_row_count"], 4)
+        self.assertEqual(packet["ordinary_result_decision_brief_row_count"], 3)
         self.assertEqual(packet["ordinary_result_handoff_row_count"], 4)
         self.assertEqual(packet["ordinary_result_readback_row_count"], 4)
         self.assertEqual(packet["ordinary_result_action_row_count"], 4)
         self.assertEqual(packet["ordinary_result_checkpoint_row_count"], 4)
         self.assertEqual(packet["counts"]["ordinary_result_quick_read_row_count"], 4)
+        self.assertEqual(packet["counts"]["ordinary_result_decision_brief_row_count"], 3)
         self.assertEqual(packet["counts"]["ordinary_result_handoff_row_count"], 4)
         self.assertEqual(packet["counts"]["ordinary_result_readback_row_count"], 4)
         self.assertEqual(packet["counts"]["ordinary_result_action_row_count"], 4)
@@ -1059,6 +1065,28 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["policy"]["ordinary_result_quick_read_rows_call_model"])
         self.assertFalse(packet["policy"]["ordinary_result_quick_read_rows_use_model_output"])
         self.assertTrue(packet["policy"]["ordinary_result_quick_read_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["ordinary_result_decision_brief_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["ordinary_result_decision_brief_rows_create_task"])
+        self.assertFalse(packet["policy"]["ordinary_result_decision_brief_rows_call_model"])
+        self.assertFalse(packet["policy"]["ordinary_result_decision_brief_rows_use_model_output"])
+        self.assertTrue(packet["policy"]["ordinary_result_decision_brief_rows_are_not_trade_signals"])
+        decision_brief_rows = {row["brief_key"]: row for row in interpretation["ordinary_result_decision_brief_rows"]}
+        self.assertEqual(
+            set(decision_brief_rows),
+            {"one_minute_conclusion", "one_minute_source", "one_minute_action_boundary"},
+        )
+        self.assertIn("Tushare-first 账本已回放 4/4 个接口", decision_brief_rows["one_minute_conclusion"]["当前状态"])
+        self.assertIn("cache / call_ledger / packet", decision_brief_rows["one_minute_source"]["证据"])
+        self.assertIn("不下单、不改 strategy action", decision_brief_rows["one_minute_action_boundary"]["边界"])
+        for brief_row in decision_brief_rows.values():
+            self.assertTrue(brief_row["cache_only_readback"])
+            self.assertFalse(brief_row["creates_task_from_readback"])
+            self.assertFalse(brief_row["external_calls_triggered"])
+            self.assertFalse(brief_row["uses_deepseek_output"])
+            self.assertFalse(brief_row["model_output_used"])
+            self.assertFalse(brief_row["contains_secret"])
+            self.assertTrue(brief_row["does_not_execute_trades"])
+            self.assertTrue(brief_row["does_not_modify_strategy_action"])
         self.assertTrue(packet["policy"]["ordinary_result_handoff_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["ordinary_result_handoff_rows_create_task"])
         self.assertFalse(packet["policy"]["ordinary_result_handoff_rows_call_model"])

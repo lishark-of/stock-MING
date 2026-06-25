@@ -17529,6 +17529,65 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "candidate_is_not_buy_instruction": True,
         },
     ]
+    ordinary_result_decision_brief_rows = [
+        {
+            "brief_key": "one_minute_conclusion",
+            "读法": "1. 先看结论",
+            "当前状态": ordinary_result_summary,
+            "用户下一步": ordinary_result_next_step,
+            "证据": ordinary_result_evidence,
+            "边界": ordinary_result_boundary,
+            "readback_source": "search_quant_projection_interpretation_summary",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "brief_key": "one_minute_source",
+            "读法": "2. 再看来源",
+            "当前状态": data_source_label,
+            "用户下一步": result_replay_label,
+            "证据": "cache / call_ledger / packet",
+            "边界": "来源只读回放；GET cache 和 React render 不补调 provider/model。",
+            "readback_source": "cache / call_ledger / packet",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "brief_key": "one_minute_action_boundary",
+            "读法": "3. 最后定动作",
+            "当前状态": f"待补证据：{missing_evidence_label}",
+            "用户下一步": next_action,
+            "证据": f"missing_evidence_count={len(missing_evidence)}",
+            "边界": "只作为研究线索；不下单、不改 strategy action，DeepSeek 单独等 governed executor。",
+            "readback_source": "ordinary_result_checkpoint_contract",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     ordinary_model_governance_rows = [
         {
             "governance_item": "executor_gate",
@@ -18273,6 +18332,12 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_quick_read_rows_create_task": False,
         "ordinary_result_quick_read_rows_use_model_output": False,
         "ordinary_result_quick_read_rows_are_not_trade_signals": True,
+        "ordinary_result_decision_brief_rows": ordinary_result_decision_brief_rows,
+        "ordinary_result_decision_brief_row_count": len(ordinary_result_decision_brief_rows),
+        "ordinary_result_decision_brief_rows_are_cache_only": True,
+        "ordinary_result_decision_brief_rows_create_task": False,
+        "ordinary_result_decision_brief_rows_use_model_output": False,
+        "ordinary_result_decision_brief_rows_are_not_trade_signals": True,
         "ordinary_model_governance_rows": ordinary_model_governance_rows,
         "ordinary_model_governance_row_count": len(ordinary_model_governance_rows),
         "ordinary_model_governance_rows_are_cache_only": True,
@@ -18405,6 +18470,9 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     ordinary_result_checkpoint_rows = [
         row for row in _as_list(summary.get("ordinary_result_checkpoint_rows")) if isinstance(row, dict)
     ]
+    ordinary_result_decision_brief_rows = [
+        row for row in _as_list(summary.get("ordinary_result_decision_brief_rows")) if isinstance(row, dict)
+    ]
     view["ordinary_result_status"] = summary.get("ordinary_result_status")
     view["ordinary_result_summary"] = summary.get("ordinary_result_summary")
     view["ordinary_result_next_step"] = summary.get("ordinary_result_next_step")
@@ -18419,14 +18487,17 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["ordinary_result_readback_rows"] = ordinary_result_readback_rows
     view["ordinary_result_action_rows"] = ordinary_result_action_rows
     view["ordinary_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
+    view["ordinary_result_decision_brief_rows"] = ordinary_result_decision_brief_rows
     view["search_quant_projection_result_quick_read_rows"] = ordinary_result_quick_read_rows
     view["search_quant_projection_result_handoff_rows"] = ordinary_result_handoff_rows
     view["search_quant_projection_result_action_rows"] = ordinary_result_action_rows
+    view["search_quant_projection_result_decision_brief_rows"] = ordinary_result_decision_brief_rows
     view["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
     view["ordinary_result_handoff_row_count"] = len(ordinary_result_handoff_rows)
     view["ordinary_result_readback_row_count"] = len(ordinary_result_readback_rows)
     view["ordinary_result_action_row_count"] = len(ordinary_result_action_rows)
     view["ordinary_result_checkpoint_row_count"] = len(ordinary_result_checkpoint_rows)
+    view["ordinary_result_decision_brief_row_count"] = len(ordinary_result_decision_brief_rows)
     view["search_quant_projection_result_checkpoint"] = result_checkpoint
     view["search_quant_projection_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
     counts["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
@@ -18434,6 +18505,7 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["ordinary_result_readback_row_count"] = len(ordinary_result_readback_rows)
     counts["ordinary_result_action_row_count"] = len(ordinary_result_action_rows)
     counts["ordinary_result_checkpoint_row_count"] = len(ordinary_result_checkpoint_rows)
+    counts["ordinary_result_decision_brief_row_count"] = len(ordinary_result_decision_brief_rows)
     counts["search_quant_projection_result_checkpoint_missing_evidence_count"] = result_checkpoint.get(
         "missing_evidence_count",
         0,
@@ -18491,6 +18563,11 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["ordinary_result_quick_read_rows_call_model"] = False
     policy["ordinary_result_quick_read_rows_use_model_output"] = False
     policy["ordinary_result_quick_read_rows_are_not_trade_signals"] = True
+    policy["ordinary_result_decision_brief_rows_are_cache_only"] = True
+    policy["ordinary_result_decision_brief_rows_create_task"] = False
+    policy["ordinary_result_decision_brief_rows_call_model"] = False
+    policy["ordinary_result_decision_brief_rows_use_model_output"] = False
+    policy["ordinary_result_decision_brief_rows_are_not_trade_signals"] = True
     policy["ordinary_result_handoff_rows_are_cache_only"] = True
     policy["ordinary_result_handoff_rows_create_task"] = False
     policy["ordinary_result_handoff_rows_call_model"] = False

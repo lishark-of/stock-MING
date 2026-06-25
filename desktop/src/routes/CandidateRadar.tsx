@@ -1244,6 +1244,17 @@ export default function CandidateRadar() {
     证据: displayText(row["证据"] ?? row.evidence, quantProjectionOrdinaryResultEvidence),
     边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
   }));
+  const quantProjectionOrdinaryResultDecisionBriefPacketRows = rows(
+    cache.ordinary_result_decision_brief_rows ??
+    cache.search_quant_projection_result_decision_brief_rows ??
+    searchQuantProjectionInterpretation.ordinary_result_decision_brief_rows
+  ).map((row) => ({
+    读法: displayText(row["读法"] ?? row.brief_key),
+    当前状态: displayText(row["当前状态"] ?? row.ordinary_label ?? row.status, quantProjectionOrdinaryResultSummary),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionOrdinaryResultNext),
+    证据: displayText(row["证据"] ?? row.evidence, quantProjectionOrdinaryResultEvidence),
+    边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
+  }));
   const quantProjectionOrdinaryResultHandoffRows = rows(
     cache.ordinary_result_handoff_rows ?? searchQuantProjectionInterpretation.ordinary_result_handoff_rows
   ).map((row) => ({
@@ -1321,6 +1332,31 @@ export default function CandidateRadar() {
           用户下一步: quantProjectionInterpretationNext,
           证据: "local_evidence_gap_summary",
           边界: "缺口不是买卖指令；DeepSeek governed executor 单独补"
+        }
+      ];
+  const quantProjectionP3DecisionBriefRows = quantProjectionOrdinaryResultDecisionBriefPacketRows.length
+    ? quantProjectionOrdinaryResultDecisionBriefPacketRows
+    : [
+        {
+          读法: "1. 先看结论",
+          当前状态: quantProjectionOrdinaryResultSummary,
+          用户下一步: quantProjectionOrdinaryResultNext,
+          证据: quantProjectionOrdinaryResultEvidence,
+          边界: quantProjectionOrdinaryResultBoundary
+        },
+        {
+          读法: "2. 再看来源",
+          当前状态: quantProjectionInterpretationReplay,
+          用户下一步: "只读查看本地 cache / ledger / packet",
+          证据: "cache / call_ledger / packet",
+          边界: "来源只读回放；GET cache 和 React render 不补调 provider/model。"
+        },
+        {
+          读法: "3. 最后定动作",
+          当前状态: `missing_evidence_count=${String(searchQuantProjectionResultCheckpoint.missing_evidence_count ?? searchQuantProjectionInterpretation.missing_evidence_count ?? 0)}`,
+          用户下一步: quantProjectionInterpretationNext,
+          证据: "local_evidence_gap_summary",
+          边界: "只作为研究线索；不下单、不改 strategy action，DeepSeek 单独等 governed executor。"
         }
       ];
   const quantProjectionModelGovernanceRows = rows(searchQuantProjectionInterpretation.ordinary_model_governance_rows).map((row) => ({
@@ -2617,6 +2653,11 @@ export default function CandidateRadar() {
         <div aria-label="candidate radar p3 first screen result quick read">
           <h3>P3 结果首屏速读</h3>
           <p className="risk-note">P2 三面之后直接看这里：可读结论、来源、下一步和安全边界都来自本地 cache / ledger / packet；本速读不创建 task、不调用 DeepSeek、不生成交易动作。</p>
+          <div aria-label="candidate radar p3 one minute decision brief">
+            <h3>P3 一分钟决策速读</h3>
+            <p className="risk-note">优先读取服务端 ordinary_result_decision_brief_rows：先看结论、再看来源、最后看下一步和边界；这张表只读本地证据，不创建 task。</p>
+            <DataLineageTable rows={quantProjectionP3DecisionBriefRows} />
+          </div>
           <MetricGrid items={quantProjectionP3ResultSummaryItems} />
           <p className="risk-note">首屏直接回放服务端 ordinary_result_quick_read_rows：现在能读什么、结果从哪里来、还缺什么都只来自本地 cache / ledger / packet。</p>
           <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
