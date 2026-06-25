@@ -296,6 +296,33 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "ordinary_output_contract_calls_model": False,
         "ordinary_output_contract_is_production_evidence": False,
     }
+    ordinary_one_screen_summary = {
+        "schema_version": "deepseek_governed_executor_one_screen_summary.v1",
+        "status": "real_call_allowed_governed_executor_ready"
+        if real_call_allowed_now
+        else "real_call_blocked_basic_research_nonblocking",
+        "headline": "DeepSeek 已满足受控调用闸门"
+        if real_call_allowed_now
+        else "DeepSeek 暂不调用，Tushare-first 和基础图谱可继续",
+        "current_state": governed_executor["ordinary_status_label"],
+        "next_action": governed_executor["ordinary_next_allowed_action"],
+        "required_before_real_call": governed_executor["ordinary_required_before_real_call"],
+        "basic_research_boundary": "P1 Tushare-first、P2 小数据写入和 P3 基础图谱不等待 DeepSeek；P5 单独补 governed executor。",
+        "safe_output_fields": list(SAFE_EXPLANATION_FIELDS),
+        "forbidden_output_targets": list(FORBIDDEN_OUTPUT_TARGETS),
+        "real_call_allowed_now": real_call_allowed_now,
+        "real_call_blocker_count": len(real_call_blockers),
+        "cache_only_readback": True,
+        "creates_task": False,
+        "calls_model": False,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+        "deepseek_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "is_production_evidence": False,
+    }
+    governed_executor["ordinary_one_screen_summary"] = ordinary_one_screen_summary
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -307,6 +334,7 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "loaded_at": loaded_at,
         "summary": "DeepSeek 模型策略只读展示；模型名来自 DEEPSEEK_*_MODEL 配置或集中默认值，不在调用点硬编码。",
         "governed_executor": governed_executor,
+        "ordinary_one_screen_summary": ordinary_one_screen_summary,
         "model_rows": rows,
         "purpose_groups": {
             "explain_grade": explain_purposes,

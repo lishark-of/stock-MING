@@ -66,6 +66,10 @@ export default function ModelStrategy() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const groups = (cache.purpose_groups as Record<string, unknown> | undefined) ?? {};
   const governedExecutor = (cache.governed_executor as Record<string, unknown> | undefined) ?? {};
+  const governedExecutorOneScreenSummary =
+    (cache.ordinary_one_screen_summary as Record<string, unknown> | undefined) ??
+    (governedExecutor.ordinary_one_screen_summary as Record<string, unknown> | undefined) ??
+    {};
   const governedExecutorScopeHash = String(governedExecutor.provider_benchmark_scope_hash ?? "");
   const governedExecutorScopeHashReady =
     governedExecutor.provider_benchmark_scope_ticket_ready === true &&
@@ -365,6 +369,14 @@ export default function ModelStrategy() {
     { label: "cache envelope ledger", value: cacheCallLedger.length },
     { label: "cache warnings", value: cacheWarnings.length }
   ];
+  const governedExecutorOneScreenItems = [
+    { label: "当前结论", value: String(governedExecutorOneScreenSummary.headline ?? "DeepSeek 暂不调用，基础投研可继续"), tone: governedExecutorOneScreenSummary.real_call_allowed_now === true ? ("good" as const) : ("warn" as const) },
+    { label: "当前状态", value: String(governedExecutorOneScreenSummary.current_state ?? governedExecutor.ordinary_status_label ?? "等待 governed executor"), tone: "warn" as const },
+    { label: "下一步", value: String(governedExecutorOneScreenSummary.next_action ?? governedExecutor.ordinary_next_allowed_action ?? "先继续 P1/P2/P3 本地回放；P5 单独补证。"), tone: "good" as const },
+    { label: "真实调用", value: governedExecutorOneScreenSummary.real_call_allowed_now === true ? "已放行" : `未放行：${String(governedExecutorOneScreenSummary.real_call_blocker_count ?? governedExecutor.real_call_blocker_count ?? 0)} 项 blocker`, tone: governedExecutorOneScreenSummary.real_call_allowed_now === true ? ("good" as const) : ("warn" as const) },
+    { label: "基础路径", value: String(governedExecutorOneScreenSummary.basic_research_boundary ?? "Tushare-first / Factor light / Next Session 可先走"), tone: "good" as const },
+    { label: "边界", value: "cache-only 摘要；不创建 task、不调用 DeepSeek、不含 token/key、不是 production evidence", tone: "good" as const }
+  ];
 
   return (
     <>
@@ -385,6 +397,11 @@ export default function ModelStrategy() {
       <div className="grid">
         <PacketCard title="普通用户 DeepSeek 状态" subtitle="P5 governed executor；真实模型调用单独补，不阻塞 Tushare-first 和基础图谱" status={String(governedExecutor.status ?? "pending")}>
           <p>{String(governedExecutor.ordinary_status_label ?? "DeepSeek 等 governed executor；Tushare-first 和基础图谱可先走。")}</p>
+          <div aria-label="deepseek governed executor one screen summary">
+            <h3>P5 一屏结论</h3>
+            <MetricGrid items={governedExecutorOneScreenItems} />
+            <p className="risk-note">这张一屏结论来自 GET /api/model-strategy/cache 的 ordinary_one_screen_summary；只读、不创建 task、不调用模型、不展示 token/key，也不作为 production evidence。</p>
+          </div>
           <MetricGrid
             items={[
               { label: "下一步", value: String(governedExecutor.ordinary_next_allowed_action ?? "先继续 Tushare-first、Factor light 和 Next Session 本地回放；DeepSeek 单独验收。") },
