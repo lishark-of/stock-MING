@@ -598,7 +598,8 @@ export default function CommandCenterHome() {
       "可解释结果只从本地 cache / ledger / packet 回放；不会从结果回放卡创建 task、调用模型或生成交易动作。"
   );
   const dailyCommandConfirmedSymbol = String(
-    candidateQuantReceipt.symbol ??
+    candidates.search_quant_projection_latest_confirmed_symbol ??
+      candidateQuantReceipt.symbol ??
       candidateQuantSmallDataWriteback.symbol ??
       candidateQuantInterpretation.symbol ??
       ""

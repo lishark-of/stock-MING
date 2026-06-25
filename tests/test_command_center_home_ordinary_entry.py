@@ -75,6 +75,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("dailyCommandP2P3ReplayChecklistRows", source)
         self.assertIn("candidateQuantResultCheckpoint", source)
         self.assertIn("candidates.search_quant_projection_result_checkpoint", source)
+        self.assertIn("candidates.search_quant_projection_latest_confirmed_symbol", source)
         self.assertIn("candidates.ordinary_result_quick_read_rows", source)
         self.assertIn("candidateQuantDecisionBriefRows", source)
         self.assertIn("candidates.ordinary_result_decision_brief_rows", source)
