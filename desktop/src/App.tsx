@@ -106,6 +106,13 @@ function routeFromHash(): RouteKey | null {
   return normalizeRouteKey(window.location.hash);
 }
 
+function routeAnchorFromHash(): string {
+  if (typeof window === "undefined") return "";
+  const cleaned = window.location.hash.trim().replace(/^#\/?/, "");
+  const parts = cleaned.split("/");
+  return parts.length > 1 ? parts.slice(1).join("/").split("?")[0] : "";
+}
+
 function routeFromStorage(): RouteKey | null {
   if (typeof window === "undefined") return null;
   try {
@@ -140,6 +147,23 @@ export default function App() {
   useEffect(() => {
     persistRoute(route);
   }, [route]);
+
+  useEffect(() => {
+    const anchor = routeAnchorFromHash();
+    if (!anchor) return;
+    let cancelled = false;
+    const scrollToAnchor = () => {
+      if (cancelled) return;
+      document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+    };
+    const raf = window.requestAnimationFrame(scrollToAnchor);
+    const timer = window.setTimeout(scrollToAnchor, 120);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+  }, [route, localFastapiRefreshNonce]);
 
   useEffect(() => {
     const onHashChange = () => {
