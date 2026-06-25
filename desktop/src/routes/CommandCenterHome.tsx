@@ -1208,6 +1208,58 @@ export default function CommandCenterHome() {
           边界: "只读跳转到次日图谱模块；不创建生成任务、不调用 Tushare/DeepSeek、不下单"
         }
       ];
+  const dailyCommandResearchWorkflowReady =
+    dailyCommandP0LocalReadinessReady &&
+    Boolean(dailyCommandConfirmedSymbol) &&
+    candidateQuantSmallDataWriteback.small_data_writeback_ready === true &&
+    dailyCommandP3OneGlanceReadable;
+  const dailyCommandResearchWorkflowStatus = dailyCommandResearchWorkflowReady
+    ? "p0_p3_replay_ready"
+    : dailyCommandP0LocalReadinessReady
+      ? "ready_for_p1_confirm"
+      : "p0_check_required";
+  const dailyCommandResearchWorkflowNext = dailyCommandResearchWorkflowReady
+    ? "直接看 P3 结果速读，再切到股票量化推演和次日图谱复核"
+    : dailyCommandP0LocalReadinessReady
+      ? "进入下一票雷达输入股票代码，并点击确认按钮创建 Tushare-first task"
+      : "先恢复 FastAPI、bootstrap、desktop preflight 和 React 四段联通";
+  const dailyCommandResearchWorkflowRows = [
+    {
+      链路段: "P0 本地联通",
+      当前状态: dailyCommandP0LocalReadinessReady ? "ready：本地四段已接上" : "check：先恢复本地四段",
+      用户下一步: dailyCommandP0LocalReadinessReady ? "可以进入下一票雷达" : "打开桌面壳预检恢复本地后端/前端",
+      证据: "health + bootstrap packet + desktop preflight packet + current React page",
+      边界: "P0 只证明本地可用；不代表 Tushare/DeepSeek 已调用，也不是 14 LTG 完成。"
+    },
+    {
+      链路段: "P1 确认按钮",
+      当前状态: dailyCommandLatestTaskId ? `已看到最近任务：${dailyCommandLatestTaskStatus}` : "等待用户确认股票代码",
+      用户下一步: dailyCommandLatestTaskId ? "按任务状态和回放结果继续复核" : "只在下一票雷达点击确认按钮；输入本身保持静默",
+      证据: dailyCommandLatestTaskId || "CandidateRadar confirm button contract",
+      边界: "首页只读回放；不会从首页创建第二个 task。"
+    },
+    {
+      链路段: "P2 小数据三面",
+      当前状态: dailyCommandSmallDataWritebackState,
+      用户下一步: "确认 cache、call_ledger、packet 三面都能回放",
+      证据: "search_quant_projection_small_data_writeback_summary",
+      边界: dailyCommandSmallDataWritebackBoundary
+    },
+    {
+      链路段: "P3 可解释结果",
+      当前状态: dailyCommandExplainableResultLabel,
+      用户下一步: dailyCommandExplainableResultNext,
+      证据: dailyCommandP3OneGlanceEvidence,
+      边界: dailyCommandExplainableResultBoundary
+    },
+    {
+      链路段: "P5 DeepSeek",
+      当前状态: dailyCommandP3OneGlanceModelState,
+      用户下一步: "先使用 Tushare-first、小数据和基础图谱；DeepSeek 后续单独补证",
+      证据: "search_quant_projection_interpretation_summary",
+      边界: dailyCommandDeepSeekGovernanceBoundary
+    }
+  ];
 
   const launchLiveBootstrap = () => {
     const mode = String(bootstrapStatus.mode ?? "cache_only");
@@ -1296,6 +1348,26 @@ export default function CommandCenterHome() {
           <a href="#candidates" title="切换到下一票雷达；输入仍保持静默，确认按钮才创建 Tushare-first task" aria-label="open candidate radar from p0 usable card">下一票雷达</a>
         </div>
         <p className="risk-note">P0 ready 只说明本机前后端已接上；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。</p>
+      </PacketCard>
+      <PacketCard title="当前可用投研链路" subtitle="当前标的、P1 确认、P2 三面、P3 结论和下一步" status={dailyCommandResearchWorkflowStatus}>
+        <MetricGrid
+          items={[
+            { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
+            { label: "P1 任务", value: dailyCommandLatestTaskId ? `${dailyCommandLatestTaskStatus}: ${dailyCommandLatestTaskId}` : "等待确认按钮", tone: dailyCommandLatestTaskId ? "good" : "warn" },
+            { label: "P2 三面", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+            { label: "P3 结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+            { label: "下一步", value: dailyCommandResearchWorkflowNext },
+            { label: "DeepSeek", value: dailyCommandP3OneGlanceModelState, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
+            { label: "边界", value: "首页只读 CandidateRadar cache / ledger / packet；不创建 task、不调用 provider/model、不交易", tone: "good" }
+          ]}
+        />
+        <DataLineageTable rows={dailyCommandResearchWorkflowRows} />
+        <div className="actions" aria-label="daily command current research workflow actions">
+          <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入代码后仍需确认按钮" aria-label="open candidate radar confirm from current research workflow">确认或换一只票</a>
+          <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from current research workflow">股票量化推演</a>
+          <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session replay from current research workflow">次日图谱</a>
+        </div>
+        <p className="risk-note">这张卡把 P1/P2/P3 放到首页前排：页面打开和搜索输入不外联；只有下一票雷达确认按钮可以创建 Tushare-first POST task，DeepSeek governed executor 单独补。</p>
       </PacketCard>
       <PacketCard title="最近本地任务" subtitle="打开软件后直接看进度；只读回放 task/cache/ledger/packet" status={dailyCommandLatestTaskStatus}>
         <MetricGrid

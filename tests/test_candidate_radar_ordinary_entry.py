@@ -523,6 +523,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
                     self.assertIn("dailyCommandLatestTaskIsReplay = dailyCommandLatestTask.cache_replay_only === true || Boolean(dailyCommandCandidateLatestTaskId && !dailyCommandLatestTask.task_id)", text)
                     self.assertIn("dailyCommandLatestTaskId && !dailyCommandLatestTaskIsReplay ? <TaskStatusPanel taskId={dailyCommandLatestTaskId} /> : null", text)
                     self.assertIn("最近任务来自 CandidateRadar cache 只读回放，不启动 TaskStatusPanel 轮询", text)
+                    self.assertIn('title="当前可用投研链路"', text)
+                    self.assertIn("dailyCommandResearchWorkflowRows", text)
+                    self.assertIn("当前标的、P1 确认、P2 三面、P3 结论和下一步", text)
+                    self.assertIn("首页只读 CandidateRadar cache / ledger / packet；不创建 task、不调用 provider/model、不交易", text)
+                    self.assertLess(
+                        text.index('title="当前可用投研链路"'),
+                        text.index('title="今日作战台摘要"'),
+                    )
                     self.assertIn('aria-label="daily command usable shortest path"', text)
                     self.assertIn("使用者可用化最短路径", text)
                     self.assertIn("当前执行目标是 Command Center 3.0 使用者可用化最短路径，不是 14 LTG strict closeout 完成声明", text)
