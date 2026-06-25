@@ -3692,26 +3692,86 @@ def _persistable_next_session_packet(packet: dict[str, Any]) -> bool:
     return packet.get("packet_key") == "command_center_next_session_projection_packet" and packet.get("status") != "cache_missing"
 
 
-def _local_exact_next_session_sample_packet(now: str) -> dict[str, Any]:
+def _local_exact_next_session_sample_packet(
+    now: str,
+    *,
+    symbol: str = "",
+    source_task_id: str = "",
+) -> dict[str, Any]:
+    symbol_safe = _safe_text(symbol, limit=32).upper()
+    source_task_id_safe = _safe_text(source_task_id, limit=128)
+    chart_payload = {
+        "status": "ready",
+        "source_packet": "command_center_next_session_projection_packet",
+        "symbol": symbol_safe,
+        "ts_code": symbol_safe,
+        "confirmed_symbol": symbol_safe,
+        "source_task_id": source_task_id_safe,
+        "is_exact_next_session_packet": True,
+        "uses_real_daily_close": False,
+        "historical_source_label": "button_gated_local_preview_no_provider",
+        "future_source_label": "button_gated_local_preview_scenarios",
+        "historical_points": [
+            {"x": "2026-06-08", "price": 10.0, "source": "button_gated_local_preview"},
+            {"x": "2026-06-09", "price": 10.4, "source": "button_gated_local_preview"},
+        ],
+        "scenario_series": [
+            {
+                "scenario_key": "neutral",
+                "scenario_name": "中性路径",
+                "trigger_condition": "放量但不追高",
+                "risk_note": "本地预览只用于复核图谱结构，不能替代 provider-backed daily close。",
+                "points": [
+                    {"x": "T0", "price": 10.4, "source": "button_gated_local_preview"},
+                    {"x": "T+1_close", "price": 10.8, "source": "button_gated_local_preview"},
+                ],
+            }
+        ],
+        "reference_lines": [
+            {"key": "current", "label": "当前价参考", "value": 10.4, "tone": "blue"},
+            {"key": "support", "label": "支撑参考", "value": 9.9, "tone": "green"},
+            {"key": "resistance", "label": "压力参考", "value": 11.0, "tone": "red"},
+        ],
+        "operation_zones": [
+            {
+                "zone_key": "reduce_watch_zone",
+                "zone_name": "止盈/减仓观察区",
+                "price_range": [10.9, 11.3],
+                "action_mode": "condition_only",
+                "guardrail": "只读条件区间，不生成买卖指令、不改 operation_zones。",
+            }
+        ],
+        "y_axis_range": [9.0, 12.0],
+        "deepseek_status": "not_called",
+        "warnings": [
+            "按钮门控本地预览用于让当前确认标的先有可读图谱；不是 provider-backed market data。",
+            "GET cache 和 React render 不会生成该预览；只有 POST /api/next-session/generate 可写入。",
+        ],
+    }
     return {
         "packet_key": "command_center_next_session_projection_packet",
         "schema_version": "next_session_projection.v1",
         "status": "ready",
-        "source_type": "local_exact_sample_for_same_packet_parity",
-        "cache_source": "button_gated_local_sample_no_provider",
+        "source_type": "button_gated_local_confirmed_symbol_preview",
+        "cache_source": "button_gated_local_preview_no_provider",
+        "symbol": symbol_safe,
+        "ts_code": symbol_safe,
+        "confirmed_symbol": symbol_safe,
+        "source_task_id": source_task_id_safe,
         "trade_date": "20260610",
         "generated_at": now,
+        "chart_payload": chart_payload,
         "chart_render_model": {
             "historical_series": [
-                {"x": "2026-06-08", "price": 10.0, "source": "local_exact_sample"},
-                {"x": "2026-06-09", "close": 10.4, "source": "local_exact_sample"},
+                {"x": "2026-06-08", "price": 10.0, "source": "button_gated_local_preview"},
+                {"x": "2026-06-09", "close": 10.4, "source": "button_gated_local_preview"},
             ],
             "scenario_series": [
                 {
                     "scenario_key": "neutral",
                     "scenario_name": "中性路径",
                     "trigger_condition": "放量但不追高",
-                    "confidence_note": "中性路径只作同包 parity 样例",
+                    "confidence_note": "本地预览只用于复核图谱结构",
                     "points": [
                         {"x": "T0", "price": 10.4},
                         {"x": "T+1_close", "price": 10.8},
@@ -3738,15 +3798,16 @@ def _local_exact_next_session_sample_packet(now: str) -> dict[str, Any]:
         },
         "position_context": {
             "conflict_flags": ["cost_price_conflict"],
-            "source_packet": "local_exact_sample_position_context",
+            "source_packet": "button_gated_local_preview_position_context",
         },
         "data_trust_summary": {
-            "facts": [{"fact_key": "moneyflow", "call_status": "local_sample_not_provider_verified"}],
-            "human_summary": ["本地同包 parity 样例：不代表真实 provider 验收", "持仓冲突展示：仅验证可视化边界"],
+            "facts": [{"fact_key": "moneyflow", "call_status": "local_preview_not_provider_verified"}],
+            "human_summary": ["按钮门控本地预览：不代表真实 provider 验收", "持仓冲突展示：仅验证可视化边界"],
             "deepseek": {"label": "DeepSeek", "status": "not_called"},
         },
         "deepseek_synthesis": {"status": "not_called"},
-        "local_exact_sample_for_same_packet_parity": True,
+        "local_exact_sample_for_same_packet_parity": False,
+        "button_gated_local_confirmed_symbol_preview": True,
         "provider_backed": False,
         "production_replacement_complete": False,
         "external_calls_triggered": False,
@@ -3759,7 +3820,7 @@ def _local_exact_next_session_sample_packet(now: str) -> dict[str, Any]:
         "does_not_modify_operation_zones": True,
         "contains_secret": False,
         "warnings": [
-            "This is a button-gated local exact sample for same-packet legacy signal/capability parity review only.",
+            "This is a button-gated local confirmed-symbol preview for ordinary Next Session readability.",
             "It is not provider-backed market data, Streamlit reference capture, browser QA, durable CI evidence, or production ECharts replacement.",
         ],
     }
@@ -3767,7 +3828,17 @@ def _local_exact_next_session_sample_packet(now: str) -> dict[str, Any]:
 
 def create_next_session_task(payload: Any = None) -> dict[str, Any]:
     payload_dict = _as_dict(payload)
+    requested_symbol = _safe_text(payload_dict.get("symbol") or payload_dict.get("ts_code") or "", limit=32).upper()
+    source_task_id = _safe_text(payload_dict.get("source_task_id") or "", limit=128)
     local_exact_sample_allowed = payload_dict.get("local_exact_sample_allowed") is True
+    local_confirmed_preview_allowed = (
+        payload_dict.get("manual_button_required") is True
+        and bool(requested_symbol)
+        and (
+            payload_dict.get("p2_small_data_ready") is True
+            or payload_dict.get("p3_readable_result_ready") is True
+        )
+    )
     task = create_task_record(
         "build_next_session_projection",
         output_packet_key="command_center_next_session_projection_packet",
@@ -3775,7 +3846,7 @@ def create_next_session_task(payload: Any = None) -> dict[str, Any]:
         current_step="next_session_cache_pipeline_queued",
         warnings=[
             "Command Center 3.0 当前只执行本地 cache pipeline；不调用 Tushare、DeepSeek、GitHub。",
-            "任务只读取并持久化已有次日图谱 packet，不修改 strategy action 或 operation_zones。",
+            "任务读取并持久化已有次日图谱 packet；当前确认标的缺少可读图谱时，可写按钮门控本地预览，不修改 strategy action 或 operation_zones。",
         ],
     )
     if task.get("dedupe_reused_existing"):
@@ -3785,20 +3856,60 @@ def create_next_session_task(payload: Any = None) -> dict[str, Any]:
     try:
         packet = dict(read_next_session_cache())
         local_exact_sample_written = False
-        if packet.get("status") == "cache_missing" and local_exact_sample_allowed:
+        local_confirmed_preview_written = False
+        chart_payload = _as_dict(packet.get("chart_payload"))
+        chart_has_drawable_data = bool(
+            _as_list(chart_payload.get("historical_points")) or _as_list(chart_payload.get("scenario_series"))
+        )
+        chart_symbol = _safe_text(
+            chart_payload.get("symbol")
+            or chart_payload.get("ts_code")
+            or chart_payload.get("confirmed_symbol")
+            or packet.get("symbol")
+            or packet.get("ts_code")
+            or packet.get("confirmed_symbol")
+            or "",
+            limit=32,
+        ).upper()
+        chart_ready_for_requested_symbol = bool(
+            chart_has_drawable_data and (not requested_symbol or chart_symbol == requested_symbol)
+        )
+        if (
+            packet.get("status") == "cache_missing" and local_exact_sample_allowed
+        ) or (
+            local_confirmed_preview_allowed and not chart_ready_for_requested_symbol
+        ):
             SQLiteMetaStore(SQLITE_META_PATH).write_packet(
                 "command_center_next_session_projection_packet",
-                _local_exact_next_session_sample_packet(now),
+                _local_exact_next_session_sample_packet(
+                    now,
+                    symbol=requested_symbol,
+                    source_task_id=source_task_id,
+                ),
             )
             local_exact_sample_written = True
+            local_confirmed_preview_written = local_confirmed_preview_allowed
             packet = dict(read_next_session_cache())
-            packet["local_exact_sample_for_same_packet_parity"] = True
+            packet["local_exact_sample_for_same_packet_parity"] = not local_confirmed_preview_written
+            packet["button_gated_local_confirmed_symbol_preview"] = local_confirmed_preview_written
             packet["provider_backed"] = False
         packet["task_call_ledger"] = _next_session_cache_call_ledger(packet, now)
         if local_exact_sample_written:
-            packet["task_call_ledger"][0]["call_status"] = "local_exact_sample_written"
-            packet["task_call_ledger"][0]["request_params_safe"]["local_exact_sample_allowed"] = True
+            packet["task_call_ledger"][0]["call_status"] = (
+                "local_confirmed_symbol_preview_written"
+                if local_confirmed_preview_written
+                else "local_exact_sample_written"
+            )
+            packet["task_call_ledger"][0]["request_params_safe"]["local_exact_sample_allowed"] = (
+                local_exact_sample_allowed
+            )
+            packet["task_call_ledger"][0]["request_params_safe"]["local_confirmed_preview_allowed"] = (
+                local_confirmed_preview_allowed
+            )
+            packet["task_call_ledger"][0]["request_params_safe"]["symbol"] = requested_symbol
+            packet["task_call_ledger"][0]["request_params_safe"]["source_task_id"] = source_task_id
             packet["task_call_ledger"][0]["request_params_safe"]["provider_backed"] = False
+            packet["task_call_ledger"][0]["request_params_safe"]["production_evidence"] = False
         packet["does_not_modify_action"] = True
         packet["does_not_modify_operation_zones"] = True
         packet["external_calls_triggered"] = False
