@@ -369,7 +369,12 @@ export default function CommandCenterHome() {
   const dailyCommandTushareFirstLedgerReady =
     candidates.search_quant_projection_p1_shortest_path_ready === true ||
     candidateQuantConfirmChainCheckpoint.provider_ledger_ready === true ||
-    candidateQuantReceipt.p1_tushare_first_provider_ledger_ready === true;
+    candidateQuantReceipt.p1_tushare_first_provider_ledger_ready === true ||
+    candidateQuantSmallDataWriteback.source_task_tushare_provider_ledger_ready === true ||
+    candidateQuantSmallDataWriteback.provider_call_ledger_replayed_from_source_task === true ||
+    candidateQuantSmallDataWriteback.provider_call_ledger_written === true ||
+    candidateQuantSmallDataWriteback.ledger_ready === true ||
+    Number(candidateQuantSmallDataWriteback.provider_api_success_count ?? 0) > 0;
   const dailyCommandTushareFirstApiCount = Number(
     candidates.search_quant_projection_p1_provider_api_call_count ??
       candidateQuantConfirmChainCheckpoint.provider_api_call_count ??
@@ -400,7 +405,8 @@ export default function CommandCenterHome() {
     "P1 只允许首页或下一票雷达确认按钮创建 Tushare-first POST task；首页回放卡只读 cache / ledger / packet，不创建第二个 task。";
   const dailyCommandP1ShortestPathReady =
     candidates.search_quant_projection_p1_shortest_path_ready === true ||
-    candidateQuantP1ShortestPathCheckpoint.tushare_first_ledger_ready === true;
+    candidateQuantP1ShortestPathCheckpoint.tushare_first_ledger_ready === true ||
+    dailyCommandTushareFirstLedgerReady;
   const dailyCommandP1ShortestPathStatus = String(
     candidates.search_quant_projection_p1_shortest_path_status ??
       candidateQuantP1ShortestPathCheckpoint.status ??
@@ -1880,9 +1886,19 @@ export default function CommandCenterHome() {
     },
     {
       阶段: "P1 确认按钮触发 Tushare-first",
-      当前状态: "等待用户在首页或下一票雷达输入代码并点击确认",
-      用户下一步: "输入 6 位 A 股代码，点击“确认股票并启动 Tushare-first”",
-      证据: "CandidateRadar 搜票确认 POST task contract",
+      当前状态: dailyCommandTushareFirstLedgerReady
+        ? `${dailyCommandTushareFirstLedgerLabel}；task=${homeQuantVisibleTaskId || dailyCommandP3OneGlanceSourceTask}`
+        : homeQuantVisibleTaskId
+          ? `确认任务已可见：${homeQuantVisibleTaskId}；等待 Tushare-first ledger 回放`
+          : "等待用户在首页或下一票雷达输入代码并点击确认",
+      用户下一步: dailyCommandTushareFirstLedgerReady
+        ? "直接看 P2 小数据三面和 P3 可解释结果；新标的再点确认按钮"
+        : homeQuantVisibleTaskId
+          ? "等待 TaskStatusPanel success 后刷新本地 cache / ledger / packet"
+          : "输入 6 位 A 股代码，点击“确认股票并启动 Tushare-first”",
+      证据: dailyCommandTushareFirstLedgerReady
+        ? "CandidateRadar small_data_writeback_summary + source task call_ledger"
+        : "CandidateRadar 搜票确认 POST task contract",
       边界: "搜索输入只做本地校验；只有确认按钮创建 POST task / worker，DeepSeek skipped"
     },
     {
