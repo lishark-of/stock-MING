@@ -83,6 +83,9 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("dailyCommandP3OneGlanceSafeFields", source)
         self.assertIn("dailyCommandP3OneGlanceModelStateRaw", source)
         self.assertIn("dailyCommandP3OneGlanceUsesModelOutput", source)
+        self.assertIn("candidateQuantDeepSeekReadinessRows", source)
+        self.assertIn("dailyCommandP5NonblockingRows", source)
+        self.assertIn("ordinary_deepseek_governed_executor_readiness_rows", source)
         self.assertIn("candidates.ordinary_result_deepseek_governed_executor_status", source)
         self.assertIn("DeepSeek 不用等：Tushare-first 和基础图谱可先看；P5 governed executor 单独补", source)
         self.assertIn("DeepSeek 待治理：不阻塞 Tushare-first、P2 写入或 P3 基础图谱", source)
@@ -369,6 +372,16 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("首页只读本地证据，不创建 task", card)
         self.assertLess(
             card.index('aria-label="daily command p3 one glance decision brief"'),
+            card.index('aria-label="daily command p3 one glance quick rows"'),
+        )
+        self.assertIn('aria-label="daily command p5 nonblocking one minute read"', card)
+        self.assertIn("P5 DeepSeek 不阻塞速读", card)
+        self.assertIn("ordinary_deepseek_governed_executor_readiness_rows", card)
+        self.assertIn("DeepSeek 单独补，不阻塞 Tushare-first、P2 三面或 P3 基础图谱", card)
+        self.assertIn("dailyCommandP5NonblockingRows", card)
+        self.assertIn("本卡只读治理状态，不调用模型", card)
+        self.assertLess(
+            card.index('aria-label="daily command p5 nonblocking one minute read"'),
             card.index('aria-label="daily command p3 one glance quick rows"'),
         )
         self.assertIn("结果速读三行", card)

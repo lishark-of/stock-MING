@@ -696,11 +696,45 @@ export default function CommandCenterHome() {
         }
       ];
   const candidateQuantModelGovernanceRows = (candidateQuantInterpretation.ordinary_model_governance_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const candidateQuantDeepSeekReadinessRows =
+    (candidateQuantInterpretation.ordinary_deepseek_governed_executor_readiness_rows as Array<Record<string, unknown>> | undefined) ??
+    [];
   const dailyCommandDeepSeekGovernanceState = String(
     candidateQuantInterpretation.deepseek_governed_executor_status ?? "governed_executor_pending_not_requested"
   );
   const dailyCommandDeepSeekGovernanceBoundary =
     "DeepSeek governed executor 单独补；首页只读显示治理状态，不调用模型、不展示 prompt/output、不覆盖价格、持仓、因子、operation_zones 或 strategy action。";
+  const dailyCommandP5NonblockingRows = candidateQuantDeepSeekReadinessRows.length
+    ? candidateQuantDeepSeekReadinessRows.slice(0, 3).map((row) => ({
+        检查项: String(row["检查项"] ?? row.readiness_key ?? "P5 readiness"),
+        当前状态: String(row["当前状态"] ?? row.status ?? dailyCommandDeepSeekGovernanceState),
+        允许动作: String(row["允许动作"] ?? row.allowed_action ?? "继续 P1/P2/P3 本地回放"),
+        用户下一步: String(row["用户下一步"] ?? row.next_action ?? "先使用 Tushare-first、小数据写入和基础图谱"),
+        边界: String(row["边界"] ?? row.boundary ?? dailyCommandDeepSeekGovernanceBoundary)
+      }))
+    : [
+        {
+          检查项: "1. 当前能先看什么",
+          当前状态: "Tushare-first、P2 小数据和 P3 基础图谱可先读",
+          允许动作: "继续本地 cache / ledger / packet 回放",
+          用户下一步: dailyCommandExplainableResultNext,
+          边界: "DeepSeek pending 不阻塞 P1/P2/P3；首页不调用模型。"
+        },
+        {
+          检查项: "2. DeepSeek 还等什么",
+          当前状态: dailyCommandDeepSeekGovernanceState,
+          允许动作: "等待 governed executor、model_ledger、sanitizer 和 output acceptance",
+          用户下一步: "需要模型解释时去 DeepSeek 模型策略页看 P5 治理状态",
+          边界: "没有 model_ledger 不能当真实模型证据，也不能当 production evidence。"
+        },
+        {
+          检查项: "3. 不会改什么",
+          当前状态: "不覆盖价格、持仓、factor、operation_zones 或 strategy action",
+          允许动作: "只读查看安全摘要",
+          用户下一步: "把结果当研究线索，不当买卖指令",
+          边界: dailyCommandDeepSeekGovernanceBoundary
+        }
+      ];
   const dailyCommandDeepSeekGovernanceRows = candidateQuantModelGovernanceRows.length
     ? candidateQuantModelGovernanceRows.map((row) => ({
         治理项: String(row["治理项"] ?? row.governance_item ?? "DeepSeek 治理"),
@@ -1769,6 +1803,11 @@ export default function CommandCenterHome() {
           <h3>P3 一分钟决策速读</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_decision_brief_rows：先看结论、再看来源、最后看下一步和边界；首页只读本地证据，不创建 task。</p>
           <DataLineageTable rows={dailyCommandP3OneGlanceDecisionRows} />
+        </div>
+        <div aria-label="daily command p5 nonblocking one minute read">
+          <h3>P5 DeepSeek 不阻塞速读</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_deepseek_governed_executor_readiness_rows：DeepSeek 单独补，不阻塞 Tushare-first、P2 三面或 P3 基础图谱；本卡只读治理状态，不调用模型。</p>
+          <DataLineageTable rows={dailyCommandP5NonblockingRows} />
         </div>
         <div aria-label="daily command p3 one glance quick rows">
           <h3>结果速读三行</h3>
