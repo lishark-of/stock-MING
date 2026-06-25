@@ -2149,7 +2149,7 @@ export default function CandidateRadar() {
     quantProjectionPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
   const quantProjectionPostConfirmReplaySequence = Array.isArray(quantProjectionPostConfirmReplayContract.readback_sequence)
     ? quantProjectionPostConfirmReplayContract.readback_sequence.map(String).join(" -> ")
-    : "等待后端 task payload_safe 回放合同";
+    : "等待确认后的回放顺序";
   const quantProjectionPostConfirmReplaySurfaces = Array.isArray(quantProjectionPostConfirmReplayContract.writeback_surfaces)
     ? quantProjectionPostConfirmReplayContract.writeback_surfaces.map(String).join(" / ")
     : "cache / call_ledger / packet";
@@ -2159,7 +2159,7 @@ export default function CandidateRadar() {
   const quantProjectionPostConfirmReplayContractRows = [
     {
       合同项: "任务回执",
-      当前状态: quantProjectionPostConfirmReplayContractReady ? "后端 task payload_safe 已返回确认后回放合同" : "等待确认按钮返回后端回放合同",
+      当前状态: quantProjectionPostConfirmReplayContractReady ? "确认后的回放顺序已返回" : "等待确认按钮返回回放顺序",
       用户下一步: quantProjectionPostConfirmReplayContractReady ? "按合同顺序看 task id、TaskStatusPanel 和本地回放" : "输入有效代码并点击确认",
       证据: "ordinary_post_confirm_replay_contract",
       边界: "合同只描述确认后的只读回放；不会从本表创建第二个 task"
@@ -2863,8 +2863,8 @@ export default function CandidateRadar() {
             </div>
           ) : null}
           <div aria-label="candidate radar first screen p1 task contract quick read">
-            <h3>确认按钮任务链速读</h3>
-            <p className="risk-note">普通用户不用展开链路详情也能看到：确认按钮会创建哪条本地 POST task、写回哪三面、DeepSeek 和交易边界如何隔离；这张速读只读页面状态，不创建第二个 task。</p>
+            <h3>确认后会发生什么</h3>
+            <p className="risk-note">普通用户不用展开技术明细也能看到：确认后会生成本地任务、写回哪三面、DeepSeek 和交易边界如何隔离；这张速读只读页面状态，不创建第二个 task。</p>
             <MetricGrid items={quantProjectionFirstScreenTaskContractItems} />
           </div>
           <div aria-label="candidate radar ordinary tushare first readiness strip">
@@ -2881,7 +2881,7 @@ export default function CandidateRadar() {
               </div>
               <TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />
               <details className="developer-audit-details" aria-label="candidate radar first screen task receipt details">
-                <summary>任务回执详情</summary>
+                <summary>查看任务回执</summary>
                 <p className="risk-note">普通用户先看任务状态和成功后回读清单；完整 POST task receipt 默认收起，只作为排查本地任务接收和 safe payload 的审计材料。</p>
                 <TaskLaunchReceipt receipt={taskReceipt} />
               </details>
@@ -2895,15 +2895,15 @@ export default function CandidateRadar() {
             <p className="risk-note">点击确认后先看这条结果：任务是否接收、P2 三面是否回放、P3 结论是否可读和下一步入口都在一屏内；这条结果条只读本地 task receipt 与 cache / ledger / packet，不创建第二个 task。</p>
             {quantProjectionBackendPostConfirmOneGlanceItems.length ? (
               <details className="developer-audit-details" aria-label="candidate radar backend post confirm one glance">
-                <summary>后端同源回放明细</summary>
+                <summary>查看同源回放</summary>
                 <p className="risk-note">优先读取后端 cache packet 的 search_quant_projection_post_confirm_one_glance_items：任务编号、P2、P3、DeepSeek 和安全边界同源回放；这张状态格只读本地 cache，不创建 task。</p>
                 <MetricGrid items={quantProjectionBackendPostConfirmOneGlanceItems} />
               </details>
             ) : null}
             <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
             <details className="developer-audit-details" aria-label="candidate radar post confirm backend replay contract">
-              <summary>后端回放合同</summary>
-              <p className="risk-note">优先读取后端 task payload_safe 的 ordinary_post_confirm_replay_contract：确认后按任务编号、TaskStatusPanel、GET cache、cache/call_ledger/packet、量化推演和次日图谱顺序回放；这张表只读合同，不创建 task。</p>
+              <summary>查看回放顺序</summary>
+              <p className="risk-note">这里展示确认后的回放顺序：先看任务编号和状态，再看本地 cache、三面回放、量化推演和次日图谱；这张表只读，不创建 task。</p>
               <DataLineageTable rows={quantProjectionPostConfirmReplayContractRows} />
             </details>
             <div className="actions" aria-label="candidate radar post confirm local replay actions">
@@ -2920,10 +2920,10 @@ export default function CandidateRadar() {
             <p className="risk-note">刷新本地回放只调用 GET cache / bootstrap status，帮助确认 cache、call_ledger、packet 是否已可读；不会创建第二个 task、不补调 Tushare/DeepSeek、不写交易动作。</p>
           </div>
           <details className="developer-audit-details" aria-label="candidate radar first screen p1 chain details">
-            <summary>P1 链路与确认后清单</summary>
+            <summary>查看确认后清单</summary>
             <p className="risk-note">普通首屏只保留确认按钮、任务状态和一屏结果；按钮路由、回放清单和链路排障默认收起。</p>
             <div aria-label="candidate radar p1 confirm actual route">
-              <h3>确认按钮实际链路</h3>
+              <h3>确认按钮去向</h3>
               <p className="risk-note">这张表只说明当前按钮会走哪条本地后端链路；输入和页面渲染仍保持静默。</p>
               <DataLineageTable rows={quantProjectionConfirmRouteRows} />
             </div>
@@ -2993,7 +2993,7 @@ export default function CandidateRadar() {
           <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
         </div>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p0 local connection diagnostics">
-          <summary>P0 本地联通诊断</summary>
+          <summary>查看本地联通</summary>
           <p className="risk-note">首页已经提供本地 FastAPI 接线速读；普通主线默认收起 P0 联通表，需要排查按钮不可用或启动异常时再展开。</p>
           <div aria-label="candidate radar ordinary p0 frontend backend readiness">
             <h3>P0 前后端联通闸门</h3>
@@ -3054,7 +3054,7 @@ export default function CandidateRadar() {
           <DataLineageTable rows={quantProjectionReadbackIndexRows} />
         </div>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p1 p2 detail readback">
-          <summary>P1/P2 细节回放</summary>
+          <summary>查看 P1/P2 回放明细</summary>
           <p className="risk-note">一屏行动摘要已经覆盖普通下一步；确认链路、P1 路径和 P2 三面核对默认收起，需要排查时再展开。</p>
         <div aria-label="candidate radar ordinary confirmed chain quick read">
           <h3>确认后链路速读</h3>
@@ -3240,7 +3240,7 @@ export default function CandidateRadar() {
             <DataLineageTable rows={quantProjectionWritebackSurfaceRows} />
           </div>
           <details className="developer-audit-details" aria-label="quant projection ordinary p1 p2 engineering details">
-            <summary>P1/P2 任务与写入详情</summary>
+            <summary>查看任务与回放明细</summary>
             <p className="risk-note">普通主视图先保留状态轨、可读结论和回放入口；确认门控、task receipt、cache / ledger / packet 写入面默认收起，不影响确认按钮动作。</p>
           <div aria-label="quant projection ordinary confirm trigger boundary">
             <h3>P1 触发边界</h3>

@@ -72,7 +72,7 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
             'aria-label="quant projection ordinary p1 p2 engineering details"',
             ordinary_quant_slice,
         )
-        self.assertIn("<summary>P1/P2 任务与写入详情</summary>", ordinary_quant_slice)
+        self.assertIn("<summary>查看任务与回放明细</summary>", ordinary_quant_slice)
         self.assertIn("普通主视图先保留状态轨、可读结论和回放入口", ordinary_quant_slice)
         self.assertNotIn('aria-label="quant projection p1 confirm gate checklist"', ordinary_quant_top_slice)
         self.assertNotIn('aria-label="quant projection ordinary p2 writeback integrity"', ordinary_quant_top_slice)
@@ -130,7 +130,7 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("本地 FastAPI 尚未完全接上：先回一键启动预检；输入保持静默，确认按钮不可用。", source)
         self.assertIn("quantProjectionConfirmRouteRows", source)
         self.assertIn('aria-label="candidate radar p1 confirm actual route"', radar_summary_slice)
-        self.assertIn("确认按钮实际链路", radar_summary_slice)
+        self.assertIn("确认按钮去向", radar_summary_slice)
         self.assertIn("这张表只说明当前按钮会走哪条本地后端链路；输入和页面渲染仍保持静默。", radar_summary_slice)
         self.assertIn("POST /api/candidate-radar/quant-projection", source)
         self.assertIn("只有按钮点击会 POST；页面打开、输入和 GET cache 不创建 task", source)
@@ -306,7 +306,7 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("quantProjectionTaskReadbackState", ordinary_quant_slice)
         self.assertIn("quantProjectionResultReplayState", ordinary_quant_slice)
         self.assertIn('aria-label="candidate radar first screen p1 chain details"', radar_summary_slice)
-        self.assertIn("<summary>P1 链路与确认后清单</summary>", radar_summary_slice)
+        self.assertIn("<summary>查看确认后清单</summary>", radar_summary_slice)
         self.assertIn("按钮路由、回放清单和链路排障默认收起", radar_summary_slice)
         self.assertIn('aria-label="candidate radar first screen post confirm readback guide"', radar_summary_slice)
         self.assertIn("点击确认后按这张清单走：先看任务编号，再看任务进度，success 后刷新本地 cache，最后回放量化推演和次日图谱", radar_summary_slice)
