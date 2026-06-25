@@ -59,7 +59,7 @@ export default function NextSessionMap() {
     }).finally(() => setLoading(false));
   };
   const launchTask = () =>
-    void postTask("/api/next-session/generate").then((res) => {
+    void postTask("/api/next-session/generate", nextSessionGeneratePayload).then((res) => {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
@@ -176,7 +176,7 @@ export default function NextSessionMap() {
     ? "先看图表路径、参考线和操作区，再看缺少证据；工程审计在开发详情"
     : "先点击生成任务或查看缓存状态；有图表后再按路径、参考线、操作区复核";
   const nextSessionCacheButtonLabel = "查看缓存只读取本地 GET cache；复核顺序是图表路径、参考线、操作区、缺少证据";
-  const nextSessionGenerateButtonLabel = "生成任务只创建按钮门控 POST task；完成后按图表路径、参考线、操作区、缺少证据复核";
+  const nextSessionGenerateButtonLabel = "生成任务只创建按钮门控 POST task；会带当前确认标的和来源 task 的 safe payload，完成后按图表路径、参考线、操作区、缺少证据复核";
   const nextSessionChartReviewRegionLabel = "次日图谱复核区域：先看图表路径，再看参考线、操作区和缺少证据";
   const nextSessionReplayOrigin = chartSummary.is_exact_next_session_packet === true
     ? "来自精确 next-session cache；可从下一票雷达/量化推演回放到本页"
@@ -289,6 +289,22 @@ export default function NextSessionMap() {
     : candidateRadarReadableResultReady
       ? "先读已确认标的、Tushare-first 结论和 P2 三面；完整图谱可手动生成"
       : nextSessionChartReviewOrder;
+  const nextSessionGeneratePayload = {
+    schema_version: "next_session_confirmed_symbol_generate_payload.v1",
+    source: "next_session_map_manual_generate_button",
+    symbol: candidateRadarConfirmedSymbol,
+    source_task_id: candidateRadarSourceTaskLabel.includes("等待") ? "" : candidateRadarSourceTaskLabel,
+    candidate_readback_source: "CandidateRadar cache / ledger / packet",
+    p2_small_data_ready: candidateRadarSmallDataWriteback.small_data_writeback_ready === true,
+    p3_readable_result_ready: candidateRadarReadableResultReady,
+    manual_button_required: true,
+    cache_get_external_calls_triggered: false,
+    react_render_external_calls_triggered: false,
+    deepseek_execution_requested: false,
+    does_not_include_token_or_raw_log: true,
+    does_not_execute_trades: true,
+    does_not_modify_operation_zones: true
+  };
   const ordinaryResultReplayStatus = String(
     packet.ordinary_result_replay_status ??
       (chartSummary.has_drawable_data === true ? "ready_cache_replay" : "waiting_for_cache_or_manual_task")
@@ -666,6 +682,7 @@ export default function NextSessionMap() {
           { label: "回放入口边界", value: nextSessionReplayDestinationBoundary, tone: "good" },
           { label: "操作区边界", value: nextSessionOperationZoneBoundary, tone: "good" },
           { label: "结果回放", value: ordinaryResultReplayStatus, tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
+          { label: "生成血缘", value: nextSessionGeneratePayload.source_task_id ? `${nextSessionGeneratePayload.symbol} / ${nextSessionGeneratePayload.source_task_id}` : "等待确认标的后再绑定生成任务", tone: nextSessionGeneratePayload.source_task_id ? "good" : "warn" },
           { label: "任务边界", value: nextSessionTaskBoundary, tone: "good" },
           { label: "仅供研究", value: nextSessionResearchOnlyLabel },
           { label: "P3 可读结论", value: nextSessionReadableLastResultLabel, tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn" },
