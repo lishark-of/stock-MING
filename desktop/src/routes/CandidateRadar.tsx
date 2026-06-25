@@ -2370,6 +2370,18 @@ export default function CandidateRadar() {
             <h3>确认后一屏结果</h3>
             <p className="risk-note">点击确认后先看这条结果：任务是否接收、P2 三面是否回放、P3 结论是否可读和下一步入口都在一屏内；这条结果条只读本地 task receipt 与 cache / ledger / packet，不创建第二个 task。</p>
             <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
+            <div className="actions" aria-label="candidate radar post confirm local replay actions">
+              <button
+                onClick={refreshQuantProjectionReadback}
+                disabled={loading}
+                title="只回读 CandidateRadar cache 和 bootstrap status；不创建 task、不调用 provider/model"
+                aria-label="refresh candidate radar local replay after p1 confirm"
+              >刷新本地回放</button>
+              <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after p1 confirm">任务进度</a>
+              <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay after p1 confirm">量化推演</a>
+              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session replay after p1 confirm">次日图谱</a>
+            </div>
+            <p className="risk-note">刷新本地回放只调用 GET cache / bootstrap status，帮助确认 cache、call_ledger、packet 是否已可读；不会创建第二个 task、不补调 Tushare/DeepSeek、不写交易动作。</p>
           </div>
           <details className="developer-audit-details" aria-label="candidate radar first screen p1 chain details">
             <summary>P1 链路与确认后清单</summary>
