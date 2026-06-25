@@ -209,6 +209,21 @@ export default function NextSessionMap() {
   const candidateRadarConfirmOutcomeRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
   const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarConfirmedSymbol = String(
+    candidateRadarReceipt.symbol ??
+      candidateRadarSmallDataWriteback.symbol ??
+      candidateRadarInterpretation.symbol ??
+      ""
+  );
+  const candidateRadarConfirmedSymbolLabel = candidateRadarConfirmedSymbol
+    ? `当前确认标的：${candidateRadarConfirmedSymbol}`
+    : "等待下一票雷达确认标的";
+  const candidateRadarSourceTaskLabel = String(
+    candidateRadarReceipt.latest_task_id ??
+      candidateRadarReceipt.task_id ??
+      candidateRadarSmallDataWriteback.latest_task_id ??
+      "等待下一票雷达确认 task"
+  );
   const candidateRadarResultQuickRows = rowsFromArray(
     candidateRadarCache.ordinary_result_quick_read_rows ??
       candidateRadarInterpretation.ordinary_result_quick_read_rows
@@ -606,6 +621,7 @@ export default function NextSessionMap() {
       <MetricGrid
         items={[
           { label: "主下一步", value: nextSessionNextClick },
+          { label: "当前标的", value: candidateRadarConfirmedSymbolLabel, tone: candidateRadarConfirmedSymbol ? "good" : "warn" },
           { label: "本地缓存", value: nextSessionCacheSourceLabel },
           { label: "数据链", value: nextSessionTushareSourceLabel },
           { label: "解释状态", value: nextSessionDeepSeekSourceLabel },
@@ -641,7 +657,8 @@ export default function NextSessionMap() {
         <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放；本卡不创建 task、不补调数据源或模型，也不改 operation_zones。</p>
         <MetricGrid
           items={[
-            { label: "标的", value: String(candidateRadarReceipt.symbol ?? "--"), tone: candidateRadarReceipt.symbol ? "good" : "warn" },
+            { label: "标的", value: candidateRadarConfirmedSymbolLabel, tone: candidateRadarConfirmedSymbol ? "good" : "warn" },
+            { label: "来源任务", value: candidateRadarSourceTaskLabel, tone: candidateRadarSourceTaskLabel.includes("等待") ? "warn" : "good" },
             { label: "可读结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
             { label: "下一步", value: candidateRadarReadableNextStep },
             { label: "P2 小数据", value: candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "CandidateRadar P2 small_data_writeback_ready 已回放" : candidateRadarWritebackSurfaceStatus, tone: candidateRadarWritebackSurfaceReady ? "good" : "warn" },
