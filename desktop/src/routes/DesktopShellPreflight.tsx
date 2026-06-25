@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getDesktopPreflightCache } from "../api/client";
+import { getDesktopPreflightCache, getHealth } from "../api/client";
 import BackendOfflineNotice from "../components/BackendOfflineNotice";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
@@ -15,12 +15,16 @@ function rows(value: unknown): Array<Record<string, unknown>> {
 }
 
 export default function DesktopShellPreflight() {
+  const [health, setHealth] = useState<Record<string, unknown>>({});
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    void getHealth().then((res) => {
+      setHealth(res.data);
+    });
     void getDesktopPreflightCache().then((res) => {
       setCache(res.data);
       setCacheEnvelopeLedger(res.call_ledger ?? []);
@@ -49,7 +53,34 @@ export default function DesktopShellPreflight() {
   const oneClickConnectionRows = rows(cache.one_click_connection_rows);
   const frontendBackendAutoLinkRows = rows(cache.frontend_backend_auto_link_rows);
   const p0LocalConnectionRows = rows(cache.p0_local_connection_rows);
-  const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
+  const currentHealthReadbackReady =
+    health.status === "ok" &&
+    health.service === "stock-MING Command Center 3.0" &&
+    health.external_calls_on_startup !== true;
+  const currentHealthReadbackLabel = currentHealthReadbackReady
+    ? "本页已实时接上 FastAPI /health"
+    : "本页正在等待 FastAPI /health";
+  const p0ConnectionReady = currentHealthReadbackReady || oneClickStartupSummary.frontend_backend_connection_ready === true;
+  const p0CurrentRuntimeReadbackRows = [
+    {
+      回读项: "本页 FastAPI /health",
+      当前状态: currentHealthReadbackReady ? "ready：当前页面已接上本地 FastAPI" : "check：等待 /health",
+      证据: currentHealthReadbackReady ? "GET /health status=ok 且 service=stock-MING Command Center 3.0" : "GET /health 尚未返回 ready",
+      边界: "只读 GET /health；不启动 FastAPI/Vite、不创建 task、不调用 Tushare/DeepSeek/GitHub。"
+    },
+    {
+      回读项: "本页 React/Vite",
+      当前状态: "ready：当前预检页已渲染",
+      证据: "React/Vite 已打开 desktop route",
+      边界: "React render 只显示状态；不调用 provider/model、不交易。"
+    },
+    {
+      回读项: "启动器 preflight cache",
+      当前状态: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready：启动器四段联通收据可回放" : "check：等待启动器收据",
+      证据: "GET /api/desktop/preflight-cache",
+      边界: "preflight cache 是启动器收据回放；当前页面联通以本页 /health 回读补充，不让旧 cache 覆盖当前状态。"
+    }
+  ];
   const p0OrdinaryOneScreenRows = rows(cache.p0_ordinary_one_screen_rows).length
     ? rows(cache.p0_ordinary_one_screen_rows)
     : [
@@ -378,6 +409,7 @@ export default function DesktopShellPreflight() {
   ];
   const p0RawBlockerCount = Number(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0);
   const p0BlockerCount = Number.isFinite(p0RawBlockerCount) ? p0RawBlockerCount : 0;
+  const p0DisplayBlockerCount = p0ConnectionReady ? 0 : p0BlockerCount;
   const p0StartupReadyMetrics = [
     {
       label: "启动入口",
@@ -388,6 +420,11 @@ export default function DesktopShellPreflight() {
       label: "后端状态",
       value: oneClickStartupSummary.fastapi_health_identity_validated_before_open === true ? "ready" : "check",
       tone: oneClickStartupSummary.fastapi_health_identity_validated_before_open === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "本页 /health",
+      value: currentHealthReadbackReady ? "ready" : "check",
+      tone: currentHealthReadbackReady ? ("good" as const) : ("warn" as const)
     },
     {
       label: "前端页面",
@@ -475,6 +512,11 @@ export default function DesktopShellPreflight() {
           <h3>一键启动就绪</h3>
           <MetricGrid items={p0StartupReadyMetrics} />
         </div>
+        <div aria-label="p0 current runtime readback">
+          <h3>当前页面实时回读</h3>
+          <p className="risk-note">本页实时回读：{currentHealthReadbackLabel}；预检 cache 仍作为启动器收据，不覆盖当前页面的本地连接状态。</p>
+          <DataLineageTable rows={p0CurrentRuntimeReadbackRows} />
+        </div>
         <div aria-label="p0 ordinary one screen action readback">
           <h3>P0 一屏行动</h3>
           <p className="risk-note">普通用户先看这 3 行：打开或恢复一键入口、确认四段联通、再回首页确认股票代码；这张表只读回放，不启动服务、不创建 task。</p>
@@ -501,8 +543,8 @@ export default function DesktopShellPreflight() {
         <p>安全自检：{String(oneClickStartupSummary.safe_check_command ?? "scripts/check_command_center_3.command")}；{String(oneClickStartupSummary.safe_check_boundary ?? "check-only 安全自检只解析本地启动配置；不启动 FastAPI/Vite、不探测 URL、不打开浏览器、不创建 task、不调用 provider/model。")}</p>
         <p>诊断分段：{Array.isArray(oneClickStartupSummary.diagnostic_surfaces) ? oneClickStartupSummary.diagnostic_surfaces.join(" / ") : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / desktop preflight cache one-click packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance"}</p>
         <p>安全边界：GET preflight 和 React render 不启动服务、不外联、不启用 provider/model executor、不执行真实交易。</p>
-        <p>当前联通：{p0ConnectionReady ? "ready" : "check"}；需要处理：{p0BlockerCount === 0 ? "无" : `${p0BlockerCount} 项，按失败诊断处理`}。</p>
-        <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.status ?? "p0_local_connection_receipt_loading")}；本页只回读本地状态，不主动探测当前运行时。</p>
+        <p>当前联通：{p0ConnectionReady ? "ready" : "check"}；需要处理：{p0DisplayBlockerCount === 0 ? "无" : `${p0DisplayBlockerCount} 项，按失败诊断处理`}。</p>
+        <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.status ?? "p0_local_connection_receipt_loading")}；本页额外用 GET /health 只读确认当前 FastAPI 连接，不启动服务、不创建 task。</p>
         <p>{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite 都就绪，再打开页面。")}</p>
         <div className="actions" aria-label="p0 ordinary primary action">
           <a href={p0OrdinaryPrimaryActionHref} aria-label="open p0 ordinary primary action">{p0OrdinaryPrimaryActionLabel}</a>
