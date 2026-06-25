@@ -491,6 +491,18 @@ export default function CommandCenterHome() {
       candidateQuantSmallDataReadbackCheckpoint.ordinary_readback_summary ??
       dailyCommandSmallDataWritebackState
   );
+  const dailyCommandP2CheckpointStatus = String(
+    candidateQuantP2ThreeSurfaceCheckpoint.status ??
+      candidateQuantSmallDataReadbackCheckpoint.status ??
+      "p2_three_surface_waiting_symbol_confirm"
+  );
+  const dailyCommandP2CheckpointNextAction = String(
+    candidateQuantP2ThreeSurfaceCheckpoint.ordinary_next_action ??
+      candidateQuantSmallDataReadbackCheckpoint.next_action ??
+      (dailyCommandP2CheckpointStatus === "p2_three_surface_ready"
+        ? "继续查看量化推演和次日图谱只读结果；DeepSeek 留到 P5 governed executor。"
+        : "确认任务完成后刷新本地 cache / ledger / packet 回放。")
+  );
   const dailyCommandP2CallLedgerState = String(
     candidateQuantP2ThreeSurfaceCheckpoint.call_ledger_state ??
       candidateQuantSmallDataReadbackCheckpoint.call_ledger_state ??
@@ -521,6 +533,8 @@ export default function CommandCenterHome() {
     candidates.search_quant_projection_p2_packet_ready === true;
   const dailyCommandSmallDataWritebackBoundary =
     "P2 小数据只从 CandidateRadar cache / call_ledger / packet 回放；首页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示 token/key 或 raw log。";
+  const dailyCommandP2CheckpointBoundary =
+    "P2 三面 checkpoint 只读 CandidateRadar cache / call_ledger / packet；不创建第二个 task、不补调 provider/model、不生成交易动作。";
   const dailyCommandP2ThreeSurfaceProofItems: MetricItem[] = [
     {
       label: "cache",
@@ -2592,6 +2606,19 @@ export default function CommandCenterHome() {
             { label: "边界", value: "这张卡只读已有 P2 写回摘要；不创建第二个 task、不补调 Tushare/DeepSeek、不展示 raw log", tone: "good" }
           ]}
         />
+        <div aria-label="daily command p2 three surface checkpoint">
+          <h3>P2 三面 checkpoint</h3>
+          <MetricGrid
+            items={[
+              { label: "状态", value: dailyCommandP2CheckpointStatus, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+              { label: "速读", value: dailyCommandP2CheckpointLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+              { label: "三面完整度", value: dailyCommandP2SurfaceCompletionLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+              { label: "下一步", value: dailyCommandP2CheckpointNextAction, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+              { label: "边界", value: dailyCommandP2CheckpointBoundary, tone: "good" }
+            ]}
+          />
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_p2_three_surface_checkpoint：普通用户直接看 cache、call_ledger、packet 三面是否齐，不需要展开 raw packet 或工程审计。</p>
+        </div>
         <div aria-label="daily command p2 three surface proof">
           <h3>P2 三面写回证明</h3>
           <MetricGrid items={dailyCommandP2ThreeSurfaceProofItems} />
