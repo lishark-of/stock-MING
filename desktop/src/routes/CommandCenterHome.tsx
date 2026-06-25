@@ -1560,6 +1560,13 @@ export default function CommandCenterHome() {
   const homeQuantPostConfirmReadableSentence = homeQuantVisibleTaskId
     ? `已看到 ${homeQuantVisibleTaskId}（${homeQuantVisibleTaskSource}）；${candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "P2 三面已可读" : "P2 三面等待本地回放"}；${dailyCommandP3OneGlanceReadable ? `P3 结论：${dailyCommandExplainableResultLabel}` : "P3 结论等待本地 cache 回放"}；下一步看股票量化推演和次日图谱。`
     : "确认后会在这里显示任务编号、P2 三面、P3 结论和下一步入口。";
+  const homeQuantPostConfirmReadbackState = homeQuantSubmitting
+    ? "提交中：等待 FastAPI 返回 task id；不会重复创建第二个 task。"
+    : homeQuantVisibleTaskCanPoll
+      ? "任务已接收：TaskStatusPanel 正在轮询本地 FastAPI，success 后自动刷新 CandidateRadar / Factor / Next / tasks 回读。"
+      : homeQuantVisibleTaskId
+        ? "最近确认链来自本地 cache 回放；首页不启动第二个 TaskStatusPanel，也不创建第二个 task。"
+        : "确认后首页会回读 CandidateRadar、股票量化推演、次日图谱和任务目录；输入代码本身保持静默。";
   const homeQuantPostConfirmHandoffRows = [
     {
       交接项: "任务进度",
@@ -2375,6 +2382,7 @@ export default function CommandCenterHome() {
             <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达详情页；同一条 P1 确认链路" aria-label="open candidate radar detail from home p1 confirm">下一票雷达详情</a>
           </div>
           <p className="risk-note" aria-label="daily command home p1 symbol autofill boundary">当前标的自动填入只来自 CandidateRadar cache；不会自动点击确认、不创建 task、不调用 Tushare/DeepSeek，手动修改后不再覆盖输入。</p>
+          <p className="ordinary-status-note" aria-label="daily command home post confirm readback state" aria-live="polite">{homeQuantPostConfirmReadbackState}</p>
           {homeQuantSubmitError ? <p className="risk-note" aria-live="polite">首页确认任务创建失败：{homeQuantSubmitError}</p> : null}
           {homeQuantVisibleTaskId ? (
             <div aria-label="daily command home post confirm handoff">

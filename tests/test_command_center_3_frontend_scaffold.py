@@ -1569,6 +1569,12 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("MetricGrid items={homeQuantPostConfirmOneGlanceItems}", home_source)
         self.assertIn("DataLineageTable rows={homeQuantPostConfirmHandoffRows}", home_source)
         self.assertIn('aria-label="daily command home post confirm handoff actions"', home_source)
+        self.assertIn("homeQuantPostConfirmReadbackState", home_source)
+        self.assertIn('aria-label="daily command home post confirm readback state"', home_source)
+        self.assertIn("提交中：等待 FastAPI 返回 task id；不会重复创建第二个 task。", home_source)
+        self.assertIn("TaskStatusPanel 正在轮询本地 FastAPI，success 后自动刷新 CandidateRadar / Factor / Next / tasks 回读", home_source)
+        self.assertIn("首页不启动第二个 TaskStatusPanel，也不创建第二个 task。", home_source)
+        self.assertIn("确认后首页会回读 CandidateRadar、股票量化推演、次日图谱和任务目录；输入代码本身保持静默。", home_source)
         self.assertIn('aria-label="daily command home recovered task cache-only notice"', home_source)
         self.assertIn("最近确认 task 来自 CandidateRadar cache 只读回放", home_source)
         self.assertIn('aria-label="daily command home p1 receipt audit details"', home_source)
@@ -1592,6 +1598,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         handoff_start = home_confirm_card.index('aria-label="daily command home post confirm handoff"')
         receipt_start = home_confirm_card.index('aria-label="daily command home p1 receipt audit details"')
         handoff_slice = home_confirm_card[handoff_start:receipt_start]
+        readback_state_start = home_confirm_card.index('aria-label="daily command home post confirm readback state"')
+        self.assertLess(readback_state_start, handoff_start)
         self.assertLess(
             handoff_slice.index('aria-label="daily command home post confirm one glance"'),
             handoff_slice.index("DataLineageTable rows={homeQuantPostConfirmHandoffRows}")
