@@ -644,7 +644,7 @@ export default function NextSessionMap() {
             { label: "标的", value: String(candidateRadarReceipt.symbol ?? "--"), tone: candidateRadarReceipt.symbol ? "good" : "warn" },
             { label: "可读结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
             { label: "下一步", value: candidateRadarReadableNextStep },
-            { label: "P2 小数据", value: candidateRadarWritebackSurfaceStatus, tone: candidateRadarWritebackSurfaceReady ? "good" : "warn" },
+            { label: "P2 小数据", value: candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "CandidateRadar P2 small_data_writeback_ready 已回放" : candidateRadarWritebackSurfaceStatus, tone: candidateRadarWritebackSurfaceReady ? "good" : "warn" },
             { label: "P2 边界", value: candidateRadarWritebackSurfaceBoundary, tone: "good" },
             { label: "DeepSeek", value: candidateRadarOrdinaryDeepSeekState, tone: candidateRadarUsesModelOutput ? "warn" : "good" },
             { label: "边界", value: candidateRadarReadableBoundary, tone: "good" }

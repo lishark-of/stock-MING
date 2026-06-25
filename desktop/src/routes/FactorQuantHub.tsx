@@ -89,6 +89,11 @@ export default function FactorQuantHub() {
   const candidateRadarWritebackSurfaceRows = toRows(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
   const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarReceiptCallLedger = toRows(candidateRadarReceipt.call_ledger);
+  const candidateRadarReceiptRequestParams =
+    (candidateRadarReceiptCallLedger[0]?.request_params_safe as Record<string, unknown> | undefined) ?? {};
+  const ordinaryQuantPostConfirmReplayContract =
+    (candidateRadarReceiptRequestParams.ordinary_post_confirm_replay_contract as Record<string, unknown> | undefined) ?? {};
   const candidateRadarLatestTaskId = String(
     candidateRadarReceipt.latest_task_id ??
       candidateRadarReceipt.task_id ??
@@ -435,6 +440,47 @@ export default function FactorQuantHub() {
   const ordinaryQuantP3Boundary = ordinaryQuantCandidateRadarP3Ready
     ? `P3 边界：${candidateRadarReadableBoundary}`
     : "P3 边界：普通摘要只读 Factor cache、Next Session preview 和 DeepSeek status；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
+  const ordinaryQuantPostConfirmReplayContractReady =
+    ordinaryQuantPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
+  const ordinaryQuantPostConfirmReplaySequence = Array.isArray(ordinaryQuantPostConfirmReplayContract.readback_sequence)
+    ? ordinaryQuantPostConfirmReplayContract.readback_sequence.map(String).join(" -> ")
+    : "等待下一票雷达确认任务回放后端合同";
+  const ordinaryQuantPostConfirmReplaySurfaces = Array.isArray(ordinaryQuantPostConfirmReplayContract.writeback_surfaces)
+    ? ordinaryQuantPostConfirmReplayContract.writeback_surfaces.map(String).join(" / ")
+    : "cache / call_ledger / packet";
+  const ordinaryQuantPostConfirmReplayAnchors = Array.isArray(ordinaryQuantPostConfirmReplayContract.result_anchors)
+    ? ordinaryQuantPostConfirmReplayContract.result_anchors.map(String).join(" / ")
+    : "#tasks / #factor / #next";
+  const ordinaryQuantPostConfirmReplayContractRows = [
+    {
+      合同项: "任务回执",
+      当前状态: ordinaryQuantPostConfirmReplayContractReady ? "CandidateRadar call_ledger safe params 已回放后端合同" : "等待下一票雷达确认按钮返回后端合同",
+      用户下一步: ordinaryQuantPostConfirmReplayContractReady ? "按合同顺序回读任务编号、TaskStatusPanel 和本地 cache" : "回下一票雷达输入代码并点击确认",
+      证据: "ordinary_post_confirm_replay_contract",
+      边界: "量化页只读合同；不会从量化页创建第二个 task"
+    },
+    {
+      合同项: "回放顺序",
+      当前状态: ordinaryQuantPostConfirmReplaySequence,
+      用户下一步: "先看任务编号，再等 TaskStatusPanel success，最后刷新本地 cache",
+      证据: "readback_sequence",
+      边界: "React render 不补调 provider/model；GET cache 只读"
+    },
+    {
+      合同项: "P2 三面",
+      当前状态: ordinaryQuantPostConfirmReplaySurfaces,
+      用户下一步: "确认 cache、call_ledger、packet 是否可回放",
+      证据: "writeback_surfaces",
+      边界: "call_ledger 只由下一票雷达 POST task / worker 产生；量化页不展示凭据或 raw log"
+    },
+    {
+      合同项: "结果入口",
+      当前状态: ordinaryQuantPostConfirmReplayAnchors,
+      用户下一步: "任务成功后打开任务进度、量化推演和次日图谱",
+      证据: "result_anchors",
+      边界: "结果入口只切换本地模块；不交易、不下单、不改 strategy action"
+    }
+  ];
   const ordinaryQuantLatestCandidateCheckpointItems: MetricItem[] = [
     {
       label: "确认标的",
@@ -462,6 +508,11 @@ export default function FactorQuantHub() {
       label: "P3 结论",
       value: ordinaryQuantP3ReadableConclusion,
       tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "后端回放合同",
+      value: ordinaryQuantPostConfirmReplayContractReady ? "已从 CandidateRadar call_ledger safe params 回放" : "等待下一票雷达确认后回放",
+      tone: ordinaryQuantPostConfirmReplayContractReady ? "good" : "warn"
     },
     {
       label: "下一步",
@@ -808,6 +859,11 @@ export default function FactorQuantHub() {
           <h3>确认后量化 checkpoint</h3>
           <p className="risk-note">最近一只票的 task id、P1 确认、P2 三面和 P3 可读结论在量化页首屏先读；本 checkpoint 只读 CandidateRadar cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
           <MetricGrid items={ordinaryQuantLatestCandidateCheckpointItems} />
+        </div>
+        <div aria-label="stock quant post confirm backend replay contract">
+          <h3>后端回放合同</h3>
+          <p className="risk-note">优先读取 CandidateRadar call_ledger safe params 里的 ordinary_post_confirm_replay_contract：量化页按同一条确认后合同回放任务、P2 三面和结果入口；本卡只读 cache / ledger / packet，不创建 task。</p>
+          <DataLineageTable rows={ordinaryQuantPostConfirmReplayContractRows} />
         </div>
         <MetricGrid items={ordinaryQuantPrimarySummaryItems} />
         <details className="developer-audit-details" aria-label="stock quant ordinary summary extra details">
