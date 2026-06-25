@@ -2042,7 +2042,7 @@ export default function CommandCenterHome() {
       </PacketCard>
       <details className="developer-audit-details">
         <summary>开发 / 审计详情</summary>
-        <p>详细验收记录、开发表格和排障明细默认收起；普通用户先看上方 P1 确认、P2 三面和 P3 可解释结果。</p>
+        <p>详细验收记录、开发表格和排障明细默认收起；普通用户先看上方今日作战台摘要、P1 确认、P2 三面和 P3 可解释结果。</p>
         <div aria-label="daily command engineering audit demotion rules">
           <h3>审计入口下沉规则</h3>
           <p className="risk-note">普通用户先看摘要和三入口；只有排障、验收或补证时展开开发详情。</p>

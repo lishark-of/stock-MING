@@ -172,12 +172,12 @@ export default function HealthStatus() {
       步骤: "1. 确认本地联通",
       用户动作: "先看 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 四段是否 ready。",
       当前状态: p0ConnectionReady ? "ready：可以进入普通投研入口" : "check：先恢复本地一键入口",
-      下一步: p0ConnectionReady ? "打开下一票雷达，输入股票代码。" : "回到启动器诊断或桌面壳预检。",
+      下一步: p0ConnectionReady ? "回到今日作战台首页确认股票代码；需要详情再打开下一票雷达。" : "回到启动器诊断或桌面壳预检。",
       边界: "只读 GET health / preflight cache；不启动服务、不创建 task。"
     },
     {
-      步骤: "2. 进入下一票雷达",
-      用户动作: "去下一票雷达的搜票量化推演卡片。",
+      步骤: "2. 首页确认股票代码",
+      用户动作: "去今日作战台首页确认卡；需要详情再打开下一票雷达确认输入区。",
       当前状态: "只读导航提示",
       下一步: "输入 6 位 A 股代码或带后缀代码。",
       边界: "页面切换和输入不会调用 Tushare、DeepSeek 或 GitHub。"
@@ -237,7 +237,7 @@ export default function HealthStatus() {
         </div>
         <div aria-label="health p0 to p1 ordinary handoff">
           <h3>联通后搜票路径</h3>
-          <p className="risk-note">健康页只告诉普通用户下一步去哪；真正的 Tushare-first 工作仍要到下一票雷达点击确认按钮。</p>
+          <p className="risk-note">健康页只告诉普通用户下一步去哪；真正的 Tushare-first 工作仍要点首页或下一票雷达的确认按钮。</p>
           <DataLineageTable rows={p0ToP1OrdinaryHandoffRows} />
         </div>
         <div aria-label="health p0 startup recovery steps">

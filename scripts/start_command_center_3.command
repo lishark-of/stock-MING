@@ -410,7 +410,7 @@ print_post_startup_readback_checklist() {
     echo "  4. React/Vite 前端：${VITE_URL_DISPLAY} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL_DISPLAY}，先看今日作战台的一键启动预检。"
   fi
   echo "  5. P0 stability check：短暂 dwell 后复读 health、bootstrap status、desktop preflight cache 和 React/Vite 仍 ready，P0_STABILITY_READY=1。"
-  echo "  6. 联通后下一步：打开下一票雷达确认输入区（#candidates/candidate-radar-search-quant-projection），输入股票代码；只有确认按钮会创建 Tushare-first POST task，DeepSeek 仍保持 governed/pending。"
+  echo "  6. 联通后下一步：回首页确认股票代码（#home）；需要详情再打开下一票雷达确认输入区（#candidates/candidate-radar-search-quant-projection）。输入本身保持静默；只有确认按钮会创建 Tushare-first POST task，DeepSeek 仍保持 governed/pending。"
   echo "  7. P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
   echo "边界：启动后复核只读本地 GET 结果；不创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
 }
