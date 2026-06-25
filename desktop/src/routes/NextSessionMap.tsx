@@ -368,6 +368,46 @@ export default function NextSessionMap() {
       tone: "good"
     }
   ];
+  const nextSessionUsableNowItems: MetricItem[] = [
+    {
+      label: "图谱状态",
+      value: chartSummary.has_drawable_data === true
+        ? `完整图谱可读：${nextSessionReadableLastResultLabel}`
+        : candidateRadarReadableResultReady
+          ? "上游结论可读，完整图谱等待手动生成"
+          : "等待确认标的或本地缓存",
+      tone: chartSummary.has_drawable_data === true ? "good" : candidateRadarReadableResultReady ? "warn" : "neutral"
+    },
+    {
+      label: "P3 结论",
+      value: candidateRadarReadableResult,
+      tone: candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "P2 三面",
+      value: candidateRadarWritebackSurfaceReady
+        ? "已回放：cache / call_ledger / packet"
+        : candidateRadarWritebackSurfaceStatus,
+      tone: candidateRadarWritebackSurfaceReady ? "good" : "warn"
+    },
+    {
+      label: "操作区",
+      value: chartSummary.has_drawable_data === true
+        ? `operation_zones=${String(chartSummary.operation_zone_count ?? 0)}；${nextSessionOperationZoneBoundary}`
+        : `等待完整图谱；${nextSessionOperationZoneBoundary}`,
+      tone: Number(chartSummary.operation_zone_count ?? 0) > 0 ? "good" : chartSummary.has_drawable_data === true ? "warn" : "neutral"
+    },
+    {
+      label: "现在点哪",
+      value: nextSessionReadableChartReviewOrder,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "只读回放；生成必须手动按钮；DeepSeek 单独补；不交易、不改 operation_zones",
+      tone: "good"
+    }
+  ];
   const ordinaryResultReplayStatus = String(
     packet.ordinary_result_replay_status ??
       (
@@ -759,6 +799,11 @@ export default function NextSessionMap() {
           { label: "P3 边界", value: nextSessionResearchOnlyLabel, tone: "good" }
         ]}
       />
+      <div aria-label="next session ordinary usable now strip">
+        <h3>现在可读状态</h3>
+        <MetricGrid items={nextSessionUsableNowItems} />
+        <p className="risk-note">这条只合成图谱可绘制、P3 结论、P2 三面、操作区和下一步；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。</p>
+      </div>
       <div aria-label="next session ordinary progress checkpoint">
         <h3>当前图谱 checkpoint</h3>
         <MetricGrid items={nextSessionOrdinaryProgressCheckpointItems} />
