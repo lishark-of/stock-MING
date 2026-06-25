@@ -3390,50 +3390,54 @@ export default function CandidateRadar() {
         </PacketCard>
         </div>
 
-        <PacketCard title="快速雷达扫描" subtitle="手动刷新本地快扫、自选池或输入股票池；不自动外联" status={String(scanCoverage.coverage_status ?? "cache")}>
-          <div className="actions">
-            <button onClick={refreshCache}>查看本地缓存</button>
-            <button onClick={launchQuickScan}>运行本地快扫</button>
-            <button onClick={launchWatchlistScan}>扫描本地自选</button>
-          </div>
-          <textarea
-            value={customPoolText}
-            onChange={(event) => setCustomPoolText(event.target.value)}
-            placeholder="002008.SZ, 002837.SZ"
-            rows={3}
-          />
-          <div className="actions">
-            <button onClick={launchCustomScan}>扫描输入股票池</button>
-          </div>
-          <details className="developer-audit-details">
-            <summary>高级扫描 / 全池深研</summary>
-            <p>全池/深研按钮默认收起；普通用户先运行本地快扫或扫描自选/输入池，生产替代补证再进入这里。</p>
+        <details className="developer-audit-details" aria-label="candidate radar optional scan tools details">
+          <summary>可选扫描 / 高级补证入口</summary>
+          <p className="risk-note">P1 主路径保留在上方搜票量化推演；本地快扫、自选池、full-pool/deep-scan 只作可选补证，默认收起，不从页面打开或输入触发 provider/model。</p>
+          <PacketCard title="快速雷达扫描" subtitle="手动刷新本地快扫、自选池或输入股票池；不自动外联" status={String(scanCoverage.coverage_status ?? "cache")}>
             <div className="actions">
-              <button onClick={launchFullPoolPlan}>规划全池扫描</button>
-              <button onClick={launchFullPoolLocalScan}>保存本地全池记录</button>
-              <button onClick={launchDeepScanPlan}>整理深研清单</button>
-              <button onClick={launchDeepScanLocalReview}>检查本地深研证据</button>
+              <button onClick={refreshCache}>查看本地缓存</button>
+              <button onClick={launchQuickScan}>运行本地快扫</button>
+              <button onClick={launchWatchlistScan}>扫描本地自选</button>
             </div>
-          </details>
-          <p>本地快扫只重建缓存和标记覆盖缺口，不调用 Tushare、DeepSeek 或 GitHub。</p>
-          <p>信号覆盖、旧雷达能力映射和跳过原因会保留在详情里，避免静默丢失能力。</p>
-          <p>缺失、跳过、陈旧或未知输入会作为仅供研究的缺口展示。</p>
-          <details className="developer-audit-details">
-            <summary>最近操作记录</summary>
-            <TaskLaunchReceipt receipt={taskReceipt} />
-            {manualTaskPanelVisible ? (
-              <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
-            ) : (
-              <p className="ordinary-status-note" aria-live="polite">{manualTaskPanelEmptyNotice}</p>
-            )}
-          </details>
-          <details className="developer-audit-details">
-            <summary>快速扫描覆盖详情</summary>
-            <p>任务血缘写入 local_candidate_radar_[scan_mode]，GET cache 仍然只读。</p>
-            <p>quick_scan_reads_cache_only: {String(policy.quick_scan_reads_cache_only === true)}</p>
-            <DataLineageTable rows={objectRow(scanCoverage)} />
-          </details>
-        </PacketCard>
+            <textarea
+              value={customPoolText}
+              onChange={(event) => setCustomPoolText(event.target.value)}
+              placeholder="002008.SZ, 002837.SZ"
+              rows={3}
+            />
+            <div className="actions">
+              <button onClick={launchCustomScan}>扫描输入股票池</button>
+            </div>
+            <details className="developer-audit-details">
+              <summary>高级扫描 / 全池深研</summary>
+              <p>全池/深研按钮默认收起；普通用户先运行本地快扫或扫描自选/输入池，生产替代补证再进入这里。</p>
+              <div className="actions">
+                <button onClick={launchFullPoolPlan}>规划全池扫描</button>
+                <button onClick={launchFullPoolLocalScan}>保存本地全池记录</button>
+                <button onClick={launchDeepScanPlan}>整理深研清单</button>
+                <button onClick={launchDeepScanLocalReview}>检查本地深研证据</button>
+              </div>
+            </details>
+            <p>本地快扫只重建缓存和标记覆盖缺口，不调用 Tushare、DeepSeek 或 GitHub。</p>
+            <p>信号覆盖、旧雷达能力映射和跳过原因会保留在详情里，避免静默丢失能力。</p>
+            <p>缺失、跳过、陈旧或未知输入会作为仅供研究的缺口展示。</p>
+            <details className="developer-audit-details">
+              <summary>最近操作记录</summary>
+              <TaskLaunchReceipt receipt={taskReceipt} />
+              {manualTaskPanelVisible ? (
+                <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+              ) : (
+                <p className="ordinary-status-note" aria-live="polite">{manualTaskPanelEmptyNotice}</p>
+              )}
+            </details>
+            <details className="developer-audit-details">
+              <summary>快速扫描覆盖详情</summary>
+              <p>任务血缘写入 local_candidate_radar_[scan_mode]，GET cache 仍然只读。</p>
+              <p>quick_scan_reads_cache_only: {String(policy.quick_scan_reads_cache_only === true)}</p>
+              <DataLineageTable rows={objectRow(scanCoverage)} />
+            </details>
+          </PacketCard>
+        </details>
 
         <details id="settings" className="developer-audit-details" aria-label="candidate radar settings audit details">
           <summary>运行模式 / provider-model 审计</summary>

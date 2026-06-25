@@ -5423,6 +5423,26 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertLess(page.index("搜票量化推演"), page.index("开发 / 审计指标"))
         self.assertLess(page.index("下一票候选池"), page.index("搜票量化推演"))
         self.assertLess(page.index("搜票量化推演"), page.index("快速雷达扫描"))
+        self.assertIn('aria-label="candidate radar optional scan tools details"', page)
+        self.assertIn("<summary>可选扫描 / 高级补证入口</summary>", page)
+        self.assertIn("P1 主路径保留在上方搜票量化推演", page)
+        self.assertIn("本地快扫、自选池、full-pool/deep-scan 只作可选补证", page)
+        self.assertLess(
+            page.index("搜票量化推演"),
+            page.index('aria-label="candidate radar optional scan tools details"'),
+        )
+        self.assertLess(
+            page.index('aria-label="candidate radar optional scan tools details"'),
+            page.index("快速雷达扫描"),
+        )
+        optional_scan_start = page.index('aria-label="candidate radar optional scan tools details"')
+        optional_scan_end = page.index('aria-label="candidate radar settings audit details"', optional_scan_start)
+        optional_scan_slice = page[optional_scan_start:optional_scan_end]
+        self.assertIn("运行本地快扫", optional_scan_slice)
+        self.assertIn("扫描本地自选", optional_scan_slice)
+        self.assertIn("扫描输入股票池", optional_scan_slice)
+        self.assertIn("规划全池扫描", optional_scan_slice)
+        self.assertIn("整理深研清单", optional_scan_slice)
         self.assertIn("手动刷新本地快扫、自选池或输入股票池；不自动外联", page)
         self.assertIn("查看本地缓存", page)
         self.assertIn("运行本地快扫", page)
