@@ -21,6 +21,7 @@ HOME_CONFIRM_HREF = "#home"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 DESKTOP_ROOT = PROJECT_ROOT / "desktop"
+TAURI_MAIN_RS = DESKTOP_ROOT / "src-tauri" / "src" / "main.rs"
 TAURI_RELEASE_BINARY = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "stock_ming_command_center"
 TAURI_BUNDLE_ROOT = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "bundle"
 TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY = "command_center_3_tauri_package_artifact_review_packet"
@@ -430,6 +431,18 @@ def _tauri_config_summary() -> dict[str, Any]:
         "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1" in before_dev_command
         and "start_command_center_3.command" in before_dev_command
     )
+    main_rs_source = _read_source_safe(TAURI_MAIN_RS)
+    app_open_fastapi_autostart = all(
+        marker in main_rs_source
+        for marker in (
+            "ensure_local_fastapi_on_app_open",
+            "local_fastapi_ready",
+            "spawn_local_fastapi",
+            "GET /health HTTP/1.1",
+            "STOCK_MING_FASTAPI_AUTOSTART",
+            "tauri_fastapi_autostart.log",
+        )
+    )
     return {
         "available": True,
         "path": _path_label(path),
@@ -443,6 +456,19 @@ def _tauri_config_summary() -> dict[str, Any]:
         "before_dev_command_links_local_stack": before_dev_links_local_stack,
         "tauri_dev_starts_fastapi_via_local_launcher": before_dev_links_local_stack,
         "tauri_dev_skip_open_launcher": "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1" in before_dev_command,
+        "tauri_app_open_fastapi_autostart_enabled": app_open_fastapi_autostart,
+        "tauri_app_open_fastapi_autostart_strategy": (
+            "app_open_check_health_then_spawn_local_uvicorn"
+            if app_open_fastapi_autostart
+            else "missing"
+        ),
+        "tauri_app_open_fastapi_autostart_host": "127.0.0.1",
+        "tauri_app_open_fastapi_autostart_port": 8710,
+        "tauri_app_open_autostart_health_gate": "GET /health Command Center 3.0 JSON",
+        "tauri_app_open_autostart_log_path": ".stock_ming_3/logs/tauri_fastapi_autostart.log",
+        "tauri_app_open_autostart_external_calls": False,
+        "tauri_app_open_autostart_loads_token_or_key": False,
+        "tauri_app_open_autostart_logs_safe_status_only": app_open_fastapi_autostart,
         "before_build_command": build.get("beforeBuildCommand"),
         "window_count": len(windows),
         "backend_sidecar_configured": False,
@@ -2320,6 +2346,16 @@ def _production_runtime_contract(api_base_info: dict[str, Any], tauri_config: di
             evidence="Tauri dev uses beforeDevCommand local launcher skip-open to start or reuse FastAPI/Vite; production sidecar remains a future explicit packaging decision",
         ),
         _production_runtime_row(
+            "tauri_app_open_local_fastapi_autostart_declared",
+            "passed" if tauri_config.get("tauri_app_open_fastapi_autostart_enabled") else "blocked",
+            bool(tauri_config.get("tauri_app_open_fastapi_autostart_enabled")),
+            evidence=(
+                "Tauri setup checks local /health on app open and may spawn local uvicorn on "
+                "127.0.0.1:8710; this is local FastAPI autostart, not provider/model execution "
+                "or production sidecar completion"
+            ),
+        ),
+        _production_runtime_row(
             "api_base_localhost_contract",
             "passed" if api_base_info.get("is_localhost") else "blocked",
             bool(api_base_info.get("is_localhost")),
@@ -2373,6 +2409,15 @@ def _production_runtime_contract(api_base_info: dict[str, Any], tauri_config: di
         "tauri_dev_before_dev_command_links_local_stack": bool(tauri_config.get("before_dev_command_links_local_stack")),
         "tauri_dev_starts_fastapi_via_local_launcher": bool(tauri_config.get("tauri_dev_starts_fastapi_via_local_launcher")),
         "tauri_dev_opens_browser_before_window": False,
+        "tauri_app_open_fastapi_autostart_enabled": bool(
+            tauri_config.get("tauri_app_open_fastapi_autostart_enabled")
+        ),
+        "tauri_app_open_fastapi_autostart_strategy": tauri_config.get(
+            "tauri_app_open_fastapi_autostart_strategy"
+        ),
+        "tauri_app_open_autostart_external_calls": False,
+        "tauri_app_open_autostart_loads_token_or_key": False,
+        "tauri_app_open_autostart_is_production_sidecar": False,
         "backend_sidecar_autostart_enabled": False,
         "backend_sidecar_configured": bool(tauri_config.get("backend_sidecar_configured")),
         "api_base": api_base_info.get("api_base"),
@@ -2398,7 +2443,7 @@ def _production_runtime_contract(api_base_info: dict[str, Any], tauri_config: di
         "production_blocker_count": len(blockers),
         "blockers": blockers,
         "rows": rows,
-        "note": "This contract declares runtime paths and startup boundaries only. Tauri dev beforeDevCommand may start or reuse local FastAPI/Vite through the user-run launcher, but GET cache does not run it, and packaged runtime sidecar/offline UX validation remains pending.",
+        "note": "This contract declares runtime paths and startup boundaries only. Tauri dev beforeDevCommand may start or reuse local FastAPI/Vite through the user-run launcher, and Tauri app open may check/spawn local FastAPI on 127.0.0.1:8710. GET cache does not run either path, and packaged runtime sidecar/offline UX validation remains pending.",
     }
 
 
@@ -5812,6 +5857,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "rust_toolchain_required": True,
         "backend_sidecar_autostart_enabled": False,
         "backend_sidecar_autostart_planned": True,
+        "tauri_app_open_fastapi_autostart_enabled": production_runtime_contract[
+            "tauri_app_open_fastapi_autostart_enabled"
+        ],
+        "tauri_app_open_autostart_is_production_sidecar": False,
         "tauri_dev_before_dev_command_links_local_stack": production_runtime_contract[
             "tauri_dev_before_dev_command_links_local_stack"
         ],
@@ -5831,7 +5880,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "blockers": [] if tauri_dev_ready else (["rust_cargo_missing"] if vite_dev_ready else ["desktop_scaffold_incomplete"]),
-        "note": "当前阶段验证 React/Vite 与 Tauri dev 本地联通：tauri dev 会先通过 beforeDevCommand 调用本地一键启动器 skip-open 接上 FastAPI/Vite；生产 package build 和 FastAPI sidecar 自动拉起仍需后续阶段。",
+        "note": "当前阶段验证 React/Vite 与 Tauri 本地联通：tauri dev 会先通过 beforeDevCommand 调用本地一键启动器 skip-open 接上 FastAPI/Vite；Tauri app 打开时也会检查本地 FastAPI 并可拉起 127.0.0.1:8710。本机 app-open autostart 不等于生产 sidecar，生产 package build 和 sidecar 验收仍需后续阶段。",
     }
     production_blocker_audit = _production_package_blocker_audit(
         package_summary=package_summary,
@@ -6019,6 +6068,15 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             and desktop_launcher_contract["shortcut_installer_executable"],
             "desktop_shortcut_installer_path": desktop_launcher_contract["shortcut_installer_path"],
             "backend_autostart_configured": False,
+            "tauri_app_open_fastapi_autostart_enabled": production_runtime_contract[
+                "tauri_app_open_fastapi_autostart_enabled"
+            ],
+            "tauri_app_open_fastapi_autostart_strategy": production_runtime_contract[
+                "tauri_app_open_fastapi_autostart_strategy"
+            ],
+            "tauri_app_open_autostart_external_calls": False,
+            "tauri_app_open_autostart_loads_token_or_key": False,
+            "tauri_app_open_autostart_is_production_sidecar": False,
             "tauri_dev_before_dev_command": tauri_config["before_dev_command"],
             "tauri_dev_before_dev_command_links_local_stack": production_runtime_contract[
                 "tauri_dev_before_dev_command_links_local_stack"
@@ -6061,6 +6119,12 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "does_not_start_fastapi": True,
             "frontend_must_use_fastapi_api_client": True,
             "backend_autostart_enabled": False,
+            "tauri_app_open_fastapi_autostart_enabled": production_runtime_contract[
+                "tauri_app_open_fastapi_autostart_enabled"
+            ],
+            "tauri_app_open_autostart_is_local_fastapi_only": True,
+            "tauri_app_open_autostart_does_not_call_provider_model": True,
+            "tauri_app_open_autostart_is_not_production_sidecar": True,
             "api_base_must_be_localhost": True,
             "production_runtime_contract_is_path_only": True,
             "packaged_runtime_qa_contract_is_static": True,

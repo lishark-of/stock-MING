@@ -240,6 +240,7 @@ def build_contract() -> dict[str, Any]:
     preflight_script = _read_script("scripts/check_tauri_env.sh")
     route_source = _read_script("desktop/src/routes/DesktopShellPreflight.tsx")
     api_client_source = _read_script("desktop/src/api/client.ts")
+    tauri_main_source = _read_script("desktop/src-tauri/src/main.rs")
     this_script = _read_script("scripts/tauri_desktop_contract.py")
     production_package_stage_scope_rows = _tauri_production_package_stage_scope_rows(
         release_binary_detected,
@@ -283,6 +284,8 @@ def build_contract() -> dict[str, Any]:
             and runtime_contract.get("status") == "runtime_contract_ready_packaged_validation_pending"
             and runtime_contract.get("scope") == "path_policy_and_startup_contract_not_packaged_runtime_validation"
             and runtime_contract.get("manual_backend_launch_required") is True
+            and runtime_contract.get("tauri_app_open_fastapi_autostart_enabled") is True
+            and runtime_contract.get("tauri_app_open_autostart_is_production_sidecar") is False
             and runtime_contract.get("backend_sidecar_autostart_enabled") is False
             and runtime_contract.get("config_paths_declared") is True
             and runtime_contract.get("log_paths_declared") is True
@@ -293,6 +296,34 @@ def build_contract() -> dict[str, Any]:
             and runtime_contract.get("does_not_execute_trades") is True
             and runtime_contract.get("does_not_modify_strategy_action") is True,
             "Runtime contract may declare startup/config/log policy only; package runtime validation remains pending.",
+        ),
+        _row(
+            "tauri_app_open_fastapi_autostart_is_local_only",
+            runtime.get("tauri_app_open_fastapi_autostart_enabled") is True
+            and runtime.get("tauri_app_open_fastapi_autostart_strategy")
+            == "app_open_check_health_then_spawn_local_uvicorn"
+            and runtime.get("tauri_app_open_autostart_external_calls") is False
+            and runtime.get("tauri_app_open_autostart_loads_token_or_key") is False
+            and runtime.get("tauri_app_open_autostart_is_production_sidecar") is False
+            and policy.get("tauri_app_open_fastapi_autostart_enabled") is True
+            and policy.get("tauri_app_open_autostart_is_local_fastapi_only") is True
+            and policy.get("tauri_app_open_autostart_does_not_call_provider_model") is True
+            and policy.get("tauri_app_open_autostart_is_not_production_sidecar") is True
+            and "ensure_local_fastapi_on_app_open" in tauri_main_source
+            and "local_fastapi_ready" in tauri_main_source
+            and "spawn_local_fastapi" in tauri_main_source
+            and "GET /health HTTP/1.1" in tauri_main_source
+            and "STOCK_MING_FASTAPI_AUTOSTART" in tauri_main_source
+            and "tauri_fastapi_autostart.log" in tauri_main_source
+            and "app-open FastAPI" in route_source
+            and "backend sidecar" in route_source
+            and "backend_autostart=tauri_app_open_local_fastapi" in preflight_script
+            and "tauri_app_open_fastapi_autostart=true" in preflight_script
+            and "fastapi_sidecar_autostart=false" in preflight_script
+            and "TUSHARE_TOKEN" not in tauri_main_source
+            and "DEEPSEEK_API_KEY" not in tauri_main_source
+            and "GITHUB_TOKEN" not in tauri_main_source,
+            "Tauri app-open autostart is limited to local FastAPI health/spawn evidence and remains separate from provider/model execution and production sidecar completion.",
         ),
         _row(
             "backend_offline_ux_is_source_contract_only",

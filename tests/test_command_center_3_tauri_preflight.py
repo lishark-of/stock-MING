@@ -16,6 +16,7 @@ HEALTH_PAGE = Path("desktop/src/routes/HealthStatus.tsx")
 HOME_PAGE = Path("desktop/src/routes/CommandCenterHome.tsx")
 SERVER_MAIN = Path("server/main.py")
 TAURI_CONFIG = Path("desktop/src-tauri/tauri.conf.json")
+TAURI_MAIN = Path("desktop/src-tauri/src/main.rs")
 
 
 class CommandCenter3TauriPreflightTests(unittest.TestCase):
@@ -45,7 +46,10 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("tauri_dev_before_dev_command=COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 ../scripts/start_command_center_3.command", source)
         self.assertIn("tauri_dev_starts_fastapi_via_local_launcher=true", source)
         self.assertIn("tauri_build_command=cd desktop && npm run tauri build", source)
-        self.assertIn("backend_autostart=false", source)
+        self.assertIn("backend_autostart=tauri_app_open_local_fastapi", source)
+        self.assertIn("tauri_app_open_fastapi_autostart=true", source)
+        self.assertIn("tauri_app_open_autostart_scope=local_fastapi_only", source)
+        self.assertIn("tauri_app_open_autostart_external_calls=false", source)
         self.assertIn("fastapi_sidecar_autostart=false", source)
         self.assertIn("production_package_build_attempted=false", source)
         self.assertIn("tauri_build_artifact_status=", source)
@@ -78,7 +82,10 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("tauri_build_command=cd desktop && npm run tauri build", output)
         self.assertIn("tauri_dev_before_dev_command=COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 ../scripts/start_command_center_3.command", output)
         self.assertIn("tauri_dev_starts_fastapi_via_local_launcher=true", output)
-        self.assertIn("backend_autostart=false", output)
+        self.assertIn("backend_autostart=tauri_app_open_local_fastapi", output)
+        self.assertIn("tauri_app_open_fastapi_autostart=true", output)
+        self.assertIn("tauri_app_open_autostart_scope=local_fastapi_only", output)
+        self.assertIn("tauri_app_open_autostart_external_calls=false", output)
         self.assertIn("fastapi_sidecar_autostart=false", output)
         self.assertIn("production_package_build_attempted=false", output)
         self.assertIn("tauri_build_artifact_status=", output)
@@ -104,6 +111,22 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", build["beforeDevCommand"])
         self.assertNotIn("DEEPSEEK_API_KEY", build["beforeDevCommand"])
         self.assertNotIn("GITHUB_TOKEN", build["beforeDevCommand"])
+
+    def test_tauri_app_open_autostarts_local_fastapi_without_provider_or_secret(self):
+        source = TAURI_MAIN.read_text(encoding="utf-8")
+
+        self.assertIn("ensure_local_fastapi_on_app_open", source)
+        self.assertIn("local_fastapi_ready", source)
+        self.assertIn("spawn_local_fastapi", source)
+        self.assertIn("GET /health HTTP/1.1", source)
+        self.assertIn('"127.0.0.1"', source)
+        self.assertIn("8710", source)
+        self.assertIn("STOCK_MING_FASTAPI_AUTOSTART", source)
+        self.assertIn("tauri_app_open", source)
+        self.assertIn("tauri_fastapi_autostart.log", source)
+        self.assertNotIn("TUSHARE_TOKEN", source)
+        self.assertNotIn("DEEPSEEK_API_KEY", source)
+        self.assertNotIn("GITHUB_TOKEN", source)
 
     def test_command_center_3_launcher_is_local_one_click_and_safe(self):
         source = LAUNCHER.read_text(encoding="utf-8")

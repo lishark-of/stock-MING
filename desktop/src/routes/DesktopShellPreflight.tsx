@@ -634,7 +634,8 @@ export default function DesktopShellPreflight() {
           { label: "binary kind", value: tauriBuildArtifact.binary_kind as string | undefined },
           { label: "app bundle", value: tauriBuildArtifact.packaged_app_bundle_detected === true ? "detected" : "missing", tone: tauriBuildArtifact.packaged_app_bundle_detected === true ? "good" : "warn" },
           { label: "DMG", value: tauriBuildArtifact.distribution_dmg_detected === true ? "detected" : "missing", tone: tauriBuildArtifact.distribution_dmg_detected === true ? "good" : "warn" },
-          { label: "backend autostart", value: runtime.backend_autostart_configured === true ? "enabled" : "manual", tone: runtime.backend_autostart_configured === true ? "warn" : "good" },
+          { label: "app-open FastAPI", value: runtime.tauri_app_open_fastapi_autostart_enabled === true ? "auto local" : "manual", tone: runtime.tauri_app_open_fastapi_autostart_enabled === true ? "good" : "warn" },
+          { label: "backend sidecar", value: runtime.backend_sidecar_autostart_enabled === true ? "enabled" : "pending", tone: runtime.backend_sidecar_autostart_enabled === true ? "warn" : "good" },
           { label: "package audit", value: productionBlockerAudit.status as string | undefined, tone: productionBlockerAudit.package_ready === true ? "good" : "warn" },
           { label: "runtime contract", value: productionRuntimeContract.status as string | undefined, tone: productionRuntimeContract.config_paths_declared === true ? "good" : "warn" },
           { label: "offline UX contract", value: backendOfflineUxContract.frontend_contract_ready === true ? "source ready" : "review", tone: backendOfflineUxContract.frontend_contract_ready === true ? "good" : "warn" },
@@ -675,6 +676,8 @@ export default function DesktopShellPreflight() {
           <p>does_not_run_tauri: {String(policy.does_not_run_tauri ?? true)}</p>
           <p>does_not_run_cargo: {String(policy.does_not_run_cargo ?? true)}</p>
           <p>frontend_must_use_fastapi_api_client: {String(policy.frontend_must_use_fastapi_api_client ?? true)}</p>
+          <p>tauri_app_open_fastapi_autostart_enabled: {String(policy.tauri_app_open_fastapi_autostart_enabled ?? false)}</p>
+          <p>tauri_app_open_autostart_is_local_fastapi_only: {String(policy.tauri_app_open_autostart_is_local_fastapi_only ?? true)}</p>
           <p>backend_autostart_enabled: {String(policy.backend_autostart_enabled ?? false)}</p>
           <p>api_base_must_be_localhost: {String(policy.api_base_must_be_localhost ?? true)}</p>
           <p>production_runtime_contract_is_path_only: {String(policy.production_runtime_contract_is_path_only ?? true)}</p>
