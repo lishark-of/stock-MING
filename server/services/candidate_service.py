@@ -15634,6 +15634,78 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         or execution_request.get("include_deepseek") is True
         or provider_receipt.get("include_deepseek") is True
     )
+    chain_symbol = _safe_text(
+        provider_receipt.get("symbol")
+        or execution_request.get("symbol")
+        or dry_run.get("symbol")
+        or quant_receipt.get("symbol")
+        or "",
+        limit=32,
+    )
+    if provider_ready:
+        p1_shortest_status = "tushare_first_ledger_replayed"
+        p1_shortest_label = (
+            f"P1 最短路径已跑通：确认任务写入 task_id={latest_task_id or 'cache'}，"
+            f"Tushare ledger 已回放 {provider_api_success_count}/{provider_api_call_count} 个接口。"
+        )
+        p1_shortest_next = "直接回放股票量化推演和次日图谱；DeepSeek 仍等 P5 governed executor。"
+    elif credential_missing_count:
+        p1_shortest_status = "blocked_missing_tushare_credentials"
+        p1_shortest_label = "P1 最短路径已到服务端凭据闸门：确认任务已接收，但 Tushare 未调用。"
+        p1_shortest_next = "配置服务端 Tushare 凭据后重新点击确认；页面刷新和 GET cache 不会自动补调 provider。"
+    elif provider_ledger_visible:
+        p1_shortest_status = "partial_tushare_ledger_replayed"
+        p1_shortest_label = (
+            f"P1 最短路径部分回放：Tushare ledger 已出现 {provider_api_success_count}/{provider_api_call_count} 个接口。"
+        )
+        p1_shortest_next = "补齐 Tushare light ledger 后再使用 P2/P3 结果入口。"
+    elif execution_request_ready:
+        p1_shortest_status = "execution_request_ready_waiting_provider_task"
+        p1_shortest_label = "P1 确认链已准备 provider task：等待按钮门控 Tushare-first ledger 写回。"
+        p1_shortest_next = "继续看 TaskStatusPanel；不要从 GET cache 或 React render 补调 provider。"
+    elif latest_task_id:
+        p1_shortest_status = "confirm_task_accepted_waiting_status"
+        p1_shortest_label = f"P1 确认任务已接收：task_id={latest_task_id}，等待任务状态和 cache 回放。"
+        p1_shortest_next = "先看 TaskStatusPanel；success 后刷新本地 cache，再看 P2/P3。"
+    elif quant_receipt:
+        p1_shortest_status = "local_receipt_waiting_confirm"
+        p1_shortest_label = "P1 本地搜票记录已可读；等待点击确认按钮创建 Tushare-first POST task。"
+        p1_shortest_next = "点击确认并生成 3.0 量化推演；输入本身保持静默。"
+    else:
+        p1_shortest_status = "waiting_symbol_confirm"
+        p1_shortest_label = "P1 等待输入股票代码并点击确认。"
+        p1_shortest_next = "先输入 6 位 A 股代码或带 .SZ/.SH/.BJ 后缀的代码。"
+    ordinary_p1_shortest_path_checkpoint = {
+        "schema_version": "candidate_radar_p1_shortest_path_checkpoint.v1",
+        "status": p1_shortest_status,
+        "ordinary_label": p1_shortest_label,
+        "next_action": p1_shortest_next,
+        "route": "POST /api/candidate-radar/quant-projection",
+        "task_type": "run_candidate_radar_quant_projection",
+        "task_id": latest_task_id,
+        "symbol": chain_symbol,
+        "provider_call_source": provider_call_source,
+        "provider_api_success_count": provider_api_success_count,
+        "provider_api_call_count": provider_api_call_count,
+        "credential_missing_provider_count": credential_missing_count,
+        "tushare_first_ledger_ready": provider_ready,
+        "confirm_button_creates_task": True,
+        "search_input_creates_task": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "readback_creates_task": False,
+        "deepseek_skipped_until_governed_executor": True,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "production_quant_projection_complete": False,
+        "evidence": (
+            f"status={status}; task_id={latest_task_id or 'waiting'}; "
+            f"provider_call_source={provider_call_source}; provider_ready={provider_ready}"
+        ),
+        "boundary": "只有确认按钮可创建 Tushare-first POST task；GET cache 和 React render 只读回放，不创建第二个 task。",
+    }
     ordinary_confirm_trigger_boundary_rows = [
         {
             "trigger_key": "search_input_local_validation",
@@ -16369,14 +16441,6 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "candidate_is_not_buy_instruction": True,
         },
     ]
-    chain_symbol = _safe_text(
-        provider_receipt.get("symbol")
-        or execution_request.get("symbol")
-        or dry_run.get("symbol")
-        or quant_receipt.get("symbol")
-        or "",
-        limit=32,
-    )
     if provider_ready:
         tushare_chain_state = f"Tushare-first ledger ready：{provider_api_success_count}/{provider_api_call_count} 个接口"
         tushare_chain_next = "回放股票量化推演，再打开次日图谱复核本地结果。"
@@ -16853,6 +16917,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_confirmed_task_receipt_row_count": len(ordinary_confirmed_task_receipt_rows),
         "ordinary_confirmed_task_receipt_rows_are_cache_only": True,
         "ordinary_confirmed_task_receipt_rows_create_task": False,
+        "ordinary_p1_shortest_path_checkpoint": ordinary_p1_shortest_path_checkpoint,
+        "ordinary_p1_shortest_path_checkpoint_is_cache_only": True,
+        "ordinary_p1_shortest_path_checkpoint_creates_task": False,
+        "ordinary_p1_shortest_path_checkpoint_calls_provider_from_readback": False,
+        "ordinary_p1_shortest_path_checkpoint_is_not_trade_signal": True,
         "ordinary_tushare_first_chain_rows": ordinary_tushare_first_chain_rows,
         "ordinary_tushare_first_chain_row_count": len(ordinary_tushare_first_chain_rows),
         "ordinary_tushare_first_chain_rows_are_cache_only": True,
@@ -16947,6 +17016,11 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         "ordinary_confirmed_task_receipt_row_count",
         "ordinary_confirmed_task_receipt_rows_are_cache_only",
         "ordinary_confirmed_task_receipt_rows_create_task",
+        "ordinary_p1_shortest_path_checkpoint",
+        "ordinary_p1_shortest_path_checkpoint_is_cache_only",
+        "ordinary_p1_shortest_path_checkpoint_creates_task",
+        "ordinary_p1_shortest_path_checkpoint_calls_provider_from_readback",
+        "ordinary_p1_shortest_path_checkpoint_is_not_trade_signal",
         "ordinary_task_readback_rows",
         "ordinary_task_readback_row_count",
         "ordinary_task_readback_rows_are_cache_only",
@@ -17044,6 +17118,12 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     )
     counts["search_quant_projection_confirmed_task_receipt_row_count"] = summary.get(
         "ordinary_confirmed_task_receipt_row_count", 0
+    )
+    counts["search_quant_projection_p1_shortest_path_checkpoint_visible"] = bool(
+        summary.get("ordinary_p1_shortest_path_checkpoint")
+    )
+    counts["search_quant_projection_p1_shortest_path_tushare_ready"] = (
+        _as_dict(summary.get("ordinary_p1_shortest_path_checkpoint")).get("tushare_first_ledger_ready") is True
     )
     counts["search_quant_projection_task_readback_row_count"] = summary.get(
         "ordinary_task_readback_row_count", 0
@@ -17209,6 +17289,10 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_confirmed_task_receipt_rows_are_cache_only"] = True
     policy["search_quant_projection_confirmed_task_receipt_rows_create_task"] = False
     policy["search_quant_projection_confirmed_task_receipt_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_p1_shortest_path_checkpoint_is_cache_only"] = True
+    policy["search_quant_projection_p1_shortest_path_checkpoint_creates_task"] = False
+    policy["search_quant_projection_p1_shortest_path_checkpoint_calls_provider_from_readback"] = False
+    policy["search_quant_projection_p1_shortest_path_checkpoint_is_not_trade_signal"] = True
     policy["search_quant_projection_task_readback_rows_are_cache_only"] = True
     policy["search_quant_projection_task_readback_rows_create_task"] = False
     policy["search_quant_projection_task_readback_rows_are_not_trade_signals"] = True

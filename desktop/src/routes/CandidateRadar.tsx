@@ -330,6 +330,9 @@ export default function CandidateRadar() {
   const searchQuantProjectionWritebackCheckpoint =
     (cache.search_quant_projection_writeback_checkpoint as Record<string, unknown> | undefined) ??
     (searchQuantProjectionSmallDataWriteback.ordinary_writeback_checkpoint_contract as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionP1ShortestPathCheckpoint =
+    (cache.ordinary_p1_shortest_path_checkpoint as Record<string, unknown> | undefined) ??
+    (searchQuantProjectionSmallDataWriteback.ordinary_p1_shortest_path_checkpoint as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionInterpretation = (cache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionResultCheckpoint =
     (cache.search_quant_projection_result_checkpoint as Record<string, unknown> | undefined) ??
@@ -1846,6 +1849,15 @@ export default function CandidateRadar() {
       label: "任务接收",
       value: quantProjectionLatestTaskState,
       tone: taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : quantProjectionSubmitError ? "bad" : "warn"
+    },
+    {
+      label: "P1 最短链路",
+      value: displayText(searchQuantProjectionP1ShortestPathCheckpoint.ordinary_label, quantProjectionTushareFirstState),
+      tone: searchQuantProjectionP1ShortestPathCheckpoint.tushare_first_ledger_ready === true
+        ? "good"
+        : String(searchQuantProjectionP1ShortestPathCheckpoint.status ?? "").includes("blocked")
+          ? "bad"
+          : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
     },
     {
       label: "当前阶段",
