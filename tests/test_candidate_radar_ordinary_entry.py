@@ -1567,12 +1567,21 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="task status tushare first ledger quick read"', panel)
         self.assertIn("Tushare-first 速读：普通用户先看主任务是否已回放接口级 ledger", panel)
         self.assertIn("Tushare ${tushareProviderSuccessCount}/${tushareProviderRows.length} 个接口已写入 task.call_ledger", panel)
+        self.assertIn('aria-label="task status p2 writeback quick read"', panel)
+        self.assertIn("P2 写回速读：普通用户先看 cache、call_ledger、packet 三面是否有本地回放信号", panel)
+        self.assertIn('写回面: "cache"', panel)
+        self.assertIn('写回面: "call_ledger"', panel)
+        self.assertIn('写回面: "packet"', panel)
         self.assertLess(
             panel.index('aria-label="task status ordinary summary"'),
             panel.index('aria-label="task status tushare first ledger quick read"'),
         )
         self.assertLess(
             panel.index('aria-label="task status tushare first ledger quick read"'),
+            panel.index('aria-label="task status p2 writeback quick read"'),
+        )
+        self.assertLess(
+            panel.index('aria-label="task status p2 writeback quick read"'),
             panel.index('<details className="developer-audit-details" aria-label="task status ordinary replay details">'),
         )
         self.assertIn("DeepSeek skipped / 未调用；P1/P2/P3 不等待模型", panel)
