@@ -15,6 +15,7 @@ import TaskStatusPanel from "../components/TaskStatusPanel";
 
 // Legacy marker: plain href="#candidates" module-top links are superseded by the confirm-input deep link.
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
+const NEXT_SESSION_CHART_HREF = "#next/next-session-chart";
 
 function toRows(items: unknown, bucket?: string): Array<Record<string, unknown>> {
   if (!Array.isArray(items)) return [];
@@ -80,10 +81,8 @@ export default function FactorQuantHub() {
   const launchTask = (path: string, payload: Record<string, unknown> = {}) =>
     void postTask(path, payload).then((res) => {
       setTaskReceipt(res);
-      if (res.ok) {
-        setTaskId(res.data.task_id);
-        refreshTaskIndex();
-      }
+      if (res.ok) setTaskId(res.data.task_id);
+      if (res.ok) refreshTaskIndex();
     });
 
   useEffect(() => {
@@ -544,7 +543,7 @@ export default function FactorQuantHub() {
   const ordinaryQuantRouteHandoffBoundary =
     "回放入口只切换本地页面/锚点（#next 是本地模块路由，#candidates/... 直达确认输入区，#factor-* 是页内锚点）；不创建 task、不调用 Tushare 或 DeepSeek、不写 cache、不改交易策略";
   const ordinaryQuantFullNextSessionHandoff =
-    "完整次日图谱入口：从量化推演摘要打开 #next 本地模块路由，复核路径、参考线和操作区；只做本地页面切换";
+    "完整次日图谱入口：从量化推演摘要打开 #next/next-session-chart 图表区域，复核路径、参考线和操作区；只做本地页面切换";
   const ordinaryQuantFullNextSessionBoundary =
     "打开完整次日图谱不创建 task、不刷新 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
   const ordinaryQuantFullNextSessionRows = [
@@ -557,7 +556,7 @@ export default function FactorQuantHub() {
     {
       交接项: "完整图谱入口",
       当前状态: ordinaryQuantFullNextSessionHandoff,
-      用户下一步: "点击“打开完整次日图谱”只切换到 #next，本地复核路径、参考线和操作区",
+      用户下一步: "点击“打开完整次日图谱”只切换到 #next/next-session-chart，本地复核路径、参考线和操作区",
       边界: ordinaryQuantFullNextSessionBoundary
     },
     {
@@ -1055,7 +1054,7 @@ export default function FactorQuantHub() {
           <div className="actions" aria-label="stock quant local task index progress actions">
             <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from stock quant progress watch">任务目录</a>
             <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="open factor support suppress from stock quant progress watch">支持/压制</a>
-            <a href="#next" title="切换到完整次日图谱模块；只读本地 next-session cache" aria-label="open next session from stock quant progress watch">次日图谱</a>
+            <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱图表区域；只读本地次日图谱数据" aria-label="open next session from stock quant progress watch">次日图谱</a>
           </div>
           <p className="risk-note">边用边看：{ordinaryQuantProgressWatchNext}；这只来自 GET /api/tasks、Factor cache 和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易。</p>
         </div>
@@ -1096,7 +1095,7 @@ export default function FactorQuantHub() {
           />
           <div className="actions" aria-label="stock quant readable result local actions">
             <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="open factor support suppress from readable result">查看支持/压制</a>
-            <a href="#next" title="切换到完整次日图谱模块；只读本地 next-session cache" aria-label="open full next session from readable result">打开完整次日图谱</a>
+            <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱图表区域；只读本地次日图谱数据" aria-label="open full next session from readable result">打开完整次日图谱</a>
             <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return candidate radar confirm input from readable result">回下一票雷达确认</a>
           </div>
           <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变 strategy action。</p>
@@ -1134,7 +1133,7 @@ export default function FactorQuantHub() {
           </div>
           <div aria-label="stock quant ordinary full next session handoff">
             <h3>完整次日图谱交接</h3>
-            <p className="ordinary-status-note">从本页打开完整次日图谱只切换 #next 本地模块；先看本页预览，再去完整图谱复核路径、参考线、操作区和缺口边界。</p>
+            <p className="ordinary-status-note">从本页打开完整次日图谱只切换 #next/next-session-chart 本地图表区域；先看本页预览，再去完整图谱复核路径、参考线、操作区和缺口边界。</p>
             <DataLineageTable rows={ordinaryQuantFullNextSessionRows} />
           </div>
           <div aria-label="stock quant ordinary factor review checklist">
@@ -1158,7 +1157,7 @@ export default function FactorQuantHub() {
         <div className="actions" aria-label="stock quant projection source actions">
           <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="view factor support suppress summary">查看支持/压制</a>
           <a href="#factor-next-session" title="跳到本页次日图谱预览；不刷新 provider/model" aria-label="view next session bridge preview">查看次日图谱预览</a>
-          <a href="#next" title="切换到完整次日图谱模块；只读本地 next-session cache" aria-label="open full next session map from stock quant replay">打开完整次日图谱</a>
+          <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱图表区域；只读本地次日图谱数据" aria-label="open full next session map from stock quant replay">打开完整次日图谱</a>
           <a href="#factor-deepseek" title="跳到本页模型解释状态；DeepSeek 仍等 governed executor" aria-label="view model explanation status">查看模型解释状态</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return to candidate radar confirm input without creating a task">去下一票雷达确认生成</a>
         </div>

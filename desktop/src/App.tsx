@@ -153,15 +153,21 @@ export default function App() {
     if (!anchor) return;
     let cancelled = false;
     const scrollToAnchor = () => {
-      if (cancelled) return;
-      document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+      if (cancelled) return false;
+      const target = document.getElementById(anchor);
+      if (!target) return false;
+      target.scrollIntoView({ block: "start" });
+      return true;
     };
-    const raf = window.requestAnimationFrame(scrollToAnchor);
-    const timer = window.setTimeout(scrollToAnchor, 120);
+    if (scrollToAnchor()) return;
+    const observer = new MutationObserver(() => {
+      if (scrollToAnchor()) observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    queueMicrotask(scrollToAnchor);
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(raf);
-      window.clearTimeout(timer);
+      observer.disconnect();
     };
   }, [route, localFastapiRefreshNonce]);
 

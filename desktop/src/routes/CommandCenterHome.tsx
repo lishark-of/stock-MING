@@ -2284,7 +2284,7 @@ export default function CommandCenterHome() {
         <div className="actions" aria-label="daily command usable path front actions">
           <a href={dailyCommandPrimaryActionHref} title={dailyCommandPrimaryActionBoundary} aria-label="open usable path primary action">{dailyCommandPrimaryActionLabel}</a>
           <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读回放本地 P2/P3 结果" aria-label="open stock quant from usable path progress">股票量化推演</a>
-          <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读回放本地 next-session cache" aria-label="open next session from usable path progress">次日图谱</a>
+          <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读回放本地图谱数据" aria-label="open next session from usable path progress">次日图谱</a>
         </div>
         <p className="risk-note">这张进度卡只读首页已回放的 health、CandidateRadar cache、task index 和本地结果；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不会读取 token/key、不会交易或修改 strategy action。</p>
       </PacketCard>
