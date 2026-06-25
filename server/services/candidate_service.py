@@ -67,6 +67,9 @@ QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION = (
 QUANT_PROJECTION_RESULT_CHECKPOINT_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_result_checkpoint.v1"
 )
+QUANT_PROJECTION_P3_EXPLAINABLE_RESULT_CHECKPOINT_SCHEMA_VERSION = (
+    "candidate_radar_p3_explainable_result_checkpoint.v1"
+)
 QUANT_PROJECTION_DEEPSEEK_GOVERNED_EXECUTOR_CONTRACT_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_deepseek_governed_executor_contract.v1"
 )
@@ -18429,6 +18432,72 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "candidate_is_not_buy_instruction": True,
         "production_quant_projection_complete": False,
     }
+    if small_data_ready:
+        p3_checkpoint_status = (
+            "p3_explainable_result_ready_local_map"
+            if factor_next_ready
+            else "p3_explainable_result_ready_pending_local_map"
+        )
+        p3_checkpoint_label = (
+            f"P3 结果 checkpoint：可读结论已从 Tushare-first ledger 回放 "
+            f"{provider_success_count}/{provider_call_count}；只解释 source/gap/next_step/safety_summary。"
+        )
+        p3_checkpoint_next_action = ordinary_result_next_step
+    elif ordinary_result_status == "blocked_missing_credentials":
+        p3_checkpoint_status = "p3_explainable_result_blocked_missing_tushare_credentials"
+        p3_checkpoint_label = "P3 结果 checkpoint：只解释本地阻断原因；缺少服务端 Tushare 凭据，未调用 provider。"
+        p3_checkpoint_next_action = ordinary_result_next_step
+    elif quant_receipt:
+        p3_checkpoint_status = "p3_explainable_result_waiting_tushare_first_ledger"
+        p3_checkpoint_label = "P3 结果 checkpoint：已有本地搜票记录，等待确认后的 Tushare-first ledger。"
+        p3_checkpoint_next_action = ordinary_result_next_step
+    else:
+        p3_checkpoint_status = "p3_explainable_result_waiting_symbol_confirm"
+        p3_checkpoint_label = "P3 结果 checkpoint：等待输入股票代码并点击确认。"
+        p3_checkpoint_next_action = ordinary_result_next_step
+    ordinary_p3_explainable_result_checkpoint = {
+        "schema_version": QUANT_PROJECTION_P3_EXPLAINABLE_RESULT_CHECKPOINT_SCHEMA_VERSION,
+        "status": p3_checkpoint_status,
+        "ordinary_label": p3_checkpoint_label,
+        "ordinary_next_action": p3_checkpoint_next_action,
+        "readback_route": "GET /api/candidate-radar/cache",
+        "source_packet_key": PACKET_KEY,
+        "source_task_id": latest_task_id or "",
+        "ordinary_result_status": ordinary_result_status,
+        "ordinary_result_summary": ordinary_result_summary,
+        "ordinary_result_next_step": ordinary_result_next_step,
+        "ordinary_result_boundary": ordinary_result_boundary,
+        "ordinary_result_evidence": ordinary_result_evidence,
+        "ordinary_result_readable": ordinary_result_checkpoint_contract["ordinary_result_readable"],
+        "provider_data_source_verified": small_data_ready,
+        "blocker_explanation_visible": ordinary_result_checkpoint_contract["blocker_explanation_visible"],
+        "data_source_state": data_source_status,
+        "evidence_source": ordinary_result_checkpoint_contract["evidence_source"],
+        "next_session_map_state": ordinary_result_checkpoint_contract["next_session_map_state"],
+        "missing_evidence": missing_evidence,
+        "missing_evidence_count": len(missing_evidence),
+        "safe_explanation_fields": ordinary_result_checkpoint_contract["safe_explanation_fields"],
+        "deepseek_state": deepseek_governed_executor_status,
+        "uses_tushare_ledger": small_data_ready,
+        "uses_deepseek_output": False,
+        "uses_model_output": False,
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "readback_creates_task": False,
+        "calls_model_from_readback": False,
+        "readback_external_calls_triggered": False,
+        "get_cache_external_calls": False,
+        "react_render_external_calls": False,
+        "search_input_external_calls": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "does_not_modify_prices": True,
+        "candidate_is_not_buy_instruction": True,
+        "production_quant_projection_complete": False,
+        "claims_14_ltg_complete": False,
+    }
     ordinary_result_checkpoint_rows = [
         {
             "checkpoint_key": "readable_result",
@@ -18669,6 +18738,12 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_checkpoint_creates_task": False,
         "ordinary_result_checkpoint_calls_model": False,
         "ordinary_result_checkpoint_is_not_trade_signal": True,
+        "ordinary_p3_explainable_result_checkpoint": ordinary_p3_explainable_result_checkpoint,
+        "ordinary_p3_explainable_result_checkpoint_is_cache_only": True,
+        "ordinary_p3_explainable_result_checkpoint_creates_task": False,
+        "ordinary_p3_explainable_result_checkpoint_calls_model": False,
+        "ordinary_p3_explainable_result_checkpoint_uses_model_output": False,
+        "ordinary_p3_explainable_result_checkpoint_is_not_trade_signal": True,
         "symbol": small_data.get("symbol") or quant_receipt.get("symbol") or "",
         "interpretation_ready": small_data_ready,
         "provider_api_success_count": provider_success_count,
@@ -18750,6 +18825,7 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     ordinary_result_decision_brief_rows = [
         row for row in _as_list(summary.get("ordinary_result_decision_brief_rows")) if isinstance(row, dict)
     ]
+    p3_explainable_result_checkpoint = _as_dict(summary.get("ordinary_p3_explainable_result_checkpoint"))
     ordinary_post_confirm_one_glance_items = [
         row for row in _as_list(summary.get("ordinary_post_confirm_one_glance_items")) if isinstance(row, dict)
     ]
@@ -18768,6 +18844,7 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["ordinary_result_action_rows"] = ordinary_result_action_rows
     view["ordinary_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
     view["ordinary_result_decision_brief_rows"] = ordinary_result_decision_brief_rows
+    view["ordinary_p3_explainable_result_checkpoint"] = p3_explainable_result_checkpoint
     view["ordinary_post_confirm_one_glance_items"] = ordinary_post_confirm_one_glance_items
     view["search_quant_projection_result_quick_read_rows"] = ordinary_result_quick_read_rows
     view["search_quant_projection_result_handoff_rows"] = ordinary_result_handoff_rows
@@ -18783,6 +18860,7 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["ordinary_post_confirm_one_glance_item_count"] = len(ordinary_post_confirm_one_glance_items)
     view["search_quant_projection_result_checkpoint"] = result_checkpoint
     view["search_quant_projection_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
+    view["search_quant_projection_p3_explainable_result_checkpoint"] = p3_explainable_result_checkpoint
     counts["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
     counts["ordinary_result_handoff_row_count"] = len(ordinary_result_handoff_rows)
     counts["ordinary_result_readback_row_count"] = len(ordinary_result_readback_rows)
@@ -18800,6 +18878,18 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["search_quant_projection_result_checkpoint_row_count"] = summary.get(
         "ordinary_result_checkpoint_row_count",
         0,
+    )
+    counts["search_quant_projection_p3_explainable_result_checkpoint_visible"] = bool(
+        p3_explainable_result_checkpoint
+    )
+    counts["search_quant_projection_p3_explainable_result_checkpoint_readable"] = (
+        p3_explainable_result_checkpoint.get("ordinary_result_readable") is True
+    )
+    counts["search_quant_projection_p3_explainable_result_checkpoint_ready"] = str(
+        p3_explainable_result_checkpoint.get("status") or ""
+    ).startswith("p3_explainable_result_ready")
+    counts["search_quant_projection_p3_explainable_result_checkpoint_missing_evidence_count"] = (
+        p3_explainable_result_checkpoint.get("missing_evidence_count", 0)
     )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
@@ -18842,6 +18932,11 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_result_checkpoint_rows_create_task"] = False
     policy["search_quant_projection_result_checkpoint_rows_call_model"] = False
     policy["search_quant_projection_result_checkpoint_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_p3_explainable_result_checkpoint_is_cache_only"] = True
+    policy["search_quant_projection_p3_explainable_result_checkpoint_creates_task"] = False
+    policy["search_quant_projection_p3_explainable_result_checkpoint_calls_model"] = False
+    policy["search_quant_projection_p3_explainable_result_checkpoint_uses_model_output"] = False
+    policy["search_quant_projection_p3_explainable_result_checkpoint_is_not_trade_signal"] = True
     policy["search_quant_projection_post_confirm_one_glance_items_are_cache_only"] = True
     policy["search_quant_projection_post_confirm_one_glance_items_create_task"] = False
     policy["search_quant_projection_post_confirm_one_glance_items_use_model_output"] = False

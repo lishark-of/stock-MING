@@ -340,6 +340,10 @@ export default function CandidateRadar() {
   const searchQuantProjectionResultCheckpoint =
     (cache.search_quant_projection_result_checkpoint as Record<string, unknown> | undefined) ??
     (searchQuantProjectionInterpretation.ordinary_result_checkpoint_contract as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionP3ExplainableResultCheckpoint =
+    (cache.ordinary_p3_explainable_result_checkpoint as Record<string, unknown> | undefined) ??
+    (cache.search_quant_projection_p3_explainable_result_checkpoint as Record<string, unknown> | undefined) ??
+    (searchQuantProjectionInterpretation.ordinary_p3_explainable_result_checkpoint as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionPostConfirmOneGlanceItems =
     rows(cache.search_quant_projection_post_confirm_one_glance_items).length
       ? rows(cache.search_quant_projection_post_confirm_one_glance_items)
@@ -1255,6 +1259,10 @@ export default function CandidateRadar() {
     readableSentencePart("证据", quantProjectionOrdinaryResultEvidence, ["证据："]),
     readableSentencePart("边界", quantProjectionOrdinaryResultBoundary, ["边界："])
   ].join(" / ");
+  const quantProjectionP3ExplainableResultCheckpointLabel =
+    String(searchQuantProjectionP3ExplainableResultCheckpoint.ordinary_label ?? "") ||
+    String(searchQuantProjectionP3ExplainableResultCheckpoint.status ?? "") ||
+    quantProjectionOrdinaryResultSummary;
   const quantProjectionInterpretationReplay =
     String(searchQuantProjectionInterpretation.result_replay_label ?? "") ||
     "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
@@ -2482,6 +2490,11 @@ export default function CandidateRadar() {
     {
       label: "可读结论",
       value: quantProjectionOrdinaryResultSummary,
+      tone: quantProjectionInterpretationReady ? "good" as const : "warn" as const
+    },
+    {
+      label: "P3 结果证据",
+      value: quantProjectionP3ExplainableResultCheckpointLabel,
       tone: quantProjectionInterpretationReady ? "good" as const : "warn" as const
     },
     {
