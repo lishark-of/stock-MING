@@ -1194,17 +1194,35 @@ export default function CommandCenterHome() {
     }
   ];
   const nextPayloadLedger = (next.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const dailyCommandNextSessionReplaySummary =
+    (next.ordinary_result_replay_summary as Record<string, unknown> | undefined) ?? {};
+  const dailyCommandNextSessionChartReady =
+    dailyCommandNextSessionReplaySummary.chart_ready_for_confirmed_symbol === true;
+  const dailyCommandNextSessionConfirmedSymbol = String(
+    dailyCommandNextSessionReplaySummary.confirmed_symbol ?? next.latest_confirmed_symbol ?? ""
+  );
+  const dailyCommandNextSessionChartSymbol = String(
+    dailyCommandNextSessionReplaySummary.chart_symbol ?? ""
+  );
+  const dailyCommandNextSessionPreviewSource =
+    next.button_gated_local_confirmed_symbol_preview === true
+      ? "按钮门控本地预览，非 provider-backed"
+      : "本地 next-session cache";
   const dailyCommandNextSessionStatusRaw = String(next.status ?? "");
   const dailyCommandNextSessionReadableStatus =
-    dailyCommandNextSessionStatusRaw === "ready"
-      ? "完整次日图谱可读"
+    dailyCommandNextSessionChartReady
+      ? `次日图谱已绑定 ${dailyCommandNextSessionConfirmedSymbol || dailyCommandNextSessionChartSymbol || "当前标的"} 可读；${dailyCommandNextSessionPreviewSource}`
+      : dailyCommandNextSessionStatusRaw === "ready"
+        ? "次日图谱 cache 可读，但等待确认标的绑定回放"
       : dailyCommandNextSessionStatusRaw === "candidate_readable_result_replay_chart_pending"
         ? "P3 结果已接上，完整图谱待生成/刷新"
         : dailyCommandNextSessionStatusRaw
           ? `次日图谱状态：${dailyCommandNextSessionStatusRaw}`
           : "等待次日图谱缓存";
   const dailyCommandNextSessionTone: MetricItem["tone"] =
-    dailyCommandNextSessionStatusRaw === "ready" || dailyCommandNextSessionStatusRaw === "candidate_readable_result_replay_chart_pending"
+    dailyCommandNextSessionChartReady ||
+    dailyCommandNextSessionStatusRaw === "ready" ||
+    dailyCommandNextSessionStatusRaw === "candidate_readable_result_replay_chart_pending"
       ? "good"
       : "warn";
   const serenityPayloadLedger = (serenity.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -1581,11 +1599,12 @@ export default function CommandCenterHome() {
     { label: "数据链", value: dailyCommandTushareFirstLedgerLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
     { label: "P2 写入", value: dailyCommandP2SurfaceCompletionLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
     { label: "P3 结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+    { label: "次日图谱", value: dailyCommandNextSessionReadableStatus, tone: dailyCommandNextSessionTone },
     { label: "下一步", value: dailyCommandP3OneGlanceReadable ? "看股票量化推演和次日图谱" : "先确认股票代码，等待本地回放", tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
     { label: "边界", value: "首屏快照只读已有 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek", tone: "good" }
   ];
   const dailyCommandCurrentResearchSnapshotReadableSentence = homeQuantP1P2P3CheckpointReady
-    ? `${dailyCommandConfirmedSymbolLabel} 已有最近确认结果：${dailyCommandExplainableResultLabel}；${dailyCommandTushareFirstLedgerLabel}；P2 ${dailyCommandP2SurfaceCompletionLabel}；下一步看股票量化推演和次日图谱。`
+    ? `${dailyCommandConfirmedSymbolLabel} 已有最近确认结果：${dailyCommandExplainableResultLabel}；${dailyCommandTushareFirstLedgerLabel}；P2 ${dailyCommandP2SurfaceCompletionLabel}；${dailyCommandNextSessionReadableStatus}；下一步看股票量化推演和次日图谱。`
     : dailyCommandP0LocalReadinessReady
       ? dailyCommandConfirmedSymbol
         ? `${dailyCommandConfirmedSymbolLabel} 已有本地回放线索；${homeQuantP1P2P3CheckpointLabel}；需要更新时再手动点击确认按钮。`
@@ -2486,7 +2505,7 @@ export default function CommandCenterHome() {
           <h3>最近确认投研快照</h3>
           <p className="ordinary-status-note" aria-label="daily command current research snapshot readable sentence" aria-live="polite">{dailyCommandCurrentResearchSnapshotReadableSentence}</p>
           <MetricGrid items={dailyCommandCurrentResearchSnapshotItems} />
-          <p className="risk-note">这张首屏快照只读最近确认 task、Tushare-first ledger、P2 三面和 P3 可读结论；不会创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key，也不交易或修改 strategy action。</p>
+          <p className="risk-note">这张首屏快照只读最近确认 task、Tushare-first ledger、P2 三面、P3 可读结论和次日图谱回放；不会创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key，也不交易或修改 strategy action。</p>
         </div>
         <DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows} />
         <div className="actions" aria-label="daily command usable path front actions">
