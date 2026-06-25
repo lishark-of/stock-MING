@@ -1457,6 +1457,55 @@ export default function CandidateRadar() {
     : quantProjectionPersistedTaskId
       ? `最近任务：${quantProjectionPersistedTaskId} / cache 回放 / ${quantProjectionPersistedTaskStep || "等待状态"}`
       : "最近任务：暂无；点击确认按钮后显示本地任务编号";
+  const quantProjectionTushareFirstOrdinaryStage = quantProjectionSubmitError
+    ? "P1 blocked：确认任务未创建；先恢复本地 FastAPI 后再重新点击确认"
+    : quantProjectionProviderLedgerReady
+      ? `Tushare-first 已回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口；继续看 P2/P3 本地结果`
+      : quantProjectionSmallDataPartialLedgerReady
+        ? "Tushare-first ledger 已出现，但 cache / packet 未齐；等待三面回放后再看 P3"
+        : taskReceipt?.ok || quantProjectionPersistedTaskId
+          ? "P1 accepted：任务已接收；等待 TaskStatusPanel success 后刷新本地回放"
+          : quantProjectionCanSubmit
+            ? "P1 ready：当前代码可确认；点击一次按钮创建 Tushare-first 后台 task"
+            : quantProjectionP0Ready
+              ? "等待有效股票代码；输入本身保持静默"
+              : "P0 未联通：先恢复本地 FastAPI、bootstrap status 和 desktop preflight";
+  const quantProjectionTushareFirstOrdinaryNextStep = quantProjectionSubmitError
+    ? "回到 P0 联通诊断，恢复后重新点击确认按钮"
+    : quantProjectionProviderLedgerReady || quantProjectionSmallDataReady
+      ? "打开股票量化推演和次日图谱，只读回放本地 cache / ledger / packet"
+      : taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? "看 TaskStatusPanel；success 后点刷新本地回放"
+        : quantProjectionCanSubmit
+          ? "点击“确认并生成 3.0 量化推演”"
+          : "先输入 6 位 A 股代码或带 .SZ/.SH/.BJ 后缀的代码";
+  const quantProjectionTushareFirstOrdinaryEvidence = quantProjectionProviderLedgerReady
+    ? "call_ledger 已可读；P2/P3 继续从本地 cache / packet 回放"
+    : taskReceipt?.ok || quantProjectionPersistedTaskId
+      ? "task receipt / TaskStatusPanel / GET cache"
+      : "本地输入校验 + P0 联通状态；尚未创建 task";
+  const quantProjectionTushareFirstOrdinaryReadinessItems: MetricItem[] = [
+    {
+      label: "当前进度",
+      value: quantProjectionTushareFirstOrdinaryStage,
+      tone: quantProjectionProviderLedgerReady || quantProjectionSmallDataReady ? "good" : quantProjectionSubmitError ? "bad" : "warn"
+    },
+    {
+      label: "下一步",
+      value: quantProjectionTushareFirstOrdinaryNextStep,
+      tone: quantProjectionCanSubmit || taskReceipt?.ok || quantProjectionPersistedTaskId || quantProjectionProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "回放依据",
+      value: quantProjectionTushareFirstOrdinaryEvidence,
+      tone: quantProjectionProviderLedgerReady || taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : "neutral"
+    },
+    {
+      label: "边界",
+      value: "页面打开、输入、React render 和 GET cache 静默；只有确认按钮创建本地 POST task；DeepSeek skipped；不交易",
+      tone: "good"
+    }
+  ];
   const quantProjectionOrdinaryTaskRailState = [
     quantProjectionCanSubmit || quantProjectionDisplaySymbol ? "input_ready" : "input_waiting",
     quantProjectionTaskReceiptInputMismatch ? "task_receipt_stale_for_input" : quantProjectionSubmitError ? "task_failed" : quantProjectionSubmitting ? "submitting" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "task_visible" : "task_waiting",
@@ -2478,6 +2527,11 @@ export default function CandidateRadar() {
             <h3>确认按钮任务链速读</h3>
             <p className="risk-note">普通用户不用展开链路详情也能看到：确认按钮会创建哪条本地 POST task、写回哪三面、DeepSeek 和交易边界如何隔离；这张速读只读页面状态，不创建第二个 task。</p>
             <MetricGrid items={quantProjectionFirstScreenTaskContractItems} />
+          </div>
+          <div aria-label="candidate radar ordinary tushare first readiness strip">
+            <h3>Tushare-first 当前进度</h3>
+            <p className="risk-note">这条进度条把“能不能点确认、任务是否接收、Tushare 账本是否回放、下一步看哪里”合成四格；它只读页面状态和本地回放，不展示审计按钮。</p>
+            <MetricGrid items={quantProjectionTushareFirstOrdinaryReadinessItems} />
           </div>
           {quantProjectionTaskPanelVisible ? (
             <div aria-label="candidate radar first screen task status">
