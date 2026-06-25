@@ -1546,6 +1546,29 @@ export default function CommandCenterHome() {
         </div>
         <p className="risk-note">这张卡把 P1/P2/P3 放到首页前排：页面打开和搜索输入不外联；只有首页或下一票雷达确认按钮可以创建 Tushare-first POST task，DeepSeek governed executor 单独补。</p>
       </PacketCard>
+      <PacketCard title="P2 小数据三面速读" subtitle="确认后直接看 cache、call_ledger、packet 是否能本地回放" status={candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "ready" : "waiting_confirm"}>
+        <MetricGrid
+          items={[
+            { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
+            { label: "三面状态", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+            { label: "写入面", value: "cache / call_ledger / packet", tone: "good" },
+            { label: "来源任务", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
+            { label: "下一步", value: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "打开股票量化推演和次日图谱回放" : "确认任务完成后刷新本地 cache / ledger / packet", tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+            { label: "边界", value: "这张卡只读已有 P2 写回摘要；不创建第二个 task、不补调 Tushare/DeepSeek、不展示 raw log", tone: "good" }
+          ]}
+        />
+        <div aria-label="daily command ordinary p2 writeback front row">
+          <h3>P2 三面回放</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_writeback_surface_summary_rows，让普通用户确认 cache、call_ledger、packet 三面有没有本地回放；完整工程审计仍下沉在折叠明细。</p>
+          <DataLineageTable rows={dailyCommandSmallDataWritebackRows} />
+        </div>
+        <div className="actions" aria-label="daily command p2 writeback front actions">
+          <a href="#factor" title="切换到股票量化推演；只读回放本地 P2/P3 结果" aria-label="open factor after p2 writeback front row">股票量化推演</a>
+          <a href="#next" title="切换到次日图谱；只读回放本地 P2/P3 图谱" aria-label="open next session after p2 writeback front row">次日图谱</a>
+          <a href={dailyCommandCandidateConfirmHref} title="回到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate confirm after p2 writeback front row">确认或换一只票</a>
+        </div>
+        <p className="risk-note">P2 三面速读只从 CandidateRadar cache / call_ledger / packet 回放；不会从首页回放卡创建 task、读取 token/key、执行真实交易或修改 strategy action。</p>
+      </PacketCard>
       <PacketCard title="最近本地任务" subtitle="打开软件后直接看进度；只读回放 task/cache/ledger/packet" status={dailyCommandLatestTaskStatus}>
         <MetricGrid
           items={[
