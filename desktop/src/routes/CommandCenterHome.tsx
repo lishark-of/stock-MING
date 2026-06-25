@@ -1774,6 +1774,39 @@ export default function CommandCenterHome() {
       边界: "不声明 release ready、不触发 provider/model、不改变 strategy action"
     }
   ];
+  const dailyCommandUsablePathP1Done = Boolean(homeQuantVisibleTaskId) || dailyCommandTushareFirstLedgerReady;
+  const dailyCommandUsablePathP1State = dailyCommandUsablePathP1Done
+    ? "done"
+    : dailyCommandP0LocalReadinessReady
+      ? "active"
+      : "blocked";
+  const dailyCommandUsablePathP1Detail = dailyCommandUsablePathP1Done
+    ? dailyCommandTushareFirstLedgerReady
+      ? "ledger ready"
+      : "task visible"
+    : dailyCommandP0LocalReadinessReady
+      ? "confirm"
+      : "blocked";
+  const dailyCommandUsablePathP2State = dailyCommandP2ThreeSurfaceReady
+    ? "done"
+    : dailyCommandUsablePathP1Done
+      ? "active"
+      : "waiting";
+  const dailyCommandUsablePathP2Detail = dailyCommandP2ThreeSurfaceReady
+    ? "cache/ledger/packet"
+    : dailyCommandUsablePathP1Done
+      ? "writeback"
+      : "after P1";
+  const dailyCommandUsablePathP3State = dailyCommandP3OneGlanceReadable
+    ? "done"
+    : dailyCommandP2ThreeSurfaceReady
+      ? "active"
+      : "waiting";
+  const dailyCommandUsablePathP3Detail = dailyCommandP3OneGlanceReadable
+    ? "readable"
+    : dailyCommandP2ThreeSurfaceReady
+      ? "review"
+      : "after P2";
   const dailyCommandUsablePathStageRailSteps = [
     {
       key: "p0",
@@ -1784,20 +1817,20 @@ export default function CommandCenterHome() {
     {
       key: "p1",
       label: "P1 确认按钮",
-      state: dailyCommandP0LocalReadinessReady ? "active" : "blocked",
-      detail: "Tushare-first"
+      state: dailyCommandUsablePathP1State,
+      detail: dailyCommandUsablePathP1Detail
     },
     {
       key: "p2",
       label: "P2 小数据",
-      state: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "done" : "active",
-      detail: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "cache/ledger/packet" : "waiting"
+      state: dailyCommandUsablePathP2State,
+      detail: dailyCommandUsablePathP2Detail
     },
     {
       key: "p3",
       label: "P3 可解释结果",
-      state: candidateQuantInterpretation.interpretation_ready === true ? "done" : "active",
-      detail: candidateQuantInterpretation.interpretation_ready === true ? "readable" : "pending"
+      state: dailyCommandUsablePathP3State,
+      detail: dailyCommandUsablePathP3Detail
     },
     {
       key: "p4",
