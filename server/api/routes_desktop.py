@@ -12,10 +12,19 @@ from server.services import desktop_service
 router = APIRouter(prefix="/api/desktop")
 
 
-@router.get("/preflight-cache")
-def get_desktop_shell_preflight_cache() -> dict:
+def _desktop_shell_preflight_envelope() -> dict:
     packet = desktop_service.read_desktop_shell_preflight_cache()
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+
+
+@router.get("/preflight-cache")
+def get_desktop_shell_preflight_cache() -> dict:
+    return _desktop_shell_preflight_envelope()
+
+
+@router.get("/preflight")
+def get_desktop_shell_preflight_alias() -> dict:
+    return _desktop_shell_preflight_envelope()
 
 
 @router.post("/tauri-package-artifact-review")
