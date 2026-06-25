@@ -66,9 +66,23 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         summary_extra_end = summary_slice.index('aria-label="candidate radar first screen quant projection confirmation"', summary_extra_start)
         summary_primary_slice = summary_slice[:summary_extra_start]
         summary_extra_slice = summary_slice[summary_extra_start:summary_extra_end]
+        self.assertIn("candidateRadarUserFirstItems", self.page)
+        self.assertIn('aria-label="candidate radar ordinary user first summary"', summary_primary_slice)
+        self.assertIn("一屏确认", summary_primary_slice)
+        self.assertIn("默认先看现在做什么、输入状态、确认按钮、最近结果、下一步入口和边界", summary_primary_slice)
+        self.assertIn('label: "现在做什么"', self.page)
+        self.assertIn('label: "输入状态"', self.page)
+        self.assertIn('label: "最近结果"', self.page)
+        self.assertIn('label: "下一步入口"', self.page)
+        self.assertIn('label: "边界"', self.page)
+        self.assertIn('aria-label="candidate radar user first actions"', summary_primary_slice)
+        self.assertIn('href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"}', summary_primary_slice)
         self.assertIn('aria-label="candidate radar ordinary usable now strip"', summary_primary_slice)
         self.assertIn("现在可用状态", summary_primary_slice)
         self.assertIn("quantProjectionUsableNowItems", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar ordinary task progress details"', summary_primary_slice)
+        self.assertIn("<summary>任务和回放状态</summary>", summary_primary_slice)
+        self.assertIn("任务编号、任务索引、checkpoint 和 P2/P3 回放状态默认收起", summary_primary_slice)
         for usable_label in (
             'label: "本地 FastAPI"',
             'label: "确认按钮"',
@@ -107,12 +121,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "P1 确认后等待"',
             'label: "P2 checkpoint"',
             'label: "P2 写入边界"',
+            'label: "任务边界"',
             'label: "结果位置"',
         ):
             self.assertNotIn(downshifted_label, summary_primary_slice)
             self.assertIn(downshifted_label, summary_extra_slice)
-        self.assertIn('label: "任务边界"', summary_primary_slice)
-        self.assertIn("候选来源、评分说明、P1 回放顺序、P2 checkpoint 和结果位置默认收起", summary_extra_slice)
+        self.assertIn("P0/P1/P2 checkpoint、候选来源、评分说明、P1 回放顺序、P2 checkpoint 和结果位置默认收起", summary_extra_slice)
 
         self.assertLess(self.page.index('title="普通用户雷达摘要"'), self.page.index("<summary>开发 / 审计指标</summary>"))
         self.assertLess(self.page.index('title="下一票候选池"'), self.page.index("<summary>扫描覆盖 / 验收审计</summary>"))

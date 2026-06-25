@@ -2078,6 +2078,44 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarUserFirstItems: MetricItem[] = [
+    {
+      label: "现在做什么",
+      value: quantProjectionCanSubmit
+        ? "点击确认并生成 3.0 量化推演"
+        : quantProjectionP0Ready
+          ? "先输入 6 位 A 股代码"
+          : "先恢复本地 FastAPI 联通",
+      tone: quantProjectionCanSubmit || quantProjectionP0Ready ? "good" : "warn"
+    },
+    {
+      label: "输入状态",
+      value: quantProjectionInputValidation,
+      tone: quantProjectionSymbolReady ? "good" : searchSymbol.trim() ? "warn" : "neutral"
+    },
+    {
+      label: "确认按钮",
+      value: quantProjectionCanSubmit ? "可用：点击后才创建后台任务" : quantProjectionDisabledReason,
+      tone: quantProjectionCanSubmit ? "good" : "warn"
+    },
+    {
+      label: "最近结果",
+      value: quantProjectionInterpretationReady || quantProjectionSmallDataReady
+        ? quantProjectionOrdinaryResultSummary
+        : quantProjectionReplayDestinationState,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "下一步入口",
+      value: quantProjectionReplayDestinationNextStep,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady || quantProjectionCanSubmit ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "输入不外联；确认按钮才触发 Tushare-first；DeepSeek 等 P5；不交易、不改 action",
+      tone: "good"
+    }
+  ];
   const quantProjectionPostConfirmReplayContractReady =
     quantProjectionPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
   const quantProjectionPostConfirmReplaySequence = Array.isArray(quantProjectionPostConfirmReplayContract.readback_sequence)
@@ -2674,57 +2712,67 @@ export default function CandidateRadar() {
       />
 
       <PacketCard title="普通用户雷达摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={candidateRadarStatusLabel}>
-        <MetricGrid
-          items={[
-            { label: "下一步", value: ordinaryNextClick },
-            { label: "主下一步", value: ordinaryPrimaryActionLabel },
-            { label: "P0 交接", value: candidateRadarP0HandoffLabel, tone: quantProjectionP0Ready ? "good" : "warn" },
-            { label: "P1 主路径", value: ordinaryP1ConfirmPathLabel, tone: quantProjectionCanSubmit ? "good" : "warn" },
-            { label: "数据链", value: ordinaryTushareSourceLabel },
-            { label: "解释状态", value: ordinaryDeepSeekSourceLabel },
-            { label: "待补证据", value: ordinaryPendingSourceLabel, tone: ordinaryPendingSourceLabel.includes("待补") ? "warn" : "good" },
-            { label: "P2 小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
-            { label: "P2 三面", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
-            { label: "任务边界", value: ordinaryTaskBoundary },
-            { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
-          ]}
-        />
+        <div aria-label="candidate radar ordinary user first summary">
+          <h3>一屏确认</h3>
+          <p className="risk-note">默认先看现在做什么、输入状态、确认按钮、最近结果、下一步入口和边界；P0/P1/P2 checkpoint、task、ledger 和补证细节继续收起。</p>
+          <MetricGrid items={candidateRadarUserFirstItems} />
+          <div className="actions" aria-label="candidate radar user first actions">
+            <a href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"} aria-label="open candidate radar user first primary action">{ordinaryPrimaryActionLabel}</a>
+            <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar user first summary">股票量化推演</a>
+            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar user first summary">次日图谱</a>
+          </div>
+        </div>
         <div aria-label="candidate radar ordinary p3 one minute result">
           <h3>最近搜票 P3 一分钟结果</h3>
           <p className="ordinary-status-note" aria-label="candidate radar summary p3 readable sentence">{quantProjectionP3OrdinaryReadableSentence}</p>
           <MetricGrid items={quantProjectionP3ResultSummaryItems} />
           <p className="risk-note">这条结果只读最近确认 task 的本地 cache / call_ledger / packet；不创建第二个 task、不调用 Tushare/DeepSeek、不生成买卖动作。</p>
         </div>
-        <div aria-label="candidate radar ordinary usable now strip">
-          <h3>现在可用状态</h3>
-          <MetricGrid items={quantProjectionUsableNowItems} />
-          <p className="risk-note">这条只合成本地 FastAPI、确认按钮、最近任务和 P2/P3 回放状态；不创建 task、不调用 Tushare/DeepSeek、不改 strategy action。</p>
-        </div>
-        <div aria-label="candidate radar local task index progress watch">
-          <h3>本地任务进度</h3>
-          <MetricGrid items={quantProjectionTaskIndexProgressItems} />
-          <div className="actions" aria-label="candidate radar local task index progress actions">
-            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from candidate radar progress watch">任务目录</a>
-            <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar progress watch">股票量化推演</a>
-            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar progress watch">次日图谱</a>
+        <details className="developer-audit-details" aria-label="candidate radar ordinary task progress details">
+          <summary>任务和回放状态</summary>
+          <p className="risk-note">任务编号、任务索引、checkpoint 和 P2/P3 回放状态默认收起；需要边用边看进度时再展开。本区只读 GET /api/tasks 与 CandidateRadar cache。</p>
+          <div aria-label="candidate radar ordinary usable now strip">
+            <h3>现在可用状态</h3>
+            <MetricGrid items={quantProjectionUsableNowItems} />
+            <p className="risk-note">这条只合成本地 FastAPI、确认按钮、最近任务和 P2/P3 回放状态；不创建 task、不调用 Tushare/DeepSeek、不改 strategy action。</p>
           </div>
-          <p className="risk-note">边用边看：{quantProjectionProgressWatchNext}；这只来自 GET /api/tasks 和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易。</p>
-        </div>
-        <div aria-label="candidate radar ordinary progress checkpoint">
-          <h3>当前进度 checkpoint</h3>
-          <MetricGrid items={quantProjectionOrdinaryProgressCheckpointItems} />
-          <div className="actions" aria-label="candidate radar ordinary progress checkpoint actions">
-            <a href={quantProjectionOrdinaryProgressCheckpointAnchor} aria-label="open candidate radar ordinary progress checkpoint next step">{quantProjectionOrdinaryProgressCheckpointLabel}</a>
-            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress from ordinary progress checkpoint">任务进度</a>
-            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from ordinary progress checkpoint">次日图谱</a>
+          <div aria-label="candidate radar local task index progress watch">
+            <h3>本地任务进度</h3>
+            <MetricGrid items={quantProjectionTaskIndexProgressItems} />
+            <div className="actions" aria-label="candidate radar local task index progress actions">
+              <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from candidate radar progress watch">任务目录</a>
+              <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar progress watch">股票量化推演</a>
+              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar progress watch">次日图谱</a>
+            </div>
+            <p className="risk-note">边用边看：{quantProjectionProgressWatchNext}；这只来自 GET /api/tasks 和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易。</p>
           </div>
-          <p className="risk-note">checkpoint 只汇总当前输入、task id、P2/P3 回放和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek、不改 strategy action。</p>
-        </div>
+          <div aria-label="candidate radar ordinary progress checkpoint">
+            <h3>当前进度 checkpoint</h3>
+            <MetricGrid items={quantProjectionOrdinaryProgressCheckpointItems} />
+            <div className="actions" aria-label="candidate radar ordinary progress checkpoint actions">
+              <a href={quantProjectionOrdinaryProgressCheckpointAnchor} aria-label="open candidate radar ordinary progress checkpoint next step">{quantProjectionOrdinaryProgressCheckpointLabel}</a>
+              <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress from ordinary progress checkpoint">任务进度</a>
+              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from ordinary progress checkpoint">次日图谱</a>
+            </div>
+            <p className="risk-note">checkpoint 只汇总当前输入、task id、P2/P3 回放和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek、不改 strategy action。</p>
+          </div>
+        </details>
         <details className="developer-audit-details" aria-label="candidate radar ordinary summary extra details">
           <summary>摘要细节</summary>
-          <p className="risk-note">候选来源、评分说明、P1 回放顺序、P2 checkpoint 和结果位置默认收起；普通用户先看上方主行动和 P3 结果速读。</p>
+          <p className="risk-note">P0/P1/P2 checkpoint、候选来源、评分说明、P1 回放顺序、P2 checkpoint 和结果位置默认收起；普通用户先看上方一屏确认和 P3 结果速读。</p>
           <MetricGrid
             items={[
+              { label: "下一步", value: ordinaryNextClick },
+              { label: "主下一步", value: ordinaryPrimaryActionLabel },
+              { label: "P0 交接", value: candidateRadarP0HandoffLabel, tone: quantProjectionP0Ready ? "good" : "warn" },
+              { label: "P1 主路径", value: ordinaryP1ConfirmPathLabel, tone: quantProjectionCanSubmit ? "good" : "warn" },
+              { label: "数据链", value: ordinaryTushareSourceLabel },
+              { label: "解释状态", value: ordinaryDeepSeekSourceLabel },
+              { label: "待补证据", value: ordinaryPendingSourceLabel, tone: ordinaryPendingSourceLabel.includes("待补") ? "warn" : "good" },
+              { label: "P2 小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+              { label: "P2 三面", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+              { label: "任务边界", value: ordinaryTaskBoundary },
+              { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" },
               { label: "主下一步边界", value: ordinaryPrimaryActionBoundary, tone: "good" },
               { label: "P1 主路径边界", value: ordinaryP1ConfirmPathBoundary, tone: "good" },
               { label: "候选分组", value: ordinaryCandidateGroupLabel },
