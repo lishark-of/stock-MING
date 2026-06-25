@@ -3873,6 +3873,12 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
             continue
         seen.add(fingerprint)
         call_ledger.append(safe_row)
+    call_ledger_external_calls_replayed = any(
+        row.get("external_calls_triggered") is True or row.get("external") is True for row in call_ledger
+    )
+    call_ledger_tushare_replayed = any(row.get("tushare_called") is True for row in call_ledger)
+    call_ledger_deepseek_replayed = any(row.get("deepseek_called") is True for row in call_ledger)
+    call_ledger_github_replayed = any(row.get("github_called") is True for row in call_ledger)
 
     latest_status = _safe_text(receipt.get("latest_task_status"), limit=32)
     status = latest_status if latest_status in TASK_STATUSES else "success"
@@ -3940,6 +3946,12 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
                 if selected_provider_acceptance or provider_ledger_ready
                 else "search_quant_projection_receipt"
             ),
+            "call_ledger_external_calls_replayed": call_ledger_external_calls_replayed,
+            "call_ledger_tushare_replayed": call_ledger_tushare_replayed,
+            "call_ledger_deepseek_replayed": call_ledger_deepseek_replayed,
+            "call_ledger_github_replayed": call_ledger_github_replayed,
+            "call_ledger_replay_is_read_only": True,
+            "readback_external_calls_triggered": False,
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -4477,6 +4489,39 @@ def build_task_status_index() -> dict[str, Any]:
     tushare_called = any(task.get("tushare_called") is True for task in tasks)
     deepseek_called = any(task.get("deepseek_called") is True for task in tasks)
     github_called = any(task.get("github_called") is True for task in tasks)
+    call_ledger_external_calls_replayed = any(
+        task.get("call_ledger_external_calls_replayed") is True
+        or any(
+            isinstance(row, dict)
+            and (row.get("external_calls_triggered") is True or row.get("external") is True)
+            for row in (task.get("call_ledger") or [])
+        )
+        for task in tasks
+    )
+    call_ledger_tushare_replayed = any(
+        task.get("call_ledger_tushare_replayed") is True
+        or any(
+            isinstance(row, dict) and row.get("tushare_called") is True
+            for row in (task.get("call_ledger") or [])
+        )
+        for task in tasks
+    )
+    call_ledger_deepseek_replayed = any(
+        task.get("call_ledger_deepseek_replayed") is True
+        or any(
+            isinstance(row, dict) and row.get("deepseek_called") is True
+            for row in (task.get("call_ledger") or [])
+        )
+        for task in tasks
+    )
+    call_ledger_github_replayed = any(
+        task.get("call_ledger_github_replayed") is True
+        or any(
+            isinstance(row, dict) and row.get("github_called") is True
+            for row in (task.get("call_ledger") or [])
+        )
+        for task in tasks
+    )
     does_not_execute_trades = all(task.get("does_not_execute_trades") is not False for task in tasks)
     does_not_modify_strategy_action = all(task.get("does_not_modify_strategy_action") is not False for task in tasks)
     task_log_count = sum(len(task.get("task_log") or []) for task in tasks)
@@ -4518,6 +4563,7 @@ def build_task_status_index() -> dict[str, Any]:
             "reads_candidate_cache_task_replay": True,
             "candidate_cache_replay_creates_task": False,
             "candidate_cache_replay_calls_external_sources": False,
+            "call_ledger_replay_is_read_only": True,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "contains_secret": False,
@@ -4528,6 +4574,11 @@ def build_task_status_index() -> dict[str, Any]:
         "tushare_called": tushare_called,
         "deepseek_called": deepseek_called,
         "github_called": github_called,
+        "call_ledger_external_calls_replayed": call_ledger_external_calls_replayed,
+        "call_ledger_tushare_replayed": call_ledger_tushare_replayed,
+        "call_ledger_deepseek_replayed": call_ledger_deepseek_replayed,
+        "call_ledger_github_replayed": call_ledger_github_replayed,
+        "readback_external_calls_triggered": False,
         "does_not_execute_trades": does_not_execute_trades,
         "does_not_modify_strategy_action": does_not_modify_strategy_action,
         "call_ledger": [
