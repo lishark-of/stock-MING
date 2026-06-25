@@ -1167,7 +1167,7 @@ export default function CommandCenterHome() {
     ? dailyCommandLatestTaskIsCandidate
       ? "看下方任务状态；成功后进入股票量化推演和次日图谱回放"
       : "看下方任务状态；按任务输出 packet 回放结果"
-    : "在首页输入股票代码，点击确认并生成 3.0 量化推演";
+    : "在首页输入股票代码，点击“确认股票并启动 Tushare-first”";
   const dailyCommandFastApiProgressWatchLabel = dailyCommandConfirmedSymbol
     ? `${dailyCommandConfirmedSymbol} / ${dailyCommandLatestTaskStatus}`
     : dailyCommandLatestTaskId
@@ -1758,7 +1758,7 @@ export default function CommandCenterHome() {
     {
       阶段: "P1 确认按钮触发 Tushare-first",
       当前状态: "等待用户在首页或下一票雷达输入代码并点击确认",
-      用户下一步: "输入 6 位 A 股代码，点击“确认并生成 3.0 量化推演”",
+      用户下一步: "输入 6 位 A 股代码，点击“确认股票并启动 Tushare-first”",
       证据: "CandidateRadar 搜票确认 POST task contract",
       边界: "搜索输入只做本地校验；只有确认按钮创建 POST task / worker，DeepSeek skipped"
     },
@@ -2401,7 +2401,7 @@ export default function CommandCenterHome() {
               onClick={launchHomeQuantProjection}
               title={homeQuantSubmitDisabledReason}
               aria-label={homeQuantSubmitDisabledReason}
-            >{homeQuantSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+            >{homeQuantSubmitting ? "提交中..." : "确认股票并启动 Tushare-first"}</button>
             <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达详情页；同一条 P1 确认链路" aria-label="open candidate radar detail from home p1 confirm">下一票雷达详情</a>
           </div>
           <p className="risk-note" aria-label="daily command home p1 symbol autofill boundary">当前标的自动填入只来自 CandidateRadar cache；不会自动点击确认、不创建 task、不调用 Tushare/DeepSeek，手动修改后不再覆盖输入。</p>

@@ -1593,6 +1593,9 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         home_confirm_start = home_source.index('title="首页确认股票代码"')
         home_confirm_end = home_source.index('title="P1 Tushare-first 链路速读"', home_confirm_start)
         home_confirm_card = home_source[home_confirm_start:home_confirm_end]
+        self.assertIn('确认股票并启动 Tushare-first', home_confirm_card)
+        self.assertNotIn('确认并生成 3.0 量化推演', home_confirm_card)
+        self.assertIn('点击“确认股票并启动 Tushare-first”', home_source)
         self.assertLess(
             home_confirm_card.index('aria-label="daily command home post confirm handoff"'),
             home_confirm_card.index('aria-label="daily command home p1 receipt audit details"')
