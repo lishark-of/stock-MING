@@ -2343,11 +2343,6 @@ export default function CommandCenterHome() {
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_decision_brief_rows：先看结论、再看来源、最后看下一步和边界；首页只读本地证据，不创建 task。</p>
           <DataLineageTable rows={dailyCommandP3OneGlanceDecisionRows} />
         </div>
-        <div aria-label="daily command p5 nonblocking one minute read">
-          <h3>P5 DeepSeek 不阻塞速读</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_deepseek_governed_executor_readiness_rows：DeepSeek 单独补，不阻塞 Tushare-first、P2 三面或 P3 基础图谱；本卡只读治理状态，不调用模型。</p>
-          <DataLineageTable rows={dailyCommandP5NonblockingRows} />
-        </div>
         <div aria-label="daily command p3 one glance quick rows">
           <h3>结果速读三行</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows 前三项：只看结论、下一步、证据和边界；不展开 raw packet、不创建 task、不调用 provider/model。</p>
@@ -2529,6 +2524,11 @@ export default function CommandCenterHome() {
         <div aria-label="daily command p5 deepseek governance quick read">
           <h3>P5 DeepSeek 单独治理</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_model_governance_rows：DeepSeek 只作为 governed executor 单独补证；pending/skipped 不阻塞 Tushare-first、小数据写入或基础图谱。</p>
+          <div aria-label="daily command p5 nonblocking one minute read">
+            <h3>P5 不阻塞速读</h3>
+            <p className="risk-note">优先读取 CandidateRadar 的 ordinary_deepseek_governed_executor_readiness_rows：DeepSeek 单独补，不阻塞 Tushare-first、P2 三面或 P3 基础图谱；本区只读治理状态，不调用模型。</p>
+            <DataLineageTable rows={dailyCommandP5NonblockingRows} />
+          </div>
           <DataLineageTable rows={dailyCommandDeepSeekGovernanceRows} />
         </div>
         <div aria-label="daily command p0 startup recovery steps">
