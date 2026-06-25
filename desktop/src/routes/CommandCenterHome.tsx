@@ -1857,9 +1857,9 @@ export default function CommandCenterHome() {
         <details className="developer-audit-details" aria-label="daily command ordinary readback details">
           <summary>本地回放明细</summary>
           <p className="risk-note">确认链、P2 写回、P3 检查点和恢复表默认收起；普通用户先用上方主按钮进入下一票雷达、股票量化推演和次日图谱。</p>
-        <details className="developer-audit-details" aria-label="daily command p6 strict closeout reentry details">
-          <summary>P6 / 14 LTG strict closeout 审计入口</summary>
-          <p className="risk-note">P6 留作工程审计和 strict closeout 回归；普通主线先看 P0 联通、P1 确认、P2 写回和 P3 结果，不把 P6 当今日可用化完成。</p>
+        <details className="developer-audit-details" aria-label="daily command engineering audit and strict closeout details">
+          <summary>工程审计 / P6 strict closeout 明细</summary>
+          <p className="risk-note">普通路径已经在上方 P1 确认、P2 三面和 P3 可解释结果；这里仅供排障、验收和 14 LTG 回归，不把 P6 当今日可用化完成。</p>
           <div aria-label="daily command p6 strict closeout reentry">
             <h3>P6 strict closeout 回归入口</h3>
             <p className="risk-note">P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence、CI、浏览器、provider、worker、storage 和 package gate 逐项补证；P6 只是 strict closeout 回归门，不是 14 LTG 完成声明；P4 下沉的是工程审计明细，不压过 P0-P3 普通路径。</p>
@@ -1959,7 +1959,7 @@ export default function CommandCenterHome() {
       </PacketCard>
       <details className="developer-audit-details">
         <summary>开发 / 审计详情</summary>
-        <p>详细验收记录、开发表格和排障明细默认收起；普通用户先看上方今日作战台摘要。</p>
+        <p>详细验收记录、开发表格和排障明细默认收起；普通用户先看上方 P1 确认、P2 三面和 P3 可解释结果。</p>
         <div aria-label="daily command engineering audit demotion rules">
           <h3>审计入口下沉规则</h3>
           <p className="risk-note">普通用户先看摘要和三入口；只有排障、验收或补证时展开开发详情。</p>
