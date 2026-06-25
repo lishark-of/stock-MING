@@ -3926,6 +3926,33 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
     return record
 
 
+def _candidate_cache_replay_tasks() -> list[dict[str, Any]]:
+    packet = _candidate_cache_replay_packet()
+    if not isinstance(packet, dict) or packet.get("status") == "cache_missing":
+        return []
+    receipt = packet.get("search_quant_projection_receipt") if isinstance(packet.get("search_quant_projection_receipt"), dict) else {}
+    provider_receipt = (
+        packet.get("search_quant_provider_model_acceptance_receipt")
+        if isinstance(packet.get("search_quant_provider_model_acceptance_receipt"), dict)
+        else {}
+    )
+    task_ids: list[str] = []
+    for raw_task_id in (
+        packet.get("task_id"),
+        receipt.get("latest_task_id"),
+        receipt.get("task_id"),
+        provider_receipt.get("task_id"),
+    ):
+        safe_task_id = _safe_text(raw_task_id, limit=120)
+        if safe_task_id and safe_task_id not in task_ids:
+            task_ids.append(safe_task_id)
+    return [
+        replay_task
+        for replay_task in (_candidate_cache_replay_task(task_id) for task_id in task_ids)
+        if replay_task is not None
+    ]
+
+
 def _active_duplicate_task(idempotency_key: str, *, exclude_task_id: str = "") -> dict[str, Any] | None:
     active_duplicates, _ = _idempotency_duplicates(idempotency_key, exclude_task_id=exclude_task_id)
     if not active_duplicates:
@@ -4301,13 +4328,13 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
         row = dict(task)
         row["storage_source"] = "memory_and_sqlite" if str(task_id) in persisted_ids else "memory"
         merged[str(task_id)] = row
-    replay_task = _candidate_cache_replay_task()
+    replay_tasks = _candidate_cache_replay_tasks()
     replay_task_count = 0
-    if replay_task is not None:
+    for replay_task in replay_tasks:
         replay_task_id = str(replay_task.get("task_id") or "")
         if replay_task_id and replay_task_id not in merged:
             merged[replay_task_id] = replay_task
-            replay_task_count = 1
+            replay_task_count += 1
 
     sorted_tasks = sorted(
         merged.values(),

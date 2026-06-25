@@ -10413,6 +10413,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(replay, ensure_ascii=False))
 
         index = task_service.build_task_status_index()
+        task_ids = {row["task_id"] for row in index["tasks"]}
+        self.assertEqual(index["task_count"], 2)
+        self.assertEqual(index["persistence"]["candidate_cache_replay_task_count"], 2)
+        self.assertIn("local-cache-main-quant", task_ids)
+        self.assertIn("local-provider-quant", task_ids)
         self.assertEqual(index["tasks"][0]["task_id"], "local-cache-main-quant")
         self.assertEqual(
             index["tasks"][0]["current_step"],
