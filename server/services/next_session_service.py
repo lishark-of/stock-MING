@@ -3127,6 +3127,18 @@ def read_next_session_cache() -> dict[str, Any]:
     packet["call_ledger"] = (
         existing_ledger + durable_evidence_recipe["call_ledger"] + production_stage_scope["call_ledger"]
     )
+    packet.setdefault("cache_only", True)
+    packet.setdefault("read_only", True)
+    packet["external_calls_triggered"] = False
+    packet["tushare_called"] = False
+    packet["deepseek_called"] = False
+    packet["github_called"] = False
+    packet["provider_or_model_calls"] = False
+    packet.setdefault("contains_secret", False)
+    packet.setdefault("does_not_execute_trades", True)
+    packet.setdefault("does_not_modify_action", True)
+    packet.setdefault("does_not_modify_strategy_action", True)
+    packet.setdefault("does_not_modify_operation_zones", True)
     warnings = [str(item) for item in _as_list(packet.get("warnings"))]
     for warning in [
         "GET /api/next-session/cache 只读取本地次日图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
