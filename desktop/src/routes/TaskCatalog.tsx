@@ -162,6 +162,44 @@ export default function TaskCatalog() {
       possible_external_sources: Array.isArray(item.possible_external_sources) ? item.possible_external_sources.join(" / ") : ""
     }))
   ];
+  const taskCatalogLatestTask =
+    taskRecords.find((task) => task.task_id === selectedTaskId) ??
+    taskRecords.find((task) => task.task_id === taskIndex?.latest_task_id) ??
+    taskRecords[0];
+  const taskCatalogLatestTaskLedger = taskCatalogLatestTask?.call_ledger ?? [];
+  const taskCatalogLatestTushareRows = taskCatalogLatestTaskLedger.filter((row) => row.tushare_called === true);
+  const taskCatalogLatestTushareSuccessCount = taskCatalogLatestTushareRows.filter((row) => String(row.call_status ?? "") === "success").length;
+  const taskCatalogLatestIsCandidateReplay =
+    taskCatalogLatestTask?.output_packet_key === "command_center_3_candidate_radar_cache" ||
+    String(taskCatalogLatestTask?.task_type ?? "").includes("candidate_radar_quant_projection");
+  const taskCatalogOrdinaryTaskStatusLabel = taskCatalogLatestTask
+    ? `${taskCatalogLatestTask.status} / ${taskCatalogLatestTask.current_step}`
+    : "等待下一票雷达确认按钮创建任务";
+  const taskCatalogOrdinaryP2Label = taskCatalogLatestTask
+    ? taskCatalogLatestTask.status === "success"
+      ? "任务已完成；可刷新 cache / ledger / packet 回放"
+      : "等待任务完成后回放 cache / ledger / packet"
+    : "暂无任务；先回下一票雷达输入代码并确认";
+  const taskCatalogOrdinaryTushareLabel = taskCatalogLatestTushareRows.length
+    ? `Tushare-first ${taskCatalogLatestTushareSuccessCount}/${taskCatalogLatestTushareRows.length} 已写入 task.call_ledger`
+    : taskCatalogLatestIsCandidateReplay
+      ? "等待 Tushare-first ledger"
+      : "非搜票任务按输出 packet 回放";
+  const taskCatalogOrdinaryP3Label = taskCatalogLatestIsCandidateReplay
+    ? taskCatalogLatestTask?.status === "success"
+      ? "可打开股票量化推演和次日图谱"
+      : "任务完成后再打开量化推演和次日图谱"
+    : taskCatalogLatestTask?.output_packet_key
+      ? `按 ${taskCatalogLatestTask.output_packet_key} 回放`
+      : "等待输出 packet";
+  const taskCatalogOrdinaryProgressItems = [
+    { label: "当前任务", value: taskCatalogLatestTask?.task_id ?? "暂无任务记录", tone: taskCatalogLatestTask ? "good" as const : "warn" as const },
+    { label: "任务状态", value: taskCatalogOrdinaryTaskStatusLabel, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : taskCatalogLatestTask ? "warn" as const : "warn" as const },
+    { label: "P2 写回", value: taskCatalogOrdinaryP2Label, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : "warn" as const },
+    { label: "Tushare-first", value: taskCatalogOrdinaryTushareLabel, tone: taskCatalogLatestTushareRows.length ? "good" as const : "warn" as const },
+    { label: "P3 结果入口", value: taskCatalogOrdinaryP3Label, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : "warn" as const },
+    { label: "安全边界", value: "Task Monitor 只读 GET /api/tasks；不创建 task、不补调 Tushare/DeepSeek、不交易", tone: "good" as const }
+  ];
   const empty = !loading && !error && !catalogTasks?.length && !taskRecords.length;
 
   return (
@@ -178,6 +216,17 @@ export default function TaskCatalog() {
         emptyTitle="暂无任务目录或任务记录"
         emptyDetail="本页只读任务目录和任务状态；POST task 必须由各业务页按钮触发。"
       />
+
+      <PacketCard title="普通任务进度速读" subtitle="确认按钮之后先看这里；工程目录和路由覆盖继续下沉" status={taskCatalogLatestTask?.status ?? "waiting_task"}>
+        <MetricGrid items={taskCatalogOrdinaryProgressItems} />
+        <div className="actions" aria-label="task monitor ordinary progress actions">
+          <button onClick={refreshTasks} title="只重新读取 GET /api/tasks；不创建 task、不调用 provider/model" aria-label="refresh task monitor ordinary progress">刷新任务状态</button>
+          <a href="#candidates" title="切换到下一票雷达；输入代码仍需确认按钮" aria-label="open candidate radar from task monitor ordinary progress">下一票雷达</a>
+          <a href="#factor" title="切换到股票量化推演；只读本地回放" aria-label="open stock quant from task monitor ordinary progress">股票量化推演</a>
+          <a href="#next" title="切换到次日图谱；只读本地回放" aria-label="open next session from task monitor ordinary progress">次日图谱</a>
+        </div>
+        <p className="risk-note">这张卡只读 task index 和当前选择任务；刷新按钮只调用本地 GET /api/tasks，不会创建第二个 task、不调用 Tushare/DeepSeek/GitHub、不读取 token/key、不执行真实交易。</p>
+      </PacketCard>
 
       <MetricGrid
         items={[
