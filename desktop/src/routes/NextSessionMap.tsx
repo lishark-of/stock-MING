@@ -262,6 +262,33 @@ export default function NextSessionMap() {
       : candidateRadarDeepSeekStateRaw.includes("pending")
         ? "DeepSeek 待治理：不阻塞 Tushare-first、P2 写入或 P3 图谱"
         : "DeepSeek governed executor 单独补；普通结果只读本地 cache / ledger / packet";
+  const candidateRadarReadableResultReady =
+    Boolean(candidateRadarConfirmedSymbol) &&
+    (
+      candidateRadarInterpretation.interpretation_ready === true ||
+      candidateRadarResultQuickRows.length > 0 ||
+      candidateRadarReadableResult !== "等待下一票雷达确认后的可读结论"
+    );
+  const nextSessionReadableStatusLabel = chartSummary.has_drawable_data === true
+    ? nextSessionStatusLabel
+    : candidateRadarReadableResultReady
+      ? "已回放搜票结论，图谱待生成"
+      : nextSessionStatusLabel;
+  const nextSessionReadableNextClick = chartSummary.has_drawable_data === true
+    ? nextSessionNextClick
+    : candidateRadarReadableResultReady
+      ? "先看已确认标的和 Tushare-first 结论；完整图谱可手动生成"
+      : nextSessionNextClick;
+  const nextSessionReadableLastResultLabel = chartSummary.has_drawable_data === true
+    ? nextSessionLastResultLabel
+    : candidateRadarReadableResultReady
+      ? `上游结果：${candidateRadarConfirmedSymbol}；${candidateRadarReadableResult}`
+      : nextSessionLastResultLabel;
+  const nextSessionReadableChartReviewOrder = chartSummary.has_drawable_data === true
+    ? nextSessionChartReviewOrder
+    : candidateRadarReadableResultReady
+      ? "先读已确认标的、Tushare-first 结论和 P2 三面；完整图谱可手动生成"
+      : nextSessionChartReviewOrder;
   const ordinaryResultReplayStatus = String(
     packet.ordinary_result_replay_status ??
       (chartSummary.has_drawable_data === true ? "ready_cache_replay" : "waiting_for_cache_or_manual_task")
@@ -288,9 +315,9 @@ export default function NextSessionMap() {
       surface: "次日图谱",
       readable_result: chartSummary.has_drawable_data === true
         ? `情景=${String(chartSummary.scenario_series_count ?? 0)} / 参考线=${String(chartSummary.reference_line_count ?? 0)} / 操作区=${String(chartSummary.operation_zone_count ?? 0)}`
-        : "暂无可绘制图谱；可手动生成本地任务。",
-      evidence: nextSessionLastCache,
-      next_step: nextSessionChartReviewOrder,
+        : candidateRadarReadableResultReady ? candidateRadarReadableResult : "暂无可绘制图谱；可手动生成本地任务。",
+      evidence: candidateRadarReadableResultReady ? "CandidateRadar ordinary_result_quick_read_rows / interpretation_summary" : nextSessionLastCache,
+      next_step: nextSessionReadableChartReviewOrder,
       boundary: nextSessionOperationZoneBoundary
     }
   ];
@@ -306,8 +333,8 @@ export default function NextSessionMap() {
     },
     {
       交接段: "2. 结论",
-      当前状态: nextSessionLastResultLabel,
-      用户下一步: chartSummary.has_drawable_data === true ? "先读图表路径和参考线，再看操作区。" : "先查看缓存状态或手动生成按钮任务。",
+      当前状态: nextSessionReadableLastResultLabel,
+      用户下一步: chartSummary.has_drawable_data === true ? "先读图表路径和参考线，再看操作区。" : nextSessionReadableChartReviewOrder,
       边界: nextSessionResearchOnlyLabel
     },
     {
@@ -333,9 +360,9 @@ export default function NextSessionMap() {
     },
     {
       读图顺序: "2. 可读结论",
-      当前状态: nextSessionLastResultLabel,
-      用户下一步: chartSummary.has_drawable_data === true ? "先读图表路径和参考线，再读操作区。" : "先查看缓存状态或手动生成按钮任务。",
-      证据: "chart_summary",
+      当前状态: nextSessionReadableLastResultLabel,
+      用户下一步: chartSummary.has_drawable_data === true ? "先读图表路径和参考线，再读操作区。" : nextSessionReadableChartReviewOrder,
+      证据: candidateRadarReadableResultReady ? "CandidateRadar readable result fallback" : "chart_summary",
       边界: nextSessionResearchOnlyLabel
     },
     {
@@ -437,7 +464,7 @@ export default function NextSessionMap() {
   const nextSessionUpstreamConfirmOutcomeLabel = nextSessionUpstreamConfirmOutcomeRows
     .map((row) => `${row.确认结果}: ${row.当前状态}`)
     .join(" / ");
-  const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
+  const empty = !loading && !error && !candidateRadarReadableResultReady && (packet.status === "cache_missing" || !Object.keys(packet).length);
   const nextSessionOrdinaryReplayBoundaryBlocked =
     packet.does_not_modify_action === false || packet.does_not_modify_operation_zones === false;
   const fallbackNextSessionOperationZoneQuickReadRows = [
@@ -586,13 +613,13 @@ export default function NextSessionMap() {
   const nextSessionOrdinaryReplayRailSteps = [
     {
       label: "雷达/量化回放",
-      state: chartSummary.has_drawable_data === true ? ("done" as const) : empty ? ("waiting" as const) : ("active" as const),
+      state: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? ("done" as const) : empty ? ("waiting" as const) : ("active" as const),
       detail: nextSessionReplayOrigin
     },
     {
       label: "图表路径",
-      state: chartSummary.has_drawable_data === true ? ("done" as const) : ("waiting" as const),
-      detail: nextSessionLastResultLabel
+      state: chartSummary.has_drawable_data === true ? ("done" as const) : candidateRadarReadableResultReady ? ("active" as const) : ("waiting" as const),
+      detail: nextSessionReadableLastResultLabel
     },
     {
       label: "操作区",
@@ -610,7 +637,7 @@ export default function NextSessionMap() {
 
   return (
     <>
-    <PacketCard title="普通用户次日图谱摘要" subtitle="下一步、来源、缺口、边界和最近结果" status={nextSessionStatusLabel}>
+    <PacketCard title="普通用户次日图谱摘要" subtitle="下一步、来源、缺口、边界和最近结果" status={nextSessionReadableStatusLabel}>
       <PageStateBanner
         loading={loading}
         error={error}
@@ -620,7 +647,7 @@ export default function NextSessionMap() {
       />
       <MetricGrid
         items={[
-          { label: "主下一步", value: nextSessionNextClick },
+          { label: "主下一步", value: nextSessionReadableNextClick },
           { label: "当前标的", value: candidateRadarConfirmedSymbolLabel, tone: candidateRadarConfirmedSymbol ? "good" : "warn" },
           { label: "本地缓存", value: nextSessionCacheSourceLabel },
           { label: "数据链", value: nextSessionTushareSourceLabel },
@@ -629,8 +656,8 @@ export default function NextSessionMap() {
           { label: "待补证据", value: nextSessionPendingSourceLabel, tone: Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "warn" : "good" },
           { label: "降级提示", value: nextSessionDegradedSourceLabel, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "缺少证据", value: nextSessionMissingEvidence, tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn" },
-          { label: "最近结果", value: nextSessionLastResultLabel },
-          { label: "查看顺序", value: nextSessionChartReviewOrder },
+          { label: "最近结果", value: nextSessionReadableLastResultLabel },
+          { label: "查看顺序", value: nextSessionReadableChartReviewOrder },
           { label: "回放来源", value: nextSessionReplayOrigin, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "上游确认链", value: nextSessionUpstreamOneScreenLabel, tone: candidateRadarOneScreenRows.length ? "good" : "warn" },
           { label: "确认结果链", value: nextSessionUpstreamConfirmOutcomeLabel, tone: candidateRadarConfirmOutcomeRows.length ? "good" : "warn" },
@@ -641,8 +668,8 @@ export default function NextSessionMap() {
           { label: "结果回放", value: ordinaryResultReplayStatus, tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
           { label: "任务边界", value: nextSessionTaskBoundary, tone: "good" },
           { label: "仅供研究", value: nextSessionResearchOnlyLabel },
-          { label: "P3 可读结论", value: nextSessionLastResultLabel, tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
-          { label: "P3 下一步", value: nextSessionChartReviewOrder },
+          { label: "P3 可读结论", value: nextSessionReadableLastResultLabel, tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn" },
+          { label: "P3 下一步", value: nextSessionReadableChartReviewOrder },
           { label: "P3 边界", value: nextSessionResearchOnlyLabel, tone: "good" }
         ]}
       />
