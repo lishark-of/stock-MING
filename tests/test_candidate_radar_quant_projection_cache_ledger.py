@@ -362,6 +362,42 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(confirm_contract["does_not_execute_trades"])
         self.assertTrue(confirm_contract["does_not_modify_strategy_action"])
         self.assertFalse(confirm_contract["production_quant_projection_complete"])
+        replay_contract = task["payload_safe"]["ordinary_post_confirm_replay_contract"]
+        self.assertEqual(
+            replay_contract["schema_version"],
+            "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1",
+        )
+        self.assertEqual(replay_contract["trigger"], "after_confirm_button_task_receipt")
+        self.assertEqual(replay_contract["route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(replay_contract["readback_route"], "GET /api/candidate-radar/cache")
+        self.assertEqual(replay_contract["task_status_surface"], "TaskStatusPanel")
+        self.assertEqual(
+            replay_contract["readback_sequence"],
+            [
+                "task_id",
+                "TaskStatusPanel",
+                "GET /api/candidate-radar/cache",
+                "cache / call_ledger / packet",
+                "factor / next_session replay",
+            ],
+        )
+        self.assertEqual(replay_contract["writeback_surfaces"], ["cache", "call_ledger", "packet"])
+        self.assertEqual(replay_contract["result_anchors"], ["#tasks", "#factor", "#next"])
+        self.assertTrue(replay_contract["include_tushare_requested"])
+        self.assertFalse(replay_contract["include_deepseek_requested"])
+        self.assertEqual(replay_contract["deepseek_policy"], "skipped_until_governed_executor")
+        self.assertFalse(replay_contract["creates_second_task_from_readback"])
+        self.assertFalse(replay_contract["cache_get_external_calls"])
+        self.assertFalse(replay_contract["react_render_external_calls"])
+        self.assertFalse(replay_contract["readback_calls_provider_or_model"])
+        self.assertTrue(replay_contract["safe_payload_material"])
+        self.assertTrue(replay_contract["does_not_execute_trades"])
+        self.assertTrue(replay_contract["does_not_modify_strategy_action"])
+        self.assertFalse(replay_contract["production_quant_projection_complete"])
+        self.assertEqual(
+            task["call_ledger"][0]["request_params_safe"]["ordinary_post_confirm_replay_contract"],
+            replay_contract,
+        )
 
         cache = self.client.get("/api/candidate-radar/cache").json()
         self.assertTrue(cache["ok"])

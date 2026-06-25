@@ -1414,6 +1414,41 @@ def _quant_projection_confirm_chain_contract(payload: Mapping[str, Any]) -> dict
     }
 
 
+def _quant_projection_post_confirm_replay_contract(payload: Mapping[str, Any]) -> dict[str, Any]:
+    include_tushare = _coerce_bool(payload.get("include_tushare"), True)
+    include_deepseek = _coerce_bool(payload.get("include_deepseek"), False)
+    return {
+        "schema_version": "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1",
+        "source": "candidate_radar_quant_projection_task_payload_safe",
+        "trigger": "after_confirm_button_task_receipt",
+        "route": "POST /api/candidate-radar/quant-projection",
+        "task_type": "run_candidate_radar_quant_projection",
+        "readback_route": "GET /api/candidate-radar/cache",
+        "task_status_surface": "TaskStatusPanel",
+        "readback_sequence": [
+            "task_id",
+            "TaskStatusPanel",
+            "GET /api/candidate-radar/cache",
+            "cache / call_ledger / packet",
+            "factor / next_session replay",
+        ],
+        "writeback_surfaces": ["cache", "call_ledger", "packet"],
+        "result_anchors": ["#tasks", "#factor", "#next"],
+        "include_tushare_requested": include_tushare,
+        "include_deepseek_requested": include_deepseek,
+        "deepseek_policy": "skipped_until_governed_executor",
+        "creates_second_task_from_readback": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "readback_calls_provider_or_model": False,
+        "safe_payload_material": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "production_quant_projection_complete": False,
+    }
+
+
 def _quant_projection_p0_confirm_gate_ready(p0_gate: Mapping[str, Any]) -> bool:
     p0_connection_evidence_ready = (
         p0_gate.get("p0_stability_check_ready") is True
@@ -1444,6 +1479,10 @@ def _quant_projection_task_payload(payload: Any) -> Any:
     task_payload.setdefault(
         "ordinary_confirm_chain_contract",
         _quant_projection_confirm_chain_contract(task_payload),
+    )
+    task_payload.setdefault(
+        "ordinary_post_confirm_replay_contract",
+        _quant_projection_post_confirm_replay_contract(task_payload),
     )
     return task_payload
 
@@ -14238,6 +14277,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         "production_quant_projection_complete": False,
         "p0_confirm_gate_evidence": p0_confirm_gate_evidence,
         "ordinary_confirm_chain_contract": payload_safe.get("ordinary_confirm_chain_contract") or {},
+        "ordinary_post_confirm_replay_contract": payload_safe.get("ordinary_post_confirm_replay_contract") or {},
     }
     packet = _build_candidate_radar_packet(
         projection_snapshot,
