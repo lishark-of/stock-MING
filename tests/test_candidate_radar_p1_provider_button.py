@@ -58,7 +58,8 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("const desktopP0StabilityReady =", source)
         self.assertIn("const desktopP0LocalLinkReady =", source)
         self.assertIn("const desktopP0ConnectionEvidenceReady = desktopP0StabilityReady || desktopP0LocalLinkReady", source)
-        self.assertIn("desktopP0ConnectionEvidenceReady &&", source)
+        self.assertIn("const desktopP0ContractEvidenceReady =", source)
+        self.assertIn("desktopP0ConnectionEvidenceReady ||", source)
         self.assertIn("p0_stability_check_ready: desktopP0StabilityReady", source)
         self.assertIn("p0_local_link_ready: desktopP0LocalLinkReady", source)
         self.assertIn("p0_connection_evidence_ready: desktopP0ConnectionEvidenceReady", source)
@@ -170,6 +171,20 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("searchQuantProjectionSmallDataWriteback.ordinary_writeback_surface_summary_rows", source)
         self.assertIn("searchQuantProjectionSmallDataWriteback.ordinary_provider_api_rows", source)
         self.assertIn("searchQuantProjectionSmallDataWriteback.ordinary_tushare_first_chain_rows", source)
+        self.assertIn("searchQuantProjectionSmallDataWriteback.provider_api_success_count", source)
+        self.assertIn("searchQuantProjectionSmallDataWriteback.provider_api_call_count", source)
+        self.assertIn("searchQuantProjectionSmallDataWriteback.source_task_tushare_provider_ledger_ready", source)
+        self.assertIn("searchQuantProjectionSmallDataWriteback.provider_call_ledger_replayed_from_source_task", source)
+        self.assertIn("searchQuantProjectionSmallDataWriteback.provider_call_ledger_written", source)
+        self.assertIn("searchQuantProjectionSmallDataWriteback.ledger_ready", source)
+        self.assertIn(
+            'tone: quantProjectionProviderLedgerReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"',
+            ordinary_quant_slice,
+        )
+        self.assertNotIn(
+            'tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn"',
+            ordinary_quant_slice,
+        )
         self.assertIn("quantProjectionTushareFirstChainRows", source)
         self.assertIn("const quantProjectionConfirmHandoffRows = quantProjectionTushareFirstChainRows.length ? quantProjectionTushareFirstChainRows", source)
         self.assertIn("优先读取服务端 ordinary_tushare_first_chain_rows", ordinary_quant_slice)

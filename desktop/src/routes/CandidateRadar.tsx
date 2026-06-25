@@ -928,11 +928,19 @@ export default function CandidateRadar() {
     : searchSymbol.trim()
       ? `摘要搜票暂未通过本地校验：${quantProjectionSymbolValidation.reason}；不会创建 task`
       : "摘要搜票等待输入代码；输入框只做本地校验，不创建 task";
-  const quantProjectionProviderApiSuccessCount = Number(searchQuantProviderModelAcceptance.provider_api_success_count ?? 0);
+  const quantProjectionProviderApiSuccessCount = Number(
+    searchQuantProviderModelAcceptance.provider_api_success_count ??
+    searchQuantProjectionSmallDataWriteback.provider_api_success_count ??
+    0
+  );
   const quantProjectionProviderApiSuccessLabel = Number.isFinite(quantProjectionProviderApiSuccessCount)
     ? String(quantProjectionProviderApiSuccessCount)
     : "0";
-  const quantProjectionProviderApiCallCount = Number(searchQuantProviderModelAcceptance.provider_api_call_count ?? 0);
+  const quantProjectionProviderApiCallCount = Number(
+    searchQuantProviderModelAcceptance.provider_api_call_count ??
+    searchQuantProjectionSmallDataWriteback.provider_api_call_count ??
+    0
+  );
   const quantProjectionProviderApiTotalCount =
     Number.isFinite(quantProjectionProviderApiCallCount) && quantProjectionProviderApiCallCount > 0
       ? quantProjectionProviderApiCallCount
@@ -943,6 +951,10 @@ export default function CandidateRadar() {
   const quantProjectionProviderLedgerReady =
     searchQuantProviderModelAcceptance.tushare_call_ledger_evidence_done === true ||
     searchQuantProjectionReceipt.p1_tushare_first_provider_ledger_ready === true ||
+    searchQuantProjectionSmallDataWriteback.source_task_tushare_provider_ledger_ready === true ||
+    searchQuantProjectionSmallDataWriteback.provider_call_ledger_replayed_from_source_task === true ||
+    searchQuantProjectionSmallDataWriteback.provider_call_ledger_written === true ||
+    searchQuantProjectionSmallDataWriteback.ledger_ready === true ||
     quantProjectionProviderApiSuccessCount > 0;
   const quantProjectionDeepSeekSkipped =
     searchQuantProviderModelAcceptance.deepseek_skipped_by_request === true ||
@@ -3244,7 +3256,7 @@ export default function CandidateRadar() {
             items={[
               { label: "确认状态", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || (quantProjectionCanLaunch && !quantProjectionSubmitError) ? "good" : "warn" },
               { label: "P1/P2 当前阶段", value: quantProjectionConfirmReplayStage, tone: quantProjectionSmallDataReady || taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : "warn" },
-              { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
+              { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: quantProjectionProviderLedgerReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral" },
               { label: "小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "可读结论", value: quantProjectionOrdinaryResultSummary, tone: quantProjectionInterpretationReady ? "good" : "warn" },
               { label: "下一步", value: quantProjectionOrdinaryResultNext },
@@ -3386,7 +3398,7 @@ export default function CandidateRadar() {
                 { label: "确认代码", value: quantProjectionConfirmedSymbol },
                 { label: "确认链路", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || (quantProjectionCanSubmit && !quantProjectionSubmitError) ? "good" : "warn" },
                 { label: "输入校验", value: quantProjectionInputValidation, tone: quantProjectionInputValidation.includes("阻断") ? "warn" : "good" },
-                { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
+                { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: quantProjectionProviderLedgerReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral" },
                 { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
                 { label: "cache / ledger / packet", value: quantProjectionSmallDataReplayState, tone: quantProjectionSmallDataReady ? "good" : "warn" },
                 { label: "小数据下一步", value: quantProjectionSmallDataNextStep, tone: quantProjectionSmallDataReady ? "good" : "warn" },
