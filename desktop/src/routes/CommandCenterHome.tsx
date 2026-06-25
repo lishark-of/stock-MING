@@ -1439,6 +1439,14 @@ export default function CommandCenterHome() {
       detail: "0/14"
     }
   ];
+  const dailyCommandUsableShortestPathPrimaryRows = dailyCommandUsableShortestPathRows.filter((row) =>
+    ["P0", "P1", "P2", "P3"].some((prefix) => String(row.阶段).startsWith(prefix))
+  );
+  const dailyCommandUsableShortestPathAuditRows = dailyCommandUsableShortestPathRows.filter((row) =>
+    ["P4", "P5", "P6"].some((prefix) => String(row.阶段).startsWith(prefix))
+  );
+  const dailyCommandUsablePathPrimaryStageRailSteps = dailyCommandUsablePathStageRailSteps.slice(0, 4);
+  const dailyCommandUsablePathAuditStageRailSteps = dailyCommandUsablePathStageRailSteps.slice(4);
   const dailyCommandConnectivityPriority = dailyCommandNeedsStartupRecovery
     ? "先恢复本地联通；缓存和投研入口等 health/preflight 变绿后再看"
     : "本地联通可用；先在首页确认股票代码，再按最近缓存、数据健康、下一票雷达、股票量化推演复核";
@@ -2048,14 +2056,27 @@ export default function CommandCenterHome() {
           <h3>使用者可用化最短路径</h3>
           <p className="risk-note">当前执行目标是 Command Center 3.0 使用者可用化最短路径，不是 14 LTG strict closeout 完成声明；DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱。</p>
           <div className="state-clarity-rail" aria-label="daily command usable path stage rail">
-            {dailyCommandUsablePathStageRailSteps.map((step) => (
+            {dailyCommandUsablePathPrimaryStageRailSteps.map((step) => (
               <div className="state-clarity-step" data-step-state={step.state} key={step.key}>
                 <span>{step.label}</span>
                 <small>{step.detail}</small>
               </div>
             ))}
           </div>
-          <DataLineageTable rows={dailyCommandUsableShortestPathRows} />
+          <DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows} />
+          <details className="developer-audit-details" aria-label="daily command usable path audit stages">
+            <summary>P4-P6 补证 / 审计路径</summary>
+            <p className="risk-note">P4-P6 继续保留为路线图和审计入口，但默认下沉；普通使用先看 P0-P3 的联通、确认、写回和结果回放。</p>
+            <div className="state-clarity-rail" aria-label="daily command usable path audit stage rail">
+              {dailyCommandUsablePathAuditStageRailSteps.map((step) => (
+                <div className="state-clarity-step" data-step-state={step.state} key={step.key}>
+                  <span>{step.label}</span>
+                  <small>{step.detail}</small>
+                </div>
+              ))}
+            </div>
+            <DataLineageTable rows={dailyCommandUsableShortestPathAuditRows} />
+          </details>
         </div>
         <div className="actions" aria-label="daily command primary next action">
           <a href={dailyCommandPrimaryActionHref} aria-label="open daily command primary next action">{dailyCommandPrimaryActionLabel}</a>
