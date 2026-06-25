@@ -118,6 +118,82 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
     execution_request_status = str(
         execution_request_receipt.get("status") or "deepseek_provider_benchmark_execution_request_missing"
     )
+    provider_benchmark_done = (
+        scope_ticket_receipt.get("provider_benchmark_done") is True
+        or execution_request_receipt.get("provider_benchmark_done") is True
+    )
+    model_execution_task_implemented = False
+    model_ledger_ready = False
+    sanitizer_ready = False
+    redaction_review_ready = False
+    cost_accounting_ready = False
+    output_acceptance_ready = False
+    response_format_enforced = False
+    bounded_retry_repair_ready = False
+    real_call_gate_specs = [
+        (
+            "scope_ticket_ready",
+            scope_ticket_ready,
+            "本地 scope ticket 已绑定 DeepSeek provider benchmark 范围",
+            "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+        ),
+        (
+            "execution_request_ready",
+            execution_request_ready,
+            "本地 execution-request ticket 已绑定 latest scope hash",
+            "POST /api/factor-quant/deepseek-provider-benchmark-execution-request",
+        ),
+        (
+            "model_execution_task_implemented",
+            model_execution_task_implemented,
+            "真实 DeepSeek governed executor 已实现并只允许按钮门控",
+            "future POST model execution task",
+        ),
+        (
+            "provider_benchmark_done",
+            provider_benchmark_done,
+            "真实 provider-backed JSON stability benchmark 已完成",
+            "future governed executor evidence",
+        ),
+        ("model_ledger_ready", model_ledger_ready, "model_ledger 可审计回放", "future model ledger"),
+        ("sanitizer_ready", sanitizer_ready, "输出 sanitizer 已生产化", "sanitizer contract"),
+        ("redaction_review_ready", redaction_review_ready, "白名单字段和脱敏审查已通过", "redaction review"),
+        ("cost_accounting_ready", cost_accounting_ready, "token/cost 账本已可回放", "cost ledger"),
+        ("output_acceptance_ready", output_acceptance_ready, "安全输出验收已通过", "output acceptance"),
+        (
+            "response_format_enforced",
+            response_format_enforced,
+            "provider response_format / JSON schema 强约束已执行",
+            "provider response_format evidence",
+        ),
+        (
+            "bounded_retry_repair_ready",
+            bounded_retry_repair_ready,
+            "有限重试和修复策略已验收",
+            "bounded retry repair evidence",
+        ),
+    ]
+    real_call_gate_rows = [
+        {
+            "gate_key": key,
+            "passed": passed,
+            "status": "ready" if passed else "blocked",
+            "evidence": evidence,
+            "next_evidence": next_evidence,
+            "blocks_real_execution": not passed,
+            "cache_only_readback": True,
+            "creates_task": False,
+            "calls_model": False,
+            "contains_secret": False,
+        }
+        for key, passed, evidence, next_evidence in real_call_gate_specs
+    ]
+    real_call_blockers = [
+        row["gate_key"]
+        for row in real_call_gate_rows
+        if row["blocks_real_execution"] is True
+    ]
+    real_call_allowed_now = not real_call_blockers
     governed_executor = {
         "schema_version": "deepseek_governed_executor_status.v1",
         "status": "governed_executor_execution_request_ready_model_ledger_pending"
@@ -150,16 +226,39 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
             execution_request_receipt.get("allowed_next_step") or "run_deepseek_provider_benchmark_scope_ticket"
         ),
         "provider_benchmark_execution_request_scope_hash_matches_latest": execution_request_receipt.get("requested_scope_hash_matches_latest") is True,
-        "provider_benchmark_done": scope_ticket_receipt.get("provider_benchmark_done") is True,
-        "model_ledger_ready": False,
-        "model_ledger_evidence_done": False,
+        "model_execution_task_implemented": model_execution_task_implemented,
+        "provider_benchmark_done": provider_benchmark_done,
+        "model_ledger_ready": model_ledger_ready,
+        "model_ledger_evidence_done": model_ledger_ready,
+        "sanitizer_ready": sanitizer_ready,
+        "redaction_review_ready": redaction_review_ready,
+        "cost_accounting_ready": cost_accounting_ready,
+        "output_acceptance_ready": output_acceptance_ready,
+        "response_format_enforced": response_format_enforced,
+        "bounded_retry_repair_ready": bounded_retry_repair_ready,
+        "real_call_allowed_now": real_call_allowed_now,
+        "real_call_blockers": real_call_blockers,
+        "real_call_blocker_count": len(real_call_blockers),
+        "real_call_gate_rows": real_call_gate_rows,
+        "real_call_gate_row_count": len(real_call_gate_rows),
+        "real_call_gate_rows_are_cache_only": True,
+        "real_call_gate_rows_create_task": False,
+        "real_call_gate_rows_call_model": False,
+        "real_call_gate_rows_contain_secret": False,
+        "real_call_gate_summary": "real_deepseek_call_blocked_until_governed_executor_evidence_complete"
+        if not real_call_allowed_now
+        else "real_deepseek_call_allowed_by_governed_executor",
         "real_call_requires": [
             "explicit_post_task",
+            "model_execution_task_implemented",
+            "provider_benchmark_done",
             "model_ledger",
             "sanitizer",
             "redaction_review",
             "cost_accounting",
             "output_acceptance",
+            "response_format_enforced",
+            "bounded_retry_repair",
         ],
         "does_not_block_tushare_first_or_basic_maps": True,
         "cache_get_external_calls": False,

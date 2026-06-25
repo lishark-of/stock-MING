@@ -71,6 +71,11 @@ export default function ModelStrategy() {
     governedExecutor.provider_benchmark_scope_ticket_ready === true &&
     governedExecutor.provider_benchmark_scope_hash_safe_to_bind === true &&
     governedExecutorScopeHash.length === 64;
+  const governedExecutorRealCallGateRows = rows(governedExecutor.real_call_gate_rows);
+  const governedExecutorRealCallAllowed = governedExecutor.real_call_allowed_now === true;
+  const governedExecutorRealCallBlockers = Array.isArray(governedExecutor.real_call_blockers)
+    ? governedExecutor.real_call_blockers.map((item) => String(item)).filter(Boolean)
+    : [];
   const launchExecutionRequest = () => {
     if (executionRequestSubmitting) return;
     if (!governedExecutorScopeHashReady) {
@@ -207,6 +212,12 @@ export default function ModelStrategy() {
       边界: "缺 model_ledger 不能当真实模型证据，也不能升级 production evidence。"
     },
     {
+      速读项: "真实调用闸门",
+      当前状态: governedExecutorRealCallAllowed ? "已放行" : `未放行：${governedExecutorRealCallBlockers.join(" / ") || "等待 governed executor evidence"}`,
+      用户下一步: "继续按本地 scope ticket / execution-request / model_ledger / sanitizer 顺序补证。",
+      边界: "闸门状态只读来自 GET cache；不会从页面打开、React render 或 GET cache 调用 DeepSeek。"
+    },
+    {
       速读项: "不会碰什么",
       当前状态: "不覆盖价格、持仓、因子、operation_zones 或 strategy action。",
       用户下一步: "模型解释只看已有证据的解释状态，不替代数据源。",
@@ -322,6 +333,7 @@ export default function ModelStrategy() {
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "DeepSeek call", value: cache.deepseek_called === true ? "已调用" : "未调用", tone: cache.deepseek_called === true ? "bad" : "good" },
           { label: "governed executor", value: String(governedExecutor.status ?? "pending"), tone: governedExecutor.deepseek_called === true ? "bad" : "warn" },
+          { label: "real call gate", value: governedExecutorRealCallAllowed ? "允许" : `未放行：${governedExecutorRealCallBlockers.length || governedExecutor.real_call_blocker_count || 0} 项`, tone: governedExecutorRealCallAllowed ? "good" : "warn" },
           { label: "Tushare/basic maps", value: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "不阻塞" : "待确认", tone: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "good" : "warn" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "contains secret", value: cache.contains_secret === true ? "是" : "否", tone: cache.contains_secret === true ? "bad" : "good" },
@@ -338,6 +350,7 @@ export default function ModelStrategy() {
               { label: "下一步", value: String(governedExecutor.ordinary_next_allowed_action ?? "先继续 Tushare-first、Factor light 和 Next Session 本地回放；DeepSeek 单独验收。") },
               { label: "P5 单独补证", value: governedExecutorStandaloneBoundary, tone: "good" },
               { label: "必备治理", value: String(governedExecutor.ordinary_required_before_real_call ?? "需要 model_ledger / sanitizer / redaction review / cost accounting / output acceptance 全部就绪。"), tone: "warn" },
+              { label: "真实调用", value: governedExecutorRealCallAllowed ? "已放行" : `未放行：${governedExecutorRealCallBlockers.length || governedExecutor.real_call_blocker_count || 0} 项 blocker`, tone: governedExecutorRealCallAllowed ? "good" : "warn" },
               { label: "非阻塞", value: governedExecutor.ordinary_safe_to_ignore_for_basic_maps === true ? "Tushare-first / Factor light / Next Session 可先走" : "待确认", tone: governedExecutor.ordinary_safe_to_ignore_for_basic_maps === true ? "good" : "warn" },
               { label: "阻断状态", value: String(governedExecutor.ordinary_blocking_state ?? "pending_model_ledger_not_blocking_tushare_or_basic_maps"), tone: "warn" },
               { label: "边界", value: String(governedExecutor.ordinary_nonblocking_boundary ?? "DeepSeek 只解释已有证据，不作为数据源、不生成买卖动作。"), tone: "good" }
@@ -370,6 +383,11 @@ export default function ModelStrategy() {
             <h3>P5 安全输出白名单</h3>
             <p className="risk-note">{String(governedExecutor.ordinary_output_contract_label ?? "仅允许安全解释字段；禁止覆盖价格、持仓、factor、operation_zones、strategy action 或交易动作。")}</p>
             <DataLineageTable rows={governedExecutorOutputContractRows} />
+          </div>
+          <div aria-label="deepseek governed executor real call gate">
+            <h3>P5 真实调用闸门</h3>
+            <p className="risk-note">真实 DeepSeek 调用必须等所有 gate 通过；当前表只读展示 blocker，不创建任务、不调用模型、不展示 token/key。</p>
+            <DataLineageTable rows={governedExecutorRealCallGateRows} />
           </div>
           <div aria-label="deepseek governed executor ordinary checklist">
             <h3>P5 治理清单</h3>

@@ -573,6 +573,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(governed_executor["ordinary_output_contract_creates_task"])
         self.assertFalse(governed_executor["ordinary_output_contract_calls_model"])
         self.assertFalse(governed_executor["ordinary_output_contract_is_production_evidence"])
+        self.assertFalse(governed_executor["real_call_allowed_now"])
+        self.assertIn("scope_ticket_ready", governed_executor["real_call_blockers"])
+        self.assertIn("model_execution_task_implemented", governed_executor["real_call_blockers"])
+        self.assertIn("model_ledger_ready", governed_executor["real_call_blockers"])
+        self.assertIn("sanitizer_ready", governed_executor["real_call_blockers"])
+        real_call_gate_rows = {
+            row["gate_key"]: row for row in governed_executor["real_call_gate_rows"]
+        }
+        self.assertFalse(real_call_gate_rows["scope_ticket_ready"]["passed"])
+        self.assertTrue(real_call_gate_rows["scope_ticket_ready"]["blocks_real_execution"])
+        self.assertFalse(real_call_gate_rows["model_execution_task_implemented"]["passed"])
+        self.assertFalse(real_call_gate_rows["model_ledger_ready"]["calls_model"])
+        self.assertFalse(real_call_gate_rows["model_ledger_ready"]["contains_secret"])
+        self.assertEqual(
+            governed_executor["real_call_gate_summary"],
+            "real_deepseek_call_blocked_until_governed_executor_evidence_complete",
+        )
         self.assertFalse(model_strategy["external_calls_triggered"])
         self.assertFalse(model_strategy["deepseek_called"])
         self.assertFalse(model_strategy["tushare_called"])
@@ -50854,6 +50871,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(governed_executor["provider_benchmark_done"])
         self.assertFalse(governed_executor["model_ledger_ready"])
         self.assertFalse(governed_executor["deepseek_called"])
+        self.assertFalse(governed_executor["real_call_allowed_now"])
+        self.assertNotIn("scope_ticket_ready", governed_executor["real_call_blockers"])
+        self.assertIn("execution_request_ready", governed_executor["real_call_blockers"])
+        self.assertIn("model_execution_task_implemented", governed_executor["real_call_blockers"])
+        self.assertIn("model_ledger_ready", governed_executor["real_call_blockers"])
+        real_call_gate_rows = {
+            row["gate_key"]: row for row in governed_executor["real_call_gate_rows"]
+        }
+        self.assertTrue(real_call_gate_rows["scope_ticket_ready"]["passed"])
+        self.assertFalse(real_call_gate_rows["scope_ticket_ready"]["calls_model"])
+        self.assertFalse(real_call_gate_rows["execution_request_ready"]["passed"])
+        self.assertTrue(real_call_gate_rows["execution_request_ready"]["blocks_real_execution"])
+        self.assertFalse(real_call_gate_rows["model_execution_task_implemented"]["passed"])
         self.assertFalse(model_strategy["data"]["external_calls_triggered"])
         self.assertFalse(model_strategy["data"]["deepseek_called"])
         self.assertFalse(model_strategy["data"]["contains_secret"])
@@ -50944,6 +50974,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(governed_executor["provider_benchmark_execution_request_scope_hash_matches_latest"])
         self.assertFalse(governed_executor["model_ledger_ready"])
         self.assertFalse(governed_executor["deepseek_called"])
+        self.assertFalse(governed_executor["real_call_allowed_now"])
+        self.assertNotIn("scope_ticket_ready", governed_executor["real_call_blockers"])
+        self.assertNotIn("execution_request_ready", governed_executor["real_call_blockers"])
+        self.assertIn("model_execution_task_implemented", governed_executor["real_call_blockers"])
+        self.assertIn("provider_benchmark_done", governed_executor["real_call_blockers"])
+        self.assertIn("model_ledger_ready", governed_executor["real_call_blockers"])
+        real_call_gate_rows = {
+            row["gate_key"]: row for row in governed_executor["real_call_gate_rows"]
+        }
+        self.assertTrue(real_call_gate_rows["scope_ticket_ready"]["passed"])
+        self.assertTrue(real_call_gate_rows["execution_request_ready"]["passed"])
+        self.assertFalse(real_call_gate_rows["model_execution_task_implemented"]["passed"])
+        self.assertFalse(real_call_gate_rows["model_ledger_ready"]["passed"])
+        self.assertFalse(real_call_gate_rows["model_ledger_ready"]["calls_model"])
         self.assertFalse(model_strategy["data"]["external_calls_triggered"])
         self.assertFalse(model_strategy["data"]["deepseek_called"])
         self.assertFalse(model_strategy["data"]["contains_secret"])
