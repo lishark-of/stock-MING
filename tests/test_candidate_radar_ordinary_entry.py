@@ -526,7 +526,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
                     self.assertIn('title="当前可用投研链路"', text)
                     self.assertIn("dailyCommandResearchWorkflowRows", text)
                     self.assertIn("当前标的、P1 确认、P2 三面、P3 结论和下一步", text)
-                    self.assertIn("首页只读 CandidateRadar cache / ledger / packet；不创建 task、不调用 provider/model、不交易", text)
+                    self.assertIn("当前链路卡只读 CandidateRadar cache / ledger / packet；只有首页确认卡创建 P1 task；不交易", text)
+                    self.assertIn('title="首页确认股票代码"', text)
+                    self.assertIn('aria-label="daily command home p1 symbol confirmation"', text)
+                    self.assertIn("首页输入只做本地格式校验；不会创建 task，也不会调用 Tushare/DeepSeek", text)
                     self.assertLess(
                         text.index('title="当前可用投研链路"'),
                         text.index('title="今日作战台摘要"'),

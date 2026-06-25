@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, postCandidateRadarQuantProjection, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
-import MetricGrid from "../components/MetricGrid";
+import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
@@ -27,6 +27,25 @@ function writeLiveBootstrapSessionKey(value: string) {
   }
 }
 
+function normalizeHomeAshareSymbolInput(raw: string) {
+  const input = raw.trim().toUpperCase().replace(/\s+/g, "");
+  if (!input) return { input, normalized: "", valid: false, reason: "empty_symbol" };
+  const explicit = input.match(/^(\d{6})\.(SH|SZ|BJ)$/);
+  if (explicit) return { input, normalized: `${explicit[1]}.${explicit[2]}`, valid: true, reason: "explicit_market_suffix" };
+  const digits = input.match(/^(\d{6})$/);
+  if (!digits) return { input, normalized: "", valid: false, reason: "require_6_digits_or_suffix" };
+  const symbol = digits[1];
+  const inferredMarket = /^(60|68|90)/.test(symbol)
+    ? "SH"
+    : /^(00|30|20)/.test(symbol)
+      ? "SZ"
+      : /^(43|83|87|88|92)/.test(symbol)
+        ? "BJ"
+        : "";
+  if (!inferredMarket) return { input, normalized: "", valid: false, reason: "unknown_market_prefix" };
+  return { input, normalized: `${symbol}.${inferredMarket}`, valid: true, reason: "market_suffix_inferred" };
+}
+
 export default function CommandCenterHome() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
   const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -38,6 +57,11 @@ export default function CommandCenterHome() {
   const [liveBootstrapReceipt, setLiveBootstrapReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [liveBootstrapTaskId, setLiveBootstrapTaskId] = useState("");
   const [liveBootstrapManualStatus, setLiveBootstrapManualStatus] = useState("not_checked");
+  const [homeQuantSymbol, setHomeQuantSymbol] = useState("");
+  const [homeQuantSubmitting, setHomeQuantSubmitting] = useState(false);
+  const [homeQuantReceipt, setHomeQuantReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [homeQuantTaskId, setHomeQuantTaskId] = useState("");
+  const [homeQuantSubmitError, setHomeQuantSubmitError] = useState("");
   const [packets, setPackets] = useState<Record<string, unknown>>({});
   const [packetEnvelopeLedger, setPacketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [market, setMarket] = useState<Record<string, unknown>>({});
@@ -353,7 +377,7 @@ export default function CommandCenterHome() {
   const dailyCommandExplainableResultBoundary = String(
     candidates.ordinary_result_boundary ??
       candidateQuantInterpretation.ordinary_result_boundary ??
-      "可解释结果只从本地 cache / ledger / packet 回放；不会从首页创建 task、调用模型或生成交易动作。"
+      "可解释结果只从本地 cache / ledger / packet 回放；不会从结果回放卡创建 task、调用模型或生成交易动作。"
   );
   const dailyCommandConfirmedSymbol = String(
     candidateQuantReceipt.symbol ??
@@ -482,7 +506,7 @@ export default function CommandCenterHome() {
           当前状态: "等待下一票雷达确认任务回放",
           用户下一步: "回下一票雷达输入代码并点击确认按钮。",
           入口: "#candidates",
-          边界: "首页不接收股票代码输入；确认按钮之前不创建 Tushare-first task。"
+          边界: "首页确认入口和下一票雷达共用同一条 P1 task；确认按钮之前不创建 Tushare-first task。"
         },
         {
           确认结果: "P2 写回结果",
@@ -757,17 +781,18 @@ export default function CommandCenterHome() {
     ? "先查看一键启动预检，恢复本地 FastAPI / React 联通"
     : dailyCommandP0QuickAction
     ? dailyCommandP0QuickAction
-    : "进入下一票雷达，输入代码并点击确认按钮生成 3.0 量化推演";
+    : "在首页输入代码并点击确认；需要详情再进下一票雷达";
   const dailyCommandPrimaryActionLabel = dailyCommandNeedsStartupRecovery
     ? "查看一键启动预检"
-    : "进入下一票雷达确认代码";
+    : "首页确认股票代码";
+  const dailyCommandHomeConfirmHref = "#home-p1-symbol-confirm";
   const dailyCommandCandidateConfirmHref = "#candidates/candidate-radar-search-quant-projection";
   const dailyCommandPrimaryActionHref = dailyCommandNeedsStartupRecovery
     ? "#desktop"
-    : dailyCommandCandidateConfirmHref;
+    : dailyCommandHomeConfirmHref;
   const dailyCommandPrimaryActionBoundary = dailyCommandNeedsStartupRecovery
     ? "主下一步只打开桌面壳预检，不启动服务、不创建 task、不刷新 provider/model"
-    : "主下一步只切换到下一票雷达；输入保持静默，确认按钮才创建 Tushare-first POST task";
+    : "主下一步可在首页输入代码并确认；输入保持静默，确认按钮才创建 Tushare-first POST task";
   const dailyCommandCacheSourceLabel = snapshotAvailable ? "本地缓存可用" : "等待本地缓存";
   const dailyCommandTushareSourceLabel = liveLight.tushare_on_open === true
     ? "live_light 已配置；仍需确认按钮触发 Tushare-first task"
@@ -828,7 +853,7 @@ export default function CommandCenterHome() {
   const dailyCommandTaskBoundary =
     "首页 GET cache 只读；live_light 手动补证只允许创建后台 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
   const dailyCommandExternalTriggerBoundary =
-    "页面打开、搜索输入、React render 和 GET cache 不自动外联；只有下一票雷达确认按钮可创建 Tushare-first POST task，DeepSeek 等 governed executor。";
+    "页面打开、搜索输入、React render 和 GET cache 不自动外联；只有首页或下一票雷达确认按钮可创建 Tushare-first POST task，DeepSeek 等 governed executor。";
   const dailyCommandResearchOnlyLabel = "今日摘要只组织投研证据；不买卖、不下单、不改交易策略";
   const dailyCommandStatusLabel = dailyCommandHealthOk ? "只读入口可用" : "等待只读入口";
   const dailyCommandConnectionState = error
@@ -849,15 +874,69 @@ export default function CommandCenterHome() {
     : `自动尝试本地 FastAPI：${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")}`;
   const dailyCommandFrontendBackendAutoLinkBoundary =
     "前端 API client 只在本地 FastAPI 候选地址内自动联通；失败显示离线提示，不启动服务、不创建 task、不调用 provider/model、不读取 token/key";
+  const dailyCommandP0LocalConnectionReceipt =
+    (desktopPreflight.p0_local_connection_receipt as Record<string, unknown> | undefined) ?? {};
+  const dailyCommandP0StabilityReady =
+    oneClickStartupSummary.p0_stability_check_before_open === true ||
+    dailyCommandP0LocalConnectionReceipt.p0_stability_check_before_open === true;
+  const dailyCommandP0LocalLinkReady =
+    oneClickStartupSummary.frontend_backend_connection_ready === true &&
+    dailyCommandP0LocalConnectionReceipt.status === "p0_local_connection_receipt_ready";
+  const dailyCommandP0ConnectionEvidenceReady = dailyCommandP0StabilityReady || dailyCommandP0LocalLinkReady;
   const dailyCommandP0LocalReadinessReady =
     dailyCommandHealthOk &&
     bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" &&
-    desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache";
+    desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache" &&
+    dailyCommandP0ConnectionEvidenceReady;
   const dailyCommandP0LocalReadinessLabel = dailyCommandP0LocalReadinessReady
     ? `P0 ready：${dailyCommandFrontendBackendSelectedApiBase} 已联通，当前 React 页面已加载；可进入下一票雷达`
     : "P0 check：先让 health、bootstrap status、desktop preflight cache 变绿；未 ready 不进入 P1";
   const dailyCommandP0LocalReadinessBoundary =
     "P0 ready 只证明本地前后端联通；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。";
+  const homeQuantSymbolValidation = normalizeHomeAshareSymbolInput(homeQuantSymbol);
+  const homeQuantCanSubmit = dailyCommandP0LocalReadinessReady && homeQuantSymbolValidation.valid && !homeQuantSubmitting;
+  const homeQuantSubmitDisabledReason = homeQuantSubmitting
+    ? "正在创建 Tushare-first 后台 task；请等待本地任务编号"
+    : !dailyCommandP0LocalReadinessReady
+      ? "P0 未 ready：先让本地 FastAPI、bootstrap、desktop preflight 和 P0 connection evidence 变绿"
+      : homeQuantSymbolValidation.valid
+        ? `已确认 ${homeQuantSymbolValidation.normalized}；点击确认才创建 Tushare-first POST task`
+        : homeQuantSymbol.trim()
+          ? `代码格式阻断：${homeQuantSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ`
+          : "先输入股票代码；输入本身不会创建 task 或调用 Tushare/DeepSeek";
+  const homeQuantP0ConfirmGateEvidence = {
+    schema_version: "candidate_radar_p0_confirm_gate.v1",
+    p0_ready: dailyCommandP0LocalReadinessReady,
+    fastapi_cache_get_ready: dailyCommandHealthOk,
+    bootstrap_runtime_mode_ready: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet",
+    desktop_preflight_ready: desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache",
+    p0_stability_check_ready: dailyCommandP0StabilityReady,
+    p0_local_link_ready: dailyCommandP0LocalLinkReady,
+    p0_connection_evidence_ready: dailyCommandP0ConnectionEvidenceReady,
+    p0_local_link_is_ui_gate_only_not_release_evidence: dailyCommandP0LocalLinkReady && !dailyCommandP0StabilityReady,
+    candidate_cache_ready: Boolean(candidates.status),
+    candidate_cache_status: String(candidates.status ?? "missing"),
+    bootstrap_packet_key: String(bootstrapStatus.packet_key ?? "missing"),
+    desktop_preflight_packet_key: String(desktopPreflight.packet_key ?? "missing"),
+    creates_task_only_after_button: true,
+    react_render_external_calls: false,
+    get_cache_external_calls: false,
+    contains_sensitive_material: false
+  };
+  const homeQuantTaskPanelTaskId = homeQuantTaskId || String(homeQuantReceipt?.data?.task_id ?? "");
+  const homeQuantReadbackStatus = homeQuantTaskPanelTaskId
+    ? `任务已创建：${homeQuantTaskPanelTaskId}`
+    : dailyCommandConfirmedSymbol
+      ? `最近回放：${dailyCommandConfirmedSymbol}`
+      : "等待首页确认按钮";
+  const homeQuantConfirmItems: MetricItem[] = [
+    { label: "输入代码", value: homeQuantSymbolValidation.valid ? homeQuantSymbolValidation.normalized : homeQuantSubmitDisabledReason, tone: homeQuantSymbolValidation.valid ? "good" : "warn" },
+    { label: "P0 闸门", value: dailyCommandP0LocalReadinessReady ? "ready：可点击确认" : "check：先恢复本地联通", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+    { label: "任务状态", value: homeQuantReadbackStatus, tone: homeQuantTaskPanelTaskId ? "good" : "warn" },
+    { label: "Tushare-first", value: "确认按钮才 POST；DeepSeek skipped，成功后通过 GET cache 回放", tone: "good" },
+    { label: "P2/P3 回放", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+    { label: "边界", value: "首页输入静默；不从页面打开、输入、React render 或 GET cache 外联；不交易、不改 action", tone: "good" }
+  ];
   const dailyCommandFrontendBackendAutoLinkRows = [
     {
       联通项: "前端 API client",
@@ -922,24 +1001,24 @@ export default function CommandCenterHome() {
     ? candidateQuantOneScreenActionRows.map((row) => ({
         行动: String(row["行动"] ?? row.action_key ?? "行动"),
         当前状态: String(row["当前状态"] ?? row.status ?? "等待本地回放"),
-        用户下一步: String(row["用户下一步"] ?? row.next_action ?? "先完成 P0 联通，再去下一票雷达确认代码"),
+        用户下一步: String(row["用户下一步"] ?? row.next_action ?? "先完成 P0 联通，再在首页或下一票雷达确认代码"),
         入口: String(row["入口"] ?? row.entry ?? "下一票雷达"),
-        边界: String(row["边界"] ?? row.boundary ?? "首页只读回放 CandidateRadar packet；不会从首页创建 task 或调用模型。")
+        边界: String(row["边界"] ?? row.boundary ?? "首页回放 CandidateRadar packet；不会从回放行创建 task 或调用模型。")
       }))
     : [
         {
           行动: "1. 确认",
-          当前状态: dailyCommandP0LocalReadinessReady ? "P0 ready：可以进入下一票雷达确认代码" : "P0 check：先恢复本地联通",
-          用户下一步: dailyCommandP0LocalReadinessReady ? "进入下一票雷达，输入股票代码并点击确认按钮" : "先打开一键启动预检恢复四段联通",
-          入口: dailyCommandP0LocalReadinessReady ? "#candidates" : "#desktop",
-          边界: "首页只提供本地导航；页面打开、输入和 GET cache 不创建 Tushare-first task。"
+          当前状态: dailyCommandP0LocalReadinessReady ? "P0 ready：可以在首页确认股票代码" : "P0 check：先恢复本地联通",
+          用户下一步: dailyCommandP0LocalReadinessReady ? "在首页输入股票代码并点击确认按钮；需要详情再进下一票雷达" : "先打开一键启动预检恢复四段联通",
+          入口: dailyCommandP0LocalReadinessReady ? "#home-p1-symbol-confirm" : "#desktop",
+          边界: "首页确认卡和下一票雷达确认按钮都走 P1 task；页面打开、输入和 GET cache 不创建 Tushare-first task。"
         },
         {
           行动: "2. 任务",
           当前状态: "等待下一票雷达确认按钮返回 task id",
           用户下一步: "确认后看 TaskStatusPanel，本地任务完成后刷新 cache",
           入口: "下一票雷达确认按钮 / TaskStatusPanel",
-          边界: "只有确认按钮可创建 Tushare-first POST task；首页不提交 task。"
+          边界: "只有首页或下一票雷达确认按钮可创建 Tushare-first POST task；回放清单不提交 task。"
         },
         {
           行动: "3. 写回",
@@ -1166,7 +1245,7 @@ export default function CommandCenterHome() {
   ];
   const dailyCommandReviewOrder = error
     ? "先看一键启动预检恢复本地联通，再回今日作战台"
-    : "先确认 P0 本地联通，再进入下一票雷达确认代码，之后回放股票量化推演和次日图谱结果";
+    : "先确认 P0 本地联通，再在首页确认股票代码，之后回放股票量化推演和次日图谱结果";
   const dailyCommandResultComposition = [
     `候选：${Number(candidateCounts?.candidate_count ?? 0) ? String(candidateCounts?.candidate_count) : "等待缓存"}`,
     `量化：${String(factor.status ?? factor.mode ?? "等待缓存")}`,
@@ -1191,7 +1270,7 @@ export default function CommandCenterHome() {
           当前状态: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待候选缓存",
           用户下一步: "复核候选、确认任务状态和结果回放位置；换标的仍需点击确认按钮",
           入口: "#candidates",
-          边界: "只读跳转到雷达模块；不会从首页创建 task，搜索输入仍保持静默"
+          边界: "只读跳转到雷达模块；不会从结果入口创建 task，搜索输入仍保持静默"
         },
         {
           结果入口: "股票量化推演",
@@ -1234,9 +1313,9 @@ export default function CommandCenterHome() {
     {
       链路段: "P1 确认按钮",
       当前状态: dailyCommandLatestTaskId ? `已看到最近任务：${dailyCommandLatestTaskStatus}` : "等待用户确认股票代码",
-      用户下一步: dailyCommandLatestTaskId ? "按任务状态和回放结果继续复核" : "只在下一票雷达点击确认按钮；输入本身保持静默",
+      用户下一步: dailyCommandLatestTaskId ? "按任务状态和回放结果继续复核" : "在首页或下一票雷达点击确认按钮；输入本身保持静默",
       证据: dailyCommandLatestTaskId || "CandidateRadar confirm button contract",
-      边界: "首页只读回放；不会从首页创建第二个 task。"
+      边界: "首页结果回放不创建第二个 task；只有确认按钮创建 P1 task。"
     },
     {
       链路段: "P2 小数据三面",
@@ -1260,6 +1339,76 @@ export default function CommandCenterHome() {
       边界: dailyCommandDeepSeekGovernanceBoundary
     }
   ];
+
+  const refreshHomeResearchReadback = () => {
+    void getCandidateRadarCache().then((res) => {
+      setCandidates(res.data);
+      if (res.ok === false) setError((current) => current || `candidate: ${res.error ?? "request_not_ok"}`);
+    }).catch((err) => {
+      setError((current) => current || `candidate: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    void getFactorQuantCache().then((res) => setFactor(res.data)).catch(() => undefined);
+    void getNextSessionCache().then((res) => setNext(res.data)).catch(() => undefined);
+    void getTasks().then((res) => {
+      setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
+      setTaskIndex(res.data);
+      setTasks(res.data.tasks ?? []);
+    }).catch(() => undefined);
+  };
+
+  const launchHomeQuantProjection = () => {
+    if (!homeQuantCanSubmit || homeQuantSubmitting) return;
+    setHomeQuantSubmitting(true);
+    setHomeQuantSubmitError("");
+    void postCandidateRadarQuantProjection({
+      scan_mode: "search_quant_projection",
+      symbol: homeQuantSymbolValidation.normalized,
+      include_tushare: true,
+      include_deepseek: false,
+      user_approved: true,
+      requested_by: "command_center_home_p1_confirm",
+      p0_confirm_gate_evidence: homeQuantP0ConfirmGateEvidence,
+      ordinary_confirm_chain_contract: {
+        schema_version: "command_center_home_p1_confirm_contract.v1",
+        trigger: "home_symbol_confirm_button",
+        route: "POST /api/candidate-radar/quant-projection",
+        task_type: "run_candidate_radar_quant_projection",
+        search_input_creates_task: false,
+        confirm_button_creates_task: true,
+        include_tushare_requested: true,
+        include_deepseek_requested: false,
+        cache_get_external_calls: false,
+        react_render_external_calls: false,
+        does_not_execute_trades: true,
+        does_not_modify_strategy_action: true
+      },
+      ordinary_post_confirm_replay_contract: {
+        schema_version: "command_center_home_post_confirm_replay_contract.v1",
+        source: "command_center_home_p1_confirm",
+        readback_route: "GET /api/candidate-radar/cache",
+        writeback_surfaces: ["cache", "call_ledger", "packet"],
+        result_anchors: ["#tasks", "#factor", "#next"],
+        creates_second_task_from_readback: false,
+        readback_calls_provider_or_model: false,
+        deepseek_policy: "skipped_until_governed_executor",
+        does_not_execute_trades: true,
+        does_not_modify_strategy_action: true
+      }
+    }).then((res) => {
+      setHomeQuantReceipt(res);
+      const nextTaskId = String(res.data?.task_id ?? res.data?.task?.task_id ?? "");
+      setHomeQuantTaskId(nextTaskId);
+      if (!res.ok || !nextTaskId) {
+        setHomeQuantSubmitError(res.error ?? "home_quant_projection_task_not_created");
+      } else {
+        refreshHomeResearchReadback();
+      }
+    }).catch((err) => {
+      setHomeQuantSubmitError(err instanceof Error ? err.message : String(err));
+    }).finally(() => {
+      setHomeQuantSubmitting(false);
+    });
+  };
 
   const launchLiveBootstrap = () => {
     const mode = String(bootstrapStatus.mode ?? "cache_only");
@@ -1349,6 +1498,34 @@ export default function CommandCenterHome() {
         </div>
         <p className="risk-note">P0 ready 只说明本机前后端已接上；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。</p>
       </PacketCard>
+      <PacketCard title="首页确认股票代码" subtitle="P1 普通入口：输入静默，点击确认才创建 Tushare-first task" status={homeQuantTaskPanelTaskId ? "task_created" : dailyCommandP0LocalReadinessReady ? "ready" : "p0_check"}>
+        <div id="home-p1-symbol-confirm" aria-label="daily command home p1 symbol confirmation">
+          <MetricGrid items={homeQuantConfirmItems} />
+          <div className="actions" aria-label="daily command home p1 symbol confirm actions">
+            <input
+              value={homeQuantSymbol}
+              onChange={(event) => {
+                setHomeQuantSymbol(event.target.value);
+                setHomeQuantSubmitError("");
+              }}
+              placeholder="002008.SZ 或 002008"
+              aria-label="daily command home quant projection symbol"
+              title="首页输入只做本地格式校验；不会创建 task，也不会调用 Tushare/DeepSeek"
+            />
+            <button
+              disabled={!homeQuantCanSubmit}
+              onClick={launchHomeQuantProjection}
+              title={homeQuantSubmitDisabledReason}
+              aria-label={homeQuantSubmitDisabledReason}
+            >{homeQuantSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+            <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达详情页；同一条 P1 确认链路" aria-label="open candidate radar detail from home p1 confirm">下一票雷达详情</a>
+          </div>
+          {homeQuantSubmitError ? <p className="risk-note" aria-live="polite">首页确认任务创建失败：{homeQuantSubmitError}</p> : null}
+          {homeQuantReceipt ? <TaskLaunchReceipt receipt={homeQuantReceipt} /> : null}
+          {homeQuantTaskPanelTaskId ? <TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} /> : null}
+          <p className="risk-note">首页确认按钮复用 POST /api/candidate-radar/quant-projection：P0 gate 通过后才启用；成功后只从 CandidateRadar cache / call_ledger / packet 回放 P2/P3。页面打开、输入、React render 和 GET cache 不外联，不调用 DeepSeek，不交易、不改 strategy action。</p>
+        </div>
+      </PacketCard>
       <PacketCard title="当前可用投研链路" subtitle="当前标的、P1 确认、P2 三面、P3 结论和下一步" status={dailyCommandResearchWorkflowStatus}>
         <MetricGrid
           items={[
@@ -1358,7 +1535,7 @@ export default function CommandCenterHome() {
             { label: "P3 结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
             { label: "下一步", value: dailyCommandResearchWorkflowNext },
             { label: "DeepSeek", value: dailyCommandP3OneGlanceModelState, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
-            { label: "边界", value: "首页只读 CandidateRadar cache / ledger / packet；不创建 task、不调用 provider/model、不交易", tone: "good" }
+            { label: "边界", value: "当前链路卡只读 CandidateRadar cache / ledger / packet；只有首页确认卡创建 P1 task；不交易", tone: "good" }
           ]}
         />
         <DataLineageTable rows={dailyCommandResearchWorkflowRows} />
@@ -1367,7 +1544,7 @@ export default function CommandCenterHome() {
           <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from current research workflow">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session replay from current research workflow">次日图谱</a>
         </div>
-        <p className="risk-note">这张卡把 P1/P2/P3 放到首页前排：页面打开和搜索输入不外联；只有下一票雷达确认按钮可以创建 Tushare-first POST task，DeepSeek governed executor 单独补。</p>
+        <p className="risk-note">这张卡把 P1/P2/P3 放到首页前排：页面打开和搜索输入不外联；只有首页或下一票雷达确认按钮可以创建 Tushare-first POST task，DeepSeek governed executor 单独补。</p>
       </PacketCard>
       <PacketCard title="最近本地任务" subtitle="打开软件后直接看进度；只读回放 task/cache/ledger/packet" status={dailyCommandLatestTaskStatus}>
         <MetricGrid
@@ -1504,7 +1681,7 @@ export default function CommandCenterHome() {
           <a href="#dataHealth" title="切换到数据健康模块；只读 cache，不刷新外部数据源" aria-label="open data health from daily command">查看数据健康</a>
           <a href="#desktop" title="切换到桌面壳预检模块；只读恢复指引，不启动服务" aria-label="open one click startup preflight from daily command">查看一键启动预检</a>
         </div>
-        <p className="risk-note">今日先按“P0 本地联通 → 下一票雷达确认代码 → 股票量化推演 / 次日图谱回放”复核；缺数据就看 pending 和缺少证据，不把空结果当成无风险。</p>
+        <p className="risk-note">今日先按“P0 本地联通 → 首页确认股票代码 → 股票量化推演 / 次日图谱回放”复核；需要详情再进下一票雷达，缺数据就看 pending 和缺少证据，不把空结果当成无风险。</p>
         <p className="risk-note">{dailyCommandExternalTriggerBoundary}</p>
         <p className="risk-note">{dailyCommandResultLocation}</p>
         <p className="risk-note">如果本地联通异常，先去 <a href="#desktop">桌面壳预检</a> 查看本地快捷入口；这个跳转只切换页面，不启动 FastAPI/Vite/浏览器。</p>
@@ -1563,7 +1740,7 @@ export default function CommandCenterHome() {
         </div>
         <div aria-label="daily command p2 p3 replay checklist">
           <h3>确认后回放清单</h3>
-          <p className="risk-note">确认按钮返回 task 后，按确认回执、任务状态、P2 写回三面、P3 结果顺序回放；首页只读 CandidateRadar cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
+          <p className="risk-note">确认按钮返回 task 后，按确认回执、任务状态、P2 写回三面、P3 结果顺序回放；本卡只读 CandidateRadar cache / ledger / packet，不创建第二个 task、不补调 Tushare/DeepSeek。</p>
           <DataLineageTable rows={dailyCommandP2P3ReplayChecklistRows} />
         </div>
         <div aria-label="daily command p0 quick action handoff">
@@ -1573,12 +1750,12 @@ export default function CommandCenterHome() {
         </div>
         <div aria-label="daily command p2 small data writeback quick read">
           <h3>P2 小数据写入速读</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_writeback_surface_summary_rows：普通入口只看 cache、call_ledger、packet 三个写入面是否可回放；不会从首页创建 task。</p>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_writeback_surface_summary_rows：普通入口只看 cache、call_ledger、packet 三个写入面是否可回放；不会从 P2 回放卡创建 task。</p>
           <DataLineageTable rows={dailyCommandSmallDataWritebackRows} />
         </div>
         <div aria-label="daily command p3 explainable result quick read">
           <h3>P3 可解释结果速读</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows：普通入口只看可读结论、来源组成、回放来源和待补证据；不会从首页创建 task、调用 DeepSeek 或展开 raw packet。</p>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows：普通入口只看可读结论、来源组成、回放来源和待补证据；不会从 P3 回放卡创建 task、调用 DeepSeek 或展开 raw packet。</p>
           <DataLineageTable rows={dailyCommandExplainableResultRows} />
         </div>
         <div aria-label="daily command p3 result checkpoint">
