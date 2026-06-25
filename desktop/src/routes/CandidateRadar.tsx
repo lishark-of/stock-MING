@@ -747,6 +747,13 @@ export default function CandidateRadar() {
   const quantProjectionPersistedTaskId = String(searchQuantProjectionReceipt.latest_task_id ?? searchQuantProjectionReceipt.task_id ?? cache.task_id ?? "");
   const quantProjectionPersistedTaskStep = String(searchQuantProjectionReceipt.latest_task_current_step ?? searchQuantProjectionReceipt.status ?? "");
   const quantProjectionTaskReceiptPayload = (taskReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const quantProjectionReceiptCallLedger = rows(searchQuantProjectionReceipt.call_ledger);
+  const quantProjectionReceiptRequestParams =
+    (quantProjectionReceiptCallLedger[0]?.request_params_safe as Record<string, unknown> | undefined) ?? {};
+  const quantProjectionPostConfirmReplayContract =
+    (quantProjectionTaskReceiptPayload.ordinary_post_confirm_replay_contract as Record<string, unknown> | undefined) ??
+    (quantProjectionReceiptRequestParams.ordinary_post_confirm_replay_contract as Record<string, unknown> | undefined) ??
+    {};
   const quantProjectionAcceptedTaskSymbol = String(quantProjectionTaskReceiptPayload.symbol ?? searchQuantProjectionReceipt.symbol ?? "");
   const quantProjectionTaskReceiptInputMismatch =
     quantProjectionSymbolReady &&
@@ -1731,6 +1738,47 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const quantProjectionPostConfirmReplayContractReady =
+    quantProjectionPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
+  const quantProjectionPostConfirmReplaySequence = Array.isArray(quantProjectionPostConfirmReplayContract.readback_sequence)
+    ? quantProjectionPostConfirmReplayContract.readback_sequence.map(String).join(" -> ")
+    : "等待后端 task payload_safe 回放合同";
+  const quantProjectionPostConfirmReplaySurfaces = Array.isArray(quantProjectionPostConfirmReplayContract.writeback_surfaces)
+    ? quantProjectionPostConfirmReplayContract.writeback_surfaces.map(String).join(" / ")
+    : "cache / call_ledger / packet";
+  const quantProjectionPostConfirmReplayAnchors = Array.isArray(quantProjectionPostConfirmReplayContract.result_anchors)
+    ? quantProjectionPostConfirmReplayContract.result_anchors.map(String).join(" / ")
+    : "#tasks / #factor / #next";
+  const quantProjectionPostConfirmReplayContractRows = [
+    {
+      合同项: "任务回执",
+      当前状态: quantProjectionPostConfirmReplayContractReady ? "后端 task payload_safe 已返回确认后回放合同" : "等待确认按钮返回后端回放合同",
+      用户下一步: quantProjectionPostConfirmReplayContractReady ? "按合同顺序看 task id、TaskStatusPanel 和本地回放" : "输入有效代码并点击确认",
+      证据: "ordinary_post_confirm_replay_contract",
+      边界: "合同只描述确认后的只读回放；不会从本表创建第二个 task"
+    },
+    {
+      合同项: "回放顺序",
+      当前状态: quantProjectionPostConfirmReplaySequence,
+      用户下一步: "先看任务编号，再等 TaskStatusPanel success，最后刷新本地 cache",
+      证据: "readback_sequence",
+      边界: "GET cache / bootstrap status 只读；React render 不补调 provider/model"
+    },
+    {
+      合同项: "P2 三面",
+      当前状态: quantProjectionPostConfirmReplaySurfaces,
+      用户下一步: "确认 cache、call_ledger、packet 是否可回放",
+      证据: "writeback_surfaces",
+      边界: "call_ledger 只由 POST task / worker 产生；普通回放不展示凭据或 raw log"
+    },
+    {
+      合同项: "结果入口",
+      当前状态: quantProjectionPostConfirmReplayAnchors,
+      用户下一步: "任务成功后打开任务进度、量化推演和次日图谱",
+      证据: "result_anchors",
+      边界: "结果入口只切换本地模块；不交易、不下单、不改 strategy action"
+    }
+  ];
   const quantProjectionFirstScreenTaskContractItems: MetricItem[] = [
     {
       label: "POST 路由",
@@ -2370,6 +2418,11 @@ export default function CandidateRadar() {
             <h3>确认后一屏结果</h3>
             <p className="risk-note">点击确认后先看这条结果：任务是否接收、P2 三面是否回放、P3 结论是否可读和下一步入口都在一屏内；这条结果条只读本地 task receipt 与 cache / ledger / packet，不创建第二个 task。</p>
             <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
+            <div aria-label="candidate radar post confirm backend replay contract">
+              <h3>后端回放合同</h3>
+              <p className="risk-note">优先读取后端 task payload_safe 的 ordinary_post_confirm_replay_contract：确认后按任务编号、TaskStatusPanel、GET cache、cache/call_ledger/packet、量化推演和次日图谱顺序回放；这张表只读合同，不创建 task。</p>
+              <DataLineageTable rows={quantProjectionPostConfirmReplayContractRows} />
+            </div>
             <div className="actions" aria-label="candidate radar post confirm local replay actions">
               <button
                 onClick={refreshQuantProjectionReadback}
