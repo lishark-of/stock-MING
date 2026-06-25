@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:5173",
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 ../scripts/start_command_center_3.command",
     "beforeBuildCommand": "npm run build"
   },
   "bundle": {

@@ -425,6 +425,11 @@ def _tauri_config_summary() -> dict[str, Any]:
     app = payload.get("app") if isinstance(payload.get("app"), dict) else {}
     windows = app.get("windows") if isinstance(app.get("windows"), list) else []
     dev_url = str(build.get("devUrl") or "")
+    before_dev_command = str(build.get("beforeDevCommand") or "")
+    before_dev_links_local_stack = (
+        "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1" in before_dev_command
+        and "start_command_center_3.command" in before_dev_command
+    )
     return {
         "available": True,
         "path": _path_label(path),
@@ -434,7 +439,10 @@ def _tauri_config_summary() -> dict[str, Any]:
         "frontend_dist": build.get("frontendDist"),
         "dev_url": dev_url,
         "dev_url_is_localhost": dev_url.startswith("http://127.0.0.1") or dev_url.startswith("http://localhost"),
-        "before_dev_command": build.get("beforeDevCommand"),
+        "before_dev_command": before_dev_command,
+        "before_dev_command_links_local_stack": before_dev_links_local_stack,
+        "tauri_dev_starts_fastapi_via_local_launcher": before_dev_links_local_stack,
+        "tauri_dev_skip_open_launcher": "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1" in before_dev_command,
         "before_build_command": build.get("beforeBuildCommand"),
         "window_count": len(windows),
         "backend_sidecar_configured": False,
@@ -636,8 +644,11 @@ def _dev_launch_plan(api_base: str) -> list[dict[str, Any]]:
             "step": "3",
             "name": "启动 Tauri 桌面壳",
             "command": "cd desktop && npm run tauri dev",
-            "required_for": "桌面窗口开发模式；需要 Rust/Cargo",
+            "required_for": "桌面窗口开发模式；beforeDevCommand 先用本地一键启动器 skip-open 接上 FastAPI/Vite；需要 Rust/Cargo",
             "manual": True,
+            "before_dev_command": "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 ../scripts/start_command_center_3.command",
+            "starts_fastapi_via_before_dev_command": True,
+            "opens_browser_before_tauri_window": False,
             "external_calls_triggered": False,
             "loads_token_or_key": False,
             "starts_when_user_runs": True,
@@ -2306,7 +2317,7 @@ def _production_runtime_contract(api_base_info: dict[str, Any], tauri_config: di
             "backend_startup_strategy_declared",
             "passed",
             True,
-            evidence="current package uses manual FastAPI launch; sidecar remains a future explicit packaging decision",
+            evidence="Tauri dev uses beforeDevCommand local launcher skip-open to start or reuse FastAPI/Vite; production sidecar remains a future explicit packaging decision",
         ),
         _production_runtime_row(
             "api_base_localhost_contract",
@@ -2337,7 +2348,10 @@ def _production_runtime_contract(api_base_info: dict[str, Any], tauri_config: di
             "sidecar_autostart_validation_pending",
             "pending",
             False,
-            evidence=f"backend_sidecar_configured={bool(tauri_config.get('backend_sidecar_configured'))}; manual launch is current policy",
+            evidence=(
+                f"tauri_dev_before_dev_links_local_stack={bool(tauri_config.get('before_dev_command_links_local_stack'))}; "
+                f"backend_sidecar_configured={bool(tauri_config.get('backend_sidecar_configured'))}; packaged sidecar validation remains pending"
+            ),
             production_blocker=True,
         ),
         _production_runtime_row(
@@ -2355,6 +2369,10 @@ def _production_runtime_contract(api_base_info: dict[str, Any], tauri_config: di
         "scope": "path_policy_and_startup_contract_not_packaged_runtime_validation",
         "backend_startup_strategy": "manual_fastapi_process_current_sidecar_pending",
         "manual_backend_launch_required": True,
+        "tauri_dev_before_dev_command": tauri_config.get("before_dev_command"),
+        "tauri_dev_before_dev_command_links_local_stack": bool(tauri_config.get("before_dev_command_links_local_stack")),
+        "tauri_dev_starts_fastapi_via_local_launcher": bool(tauri_config.get("tauri_dev_starts_fastapi_via_local_launcher")),
+        "tauri_dev_opens_browser_before_window": False,
         "backend_sidecar_autostart_enabled": False,
         "backend_sidecar_configured": bool(tauri_config.get("backend_sidecar_configured")),
         "api_base": api_base_info.get("api_base"),
@@ -2380,7 +2398,7 @@ def _production_runtime_contract(api_base_info: dict[str, Any], tauri_config: di
         "production_blocker_count": len(blockers),
         "blockers": blockers,
         "rows": rows,
-        "note": "This contract declares production runtime paths and startup boundaries only; it does not run Tauri build, start FastAPI, read config values, write logs, or validate packaged runtime UX.",
+        "note": "This contract declares runtime paths and startup boundaries only. Tauri dev beforeDevCommand may start or reuse local FastAPI/Vite through the user-run launcher, but GET cache does not run it, and packaged runtime sidecar/offline UX validation remains pending.",
     }
 
 
@@ -5794,6 +5812,12 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "rust_toolchain_required": True,
         "backend_sidecar_autostart_enabled": False,
         "backend_sidecar_autostart_planned": True,
+        "tauri_dev_before_dev_command_links_local_stack": production_runtime_contract[
+            "tauri_dev_before_dev_command_links_local_stack"
+        ],
+        "tauri_dev_starts_fastapi_via_local_launcher": production_runtime_contract[
+            "tauri_dev_starts_fastapi_via_local_launcher"
+        ],
         "frontend_stores_tokens": False,
         "production_runtime_contract_status": production_runtime_contract["status"],
         "backend_offline_ux_contract_status": backend_offline_ux_contract["status"],
@@ -5807,7 +5831,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "blockers": [] if tauri_dev_ready else (["rust_cargo_missing"] if vite_dev_ready else ["desktop_scaffold_incomplete"]),
-        "note": "当前阶段验证 React/Vite 与 Tauri scaffold；生产 package build 和 FastAPI sidecar 自动拉起仍需后续阶段。",
+        "note": "当前阶段验证 React/Vite 与 Tauri dev 本地联通：tauri dev 会先通过 beforeDevCommand 调用本地一键启动器 skip-open 接上 FastAPI/Vite；生产 package build 和 FastAPI sidecar 自动拉起仍需后续阶段。",
     }
     production_blocker_audit = _production_package_blocker_audit(
         package_summary=package_summary,
@@ -5995,6 +6019,13 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             and desktop_launcher_contract["shortcut_installer_executable"],
             "desktop_shortcut_installer_path": desktop_launcher_contract["shortcut_installer_path"],
             "backend_autostart_configured": False,
+            "tauri_dev_before_dev_command": tauri_config["before_dev_command"],
+            "tauri_dev_before_dev_command_links_local_stack": production_runtime_contract[
+                "tauri_dev_before_dev_command_links_local_stack"
+            ],
+            "tauri_dev_starts_fastapi_via_local_launcher": production_runtime_contract[
+                "tauri_dev_starts_fastapi_via_local_launcher"
+            ],
             "production_package_build_attempted": False,
             "production_package_build_artifact_detected": tauri_build_artifact["binary_exists"],
             "backend_sidecar_autostart_enabled": False,

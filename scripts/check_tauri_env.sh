@@ -12,6 +12,8 @@ echo "api_base=${VITE_API_BASE_URL:-http://127.0.0.1:8710}"
 echo "fastapi_dev_command=scripts/dev_server.sh"
 echo "vite_dev_command=cd desktop && npm run dev"
 echo "tauri_dev_command=cd desktop && npm run tauri dev"
+echo "tauri_dev_before_dev_command=COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 ../scripts/start_command_center_3.command"
+echo "tauri_dev_starts_fastapi_via_local_launcher=true"
 echo "tauri_build_command=cd desktop && npm run tauri build"
 echo "backend_autostart=false"
 echo "fastapi_sidecar_autostart=false"
@@ -92,7 +94,7 @@ if ! command -v rustc >/dev/null 2>&1 || ! command -v cargo >/dev/null 2>&1; the
   echo "note=Rust toolchain is required for Tauri dev mode; Vite frontend can still run without Rust."
 else
   echo "tauri_dev_ready=true"
-  echo "note=Run scripts/dev_server.sh first, then start the desktop Tauri dev command from desktop/."
+  echo "note=Run cd desktop && npm run tauri dev; Tauri beforeDevCommand runs the local launcher in skip-open mode, starts or reuses FastAPI/Vite, then the Tauri window loads the ready local frontend."
 fi
 echo "external_calls_triggered=false"
 echo "secrets_loaded=false"
