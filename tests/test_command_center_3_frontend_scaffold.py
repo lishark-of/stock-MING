@@ -2106,9 +2106,20 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("P6 strict closeout 回归入口", summary_slice)
         self.assertIn("P6 只是 strict closeout 回归门，不是 14 LTG 完成声明", summary_slice)
         self.assertIn("P4 下沉的是工程审计明细，不压过 P0-P3 普通路径", summary_slice)
+        self.assertIn('aria-label="daily command p4 ordinary first mode"', summary_slice)
+        self.assertIn("dailyCommandP4OrdinaryFirstItems", home_source)
+        self.assertIn("普通优先模式不展示 raw packet、raw log、token/key、provider error 或未脱敏模型输出", home_source)
         self.assertIn("查看 14 LTG 迁移状态", summary_slice)
         self.assertIn("rows={dailyCommandP6StrictCloseoutReentryRows}", summary_slice)
         self.assertIn('aria-label="daily command p6 reentry links"', summary_slice)
+        self.assertLess(
+            summary_slice.index('aria-label="daily command p4 ordinary first mode"'),
+            summary_slice.index('aria-label="daily command usable path audit stages"'),
+        )
+        self.assertLess(
+            summary_slice.index('aria-label="daily command p4 ordinary first mode"'),
+            home_source.index("<summary>开发 / 审计详情</summary>"),
+        )
         self.assertLess(summary_slice.index('aria-label="daily command primary next action"'), summary_slice.index('aria-label="daily command next user actions"'))
         self.assertLess(summary_slice.index('aria-label="daily command local connection readback"'), summary_slice.index('aria-label="daily command p0 frontend backend auto link readback"'))
         self.assertLess(summary_slice.index('aria-label="daily command p0 frontend backend auto link readback"'), summary_slice.index('aria-label="daily command p0 p1 entry gate"'))

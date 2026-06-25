@@ -2016,6 +2016,14 @@ export default function CommandCenterHome() {
   );
   const dailyCommandUsablePathPrimaryStageRailSteps = dailyCommandUsablePathStageRailSteps.slice(0, 4);
   const dailyCommandUsablePathAuditStageRailSteps = dailyCommandUsablePathStageRailSteps.slice(4);
+  const dailyCommandP4OrdinaryFirstItems: MetricItem[] = [
+    { label: "默认视图", value: "P0 联通、P1 确认、P2 三面、P3 结果先显示", tone: "good" },
+    { label: "工程审计", value: "默认折叠在 P4-P6 补证 / 审计路径和开发详情", tone: "good" },
+    { label: "普通下一步", value: dailyCommandPrimaryActionLabel, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+    { label: "P5", value: "DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱", tone: "good" },
+    { label: "P6", value: "14 LTG strict closeout 只作为回归门，不混入普通投研路径", tone: "warn" },
+    { label: "边界", value: "普通优先模式不展示 raw packet、raw log、token/key、provider error 或未脱敏模型输出", tone: "good" }
+  ];
   const dailyCommandConnectivityPriority = dailyCommandNeedsStartupRecovery
     ? "先恢复本地联通；缓存和投研入口等 health/preflight 变绿后再看"
     : "本地联通可用；先在首页确认股票代码，再按最近缓存、数据健康、下一票雷达、股票量化推演复核";
@@ -2777,6 +2785,11 @@ export default function CommandCenterHome() {
             ))}
           </div>
           <DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows} />
+          <div aria-label="daily command p4 ordinary first mode">
+            <h3>普通优先模式</h3>
+            <p className="risk-note">P4 的当前口径是把工程审计噪音下沉：默认先看 P0-P3 的本地联通、确认按钮、三面写回和可读结果；P4-P6 只在需要排障、补证或 strict closeout 时展开。</p>
+            <MetricGrid items={dailyCommandP4OrdinaryFirstItems} />
+          </div>
           <details className="developer-audit-details" aria-label="daily command usable path audit stages">
             <summary>P4-P6 补证 / 审计路径</summary>
             <p className="risk-note">P4-P6 继续保留为路线图和审计入口，但默认下沉；普通使用先看 P0-P3 的联通、确认、写回和结果回放。</p>
