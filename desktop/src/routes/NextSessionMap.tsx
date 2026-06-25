@@ -210,6 +210,10 @@ export default function NextSessionMap() {
   const candidateRadarOneScreenRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
   const candidateRadarConfirmOutcomeRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
   const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarPostConfirmOneGlanceRows = rowsFromArray(
+    candidateRadarCache.search_quant_projection_post_confirm_one_glance_items ??
+      candidateRadarInterpretation.ordinary_post_confirm_one_glance_items
+  );
   const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const candidateRadarConfirmedSymbol = String(
     candidateRadarReceipt.symbol ??
@@ -264,6 +268,14 @@ export default function NextSessionMap() {
       : candidateRadarDeepSeekStateRaw.includes("pending")
         ? "DeepSeek 待治理：不阻塞 Tushare-first、P2 写入或 P3 图谱"
         : "DeepSeek governed executor 单独补；普通结果只读本地 cache / ledger / packet";
+  const nextSessionBackendPostConfirmOneGlanceItems: MetricItem[] = candidateRadarPostConfirmOneGlanceRows.map((row) => {
+    const tone = String(row.tone ?? "neutral");
+    return {
+      label: String(row.label ?? row["状态项"] ?? row.item_key ?? "确认后状态"),
+      value: String(row.value ?? row["当前状态"] ?? row.status ?? "--"),
+      tone: (["good", "warn", "bad", "neutral"].includes(tone) ? tone : "neutral") as MetricItem["tone"]
+    };
+  });
   const candidateRadarReadableResultReady =
     Boolean(candidateRadarConfirmedSymbol) &&
     (
@@ -762,9 +774,9 @@ export default function NextSessionMap() {
       <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek，P5 解释治理继续收起为单独补证。</p>
       <div aria-label="next session latest candidate readable result">
         <h3>最近搜票可读结论</h3>
-        <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放；本卡不创建 task、不补调数据源或模型，也不改 operation_zones。</p>
+        <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_post_confirm_one_glance_items；没有后端一屏结果时，fallback 仍读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放。本卡不创建 task、不补调数据源或模型，也不改 operation_zones；只读本地 cache。</p>
         <MetricGrid
-          items={[
+          items={nextSessionBackendPostConfirmOneGlanceItems.length ? nextSessionBackendPostConfirmOneGlanceItems : [
             { label: "标的", value: candidateRadarConfirmedSymbolLabel, tone: candidateRadarConfirmedSymbol ? "good" : "warn" },
             { label: "来源任务", value: candidateRadarSourceTaskLabel, tone: candidateRadarSourceTaskLabel.includes("等待") ? "warn" : "good" },
             { label: "可读结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
