@@ -1205,6 +1205,43 @@ export default function CommandCenterHome() {
     { label: "P2/P3 回放", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
     { label: "边界", value: "首页输入静默；不从页面打开、输入、React render 或 GET cache 外联；不交易、不改 action", tone: "good" }
   ];
+  const homeQuantConfirmButtonChainRows = [
+    {
+      链路段: "1. 输入静默",
+      当前状态: homeQuantSymbolValidation.valid ? `本地格式已通过：${homeQuantSymbolValidation.normalized}` : homeQuantSubmitDisabledReason,
+      用户下一步: "输入 6 位 A 股代码或带市场后缀代码",
+      证据: "normalizeHomeAshareSymbolInput",
+      边界: "输入只做本地格式校验；不创建 task、不调用 Tushare/DeepSeek。"
+    },
+    {
+      链路段: "2. P0 gate",
+      当前状态: dailyCommandP0LocalReadinessReady ? "P0 ready：按钮可用" : "P0 check：按钮禁用",
+      用户下一步: dailyCommandP0LocalReadinessReady ? "确认代码后点击按钮" : "先让 FastAPI、bootstrap、desktop preflight 和连接证据变绿",
+      证据: "homeQuantP0ConfirmGateEvidence",
+      边界: "P0 gate 只是前后端联通门槛，不代表 provider 已调用或 release ready。"
+    },
+    {
+      链路段: "3. 确认按钮",
+      当前状态: homeP1ManualConfirmReady ? "点击后创建 Tushare-first POST task" : "等待 P1 runtime ready",
+      用户下一步: "点击一次确认按钮，然后看任务编号",
+      证据: "POST /api/candidate-radar/quant-projection；include_tushare=true；include_deepseek=false",
+      边界: "只有显式点击按钮才创建 task；页面打开、搜索输入、React render 和 GET cache 不外联。"
+    },
+    {
+      链路段: "4. 任务进度",
+      当前状态: homeQuantTaskPanelTaskId ? `TaskStatusPanel 正在回放：${homeQuantTaskPanelTaskId}` : "等待按钮返回 task id",
+      用户下一步: homeQuantTaskPanelTaskId ? "等待 success 后看 P2/P3 回放" : "按钮返回后先看任务进度",
+      证据: "TaskStatusPanel + /api/tasks 本地轮询",
+      边界: "任务进度只读本地 FastAPI；不自动重试、不下单、不改 strategy action。"
+    },
+    {
+      链路段: "5. 写回回放",
+      当前状态: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "P2/P3 已从 cache / call_ledger / packet 回放" : "等待任务写入本地三面",
+      用户下一步: "看股票量化推演、次日图谱和下一票雷达详情",
+      证据: "CandidateRadar cache / call_ledger / packet",
+      边界: "回放不创建第二个 task、不补调 provider/model、不读取 token/key。"
+    }
+  ];
   const homeQuantPostConfirmOneGlanceItems: MetricItem[] = candidateQuantPostConfirmOneGlanceRows.length
     ? candidateQuantPostConfirmOneGlanceRows.map((row) => {
         const rowTone = String(row.tone ?? "neutral");
@@ -1945,6 +1982,11 @@ export default function CommandCenterHome() {
       <PacketCard title="首页确认股票代码" subtitle="P1 普通入口：输入静默，点击确认才创建 Tushare-first task" status={homeQuantTaskPanelTaskId ? "task_created" : dailyCommandP0LocalReadinessReady ? "ready" : "p0_check"}>
         <div id="home-p1-symbol-confirm" aria-label="daily command home p1 symbol confirmation">
           <MetricGrid items={homeQuantConfirmItems} />
+          <div aria-label="daily command home p1 confirm button chain proof">
+            <h3>确认按钮链路证明</h3>
+            <p className="risk-note">点击前先看这五步：输入静默、P0 gate、确认按钮创建 task、任务进度、本地三面回放；本表只解释链路，不创建 task。</p>
+            <DataLineageTable rows={homeQuantConfirmButtonChainRows} />
+          </div>
           <div className="actions" aria-label="daily command home p1 symbol confirm actions">
             <input
               value={homeQuantSymbol}
