@@ -17152,6 +17152,12 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         if source_key in summary:
             view[alias] = summary[source_key]
     latest_task_id = _safe_text(summary.get("latest_task_id") or "", limit=128)
+    latest_confirmed_symbol = _safe_text(
+        summary.get("symbol")
+        or _as_dict(view.get("search_quant_projection_receipt")).get("symbol")
+        or "",
+        limit=64,
+    )
     if latest_task_id:
         view["latest_task_id"] = latest_task_id
         view["latest_task_status"] = summary.get("latest_task_status") or ""
@@ -17159,6 +17165,7 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         view["search_quant_projection_latest_task_id"] = latest_task_id
         view["search_quant_projection_latest_task_status"] = summary.get("latest_task_status") or ""
         view["search_quant_projection_latest_task_current_step"] = summary.get("latest_task_current_step") or ""
+        view["search_quant_projection_latest_confirmed_symbol"] = latest_confirmed_symbol
         receipt = dict(_as_dict(view.get("search_quant_projection_receipt")))
         if receipt:
             provider_receipt = _as_dict(view.get("search_quant_provider_model_acceptance_receipt"))
@@ -17337,7 +17344,7 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         "ordinary_status": confirm_stage.get("当前状态") or "",
         "ordinary_next_step": confirm_stage.get("用户下一步") or summary.get("next_action") or "",
         "ordinary_evidence": confirm_stage.get("证据") or "",
-        "symbol": summary.get("symbol") or "",
+        "symbol": latest_confirmed_symbol,
         "confirm_task_written": confirm_task_written,
         "acceptance_dry_run_written": summary.get("acceptance_dry_run_written") is True,
         "execution_request_written": summary.get("execution_request_written") is True,

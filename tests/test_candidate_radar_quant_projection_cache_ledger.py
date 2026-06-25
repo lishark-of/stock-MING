@@ -406,6 +406,8 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         quant_receipt = packet["search_quant_projection_receipt"]
         small_data = packet["search_quant_projection_small_data_writeback_summary"]
         interpretation = packet["search_quant_projection_interpretation_summary"]
+        self.assertEqual(packet["search_quant_projection_latest_confirmed_symbol"], "002008.SZ")
+        self.assertEqual(packet["search_quant_projection_confirm_chain_checkpoint"]["symbol"], "002008.SZ")
         self.assertEqual(
             quant_receipt["p1_confirm_chain_status"],
             "p1_confirm_chain_tushare_first_replayed",
