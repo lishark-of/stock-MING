@@ -87,6 +87,8 @@ export default function CommandCenterHome() {
   const [homeQuantReceipt, setHomeQuantReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [homeQuantTaskId, setHomeQuantTaskId] = useState("");
   const [homeQuantSubmitError, setHomeQuantSubmitError] = useState("");
+  const [homeQuantReadbackRefreshing, setHomeQuantReadbackRefreshing] = useState(false);
+  const [homeQuantReadbackLastRefresh, setHomeQuantReadbackLastRefresh] = useState("");
   const [packets, setPackets] = useState<Record<string, unknown>>({});
   const [packetEnvelopeLedger, setPacketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [market, setMarket] = useState<Record<string, unknown>>({});
@@ -1479,6 +1481,11 @@ export default function CommandCenterHome() {
         ? `${dailyCommandConfirmedSymbolLabel} 已有本地回放线索；${homeQuantP1P2P3CheckpointLabel}；需要更新时再手动点击确认按钮。`
         : "本地联通已 ready；先在首页输入股票代码并点击确认，输入本身保持静默。"
       : "P0 本地联通还没全部 ready；先看一键启动预检，等 FastAPI、bootstrap、desktop preflight 和 React 变绿。";
+  const homeQuantReadbackRefreshLabel = homeQuantReadbackRefreshing
+    ? "正在回读 CandidateRadar / Factor / Next / Tasks"
+    : homeQuantReadbackLastRefresh
+      ? `最近回读 ${homeQuantReadbackLastRefresh}`
+      : "等待确认按钮后的本地回读";
   const homeQuantConfirmItems: MetricItem[] = [
     { label: "输入代码", value: homeQuantSymbolValidation.valid ? homeQuantSymbolValidation.normalized : homeQuantSubmitDisabledReason, tone: homeQuantSymbolValidation.valid ? "good" : "warn" },
     { label: "确认按钮", value: homeQuantCanSubmit ? `可点击：${homeQuantSymbolValidation.normalized} 将创建 Tushare-first POST task` : `不可点击：${homeQuantSubmitDisabledReason}`, tone: homeQuantCanSubmit ? "good" : "warn" },
@@ -1486,6 +1493,7 @@ export default function CommandCenterHome() {
     { label: "P1 手动确认", value: homeP1ManualConfirmLabel, tone: homeP1ManualConfirmReady ? "good" : "warn" },
     { label: "P1 runtime", value: homeP1ManualConfirmStatus, tone: homeP1ManualConfirmReady ? "good" : "warn" },
     { label: "任务状态", value: homeQuantReadbackStatus, tone: homeQuantVisibleTaskId ? "good" : "warn" },
+    { label: "回读刷新", value: homeQuantReadbackRefreshLabel, tone: homeQuantReadbackRefreshing || homeQuantReadbackLastRefresh ? "good" : "warn" },
     { label: "链路 checkpoint", value: homeQuantP1P2P3CheckpointLabel, tone: homeQuantP1P2P3CheckpointReady ? "good" : "warn" },
     { label: "Tushare-first", value: "确认按钮才 POST；DeepSeek skipped，成功后通过 GET cache 回放", tone: "good" },
     { label: "浏览器验收", value: homeP1BrowserEvidenceLabel, tone: "warn" },
@@ -1562,6 +1570,8 @@ export default function CommandCenterHome() {
     : "确认后会在这里显示任务编号、P2 三面、P3 结论和下一步入口。";
   const homeQuantPostConfirmReadbackState = homeQuantSubmitting
     ? "提交中：等待 FastAPI 返回 task id；不会重复创建第二个 task。"
+    : homeQuantReadbackRefreshing
+      ? "任务已接收：正在回读 CandidateRadar、股票量化推演、次日图谱和任务目录；这只是本地 GET 回读。"
     : homeQuantVisibleTaskCanPoll
       ? "任务已接收：TaskStatusPanel 正在轮询本地 FastAPI，success 后自动刷新 CandidateRadar / Factor / Next / tasks 回读。"
       : homeQuantVisibleTaskId
@@ -2141,19 +2151,27 @@ export default function CommandCenterHome() {
   ];
 
   const refreshHomeResearchReadback = () => {
-    void getCandidateRadarCache().then((res) => {
-      setCandidates(res.data);
-      if (res.ok === false) setError((current) => current || `candidate: ${res.error ?? "request_not_ok"}`);
-    }).catch((err) => {
-      setError((current) => current || `candidate: ${err instanceof Error ? err.message : String(err)}`);
+    setHomeQuantReadbackRefreshing(true);
+    const readbackJobs = [
+      getCandidateRadarCache().then((res) => {
+        setCandidates(res.data);
+        if (res.ok === false) setError((current) => current || `candidate: ${res.error ?? "request_not_ok"}`);
+      }).catch((err) => {
+        setError((current) => current || `candidate: ${err instanceof Error ? err.message : String(err)}`);
+      }),
+      getFactorQuantCache().then((res) => setFactor(res.data)).catch(() => undefined),
+      getNextSessionCache().then((res) => setNext(res.data)).catch(() => undefined),
+      getTasks().then((res) => {
+        setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
+        setTaskIndex(res.data);
+        setTasks(res.data.tasks ?? []);
+      }).catch(() => undefined),
+    ];
+    void Promise.allSettled(readbackJobs).then(() => {
+      setHomeQuantReadbackLastRefresh(new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+    }).finally(() => {
+      setHomeQuantReadbackRefreshing(false);
     });
-    void getFactorQuantCache().then((res) => setFactor(res.data)).catch(() => undefined);
-    void getNextSessionCache().then((res) => setNext(res.data)).catch(() => undefined);
-    void getTasks().then((res) => {
-      setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
-      setTaskIndex(res.data);
-      setTasks(res.data.tasks ?? []);
-    }).catch(() => undefined);
   };
 
   const launchHomeQuantProjection = () => {
