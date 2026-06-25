@@ -181,6 +181,13 @@ export default function TaskCatalog() {
   const taskCatalogLatestReadbackExternal =
     taskCatalogLatestTask?.readback_external_calls_triggered === true ||
     taskIndex?.readback_external_calls_triggered === true;
+  const taskCatalogIndexSourceTushareReplayed =
+    taskIndex?.call_ledger_tushare_replayed === true ||
+    taskIndex?.tushare_called === true ||
+    taskRecords.some((task) => task.source_task_tushare_called === true || task.call_ledger_tushare_replayed === true);
+  const taskCatalogIndexTushareReplayLabel = taskCatalogIndexSourceTushareReplayed
+    ? "源任务 Tushare 已从 call_ledger 回放"
+    : "未回放源任务 Tushare ledger";
   const taskCatalogLatestIsCandidateReplay =
     taskCatalogLatestTask?.output_packet_key === "command_center_3_candidate_radar_cache" ||
     String(taskCatalogLatestTask?.task_type ?? "").includes("candidate_radar_quant_projection");
@@ -217,7 +224,7 @@ export default function TaskCatalog() {
     { label: "当前任务", value: taskCatalogLatestTask?.task_id ?? "暂无任务记录", tone: taskCatalogLatestTask ? "good" as const : "warn" as const },
     { label: "任务状态", value: taskCatalogOrdinaryTaskStatusLabel, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : taskCatalogLatestTask ? "warn" as const : "warn" as const },
     { label: "P2 写回", value: taskCatalogOrdinaryP2Label, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : "warn" as const },
-    { label: "Tushare-first", value: taskCatalogOrdinaryTushareLabel, tone: taskCatalogLatestTushareRows.length ? "good" as const : "warn" as const },
+    { label: "Tushare-first", value: taskCatalogOrdinaryTushareLabel, tone: taskCatalogLatestSourceTushareReplayed ? "good" as const : "warn" as const },
     { label: "读取方式", value: taskCatalogOrdinaryReadbackLabel, tone: taskCatalogLatestReadbackExternal ? "bad" as const : taskCatalogLatestTask ? "good" as const : "warn" as const },
     { label: "P3 结果入口", value: taskCatalogOrdinaryP3Label, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : "warn" as const },
     { label: "安全边界", value: "Task Monitor 只读 GET /api/tasks；不创建 task、不补调 Tushare/DeepSeek、不交易", tone: "good" as const }
@@ -269,7 +276,8 @@ export default function TaskCatalog() {
           { label: "catalog warnings", value: catalogWarnings.length },
           { label: "task index envelope ledger", value: taskIndexCallLedger.length },
           { label: "task index warnings", value: taskIndexWarnings.length },
-          { label: "任务外联", value: taskIndex?.external_calls_triggered === true ? "存在" : "无", tone: taskIndex?.external_calls_triggered === true ? "bad" : "good" },
+          { label: "GET 回放外联", value: taskIndex?.readback_external_calls_triggered === true ? "异常" : "无", tone: taskIndex?.readback_external_calls_triggered === true ? "bad" : "good" },
+          { label: "源任务 Tushare", value: taskCatalogIndexTushareReplayLabel, tone: taskCatalogIndexSourceTushareReplayed ? "good" : "warn" },
           { label: "任务真实交易", value: taskIndex?.does_not_execute_trades === false ? "可能" : "禁止", tone: taskIndex?.does_not_execute_trades === false ? "bad" : "good" },
           { label: "全部按钮门控", value: policy?.all_tasks_button_gated, tone: policy?.all_tasks_button_gated === false ? "bad" : "good" },
           { label: "POST 全部登记", value: policy?.all_known_post_routes_button_gated, tone: policy?.all_known_post_routes_button_gated === false ? "bad" : "good" },
@@ -278,7 +286,7 @@ export default function TaskCatalog() {
           { label: "真实交易", value: policy?.does_not_execute_trades === false ? "可能" : "禁止", tone: policy?.does_not_execute_trades === false ? "bad" : "good" },
           { label: "修改 action", value: policy?.does_not_modify_strategy_action === false ? "可能" : "不会", tone: policy?.does_not_modify_strategy_action === false ? "bad" : "good" },
           { label: "外部源", value: externalSources?.join(" / ") || "无" },
-          { label: "已触发外部调用", value: catalog.external_calls_triggered === true ? "是" : "否", tone: catalog.external_calls_triggered === true ? "bad" : "good" }
+          { label: "目录 GET 外联", value: catalog.external_calls_triggered === true ? "异常" : "无", tone: catalog.external_calls_triggered === true ? "bad" : "good" }
         ]}
       />
 
