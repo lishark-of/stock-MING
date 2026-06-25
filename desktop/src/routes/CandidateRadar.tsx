@@ -101,6 +101,7 @@ export default function CandidateRadar() {
   const [quantProjectionSubmitError, setQuantProjectionSubmitError] = useState("");
   const [customPoolText, setCustomPoolText] = useState("");
   const [searchSymbol, setSearchSymbol] = useState("");
+  const [searchSymbolTouched, setSearchSymbolTouched] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const quantProjectionP1ConfirmPayloadContract = {
@@ -129,6 +130,12 @@ export default function CandidateRadar() {
         setCache(res.data);
         setCacheEnvelopeLedger(res.call_ledger ?? []);
         setCacheEnvelopeWarnings(res.warnings ?? []);
+        const cachedQuantProjectionReceipt =
+          (res.data.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
+        const cachedQuantProjectionSymbol = String(cachedQuantProjectionReceipt.symbol ?? "");
+        if (!searchSymbolTouched && !searchSymbol.trim() && normalizeAshareSymbolInput(cachedQuantProjectionSymbol).valid) {
+          setSearchSymbol(cachedQuantProjectionSymbol);
+        }
         if (res.ok === false) setError(res.error ?? "candidate_radar_cache_not_ok");
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
@@ -788,7 +795,7 @@ export default function CandidateRadar() {
     : searchSymbol.trim()
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
-  const quantProjectionInputBoundaryLabel = "输入股票代码只做本地校验；不会创建任务，也不会调用 Tushare 或 DeepSeek";
+  const quantProjectionInputBoundaryLabel = "输入股票代码只做本地校验；不会创建任务，也不会调用 Tushare 或 DeepSeek；页面打开可从本地 cache 预填最近标的。";
   const quantProjectionSummaryInputHelpId = "candidate-radar-summary-symbol-help";
   const quantProjectionSummarySubmitHelpId = "candidate-radar-summary-confirm-help";
   const quantProjectionFactorInputHelpId = "candidate-radar-factor-symbol-help";
@@ -2380,6 +2387,7 @@ export default function CandidateRadar() {
               value={searchSymbol}
               onChange={(event) => {
                 setSearchSymbol(event.target.value);
+                setSearchSymbolTouched(true);
                 setQuantProjectionSubmitError("");
               }}
               placeholder="002008.SZ 或 002008"
@@ -2635,6 +2643,7 @@ export default function CandidateRadar() {
             value={searchSymbol}
             onChange={(event) => {
               setSearchSymbol(event.target.value);
+              setSearchSymbolTouched(true);
               setQuantProjectionSubmitError("");
             }}
             placeholder="002008.SZ 或 002008"
@@ -2715,6 +2724,7 @@ export default function CandidateRadar() {
               value={searchSymbol}
               onChange={(event) => {
                 setSearchSymbol(event.target.value);
+                setSearchSymbolTouched(true);
                 setQuantProjectionSubmitError("");
               }}
               placeholder="002008.SZ 或 002008"
