@@ -1731,6 +1731,38 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const quantProjectionFirstScreenTaskContractItems: MetricItem[] = [
+    {
+      label: "POST 路由",
+      value: "POST /api/candidate-radar/quant-projection",
+      tone: quantProjectionCanSubmit ? "good" : "warn"
+    },
+    {
+      label: "task_type",
+      value: "run_candidate_radar_quant_projection",
+      tone: "good"
+    },
+    {
+      label: "触发方式",
+      value: "只在确认按钮点击后创建；输入、页面打开、React render 和 GET cache 静默",
+      tone: "good"
+    },
+    {
+      label: "写回三面",
+      value: "cache / call_ledger / packet",
+      tone: quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "DeepSeek",
+      value: "skipped，等 governed executor；不作为数据源或动作",
+      tone: "good"
+    },
+    {
+      label: "交易边界",
+      value: "不真实交易、不下单、不改 strategy action",
+      tone: "good"
+    }
+  ];
   const quantProjectionConfirmedChainQuickRows = [
     {
       链路节点: "1. 点击确认",
@@ -2320,6 +2352,11 @@ export default function CandidateRadar() {
           <p className="ordinary-status-note" aria-live="polite">{quantProjectionConnectionReadyLabel}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionConfirmChainState}</p>
+          <div aria-label="candidate radar first screen p1 task contract quick read">
+            <h3>确认按钮任务链速读</h3>
+            <p className="risk-note">普通用户不用展开链路详情也能看到：确认按钮会创建哪条本地 POST task、写回哪三面、DeepSeek 和交易边界如何隔离；这张速读只读页面状态，不创建第二个 task。</p>
+            <MetricGrid items={quantProjectionFirstScreenTaskContractItems} />
+          </div>
           {quantProjectionTaskPanelVisible ? (
             <div aria-label="candidate radar first screen task status">
               <TaskLaunchReceipt receipt={taskReceipt} />
