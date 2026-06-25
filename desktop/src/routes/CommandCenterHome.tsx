@@ -46,6 +46,30 @@ function normalizeHomeAshareSymbolInput(raw: string) {
   return { input, normalized: `${symbol}.${inferredMarket}`, valid: true, reason: "market_suffix_inferred" };
 }
 
+function dailyCommandReadableGap(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const known: Record<string, string> = {
+    "Factor/Next/ECharts local cache replay": "量化推演、次日图谱和图表本地缓存待刷新",
+    "Factor Quant Hub refresh evidence": "股票量化推演刷新证据待补",
+    "Next Session/ECharts cache refresh evidence": "次日图谱和图表缓存证据待补",
+    "optional DeepSeek pro model ledger": "DeepSeek governed executor 单独补",
+    "freshness expected_trade_date evidence": "交易日 freshness 证据待补",
+  };
+  return known[text] ?? text.replace(/_/g, " ");
+}
+
+function dailyCommandReadableEntry(value: unknown) {
+  const text = String(value ?? "").trim();
+  const known: Record<string, string> = {
+    readable_conclusion: "P3 结果速读",
+    replay_quant_projection: "股票量化推演",
+    replay_next_session_map: "次日图谱",
+    candidate_pool: "下一票雷达",
+  };
+  return known[text] ?? text;
+}
+
 export default function CommandCenterHome() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
   const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -556,21 +580,23 @@ export default function CommandCenterHome() {
       candidateQuantReceipt.task_id ??
       "等待确认任务"
   );
-  const dailyCommandP3OneGlanceResultEntrances = candidateQuantHandoffRows.length
+  const dailyCommandP3ReadableEntranceNames = candidateQuantHandoffRows.length
     ? candidateQuantHandoffRows
-        .map((row) => {
-          const entry = String(row["入口"] ?? row.handoff_key ?? "结果入口");
-          const state = String(row["当前状态"] ?? row.status ?? "等待回放");
-          return `${entry}: ${state}`;
-        })
-        .join(" / ")
+        .map((row) => dailyCommandReadableEntry(row["入口"] ?? row.handoff_key ?? "结果入口"))
+        .filter(Boolean)
+    : ["下一票雷达", "股票量化推演", "次日图谱"];
+  const dailyCommandP3OneGlanceResultEntrances = dailyCommandP3ReadableEntranceNames.length
+    ? `结果入口 ${String(dailyCommandP3ReadableEntranceNames.length)} 个：${dailyCommandP3ReadableEntranceNames.slice(0, 3).join(" / ")}`
     : "下一票雷达 / 股票量化推演 / 次日图谱";
   const dailyCommandP3OneGlanceSource = String(
     candidateQuantResultCheckpoint.evidence_source ?? "CandidateRadar cache / ledger / packet"
   );
-  const dailyCommandP3OneGlanceMissingEvidence = Array.isArray(candidateQuantResultCheckpoint.missing_evidence)
-    ? candidateQuantResultCheckpoint.missing_evidence.map(String).join(" / ")
-    : String(candidateQuantResultCheckpoint.missing_evidence ?? "等待 P3 checkpoint 回放待补缺口");
+  const dailyCommandP3MissingEvidenceItems = Array.isArray(candidateQuantResultCheckpoint.missing_evidence)
+    ? candidateQuantResultCheckpoint.missing_evidence.map(dailyCommandReadableGap).filter(Boolean)
+    : [dailyCommandReadableGap(candidateQuantResultCheckpoint.missing_evidence)].filter(Boolean);
+  const dailyCommandP3OneGlanceMissingEvidence = dailyCommandP3MissingEvidenceItems.length
+    ? dailyCommandP3MissingEvidenceItems.join(" / ")
+    : "暂无额外缺口";
   const dailyCommandP3OneGlanceSafeFields = Array.isArray(candidateQuantResultCheckpoint.safe_explanation_fields)
     ? candidateQuantResultCheckpoint.safe_explanation_fields.map(String).join(" / ")
     : "source / gap / next_step / safety_summary";
@@ -1821,7 +1847,7 @@ export default function CommandCenterHome() {
             { label: "结果证据", value: dailyCommandP3OneGlanceEvidence, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
             { label: "来源任务", value: dailyCommandP3OneGlanceSourceTask, tone: dailyCommandP3OneGlanceSourceTask === "等待确认任务" ? "warn" : "good" },
             { label: "结果入口", value: dailyCommandP3OneGlanceResultEntrances, tone: candidateQuantHandoffRows.length ? "good" : "warn" },
-            { label: "待补缺口", value: dailyCommandP3OneGlanceMissingEvidence || "暂无额外缺口", tone: dailyCommandP3OneGlanceMissingEvidence ? "warn" : "good" },
+            { label: "待补缺口", value: dailyCommandP3OneGlanceMissingEvidence, tone: dailyCommandP3MissingEvidenceItems.length ? "warn" : "good" },
             { label: "下一步", value: dailyCommandExplainableResultNext },
             { label: "模型状态", value: dailyCommandP3OneGlanceModelState, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
             { label: "安全字段", value: dailyCommandP3OneGlanceSafeFields, tone: "good" },
