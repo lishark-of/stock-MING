@@ -1309,8 +1309,16 @@ export default function CommandCenterHome() {
     contains_sensitive_material: false
   };
   const homeQuantTaskPanelTaskId = homeQuantTaskId || String(homeQuantReceipt?.data?.task_id ?? "");
-  const homeQuantReadbackStatus = homeQuantTaskPanelTaskId
-    ? `任务已创建：${homeQuantTaskPanelTaskId}`
+  const homeQuantRecoveredTaskId = dailyCommandCandidateLatestTaskId;
+  const homeQuantVisibleTaskId = homeQuantTaskPanelTaskId || homeQuantRecoveredTaskId;
+  const homeQuantVisibleTaskSource = homeQuantTaskPanelTaskId
+    ? "本次首页确认按钮"
+    : homeQuantRecoveredTaskId
+      ? "CandidateRadar cache 最近确认 task"
+      : "等待确认按钮";
+  const homeQuantVisibleTaskCanPoll = Boolean(homeQuantTaskPanelTaskId || (homeQuantRecoveredTaskId && !dailyCommandLatestTaskIsReplay));
+  const homeQuantReadbackStatus = homeQuantVisibleTaskId
+    ? `任务已回放：${homeQuantVisibleTaskId}`
     : dailyCommandConfirmedSymbol
       ? `最近回放：${dailyCommandConfirmedSymbol}`
       : "等待首页确认按钮";
@@ -1319,7 +1327,7 @@ export default function CommandCenterHome() {
     { label: "P0 闸门", value: dailyCommandP0LocalReadinessReady ? "ready：可点击确认" : "check：先恢复本地联通", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
     { label: "P1 手动确认", value: homeP1ManualConfirmLabel, tone: homeP1ManualConfirmReady ? "good" : "warn" },
     { label: "P1 runtime", value: homeP1ManualConfirmStatus, tone: homeP1ManualConfirmReady ? "good" : "warn" },
-    { label: "任务状态", value: homeQuantReadbackStatus, tone: homeQuantTaskPanelTaskId ? "good" : "warn" },
+    { label: "任务状态", value: homeQuantReadbackStatus, tone: homeQuantVisibleTaskId ? "good" : "warn" },
     { label: "Tushare-first", value: "确认按钮才 POST；DeepSeek skipped，成功后通过 GET cache 回放", tone: "good" },
     { label: "浏览器验收", value: homeP1BrowserEvidenceLabel, tone: "warn" },
     { label: "P2/P3 回放", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
@@ -1349,10 +1357,10 @@ export default function CommandCenterHome() {
     },
     {
       链路段: "4. 任务进度",
-      当前状态: homeQuantTaskPanelTaskId ? `TaskStatusPanel 正在回放：${homeQuantTaskPanelTaskId}` : "等待按钮返回 task id",
-      用户下一步: homeQuantTaskPanelTaskId ? "等待 success 后看 P2/P3 回放" : "按钮返回后先看任务进度",
+      当前状态: homeQuantVisibleTaskId ? `任务来源已可见：${homeQuantVisibleTaskId}` : "等待按钮返回 task id",
+      用户下一步: homeQuantVisibleTaskCanPoll ? "等待 TaskStatusPanel success 后看 P2/P3 回放" : homeQuantVisibleTaskId ? "按 cache / ledger / packet 只读回放最近确认链" : "按钮返回后先看任务进度",
       证据: "TaskStatusPanel + /api/tasks 本地轮询",
-      边界: "任务进度只读本地 FastAPI；不自动重试、不下单、不改 strategy action。"
+      边界: "任务进度只读本地 FastAPI；cache 恢复不会创建第二个 task、不自动重试、不下单、不改 strategy action。"
     },
     {
       链路段: "5. 写回回放",
@@ -1373,23 +1381,24 @@ export default function CommandCenterHome() {
         };
       })
     : [
-        { label: "任务编号", value: homeQuantTaskPanelTaskId || "等待确认按钮返回 task id", tone: homeQuantTaskPanelTaskId ? "good" : "warn" },
+        { label: "任务编号", value: homeQuantVisibleTaskId || "等待确认按钮返回 task id", tone: homeQuantVisibleTaskId ? "good" : "warn" },
+        { label: "任务来源", value: homeQuantVisibleTaskSource, tone: homeQuantVisibleTaskId ? "good" : "warn" },
         { label: "先看哪里", value: "先看任务进度；success 后刷新本地回放", tone: "good" },
         { label: "P2 写回", value: "cache / call_ledger / packet 三面回放", tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
         { label: "P3 结果", value: "股票量化推演 + 次日图谱 + 下一票雷达详情", tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
         { label: "DeepSeek", value: "skipped/pending 不阻塞；P5 governed executor 单独补", tone: "good" },
         { label: "安全边界", value: "回放不创建第二个 task，不下单，不改 strategy action", tone: "good" }
       ];
-  const homeQuantPostConfirmReadableSentence = homeQuantTaskPanelTaskId
-    ? `已接收 ${homeQuantTaskPanelTaskId}；${candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "P2 三面已可读" : "P2 三面等待本地回放"}；${dailyCommandP3OneGlanceReadable ? `P3 结论：${dailyCommandExplainableResultLabel}` : "P3 结论等待本地 cache 回放"}；下一步看股票量化推演和次日图谱。`
+  const homeQuantPostConfirmReadableSentence = homeQuantVisibleTaskId
+    ? `已看到 ${homeQuantVisibleTaskId}（${homeQuantVisibleTaskSource}）；${candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "P2 三面已可读" : "P2 三面等待本地回放"}；${dailyCommandP3OneGlanceReadable ? `P3 结论：${dailyCommandExplainableResultLabel}` : "P3 结论等待本地 cache 回放"}；下一步看股票量化推演和次日图谱。`
     : "确认后会在这里显示任务编号、P2 三面、P3 结论和下一步入口。";
   const homeQuantPostConfirmHandoffRows = [
     {
       交接项: "任务进度",
-      当前状态: homeQuantTaskPanelTaskId ? `已创建 ${homeQuantTaskPanelTaskId}` : "等待确认按钮",
-      用户下一步: homeQuantTaskPanelTaskId ? "先看 TaskStatusPanel 是否 success，再看 P2/P3 回放" : "输入代码并点击确认按钮",
+      当前状态: homeQuantVisibleTaskId ? `已看到 ${homeQuantVisibleTaskId}` : "等待确认按钮",
+      用户下一步: homeQuantVisibleTaskCanPoll ? "先看 TaskStatusPanel 是否 success，再看 P2/P3 回放" : homeQuantVisibleTaskId ? "按最近确认链只读回放 P2/P3；需要新标的再点击确认" : "输入代码并点击确认按钮",
       入口: "#tasks",
-      边界: "只读任务进度；不会创建第二个 Tushare-first task。"
+      边界: "只读任务进度；cache 恢复不创建第二个 Tushare-first task。"
     },
     {
       交接项: "股票量化推演",
@@ -2099,7 +2108,7 @@ export default function CommandCenterHome() {
         </div>
         <p className="risk-note">P0 ready 只说明本机前后端已接上；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。</p>
       </PacketCard>
-      <PacketCard title="首页确认股票代码" subtitle="P1 普通入口：输入静默，点击确认才创建 Tushare-first task" status={homeQuantTaskPanelTaskId ? "task_created" : dailyCommandP0LocalReadinessReady ? "ready" : "p0_check"}>
+      <PacketCard title="首页确认股票代码" subtitle="P1 普通入口：输入静默，点击确认才创建 Tushare-first task" status={homeQuantVisibleTaskId ? "task_visible" : dailyCommandP0LocalReadinessReady ? "ready" : "p0_check"}>
         <div id="home-p1-symbol-confirm" aria-label="daily command home p1 symbol confirmation">
           <MetricGrid items={homeQuantConfirmItems} />
           <div aria-label="daily command home p1 confirm button chain proof">
@@ -2127,10 +2136,10 @@ export default function CommandCenterHome() {
             <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达详情页；同一条 P1 确认链路" aria-label="open candidate radar detail from home p1 confirm">下一票雷达详情</a>
           </div>
           {homeQuantSubmitError ? <p className="risk-note" aria-live="polite">首页确认任务创建失败：{homeQuantSubmitError}</p> : null}
-          {homeQuantTaskPanelTaskId ? (
+          {homeQuantVisibleTaskId ? (
             <div aria-label="daily command home post confirm handoff">
               <h3>确认后下一步</h3>
-              <p className="risk-note">任务编号出现后，先看任务进度；成功后按股票量化推演和次日图谱回放。这里的链接只切换本地页面，不创建第二个 task。</p>
+              <p className="risk-note">任务编号出现或从本地 cache 恢复后，先看任务进度；成功后按股票量化推演和次日图谱回放。这里的链接只切换本地页面，不创建第二个 task。</p>
               <p className="ordinary-status-note" aria-label="daily command home post confirm readable result" aria-live="polite">{homeQuantPostConfirmReadableSentence}</p>
               <div aria-label="daily command home post confirm one glance">
                 <MetricGrid items={homeQuantPostConfirmOneGlanceItems} />
@@ -2144,7 +2153,10 @@ export default function CommandCenterHome() {
               </div>
             </div>
           ) : null}
-          {homeQuantTaskPanelTaskId ? <TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} /> : null}
+          {homeQuantVisibleTaskCanPoll ? <TaskStatusPanel taskId={homeQuantVisibleTaskId} onSuccess={refreshHomeResearchReadback} /> : null}
+          {homeQuantVisibleTaskId && !homeQuantVisibleTaskCanPoll ? (
+            <p className="risk-note" aria-label="daily command home recovered task cache-only notice">最近确认 task 来自 CandidateRadar cache 只读回放；当前任务目录没有可轮询记录，首页不会启动 TaskStatusPanel，也不会创建第二个 task。</p>
+          ) : null}
           {homeQuantReceipt ? (
             <details className="developer-audit-details" aria-label="daily command home p1 receipt audit details">
               <summary>任务回执 / 审计详情</summary>

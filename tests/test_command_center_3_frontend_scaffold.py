@@ -1537,12 +1537,18 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("candidates.search_quant_projection_post_confirm_one_glance_items", home_source)
         self.assertIn("candidateQuantInterpretation.ordinary_post_confirm_one_glance_items", home_source)
         self.assertIn("homeQuantPostConfirmOneGlanceItems", home_source)
+        self.assertIn("homeQuantRecoveredTaskId", home_source)
+        self.assertIn("homeQuantVisibleTaskId", home_source)
+        self.assertIn("homeQuantVisibleTaskSource", home_source)
+        self.assertIn("homeQuantVisibleTaskCanPoll", home_source)
+        self.assertIn("CandidateRadar cache 最近确认 task", home_source)
         self.assertIn("candidateQuantPostConfirmOneGlanceRows.length", home_source)
         self.assertIn("candidateQuantPostConfirmOneGlanceRows.map", home_source)
         self.assertIn('label: String(row.label ?? row["状态项"] ?? row.item_key ?? "确认后状态")', home_source)
         self.assertIn('value: String(row.value ?? row["当前状态"] ?? row.status ?? "--")', home_source)
         self.assertIn('aria-label="daily command home post confirm one glance"', home_source)
-        self.assertIn('{ label: "任务编号", value: homeQuantTaskPanelTaskId || "等待确认按钮返回 task id"', home_source)
+        self.assertIn('{ label: "任务编号", value: homeQuantVisibleTaskId || "等待确认按钮返回 task id"', home_source)
+        self.assertIn('{ label: "任务来源", value: homeQuantVisibleTaskSource', home_source)
         self.assertIn('{ label: "先看哪里", value: "先看任务进度；success 后刷新本地回放"', home_source)
         self.assertIn('{ label: "P2 写回", value: "cache / call_ledger / packet 三面回放"', home_source)
         self.assertIn('{ label: "P3 结果", value: "股票量化推演 + 次日图谱 + 下一票雷达详情"', home_source)
@@ -1554,6 +1560,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("MetricGrid items={homeQuantPostConfirmOneGlanceItems}", home_source)
         self.assertIn("DataLineageTable rows={homeQuantPostConfirmHandoffRows}", home_source)
         self.assertIn('aria-label="daily command home post confirm handoff actions"', home_source)
+        self.assertIn('aria-label="daily command home recovered task cache-only notice"', home_source)
+        self.assertIn("最近确认 task 来自 CandidateRadar cache 只读回放", home_source)
         self.assertIn('aria-label="daily command home p1 receipt audit details"', home_source)
         self.assertIn("<summary>任务回执 / 审计详情</summary>", home_source)
         self.assertIn("完整 POST task receipt 默认下沉", home_source)
@@ -1566,10 +1574,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         )
         self.assertLess(
             home_confirm_card.index('aria-label="daily command home post confirm handoff"'),
-            home_confirm_card.index("<TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} />")
+            home_confirm_card.index("<TaskStatusPanel taskId={homeQuantVisibleTaskId} onSuccess={refreshHomeResearchReadback} />")
         )
         self.assertLess(
-            home_confirm_card.index("<TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} />"),
+            home_confirm_card.index("<TaskStatusPanel taskId={homeQuantVisibleTaskId} onSuccess={refreshHomeResearchReadback} />"),
             home_confirm_card.index('aria-label="daily command home p1 receipt audit details"')
         )
         handoff_start = home_confirm_card.index('aria-label="daily command home post confirm handoff"')
