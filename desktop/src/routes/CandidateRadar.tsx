@@ -2791,29 +2791,6 @@ export default function CandidateRadar() {
           <summary>高级诊断入口</summary>
           <p className="risk-note">工程审计明细继续默认收起；完整 call ledger、release gate 和配置状态下沉在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
         </details>
-        <details className="developer-audit-details" aria-label="candidate radar ordinary p5 governance details">
-          <summary>P5 DeepSeek 单独补证状态</summary>
-          <p className="risk-note">P4 已将 P5 治理状态下沉到主行动之后；普通主线先停在 P1 确认、P2 三面回放和 P3 结果速读，DeepSeek governed executor 只作为高级补证参考。</p>
-          <div aria-label="candidate radar ordinary p5 deepseek standalone governance">
-            <h3>P5 DeepSeek 单独治理速读</h3>
-            <p className="risk-note">DeepSeek 只作为 governed executor 单独补证；P1 Tushare-first、P2 小数据写入和 P3 基础图谱继续先走本地回放，不等待模型。</p>
-            <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
-          </div>
-          <div aria-label="candidate radar ordinary p5 governed executor contract">
-            <h3>P5 DeepSeek 单独补证合同</h3>
-            <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：未来 DeepSeek 只能作为单独 P5 按钮任务，必须有 model_ledger、sanitizer、output acceptance 和安全摘要字段；本表只读回放，不创建 task、不调用模型。</p>
-            <DataLineageTable rows={quantProjectionDeepSeekContractRows} />
-          </div>
-          <div aria-label="candidate radar ordinary p5 governed executor readiness">
-            <h3>P5 governed executor readiness</h3>
-            <p className="risk-note">普通用户只看 P5 是否具备单独补证条件：model_ledger、sanitizer、output acceptance、fallback 和 promotion 边界；这张表只读回放，不创建 task、不调用模型。</p>
-            <DataLineageTable rows={quantProjectionDeepSeekReadinessRows} />
-          </div>
-        </details>
-        <details className="developer-audit-details" aria-label="candidate radar ordinary p6 strict closeout handoff">
-          <summary>P6 14 LTG strict closeout 交接</summary>
-          <p className="risk-note">P4 已将 14 LTG strict closeout 交接下沉到主行动之后；当前只是使用者可用化 checkpoint，不是 14 LTG 全部完成，后续必须回到 direct evidence、CI、browser/provider/worker/storage/package 等逐项严格验收。</p>
-        </details>
       </PacketCard>
 
       <div className="grid radar-result-cluster" data-radar-state={radarMotionState}>
@@ -3262,6 +3239,29 @@ export default function CandidateRadar() {
       <details id="audit" className="developer-audit-details" aria-label="candidate radar developer audit details">
         <summary>开发 / 审计指标</summary>
         <p>Provider、worker、receipt、browser QA、retained coverage 和 production blocker 明细默认收起；普通用户先看上方雷达摘要、候选池和搜票量化推演；也就是先查看本地候选摘要，再继续搜票量化推演。</p>
+        <details className="developer-audit-details" aria-label="candidate radar audit p5 governance details">
+          <summary>P5 DeepSeek 单独补证状态</summary>
+          <p className="risk-note">P4 将 P5 治理状态下沉到开发审计区；普通主线先停在 P1 确认、P2 三面回放和 P3 结果速读，DeepSeek governed executor 只作为高级补证参考。</p>
+          <div aria-label="candidate radar audit p5 deepseek standalone governance">
+            <h3>P5 DeepSeek 单独治理速读</h3>
+            <p className="risk-note">DeepSeek 只作为 governed executor 单独补证；P1 Tushare-first、P2 小数据写入和 P3 基础图谱继续先走本地回放，不等待模型。</p>
+            <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
+          </div>
+          <div aria-label="candidate radar audit p5 governed executor contract">
+            <h3>P5 DeepSeek 单独补证合同</h3>
+            <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：未来 DeepSeek 只能作为单独 P5 按钮任务，必须有 model_ledger、sanitizer、output acceptance 和安全摘要字段；本表只读回放，不创建 task、不调用模型。</p>
+            <DataLineageTable rows={quantProjectionDeepSeekContractRows} />
+          </div>
+          <div aria-label="candidate radar audit p5 governed executor readiness">
+            <h3>P5 governed executor readiness</h3>
+            <p className="risk-note">高级审计只看 P5 是否具备单独补证条件：model_ledger、sanitizer、output acceptance、fallback 和 promotion 边界；这张表只读回放，不创建 task、不调用模型。</p>
+            <DataLineageTable rows={quantProjectionDeepSeekReadinessRows} />
+          </div>
+        </details>
+        <details className="developer-audit-details" aria-label="candidate radar audit p6 strict closeout handoff">
+          <summary>P6 14 LTG strict closeout 交接</summary>
+          <p className="risk-note">P4 将 14 LTG strict closeout 交接下沉到开发审计区；当前只是使用者可用化 checkpoint，不是 14 LTG 全部完成，后续必须回到 direct evidence、CI、browser/provider/worker/storage/package 等逐项严格验收。</p>
+        </details>
         <MetricGrid
           items={[
           { label: "mode", value: cache.mode as string | undefined },
