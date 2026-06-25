@@ -18309,6 +18309,70 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "production_quant_projection_complete": False,
         },
     ]
+    ordinary_post_confirm_one_glance_items = [
+        {
+            "item_key": "task_id",
+            "label": "任务编号",
+            "value": latest_task_id or "等待确认按钮返回 task id",
+            "tone": "good" if latest_task_id else "warn",
+            "readback_source": "search_quant_projection_receipt / task_status",
+            "boundary": "只读展示本地 task id；不从回放创建第二个 task。",
+        },
+        {
+            "item_key": "next_step",
+            "label": "先看哪里",
+            "value": "先看任务进度；success 后刷新本地回放",
+            "tone": "good",
+            "readback_source": "ordinary_confirm_replay_stage_rows",
+            "boundary": "任务进度只轮询本地 FastAPI；不补调 provider/model。",
+        },
+        {
+            "item_key": "p2_writeback",
+            "label": "P2 写回",
+            "value": "cache / call_ledger / packet 三面回放",
+            "tone": "good" if small_data_ready else "warn",
+            "readback_source": "search_quant_projection_small_data_writeback_summary",
+            "boundary": "P2 只读本地三面；GET cache 不补调 Tushare/DeepSeek。",
+        },
+        {
+            "item_key": "p3_result",
+            "label": "P3 结果",
+            "value": "股票量化推演 + 次日图谱 + 下一票雷达详情",
+            "tone": "good" if bool(small_data_ready or quant_receipt or small_data) else "warn",
+            "readback_source": "search_quant_projection_interpretation_summary",
+            "boundary": "P3 只读 cache / ledger / packet；不调用 DeepSeek，不生成交易动作。",
+        },
+        {
+            "item_key": "deepseek",
+            "label": "DeepSeek",
+            "value": "skipped/pending 不阻塞；P5 governed executor 单独补",
+            "tone": "good",
+            "readback_source": "ordinary_model_governance_rows",
+            "boundary": "DeepSeek 不作为数据源，不覆盖价格、持仓、factor、operation_zones 或 strategy action。",
+        },
+        {
+            "item_key": "safety_boundary",
+            "label": "安全边界",
+            "value": "回放不创建第二个 task，不下单，不改 strategy action",
+            "tone": "good",
+            "readback_source": "local_safety_policy",
+            "boundary": "真实交易隔离；候选和图谱只作为研究线索。",
+        },
+    ]
+    for item in ordinary_post_confirm_one_glance_items:
+        item.update(
+            {
+                "cache_only_readback": True,
+                "creates_task_from_readback": False,
+                "readback_external_calls_triggered": False,
+                "external_calls_triggered": False,
+                "uses_deepseek_output": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
+            }
+        )
     return {
         "schema_version": QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION,
         "status": status,
@@ -18388,6 +18452,12 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_checkpoint_rows_create_task": False,
         "ordinary_result_checkpoint_rows_call_model": False,
         "ordinary_result_checkpoint_rows_are_not_trade_signals": True,
+        "ordinary_post_confirm_one_glance_items": ordinary_post_confirm_one_glance_items,
+        "ordinary_post_confirm_one_glance_item_count": len(ordinary_post_confirm_one_glance_items),
+        "ordinary_post_confirm_one_glance_items_are_cache_only": True,
+        "ordinary_post_confirm_one_glance_items_create_task": False,
+        "ordinary_post_confirm_one_glance_items_use_model_output": False,
+        "ordinary_post_confirm_one_glance_items_are_not_trade_signals": True,
         "ordinary_result_checkpoint_is_cache_only": True,
         "ordinary_result_checkpoint_creates_task": False,
         "ordinary_result_checkpoint_calls_model": False,
@@ -18473,6 +18543,9 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     ordinary_result_decision_brief_rows = [
         row for row in _as_list(summary.get("ordinary_result_decision_brief_rows")) if isinstance(row, dict)
     ]
+    ordinary_post_confirm_one_glance_items = [
+        row for row in _as_list(summary.get("ordinary_post_confirm_one_glance_items")) if isinstance(row, dict)
+    ]
     view["ordinary_result_status"] = summary.get("ordinary_result_status")
     view["ordinary_result_summary"] = summary.get("ordinary_result_summary")
     view["ordinary_result_next_step"] = summary.get("ordinary_result_next_step")
@@ -18488,16 +18561,19 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["ordinary_result_action_rows"] = ordinary_result_action_rows
     view["ordinary_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
     view["ordinary_result_decision_brief_rows"] = ordinary_result_decision_brief_rows
+    view["ordinary_post_confirm_one_glance_items"] = ordinary_post_confirm_one_glance_items
     view["search_quant_projection_result_quick_read_rows"] = ordinary_result_quick_read_rows
     view["search_quant_projection_result_handoff_rows"] = ordinary_result_handoff_rows
     view["search_quant_projection_result_action_rows"] = ordinary_result_action_rows
     view["search_quant_projection_result_decision_brief_rows"] = ordinary_result_decision_brief_rows
+    view["search_quant_projection_post_confirm_one_glance_items"] = ordinary_post_confirm_one_glance_items
     view["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
     view["ordinary_result_handoff_row_count"] = len(ordinary_result_handoff_rows)
     view["ordinary_result_readback_row_count"] = len(ordinary_result_readback_rows)
     view["ordinary_result_action_row_count"] = len(ordinary_result_action_rows)
     view["ordinary_result_checkpoint_row_count"] = len(ordinary_result_checkpoint_rows)
     view["ordinary_result_decision_brief_row_count"] = len(ordinary_result_decision_brief_rows)
+    view["ordinary_post_confirm_one_glance_item_count"] = len(ordinary_post_confirm_one_glance_items)
     view["search_quant_projection_result_checkpoint"] = result_checkpoint
     view["search_quant_projection_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
     counts["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
@@ -18506,6 +18582,7 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["ordinary_result_action_row_count"] = len(ordinary_result_action_rows)
     counts["ordinary_result_checkpoint_row_count"] = len(ordinary_result_checkpoint_rows)
     counts["ordinary_result_decision_brief_row_count"] = len(ordinary_result_decision_brief_rows)
+    counts["search_quant_projection_post_confirm_one_glance_item_count"] = len(ordinary_post_confirm_one_glance_items)
     counts["search_quant_projection_result_checkpoint_missing_evidence_count"] = result_checkpoint.get(
         "missing_evidence_count",
         0,
@@ -18558,6 +18635,10 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_result_checkpoint_rows_create_task"] = False
     policy["search_quant_projection_result_checkpoint_rows_call_model"] = False
     policy["search_quant_projection_result_checkpoint_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_post_confirm_one_glance_items_are_cache_only"] = True
+    policy["search_quant_projection_post_confirm_one_glance_items_create_task"] = False
+    policy["search_quant_projection_post_confirm_one_glance_items_use_model_output"] = False
+    policy["search_quant_projection_post_confirm_one_glance_items_are_not_trade_signals"] = True
     policy["ordinary_result_quick_read_rows_are_cache_only"] = True
     policy["ordinary_result_quick_read_rows_create_task"] = False
     policy["ordinary_result_quick_read_rows_call_model"] = False

@@ -40171,6 +40171,28 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         interpretation = packet["search_quant_projection_interpretation_summary"]
         self.assertTrue(interpretation["interpretation_ready"])
+        one_glance = {
+            row["item_key"]: row for row in packet["search_quant_projection_post_confirm_one_glance_items"]
+        }
+        self.assertEqual(
+            set(one_glance),
+            {"task_id", "next_step", "p2_writeback", "p3_result", "deepseek", "safety_boundary"},
+        )
+        self.assertEqual(packet["counts"]["search_quant_projection_post_confirm_one_glance_item_count"], 6)
+        self.assertTrue(packet["policy"]["search_quant_projection_post_confirm_one_glance_items_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_post_confirm_one_glance_items_create_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_post_confirm_one_glance_items_use_model_output"])
+        self.assertTrue(packet["policy"]["search_quant_projection_post_confirm_one_glance_items_are_not_trade_signals"])
+        self.assertEqual(interpretation["ordinary_post_confirm_one_glance_item_count"], 6)
+        self.assertIn(task["task_id"], one_glance["task_id"]["value"])
+        self.assertIn("cache / call_ledger / packet", one_glance["p2_writeback"]["value"])
+        self.assertIn("P5 governed executor", one_glance["deepseek"]["value"])
+        self.assertFalse(any(row["creates_task_from_readback"] for row in one_glance.values()))
+        self.assertFalse(any(row["readback_external_calls_triggered"] for row in one_glance.values()))
+        self.assertFalse(any(row["uses_deepseek_output"] for row in one_glance.values()))
+        self.assertFalse(any(row["contains_secret"] for row in one_glance.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in one_glance.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in one_glance.values()))
         self.assertTrue(interpretation["ordinary_result_quick_read_rows_are_cache_only"])
         self.assertFalse(interpretation["ordinary_result_quick_read_rows_create_task"])
         self.assertFalse(interpretation["ordinary_result_quick_read_rows_use_model_output"])
