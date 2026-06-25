@@ -650,6 +650,12 @@ export default function NextSessionMap() {
             { label: "边界", value: candidateRadarReadableBoundary, tone: "good" }
           ]}
         />
+        <div className="actions" aria-label="next session readable result local actions">
+          <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地 next-session cache" aria-label="open local next session chart from readable result">查看图谱区域</a>
+          <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant replay from next session readable result">查看支持/压制</a>
+          <a href="#candidates" title="切换到下一票雷达模块；换标的仍需输入代码并确认" aria-label="return candidate radar from next session readable result">回下一票雷达</a>
+        </div>
+        <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变 operation_zones 或 strategy action。</p>
         {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
         {candidateRadarResultHandoffRows.length ? <DataLineageTable rows={candidateRadarResultHandoffRows} /> : null}
       </div>
@@ -754,7 +760,7 @@ export default function NextSessionMap() {
         ]}
       />
       <p className="risk-note">{String(packet.summary ?? "当前只读取 cache；无缓存时不会触发 Tushare。")}</p>
-      <div className="next-session-chart-review" role="region" aria-label={nextSessionChartReviewRegionLabel} title={nextSessionChartReviewRegionLabel}>
+      <div id="next-session-chart" className="next-session-chart-review" role="region" aria-label={nextSessionChartReviewRegionLabel} title={nextSessionChartReviewRegionLabel}>
         <NextSessionChart payload={chartPayload} />
       </div>
       <details id="next-session-audit" className="developer-audit-details" aria-label="next session developer audit details">
