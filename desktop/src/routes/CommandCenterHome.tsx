@@ -629,17 +629,20 @@ export default function CommandCenterHome() {
     (candidateQuantInterpretation.ordinary_post_confirm_one_glance_items as Array<Record<string, unknown>> | undefined) ??
     [];
   const dailyCommandExplainableResultLabel = String(
-    candidates.ordinary_result_summary ??
+    candidates.search_quant_projection_p3_readable_result_summary ??
+      candidates.ordinary_result_summary ??
       candidateQuantInterpretation.ordinary_result_summary ??
       "等待搜票确认后的可解释结果"
   );
   const dailyCommandExplainableResultNext = String(
-    candidates.ordinary_result_next_step ??
+    candidates.search_quant_projection_p3_readable_result_next_step ??
+      candidates.ordinary_result_next_step ??
       candidateQuantInterpretation.ordinary_result_next_step ??
       "先进入下一票雷达输入代码并点击确认"
   );
   const dailyCommandExplainableResultBoundary = String(
-    candidates.ordinary_result_boundary ??
+    candidates.search_quant_projection_p3_readable_result_boundary ??
+      candidates.ordinary_result_boundary ??
       candidateQuantInterpretation.ordinary_result_boundary ??
       "可解释结果只从本地 cache / ledger / packet 回放；不会从结果回放卡创建 task、调用模型或生成交易动作。"
   );
@@ -668,6 +671,7 @@ export default function CommandCenterHome() {
       "等待下一票雷达确认 task"
   );
   const dailyCommandP3OneGlanceReadable =
+    candidates.search_quant_projection_p3_readable_result_ready === true ||
     candidateQuantResultCheckpoint.ordinary_result_readable === true ||
     candidateQuantInterpretation.interpretation_ready === true ||
     candidateQuantQuickRows.length > 0;
@@ -733,7 +737,8 @@ export default function CommandCenterHome() {
     ? `P3 检查点 ${String(candidateQuantCheckpointRows.length)} 项可回放`
     : "等待 CandidateRadar P3 结果检查点";
   const dailyCommandP3OneGlanceStatus = String(
-    candidateQuantResultCheckpoint.status ??
+    candidates.search_quant_projection_p3_readable_result_status ??
+      candidateQuantResultCheckpoint.status ??
       candidateQuantInterpretation.ordinary_result_status ??
       (dailyCommandP3OneGlanceReadable ? "readable_cache_replay" : "waiting_confirm")
   );

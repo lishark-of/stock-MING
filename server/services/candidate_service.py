@@ -18956,6 +18956,11 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     ordinary_post_confirm_one_glance_items = [
         row for row in _as_list(summary.get("ordinary_post_confirm_one_glance_items")) if isinstance(row, dict)
     ]
+    p3_readable_result_ready = (
+        result_checkpoint.get("ordinary_result_readable") is True
+        or summary.get("interpretation_ready") is True
+        or bool(ordinary_result_quick_read_rows)
+    )
     view["ordinary_result_status"] = summary.get("ordinary_result_status")
     view["ordinary_result_summary"] = summary.get("ordinary_result_summary")
     view["ordinary_result_next_step"] = summary.get("ordinary_result_next_step")
@@ -18997,6 +19002,16 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["search_quant_projection_result_checkpoint"] = result_checkpoint
     view["search_quant_projection_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
     view["search_quant_projection_p3_explainable_result_checkpoint"] = p3_explainable_result_checkpoint
+    view["search_quant_projection_p3_readable_result_ready"] = p3_readable_result_ready
+    view["search_quant_projection_p3_readable_result_status"] = summary.get("ordinary_result_status")
+    view["search_quant_projection_p3_readable_result_summary"] = summary.get("ordinary_result_summary")
+    view["search_quant_projection_p3_readable_result_next_step"] = summary.get("ordinary_result_next_step")
+    view["search_quant_projection_p3_readable_result_boundary"] = summary.get("ordinary_result_boundary")
+    view["search_quant_projection_p3_readable_result_cache_only"] = True
+    view["search_quant_projection_p3_readable_result_creates_task"] = False
+    view["search_quant_projection_p3_readable_result_calls_model"] = False
+    view["search_quant_projection_p3_readable_result_uses_model_output"] = False
+    view["search_quant_projection_p3_readable_result_is_not_trade_signal"] = True
     view["search_quant_projection_p3_explainable_result_ready"] = (
         summary.get("p3_explainable_result_ready") is True
     )
@@ -19046,6 +19061,7 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["search_quant_projection_p3_explainable_result_readable"] = (
         summary.get("p3_explainable_result_readable") is True
     )
+    counts["search_quant_projection_p3_readable_result_ready"] = p3_readable_result_ready
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_interpretation_is_cache_replay"] = True
@@ -19092,6 +19108,11 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_p3_explainable_result_checkpoint_calls_model"] = False
     policy["search_quant_projection_p3_explainable_result_checkpoint_uses_model_output"] = False
     policy["search_quant_projection_p3_explainable_result_checkpoint_is_not_trade_signal"] = True
+    policy["search_quant_projection_p3_readable_result_is_cache_only"] = True
+    policy["search_quant_projection_p3_readable_result_creates_task"] = False
+    policy["search_quant_projection_p3_readable_result_calls_model"] = False
+    policy["search_quant_projection_p3_readable_result_uses_model_output"] = False
+    policy["search_quant_projection_p3_readable_result_is_not_trade_signal"] = True
     policy["search_quant_projection_p3_safe_explanation_is_cache_only"] = True
     policy["search_quant_projection_p3_safe_explanation_creates_task"] = False
     policy["search_quant_projection_p3_safe_explanation_calls_model"] = False

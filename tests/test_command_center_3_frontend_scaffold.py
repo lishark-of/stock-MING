@@ -1726,6 +1726,14 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("等待下一票雷达确认 task", home_source)
         self.assertIn("candidateQuantQuickRows", home_source)
         self.assertIn("search_quant_projection_p3_result_rows", home_source)
+        self.assertIn("candidates.search_quant_projection_p3_readable_result_ready", home_source)
+        self.assertIn("candidates.search_quant_projection_p3_readable_result_summary", home_source)
+        self.assertIn("candidates.search_quant_projection_p3_readable_result_next_step", home_source)
+        self.assertIn("candidates.search_quant_projection_p3_readable_result_boundary", home_source)
+        self.assertLess(
+            home_source.index("candidates.search_quant_projection_p3_readable_result_summary"),
+            home_source.index("candidates.ordinary_result_summary"),
+        )
         self.assertLess(
             home_source.index("candidates.search_quant_projection_p3_result_rows"),
             home_source.index("candidates.ordinary_result_quick_read_rows"),

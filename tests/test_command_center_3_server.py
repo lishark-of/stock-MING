@@ -40509,6 +40509,30 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(set(quick_read), {"conclusion", "replay_scope", "source_map", "remaining_gap"})
         self.assertTrue(packet["search_quant_projection_p3_explainable_result_ready"])
         self.assertTrue(packet["search_quant_projection_p3_explainable_result_readable"])
+        self.assertTrue(packet["search_quant_projection_p3_readable_result_ready"])
+        self.assertTrue(packet["counts"]["search_quant_projection_p3_readable_result_ready"])
+        self.assertEqual(
+            packet["search_quant_projection_p3_readable_result_summary"],
+            interpretation["ordinary_result_summary"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_p3_readable_result_next_step"],
+            interpretation["ordinary_result_next_step"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_p3_readable_result_boundary"],
+            interpretation["ordinary_result_boundary"],
+        )
+        self.assertTrue(packet["search_quant_projection_p3_readable_result_cache_only"])
+        self.assertFalse(packet["search_quant_projection_p3_readable_result_creates_task"])
+        self.assertFalse(packet["search_quant_projection_p3_readable_result_calls_model"])
+        self.assertFalse(packet["search_quant_projection_p3_readable_result_uses_model_output"])
+        self.assertTrue(packet["search_quant_projection_p3_readable_result_is_not_trade_signal"])
+        self.assertTrue(packet["policy"]["search_quant_projection_p3_readable_result_is_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_p3_readable_result_creates_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_p3_readable_result_calls_model"])
+        self.assertFalse(packet["policy"]["search_quant_projection_p3_readable_result_uses_model_output"])
+        self.assertTrue(packet["policy"]["search_quant_projection_p3_readable_result_is_not_trade_signal"])
         safe_explanation = packet["search_quant_projection_p3_safe_explanation"]
         self.assertEqual(safe_explanation["schema_version"], "candidate_radar_p3_safe_explanation.v1")
         self.assertEqual(safe_explanation["safe_explanation_fields"], ["source", "gap", "next_step", "safety_summary"])
