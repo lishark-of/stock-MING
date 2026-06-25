@@ -21,14 +21,31 @@ class TaskStatusPanelOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "确认任务"', source)
         self.assertIn("candidateRadarResultReplay ? task.task_id : \"按当前任务查看\"", source)
         self.assertIn("任务速读：普通用户先看状态、写回、Tushare-first、结果入口和安全边界", source)
+        self.assertIn('aria-label="task status runtime metadata details"', source)
+        self.assertIn("运行元数据、P1/P2/P3 明细、call ledger、model ledger 和状态历史默认收起", source)
         self.assertIn("TaskStatusPanel 只轮询本地 FastAPI 任务状态；不会补调 provider/model。", source)
 
         ordinary_summary = source[
             source.index('aria-label="task status ordinary summary"') : source.index('aria-label="task status p3 result replay links"')
         ]
+        audit_details = source[source.index('aria-label="task status audit details"') :]
         self.assertIn("taskConfirmedSymbolLabel", ordinary_summary)
         self.assertIn("taskConfirmTaskLabel", ordinary_summary)
         self.assertIn("MetricGrid items={taskOrdinarySummaryItems}", ordinary_summary)
+        self.assertNotIn("<p>运行方式：", ordinary_summary)
+        self.assertNotIn("<p>记录来源：", ordinary_summary)
+        self.assertNotIn("<p>创建时间：", ordinary_summary)
+        self.assertNotIn("<p>开始时间：", ordinary_summary)
+        self.assertNotIn("<p>结束时间：", ordinary_summary)
+        self.assertIn("<p>当前步骤：{task.current_step}</p>", audit_details)
+        self.assertIn("<p>任务编号：{task.task_id}</p>", audit_details)
+        self.assertIn("<p>运行方式：{task.backend ?? \"local_fallback\"}</p>", audit_details)
+        self.assertIn("<p>记录来源：{task.storage_source ?? \"memory_or_sqlite_fallback\"}</p>", audit_details)
+        self.assertIn("<p>创建时间：{task.created_at ?? \"--\"}</p>", audit_details)
+        self.assertLess(
+            source.index('aria-label="task status ordinary summary"'),
+            source.index('aria-label="task status runtime metadata details"'),
+        )
         self.assertNotIn("postTask(", ordinary_summary)
         self.assertNotIn("cancelTask(", ordinary_summary)
         self.assertNotIn("TUSHARE_TOKEN", ordinary_summary)

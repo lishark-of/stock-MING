@@ -337,13 +337,6 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
         ]}
       />
       <progress className="task-progress" value={task.progress ?? 0} max={1} />
-      <p>{task.current_step}</p>
-      <p>任务编号：{task.task_id}</p>
-      <p>运行方式：{task.backend ?? "local_fallback"}</p>
-      <p>记录来源：{task.storage_source ?? "memory_or_sqlite_fallback"}</p>
-      <p>创建时间：{task.created_at ?? "--"}</p>
-      <p>开始时间：{task.started_at ?? "--"}</p>
-      <p>结束时间：{task.finished_at ?? "--"}</p>
       {successRefreshMessage ? <p className="panelSuccessRefresh">{successRefreshMessage}</p> : null}
       <div aria-label="task status ordinary summary">
         <p className="risk-note">任务速读：普通用户先看状态、写回、Tushare-first、结果入口和安全边界；工程明细默认收起。</p>
@@ -396,7 +389,16 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       {task.warnings?.length ? <p className="risk-note">{task.warnings[0]}</p> : null}
       <details className="developer-audit-details" aria-label="task status audit details">
         <summary>任务审计详情</summary>
-        <p>普通用户先看状态轨、当前步骤、本地回放提示和取消按钮；call ledger、model ledger 和状态历史默认收起。</p>
+        <p>普通用户先看状态轨、当前步骤、本地回放提示和取消按钮；运行元数据、P1/P2/P3 明细、call ledger、model ledger 和状态历史默认收起。</p>
+        <div aria-label="task status runtime metadata details">
+          <p>当前步骤：{task.current_step}</p>
+          <p>任务编号：{task.task_id}</p>
+          <p>运行方式：{task.backend ?? "local_fallback"}</p>
+          <p>记录来源：{task.storage_source ?? "memory_or_sqlite_fallback"}</p>
+          <p>创建时间：{task.created_at ?? "--"}</p>
+          <p>开始时间：{task.started_at ?? "--"}</p>
+          <p>结束时间：{task.finished_at ?? "--"}</p>
+        </div>
         <p>审计记录：{callLedger.length}</p>
         <DeepSeekModelStrategyLedger callLedger={callLedger} />
         {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无任务审计记录。</p>}
