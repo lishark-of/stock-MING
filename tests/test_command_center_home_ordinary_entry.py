@@ -36,6 +36,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "主下一步边界"', source)
         self.assertIn('label: "本地联通"', source)
         self.assertIn('label: "一键启动"', source)
+        self.assertIn('label: "首页读法"', source)
+        self.assertIn("多接口本地聚合：health / bootstrap / preflight / radar / factor / next / tasks", source)
         self.assertIn('label: "启动恢复"', source)
         self.assertIn('label: "启动边界"', source)
         self.assertIn('label: "启动成功条件"', source)
@@ -53,6 +55,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "确认后回放"', source)
         self.assertIn('label: "量化缓存回放"', source)
         self.assertIn("dailyCommandStartupReadbackRows", source)
+        self.assertIn("dailyCommandHomeAggregateReadbackRows", source)
         self.assertIn("p0LauncherCheckOnlyRows", source)
         self.assertIn("p0OrdinaryQuickActionRows", source)
         self.assertIn("p0CurrentNextActionRows", source)
@@ -99,6 +102,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("dailyCommandP0QuickAction", source)
         self.assertIn("dailyCommandUsablePathStageRailSteps", source)
         self.assertIn('aria-label="daily command local connection readback"', source)
+        self.assertIn('aria-label="daily command home aggregate readback"', source)
         self.assertIn('aria-label="daily command usable path stage rail"', source)
         self.assertIn('aria-label="daily command engineering audit and strict closeout details"', source)
         self.assertIn('aria-label="daily command p6 strict closeout reentry"', source)
@@ -111,6 +115,10 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="daily command p0 quick action handoff"', source)
         self.assertIn('aria-label="daily command factor cache fallback readback"', source)
         self.assertIn("本地联通四段回读", source)
+        self.assertIn("首页多接口回读", source)
+        self.assertIn("首页是多个本地只读接口合成的作战台，不依赖单个总 cache URL", source)
+        self.assertIn("不依赖单个 /api/command-center/cache", source)
+        self.assertIn("GET /api/candidate-radar/cache + /api/factor-quant/cache + /api/next-session/cache + /api/tasks", source)
         self.assertIn("工程审计 / P6 strict closeout 明细", source)
         self.assertIn("普通路径已经在上方 P1 确认、P2 三面和 P3 可解释结果", source)
         self.assertIn("普通用户先看上方 P1 确认、P2 三面和 P3 可解释结果", source)
@@ -724,10 +732,12 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         summary_end = source.index("<summary>开发 / 审计详情</summary>", summary_start)
         summary = source[summary_start:summary_end]
         rail_start = summary.index('<div className="state-clarity-rail" aria-label="daily command usable path stage rail">')
-        table_start = summary.index("<DataLineageTable rows={dailyCommandUsableShortestPathRows}")
+        table_start = summary.index("<DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows}")
         rail = summary[rail_start:table_start]
 
-        self.assertIn("dailyCommandUsablePathStageRailSteps.map", rail)
+        self.assertIn("dailyCommandUsablePathPrimaryStageRailSteps.map", rail)
+        self.assertIn("dailyCommandUsablePathAuditStageRailSteps.map", summary)
+        self.assertIn("dailyCommandUsableShortestPathAuditRows", summary)
         self.assertIn('className="state-clarity-rail"', rail)
         self.assertIn('className="state-clarity-step"', rail)
         self.assertIn("data-step-state={step.state}", rail)
@@ -777,7 +787,9 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         audit = source[summary_end:]
 
         self.assertIn("dailyCommandBackgroundTaskState", source)
-        self.assertIn('label: "补证状态"', summary)
+        self.assertIn('label: "补证状态"', source)
+        self.assertIn("dailyCommandSummaryTechnicalItems", summary)
+        self.assertIn("<MetricGrid items={dailyCommandSummaryTechnicalItems} />", summary)
         self.assertNotIn('label: "后台状态"', source)
         self.assertIn("普通路径不自动补证；需要时在开发详情手动确认", source)
         self.assertIn("手动补证任务提交中；页面可继续查看缓存", source)
@@ -794,7 +806,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("liveBootstrapManualStatus", summary)
         self.assertNotIn("auto status", audit)
         self.assertIn("manual status: {liveBootstrapManualStatus}", audit)
-        self.assertLess(source.index('label: "补证状态"'), source.index("<summary>开发 / 审计详情</summary>"))
+        self.assertLess(summary.index("<MetricGrid items={dailyCommandSummaryTechnicalItems} />"), summary.index('aria-label="daily command usable shortest path"'))
 
     def test_live_light_bootstrap_requires_manual_button_not_page_open_autostart(self):
         source = self.source

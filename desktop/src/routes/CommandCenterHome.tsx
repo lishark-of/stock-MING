@@ -1250,6 +1250,41 @@ export default function CommandCenterHome() {
       边界: dailyCommandP0LocalReadinessBoundary
     }
   ];
+  const dailyCommandHomeAggregateReadbackRows = [
+    {
+      回读项: "1. 本地服务身份",
+      当前状态: dailyCommandHealthOk ? "已回读 Command Center 3.0 health" : "等待 /health",
+      接口: "GET /health",
+      用户下一步: dailyCommandHealthOk ? "继续看运行模式和桌面预检" : "先恢复本地 FastAPI",
+      边界: "只确认本机后端身份；不刷新 provider/model、不创建 task"
+    },
+    {
+      回读项: "2. 运行模式",
+      当前状态: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "runtime-mode packet 可读" : "等待 bootstrap status",
+      接口: "GET /api/bootstrap/status",
+      用户下一步: "确认 cache_only/manual/live_light 口径后再进入 P1",
+      边界: "只读模式配置；不创建 live_light task、不外联"
+    },
+    {
+      回读项: "3. 一键启动预检",
+      当前状态: desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache" ? "desktop preflight cache 可读" : "等待 desktop preflight",
+      接口: "GET /api/desktop/preflight-cache",
+      用户下一步: "四段 ready 后继续首页确认股票代码",
+      边界: "只读启动器回执；不启动 FastAPI/Vite、不打开浏览器"
+    },
+    {
+      回读项: "4. 投研链路缓存",
+      当前状态: [
+        candidates.status ? `CandidateRadar=${String(candidates.status)}` : "CandidateRadar=waiting",
+        factor.status ? `Factor=${String(factor.status)}` : "Factor=waiting",
+        next.status ? `Next=${String(next.status)}` : "Next=waiting",
+        taskIndex?.status ? `Tasks=${String(taskIndex.status)}` : "Tasks=waiting"
+      ].join(" / "),
+      接口: "GET /api/candidate-radar/cache + /api/factor-quant/cache + /api/next-session/cache + /api/tasks",
+      用户下一步: dailyCommandP0LocalReadinessReady ? "可以在首页确认股票代码；已有结果直接回放 P2/P3" : "先让 P0 四段 ready",
+      边界: "首页是多接口本地聚合，不依赖单个 /api/command-center/cache；这些 GET 只读回放，不补调 Tushare/DeepSeek"
+    }
+  ];
   const dailyCommandP0EntryGateRows = [
     {
       闸门项: "1. FastAPI health",
@@ -1822,6 +1857,7 @@ export default function CommandCenterHome() {
           items={[
             { label: "本地后端", value: dailyCommandFrontendBackendAutoLinkLabel, tone: dailyCommandHealthOk ? "good" : "warn" },
             { label: "当前页面", value: dailyCommandP0LocalReadinessReady ? "FastAPI、bootstrap、desktop preflight 和 React 已接上" : "等待本地四段联通回读", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+            { label: "首页读法", value: "多接口本地聚合：health / bootstrap / preflight / radar / factor / next / tasks", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "投研入口", value: dailyCommandNeedsStartupRecovery ? "先看一键启动预检" : "在首页确认股票代码；需要详情再进下一票雷达", tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "安全边界", value: "打开页面和输入代码不外联；确认按钮才触发 Tushare-first", tone: "good" }
           ]}
@@ -1841,6 +1877,11 @@ export default function CommandCenterHome() {
             ]}
           />
           <p className="risk-note">接线地址来自前端本机 FastAPI auto-link ledger；候选地址只展示本机 127.0.0.1/localhost fallback。该卡只读 FastAPI health、bootstrap status 和 desktop preflight cache；不会启动服务、不会创建 task、不会调用 Tushare/DeepSeek/GitHub，也不会暴露 token/key。</p>
+          <div aria-label="daily command home aggregate readback">
+            <h3>首页多接口回读</h3>
+            <p className="risk-note">首页是多个本地只读接口合成的作战台，不依赖单个总 cache URL；看到某个猜测 URL 不存在，不代表软件没接上。</p>
+            <DataLineageTable rows={dailyCommandHomeAggregateReadbackRows} />
+          </div>
         </details>
       </PacketCard>
       <PacketCard title="P0 现在能不能用" subtitle="普通用户打开软件后的 10 秒判断" status={dailyCommandP0LocalReadinessReady ? "ready" : "check"}>
