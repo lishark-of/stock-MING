@@ -401,6 +401,41 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postBootstrapLiveStartup", card)
         self.assertNotIn("launchLiveBootstrap", card)
 
+    def test_home_p1_confirm_handoff_keeps_receipt_audit_folded(self):
+        source = self.source
+        card_start = source.index('title="首页确认股票代码"')
+        card_end = source.index('title="P1 Tushare-first 链路速读"', card_start)
+        card = source[card_start:card_end]
+
+        self.assertIn("homeQuantPostConfirmHandoffRows", source)
+        self.assertIn('aria-label="daily command home post confirm handoff"', card)
+        self.assertIn("确认后下一步", card)
+        self.assertIn("任务编号出现后，先看任务进度；成功后按股票量化推演和次日图谱回放", card)
+        self.assertIn("DataLineageTable rows={homeQuantPostConfirmHandoffRows}", card)
+        self.assertIn('aria-label="daily command home post confirm handoff actions"', card)
+        self.assertIn('href="#tasks"', card)
+        self.assertIn('href="#factor"', card)
+        self.assertIn('href="#next"', card)
+        self.assertIn('href="#candidates"', card)
+        self.assertIn("只读任务进度；不会创建第二个 Tushare-first task", source)
+        self.assertIn("链接只切换本地模块；Factor 页 GET cache 不补调 Tushare/DeepSeek", source)
+        self.assertIn("operation_zones 只是复核区间；不是买卖、下单或 strategy action", source)
+        self.assertIn("结果回放只读 CandidateRadar cache / ledger / packet；不调用模型", source)
+
+        handoff_start = card.index('aria-label="daily command home post confirm handoff"')
+        receipt_details_start = card.index('<details className="developer-audit-details" aria-label="daily command home p1 receipt audit details">')
+        handoff_slice = card[handoff_start:receipt_details_start]
+        self.assertNotIn("postCandidateRadarQuantProjection(", handoff_slice)
+        self.assertNotIn("launchHomeQuantProjection", handoff_slice)
+        self.assertNotIn("onClick=", handoff_slice)
+        self.assertLess(handoff_start, receipt_details_start)
+
+        receipt_slice = card[receipt_details_start:]
+        self.assertIn('<details className="developer-audit-details" aria-label="daily command home p1 receipt audit details">', receipt_slice)
+        self.assertIn("<summary>任务回执 / 审计详情</summary>", receipt_slice)
+        self.assertIn("完整 POST task receipt 默认下沉；普通路径先看上方任务进度、量化推演和次日图谱。", receipt_slice)
+        self.assertIn("<TaskLaunchReceipt receipt={homeQuantReceipt} />", receipt_slice)
+
     def test_daily_command_center_source_and_boundary_are_visible(self):
         source = self.source
 

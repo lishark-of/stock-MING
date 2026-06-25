@@ -1009,6 +1009,36 @@ export default function CommandCenterHome() {
     { label: "P2/P3 回放", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
     { label: "边界", value: "首页输入静默；不从页面打开、输入、React render 或 GET cache 外联；不交易、不改 action", tone: "good" }
   ];
+  const homeQuantPostConfirmHandoffRows = [
+    {
+      交接项: "任务进度",
+      当前状态: homeQuantTaskPanelTaskId ? `已创建 ${homeQuantTaskPanelTaskId}` : "等待确认按钮",
+      用户下一步: homeQuantTaskPanelTaskId ? "先看 TaskStatusPanel 是否 success，再看 P2/P3 回放" : "输入代码并点击确认按钮",
+      入口: "#tasks",
+      边界: "只读任务进度；不会创建第二个 Tushare-first task。"
+    },
+    {
+      交接项: "股票量化推演",
+      当前状态: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "P2/P3 本地回放已可读" : "等待 task 写入 cache / ledger / packet",
+      用户下一步: "打开股票量化推演，复核支持/压制和 P3 可读结论",
+      入口: "#factor",
+      边界: "链接只切换本地模块；Factor 页 GET cache 不补调 Tushare/DeepSeek。"
+    },
+    {
+      交接项: "次日图谱",
+      当前状态: String(next.status ?? "等待次日图谱本地缓存"),
+      用户下一步: "打开次日图谱，复核路径、参考线和 operation_zones",
+      入口: "#next",
+      边界: "operation_zones 只是复核区间；不是买卖、下单或 strategy action。"
+    },
+    {
+      交接项: "下一票雷达结果",
+      当前状态: dailyCommandP3OneGlanceReadable ? "P3 可解释结果可回放" : "等待 CandidateRadar checkpoint",
+      用户下一步: "需要换标的时回下一票雷达；输入仍保持静默，确认按钮才创建 task",
+      入口: "#candidates",
+      边界: "结果回放只读 CandidateRadar cache / ledger / packet；不调用模型。"
+    }
+  ];
   const dailyCommandFrontendBackendAutoLinkRows = [
     {
       联通项: "前端 API client",
@@ -1593,7 +1623,26 @@ export default function CommandCenterHome() {
             <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达详情页；同一条 P1 确认链路" aria-label="open candidate radar detail from home p1 confirm">下一票雷达详情</a>
           </div>
           {homeQuantSubmitError ? <p className="risk-note" aria-live="polite">首页确认任务创建失败：{homeQuantSubmitError}</p> : null}
-          {homeQuantReceipt ? <TaskLaunchReceipt receipt={homeQuantReceipt} /> : null}
+          {homeQuantTaskPanelTaskId ? (
+            <div aria-label="daily command home post confirm handoff">
+              <h3>确认后下一步</h3>
+              <p className="risk-note">任务编号出现后，先看任务进度；成功后按股票量化推演和次日图谱回放。这里的链接只切换本地页面，不创建第二个 task。</p>
+              <DataLineageTable rows={homeQuantPostConfirmHandoffRows} />
+              <div className="actions" aria-label="daily command home post confirm handoff actions">
+                <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after home symbol confirm">查看任务进度</a>
+                <a href="#factor" title="切换到股票量化推演；只读回放确认后的本地结果" aria-label="open factor after home symbol confirm">股票量化推演</a>
+                <a href="#next" title="切换到次日图谱；只读回放确认后的本地图谱" aria-label="open next session after home symbol confirm">次日图谱</a>
+                <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="open candidate radar after home symbol confirm">下一票雷达结果</a>
+              </div>
+            </div>
+          ) : null}
+          {homeQuantReceipt ? (
+            <details className="developer-audit-details" aria-label="daily command home p1 receipt audit details">
+              <summary>任务回执 / 审计详情</summary>
+              <p className="risk-note">完整 POST task receipt 默认下沉；普通路径先看上方任务进度、量化推演和次日图谱。</p>
+              <TaskLaunchReceipt receipt={homeQuantReceipt} />
+            </details>
+          ) : null}
           {homeQuantTaskPanelTaskId ? <TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} /> : null}
           <p className="risk-note">首页确认按钮复用 POST /api/candidate-radar/quant-projection：P0 gate 通过后才启用；成功后只从 CandidateRadar cache / call_ledger / packet 回放 P2/P3。页面打开、输入、React render 和 GET cache 不外联，不调用 DeepSeek，不交易、不改 strategy action。</p>
         </div>

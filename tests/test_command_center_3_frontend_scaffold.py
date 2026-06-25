@@ -1517,6 +1517,27 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("home_symbol_confirm_button", home_source)
         self.assertIn("writeback_surfaces: [\"cache\", \"call_ledger\", \"packet\"]", home_source)
         self.assertIn("DeepSeek skipped", home_source)
+        self.assertIn("homeQuantPostConfirmHandoffRows", home_source)
+        self.assertIn('aria-label="daily command home post confirm handoff"', home_source)
+        self.assertIn("确认后下一步", home_source)
+        self.assertIn("DataLineageTable rows={homeQuantPostConfirmHandoffRows}", home_source)
+        self.assertIn('aria-label="daily command home post confirm handoff actions"', home_source)
+        self.assertIn('aria-label="daily command home p1 receipt audit details"', home_source)
+        self.assertIn("<summary>任务回执 / 审计详情</summary>", home_source)
+        self.assertIn("完整 POST task receipt 默认下沉", home_source)
+        home_confirm_start = home_source.index('title="首页确认股票代码"')
+        home_confirm_end = home_source.index('title="P1 Tushare-first 链路速读"', home_confirm_start)
+        home_confirm_card = home_source[home_confirm_start:home_confirm_end]
+        self.assertLess(
+            home_confirm_card.index('aria-label="daily command home post confirm handoff"'),
+            home_confirm_card.index('aria-label="daily command home p1 receipt audit details"')
+        )
+        handoff_start = home_confirm_card.index('aria-label="daily command home post confirm handoff"')
+        receipt_start = home_confirm_card.index('aria-label="daily command home p1 receipt audit details"')
+        handoff_slice = home_confirm_card[handoff_start:receipt_start]
+        self.assertNotIn("postCandidateRadarQuantProjection(", handoff_slice)
+        self.assertNotIn("launchHomeQuantProjection", handoff_slice)
+        self.assertNotIn("onClick=", handoff_slice)
         self.assertNotIn("主下一步只查看本地数据健康；运行快扫仍需进入下一票雷达手动点击", home_source)
         self.assertIn("dailyCommandSourceState", home_source)
         self.assertIn("dailyCommandCacheSourceLabel", home_source)
