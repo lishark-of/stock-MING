@@ -3371,20 +3371,24 @@ export default function CandidateRadar() {
           </PacketCard>
         </details>
 
-        <PacketCard title="补证路线概览" subtitle="只整理候选证据和待补路线，不生成交易动作" status={String(overview.tone ?? overview.status ?? "cache")}>
-          <MetricGrid
-            items={[
-              { label: "证据摘要", value: String(overview.headline ?? "--") },
-              { label: "当前阶段", value: String(overview.stage_text ?? "--") },
-              { label: "研究边界", value: String(overview.decision_guardrail ?? "--"), tone: "good" }
-            ]}
-          />
-        </PacketCard>
       </div>
 
       <details id="audit" className="developer-audit-details" aria-label="candidate radar developer audit details">
         <summary>开发 / 审计指标</summary>
         <p>Provider、worker、receipt、browser QA、retained coverage 和 production blocker 明细默认收起；普通用户先看上方雷达摘要、候选池和搜票量化推演；也就是先查看本地候选摘要，再继续搜票量化推演。</p>
+        <details className="developer-audit-details" aria-label="candidate radar audit evidence route details">
+          <summary>补证路线 / 缺口审计</summary>
+          <p className="risk-note">P4 将补证路线从普通主卡下沉到开发审计区；普通用户先看 P1 确认、P2 三面和 P3 结果证据，补证路线只作为后续人工排查参考。</p>
+          <PacketCard title="补证路线概览" subtitle="只整理候选证据和待补路线，不生成交易动作" status={String(overview.tone ?? overview.status ?? "cache")}>
+            <MetricGrid
+              items={[
+                { label: "证据摘要", value: String(overview.headline ?? "--") },
+                { label: "当前阶段", value: String(overview.stage_text ?? "--") },
+                { label: "研究边界", value: String(overview.decision_guardrail ?? "--"), tone: "good" }
+              ]}
+            />
+          </PacketCard>
+        </details>
         <details className="developer-audit-details" aria-label="candidate radar audit p5 governance details">
           <summary>P5 DeepSeek 单独补证状态</summary>
           <p className="risk-note">P4 将 P5 治理状态下沉到开发审计区；普通主线先停在 P1 确认、P2 三面回放和 P3 结果速读，DeepSeek governed executor 只作为高级补证参考。</p>
@@ -4041,10 +4045,15 @@ export default function CandidateRadar() {
         </details>
       </PacketCard>
 
-      <div className="grid">
+      <details className="developer-audit-details" aria-label="candidate radar evidence recovery audit details">
+        <summary>后续补证路线审计</summary>
+        <p className="risk-note">P4 将手动补证步骤默认收起；普通用户先复核候选、排除原因和安全边界，补证路线只在排查缺口时展开。</p>
         <PacketCard title="后续补证路线" subtitle="只展示手动补证步骤；不会调用旧工具或生成交易动作" status="recovery">
           <DataLineageTable rows={rows(cache.evidence_recovery_actions)} />
         </PacketCard>
+      </details>
+
+      <div className="grid">
         <PacketCard title="排除候选" subtitle="只读展示被排除的候选；用于复核原因，不做交易判断" status="excluded">
           <DataLineageTable rows={rows(cache.excluded_candidates)} />
         </PacketCard>
