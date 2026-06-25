@@ -341,6 +341,10 @@ export default function CommandCenterHome() {
     (candidates.ordinary_p2_three_surface_checkpoint as Record<string, unknown> | undefined) ??
     (candidateQuantSmallDataWriteback.ordinary_p2_three_surface_checkpoint as Record<string, unknown> | undefined) ??
     {};
+  const candidateQuantP1ShortestPathCheckpoint =
+    (candidates.ordinary_p1_shortest_path_checkpoint as Record<string, unknown> | undefined) ??
+    (candidateQuantSmallDataWriteback.ordinary_p1_shortest_path_checkpoint as Record<string, unknown> | undefined) ??
+    {};
   const candidateQuantOneScreenActionRows = (candidateQuantSmallDataWriteback.ordinary_one_screen_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantConfirmOutcomeRows = (candidateQuantSmallDataWriteback.ordinary_confirm_outcome_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantConfirmedTaskReceiptRows =
@@ -391,6 +395,23 @@ export default function CommandCenterHome() {
       : "DeepSeek 等 governed executor；不阻塞 P1/P2/P3";
   const dailyCommandTushareFirstBoundary =
     "P1 只允许首页或下一票雷达确认按钮创建 Tushare-first POST task；首页回放卡只读 cache / ledger / packet，不创建第二个 task。";
+  const dailyCommandP1ShortestPathReady = candidateQuantP1ShortestPathCheckpoint.tushare_first_ledger_ready === true;
+  const dailyCommandP1ShortestPathStatus = String(
+    candidateQuantP1ShortestPathCheckpoint.status ??
+      (dailyCommandP1ShortestPathReady ? "tushare_first_ledger_replayed" : "waiting_symbol_confirm")
+  );
+  const dailyCommandP1ShortestPathLabel = String(
+    candidateQuantP1ShortestPathCheckpoint.ordinary_label ??
+      (dailyCommandP1ShortestPathReady ? dailyCommandTushareFirstLedgerLabel : "P1 等待输入股票代码并点击确认。")
+  );
+  const dailyCommandP1ShortestPathNext = String(
+    candidateQuantP1ShortestPathCheckpoint.next_action ??
+      (dailyCommandP1ShortestPathReady
+        ? "直接回放股票量化推演和次日图谱；DeepSeek 仍等 P5 governed executor。"
+        : "先输入股票代码并点击确认按钮；输入本身保持静默。")
+  );
+  const dailyCommandP1ShortestPathBoundary =
+    "P1 最短路径 checkpoint 只读 CandidateRadar cache；不创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key、不交易。";
   const dailyCommandTushareFirstRows = candidateQuantTushareFirstRows.length
     ? candidateQuantTushareFirstRows.map((row) => ({
         链路段: String(row["步骤"] ?? row.chain_step ?? row["链路段"] ?? "Tushare-first"),
@@ -1475,6 +1496,7 @@ export default function CommandCenterHome() {
     : `等待 ${homeQuantP1P2P3CheckpointGaps.join(" / ") || "本地回放"}`;
   const homeQuantP1P2P3CheckpointItems: MetricItem[] = [
     { label: "一眼 checkpoint", value: homeQuantP1P2P3CheckpointLabel, tone: homeQuantP1P2P3CheckpointReady ? "good" : "warn" },
+    { label: "P1 最短路径", value: dailyCommandP1ShortestPathLabel, tone: dailyCommandP1ShortestPathReady ? "good" : "warn" },
     { label: "P1 task", value: homeQuantVisibleTaskId || "等待确认按钮返回 task id", tone: homeQuantVisibleTaskId ? "good" : "warn" },
     { label: "Tushare ledger", value: dailyCommandTushareFirstLedgerLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
     { label: "P2 三面", value: dailyCommandP2CheckpointLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
@@ -1484,6 +1506,7 @@ export default function CommandCenterHome() {
   ];
   const dailyCommandCurrentResearchSnapshotItems: MetricItem[] = [
     { label: "最近标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
+    { label: "P1 最短路径", value: dailyCommandP1ShortestPathLabel, tone: dailyCommandP1ShortestPathReady ? "good" : "warn" },
     { label: "确认任务", value: homeQuantVisibleTaskId ? `${homeQuantVisibleTaskId} (${homeQuantVisibleTaskSource})` : "等待确认按钮返回 task id", tone: homeQuantVisibleTaskId ? "good" : "warn" },
     { label: "数据链", value: dailyCommandTushareFirstLedgerLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
     { label: "P2 写入", value: dailyCommandP2SurfaceCompletionLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
@@ -2488,6 +2511,7 @@ export default function CommandCenterHome() {
         <MetricGrid
           items={[
             { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
+            { label: "P1 最短路径", value: dailyCommandP1ShortestPathLabel, tone: dailyCommandP1ShortestPathReady ? "good" : "warn" },
             { label: "确认链", value: dailyCommandTushareFirstStatus, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
             { label: "Tushare ledger", value: dailyCommandTushareFirstLedgerLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
             { label: "DeepSeek", value: dailyCommandTushareFirstDeepSeekLabel, tone: "good" },
@@ -2495,6 +2519,18 @@ export default function CommandCenterHome() {
             { label: "边界", value: dailyCommandTushareFirstBoundary, tone: "good" }
           ]}
         />
+        <div aria-label="daily command p1 shortest path checkpoint">
+          <h3>P1 最短路径 checkpoint</h3>
+          <MetricGrid
+            items={[
+              { label: "状态", value: dailyCommandP1ShortestPathStatus, tone: dailyCommandP1ShortestPathReady ? "good" : "warn" },
+              { label: "速读", value: dailyCommandP1ShortestPathLabel, tone: dailyCommandP1ShortestPathReady ? "good" : "warn" },
+              { label: "下一步", value: dailyCommandP1ShortestPathNext, tone: dailyCommandP1ShortestPathReady ? "good" : "warn" },
+              { label: "边界", value: dailyCommandP1ShortestPathBoundary, tone: "good" }
+            ]}
+          />
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_p1_shortest_path_checkpoint：普通用户直接看确认按钮后的 Tushare-first 是否跑通、下一步去哪，不需要展开 raw packet 或工程审计。</p>
+        </div>
         <div aria-label="daily command p1 tushare first front row">
           <h3>P1 链路四步</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_tushare_first_chain_rows：普通用户只看输入是否静默、确认按钮是否创建 task、Tushare ledger 是否回放、DeepSeek 是否 skipped；工程明细继续下沉。</p>
