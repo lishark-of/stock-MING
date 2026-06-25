@@ -1594,6 +1594,29 @@ export default function CommandCenterHome() {
       : homeQuantVisibleTaskId
         ? "最近确认链来自本地 cache 回放；首页不启动第二个 TaskStatusPanel，也不创建第二个 task。"
         : "确认后首页会回读 CandidateRadar、股票量化推演、次日图谱和任务目录；输入代码本身保持静默。";
+  const homeQuantSubmitFailureRecoveryRows = [
+    {
+      恢复项: "1. 失败先停住",
+      当前状态: homeQuantSubmitError ? "确认任务未创建或未返回 task id" : "等待确认按钮",
+      用户下一步: homeQuantSubmitError ? "先不要重复点击；确认 P0 四段仍为 ready" : "输入代码后点击确认按钮",
+      入口: "#home-p1-symbol-confirm",
+      边界: "失败提示不自动重试、不创建第二个 task、不调用 Tushare/DeepSeek。"
+    },
+    {
+      恢复项: "2. 回看 P0",
+      当前状态: dailyCommandP0LocalReadinessReady ? "P0 ready" : "P0 check",
+      用户下一步: dailyCommandP0LocalReadinessReady ? "可手动重新确认一次" : "先打开一键启动预检恢复本地四段联通",
+      入口: "#desktop",
+      边界: "只切换本地预检页；不启动服务、不外联、不写 cache。"
+    },
+    {
+      恢复项: "3. 手动重试",
+      当前状态: homeQuantCanSubmit ? `可重试：${homeQuantSymbolValidation.normalized}` : homeQuantSubmitDisabledReason,
+      用户下一步: "修正输入或恢复 P0 后，再由用户手动点击确认按钮",
+      入口: "确认股票并启动 Tushare-first",
+      边界: "只有下一次显式点击才会创建新的 Tushare-first POST task；DeepSeek 仍 skipped/governed。"
+    }
+  ];
   const homeQuantPostConfirmHandoffRows = [
     {
       交接项: "任务进度",
@@ -2419,7 +2442,12 @@ export default function CommandCenterHome() {
           </div>
           <p className="risk-note" aria-label="daily command home p1 symbol autofill boundary">当前标的自动填入只来自 CandidateRadar cache；不会自动点击确认、不创建 task、不调用 Tushare/DeepSeek，手动修改后不再覆盖输入。</p>
           <p className="ordinary-status-note" aria-label="daily command home post confirm readback state" aria-live="polite">{homeQuantPostConfirmReadbackState}</p>
-          {homeQuantSubmitError ? <p className="risk-note" aria-live="polite">首页确认任务创建失败：{homeQuantSubmitError}</p> : null}
+          {homeQuantSubmitError ? (
+            <div aria-label="daily command home p1 submit failure recovery">
+              <p className="risk-note" aria-live="polite">首页确认任务创建失败：{homeQuantSubmitError}</p>
+              <DataLineageTable rows={homeQuantSubmitFailureRecoveryRows} />
+            </div>
+          ) : null}
           {homeQuantVisibleTaskId ? (
             <div aria-label="daily command home post confirm handoff">
               <h3>确认后下一步</h3>
