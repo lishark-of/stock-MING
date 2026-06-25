@@ -163,6 +163,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         npm_check_index = source.index("if ! command -v npm >/dev/null 2>&1; then")
         self.assertLess(vite_reuse_index, npm_check_index)
         self.assertIn("Vite already running; npm is only required when React/Vite must be started.", source)
+        self.assertEqual(source.count('nohup npm run dev >"$VITE_LOG" 2>&1 &'), 1)
         self.assertIn("未找到 npm，且 React/Vite 尚未运行", source)
         self.assertIn("已运行的 React/Vite 会被复用", source)
         self.assertIn("COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN", source)
