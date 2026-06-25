@@ -225,10 +225,20 @@ export default function NextSessionMap() {
     ? `当前确认标的：${candidateRadarConfirmedSymbol}`
     : "等待下一票雷达确认标的";
   const candidateRadarSourceTaskLabel = String(
-    candidateRadarReceipt.latest_task_id ??
+    candidateRadarCache.search_quant_projection_latest_task_id ??
+      candidateRadarCache.latest_task_id ??
+      candidateRadarReceipt.latest_task_id ??
       candidateRadarReceipt.task_id ??
       candidateRadarSmallDataWriteback.latest_task_id ??
       "等待下一票雷达确认 task"
+  );
+  const candidateRadarConfirmedTaskReceiptRows = rowsFromArray(
+    candidateRadarCache.search_quant_projection_confirmed_task_receipt_rows ??
+      candidateRadarSmallDataWriteback.ordinary_confirmed_task_receipt_rows
+  );
+  const candidateRadarTaskReadbackRows = rowsFromArray(
+    candidateRadarCache.search_quant_projection_task_readback_rows ??
+      candidateRadarSmallDataWriteback.ordinary_task_readback_rows
   );
   const candidateRadarResultQuickRows = rowsFromArray(
     candidateRadarCache.ordinary_result_quick_read_rows ??
@@ -405,6 +415,32 @@ export default function NextSessionMap() {
     {
       label: "安全边界",
       value: "只读回放；生成必须手动按钮；DeepSeek 单独补；不交易、不改 operation_zones",
+      tone: "good"
+    }
+  ];
+  const nextSessionTaskSourceReadbackItems: MetricItem[] = [
+    {
+      label: "来源 task",
+      value: candidateRadarSourceTaskLabel,
+      tone: candidateRadarSourceTaskLabel.includes("等待") ? "warn" : "good"
+    },
+    {
+      label: "确认回执",
+      value: candidateRadarConfirmedTaskReceiptRows.length
+        ? `${candidateRadarConfirmedTaskReceiptRows.length} 行已从 CandidateRadar cache 回放`
+        : "等待 search_quant_projection_confirmed_task_receipt_rows",
+      tone: candidateRadarConfirmedTaskReceiptRows.length ? "good" : "warn"
+    },
+    {
+      label: "任务回放",
+      value: candidateRadarTaskReadbackRows.length
+        ? `${candidateRadarTaskReadbackRows.length} 行 task_readback 已回放`
+        : "等待 search_quant_projection_task_readback_rows",
+      tone: candidateRadarTaskReadbackRows.length ? "good" : "warn"
+    },
+    {
+      label: "读取边界",
+      value: "图谱页只读 CandidateRadar cache；不创建第二个 task、不补调 Tushare/DeepSeek、不改 operation_zones",
       tone: "good"
     }
   ];
@@ -836,6 +872,11 @@ export default function NextSessionMap() {
             { label: "边界", value: candidateRadarReadableBoundary, tone: "good" }
           ]}
         />
+        <div aria-label="next session p1 task source readback">
+          <h3>P1 任务来源回放</h3>
+          <p className="risk-note">这张小表只说明 P3 图谱结论来自哪次确认 task，以及确认回执和 task_readback 是否已经本地回放；完整上游链路继续收起。</p>
+          <MetricGrid items={nextSessionTaskSourceReadbackItems} />
+        </div>
         <div className="actions" aria-label="next session readable result local actions">
           <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地 next-session cache" aria-label="open local next session chart from readable result">查看图谱区域</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant replay from next session readable result">查看支持/压制</a>

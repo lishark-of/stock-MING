@@ -102,10 +102,20 @@ export default function FactorQuantHub() {
   const ordinaryQuantPostConfirmReplayContract =
     (candidateRadarReceiptRequestParams.ordinary_post_confirm_replay_contract as Record<string, unknown> | undefined) ?? {};
   const candidateRadarLatestTaskId = String(
-    candidateRadarReceipt.latest_task_id ??
+    candidateRadarCache.search_quant_projection_latest_task_id ??
+      candidateRadarCache.latest_task_id ??
+      candidateRadarReceipt.latest_task_id ??
       candidateRadarReceipt.task_id ??
       candidateRadarSmallDataWriteback.latest_task_id ??
       ""
+  );
+  const candidateRadarConfirmedTaskReceiptRows = toRows(
+    candidateRadarCache.search_quant_projection_confirmed_task_receipt_rows ??
+      candidateRadarSmallDataWriteback.ordinary_confirmed_task_receipt_rows
+  );
+  const candidateRadarTaskReadbackRows = toRows(
+    candidateRadarCache.search_quant_projection_task_readback_rows ??
+      candidateRadarSmallDataWriteback.ordinary_task_readback_rows
   );
   const candidateRadarLatestTaskStep = String(
     candidateRadarReceipt.latest_task_current_step ??
@@ -564,6 +574,32 @@ export default function FactorQuantHub() {
   const ordinaryQuantLatestCandidateCheckpointItems: MetricItem[] = ordinaryQuantBackendPostConfirmOneGlanceItems.length
     ? ordinaryQuantBackendPostConfirmOneGlanceItems
     : ordinaryQuantFallbackLatestCandidateCheckpointItems;
+  const ordinaryQuantTaskSourceReadbackItems: MetricItem[] = [
+    {
+      label: "来源 task",
+      value: candidateRadarLatestTaskId ? `task_id=${candidateRadarLatestTaskId}` : "等待下一票雷达确认 task",
+      tone: candidateRadarLatestTaskId ? "good" : "warn"
+    },
+    {
+      label: "确认回执",
+      value: candidateRadarConfirmedTaskReceiptRows.length
+        ? `${candidateRadarConfirmedTaskReceiptRows.length} 行已从 CandidateRadar cache 回放`
+        : "等待 search_quant_projection_confirmed_task_receipt_rows",
+      tone: candidateRadarConfirmedTaskReceiptRows.length ? "good" : "warn"
+    },
+    {
+      label: "任务回放",
+      value: candidateRadarTaskReadbackRows.length
+        ? `${candidateRadarTaskReadbackRows.length} 行 task_readback 已回放`
+        : "等待 search_quant_projection_task_readback_rows",
+      tone: candidateRadarTaskReadbackRows.length ? "good" : "warn"
+    },
+    {
+      label: "读取边界",
+      value: "量化页只读 CandidateRadar cache；不创建第二个 task、不补调 Tushare/DeepSeek",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantResultBoundary =
     "结果只用于研究复核；支持/压制、次日图谱和模型解释都不能直接变成买卖指令";
   const ordinaryDeepSeekGovernedExecutorState =
@@ -902,6 +938,11 @@ export default function FactorQuantHub() {
           <h3>确认后量化 checkpoint</h3>
           <p className="risk-note">最近一只票的 task id、P1 确认、P2 三面和 P3 可读结论在量化页首屏先读；本 checkpoint 只读 CandidateRadar cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
           <MetricGrid items={ordinaryQuantLatestCandidateCheckpointItems} />
+        </div>
+        <div aria-label="stock quant p1 task source readback">
+          <h3>P1 任务来源回放</h3>
+          <p className="risk-note">这张小表只告诉普通用户 P3 结论来自哪次确认 task，以及确认回执和 task_readback 是否已经本地回放；详细回放合同继续收起。</p>
+          <MetricGrid items={ordinaryQuantTaskSourceReadbackItems} />
         </div>
         <details className="developer-audit-details" aria-label="stock quant post confirm backend replay contract">
           <summary>后端回放合同</summary>
