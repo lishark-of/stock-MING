@@ -62,6 +62,10 @@ export default function HealthStatus() {
   const currentHealthReadbackLabel = currentHealthReadbackReady
     ? "本页已实时接上 FastAPI /health"
     : "本页正在等待 FastAPI /health";
+  const healthStandardSafetyReady =
+    health.external_calls_triggered === false &&
+    health.does_not_execute_trades === true &&
+    health.does_not_modify_strategy_action === true;
   const p0ConnectionReady = currentHealthReadbackReady || oneClickStartupSummary.frontend_backend_connection_ready === true;
   const p0RecoverySteps = rows(desktopPreflight.p0_recovery_steps).length ? rows(desktopPreflight.p0_recovery_steps) : [
     { step: "1", title: "打开本地一键入口", action: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。" },
@@ -267,7 +271,7 @@ export default function HealthStatus() {
           { label: "P0 front/back", value: p0ConnectionReady ? "ready" : "check", tone: p0ConnectionReady ? "good" : "warn" },
           { label: "one-click launcher", value: desktopLauncherContract.launcher_executable === true ? "ready" : "check", tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
           { label: "startup external calls", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
-          { label: "真实交易", value: health.real_trading_enabled === true ? "启用" : "禁用", tone: health.real_trading_enabled === true ? "bad" : "good" }
+          { label: "P0 安全回读", value: healthStandardSafetyReady ? "不外联/不交易/不改 action" : "check", tone: healthStandardSafetyReady ? "good" : "warn" }
         ]}
       />
 
@@ -287,6 +291,8 @@ export default function HealthStatus() {
           { label: "DeepSeek", value: health.deepseek_called === true ? "已调用" : "未调用", tone: health.deepseek_called === true ? "bad" : "good" },
           { label: "GitHub", value: health.github_called === true ? "已调用" : "未调用", tone: health.github_called === true ? "bad" : "good" },
           { label: "真实交易", value: health.real_trading_enabled === true ? "启用" : "禁用", tone: health.real_trading_enabled === true ? "bad" : "good" },
+          { label: "执行交易", value: health.does_not_execute_trades === true ? "否" : "check", tone: health.does_not_execute_trades === true ? "good" : "warn" },
+          { label: "改 strategy action", value: health.does_not_modify_strategy_action === true ? "否" : "check", tone: health.does_not_modify_strategy_action === true ? "good" : "warn" },
           { label: "Streamlit", value: String(health.legacy_streamlit ?? "legacy/admin/debug") },
           { label: "迁移基线", value: String(migration.status ?? "loading") },
           { label: "cache only", value: migrationPolicy?.cache_only, tone: migrationPolicy?.cache_only === false ? "bad" : "good" },
