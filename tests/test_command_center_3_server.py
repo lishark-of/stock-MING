@@ -10271,6 +10271,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                     "status": "ready",
                     "loaded_at": "2026-06-24T10:00:00",
                     "task_id": "local-cache-replay-quant",
+                    "latest_confirmed_symbol": "002008.SZ",
+                    "latest_confirmed_task_id": "local-cache-replay-quant",
+                    "latest_confirmed_task_status": "success",
+                    "latest_confirmed_task_current_step": "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
                     "search_quant_projection_completed_at": "2026-06-24T10:00:01",
                     "search_quant_projection_receipt": {
                         "schema_version": "candidate_radar_search_quant_projection_receipt.v1",
@@ -10340,6 +10344,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         index = task_service.build_task_status_index()
         self.assertEqual(index["task_count"], 1)
         self.assertEqual(index["latest_task_id"], "local-cache-replay-quant")
+        self.assertEqual(index["latest_confirmed_symbol"], "002008.SZ")
+        self.assertEqual(index["latest_confirmed_symbol_source"], "candidate_cache_task_status_index_readback")
+        self.assertEqual(index["latest_confirmed_task_id"], "local-cache-replay-quant")
+        self.assertEqual(index["latest_confirmed_task_status"], "success")
+        self.assertFalse(index["latest_confirmed_symbol_readback_external_calls_triggered"])
+        self.assertFalse(index["latest_confirmed_symbol_creates_task_from_readback"])
         self.assertEqual(index["tasks"][0]["storage_source"], "candidate_cache_replay")
         self.assertEqual(index["persistence"]["memory_task_count"], 0)
         self.assertEqual(index["persistence"]["sqlite_task_count"], 0)
@@ -10348,6 +10358,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(index["policy"]["reads_candidate_cache_task_replay"])
         self.assertFalse(index["policy"]["candidate_cache_replay_creates_task"])
         self.assertFalse(index["policy"]["candidate_cache_replay_calls_external_sources"])
+        self.assertTrue(index["policy"]["latest_confirmed_readback_is_cache_only"])
+        self.assertFalse(index["policy"]["latest_confirmed_readback_creates_task"])
+        self.assertFalse(index["policy"]["latest_confirmed_readback_calls_external_sources"])
+        self.assertTrue(index["policy"]["latest_confirmed_readback_is_not_trade_signal"])
         self.assertFalse(index["external_calls_triggered"])
         self.assertFalse(index["tushare_called"])
         self.assertFalse(index["deepseek_called"])

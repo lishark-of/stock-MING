@@ -3988,6 +3988,70 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
     return record
 
 
+def _candidate_cache_latest_confirmed_readback() -> dict[str, Any]:
+    packet = _candidate_cache_replay_packet()
+    if not isinstance(packet, dict) or packet.get("status") == "cache_missing":
+        return {}
+    receipt = packet.get("search_quant_projection_receipt") if isinstance(packet.get("search_quant_projection_receipt"), dict) else {}
+    provider_receipt = (
+        packet.get("search_quant_provider_model_acceptance_receipt")
+        if isinstance(packet.get("search_quant_provider_model_acceptance_receipt"), dict)
+        else {}
+    )
+    symbol = _safe_text(
+        packet.get("latest_confirmed_symbol")
+        or receipt.get("symbol")
+        or provider_receipt.get("symbol"),
+        limit=32,
+    )
+    task_id = _safe_text(
+        packet.get("latest_confirmed_task_id")
+        or packet.get("search_quant_projection_latest_task_id")
+        or receipt.get("latest_task_id")
+        or receipt.get("task_id")
+        or provider_receipt.get("task_id")
+        or packet.get("task_id"),
+        limit=120,
+    )
+    task_status = _safe_text(
+        packet.get("latest_confirmed_task_status")
+        or packet.get("latest_task_status")
+        or receipt.get("latest_task_status")
+        or provider_receipt.get("latest_task_status")
+        or "",
+        limit=32,
+    )
+    task_current_step = _safe_text(
+        packet.get("latest_confirmed_task_current_step")
+        or packet.get("latest_task_current_step")
+        or receipt.get("latest_task_current_step")
+        or provider_receipt.get("status")
+        or receipt.get("status")
+        or "",
+        limit=160,
+    )
+    if not (symbol or task_id):
+        return {}
+    return {
+        "schema_version": "command_center_task_status_latest_confirmed_readback.v1",
+        "status": "ready",
+        "source_packet_key": "command_center_3_candidate_radar_cache",
+        "latest_confirmed_symbol": symbol,
+        "latest_confirmed_symbol_source": "candidate_cache_task_status_index_readback",
+        "latest_confirmed_task_id": task_id,
+        "latest_confirmed_task_status": task_status,
+        "latest_confirmed_task_current_step": task_current_step,
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "calls_provider_or_model": False,
+        "readback_external_calls_triggered": False,
+        "contains_secret": False,
+        "candidate_is_not_buy_instruction": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def _candidate_cache_replay_tasks() -> list[dict[str, Any]]:
     packet = _candidate_cache_replay_packet()
     if not isinstance(packet, dict) or packet.get("status") == "cache_missing":
@@ -4534,6 +4598,7 @@ def build_task_status_index() -> dict[str, Any]:
     does_not_modify_strategy_action = all(task.get("does_not_modify_strategy_action") is not False for task in tasks)
     task_log_count = sum(len(task.get("task_log") or []) for task in tasks)
     latest_task = tasks[0] if tasks else {}
+    latest_confirmed_readback = _candidate_cache_latest_confirmed_readback()
     return {
         "packet_key": "command_center_3_task_status_index",
         "schema_version": "command_center_3_task_status_index.v1",
@@ -4545,6 +4610,13 @@ def build_task_status_index() -> dict[str, Any]:
         "latest_task_id": latest_task.get("task_id"),
         "latest_task_type": latest_task.get("task_type"),
         "latest_task_status": latest_task.get("status"),
+        "latest_confirmed_symbol": latest_confirmed_readback.get("latest_confirmed_symbol"),
+        "latest_confirmed_symbol_source": latest_confirmed_readback.get("latest_confirmed_symbol_source"),
+        "latest_confirmed_task_id": latest_confirmed_readback.get("latest_confirmed_task_id"),
+        "latest_confirmed_task_status": latest_confirmed_readback.get("latest_confirmed_task_status"),
+        "latest_confirmed_task_current_step": latest_confirmed_readback.get("latest_confirmed_task_current_step"),
+        "latest_confirmed_symbol_readback_external_calls_triggered": False,
+        "latest_confirmed_symbol_creates_task_from_readback": False,
         "call_ledger_count": call_ledger_count,
         "task_log_count": task_log_count,
         "persistence": persistence,
@@ -4571,6 +4643,10 @@ def build_task_status_index() -> dict[str, Any]:
             "reads_candidate_cache_task_replay": True,
             "candidate_cache_replay_creates_task": False,
             "candidate_cache_replay_calls_external_sources": False,
+            "latest_confirmed_readback_is_cache_only": True,
+            "latest_confirmed_readback_creates_task": False,
+            "latest_confirmed_readback_calls_external_sources": False,
+            "latest_confirmed_readback_is_not_trade_signal": True,
             "call_ledger_replay_is_read_only": True,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,

@@ -53,6 +53,13 @@ export type TaskStatusIndex = {
   latest_task_id?: string;
   latest_task_type?: string;
   latest_task_status?: string;
+  latest_confirmed_symbol?: string;
+  latest_confirmed_symbol_source?: string;
+  latest_confirmed_task_id?: string;
+  latest_confirmed_task_status?: string;
+  latest_confirmed_task_current_step?: string;
+  latest_confirmed_symbol_readback_external_calls_triggered?: boolean;
+  latest_confirmed_symbol_creates_task_from_readback?: boolean;
   call_ledger_count: number;
   persistence?: Record<string, unknown>;
   persistence_source_rows?: Array<Record<string, unknown>>;

@@ -191,6 +191,17 @@ export default function TaskCatalog() {
   const taskCatalogLatestIsCandidateReplay =
     taskCatalogLatestTask?.output_packet_key === "command_center_3_candidate_radar_cache" ||
     String(taskCatalogLatestTask?.task_type ?? "").includes("candidate_radar_quant_projection");
+  const taskCatalogLatestConfirmedSymbol = String(
+    taskIndex?.latest_confirmed_symbol ??
+      taskCatalogLatestTask?.payload_safe?.symbol ??
+      ""
+  );
+  const taskCatalogLatestConfirmedSymbolLabel = taskCatalogLatestConfirmedSymbol
+    ? `当前标的：${taskCatalogLatestConfirmedSymbol}`
+    : "等待下一票雷达确认标的";
+  const taskCatalogLatestConfirmedTaskLabel = taskIndex?.latest_confirmed_task_id
+    ? `${taskIndex.latest_confirmed_task_status ?? "unknown"} / ${taskIndex.latest_confirmed_task_id}`
+    : taskCatalogLatestTask?.task_id ?? "等待确认任务";
   const taskCatalogOrdinaryTaskStatusLabel = taskCatalogLatestTask
     ? `${taskCatalogLatestTask.status} / ${taskCatalogLatestTask.current_step}`
     : "等待下一票雷达确认按钮创建任务";
@@ -221,7 +232,9 @@ export default function TaskCatalog() {
       ? `按 ${taskCatalogLatestTask.output_packet_key} 回放`
       : "等待输出 packet";
   const taskCatalogOrdinaryProgressItems = [
+    { label: "当前标的", value: taskCatalogLatestConfirmedSymbolLabel, tone: taskCatalogLatestConfirmedSymbol ? "good" as const : "warn" as const },
     { label: "当前任务", value: taskCatalogLatestTask?.task_id ?? "暂无任务记录", tone: taskCatalogLatestTask ? "good" as const : "warn" as const },
+    { label: "确认任务", value: taskCatalogLatestConfirmedTaskLabel, tone: taskIndex?.latest_confirmed_task_id ? "good" as const : "warn" as const },
     { label: "任务状态", value: taskCatalogOrdinaryTaskStatusLabel, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : taskCatalogLatestTask ? "warn" as const : "warn" as const },
     { label: "P2 写回", value: taskCatalogOrdinaryP2Label, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : "warn" as const },
     { label: "Tushare-first", value: taskCatalogOrdinaryTushareLabel, tone: taskCatalogLatestSourceTushareReplayed ? "good" as const : "warn" as const },
