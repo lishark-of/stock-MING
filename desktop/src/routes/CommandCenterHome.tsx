@@ -1472,6 +1472,13 @@ export default function CommandCenterHome() {
     { label: "下一步", value: dailyCommandP3OneGlanceReadable ? "看股票量化推演和次日图谱" : "先确认股票代码，等待本地回放", tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
     { label: "边界", value: "首屏快照只读已有 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek", tone: "good" }
   ];
+  const dailyCommandCurrentResearchSnapshotReadableSentence = homeQuantP1P2P3CheckpointReady
+    ? `${dailyCommandConfirmedSymbolLabel} 已有最近确认结果：${dailyCommandExplainableResultLabel}；${dailyCommandTushareFirstLedgerLabel}；P2 ${dailyCommandP2SurfaceCompletionLabel}；下一步看股票量化推演和次日图谱。`
+    : dailyCommandP0LocalReadinessReady
+      ? dailyCommandConfirmedSymbol
+        ? `${dailyCommandConfirmedSymbolLabel} 已有本地回放线索；${homeQuantP1P2P3CheckpointLabel}；需要更新时再手动点击确认按钮。`
+        : "本地联通已 ready；先在首页输入股票代码并点击确认，输入本身保持静默。"
+      : "P0 本地联通还没全部 ready；先看一键启动预检，等 FastAPI、bootstrap、desktop preflight 和 React 变绿。";
   const homeQuantConfirmItems: MetricItem[] = [
     { label: "输入代码", value: homeQuantSymbolValidation.valid ? homeQuantSymbolValidation.normalized : homeQuantSubmitDisabledReason, tone: homeQuantSymbolValidation.valid ? "good" : "warn" },
     { label: "确认按钮", value: homeQuantCanSubmit ? `可点击：${homeQuantSymbolValidation.normalized} 将创建 Tushare-first POST task` : `不可点击：${homeQuantSubmitDisabledReason}`, tone: homeQuantCanSubmit ? "good" : "warn" },
@@ -2300,6 +2307,7 @@ export default function CommandCenterHome() {
         <p className="ordinary-status-note" aria-label="daily command usable path front readable status" aria-live="polite">{homeQuantP1P2P3CheckpointLabel}</p>
         <div aria-label="daily command current research snapshot">
           <h3>最近确认投研快照</h3>
+          <p className="ordinary-status-note" aria-label="daily command current research snapshot readable sentence" aria-live="polite">{dailyCommandCurrentResearchSnapshotReadableSentence}</p>
           <MetricGrid items={dailyCommandCurrentResearchSnapshotItems} />
           <p className="risk-note">这张首屏快照只读最近确认 task、Tushare-first ledger、P2 三面和 P3 可读结论；不会创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key，也不交易或修改 strategy action。</p>
         </div>
