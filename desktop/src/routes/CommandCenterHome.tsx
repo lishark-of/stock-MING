@@ -2101,9 +2101,9 @@ export default function CommandCenterHome() {
     },
     {
       链路段: "P5 DeepSeek",
-      当前状态: dailyCommandP3OneGlanceModelState,
-      用户下一步: "先使用 Tushare-first、小数据和基础图谱；DeepSeek 后续单独补证",
-      证据: "search_quant_projection_interpretation_summary",
+      当前状态: modelStrategyP5StatusLabel,
+      用户下一步: modelStrategyP5NextAllowedAction,
+      证据: "GET /api/model-strategy/cache governed_executor",
       边界: dailyCommandDeepSeekGovernanceBoundary
     }
   ];
@@ -2501,7 +2501,8 @@ export default function CommandCenterHome() {
             { label: "P2 三面", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
             { label: "P3 结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
             { label: "下一步", value: dailyCommandResearchWorkflowNext },
-            { label: "DeepSeek", value: dailyCommandP3OneGlanceModelState, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
+            { label: "P5 单独补证", value: modelStrategyP5StatusLabel, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
+            { label: "P5 不阻塞", value: modelStrategyP5NextAllowedAction, tone: "good" },
             { label: "边界", value: "当前链路卡只读 CandidateRadar cache / ledger / packet；只有首页确认卡创建 P1 task；不交易", tone: "good" }
           ]}
         />
