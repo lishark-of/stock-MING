@@ -981,6 +981,34 @@ export default function CommandCenterHome() {
   const marketPayloadLedger = (market.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const disciplinePayloadLedger = (discipline.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const factorPayloadLedger = (factor.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const factorCandidateHandoff =
+    (factor.candidate_radar_quant_projection_handoff as Record<string, unknown> | undefined) ?? {};
+  const factorCandidateHandoffRows =
+    (factor.ordinary_quant_candidate_handoff_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const dailyCommandFactorCandidateHandoffReady =
+    factorCandidateHandoff.p3_readable_result_ready === true || factorCandidateHandoffRows.length > 0;
+  const dailyCommandFactorCandidateHandoffSymbol = String(
+    factorCandidateHandoff.symbol ?? dailyCommandConfirmedSymbol ?? ""
+  );
+  const dailyCommandFactorCandidateHandoffTask = String(
+    factorCandidateHandoff.source_task_id ?? dailyCommandP3OneGlanceSourceTask
+  );
+  const dailyCommandFactorCandidateHandoffLabel = dailyCommandFactorCandidateHandoffReady
+    ? `Factor 已接上 ${dailyCommandFactorCandidateHandoffSymbol || "当前标的"} / task=${dailyCommandFactorCandidateHandoffTask}`
+    : "Factor handoff 等待本地 cache";
+  const dailyCommandFactorCandidateHandoffBoundary =
+    "只读 /api/factor-quant/cache 的 CandidateRadar handoff；不创建 task、不补调 Tushare/DeepSeek、不展示 token/key/raw log。";
+  const dailyCommandFactorCandidateHandoffReadbackRows = factorCandidateHandoffRows.length
+    ? factorCandidateHandoffRows
+    : [
+        {
+          handoff_step: "等待 Factor handoff",
+          当前状态: dailyCommandFactorCandidateHandoffLabel,
+          用户下一步: "完成下一票雷达确认任务后，再回首页或股票量化推演查看本地 handoff。",
+          证据: "factor.ordinary_quant_candidate_handoff_rows pending",
+          边界: dailyCommandFactorCandidateHandoffBoundary
+        }
+      ];
   const factorFailedCacheSummary = (factor.failed_factor_quant_cache_summary as Record<string, unknown> | undefined) ?? {};
   const dailyCommandFactorCacheFallbackActive = factor.cache_fallback_from_failed_factor_quant_packet === true;
   const dailyCommandFactorCacheFallbackLabel = dailyCommandFactorCacheFallbackActive
@@ -1905,6 +1933,7 @@ export default function CommandCenterHome() {
     { label: "确认结果链", value: dailyCommandConfirmOutcomeLabel, tone: candidateQuantConfirmOutcomeRows.length ? "good" : "warn" },
     { label: "确认后回放", value: "确认回执 -> 任务状态 -> P2 写回 -> P3 结果", tone: "good" },
     { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
+    { label: "Factor handoff", value: dailyCommandFactorCandidateHandoffLabel, tone: dailyCommandFactorCandidateHandoffReady ? "good" : "warn" },
     { label: "量化缓存回放", value: dailyCommandFactorCacheFallbackLabel, tone: dailyCommandFactorCacheFallbackActive ? "warn" : "good" },
     { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
     { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
@@ -2264,6 +2293,8 @@ export default function CommandCenterHome() {
             { label: "结果证据", value: dailyCommandP3OneGlanceEvidence, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
             { label: "来源任务", value: dailyCommandP3OneGlanceSourceTask, tone: dailyCommandP3OneGlanceSourceTask === "等待确认任务" ? "warn" : "good" },
             { label: "结果入口", value: dailyCommandP3OneGlanceResultEntrances, tone: candidateQuantHandoffRows.length ? "good" : "warn" },
+            { label: "Factor handoff", value: dailyCommandFactorCandidateHandoffLabel, tone: dailyCommandFactorCandidateHandoffReady ? "good" : "warn" },
+            { label: "Factor 行数", value: `${String(factorCandidateHandoffRows.length)} 行只读`, tone: dailyCommandFactorCandidateHandoffReady ? "good" : "warn" },
             { label: "待补缺口", value: dailyCommandP3OneGlanceMissingEvidence, tone: dailyCommandP3MissingEvidenceItems.length ? "warn" : "good" },
             { label: "下一步", value: dailyCommandExplainableResultNext },
             { label: "模型状态", value: dailyCommandP3OneGlanceModelState, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
@@ -2290,6 +2321,11 @@ export default function CommandCenterHome() {
           <h3>结果速读三行</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows 前三项：只看结论、下一步、证据和边界；不展开 raw packet、不创建 task、不调用 provider/model。</p>
           <DataLineageTable rows={dailyCommandP3OneGlanceQuickRows} />
+        </div>
+        <div aria-label="daily command factor candidate handoff readback">
+          <h3>股票量化推演 handoff</h3>
+          <p className="risk-note">优先读取 /api/factor-quant/cache 的 ordinary_quant_candidate_handoff_rows：只读确认 CandidateRadar 确认任务是否已经接到股票量化推演；不创建 task、不补调 provider/model。</p>
+          <DataLineageTable rows={dailyCommandFactorCandidateHandoffReadbackRows} />
         </div>
         <div className="actions" aria-label="daily command p3 one glance actions">
           <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；只读查看 P3 结果速读" aria-label="open candidate radar confirm input p3 one glance">下一票雷达确认输入区</a>

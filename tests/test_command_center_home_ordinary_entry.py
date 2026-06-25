@@ -54,6 +54,9 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "确认结果链"', source)
         self.assertIn('label: "确认后回放"', source)
         self.assertIn('label: "量化缓存回放"', source)
+        self.assertIn('label: "Factor handoff"', source)
+        self.assertIn("dailyCommandFactorCandidateHandoffLabel", source)
+        self.assertIn("dailyCommandFactorCandidateHandoffReady", source)
         self.assertIn("dailyCommandStartupReadbackRows", source)
         self.assertIn("dailyCommandHomeAggregateReadbackRows", source)
         self.assertIn("p0LauncherCheckOnlyRows", source)
@@ -405,6 +408,10 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("dailyCommandP3OneGlanceSourceTask", card)
         self.assertIn('label: "结果入口"', card)
         self.assertIn("dailyCommandP3OneGlanceResultEntrances", card)
+        self.assertIn('label: "Factor handoff"', card)
+        self.assertIn("dailyCommandFactorCandidateHandoffLabel", card)
+        self.assertIn('label: "Factor 行数"', card)
+        self.assertIn("factorCandidateHandoffRows.length", card)
         self.assertIn('label: "待补缺口"', card)
         self.assertIn("dailyCommandP3OneGlanceMissingEvidence", card)
         self.assertIn('label: "下一步"', card)
@@ -464,6 +471,24 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinary_result_quick_read_rows 前三项", card)
         self.assertIn("dailyCommandP3OneGlanceQuickRows", card)
         self.assertIn("不展开 raw packet、不创建 task、不调用 provider/model", card)
+        self.assertIn("factorCandidateHandoff", source)
+        self.assertIn("factor.candidate_radar_quant_projection_handoff", source)
+        self.assertIn("factor.ordinary_quant_candidate_handoff_rows", source)
+        self.assertIn("dailyCommandFactorCandidateHandoffReadbackRows", source)
+        self.assertIn('aria-label="daily command factor candidate handoff readback"', card)
+        self.assertIn("股票量化推演 handoff", card)
+        self.assertIn("/api/factor-quant/cache 的 ordinary_quant_candidate_handoff_rows", card)
+        self.assertIn("只读确认 CandidateRadar 确认任务是否已经接到股票量化推演", card)
+        self.assertIn("不创建 task、不补调 provider/model", card)
+        self.assertIn("DataLineageTable rows={dailyCommandFactorCandidateHandoffReadbackRows}", card)
+        self.assertLess(
+            card.index('aria-label="daily command p3 one glance quick rows"'),
+            card.index('aria-label="daily command factor candidate handoff readback"'),
+        )
+        self.assertLess(
+            card.index('aria-label="daily command factor candidate handoff readback"'),
+            card.index('aria-label="daily command p3 one glance actions"'),
+        )
         self.assertIn('aria-label="daily command p3 one glance actions"', card)
         self.assertIn("href={dailyCommandCandidateConfirmHref}", card)
         self.assertIn("open candidate radar confirm input p3 one glance", card)
