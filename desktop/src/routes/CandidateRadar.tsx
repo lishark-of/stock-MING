@@ -2622,10 +2622,11 @@ export default function CandidateRadar() {
             <h3>确认后一屏结果</h3>
             <p className="risk-note">点击确认后先看这条结果：任务是否接收、P2 三面是否回放、P3 结论是否可读和下一步入口都在一屏内；这条结果条只读本地 task receipt 与 cache / ledger / packet，不创建第二个 task。</p>
             {quantProjectionBackendPostConfirmOneGlanceItems.length ? (
-              <div aria-label="candidate radar backend post confirm one glance">
+              <details className="developer-audit-details" aria-label="candidate radar backend post confirm one glance">
+                <summary>后端同源回放明细</summary>
                 <p className="risk-note">优先读取后端 cache packet 的 search_quant_projection_post_confirm_one_glance_items：任务编号、P2、P3、DeepSeek 和安全边界同源回放；这张状态格只读本地 cache，不创建 task。</p>
                 <MetricGrid items={quantProjectionBackendPostConfirmOneGlanceItems} />
-              </div>
+              </details>
             ) : null}
             <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
             <details className="developer-audit-details" aria-label="candidate radar post confirm backend replay contract">

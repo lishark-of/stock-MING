@@ -844,7 +844,25 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postTask(", first_screen_contract_slice)
         self.assertNotIn("onClick=", first_screen_contract_slice)
         one_screen_result_slice = self.page[one_screen_result_index:post_confirm_guide_index]
+        backend_one_glance_index = self.page.index(
+            'aria-label="candidate radar backend post confirm one glance"',
+            one_screen_result_index,
+        )
+        ordinary_one_screen_intro_slice = self.page[one_screen_result_index:backend_one_glance_index]
+        backend_one_glance_end = self.page.index(
+            "MetricGrid items={quantProjectionPostConfirmOneScreenItems}",
+            backend_one_glance_index,
+        )
+        backend_one_glance_slice = self.page[backend_one_glance_index:backend_one_glance_end]
         self.assertIn("MetricGrid items={quantProjectionPostConfirmOneScreenItems}", one_screen_result_slice)
+        self.assertNotIn("search_quant_projection_post_confirm_one_glance_items", ordinary_one_screen_intro_slice)
+        self.assertIn(
+            '<details className="developer-audit-details" aria-label="candidate radar backend post confirm one glance">',
+            one_screen_result_slice,
+        )
+        self.assertIn("<summary>后端同源回放明细</summary>", one_screen_result_slice)
+        self.assertIn("search_quant_projection_post_confirm_one_glance_items", backend_one_glance_slice)
+        self.assertIn("MetricGrid items={quantProjectionBackendPostConfirmOneGlanceItems}", backend_one_glance_slice)
         self.assertIn("quantProjectionPostConfirmReplayContract", self.page)
         self.assertIn("ordinary_post_confirm_replay_contract", self.page)
         self.assertIn("quantProjectionReceiptRequestParams", self.page)
