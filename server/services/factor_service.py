@@ -362,6 +362,35 @@ def read_factor_quant_cache() -> dict[str, Any]:
         candidate_handoff_ledger = [
             row for row in _list(candidate_handoff.get("call_ledger")) if isinstance(row, dict)
         ]
+    p3_one_screen_summary, p3_one_screen_items = _factor_quant_p3_one_screen_summary(packet, candidate_handoff)
+    packet["ordinary_quant_p3_one_screen_summary"] = p3_one_screen_summary
+    packet["ordinary_quant_p3_one_screen_items"] = p3_one_screen_items
+    packet["ordinary_quant_p3_readable_summary"] = p3_one_screen_summary["result_summary"]
+    packet["ordinary_quant_p3_readable_next_step"] = p3_one_screen_summary["result_next_step"]
+    packet["ordinary_quant_p3_readable_boundary"] = p3_one_screen_summary["result_boundary"]
+    counts = _dict(packet.get("counts"))
+    counts.update(
+        {
+            "factor_quant_p3_one_screen_summary_visible": True,
+            "factor_quant_p3_one_screen_explainable_result_ready": p3_one_screen_summary[
+                "p3_readable_result_ready"
+            ],
+            "factor_quant_p3_one_screen_item_count": len(p3_one_screen_items),
+        }
+    )
+    packet["counts"] = counts
+    policy = _dict(packet.get("policy"))
+    policy.update(
+        {
+            "factor_quant_p3_one_screen_is_cache_only": True,
+            "factor_quant_p3_one_screen_creates_task": False,
+            "factor_quant_p3_one_screen_calls_provider_or_model": False,
+            "factor_quant_p3_one_screen_uses_model_output": False,
+            "factor_quant_p3_one_screen_uses_deepseek_output": False,
+            "factor_quant_p3_one_screen_is_not_trade_signal": True,
+        }
+    )
+    packet["policy"] = policy
     packet, universe_rank_ledger = _attach_factor_universe_local_rank_zscore_dry_run(packet, now)
     packet = _attach_factor_universe_execution_readiness(packet)
     packet, universe_execution_receipt_ledger = _attach_factor_universe_execution_readiness_receipt(packet, now)
@@ -711,6 +740,152 @@ def _factor_quant_candidate_handoff_rows(
             "does_not_modify_operation_zones": True,
         },
     ]
+
+
+def _factor_quant_p3_one_screen_summary(
+    packet: dict[str, Any],
+    handoff: dict[str, Any] | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    score = _dict(packet.get("score"))
+    bridge = _dict(packet.get("next_session_bridge"))
+    safe_handoff = _dict(handoff)
+    p3_ready = safe_handoff.get("p3_readable_result_ready") is True
+    p2_ready = safe_handoff.get("p2_small_data_ready") is True
+    symbol = _safe_text(safe_handoff.get("symbol") or packet.get("latest_confirmed_symbol"), limit=32)
+    source_task_id = _safe_text(
+        safe_handoff.get("source_task_id") or packet.get("latest_confirmed_task_id"),
+        limit=120,
+    )
+    provider_success_count = int(_safe_float(safe_handoff.get("provider_api_success_count")))
+    provider_call_count = int(_safe_float(safe_handoff.get("provider_api_call_count")))
+    support_count = len(_list(score.get("support_factors")))
+    suppress_count = len(_list(score.get("suppress_factors")))
+    conflict_count = len(_list(score.get("conflict_factors")))
+    missing_count = len(_list(score.get("missing_factors")))
+    next_session_state = _safe_text(
+        bridge.get("status") or bridge.get("bridge_status") or "等待本地 next-session cache",
+        limit=180,
+    )
+    result_summary = _safe_text(
+        safe_handoff.get("ordinary_result_summary")
+        or "P3 等待下一票雷达确认链；Factor cache 只读展示支持/压制和次日图谱状态。",
+        limit=360,
+    )
+    result_next_step = _safe_text(
+        safe_handoff.get("ordinary_result_next_step")
+        or "先回下一票雷达确认输入区输入代码并点击确认；确认后再读量化推演和次日图谱。",
+        limit=320,
+    )
+    result_boundary = _safe_text(
+        safe_handoff.get("ordinary_result_boundary")
+        or "P3 一屏摘要只读 Factor cache 和 CandidateRadar handoff；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。",
+        limit=360,
+    )
+    status = (
+        "factor_quant_p3_explainable_result_ready_from_candidate_handoff"
+        if p3_ready
+        else "factor_quant_p3_waiting_candidate_confirm_or_cache_refresh"
+    )
+    headline = (
+        f"P3 可读结论已接上：{symbol or '当前标的'} / task={source_task_id or 'waiting'}"
+        if p3_ready
+        else "P3 等待确认任务；当前只读本地 Factor cache"
+    )
+    deepseek_status = _safe_text(
+        safe_handoff.get("deepseek_governed_executor_status") or "governed_executor_pending",
+        limit=160,
+    )
+    summary = {
+        "schema_version": "factor_quant_p3_one_screen_summary.v1",
+        "status": status,
+        "headline": headline,
+        "symbol": symbol,
+        "source_task_id": source_task_id,
+        "p2_small_data_ready": p2_ready,
+        "p3_readable_result_ready": p3_ready,
+        "result_summary": result_summary,
+        "result_next_step": result_next_step,
+        "result_boundary": result_boundary,
+        "provider_api_success_count": provider_success_count,
+        "provider_api_call_count": provider_call_count,
+        "support_count": support_count,
+        "suppress_count": suppress_count,
+        "conflict_count": conflict_count,
+        "missing_count": missing_count,
+        "next_session_state": next_session_state,
+        "deepseek_governed_executor_status": deepseek_status,
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "creates_task": False,
+        "calls_provider_or_model": False,
+        "external_calls_triggered": False,
+        "uses_model_output": False,
+        "uses_deepseek_output": False,
+        "contains_secret": False,
+        "candidate_is_not_buy_instruction": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "is_production_evidence": False,
+    }
+    items = [
+        {
+            "label": "当前结论",
+            "value": result_summary,
+            "tone": "good" if p3_ready else "warn",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+        },
+        {
+            "label": "来源 task",
+            "value": source_task_id or "等待下一票雷达确认任务",
+            "tone": "good" if source_task_id else "warn",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+        },
+        {
+            "label": "Tushare-first",
+            "value": (
+                f"ledger 已回放 {provider_success_count}/{provider_call_count} 个接口"
+                if provider_call_count
+                else "等待 Tushare-first ledger"
+            ),
+            "tone": "good" if provider_success_count and provider_success_count == provider_call_count else "warn",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+        },
+        {
+            "label": "支持/压制",
+            "value": f"支持 {support_count} / 压制 {suppress_count} / 冲突 {conflict_count} / 缺失 {missing_count}",
+            "tone": "good",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+        },
+        {
+            "label": "次日图谱",
+            "value": next_session_state,
+            "tone": "good" if next_session_state and "等待" not in next_session_state else "warn",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+        },
+        {
+            "label": "DeepSeek",
+            "value": f"{deepseek_status}；P5 单独补，不阻塞 P3",
+            "tone": "good",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "uses_deepseek_output": False,
+        },
+        {
+            "label": "边界",
+            "value": "只读 cache / handoff；不创建 task、不外联、不交易、不改 action",
+            "tone": "good",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_provider_or_model": False,
+        },
+    ]
+    return summary, items
 
 
 def _factor_universe_local_rank_zscore_dry_run(now: str) -> dict[str, Any]:

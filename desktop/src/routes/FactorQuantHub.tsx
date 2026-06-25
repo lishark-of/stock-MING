@@ -95,6 +95,8 @@ export default function FactorQuantHub() {
   const score = packet.score ?? {};
   const factorPacketCandidateHandoff = (packet.candidate_radar_quant_projection_handoff as Record<string, unknown> | undefined) ?? {};
   const factorPacketCandidateHandoffRows = toRows(packet.ordinary_quant_candidate_handoff_rows);
+  const factorPacketP3OneScreenSummary = (packet.ordinary_quant_p3_one_screen_summary as Record<string, unknown> | undefined) ?? {};
+  const factorPacketP3OneScreenRows = toRows(packet.ordinary_quant_p3_one_screen_items);
   const candidateRadarP1ShortestPathCheckpoint = (candidateRadarCache.ordinary_p1_shortest_path_checkpoint as Record<string, unknown> | undefined) ?? {};
   const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarOneScreenRows = toRows(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
@@ -249,25 +251,29 @@ export default function FactorQuantHub() {
       packet.ordinary_quant_candidate_handoff_rows
   );
   const candidateRadarReadableResult = String(
-    candidateRadarCache.ordinary_result_summary ??
+    factorPacketP3OneScreenSummary.result_summary ??
+      candidateRadarCache.ordinary_result_summary ??
       candidateRadarInterpretation.ordinary_result_summary ??
       factorPacketCandidateHandoff.ordinary_result_summary ??
       "等待下一票雷达确认后的可读结论"
   );
   const candidateRadarReadableNextStep = String(
-    candidateRadarCache.ordinary_result_next_step ??
+    factorPacketP3OneScreenSummary.result_next_step ??
+      candidateRadarCache.ordinary_result_next_step ??
       candidateRadarInterpretation.ordinary_result_next_step ??
       factorPacketCandidateHandoff.ordinary_result_next_step ??
       "先回下一票雷达确认输入区输入代码并点击确认按钮"
   );
   const candidateRadarReadableBoundary = String(
-    candidateRadarCache.ordinary_result_boundary ??
+    factorPacketP3OneScreenSummary.result_boundary ??
+      candidateRadarCache.ordinary_result_boundary ??
       candidateRadarInterpretation.ordinary_result_boundary ??
       factorPacketCandidateHandoff.ordinary_result_boundary ??
       "量化页只读 CandidateRadar cache / ledger / packet 的可读结论；不创建 task、不调用 Tushare/DeepSeek、不改交易动作。"
   );
   const candidateRadarDeepSeekStateRaw = String(
-    candidateRadarCache.ordinary_result_deepseek_governed_executor_status ??
+    factorPacketP3OneScreenSummary.deepseek_governed_executor_status ??
+      candidateRadarCache.ordinary_result_deepseek_governed_executor_status ??
       candidateRadarInterpretation.deepseek_governed_executor_status ??
       factorPacketCandidateHandoff.deepseek_governed_executor_status ??
       "governed_executor_pending"
@@ -283,6 +289,7 @@ export default function FactorQuantHub() {
         ? "DeepSeek 待治理：不阻塞 Tushare-first、支持/压制和次日图谱"
         : "DeepSeek governed executor 单独补；普通结果只读本地 cache / ledger / packet";
   const ordinaryQuantCandidateRadarP3Ready =
+    factorPacketP3OneScreenSummary.p3_readable_result_ready === true ||
     candidateRadarResultQuickRows.length > 0 ||
     factorPacketCandidateHandoff.p3_readable_result_ready === true ||
     (
@@ -610,6 +617,24 @@ export default function FactorQuantHub() {
   const ordinaryQuantP3Boundary = ordinaryQuantCandidateRadarP3Ready
     ? `P3 边界：${candidateRadarReadableBoundary}`
     : "P3 边界：普通摘要只读 Factor cache、Next Session preview 和 DeepSeek status；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
+  const ordinaryQuantP3OneScreenItems: MetricItem[] = factorPacketP3OneScreenRows.length
+    ? factorPacketP3OneScreenRows.map((row) => {
+        const tone = String(row.tone ?? "neutral");
+        return {
+          label: String(row.label ?? row["状态项"] ?? "P3 一屏项"),
+          value: String(row.value ?? row["当前状态"] ?? "--"),
+          tone: (["good", "warn", "bad", "neutral"].includes(tone) ? tone : "neutral") as MetricItem["tone"]
+        };
+      })
+    : [
+        { label: "当前结论", value: candidateRadarReadableResult, tone: ordinaryQuantCandidateRadarP3Ready ? "good" : "warn" },
+        { label: "来源 task", value: candidateRadarLatestTaskId || "等待下一票雷达确认 task", tone: candidateRadarLatestTaskId ? "good" : "warn" },
+        { label: "Tushare-first", value: ordinaryQuantTushareFirstDataChainLabel, tone: ordinaryQuantTushareFirstProviderSuccessCount > 0 ? "good" : "warn" },
+        { label: "支持/压制", value: ordinaryQuantResultComposition, tone: empty ? "warn" : "good" },
+        { label: "下一步", value: candidateRadarReadableNextStep },
+        { label: "DeepSeek", value: candidateRadarOrdinaryDeepSeekState, tone: candidateRadarUsesModelOutput ? "warn" : "good" },
+        { label: "边界", value: "只读 cache / handoff；不创建 task、不外联、不交易、不改 action", tone: "good" }
+      ];
   const ordinaryQuantPostConfirmReplayContractReady =
     ordinaryQuantPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
   const ordinaryQuantPostConfirmReplaySequence = Array.isArray(ordinaryQuantPostConfirmReplayContract.readback_sequence)
@@ -1092,6 +1117,11 @@ export default function FactorQuantHub() {
           <DataLineageTable rows={ordinaryQuantPostConfirmReplayContractRows} />
         </details>
         <MetricGrid items={ordinaryQuantPrimarySummaryItems} />
+        <div aria-label="stock quant p3 one screen explanation">
+          <h3>P3 一屏结论</h3>
+          <MetricGrid items={ordinaryQuantP3OneScreenItems} />
+          <p className="risk-note">优先读取 /api/factor-quant/cache 的 ordinary_quant_p3_one_screen_summary；只读本地 cache / CandidateRadar handoff，不创建 task、不调用 Tushare/DeepSeek、不交易、不改 strategy action。</p>
+        </div>
         <details className="developer-audit-details" aria-label="stock quant ordinary summary extra details">
           <summary>更多量化摘要字段</summary>
           <p className="risk-note">普通首屏只保留下一步、P2 三面、P3 结论和安全边界；运行模式、回放位置、缺口和补证方式默认收起。</p>

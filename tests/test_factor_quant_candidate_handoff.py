@@ -73,6 +73,42 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
         self.assertTrue(handoff["does_not_modify_operation_zones"])
 
         self.assertEqual(packet["ordinary_quant_candidate_handoff_status"], handoff["status"])
+        p3_summary = packet["ordinary_quant_p3_one_screen_summary"]
+        self.assertEqual(p3_summary["schema_version"], "factor_quant_p3_one_screen_summary.v1")
+        self.assertEqual(
+            p3_summary["status"],
+            "factor_quant_p3_explainable_result_ready_from_candidate_handoff",
+        )
+        self.assertEqual(p3_summary["symbol"], "002008.SZ")
+        self.assertEqual(p3_summary["source_task_id"], "local-factor-handoff")
+        self.assertTrue(p3_summary["p2_small_data_ready"])
+        self.assertTrue(p3_summary["p3_readable_result_ready"])
+        self.assertEqual(p3_summary["provider_api_success_count"], 4)
+        self.assertEqual(p3_summary["provider_api_call_count"], 4)
+        self.assertIn("Tushare-first", p3_summary["result_summary"])
+        self.assertFalse(p3_summary["creates_task"])
+        self.assertFalse(p3_summary["calls_provider_or_model"])
+        self.assertFalse(p3_summary["uses_model_output"])
+        self.assertFalse(p3_summary["uses_deepseek_output"])
+        self.assertFalse(p3_summary["contains_secret"])
+        self.assertTrue(p3_summary["does_not_execute_trades"])
+        self.assertTrue(p3_summary["does_not_modify_strategy_action"])
+        self.assertTrue(p3_summary["does_not_modify_operation_zones"])
+        self.assertFalse(p3_summary["is_production_evidence"])
+        self.assertEqual(len(packet["ordinary_quant_p3_one_screen_items"]), 7)
+        self.assertTrue(packet["counts"]["factor_quant_p3_one_screen_summary_visible"])
+        self.assertTrue(packet["counts"]["factor_quant_p3_one_screen_explainable_result_ready"])
+        self.assertEqual(packet["counts"]["factor_quant_p3_one_screen_item_count"], 7)
+        self.assertTrue(packet["policy"]["factor_quant_p3_one_screen_is_cache_only"])
+        self.assertFalse(packet["policy"]["factor_quant_p3_one_screen_creates_task"])
+        self.assertFalse(packet["policy"]["factor_quant_p3_one_screen_calls_provider_or_model"])
+        self.assertFalse(packet["policy"]["factor_quant_p3_one_screen_uses_model_output"])
+        self.assertFalse(packet["policy"]["factor_quant_p3_one_screen_uses_deepseek_output"])
+        self.assertTrue(packet["policy"]["factor_quant_p3_one_screen_is_not_trade_signal"])
+        self.assertIn("Tushare-first", packet["ordinary_quant_p3_readable_summary"])
+        self.assertIn("先看支持/压制", packet["ordinary_quant_p3_readable_next_step"])
+        self.assertIn("不调用 DeepSeek", packet["ordinary_quant_p3_readable_boundary"])
+
         self.assertEqual(packet["latest_confirmed_symbol"], "002008.SZ")
         self.assertEqual(packet["latest_confirmed_symbol_source"], "candidate_radar_quant_projection_handoff")
         self.assertEqual(packet["latest_confirmed_task_id"], "local-factor-handoff")
@@ -116,6 +152,18 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
 
         self.assertNotIn("candidate_radar_quant_projection_handoff", packet)
         self.assertFalse(packet.get("counts", {}).get("factor_quant_candidate_radar_handoff_ready", False))
+        p3_summary = packet["ordinary_quant_p3_one_screen_summary"]
+        self.assertEqual(
+            p3_summary["status"],
+            "factor_quant_p3_waiting_candidate_confirm_or_cache_refresh",
+        )
+        self.assertFalse(p3_summary["p3_readable_result_ready"])
+        self.assertFalse(p3_summary["calls_provider_or_model"])
+        self.assertFalse(p3_summary["uses_model_output"])
+        self.assertFalse(p3_summary["uses_deepseek_output"])
+        self.assertFalse(p3_summary["contains_secret"])
+        self.assertTrue(packet["policy"]["factor_quant_p3_one_screen_is_cache_only"])
+        self.assertFalse(packet["counts"]["factor_quant_p3_one_screen_explainable_result_ready"])
 
 
 if __name__ == "__main__":
