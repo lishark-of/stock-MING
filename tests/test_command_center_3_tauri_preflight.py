@@ -117,6 +117,8 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
 
         self.assertIn("ensure_local_fastapi_on_app_open", source)
         self.assertIn("local_fastapi_ready", source)
+        self.assertIn("local_fastapi_health_body_ready", source)
+        self.assertIn("is_ascii_whitespace", source)
         self.assertIn("spawn_local_fastapi", source)
         self.assertIn("GET /health HTTP/1.1", source)
         self.assertIn('"127.0.0.1"', source)
@@ -124,6 +126,9 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("STOCK_MING_FASTAPI_AUTOSTART", source)
         self.assertIn("tauri_app_open", source)
         self.assertIn("tauri_fastapi_autostart.log", source)
+        self.assertIn('\\"external_calls_triggered\\":false', source)
+        self.assertIn('\\"provider_or_model_calls\\":false', source)
+        self.assertIn('\\"real_trading_enabled\\":false', source)
         self.assertNotIn("TUSHARE_TOKEN", source)
         self.assertNotIn("DEEPSEEK_API_KEY", source)
         self.assertNotIn("GITHUB_TOKEN", source)

@@ -147,9 +147,18 @@ fn local_fastapi_ready() -> bool {
         return false;
     }
 
-    response.contains("200 OK")
-        && response.contains("stock-MING Command Center 3.0")
-        && response.contains("\"external_calls_on_startup\":false")
+    local_fastapi_health_body_ready(&response)
+}
+
+fn local_fastapi_health_body_ready(response: &str) -> bool {
+    let compact: String = response.chars().filter(|ch| !ch.is_ascii_whitespace()).collect();
+    compact.contains("200OK")
+        && compact.contains("\"service\":\"stock-MINGCommandCenter3.0\"")
+        && compact.contains("\"status\":\"ok\"")
+        && compact.contains("\"external_calls_on_startup\":false")
+        && compact.contains("\"external_calls_triggered\":false")
+        && compact.contains("\"provider_or_model_calls\":false")
+        && compact.contains("\"real_trading_enabled\":false")
 }
 
 fn spawn_local_fastapi(project_root: &Path) -> Result<u32, String> {
