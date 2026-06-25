@@ -40420,6 +40420,25 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["policy"]["search_quant_projection_interpretation_quick_read_rows_create_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_interpretation_quick_read_rows_use_model_output"])
         self.assertTrue(packet["policy"]["search_quant_projection_interpretation_quick_read_rows_are_not_trade_signals"])
+        p3_rows = packet["search_quant_projection_p3_result_rows"]
+        self.assertEqual(p3_rows, packet["ordinary_result_quick_read_rows"])
+        self.assertEqual(packet["search_quant_projection_p3_result_row_count"], len(p3_rows))
+        self.assertEqual(packet["counts"]["search_quant_projection_p3_result_row_count"], len(p3_rows))
+        self.assertTrue(packet["search_quant_projection_p3_result_rows_are_cache_only"])
+        self.assertFalse(packet["search_quant_projection_p3_result_rows_create_task"])
+        self.assertFalse(packet["search_quant_projection_p3_result_rows_call_model"])
+        self.assertFalse(packet["search_quant_projection_p3_result_rows_use_model_output"])
+        self.assertTrue(packet["search_quant_projection_p3_result_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["search_quant_projection_p3_result_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_p3_result_rows_create_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_p3_result_rows_call_model"])
+        self.assertFalse(packet["policy"]["search_quant_projection_p3_result_rows_use_model_output"])
+        self.assertTrue(packet["policy"]["search_quant_projection_p3_result_rows_are_not_trade_signals"])
+        self.assertFalse(any(row["creates_task_from_readback"] for row in p3_rows))
+        self.assertFalse(any(row["uses_deepseek_output"] for row in p3_rows))
+        self.assertFalse(any(row["contains_secret"] for row in p3_rows))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in p3_rows))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in p3_rows))
         quick_read = {
             row["quick_read_item"]: row for row in interpretation["ordinary_result_quick_read_rows"]
         }

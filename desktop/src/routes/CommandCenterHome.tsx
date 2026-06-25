@@ -570,6 +570,7 @@ export default function CommandCenterHome() {
   const candidateQuantInterpretation = (candidates.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const candidateQuantResultCheckpoint = (candidates.search_quant_projection_result_checkpoint as Record<string, unknown> | undefined) ?? {};
   const candidateQuantQuickRows =
+    (candidates.search_quant_projection_p3_result_rows as Array<Record<string, unknown>> | undefined) ??
     (candidates.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ??
     (candidateQuantInterpretation.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ??
     [];

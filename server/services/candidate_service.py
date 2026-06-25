@@ -18961,6 +18961,7 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["ordinary_p3_explainable_result_checkpoint"] = p3_explainable_result_checkpoint
     view["ordinary_post_confirm_one_glance_items"] = ordinary_post_confirm_one_glance_items
     view["search_quant_projection_result_quick_read_rows"] = ordinary_result_quick_read_rows
+    view["search_quant_projection_p3_result_rows"] = ordinary_result_quick_read_rows
     view["search_quant_projection_result_handoff_rows"] = ordinary_result_handoff_rows
     view["search_quant_projection_result_action_rows"] = ordinary_result_action_rows
     view["search_quant_projection_result_decision_brief_rows"] = ordinary_result_decision_brief_rows
@@ -18972,6 +18973,12 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["ordinary_result_checkpoint_row_count"] = len(ordinary_result_checkpoint_rows)
     view["ordinary_result_decision_brief_row_count"] = len(ordinary_result_decision_brief_rows)
     view["ordinary_post_confirm_one_glance_item_count"] = len(ordinary_post_confirm_one_glance_items)
+    view["search_quant_projection_p3_result_row_count"] = len(ordinary_result_quick_read_rows)
+    view["search_quant_projection_p3_result_rows_are_cache_only"] = True
+    view["search_quant_projection_p3_result_rows_create_task"] = False
+    view["search_quant_projection_p3_result_rows_call_model"] = False
+    view["search_quant_projection_p3_result_rows_use_model_output"] = False
+    view["search_quant_projection_p3_result_rows_are_not_trade_signals"] = True
     view["search_quant_projection_result_checkpoint"] = result_checkpoint
     view["search_quant_projection_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
     view["search_quant_projection_p3_explainable_result_checkpoint"] = p3_explainable_result_checkpoint
@@ -18993,6 +19000,7 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["ordinary_result_action_row_count"] = len(ordinary_result_action_rows)
     counts["ordinary_result_checkpoint_row_count"] = len(ordinary_result_checkpoint_rows)
     counts["ordinary_result_decision_brief_row_count"] = len(ordinary_result_decision_brief_rows)
+    counts["search_quant_projection_p3_result_row_count"] = len(ordinary_result_quick_read_rows)
     counts["search_quant_projection_post_confirm_one_glance_item_count"] = len(ordinary_post_confirm_one_glance_items)
     counts["search_quant_projection_result_checkpoint_missing_evidence_count"] = result_checkpoint.get(
         "missing_evidence_count",
@@ -19074,6 +19082,11 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_p3_safe_explanation_calls_model"] = False
     policy["search_quant_projection_p3_safe_explanation_uses_model_output"] = False
     policy["search_quant_projection_p3_safe_explanation_is_not_trade_signal"] = True
+    policy["search_quant_projection_p3_result_rows_are_cache_only"] = True
+    policy["search_quant_projection_p3_result_rows_create_task"] = False
+    policy["search_quant_projection_p3_result_rows_call_model"] = False
+    policy["search_quant_projection_p3_result_rows_use_model_output"] = False
+    policy["search_quant_projection_p3_result_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_post_confirm_one_glance_items_are_cache_only"] = True
     policy["search_quant_projection_post_confirm_one_glance_items_create_task"] = False
     policy["search_quant_projection_post_confirm_one_glance_items_use_model_output"] = False
