@@ -2409,6 +2409,12 @@ export default function CandidateRadar() {
               { label: "边界", value: quantProjectionSmallDataReadbackContract, tone: "good" }
             ]}
           />
+          <div className="actions" aria-label="candidate radar p2 three surface local replay actions">
+            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress from p2 three surface status">查看任务进度</a>
+            <a href="#factor" title="切换到股票量化推演；只读回放 cache / ledger / packet" aria-label="open factor replay from p2 three surface status">查看量化推演</a>
+            <a href="#next" title="切换到次日图谱；只读回放本地 next-session cache" aria-label="open next session replay from p2 three surface status">查看次日图谱</a>
+          </div>
+          <p className="risk-note">P2 三面入口只切换本地页面；不会创建第二个 task、不补调 Tushare/DeepSeek、不写 cache，也不改 strategy action。</p>
         </div>
         <div aria-label="candidate radar p3 first screen result quick read">
           <h3>P3 结果首屏速读</h3>
