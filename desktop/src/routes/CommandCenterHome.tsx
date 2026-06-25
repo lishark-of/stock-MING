@@ -1350,12 +1350,37 @@ export default function CommandCenterHome() {
     : dailyCommandConfirmedSymbol
       ? `最近回放：${dailyCommandConfirmedSymbol}`
       : "等待首页确认按钮";
+  const homeQuantP1P2P3CheckpointReady =
+    Boolean(homeQuantVisibleTaskId) &&
+    dailyCommandTushareFirstLedgerReady &&
+    dailyCommandP2ThreeSurfaceReady &&
+    dailyCommandP3OneGlanceReadable;
+  const homeQuantP1P2P3CheckpointGaps = [
+    homeQuantVisibleTaskId ? "" : "P1 task id",
+    dailyCommandTushareFirstLedgerReady ? "" : "Tushare ledger",
+    dailyCommandP2ThreeSurfaceReady ? "" : "P2 cache/ledger/packet",
+    dailyCommandP3OneGlanceReadable ? "" : "P3 可读结论",
+    dailyCommandFactorCandidateHandoffReady ? "" : "Factor handoff"
+  ].filter(Boolean);
+  const homeQuantP1P2P3CheckpointLabel = homeQuantP1P2P3CheckpointReady
+    ? `已完成 P1/P2/P3 本地回放：${homeQuantVisibleTaskId}；Factor handoff ${dailyCommandFactorCandidateHandoffReady ? "已接上" : "待回放"}`
+    : `等待 ${homeQuantP1P2P3CheckpointGaps.join(" / ") || "本地回放"}`;
+  const homeQuantP1P2P3CheckpointItems: MetricItem[] = [
+    { label: "一眼 checkpoint", value: homeQuantP1P2P3CheckpointLabel, tone: homeQuantP1P2P3CheckpointReady ? "good" : "warn" },
+    { label: "P1 task", value: homeQuantVisibleTaskId || "等待确认按钮返回 task id", tone: homeQuantVisibleTaskId ? "good" : "warn" },
+    { label: "Tushare ledger", value: dailyCommandTushareFirstLedgerLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
+    { label: "P2 三面", value: dailyCommandP2CheckpointLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+    { label: "P3 结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+    { label: "Factor handoff", value: dailyCommandFactorCandidateHandoffLabel, tone: dailyCommandFactorCandidateHandoffReady ? "good" : "warn" },
+    { label: "边界", value: "checkpoint 只合成现有 cache / ledger / packet；不创建 task、不补调 provider/model", tone: "good" }
+  ];
   const homeQuantConfirmItems: MetricItem[] = [
     { label: "输入代码", value: homeQuantSymbolValidation.valid ? homeQuantSymbolValidation.normalized : homeQuantSubmitDisabledReason, tone: homeQuantSymbolValidation.valid ? "good" : "warn" },
     { label: "P0 闸门", value: dailyCommandP0LocalReadinessReady ? "ready：可点击确认" : "check：先恢复本地联通", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
     { label: "P1 手动确认", value: homeP1ManualConfirmLabel, tone: homeP1ManualConfirmReady ? "good" : "warn" },
     { label: "P1 runtime", value: homeP1ManualConfirmStatus, tone: homeP1ManualConfirmReady ? "good" : "warn" },
     { label: "任务状态", value: homeQuantReadbackStatus, tone: homeQuantVisibleTaskId ? "good" : "warn" },
+    { label: "链路 checkpoint", value: homeQuantP1P2P3CheckpointLabel, tone: homeQuantP1P2P3CheckpointReady ? "good" : "warn" },
     { label: "Tushare-first", value: "确认按钮才 POST；DeepSeek skipped，成功后通过 GET cache 回放", tone: "good" },
     { label: "浏览器验收", value: homeP1BrowserEvidenceLabel, tone: "warn" },
     { label: "P2/P3 回放", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
@@ -2170,6 +2195,11 @@ export default function CommandCenterHome() {
               <h3>确认后下一步</h3>
               <p className="risk-note">任务编号出现或从本地 cache 恢复后，先看任务进度；成功后按股票量化推演和次日图谱回放。这里的链接只切换本地页面，不创建第二个 task。</p>
               <p className="ordinary-status-note" aria-label="daily command home post confirm readable result" aria-live="polite">{homeQuantPostConfirmReadableSentence}</p>
+              <div aria-label="daily command home p1 p2 p3 checkpoint">
+                <h3>P1/P2/P3 一眼 checkpoint</h3>
+                <MetricGrid items={homeQuantP1P2P3CheckpointItems} />
+                <p className="risk-note">这条 checkpoint 只合成现有 task id、Tushare ledger、P2 三面、P3 可读结论和 Factor handoff；不创建 task、不补调 provider/model、不展示 raw packet。</p>
+              </div>
               <div aria-label="daily command home post confirm one glance">
                 <MetricGrid items={homeQuantPostConfirmOneGlanceItems} />
               </div>
