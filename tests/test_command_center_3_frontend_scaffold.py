@@ -1808,9 +1808,11 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("这张卡只读已有 P2 写回摘要；不创建第二个 task、不补调 Tushare/DeepSeek、不展示 raw log", home_source)
         self.assertIn("P2 三面速读只从 CandidateRadar cache / call_ledger / packet 回放", home_source)
         self.assertLess(home_source.index('title="当前可用投研链路"'), home_source.index('title="P2 小数据三面速读"'))
-        self.assertLess(home_source.index('title="P2 小数据三面速读"'), home_source.index('title="最近本地任务"'))
+        self.assertLess(home_source.index('title="P2 小数据三面速读"'), home_source.index('title="P3 可解释结果一眼读懂"'))
+        self.assertLess(home_source.index('title="P3 可解释结果一眼读懂"'), home_source.index('title="最近本地任务"'))
+        self.assertLess(home_source.index('title="最近本地任务"'), home_source.index('title="今日作战台摘要"'))
         p2_front_start = home_source.index('title="P2 小数据三面速读"')
-        p2_front_end = home_source.index('title="最近本地任务"', p2_front_start)
+        p2_front_end = home_source.index('title="P3 可解释结果一眼读懂"', p2_front_start)
         p2_front_slice = home_source[p2_front_start:p2_front_end]
         self.assertIn("rows={dailyCommandSmallDataWritebackRows}", p2_front_slice)
         self.assertIn('href="#factor"', p2_front_slice)

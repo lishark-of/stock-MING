@@ -1664,32 +1664,6 @@ export default function CommandCenterHome() {
         </div>
         <p className="risk-note">P2 三面速读只从 CandidateRadar cache / call_ledger / packet 回放；不会从首页回放卡创建 task、读取 token/key、执行真实交易或修改 strategy action。</p>
       </PacketCard>
-      <PacketCard title="最近本地任务" subtitle="打开软件后直接看进度；只读回放 task/cache/ledger/packet" status={dailyCommandLatestTaskStatus}>
-        <MetricGrid
-          items={[
-            { label: "任务数", value: taskIndex?.task_count ?? tasks.length, tone: (taskIndex?.task_count ?? tasks.length) ? "good" : "warn" },
-            { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
-            { label: "最近任务", value: dailyCommandLatestTaskId || "暂无", tone: dailyCommandLatestTaskId ? "good" : "warn" },
-            { label: "状态", value: dailyCommandLatestTaskStatus, tone: dailyCommandLatestTaskStatus === "success" ? "good" : dailyCommandLatestTaskStatus === "failed" ? "bad" : "warn" },
-            { label: "来源任务", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
-            { label: "来源", value: dailyCommandLatestTaskIsReplay ? "cache 只读回放" : dailyCommandLatestTaskSource, tone: "good" },
-            { label: "下一步", value: dailyCommandLatestTaskNext },
-            { label: "边界", value: "首页只读任务状态；确认按钮之前不创建 task", tone: "good" }
-          ]}
-        />
-        <DataLineageTable rows={dailyCommandLatestTaskRows} />
-        <div className="actions" aria-label="daily command latest local task actions">
-          <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入代码后仍需确认按钮" aria-label="open candidate radar confirm input from latest local task">下一票雷达确认代码</a>
-          <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor projection from latest local task">股票量化推演</a>
-          <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session map from latest local task">次日图谱</a>
-          <a href="#tasks" title="切换到任务目录；只读查看完整任务列表" aria-label="open task monitor from latest local task">任务目录</a>
-        </div>
-        {dailyCommandLatestTaskId && !dailyCommandLatestTaskIsReplay ? <TaskStatusPanel taskId={dailyCommandLatestTaskId} /> : null}
-        {dailyCommandLatestTaskId && dailyCommandLatestTaskIsReplay ? (
-          <p className="risk-note">最近任务来自 CandidateRadar cache 只读回放，不启动 TaskStatusPanel 轮询；看上方 cache / ledger / packet 状态即可。</p>
-        ) : null}
-        <p className="risk-note">本卡只读 `/api/tasks` 和具体 task 状态；不会补调 Tushare、DeepSeek 或 GitHub，也不会真实交易或修改 strategy action。</p>
-      </PacketCard>
       <PacketCard title="P3 可解释结果一眼读懂" subtitle="结论、来源、缺口、下一步和安全边界；只读 CandidateRadar checkpoint" status={dailyCommandP3OneGlanceStatus}>
         <MetricGrid
           items={[
@@ -1717,6 +1691,32 @@ export default function CommandCenterHome() {
           <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session p3 one glance">次日图谱</a>
         </div>
         <p className="risk-note">这张卡只读 `search_quant_projection_result_checkpoint` 和 CandidateRadar 本地 cache；不会创建 task、不会调用 DeepSeek、不会交易或修改 strategy action。</p>
+      </PacketCard>
+      <PacketCard title="最近本地任务" subtitle="打开软件后直接看进度；只读回放 task/cache/ledger/packet" status={dailyCommandLatestTaskStatus}>
+        <MetricGrid
+          items={[
+            { label: "任务数", value: taskIndex?.task_count ?? tasks.length, tone: (taskIndex?.task_count ?? tasks.length) ? "good" : "warn" },
+            { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
+            { label: "最近任务", value: dailyCommandLatestTaskId || "暂无", tone: dailyCommandLatestTaskId ? "good" : "warn" },
+            { label: "状态", value: dailyCommandLatestTaskStatus, tone: dailyCommandLatestTaskStatus === "success" ? "good" : dailyCommandLatestTaskStatus === "failed" ? "bad" : "warn" },
+            { label: "来源任务", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
+            { label: "来源", value: dailyCommandLatestTaskIsReplay ? "cache 只读回放" : dailyCommandLatestTaskSource, tone: "good" },
+            { label: "下一步", value: dailyCommandLatestTaskNext },
+            { label: "边界", value: "首页只读任务状态；确认按钮之前不创建 task", tone: "good" }
+          ]}
+        />
+        <DataLineageTable rows={dailyCommandLatestTaskRows} />
+        <div className="actions" aria-label="daily command latest local task actions">
+          <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入代码后仍需确认按钮" aria-label="open candidate radar confirm input from latest local task">下一票雷达确认代码</a>
+          <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor projection from latest local task">股票量化推演</a>
+          <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session map from latest local task">次日图谱</a>
+          <a href="#tasks" title="切换到任务目录；只读查看完整任务列表" aria-label="open task monitor from latest local task">任务目录</a>
+        </div>
+        {dailyCommandLatestTaskId && !dailyCommandLatestTaskIsReplay ? <TaskStatusPanel taskId={dailyCommandLatestTaskId} /> : null}
+        {dailyCommandLatestTaskId && dailyCommandLatestTaskIsReplay ? (
+          <p className="risk-note">最近任务来自 CandidateRadar cache 只读回放，不启动 TaskStatusPanel 轮询；看上方 cache / ledger / packet 状态即可。</p>
+        ) : null}
+        <p className="risk-note">本卡只读 `/api/tasks` 和具体 task 状态；不会补调 Tushare、DeepSeek 或 GitHub，也不会真实交易或修改 strategy action。</p>
       </PacketCard>
       <PacketCard title="今日作战台摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={dailyCommandStatusLabel}>
         <MetricGrid
