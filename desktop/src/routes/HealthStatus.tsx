@@ -55,7 +55,14 @@ export default function HealthStatus() {
   const p0LocalConnectionReceipt = (desktopPreflight.p0_local_connection_receipt as Record<string, unknown> | undefined) ?? {};
   const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const oneClickConnectionRows = (desktopPreflight.one_click_connection_rows as Array<Record<string, unknown>> | undefined) ?? [];
-  const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
+  const currentHealthReadbackReady =
+    health.status === "ok" &&
+    health.service === "stock-MING Command Center 3.0" &&
+    health.external_calls_on_startup !== true;
+  const currentHealthReadbackLabel = currentHealthReadbackReady
+    ? "本页已实时接上 FastAPI /health"
+    : "本页正在等待 FastAPI /health";
+  const p0ConnectionReady = currentHealthReadbackReady || oneClickStartupSummary.frontend_backend_connection_ready === true;
   const p0RecoverySteps = rows(desktopPreflight.p0_recovery_steps).length ? rows(desktopPreflight.p0_recovery_steps) : [
     { step: "1", title: "打开本地一键入口", action: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。" },
     { step: "2", title: "按启动器诊断定位失败段", action: "先看 FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪一段没有 ready。" },
@@ -212,13 +219,15 @@ export default function HealthStatus() {
 
       <PacketCard title="P0 前后端联通摘要" subtitle="普通用户先确认本地 FastAPI / React 是否已联通" status={String(oneClickStartupSummary.status ?? "preflight_cache_loading")}>
         <p>联通状态：{p0ConnectionReady ? "已具备本地一键联通条件" : "需要检查本地一键入口"}</p>
+        <p>本页实时回读：{currentHealthReadbackLabel}</p>
+        <p>页面已打开：React/Vite 已在本机渲染；本页只额外确认 FastAPI /health 是否可读。</p>
         <p>下一步：{String(oneClickStartupSummary.what_user_should_click_next ?? "打开桌面壳预检，按本地快捷入口重启。")}</p>
         <p>快捷入口：{String(desktopLauncherContract.desktop_shortcut_target_name ?? "stock-MING Command Center 3.command")}</p>
         <p>成功条件：{String(oneClickStartupSummary.success_condition ?? "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，/api/desktop/preflight-cache 必须返回一键启动 packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。")}</p>
         <p>失败处理：{String(oneClickStartupSummary.blocked_next_action ?? "先看启动器的可操作诊断：FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或进入桌面壳预检。")}</p>
         <p>诊断分段：{Array.isArray(oneClickStartupSummary.diagnostic_surfaces) ? oneClickStartupSummary.diagnostic_surfaces.join(" / ") : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / desktop preflight cache one-click packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance"}</p>
         <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite 都就绪，再打开页面。")}</p>
-        <p>当前 GET 是否做实时探针：{String(p0LocalConnectionReceipt.current_runtime_probe_executed_by_get_cache ?? false)}；实时联通是否已由本页验证：{String(p0LocalConnectionReceipt.current_runtime_live_connection_verified ?? false)}</p>
+        <p>启动器收据：GET preflight cache 自身是否做实时探针 {String(p0LocalConnectionReceipt.current_runtime_probe_executed_by_get_cache ?? false)}；本页当前以 /health 回读为准，不让旧收据覆盖当前连接状态。</p>
         <p>只读边界：本卡只读取 GET /health 与 GET /api/desktop/preflight-cache；不会启动 FastAPI/Vite、不会创建 task、不会调用 Tushare/DeepSeek/GitHub 或交易路径。</p>
         <div aria-label="health ordinary frontend backend connection rows">
           <h3>四段联通状态</h3>
@@ -254,6 +263,7 @@ export default function HealthStatus() {
       <MetricGrid
         items={[
           { label: "FastAPI", value: health.status as string | undefined, tone: health.status === "ok" ? "good" : "warn" },
+          { label: "本页 /health", value: currentHealthReadbackReady ? "ready" : "check", tone: currentHealthReadbackReady ? "good" : "warn" },
           { label: "P0 front/back", value: p0ConnectionReady ? "ready" : "check", tone: p0ConnectionReady ? "good" : "warn" },
           { label: "one-click launcher", value: desktopLauncherContract.launcher_executable === true ? "ready" : "check", tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
           { label: "startup external calls", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
@@ -268,6 +278,7 @@ export default function HealthStatus() {
       <MetricGrid
         items={[
           { label: "FastAPI", value: health.status as string | undefined, tone: health.status === "ok" ? "good" : "warn" },
+          { label: "本页 /health", value: currentHealthReadbackReady ? "ready" : "check", tone: currentHealthReadbackReady ? "good" : "warn" },
           { label: "P0 front/back", value: p0ConnectionReady ? "ready" : "check", tone: p0ConnectionReady ? "good" : "warn" },
           { label: "P0 receipt", value: p0LocalConnectionReceipt.status as string | undefined, tone: p0LocalConnectionReceipt.connection_contract_ready === true ? "good" : "warn" },
           { label: "one-click launcher", value: desktopLauncherContract.launcher_executable === true ? "ready" : "check", tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
