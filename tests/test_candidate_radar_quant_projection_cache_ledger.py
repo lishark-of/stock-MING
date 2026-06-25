@@ -1689,6 +1689,89 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         )
         self.assertFalse(confirm_checkpoint["provider_ledger_ready"])
 
+    def test_interpretation_marks_next_session_local_map_ready_from_cache_packet(self):
+        self._with_meta_store()
+        SQLiteMetaStore(candidate_service.SQLITE_META_PATH).write_packet(
+            "command_center_next_session_projection_packet",
+            {
+                "packet_key": "command_center_next_session_projection_packet",
+                "schema_version": "next_session_projection.v1",
+                "status": "ready",
+                "cache_source": "button_gated_local_preview_no_provider",
+                "symbol": "002008.SZ",
+                "confirmed_symbol": "002008.SZ",
+                "button_gated_local_confirmed_symbol_preview": True,
+                "provider_backed": False,
+                "chart_payload": {
+                    "status": "ready",
+                    "symbol": "002008.SZ",
+                    "ts_code": "002008.SZ",
+                    "confirmed_symbol": "002008.SZ",
+                    "historical_points": [{"x": "2026-06-08", "price": 10.0}],
+                    "scenario_series": [{"scenario_key": "base", "points": [{"x": "T+1", "price": 10.3}]}],
+                    "reference_lines": [{"key": "current", "value": 10.0}],
+                    "operation_zones": [{"zone_key": "watch", "price_range": [9.8, 10.5]}],
+                },
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+        )
+        packet = candidate_service._attach_search_quant_projection_interpretation_summary(
+            {
+                "packet_key": "command_center_3_candidate_radar_cache",
+                "latest_confirmed_symbol": "002008.SZ",
+                "search_quant_projection_receipt": {
+                    "symbol": "002008.SZ",
+                    "task_id": "local-confirm-task",
+                    "latest_task_id": "local-confirm-task",
+                    "latest_task_status": "success",
+                },
+                "search_quant_provider_model_acceptance_receipt": {
+                    "symbol": "002008.SZ",
+                    "provider_api_call_count": 4,
+                    "provider_api_success_count": 4,
+                    "deepseek_skipped_by_request": True,
+                },
+                "search_quant_projection_small_data_writeback_summary": {
+                    "symbol": "002008.SZ",
+                    "small_data_writeback_ready": True,
+                    "provider_api_call_count": 4,
+                    "provider_api_success_count": 4,
+                    "provider_call_ledger_written": True,
+                    "source_task_tushare_provider_ledger_ready": True,
+                },
+                "counts": {},
+                "policy": {},
+            }
+        )
+
+        interpretation = packet["search_quant_projection_interpretation_summary"]
+        self.assertEqual(interpretation["status"], "interpretation_ready_tushare_ledger_with_local_map")
+        self.assertEqual(interpretation["ordinary_result_status"], "ready_with_local_map")
+        self.assertTrue(interpretation["factor_next_echarts_ready"])
+        self.assertEqual(interpretation["next_session_map_state"], "local_map_ready")
+        self.assertNotIn("Factor/Next/ECharts local cache replay", interpretation["missing_evidence"])
+        local_map = interpretation["next_session_local_map_readback"]
+        self.assertTrue(local_map["ready"])
+        self.assertEqual(local_map["symbol"], "002008.SZ")
+        self.assertEqual(local_map["scenario_series_count"], 1)
+        self.assertFalse(local_map["external_calls_triggered"])
+        self.assertFalse(local_map["tushare_called"])
+        self.assertFalse(local_map["deepseek_called"])
+        self.assertFalse(local_map["contains_secret"])
+        result_rows = {
+            row["surface"]: row for row in interpretation["ordinary_result_readback_rows"]
+        }
+        self.assertEqual(result_rows["next_session_map"]["status"], "local_map_ready")
+        handoff_rows = {
+            row["handoff_key"]: row for row in interpretation["ordinary_result_handoff_rows"]
+        }
+        self.assertIn("本地图谱可回放", handoff_rows["replay_next_session_map"]["当前状态"])
+
     def test_confirm_tushare_first_blocks_missing_credentials_without_provider_call(self):
         self._with_meta_store()
         self._with_env(TUSHARE_TOKEN=None, DEEPSEEK_API_KEY=None)

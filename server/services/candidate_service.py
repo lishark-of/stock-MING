@@ -15,6 +15,7 @@ from server.services import packet_service, task_service, tushare_task_service
 
 
 PACKET_KEY = "command_center_3_candidate_radar_cache"
+NEXT_SESSION_PACKET_KEY = "command_center_next_session_projection_packet"
 SCHEMA_VERSION = "candidate_radar_cache.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
@@ -1493,6 +1494,70 @@ def _quant_projection_p0_confirm_gate_ready(p0_gate: Mapping[str, Any]) -> bool:
         and p0_gate.get("get_cache_external_calls") is False
         and contains_sensitive_material is False
     )
+
+
+def _next_session_local_map_readback(symbol: str) -> dict[str, Any]:
+    symbol_safe = _safe_text(symbol, limit=32).upper()
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(NEXT_SESSION_PACKET_KEY)
+    except Exception:
+        return {}
+    if not isinstance(packet, Mapping):
+        return {}
+    if packet.get("contains_secret") is True or packet.get("external_calls_triggered") is True:
+        return {}
+    chart_payload = _as_dict(packet.get("chart_payload"))
+    chart_summary = _as_dict(packet.get("chart_summary")) or _as_dict(chart_payload.get("chart_summary"))
+    has_drawable_data = bool(
+        chart_summary.get("has_drawable_data") is True
+        or _as_list(chart_payload.get("historical_points"))
+        or _as_list(chart_payload.get("scenario_series"))
+    )
+    chart_symbol = _safe_text(
+        chart_summary.get("symbol")
+        or chart_summary.get("ts_code")
+        or chart_summary.get("confirmed_symbol")
+        or chart_payload.get("symbol")
+        or chart_payload.get("ts_code")
+        or chart_payload.get("confirmed_symbol")
+        or packet.get("symbol")
+        or packet.get("ts_code")
+        or packet.get("confirmed_symbol")
+        or packet.get("latest_confirmed_symbol")
+        or "",
+        limit=32,
+    ).upper()
+    symbol_matches = bool(has_drawable_data and (not symbol_safe or chart_symbol == symbol_safe))
+    return {
+        "ready": symbol_matches,
+        "packet_key": NEXT_SESSION_PACKET_KEY,
+        "status": packet.get("status"),
+        "cache_source": packet.get("cache_source"),
+        "symbol": chart_symbol,
+        "requested_symbol": symbol_safe,
+        "scenario_series_count": int(
+            chart_summary.get("scenario_series_count") or len(_as_list(chart_payload.get("scenario_series")))
+        ),
+        "reference_line_count": int(
+            chart_summary.get("reference_line_count") or len(_as_list(chart_payload.get("reference_lines")))
+        ),
+        "operation_zone_count": int(
+            chart_summary.get("operation_zone_count") or len(_as_list(chart_payload.get("operation_zones")))
+        ),
+        "button_gated_local_confirmed_symbol_preview": (
+            packet.get("button_gated_local_confirmed_symbol_preview") is True
+        ),
+        "provider_backed": packet.get("provider_backed") is True,
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "calls_provider_or_model": False,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
 
 
 def _quant_projection_task_payload(payload: Any) -> Any:
@@ -17648,10 +17713,20 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         provider_receipt.get("deepseek_model_ledger_evidence_done") is True
         or provider_receipt.get("model_ledger_evidence_done") is True
     )
+    confirmed_symbol = _safe_text(
+        provider_receipt.get("symbol")
+        or quant_receipt.get("symbol")
+        or small_data.get("symbol")
+        or packet.get("latest_confirmed_symbol")
+        or "",
+        limit=32,
+    ).upper()
+    next_session_local_map = _next_session_local_map_readback(confirmed_symbol)
     factor_next_ready = bool(
         provider_receipt.get("factor_refresh_executed") is True
         or provider_receipt.get("next_session_refresh_executed") is True
         or provider_receipt.get("echarts_payload_refreshed") is True
+        or next_session_local_map.get("ready") is True
     )
     missing_evidence: list[str] = []
     if not small_data_ready:
@@ -18977,6 +19052,7 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "readback_external_calls_triggered": False,
         "readback_tushare_called": False,
         "factor_next_echarts_ready": factor_next_ready,
+        "next_session_local_map_readback": next_session_local_map,
         "next_session_map_state": "local_map_ready" if factor_next_ready else "pending_local_cache_refresh",
         "missing_evidence": missing_evidence,
         "missing_evidence_count": len(missing_evidence),

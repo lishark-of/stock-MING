@@ -3831,13 +3831,10 @@ def create_next_session_task(payload: Any = None) -> dict[str, Any]:
     requested_symbol = _safe_text(payload_dict.get("symbol") or payload_dict.get("ts_code") or "", limit=32).upper()
     source_task_id = _safe_text(payload_dict.get("source_task_id") or "", limit=128)
     local_exact_sample_allowed = payload_dict.get("local_exact_sample_allowed") is True
-    local_confirmed_preview_allowed = (
-        payload_dict.get("manual_button_required") is True
-        and bool(requested_symbol)
-        and (
-            payload_dict.get("p2_small_data_ready") is True
-            or payload_dict.get("p3_readable_result_ready") is True
-        )
+    local_confirmed_preview_requested = payload_dict.get("manual_button_required") is True and bool(requested_symbol)
+    local_confirmed_preview_allowed = local_confirmed_preview_requested and (
+        payload_dict.get("p2_small_data_ready") is True
+        or payload_dict.get("p3_readable_result_ready") is True
     )
     task = create_task_record(
         "build_next_session_projection",
@@ -3857,6 +3854,23 @@ def create_next_session_task(payload: Any = None) -> dict[str, Any]:
         packet = dict(read_next_session_cache())
         local_exact_sample_written = False
         local_confirmed_preview_written = False
+        candidate_handoff = _as_dict(packet.get("candidate_radar_p3_handoff"))
+        ordinary_replay = _as_dict(packet.get("ordinary_result_replay_summary"))
+        cache_confirmed_symbol = _safe_text(
+            candidate_handoff.get("symbol") or packet.get("latest_confirmed_symbol") or "",
+            limit=32,
+        ).upper()
+        cache_candidate_preview_allowed = bool(
+            local_confirmed_preview_requested
+            and (not cache_confirmed_symbol or cache_confirmed_symbol == requested_symbol)
+            and (
+                candidate_handoff.get("p2_small_data_ready") is True
+                or candidate_handoff.get("p3_readable_result_ready") is True
+                or ordinary_replay.get("status") == "candidate_readable_result_replay_chart_pending"
+                or packet.get("status") == "candidate_readable_result_replay_chart_pending"
+            )
+        )
+        local_confirmed_preview_allowed = local_confirmed_preview_allowed or cache_candidate_preview_allowed
         chart_payload = _as_dict(packet.get("chart_payload"))
         chart_has_drawable_data = bool(
             _as_list(chart_payload.get("historical_points")) or _as_list(chart_payload.get("scenario_series"))
@@ -3906,6 +3920,10 @@ def create_next_session_task(payload: Any = None) -> dict[str, Any]:
             packet["task_call_ledger"][0]["request_params_safe"]["local_confirmed_preview_allowed"] = (
                 local_confirmed_preview_allowed
             )
+            packet["task_call_ledger"][0]["request_params_safe"]["cache_candidate_preview_allowed"] = (
+                cache_candidate_preview_allowed
+            )
+            packet["task_call_ledger"][0]["request_params_safe"]["cache_confirmed_symbol"] = cache_confirmed_symbol
             packet["task_call_ledger"][0]["request_params_safe"]["symbol"] = requested_symbol
             packet["task_call_ledger"][0]["request_params_safe"]["source_task_id"] = source_task_id
             packet["task_call_ledger"][0]["request_params_safe"]["provider_backed"] = False
