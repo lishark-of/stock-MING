@@ -96,7 +96,8 @@ const ROUTE_COMPONENTS = {
 function normalizeRouteKey(value: string | null): RouteKey | null {
   const cleaned = String(value ?? "")
     .trim()
-    .replace(/^#\/?/, "");
+    .replace(/^#\/?/, "")
+    .split(/[/?]/)[0];
   return ROUTE_KEYS.includes(cleaned as RouteKey) ? (cleaned as RouteKey) : null;
 }
 
@@ -126,7 +127,7 @@ function persistRoute(route: RouteKey) {
     // Tauri/WebView privacy settings may disable localStorage; hash routing remains enough.
   }
   const nextHash = `#${route}`;
-  if (window.location.hash !== nextHash) {
+  if (normalizeRouteKey(window.location.hash) !== route) {
     window.history.replaceState(null, "", nextHash);
   }
 }

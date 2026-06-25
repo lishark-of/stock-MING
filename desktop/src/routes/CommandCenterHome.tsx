@@ -761,9 +761,10 @@ export default function CommandCenterHome() {
   const dailyCommandPrimaryActionLabel = dailyCommandNeedsStartupRecovery
     ? "查看一键启动预检"
     : "进入下一票雷达确认代码";
+  const dailyCommandCandidateConfirmHref = "#candidates/candidate-radar-search-quant-projection";
   const dailyCommandPrimaryActionHref = dailyCommandNeedsStartupRecovery
     ? "#desktop"
-    : "#candidates";
+    : dailyCommandCandidateConfirmHref;
   const dailyCommandPrimaryActionBoundary = dailyCommandNeedsStartupRecovery
     ? "主下一步只打开桌面壳预检，不启动服务、不创建 task、不刷新 provider/model"
     : "主下一步只切换到下一票雷达；输入保持静默，确认按钮才创建 Tushare-first POST task";
@@ -1311,7 +1312,7 @@ export default function CommandCenterHome() {
         />
         <DataLineageTable rows={dailyCommandLatestTaskRows} />
         <div className="actions" aria-label="daily command latest local task actions">
-          <a href="#candidates" title="切换到下一票雷达；输入代码后仍需确认按钮" aria-label="open candidate radar from latest local task">下一票雷达确认代码</a>
+          <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入代码后仍需确认按钮" aria-label="open candidate radar confirm input from latest local task">下一票雷达确认代码</a>
           <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor projection from latest local task">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session map from latest local task">次日图谱</a>
           <a href="#tasks" title="切换到任务目录；只读查看完整任务列表" aria-label="open task monitor from latest local task">任务目录</a>
@@ -1425,7 +1426,7 @@ export default function CommandCenterHome() {
           <a href={dailyCommandPrimaryActionHref} aria-label="open daily command primary next action">{dailyCommandPrimaryActionLabel}</a>
         </div>
         <div className="actions" aria-label="daily command next user actions">
-          <a href="#candidates" title="切换到下一票雷达模块；输入代码后仍需确认按钮" aria-label="open candidate radar from daily command">查看下一票雷达</a>
+          <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入代码后仍需确认按钮" aria-label="open candidate radar confirm input from daily command">下一票雷达确认代码</a>
           <a href="#factor" title="切换到股票量化推演模块；只回放缓存结果，不创建 task" aria-label="open stock quant projection from daily command">查看股票量化推演</a>
           <a href="#next" title="切换到次日图谱模块；只回放本地次日图谱缓存，不创建 task" aria-label="open next session map from daily command">查看次日图谱</a>
           <a href="#dataHealth" title="切换到数据健康模块；只读 cache，不刷新外部数据源" aria-label="open data health from daily command">查看数据健康</a>

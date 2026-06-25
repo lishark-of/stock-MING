@@ -86,6 +86,13 @@ function normalizeAshareSymbolInput(raw: string) {
   return { input, normalized: `${symbol}.${inferredMarket}`, valid: true, reason: "inferred_market_suffix" };
 }
 
+function candidateRadarRouteAnchorFromHash() {
+  if (typeof window === "undefined") return "";
+  const cleaned = window.location.hash.trim().replace(/^#\/?/, "");
+  const parts = cleaned.split("/");
+  return parts.length > 1 ? parts.slice(1).join("/").split("?")[0] : "";
+}
+
 export default function CandidateRadar() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -285,6 +292,11 @@ export default function CandidateRadar() {
     refreshCache();
     refreshBootstrapStatus();
     refreshDesktopPreflight();
+  }, []);
+  useEffect(() => {
+    const anchor = candidateRadarRouteAnchorFromHash();
+    if (anchor !== "candidate-radar-search-quant-projection") return;
+    document.getElementById(anchor)?.scrollIntoView({ block: "start" });
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};

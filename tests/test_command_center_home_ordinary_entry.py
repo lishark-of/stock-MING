@@ -386,6 +386,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("dailyCommandResultComposition", source)
         self.assertIn("dailyCommandMissingDataBoundary", source)
         self.assertIn("dailyCommandPrimaryActionLabel", source)
+        self.assertIn("dailyCommandCandidateConfirmHref", source)
+        self.assertIn('const dailyCommandCandidateConfirmHref = "#candidates/candidate-radar-search-quant-projection";', source)
         self.assertIn("dailyCommandPrimaryActionHref", source)
         self.assertIn("dailyCommandPrimaryActionBoundary", source)
         self.assertIn("dailyCommandHealthOk", source)
@@ -516,16 +518,18 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="daily command primary next action"', summary)
         self.assertIn('aria-label="open daily command primary next action"', summary)
         self.assertIn('aria-label="daily command next user actions"', summary)
+        self.assertIn('aria-label="open candidate radar confirm input from daily command"', summary)
+        self.assertIn("下一票雷达确认代码", summary)
         self.assertIn('aria-label="daily command ordinary readback details"', summary)
         self.assertIn("<summary>本地回放明细</summary>", summary)
         self.assertIn("确认链、P2 写回、P3 检查点和恢复表默认收起", summary)
-        self.assertIn('href="#candidates"', summary)
+        self.assertIn("dailyCommandCandidateConfirmHref", summary)
         self.assertIn('href="#factor"', summary)
         self.assertIn('href="#dataHealth"', summary)
         self.assertIn('href="#desktop"', summary)
         self.assertIn('href="#migration"', summary)
         self.assertIn('href="#tasks"', summary)
-        self.assertIn('title="切换到下一票雷达模块；输入代码后仍需确认按钮"', summary)
+        self.assertIn('title="切换到下一票雷达确认输入区；输入代码后仍需确认按钮"', summary)
         self.assertIn('title="切换到股票量化推演模块；只回放缓存结果，不创建 task"', summary)
         self.assertIn('title="切换到数据健康模块；只读 cache，不刷新外部数据源"', summary)
         self.assertIn('title="切换到桌面壳预检模块；只读恢复指引，不启动服务"', summary)
@@ -544,6 +548,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         for route_key in ('"candidates"', '"factor"', '"dataHealth"', '"desktop"', '"migration"', '"tasks"'):
             self.assertIn(route_key, app_source)
         self.assertIn("normalizeRouteKey(window.location.hash)", app_source)
+        self.assertIn(".split(/[/?]/)[0]", app_source)
+        self.assertIn("normalizeRouteKey(window.location.hash) !== route", app_source)
 
     def test_engineering_metrics_are_demoted_behind_details(self):
         source = self.source
