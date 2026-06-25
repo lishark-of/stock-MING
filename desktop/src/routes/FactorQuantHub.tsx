@@ -1038,6 +1038,38 @@ export default function FactorQuantHub() {
       ? "已回放搜票结论，量化缓存待刷新"
       : "等待量化缓存"
     : "量化缓存可用";
+  const ordinaryQuantUserFirstItems: MetricItem[] = [
+    {
+      label: "当前标的",
+      value: candidateRadarConfirmedSymbol || "等待下一票雷达确认",
+      tone: candidateRadarConfirmedSymbol ? "good" : "warn"
+    },
+    {
+      label: "现在看什么",
+      value: ordinaryQuantCandidateRadarP3Ready || !empty ? candidateRadarReadableResult : ordinaryQuantNextClick,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: ordinaryQuantPrimaryActionLabel,
+      tone: ordinaryQuantPrimaryActionHref === CANDIDATE_CONFIRM_HREF ? "warn" : "good"
+    },
+    {
+      label: "数据链",
+      value: ordinaryQuantTushareFirstDataChainLabel,
+      tone: ordinaryQuantTushareFirstProviderSuccessCount > 0 ? "good" : "warn"
+    },
+    {
+      label: "图谱/解释",
+      value: `次日图谱：${String(bridge.status ?? bridge.bridge_status ?? "等待本地缓存")} / ${candidateRadarOrdinaryDeepSeekState}`,
+      tone: candidateRadarUsesModelOutput ? "warn" : "good"
+    },
+    {
+      label: "边界",
+      value: "只读本地结果；不自动外联、不真实交易、不下单、不改 strategy action",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantPrimarySummaryItems: MetricItem[] = [
     { label: "下一步", value: ordinaryQuantNextClick },
     { label: "数据链", value: ordinaryQuantTushareFirstDataChainLabel },
@@ -1091,32 +1123,14 @@ export default function FactorQuantHub() {
         emptyDetail="本页只读取本地缓存；不会自动刷新外部数据。若需要更新，请手动点击任务按钮。"
       />
       <PacketCard title="普通用户量化推演摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={ordinaryQuantStatusLabel}>
-        <div aria-label="stock quant latest candidate post confirm checkpoint">
-          <h3>确认后量化 checkpoint</h3>
-          <p className="risk-note">最近一只票的 task id、P1 确认、P2 三面和 P3 可读结论在量化页首屏先读；本 checkpoint 只读 CandidateRadar cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
-          <MetricGrid items={ordinaryQuantLatestCandidateCheckpointItems} />
-        </div>
-        <div aria-label="stock quant local task index progress watch">
-          <h3>本地任务进度</h3>
-          <MetricGrid items={ordinaryQuantTaskIndexProgressItems} />
-          <div className="actions" aria-label="stock quant local task index progress actions">
-            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from stock quant progress watch">任务目录</a>
-            <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="open factor support suppress from stock quant progress watch">支持/压制</a>
-            <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱图表区域；只读本地次日图谱数据" aria-label="open next session from stock quant progress watch">次日图谱</a>
+        <div aria-label="stock quant ordinary user first summary">
+          <h3>一屏速读</h3>
+          <p className="risk-note">默认先看当前标的、结论、下一步、数据链、图谱/解释和边界；task、ledger、合同和回放细节继续收起在下方。</p>
+          <MetricGrid items={ordinaryQuantUserFirstItems} />
+          <div className="actions" aria-label="stock quant projection primary next action">
+            <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
           </div>
-          <p className="risk-note">边用边看：{ordinaryQuantProgressWatchNext}；这只来自 GET /api/tasks、Factor cache 和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易。</p>
         </div>
-        <div aria-label="stock quant p1 task source readback">
-          <h3>P1 任务来源回放</h3>
-          <p className="risk-note">这张小表只告诉普通用户 P3 结论来自哪次确认 task，以及确认回执和 task_readback 是否已经本地回放；详细回放合同继续收起。</p>
-          <MetricGrid items={ordinaryQuantTaskSourceReadbackItems} />
-        </div>
-        <details className="developer-audit-details" aria-label="stock quant post confirm backend replay contract">
-          <summary>后端回放合同</summary>
-          <p className="risk-note">优先读取 CandidateRadar call_ledger safe params 里的 ordinary_post_confirm_replay_contract：量化页按同一条确认后合同回放任务、P2 三面和结果入口；本卡只读 cache / ledger / packet，不创建 task。</p>
-          <DataLineageTable rows={ordinaryQuantPostConfirmReplayContractRows} />
-        </details>
-        <MetricGrid items={ordinaryQuantPrimarySummaryItems} />
         <div aria-label="stock quant p3 one screen explanation">
           <h3>P3 一屏结论</h3>
           <MetricGrid items={ordinaryQuantP3OneScreenItems} />
@@ -1124,7 +1138,8 @@ export default function FactorQuantHub() {
         </div>
         <details className="developer-audit-details" aria-label="stock quant ordinary summary extra details">
           <summary>更多量化摘要字段</summary>
-          <p className="risk-note">普通首屏只保留下一步、P2 三面、P3 结论和安全边界；运行模式、回放位置、缺口和补证方式默认收起。</p>
+          <p className="risk-note">普通首屏只保留当前标的、结论、下一步、数据链、图谱/解释和安全边界；P1/P2/P3 完整字段、运行模式、回放位置、缺口和补证方式默认收起。</p>
+          <MetricGrid items={ordinaryQuantPrimarySummaryItems} />
           <MetricGrid items={ordinaryQuantExpandedSummaryItems} />
         </details>
         <StateClarityRail
@@ -1152,13 +1167,46 @@ export default function FactorQuantHub() {
             <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return candidate radar confirm input from readable result">回下一票雷达确认</a>
           </div>
           <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变 strategy action。</p>
-          {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
-          {candidateRadarResultCheckpointRows.length ? <DataLineageTable rows={candidateRadarResultCheckpointRows} /> : null}
-          {factorPacketCandidateHandoffRows.length ? <DataLineageTable rows={factorPacketCandidateHandoffRows} /> : null}
+          <details className="developer-audit-details" aria-label="stock quant readable result source rows">
+            <summary>可读结论来源明细</summary>
+            <p className="risk-note">这些来源行用于复核 CandidateRadar quick rows、checkpoint rows 和 Factor handoff；默认收起，避免普通阅读从工程表开始。</p>
+            {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
+            {candidateRadarResultCheckpointRows.length ? <DataLineageTable rows={candidateRadarResultCheckpointRows} /> : null}
+            {factorPacketCandidateHandoffRows.length ? <DataLineageTable rows={factorPacketCandidateHandoffRows} /> : null}
+          </details>
         </div>
+        <details className="developer-audit-details" aria-label="stock quant ordinary task provenance details">
+          <summary>任务来源和回放细节</summary>
+          <p className="risk-note">task id、P1 确认、P2 三面、任务索引和后端回放合同默认收起；需要排查来源时再展开。本区仍只读 cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
+          <div aria-label="stock quant latest candidate post confirm checkpoint">
+            <h3>确认后量化 checkpoint</h3>
+            <p className="risk-note">最近一只票的 task id、P1 确认、P2 三面和 P3 可读结论在量化页可展开复核；本 checkpoint 只读 CandidateRadar cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
+            <MetricGrid items={ordinaryQuantLatestCandidateCheckpointItems} />
+          </div>
+          <div aria-label="stock quant local task index progress watch">
+            <h3>本地任务进度</h3>
+            <MetricGrid items={ordinaryQuantTaskIndexProgressItems} />
+            <div className="actions" aria-label="stock quant local task index progress actions">
+              <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from stock quant progress watch">任务目录</a>
+              <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="open factor support suppress from stock quant progress watch">支持/压制</a>
+              <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱图表区域；只读本地次日图谱数据" aria-label="open next session from stock quant progress watch">次日图谱</a>
+            </div>
+            <p className="risk-note">边用边看：{ordinaryQuantProgressWatchNext}；这只来自 GET /api/tasks、Factor cache 和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易。</p>
+          </div>
+          <div aria-label="stock quant p1 task source readback">
+            <h3>P1 任务来源回放</h3>
+            <p className="risk-note">这张小表只告诉普通用户 P3 结论来自哪次确认 task，以及确认回执和 task_readback 是否已经本地回放；详细回放合同继续收起。</p>
+            <MetricGrid items={ordinaryQuantTaskSourceReadbackItems} />
+          </div>
+          <div aria-label="stock quant post confirm backend replay contract">
+            <h3>后端回放合同</h3>
+            <p className="risk-note">优先读取 CandidateRadar call_ledger safe params 里的 ordinary_post_confirm_replay_contract：量化页按同一条确认后合同回放任务、P2 三面和结果入口；本卡只读 cache / ledger / packet，不创建 task。</p>
+            <DataLineageTable rows={ordinaryQuantPostConfirmReplayContractRows} />
+          </div>
+        </details>
         <details className="developer-audit-details" aria-label="stock quant ordinary expanded replay details">
           <summary>更多量化回放明细</summary>
-          <p className="risk-note">普通主视图保留确认后 checkpoint、P3 可读结论和下一步入口；上游确认、P2 三面、三段解释、完整图谱交接和因子复核默认收起。</p>
+          <p className="risk-note">普通主视图保留一屏速读、P3 可读结论和下一步入口；上游确认、P2 三面、三段解释、完整图谱交接和因子复核默认收起。</p>
           <div aria-label="stock quant ordinary upstream one screen actions">
             <h3>上游确认一屏行动</h3>
             <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成量化页上游速读；本页只读回放，不创建 task、不调用模型。</p>
@@ -1204,9 +1252,6 @@ export default function FactorQuantHub() {
             <DataLineageTable rows={ordinaryDeepSeekGovernedExecutorRows} />
           </div>
         </details>
-        <div className="actions" aria-label="stock quant projection primary next action">
-          <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
-        </div>
         <div className="actions" aria-label="stock quant projection source actions">
           <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="view factor support suppress summary">查看支持/压制</a>
           <a href="#factor-next-session" title="跳到本页次日图谱预览；不刷新 provider/model" aria-label="view next session bridge preview">查看次日图谱预览</a>
