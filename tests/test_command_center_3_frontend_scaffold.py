@@ -4749,6 +4749,14 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         ]
         self.assertIn("DataLineageTable rows={quantProjectionTaskSuccessRefreshRows}", first_screen_task_status_slice)
         self.assertIn("<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />", first_screen_task_status_slice)
+        self.assertIn('className="developer-audit-details" aria-label="candidate radar first screen task receipt details"', first_screen_task_status_slice)
+        self.assertIn("<summary>任务回执详情</summary>", first_screen_task_status_slice)
+        self.assertIn("完整 POST task receipt 默认收起", first_screen_task_status_slice)
+        self.assertIn("<TaskLaunchReceipt receipt={taskReceipt} />", first_screen_task_status_slice)
+        self.assertLess(
+            first_screen_task_status_slice.index("<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />"),
+            first_screen_task_status_slice.index('aria-label="candidate radar first screen task receipt details"')
+        )
         self.assertNotIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", first_screen_task_status_slice)
         post_confirm_outcome_slice = page[
             page.index('aria-label="candidate radar post confirm one screen outcome"') :

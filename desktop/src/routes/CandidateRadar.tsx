@@ -2585,13 +2585,17 @@ export default function CandidateRadar() {
           </div>
           {quantProjectionTaskPanelVisible ? (
             <div aria-label="candidate radar first screen task status">
-              <TaskLaunchReceipt receipt={taskReceipt} />
               <div aria-label="quant projection task success refresh checklist">
                 <h3>任务成功后自动回读</h3>
                 <p className="risk-note">TaskStatusPanel success 后调用 refreshQuantProjectionReadback：只回读 CandidateRadar cache 和 bootstrap status，再让用户看 P2 三面与 P3 结果入口；不会创建第二个 task。</p>
                 <DataLineageTable rows={quantProjectionTaskSuccessRefreshRows} />
               </div>
               <TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />
+              <details className="developer-audit-details" aria-label="candidate radar first screen task receipt details">
+                <summary>任务回执详情</summary>
+                <p className="risk-note">普通用户先看任务状态和成功后回读清单；完整 POST task receipt 默认收起，只作为排查本地任务接收和 safe payload 的审计材料。</p>
+                <TaskLaunchReceipt receipt={taskReceipt} />
+              </details>
             </div>
           ) : null}
           {quantProjectionTaskPanelStaleNotice ? (
