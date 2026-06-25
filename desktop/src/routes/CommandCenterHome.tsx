@@ -1571,6 +1571,64 @@ export default function CommandCenterHome() {
       边界: dailyCommandDeepSeekGovernanceBoundary
     }
   ];
+  const dailyCommandSummaryPrimaryItems: MetricItem[] = [
+    { label: "下一步", value: dailyCommandNextClick },
+    { label: "本地联通", value: dailyCommandConnectionState, tone: dailyCommandHealthOk ? "good" : "warn" },
+    { label: "P0 可继续", value: dailyCommandP0LocalReadinessLabel, tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+    { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
+    { label: "P2 小数据", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+    { label: "P3 可读结论", value: dailyCommandExplainableResultLabel, tone: candidateQuantInterpretation.interpretation_ready === true ? "good" : "warn" },
+    { label: "今日结果位置", value: dailyCommandResultLocation, tone: "good" },
+    { label: "缺少证据", value: dailyCommandMissingEvidence, tone: dailyCommandMissingEvidence.includes("缓存") || dailyCommandMissingEvidence.includes("验收") || dailyCommandMissingEvidence.includes("收口") ? "warn" : "good" },
+    { label: "仅供研究", value: dailyCommandResearchOnlyLabel, tone: "good" }
+  ];
+  const dailyCommandSummaryTechnicalItems: MetricItem[] = [
+    { label: "主下一步", value: dailyCommandPrimaryActionLabel },
+    { label: "主下一步边界", value: dailyCommandPrimaryActionBoundary, tone: "good" },
+    { label: "联通优先级", value: dailyCommandConnectivityPriority, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+    { label: "一键启动", value: dailyCommandLauncherState, tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
+    { label: "启动恢复", value: dailyCommandStartupRecoveryLabel, tone: error || desktopLauncherContract.launcher_executable !== true ? "warn" : "good" },
+    { label: "启动边界", value: dailyCommandStartupBoundary, tone: "good" },
+    { label: "启动成功条件", value: dailyCommandStartupSuccessCondition, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+    { label: "启动诊断", value: dailyCommandStartupDiagnosticSurfaces, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+    { label: "启动失败处理", value: dailyCommandStartupFailureAction, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+    { label: "恢复回读", value: dailyCommandStartupReadbackLabel, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+    { label: "回读顺序", value: dailyCommandStartupReadbackOrder, tone: "good" },
+    { label: "回读边界", value: dailyCommandStartupReadbackBoundary, tone: "good" },
+    { label: "只读自检", value: dailyCommandP0CheckOnlyNext, tone: p0LauncherCheckOnlyRows.length ? "good" : "warn" },
+    { label: "自动联通", value: dailyCommandFrontendBackendAutoLinkLabel, tone: dailyCommandHealthOk ? "good" : "warn" },
+    { label: "自动联通边界", value: dailyCommandFrontendBackendAutoLinkBoundary, tone: "good" },
+    { label: "P0 进入 P1 闸门", value: dailyCommandP0LocalReadinessReady ? "四段已通过；可在首页确认股票代码" : "先让 health / bootstrap / preflight / React 四段变绿", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+    { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
+    { label: "一屏行动", value: dailyCommandOneScreenActionLabel || "等待 CandidateRadar 一屏行动回放", tone: candidateQuantOneScreenActionRows.length ? "good" : "warn" },
+    { label: "确认结果链", value: dailyCommandConfirmOutcomeLabel, tone: candidateQuantConfirmOutcomeRows.length ? "good" : "warn" },
+    { label: "确认后回放", value: "确认回执 -> 任务状态 -> P2 写回 -> P3 结果", tone: "good" },
+    { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
+    { label: "量化缓存回放", value: dailyCommandFactorCacheFallbackLabel, tone: dailyCommandFactorCacheFallbackActive ? "warn" : "good" },
+    { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
+    { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
+    { label: "今日结果组成", value: dailyCommandResultComposition },
+    { label: "次日图谱", value: String(next.status ?? "等待缓存"), tone: next.status === "ready" ? "good" : "warn" },
+    { label: "P2 边界", value: dailyCommandSmallDataWritebackBoundary, tone: "good" },
+    { label: "P3 下一步", value: dailyCommandExplainableResultNext },
+    { label: "P3 边界", value: dailyCommandExplainableResultBoundary, tone: "good" },
+    { label: "P3 检查点", value: dailyCommandP3CheckpointLabel, tone: candidateQuantCheckpointRows.length ? "good" : "warn" },
+    { label: "P5 解释治理", value: dailyCommandDeepSeekGovernanceState, tone: candidateQuantInterpretation.deepseek_model_ledger_ready === true ? "warn" : "good" },
+    { label: "P5 边界", value: dailyCommandDeepSeekGovernanceBoundary, tone: "good" },
+    { label: "本地缓存", value: dailyCommandCacheSourceLabel },
+    { label: "数据链", value: dailyCommandTushareSourceLabel },
+    { label: "解释状态", value: dailyCommandDeepSeekSourceLabel },
+    { label: "外联触发边界", value: dailyCommandExternalTriggerBoundary, tone: "good" },
+    { label: "待补证据", value: dailyCommandPendingSourceLabel, tone: dailyCommandPendingSourceLabel.includes("待补") || dailyCommandPendingSourceLabel.includes("验收") || dailyCommandPendingSourceLabel.includes("缓存") ? "warn" : "good" },
+    { label: "降级提示", value: dailyCommandDegradedSourceLabel, tone: dailyCommandDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
+    { label: "最近成功回放", value: dailyCommandLastCache },
+    { label: "数据来源", value: dailyCommandSourceState },
+    { label: "补证状态", value: dailyCommandBackgroundTaskState, tone: dailyCommandBackgroundTaskTone },
+    { label: "阻断/降级", value: dailyCommandBlockedState, tone: dailyCommandBlockedState.includes("未标记") ? "good" : "warn" },
+    { label: "最近可用缓存", value: dailyCommandLastCache },
+    { label: "任务边界", value: dailyCommandTaskBoundary },
+    { label: "缺数据口径", value: dailyCommandMissingDataBoundary, tone: "good" }
+  ];
 
   const refreshHomeResearchReadback = () => {
     void getCandidateRadarCache().then((res) => {
@@ -1921,63 +1979,12 @@ export default function CommandCenterHome() {
         <p className="risk-note">本卡只读 `/api/tasks` 和具体 task 状态；不会补调 Tushare、DeepSeek 或 GitHub，也不会真实交易或修改 strategy action。</p>
       </PacketCard>
       <PacketCard title="今日作战台摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={dailyCommandStatusLabel}>
-        <MetricGrid
-          items={[
-            { label: "下一步", value: dailyCommandNextClick },
-            { label: "主下一步", value: dailyCommandPrimaryActionLabel },
-            { label: "主下一步边界", value: dailyCommandPrimaryActionBoundary, tone: "good" },
-            { label: "本地联通", value: dailyCommandConnectionState, tone: dailyCommandHealthOk ? "good" : "warn" },
-            { label: "联通优先级", value: dailyCommandConnectivityPriority, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
-            { label: "一键启动", value: dailyCommandLauncherState, tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
-            { label: "启动恢复", value: dailyCommandStartupRecoveryLabel, tone: error || desktopLauncherContract.launcher_executable !== true ? "warn" : "good" },
-            { label: "启动边界", value: dailyCommandStartupBoundary, tone: "good" },
-            { label: "启动成功条件", value: dailyCommandStartupSuccessCondition, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
-            { label: "启动诊断", value: dailyCommandStartupDiagnosticSurfaces, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
-            { label: "启动失败处理", value: dailyCommandStartupFailureAction, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
-            { label: "恢复回读", value: dailyCommandStartupReadbackLabel, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
-            { label: "回读顺序", value: dailyCommandStartupReadbackOrder, tone: "good" },
-            { label: "回读边界", value: dailyCommandStartupReadbackBoundary, tone: "good" },
-            { label: "只读自检", value: dailyCommandP0CheckOnlyNext, tone: p0LauncherCheckOnlyRows.length ? "good" : "warn" },
-            { label: "自动联通", value: dailyCommandFrontendBackendAutoLinkLabel, tone: dailyCommandHealthOk ? "good" : "warn" },
-            { label: "自动联通边界", value: dailyCommandFrontendBackendAutoLinkBoundary, tone: "good" },
-            { label: "P0 可继续", value: dailyCommandP0LocalReadinessLabel, tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
-            { label: "P0 进入 P1 闸门", value: dailyCommandP0LocalReadinessReady ? "四段已通过；可在首页确认股票代码" : "先让 health / bootstrap / preflight / React 四段变绿", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
-            { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
-            { label: "一屏行动", value: dailyCommandOneScreenActionLabel || "等待 CandidateRadar 一屏行动回放", tone: candidateQuantOneScreenActionRows.length ? "good" : "warn" },
-            { label: "确认结果链", value: dailyCommandConfirmOutcomeLabel, tone: candidateQuantConfirmOutcomeRows.length ? "good" : "warn" },
-            { label: "确认后回放", value: "确认回执 -> 任务状态 -> P2 写回 -> P3 结果", tone: "good" },
-            { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
-            { label: "量化缓存回放", value: dailyCommandFactorCacheFallbackLabel, tone: dailyCommandFactorCacheFallbackActive ? "warn" : "good" },
-            { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
-            { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
-            { label: "今日结果组成", value: dailyCommandResultComposition },
-            { label: "今日结果位置", value: dailyCommandResultLocation, tone: "good" },
-            { label: "次日图谱", value: String(next.status ?? "等待缓存"), tone: next.status === "ready" ? "good" : "warn" },
-            { label: "P2 小数据", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
-            { label: "P2 边界", value: dailyCommandSmallDataWritebackBoundary, tone: "good" },
-            { label: "P3 可读结论", value: dailyCommandExplainableResultLabel, tone: candidateQuantInterpretation.interpretation_ready === true ? "good" : "warn" },
-            { label: "P3 下一步", value: dailyCommandExplainableResultNext },
-            { label: "P3 边界", value: dailyCommandExplainableResultBoundary, tone: "good" },
-            { label: "P3 检查点", value: dailyCommandP3CheckpointLabel, tone: candidateQuantCheckpointRows.length ? "good" : "warn" },
-            { label: "P5 解释治理", value: dailyCommandDeepSeekGovernanceState, tone: candidateQuantInterpretation.deepseek_model_ledger_ready === true ? "warn" : "good" },
-            { label: "P5 边界", value: dailyCommandDeepSeekGovernanceBoundary, tone: "good" },
-            { label: "本地缓存", value: dailyCommandCacheSourceLabel },
-            { label: "数据链", value: dailyCommandTushareSourceLabel },
-            { label: "解释状态", value: dailyCommandDeepSeekSourceLabel },
-            { label: "外联触发边界", value: dailyCommandExternalTriggerBoundary, tone: "good" },
-            { label: "待补证据", value: dailyCommandPendingSourceLabel, tone: dailyCommandPendingSourceLabel.includes("待补") || dailyCommandPendingSourceLabel.includes("验收") || dailyCommandPendingSourceLabel.includes("缓存") ? "warn" : "good" },
-            { label: "降级提示", value: dailyCommandDegradedSourceLabel, tone: dailyCommandDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
-            { label: "最近成功回放", value: dailyCommandLastCache },
-            { label: "数据来源", value: dailyCommandSourceState },
-            { label: "补证状态", value: dailyCommandBackgroundTaskState, tone: dailyCommandBackgroundTaskTone },
-            { label: "缺少证据", value: dailyCommandMissingEvidence, tone: dailyCommandMissingEvidence.includes("缓存") || dailyCommandMissingEvidence.includes("验收") || dailyCommandMissingEvidence.includes("收口") ? "warn" : "good" },
-            { label: "阻断/降级", value: dailyCommandBlockedState, tone: dailyCommandBlockedState.includes("未标记") ? "good" : "warn" },
-            { label: "最近可用缓存", value: dailyCommandLastCache },
-            { label: "任务边界", value: dailyCommandTaskBoundary },
-            { label: "缺数据口径", value: dailyCommandMissingDataBoundary, tone: "good" },
-            { label: "仅供研究", value: dailyCommandResearchOnlyLabel, tone: "good" }
-          ]}
-        />
+        <MetricGrid items={dailyCommandSummaryPrimaryItems} />
+        <details className="developer-audit-details" aria-label="daily command summary technical metrics">
+          <summary>启动诊断 / 证据口径 / P5 明细</summary>
+          <p className="risk-note">普通视图只保留下一步、联通、P2/P3 和缺口；启动诊断、fallback、证据口径和 P5 状态默认下沉，展开后仍只读本地 cache。</p>
+          <MetricGrid items={dailyCommandSummaryTechnicalItems} />
+        </details>
         <div aria-label="daily command usable shortest path">
           <h3>使用者可用化最短路径</h3>
           <p className="risk-note">当前执行目标是 Command Center 3.0 使用者可用化最短路径，不是 14 LTG strict closeout 完成声明；DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱。</p>
