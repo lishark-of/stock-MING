@@ -95,6 +95,15 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("本地快扫和输入股票池保留为可选补证；主路径走搜票确认", self.page)
         self.assertIn('href="#candidate-radar-search-quant-projection"', self.page)
         self.assertIn('id="candidate-radar-search-quant-projection"', self.page)
+        first_screen_confirm_start = self.page.index('id="candidate-radar-search-quant-projection"')
+        self.assertLess(
+            first_screen_confirm_start,
+            self.page.index('aria-label="candidate radar first screen quant projection actions"', first_screen_confirm_start),
+        )
+        self.assertLess(
+            first_screen_confirm_start,
+            self.page.index('aria-label="candidate radar next user actions"', first_screen_confirm_start),
+        )
         self.assertIn("candidateRadarP0HandoffPacketRows", self.page)
         self.assertIn("desktopPreflight.p0_to_p1_ordinary_handoff_rows", self.page)
         self.assertIn("candidateRadarP0HandoffRows", self.page)

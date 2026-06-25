@@ -2495,7 +2495,7 @@ export default function CandidateRadar() {
             ]}
           />
         </details>
-        <div aria-label="candidate radar first screen quant projection confirmation">
+        <div id="candidate-radar-search-quant-projection" aria-label="candidate radar first screen quant projection confirmation">
           <h3>P1 搜票确认</h3>
           <div className="actions" aria-label="candidate radar first screen quant projection actions">
             <input
@@ -2756,7 +2756,7 @@ export default function CandidateRadar() {
             <a href="#candidate-radar-search-quant-projection" aria-label="jump to searched symbol confirmation from radar summary">{ordinaryPrimaryActionLabel}</a>
           )}
         </div>
-        <div id="candidate-radar-search-quant-projection" className="actions" aria-label="candidate radar next user actions">
+        <div id="candidate-radar-summary-actions" className="actions" aria-label="candidate radar next user actions">
           <button onClick={refreshCache}>查看本地缓存</button>
           {Number(counts.candidate_count ?? 0) ? <button onClick={launchQuickScan}>运行本地快扫</button> : null}
           <input

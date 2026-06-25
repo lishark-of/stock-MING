@@ -5416,9 +5416,14 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             page.index('aria-label="candidate radar primary next action"', summary_start),
             page.index('aria-label="candidate radar next user actions"', summary_start),
         )
+        first_screen_confirm_start = page.index('id="candidate-radar-search-quant-projection"')
         self.assertLess(
-            page.index('href="#candidate-radar-search-quant-projection"'),
-            page.index('id="candidate-radar-search-quant-projection"'),
+            first_screen_confirm_start,
+            page.index('aria-label="candidate radar first screen quant projection actions"', first_screen_confirm_start),
+        )
+        self.assertLess(
+            first_screen_confirm_start,
+            page.index('aria-label="candidate radar next user actions"', summary_start),
         )
         self.assertLess(page.index('aria-label="candidate radar next user actions"', summary_start), candidate_pool_start)
         self.assertLess(page.index('aria-label="candidate radar next user actions"', summary_start), quick_scan_start)
