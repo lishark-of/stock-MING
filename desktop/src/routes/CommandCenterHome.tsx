@@ -1151,6 +1151,14 @@ export default function CommandCenterHome() {
       ? "看下方任务状态；成功后进入股票量化推演和次日图谱回放"
       : "看下方任务状态；按任务输出 packet 回放结果"
     : "在首页输入股票代码，点击确认并生成 3.0 量化推演";
+  const dailyCommandFastApiProgressWatchLabel = dailyCommandConfirmedSymbol
+    ? `${dailyCommandConfirmedSymbol} / ${dailyCommandLatestTaskStatus}`
+    : dailyCommandLatestTaskId
+      ? `${dailyCommandLatestTaskId} / ${dailyCommandLatestTaskStatus}`
+      : "等待确认按钮后的任务进度";
+  const dailyCommandFastApiProgressWatchNext = dailyCommandLatestTaskId
+    ? "查看任务进度；再回股票量化推演和次日图谱"
+    : "先在首页确认股票代码；输入本身保持静默";
   const dailyCommandLatestTaskRows = [
     {
       速读项: "最近任务",
@@ -2178,6 +2186,7 @@ export default function CommandCenterHome() {
             { label: "本地后端", value: dailyCommandFrontendBackendAutoLinkLabel, tone: dailyCommandHealthOk ? "good" : "warn" },
             { label: "当前页面", value: dailyCommandP0LocalReadinessReady ? "FastAPI、bootstrap、desktop preflight 和 React 已接上" : "等待本地四段联通回读", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "首页读法", value: "多接口本地聚合：health / bootstrap / preflight / radar / factor / next / tasks", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+            { label: "边用边看", value: dailyCommandFastApiProgressWatchLabel, tone: dailyCommandLatestTaskId || dailyCommandConfirmedSymbol ? "good" : "warn" },
             { label: "投研入口", value: dailyCommandNeedsStartupRecovery ? "先看一键启动预检" : "在首页确认股票代码；需要详情再进下一票雷达", tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "安全边界", value: "打开页面和输入代码不外联；确认按钮才触发 Tushare-first", tone: "good" }
           ]}
@@ -2192,6 +2201,7 @@ export default function CommandCenterHome() {
           <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after local fastapi connection">查看任务进度</a>
           <a href="#desktop" title="切换到桌面壳预检；只读查看本地连接诊断" aria-label="open desktop preflight after local fastapi connection">查看本地预检</a>
         </div>
+        <p className="risk-note">边用边看：{dailyCommandFastApiProgressWatchNext}；这只来自首页已回读的 `/api/tasks` 和 CandidateRadar cache，不创建第二个 task。</p>
         <p className="risk-note">本卡只判断本机前后端能不能继续投研；需要排查地址或 fallback 时展开技术明细。页面打开和输入代码仍保持只读，不创建 task。</p>
         <details className="developer-audit-details" aria-label="daily command local fastapi technical connection details">
           <summary>本地接线技术明细</summary>
