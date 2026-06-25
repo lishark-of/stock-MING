@@ -182,6 +182,15 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         latest_candidate_start = ordinary_slice.index('aria-label="next session latest candidate readable result"')
         latest_candidate_end = ordinary_slice.index('aria-label="next session p3 one minute read"', latest_candidate_start)
         latest_candidate_slice = ordinary_slice[latest_candidate_start:latest_candidate_end]
+        self.assertIn("nextSessionLatestCandidateReadableSentence", source_before_audit)
+        self.assertIn("P3 结论：${candidateRadarReadableResult}", source_before_audit)
+        self.assertIn("完整图谱等待手动生成", source_before_audit)
+        self.assertIn('aria-label="next session latest candidate readable sentence"', latest_candidate_slice)
+        self.assertIn("{nextSessionLatestCandidateReadableSentence}", latest_candidate_slice)
+        self.assertLess(
+            latest_candidate_slice.index('aria-label="next session latest candidate readable sentence"'),
+            latest_candidate_slice.index("<MetricGrid"),
+        )
         self.assertIn('label: "来源任务"', latest_candidate_slice)
         self.assertIn("value: candidateRadarSourceTaskLabel", latest_candidate_slice)
         self.assertIn('label: "P2 小数据"', latest_candidate_slice)
@@ -190,6 +199,10 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("value: candidateRadarWritebackSurfaceBoundary", latest_candidate_slice)
         self.assertIn('aria-label="next session readable result local actions"', latest_candidate_slice)
         readable_actions_start = latest_candidate_slice.index('aria-label="next session readable result local actions"')
+        self.assertLess(
+            latest_candidate_slice.index('aria-label="next session latest candidate readable sentence"'),
+            readable_actions_start,
+        )
         readable_actions_end = latest_candidate_slice.index("</div>", readable_actions_start)
         readable_actions_slice = latest_candidate_slice[readable_actions_start:readable_actions_end]
         self.assertIn('href="#next-session-chart"', readable_actions_slice)

@@ -303,6 +303,9 @@ export default function NextSessionMap() {
     : candidateRadarReadableResultReady
       ? "先读已确认标的、Tushare-first 结论和 P2 三面；完整图谱可手动生成"
       : nextSessionChartReviewOrder;
+  const nextSessionLatestCandidateReadableSentence = candidateRadarReadableResultReady
+    ? `${candidateRadarConfirmedSymbolLabel}；P3 结论：${candidateRadarReadableResult}；${chartSummary.has_drawable_data === true ? "完整图谱已可读" : "完整图谱等待手动生成"}；下一步：${nextSessionReadableChartReviewOrder}。`
+    : `等待下一票雷达确认标的；下一步：${nextSessionReadableChartReviewOrder}。`;
   const nextSessionGeneratePayload = {
     schema_version: "next_session_confirmed_symbol_generate_payload.v1",
     source: "next_session_map_manual_generate_button",
@@ -774,7 +777,8 @@ export default function NextSessionMap() {
       <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek，P5 解释治理继续收起为单独补证。</p>
       <div aria-label="next session latest candidate readable result">
         <h3>最近搜票可读结论</h3>
-        <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_post_confirm_one_glance_items；没有后端一屏结果时，fallback 仍读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放。本卡不创建 task、不补调数据源或模型，也不改 operation_zones；只读本地 cache。</p>
+        <p className="ordinary-status-note" aria-label="next session latest candidate readable sentence" aria-live="polite">{nextSessionLatestCandidateReadableSentence}</p>
+        <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_post_confirm_one_glance_items；没有后端一屏结果时，fallback 仍读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows，并优先读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows 作为可读行，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放。本卡不创建 task、不补调数据源或模型，也不改 operation_zones；只读本地 cache。</p>
         <MetricGrid
           items={nextSessionBackendPostConfirmOneGlanceItems.length ? nextSessionBackendPostConfirmOneGlanceItems : [
             { label: "标的", value: candidateRadarConfirmedSymbolLabel, tone: candidateRadarConfirmedSymbol ? "good" : "warn" },
