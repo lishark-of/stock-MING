@@ -14993,17 +14993,18 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
     if provider_ready:
         status = "small_data_writeback_ready_tushare_ledger_replayed"
         summary_label = (
-            f"cache / ledger / packet 已回放：Tushare {provider_api_success_count}/{provider_api_call_count} "
-            f"个接口；packet={PACKET_KEY}"
+            f"cache / ledger / packet 已回放（本次 GET cache 未外联）：源任务 Tushare "
+            f"{provider_api_success_count}/{provider_api_call_count} 个接口；packet={PACKET_KEY}"
         )
         next_action = "查看量化推演和次日图谱只读回放；Factor/Next/ECharts 仍需后续本地刷新证据。"
         ordinary_readback_status = "ready_tushare_ledger_replayed"
         ordinary_readback_summary = (
-            f"小数据已写入 cache / ledger / packet：Tushare {provider_api_success_count}/{provider_api_call_count} "
-            "个接口可回放，DeepSeek 未参与。"
+            f"小数据已写入 cache / ledger / packet：源任务 Tushare "
+            f"{provider_api_success_count}/{provider_api_call_count} 个接口可回放；"
+            "本次 GET cache 未外联，DeepSeek 未参与。"
         )
         ordinary_readback_next_step = "先看本地量化推演和次日图谱回放；Factor/Next/ECharts 缺口只作为待补证据。"
-        ordinary_readback_stage_label = "已回放 Tushare POST task ledger；当前页面只读 cache / ledger / packet。"
+        ordinary_readback_stage_label = "已回放源任务 Tushare POST task ledger；当前页面只读 cache / ledger / packet。"
     elif p0_confirm_gate_blocked:
         status = "small_data_writeback_blocked_p0_confirm_gate"
         summary_label = "cache / ledger / packet 已写入本地阻断：P0 本地联通闸门未通过；未调用 provider。"
@@ -15732,7 +15733,8 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         p1_shortest_status = "tushare_first_ledger_replayed"
         p1_shortest_label = (
             f"P1 最短路径已跑通：确认任务写入 task_id={latest_task_id or 'cache'}，"
-            f"Tushare ledger 已回放 {provider_api_success_count}/{provider_api_call_count} 个接口。"
+            f"源任务 Tushare ledger 已回放 {provider_api_success_count}/{provider_api_call_count} 个接口；"
+            "本次 GET cache 未外联。"
         )
         p1_shortest_next = "直接回放股票量化推演和次日图谱；DeepSeek 仍等 P5 governed executor。"
     elif credential_missing_count:
@@ -17029,8 +17031,10 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "writeback_surfaces": writeback_surfaces,
         "provider_call_source": provider_call_source,
         "provider_call_observed_only_from_post_task": provider_external_call_observed,
+        "provider_call_ledger_replayed_from_source_task": provider_ready or provider_ledger_visible,
         "ordinary_readback_provider_task_call_source": provider_call_source,
         "ordinary_readback_provider_task_external_call_observed": provider_external_call_observed,
+        "ordinary_readback_provenance_summary": ordinary_readback_provenance_summary,
         "latest_task_id": latest_task_id,
         "latest_task_status": latest_task_status,
         "latest_task_current_step": latest_task_current_step,
@@ -17073,6 +17077,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "next_session_refresh_executed": provider_receipt.get("next_session_refresh_executed") is True,
         "echarts_payload_refreshed": provider_receipt.get("echarts_payload_refreshed") is True,
         "provider_external_call_observed_in_post_task": provider_external_call_observed,
+        "source_task_external_calls_triggered": provider_external_call_observed,
+        "source_task_tushare_called": provider_external_call_observed,
+        "source_task_tushare_provider_ledger_ready": provider_ready,
+        "readback_external_calls_triggered": False,
+        "readback_tushare_called": False,
         "cache_get_external_calls": False,
         "react_render_external_calls": False,
         "external_calls_triggered": False,
@@ -17569,8 +17578,8 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             else "interpretation_ready_tushare_ledger_pending_local_map"
         )
         summary_label = (
-            f"可解释结果：Tushare {provider_success_count}/{provider_call_count} 接口账本已回放；"
-            "当前解释只说明数据来源和待补图谱，不生成买卖动作。"
+            f"可解释结果：源任务 Tushare {provider_success_count}/{provider_call_count} 接口账本已回放；"
+            "本次 GET cache 未外联，当前解释只说明数据来源和待补图谱，不生成买卖动作。"
         )
         result_replay_label = (
             "量化推演可先读 Tushare-first 证据；Next Session 图谱仍等待本地 cache 刷新。"
@@ -17580,8 +17589,8 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         next_action = "查看量化推演摘要，再补 Factor/Next/ECharts 本地刷新证据；DeepSeek 单独等待 governed executor。"
         ordinary_result_status = "ready_with_local_map" if factor_next_ready else "ready_pending_local_map"
         ordinary_result_summary = (
-            f"可读结论：Tushare-first 账本已回放 {provider_success_count}/{provider_call_count} 个接口；"
-            "当前可以解释数据来源和缺口，量化推演/次日图谱仍按本地缓存只读回放。"
+            f"可读结论：源任务 Tushare-first 账本已回放 {provider_success_count}/{provider_call_count} 个接口；"
+            "本次 GET cache 未外联；当前可以解释数据来源和缺口，量化推演/次日图谱仍按本地缓存只读回放。"
         )
         ordinary_result_next_step = (
             "先查看量化推演和次日图谱回放；缺口只作为待补证据，不生成买卖动作。"
@@ -17616,8 +17625,8 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "解释只基于本地 cache / ledger / packet；不调用 DeepSeek，不覆盖价格、持仓、因子、operation_zones 或 strategy action。"
     )
     ordinary_result_evidence = (
-        f"证据：Tushare 接口 {provider_success_count}/{provider_call_count}；"
-        f"DeepSeek 未参与；图谱{'已回放' if factor_next_ready else '待本地刷新'}。"
+        f"证据：源任务 Tushare 接口 {provider_success_count}/{provider_call_count}；"
+        f"本次 GET cache 未外联；DeepSeek 未参与；图谱{'已回放' if factor_next_ready else '待本地刷新'}。"
     )
     missing_evidence_label = " / ".join(missing_evidence) if missing_evidence else "基础图谱已有本地回放"
     latest_task_id = str(
@@ -18860,6 +18869,12 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "interpretation_ready": small_data_ready,
         "provider_api_success_count": provider_success_count,
         "provider_api_call_count": provider_call_count,
+        "provider_call_ledger_replayed_from_source_task": small_data_ready,
+        "source_task_external_calls_triggered": small_data.get("source_task_external_calls_triggered") is True,
+        "source_task_tushare_called": small_data.get("source_task_tushare_called") is True,
+        "source_task_tushare_provider_ledger_ready": small_data.get("source_task_tushare_provider_ledger_ready") is True,
+        "readback_external_calls_triggered": False,
+        "readback_tushare_called": False,
         "factor_next_echarts_ready": factor_next_ready,
         "next_session_map_state": "local_map_ready" if factor_next_ready else "pending_local_cache_refresh",
         "missing_evidence": missing_evidence,
