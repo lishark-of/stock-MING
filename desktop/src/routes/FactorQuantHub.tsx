@@ -91,6 +91,10 @@ export default function FactorQuantHub() {
   const candidateRadarConfirmOutcomeRows = toRows(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
   const candidateRadarWritebackSurfaceRows = toRows(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
   const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarPostConfirmOneGlanceRows = toRows(
+    candidateRadarCache.search_quant_projection_post_confirm_one_glance_items ??
+      candidateRadarInterpretation.ordinary_post_confirm_one_glance_items
+  );
   const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const candidateRadarReceiptCallLedger = toRows(candidateRadarReceipt.call_ledger);
   const candidateRadarReceiptRequestParams =
@@ -495,7 +499,15 @@ export default function FactorQuantHub() {
       边界: "结果入口只切换本地模块；不交易、不下单、不改 strategy action"
     }
   ];
-  const ordinaryQuantLatestCandidateCheckpointItems: MetricItem[] = [
+  const ordinaryQuantBackendPostConfirmOneGlanceItems: MetricItem[] = candidateRadarPostConfirmOneGlanceRows.map((row) => {
+    const tone = String(row.tone ?? "neutral");
+    return {
+      label: String(row.label ?? row["状态项"] ?? row.item_key ?? "确认后状态"),
+      value: String(row.value ?? row["当前状态"] ?? row.status ?? "--"),
+      tone: (["good", "warn", "bad", "neutral"].includes(tone) ? tone : "neutral") as MetricItem["tone"]
+    };
+  });
+  const ordinaryQuantFallbackLatestCandidateCheckpointItems: MetricItem[] = [
     {
       label: "确认标的",
       value: String(candidateRadarReceipt.symbol ?? "--"),
@@ -539,6 +551,9 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
+  const ordinaryQuantLatestCandidateCheckpointItems: MetricItem[] = ordinaryQuantBackendPostConfirmOneGlanceItems.length
+    ? ordinaryQuantBackendPostConfirmOneGlanceItems
+    : ordinaryQuantFallbackLatestCandidateCheckpointItems;
   const ordinaryQuantResultBoundary =
     "结果只用于研究复核；支持/压制、次日图谱和模型解释都不能直接变成买卖指令";
   const ordinaryDeepSeekGovernedExecutorState =
