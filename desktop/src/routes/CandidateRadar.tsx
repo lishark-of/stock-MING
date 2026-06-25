@@ -1945,6 +1945,44 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const quantProjectionUsableNowItems: MetricItem[] = [
+    {
+      label: "本地 FastAPI",
+      value: quantProjectionP0Ready
+        ? "已接上：可以输入代码并用确认按钮创建后台任务"
+        : "未完全接上：先回 P0 一键启动预检",
+      tone: quantProjectionP0Ready ? "good" : "warn"
+    },
+    {
+      label: "确认按钮",
+      value: quantProjectionCanSubmit
+        ? `可点击：${quantProjectionSymbolValidation.normalized} 将创建 Tushare-first POST task`
+        : quantProjectionDisabledReason,
+      tone: quantProjectionCanSubmit ? "good" : "warn"
+    },
+    {
+      label: "最近任务",
+      value: quantProjectionDisplayTaskId || "等待点击确认按钮",
+      tone: quantProjectionDisplayTaskId ? "good" : "warn"
+    },
+    {
+      label: "结果回放",
+      value: quantProjectionInterpretationReady || quantProjectionSmallDataReady
+        ? "已可读：打开股票量化推演和次日图谱回放本地结果"
+        : quantProjectionReplayDestinationState,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "现在点哪",
+      value: quantProjectionReplayDestinationNextStep,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady || quantProjectionCanSubmit ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "输入不外联；确认按钮才触发 Tushare-first；DeepSeek skipped；不交易、不改 action",
+      tone: "good"
+    }
+  ];
   const quantProjectionPostConfirmReplayContractReady =
     quantProjectionPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
   const quantProjectionPostConfirmReplaySequence = Array.isArray(quantProjectionPostConfirmReplayContract.readback_sequence)
@@ -2556,6 +2594,11 @@ export default function CandidateRadar() {
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
+        <div aria-label="candidate radar ordinary usable now strip">
+          <h3>现在可用状态</h3>
+          <MetricGrid items={quantProjectionUsableNowItems} />
+          <p className="risk-note">这条只合成本地 FastAPI、确认按钮、最近任务和 P2/P3 回放状态；不创建 task、不调用 Tushare/DeepSeek、不改 strategy action。</p>
+        </div>
         <div aria-label="candidate radar ordinary progress checkpoint">
           <h3>当前进度 checkpoint</h3>
           <MetricGrid items={quantProjectionOrdinaryProgressCheckpointItems} />

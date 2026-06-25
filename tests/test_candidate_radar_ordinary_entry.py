@@ -66,6 +66,22 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         summary_extra_end = summary_slice.index('aria-label="candidate radar first screen quant projection confirmation"', summary_extra_start)
         summary_primary_slice = summary_slice[:summary_extra_start]
         summary_extra_slice = summary_slice[summary_extra_start:summary_extra_end]
+        self.assertIn('aria-label="candidate radar ordinary usable now strip"', summary_primary_slice)
+        self.assertIn("现在可用状态", summary_primary_slice)
+        self.assertIn("quantProjectionUsableNowItems", summary_primary_slice)
+        for usable_label in (
+            'label: "本地 FastAPI"',
+            'label: "确认按钮"',
+            'label: "最近任务"',
+            'label: "结果回放"',
+            'label: "现在点哪"',
+        ):
+            self.assertIn(usable_label, self.page)
+        self.assertIn("这条只合成本地 FastAPI、确认按钮、最近任务和 P2/P3 回放状态", summary_primary_slice)
+        self.assertLess(
+            summary_primary_slice.index('aria-label="candidate radar ordinary usable now strip"'),
+            summary_primary_slice.index('aria-label="candidate radar ordinary progress checkpoint"'),
+        )
         for downshifted_label in (
             'label: "候选来源"',
             'label: "评分说明"',
