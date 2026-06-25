@@ -403,7 +403,7 @@ export default function CommandCenterHome() {
           写入面: "cache",
           当前状态: dailyCommandSmallDataWritebackState,
           回放来源: "search_quant_projection_small_data_writeback_summary",
-          下一步: "先去下一票雷达输入代码并点击确认",
+          下一步: "先去下一票雷达确认输入区输入代码并点击确认",
           边界: dailyCommandSmallDataWritebackBoundary
         },
         {
@@ -576,8 +576,8 @@ export default function CommandCenterHome() {
         {
           确认结果: "P1 确认结果",
           当前状态: "等待下一票雷达确认任务回放",
-          用户下一步: "回下一票雷达输入代码并点击确认按钮。",
-          入口: "#candidates",
+          用户下一步: "回下一票雷达确认输入区输入代码并点击确认按钮。",
+          入口: "#candidates/candidate-radar-search-quant-projection",
           边界: "首页确认入口和下一票雷达共用同一条 P1 task；确认按钮之前不创建 Tushare-first task。"
         },
         {
@@ -794,7 +794,7 @@ export default function CommandCenterHome() {
   const dailyCommandLatestTaskIsReplay = dailyCommandLatestTask.cache_replay_only === true || Boolean(dailyCommandCandidateLatestTaskId && !dailyCommandLatestTask.task_id);
   const dailyCommandLatestTaskLabel = dailyCommandLatestTaskId
     ? `${dailyCommandLatestTaskStatus}: ${dailyCommandLatestTaskType}`
-    : "暂无本地任务；先去下一票雷达输入代码并确认";
+    : "暂无本地任务；先去下一票雷达确认输入区输入代码并确认";
   const dailyCommandLatestTaskNext = dailyCommandLatestTaskId
     ? dailyCommandLatestTaskIsCandidate
       ? "看下方任务状态；成功后进入股票量化推演和次日图谱回放"
@@ -1034,8 +1034,8 @@ export default function CommandCenterHome() {
     {
       交接项: "下一票雷达结果",
       当前状态: dailyCommandP3OneGlanceReadable ? "P3 可解释结果可回放" : "等待 CandidateRadar checkpoint",
-      用户下一步: "需要换标的时回下一票雷达；输入仍保持静默，确认按钮才创建 task",
-      入口: "#candidates",
+      用户下一步: "需要换标的时回下一票雷达确认输入区；输入仍保持静默，确认按钮才创建 task",
+      入口: "#candidates/candidate-radar-search-quant-projection",
       边界: "结果回放只读 CandidateRadar cache / ledger / packet；不调用模型。"
     }
   ];
@@ -1065,7 +1065,7 @@ export default function CommandCenterHome() {
       联通项: "P0 可继续闸门",
       当前状态: dailyCommandP0LocalReadinessLabel,
       证据: "health ok + bootstrap runtime-mode packet + desktop preflight one-click packet + current React page",
-      下一步: dailyCommandP0LocalReadinessReady ? "进入下一票雷达；输入保持静默，确认按钮才触发 Tushare-first" : "回到一键启动预检；不要进入 P1 投研入口",
+      下一步: dailyCommandP0LocalReadinessReady ? "进入下一票雷达确认输入区；输入保持静默，确认按钮才触发 Tushare-first" : "回到一键启动预检；不要进入 P1 投研入口",
       边界: dailyCommandP0LocalReadinessBoundary
     }
   ];
@@ -1371,8 +1371,8 @@ export default function CommandCenterHome() {
           结果入口: "下一票雷达",
           当前状态: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待候选缓存",
           用户下一步: "复核候选、确认任务状态和结果回放位置；换标的仍需点击确认按钮",
-          入口: "#candidates",
-          边界: "只读跳转到雷达模块；不会从结果入口创建 task，搜索输入仍保持静默"
+          入口: "#candidates/candidate-radar-search-quant-projection",
+          边界: "只读跳转到雷达确认输入区；不会从结果入口创建 task，搜索输入仍保持静默"
         },
         {
           结果入口: "股票量化推演",
@@ -1572,7 +1572,7 @@ export default function CommandCenterHome() {
             { label: "接线地址", value: dailyCommandFrontendBackendSelectedApiBase, tone: dailyCommandHealthOk ? "good" : "warn" },
             { label: "候选地址", value: API_BASE_CANDIDATE_DISPLAY_URLS.join(" / "), tone: "good" },
             { label: "当前页面", value: dailyCommandP0LocalReadinessReady ? "FastAPI、bootstrap、desktop preflight 和 React 已接上" : "等待本地四段联通回读", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
-            { label: "投研入口", value: dailyCommandNeedsStartupRecovery ? "先看一键启动预检" : "去下一票雷达输入代码并确认", tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+            { label: "投研入口", value: dailyCommandNeedsStartupRecovery ? "先看一键启动预检" : "去下一票雷达确认输入区输入代码并确认", tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "安全边界", value: "打开页面和输入代码不外联；确认按钮才触发 Tushare-first", tone: "good" }
           ]}
         />
@@ -1596,7 +1596,7 @@ export default function CommandCenterHome() {
         <div className="actions" aria-label="daily command p0 now usable actions">
           <a href={dailyCommandPrimaryActionHref} aria-label="open p0 recommended next action">{dailyCommandPrimaryActionLabel}</a>
           <a href="#desktop" title="切换到桌面壳预检；只读查看本地四段诊断" aria-label="open p0 diagnostics from now usable card">查看四段诊断</a>
-          <a href="#candidates" title="切换到下一票雷达；输入仍保持静默，确认按钮才创建 Tushare-first task" aria-label="open candidate radar from p0 usable card">下一票雷达</a>
+          <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入仍保持静默，确认按钮才创建 Tushare-first task" aria-label="open candidate radar confirm input from p0 usable card">下一票雷达确认输入区</a>
         </div>
         <p className="risk-note">P0 ready 只说明本机前后端已接上；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。</p>
       </PacketCard>
@@ -1632,7 +1632,7 @@ export default function CommandCenterHome() {
                 <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after home symbol confirm">查看任务进度</a>
                 <a href="#factor" title="切换到股票量化推演；只读回放确认后的本地结果" aria-label="open factor after home symbol confirm">股票量化推演</a>
                 <a href="#next" title="切换到次日图谱；只读回放确认后的本地图谱" aria-label="open next session after home symbol confirm">次日图谱</a>
-                <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="open candidate radar after home symbol confirm">下一票雷达结果</a>
+                <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="open candidate radar confirm input after home symbol confirm">下一票雷达确认输入区</a>
               </div>
             </div>
           ) : null}
@@ -1735,7 +1735,7 @@ export default function CommandCenterHome() {
           <DataLineageTable rows={dailyCommandP3OneGlanceQuickRows} />
         </div>
         <div className="actions" aria-label="daily command p3 one glance actions">
-          <a href="#candidates" title="切换到下一票雷达；只读查看 P3 结果速读" aria-label="open candidate radar p3 one glance">下一票雷达结果</a>
+          <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；只读查看 P3 结果速读" aria-label="open candidate radar confirm input p3 one glance">下一票雷达确认输入区</a>
           <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor p3 one glance">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session p3 one glance">次日图谱</a>
         </div>
