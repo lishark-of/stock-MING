@@ -202,6 +202,10 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         if scope_ticket_ready
         else "governed_executor_pending_model_ledger",
         "execution_route": "POST /api/factor-quant/deepseek-explain",
+        "execution_route_semantics": "guarded_prompt_or_sanitizer_no_model_call",
+        "prompt_sanitizer_route": "POST /api/factor-quant/deepseek-explain",
+        "future_model_execution_route": "future POST governed DeepSeek executor",
+        "real_model_execution_route_implemented": False,
         "scope_ticket_route": "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
         "execution_request_route": "POST /api/factor-quant/deepseek-provider-benchmark-execution-request",
         "model_call_default": "off",

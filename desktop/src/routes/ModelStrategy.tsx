@@ -516,7 +516,7 @@ export default function ModelStrategy() {
           </details>
           <details className="developer-audit-details">
             <summary>P5 执行路由详情</summary>
-            <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}；execution-request：{String(governedExecutor.execution_request_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-execution-request")}。</p>
+            <p>本地 prompt / sanitizer 入口：{String(governedExecutor.prompt_sanitizer_route ?? governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；未来真实模型入口：{String(governedExecutor.future_model_execution_route ?? "future POST governed DeepSeek executor")}（当前未实现真实模型调用）；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}；execution-request：{String(governedExecutor.execution_request_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-execution-request")}。</p>
           </details>
         </PacketCard>
 

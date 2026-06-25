@@ -587,6 +587,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(one_screen["deepseek_called"])
         self.assertFalse(one_screen["is_production_evidence"])
         self.assertEqual(governed_executor["ordinary_one_screen_summary"], one_screen)
+        self.assertEqual(governed_executor["execution_route_semantics"], "guarded_prompt_or_sanitizer_no_model_call")
+        self.assertEqual(governed_executor["prompt_sanitizer_route"], "POST /api/factor-quant/deepseek-explain")
+        self.assertEqual(governed_executor["future_model_execution_route"], "future POST governed DeepSeek executor")
+        self.assertFalse(governed_executor["real_model_execution_route_implemented"])
         checkpoint_rows = model_strategy["ordinary_checkpoint_rows"]
         self.assertEqual(len(checkpoint_rows), 4)
         self.assertEqual(governed_executor["ordinary_checkpoint_rows"], checkpoint_rows)
