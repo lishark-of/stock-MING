@@ -1691,8 +1691,6 @@ export default function CommandCenterHome() {
         <MetricGrid
           items={[
             { label: "本地后端", value: dailyCommandFrontendBackendAutoLinkLabel, tone: dailyCommandHealthOk ? "good" : "warn" },
-            { label: "接线地址", value: dailyCommandFrontendBackendSelectedApiBase, tone: dailyCommandHealthOk ? "good" : "warn" },
-            { label: "候选地址", value: API_BASE_CANDIDATE_DISPLAY_URLS.join(" / "), tone: "good" },
             { label: "当前页面", value: dailyCommandP0LocalReadinessReady ? "FastAPI、bootstrap、desktop preflight 和 React 已接上" : "等待本地四段联通回读", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "投研入口", value: dailyCommandNeedsStartupRecovery ? "先看一键启动预检" : "在首页确认股票代码；需要详情再进下一票雷达", tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "安全边界", value: "打开页面和输入代码不外联；确认按钮才触发 Tushare-first", tone: "good" }
@@ -1703,7 +1701,17 @@ export default function CommandCenterHome() {
           <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after local fastapi connection">查看任务进度</a>
           <a href="#desktop" title="切换到桌面壳预检；只读查看本地连接诊断" aria-label="open desktop preflight after local fastapi connection">查看本地预检</a>
         </div>
-        <p className="risk-note">接线地址来自前端本机 FastAPI auto-link ledger；候选地址只展示本机 127.0.0.1/localhost fallback。该卡只读 FastAPI health、bootstrap status 和 desktop preflight cache；不会启动服务、不会创建 task、不会调用 Tushare/DeepSeek/GitHub，也不会暴露 token/key。</p>
+        <p className="risk-note">本卡只判断本机前后端能不能继续投研；需要排查地址或 fallback 时展开技术明细。页面打开和输入代码仍保持只读，不创建 task。</p>
+        <details className="developer-audit-details" aria-label="daily command local fastapi technical connection details">
+          <summary>本地接线技术明细</summary>
+          <MetricGrid
+            items={[
+              { label: "接线地址", value: dailyCommandFrontendBackendSelectedApiBase, tone: dailyCommandHealthOk ? "good" : "warn" },
+              { label: "候选地址", value: API_BASE_CANDIDATE_DISPLAY_URLS.join(" / "), tone: "good" }
+            ]}
+          />
+          <p className="risk-note">接线地址来自前端本机 FastAPI auto-link ledger；候选地址只展示本机 127.0.0.1/localhost fallback。该卡只读 FastAPI health、bootstrap status 和 desktop preflight cache；不会启动服务、不会创建 task、不会调用 Tushare/DeepSeek/GitHub，也不会暴露 token/key。</p>
+        </details>
       </PacketCard>
       <PacketCard title="P0 现在能不能用" subtitle="普通用户打开软件后的 10 秒判断" status={dailyCommandP0LocalReadinessReady ? "ready" : "check"}>
         <MetricGrid
@@ -1994,7 +2002,7 @@ export default function CommandCenterHome() {
           <p className="risk-note">确认链、P2 写回、P3 检查点和恢复表默认收起；普通用户先用上方主按钮在首页确认股票代码，再看股票量化推演和次日图谱。</p>
         <details className="developer-audit-details" aria-label="daily command engineering audit and strict closeout details">
           <summary>工程审计 / P6 strict closeout 明细</summary>
-          <p className="risk-note">普通路径已经在上方 P1 确认、P2 三面和 P3 可解释结果；这里仅供排障、验收和 14 LTG 回归，不把 P6 当今日可用化完成。</p>
+          <p className="risk-note">普通路径已经在上方 P1 确认、P2 三面和 P3 可解释结果；普通用户先看上方 P1 确认、P2 三面和 P3 可解释结果。这里仅供排障、验收和 14 LTG 回归，不把 P6 当今日可用化完成。</p>
           <div aria-label="daily command p6 strict closeout reentry">
             <h3>P6 strict closeout 回归入口</h3>
             <p className="risk-note">P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence、CI、浏览器、provider、worker、storage 和 package gate 逐项补证；P6 只是 strict closeout 回归门，不是 14 LTG 完成声明；P4 下沉的是工程审计明细，不压过 P0-P3 普通路径。</p>

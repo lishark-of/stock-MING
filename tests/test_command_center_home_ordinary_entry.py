@@ -307,10 +307,22 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("打开软件后先看这张卡", card)
         self.assertIn('label: "本地后端"', card)
         self.assertIn("dailyCommandFrontendBackendAutoLinkLabel", card)
+        technical_detail_start = card.index(
+            '<details className="developer-audit-details" aria-label="daily command local fastapi technical connection details">'
+        )
+        ordinary_connection_slice = card[:technical_detail_start]
+        technical_detail_slice = card[technical_detail_start:]
+        self.assertNotIn('label: "接线地址"', ordinary_connection_slice)
+        self.assertNotIn('label: "候选地址"', ordinary_connection_slice)
         self.assertIn('label: "接线地址"', card)
         self.assertIn("dailyCommandFrontendBackendSelectedApiBase", card)
         self.assertIn('label: "候选地址"', card)
         self.assertIn('API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")', card)
+        self.assertIn("<summary>本地接线技术明细</summary>", technical_detail_slice)
+        self.assertIn('label: "接线地址"', technical_detail_slice)
+        self.assertIn('label: "候选地址"', technical_detail_slice)
+        self.assertIn("dailyCommandFrontendBackendSelectedApiBase", technical_detail_slice)
+        self.assertIn('API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")', technical_detail_slice)
         self.assertIn('label: "当前页面"', card)
         self.assertIn("FastAPI、bootstrap、desktop preflight 和 React 已接上", card)
         self.assertIn('label: "投研入口"', card)
@@ -322,6 +334,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('href={dailyCommandPrimaryActionHref}', card)
         self.assertIn('href="#tasks"', card)
         self.assertIn('href="#desktop"', card)
+        self.assertIn("本卡只判断本机前后端能不能继续投研", ordinary_connection_slice)
+        self.assertIn("需要排查地址或 fallback 时展开技术明细", ordinary_connection_slice)
         self.assertIn("接线地址来自前端本机 FastAPI auto-link ledger", card)
         self.assertIn("候选地址只展示本机 127.0.0.1/localhost fallback", card)
         self.assertIn("只读 FastAPI health、bootstrap status 和 desktop preflight cache", card)
