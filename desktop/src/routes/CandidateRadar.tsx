@@ -1896,8 +1896,13 @@ export default function CandidateRadar() {
         : quantProjectionCanSubmit
           ? "P1 ready：点击确认后创建 Tushare-first POST task"
           : "等待有效股票代码；输入不会创建 task";
-  const quantProjectionPostConfirmWaitLabel =
-    "确认后等待顺序：先看 task id，再看 TaskStatusPanel，等待 success 后刷新 cache，最后回放 #factor/#next";
+  const quantProjectionPostConfirmWaitLabel = quantProjectionSubmitError
+    ? "确认后未创建任务：先恢复本地 FastAPI，再重新点击确认按钮"
+    : quantProjectionSmallDataReady || quantProjectionInterpretationReady
+      ? "确认后已进入回放：P2 cache / call_ledger / packet 可读；下一步打开 #factor/#next 只读复核"
+      : taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? "确认后等待顺序：先看 task id，再看 TaskStatusPanel，等待 success 后刷新 cache，最后回放 #factor/#next"
+        : "确认前准备：输入有效代码后点击确认按钮，才创建 Tushare-first POST task";
   const quantProjectionReplayBoundary =
     "回放链接只切换本地页面或锚点；回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache";
   const quantProjectionReplayDestinationState = quantProjectionSubmitError
