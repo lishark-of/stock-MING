@@ -9,6 +9,8 @@ import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
+const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
+
 export default function TaskCatalog() {
   const [catalog, setCatalog] = useState<Record<string, unknown>>({});
   const [catalogEnvelopeLedger, setCatalogEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -179,7 +181,7 @@ export default function TaskCatalog() {
     ? taskCatalogLatestTask.status === "success"
       ? "任务已完成；可刷新 cache / ledger / packet 回放"
       : "等待任务完成后回放 cache / ledger / packet"
-    : "暂无任务；先回下一票雷达输入代码并确认";
+    : "暂无任务；先回下一票雷达确认输入区输入代码并确认";
   const taskCatalogOrdinaryTushareLabel = taskCatalogLatestTushareRows.length
     ? `Tushare-first ${taskCatalogLatestTushareSuccessCount}/${taskCatalogLatestTushareRows.length} 已写入 task.call_ledger`
     : taskCatalogLatestIsCandidateReplay
@@ -221,7 +223,7 @@ export default function TaskCatalog() {
         <MetricGrid items={taskCatalogOrdinaryProgressItems} />
         <div className="actions" aria-label="task monitor ordinary progress actions">
           <button onClick={refreshTasks} title="只重新读取 GET /api/tasks；不创建 task、不调用 provider/model" aria-label="refresh task monitor ordinary progress">刷新任务状态</button>
-          <a href="#candidates" title="切换到下一票雷达；输入代码仍需确认按钮" aria-label="open candidate radar from task monitor ordinary progress">下一票雷达</a>
+          <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；输入代码仍需确认按钮" aria-label="open candidate radar confirm input from task monitor ordinary progress">下一票雷达确认</a>
           <a href="#factor" title="切换到股票量化推演；只读本地回放" aria-label="open stock quant from task monitor ordinary progress">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读本地回放" aria-label="open next session from task monitor ordinary progress">次日图谱</a>
         </div>
