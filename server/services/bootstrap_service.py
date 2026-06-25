@@ -7003,6 +7003,8 @@ def _search_quant_projection_frontend_wiring_acceptance_contract(
         "manual_confirm_button_runtime_ready": True,
         "manual_confirm_button_status": "ready_explicit_confirm_button_posts_quant_projection_task",
         "manual_confirm_button_scope": "P1 searched-symbol confirm button only",
+        "p1_manual_confirm_path_ready": True,
+        "p1_manual_confirm_path_status": "ready_button_posts_tushare_first_task",
         "manual_button_task_launch_receipt_bound": True,
         "manual_button_task_status_polling_bound": True,
         "manual_button_success_refresh_bound": True,
@@ -7038,6 +7040,8 @@ def _search_quant_projection_frontend_wiring_acceptance_contract(
         "frontend_submit_autostart_wiring_implemented": False,
         "frontend_runtime_wiring_implemented": True,
         "frontend_runtime_wiring_scope": "manual_confirm_button_ready_autostart_and_browser_acceptance_pending",
+        "full_frontend_wiring_implemented": False,
+        "full_frontend_wiring_pending_reason": "browser_acceptance_and_submit_autostart_pending",
         "frontend_acceptance_test_implemented": False,
         "browser_runtime_evidence_complete": False,
         "live_light_wiring_allowed": effective_search_submit_autostart,
@@ -13314,6 +13318,16 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
                     "manual_confirm_button_status"
                 ]
             ),
+            "search_quant_projection_p1_manual_confirm_path_ready": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "p1_manual_confirm_path_ready"
+                ]
+            ),
+            "search_quant_projection_p1_manual_confirm_path_status": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "p1_manual_confirm_path_status"
+                ]
+            ),
             "search_quant_projection_frontend_runtime_wiring_implemented": (
                 search_quant_projection_frontend_wiring_acceptance_contract[
                     "frontend_runtime_wiring_implemented"
@@ -13354,6 +13368,16 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "search_quant_projection_frontend_wiring_safe_error_display_required": True,
             "search_quant_projection_frontend_wiring_rate_limit_reuse_visible_required": True,
             "search_quant_projection_frontend_wiring_implemented": False,
+            "search_quant_projection_full_frontend_wiring_implemented": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "full_frontend_wiring_implemented"
+                ]
+            ),
+            "search_quant_projection_full_frontend_wiring_pending_reason": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "full_frontend_wiring_pending_reason"
+                ]
+            ),
             "search_quant_projection_frontend_wiring_browser_evidence_complete": False,
             "search_quant_projection_frontend_wiring_failure_recovery_evidence_complete": False,
             "search_quant_projection_frontend_wiring_is_production_evidence": False,
@@ -14219,6 +14243,16 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
                     "manual_confirm_button_status"
                 ]
             ),
+            "search_quant_projection_p1_manual_confirm_path_ready": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "p1_manual_confirm_path_ready"
+                ]
+            ),
+            "search_quant_projection_p1_manual_confirm_path_status": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "p1_manual_confirm_path_status"
+                ]
+            ),
             "search_quant_projection_frontend_runtime_wiring_implemented": (
                 search_quant_projection_frontend_wiring_acceptance_contract[
                     "frontend_runtime_wiring_implemented"
@@ -14248,6 +14282,16 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "search_quant_projection_frontend_wiring_failure_recovery_evidence_required": True,
             "search_quant_projection_frontend_wiring_unbounded_task_queue_allowed": False,
             "search_quant_projection_frontend_wiring_implemented": False,
+            "search_quant_projection_full_frontend_wiring_implemented": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "full_frontend_wiring_implemented"
+                ]
+            ),
+            "search_quant_projection_full_frontend_wiring_pending_reason": (
+                search_quant_projection_frontend_wiring_acceptance_contract[
+                    "full_frontend_wiring_pending_reason"
+                ]
+            ),
             "search_quant_projection_frontend_wiring_requires_task_status_polling": True,
             "search_quant_projection_frontend_wiring_browser_evidence_complete": False,
             "search_quant_projection_frontend_wiring_is_production_evidence": False,
@@ -14975,6 +15019,16 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
                         "manual_confirm_button_status"
                     ]
                 ),
+                "search_quant_projection_p1_manual_confirm_path_ready": (
+                    search_quant_projection_frontend_wiring_acceptance_contract[
+                        "p1_manual_confirm_path_ready"
+                    ]
+                ),
+                "search_quant_projection_p1_manual_confirm_path_status": (
+                    search_quant_projection_frontend_wiring_acceptance_contract[
+                        "p1_manual_confirm_path_status"
+                    ]
+                ),
                 "search_quant_projection_frontend_runtime_wiring_implemented": (
                     search_quant_projection_frontend_wiring_acceptance_contract[
                         "frontend_runtime_wiring_implemented"
@@ -14987,6 +15041,16 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
                 ),
                 "search_quant_projection_manual_button_path_calls_provider_or_model_from_frontend": False,
                 "search_quant_projection_frontend_wiring_implemented": False,
+                "search_quant_projection_full_frontend_wiring_implemented": (
+                    search_quant_projection_frontend_wiring_acceptance_contract[
+                        "full_frontend_wiring_implemented"
+                    ]
+                ),
+                "search_quant_projection_full_frontend_wiring_pending_reason": (
+                    search_quant_projection_frontend_wiring_acceptance_contract[
+                        "full_frontend_wiring_pending_reason"
+                    ]
+                ),
                 "search_quant_projection_frontend_wiring_browser_evidence_complete": False,
                 "activation_receipt_status": activation_receipt["status"],
                 "activation_receipt_ready": activation_receipt["local_activation_receipt_ready"],
