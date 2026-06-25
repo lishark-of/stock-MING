@@ -530,6 +530,7 @@ export default function CommandCenterHome() {
     ? candidateQuantWritebackSurfaceRows.map((row) => ({
         写入面: String(row["写入面"] ?? row.surface ?? "writeback"),
         当前状态: String(row["当前状态"] ?? row.status ?? dailyCommandSmallDataWritebackState),
+        普通读法: String(row["普通读法"] ?? row["普通速读"] ?? row.ordinary_label ?? "确认这一面是否已经可本地回放"),
         回放来源: String(row["回放来源"] ?? row.readback_source ?? "GET /api/candidate-radar/cache"),
         下一步: String(row["下一步"] ?? row.next_action ?? "确认任务完成后刷新本地 cache 回放"),
         边界: String(row["边界"] ?? row.boundary ?? dailyCommandSmallDataWritebackBoundary)
@@ -538,6 +539,7 @@ export default function CommandCenterHome() {
         {
           写入面: "cache",
           当前状态: dailyCommandSmallDataWritebackState,
+          普通读法: "页面刷新后只读回放本地缓存。",
           回放来源: "search_quant_projection_small_data_writeback_summary",
           下一步: "先去下一票雷达确认输入区输入代码并点击确认",
           边界: dailyCommandSmallDataWritebackBoundary
@@ -545,6 +547,7 @@ export default function CommandCenterHome() {
         {
           写入面: "call_ledger",
           当前状态: "等待 POST task 写入或回放 Tushare-first ledger",
+          普通读法: "只确认 Tushare ledger 是否由确认任务写入。",
           回放来源: "ordinary_writeback_surface_summary_rows pending",
           下一步: "任务完成后只读查看 ledger 状态；接口明细留在雷达高级状态",
           边界: "call_ledger 只由按钮门控后台任务产生；首页不补调 provider/model。"
@@ -552,6 +555,7 @@ export default function CommandCenterHome() {
         {
           写入面: "packet",
           当前状态: "等待 candidate radar packet 写入 task id、安全步骤和结果位置",
+          普通读法: "回放 task id、安全步骤、结果入口和下一步。",
           回放来源: "command_center_3_candidate_radar_cache",
           下一步: "刷新 cache 后回放股票量化推演和次日图谱",
           边界: "packet 不含凭据、不生成交易动作、不覆盖 strategy action。"
