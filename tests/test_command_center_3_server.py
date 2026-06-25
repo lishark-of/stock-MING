@@ -10311,6 +10311,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(replay["tushare_called"])
         self.assertFalse(replay["deepseek_called"])
         self.assertFalse(replay["github_called"])
+        self.assertTrue(replay["source_task_external_calls_triggered"])
+        self.assertTrue(replay["source_task_tushare_called"])
+        self.assertFalse(replay["source_task_deepseek_called"])
+        self.assertFalse(replay["source_task_github_called"])
+        self.assertTrue(replay["source_task_provider_ledger_replayed"])
+        self.assertFalse(replay["readback_external_calls_triggered"])
         self.assertTrue(any(row["api"] == "daily" and row["tushare_called"] is True for row in replay["call_ledger"]))
         self.assertNotIn("SHOULD_DROP", json.dumps(replay, ensure_ascii=False))
 
@@ -10329,6 +10335,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(index["tushare_called"])
         self.assertFalse(index["deepseek_called"])
         self.assertFalse(index["github_called"])
+        self.assertTrue(index["tasks"][0]["source_task_external_calls_triggered"])
+        self.assertTrue(index["tasks"][0]["source_task_tushare_called"])
+        self.assertFalse(index["tasks"][0]["readback_external_calls_triggered"])
+        self.assertTrue(index["call_ledger_tushare_replayed"])
+        self.assertFalse(index["readback_external_calls_triggered"])
         self.assertNotIn("SHOULD_DROP", json.dumps(index, ensure_ascii=False))
 
         self.assertIsNone(task_service.read_task_status("local-missing-task"))
@@ -10409,6 +10420,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(replay["external_calls_triggered"])
         self.assertFalse(replay["tushare_called"])
         self.assertFalse(replay["deepseek_called"])
+        self.assertTrue(replay["source_task_external_calls_triggered"])
+        self.assertTrue(replay["source_task_tushare_called"])
+        self.assertFalse(replay["source_task_deepseek_called"])
+        self.assertTrue(replay["source_task_provider_ledger_replayed"])
+        self.assertFalse(replay["readback_external_calls_triggered"])
         self.assertTrue(any(row["api"] == "daily" and row["tushare_called"] is True for row in replay["call_ledger"]))
         self.assertNotIn("SHOULD_DROP", json.dumps(replay, ensure_ascii=False))
 
@@ -10426,6 +10442,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(index["external_calls_triggered"])
         self.assertFalse(index["tushare_called"])
         self.assertFalse(index["deepseek_called"])
+        self.assertTrue(index["tasks"][0]["source_task_external_calls_triggered"])
+        self.assertTrue(index["tasks"][0]["source_task_tushare_called"])
+        self.assertFalse(index["tasks"][0]["readback_external_calls_triggered"])
 
     def test_tushare_refresh_task_records_call_ledger_and_local_parquet(self):
         db_path = self._with_meta_store()

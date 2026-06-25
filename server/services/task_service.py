@@ -3950,6 +3950,14 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
             "call_ledger_tushare_replayed": call_ledger_tushare_replayed,
             "call_ledger_deepseek_replayed": call_ledger_deepseek_replayed,
             "call_ledger_github_replayed": call_ledger_github_replayed,
+            "source_task_external_calls_triggered": call_ledger_external_calls_replayed,
+            "source_task_tushare_called": call_ledger_tushare_replayed,
+            "source_task_deepseek_called": call_ledger_deepseek_replayed,
+            "source_task_github_called": call_ledger_github_replayed,
+            "source_task_provider_ledger_replayed": call_ledger_external_calls_replayed
+            or call_ledger_tushare_replayed
+            or call_ledger_deepseek_replayed
+            or call_ledger_github_replayed,
             "call_ledger_replay_is_read_only": True,
             "readback_external_calls_triggered": False,
             "external_calls_triggered": False,

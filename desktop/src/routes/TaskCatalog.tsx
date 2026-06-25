@@ -139,6 +139,9 @@ export default function TaskCatalog() {
     call_ledger_count: task.call_ledger?.length ?? 0,
     external_calls_triggered: task.external_calls_triggered === true,
     tushare_called: task.tushare_called === true,
+    source_task_tushare_called: task.source_task_tushare_called === true || task.call_ledger_tushare_replayed === true,
+    source_task_provider_ledger_replayed: task.source_task_provider_ledger_replayed === true || task.call_ledger_external_calls_replayed === true,
+    readback_external_calls_triggered: task.readback_external_calls_triggered === true,
     deepseek_called: task.deepseek_called === true,
     github_called: task.github_called === true,
     does_not_execute_trades: task.does_not_execute_trades !== false,
@@ -171,6 +174,13 @@ export default function TaskCatalog() {
   const taskCatalogLatestTaskLedger = taskCatalogLatestTask?.call_ledger ?? [];
   const taskCatalogLatestTushareRows = taskCatalogLatestTaskLedger.filter((row) => row.tushare_called === true);
   const taskCatalogLatestTushareSuccessCount = taskCatalogLatestTushareRows.filter((row) => String(row.call_status ?? "") === "success").length;
+  const taskCatalogLatestSourceTushareReplayed =
+    taskCatalogLatestTask?.source_task_tushare_called === true ||
+    taskCatalogLatestTask?.call_ledger_tushare_replayed === true ||
+    taskCatalogLatestTushareRows.length > 0;
+  const taskCatalogLatestReadbackExternal =
+    taskCatalogLatestTask?.readback_external_calls_triggered === true ||
+    taskIndex?.readback_external_calls_triggered === true;
   const taskCatalogLatestIsCandidateReplay =
     taskCatalogLatestTask?.output_packet_key === "command_center_3_candidate_radar_cache" ||
     String(taskCatalogLatestTask?.task_type ?? "").includes("candidate_radar_quant_projection");
@@ -184,9 +194,18 @@ export default function TaskCatalog() {
     : "暂无任务；先回下一票雷达确认输入区输入代码并确认";
   const taskCatalogOrdinaryTushareLabel = taskCatalogLatestTushareRows.length
     ? `Tushare-first ${taskCatalogLatestTushareSuccessCount}/${taskCatalogLatestTushareRows.length} 已写入 task.call_ledger`
+    : taskCatalogLatestSourceTushareReplayed
+      ? "Tushare-first ledger 已从 CandidateRadar cache 回放"
     : taskCatalogLatestIsCandidateReplay
       ? "等待 Tushare-first ledger"
       : "非搜票任务按输出 packet 回放";
+  const taskCatalogOrdinaryReadbackLabel = taskCatalogLatestTask
+    ? taskCatalogLatestReadbackExternal
+      ? "异常：任务状态读取触发外联，需先排障"
+      : taskCatalogLatestSourceTushareReplayed
+        ? "GET 只读回放源任务 Tushare ledger；本次刷新无新增外联"
+        : "GET 只读读取任务状态；未回放 provider ledger"
+    : "等待任务记录";
   const taskCatalogOrdinaryP3Label = taskCatalogLatestIsCandidateReplay
     ? taskCatalogLatestTask?.status === "success"
       ? "可打开股票量化推演和次日图谱"
@@ -199,6 +218,7 @@ export default function TaskCatalog() {
     { label: "任务状态", value: taskCatalogOrdinaryTaskStatusLabel, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : taskCatalogLatestTask ? "warn" as const : "warn" as const },
     { label: "P2 写回", value: taskCatalogOrdinaryP2Label, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : "warn" as const },
     { label: "Tushare-first", value: taskCatalogOrdinaryTushareLabel, tone: taskCatalogLatestTushareRows.length ? "good" as const : "warn" as const },
+    { label: "读取方式", value: taskCatalogOrdinaryReadbackLabel, tone: taskCatalogLatestReadbackExternal ? "bad" as const : taskCatalogLatestTask ? "good" as const : "warn" as const },
     { label: "P3 结果入口", value: taskCatalogOrdinaryP3Label, tone: taskCatalogLatestTask?.status === "success" ? "good" as const : "warn" as const },
     { label: "安全边界", value: "Task Monitor 只读 GET /api/tasks；不创建 task、不补调 Tushare/DeepSeek、不交易", tone: "good" as const }
   ];
@@ -221,6 +241,7 @@ export default function TaskCatalog() {
 
       <PacketCard title="普通任务进度速读" subtitle="确认按钮之后先看这里；工程目录和路由覆盖继续下沉" status={taskCatalogLatestTask?.status ?? "waiting_task"}>
         <MetricGrid items={taskCatalogOrdinaryProgressItems} />
+        <p className="risk-note">Tushare-first 显示的是源任务 call_ledger 回放；“刷新任务状态”只是 GET /api/tasks，只读、不新增外联。</p>
         <div className="actions" aria-label="task monitor ordinary progress actions">
           <button onClick={refreshTasks} title="只重新读取 GET /api/tasks；不创建 task、不调用 provider/model" aria-label="refresh task monitor ordinary progress">刷新任务状态</button>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；输入代码仍需确认按钮" aria-label="open candidate radar confirm input from task monitor ordinary progress">下一票雷达确认</a>

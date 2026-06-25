@@ -26,6 +26,16 @@ export type TaskRecord = {
   tushare_called?: boolean;
   deepseek_called?: boolean;
   github_called?: boolean;
+  call_ledger_external_calls_replayed?: boolean;
+  call_ledger_tushare_replayed?: boolean;
+  call_ledger_deepseek_replayed?: boolean;
+  call_ledger_github_replayed?: boolean;
+  source_task_external_calls_triggered?: boolean;
+  source_task_tushare_called?: boolean;
+  source_task_deepseek_called?: boolean;
+  source_task_github_called?: boolean;
+  source_task_provider_ledger_replayed?: boolean;
+  readback_external_calls_triggered?: boolean;
   does_not_execute_trades?: boolean;
   does_not_modify_strategy_action?: boolean;
   retry_policy?: Record<string, unknown>;
@@ -51,6 +61,11 @@ export type TaskStatusIndex = {
   tushare_called: boolean;
   deepseek_called: boolean;
   github_called: boolean;
+  call_ledger_external_calls_replayed?: boolean;
+  call_ledger_tushare_replayed?: boolean;
+  call_ledger_deepseek_replayed?: boolean;
+  call_ledger_github_replayed?: boolean;
+  readback_external_calls_triggered?: boolean;
   does_not_execute_trades: boolean;
   does_not_modify_strategy_action: boolean;
   call_ledger: Array<Record<string, unknown>>;
