@@ -307,7 +307,13 @@ export default function NextSessionMap() {
   };
   const ordinaryResultReplayStatus = String(
     packet.ordinary_result_replay_status ??
-      (chartSummary.has_drawable_data === true ? "ready_cache_replay" : "waiting_for_cache_or_manual_task")
+      (
+        chartSummary.has_drawable_data === true
+          ? "ready_cache_replay"
+          : candidateRadarReadableResultReady
+            ? "candidate_readable_result_replay_chart_pending"
+            : "waiting_for_cache_or_manual_task"
+      )
   );
   const fallbackOrdinaryResultReplayRows = [
     {
@@ -681,7 +687,7 @@ export default function NextSessionMap() {
           { label: "回放路径", value: nextSessionReplayPath, tone: "good" },
           { label: "回放入口边界", value: nextSessionReplayDestinationBoundary, tone: "good" },
           { label: "操作区边界", value: nextSessionOperationZoneBoundary, tone: "good" },
-          { label: "结果回放", value: ordinaryResultReplayStatus, tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
+          { label: "结果回放", value: ordinaryResultReplayStatus, tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn" },
           { label: "生成血缘", value: nextSessionGeneratePayload.source_task_id ? `${nextSessionGeneratePayload.symbol} / ${nextSessionGeneratePayload.source_task_id}` : "等待确认标的后再绑定生成任务", tone: nextSessionGeneratePayload.source_task_id ? "good" : "warn" },
           { label: "任务边界", value: nextSessionTaskBoundary, tone: "good" },
           { label: "仅供研究", value: nextSessionResearchOnlyLabel },

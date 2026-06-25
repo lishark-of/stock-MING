@@ -97,6 +97,8 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("先看已确认标的和 Tushare-first 结论；完整图谱可手动生成", source_before_audit)
         self.assertIn("上游结果：${candidateRadarConfirmedSymbol}；${candidateRadarReadableResult}", source_before_audit)
         self.assertIn("先读已确认标的、Tushare-first 结论和 P2 三面；完整图谱可手动生成", source_before_audit)
+        self.assertIn("candidate_readable_result_replay_chart_pending", source_before_audit)
+        self.assertIn("chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? \"good\" : \"warn\"", source_before_audit)
         self.assertIn("!candidateRadarReadableResultReady && (packet.status === \"cache_missing\"", source_before_audit)
         self.assertIn("nextSessionOrdinaryReplayBoundaryBlocked", source_before_audit)
         self.assertIn("evidence_gap_clear", source_before_audit)
