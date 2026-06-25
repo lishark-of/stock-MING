@@ -1757,6 +1757,50 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const quantProjectionOrdinaryProgressCheckpointAnchor = quantProjectionSubmitError
+    ? "#desktop"
+    : quantProjectionSmallDataReady || quantProjectionInterpretationReady
+      ? "#factor"
+      : "#candidate-radar-search-quant-projection";
+  const quantProjectionOrdinaryProgressCheckpointLabel = quantProjectionSubmitError
+    ? "回 P0 联通恢复"
+    : quantProjectionSmallDataReady || quantProjectionInterpretationReady
+      ? "查看结果回放"
+      : quantProjectionCanSubmit
+        ? "去确认并生成"
+        : "输入股票代码";
+  const quantProjectionOrdinaryProgressCheckpointItems: MetricItem[] = [
+    {
+      label: "当前 checkpoint",
+      value: quantProjectionConfirmReplayStage,
+      tone: quantProjectionSubmitError ? "bad" : quantProjectionSmallDataReady || taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : "warn"
+    },
+    {
+      label: "确认标的",
+      value: quantProjectionDisplaySymbol || "等待输入",
+      tone: quantProjectionDisplaySymbol ? "good" : "neutral"
+    },
+    {
+      label: "任务编号",
+      value: quantProjectionDisplayTaskId || "等待确认按钮",
+      tone: quantProjectionDisplayTaskId ? "good" : "warn"
+    },
+    {
+      label: "下一步入口",
+      value: quantProjectionReplayDestinationNextStep,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "结果状态",
+      value: quantProjectionReplayDestinationState,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "只读回放；确认按钮之外不创建 task；不交易、不改 action",
+      tone: "good"
+    }
+  ];
   const quantProjectionPostConfirmReplayContractReady =
     quantProjectionPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
   const quantProjectionPostConfirmReplaySequence = Array.isArray(quantProjectionPostConfirmReplayContract.readback_sequence)
@@ -2363,6 +2407,16 @@ export default function CandidateRadar() {
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
+        <div aria-label="candidate radar ordinary progress checkpoint">
+          <h3>当前进度 checkpoint</h3>
+          <MetricGrid items={quantProjectionOrdinaryProgressCheckpointItems} />
+          <div className="actions" aria-label="candidate radar ordinary progress checkpoint actions">
+            <a href={quantProjectionOrdinaryProgressCheckpointAnchor} aria-label="open candidate radar ordinary progress checkpoint next step">{quantProjectionOrdinaryProgressCheckpointLabel}</a>
+            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress from ordinary progress checkpoint">任务进度</a>
+            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from ordinary progress checkpoint">次日图谱</a>
+          </div>
+          <p className="risk-note">checkpoint 只汇总当前输入、task id、P2/P3 回放和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek、不改 strategy action。</p>
+        </div>
         <details className="developer-audit-details" aria-label="candidate radar ordinary summary extra details">
           <summary>摘要细节</summary>
           <p className="risk-note">候选来源、评分说明、P1 回放顺序、P2 checkpoint 和结果位置默认收起；普通用户先看上方主行动和 P3 结果速读。</p>

@@ -101,12 +101,21 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("quantProjectionDisplayTaskId", self.page)
         self.assertIn("run_candidate_radar_quant_projection", self.page)
         self.assertIn("run_candidate_radar_quant_projection_provider_model_acceptance", self.page)
-        self.assertIn('aria-label="quant projection tushare-first task status"', search_panel)
-        self.assertIn("<TaskLaunchReceipt receipt={taskReceipt} />", search_panel)
+        self.assertIn('aria-label="quant projection tushare-first task status handoff"', search_panel)
+        self.assertIn("<TaskLaunchReceipt receipt={taskReceipt} />", self.page)
         self.assertIn(
             "<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />",
-            search_panel,
+            self.page,
         )
+        self.assertEqual(
+            self.page.count("<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />"),
+            1,
+        )
+        handoff_start = search_panel.index('aria-label="quant projection tushare-first task status handoff"')
+        handoff_end = search_panel.index('aria-label="quant projection confirm chain explanation details"', handoff_start)
+        handoff = search_panel[handoff_start:handoff_end]
+        self.assertIn("任务状态面板已固定在确认后一屏结果", handoff)
+        self.assertNotIn("TaskStatusPanel", handoff)
         self.assertIn("后台补证申请待准备", self.page)
         self.assertIn("普通页只看回放状态", self.page)
         self.assertIn("不额外刷新外部数据或模型", self.page)

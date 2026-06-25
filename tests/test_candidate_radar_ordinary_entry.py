@@ -208,6 +208,21 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('链路节点: "5. 结果入口"', self.page)
         self.assertIn("只有确认按钮会创建 POST task；页面打开、搜索输入、React render 和 GET cache 不外联", self.page)
         self.assertIn("Tushare 只允许在 POST task / worker 内调用；DeepSeek 默认 skipped，等 governed executor", self.page)
+        self.assertIn("quantProjectionOrdinaryProgressCheckpointItems", self.page)
+        self.assertIn("quantProjectionOrdinaryProgressCheckpointAnchor", self.page)
+        self.assertIn("quantProjectionOrdinaryProgressCheckpointLabel", self.page)
+        self.assertIn('aria-label="candidate radar ordinary progress checkpoint"', self.page)
+        self.assertIn("当前进度 checkpoint", self.page)
+        self.assertIn('label: "当前 checkpoint"', self.page)
+        self.assertIn('label: "确认标的"', self.page)
+        self.assertIn('label: "任务编号"', self.page)
+        self.assertIn('label: "下一步入口"', self.page)
+        self.assertIn('label: "结果状态"', self.page)
+        self.assertIn("只读回放；确认按钮之外不创建 task；不交易、不改 action", self.page)
+        self.assertIn("checkpoint 只汇总当前输入、task id、P2/P3 回放和下一步入口", self.page)
+        self.assertIn("链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek、不改 strategy action", self.page)
+        self.assertIn('href={quantProjectionOrdinaryProgressCheckpointAnchor}', self.page)
+        self.assertIn("{quantProjectionOrdinaryProgressCheckpointLabel}</a>", self.page)
         self.assertIn('aria-label="candidate radar ordinary p1 confirm path"', self.page)
         self.assertIn("P1 普通确认路径", self.page)
         self.assertIn("普通用户先看这条 P1 路径", self.page)
@@ -298,6 +313,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             self.page.index('aria-label="candidate radar ordinary one screen actions"'),
         )
         self.assertLess(
+            self.page.index('aria-label="candidate radar ordinary progress checkpoint"'),
+            self.page.index('aria-label="candidate radar first screen quant projection confirmation"'),
+        )
+        self.assertLess(
             self.page.index('aria-label="candidate radar ordinary one screen actions"'),
             self.page.index('aria-label="quant projection submit recovery quick read"'),
         )
@@ -351,6 +370,24 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("轻量实时后台任务", summary_slice)
         self.assertIn('{ label: "解释状态", value: ordinaryDeepSeekSourceLabel }', summary_slice)
         self.assertNotIn('DeepSeek", value: bootstrapLiveLight.deepseek_on_open === true ? "轻量实时后台任务"', summary_slice)
+
+    def test_candidate_radar_progress_checkpoint_is_navigation_only(self):
+        summary_start = self.page.index('title="普通用户雷达摘要"')
+        summary_end = self.page.index('aria-label="candidate radar first screen quant projection confirmation"', summary_start)
+        summary = self.page[summary_start:summary_end]
+        checkpoint_start = summary.index('aria-label="candidate radar ordinary progress checkpoint"')
+        checkpoint = summary[checkpoint_start:]
+
+        self.assertIn("当前进度 checkpoint", checkpoint)
+        self.assertIn("quantProjectionOrdinaryProgressCheckpointItems", checkpoint)
+        self.assertIn('aria-label="candidate radar ordinary progress checkpoint actions"', checkpoint)
+        self.assertIn('href={quantProjectionOrdinaryProgressCheckpointAnchor}', checkpoint)
+        self.assertIn('href="#tasks"', checkpoint)
+        self.assertIn('href="#next"', checkpoint)
+        self.assertIn("链接只切换本地页面或锚点", checkpoint)
+        self.assertNotIn("onClick=", checkpoint)
+        self.assertNotIn("postCandidateRadarQuantProjection", checkpoint)
+        self.assertNotIn("launchQuantProjection", checkpoint)
 
     def test_candidate_radar_p1_direct_handoff_is_local_navigation_only(self):
         direct_start = self.page.index('aria-label="candidate radar p1 direct confirmation handoff"')
