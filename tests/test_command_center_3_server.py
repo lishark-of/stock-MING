@@ -21972,9 +21972,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "packet_key": candidate_service.PACKET_KEY,
                 "status": "ready",
                 "task_id": "candidate-task-002008",
+                "latest_confirmed_symbol": "002008.SZ",
+                "latest_confirmed_task_id": "candidate-task-002008",
+                "latest_confirmed_task_status": "success",
+                "latest_confirmed_task_current_step": "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
                 "search_quant_projection_receipt": {
                     "schema_version": "candidate_radar_search_quant_projection_receipt.v1",
-                    "symbol": "002008.SZ",
                     "latest_task_id": "candidate-task-002008",
                 },
                 "search_quant_projection_small_data_writeback_summary": {
@@ -22024,6 +22027,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(handoff["schema_version"], "next_session_candidate_radar_p3_handoff.v1")
         self.assertEqual(handoff["source_packet_key"], candidate_service.PACKET_KEY)
         self.assertEqual(handoff["symbol"], "002008.SZ")
+        self.assertEqual(handoff["source_task_status"], "success")
+        self.assertEqual(
+            handoff["source_task_current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+        )
         self.assertTrue(handoff["p2_small_data_ready"])
         self.assertTrue(handoff["p3_readable_result_ready"])
         self.assertFalse(handoff["chart_payload_generated"])
@@ -22036,6 +22044,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             packet["ordinary_result_replay_status"],
             "candidate_readable_result_replay_chart_pending",
         )
+        self.assertEqual(packet["latest_confirmed_symbol"], "002008.SZ")
+        self.assertEqual(packet["latest_confirmed_symbol_source"], "candidate_radar_p3_handoff")
+        self.assertEqual(packet["latest_confirmed_task_id"], "candidate-task-002008")
+        self.assertEqual(packet["latest_confirmed_task_status"], "success")
+        self.assertFalse(packet["latest_confirmed_symbol_readback_external_calls_triggered"])
+        self.assertFalse(packet["latest_confirmed_symbol_creates_task_from_readback"])
         ordinary_rows = {row["surface"]: row for row in packet["ordinary_result_replay_rows"]}
         self.assertIn("上游结果可读", ordinary_rows["下一票雷达"]["readable_result"])
         self.assertIn("Tushare-first 账本已回放", ordinary_rows["股票量化推演"]["readable_result"])
@@ -22044,9 +22058,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("上游搜票结论可读", condition_rows["1. 来源"]["当前状态"])
         self.assertIn("不要把上游可读结论当完整图谱", condition_rows["3. 失效"]["当前状态"])
         self.assertTrue(packet["counts"]["next_session_candidate_radar_p3_handoff_ready"])
+        self.assertTrue(packet["counts"]["next_session_latest_confirmed_readback_ready"])
         self.assertTrue(packet["policy"]["next_session_candidate_radar_p3_handoff_is_cache_only"])
         self.assertFalse(packet["policy"]["next_session_candidate_radar_p3_handoff_creates_task"])
         self.assertFalse(packet["policy"]["next_session_candidate_radar_p3_handoff_calls_provider_or_model"])
+        self.assertTrue(packet["policy"]["next_session_latest_confirmed_readback_is_cache_only"])
+        self.assertFalse(packet["policy"]["next_session_latest_confirmed_readback_creates_task"])
+        self.assertFalse(packet["policy"]["next_session_latest_confirmed_readback_calls_provider_or_model"])
+        self.assertTrue(packet["policy"]["next_session_latest_confirmed_readback_is_not_trade_signal"])
         ledger_by_api = {row["api"]: row for row in response["call_ledger"]}
         self.assertIn("local_next_session_candidate_radar_p3_handoff", ledger_by_api)
         self.assertFalse(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["external"])

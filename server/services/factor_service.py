@@ -323,10 +323,18 @@ def read_factor_quant_cache() -> dict[str, Any]:
         packet["candidate_radar_quant_projection_handoff"] = candidate_handoff
         packet["ordinary_quant_candidate_handoff_rows"] = candidate_handoff_rows
         packet["ordinary_quant_candidate_handoff_status"] = candidate_handoff["status"]
+        packet["latest_confirmed_symbol"] = candidate_handoff["symbol"]
+        packet["latest_confirmed_symbol_source"] = "candidate_radar_quant_projection_handoff"
+        packet["latest_confirmed_task_id"] = candidate_handoff["source_task_id"]
+        packet["latest_confirmed_task_status"] = candidate_handoff["source_task_status"]
+        packet["latest_confirmed_task_current_step"] = candidate_handoff["source_task_current_step"]
+        packet["latest_confirmed_symbol_readback_external_calls_triggered"] = False
+        packet["latest_confirmed_symbol_creates_task_from_readback"] = False
         counts = _dict(packet.get("counts"))
         counts.update(
             {
                 "factor_quant_candidate_radar_handoff_ready": True,
+                "factor_quant_latest_confirmed_readback_ready": True,
                 "factor_quant_candidate_handoff_row_count": len(candidate_handoff_rows),
                 "factor_quant_candidate_handoff_provider_api_success_count": candidate_handoff[
                     "provider_api_success_count"
@@ -344,6 +352,10 @@ def read_factor_quant_cache() -> dict[str, Any]:
                 "factor_quant_candidate_handoff_creates_task": False,
                 "factor_quant_candidate_handoff_calls_provider_or_model": False,
                 "factor_quant_candidate_handoff_is_not_trade_signal": True,
+                "factor_quant_latest_confirmed_readback_is_cache_only": True,
+                "factor_quant_latest_confirmed_readback_creates_task": False,
+                "factor_quant_latest_confirmed_readback_calls_provider_or_model": False,
+                "factor_quant_latest_confirmed_readback_is_not_trade_signal": True,
             }
         )
         packet["policy"] = policy
@@ -509,19 +521,35 @@ def _read_candidate_radar_quant_projection_handoff(now: str) -> dict[str, Any]:
         return {}
 
     symbol = _safe_text(
-        receipt.get("symbol")
+        candidate_packet.get("latest_confirmed_symbol")
+        or receipt.get("symbol")
         or small_data.get("symbol")
         or interpretation.get("symbol")
         or candidate_packet.get("symbol"),
         limit=32,
     )
     source_task_id = _safe_text(
-        candidate_packet.get("search_quant_projection_latest_task_id")
+        candidate_packet.get("latest_confirmed_task_id")
+        or candidate_packet.get("search_quant_projection_latest_task_id")
         or receipt.get("latest_task_id")
         or receipt.get("task_id")
         or small_data.get("latest_task_id")
         or candidate_packet.get("task_id"),
         limit=128,
+    )
+    source_task_status = _safe_text(
+        candidate_packet.get("latest_confirmed_task_status")
+        or candidate_packet.get("latest_task_status")
+        or receipt.get("latest_task_status")
+        or "",
+        limit=48,
+    )
+    source_task_current_step = _safe_text(
+        candidate_packet.get("latest_confirmed_task_current_step")
+        or candidate_packet.get("latest_task_current_step")
+        or receipt.get("latest_task_current_step")
+        or "",
+        limit=160,
     )
     provider_success_count = int(small_data.get("provider_api_success_count") or 0)
     provider_call_count = int(small_data.get("provider_api_call_count") or 0)
@@ -572,6 +600,8 @@ def _read_candidate_radar_quant_projection_handoff(now: str) -> dict[str, Any]:
         "status": status,
         "source_packet_key": CANDIDATE_RADAR_PACKET_KEY,
         "source_task_id": source_task_id,
+        "source_task_status": source_task_status,
+        "source_task_current_step": source_task_current_step,
         "symbol": symbol,
         "p2_small_data_ready": p2_ready,
         "p3_readable_result_ready": p3_ready,

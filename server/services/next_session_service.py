@@ -2918,6 +2918,13 @@ def read_next_session_cache() -> dict[str, Any]:
     candidate_radar_p3_ready = candidate_radar_p3_handoff.get("p3_readable_result_ready") is True
     if candidate_radar_p3_handoff:
         packet["candidate_radar_p3_handoff"] = candidate_radar_p3_handoff
+        packet["latest_confirmed_symbol"] = candidate_radar_p3_handoff["symbol"]
+        packet["latest_confirmed_symbol_source"] = "candidate_radar_p3_handoff"
+        packet["latest_confirmed_task_id"] = candidate_radar_p3_handoff["source_task_id"]
+        packet["latest_confirmed_task_status"] = candidate_radar_p3_handoff["source_task_status"]
+        packet["latest_confirmed_task_current_step"] = candidate_radar_p3_handoff["source_task_current_step"]
+        packet["latest_confirmed_symbol_readback_external_calls_triggered"] = False
+        packet["latest_confirmed_symbol_creates_task_from_readback"] = False
     if packet.get("status") == "cache_missing" and candidate_radar_p3_ready:
         packet["status"] = "candidate_readable_result_replay_chart_pending"
         packet["cache_source"] = "candidate_radar_p3_handoff_readonly"
@@ -3057,6 +3064,7 @@ def read_next_session_cache() -> dict[str, Any]:
                 "condition_quick_read_row_count"
             ],
             "next_session_candidate_radar_p3_handoff_ready": candidate_radar_p3_ready,
+            "next_session_latest_confirmed_readback_ready": bool(candidate_radar_p3_handoff),
         }
     )
     packet["counts"] = counts
@@ -3084,6 +3092,10 @@ def read_next_session_cache() -> dict[str, Any]:
             "next_session_candidate_radar_p3_handoff_creates_task": False,
             "next_session_candidate_radar_p3_handoff_calls_provider_or_model": False,
             "next_session_candidate_radar_p3_handoff_is_not_trade_signal": True,
+            "next_session_latest_confirmed_readback_is_cache_only": True,
+            "next_session_latest_confirmed_readback_creates_task": False,
+            "next_session_latest_confirmed_readback_calls_provider_or_model": False,
+            "next_session_latest_confirmed_readback_is_not_trade_signal": True,
         }
     )
     packet["policy"] = policy
@@ -3436,19 +3448,35 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
     ):
         return {}
     symbol = _safe_text(
-        receipt.get("symbol")
+        candidate_packet.get("latest_confirmed_symbol")
+        or receipt.get("symbol")
         or small_data.get("symbol")
         or interpretation.get("symbol")
         or "",
         limit=32,
     )
     source_task_id = _safe_text(
-        receipt.get("latest_task_id")
+        candidate_packet.get("latest_confirmed_task_id")
+        or receipt.get("latest_task_id")
         or receipt.get("task_id")
         or small_data.get("latest_task_id")
         or candidate_packet.get("task_id")
         or "",
         limit=128,
+    )
+    source_task_status = _safe_text(
+        candidate_packet.get("latest_confirmed_task_status")
+        or candidate_packet.get("latest_task_status")
+        or receipt.get("latest_task_status")
+        or "",
+        limit=48,
+    )
+    source_task_current_step = _safe_text(
+        candidate_packet.get("latest_confirmed_task_current_step")
+        or candidate_packet.get("latest_task_current_step")
+        or receipt.get("latest_task_current_step")
+        or "",
+        limit=160,
     )
     result_summary = _safe_text(
         interpretation.get("ordinary_result_summary")
@@ -3498,6 +3526,8 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
         "status": status,
         "source_packet_key": CANDIDATE_RADAR_PACKET_KEY,
         "source_task_id": source_task_id,
+        "source_task_status": source_task_status,
+        "source_task_current_step": source_task_current_step,
         "symbol": symbol,
         "p2_small_data_ready": p2_ready,
         "p3_readable_result_ready": p3_ready,

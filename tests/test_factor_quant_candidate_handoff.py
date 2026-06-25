@@ -20,9 +20,12 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
     def _write_candidate_packet(self, **overrides):
         packet = {
             "packet_key": "command_center_3_candidate_radar_cache",
+            "latest_confirmed_symbol": "002008.SZ",
+            "latest_confirmed_task_id": "local-factor-handoff",
+            "latest_confirmed_task_status": "success",
+            "latest_confirmed_task_current_step": "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
             "search_quant_projection_latest_task_id": "local-factor-handoff",
             "search_quant_projection_receipt": {
-                "symbol": "002008.SZ",
                 "latest_task_id": "local-factor-handoff",
             },
             "search_quant_projection_small_data_writeback_summary": {
@@ -53,6 +56,11 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
         self.assertEqual(handoff["schema_version"], "factor_quant_candidate_radar_handoff.v1")
         self.assertEqual(handoff["symbol"], "002008.SZ")
         self.assertEqual(handoff["source_task_id"], "local-factor-handoff")
+        self.assertEqual(handoff["source_task_status"], "success")
+        self.assertEqual(
+            handoff["source_task_current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+        )
         self.assertTrue(handoff["p2_small_data_ready"])
         self.assertTrue(handoff["p3_readable_result_ready"])
         self.assertEqual(handoff["provider_api_success_count"], 4)
@@ -65,13 +73,24 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
         self.assertTrue(handoff["does_not_modify_operation_zones"])
 
         self.assertEqual(packet["ordinary_quant_candidate_handoff_status"], handoff["status"])
+        self.assertEqual(packet["latest_confirmed_symbol"], "002008.SZ")
+        self.assertEqual(packet["latest_confirmed_symbol_source"], "candidate_radar_quant_projection_handoff")
+        self.assertEqual(packet["latest_confirmed_task_id"], "local-factor-handoff")
+        self.assertEqual(packet["latest_confirmed_task_status"], "success")
+        self.assertFalse(packet["latest_confirmed_symbol_readback_external_calls_triggered"])
+        self.assertFalse(packet["latest_confirmed_symbol_creates_task_from_readback"])
         self.assertEqual(len(packet["ordinary_quant_candidate_handoff_rows"]), 5)
         self.assertTrue(packet["counts"]["factor_quant_candidate_radar_handoff_ready"])
+        self.assertTrue(packet["counts"]["factor_quant_latest_confirmed_readback_ready"])
         self.assertEqual(packet["counts"]["factor_quant_candidate_handoff_row_count"], 5)
         self.assertTrue(packet["policy"]["factor_quant_candidate_handoff_is_cache_only"])
         self.assertFalse(packet["policy"]["factor_quant_candidate_handoff_creates_task"])
         self.assertFalse(packet["policy"]["factor_quant_candidate_handoff_calls_provider_or_model"])
         self.assertTrue(packet["policy"]["factor_quant_candidate_handoff_is_not_trade_signal"])
+        self.assertTrue(packet["policy"]["factor_quant_latest_confirmed_readback_is_cache_only"])
+        self.assertFalse(packet["policy"]["factor_quant_latest_confirmed_readback_creates_task"])
+        self.assertFalse(packet["policy"]["factor_quant_latest_confirmed_readback_calls_provider_or_model"])
+        self.assertTrue(packet["policy"]["factor_quant_latest_confirmed_readback_is_not_trade_signal"])
 
         ledger = {row["api"]: row for row in packet["call_ledger"]}
         self.assertIn("local_factor_quant_candidate_radar_handoff", ledger)
