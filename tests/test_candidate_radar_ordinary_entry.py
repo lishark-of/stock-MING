@@ -1031,11 +1031,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn('只读策略:', ordinary_readback_slice)
         self.assertLess(result_quick_start, result_checkpoint_start)
         self.assertLess(result_checkpoint_start, result_handoff_start)
+        self.assertIn("function readableSentencePart", self.page)
         self.assertIn("quantProjectionP3OrdinaryReadableSentence", self.page)
-        self.assertIn("结论：${quantProjectionOrdinaryResultSummary}", self.page)
-        self.assertIn("下一步：${quantProjectionOrdinaryResultNext}", self.page)
-        self.assertIn("证据：${quantProjectionOrdinaryResultEvidence}", self.page)
-        self.assertIn("边界：${quantProjectionOrdinaryResultBoundary}", self.page)
+        self.assertIn('readableSentencePart("结论", quantProjectionOrdinaryResultSummary, ["结论：", "可读结论："])', self.page)
+        self.assertIn('readableSentencePart("下一步", quantProjectionOrdinaryResultNext, ["下一步："])', self.page)
+        self.assertIn('readableSentencePart("证据", quantProjectionOrdinaryResultEvidence, ["证据："])', self.page)
+        self.assertIn('readableSentencePart("边界", quantProjectionOrdinaryResultBoundary, ["边界："])', self.page)
+        self.assertNotIn("证据：${quantProjectionOrdinaryResultEvidence}", self.page)
+        self.assertNotIn("结论：${quantProjectionOrdinaryResultSummary}", self.page)
         self.assertIn('aria-label="quant projection ordinary p3 readable sentence"', self.page)
         self.assertLess(
             self.page.index('aria-label="quant projection ordinary p3 readable sentence"', result_quick_start),

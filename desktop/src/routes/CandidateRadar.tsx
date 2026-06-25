@@ -23,6 +23,17 @@ function displayText(value: unknown, fallback = "--") {
   return String(value);
 }
 
+function readableSentencePart(label: string, value: string, stripPrefixes: string[] = []) {
+  let cleaned = value.trim();
+  for (const prefix of stripPrefixes) {
+    if (cleaned.startsWith(prefix)) {
+      cleaned = cleaned.slice(prefix.length).trim();
+      break;
+    }
+  }
+  return `${label}：${cleaned}`;
+}
+
 function ordinaryResultSurfaceLabel(surface: unknown) {
   const key = String(surface ?? "");
   if (key === "data_source") return "数据来源";
@@ -1229,10 +1240,10 @@ export default function CandidateRadar() {
     String(searchQuantProjectionInterpretation.ordinary_result_evidence ?? "") ||
     "证据：等待 Tushare-first 账本；DeepSeek 未参与。";
   const quantProjectionP3OrdinaryReadableSentence = [
-    `结论：${quantProjectionOrdinaryResultSummary}`,
-    `下一步：${quantProjectionOrdinaryResultNext}`,
-    `证据：${quantProjectionOrdinaryResultEvidence}`,
-    `边界：${quantProjectionOrdinaryResultBoundary}`
+    readableSentencePart("结论", quantProjectionOrdinaryResultSummary, ["结论：", "可读结论："]),
+    readableSentencePart("下一步", quantProjectionOrdinaryResultNext, ["下一步："]),
+    readableSentencePart("证据", quantProjectionOrdinaryResultEvidence, ["证据："]),
+    readableSentencePart("边界", quantProjectionOrdinaryResultBoundary, ["边界："])
   ].join(" / ");
   const quantProjectionInterpretationReplay =
     String(searchQuantProjectionInterpretation.result_replay_label ?? "") ||
