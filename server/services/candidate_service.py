@@ -17138,8 +17138,27 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     for key in ordinary_readback_alias_keys:
         if key in summary:
             view[key] = summary[key]
+    search_quant_readback_aliases = {
+        "search_quant_projection_confirmed_task_receipt_rows": "ordinary_confirmed_task_receipt_rows",
+        "search_quant_projection_confirmed_task_receipt_row_count": "ordinary_confirmed_task_receipt_row_count",
+        "search_quant_projection_confirmed_task_receipt_rows_are_cache_only": "ordinary_confirmed_task_receipt_rows_are_cache_only",
+        "search_quant_projection_confirmed_task_receipt_rows_create_task": "ordinary_confirmed_task_receipt_rows_create_task",
+        "search_quant_projection_task_readback_rows": "ordinary_task_readback_rows",
+        "search_quant_projection_task_readback_row_count": "ordinary_task_readback_row_count",
+        "search_quant_projection_task_readback_rows_are_cache_only": "ordinary_task_readback_rows_are_cache_only",
+        "search_quant_projection_task_readback_rows_create_task": "ordinary_task_readback_rows_create_task",
+    }
+    for alias, source_key in search_quant_readback_aliases.items():
+        if source_key in summary:
+            view[alias] = summary[source_key]
     latest_task_id = _safe_text(summary.get("latest_task_id") or "", limit=128)
     if latest_task_id:
+        view["latest_task_id"] = latest_task_id
+        view["latest_task_status"] = summary.get("latest_task_status") or ""
+        view["latest_task_current_step"] = summary.get("latest_task_current_step") or ""
+        view["search_quant_projection_latest_task_id"] = latest_task_id
+        view["search_quant_projection_latest_task_status"] = summary.get("latest_task_status") or ""
+        view["search_quant_projection_latest_task_current_step"] = summary.get("latest_task_current_step") or ""
         receipt = dict(_as_dict(view.get("search_quant_projection_receipt")))
         if receipt:
             provider_receipt = _as_dict(view.get("search_quant_provider_model_acceptance_receipt"))

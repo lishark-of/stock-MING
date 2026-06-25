@@ -340,6 +340,16 @@ export default function CommandCenterHome() {
     {};
   const candidateQuantOneScreenActionRows = (candidateQuantSmallDataWriteback.ordinary_one_screen_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const candidateQuantConfirmOutcomeRows = (candidateQuantSmallDataWriteback.ordinary_confirm_outcome_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const candidateQuantConfirmedTaskReceiptRows =
+    (candidates.search_quant_projection_confirmed_task_receipt_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidates.ordinary_confirmed_task_receipt_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidateQuantSmallDataWriteback.ordinary_confirmed_task_receipt_rows as Array<Record<string, unknown>> | undefined) ??
+    [];
+  const candidateQuantTaskReadbackRows =
+    (candidates.search_quant_projection_task_readback_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidates.ordinary_task_readback_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidateQuantSmallDataWriteback.ordinary_task_readback_rows as Array<Record<string, unknown>> | undefined) ??
+    [];
   const candidateQuantTushareFirstRows =
     (candidates.ordinary_tushare_first_chain_rows as Array<Record<string, unknown>> | undefined) ??
     (candidateQuantSmallDataWriteback.ordinary_tushare_first_chain_rows as Array<Record<string, unknown>> | undefined) ??
@@ -413,6 +423,22 @@ export default function CommandCenterHome() {
           边界: "DeepSeek 不作为数据源，不覆盖价格、持仓、factor、operation_zones 或 strategy action。"
         }
       ];
+  const dailyCommandP1ConfirmTaskReadbackRows = [
+    ...candidateQuantConfirmedTaskReceiptRows.map((row) => ({
+      回放项: String(row.receipt_item ?? row["回放项"] ?? "确认回执"),
+      当前状态: String(row.status ?? row["当前状态"] ?? "waiting_confirm"),
+      用户读法: String(row.ordinary_label ?? row["用户读法"] ?? "等待确认按钮回执"),
+      来源: String(row.readback_source ?? row["来源"] ?? "CandidateRadar cache"),
+      边界: String(row.boundary ?? row["边界"] ?? "GET cache 只读回放；不创建第二个 task")
+    })),
+    ...candidateQuantTaskReadbackRows.map((row) => ({
+      回放项: String(row.surface ?? row["回放项"] ?? "任务状态"),
+      当前状态: String(row.status ?? row["当前状态"] ?? "waiting_task"),
+      用户读法: String(row.ordinary_label ?? row["用户读法"] ?? "等待本地 task 状态"),
+      来源: String(row.readback_source ?? row["来源"] ?? "local task status"),
+      边界: String(row.boundary ?? row["边界"] ?? "只读任务状态；不调用 provider/model")
+    }))
+  ];
   const dailyCommandSmallDataWritebackState = String(
     candidateQuantSmallDataWriteback.ordinary_readback_stage_label ??
       candidateQuantSmallDataWriteback.summary_label ??
@@ -2144,6 +2170,19 @@ export default function CommandCenterHome() {
           <h3>P1 链路四步</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_tushare_first_chain_rows：普通用户只看输入是否静默、确认按钮是否创建 task、Tushare ledger 是否回放、DeepSeek 是否 skipped；工程明细继续下沉。</p>
           <DataLineageTable rows={dailyCommandTushareFirstRows} />
+        </div>
+        <div aria-label="daily command p1 confirm task readback proof">
+          <h3>P1 确认任务回放</h3>
+          <MetricGrid
+            items={[
+              { label: "确认回执", value: candidateQuantConfirmedTaskReceiptRows.length ? `${candidateQuantConfirmedTaskReceiptRows.length} 行已回放` : "等待确认回执", tone: candidateQuantConfirmedTaskReceiptRows.length ? "good" : "warn" },
+              { label: "任务状态", value: candidateQuantTaskReadbackRows.length ? `${candidateQuantTaskReadbackRows.length} 行已回放` : "等待 task 状态", tone: candidateQuantTaskReadbackRows.length ? "good" : "warn" },
+              { label: "来源任务", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
+              { label: "回放边界", value: "只读 search_quant_projection_confirmed_task_receipt_rows / task_readback_rows；不创建第二个 task", tone: "good" }
+            ]}
+          />
+          <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_confirmed_task_receipt_rows 和 search_quant_projection_task_readback_rows，让点击确认后的 task id、安全步骤和 TaskStatusPanel 回放直接可见。</p>
+          <DataLineageTable rows={dailyCommandP1ConfirmTaskReadbackRows} />
         </div>
         <div className="actions" aria-label="daily command p1 tushare first front actions">
           <a href={dailyCommandCandidateConfirmHref} title="回到下一票雷达确认输入区；输入静默，确认按钮才创建 Tushare-first task" aria-label="open candidate confirm from p1 tushare first front row">确认或换一只票</a>

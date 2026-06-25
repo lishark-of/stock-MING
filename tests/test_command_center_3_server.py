@@ -40032,9 +40032,27 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             small_data["ordinary_confirmed_task_receipt_row_count"],
         )
         self.assertEqual(
+            packet["search_quant_projection_confirmed_task_receipt_rows"],
+            small_data["ordinary_confirmed_task_receipt_rows"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_confirmed_task_receipt_row_count"],
+            small_data["ordinary_confirmed_task_receipt_row_count"],
+        )
+        self.assertEqual(
             packet["counts"]["search_quant_projection_task_readback_row_count"],
             small_data["ordinary_task_readback_row_count"],
         )
+        self.assertEqual(
+            packet["search_quant_projection_task_readback_rows"],
+            small_data["ordinary_task_readback_rows"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_task_readback_row_count"],
+            small_data["ordinary_task_readback_row_count"],
+        )
+        self.assertEqual(packet["latest_task_id"], task["task_id"])
+        self.assertEqual(packet["search_quant_projection_latest_task_id"], task["task_id"])
         self.assertEqual(
             packet["counts"]["search_quant_projection_provider_api_row_count"],
             small_data["ordinary_provider_api_row_count"],
