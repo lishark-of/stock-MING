@@ -480,9 +480,22 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("本速读不创建 task、不调用 DeepSeek、不生成交易动作", quick)
         self.assertIn('aria-label="candidate radar p3 ordinary readable sentence"', quick)
         self.assertIn("{quantProjectionP3OrdinaryReadableSentence}", quick)
+        self.assertIn('aria-label="candidate radar p3 first screen local result actions"', quick)
+        self.assertIn('aria-label="open factor replay from p3 first screen result"', quick)
+        self.assertIn('aria-label="open next session replay from p3 first screen result"', quick)
+        self.assertIn('aria-label="return candidate pool from p3 first screen result"', quick)
+        self.assertIn('href="#factor"', quick)
+        self.assertIn('href="#next"', quick)
+        self.assertIn('href="#candidate-pool"', quick)
+        self.assertIn("P3 结果入口只切换本地页面或锚点", quick)
+        self.assertIn("不会创建 task、不调用 Tushare/DeepSeek、不写 cache，也不改 strategy action", quick)
         self.assertIn("<MetricGrid items={quantProjectionP3ResultSummaryItems} />", quick)
         self.assertLess(
             quick.index('aria-label="candidate radar p3 ordinary readable sentence"'),
+            quick.index('aria-label="candidate radar p3 first screen local result actions"'),
+        )
+        self.assertLess(
+            quick.index('aria-label="candidate radar p3 first screen local result actions"'),
             quick.index('aria-label="candidate radar p3 one minute decision brief"'),
         )
         self.assertNotIn("onClick=", quick)

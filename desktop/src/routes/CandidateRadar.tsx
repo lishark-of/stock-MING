@@ -2712,6 +2712,12 @@ export default function CandidateRadar() {
           <h3>P3 结果首屏速读</h3>
           <p className="risk-note">P2 三面之后直接看这里：可读结论、来源、下一步和安全边界都来自本地 cache / ledger / packet；本速读不创建 task、不调用 DeepSeek、不生成交易动作。</p>
           <p className="ordinary-status-note" aria-label="candidate radar p3 ordinary readable sentence">{quantProjectionP3OrdinaryReadableSentence}</p>
+          <div className="actions" aria-label="candidate radar p3 first screen local result actions">
+            <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from p3 first screen result">量化推演</a>
+            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session replay from p3 first screen result">次日图谱</a>
+            <a href="#candidate-pool" title="跳回候选池；只读回看本地候选缓存" aria-label="return candidate pool from p3 first screen result">候选池</a>
+          </div>
+          <p className="risk-note">P3 结果入口只切换本地页面或锚点；不会创建 task、不调用 Tushare/DeepSeek、不写 cache，也不改 strategy action。</p>
           <div aria-label="candidate radar p3 one minute decision brief">
             <h3>P3 一分钟决策速读</h3>
             <p className="risk-note">优先读取服务端 ordinary_result_decision_brief_rows：先看结论、再看来源、最后看下一步和边界；这张表只读本地证据，不创建 task。</p>
