@@ -191,15 +191,34 @@ export default function NextSessionMap() {
   const packetOrdinaryResultReplayRows = rowsFromArray(packet.ordinary_result_replay_rows);
   const packetOrdinaryChartReviewRows = rowsFromArray(packet.ordinary_chart_review_rows);
   const packetOrdinaryConditionQuickReadRows = rowsFromArray(packet.ordinary_condition_quick_read_rows);
+  const packetCandidateRadarP3Handoff = (packet.candidate_radar_p3_handoff as Record<string, unknown> | undefined) ?? {};
+  const packetCandidateRadarP3HandoffReady = packetCandidateRadarP3Handoff.p3_readable_result_ready === true;
+  const packetCandidateRadarP2HandoffReady = packetCandidateRadarP3Handoff.p2_small_data_ready === true;
+  const packetCandidateRadarP3HandoffSymbol = String(packetCandidateRadarP3Handoff.symbol ?? "");
+  const packetCandidateRadarP3HandoffSourceTask = String(packetCandidateRadarP3Handoff.source_task_id ?? "");
+  const packetCandidateRadarP3HandoffSummary = String(packetCandidateRadarP3Handoff.ordinary_result_summary ?? "");
+  const packetCandidateRadarP3HandoffNextStep = String(packetCandidateRadarP3Handoff.ordinary_result_next_step ?? "");
+  const packetCandidateRadarP3HandoffBoundary = String(packetCandidateRadarP3Handoff.ordinary_result_boundary ?? "");
+  const packetCandidateRadarP3HandoffDeepSeekState = String(
+    packetCandidateRadarP3Handoff.deepseek_governed_executor_status ?? ""
+  );
+  const nextSessionPacketHandoffLabel = packetCandidateRadarP3HandoffReady
+    ? `next-session cache 已接上 ${packetCandidateRadarP3HandoffSymbol || "当前标的"} / task=${packetCandidateRadarP3HandoffSourceTask || "本地回放"}`
+    : "next-session cache handoff 等待 CandidateRadar P3 结果";
   const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarWritebackSurfaceRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
   const candidateRadarWritebackSurfaceReady =
-    candidateRadarWritebackSurfaceRows.length >= 3 &&
-    candidateRadarSmallDataWriteback.cache_packet_written === true &&
-    candidateRadarSmallDataWriteback.provider_call_ledger_written === true &&
-    candidateRadarSmallDataWriteback.small_data_writeback_ready === true;
+    packetCandidateRadarP2HandoffReady ||
+    (
+      candidateRadarWritebackSurfaceRows.length >= 3 &&
+      candidateRadarSmallDataWriteback.cache_packet_written === true &&
+      candidateRadarSmallDataWriteback.provider_call_ledger_written === true &&
+      candidateRadarSmallDataWriteback.small_data_writeback_ready === true
+    );
   const candidateRadarWritebackSurfaceStatus = candidateRadarWritebackSurfaceReady
-    ? "P2 三面已回放：cache / call_ledger / packet 都可读"
+    ? packetCandidateRadarP2HandoffReady
+      ? "P2 三面已由 next-session handoff 回放：cache / call_ledger / packet 可读"
+      : "P2 三面已回放：cache / call_ledger / packet 都可读"
     : `P2 三面等待：${String(
         candidateRadarSmallDataWriteback.ordinary_readback_stage_label ??
           candidateRadarSmallDataWriteback.summary_label ??
@@ -216,20 +235,22 @@ export default function NextSessionMap() {
   );
   const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const candidateRadarConfirmedSymbol = String(
-    candidateRadarReceipt.symbol ??
-      candidateRadarSmallDataWriteback.symbol ??
-      candidateRadarInterpretation.symbol ??
+    packetCandidateRadarP3HandoffSymbol ||
+      candidateRadarReceipt.symbol ||
+      candidateRadarSmallDataWriteback.symbol ||
+      candidateRadarInterpretation.symbol ||
       ""
   );
   const candidateRadarConfirmedSymbolLabel = candidateRadarConfirmedSymbol
     ? `当前确认标的：${candidateRadarConfirmedSymbol}`
     : "等待下一票雷达确认标的";
   const candidateRadarSourceTaskLabel = String(
-    candidateRadarCache.search_quant_projection_latest_task_id ??
-      candidateRadarCache.latest_task_id ??
-      candidateRadarReceipt.latest_task_id ??
-      candidateRadarReceipt.task_id ??
-      candidateRadarSmallDataWriteback.latest_task_id ??
+    packetCandidateRadarP3HandoffSourceTask ||
+      candidateRadarCache.search_quant_projection_latest_task_id ||
+      candidateRadarCache.latest_task_id ||
+      candidateRadarReceipt.latest_task_id ||
+      candidateRadarReceipt.task_id ||
+      candidateRadarSmallDataWriteback.latest_task_id ||
       "等待下一票雷达确认 task"
   );
   const candidateRadarConfirmedTaskReceiptRows = rowsFromArray(
@@ -249,26 +270,32 @@ export default function NextSessionMap() {
       candidateRadarInterpretation.ordinary_result_handoff_rows
   );
   const candidateRadarReadableResult = String(
-    candidateRadarCache.ordinary_result_summary ??
-      candidateRadarInterpretation.ordinary_result_summary ??
+    packetCandidateRadarP3HandoffSummary ||
+      candidateRadarCache.ordinary_result_summary ||
+      candidateRadarInterpretation.ordinary_result_summary ||
       "等待下一票雷达确认后的可读结论"
   );
   const candidateRadarReadableNextStep = String(
-    candidateRadarCache.ordinary_result_next_step ??
-      candidateRadarInterpretation.ordinary_result_next_step ??
+    packetCandidateRadarP3HandoffNextStep ||
+      candidateRadarCache.ordinary_result_next_step ||
+      candidateRadarInterpretation.ordinary_result_next_step ||
       "先回下一票雷达确认输入区输入代码并点击确认按钮"
   );
   const candidateRadarReadableBoundary = String(
-    candidateRadarCache.ordinary_result_boundary ??
-      candidateRadarInterpretation.ordinary_result_boundary ??
+    packetCandidateRadarP3HandoffBoundary ||
+      candidateRadarCache.ordinary_result_boundary ||
+      candidateRadarInterpretation.ordinary_result_boundary ||
       "次日图谱只读 CandidateRadar cache / ledger / packet 的可读结论；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。"
   );
   const candidateRadarDeepSeekStateRaw = String(
-    candidateRadarCache.ordinary_result_deepseek_governed_executor_status ??
-      candidateRadarInterpretation.deepseek_governed_executor_status ??
+    packetCandidateRadarP3HandoffDeepSeekState ||
+      candidateRadarCache.ordinary_result_deepseek_governed_executor_status ||
+      candidateRadarInterpretation.deepseek_governed_executor_status ||
       "governed_executor_pending"
   );
   const candidateRadarUsesModelOutput =
+    packetCandidateRadarP3Handoff.uses_deepseek_output === true ||
+    packetCandidateRadarP3Handoff.uses_model_output === true ||
     candidateRadarInterpretation.uses_deepseek_output === true ||
     candidateRadarInterpretation.uses_model_output === true;
   const candidateRadarOrdinaryDeepSeekState = candidateRadarUsesModelOutput
@@ -289,6 +316,7 @@ export default function NextSessionMap() {
   const candidateRadarReadableResultReady =
     Boolean(candidateRadarConfirmedSymbol) &&
     (
+      packetCandidateRadarP3HandoffReady ||
       candidateRadarInterpretation.interpretation_ready === true ||
       candidateRadarResultQuickRows.length > 0 ||
       candidateRadarReadableResult !== "等待下一票雷达确认后的可读结论"
@@ -322,7 +350,7 @@ export default function NextSessionMap() {
     symbol: candidateRadarConfirmedSymbol,
     source_task_id: candidateRadarSourceTaskLabel.includes("等待") ? "" : candidateRadarSourceTaskLabel,
     candidate_readback_source: "CandidateRadar cache / ledger / packet",
-    p2_small_data_ready: candidateRadarSmallDataWriteback.small_data_writeback_ready === true,
+    p2_small_data_ready: candidateRadarWritebackSurfaceReady,
     p3_readable_result_ready: candidateRadarReadableResultReady,
     manual_button_required: true,
     cache_get_external_calls_triggered: false,
@@ -387,6 +415,11 @@ export default function NextSessionMap() {
           ? "上游结论可读，完整图谱等待手动生成"
           : "等待确认标的或本地缓存",
       tone: chartSummary.has_drawable_data === true ? "good" : candidateRadarReadableResultReady ? "warn" : "neutral"
+    },
+    {
+      label: "Next cache handoff",
+      value: nextSessionPacketHandoffLabel,
+      tone: packetCandidateRadarP3HandoffReady ? "good" : "warn"
     },
     {
       label: "P3 结论",
