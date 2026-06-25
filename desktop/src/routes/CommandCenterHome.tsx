@@ -1463,6 +1463,15 @@ export default function CommandCenterHome() {
     { label: "Factor handoff", value: dailyCommandFactorCandidateHandoffLabel, tone: dailyCommandFactorCandidateHandoffReady ? "good" : "warn" },
     { label: "边界", value: "checkpoint 只合成现有 cache / ledger / packet；不创建 task、不补调 provider/model", tone: "good" }
   ];
+  const dailyCommandCurrentResearchSnapshotItems: MetricItem[] = [
+    { label: "最近标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
+    { label: "确认任务", value: homeQuantVisibleTaskId ? `${homeQuantVisibleTaskId} (${homeQuantVisibleTaskSource})` : "等待确认按钮返回 task id", tone: homeQuantVisibleTaskId ? "good" : "warn" },
+    { label: "数据链", value: dailyCommandTushareFirstLedgerLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
+    { label: "P2 写入", value: dailyCommandP2SurfaceCompletionLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+    { label: "P3 结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+    { label: "下一步", value: dailyCommandP3OneGlanceReadable ? "看股票量化推演和次日图谱" : "先确认股票代码，等待本地回放", tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+    { label: "边界", value: "首屏快照只读已有 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek", tone: "good" }
+  ];
   const homeQuantConfirmItems: MetricItem[] = [
     { label: "输入代码", value: homeQuantSymbolValidation.valid ? homeQuantSymbolValidation.normalized : homeQuantSubmitDisabledReason, tone: homeQuantSymbolValidation.valid ? "good" : "warn" },
     { label: "确认按钮", value: homeQuantCanSubmit ? `可点击：${homeQuantSymbolValidation.normalized} 将创建 Tushare-first POST task` : `不可点击：${homeQuantSubmitDisabledReason}`, tone: homeQuantCanSubmit ? "good" : "warn" },
@@ -2280,6 +2289,11 @@ export default function CommandCenterHome() {
           ))}
         </div>
         <p className="ordinary-status-note" aria-label="daily command usable path front readable status" aria-live="polite">{homeQuantP1P2P3CheckpointLabel}</p>
+        <div aria-label="daily command current research snapshot">
+          <h3>最近确认投研快照</h3>
+          <MetricGrid items={dailyCommandCurrentResearchSnapshotItems} />
+          <p className="risk-note">这张首屏快照只读最近确认 task、Tushare-first ledger、P2 三面和 P3 可读结论；不会创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key，也不交易或修改 strategy action。</p>
+        </div>
         <DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows} />
         <div className="actions" aria-label="daily command usable path front actions">
           <a href={dailyCommandPrimaryActionHref} title={dailyCommandPrimaryActionBoundary} aria-label="open usable path primary action">{dailyCommandPrimaryActionLabel}</a>
