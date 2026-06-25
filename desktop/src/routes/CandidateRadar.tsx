@@ -2903,6 +2903,12 @@ export default function CandidateRadar() {
             <p className="risk-note">点确认后先看这里：任务是否接收、最近 task、Tushare-first 和 P2 回放状态会直接出现在普通视图，不需要展开工程明细。</p>
             <MetricGrid items={quantProjectionP1ProgressItems} />
           </div>
+          <div aria-label="quant projection ordinary p1 p2 immediate readback">
+            <h3>P1/P2 即时回读</h3>
+            <p className="risk-note">点击确认后普通视图直接回放任务接收、P2 三面和 P3 入口；优先读取 ordinary_confirm_outcome_rows 与 ordinary_writeback_surface_summary_rows，只读本地 cache，不创建第二个 task。</p>
+            <DataLineageTable rows={quantProjectionOrdinaryConfirmOutcomeRows} />
+            <DataLineageTable rows={quantProjectionWritebackSurfaceRows} />
+          </div>
           <details className="developer-audit-details" aria-label="quant projection ordinary p1 p2 engineering details">
             <summary>P1/P2 任务与写入详情</summary>
             <p className="risk-note">普通主视图先保留状态轨、可读结论和回放入口；确认门控、task receipt、cache / ledger / packet 写入面默认收起，不影响确认按钮动作。</p>

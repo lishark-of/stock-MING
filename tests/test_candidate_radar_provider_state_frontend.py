@@ -131,6 +131,16 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         )
         self.assertIn("普通页不展示 prompt/output", search_panel)
         self.assertIn("不改 action", self.page)
+        self.assertIn('aria-label="quant projection ordinary p1 p2 immediate readback"', search_panel_top)
+        self.assertIn("P1/P2 即时回读", search_panel_top)
+        self.assertIn("ordinary_confirm_outcome_rows 与 ordinary_writeback_surface_summary_rows", search_panel_top)
+        self.assertIn("只读本地 cache，不创建第二个 task", search_panel_top)
+        self.assertIn("rows={quantProjectionOrdinaryConfirmOutcomeRows}", search_panel_top)
+        self.assertIn("rows={quantProjectionWritebackSurfaceRows}", search_panel_top)
+        self.assertLess(
+            search_panel.index('aria-label="quant projection ordinary p1 p2 immediate readback"'),
+            search_panel.index('aria-label="quant projection ordinary p1 p2 engineering details"'),
+        )
 
     def test_search_panel_keeps_external_work_button_gated(self):
         submit_start = self.page.index("const launchQuantProjection = () =>")
