@@ -12,6 +12,9 @@ import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
+// Legacy marker: plain href="#candidates" module-top links are superseded by the confirm-input deep link.
+const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
+
 function toRows(items: unknown, bucket?: string): Array<Record<string, unknown>> {
   if (!Array.isArray(items)) return [];
   return items.map((item, index) => {
@@ -133,7 +136,7 @@ export default function FactorQuantHub() {
   const candidateRadarReadableNextStep = String(
     candidateRadarCache.ordinary_result_next_step ??
       candidateRadarInterpretation.ordinary_result_next_step ??
-      "先回下一票雷达输入代码并点击确认按钮"
+      "先回下一票雷达确认输入区输入代码并点击确认按钮"
   );
   const candidateRadarReadableBoundary = String(
     candidateRadarCache.ordinary_result_boundary ??
@@ -317,15 +320,15 @@ export default function FactorQuantHub() {
   };
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
   const ordinaryQuantNextClick = empty
-    ? "先从下一票雷达输入股票代码并生成 3.0 量化推演；本页查看本地缓存，不自动刷新外部数据或模型解释"
-    : "先看支持/压制与次日图谱预览；换标的从下一票雷达输入代码并点生成 3.0 量化推演；需要更新时再手动刷新数据、运行轻量推演或整理模型解释";
+    ? "先从下一票雷达确认输入区输入股票代码并生成 3.0 量化推演；本页查看本地缓存，不自动刷新外部数据或模型解释"
+    : "先看支持/压制与次日图谱预览；换标的从下一票雷达确认输入区点生成 3.0 量化推演；需要更新时再手动刷新数据、运行轻量推演或整理模型解释";
   const ordinaryQuantPrimaryActionLabel = empty ? "去下一票雷达生成推演" : "查看支持/压制";
-  const ordinaryQuantPrimaryActionHref = empty ? "#candidates" : "#factor-score";
+  const ordinaryQuantPrimaryActionHref = empty ? CANDIDATE_CONFIRM_HREF : "#factor-score";
   const ordinaryQuantPrimaryActionBoundary = empty
-    ? "主下一步只切换到下一票雷达；输入代码和生成推演仍需按钮确认"
+    ? "主下一步直达下一票雷达确认输入区；输入代码和生成推演仍需按钮确认"
     : "主下一步只跳转本地支持/压制摘要；不刷新 provider/model、不写 cache";
   const ordinaryQuantSymbolEntryBoundary =
-    "本页不提供股票代码输入；换标的必须回下一票雷达输入代码并点击确认生成，输入本身不创建 task";
+    "本页不提供股票代码输入；换标的必须回下一票雷达确认输入区点击确认生成，输入本身不创建 task";
   const ordinaryQuantCacheSourceLabel = empty ? "等待本地量化缓存" : "本地量化缓存可用";
   const ordinaryQuantGlobalTushareSourceLabel =
     Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "Tushare 数据有本地记录" : "等待手动补充 Tushare 数据";
@@ -405,7 +408,7 @@ export default function FactorQuantHub() {
   const ordinaryQuantResultLocation =
     "结果位置：本页看支持/压制与模型解释状态，次日图谱预览复核路径，下一票雷达回到代码确认入口；三个位置都只读回放";
   const ordinaryQuantRouteHandoffBoundary =
-    "回放入口只切换本地页面/锚点（#next/#candidates 是本地模块路由，#factor-* 是页内锚点）；不创建 task、不调用 Tushare 或 DeepSeek、不写 cache、不改交易策略";
+    "回放入口只切换本地页面/锚点（#next 是本地模块路由，#candidates/... 直达确认输入区，#factor-* 是页内锚点）；不创建 task、不调用 Tushare 或 DeepSeek、不写 cache、不改交易策略";
   const ordinaryQuantFullNextSessionHandoff =
     "完整次日图谱入口：从量化推演摘要打开 #next 本地模块路由，复核路径、参考线和操作区；只做本地页面切换";
   const ordinaryQuantFullNextSessionBoundary =
@@ -431,7 +434,7 @@ export default function FactorQuantHub() {
     }
   ];
   const ordinaryQuantReviewOrder = empty
-    ? "先回下一票雷达输入代码并确认生成；本页只等本地结果回放"
+    ? "先回下一票雷达确认输入区输入代码并确认生成；本页只等本地结果回放"
     : "先看支持/压制，再看次日图谱预览，最后看模型解释状态；不要从工程审计表开始";
   const ordinaryQuantResultComposition = [
     `支持 ${String(score.support_factors?.length ?? 0)} / 压制 ${String(score.suppress_factors?.length ?? 0)} / 冲突 ${String(score.conflict_factors?.length ?? 0)} / 缺失 ${String(score.missing_factors?.length ?? 0)}`,
@@ -446,7 +449,7 @@ export default function FactorQuantHub() {
   const ordinaryQuantP3NextStep = ordinaryQuantCandidateRadarP3Ready
     ? `P3 下一步：${candidateRadarReadableNextStep}`
     : empty
-      ? "P3 下一步：回下一票雷达输入代码并点击确认；输入股票代码本身不创建 task"
+      ? "P3 下一步：回下一票雷达确认输入区输入代码并点击确认；输入股票代码本身不创建 task"
       : "P3 下一步：按支持/压制 -> 次日图谱预览 -> DeepSeek 状态复核；需要更新才点击按钮创建 POST task";
   const ordinaryQuantP3Boundary = ordinaryQuantCandidateRadarP3Ready
     ? `P3 边界：${candidateRadarReadableBoundary}`
@@ -466,7 +469,7 @@ export default function FactorQuantHub() {
     {
       合同项: "任务回执",
       当前状态: ordinaryQuantPostConfirmReplayContractReady ? "CandidateRadar call_ledger safe params 已回放后端合同" : "等待下一票雷达确认按钮返回后端合同",
-      用户下一步: ordinaryQuantPostConfirmReplayContractReady ? "按合同顺序回读任务编号、TaskStatusPanel 和本地 cache" : "回下一票雷达输入代码并点击确认",
+      用户下一步: ordinaryQuantPostConfirmReplayContractReady ? "按合同顺序回读任务编号、TaskStatusPanel 和本地 cache" : "回下一票雷达确认输入区输入代码并点击确认",
       证据: "ordinary_post_confirm_replay_contract",
       边界: "量化页只读合同；不会从量化页创建第二个 task"
     },
@@ -551,7 +554,7 @@ export default function FactorQuantHub() {
     {
       label: "雷达确认",
       state: empty ? ("waiting" as const) : ("done" as const),
-      detail: empty ? "回下一票雷达输入代码并点击确认" : ordinaryQuantRadarHandoffState
+      detail: empty ? "回下一票雷达确认输入区输入代码并点击确认" : ordinaryQuantRadarHandoffState
     },
     {
       label: "Factor cache",
@@ -581,7 +584,7 @@ export default function FactorQuantHub() {
         {
           行动: "1. 确认",
           当前状态: empty ? "等待下一票雷达确认代码" : ordinaryQuantRadarHandoffState,
-          用户下一步: empty ? "回下一票雷达输入代码并点击确认按钮" : ordinaryQuantReviewOrder,
+          用户下一步: empty ? "回下一票雷达确认输入区输入代码并点击确认按钮" : ordinaryQuantReviewOrder,
           入口: "#candidates",
           边界: "本页不接收代码输入；换标的必须回下一票雷达确认按钮，页面链接只做本地切换。"
         },
@@ -622,7 +625,7 @@ export default function FactorQuantHub() {
         {
           确认结果: "P1 确认结果",
           当前状态: "等待下一票雷达确认任务回放",
-          用户下一步: "回下一票雷达输入代码并点击确认按钮。",
+          用户下一步: "回下一票雷达确认输入区输入代码并点击确认按钮。",
           入口: "#candidates",
           边界: "量化页不接收换标的输入；确认按钮之前不创建 Tushare-first task。"
         },
@@ -660,7 +663,7 @@ export default function FactorQuantHub() {
           写入面: "cache",
           当前状态: ordinaryQuantSmallDataWritebackState,
           回放来源: "search_quant_projection_small_data_writeback_summary",
-          下一步: "先去下一票雷达输入代码并点击确认",
+          下一步: "先去下一票雷达确认输入区输入代码并点击确认",
           边界: ordinaryQuantP2WritebackBoundary
         },
         {
@@ -737,7 +740,7 @@ export default function FactorQuantHub() {
   const ordinaryQuantHandoffRows = [
     {
       交接段: "按钮确认",
-      用户看到: empty ? "先回下一票雷达输入代码并确认生成" : "已从本地量化缓存读取确认后的推演结果",
+      用户看到: empty ? "先回下一票雷达确认输入区输入代码并确认生成" : "已从本地量化缓存读取确认后的推演结果",
       写入位置: "确认按钮创建 POST task 后才可写入本地 cache / ledger / packet",
       边界: "输入股票代码、页面打开、React render 和 GET cache 都不自动外联"
     },
@@ -904,7 +907,7 @@ export default function FactorQuantHub() {
           <div className="actions" aria-label="stock quant readable result local actions">
             <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="open factor support suppress from readable result">查看支持/压制</a>
             <a href="#next" title="切换到完整次日图谱模块；只读本地 next-session cache" aria-label="open full next session from readable result">打开完整次日图谱</a>
-            <a href="#candidates" title="切换到下一票雷达模块；换标的仍需输入代码并确认" aria-label="return candidate radar from readable result">回下一票雷达</a>
+            <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return candidate radar confirm input from readable result">回下一票雷达确认</a>
           </div>
           <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变 strategy action。</p>
           {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
@@ -966,10 +969,10 @@ export default function FactorQuantHub() {
           <a href="#factor-next-session" title="跳到本页次日图谱预览；不刷新 provider/model" aria-label="view next session bridge preview">查看次日图谱预览</a>
           <a href="#next" title="切换到完整次日图谱模块；只读本地 next-session cache" aria-label="open full next session map from stock quant replay">打开完整次日图谱</a>
           <a href="#factor-deepseek" title="跳到本页模型解释状态；DeepSeek 仍等 governed executor" aria-label="view model explanation status">查看模型解释状态</a>
-          <a href="#candidates" title="切换到下一票雷达模块；换标的仍需输入代码并确认" aria-label="return to candidate radar symbol confirmation without creating a task">去下一票雷达生成推演</a>
+          <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return to candidate radar confirm input without creating a task">去下一票雷达确认生成</a>
         </div>
-        <p className="risk-note">没有标的时先去 <a href="#candidates">下一票雷达</a> 输入代码并点击生成 3.0 量化推演；这个链接只切换本地页面，不创建 task。</p>
-        <p className="risk-note">本页不接收股票代码输入；换标的必须回下一票雷达确认按钮，避免把查看缓存误当成重新推演。</p>
+        <p className="risk-note">没有标的时先去 <a href={CANDIDATE_CONFIRM_HREF}>下一票雷达确认输入区</a> 输入代码并点击生成 3.0 量化推演；这个链接只切换本地页面，不创建 task。</p>
+        <p className="risk-note">本页不接收股票代码输入；换标的必须回下一票雷达确认输入区，避免把查看缓存误当成重新推演。</p>
         <p className="risk-note">来自下一票雷达的搜票结果在本页只回放 Factor cache、次日图谱预览和模型解释状态；本页链接不重新触发 Tushare-first 或 DeepSeek。</p>
         <p className="risk-note">{ordinaryQuantResultLocation}</p>
         <p className="risk-note">{ordinaryQuantFullNextSessionBoundary}。</p>

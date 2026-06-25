@@ -10,6 +10,8 @@ import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
+const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
+
 function rowsFromArray(items: unknown, fallbackKey = "value"): Array<Record<string, unknown>> {
   if (!Array.isArray(items)) return [];
   return items.map((item, index) => {
@@ -184,7 +186,7 @@ export default function NextSessionMap() {
   const nextSessionReplayPath =
     "回放路径：下一票雷达确认代码 -> 股票量化推演支持/压制 -> 次日图谱路径/参考线/操作区";
   const nextSessionReplayDestinationBoundary =
-    "回放入口只切换本地模块路由（#candidates/#factor）；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones";
+    "回放入口只切换本地模块路由（#candidates/... 直达确认输入区，#factor 到量化推演）；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones";
   const nextSessionOperationZoneBoundary = "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
   const packetOrdinaryResultReplayRows = rowsFromArray(packet.ordinary_result_replay_rows);
   const packetOrdinaryChartReviewRows = rowsFromArray(packet.ordinary_chart_review_rows);
@@ -240,7 +242,7 @@ export default function NextSessionMap() {
   const candidateRadarReadableNextStep = String(
     candidateRadarCache.ordinary_result_next_step ??
       candidateRadarInterpretation.ordinary_result_next_step ??
-      "先回下一票雷达输入代码并点击确认按钮"
+      "先回下一票雷达确认输入区输入代码并点击确认按钮"
   );
   const candidateRadarReadableBoundary = String(
     candidateRadarCache.ordinary_result_boundary ??
@@ -309,7 +311,7 @@ export default function NextSessionMap() {
     ? "#next-session-chart"
     : candidateRadarReadableResultReady
       ? "#next-session-generate-actions"
-      : "#candidates";
+      : CANDIDATE_CONFIRM_HREF;
   const nextSessionOrdinaryProgressCheckpointLabel = chartSummary.has_drawable_data === true
     ? "查看完整图谱"
     : candidateRadarReadableResultReady
@@ -453,7 +455,7 @@ export default function NextSessionMap() {
       读图顺序: "5. 回流",
       当前状态: nextSessionChartReviewOrder,
       用户下一步: "需要换标的回下一票雷达；需要支持/压制回股票量化推演。",
-      证据: "local route handoff #candidates/#factor",
+      证据: "local route handoff #candidates/.../#factor",
       边界: nextSessionReplayDestinationBoundary
     }
   ];
@@ -469,7 +471,7 @@ export default function NextSessionMap() {
         {
           行动: "1. 确认",
           当前状态: chartSummary.has_drawable_data === true ? "上游确认链等待 CandidateRadar packet 回放" : "等待下一票雷达确认代码",
-          用户下一步: chartSummary.has_drawable_data === true ? nextSessionChartReviewOrder : "回下一票雷达输入代码并点击确认按钮",
+          用户下一步: chartSummary.has_drawable_data === true ? nextSessionChartReviewOrder : "回下一票雷达确认输入区输入代码并点击确认按钮",
           入口: "#candidates",
           边界: "图谱页不接收代码输入；换标的必须回下一票雷达确认按钮，链接只做本地切换。"
         },
@@ -510,7 +512,7 @@ export default function NextSessionMap() {
         {
           确认结果: "P1 确认结果",
           当前状态: "等待下一票雷达确认任务回放",
-          用户下一步: "回下一票雷达输入代码并点击确认按钮。",
+          用户下一步: "回下一票雷达确认输入区输入代码并点击确认按钮。",
           入口: "#candidates",
           边界: "图谱页不接收代码输入；确认按钮之前不创建 Tushare-first task。"
         },
@@ -748,7 +750,7 @@ export default function NextSessionMap() {
         <div className="actions" aria-label="next session ordinary progress checkpoint actions">
           <a href={nextSessionOrdinaryProgressCheckpointAnchor} aria-label="open next session ordinary progress checkpoint next step">{nextSessionOrdinaryProgressCheckpointLabel}</a>
           <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地 next-session cache" aria-label="open chart area from next session checkpoint">图谱区域</a>
-          <a href="#candidates" title="切换到下一票雷达模块；换标的仍需确认按钮" aria-label="return candidate radar from next session checkpoint">下一票雷达</a>
+          <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session checkpoint">下一票雷达确认</a>
         </div>
         <p className="risk-note">checkpoint 只汇总 CandidateRadar 上游结论、来源 task、图谱状态和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek，也不改 operation_zones 或 strategy action。</p>
       </div>
@@ -776,7 +778,7 @@ export default function NextSessionMap() {
         <div className="actions" aria-label="next session readable result local actions">
           <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地 next-session cache" aria-label="open local next session chart from readable result">查看图谱区域</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant replay from next session readable result">查看支持/压制</a>
-          <a href="#candidates" title="切换到下一票雷达模块；换标的仍需输入代码并确认" aria-label="return candidate radar from next session readable result">回下一票雷达</a>
+          <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return candidate radar confirm input from next session readable result">回下一票雷达确认</a>
         </div>
         <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变 operation_zones 或 strategy action。</p>
         {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
@@ -838,7 +840,7 @@ export default function NextSessionMap() {
         </div>
       </details>
       <div className="actions" aria-label="next session replay handoff actions">
-        <a href="#candidates" title="切换到下一票雷达模块；换标的仍需确认按钮" aria-label="return to candidate radar confirmed symbol entry">回到下一票雷达</a>
+        <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return to candidate radar confirm input">回到下一票雷达确认</a>
         <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant projection replay">查看股票量化推演</a>
       </div>
       <div id="next-session-generate-actions" className="actions" aria-label="next session manual generate actions">
