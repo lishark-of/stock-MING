@@ -889,12 +889,64 @@ export default function CommandCenterHome() {
   const candidateQuantDeepSeekReadinessRows =
     (candidateQuantInterpretation.ordinary_deepseek_governed_executor_readiness_rows as Array<Record<string, unknown>> | undefined) ??
     [];
-  const dailyCommandDeepSeekGovernanceState = String(
-    candidateQuantInterpretation.deepseek_governed_executor_status ?? "governed_executor_pending_not_requested"
-  );
+  const modelStrategyGovernedExecutor = (modelStrategy.governed_executor as Record<string, unknown> | undefined) ?? {};
+  const modelStrategyP5RealCallGateRows =
+    (modelStrategyGovernedExecutor.real_call_gate_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const dailyCommandDeepSeekGovernanceBoundary =
     "DeepSeek governed executor 单独补；首页只读显示治理状态，不调用模型、不展示 prompt/output、不覆盖价格、持仓、因子、operation_zones 或 strategy action。";
-  const dailyCommandP5NonblockingRows = candidateQuantDeepSeekReadinessRows.length
+  const dailyCommandDeepSeekGovernanceState = String(
+    modelStrategyGovernedExecutor.ordinary_status_label ??
+      modelStrategyGovernedExecutor.status ??
+      candidateQuantInterpretation.deepseek_governed_executor_status ??
+      "governed_executor_pending_not_requested"
+  );
+  const modelStrategyP5StatusLabel = String(
+    modelStrategyGovernedExecutor.ordinary_status_label ??
+      modelStrategyGovernedExecutor.status ??
+      dailyCommandDeepSeekGovernanceState
+  );
+  const modelStrategyP5NextAllowedAction = String(
+    modelStrategyGovernedExecutor.ordinary_next_allowed_action ??
+      "先继续 Tushare-first、Factor light 和 Next Session 本地回放；DeepSeek 单独补证。"
+  );
+  const modelStrategyP5RequiredBeforeRealCall = String(
+    modelStrategyGovernedExecutor.ordinary_required_before_real_call ??
+      "等待 model_ledger / sanitizer / redaction review / cost accounting / output acceptance"
+  );
+  const modelStrategyP5Boundary = String(
+    modelStrategyGovernedExecutor.ordinary_nonblocking_boundary ?? dailyCommandDeepSeekGovernanceBoundary
+  );
+  const modelStrategyP5BlockerCount = Number(
+    modelStrategyGovernedExecutor.real_call_blocker_count ?? modelStrategyP5RealCallGateRows.length
+  );
+  const modelStrategyP5NonblockingRows = modelStrategyGovernedExecutor.status
+    ? [
+        {
+          检查项: "1. 当前能先看什么",
+          当前状态: modelStrategyP5StatusLabel,
+          允许动作: modelStrategyP5NextAllowedAction,
+          用户下一步: "继续 P1/P2/P3 本地回放；P5 只读治理状态在本区查看",
+          边界: modelStrategyP5Boundary
+        },
+        {
+          检查项: "2. 真实调用闸门",
+          当前状态: modelStrategyGovernedExecutor.real_call_allowed_now === true ? "已放行" : `未放行：${String(modelStrategyP5BlockerCount)} 个 blocker`,
+          允许动作: "只允许本地 scope ticket / execution-request 补证",
+          用户下一步: modelStrategyP5RequiredBeforeRealCall,
+          边界: "GET /api/model-strategy/cache 只读，不调用 DeepSeek、不创建模型任务。"
+        },
+        {
+          检查项: "3. 不会改什么",
+          当前状态: "不覆盖价格、持仓、factor、operation_zones 或 strategy action",
+          允许动作: "继续基础图谱本地回放",
+          用户下一步: "把 DeepSeek pending 当单独 P5 补证，不阻塞当前投研链路",
+          边界: dailyCommandDeepSeekGovernanceBoundary
+        }
+      ]
+    : [];
+  const dailyCommandP5NonblockingRows = modelStrategyP5NonblockingRows.length
+    ? modelStrategyP5NonblockingRows
+    : candidateQuantDeepSeekReadinessRows.length
     ? candidateQuantDeepSeekReadinessRows.slice(0, 3).map((row) => ({
         检查项: String(row["检查项"] ?? row.readiness_key ?? "P5 readiness"),
         当前状态: String(row["当前状态"] ?? row.status ?? dailyCommandDeepSeekGovernanceState),
@@ -925,7 +977,18 @@ export default function CommandCenterHome() {
           边界: dailyCommandDeepSeekGovernanceBoundary
         }
       ];
-  const dailyCommandDeepSeekGovernanceRows = candidateQuantModelGovernanceRows.length
+  const modelStrategyP5GovernanceRows = modelStrategyP5RealCallGateRows.length
+    ? modelStrategyP5RealCallGateRows.slice(0, 5).map((row) => ({
+        治理项: String(row.gate_key ?? "DeepSeek gate"),
+        当前状态: String(row.status ?? (row.passed === true ? "passed" : "blocked")),
+        用户下一步: String(row.next_evidence ?? modelStrategyP5RequiredBeforeRealCall),
+        证据: String(row.evidence ?? "GET /api/model-strategy/cache governed_executor.real_call_gate_rows"),
+        边界: "model-strategy cache 只读回放；不调用模型、不创建 task。"
+      }))
+    : [];
+  const dailyCommandDeepSeekGovernanceRows = modelStrategyP5GovernanceRows.length
+    ? modelStrategyP5GovernanceRows
+    : candidateQuantModelGovernanceRows.length
     ? candidateQuantModelGovernanceRows.map((row) => ({
         治理项: String(row["治理项"] ?? row.governance_item ?? "DeepSeek 治理"),
         当前状态: String(row["当前状态"] ?? "等待 governed executor"),
@@ -2523,10 +2586,10 @@ export default function CommandCenterHome() {
         </div>
         <div aria-label="daily command p5 deepseek governance quick read">
           <h3>P5 DeepSeek 单独治理</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_model_governance_rows：DeepSeek 只作为 governed executor 单独补证；pending/skipped 不阻塞 Tushare-first、小数据写入或基础图谱。</p>
+          <p className="risk-note">优先读取 /api/model-strategy/cache 的 governed_executor；CandidateRadar governance rows 只作 fallback。DeepSeek 只作为 governed executor 单独补证；pending/skipped 不阻塞 Tushare-first、小数据写入或基础图谱。</p>
           <div aria-label="daily command p5 nonblocking one minute read">
             <h3>P5 不阻塞速读</h3>
-            <p className="risk-note">优先读取 CandidateRadar 的 ordinary_deepseek_governed_executor_readiness_rows：DeepSeek 单独补，不阻塞 Tushare-first、P2 三面或 P3 基础图谱；本区只读治理状态，不调用模型。</p>
+            <p className="risk-note">优先读取 modelStrategy.governed_executor 的 ordinary_status_label、real_call_gate_rows 和 nonblocking boundary；CandidateRadar readiness rows 只作 fallback。本区只读治理状态，不调用模型。</p>
             <DataLineageTable rows={dailyCommandP5NonblockingRows} />
           </div>
           <DataLineageTable rows={dailyCommandDeepSeekGovernanceRows} />
