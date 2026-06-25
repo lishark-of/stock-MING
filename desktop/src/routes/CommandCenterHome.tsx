@@ -775,6 +775,22 @@ export default function CommandCenterHome() {
       candidateQuantResultCheckpoint.missing_evidence_count ??
       dailyCommandP3MissingEvidenceItems.length
   );
+  const dailyCommandP3ExplainableCheckpointStatus = String(
+    dailyCommandP3ExplainableCheckpoint.status ??
+      dailyCommandP3OneGlanceStatus
+  );
+  const dailyCommandP3ExplainableCheckpointLabel = String(
+    dailyCommandP3ExplainableCheckpoint.ordinary_label ??
+      dailyCommandExplainableResultLabel
+  );
+  const dailyCommandP3ExplainableCheckpointNextAction = String(
+    dailyCommandP3ExplainableCheckpoint.ordinary_next_action ??
+      dailyCommandExplainableResultNext
+  );
+  const dailyCommandP3ExplainableCheckpointBoundary = String(
+    dailyCommandP3ExplainableCheckpoint.ordinary_result_boundary ??
+      dailyCommandExplainableResultBoundary
+  );
   const dailyCommandP3ExplainableProofItems: MetricItem[] = [
     {
       label: "结果状态",
@@ -2654,6 +2670,20 @@ export default function CommandCenterHome() {
             { label: "边界", value: dailyCommandExplainableResultBoundary, tone: "good" }
           ]}
         />
+        <div aria-label="daily command p3 explainable result checkpoint">
+          <h3>P3 可解释结果 checkpoint</h3>
+          <MetricGrid
+            items={[
+              { label: "状态", value: dailyCommandP3ExplainableCheckpointStatus, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+              { label: "速读", value: dailyCommandP3ExplainableCheckpointLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+              { label: "来源", value: dailyCommandP3OneGlanceSource, tone: dailyCommandP3OneGlanceProviderVerified ? "good" : "warn" },
+              { label: "缺口", value: dailyCommandP3OneGlanceMissingEvidence, tone: dailyCommandP3ExplainableMissingEvidenceCount ? "warn" : "good" },
+              { label: "下一步", value: dailyCommandP3ExplainableCheckpointNextAction, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+              { label: "边界", value: dailyCommandP3ExplainableCheckpointBoundary, tone: "good" }
+            ]}
+          />
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_p3_explainable_result_checkpoint：普通用户直接看可读结论、来源、缺口和下一步；DeepSeek 不参与本地结果回放。</p>
+        </div>
         <div aria-label="daily command p3 explainable result proof">
           <h3>P3 结果证明</h3>
           <MetricGrid items={dailyCommandP3ExplainableProofItems} />
