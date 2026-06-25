@@ -3075,8 +3075,8 @@ export default function CandidateRadar() {
               <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
             </div>
             <details className="developer-audit-details" aria-label="quant projection ordinary deepseek governance status">
-              <summary>P5 DeepSeek 治理状态</summary>
-              <p className="risk-note">优先读取服务端 ordinary_model_governance_rows：只看执行门控、输出范围和是否阻塞基础图谱；不会从治理状态创建 task 或调用模型。</p>
+              <summary>高级：P5 DeepSeek 单独补证</summary>
+              <p className="risk-note">P5 只作为高级单独补证：这里优先读取 ordinary_model_governance_rows，说明何时才允许模型补证；不作为普通用户当前下一步，不阻塞 P1/P2/P3 本地回放，不会从治理状态创建 task 或调用模型。</p>
               {quantProjectionDeepSeekContractRows.length ? (
                 <div aria-label="quant projection ordinary deepseek governed executor contract">
                   <h3>P5 DeepSeek 单独补证合同</h3>
