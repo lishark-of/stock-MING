@@ -1419,11 +1419,21 @@ export default function CommandCenterHome() {
     oneClickStartupSummary.frontend_backend_connection_ready === true &&
     dailyCommandP0LocalConnectionReceipt.status === "p0_local_connection_receipt_ready";
   const dailyCommandP0ConnectionEvidenceReady = dailyCommandP0StabilityReady || dailyCommandP0LocalLinkReady;
-  const dailyCommandP0LocalReadinessReady =
+  const dailyCommandP0RuntimePacketsReady =
     dailyCommandHealthOk &&
     bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" &&
-    desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache" &&
-    dailyCommandP0ConnectionEvidenceReady;
+    desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache";
+  const dailyCommandP0QuickActionReady = p0CurrentNextActionRows.some(
+    (row) => row.p1_entry_enabled === true || row.p0_ready_now === true
+  );
+  const dailyCommandP0ContractEvidenceReady =
+    dailyCommandP0ConnectionEvidenceReady ||
+    oneClickStartupSummary.status === "one_click_frontend_backend_ready" ||
+    dailyCommandP0LocalConnectionReceipt.status === "p0_local_connection_receipt_ready" ||
+    dailyCommandP0QuickActionReady;
+  const dailyCommandP0LocalReadinessReady =
+    dailyCommandP0RuntimePacketsReady &&
+    dailyCommandP0ContractEvidenceReady;
   const dailyCommandP0LocalReadinessLabel = dailyCommandP0LocalReadinessReady
     ? `P0 ready：${dailyCommandFrontendBackendSelectedApiBase} 已联通，当前 React 页面已加载；可在首页确认股票代码`
     : "P0 check：先让 health、bootstrap status、desktop preflight cache 变绿；未 ready 不进入 P1";
@@ -1503,9 +1513,12 @@ export default function CommandCenterHome() {
     fastapi_cache_get_ready: dailyCommandHealthOk,
     bootstrap_runtime_mode_ready: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet",
     desktop_preflight_ready: desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache",
+    p0_runtime_packets_ready: dailyCommandP0RuntimePacketsReady,
     p0_stability_check_ready: dailyCommandP0StabilityReady,
     p0_local_link_ready: dailyCommandP0LocalLinkReady,
     p0_connection_evidence_ready: dailyCommandP0ConnectionEvidenceReady,
+    p0_quick_action_ready: dailyCommandP0QuickActionReady,
+    p0_contract_evidence_ready: dailyCommandP0ContractEvidenceReady,
     p0_local_link_is_ui_gate_only_not_release_evidence: dailyCommandP0LocalLinkReady && !dailyCommandP0StabilityReady,
     candidate_cache_ready: Boolean(candidates.status),
     candidate_cache_status: String(candidates.status ?? "missing"),

@@ -683,6 +683,29 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postBootstrapLiveStartup", card)
         self.assertNotIn("launchLiveBootstrap", card)
 
+    def test_home_p0_gate_uses_runtime_packets_before_receipt_detail(self):
+        source = self.source
+        gate_start = source.index("const dailyCommandP0RuntimePacketsReady =")
+        gate_end = source.index("const dailyCommandP0LocalReadinessLabel", gate_start)
+        gate = source[gate_start:gate_end]
+
+        self.assertIn("dailyCommandHealthOk", gate)
+        self.assertIn('bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet"', gate)
+        self.assertIn('desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache"', gate)
+        self.assertIn("const dailyCommandP0QuickActionReady = p0CurrentNextActionRows.some", gate)
+        self.assertIn("row.p1_entry_enabled === true || row.p0_ready_now === true", gate)
+        self.assertIn("const dailyCommandP0ContractEvidenceReady =", gate)
+        self.assertIn('oneClickStartupSummary.status === "one_click_frontend_backend_ready"', gate)
+        self.assertIn('dailyCommandP0LocalConnectionReceipt.status === "p0_local_connection_receipt_ready"', gate)
+        self.assertIn("dailyCommandP0QuickActionReady", gate)
+        self.assertIn("dailyCommandP0RuntimePacketsReady &&", gate)
+        self.assertIn("dailyCommandP0ContractEvidenceReady", gate)
+
+        self.assertIn("p0_runtime_packets_ready: dailyCommandP0RuntimePacketsReady", source)
+        self.assertIn("p0_quick_action_ready: dailyCommandP0QuickActionReady", source)
+        self.assertIn("p0_contract_evidence_ready: dailyCommandP0ContractEvidenceReady", source)
+        self.assertNotIn("dailyCommandP0RuntimePacketsReady &&\n    dailyCommandP0ConnectionEvidenceReady", gate)
+
     def test_home_p1_confirm_handoff_keeps_receipt_audit_folded(self):
         source = self.source
         card_start = source.index('title="首页确认股票代码"')
