@@ -16,6 +16,9 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("先看下一步、数据来源、缺少证据和仅供研究边界", source)
         self.assertIn('title="本地 FastAPI 接线速读"', source)
         self.assertLess(source.index('title="本地 FastAPI 接线速读"'), source.index('title="今日作战台摘要"'))
+        self.assertIn('title="使用者可用化进度"', source)
+        self.assertLess(source.index('title="本地 FastAPI 接线速读"'), source.index('title="使用者可用化进度"'))
+        self.assertLess(source.index('title="使用者可用化进度"'), source.index('title="P0 现在能不能用"'))
         self.assertIn('title="P0 现在能不能用"', source)
         self.assertLess(source.index('title="本地 FastAPI 接线速读"'), source.index('title="P0 现在能不能用"'))
         self.assertLess(source.index('title="P0 现在能不能用"'), source.index('title="今日作战台摘要"'))
@@ -407,6 +410,36 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("fetch(", card)
         self.assertNotIn("postTask", card)
         self.assertNotIn("postBootstrapLiveStartup", card)
+
+    def test_usable_path_progress_card_is_front_loaded_and_read_only(self):
+        source = self.source
+        card_start = source.index('title="使用者可用化进度"')
+        card_end = source.index('title="P0 现在能不能用"', card_start)
+        card = source[card_start:card_end]
+        rail_start = card.index('aria-label="daily command usable path front stage rail"')
+        table_start = card.index("<DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows}")
+        rail = card[rail_start:table_start]
+
+        self.assertIn("打开即看 P0 到 P3 当前阶段；P4-P6 下沉到摘要和审计", card)
+        self.assertIn('status={homeQuantP1P2P3CheckpointReady ? "p1_p2_p3_ready" : dailyCommandP0LocalReadinessReady ? "ready_for_confirm" : "p0_check"}', card)
+        self.assertIn("dailyCommandUsablePathPrimaryStageRailSteps.map", rail)
+        self.assertIn('aria-label="daily command usable path front readable status"', card)
+        self.assertIn("{homeQuantP1P2P3CheckpointLabel}", card)
+        self.assertIn("DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows}", card)
+        self.assertIn('aria-label="daily command usable path front actions"', card)
+        self.assertIn('href={dailyCommandPrimaryActionHref}', card)
+        self.assertIn('href="#factor"', card)
+        self.assertIn('href="#next"', card)
+        self.assertIn("只读首页已回放的 health、CandidateRadar cache、task index 和本地结果", card)
+        self.assertIn("不会创建 task、不会调用 Tushare/DeepSeek/GitHub", card)
+        self.assertIn("不会读取 token/key、不会交易或修改 strategy action", card)
+        self.assertNotIn("dailyCommandUsablePathAuditStageRailSteps.map", card)
+        self.assertNotIn("dailyCommandUsableShortestPathAuditRows", card)
+        self.assertNotIn("onClick=", card)
+        self.assertNotIn("fetch(", card)
+        self.assertNotIn("postTask", card)
+        self.assertNotIn("postBootstrapLiveStartup", card)
+        self.assertNotIn("launchLiveBootstrap", card)
 
     def test_p3_one_glance_card_is_early_read_only_result_summary(self):
         source = self.source

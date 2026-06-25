@@ -2236,6 +2236,24 @@ export default function CommandCenterHome() {
           </div>
         </details>
       </PacketCard>
+      <PacketCard title="使用者可用化进度" subtitle="打开即看 P0 到 P3 当前阶段；P4-P6 下沉到摘要和审计" status={homeQuantP1P2P3CheckpointReady ? "p1_p2_p3_ready" : dailyCommandP0LocalReadinessReady ? "ready_for_confirm" : "p0_check"}>
+        <div className="state-clarity-rail" aria-label="daily command usable path front stage rail">
+          {dailyCommandUsablePathPrimaryStageRailSteps.map((step) => (
+            <div className="state-clarity-step" data-step-state={step.state} key={step.key}>
+              <span>{step.label}</span>
+              <small>{step.detail}</small>
+            </div>
+          ))}
+        </div>
+        <p className="ordinary-status-note" aria-label="daily command usable path front readable status" aria-live="polite">{homeQuantP1P2P3CheckpointLabel}</p>
+        <DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows} />
+        <div className="actions" aria-label="daily command usable path front actions">
+          <a href={dailyCommandPrimaryActionHref} title={dailyCommandPrimaryActionBoundary} aria-label="open usable path primary action">{dailyCommandPrimaryActionLabel}</a>
+          <a href="#factor" title="切换到股票量化推演；只读回放本地 P2/P3 结果" aria-label="open stock quant from usable path progress">股票量化推演</a>
+          <a href="#next" title="切换到次日图谱；只读回放本地 next-session cache" aria-label="open next session from usable path progress">次日图谱</a>
+        </div>
+        <p className="risk-note">这张进度卡只读首页已回放的 health、CandidateRadar cache、task index 和本地结果；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不会读取 token/key、不会交易或修改 strategy action。</p>
+      </PacketCard>
       <PacketCard title="P0 现在能不能用" subtitle="普通用户打开软件后的 10 秒判断" status={dailyCommandP0LocalReadinessReady ? "ready" : "check"}>
         <MetricGrid
           items={[
