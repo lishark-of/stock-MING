@@ -114,6 +114,8 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("wait_for_desktop_preflight_cache", source)
         self.assertIn("vite_command_center_ready", source)
         self.assertIn("wait_for_vite_command_center", source)
+        self.assertGreaterEqual(source.count("timeout=5.0"), 5)
+        self.assertNotIn("timeout=1.5", source)
         self.assertIn('data.get("service") != "stock-MING Command Center 3.0"', source)
         self.assertIn('data.get("external_calls_on_startup") is not False', source)
         self.assertIn("command_center_3_bootstrap_runtime_mode_packet", source)

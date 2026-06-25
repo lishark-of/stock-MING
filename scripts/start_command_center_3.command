@@ -139,7 +139,7 @@ import urllib.request
 
 url = sys.argv[1]
 try:
-    with urllib.request.urlopen(url, timeout=1.5) as response:
+    with urllib.request.urlopen(url, timeout=5.0) as response:
         sys.exit(0 if response.status < 500 else 1)
 except Exception:
     sys.exit(1)
@@ -155,7 +155,7 @@ import urllib.request
 
 url = sys.argv[1]
 try:
-    with urllib.request.urlopen(url, timeout=1.5) as response:
+    with urllib.request.urlopen(url, timeout=5.0) as response:
         if response.status < 200 or response.status >= 300:
             sys.exit(1)
         payload = json.loads(response.read().decode("utf-8"))
@@ -183,7 +183,7 @@ import urllib.request
 
 url = sys.argv[1]
 try:
-    with urllib.request.urlopen(url, timeout=1.5) as response:
+    with urllib.request.urlopen(url, timeout=5.0) as response:
         if response.status < 200 or response.status >= 300:
             sys.exit(1)
         body = response.read(20000).decode("utf-8", errors="replace")
@@ -207,7 +207,7 @@ import urllib.request
 
 url = sys.argv[1]
 try:
-    with urllib.request.urlopen(url, timeout=1.5) as response:
+    with urllib.request.urlopen(url, timeout=5.0) as response:
         if response.status < 200 or response.status >= 300:
             sys.exit(1)
         payload = json.loads(response.read().decode("utf-8"))
@@ -234,7 +234,7 @@ import urllib.request
 
 url = sys.argv[1]
 try:
-    with urllib.request.urlopen(url, timeout=1.5) as response:
+    with urllib.request.urlopen(url, timeout=5.0) as response:
         if response.status < 200 or response.status >= 300:
             sys.exit(1)
         payload = json.loads(response.read().decode("utf-8"))
