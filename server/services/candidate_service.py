@@ -15380,6 +15380,12 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             bool(cache_packet_written),
         ]
     )
+    cache_ready = bool(cache_packet_written)
+    ledger_ready = bool(provider_ready)
+    ledger_readable = bool(readable_call_ledger_written)
+    packet_ready = bool(cache_packet_written)
+    p2_three_surface_ready = bool(cache_ready and ledger_ready and packet_ready)
+    p2_three_surface_readable = bool(cache_ready and ledger_readable and packet_ready)
     call_ledger_checkpoint_state = (
         "ready_tushare_post_task_ledger"
         if provider_ready
@@ -17045,12 +17051,18 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             or ""
         ),
         "cache_packet_written": cache_packet_written,
+        "cache_ready": cache_ready,
         "local_receipt_written": bool(quant_receipt),
         "acceptance_dry_run_written": bool(dry_run),
         "execution_request_written": bool(execution_request),
         "provider_acceptance_written": bool(provider_receipt),
         "small_data_writeback_ready": provider_ready,
         "provider_call_ledger_written": bool(provider_ledger),
+        "ledger_ready": ledger_ready,
+        "ledger_readable": ledger_readable,
+        "packet_ready": packet_ready,
+        "p2_three_surface_ready": p2_three_surface_ready,
+        "p2_three_surface_readable": p2_three_surface_readable,
         "provider_call_ledger_api_count": len(provider_ledger),
         "provider_api_call_count": provider_api_call_count,
         "provider_api_success_count": provider_api_success_count,
@@ -17228,6 +17240,16 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_p2_three_surface_checkpoint_complete_surface_count"] = (
         p2_three_surface_checkpoint.get("complete_surface_count", 0)
     )
+    counts["search_quant_projection_p2_cache_ready"] = summary.get("cache_ready") is True
+    counts["search_quant_projection_p2_ledger_ready"] = summary.get("ledger_ready") is True
+    counts["search_quant_projection_p2_ledger_readable"] = summary.get("ledger_readable") is True
+    counts["search_quant_projection_p2_packet_ready"] = summary.get("packet_ready") is True
+    counts["search_quant_projection_p2_three_surface_ready"] = (
+        summary.get("p2_three_surface_ready") is True
+    )
+    counts["search_quant_projection_p2_three_surface_readable"] = (
+        summary.get("p2_three_surface_readable") is True
+    )
     counts["search_quant_projection_task_readback_row_count"] = summary.get(
         "ordinary_task_readback_row_count", 0
     )
@@ -17344,8 +17366,14 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         "provider_api_call_count": summary.get("provider_api_call_count", 0),
         "provider_api_success_count": summary.get("provider_api_success_count", 0),
         "cache_packet_written": summary.get("cache_packet_written") is True,
+        "cache_ready": summary.get("cache_ready") is True,
         "provider_call_ledger_written": summary.get("provider_call_ledger_written") is True,
+        "ledger_ready": summary.get("ledger_ready") is True,
+        "ledger_readable": summary.get("ledger_readable") is True,
         "packet_written": writeback_checkpoint.get("packet_written") is True,
+        "packet_ready": summary.get("packet_ready") is True,
+        "p2_three_surface_ready": summary.get("p2_three_surface_ready") is True,
+        "p2_three_surface_readable": summary.get("p2_three_surface_readable") is True,
         "cache_only_readback": True,
         "creates_task_from_readback": False,
         "readback_external_calls_triggered": False,
@@ -17358,6 +17386,16 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     view["search_quant_projection_small_data_writeback_ready"] = small_data_readback_checkpoint["ready"]
     view["search_quant_projection_small_data_writeback_status"] = small_data_readback_checkpoint["status"]
     view["search_quant_projection_writeback_surfaces"] = small_data_readback_checkpoint["writeback_surfaces"]
+    view["search_quant_projection_p2_cache_ready"] = small_data_readback_checkpoint["cache_ready"]
+    view["search_quant_projection_p2_ledger_ready"] = small_data_readback_checkpoint["ledger_ready"]
+    view["search_quant_projection_p2_ledger_readable"] = small_data_readback_checkpoint["ledger_readable"]
+    view["search_quant_projection_p2_packet_ready"] = small_data_readback_checkpoint["packet_ready"]
+    view["search_quant_projection_p2_three_surface_ready"] = small_data_readback_checkpoint[
+        "p2_three_surface_ready"
+    ]
+    view["search_quant_projection_p2_three_surface_readable"] = small_data_readback_checkpoint[
+        "p2_three_surface_readable"
+    ]
     counts["search_quant_projection_small_data_readback_checkpoint_ready"] = small_data_readback_checkpoint[
         "ready"
     ]

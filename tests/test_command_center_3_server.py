@@ -39997,6 +39997,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             small_data["ordinary_readback_stage_label"],
             "已回放 Tushare POST task ledger；当前页面只读 cache / ledger / packet。",
         )
+        self.assertTrue(small_data["cache_ready"])
+        self.assertTrue(small_data["ledger_ready"])
+        self.assertTrue(small_data["ledger_readable"])
+        self.assertTrue(small_data["packet_ready"])
+        self.assertTrue(small_data["p2_three_surface_ready"])
+        self.assertTrue(small_data["p2_three_surface_readable"])
         self.assertIn(
             "provider 证据只由 POST task call_ledger 证明",
             small_data["ordinary_readback_provenance_summary"],
