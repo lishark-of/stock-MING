@@ -1082,6 +1082,14 @@ export default function CommandCenterHome() {
     { label: "P2/P3 回放", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
     { label: "边界", value: "首页输入静默；不从页面打开、输入、React render 或 GET cache 外联；不交易、不改 action", tone: "good" }
   ];
+  const homeQuantPostConfirmOneGlanceItems: MetricItem[] = [
+    { label: "任务编号", value: homeQuantTaskPanelTaskId || "等待确认按钮返回 task id", tone: homeQuantTaskPanelTaskId ? "good" : "warn" },
+    { label: "先看哪里", value: "先看任务进度；success 后刷新本地回放", tone: "good" },
+    { label: "P2 写回", value: "cache / call_ledger / packet 三面回放", tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+    { label: "P3 结果", value: "股票量化推演 + 次日图谱 + 下一票雷达详情", tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+    { label: "DeepSeek", value: "skipped/pending 不阻塞；P5 governed executor 单独补", tone: "good" },
+    { label: "安全边界", value: "回放不创建第二个 task，不下单，不改 strategy action", tone: "good" }
+  ];
   const homeQuantPostConfirmHandoffRows = [
     {
       交接项: "任务进度",
@@ -1700,6 +1708,9 @@ export default function CommandCenterHome() {
             <div aria-label="daily command home post confirm handoff">
               <h3>确认后下一步</h3>
               <p className="risk-note">任务编号出现后，先看任务进度；成功后按股票量化推演和次日图谱回放。这里的链接只切换本地页面，不创建第二个 task。</p>
+              <div aria-label="daily command home post confirm one glance">
+                <MetricGrid items={homeQuantPostConfirmOneGlanceItems} />
+              </div>
               <DataLineageTable rows={homeQuantPostConfirmHandoffRows} />
               <div className="actions" aria-label="daily command home post confirm handoff actions">
                 <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after home symbol confirm">查看任务进度</a>
