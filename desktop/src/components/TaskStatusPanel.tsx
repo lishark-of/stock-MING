@@ -360,18 +360,15 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
         <p className="risk-note">P2 写回速读：普通用户先看 cache、call_ledger、packet 三面是否有本地回放信号；这张表只读任务状态，不创建新 task。</p>
         <DataLineageTable rows={p2WritebackQuickRows} />
       </div>
+      <div aria-label="task status p3 result replay quick read">
+        <p className="risk-note">P3 结果入口速读：任务写回后按本地入口回放可解释结果；这些链接只切换本地页面，不创建 task、不调用 provider/model。</p>
+        <DataLineageTable rows={p3ResultReplayRows} />
+      </div>
       <div className="actions" aria-label="task status p3 result replay links">
         {p3ResultReplayLinks.map((link) => (
           <a key={link.href} href={link.href} title={link.title} aria-label={link.aria}>{link.label}</a>
         ))}
       </div>
-      <details className="developer-audit-details" aria-label="task status ordinary replay details">
-        <summary>任务回放详情</summary>
-        <div aria-label="task status p3 result replay quick read">
-          <p className="risk-note">P3 结果入口速读：任务写回后按本地入口回放可解释结果；这些链接只切换本地页面，不创建 task、不调用 provider/model。</p>
-          <DataLineageTable rows={p3ResultReplayRows} />
-        </div>
-      </details>
       {showTaskFailureRecovery ? (
         <div aria-label="task status failed recovery quick read">
           <p className="risk-note">失败/取消恢复速读：先回 P0 确认前后端联通，再由用户手动回到原入口；这里不自动重试、不调用 provider/model、不执行真实交易。</p>

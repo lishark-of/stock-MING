@@ -1572,6 +1572,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('写回面: "cache"', panel)
         self.assertIn('写回面: "call_ledger"', panel)
         self.assertIn('写回面: "packet"', panel)
+        self.assertIn('aria-label="task status p3 result replay quick read"', panel)
+        self.assertIn("P3 结果入口速读：任务写回后按本地入口回放可解释结果", panel)
+        self.assertIn('结果入口: "股票量化推演"', panel)
+        self.assertIn('结果入口: "次日图谱"', panel)
         self.assertLess(
             panel.index('aria-label="task status ordinary summary"'),
             panel.index('aria-label="task status tushare first ledger quick read"'),
@@ -1582,7 +1586,15 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         )
         self.assertLess(
             panel.index('aria-label="task status p2 writeback quick read"'),
-            panel.index('<details className="developer-audit-details" aria-label="task status ordinary replay details">'),
+            panel.index('aria-label="task status p3 result replay quick read"'),
+        )
+        self.assertLess(
+            panel.index('aria-label="task status p3 result replay quick read"'),
+            panel.index('aria-label="task status p3 result replay links"'),
+        )
+        self.assertLess(
+            panel.index('aria-label="task status p3 result replay quick read"'),
+            panel.index('aria-label="task status audit details"'),
         )
         self.assertIn("DeepSeek skipped / 未调用；P1/P2/P3 不等待模型", panel)
         self.assertIn("DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱", panel)
