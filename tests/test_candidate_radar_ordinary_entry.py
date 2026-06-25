@@ -1567,6 +1567,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="task status tushare first ledger quick read"', panel)
         self.assertIn("Tushare-first 速读：普通用户先看主任务是否已回放接口级 ledger", panel)
         self.assertIn("Tushare ${tushareProviderSuccessCount}/${tushareProviderRows.length} 个接口已写入 task.call_ledger", panel)
+        self.assertLess(
+            panel.index('aria-label="task status ordinary summary"'),
+            panel.index('aria-label="task status tushare first ledger quick read"'),
+        )
+        self.assertLess(
+            panel.index('aria-label="task status tushare first ledger quick read"'),
+            panel.index('<details className="developer-audit-details" aria-label="task status ordinary replay details">'),
+        )
         self.assertIn("DeepSeek skipped / 未调用；P1/P2/P3 不等待模型", panel)
         self.assertIn("DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱", panel)
         self.assertIn("TaskStatusPanel 只读当前 task.call_ledger；不补调 Tushare、DeepSeek 或 GitHub。", panel)
