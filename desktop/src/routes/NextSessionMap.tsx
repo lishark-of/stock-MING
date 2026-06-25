@@ -161,7 +161,30 @@ export default function NextSessionMap() {
   const nextSessionStatusLabel = chartSummary.has_drawable_data === true ? "可查看缓存图谱" : "等待缓存图谱";
   const nextSessionNextClick = chartSummary.has_drawable_data === true ? "先查看图谱；需要刷新时再点击生成任务" : "点击生成任务创建按钮门控图谱任务";
   const nextSessionCacheSourceLabel = packet.status === "cache_missing" ? "暂无缓存" : String(packet.cache_source ?? "本地缓存");
-  const nextSessionTushareSourceLabel = chartSummary.uses_real_daily_close === true ? "真实 daily close 已在本地缓存" : "待 Tushare/cache 补证";
+  const packetOrdinaryResultReplayRows = rowsFromArray(packet.ordinary_result_replay_rows);
+  const packetOrdinaryChartReviewRows = rowsFromArray(packet.ordinary_chart_review_rows);
+  const packetOrdinaryConditionQuickReadRows = rowsFromArray(packet.ordinary_condition_quick_read_rows);
+  const packetCandidateRadarP3Handoff = (packet.candidate_radar_p3_handoff as Record<string, unknown> | undefined) ?? {};
+  const packetCandidateRadarP3HandoffReady = packetCandidateRadarP3Handoff.p3_readable_result_ready === true;
+  const packetCandidateRadarP2HandoffReady = packetCandidateRadarP3Handoff.p2_small_data_ready === true;
+  const packetCandidateRadarP3HandoffSymbol = String(packetCandidateRadarP3Handoff.symbol ?? "");
+  const packetCandidateRadarP3HandoffSourceTask = String(packetCandidateRadarP3Handoff.source_task_id ?? "");
+  const packetCandidateRadarP3HandoffSummary = String(packetCandidateRadarP3Handoff.ordinary_result_summary ?? "");
+  const packetCandidateRadarP3HandoffNextStep = String(packetCandidateRadarP3Handoff.ordinary_result_next_step ?? "");
+  const packetCandidateRadarP3HandoffBoundary = String(packetCandidateRadarP3Handoff.ordinary_result_boundary ?? "");
+  const packetCandidateRadarP3HandoffDeepSeekState = String(
+    packetCandidateRadarP3Handoff.deepseek_governed_executor_status ?? ""
+  );
+  const packetCandidateRadarProviderSuccessCount = Number(packetCandidateRadarP3Handoff.provider_api_success_count ?? 0);
+  const packetCandidateRadarProviderCallCount = Number(packetCandidateRadarP3Handoff.provider_api_call_count ?? 0);
+  const packetCandidateRadarProviderLedgerLabel = packetCandidateRadarProviderSuccessCount > 0
+    ? `${String(packetCandidateRadarProviderSuccessCount)}/${String(packetCandidateRadarProviderCallCount || packetCandidateRadarProviderSuccessCount)} 个接口`
+    : "本地 ledger 可读";
+  const nextSessionTushareSourceLabel = chartSummary.uses_real_daily_close === true
+    ? "真实 daily close 已在本地缓存"
+    : packetCandidateRadarP3HandoffReady || packetCandidateRadarP2HandoffReady || packetCandidateRadarProviderSuccessCount > 0
+      ? `Tushare-first 已从 CandidateRadar 回放：${packetCandidateRadarProviderLedgerLabel}；完整图谱锚点待本地 cache`
+      : "待 Tushare/cache 补证";
   const nextSessionDeepSeekSourceLabel = chartPayload?.deepseek_status === "success" ? "已有本地解释记录" : "未调用或待 governed executor";
   const nextSessionP5GovernanceLabel = "P5 解释治理：DeepSeek 单独补证，不阻塞 P3 图谱复核";
   const nextSessionPendingSourceLabel = Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "生产替代证据仍有 pending" : "当前图谱摘要未标记 pending";
@@ -196,20 +219,6 @@ export default function NextSessionMap() {
   const nextSessionReplayDestinationBoundary =
     "回放入口只切换本地模块路由（#candidates/... 直达确认输入区，#factor 到量化推演）；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones";
   const nextSessionOperationZoneBoundary = "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
-  const packetOrdinaryResultReplayRows = rowsFromArray(packet.ordinary_result_replay_rows);
-  const packetOrdinaryChartReviewRows = rowsFromArray(packet.ordinary_chart_review_rows);
-  const packetOrdinaryConditionQuickReadRows = rowsFromArray(packet.ordinary_condition_quick_read_rows);
-  const packetCandidateRadarP3Handoff = (packet.candidate_radar_p3_handoff as Record<string, unknown> | undefined) ?? {};
-  const packetCandidateRadarP3HandoffReady = packetCandidateRadarP3Handoff.p3_readable_result_ready === true;
-  const packetCandidateRadarP2HandoffReady = packetCandidateRadarP3Handoff.p2_small_data_ready === true;
-  const packetCandidateRadarP3HandoffSymbol = String(packetCandidateRadarP3Handoff.symbol ?? "");
-  const packetCandidateRadarP3HandoffSourceTask = String(packetCandidateRadarP3Handoff.source_task_id ?? "");
-  const packetCandidateRadarP3HandoffSummary = String(packetCandidateRadarP3Handoff.ordinary_result_summary ?? "");
-  const packetCandidateRadarP3HandoffNextStep = String(packetCandidateRadarP3Handoff.ordinary_result_next_step ?? "");
-  const packetCandidateRadarP3HandoffBoundary = String(packetCandidateRadarP3Handoff.ordinary_result_boundary ?? "");
-  const packetCandidateRadarP3HandoffDeepSeekState = String(
-    packetCandidateRadarP3Handoff.deepseek_governed_executor_status ?? ""
-  );
   const nextSessionPacketHandoffLabel = packetCandidateRadarP3HandoffReady
     ? `本地次日图谱数据已接上 ${packetCandidateRadarP3HandoffSymbol || "当前标的"} / task=${packetCandidateRadarP3HandoffSourceTask || "本地回放"}`
     : "本地次日图谱数据等待 CandidateRadar P3 结果";
