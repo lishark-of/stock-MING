@@ -13,9 +13,21 @@ SOFTWARE_ENTRY = Path("scripts/start_stock_ming_desktop.command")
 DESKTOP_PREFLIGHT_PAGE = Path("desktop/src/routes/DesktopShellPreflight.tsx")
 HEALTH_PAGE = Path("desktop/src/routes/HealthStatus.tsx")
 HOME_PAGE = Path("desktop/src/routes/CommandCenterHome.tsx")
+SERVER_MAIN = Path("server/main.py")
 
 
 class CommandCenter3TauriPreflightTests(unittest.TestCase):
+    def test_fastapi_cors_allows_browser_and_tauri_local_shells(self):
+        source = SERVER_MAIN.read_text(encoding="utf-8")
+
+        self.assertIn('"http://127.0.0.1:5173"', source)
+        self.assertIn('"http://localhost:5173"', source)
+        self.assertIn('"tauri://localhost"', source)
+        self.assertIn('"http://tauri.localhost"', source)
+        self.assertIn('allow_methods=["GET", "POST"]', source)
+        self.assertIn("allow_credentials=False", source)
+        self.assertNotIn("allow_origins=[\"*\"]", source)
+
     def test_preflight_script_is_read_only_and_documents_safety(self):
         source = SCRIPT.read_text(encoding="utf-8")
 
