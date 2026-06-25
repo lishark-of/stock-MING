@@ -453,9 +453,15 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         card = source[card_start:card_end]
 
         self.assertIn("homeQuantPostConfirmHandoffRows", source)
+        self.assertIn("homeQuantPostConfirmReadableSentence", source)
+        self.assertIn("P2 三面已可读", source)
+        self.assertIn("P3 结论：${dailyCommandExplainableResultLabel}", source)
+        self.assertIn("下一步看股票量化推演和次日图谱", source)
         self.assertIn('aria-label="daily command home post confirm handoff"', card)
         self.assertIn("确认后下一步", card)
         self.assertIn("任务编号出现后，先看任务进度；成功后按股票量化推演和次日图谱回放", card)
+        self.assertIn('aria-label="daily command home post confirm readable result"', card)
+        self.assertIn("{homeQuantPostConfirmReadableSentence}", card)
         self.assertIn("DataLineageTable rows={homeQuantPostConfirmHandoffRows}", card)
         self.assertIn('aria-label="daily command home post confirm handoff actions"', card)
         self.assertIn('href="#tasks"', card)
@@ -475,7 +481,9 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postCandidateRadarQuantProjection(", handoff_slice)
         self.assertNotIn("launchHomeQuantProjection", handoff_slice)
         self.assertNotIn("onClick=", handoff_slice)
+        readable_result_start = card.index('aria-label="daily command home post confirm readable result"', handoff_start)
         self.assertLess(handoff_start, receipt_details_start)
+        self.assertLess(readable_result_start, task_panel_start)
         self.assertLess(handoff_start, task_panel_start)
         self.assertLess(task_panel_start, receipt_details_start)
 

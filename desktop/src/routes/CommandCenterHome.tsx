@@ -1131,6 +1131,9 @@ export default function CommandCenterHome() {
         { label: "DeepSeek", value: "skipped/pending 不阻塞；P5 governed executor 单独补", tone: "good" },
         { label: "安全边界", value: "回放不创建第二个 task，不下单，不改 strategy action", tone: "good" }
       ];
+  const homeQuantPostConfirmReadableSentence = homeQuantTaskPanelTaskId
+    ? `已接收 ${homeQuantTaskPanelTaskId}；${candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "P2 三面已可读" : "P2 三面等待本地回放"}；${dailyCommandP3OneGlanceReadable ? `P3 结论：${dailyCommandExplainableResultLabel}` : "P3 结论等待本地 cache 回放"}；下一步看股票量化推演和次日图谱。`
+    : "确认后会在这里显示任务编号、P2 三面、P3 结论和下一步入口。";
   const homeQuantPostConfirmHandoffRows = [
     {
       交接项: "任务进度",
@@ -1757,6 +1760,7 @@ export default function CommandCenterHome() {
             <div aria-label="daily command home post confirm handoff">
               <h3>确认后下一步</h3>
               <p className="risk-note">任务编号出现后，先看任务进度；成功后按股票量化推演和次日图谱回放。这里的链接只切换本地页面，不创建第二个 task。</p>
+              <p className="ordinary-status-note" aria-label="daily command home post confirm readable result" aria-live="polite">{homeQuantPostConfirmReadableSentence}</p>
               <div aria-label="daily command home post confirm one glance">
                 <MetricGrid items={homeQuantPostConfirmOneGlanceItems} />
               </div>
