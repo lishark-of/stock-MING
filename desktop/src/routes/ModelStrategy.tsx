@@ -70,6 +70,10 @@ export default function ModelStrategy() {
     (cache.ordinary_one_screen_summary as Record<string, unknown> | undefined) ??
     (governedExecutor.ordinary_one_screen_summary as Record<string, unknown> | undefined) ??
     {};
+  const governedExecutorCheckpointRows =
+    rows(cache.ordinary_checkpoint_rows).length
+      ? rows(cache.ordinary_checkpoint_rows)
+      : rows(governedExecutor.ordinary_checkpoint_rows);
   const governedExecutorScopeHash = String(governedExecutor.provider_benchmark_scope_hash ?? "");
   const governedExecutorScopeHashReady =
     governedExecutor.provider_benchmark_scope_ticket_ready === true &&
@@ -401,6 +405,11 @@ export default function ModelStrategy() {
             <h3>P5 一屏结论</h3>
             <MetricGrid items={governedExecutorOneScreenItems} />
             <p className="risk-note">这张一屏结论来自 GET /api/model-strategy/cache 的 ordinary_one_screen_summary；只读、不创建 task、不调用模型、不展示 token/key，也不作为 production evidence。</p>
+          </div>
+          <div aria-label="deepseek governed executor ordinary checkpoint">
+            <h3>P5 当前 checkpoint</h3>
+            <p className="risk-note">这组 checkpoint 来自 GET /api/model-strategy/cache 的 ordinary_checkpoint_rows；只回答能不能继续基础投研、真实调用为什么没放行、安全输出边界和下一步本地票据，不创建 task、不调用模型。</p>
+            <DataLineageTable rows={governedExecutorCheckpointRows} />
           </div>
           <MetricGrid
             items={[

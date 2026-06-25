@@ -322,7 +322,51 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "is_production_evidence": False,
     }
+    ordinary_checkpoint_rows = [
+        {
+            "checkpoint": "1. 当前能否继续投研",
+            "current_state": "P1 Tushare-first / P2 小数据 / P3 基础图谱不等待 DeepSeek",
+            "user_next_step": "先继续下一票雷达确认、股票量化推演和次日图谱本地回放",
+            "evidence": "ordinary_one_screen_summary.basic_research_boundary",
+            "boundary": "DeepSeek pending 不阻塞基础投研；本行只读 cache，不创建 task。",
+        },
+        {
+            "checkpoint": "2. 真实模型调用",
+            "current_state": "已放行" if real_call_allowed_now else f"未放行：{len(real_call_blockers)} 项 blocker",
+            "user_next_step": governed_executor["ordinary_next_allowed_action"],
+            "evidence": "governed_executor.real_call_gate_rows",
+            "boundary": "真实调用必须等 POST task、model_ledger、sanitizer、redaction、cost 和 output acceptance；GET cache 不调用模型。",
+        },
+        {
+            "checkpoint": "3. 安全输出范围",
+            "current_state": "仅允许 summary / support_notes / suppress_notes / conflict_notes / missing_data_notes / discipline_notes",
+            "user_next_step": "只把模型当已有证据解释层，不当数据源或动作源。",
+            "evidence": "ordinary_allowed_output_fields + ordinary_forbidden_output_targets",
+            "boundary": "禁止覆盖 price、holding、factor、operation_zones、strategy_action 或 trade_order。",
+        },
+        {
+            "checkpoint": "4. 当前补证动作",
+            "current_state": governed_executor["ordinary_blocking_state"],
+            "user_next_step": "需要时只生成本地 scope ticket / execution-request；真实 DeepSeek 继续等待 governed executor。",
+            "evidence": "provider_benchmark_scope_ticket_status + provider_benchmark_execution_request_status",
+            "boundary": "本地票据是 scope/execution-request，不是 model_ledger、模型输出或 production evidence。",
+        },
+    ]
+    for row in ordinary_checkpoint_rows:
+        row.update({
+            "schema_version": "deepseek_governed_executor_checkpoint_rows.v1",
+            "cache_only_readback": True,
+            "creates_task": False,
+            "calls_model": False,
+            "contains_secret": False,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "is_production_evidence": False,
+        })
     governed_executor["ordinary_one_screen_summary"] = ordinary_one_screen_summary
+    governed_executor["ordinary_checkpoint_rows"] = ordinary_checkpoint_rows
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -335,6 +379,7 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "summary": "DeepSeek 模型策略只读展示；模型名来自 DEEPSEEK_*_MODEL 配置或集中默认值，不在调用点硬编码。",
         "governed_executor": governed_executor,
         "ordinary_one_screen_summary": ordinary_one_screen_summary,
+        "ordinary_checkpoint_rows": ordinary_checkpoint_rows,
         "model_rows": rows,
         "purpose_groups": {
             "explain_grade": explain_purposes,
@@ -344,6 +389,7 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
             "purpose_count": len(rows),
             "configured_count": configured_count,
             "safe_default_count": len(rows) - configured_count,
+            "ordinary_checkpoint_row_count": len(ordinary_checkpoint_rows),
         },
         "policy": {
             "cache_api_external_calls": False,
