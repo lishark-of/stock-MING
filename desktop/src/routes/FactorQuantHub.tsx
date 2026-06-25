@@ -95,6 +95,7 @@ export default function FactorQuantHub() {
   const score = packet.score ?? {};
   const factorPacketCandidateHandoff = (packet.candidate_radar_quant_projection_handoff as Record<string, unknown> | undefined) ?? {};
   const factorPacketCandidateHandoffRows = toRows(packet.ordinary_quant_candidate_handoff_rows);
+  const candidateRadarP1ShortestPathCheckpoint = (candidateRadarCache.ordinary_p1_shortest_path_checkpoint as Record<string, unknown> | undefined) ?? {};
   const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarOneScreenRows = toRows(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
   const candidateRadarConfirmOutcomeRows = toRows(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
@@ -466,12 +467,34 @@ export default function FactorQuantHub() {
   const ordinaryQuantCacheSourceLabel = empty ? "等待本地量化缓存" : "本地量化缓存可用";
   const ordinaryQuantGlobalTushareSourceLabel =
     Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "Tushare 数据有本地记录" : "等待手动补充 Tushare 数据";
+  const ordinaryQuantTushareFirstProviderSuccessCount = Number(
+    factorPacketCandidateHandoff.provider_api_success_count ??
+      candidateRadarSmallDataWriteback.provider_api_success_count ??
+      candidateRadarInterpretation.provider_api_success_count ??
+      candidateRadarP1ShortestPathCheckpoint.provider_api_success_count ??
+      0
+  );
+  const ordinaryQuantTushareFirstProviderCallCount = Number(
+    factorPacketCandidateHandoff.provider_api_call_count ??
+      candidateRadarSmallDataWriteback.provider_api_call_count ??
+      candidateRadarInterpretation.provider_api_call_count ??
+      candidateRadarP1ShortestPathCheckpoint.provider_api_call_count ??
+      ordinaryQuantTushareFirstProviderSuccessCount
+  );
+  const ordinaryQuantTushareFirstProviderLedgerRatio = ordinaryQuantTushareFirstProviderCallCount > 0
+    ? `${ordinaryQuantTushareFirstProviderSuccessCount}/${ordinaryQuantTushareFirstProviderCallCount}`
+    : `${ordinaryQuantTushareFirstProviderSuccessCount}`;
   const ordinaryQuantTushareFirstDataChainLabel = (() => {
     const upstreamStage = String(
       candidateRadarSmallDataWriteback.ordinary_readback_stage_label ??
         candidateRadarSmallDataWriteback.summary_label ??
         ""
     );
+    if (ordinaryQuantTushareFirstProviderSuccessCount > 0) {
+      const symbolLabel = candidateRadarConfirmedSymbol ? `${candidateRadarConfirmedSymbol} ` : "";
+      const taskLabel = candidateRadarLatestTaskId ? `；task=${candidateRadarLatestTaskId}` : "";
+      return `${symbolLabel}Tushare-first：ledger 已回放 ${ordinaryQuantTushareFirstProviderLedgerRatio} 个接口${taskLabel}`;
+    }
     if (candidateRadarConfirmedSymbol && upstreamStage) return `${candidateRadarConfirmedSymbol} Tushare-first：${upstreamStage}`;
     if (upstreamStage) return `Tushare-first：${upstreamStage}`;
     return ordinaryQuantGlobalTushareSourceLabel;
