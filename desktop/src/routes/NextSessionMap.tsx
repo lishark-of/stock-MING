@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getCandidateRadarCache, getNextSessionCache, postTask, type TaskCreationEnvelope } from "../api/client";
+import { getTasks, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
@@ -32,6 +33,7 @@ export default function NextSessionMap() {
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [cacheMissingMessage, setCacheMissingMessage] = useState("");
+  const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [browserQaReceipt, setBrowserQaReceipt] = useState<TaskCreationEnvelope | null>(null);
@@ -63,7 +65,10 @@ export default function NextSessionMap() {
   const launchTask = () =>
     void postTask("/api/next-session/generate", nextSessionGeneratePayload).then((res) => {
       setTaskReceipt(res);
-      if (res.ok) setTaskId(res.data.task_id);
+      if (res.ok) {
+        setTaskId(res.data.task_id);
+        refreshTaskIndex();
+      }
     });
   const reviewBrowserQa = () =>
     void postTask("/api/next-session/browser-qa-review", { review_scope: "next_session_browser_qa_local_artifact" }).then((res) => {
@@ -84,10 +89,13 @@ export default function NextSessionMap() {
     void getCandidateRadarCache().then((res) => {
       if (res.ok !== false) setCandidateRadarCache(res.data ?? {});
     });
+  const refreshTaskIndex = () =>
+    void getTasks().then((res) => setTaskIndex(res.data));
 
   useEffect(() => {
     refreshCache();
     refreshCandidateRadarCache();
+    refreshTaskIndex();
   }, []);
 
   const legacy = packet.legacy_projection_cache as Record<string, unknown> | undefined;
@@ -257,6 +265,91 @@ export default function NextSessionMap() {
       candidateRadarSmallDataWriteback.latest_task_id ||
       "等待下一票雷达确认 task"
   );
+  const candidateRadarSourceTaskStep = String(
+    packet.latest_confirmed_task_current_step ||
+      candidateRadarCache.latest_confirmed_task_current_step ||
+      packetCandidateRadarP3Handoff.status ||
+      candidateRadarReceipt.latest_task_current_step ||
+      candidateRadarSmallDataWriteback.latest_task_current_step ||
+      candidateRadarReceipt.status ||
+      "waiting_confirm"
+  );
+  const taskIndexLatestTask = taskIndex?.tasks?.[0];
+  const taskIndexLatestConfirmedSymbol = String(
+    taskIndex?.latest_confirmed_symbol ??
+      (taskIndexLatestTask?.payload_safe as Record<string, unknown> | undefined)?.symbol ??
+      ""
+  );
+  const taskIndexLatestConfirmedTaskId = String(
+    taskIndex?.latest_confirmed_task_id ??
+      taskIndex?.latest_task_id ??
+      taskIndexLatestTask?.task_id ??
+      ""
+  );
+  const taskIndexLatestConfirmedStatus = String(
+    taskIndex?.latest_confirmed_task_status ??
+      taskIndex?.latest_task_status ??
+      taskIndexLatestTask?.status ??
+      ""
+  );
+  const taskIndexLatestConfirmedStep = String(
+    taskIndex?.latest_confirmed_task_current_step ??
+      taskIndexLatestTask?.current_step ??
+      ""
+  );
+  const taskIndexReadbackSafe =
+    taskIndex !== null &&
+    taskIndex.external_calls_triggered !== true &&
+    taskIndex.readback_external_calls_triggered !== true &&
+    taskIndex.latest_confirmed_symbol_readback_external_calls_triggered !== true &&
+    taskIndex.latest_confirmed_symbol_creates_task_from_readback !== true;
+  const nextSessionProgressWatchTaskId = taskIndexLatestConfirmedTaskId || (candidateRadarSourceTaskLabel.includes("等待") ? "" : candidateRadarSourceTaskLabel);
+  const nextSessionProgressWatchSymbol = taskIndexLatestConfirmedSymbol || candidateRadarConfirmedSymbol;
+  const nextSessionProgressWatchStatus =
+    taskIndexLatestConfirmedStatus ||
+    (nextSessionProgressWatchTaskId ? "cache_replay" : "waiting_confirm");
+  const nextSessionProgressWatchStep =
+    taskIndexLatestConfirmedStep ||
+    candidateRadarSourceTaskStep ||
+    "等待确认按钮后的本地任务状态";
+  const nextSessionProgressWatchLabel = nextSessionProgressWatchTaskId
+    ? `${nextSessionProgressWatchSymbol || "当前标的"} / ${nextSessionProgressWatchStatus}`
+    : "等待确认按钮后的任务进度";
+  const nextSessionProgressWatchNext = nextSessionProgressWatchTaskId
+    ? "查看任务目录；成功后继续读图表路径、参考线和操作区"
+    : "先回下一票雷达输入股票代码并点击确认按钮；输入本身保持静默";
+  const nextSessionTaskIndexProgressItems: MetricItem[] = [
+    {
+      label: "边用边看",
+      value: nextSessionProgressWatchLabel,
+      tone: nextSessionProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "最新确认标的",
+      value: nextSessionProgressWatchSymbol || "等待确认股票代码",
+      tone: nextSessionProgressWatchSymbol ? "good" : "neutral"
+    },
+    {
+      label: "最新任务",
+      value: nextSessionProgressWatchTaskId || "等待确认按钮",
+      tone: nextSessionProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "当前步骤",
+      value: nextSessionProgressWatchStep,
+      tone: nextSessionProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "只读来源",
+      value: "GET /api/tasks + Next Session cache + CandidateRadar cache",
+      tone: "good"
+    },
+    {
+      label: "安全边界",
+      value: taskIndexReadbackSafe ? "任务索引回读未触发外联、未创建 task" : "等待任务索引只读边界回放",
+      tone: taskIndexReadbackSafe ? "good" : "warn"
+    }
+  ];
   const candidateRadarConfirmedTaskReceiptRows = rowsFromArray(
     candidateRadarCache.search_quant_projection_confirmed_task_receipt_rows ??
       candidateRadarSmallDataWriteback.ordinary_confirmed_task_receipt_rows
@@ -876,6 +969,16 @@ export default function NextSessionMap() {
         <h3>现在可读状态</h3>
         <MetricGrid items={nextSessionUsableNowItems} />
         <p className="risk-note">这条只合成图谱可绘制、P3 结论、P2 三面、操作区和下一步；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。</p>
+      </div>
+      <div aria-label="next session local task index progress watch">
+        <h3>本地任务进度</h3>
+        <MetricGrid items={nextSessionTaskIndexProgressItems} />
+        <div className="actions" aria-label="next session local task index progress actions">
+          <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from next session progress watch">任务目录</a>
+          <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地 next-session cache" aria-label="open chart area from next session progress watch">图谱区域</a>
+          <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant from next session progress watch">股票量化推演</a>
+        </div>
+        <p className="risk-note">边用边看：{nextSessionProgressWatchNext}；这只来自 GET /api/tasks、Next Session cache 和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易，也不改 operation_zones。</p>
       </div>
       <div aria-label="next session ordinary progress checkpoint">
         <h3>当前图谱 checkpoint</h3>
