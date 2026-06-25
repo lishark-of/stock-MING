@@ -1522,20 +1522,29 @@ export default function CommandCenterHome() {
       边界: "回放不创建第二个 task、不补调 provider/model、不读取 token/key。"
     }
   ];
+  const homeQuantPostConfirmNextStepLabel = dailyCommandP2ThreeSurfaceReady || dailyCommandP3OneGlanceReadable
+    ? "已进入回放：先看股票量化推演，再打开次日图谱；需要换标的再点确认"
+    : homeQuantVisibleTaskId
+      ? "先看任务进度；success 后刷新本地回放"
+      : "先输入股票代码并点击确认按钮";
   const homeQuantPostConfirmOneGlanceItems: MetricItem[] = candidateQuantPostConfirmOneGlanceRows.length
     ? candidateQuantPostConfirmOneGlanceRows.map((row) => {
         const rowTone = String(row.tone ?? "neutral");
         const tone = ["good", "warn", "bad", "neutral"].includes(rowTone) ? rowTone as MetricItem["tone"] : "neutral";
+        const label = String(row.label ?? row["状态项"] ?? row.item_key ?? "确认后状态");
+        const itemKey = String(row.item_key ?? row["状态项"] ?? row.label ?? "");
         return {
-          label: String(row.label ?? row["状态项"] ?? row.item_key ?? "确认后状态"),
-          value: String(row.value ?? row["当前状态"] ?? row.status ?? "--"),
+          label,
+          value: itemKey === "next_step" || label === "先看哪里"
+            ? homeQuantPostConfirmNextStepLabel
+            : String(row.value ?? row["当前状态"] ?? row.status ?? "--"),
           tone
         };
       })
     : [
         { label: "任务编号", value: homeQuantVisibleTaskId || "等待确认按钮返回 task id", tone: homeQuantVisibleTaskId ? "good" : "warn" },
         { label: "任务来源", value: homeQuantVisibleTaskSource, tone: homeQuantVisibleTaskId ? "good" : "warn" },
-        { label: "先看哪里", value: "先看任务进度；success 后刷新本地回放", tone: "good" },
+        { label: "先看哪里", value: homeQuantPostConfirmNextStepLabel, tone: dailyCommandP2ThreeSurfaceReady || dailyCommandP3OneGlanceReadable ? "good" : "warn" },
         { label: "P2 写回", value: "cache / call_ledger / packet 三面回放", tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
         { label: "P3 结果", value: "股票量化推演 + 次日图谱 + 下一票雷达详情", tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
         { label: "DeepSeek", value: "skipped/pending 不阻塞；P5 governed executor 单独补", tone: "good" },
