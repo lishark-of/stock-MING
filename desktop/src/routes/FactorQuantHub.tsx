@@ -327,8 +327,19 @@ export default function FactorQuantHub() {
   const ordinaryQuantSymbolEntryBoundary =
     "本页不提供股票代码输入；换标的必须回下一票雷达输入代码并点击确认生成，输入本身不创建 task";
   const ordinaryQuantCacheSourceLabel = empty ? "等待本地量化缓存" : "本地量化缓存可用";
-  const ordinaryQuantTushareSourceLabel =
+  const ordinaryQuantGlobalTushareSourceLabel =
     Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "Tushare 数据有本地记录" : "等待手动补充 Tushare 数据";
+  const ordinaryQuantTushareFirstDataChainLabel = (() => {
+    const upstreamStage = String(
+      candidateRadarSmallDataWriteback.ordinary_readback_stage_label ??
+        candidateRadarSmallDataWriteback.summary_label ??
+        ""
+    );
+    const confirmedSymbol = String(candidateRadarReceipt.symbol ?? "");
+    if (confirmedSymbol && upstreamStage) return `${confirmedSymbol} Tushare-first：${upstreamStage}`;
+    if (upstreamStage) return `Tushare-first：${upstreamStage}`;
+    return ordinaryQuantGlobalTushareSourceLabel;
+  })();
   const ordinaryQuantDeepSeekSourceLabel =
     deepseek.called === true ? "DeepSeek 解释已有本地结果；只解释不改数值或动作" : "DeepSeek 待 governed executor；普通页只读状态";
   const ordinaryQuantModelSourceLabel =
@@ -356,7 +367,7 @@ export default function FactorQuantHub() {
   })();
   const ordinaryQuantSourceState = [
     `本地缓存：${ordinaryQuantCacheSourceLabel}`,
-    `Tushare 数据：${ordinaryQuantTushareSourceLabel}`,
+    `Tushare-first：${ordinaryQuantTushareFirstDataChainLabel}`,
     `DeepSeek 解释：${ordinaryQuantDeepSeekSourceLabel}`,
     `模型状态：${ordinaryQuantModelSourceLabel}`,
     `Pending 状态：${ordinaryQuantPendingStateLabel}`
@@ -804,7 +815,7 @@ export default function FactorQuantHub() {
   const ordinaryQuantStatusLabel = empty ? "等待量化缓存" : "量化缓存可用";
   const ordinaryQuantPrimarySummaryItems: MetricItem[] = [
     { label: "下一步", value: ordinaryQuantNextClick },
-    { label: "数据链", value: ordinaryQuantTushareSourceLabel },
+    { label: "数据链", value: ordinaryQuantTushareFirstDataChainLabel },
     { label: "P2 三面回放", value: ordinaryQuantUpstreamP2WritebackLabel, tone: candidateRadarWritebackSurfaceRows.length ? "good" : "warn" },
     { label: "P3 可读结论", value: ordinaryQuantP3ReadableConclusion, tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn" },
     { label: "P3 下一步", value: ordinaryQuantP3NextStep },
