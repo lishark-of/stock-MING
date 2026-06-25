@@ -17147,6 +17147,11 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         "search_quant_projection_task_readback_row_count": "ordinary_task_readback_row_count",
         "search_quant_projection_task_readback_rows_are_cache_only": "ordinary_task_readback_rows_are_cache_only",
         "search_quant_projection_task_readback_rows_create_task": "ordinary_task_readback_rows_create_task",
+        "search_quant_projection_small_data_writeback_rows": "ordinary_writeback_surface_summary_rows",
+        "search_quant_projection_small_data_writeback_row_count": "ordinary_writeback_surface_summary_row_count",
+        "search_quant_projection_small_data_writeback_rows_are_cache_only": "ordinary_writeback_surface_summary_rows_are_cache_only",
+        "search_quant_projection_small_data_writeback_rows_create_task": "ordinary_writeback_surface_summary_rows_create_task",
+        "search_quant_projection_small_data_writeback_rows_are_not_trade_signals": "ordinary_writeback_surface_summary_rows_are_not_trade_signals",
     }
     for alias, source_key in search_quant_readback_aliases.items():
         if source_key in summary:

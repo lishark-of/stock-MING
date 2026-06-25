@@ -39310,6 +39310,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["search_quant_projection_activation_receipt_is_local"])
         self.assertTrue(packet["policy"]["search_quant_projection_activation_blocks_production"])
         self.assertTrue(packet["policy"]["search_quant_projection_requires_tushare_deepseek_ledgers"])
+        top_level_writeback_rows = packet["search_quant_projection_small_data_writeback_rows"]
+        self.assertEqual(
+            top_level_writeback_rows,
+            writeback_summary["ordinary_writeback_surface_summary_rows"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_small_data_writeback_row_count"],
+            len(top_level_writeback_rows),
+        )
+        self.assertEqual({row["surface"] for row in top_level_writeback_rows}, {"cache", "call_ledger", "packet"})
+        self.assertTrue(packet["search_quant_projection_small_data_writeback_rows_are_cache_only"])
+        self.assertFalse(packet["search_quant_projection_small_data_writeback_rows_create_task"])
+        self.assertTrue(packet["search_quant_projection_small_data_writeback_rows_are_not_trade_signals"])
+        self.assertFalse(any(row["creates_task_from_readback"] for row in top_level_writeback_rows))
+        self.assertFalse(any(row["readback_external_calls_triggered"] for row in top_level_writeback_rows))
+        self.assertFalse(any(row["contains_secret"] for row in top_level_writeback_rows))
         self.assertEqual(packet["counts"]["search_quant_projection_row_count"], receipt["row_count"])
         self.assertGreater(packet["counts"]["search_quant_projection_production_blocker_count"], 0)
         self.assertEqual(packet["counts"]["search_quant_projection_activation_row_count"], activation["row_count"])

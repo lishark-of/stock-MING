@@ -1689,6 +1689,11 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("candidateQuantWritebackSurfaceRows", home_source)
         self.assertIn("dailyCommandSmallDataWritebackRows", home_source)
         self.assertIn("search_quant_projection_small_data_writeback_summary", home_source)
+        self.assertIn("search_quant_projection_small_data_writeback_rows", home_source)
+        self.assertLess(
+            home_source.index("candidates.search_quant_projection_small_data_writeback_rows"),
+            home_source.index("candidateQuantSmallDataWriteback.ordinary_writeback_surface_summary_rows"),
+        )
         self.assertIn("ordinary_writeback_surface_summary_rows", home_source)
         self.assertIn('label: "P2 小数据"', home_source)
         self.assertIn('label: "P2 边界"', home_source)

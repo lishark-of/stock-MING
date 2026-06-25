@@ -357,7 +357,10 @@ export default function CommandCenterHome() {
     (candidates.ordinary_tushare_first_chain_rows as Array<Record<string, unknown>> | undefined) ??
     (candidateQuantSmallDataWriteback.ordinary_tushare_first_chain_rows as Array<Record<string, unknown>> | undefined) ??
     [];
-  const candidateQuantWritebackSurfaceRows = (candidateQuantSmallDataWriteback.ordinary_writeback_surface_summary_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const candidateQuantWritebackSurfaceRows =
+    (candidates.search_quant_projection_small_data_writeback_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidateQuantSmallDataWriteback.ordinary_writeback_surface_summary_rows as Array<Record<string, unknown>> | undefined) ??
+    [];
   const candidateQuantConfirmChainCheckpoint = (candidates.search_quant_projection_confirm_chain_checkpoint as Record<string, unknown> | undefined) ?? {};
   const dailyCommandTushareFirstLedgerReady =
     candidateQuantConfirmChainCheckpoint.provider_ledger_ready === true ||
