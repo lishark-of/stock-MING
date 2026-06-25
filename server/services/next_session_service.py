@@ -23,6 +23,7 @@ NEXT_SESSION_STREAMLIT_PARITY_REVIEW_PACKET_KEY = "command_center_next_session_s
 NEXT_SESSION_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY = (
     "command_center_next_session_production_promotion_review_packet"
 )
+CANDIDATE_RADAR_PACKET_KEY = "command_center_3_candidate_radar_cache"
 NEXT_SESSION_PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION = "next_session_production_promotion_review.v1"
 NEXT_SESSION_DURABLE_EVIDENCE_SCHEMA_VERSION = "next_session_durable_evidence_recipe.v1"
 NEXT_SESSION_DURABLE_EVIDENCE_KEYS = (
@@ -2670,8 +2671,11 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
 def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str, Any]:
     chart_payload = _as_dict(packet.get("chart_payload"))
     chart_summary = _as_dict(packet.get("chart_summary")) or _as_dict(chart_payload.get("chart_summary"))
+    candidate_handoff = _as_dict(packet.get("candidate_radar_p3_handoff"))
     latest_close_anchor = _as_dict(chart_payload.get("latest_close_anchor"))
     has_drawable_data = chart_summary.get("has_drawable_data") is True
+    candidate_readable = candidate_handoff.get("p3_readable_result_ready") is True
+    candidate_p2_ready = candidate_handoff.get("p2_small_data_ready") is True
     uses_real_daily_close = chart_summary.get("uses_real_daily_close") is True
     exact_packet = chart_summary.get("is_exact_next_session_packet") is True
     scenario_count = int(chart_summary.get("scenario_series_count") or 0)
@@ -2687,14 +2691,35 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         ]
         if item
     ) or "暂无最近可用缓存"
-    result_status = "ready_cache_replay" if has_drawable_data else "waiting_for_cache_or_manual_task"
+    result_status = (
+        "ready_cache_replay"
+        if has_drawable_data
+        else "candidate_readable_result_replay_chart_pending"
+        if candidate_readable
+        else "waiting_for_cache_or_manual_task"
+    )
     result_rows = [
         {
             "step": "1",
             "surface": "下一票雷达",
-            "readable_result": "可从已确认标的继续复核" if has_drawable_data else "先回到雷达输入代码并点击确认",
-            "evidence": "候选池和搜票确认按钮在 #candidates；本页不扫描、不搜票。",
-            "next_step": "需要新标的时回到下一票雷达确认代码。",
+            "readable_result": (
+                f"上游结果可读：{candidate_handoff.get('symbol') or '已确认标的'}"
+                if candidate_readable
+                else "可从已确认标的继续复核"
+                if has_drawable_data
+                else "先回到雷达输入代码并点击确认"
+            ),
+            "evidence": (
+                f"source_task={candidate_handoff.get('source_task_id') or 'candidate_radar_cache'}; "
+                f"packet={CANDIDATE_RADAR_PACKET_KEY}"
+                if candidate_readable
+                else "候选池和搜票确认按钮在 #candidates；本页不扫描、不搜票。"
+            ),
+            "next_step": (
+                "先读已确认标的和 Tushare-first 结论；完整图谱仍需手动生成。"
+                if candidate_readable
+                else "需要新标的时回到下一票雷达确认代码。"
+            ),
             "boundary": "输入和页面打开不外联；只有确认按钮可创建 Tushare-first 后台 task。",
             "cache_only_readback": True,
             "creates_task_from_readback": False,
@@ -2704,9 +2729,24 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         {
             "step": "2",
             "surface": "股票量化推演",
-            "readable_result": "上游 Tushare daily close 已在本地缓存参与图谱" if uses_real_daily_close else "等待上游 Tushare ledger 或本地阻断回放",
-            "evidence": "真实 daily close 已在本地缓存" if uses_real_daily_close else "待 Tushare/cache 补证",
-            "next_step": "先看支持/压制摘要，再回到次日图谱复核路径和操作区。",
+            "readable_result": (
+                "上游 Tushare daily close 已在本地缓存参与图谱"
+                if uses_real_daily_close
+                else str(candidate_handoff.get("ordinary_result_summary"))
+                if candidate_readable
+                else "等待上游 Tushare ledger 或本地阻断回放"
+            ),
+            "evidence": (
+                "真实 daily close 已在本地缓存"
+                if uses_real_daily_close
+                else f"Tushare-first {candidate_handoff.get('provider_api_success_count')}/{candidate_handoff.get('provider_api_call_count')} 个接口已回放"
+                if candidate_p2_ready
+                else "待 Tushare/cache 补证"
+            ),
+            "next_step": str(
+                candidate_handoff.get("ordinary_result_next_step")
+                or "先看支持/压制摘要，再回到次日图谱复核路径和操作区。"
+            ),
             "boundary": "本页只读 cache，不补调 Tushare 或 DeepSeek；DeepSeek governed executor 单独补。",
             "cache_only_readback": True,
             "creates_task_from_readback": False,
@@ -2719,12 +2759,16 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
             "readable_result": (
                 f"情景={scenario_count} / 参考线={reference_count} / 操作区={operation_zone_count}"
                 if has_drawable_data
+                else "上游结果可读；完整 next-session 图谱待手动生成。"
+                if candidate_readable
                 else "暂无可绘制图谱；可手动生成本地任务。"
             ),
             "evidence": last_cache,
             "next_step": (
                 "先看图表路径、参考线和操作区，再看缺少证据；工程审计在开发详情"
                 if has_drawable_data
+                else "点击本页生成任务，使用上游已确认标的创建本地图谱 cache。"
+                if candidate_readable
                 else "先点击生成任务或查看缓存状态；有图表后再按路径、参考线、操作区复核"
             ),
             "boundary": "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action",
@@ -2767,8 +2811,18 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         },
         {
             "复核项": "缺少证据",
-            "看什么": "当前摘要未标记缺口" if exact_packet and has_drawable_data else "真实 close、精确 packet 或生产替代证据仍待补齐",
-            "证据": "replacement / browser QA / retained signal / real close evidence",
+            "看什么": (
+                "当前摘要未标记缺口"
+                if exact_packet and has_drawable_data
+                else "完整 next-session 图谱待手动生成；上游 Tushare-first 可读结论已回放"
+                if candidate_readable
+                else "真实 close、精确 packet 或生产替代证据仍待补齐"
+            ),
+            "证据": (
+                f"candidate_p3={candidate_handoff.get('status')}"
+                if candidate_readable
+                else "replacement / browser QA / retained signal / real close evidence"
+            ),
             "边界": "缺口只提示后续补证，不把空结果解释成无风险",
             "cache_only_readback": True,
             "creates_task_from_readback": False,
@@ -2783,7 +2837,13 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
     condition_quick_read_rows = [
         {
             "速读项": "1. 来源",
-            "当前状态": "精确 next-session cache 可回放" if exact_packet and has_drawable_data else "等待精确 next-session cache 或按钮任务结果",
+            "当前状态": (
+                "精确 next-session cache 可回放"
+                if exact_packet and has_drawable_data
+                else "上游搜票结论可读；完整图谱等待手动生成"
+                if candidate_readable
+                else "等待精确 next-session cache 或按钮任务结果"
+            ),
             "用户下一步": "先确认来源来自雷达/量化后的本地回放，再进入图表路径。",
             "边界": "只读 GET cache；页面打开、普通链接和 React render 不创建 task。",
             "cache_only_readback": True,
@@ -2807,7 +2867,13 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         },
         {
             "速读项": "3. 失效",
-            "当前状态": "当前摘要未标记关键缺口" if exact_packet and has_drawable_data else "真实 close、精确 packet 或 operation_zones cache 待补齐",
+            "当前状态": (
+                "当前摘要未标记关键缺口"
+                if exact_packet and has_drawable_data
+                else "operation_zones cache 待生成；不要把上游可读结论当完整图谱"
+                if candidate_readable
+                else "真实 close、精确 packet 或 operation_zones cache 待补齐"
+            ),
             "用户下一步": "缺口回到下一票雷达或股票量化推演补证；不要把空图谱解释成无风险。",
             "边界": "失效提示不自动重试、不补调 Tushare/DeepSeek/GitHub、不写 cache。",
             "cache_only_readback": True,
@@ -2848,6 +2914,22 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
 
 def read_next_session_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_next_session_cache())
+    candidate_radar_p3_handoff = _read_candidate_radar_p3_handoff()
+    candidate_radar_p3_ready = candidate_radar_p3_handoff.get("p3_readable_result_ready") is True
+    if candidate_radar_p3_handoff:
+        packet["candidate_radar_p3_handoff"] = candidate_radar_p3_handoff
+    if packet.get("status") == "cache_missing" and candidate_radar_p3_ready:
+        packet["status"] = "candidate_readable_result_replay_chart_pending"
+        packet["cache_source"] = "candidate_radar_p3_handoff_readonly"
+        packet["summary"] = (
+            "上游搜票量化推演已有 Tushare-first 可读结论；完整次日图谱仍需手动生成本地 cache。"
+        )
+        packet["manual_required_text"] = (
+            "可先读上游结论；点击本页生成任务才会写 next-session 图谱 cache，GET cache 不补调 provider/model。"
+        )
+        packet["chart_payload_generated"] = False
+        packet["operation_zones_generated"] = False
+        packet["manual_next_session_generate_required"] = True
     activation_receipt, activation_rows = _next_session_replacement_activation_receipt(packet)
     legacy_parity_recipe, legacy_parity_rows = _next_session_legacy_parity_execution_recipe(packet)
     (
@@ -2974,6 +3056,7 @@ def read_next_session_cache() -> dict[str, Any]:
             "next_session_ordinary_condition_quick_read_row_count": ordinary_result_replay[
                 "condition_quick_read_row_count"
             ],
+            "next_session_candidate_radar_p3_handoff_ready": candidate_radar_p3_ready,
         }
     )
     packet["counts"] = counts
@@ -2997,6 +3080,10 @@ def read_next_session_cache() -> dict[str, Any]:
             "next_session_ordinary_condition_quick_read_rows_are_cache_only": True,
             "next_session_ordinary_condition_quick_read_rows_call_provider_or_model": False,
             "next_session_ordinary_condition_quick_read_rows_are_not_trade_signals": True,
+            "next_session_candidate_radar_p3_handoff_is_cache_only": True,
+            "next_session_candidate_radar_p3_handoff_creates_task": False,
+            "next_session_candidate_radar_p3_handoff_calls_provider_or_model": False,
+            "next_session_candidate_radar_p3_handoff_is_not_trade_signal": True,
         }
     )
     packet["policy"] = policy
@@ -3020,6 +3107,11 @@ def read_next_session_cache() -> dict[str, Any]:
     ]
     if promotion_review_ledger:
         existing_ledger.extend(promotion_review_ledger)
+    candidate_handoff_ledger = [
+        row for row in _as_list(candidate_radar_p3_handoff.get("call_ledger")) if isinstance(row, dict)
+    ]
+    if candidate_handoff_ledger:
+        existing_ledger.extend(candidate_handoff_ledger)
     packet["call_ledger"] = (
         existing_ledger + durable_evidence_recipe["call_ledger"] + production_stage_scope["call_ledger"]
     )
@@ -3316,6 +3408,123 @@ def _next_session_data_date(packet: dict[str, Any]) -> Any:
     if isinstance(chart, dict):
         return chart.get("base_date")
     return None
+
+
+def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
+    try:
+        candidate_packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(CANDIDATE_RADAR_PACKET_KEY)
+    except Exception:
+        return {}
+    if not isinstance(candidate_packet, Mapping):
+        return {}
+    small_data = _as_dict(candidate_packet.get("search_quant_projection_small_data_writeback_summary"))
+    interpretation = _as_dict(candidate_packet.get("search_quant_projection_interpretation_summary"))
+    receipt = _as_dict(candidate_packet.get("search_quant_projection_receipt"))
+    p2_ready = small_data.get("small_data_writeback_ready") is True
+    p3_ready = interpretation.get("interpretation_ready") is True or bool(
+        str(interpretation.get("ordinary_result_summary") or candidate_packet.get("ordinary_result_summary") or "").strip()
+    )
+    if not (p2_ready or p3_ready):
+        return {}
+    if (
+        candidate_packet.get("contains_secret") is True
+        or interpretation.get("contains_secret") is True
+        or small_data.get("contains_secret") is True
+        or interpretation.get("uses_model_output") is True
+        or interpretation.get("uses_deepseek_output") is True
+        or interpretation.get("model_output_used") is True
+    ):
+        return {}
+    symbol = _safe_text(
+        receipt.get("symbol")
+        or small_data.get("symbol")
+        or interpretation.get("symbol")
+        or "",
+        limit=32,
+    )
+    source_task_id = _safe_text(
+        receipt.get("latest_task_id")
+        or receipt.get("task_id")
+        or small_data.get("latest_task_id")
+        or candidate_packet.get("task_id")
+        or "",
+        limit=128,
+    )
+    result_summary = _safe_text(
+        interpretation.get("ordinary_result_summary")
+        or candidate_packet.get("ordinary_result_summary")
+        or small_data.get("ordinary_readback_summary")
+        or small_data.get("summary_label")
+        or "上游 Tushare-first 结果可读；完整次日图谱待手动生成。",
+        limit=360,
+    )
+    result_next_step = _safe_text(
+        interpretation.get("ordinary_result_next_step")
+        or candidate_packet.get("ordinary_result_next_step")
+        or small_data.get("ordinary_readback_next_step")
+        or "可在本页手动生成完整次日图谱；GET cache 不会补调 provider/model。",
+        limit=300,
+    )
+    result_boundary = _safe_text(
+        interpretation.get("ordinary_result_boundary")
+        or candidate_packet.get("ordinary_result_boundary")
+        or "只读回放 CandidateRadar cache / ledger / packet；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。",
+        limit=360,
+    )
+    provider_success_count = int(small_data.get("provider_api_success_count") or 0)
+    provider_call_count = int(small_data.get("provider_api_call_count") or 0)
+    status = "candidate_readable_result_ready_chart_pending" if p3_ready else "candidate_small_data_ready_chart_pending"
+    ledger = {
+        "api": "local_next_session_candidate_radar_p3_handoff",
+        "request_params_safe": {
+            "source_packet_key": CANDIDATE_RADAR_PACKET_KEY,
+            "source_task_id": source_task_id,
+            "symbol": symbol,
+            "p2_small_data_ready": p2_ready,
+            "p3_readable_result_ready": p3_ready,
+            "provider_api_success_count": provider_success_count,
+            "provider_api_call_count": provider_call_count,
+            "does_not_include_token_or_raw_log": True,
+        },
+        "row_count": len(_as_list(interpretation.get("ordinary_result_quick_read_rows"))),
+        "data_date": small_data.get("data_date") or candidate_packet.get("trade_date"),
+        "local_fetched_at": _now_iso(),
+        "call_status": status,
+        "error_message_safe": "",
+        **_local_ledger_boundary(),
+    }
+    return {
+        "schema_version": "next_session_candidate_radar_p3_handoff.v1",
+        "status": status,
+        "source_packet_key": CANDIDATE_RADAR_PACKET_KEY,
+        "source_task_id": source_task_id,
+        "symbol": symbol,
+        "p2_small_data_ready": p2_ready,
+        "p3_readable_result_ready": p3_ready,
+        "ordinary_result_summary": result_summary,
+        "ordinary_result_next_step": result_next_step,
+        "ordinary_result_boundary": result_boundary,
+        "provider_api_success_count": provider_success_count,
+        "provider_api_call_count": provider_call_count,
+        "provider_call_source": small_data.get("provider_call_source") or "candidate_radar_cache",
+        "deepseek_governed_executor_status": (
+            interpretation.get("deepseek_governed_executor_status")
+            or candidate_packet.get("ordinary_result_deepseek_governed_executor_status")
+            or "skipped_or_pending_governed_executor"
+        ),
+        "chart_payload_generated": False,
+        "operation_zones_generated": False,
+        "manual_next_session_generate_required": True,
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "calls_provider_or_model": False,
+        "uses_model_output": False,
+        "uses_deepseek_output": False,
+        "contains_secret": False,
+        "candidate_is_not_buy_instruction": True,
+        "call_ledger": [ledger],
+        **_local_ledger_boundary(),
+    }
 
 
 def _next_session_cache_call_ledger(packet: dict[str, Any], now: str) -> list[dict[str, Any]]:

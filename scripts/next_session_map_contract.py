@@ -476,6 +476,7 @@ def build_contract() -> dict[str, Any]:
                     "local_next_session_browser_qa_review",
                     "local_next_session_streamlit_parity_review",
                     "local_next_session_production_promotion_review",
+                    "local_next_session_candidate_radar_p3_handoff",
                     "local_next_session_durable_evidence_recipe",
                     "local_next_session_production_stage_scope_manifest",
                 }

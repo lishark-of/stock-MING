@@ -21885,6 +21885,100 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(response["call_ledger"][0]["does_not_execute_trades"])
         self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
 
+    def test_next_session_cache_replays_candidate_radar_p3_handoff_when_chart_missing(self):
+        db_path = self._with_meta_store()
+        self._with_snapshot_cache({})
+        SQLiteMetaStore(db_path).write_packet(
+            candidate_service.PACKET_KEY,
+            {
+                "packet_key": candidate_service.PACKET_KEY,
+                "status": "ready",
+                "task_id": "candidate-task-002008",
+                "search_quant_projection_receipt": {
+                    "schema_version": "candidate_radar_search_quant_projection_receipt.v1",
+                    "symbol": "002008.SZ",
+                    "latest_task_id": "candidate-task-002008",
+                },
+                "search_quant_projection_small_data_writeback_summary": {
+                    "schema_version": "candidate_radar_search_quant_projection_small_data_writeback.v1",
+                    "status": "small_data_writeback_ready_tushare_ledger_replayed",
+                    "symbol": "002008.SZ",
+                    "small_data_writeback_ready": True,
+                    "provider_call_source": "post_task_call_ledger",
+                    "provider_api_success_count": 4,
+                    "provider_api_call_count": 4,
+                    "ordinary_readback_summary": "Tushare-first 账本已回放 4/4 个接口。",
+                    "ordinary_readback_next_step": "打开次日图谱生成本地 cache。",
+                    "contains_secret": False,
+                },
+                "search_quant_projection_interpretation_summary": {
+                    "schema_version": "candidate_radar_search_quant_projection_interpretation.v1",
+                    "status": "interpretation_ready_tushare_ledger_pending_local_map",
+                    "symbol": "002008.SZ",
+                    "interpretation_ready": True,
+                    "ordinary_result_summary": "可读结论：Tushare-first 账本已回放 4/4 个接口。",
+                    "ordinary_result_next_step": "完整次日图谱待手动生成。",
+                    "ordinary_result_boundary": "只读回放；不调用 DeepSeek、不交易、不改 operation_zones。",
+                    "deepseek_governed_executor_status": "skipped_by_tushare_first_request_waiting_governed_executor",
+                    "uses_deepseek_output": False,
+                    "uses_model_output": False,
+                    "model_output_used": False,
+                    "contains_secret": False,
+                    "ordinary_result_quick_read_rows": [{"quick_read_item": "conclusion"}],
+                },
+                "contains_secret": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+        )
+
+        response = self.client.get("/api/next-session/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["status"], "candidate_readable_result_replay_chart_pending")
+        self.assertEqual(packet["cache_source"], "candidate_radar_p3_handoff_readonly")
+        handoff = packet["candidate_radar_p3_handoff"]
+        self.assertEqual(handoff["schema_version"], "next_session_candidate_radar_p3_handoff.v1")
+        self.assertEqual(handoff["source_packet_key"], candidate_service.PACKET_KEY)
+        self.assertEqual(handoff["symbol"], "002008.SZ")
+        self.assertTrue(handoff["p2_small_data_ready"])
+        self.assertTrue(handoff["p3_readable_result_ready"])
+        self.assertFalse(handoff["chart_payload_generated"])
+        self.assertFalse(handoff["operation_zones_generated"])
+        self.assertTrue(handoff["manual_next_session_generate_required"])
+        self.assertFalse(handoff["calls_provider_or_model"])
+        self.assertFalse(handoff["uses_model_output"])
+        self.assertFalse(handoff["contains_secret"])
+        self.assertEqual(
+            packet["ordinary_result_replay_status"],
+            "candidate_readable_result_replay_chart_pending",
+        )
+        ordinary_rows = {row["surface"]: row for row in packet["ordinary_result_replay_rows"]}
+        self.assertIn("上游结果可读", ordinary_rows["下一票雷达"]["readable_result"])
+        self.assertIn("Tushare-first 账本已回放", ordinary_rows["股票量化推演"]["readable_result"])
+        self.assertIn("完整 next-session 图谱待手动生成", ordinary_rows["次日图谱"]["readable_result"])
+        condition_rows = {row["速读项"]: row for row in packet["ordinary_condition_quick_read_rows"]}
+        self.assertIn("上游搜票结论可读", condition_rows["1. 来源"]["当前状态"])
+        self.assertIn("不要把上游可读结论当完整图谱", condition_rows["3. 失效"]["当前状态"])
+        self.assertTrue(packet["counts"]["next_session_candidate_radar_p3_handoff_ready"])
+        self.assertTrue(packet["policy"]["next_session_candidate_radar_p3_handoff_is_cache_only"])
+        self.assertFalse(packet["policy"]["next_session_candidate_radar_p3_handoff_creates_task"])
+        self.assertFalse(packet["policy"]["next_session_candidate_radar_p3_handoff_calls_provider_or_model"])
+        ledger_by_api = {row["api"]: row for row in response["call_ledger"]}
+        self.assertIn("local_next_session_candidate_radar_p3_handoff", ledger_by_api)
+        self.assertFalse(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["external"])
+        self.assertFalse(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["tushare_called"])
+        self.assertFalse(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["deepseek_called"])
+        self.assertTrue(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["does_not_execute_trades"])
+        self.assertTrue(
+            ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["does_not_modify_operation_zones"]
+        )
+
     def test_trade_cal_provider_acceptance_dry_run_creates_scope_ticket_without_provider_call(self):
         self._with_meta_store()
         self._with_bootstrap_env(TUSHARE_TOKEN="TS_OK")
