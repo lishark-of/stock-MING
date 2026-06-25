@@ -1887,6 +1887,15 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         summary_start = home_source.index('title="今日作战台摘要"')
         summary_end = home_source.index("<summary>开发 / 审计详情</summary>", summary_start)
         summary_slice = home_source[summary_start:summary_end]
+        local_fastapi_start = home_source.index('title="本地 FastAPI 接线速读"')
+        local_fastapi_details_start = home_source.index("<summary>本地接线技术明细</summary>", local_fastapi_start)
+        local_fastapi_front_slice = home_source[local_fastapi_start:local_fastapi_details_start]
+        local_fastapi_details_end = home_source.index('title="使用者可用化进度"', local_fastapi_details_start)
+        local_fastapi_details_slice = home_source[local_fastapi_details_start:local_fastapi_details_end]
+        self.assertIn("先看本地联通，再确认股票代码；确认后看任务进度、量化推演和次日图谱", local_fastapi_front_slice)
+        self.assertNotIn("多接口本地聚合：health / bootstrap / preflight / radar / factor / next / tasks", local_fastapi_front_slice)
+        self.assertIn('{ label: "接口读法"', local_fastapi_details_slice)
+        self.assertIn("多接口本地聚合：health / bootstrap / preflight / radar / factor / next / tasks", local_fastapi_details_slice)
         self.assertIn('aria-label="daily command primary next action"', summary_slice)
         self.assertIn('aria-label="open daily command primary next action"', summary_slice)
         self.assertIn("dailyCommandCandidateConfirmHref", summary_slice)
