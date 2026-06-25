@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { getHealth } from "../api/client";
 
 export type RouteKey =
@@ -34,6 +34,7 @@ export type RouteKey =
 const ORDINARY_NAVIGATION_BOUNDARY =
   "普通用户先用三入口；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、审计、设置或回退。";
 const LOCAL_FASTAPI_HEALTH_POLL_MS = 15000;
+type LocalFastapiStatus = "checking" | "online" | "offline";
 
 const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; routes: Array<{ key: RouteKey; label: string }> }> = [
   {
@@ -94,26 +95,38 @@ const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; rout
 export default function Layout({
   active,
   onNavigate,
+  onLocalFastapiConnected,
   children
 }: {
   active: RouteKey;
   onNavigate: (route: RouteKey) => void;
+  onLocalFastapiConnected?: () => void;
   children: ReactNode;
 }) {
-  const [localFastapiStatus, setLocalFastapiStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [localFastapiStatus, setLocalFastapiStatus] = useState<LocalFastapiStatus>("checking");
+  const lastLocalFastapiStatusRef = useRef<LocalFastapiStatus>("checking");
 
   useEffect(() => {
     let cancelled = false;
+
+    const publishLocalFastapiStatus = (nextStatus: LocalFastapiStatus) => {
+      const previousStatus = lastLocalFastapiStatusRef.current;
+      lastLocalFastapiStatusRef.current = nextStatus;
+      setLocalFastapiStatus(nextStatus);
+      if (nextStatus === "online" && previousStatus !== "online") {
+        onLocalFastapiConnected?.();
+      }
+    };
 
     const checkLocalFastapi = () => {
       void getHealth()
         .then((res) => {
           if (cancelled) return;
           const ready = res.ok === true && String(res.data?.status ?? "") === "ok";
-          setLocalFastapiStatus(ready ? "online" : "offline");
+          publishLocalFastapiStatus(ready ? "online" : "offline");
         })
         .catch(() => {
-          if (!cancelled) setLocalFastapiStatus("offline");
+          if (!cancelled) publishLocalFastapiStatus("offline");
         });
     };
 
@@ -123,7 +136,7 @@ export default function Layout({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [onLocalFastapiConnected]);
 
   const localFastapiLabel =
     localFastapiStatus === "online"

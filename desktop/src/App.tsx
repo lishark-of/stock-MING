@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, type ComponentType, type LazyExoticComponent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, type ComponentType, type LazyExoticComponent } from "react";
 import Layout, { type RouteKey } from "./components/Layout";
 
 const AShareEvidenceRadar = lazy(() => import("./routes/AShareEvidenceRadar"));
@@ -134,6 +134,7 @@ function persistRoute(route: RouteKey) {
 
 export default function App() {
   const [route, setRoute] = useState<RouteKey>(() => readInitialRoute());
+  const [localFastapiRefreshNonce, setLocalFastapiRefreshNonce] = useState(0);
   const ActiveRoute = ROUTE_COMPONENTS[route];
 
   useEffect(() => {
@@ -149,13 +150,22 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
+  const handleLocalFastapiConnected = useCallback(() => {
+    setLocalFastapiRefreshNonce((value) => value + 1);
+  }, []);
+
   const navigateRoute = (nextRoute: RouteKey) => setRoute(nextRoute);
 
   return (
-    <Layout active={route} onNavigate={navigateRoute}>
+    <Layout active={route} onNavigate={navigateRoute} onLocalFastapiConnected={handleLocalFastapiConnected}>
       <Suspense fallback={<div className="panel-loading">正在加载模块...</div>}>
-        <div className="route-stage" key={route}>
-          <ActiveRoute />
+        <div
+          className="route-stage"
+          key={route}
+          data-local-fastapi-refresh-nonce={localFastapiRefreshNonce}
+          data-local-fastapi-refresh-boundary="local_health_only_get_cache_remount"
+        >
+          <ActiveRoute key={`${route}:${localFastapiRefreshNonce}`} />
         </div>
       </Suspense>
     </Layout>
