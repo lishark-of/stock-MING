@@ -2691,6 +2691,29 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
     has_drawable_data = chart_summary.get("has_drawable_data") is True
     candidate_readable = candidate_handoff.get("p3_readable_result_ready") is True
     candidate_p2_ready = candidate_handoff.get("p2_small_data_ready") is True
+    confirmed_symbol = _safe_text(
+        candidate_handoff.get("symbol") or packet.get("latest_confirmed_symbol") or "",
+        limit=32,
+    ).upper()
+    chart_symbol = _safe_text(
+        chart_summary.get("symbol")
+        or chart_summary.get("ts_code")
+        or chart_summary.get("confirmed_symbol")
+        or chart_payload.get("symbol")
+        or chart_payload.get("ts_code")
+        or chart_payload.get("confirmed_symbol")
+        or packet.get("symbol")
+        or packet.get("ts_code")
+        or "",
+        limit=32,
+    ).upper()
+    chart_symbol_matches_confirmed = (
+        bool(has_drawable_data)
+        if not (candidate_readable and confirmed_symbol)
+        else bool(chart_symbol and chart_symbol == confirmed_symbol)
+    )
+    chart_ready_for_confirmed_symbol = has_drawable_data and chart_symbol_matches_confirmed
+    chart_stale_for_confirmed_symbol = has_drawable_data and candidate_readable and not chart_symbol_matches_confirmed
     uses_real_daily_close = chart_summary.get("uses_real_daily_close") is True
     exact_packet = chart_summary.get("is_exact_next_session_packet") is True
     scenario_count = int(chart_summary.get("scenario_series_count") or 0)
@@ -2703,12 +2726,15 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
             str(packet.get("cache_source") or "cache source unknown"),
             f"情景={scenario_count} / 参考线={reference_count} / 操作区={operation_zone_count}" if has_drawable_data else "",
             f"latest close={latest_close}" if latest_close else "",
+            f"图谱标的={chart_symbol or '未标记'} / 当前确认标的={confirmed_symbol}"
+            if chart_stale_for_confirmed_symbol
+            else "",
         ]
         if item
     ) or "暂无最近可用缓存"
     result_status = (
         "ready_cache_replay"
-        if has_drawable_data
+        if chart_ready_for_confirmed_symbol
         else "candidate_readable_result_replay_chart_pending"
         if candidate_readable
         else "waiting_for_cache_or_manual_task"
@@ -2721,7 +2747,7 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
                 f"上游结果可读：{candidate_handoff.get('symbol') or '已确认标的'}"
                 if candidate_readable
                 else "可从已确认标的继续复核"
-                if has_drawable_data
+                if chart_ready_for_confirmed_symbol
                 else "先回到雷达输入代码并点击确认"
             ),
             "evidence": (
@@ -2746,14 +2772,14 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
             "surface": "股票量化推演",
             "readable_result": (
                 "上游 Tushare daily close 已在本地缓存参与图谱"
-                if uses_real_daily_close
+                if chart_ready_for_confirmed_symbol and uses_real_daily_close
                 else str(candidate_handoff.get("ordinary_result_summary"))
                 if candidate_readable
                 else "等待上游 Tushare ledger 或本地阻断回放"
             ),
             "evidence": (
                 "真实 daily close 已在本地缓存"
-                if uses_real_daily_close
+                if chart_ready_for_confirmed_symbol and uses_real_daily_close
                 else f"Tushare-first {candidate_handoff.get('provider_api_success_count')}/{candidate_handoff.get('provider_api_call_count')} 个接口已回放"
                 if candidate_p2_ready
                 else "待 Tushare/cache 补证"
@@ -2773,7 +2799,7 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
             "surface": "次日图谱",
             "readable_result": (
                 f"情景={scenario_count} / 参考线={reference_count} / 操作区={operation_zone_count}"
-                if has_drawable_data
+                if chart_ready_for_confirmed_symbol
                 else "上游结果可读；完整 next-session 图谱待手动生成。"
                 if candidate_readable
                 else "暂无可绘制图谱；可手动生成本地任务。"
@@ -2796,7 +2822,13 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
     chart_review_rows = [
         {
             "复核项": "图表路径",
-            "看什么": f"情景路径 {scenario_count} 条；先看基准、乐观和压力路径的方向" if has_drawable_data else "暂无可绘制路径；先看缓存状态或点击生成任务",
+            "看什么": (
+                f"情景路径 {scenario_count} 条；先看基准、乐观和压力路径的方向"
+                if chart_ready_for_confirmed_symbol
+                else "已有上游结论，但当前确认标的的图谱待手动生成"
+                if chart_stale_for_confirmed_symbol
+                else "暂无可绘制路径；先看缓存状态或点击生成任务"
+            ),
             "证据": last_cache,
             "边界": "只读取图表路径；不重算价格、不调用数据源或模型",
             "cache_only_readback": True,
@@ -2806,7 +2838,11 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         },
         {
             "复核项": "参考线",
-            "看什么": f"参考线 {reference_count} 条；用于定位压力、支撑和最新收盘锚点" if has_drawable_data else "等待 reference_lines 写入本地 cache",
+            "看什么": (
+                f"参考线 {reference_count} 条；用于定位压力、支撑和最新收盘锚点"
+                if chart_ready_for_confirmed_symbol
+                else "等待当前确认标的的 reference_lines 写入本地 cache"
+            ),
             "证据": f"latest close={latest_close}" if latest_close else "等待 latest close anchor",
             "边界": "参考线只作研究复核，不生成买卖动作",
             "cache_only_readback": True,
@@ -2816,7 +2852,11 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         },
         {
             "复核项": "操作区",
-            "看什么": f"操作区 {operation_zone_count} 个；只看条件区间、触发条件和风险提示" if has_drawable_data else "等待 operation_zones cache",
+            "看什么": (
+                f"操作区 {operation_zone_count} 个；只看条件区间、触发条件和风险提示"
+                if chart_ready_for_confirmed_symbol
+                else "等待当前确认标的的 operation_zones cache"
+            ),
             "证据": "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action",
             "边界": "不改 operation_zones、不下单、不写 strategy action",
             "cache_only_readback": True,
@@ -2828,7 +2868,7 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
             "复核项": "缺少证据",
             "看什么": (
                 "当前摘要未标记缺口"
-                if exact_packet and has_drawable_data
+                if exact_packet and chart_ready_for_confirmed_symbol
                 else "完整 next-session 图谱待手动生成；上游 Tushare-first 可读结论已回放"
                 if candidate_readable
                 else "真实 close、精确 packet 或生产替代证据仍待补齐"
@@ -2854,7 +2894,7 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
             "速读项": "1. 来源",
             "当前状态": (
                 "精确 next-session cache 可回放"
-                if exact_packet and has_drawable_data
+                if exact_packet and chart_ready_for_confirmed_symbol
                 else "上游搜票结论可读；完整图谱等待手动生成"
                 if candidate_readable
                 else "等待精确 next-session cache 或按钮任务结果"
@@ -2870,7 +2910,7 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
             "速读项": "2. 条件",
             "当前状态": (
                 f"operation_zones {operation_zone_count} 个；只表示条件区间、触发条件和风险提示"
-                if has_drawable_data
+                if chart_ready_for_confirmed_symbol
                 else "等待 operation_zones cache；不能把空操作区解释成无风险"
             ),
             "用户下一步": "把操作区当人工复核条件，结合参考线和最新收盘锚点判断。",
@@ -2884,7 +2924,7 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
             "速读项": "3. 失效",
             "当前状态": (
                 "当前摘要未标记关键缺口"
-                if exact_packet and has_drawable_data
+                if exact_packet and chart_ready_for_confirmed_symbol
                 else "operation_zones cache 待生成；不要把上游可读结论当完整图谱"
                 if candidate_readable
                 else "真实 close、精确 packet 或 operation_zones cache 待补齐"
@@ -2920,6 +2960,12 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         "rows_are_not_trade_signals": True,
         "contains_secret": False,
         "production_evidence": False,
+        "confirmed_symbol": confirmed_symbol,
+        "chart_symbol": chart_symbol,
+        "chart_has_drawable_data": has_drawable_data,
+        "chart_symbol_matches_confirmed": chart_symbol_matches_confirmed,
+        "chart_ready_for_confirmed_symbol": chart_ready_for_confirmed_symbol,
+        "chart_stale_for_confirmed_symbol": chart_stale_for_confirmed_symbol,
         "result_rows": result_rows,
         "chart_review_rows": chart_review_rows,
         "condition_quick_read_rows": condition_quick_read_rows,
@@ -3080,6 +3126,13 @@ def read_next_session_cache() -> dict[str, Any]:
             ],
             "next_session_candidate_radar_p3_handoff_ready": candidate_radar_p3_ready,
             "next_session_latest_confirmed_readback_ready": bool(candidate_radar_p3_handoff),
+            "next_session_chart_has_drawable_data": ordinary_result_replay["chart_has_drawable_data"],
+            "next_session_chart_ready_for_confirmed_symbol": ordinary_result_replay[
+                "chart_ready_for_confirmed_symbol"
+            ],
+            "next_session_chart_stale_for_confirmed_symbol": ordinary_result_replay[
+                "chart_stale_for_confirmed_symbol"
+            ],
         }
     )
     packet["counts"] = counts

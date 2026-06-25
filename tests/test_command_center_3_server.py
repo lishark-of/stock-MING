@@ -3908,6 +3908,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["chart_summary"]["scenario_series_count"], 1)
 
     def test_next_session_cache_maps_exact_chart_render_model_for_echarts(self):
+        self._with_meta_store()
         self._with_snapshot_cache(
             {
                 "command_center_next_session_projection_packet": {
