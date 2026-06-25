@@ -209,7 +209,8 @@ export default function CandidateRadar() {
         creates_task_only_after_button: true,
         react_render_external_calls: false,
         get_cache_external_calls: false,
-        contains_secret: false
+        contains_secret: false,
+        contains_sensitive_material: false
       },
       ordinary_confirm_chain_contract: quantProjectionP1ConfirmPayloadContract
     }).then((res) => {

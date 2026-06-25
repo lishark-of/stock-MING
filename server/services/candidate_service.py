@@ -1463,6 +1463,9 @@ def _quant_projection_p0_confirm_gate_ready(p0_gate: Mapping[str, Any]) -> bool:
             and p0_gate.get("p0_connection_evidence_ready") is True
         )
     )
+    contains_sensitive_material = p0_gate.get("contains_sensitive_material")
+    if contains_sensitive_material is None:
+        contains_sensitive_material = p0_gate.get("contains_secret")
     return bool(
         p0_gate.get("schema_version") == "candidate_radar_p0_confirm_gate.v1"
         and p0_gate.get("p0_ready") is True
@@ -1474,7 +1477,7 @@ def _quant_projection_p0_confirm_gate_ready(p0_gate: Mapping[str, Any]) -> bool:
         and p0_gate.get("creates_task_only_after_button") is True
         and p0_gate.get("react_render_external_calls") is False
         and p0_gate.get("get_cache_external_calls") is False
-        and p0_gate.get("contains_sensitive_material") is False
+        and contains_sensitive_material is False
     )
 
 

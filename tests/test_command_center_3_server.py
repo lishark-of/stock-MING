@@ -40447,6 +40447,139 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
 
+    def test_candidate_radar_quant_projection_confirm_accepts_frontend_secret_gate_and_starts_tushare_first_chain(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        provider_calls = []
+        original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
+
+        def fake_run_tushare_refresh_task(payload, **kwargs):
+            provider_calls.append({"payload": payload, "kwargs": kwargs})
+            selected_apis = list(payload.get("apis") or [])
+            return {
+                "task_id": "unit-test-tushare-first-provider-task",
+                "task_type": kwargs.get("task_type") or "candidate_radar_quant_projection_tushare_light_provider",
+                "status": "success",
+                "current_step": "unit_test_tushare_first_provider_stub_success",
+                "call_ledger": [
+                    {
+                        "api": api,
+                        "endpoint": f"tushare.{api}",
+                        "call_status": "success",
+                        "row_count": 1,
+                        "request_params_safe": {"ts_code": payload.get("ts_code") or payload.get("symbol")},
+                        "external": False,
+                        "external_calls_triggered": False,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "provider_call_is_unit_test_stub": True,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                        "contains_secret": False,
+                    }
+                    for api in selected_apis
+                ],
+            }
+
+        candidate_service.tushare_task_service.run_tushare_refresh_task = fake_run_tushare_refresh_task
+        self.addCleanup(
+            setattr,
+            candidate_service.tushare_task_service,
+            "run_tushare_refresh_task",
+            original_run_tushare,
+        )
+
+        response = self.client.post(
+            "/api/candidate-radar/quant-projection",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": False,
+                "user_approved": True,
+                "p0_confirm_gate_evidence": {
+                    "schema_version": "candidate_radar_p0_confirm_gate.v1",
+                    "p0_ready": True,
+                    "fastapi_cache_get_ready": True,
+                    "bootstrap_runtime_mode_ready": True,
+                    "desktop_preflight_ready": True,
+                    "p0_stability_check_ready": True,
+                    "candidate_cache_ready": True,
+                    "candidate_cache_status": "ready",
+                    "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+                    "desktop_preflight_packet_key": "command_center_3_desktop_shell_preflight_cache",
+                    "creates_task_only_after_button": True,
+                    "react_render_external_calls": False,
+                    "get_cache_external_calls": False,
+                    "contains_secret": False,
+                },
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(
+            task["current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+        )
+        self.assertEqual(len(provider_calls), 1)
+        self.assertEqual(provider_calls[0]["payload"]["ts_code"], "002008.SZ")
+        self.assertEqual(
+            provider_calls[0]["payload"]["apis"],
+            list(candidate_service.QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS),
+        )
+        request_params = task["call_ledger"][0]["request_params_safe"]
+        self.assertTrue(request_params["p0_confirm_gate_ready"])
+        self.assertTrue(task["call_ledger"][0]["delegated_tushare_first_call_ledger_replayed"])
+        self.assertEqual(
+            task["call_ledger"][0]["delegated_tushare_first_provider_api_success_count"],
+            len(candidate_service.QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS),
+        )
+        self.assertTrue(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        quant_receipt = packet["search_quant_projection_receipt"]
+        self.assertEqual(quant_receipt["latest_task_id"], task["task_id"])
+        self.assertEqual(
+            quant_receipt["latest_task_current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+        )
+        provider_receipt = packet["search_quant_provider_model_acceptance_receipt"]
+        self.assertTrue(provider_receipt["tushare_call_ledger_evidence_done"])
+        self.assertTrue(provider_receipt["deepseek_skipped_by_request"])
+        self.assertEqual(
+            provider_receipt["provider_api_success_count"],
+            len(candidate_service.QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS),
+        )
+        small_data = packet["search_quant_projection_small_data_writeback_summary"]
+        self.assertEqual(small_data["ordinary_readback_status"], "ready_tushare_ledger_replayed")
+        self.assertTrue(small_data["provider_call_observed_only_from_post_task"])
+        self.assertTrue(packet["policy"]["search_quant_provider_model_acceptance_calls_provider_only_from_post_task"])
+        self.assertFalse(packet["policy"]["search_quant_provider_model_acceptance_get_cache_calls_provider"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
+
     def test_bootstrap_provider_model_latest_status_keeps_deepseek_requested_output_acceptance_pending(self):
         self._with_meta_store()
         self._with_bootstrap_env(
