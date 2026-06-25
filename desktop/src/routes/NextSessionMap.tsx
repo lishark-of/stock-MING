@@ -62,14 +62,17 @@ export default function NextSessionMap() {
       setError(err instanceof Error ? err.message : String(err));
     }).finally(() => setLoading(false));
   };
-  const launchTask = () =>
+  const launchTask = () => {
+    if (!candidateRadarConfirmedSymbol) return;
     void postTask("/api/next-session/generate", nextSessionGeneratePayload).then((res) => {
       setTaskReceipt(res);
       if (res.ok) {
         setTaskId(res.data.task_id);
         refreshTaskIndex();
+        refreshCache();
       }
     });
+  };
   const reviewBrowserQa = () =>
     void postTask("/api/next-session/browser-qa-review", { review_scope: "next_session_browser_qa_local_artifact" }).then((res) => {
       setBrowserQaReceipt(res);
@@ -225,7 +228,6 @@ export default function NextSessionMap() {
     ? "先看图表路径、参考线和操作区，再看缺少证据；工程审计在开发详情"
     : "先点击生成任务或查看缓存状态；有图表后再按路径、参考线、操作区复核";
   const nextSessionCacheButtonLabel = "查看缓存只读取本地 GET cache；复核顺序是图表路径、参考线、操作区、缺少证据";
-  const nextSessionGenerateButtonLabel = "生成任务只创建按钮门控 POST task；会带当前确认标的和来源 task 的 safe payload，完成后按图表路径、参考线、操作区、缺少证据复核";
   const nextSessionChartReviewRegionLabel = "次日图谱复核区域：先看图表路径，再看参考线、操作区和缺少证据";
   const nextSessionReplayOrigin = chartSummary.is_exact_next_session_packet === true
     ? "来自精确本地次日图谱数据；可从下一票雷达/量化推演回放到本页"
@@ -278,6 +280,13 @@ export default function NextSessionMap() {
   const candidateRadarConfirmedSymbolLabel = candidateRadarConfirmedSymbol
     ? `当前确认标的：${candidateRadarConfirmedSymbol}`
     : "等待下一票雷达确认标的";
+  const nextSessionGenerateButtonDisabled = !candidateRadarConfirmedSymbol;
+  const nextSessionGenerateButtonLabel = candidateRadarConfirmedSymbol
+    ? `为 ${candidateRadarConfirmedSymbol} 生成完整次日图谱；按钮门控 POST task，只带当前确认标的和来源 task 的 safe payload`
+    : "等待下一票雷达确认标的后才能生成完整次日图谱；输入、页面打开和 GET cache 不创建 task";
+  const nextSessionGenerateButtonText = candidateRadarConfirmedSymbol
+    ? `为 ${candidateRadarConfirmedSymbol} 生成完整图谱`
+    : "等待确认标的";
   const candidateRadarSourceTaskLabel = String(
     packet.latest_confirmed_task_id ||
       candidateRadarCache.latest_confirmed_task_id ||
@@ -1111,7 +1120,7 @@ export default function NextSessionMap() {
       </div>
       <div id="next-session-generate-actions" className="actions" aria-label="next session manual generate actions">
         <button onClick={refreshCache} title={nextSessionCacheButtonLabel} aria-label={nextSessionCacheButtonLabel}>查看缓存</button>
-        <button onClick={launchTask} title={nextSessionGenerateButtonLabel} aria-label={nextSessionGenerateButtonLabel}>生成任务</button>
+        <button onClick={launchTask} disabled={nextSessionGenerateButtonDisabled} title={nextSessionGenerateButtonLabel} aria-label={nextSessionGenerateButtonLabel}>{nextSessionGenerateButtonText}</button>
       </div>
       <p className="risk-note">{nextSessionReplayPath}；这些回放入口只做本地模块路由切换，不创建任务、不刷新 Tushare/DeepSeek。</p>
       <p className="risk-note">摘要里的查看缓存只读取本地 GET cache；生成任务只创建按钮门控 POST task，不调用 Tushare 或 DeepSeek，不写交易动作。</p>
