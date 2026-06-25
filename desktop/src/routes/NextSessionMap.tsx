@@ -189,7 +189,7 @@ export default function NextSessionMap() {
   const nextSessionGenerateButtonLabel = "生成任务只创建按钮门控 POST task；会带当前确认标的和来源 task 的 safe payload，完成后按图表路径、参考线、操作区、缺少证据复核";
   const nextSessionChartReviewRegionLabel = "次日图谱复核区域：先看图表路径，再看参考线、操作区和缺少证据";
   const nextSessionReplayOrigin = chartSummary.is_exact_next_session_packet === true
-    ? "来自精确 next-session cache；可从下一票雷达/量化推演回放到本页"
+    ? "来自精确本地次日图谱数据；可从下一票雷达/量化推演回放到本页"
     : "来自 legacy/cache 投影或暂无精确 packet；只作降级预览";
   const nextSessionReplayPath =
     "回放路径：下一票雷达确认代码 -> 股票量化推演支持/压制 -> 次日图谱路径/参考线/操作区";
@@ -211,8 +211,8 @@ export default function NextSessionMap() {
     packetCandidateRadarP3Handoff.deepseek_governed_executor_status ?? ""
   );
   const nextSessionPacketHandoffLabel = packetCandidateRadarP3HandoffReady
-    ? `next-session cache 已接上 ${packetCandidateRadarP3HandoffSymbol || "当前标的"} / task=${packetCandidateRadarP3HandoffSourceTask || "本地回放"}`
-    : "next-session cache handoff 等待 CandidateRadar P3 结果";
+    ? `本地次日图谱数据已接上 ${packetCandidateRadarP3HandoffSymbol || "当前标的"} / task=${packetCandidateRadarP3HandoffSourceTask || "本地回放"}`
+    : "本地次日图谱数据等待 CandidateRadar P3 结果";
   const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarWritebackSurfaceRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
   const candidateRadarWritebackSurfaceReady =
@@ -341,7 +341,7 @@ export default function NextSessionMap() {
     },
     {
       label: "只读来源",
-      value: "GET /api/tasks + Next Session cache + CandidateRadar cache",
+      value: "GET /api/tasks + 本地次日图谱数据 + CandidateRadar cache",
       tone: "good"
     },
     {
@@ -620,7 +620,7 @@ export default function NextSessionMap() {
       交接段: "1. 来源",
       当前状态: nextSessionReplayOrigin,
       用户下一步: "先确认这张图谱来自下一票雷达 / 股票量化推演后的本地回放。",
-      边界: "只读本地 next-session cache；不会从页面打开或普通链接创建任务。"
+      边界: "只读本地次日图谱数据；不会从页面打开或普通链接创建任务。"
     },
     {
       交接段: "2. 结论",
@@ -646,7 +646,7 @@ export default function NextSessionMap() {
       读图顺序: "1. 来源",
       当前状态: nextSessionReplayOrigin,
       用户下一步: "确认来源来自下一票雷达 / 股票量化推演后的本地回放。",
-      证据: "next-session cache / chart_summary",
+      证据: "本地次日图谱数据 / chart_summary",
       边界: "GET cache 只读；不创建 task、不调用 Tushare/DeepSeek/GitHub。"
     },
     {
@@ -707,7 +707,7 @@ export default function NextSessionMap() {
           行动: "3. 写回",
           当前状态: ordinaryResultReplayStatus,
           用户下一步: "确认 cache、call_ledger、packet 已经能支撑图谱回放",
-          入口: "next-session cache / call_ledger / packet",
+          入口: "本地次日图谱数据 / call_ledger / packet",
           边界: "写回只读本地 cache / ledger / packet；不补调 provider/model、不展示 token/key。"
         },
         {
@@ -975,17 +975,17 @@ export default function NextSessionMap() {
         <MetricGrid items={nextSessionTaskIndexProgressItems} />
         <div className="actions" aria-label="next session local task index progress actions">
           <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from next session progress watch">任务目录</a>
-          <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地 next-session cache" aria-label="open chart area from next session progress watch">图谱区域</a>
+          <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart area from next session progress watch">图谱区域</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant from next session progress watch">股票量化推演</a>
         </div>
-        <p className="risk-note">边用边看：{nextSessionProgressWatchNext}；这只来自 GET /api/tasks、Next Session cache 和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易，也不改 operation_zones。</p>
+        <p className="risk-note">边用边看：{nextSessionProgressWatchNext}；这只来自 GET /api/tasks、本地次日图谱数据和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易，也不改 operation_zones。</p>
       </div>
       <div aria-label="next session ordinary progress checkpoint">
         <h3>当前图谱 checkpoint</h3>
         <MetricGrid items={nextSessionOrdinaryProgressCheckpointItems} />
         <div className="actions" aria-label="next session ordinary progress checkpoint actions">
           <a href={nextSessionOrdinaryProgressCheckpointAnchor} aria-label="open next session ordinary progress checkpoint next step">{nextSessionOrdinaryProgressCheckpointLabel}</a>
-          <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地 next-session cache" aria-label="open chart area from next session checkpoint">图谱区域</a>
+          <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart area from next session checkpoint">图谱区域</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session checkpoint">下一票雷达确认</a>
         </div>
         <p className="risk-note">checkpoint 只汇总 CandidateRadar 上游结论、来源 task、图谱状态和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek，也不改 operation_zones 或 strategy action。</p>
@@ -995,7 +995,7 @@ export default function NextSessionMap() {
         state={nextSessionOrdinaryReplayRailState}
         steps={nextSessionOrdinaryReplayRailSteps}
       />
-      <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek，P5 解释治理继续收起为单独补证。</p>
+      <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地次日图谱数据，不创建 task、不补调 Tushare 或 DeepSeek，P5 解释治理继续收起为单独补证。</p>
       <div aria-label="next session latest candidate readable result">
         <h3>最近搜票可读结论</h3>
         <p className="ordinary-status-note" aria-label="next session latest candidate readable sentence" aria-live="polite">{nextSessionLatestCandidateReadableSentence}</p>
@@ -1018,7 +1018,7 @@ export default function NextSessionMap() {
           <MetricGrid items={nextSessionTaskSourceReadbackItems} />
         </div>
         <div className="actions" aria-label="next session readable result local actions">
-          <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地 next-session cache" aria-label="open local next session chart from readable result">查看图谱区域</a>
+          <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open local next session chart from readable result">查看图谱区域</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant replay from next session readable result">查看支持/压制</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return candidate radar confirm input from next session readable result">回下一票雷达确认</a>
         </div>
@@ -1028,7 +1028,7 @@ export default function NextSessionMap() {
       </div>
       <div aria-label="next session p3 one minute read">
         <h3>P3 一分钟读图</h3>
-        <p className="risk-note">普通用户先看这张表：用一分钟确认来源、可读结论、operation_zones、缺口和回流入口；它只读本地 next-session cache。</p>
+        <p className="risk-note">普通用户先看这张表：用一分钟确认来源、可读结论、operation_zones、缺口和回流入口；它只读本地次日图谱数据。</p>
         <DataLineageTable rows={nextSessionP3OneMinuteReadRows} />
       </div>
       <div aria-label="next session p3 result handoff quick read">
