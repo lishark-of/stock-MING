@@ -316,6 +316,55 @@ export default function ModelStrategy() {
       detail: "Tushare-first / Factor light / Next Session 可先走"
     }
   ];
+  const governedExecutorFrontSummaryItems = [
+    {
+      label: "当前结论",
+      value: cache.deepseek_called === true ? "已记录 DeepSeek 调用；先看 model_ledger" : "当前未调用 DeepSeek；基础投研可先看",
+      tone: cache.deepseek_called === true ? ("warn" as const) : ("good" as const)
+    },
+    {
+      label: "基础路径",
+      value: governedExecutor.ordinary_safe_to_ignore_for_basic_maps === true || governedExecutor.does_not_block_tushare_first_or_basic_maps === true
+        ? "不阻塞：Tushare-first、股票量化推演、次日图谱可先走"
+        : "待确认：先看本地回放，不把模型 pending 当阻断",
+      tone: governedExecutor.ordinary_safe_to_ignore_for_basic_maps === true || governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "真实调用",
+      value: governedExecutorRealCallAllowed ? "已放行" : `未放行：${governedExecutorRealCallBlockers.length || governedExecutor.real_call_blocker_count || 0} 项待补`,
+      tone: governedExecutorRealCallAllowed ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "下一步",
+      value: "继续 P1 确认按钮、P2 小数据回放、P3 基础图谱；P5 模型补证单独做",
+      tone: "good" as const
+    },
+    {
+      label: "安全边界",
+      value: "GET cache 只读；页面打开、React render 和本卡不会调用 DeepSeek",
+      tone: "good" as const
+    },
+    {
+      label: "凭据",
+      value: cache.contains_secret === true ? "异常：需要审计" : "不展示 token/key；前端只显示安全状态",
+      tone: cache.contains_secret === true ? ("bad" as const) : ("good" as const)
+    }
+  ];
+  const governedExecutorTechnicalCounterItems = [
+    { label: "mode", value: cache.mode as string | undefined },
+    { label: "purposes", value: counts.purpose_count as number | undefined },
+    { label: "configured", value: counts.configured_count as number | undefined },
+    { label: "safe defaults", value: counts.safe_default_count as number | undefined },
+    { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? ("bad" as const) : ("good" as const) },
+    { label: "DeepSeek call", value: cache.deepseek_called === true ? "已调用" : "未调用", tone: cache.deepseek_called === true ? ("bad" as const) : ("good" as const) },
+    { label: "governed executor", value: String(governedExecutor.status ?? "pending"), tone: governedExecutor.deepseek_called === true ? ("bad" as const) : ("warn" as const) },
+    { label: "real call gate", value: governedExecutorRealCallAllowed ? "允许" : `未放行：${governedExecutorRealCallBlockers.length || governedExecutor.real_call_blocker_count || 0} 项`, tone: governedExecutorRealCallAllowed ? ("good" as const) : ("warn" as const) },
+    { label: "Tushare/basic maps", value: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "不阻塞" : "待确认", tone: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? ("good" as const) : ("warn" as const) },
+    { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? ("bad" as const) : ("good" as const) },
+    { label: "contains secret", value: cache.contains_secret === true ? "是" : "否", tone: cache.contains_secret === true ? ("bad" as const) : ("good" as const) },
+    { label: "cache envelope ledger", value: cacheCallLedger.length },
+    { label: "cache warnings", value: cacheWarnings.length }
+  ];
 
   return (
     <>
@@ -324,23 +373,14 @@ export default function ModelStrategy() {
         <StatusBadge label={String(cache.status ?? "cache_missing")} tone={cache.status === "ready" ? "good" : "warn"} />
       </div>
 
-      <MetricGrid
-        items={[
-          { label: "mode", value: cache.mode as string | undefined },
-          { label: "purposes", value: counts.purpose_count as number | undefined },
-          { label: "configured", value: counts.configured_count as number | undefined },
-          { label: "safe defaults", value: counts.safe_default_count as number | undefined },
-          { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
-          { label: "DeepSeek call", value: cache.deepseek_called === true ? "已调用" : "未调用", tone: cache.deepseek_called === true ? "bad" : "good" },
-          { label: "governed executor", value: String(governedExecutor.status ?? "pending"), tone: governedExecutor.deepseek_called === true ? "bad" : "warn" },
-          { label: "real call gate", value: governedExecutorRealCallAllowed ? "允许" : `未放行：${governedExecutorRealCallBlockers.length || governedExecutor.real_call_blocker_count || 0} 项`, tone: governedExecutorRealCallAllowed ? "good" : "warn" },
-          { label: "Tushare/basic maps", value: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "不阻塞" : "待确认", tone: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "good" : "warn" },
-          { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
-          { label: "contains secret", value: cache.contains_secret === true ? "是" : "否", tone: cache.contains_secret === true ? "bad" : "good" },
-          { label: "cache envelope ledger", value: cacheCallLedger.length },
-          { label: "cache warnings", value: cacheWarnings.length }
-        ]}
-      />
+      <MetricGrid items={governedExecutorFrontSummaryItems} />
+      <p className="risk-note" aria-label="deepseek ordinary top summary boundary">
+        这张首屏摘要只读 /api/model-strategy/cache；不创建 task、不调用 DeepSeek、不读取 token/key，也不阻塞 Tushare-first、P2 小数据回放或 P3 基础图谱。
+      </p>
+      <details className="developer-audit-details" aria-label="deepseek model strategy top technical counters">
+        <summary>模型策略计数 / cache 明细</summary>
+        <MetricGrid items={governedExecutorTechnicalCounterItems} />
+      </details>
 
       <div className="grid">
         <PacketCard title="普通用户 DeepSeek 状态" subtitle="P5 governed executor；真实模型调用单独补，不阻塞 Tushare-first 和基础图谱" status={String(governedExecutor.status ?? "pending")}>
@@ -382,7 +422,7 @@ export default function ModelStrategy() {
           <div className="actions" aria-label="deepseek governed executor nonblocking handoff links">
             <a href="#candidates" title="回到下一票雷达；确认按钮才创建 Tushare-first task" aria-label="continue tushare first candidate radar while deepseek pending">继续下一票雷达</a>
             <a href="#factor" title="打开股票量化推演；只读 Factor cache 和本地结果" aria-label="continue factor light replay while deepseek pending">查看股票量化推演</a>
-            <a href="#next" title="打开次日图谱；只读本地 next-session cache" aria-label="continue next session map while deepseek pending">查看次日图谱</a>
+            <a href="#next" title="打开次日图谱；只读本地次日图谱结果" aria-label="continue next session map while deepseek pending">查看次日图谱</a>
           </div>
           <p className="risk-note">这些入口只切换本地页面；不会创建 DeepSeek task、不会调用模型，也不会把 pending 状态当生产验收。</p>
           <details className="developer-audit-details" aria-label="deepseek governed executor ticket and gate details">
