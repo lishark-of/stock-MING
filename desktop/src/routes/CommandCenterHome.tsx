@@ -427,6 +427,11 @@ export default function CommandCenterHome() {
     (candidates.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ??
     (candidateQuantInterpretation.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ??
     [];
+  const candidateQuantDecisionBriefRows =
+    (candidates.ordinary_result_decision_brief_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidates.search_quant_projection_result_decision_brief_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidateQuantInterpretation.ordinary_result_decision_brief_rows as Array<Record<string, unknown>> | undefined) ??
+    [];
   const candidateQuantHandoffRows =
     (candidates.ordinary_result_handoff_rows as Array<Record<string, unknown>> | undefined) ??
     (candidateQuantInterpretation.ordinary_result_handoff_rows as Array<Record<string, unknown>> | undefined) ??
@@ -564,6 +569,37 @@ export default function CommandCenterHome() {
   const dailyCommandP3OneGlanceSafeFields = Array.isArray(candidateQuantResultCheckpoint.safe_explanation_fields)
     ? candidateQuantResultCheckpoint.safe_explanation_fields.map(String).join(" / ")
     : "source / gap / next_step / safety_summary";
+  const dailyCommandP3OneGlanceDecisionRows = candidateQuantDecisionBriefRows.length
+    ? candidateQuantDecisionBriefRows.map((row) => ({
+        读法: String(row["读法"] ?? row.brief_key ?? "结果读法"),
+        当前状态: String(row["当前状态"] ?? row.ordinary_label ?? row.status ?? dailyCommandExplainableResultLabel),
+        用户下一步: String(row["用户下一步"] ?? row.next_action ?? dailyCommandExplainableResultNext),
+        证据: String(row["证据"] ?? row.evidence ?? dailyCommandP3OneGlanceEvidence),
+        边界: String(row["边界"] ?? row.boundary ?? dailyCommandExplainableResultBoundary)
+      }))
+    : [
+        {
+          读法: "1. 先看结论",
+          当前状态: dailyCommandExplainableResultLabel,
+          用户下一步: dailyCommandExplainableResultNext,
+          证据: dailyCommandP3OneGlanceEvidence,
+          边界: dailyCommandExplainableResultBoundary
+        },
+        {
+          读法: "2. 再看来源",
+          当前状态: dailyCommandP3OneGlanceSource,
+          用户下一步: "只读查看 CandidateRadar cache / ledger / packet",
+          证据: "CandidateRadar cache / call_ledger / packet",
+          边界: "首页只读回放来源；GET cache 和 React render 不补调 provider/model。"
+        },
+        {
+          读法: "3. 最后定动作",
+          当前状态: dailyCommandP3OneGlanceMissingEvidence || "等待本地缺口回放",
+          用户下一步: dailyCommandExplainableResultNext,
+          证据: "local_evidence_gap_summary",
+          边界: "只作为研究线索；不下单、不改 strategy action，DeepSeek 单独等 governed executor。"
+        }
+      ];
   const dailyCommandConfirmOutcomeRows = candidateQuantConfirmOutcomeRows.length
     ? candidateQuantConfirmOutcomeRows.map((row) => ({
         确认结果: String(row["速读项"] ?? row.outcome_key ?? "确认结果"),
@@ -1729,6 +1765,11 @@ export default function CommandCenterHome() {
             { label: "边界", value: dailyCommandExplainableResultBoundary, tone: "good" }
           ]}
         />
+        <div aria-label="daily command p3 one glance decision brief">
+          <h3>P3 一分钟决策速读</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_decision_brief_rows：先看结论、再看来源、最后看下一步和边界；首页只读本地证据，不创建 task。</p>
+          <DataLineageTable rows={dailyCommandP3OneGlanceDecisionRows} />
+        </div>
         <div aria-label="daily command p3 one glance quick rows">
           <h3>结果速读三行</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows 前三项：只看结论、下一步、证据和边界；不展开 raw packet、不创建 task、不调用 provider/model。</p>

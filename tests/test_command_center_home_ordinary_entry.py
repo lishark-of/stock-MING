@@ -70,6 +70,9 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("candidateQuantResultCheckpoint", source)
         self.assertIn("candidates.search_quant_projection_result_checkpoint", source)
         self.assertIn("candidates.ordinary_result_quick_read_rows", source)
+        self.assertIn("candidateQuantDecisionBriefRows", source)
+        self.assertIn("candidates.ordinary_result_decision_brief_rows", source)
+        self.assertIn("candidates.search_quant_projection_result_decision_brief_rows", source)
         self.assertIn("candidateQuantHandoffRows", source)
         self.assertIn("candidates.ordinary_result_handoff_rows", source)
         self.assertIn("candidates.ordinary_result_checkpoint_rows", source)
@@ -358,6 +361,16 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "边界"', card)
         self.assertIn("dailyCommandExplainableResultBoundary", card)
         self.assertIn('aria-label="daily command p3 one glance quick rows"', card)
+        self.assertIn('aria-label="daily command p3 one glance decision brief"', card)
+        self.assertIn("P3 一分钟决策速读", card)
+        self.assertIn("ordinary_result_decision_brief_rows", card)
+        self.assertIn("先看结论、再看来源、最后看下一步和边界", card)
+        self.assertIn("dailyCommandP3OneGlanceDecisionRows", card)
+        self.assertIn("首页只读本地证据，不创建 task", card)
+        self.assertLess(
+            card.index('aria-label="daily command p3 one glance decision brief"'),
+            card.index('aria-label="daily command p3 one glance quick rows"'),
+        )
         self.assertIn("结果速读三行", card)
         self.assertIn("ordinary_result_quick_read_rows 前三项", card)
         self.assertIn("dailyCommandP3OneGlanceQuickRows", card)
