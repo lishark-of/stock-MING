@@ -1228,6 +1228,12 @@ export default function CandidateRadar() {
   const quantProjectionOrdinaryResultEvidence =
     String(searchQuantProjectionInterpretation.ordinary_result_evidence ?? "") ||
     "证据：等待 Tushare-first 账本；DeepSeek 未参与。";
+  const quantProjectionP3OrdinaryReadableSentence = [
+    `结论：${quantProjectionOrdinaryResultSummary}`,
+    `下一步：${quantProjectionOrdinaryResultNext}`,
+    `证据：${quantProjectionOrdinaryResultEvidence}`,
+    `边界：${quantProjectionOrdinaryResultBoundary}`
+  ].join(" / ");
   const quantProjectionInterpretationReplay =
     String(searchQuantProjectionInterpretation.result_replay_label ?? "") ||
     "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
@@ -2677,6 +2683,7 @@ export default function CandidateRadar() {
         <div aria-label="candidate radar p3 first screen result quick read">
           <h3>P3 结果首屏速读</h3>
           <p className="risk-note">P2 三面之后直接看这里：可读结论、来源、下一步和安全边界都来自本地 cache / ledger / packet；本速读不创建 task、不调用 DeepSeek、不生成交易动作。</p>
+          <p className="ordinary-status-note" aria-label="candidate radar p3 ordinary readable sentence">{quantProjectionP3OrdinaryReadableSentence}</p>
           <div aria-label="candidate radar p3 one minute decision brief">
             <h3>P3 一分钟决策速读</h3>
             <p className="risk-note">优先读取服务端 ordinary_result_decision_brief_rows：先看结论、再看来源、最后看下一步和边界；这张表只读本地证据，不创建 task。</p>
@@ -3014,6 +3021,7 @@ export default function CandidateRadar() {
             </details>
             <div aria-label="quant projection ordinary explainable result quick read">
               <h3>P3 结果速读</h3>
+              <p className="ordinary-status-note" aria-label="quant projection ordinary p3 readable sentence">{quantProjectionP3OrdinaryReadableSentence}</p>
               <div aria-label="quant projection ordinary p3 result summary strip">
                 <MetricGrid items={quantProjectionP3ResultSummaryItems} />
               </div>

@@ -468,7 +468,13 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("可读结论、来源、下一步和安全边界", quick)
         self.assertIn("本地 cache / ledger / packet", quick)
         self.assertIn("本速读不创建 task、不调用 DeepSeek、不生成交易动作", quick)
+        self.assertIn('aria-label="candidate radar p3 ordinary readable sentence"', quick)
+        self.assertIn("{quantProjectionP3OrdinaryReadableSentence}", quick)
         self.assertIn("<MetricGrid items={quantProjectionP3ResultSummaryItems} />", quick)
+        self.assertLess(
+            quick.index('aria-label="candidate radar p3 ordinary readable sentence"'),
+            quick.index('aria-label="candidate radar p3 one minute decision brief"'),
+        )
         self.assertNotIn("onClick=", quick)
         self.assertNotIn("postCandidateRadarQuantProjection", quick)
         self.assertNotIn("launchQuantProjection", quick)
@@ -1025,6 +1031,16 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn('只读策略:', ordinary_readback_slice)
         self.assertLess(result_quick_start, result_checkpoint_start)
         self.assertLess(result_checkpoint_start, result_handoff_start)
+        self.assertIn("quantProjectionP3OrdinaryReadableSentence", self.page)
+        self.assertIn("结论：${quantProjectionOrdinaryResultSummary}", self.page)
+        self.assertIn("下一步：${quantProjectionOrdinaryResultNext}", self.page)
+        self.assertIn("证据：${quantProjectionOrdinaryResultEvidence}", self.page)
+        self.assertIn("边界：${quantProjectionOrdinaryResultBoundary}", self.page)
+        self.assertIn('aria-label="quant projection ordinary p3 readable sentence"', self.page)
+        self.assertLess(
+            self.page.index('aria-label="quant projection ordinary p3 readable sentence"', result_quick_start),
+            result_checkpoint_start,
+        )
         self.assertIn("P3 结果速读", self.page)
         self.assertIn("优先读取服务端 ordinary_result_quick_read_rows", self.page)
         self.assertIn('aria-label="candidate radar ordinary p3 result checkpoint"', self.page)
@@ -1168,7 +1184,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(task_readback_index, advanced_index)
         self.assertLess(advanced_index, provider_replay_index)
         self.assertLess(provider_replay_index, record_details_index)
-        self.assertIn("页面刷新后，最近任务会优先从本地 cache / packet 回放 task id 和安全 current_step", self.page)
+        self.assertIn("最近任务优先显示本次确认返回的 task id", self.page)
+        self.assertIn("页面刷新后再从本地 cache / packet 回放 task id 和安全 current_step", self.page)
         self.assertIn("GET cache 不会因此补调 provider", self.page)
         self.assertIn("确认按钮只提交后台链路", self.page)
         self.assertIn("服务端凭据可用才写入 Tushare call_ledger / cache / packet", self.page)
