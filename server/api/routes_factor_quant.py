@@ -80,3 +80,9 @@ def explain_factor_with_deepseek(payload: dict[str, Any] | None = None) -> dict:
 def create_deepseek_provider_benchmark_scope_ticket(payload: dict[str, Any] | None = None) -> dict:
     task = factor_service.create_factor_task("run_deepseek_provider_benchmark_scope_ticket", payload)
     return task_envelope(task)
+
+
+@router.post("/deepseek-provider-benchmark-execution-request")
+def create_deepseek_provider_benchmark_execution_request(payload: dict[str, Any] | None = None) -> dict:
+    task = factor_service.create_factor_task("run_deepseek_provider_benchmark_execution_request", payload)
+    return task_envelope(task)

@@ -318,6 +318,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, deepseek_activation_ledger = _attach_deepseek_production_activation_receipt(packet, now)
     packet, deepseek_benchmark_recipe_ledger = _attach_deepseek_provider_benchmark_execution_recipe(packet, now)
     packet, deepseek_benchmark_scope_ledger = _attach_deepseek_provider_benchmark_scope_ticket(packet, now)
+    packet, deepseek_benchmark_request_ledger = _attach_deepseek_provider_benchmark_execution_request(packet, now)
     packet, deepseek_durable_recipe_ledger = _attach_deepseek_durable_evidence_recipe(packet, now)
     packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
     packet, local_dataset_ledger = _attach_factor_test_local_dataset_sample_evidence(packet, now)
@@ -343,6 +344,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + deepseek_activation_ledger
         + deepseek_benchmark_recipe_ledger
         + deepseek_benchmark_scope_ledger
+        + deepseek_benchmark_request_ledger
         + deepseek_durable_recipe_ledger
         + storage_query_ledger
         + local_dataset_ledger
@@ -365,6 +367,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     deepseek_activation_warning = "DeepSeek production activation receipt 只汇总下一步生产解释验收缺口；不会调用模型，不代表 provider benchmark、response_format 强约束或 auto_after_task 生产完成。"
     deepseek_benchmark_recipe_warning = "DeepSeek provider benchmark execution recipe 只固定未来显式 benchmark 的样本、ledger、retry、成本和 promotion 标准；不会调用 DeepSeek 或完成生产解释。"
     deepseek_benchmark_scope_warning = "DeepSeek provider benchmark scope ticket 只显示或记录显式 POST 预检范围；不会调用 DeepSeek，不代表 provider benchmark 已执行。"
+    deepseek_benchmark_request_warning = "DeepSeek provider benchmark execution request ticket 只绑定 scope hash 和后续手工 benchmark 请求；不会调用 DeepSeek、创建模型任务或标记生产完成。"
     deepseek_durable_recipe_warning = "DeepSeek durable evidence recipe 只固定 provider benchmark、response_format、retry/repair、model ledger、cost、redaction 和 promotion 缺口；不会调用 DeepSeek 或完成生产解释。"
     storage_query_warning = "Factor Test Lab 只消费本地 factor_values DuckDB 查询合同；不把查询样本当作生产 IC 验收或交易信号。"
     local_dataset_warning = "Factor Test Lab 本地 Parquet 样本证据只做样本充分性审计；不足以证明真实小股票池或生产级因子验证。"
@@ -386,6 +389,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         deepseek_activation_warning,
         deepseek_benchmark_recipe_warning,
         deepseek_benchmark_scope_warning,
+        deepseek_benchmark_request_warning,
         deepseek_durable_recipe_warning,
         storage_query_warning,
         local_dataset_warning,
@@ -407,6 +411,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         deepseek_activation_warning,
         deepseek_benchmark_recipe_warning,
         deepseek_benchmark_scope_warning,
+        deepseek_benchmark_request_warning,
         deepseek_durable_recipe_warning,
         storage_query_warning,
         local_dataset_warning,
@@ -1835,6 +1840,350 @@ def _attach_deepseek_provider_benchmark_scope_ticket(
         governance["provider_benchmark_scope_ticket_status"] = receipt.get("status")
         governance["provider_benchmark_scope_ticket_ready"] = receipt.get("local_scope_ticket_ready") is True
         governance["provider_benchmark_scope_hash_short"] = receipt.get("benchmark_scope_hash_short") or ""
+    return hub, ledger
+
+
+def _deepseek_provider_benchmark_execution_request_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_for_manual_model_task_submission": bool(required),
+        "blocks_manual_model_task_submission": bool(required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "model_task_created": False,
+        "model_execution_implemented": False,
+        "provider_benchmark_done": False,
+        "model_ledger_evidence_done": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+
+
+def _deepseek_provider_benchmark_execution_request_payload(
+    payload: Any,
+    hub: dict[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    scope_receipt = _dict(hub.get("deepseek_provider_benchmark_scope_ticket_receipt"))
+    recipe = _dict(hub.get("deepseek_provider_benchmark_execution_recipe"))
+    payload_dict = payload if isinstance(payload, dict) else {}
+    requested_scope_hash = str(
+        payload_dict.get("benchmark_scope_hash")
+        or payload_dict.get("scope_hash")
+        or payload_dict.get("provider_benchmark_scope_hash")
+        or ""
+    ).strip()
+    return {
+        "approved_by_user": bool(
+            payload_dict.get("approved_by_user") is True
+            or payload_dict.get("confirm_execution_request") is True
+        ),
+        "requested_scope_hash": requested_scope_hash,
+        "latest_scope_ticket_status": str(scope_receipt.get("status") or ""),
+        "latest_scope_ticket_ready": scope_receipt.get("local_scope_ticket_ready") is True,
+        "latest_scope_hash": str(scope_receipt.get("benchmark_scope_hash") or ""),
+        "latest_scope_hash_short": str(scope_receipt.get("benchmark_scope_hash_short") or ""),
+        "latest_ready_for_explicit_provider_benchmark_task": scope_receipt.get("ready_for_explicit_provider_benchmark_task") is True,
+        "server_secret_presence_checked": scope_receipt.get("server_secret_presence_checked") is True,
+        "server_secret_present": scope_receipt.get("server_secret_present") is True,
+        "execution_recipe_status": str(recipe.get("status") or ""),
+        "execution_recipe_ready": recipe.get("local_recipe_ready") is True,
+        "required_sample_count": int(scope_receipt.get("required_sample_count") or recipe.get("required_sample_count") or 40),
+        "requested_sample_count": int(scope_receipt.get("requested_sample_count") or 0),
+        "required_json_success_rate": float(scope_receipt.get("required_json_success_rate") or recipe.get("required_json_success_rate") or 0.9),
+        "response_format": str(scope_receipt.get("response_format") or "json_schema"),
+        "max_retry_per_sample": int(scope_receipt.get("max_retry_per_sample") or recipe.get("max_retry_per_sample") or 2),
+        "required_model_ledger_fields": list(
+            scope_receipt.get("required_model_ledger_fields")
+            or recipe.get("required_model_ledger_fields")
+            or DEEPSEEK_PROVIDER_BENCHMARK_LEDGER_FIELDS
+        ),
+        "allowed_output_fields": list(
+            scope_receipt.get("allowed_output_fields")
+            or recipe.get("allowed_output_fields")
+            or [
+                "summary",
+                "support_notes",
+                "suppress_notes",
+                "conflict_notes",
+                "missing_data_notes",
+                "discipline_notes",
+            ]
+        ),
+        "phase_keys": list(scope_receipt.get("phase_keys") or recipe.get("phase_keys") or DEEPSEEK_PROVIDER_BENCHMARK_SCOPE_PHASES),
+        "target_model_task_route": "future POST /api/factor-quant/deepseek-provider-benchmark",
+        "target_model_task_type": "run_deepseek_provider_benchmark",
+        "target_acceptance_mode": "provider_backed_deepseek_json_stability_benchmark",
+        "created_at": now,
+        "server_secret_values_read": False,
+        "env_key_names_exposed": False,
+        "credential_values_exposed": False,
+    }
+
+
+def _deepseek_provider_benchmark_execution_request_receipt(
+    payload_safe: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    latest_scope_hash = str(payload_safe.get("latest_scope_hash") or "")
+    requested_scope_hash = str(payload_safe.get("requested_scope_hash") or "")
+    requested_hash_matches_latest = bool(latest_scope_hash and requested_scope_hash and requested_scope_hash == latest_scope_hash)
+    scope_ticket_visible = bool(
+        payload_safe.get("latest_scope_ticket_ready") is True
+        and latest_scope_hash
+        and payload_safe.get("latest_scope_ticket_status") != "deepseek_provider_benchmark_scope_ticket_missing"
+    )
+    user_confirmed = payload_safe.get("approved_by_user") is True
+    recipe_ready = bool(payload_safe.get("execution_recipe_status"))
+    target_route_ok = payload_safe.get("target_model_task_route") == "future POST /api/factor-quant/deepseek-provider-benchmark"
+    rows = [
+        _deepseek_provider_benchmark_execution_request_row(
+            "latest_scope_ticket_visible",
+            "passed_scope_ticket_visible" if scope_ticket_visible else "blocked_missing_scope_ticket",
+            scope_ticket_visible,
+            f"latest_scope_ticket_status={payload_safe.get('latest_scope_ticket_status')}; scope_hash_short={payload_safe.get('latest_scope_hash_short')}",
+            "Generate the DeepSeek provider benchmark scope ticket first and keep its safe scope hash visible.",
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
+            "scope_hash_bound_to_latest_ticket",
+            "passed_scope_hash_match" if requested_hash_matches_latest else "blocked_scope_hash_missing_or_mismatch",
+            requested_hash_matches_latest,
+            f"requested_scope_hash_short={requested_scope_hash[:16]}; latest_scope_hash_short={payload_safe.get('latest_scope_hash_short')}",
+            "Bind the manual benchmark request to the latest approved scope ticket hash.",
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
+            "explicit_user_confirmation",
+            "passed_user_confirmed" if user_confirmed else "blocked_user_confirmation_required",
+            user_confirmed,
+            f"approved_by_user={user_confirmed}",
+            "Require explicit user confirmation before a future model benchmark task can be submitted.",
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
+            "execution_recipe_visible",
+            "passed_execution_recipe_visible" if recipe_ready else "blocked_execution_recipe_missing",
+            recipe_ready,
+            f"execution_recipe_status={payload_safe.get('execution_recipe_status')}",
+            "Keep the provider benchmark recipe visible before any real DeepSeek benchmark.",
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
+            "target_model_task_route_declared",
+            "passed_target_route_declared" if target_route_ok else "blocked_target_route_mismatch",
+            target_route_ok,
+            f"target_model_task_route={payload_safe.get('target_model_task_route')}",
+            "Use a future explicit provider benchmark route; never create it from GET cache.",
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
+            "model_task_not_created_by_request",
+            "passed_no_model_task_created",
+            True,
+            "Execution request ticket records intent only and does not create or execute the model benchmark task.",
+            "Submit a separate governed executor task only after this request is reviewed.",
+            required=False,
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
+            "no_provider_github_trade_action_side_effects",
+            "passed_no_external_or_trade_side_effects",
+            True,
+            "Request ticket does not call DeepSeek, Tushare, GitHub, execute trades, or mutate strategy action.",
+            "Keep DeepSeek governed executor research-only until provider evidence is promoted.",
+            required=False,
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
+            "secret_redaction_boundary",
+            "passed_no_secret_exposure",
+            True,
+            "Request ticket includes safe scope hash, response-format, retry budget, ledger field names, and target route only.",
+            "Keep token/key material out of frontend, logs, packets, cache, and task payloads.",
+            required=False,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row["blocks_manual_model_task_submission"]]
+    if not scope_ticket_visible:
+        status = "deepseek_provider_benchmark_execution_request_blocked_missing_scope_ticket"
+        allowed_next_step = "run_deepseek_provider_benchmark_scope_ticket"
+    elif not requested_hash_matches_latest:
+        status = "deepseek_provider_benchmark_execution_request_blocked_scope_hash_mismatch"
+        allowed_next_step = "resubmit_execution_request_with_latest_scope_hash"
+    elif not user_confirmed:
+        status = "deepseek_provider_benchmark_execution_request_blocked_user_confirmation_required"
+        allowed_next_step = "confirm_deepseek_provider_benchmark_execution_request"
+    elif not recipe_ready:
+        status = "deepseek_provider_benchmark_execution_request_blocked_local_recipe"
+        allowed_next_step = "repair_deepseek_provider_benchmark_execution_recipe"
+    else:
+        status = "deepseek_provider_benchmark_execution_request_ready_manual_model_task_pending"
+        allowed_next_step = "manual_submit_future_deepseek_provider_benchmark_bound_to_scope_ticket"
+    ready = status == "deepseek_provider_benchmark_execution_request_ready_manual_model_task_pending"
+    receipt = {
+        "schema_version": "factor_deepseek_provider_benchmark_execution_request.v1",
+        "status": status,
+        "scope": "local_deepseek_provider_benchmark_execution_request_no_model_execution",
+        "created_at": now,
+        "ltg": "LTG-07/LTG-11",
+        "local_execution_request_ready": ready,
+        "ready_for_manual_model_task_submission": ready,
+        "allowed_next_step": allowed_next_step,
+        "target_model_task_route": payload_safe.get("target_model_task_route"),
+        "target_model_task_type": payload_safe.get("target_model_task_type"),
+        "target_acceptance_mode": payload_safe.get("target_acceptance_mode"),
+        "latest_scope_ticket_status": payload_safe.get("latest_scope_ticket_status"),
+        "execution_recipe_status": payload_safe.get("execution_recipe_status"),
+        "requested_scope_hash_matches_latest": requested_hash_matches_latest,
+        "benchmark_scope_hash": latest_scope_hash if requested_hash_matches_latest else "",
+        "benchmark_scope_hash_short": str(payload_safe.get("latest_scope_hash_short") or ""),
+        "requested_scope_hash_short": requested_scope_hash[:16],
+        "required_sample_count": payload_safe.get("required_sample_count"),
+        "requested_sample_count": payload_safe.get("requested_sample_count"),
+        "required_json_success_rate": payload_safe.get("required_json_success_rate"),
+        "response_format": payload_safe.get("response_format"),
+        "max_retry_per_sample": payload_safe.get("max_retry_per_sample"),
+        "required_model_ledger_fields": payload_safe.get("required_model_ledger_fields") or [],
+        "allowed_output_fields": payload_safe.get("allowed_output_fields") or [],
+        "phase_keys": payload_safe.get("phase_keys") or [],
+        "phase_count": len(payload_safe.get("phase_keys") or []),
+        "model_task_created": False,
+        "model_execution_implemented": False,
+        "provider_benchmark_done": False,
+        "model_ledger_evidence_done": False,
+        "provider_response_format_enforced": False,
+        "bounded_retry_repair_executed": False,
+        "token_budget_cost_evidence_complete": False,
+        "production_deepseek_explanation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+        "contains_secret": False,
+        "env_key_names_exposed": False,
+        "credential_value_exposed": False,
+        "blocking_criterion_count": len(blockers),
+        "blocking_criteria": blockers,
+        "not_allowed_next_steps": [
+            "treat_execution_request_as_provider_benchmark",
+            "create model task from GET cache",
+            "call DeepSeek from execution request",
+            "call Tushare from execution request",
+            "call GitHub from execution request",
+            "write raw prompt or raw model output into packet",
+            "mutate strategy action",
+            "overwrite numeric values",
+            "real trade execution",
+            "leak token/key",
+        ],
+        "missing_evidence": [
+            "separate governed provider benchmark task implementation",
+            "provider model ledger rows bound to scope hash",
+            "response_format/json_schema execution evidence",
+            "bounded retry/repair execution ledger",
+            "token budget and cost evidence",
+            "redaction review",
+            "production promotion review",
+        ],
+        "row_count": len(rows),
+        "rows": rows,
+    }
+    ledger = [
+        {
+            "api": "local_deepseek_provider_benchmark_execution_request",
+            "request_params_safe": {
+                "status": status,
+                "scope": "local_deepseek_provider_benchmark_execution_request_no_model_execution",
+                "target_model_task_route": payload_safe.get("target_model_task_route"),
+                "scope_hash_short": receipt["benchmark_scope_hash_short"],
+                "ready_for_manual_model_task_submission": ready,
+                "model_task_created": False,
+                "provider_benchmark_done": False,
+            },
+            "row_count": len(rows),
+            "data_date": None,
+            "local_fetched_at": now,
+            "call_status": status,
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+    receipt["call_ledger"] = ledger
+    return receipt, rows
+
+
+def _missing_deepseek_provider_benchmark_execution_request(now: str) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    receipt, rows = _deepseek_provider_benchmark_execution_request_receipt(
+        {
+            "approved_by_user": False,
+            "requested_scope_hash": "",
+            "latest_scope_ticket_status": "deepseek_provider_benchmark_scope_ticket_missing",
+            "latest_scope_ticket_ready": False,
+            "latest_scope_hash": "",
+            "latest_scope_hash_short": "",
+            "execution_recipe_status": "",
+            "target_model_task_route": "future POST /api/factor-quant/deepseek-provider-benchmark",
+            "target_model_task_type": "run_deepseek_provider_benchmark",
+            "target_acceptance_mode": "provider_backed_deepseek_json_stability_benchmark",
+            "phase_keys": list(DEEPSEEK_PROVIDER_BENCHMARK_SCOPE_PHASES),
+        },
+        now,
+    )
+    receipt["status"] = "deepseek_provider_benchmark_execution_request_missing"
+    receipt["local_execution_request_ready"] = False
+    receipt["ready_for_manual_model_task_submission"] = False
+    receipt["source_packet_present"] = False
+    receipt["cache_get_initializes_execution_request"] = False
+    for ledger_row in receipt.get("call_ledger") or []:
+        if isinstance(ledger_row, dict):
+            ledger_row["call_status"] = receipt["status"]
+            ledger_row["request_params_safe"]["status"] = receipt["status"]
+    return receipt, rows, list(receipt.get("call_ledger") or [])
+
+
+def _attach_deepseek_provider_benchmark_execution_request(
+    hub: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    receipt = hub.get("deepseek_provider_benchmark_execution_request_receipt")
+    rows = hub.get("deepseek_provider_benchmark_execution_request_rows")
+    if not isinstance(receipt, dict):
+        receipt, rows, ledger = _missing_deepseek_provider_benchmark_execution_request(now)
+    else:
+        rows = rows if isinstance(rows, list) else receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
+        receipt = dict(receipt)
+        receipt["source_packet_present"] = True
+        receipt["cache_get_initializes_execution_request"] = False
+        ledger = list(receipt.get("call_ledger") or [])
+    hub["deepseek_provider_benchmark_execution_request_receipt"] = receipt
+    hub["deepseek_provider_benchmark_execution_request_rows"] = rows
+    governance = hub.get("deepseek_explain_governance")
+    if isinstance(governance, dict):
+        governance["provider_benchmark_execution_request_status"] = receipt.get("status")
+        governance["provider_benchmark_execution_request_ready"] = bool(receipt.get("local_execution_request_ready"))
+        governance["provider_benchmark_execution_request_is_not_model_execution"] = True
+        governance["provider_benchmark_execution_request_model_task_created"] = False
     return hub, ledger
 
 
@@ -8577,6 +8926,72 @@ def run_factor_deepseek_provider_benchmark_scope_ticket_task(payload: Any = None
     return updated
 
 
+def run_factor_deepseek_provider_benchmark_execution_request_task(payload: Any = None) -> dict[str, Any]:
+    now = _now_iso()
+    base_hub = dict(read_factor_quant_cache())
+    payload_safe = _deepseek_provider_benchmark_execution_request_payload(payload, base_hub, now)
+    receipt, rows = _deepseek_provider_benchmark_execution_request_receipt(payload_safe, now)
+    payload_safe["deepseek_provider_benchmark_execution_request_receipt"] = receipt
+    payload_safe["deepseek_provider_benchmark_execution_request_rows"] = rows
+    task = create_task_record(
+        "run_deepseek_provider_benchmark_execution_request",
+        output_packet_key="command_center_factor_quant_hub_packet",
+        payload=payload_safe,
+        current_step="deepseek_provider_benchmark_execution_request_queued",
+        warnings=[
+            "DeepSeek provider benchmark execution request 只生成本地请求 ticket，不调用 DeepSeek、Tushare 或 GitHub。",
+            "execution request 不创建模型任务、不写 model_ledger、不代表 provider benchmark 或生产解释完成。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="building_deepseek_provider_benchmark_execution_request_ticket",
+    )
+    receipt["task_id"] = task["task_id"]
+    try:
+        hub = dict(read_factor_quant_cache())
+        hub["deepseek_provider_benchmark_execution_request_receipt"] = receipt
+        hub["deepseek_provider_benchmark_execution_request_rows"] = rows
+        hub["deepseek_provider_benchmark_execution_request_call_ledger"] = list(receipt.get("call_ledger") or [])
+        governance = hub.get("deepseek_explain_governance") if isinstance(hub.get("deepseek_explain_governance"), dict) else {}
+        governance = dict(governance)
+        governance["provider_benchmark_execution_request_status"] = receipt.get("status")
+        governance["provider_benchmark_execution_request_ready"] = bool(receipt.get("local_execution_request_ready"))
+        governance["provider_benchmark_execution_request_is_not_model_execution"] = True
+        governance["provider_benchmark_execution_request_model_task_created"] = False
+        governance["provider_benchmark_done"] = False
+        governance["model_ledger_evidence_done"] = False
+        governance["production_deepseek_explanation_complete"] = False
+        hub["deepseek_explain_governance"] = governance
+        existing_ledger = hub.get("call_ledger") if isinstance(hub.get("call_ledger"), list) else []
+        hub["call_ledger"] = list(receipt.get("call_ledger") or []) + existing_ledger
+        warning = "DeepSeek provider benchmark execution request ticket 已生成：本地请求，不调用模型，不代表生产解释完成。"
+        existing_warnings = hub.get("warnings") if isinstance(hub.get("warnings"), list) else []
+        hub["warnings"] = [warning] + [item for item in existing_warnings if item != warning]
+        hub["external_calls_triggered"] = False
+        hub["tushare_called"] = False
+        hub["deepseek_called"] = False
+        hub["github_called"] = False
+        hub["does_not_execute_trades"] = True
+        hub["does_not_modify_strategy_action"] = True
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+    except Exception as exc:
+        payload_safe["cache_write_error_safe"] = str(exc).splitlines()[0][:240]
+    updated = update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=str(receipt.get("status") or "deepseek_provider_benchmark_execution_request_recorded"),
+        call_ledger=list(receipt.get("call_ledger") or []),
+    ) or task
+    updated["payload_safe"] = payload_safe
+    return updated
+
+
 def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
     if task_type == "refresh_factor_data":
         return tushare_task_service.run_tushare_refresh_task(
@@ -8603,6 +9018,8 @@ def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
         return run_factor_deepseek_explanation_task(payload)
     if task_type == "run_deepseek_provider_benchmark_scope_ticket":
         return run_factor_deepseek_provider_benchmark_scope_ticket_task(payload)
+    if task_type == "run_deepseek_provider_benchmark_execution_request":
+        return run_factor_deepseek_provider_benchmark_execution_request_task(payload)
     return create_task_stub(
         task_type,
         output_packet_key="command_center_factor_quant_hub_packet",

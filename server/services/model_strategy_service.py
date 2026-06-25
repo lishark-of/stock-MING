@@ -73,7 +73,7 @@ def _purpose_row(purpose: str) -> dict[str, Any]:
     return build_deepseek_model_strategy_ref(purpose)
 
 
-def _latest_provider_benchmark_scope_ticket_receipt() -> dict[str, Any]:
+def _latest_factor_quant_hub_packet() -> dict[str, Any]:
     try:
         from server.services import factor_service
         from storage.sqlite_meta import SQLiteMetaStore
@@ -85,9 +85,18 @@ def _latest_provider_benchmark_scope_ticket_receipt() -> dict[str, Any]:
         )
     except Exception:
         return {}
-    if not isinstance(packet, dict):
-        return {}
+    return dict(packet) if isinstance(packet, dict) else {}
+
+
+def _latest_provider_benchmark_scope_ticket_receipt() -> dict[str, Any]:
+    packet = _latest_factor_quant_hub_packet()
     receipt = packet.get("deepseek_provider_benchmark_scope_ticket_receipt")
+    return dict(receipt) if isinstance(receipt, dict) else {}
+
+
+def _latest_provider_benchmark_execution_request_receipt() -> dict[str, Any]:
+    packet = _latest_factor_quant_hub_packet()
+    receipt = packet.get("deepseek_provider_benchmark_execution_request_receipt")
     return dict(receipt) if isinstance(receipt, dict) else {}
 
 
@@ -103,13 +112,21 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         scope_ticket_receipt.get("status") or "deepseek_provider_benchmark_scope_ticket_missing"
     )
     scope_ticket_hash_short = str(scope_ticket_receipt.get("benchmark_scope_hash_short") or "")
+    execution_request_receipt = _latest_provider_benchmark_execution_request_receipt()
+    execution_request_ready = execution_request_receipt.get("local_execution_request_ready") is True
+    execution_request_status = str(
+        execution_request_receipt.get("status") or "deepseek_provider_benchmark_execution_request_missing"
+    )
     governed_executor = {
         "schema_version": "deepseek_governed_executor_status.v1",
-        "status": "governed_executor_scope_ticket_ready_model_ledger_pending"
+        "status": "governed_executor_execution_request_ready_model_ledger_pending"
+        if execution_request_ready
+        else "governed_executor_scope_ticket_ready_execution_request_pending"
         if scope_ticket_ready
         else "governed_executor_pending_model_ledger",
         "execution_route": "POST /api/factor-quant/deepseek-explain",
         "scope_ticket_route": "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+        "execution_request_route": "POST /api/factor-quant/deepseek-provider-benchmark-execution-request",
         "model_call_default": "off",
         "scope_ticket_ready": scope_ticket_ready,
         "provider_benchmark_scope_ticket_ready": scope_ticket_ready,
@@ -120,6 +137,16 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
             scope_ticket_receipt.get("model_call_status") or "not_called"
         ),
         "provider_benchmark_scope_ticket_cache_read_initializes_ticket": False,
+        "provider_benchmark_execution_request_ready": execution_request_ready,
+        "provider_benchmark_execution_request_status": execution_request_status,
+        "provider_benchmark_execution_request_source_packet_present": bool(execution_request_receipt),
+        "provider_benchmark_execution_request_model_task_created": False,
+        "provider_benchmark_execution_request_cache_read_initializes_ticket": False,
+        "provider_benchmark_execution_request_is_not_model_execution": True,
+        "provider_benchmark_execution_request_allowed_next_step": str(
+            execution_request_receipt.get("allowed_next_step") or "run_deepseek_provider_benchmark_scope_ticket"
+        ),
+        "provider_benchmark_execution_request_scope_hash_matches_latest": execution_request_receipt.get("requested_scope_hash_matches_latest") is True,
         "provider_benchmark_done": scope_ticket_receipt.get("provider_benchmark_done") is True,
         "model_ledger_ready": False,
         "model_ledger_evidence_done": False,
@@ -141,16 +168,22 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "does_not_override_factors": True,
         "does_not_override_operation_zones": True,
         "does_not_modify_strategy_action": True,
-        "ordinary_status_label": "P5 scope ticket 已本地回读；真实 DeepSeek 调用仍等 model_ledger / sanitizer / output acceptance。"
+        "ordinary_status_label": "P5 execution-request ticket 已本地回读；真实 DeepSeek 调用仍等 governed benchmark / model_ledger / sanitizer / output acceptance。"
+        if execution_request_ready
+        else "P5 scope ticket 已本地回读；下一步是本地 execution-request ticket，真实 DeepSeek 调用仍等 model_ledger / sanitizer / output acceptance。"
         if scope_ticket_ready
         else "DeepSeek 等 governed executor；Tushare-first 和基础图谱可先走。",
-        "ordinary_next_allowed_action": "保留 Tushare-first / Factor light / Next Session 先走；下一步只可做 model_ledger 与输出验收，不从 GET cache 调模型。"
+        "ordinary_next_allowed_action": "保留 Tushare-first / Factor light / Next Session 先走；下一步只能手工提交未来 governed provider benchmark，并绑定本地 execution-request scope。"
+        if execution_request_ready
+        else "保留 Tushare-first / Factor light / Next Session 先走；下一步只可做本地 execution-request ticket，并继续等待 model_ledger，不从 GET cache 调模型。"
         if scope_ticket_ready
         else "先继续 Tushare-first、Factor light 和 Next Session 本地回放；DeepSeek 真实解释等 governed executor 单独验收。",
         "ordinary_required_before_real_call": "需要 model_ledger / sanitizer / redaction review / cost accounting / output acceptance 全部就绪。",
         "ordinary_nonblocking_boundary": "DeepSeek 状态只解释已有证据，不作为数据源、不替代价格/持仓/因子/operation_zones，也不生成买卖动作。",
         "ordinary_safe_to_ignore_for_basic_maps": True,
-        "ordinary_blocking_state": "scope_ticket_ready_model_ledger_pending_not_blocking_tushare_or_basic_maps"
+        "ordinary_blocking_state": "execution_request_ready_model_ledger_pending_not_blocking_tushare_or_basic_maps"
+        if execution_request_ready
+        else "scope_ticket_ready_execution_request_pending_not_blocking_tushare_or_basic_maps"
         if scope_ticket_ready
         else "pending_model_ledger_not_blocking_tushare_or_basic_maps",
         "ordinary_allowed_output_fields": list(SAFE_EXPLANATION_FIELDS),

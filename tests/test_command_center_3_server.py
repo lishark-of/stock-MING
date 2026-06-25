@@ -16824,7 +16824,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 84)
+        self.assertEqual(catalog["task_count"], 85)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -16843,7 +16843,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 84)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 85)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -16877,8 +16877,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 86)
-        self.assertEqual(route_coverage["task_creation_route_count"], 84)
+        self.assertEqual(route_coverage["known_post_route_count"], 87)
+        self.assertEqual(route_coverage["task_creation_route_count"], 85)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -16887,11 +16887,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 84)
+        self.assertEqual(implementation_status["task_count"], 85)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 79)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 80)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 80)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 81)
         self.assertEqual(implementation_status["external_capable_task_count"], 9)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -16979,6 +16979,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_worker_runtime_qa_execution",
                 "run_worker_production_promotion_review",
                 "run_deepseek_provider_benchmark_scope_ticket",
+                "run_deepseek_provider_benchmark_execution_request",
             },
         )
         self.assertEqual(implementation_status["guarded_local_task_types"], ["run_deepseek_factor_explanation"])
@@ -17065,6 +17066,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_worker_production_promotion_review",
                 "run_deepseek_factor_explanation",
                 "run_deepseek_provider_benchmark_scope_ticket",
+                "run_deepseek_provider_benchmark_execution_request",
             },
         )
         self.assertTrue(implementation_status["all_external_capable_tasks_are_button_gated"])
@@ -17099,6 +17101,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/bootstrap/provider-model-execution-request",
+            route_coverage["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/factor-quant/deepseek-provider-benchmark-execution-request",
             route_coverage["known_post_routes"],
         )
         self.assertIn(
@@ -17652,6 +17658,36 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(by_type["run_deepseek_provider_benchmark_scope_ticket"]["does_not_modify_strategy_action"])
         self.assertTrue(by_type["run_deepseek_provider_benchmark_scope_ticket"]["does_not_override_numeric_values"])
         self.assertTrue(by_type["run_deepseek_provider_benchmark_scope_ticket"]["does_not_output_strategy_action"])
+        self.assertEqual(
+            by_type["run_deepseek_provider_benchmark_execution_request"]["route"],
+            "POST /api/factor-quant/deepseek-provider-benchmark-execution-request",
+        )
+        self.assertEqual(
+            by_type["run_deepseek_provider_benchmark_execution_request"]["current_backend"],
+            "local_deepseek_provider_benchmark_execution_request_pipeline",
+        )
+        self.assertEqual(
+            by_type["run_deepseek_provider_benchmark_execution_request"]["external_call_policy"],
+            "local_execution_request_no_model_call",
+        )
+        self.assertEqual(by_type["run_deepseek_provider_benchmark_execution_request"]["possible_external_sources"], [])
+        self.assertEqual(by_type["run_deepseek_provider_benchmark_execution_request"]["future_external_sources"], ["deepseek"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_execution_request"]["requires_prior_scope_ticket"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_execution_request"]["local_execution_request_only"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_execution_request"]["scope_hash_bound_to_latest_ticket"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_execution_request"]["model_task_created"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_execution_request"]["model_execution_implemented"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_execution_request"]["provider_benchmark_done"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_execution_request"]["model_ledger_evidence_done"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_execution_request"]["cache_get_external_calls"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_execution_request"]["react_render_direct_model_calls"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_execution_request"]["does_not_execute_trades"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_execution_request"]["does_not_modify_strategy_action"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_execution_request"]["does_not_override_numeric_values"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_execution_request"]["does_not_output_strategy_action"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_execution_request"]["server_secret_values_read"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_execution_request"]["env_key_names_exposed"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_execution_request"]["credential_values_exposed"])
         self.assertIn("github", by_type["probe_serenity_github"]["possible_external_sources"])
         self.assertEqual(by_type["run_chokepoint_scan"]["deepseek_model_strategy_purpose"], "explain")
         self.assertIn("DEEPSEEK_EXPLAIN_MODEL", by_type["run_chokepoint_scan"]["deepseek_model_config_keys"])
@@ -50597,7 +50633,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         governed_executor = model_strategy["data"]["governed_executor"]
         self.assertEqual(
             governed_executor["status"],
-            "governed_executor_scope_ticket_ready_model_ledger_pending",
+            "governed_executor_scope_ticket_ready_execution_request_pending",
         )
         self.assertTrue(governed_executor["scope_ticket_ready"])
         self.assertTrue(governed_executor["provider_benchmark_scope_ticket_ready"])
@@ -50620,9 +50656,94 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("scope ticket 已本地回读", governed_executor["ordinary_status_label"])
         self.assertIn("model_ledger", governed_executor["ordinary_next_allowed_action"])
         self.assertIn(
-            "scope_ticket_ready_model_ledger_pending_not_blocking_tushare_or_basic_maps",
+            "scope_ticket_ready_execution_request_pending_not_blocking_tushare_or_basic_maps",
             governed_executor["ordinary_blocking_state"],
         )
+        self.assertNotIn("SHOULD_DROP", json.dumps(model_strategy, ensure_ascii=False))
+
+    def test_deepseek_provider_benchmark_execution_request_endpoint_is_scope_bound_local_only(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        scope_created = self.client.post(
+            "/api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+            json={
+                "approved_by_user": True,
+                "sample_count": 40,
+                "response_format": "json_schema",
+                "max_retry_per_sample": 2,
+            },
+        ).json()
+        self.assertTrue(scope_created["ok"])
+        factor_before = self.client.get("/api/factor-quant/cache").json()
+        scope_receipt = factor_before["data"]["deepseek_provider_benchmark_scope_ticket_receipt"]
+        scope_hash = scope_receipt["benchmark_scope_hash"]
+
+        created = self.client.post(
+            "/api/factor-quant/deepseek-provider-benchmark-execution-request",
+            json={
+                "approved_by_user": True,
+                "benchmark_scope_hash": scope_hash,
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(created["ok"])
+        task = created["data"]["task"]
+        self.assertEqual(task["task_type"], "run_deepseek_provider_benchmark_execution_request")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(
+            task["current_step"],
+            "deepseek_provider_benchmark_execution_request_ready_manual_model_task_pending",
+        )
+        self.assertEqual(created["call_ledger"][0]["api"], "local_deepseek_provider_benchmark_execution_request")
+        self.assert_local_ledger_boundary(created["call_ledger"][0])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(created, ensure_ascii=False))
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        self.assertTrue(factor["ok"])
+        receipt = factor["data"]["deepseek_provider_benchmark_execution_request_receipt"]
+        self.assertEqual(receipt["status"], task["current_step"])
+        self.assertTrue(receipt["source_packet_present"])
+        self.assertFalse(receipt["cache_get_initializes_execution_request"])
+        self.assertTrue(receipt["local_execution_request_ready"])
+        self.assertTrue(receipt["ready_for_manual_model_task_submission"])
+        self.assertTrue(receipt["requested_scope_hash_matches_latest"])
+        self.assertFalse(receipt["model_task_created"])
+        self.assertFalse(receipt["model_execution_implemented"])
+        self.assertFalse(receipt["provider_benchmark_done"])
+        self.assertFalse(receipt["model_ledger_evidence_done"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertIn("treat_execution_request_as_provider_benchmark", receipt["not_allowed_next_steps"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(factor, ensure_ascii=False))
+
+        model_strategy = self.client.get("/api/model-strategy/cache").json()
+        self.assertTrue(model_strategy["ok"])
+        governed_executor = model_strategy["data"]["governed_executor"]
+        self.assertEqual(
+            governed_executor["status"],
+            "governed_executor_execution_request_ready_model_ledger_pending",
+        )
+        self.assertTrue(governed_executor["provider_benchmark_execution_request_ready"])
+        self.assertEqual(governed_executor["provider_benchmark_execution_request_status"], task["current_step"])
+        self.assertTrue(governed_executor["provider_benchmark_execution_request_source_packet_present"])
+        self.assertFalse(governed_executor["provider_benchmark_execution_request_model_task_created"])
+        self.assertFalse(governed_executor["provider_benchmark_execution_request_cache_read_initializes_ticket"])
+        self.assertTrue(governed_executor["provider_benchmark_execution_request_scope_hash_matches_latest"])
+        self.assertFalse(governed_executor["model_ledger_ready"])
+        self.assertFalse(governed_executor["deepseek_called"])
+        self.assertFalse(model_strategy["data"]["external_calls_triggered"])
+        self.assertFalse(model_strategy["data"]["deepseek_called"])
+        self.assertFalse(model_strategy["data"]["contains_secret"])
+        self.assertIn("execution-request ticket 已本地回读", governed_executor["ordinary_status_label"])
         self.assertNotIn("SHOULD_DROP", json.dumps(model_strategy, ensure_ascii=False))
 
     def test_deepseek_explain_endpoint_is_guarded_and_sanitized(self):
