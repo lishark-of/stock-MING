@@ -369,30 +369,10 @@ export default function ModelStrategy() {
             <p className="risk-note">先看现在能做什么、DeepSeek 还等什么、不会改哪些数据；这张表不展开执行路由、raw policy 或模型输出。</p>
             <DataLineageTable rows={governedExecutorOrdinaryQuickReadRows} />
           </div>
-          <div aria-label="deepseek governed executor scope ticket readback">
-            <h3>P5 scope ticket 回读</h3>
-            <p className="risk-note">刷新后优先看这里：它只读已持久化的本地 scope ticket 状态，不从 GET cache 创建票据、不调用 DeepSeek。</p>
-            <DataLineageTable rows={governedExecutorScopeTicketReadbackRows} />
-          </div>
-          <div aria-label="deepseek governed executor execution request readback">
-            <h3>P5 execution-request 回读</h3>
-            <p className="risk-note">scope ticket 之后只生成本地 execution-request ticket；它绑定 scope hash，不创建模型任务、不调用 DeepSeek。</p>
-            <DataLineageTable rows={governedExecutorExecutionRequestReadbackRows} />
-          </div>
           <div aria-label="deepseek governed executor output contract">
             <h3>P5 安全输出白名单</h3>
             <p className="risk-note">{String(governedExecutor.ordinary_output_contract_label ?? "仅允许安全解释字段；禁止覆盖价格、持仓、factor、operation_zones、strategy action 或交易动作。")}</p>
             <DataLineageTable rows={governedExecutorOutputContractRows} />
-          </div>
-          <div aria-label="deepseek governed executor real call gate">
-            <h3>P5 真实调用闸门</h3>
-            <p className="risk-note">真实 DeepSeek 调用必须等所有 gate 通过；当前表只读展示 blocker，不创建任务、不调用模型、不展示 token/key。</p>
-            <DataLineageTable rows={governedExecutorRealCallGateRows} />
-          </div>
-          <div aria-label="deepseek governed executor ordinary checklist">
-            <h3>P5 治理清单</h3>
-            <p className="risk-note">普通用户只看能不能安全补证、是否阻塞基础路径；执行路由、scope ticket 和 raw policy 仍在详情里。</p>
-            <DataLineageTable rows={governedExecutorOrdinaryChecklistRows} />
           </div>
           <div aria-label="deepseek governed executor nonblocking ordinary paths">
             <h3>不阻塞基础投研路径</h3>
@@ -405,45 +385,69 @@ export default function ModelStrategy() {
             <a href="#next" title="打开次日图谱；只读本地 next-session cache" aria-label="continue next session map while deepseek pending">查看次日图谱</a>
           </div>
           <p className="risk-note">这些入口只切换本地页面；不会创建 DeepSeek task、不会调用模型，也不会把 pending 状态当生产验收。</p>
-          <div aria-label="deepseek governed executor scope ticket action">
-            <h3>P5 本地 scope ticket</h3>
-            <p className="risk-note">这个按钮只创建本地 provider benchmark scope ticket，写入本地任务回执；不调用 DeepSeek、不读取 token/key、不阻塞 Tushare-first 或基础图谱。</p>
-            <div className="actions">
-              <button onClick={launchScopeTicket} disabled={scopeTicketSubmitting}>
-                {scopeTicketSubmitting ? "生成中" : "生成 P5 本地 scope ticket"}
-              </button>
+          <details className="developer-audit-details" aria-label="deepseek governed executor ticket and gate details">
+            <summary>P5 本地票据 / 闸门审计</summary>
+            <p className="risk-note">scope ticket、execution-request、真实调用闸门和本地票据按钮默认下沉；需要补证时再展开。这里仍只创建本地票据，不调用 DeepSeek、不读取 token/key、不阻塞 Tushare-first 或基础图谱。</p>
+            <div aria-label="deepseek governed executor scope ticket readback">
+              <h3>P5 scope ticket 回读</h3>
+              <p className="risk-note">刷新后优先看这里：它只读已持久化的本地 scope ticket 状态，不从 GET cache 创建票据、不调用 DeepSeek。</p>
+              <DataLineageTable rows={governedExecutorScopeTicketReadbackRows} />
             </div>
-            {scopeTicketError && <p className="risk-note">{scopeTicketError}</p>}
-            <MetricGrid
-              items={[
-                { label: "任务", value: taskReceipt?.data?.task_id ?? "等待点击", tone: taskReceipt?.ok ? "good" : "warn" },
-                { label: "DeepSeek call", value: taskReceipt?.data?.task?.deepseek_called === true ? "已调用" : "未调用", tone: taskReceipt?.data?.task?.deepseek_called === true ? "bad" : "good" },
-                { label: "外联", value: taskReceipt?.data?.task?.external_calls_triggered === true ? "存在" : "无", tone: taskReceipt?.data?.task?.external_calls_triggered === true ? "bad" : "good" },
-                { label: "真实交易", value: taskReceipt?.data?.task?.does_not_execute_trades === false ? "可能" : "禁止", tone: taskReceipt?.data?.task?.does_not_execute_trades === false ? "bad" : "good" }
-              ]}
-            />
-            <TaskLaunchReceipt receipt={taskReceipt} />
-          </div>
-          <div aria-label="deepseek governed executor execution request action">
-            <h3>P5 本地 execution-request</h3>
-            <p className="risk-note">这个按钮只绑定本地 scope hash 并生成 execution-request ticket；不调用 DeepSeek、不创建模型任务、不写 model_ledger，也不阻塞 Tushare-first 或基础图谱。</p>
-            <div className="actions">
-              <button onClick={launchExecutionRequest} disabled={executionRequestSubmitting || !governedExecutorScopeHashReady}>
-                {executionRequestSubmitting ? "生成中" : "生成 P5 本地 execution-request"}
-              </button>
+            <div aria-label="deepseek governed executor execution request readback">
+              <h3>P5 execution-request 回读</h3>
+              <p className="risk-note">scope ticket 之后只生成本地 execution-request ticket；它绑定 scope hash，不创建模型任务、不调用 DeepSeek。</p>
+              <DataLineageTable rows={governedExecutorExecutionRequestReadbackRows} />
             </div>
-            {!governedExecutorScopeHashReady && <p className="risk-note">需要先生成 P5 本地 scope ticket，才可绑定 scope hash。</p>}
-            {executionRequestError && <p className="risk-note">{executionRequestError}</p>}
-            <MetricGrid
-              items={[
-                { label: "任务", value: executionRequestReceipt?.data?.task_id ?? "等待点击", tone: executionRequestReceipt?.ok ? "good" : "warn" },
-                { label: "DeepSeek call", value: executionRequestReceipt?.data?.task?.deepseek_called === true ? "已调用" : "未调用", tone: executionRequestReceipt?.data?.task?.deepseek_called === true ? "bad" : "good" },
-                { label: "模型任务", value: executionRequestPayloadReceipt.model_task_created === true ? "已创建" : "未创建", tone: executionRequestPayloadReceipt.model_task_created === true ? "bad" : "good" },
-                { label: "真实交易", value: executionRequestReceipt?.data?.task?.does_not_execute_trades === false ? "可能" : "禁止", tone: executionRequestReceipt?.data?.task?.does_not_execute_trades === false ? "bad" : "good" }
-              ]}
-            />
-            <TaskLaunchReceipt receipt={executionRequestReceipt} />
-          </div>
+            <div aria-label="deepseek governed executor real call gate">
+              <h3>P5 真实调用闸门</h3>
+              <p className="risk-note">真实 DeepSeek 调用必须等所有 gate 通过；当前表只读展示 blocker，不创建任务、不调用模型、不展示 token/key。</p>
+              <DataLineageTable rows={governedExecutorRealCallGateRows} />
+            </div>
+            <div aria-label="deepseek governed executor ordinary checklist">
+              <h3>P5 治理清单</h3>
+              <p className="risk-note">普通用户只看能不能安全补证、是否阻塞基础路径；执行路由、scope ticket 和 raw policy 仍在详情里。</p>
+              <DataLineageTable rows={governedExecutorOrdinaryChecklistRows} />
+            </div>
+            <div aria-label="deepseek governed executor scope ticket action">
+              <h3>P5 本地 scope ticket</h3>
+              <p className="risk-note">这个按钮只创建本地 provider benchmark scope ticket，写入本地任务回执；不调用 DeepSeek、不读取 token/key、不阻塞 Tushare-first 或基础图谱。</p>
+              <div className="actions">
+                <button onClick={launchScopeTicket} disabled={scopeTicketSubmitting}>
+                  {scopeTicketSubmitting ? "生成中" : "生成 P5 本地 scope ticket"}
+                </button>
+              </div>
+              {scopeTicketError && <p className="risk-note">{scopeTicketError}</p>}
+              <MetricGrid
+                items={[
+                  { label: "任务", value: taskReceipt?.data?.task_id ?? "等待点击", tone: taskReceipt?.ok ? "good" : "warn" },
+                  { label: "DeepSeek call", value: taskReceipt?.data?.task?.deepseek_called === true ? "已调用" : "未调用", tone: taskReceipt?.data?.task?.deepseek_called === true ? "bad" : "good" },
+                  { label: "外联", value: taskReceipt?.data?.task?.external_calls_triggered === true ? "存在" : "无", tone: taskReceipt?.data?.task?.external_calls_triggered === true ? "bad" : "good" },
+                  { label: "真实交易", value: taskReceipt?.data?.task?.does_not_execute_trades === false ? "可能" : "禁止", tone: taskReceipt?.data?.task?.does_not_execute_trades === false ? "bad" : "good" }
+                ]}
+              />
+              <TaskLaunchReceipt receipt={taskReceipt} />
+            </div>
+            <div aria-label="deepseek governed executor execution request action">
+              <h3>P5 本地 execution-request</h3>
+              <p className="risk-note">这个按钮只绑定本地 scope hash 并生成 execution-request ticket；不调用 DeepSeek、不创建模型任务、不写 model_ledger，也不阻塞 Tushare-first 或基础图谱。</p>
+              <div className="actions">
+                <button onClick={launchExecutionRequest} disabled={executionRequestSubmitting || !governedExecutorScopeHashReady}>
+                  {executionRequestSubmitting ? "生成中" : "生成 P5 本地 execution-request"}
+                </button>
+              </div>
+              {!governedExecutorScopeHashReady && <p className="risk-note">需要先生成 P5 本地 scope ticket，才可绑定 scope hash。</p>}
+              {executionRequestError && <p className="risk-note">{executionRequestError}</p>}
+              <MetricGrid
+                items={[
+                  { label: "任务", value: executionRequestReceipt?.data?.task_id ?? "等待点击", tone: executionRequestReceipt?.ok ? "good" : "warn" },
+                  { label: "DeepSeek call", value: executionRequestReceipt?.data?.task?.deepseek_called === true ? "已调用" : "未调用", tone: executionRequestReceipt?.data?.task?.deepseek_called === true ? "bad" : "good" },
+                  { label: "模型任务", value: executionRequestPayloadReceipt.model_task_created === true ? "已创建" : "未创建", tone: executionRequestPayloadReceipt.model_task_created === true ? "bad" : "good" },
+                  { label: "真实交易", value: executionRequestReceipt?.data?.task?.does_not_execute_trades === false ? "可能" : "禁止", tone: executionRequestReceipt?.data?.task?.does_not_execute_trades === false ? "bad" : "good" }
+                ]}
+              />
+              <TaskLaunchReceipt receipt={executionRequestReceipt} />
+            </div>
+          </details>
           <details className="developer-audit-details">
             <summary>P5 执行路由详情</summary>
             <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}；execution-request：{String(governedExecutor.execution_request_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-execution-request")}。</p>
