@@ -50642,6 +50642,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             task["current_step"],
         )
         self.assertTrue(governed_executor["provider_benchmark_scope_ticket_source_packet_present"])
+        self.assertEqual(governed_executor["provider_benchmark_scope_hash"], receipt["benchmark_scope_hash"])
+        self.assertEqual(len(governed_executor["provider_benchmark_scope_hash"]), 64)
+        self.assertTrue(governed_executor["provider_benchmark_scope_hash_safe_to_bind"])
         self.assertEqual(
             governed_executor["provider_benchmark_scope_ticket_model_call_status"],
             "not_called",

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getModelStrategyCache, postDeepseekProviderBenchmarkScopeTicket, type TaskCreationEnvelope } from "../api/client";
+import { getModelStrategyCache, postDeepseekProviderBenchmarkExecutionRequest, postDeepseekProviderBenchmarkScopeTicket, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -24,6 +24,9 @@ export default function ModelStrategy() {
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [scopeTicketSubmitting, setScopeTicketSubmitting] = useState(false);
   const [scopeTicketError, setScopeTicketError] = useState("");
+  const [executionRequestReceipt, setExecutionRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [executionRequestSubmitting, setExecutionRequestSubmitting] = useState(false);
+  const [executionRequestError, setExecutionRequestError] = useState("");
 
   const refreshModelStrategyCache = () => {
     void getModelStrategyCache().then((res) => {
@@ -63,6 +66,35 @@ export default function ModelStrategy() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const groups = (cache.purpose_groups as Record<string, unknown> | undefined) ?? {};
   const governedExecutor = (cache.governed_executor as Record<string, unknown> | undefined) ?? {};
+  const governedExecutorScopeHash = String(governedExecutor.provider_benchmark_scope_hash ?? "");
+  const governedExecutorScopeHashReady =
+    governedExecutor.provider_benchmark_scope_ticket_ready === true &&
+    governedExecutor.provider_benchmark_scope_hash_safe_to_bind === true &&
+    governedExecutorScopeHash.length === 64;
+  const launchExecutionRequest = () => {
+    if (executionRequestSubmitting) return;
+    if (!governedExecutorScopeHashReady) {
+      setExecutionRequestError("deepseek_execution_request_scope_hash_missing");
+      return;
+    }
+    setExecutionRequestSubmitting(true);
+    setExecutionRequestError("");
+    void postDeepseekProviderBenchmarkExecutionRequest({
+      approved_by_user: true,
+      confirm_execution_request: true,
+      benchmark_scope_hash: governedExecutorScopeHash,
+      requested_by: "model_strategy_page"
+    }).then((res) => {
+      setExecutionRequestReceipt(res);
+      if (!res.ok) {
+        setExecutionRequestError(res.error ?? "deepseek_execution_request_task_failed");
+      }
+      refreshModelStrategyCache();
+    }).catch(() => {
+      setExecutionRequestReceipt(null);
+      setExecutionRequestError("deepseek_execution_request_submit_exception");
+    }).finally(() => setExecutionRequestSubmitting(false));
+  };
   const modelRows = rows(cache.model_rows);
   const modelSafetyRows = [
     {
@@ -88,6 +120,9 @@ export default function ModelStrategy() {
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
+  const executionRequestPayloadReceipt = (
+    executionRequestReceipt?.data?.task?.payload_safe?.deepseek_provider_benchmark_execution_request_receipt as Record<string, unknown> | undefined
+  ) ?? {};
   const governedExecutorStandaloneBoundary =
     "DeepSeek 补证是单独 P5 executor；不阻塞 P1 Tushare-first、P2 小数据写入或 P3 基础图谱，也不从本页触发真实模型调用。";
   const governedExecutorAllowedOutputFields = listText(
@@ -210,8 +245,35 @@ export default function ModelStrategy() {
       边界: "不创建 task、不读取 token/key、不阻塞 Tushare-first 或基础图谱。"
     }
   ];
+  const governedExecutorExecutionRequestReadbackRows = [
+    {
+      回读项: "execution request 状态",
+      当前状态: String(governedExecutor.provider_benchmark_execution_request_status ?? "deepseek_provider_benchmark_execution_request_missing"),
+      用户下一步: governedExecutor.provider_benchmark_execution_request_ready === true ? "保留本地 execution-request ticket；真实模型调用继续等 model_ledger / sanitizer / output acceptance" : "scope ticket ready 后点击下方按钮生成本地 execution-request",
+      边界: "GET model strategy cache 只读回放已存在的 execution-request；不会创建模型任务。"
+    },
+    {
+      回读项: "scope 绑定",
+      当前状态: governedExecutor.provider_benchmark_execution_request_scope_hash_matches_latest === true ? "scope hash 已绑定 latest ticket" : "等待 scope hash 绑定",
+      用户下一步: "只用本地 scope digest 绑定后续 governed benchmark；不传 token/key。",
+      边界: "scope hash 是安全 digest，不是 provider benchmark、model_ledger 或模型正确性证据。"
+    },
+    {
+      回读项: "model task 状态",
+      当前状态: governedExecutor.provider_benchmark_execution_request_model_task_created === true ? "异常：需要审计" : "未创建模型任务",
+      用户下一步: "真实 DeepSeek benchmark 继续等待单独 governed executor。",
+      边界: "execution-request ticket 不调用 DeepSeek、不写 model output、不写 model_ledger。"
+    },
+    {
+      回读项: "readback 边界",
+      当前状态: governedExecutor.provider_benchmark_execution_request_cache_read_initializes_ticket === true ? "异常：需要审计" : "cache read 不初始化 execution-request",
+      用户下一步: "继续 P1/P2/P3；P5 只按按钮门控推进。",
+      边界: "不创建 task、不读取 token/key、不阻塞 Tushare-first 或基础图谱。"
+    }
+  ];
   const governedExecutorRailState = [
     governedExecutor.scope_ticket_ready === true || governedExecutor.provider_benchmark_scope_ticket_ready === true ? "scope_ticket_ready" : "scope_ticket_pending",
+    governedExecutor.provider_benchmark_execution_request_ready === true ? "execution_request_ready" : "execution_request_pending",
     governedExecutor.sanitizer_ready === true && governedExecutor.redaction_review_ready === true ? "sanitizer_redaction_ready" : "sanitizer_redaction_pending",
     governedExecutor.model_ledger_ready === true || governedExecutor.model_ledger_evidence_done === true ? "model_ledger_ready" : "model_ledger_pending",
     governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "ordinary_paths_unblocked" : "ordinary_paths_check"
@@ -221,6 +283,11 @@ export default function ModelStrategy() {
       label: "scope ticket",
       state: governedExecutor.scope_ticket_ready === true || governedExecutor.provider_benchmark_scope_ticket_ready === true ? ("done" as const) : ("waiting" as const),
       detail: String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")
+    },
+    {
+      label: "execution request",
+      state: governedExecutor.provider_benchmark_execution_request_ready === true ? ("done" as const) : governedExecutorScopeHashReady ? ("active" as const) : ("waiting" as const),
+      detail: String(governedExecutor.execution_request_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-execution-request")
     },
     {
       label: "sanitizer / redaction",
@@ -294,6 +361,11 @@ export default function ModelStrategy() {
             <p className="risk-note">刷新后优先看这里：它只读已持久化的本地 scope ticket 状态，不从 GET cache 创建票据、不调用 DeepSeek。</p>
             <DataLineageTable rows={governedExecutorScopeTicketReadbackRows} />
           </div>
+          <div aria-label="deepseek governed executor execution request readback">
+            <h3>P5 execution-request 回读</h3>
+            <p className="risk-note">scope ticket 之后只生成本地 execution-request ticket；它绑定 scope hash，不创建模型任务、不调用 DeepSeek。</p>
+            <DataLineageTable rows={governedExecutorExecutionRequestReadbackRows} />
+          </div>
           <div aria-label="deepseek governed executor output contract">
             <h3>P5 安全输出白名单</h3>
             <p className="risk-note">{String(governedExecutor.ordinary_output_contract_label ?? "仅允许安全解释字段；禁止覆盖价格、持仓、factor、operation_zones、strategy action 或交易动作。")}</p>
@@ -334,9 +406,29 @@ export default function ModelStrategy() {
             />
             <TaskLaunchReceipt receipt={taskReceipt} />
           </div>
+          <div aria-label="deepseek governed executor execution request action">
+            <h3>P5 本地 execution-request</h3>
+            <p className="risk-note">这个按钮只绑定本地 scope hash 并生成 execution-request ticket；不调用 DeepSeek、不创建模型任务、不写 model_ledger，也不阻塞 Tushare-first 或基础图谱。</p>
+            <div className="actions">
+              <button onClick={launchExecutionRequest} disabled={executionRequestSubmitting || !governedExecutorScopeHashReady}>
+                {executionRequestSubmitting ? "生成中" : "生成 P5 本地 execution-request"}
+              </button>
+            </div>
+            {!governedExecutorScopeHashReady && <p className="risk-note">需要先生成 P5 本地 scope ticket，才可绑定 scope hash。</p>}
+            {executionRequestError && <p className="risk-note">{executionRequestError}</p>}
+            <MetricGrid
+              items={[
+                { label: "任务", value: executionRequestReceipt?.data?.task_id ?? "等待点击", tone: executionRequestReceipt?.ok ? "good" : "warn" },
+                { label: "DeepSeek call", value: executionRequestReceipt?.data?.task?.deepseek_called === true ? "已调用" : "未调用", tone: executionRequestReceipt?.data?.task?.deepseek_called === true ? "bad" : "good" },
+                { label: "模型任务", value: executionRequestPayloadReceipt.model_task_created === true ? "已创建" : "未创建", tone: executionRequestPayloadReceipt.model_task_created === true ? "bad" : "good" },
+                { label: "真实交易", value: executionRequestReceipt?.data?.task?.does_not_execute_trades === false ? "可能" : "禁止", tone: executionRequestReceipt?.data?.task?.does_not_execute_trades === false ? "bad" : "good" }
+              ]}
+            />
+            <TaskLaunchReceipt receipt={executionRequestReceipt} />
+          </div>
           <details className="developer-audit-details">
             <summary>P5 执行路由详情</summary>
-            <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}。</p>
+            <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}；execution-request：{String(governedExecutor.execution_request_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-execution-request")}。</p>
           </details>
         </PacketCard>
 

@@ -354,6 +354,13 @@ export function postDeepseekProviderBenchmarkScopeTicket(payload: Record<string,
   });
 }
 
+export function postDeepseekProviderBenchmarkExecutionRequest(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/factor-quant/deepseek-provider-benchmark-execution-request", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getBootstrapStatus() {
   return request<Record<string, unknown>>("/api/bootstrap/status");
 }
@@ -618,6 +625,7 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/worker/runtime-qa-dry-run",
   "/api/worker/runtime-qa-execution",
   "/api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+  "/api/factor-quant/deepseek-provider-benchmark-execution-request",
   "/api/next-session/browser-qa-review",
   "/api/next-session/streamlit-parity-review",
   "/api/next-session/production-promotion-review",

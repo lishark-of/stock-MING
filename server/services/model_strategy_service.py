@@ -111,6 +111,7 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
     scope_ticket_status = str(
         scope_ticket_receipt.get("status") or "deepseek_provider_benchmark_scope_ticket_missing"
     )
+    scope_ticket_hash = str(scope_ticket_receipt.get("benchmark_scope_hash") or "")
     scope_ticket_hash_short = str(scope_ticket_receipt.get("benchmark_scope_hash_short") or "")
     execution_request_receipt = _latest_provider_benchmark_execution_request_receipt()
     execution_request_ready = execution_request_receipt.get("local_execution_request_ready") is True
@@ -132,7 +133,9 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "provider_benchmark_scope_ticket_ready": scope_ticket_ready,
         "provider_benchmark_scope_ticket_status": scope_ticket_status,
         "provider_benchmark_scope_ticket_source_packet_present": bool(scope_ticket_receipt),
+        "provider_benchmark_scope_hash": scope_ticket_hash,
         "provider_benchmark_scope_hash_short": scope_ticket_hash_short,
+        "provider_benchmark_scope_hash_safe_to_bind": bool(scope_ticket_ready and scope_ticket_hash and len(scope_ticket_hash) == 64),
         "provider_benchmark_scope_ticket_model_call_status": str(
             scope_ticket_receipt.get("model_call_status") or "not_called"
         ),
