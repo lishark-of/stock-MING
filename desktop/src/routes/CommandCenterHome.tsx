@@ -1380,6 +1380,12 @@ export default function CommandCenterHome() {
       : "浏览器网络证据未补；不阻塞手动确认使用";
   const homeQuantSymbolValidation = normalizeHomeAshareSymbolInput(homeQuantSymbol);
   const homeQuantCanSubmit = dailyCommandP0LocalReadinessReady && homeQuantSymbolValidation.valid && !homeQuantSubmitting;
+  const homeQuantUseConfirmedSymbolLabel = dailyCommandConfirmedSymbol
+    ? `填入当前标的 ${dailyCommandConfirmedSymbol}`
+    : "等待当前标的回放";
+  const homeQuantUseConfirmedSymbolTitle = dailyCommandConfirmedSymbol
+    ? "只把已回放标的填入输入框；不会创建 task，也不会调用 Tushare/DeepSeek"
+    : "暂无当前确认标的；请手动输入 6 位 A 股代码或带后缀代码";
   const homeQuantSubmitDisabledReason = homeQuantSubmitting
     ? "正在创建 Tushare-first 后台 task；请等待本地任务编号"
     : !dailyCommandP0LocalReadinessReady
@@ -2255,6 +2261,15 @@ export default function CommandCenterHome() {
               aria-label="daily command home quant projection symbol"
               title="首页输入只做本地格式校验；不会创建 task，也不会调用 Tushare/DeepSeek"
             />
+            <button
+              disabled={!dailyCommandConfirmedSymbol}
+              onClick={() => {
+                setHomeQuantSymbol(dailyCommandConfirmedSymbol);
+                setHomeQuantSubmitError("");
+              }}
+              title={homeQuantUseConfirmedSymbolTitle}
+              aria-label={homeQuantUseConfirmedSymbolTitle}
+            >{homeQuantUseConfirmedSymbolLabel}</button>
             <button
               disabled={!homeQuantCanSubmit}
               onClick={launchHomeQuantProjection}
