@@ -228,6 +228,7 @@ def _cache_endpoint_specs() -> list[tuple[str, str, Callable[[], dict[str, Any]]
         ("GET /api/migration/status", "migration_status", migration_status_service.build_migration_status),
         ("GET /api/bootstrap/status", "bootstrap_status", bootstrap_service.read_bootstrap_status_cache),
         ("GET /api/model-strategy/cache", "model_strategy", model_strategy_service.read_deepseek_model_strategy_cache),
+        ("GET /api/desktop/preflight", "desktop_preflight_alias", desktop_service.read_desktop_shell_preflight_cache),
         ("GET /api/desktop/preflight-cache", "desktop_preflight", desktop_service.read_desktop_shell_preflight_cache),
         ("GET /api/worker/cache", "worker_runtime", worker_service.read_worker_runtime_cache),
         ("GET /api/tasks", "task_status_index", task_service.build_task_status_index),
