@@ -17166,6 +17166,13 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         view["search_quant_projection_latest_task_status"] = summary.get("latest_task_status") or ""
         view["search_quant_projection_latest_task_current_step"] = summary.get("latest_task_current_step") or ""
         view["search_quant_projection_latest_confirmed_symbol"] = latest_confirmed_symbol
+        view["latest_confirmed_task_id"] = latest_task_id
+        view["latest_confirmed_task_status"] = summary.get("latest_task_status") or ""
+        view["latest_confirmed_task_current_step"] = summary.get("latest_task_current_step") or ""
+        view["latest_confirmed_symbol"] = latest_confirmed_symbol
+        view["latest_confirmed_symbol_source"] = "search_quant_projection_cache_readback"
+        view["latest_confirmed_symbol_readback_external_calls_triggered"] = False
+        view["latest_confirmed_symbol_creates_task_from_readback"] = False
         receipt = dict(_as_dict(view.get("search_quant_projection_receipt")))
         if receipt:
             provider_receipt = _as_dict(view.get("search_quant_provider_model_acceptance_receipt"))

@@ -40068,6 +40068,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(packet["latest_task_id"], task["task_id"])
         self.assertEqual(packet["search_quant_projection_latest_task_id"], task["task_id"])
+        self.assertEqual(packet["latest_confirmed_task_id"], task["task_id"])
+        self.assertEqual(packet["latest_confirmed_task_status"], "success")
+        self.assertEqual(
+            packet["latest_confirmed_task_current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+        )
+        self.assertEqual(packet["latest_confirmed_symbol"], "002008.SZ")
+        self.assertEqual(packet["latest_confirmed_symbol_source"], "search_quant_projection_cache_readback")
+        self.assertFalse(packet["latest_confirmed_symbol_readback_external_calls_triggered"])
+        self.assertFalse(packet["latest_confirmed_symbol_creates_task_from_readback"])
         self.assertEqual(
             packet["counts"]["search_quant_projection_provider_api_row_count"],
             small_data["ordinary_provider_api_row_count"],
