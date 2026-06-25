@@ -1481,7 +1481,7 @@ export default function CandidateRadar() {
     : searchQuantProjectionReceipt.status
       ? "等待 Tushare-first 回放；普通页只看回放状态"
       : "输入代码并确认后创建 Tushare-first 任务";
-  const quantProjectionDisplayTaskId = quantProjectionPersistedTaskId || taskId;
+  const quantProjectionDisplayTaskId = taskId || quantProjectionPersistedTaskId;
   const quantProjectionLastResult = [
     `当前标的：${quantProjectionDisplaySymbol || "--"}`,
     `本地记录：${String(searchQuantProjectionReceipt.status ?? "暂无")}`,
@@ -3142,7 +3142,7 @@ export default function CandidateRadar() {
           <details className="developer-audit-details" aria-label="quant projection confirm chain explanation details">
             <summary>确认链路细节</summary>
             <p className="risk-note">任务接收后立即回读本地 cache receipt，再看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。</p>
-            <p className="risk-note">页面刷新后，最近任务会优先从本地 cache / packet 回放 task id 和安全 current_step；GET cache 不会因此补调 provider。</p>
+            <p className="risk-note">最近任务优先显示本次确认返回的 task id；页面刷新后再从本地 cache / packet 回放 task id 和安全 current_step；GET cache 不会因此补调 provider。</p>
             <p className="risk-note">确认按钮只提交后台链路；服务端凭据可用才写入 Tushare call_ledger / cache / packet，凭据缺失只写本地阻断，GET cache 和 React render 不补调 provider。</p>
             <p>普通入口保留“确认并生成”作为 P1 主按钮；点击后在本卡显示任务接收和状态，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
             <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
