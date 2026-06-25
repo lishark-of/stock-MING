@@ -416,6 +416,7 @@ export default function CommandCenterHome() {
           边界: "不把缺口、候选或解释结果当买卖指令。"
         }
       ];
+  const dailyCommandP3OneGlanceQuickRows = dailyCommandExplainableResultRows.slice(0, 3);
   const dailyCommandP3CheckpointLabel = candidateQuantCheckpointRows.length
     ? `P3 检查点 ${String(candidateQuantCheckpointRows.length)} 项可回放`
     : "等待 CandidateRadar P3 结果检查点";
@@ -1314,6 +1315,11 @@ export default function CommandCenterHome() {
             { label: "边界", value: dailyCommandExplainableResultBoundary, tone: "good" }
           ]}
         />
+        <div aria-label="daily command p3 one glance quick rows">
+          <h3>结果速读三行</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows 前三项：只看结论、下一步、证据和边界；不展开 raw packet、不创建 task、不调用 provider/model。</p>
+          <DataLineageTable rows={dailyCommandP3OneGlanceQuickRows} />
+        </div>
         <div className="actions" aria-label="daily command p3 one glance actions">
           <a href="#candidates" title="切换到下一票雷达；只读查看 P3 结果速读" aria-label="open candidate radar p3 one glance">下一票雷达结果</a>
           <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor p3 one glance">股票量化推演</a>
