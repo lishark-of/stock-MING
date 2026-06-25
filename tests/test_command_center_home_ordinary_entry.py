@@ -423,12 +423,15 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("结果回放只读 CandidateRadar cache / ledger / packet；不调用模型", source)
 
         handoff_start = card.index('aria-label="daily command home post confirm handoff"')
+        task_panel_start = card.index("<TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} />")
         receipt_details_start = card.index('<details className="developer-audit-details" aria-label="daily command home p1 receipt audit details">')
         handoff_slice = card[handoff_start:receipt_details_start]
         self.assertNotIn("postCandidateRadarQuantProjection(", handoff_slice)
         self.assertNotIn("launchHomeQuantProjection", handoff_slice)
         self.assertNotIn("onClick=", handoff_slice)
         self.assertLess(handoff_start, receipt_details_start)
+        self.assertLess(handoff_start, task_panel_start)
+        self.assertLess(task_panel_start, receipt_details_start)
 
         receipt_slice = card[receipt_details_start:]
         self.assertIn('<details className="developer-audit-details" aria-label="daily command home p1 receipt audit details">', receipt_slice)

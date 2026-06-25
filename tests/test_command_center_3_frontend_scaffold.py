@@ -1532,6 +1532,14 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             home_confirm_card.index('aria-label="daily command home post confirm handoff"'),
             home_confirm_card.index('aria-label="daily command home p1 receipt audit details"')
         )
+        self.assertLess(
+            home_confirm_card.index('aria-label="daily command home post confirm handoff"'),
+            home_confirm_card.index("<TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} />")
+        )
+        self.assertLess(
+            home_confirm_card.index("<TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} />"),
+            home_confirm_card.index('aria-label="daily command home p1 receipt audit details"')
+        )
         handoff_start = home_confirm_card.index('aria-label="daily command home post confirm handoff"')
         receipt_start = home_confirm_card.index('aria-label="daily command home p1 receipt audit details"')
         handoff_slice = home_confirm_card[handoff_start:receipt_start]

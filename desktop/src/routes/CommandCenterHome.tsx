@@ -1636,6 +1636,7 @@ export default function CommandCenterHome() {
               </div>
             </div>
           ) : null}
+          {homeQuantTaskPanelTaskId ? <TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} /> : null}
           {homeQuantReceipt ? (
             <details className="developer-audit-details" aria-label="daily command home p1 receipt audit details">
               <summary>任务回执 / 审计详情</summary>
@@ -1643,7 +1644,6 @@ export default function CommandCenterHome() {
               <TaskLaunchReceipt receipt={homeQuantReceipt} />
             </details>
           ) : null}
-          {homeQuantTaskPanelTaskId ? <TaskStatusPanel taskId={homeQuantTaskPanelTaskId} onSuccess={refreshHomeResearchReadback} /> : null}
           <p className="risk-note">首页确认按钮复用 POST /api/candidate-radar/quant-projection：P0 gate 通过后才启用；成功后只从 CandidateRadar cache / call_ledger / packet 回放 P2/P3。页面打开、输入、React render 和 GET cache 不外联，不调用 DeepSeek，不交易、不改 strategy action。</p>
         </div>
       </PacketCard>
