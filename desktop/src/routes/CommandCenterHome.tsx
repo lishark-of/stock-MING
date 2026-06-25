@@ -658,6 +658,11 @@ export default function CommandCenterHome() {
       candidateQuantInterpretation.ordinary_result_status ??
       (dailyCommandP3OneGlanceReadable ? "readable_cache_replay" : "waiting_confirm")
   );
+  const dailyCommandP3ExplainableCheckpoint =
+    (candidates.ordinary_p3_explainable_result_checkpoint as Record<string, unknown> | undefined) ??
+    (candidates.search_quant_projection_p3_explainable_result_checkpoint as Record<string, unknown> | undefined) ??
+    (candidateQuantInterpretation.ordinary_p3_explainable_result_checkpoint as Record<string, unknown> | undefined) ??
+    {};
   const dailyCommandP3OneGlanceSourceTask = String(
     candidateQuantResultCheckpoint.source_task_id ??
       candidateQuantInterpretation.source_task_id ??
@@ -686,6 +691,47 @@ export default function CommandCenterHome() {
   const dailyCommandP3OneGlanceSafeFields = Array.isArray(candidateQuantResultCheckpoint.safe_explanation_fields)
     ? candidateQuantResultCheckpoint.safe_explanation_fields.map(String).join(" / ")
     : "source / gap / next_step / safety_summary";
+  const dailyCommandP3ExplainableMissingEvidenceCount = Number(
+    dailyCommandP3ExplainableCheckpoint.missing_evidence_count ??
+      candidateQuantResultCheckpoint.missing_evidence_count ??
+      dailyCommandP3MissingEvidenceItems.length
+  );
+  const dailyCommandP3ExplainableProofItems: MetricItem[] = [
+    {
+      label: "结果状态",
+      value: dailyCommandP3OneGlanceReadable ? `可读：${dailyCommandExplainableResultLabel}` : "等待确认后的可读结果",
+      tone: dailyCommandP3OneGlanceReadable ? "good" : "warn"
+    },
+    {
+      label: "来源证明",
+      value: dailyCommandP3OneGlanceProviderVerified
+        ? `Tushare-first ledger 已参与；${dailyCommandP3OneGlanceSource}`
+        : dailyCommandP3OneGlanceSource,
+      tone: dailyCommandP3OneGlanceProviderVerified ? "good" : "warn"
+    },
+    {
+      label: "缺口数量",
+      value: dailyCommandP3ExplainableMissingEvidenceCount
+        ? `${String(dailyCommandP3ExplainableMissingEvidenceCount)} 项：${dailyCommandP3OneGlanceMissingEvidence}`
+        : "暂无额外缺口",
+      tone: dailyCommandP3ExplainableMissingEvidenceCount ? "warn" : "good"
+    },
+    {
+      label: "模型状态",
+      value: dailyCommandP3OneGlanceModelState,
+      tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good"
+    },
+    {
+      label: "结果入口",
+      value: dailyCommandP3OneGlanceResultEntrances,
+      tone: candidateQuantHandoffRows.length ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "只读 P3 证明；不创建 task、不调用 DeepSeek、不交易、不改 strategy action",
+      tone: "good"
+    }
+  ];
   const dailyCommandP3OneGlanceDecisionRows = candidateQuantDecisionBriefRows.length
     ? candidateQuantDecisionBriefRows.map((row) => ({
         读法: String(row["读法"] ?? row.brief_key ?? "结果读法"),
@@ -2174,6 +2220,11 @@ export default function CommandCenterHome() {
             { label: "边界", value: dailyCommandExplainableResultBoundary, tone: "good" }
           ]}
         />
+        <div aria-label="daily command p3 explainable result proof">
+          <h3>P3 结果证明</h3>
+          <MetricGrid items={dailyCommandP3ExplainableProofItems} />
+          <p className="risk-note">这条证明只合成 CandidateRadar 本地 cache 的 P3 checkpoint、可读结论、Tushare-first 来源、缺口和模型状态；不创建 task、不调用 DeepSeek、不展示 raw packet/token/key，也不是买卖指令。</p>
+        </div>
         <div aria-label="daily command p3 one glance decision brief">
           <h3>P3 一分钟决策速读</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_decision_brief_rows：先看结论、再看来源、最后看下一步和边界；首页只读本地证据，不创建 task。</p>
