@@ -323,6 +323,10 @@ export default function CandidateRadar() {
   const searchQuantProjectionResultCheckpoint =
     (cache.search_quant_projection_result_checkpoint as Record<string, unknown> | undefined) ??
     (searchQuantProjectionInterpretation.ordinary_result_checkpoint_contract as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionPostConfirmOneGlanceItems =
+    rows(cache.search_quant_projection_post_confirm_one_glance_items).length
+      ? rows(cache.search_quant_projection_post_confirm_one_glance_items)
+      : rows(searchQuantProjectionInterpretation.ordinary_post_confirm_one_glance_items);
   const providerParityDryRun = (cache.provider_parity_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
@@ -1542,6 +1546,16 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const quantProjectionBackendPostConfirmOneGlanceItems: MetricItem[] =
+    searchQuantProjectionPostConfirmOneGlanceItems.map((row) => {
+      const rawTone = String(row.tone ?? "neutral");
+      const tone = ["good", "warn", "bad", "neutral"].includes(rawTone) ? rawTone as MetricItem["tone"] : "neutral";
+      return {
+        label: displayText(row.label ?? row["状态项"] ?? row.item_key, "确认后状态"),
+        value: displayText(row.value ?? row["当前状态"] ?? row.status),
+        tone
+      };
+    });
   const quantProjectionOrdinaryTaskRailState = [
     quantProjectionCanSubmit || quantProjectionDisplaySymbol ? "input_ready" : "input_waiting",
     quantProjectionTaskReceiptInputMismatch ? "task_receipt_stale_for_input" : quantProjectionSubmitError ? "task_failed" : quantProjectionSubmitting ? "submitting" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "task_visible" : "task_waiting",
@@ -2586,6 +2600,12 @@ export default function CandidateRadar() {
           <div aria-label="candidate radar post confirm one screen outcome">
             <h3>确认后一屏结果</h3>
             <p className="risk-note">点击确认后先看这条结果：任务是否接收、P2 三面是否回放、P3 结论是否可读和下一步入口都在一屏内；这条结果条只读本地 task receipt 与 cache / ledger / packet，不创建第二个 task。</p>
+            {quantProjectionBackendPostConfirmOneGlanceItems.length ? (
+              <div aria-label="candidate radar backend post confirm one glance">
+                <p className="risk-note">优先读取后端 cache packet 的 search_quant_projection_post_confirm_one_glance_items：任务编号、P2、P3、DeepSeek 和安全边界同源回放；这张状态格只读本地 cache，不创建 task。</p>
+                <MetricGrid items={quantProjectionBackendPostConfirmOneGlanceItems} />
+              </div>
+            ) : null}
             <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
             <details className="developer-audit-details" aria-label="candidate radar post confirm backend replay contract">
               <summary>后端回放合同</summary>

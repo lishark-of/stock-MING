@@ -4703,6 +4703,12 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('quantProjectionTaskPanelStaleForCurrentInput ? "" : quantProjectionTaskVisible && taskId ? taskId : quantProjectionPersistedTaskId', page)
         self.assertIn("quantProjectionResumeTaskRows", page)
         self.assertIn("ordinary_task_readback_rows", page)
+        self.assertIn("searchQuantProjectionPostConfirmOneGlanceItems", page)
+        self.assertIn("cache.search_quant_projection_post_confirm_one_glance_items", page)
+        self.assertIn("searchQuantProjectionInterpretation.ordinary_post_confirm_one_glance_items", page)
+        self.assertIn("quantProjectionBackendPostConfirmOneGlanceItems", page)
+        self.assertIn("searchQuantProjectionPostConfirmOneGlanceItems.map", page)
+        self.assertIn('label: displayText(row.label ?? row["状态项"] ?? row.item_key, "确认后状态")', page)
         self.assertIn('aria-label="quant projection persisted task resume"', page)
         self.assertIn("刷新后继续任务", page)
         self.assertIn("页面刷新后优先用 quantProjectionPersistedTaskId 恢复最近确认任务", page)
@@ -4735,6 +4741,17 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("DataLineageTable rows={quantProjectionTaskSuccessRefreshRows}", first_screen_task_status_slice)
         self.assertIn("<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />", first_screen_task_status_slice)
         self.assertNotIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", first_screen_task_status_slice)
+        post_confirm_outcome_slice = page[
+            page.index('aria-label="candidate radar post confirm one screen outcome"') :
+            page.index('aria-label="candidate radar post confirm backend replay contract"')
+        ]
+        self.assertIn('aria-label="candidate radar backend post confirm one glance"', post_confirm_outcome_slice)
+        self.assertIn("search_quant_projection_post_confirm_one_glance_items", post_confirm_outcome_slice)
+        self.assertIn("MetricGrid items={quantProjectionBackendPostConfirmOneGlanceItems}", post_confirm_outcome_slice)
+        self.assertLess(
+            post_confirm_outcome_slice.index('aria-label="candidate radar backend post confirm one glance"'),
+            post_confirm_outcome_slice.index("MetricGrid items={quantProjectionPostConfirmOneScreenItems}")
+        )
         handoff_slice = page[
             page.index('aria-label="quant projection tushare-first task status handoff"') :
             page.index('aria-label="quant projection confirm chain explanation details"')
