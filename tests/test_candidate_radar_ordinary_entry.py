@@ -823,6 +823,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "交易边界"', self.page)
         self.assertIn("不真实交易、不下单、不改 strategy action", self.page)
         first_screen_start = self.page.index('aria-label="candidate radar first screen quant projection confirmation"')
+        first_screen_recovery_index = self.page.index('aria-label="candidate radar first screen p0 submit failure recovery"', first_screen_start)
         first_screen_contract_index = self.page.index('aria-label="candidate radar first screen p1 task contract quick read"', first_screen_start)
         tushare_first_readiness_index = self.page.index('aria-label="candidate radar ordinary tushare first readiness strip"', first_screen_start)
         one_screen_result_index = self.page.index('aria-label="candidate radar post confirm one screen outcome"', first_screen_start)
@@ -831,6 +832,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         p1_details_index = self.page.index('aria-label="candidate radar ordinary p1 p2 detail readback"', first_screen_start)
         self.assertIn("<summary>P1 链路与确认后清单</summary>", self.page)
         self.assertIn("按钮路由、回放清单和链路排障默认收起", self.page)
+        self.assertLess(first_screen_recovery_index, first_screen_contract_index)
         self.assertLess(first_screen_contract_index, tushare_first_readiness_index)
         self.assertLess(tushare_first_readiness_index, one_screen_result_index)
         self.assertLess(first_screen_contract_index, p1_chain_details_index)
@@ -838,6 +840,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(one_screen_result_index, p1_chain_details_index)
         self.assertLess(p1_chain_details_index, post_confirm_guide_index)
         self.assertLess(one_screen_result_index, p1_details_index)
+        first_screen_recovery_slice = self.page[first_screen_recovery_index:first_screen_contract_index]
+        self.assertIn("确认按钮失败后就在这里看本地联通恢复包", first_screen_recovery_slice)
+        self.assertIn("DataLineageTable rows={quantProjectionP0SubmitRecoveryRows}", first_screen_recovery_slice)
+        self.assertIn("不自动重试、不创建 task", first_screen_recovery_slice)
+        self.assertNotIn("postCandidateRadarQuantProjection", first_screen_recovery_slice)
+        self.assertNotIn("onClick=", first_screen_recovery_slice)
         first_screen_contract_slice = self.page[first_screen_contract_index:one_screen_result_index]
         self.assertIn("MetricGrid items={quantProjectionFirstScreenTaskContractItems}", first_screen_contract_slice)
         self.assertNotIn("postCandidateRadarQuantProjection", first_screen_contract_slice)

@@ -2590,6 +2590,14 @@ export default function CandidateRadar() {
           <p className="ordinary-status-note" aria-live="polite">{quantProjectionConnectionReadyLabel}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionConfirmChainState}</p>
+          {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
+          {quantProjectionP0SubmitRecoveryRows.length ? (
+            <div aria-label="candidate radar first screen p0 submit failure recovery">
+              <h3>P0 恢复提示</h3>
+              <p className="risk-note">确认按钮失败后就在这里看本地联通恢复包：check-only 不启动服务，启动器只在用户运行时恢复 FastAPI/Vite；这张表只读展示，不自动重试、不创建 task。</p>
+              <DataLineageTable rows={quantProjectionP0SubmitRecoveryRows} />
+            </div>
+          ) : null}
           <div aria-label="candidate radar first screen p1 task contract quick read">
             <h3>确认按钮任务链速读</h3>
             <p className="risk-note">普通用户不用展开链路详情也能看到：确认按钮会创建哪条本地 POST task、写回哪三面、DeepSeek 和交易边界如何隔离；这张速读只读页面状态，不创建第二个 task。</p>
