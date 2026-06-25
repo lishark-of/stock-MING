@@ -450,8 +450,56 @@ export default function CommandCenterHome() {
     candidateQuantP2ThreeSurfaceCheckpoint.status === "p2_three_surface_ready" ||
     candidateQuantSmallDataReadbackCheckpoint.p2_three_surface_ready === true ||
     candidateQuantSmallDataWriteback.p2_three_surface_ready === true;
+  const dailyCommandP2CacheReady =
+    candidateQuantSmallDataReadbackCheckpoint.cache_ready === true ||
+    candidateQuantSmallDataWriteback.cache_ready === true ||
+    candidates.search_quant_projection_p2_cache_ready === true;
+  const dailyCommandP2LedgerReady =
+    candidateQuantSmallDataReadbackCheckpoint.ledger_ready === true ||
+    candidateQuantSmallDataReadbackCheckpoint.provider_ledger_ready === true ||
+    candidateQuantSmallDataWriteback.ledger_ready === true ||
+    candidateQuantSmallDataWriteback.provider_call_ledger_written === true ||
+    candidates.search_quant_projection_p2_ledger_ready === true;
+  const dailyCommandP2PacketReady =
+    candidateQuantSmallDataReadbackCheckpoint.packet_ready === true ||
+    candidateQuantSmallDataReadbackCheckpoint.packet_written === true ||
+    candidateQuantSmallDataWriteback.packet_ready === true ||
+    candidateQuantSmallDataWriteback.cache_packet_written === true ||
+    candidates.search_quant_projection_p2_packet_ready === true;
   const dailyCommandSmallDataWritebackBoundary =
     "P2 小数据只从 CandidateRadar cache / call_ledger / packet 回放；首页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示 token/key 或 raw log。";
+  const dailyCommandP2ThreeSurfaceProofItems: MetricItem[] = [
+    {
+      label: "cache",
+      value: dailyCommandP2CacheReady ? "已写入本地 cache；页面刷新只读回放" : "等待本地 cache 写入",
+      tone: dailyCommandP2CacheReady ? "good" : "warn"
+    },
+    {
+      label: "call_ledger",
+      value: dailyCommandP2LedgerReady ? `已回放 POST task ledger：${dailyCommandP2CallLedgerState}` : "等待确认任务写入 call_ledger",
+      tone: dailyCommandP2LedgerReady ? "good" : "warn"
+    },
+    {
+      label: "packet",
+      value: dailyCommandP2PacketReady ? "已写入 command_center_3_candidate_radar_cache；不含凭据或交易动作" : "等待 packet 写入",
+      tone: dailyCommandP2PacketReady ? "good" : "warn"
+    },
+    {
+      label: "完整度",
+      value: dailyCommandP2SurfaceCompletionLabel,
+      tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn"
+    },
+    {
+      label: "现在看哪里",
+      value: dailyCommandP2ThreeSurfaceReady ? "先看股票量化推演，再看次日图谱" : "先完成确认按钮链路",
+      tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "只读三面证明；不创建 task、不补调 provider/model、不展示 token/key/raw log",
+      tone: "good"
+    }
+  ];
   const dailyCommandSmallDataWritebackRows = candidateQuantWritebackSurfaceRows.length
     ? candidateQuantWritebackSurfaceRows.map((row) => ({
         写入面: String(row["写入面"] ?? row.surface ?? "writeback"),
@@ -2093,6 +2141,11 @@ export default function CommandCenterHome() {
             { label: "边界", value: "这张卡只读已有 P2 写回摘要；不创建第二个 task、不补调 Tushare/DeepSeek、不展示 raw log", tone: "good" }
           ]}
         />
+        <div aria-label="daily command p2 three surface proof">
+          <h3>P2 三面写回证明</h3>
+          <MetricGrid items={dailyCommandP2ThreeSurfaceProofItems} />
+          <p className="risk-note">这条证明只合成 CandidateRadar 本地 cache 的 cache_ready、ledger_ready、packet_ready 和三面完整度；它不创建 task、不调用 Tushare/DeepSeek、不展示 token/key/raw log，也不是买卖指令。</p>
+        </div>
         <div aria-label="daily command ordinary p2 writeback front row">
           <h3>P2 三面回放</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_writeback_surface_summary_rows，让普通用户确认 cache、call_ledger、packet 三面有没有本地回放；完整工程审计仍下沉在折叠明细。</p>

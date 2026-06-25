@@ -467,6 +467,40 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("fetch(", card)
         self.assertNotIn("postCandidateRadar", card)
 
+    def test_p2_three_surface_proof_is_before_writeback_table_and_read_only(self):
+        source = self.source
+        card_start = source.index('title="P2 小数据三面速读"')
+        card_end = source.index('title="P3 可解释结果一眼读懂"', card_start)
+        card = source[card_start:card_end]
+
+        self.assertIn("dailyCommandP2CacheReady", source)
+        self.assertIn("dailyCommandP2LedgerReady", source)
+        self.assertIn("dailyCommandP2PacketReady", source)
+        self.assertIn("dailyCommandP2ThreeSurfaceProofItems", source)
+        self.assertIn("candidates.search_quant_projection_p2_cache_ready", source)
+        self.assertIn("candidates.search_quant_projection_p2_ledger_ready", source)
+        self.assertIn("candidates.search_quant_projection_p2_packet_ready", source)
+        self.assertIn('aria-label="daily command p2 three surface proof"', card)
+        self.assertIn("P2 三面写回证明", card)
+        self.assertIn("MetricGrid items={dailyCommandP2ThreeSurfaceProofItems}", card)
+        self.assertIn('label: "cache"', source)
+        self.assertIn("已写入本地 cache；页面刷新只读回放", source)
+        self.assertIn('label: "call_ledger"', source)
+        self.assertIn("已回放 POST task ledger：${dailyCommandP2CallLedgerState}", source)
+        self.assertIn('label: "packet"', source)
+        self.assertIn("已写入 command_center_3_candidate_radar_cache；不含凭据或交易动作", source)
+        self.assertIn('label: "完整度"', source)
+        self.assertIn("value: dailyCommandP2SurfaceCompletionLabel", source)
+        self.assertIn("这条证明只合成 CandidateRadar 本地 cache 的 cache_ready、ledger_ready、packet_ready 和三面完整度", card)
+        self.assertIn("不创建 task、不调用 Tushare/DeepSeek、不展示 token/key/raw log", card)
+        proof_start = card.index('aria-label="daily command p2 three surface proof"')
+        table_start = card.index('aria-label="daily command ordinary p2 writeback front row"')
+        proof_slice = card[proof_start:table_start]
+        self.assertLess(proof_start, table_start)
+        self.assertNotIn("onClick=", proof_slice)
+        self.assertNotIn("fetch(", proof_slice)
+        self.assertNotIn("postCandidateRadar", proof_slice)
+
     def test_p0_now_usable_card_is_short_read_only_status(self):
         source = self.source
         card_start = source.index('title="P0 现在能不能用"')
