@@ -70,6 +70,13 @@ function isTushareProviderLedgerRow(row: Record<string, unknown>) {
   return row.tushare_called === true || (row.external_calls_triggered === true && taskLedgerApi(row).startsWith("tushare_"));
 }
 
+function firstNonEmptyString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const [task, setTask] = useState<TaskRecord | null>(null);
   const [lookupError, setLookupError] = useState<TaskLookupError | null>(null);
@@ -188,6 +195,15 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const candidateRadarResultReplay =
     task.output_packet_key === "command_center_3_candidate_radar_cache" ||
     task.task_type.includes("candidate_radar_quant_projection");
+  const taskPayloadSafe = task.payload_safe ?? {};
+  const taskConfirmedSymbol = firstNonEmptyString(
+    taskPayloadSafe.symbol,
+    taskPayloadSafe.ts_code,
+    taskPayloadSafe.stock_code,
+    taskPayloadSafe.ticker
+  );
+  const taskConfirmedSymbolLabel = taskConfirmedSymbol || "等待确认标的";
+  const taskConfirmTaskLabel = candidateRadarResultReplay ? task.task_id : "按当前任务查看";
   const taskTushareFirstQuickRows = [
     {
       回放项: "Tushare-first ledger",
@@ -295,6 +311,8 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     { href: "#packets", label: "查看 Packet", title: "打开 Packet 注册表；只读查看本地输出", aria: "open packet registry from failed task status" }
   ];
   const taskOrdinarySummaryItems: MetricItem[] = [
+    { label: "当前标的", value: taskConfirmedSymbolLabel, tone: taskConfirmedSymbol ? "good" as const : "warn" as const },
+    { label: "确认任务", value: taskConfirmTaskLabel, tone: candidateRadarResultReplay ? toneForStatus(task.status) : "warn" as const },
     { label: "状态", value: taskStatusLabel, tone: toneForStatus(task.status) },
     { label: "当前步骤", value: task.current_step, tone: task.status === "success" ? "good" as const : "warn" as const },
     { label: "P2 写回", value: callLedgerQuickStatus, tone: callLedger.length ? "good" as const : "warn" as const },
@@ -329,6 +347,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       {successRefreshMessage ? <p className="panelSuccessRefresh">{successRefreshMessage}</p> : null}
       <div aria-label="task status ordinary summary">
         <p className="risk-note">任务速读：普通用户先看状态、写回、Tushare-first、结果入口和安全边界；工程明细默认收起。</p>
+        <p className="risk-note">当前标的：{taskConfirmedSymbolLabel}；确认任务：{taskConfirmTaskLabel}。</p>
         <MetricGrid items={taskOrdinarySummaryItems} />
       </div>
       <div className="actions" aria-label="task status p3 result replay links">
