@@ -1142,8 +1142,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         post_confirm_start = self.page.index('aria-label="quant projection post confirm user actions"')
         post_confirm_end = self.page.index('aria-label="quant projection ordinary small data writeback targets"', post_confirm_start)
         post_confirm_slice = self.page[post_confirm_start:post_confirm_end]
-        task_status_start = self.page.index('aria-label="quant projection tushare-first task status"')
-        task_status_end = self.page.index('aria-label="quant projection confirm chain explanation details"', task_status_start)
+        task_status_start = self.page.index('aria-label="candidate radar first screen task status"')
+        task_status_end = self.page.index('aria-label="candidate radar post confirm one screen outcome"', task_status_start)
         task_status_slice = self.page[task_status_start:task_status_end]
 
         self.assertIn("postCandidateRadarQuantProjection({", submit_slice)
@@ -1258,6 +1258,17 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("quantProjectionTaskSuccessRefreshRows", task_status_slice)
         self.assertIn("TaskStatusPanel", task_status_slice)
         self.assertIn("任务成功后自动回读", task_status_slice)
+        self.assertEqual(
+            self.page.count("<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />"),
+            1,
+        )
+        self.assertIn('aria-label="quant projection tushare-first task status handoff"', self.page)
+        handoff_slice = self.page[
+            self.page.index('aria-label="quant projection tushare-first task status handoff"') :
+            self.page.index('aria-label="quant projection confirm chain explanation details"')
+        ]
+        self.assertIn("任务状态面板已固定在确认后一屏结果", handoff_slice)
+        self.assertNotIn("TaskStatusPanel", handoff_slice)
         self.assertNotIn("launchQuantProjectionAcceptanceDryRun", task_status_slice)
         self.assertNotIn("launchQuantProjectionExecutionRequest", task_status_slice)
         self.assertNotIn("launchQuantProjectionProviderModelAcceptance", task_status_slice)

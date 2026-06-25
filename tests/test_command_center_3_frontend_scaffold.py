@@ -4539,7 +4539,23 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("TaskStatusPanel 只轮询本地 FastAPI；success 回调不创建第二个 task、不补调 Tushare/DeepSeek", page)
         self.assertIn("GET cache 只读；不展示 raw log、token/key 或 provider error", page)
         self.assertIn("<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />", page)
-        self.assertNotIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", page[page.index('aria-label="quant projection tushare-first task status"') - 120:page.index("任务接收后立即回读本地 cache receipt")])
+        self.assertEqual(
+            page.count("<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />"),
+            1,
+        )
+        first_screen_task_status_slice = page[
+            page.index('aria-label="candidate radar first screen task status"') :
+            page.index('aria-label="candidate radar post confirm one screen outcome"')
+        ]
+        self.assertIn("DataLineageTable rows={quantProjectionTaskSuccessRefreshRows}", first_screen_task_status_slice)
+        self.assertIn("<TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />", first_screen_task_status_slice)
+        self.assertNotIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", first_screen_task_status_slice)
+        handoff_slice = page[
+            page.index('aria-label="quant projection tushare-first task status handoff"') :
+            page.index('aria-label="quant projection confirm chain explanation details"')
+        ]
+        self.assertIn("任务状态面板已固定在确认后一屏结果", handoff_slice)
+        self.assertNotIn("TaskStatusPanel", handoff_slice)
         self.assertIn("quantProjectionSourceState", page)
         self.assertIn("quantProjectionCacheSourceLabel", page)
         self.assertIn("quantProjectionProviderSourceLabel", page)
@@ -4949,8 +4965,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("quantProjectionTaskVisible", page)
         self.assertIn("run_candidate_radar_quant_projection", page)
         self.assertIn("run_candidate_radar_quant_projection_provider_model_acceptance", page)
-        self.assertIn('aria-label="quant projection tushare-first task status"', page)
-        self.assertLess(page.index('aria-label="quant projection tushare-first task status"'), page.index('aria-label="quant projection confirm chain explanation details"'))
+        self.assertIn('aria-label="candidate radar first screen task status"', page)
+        self.assertIn('aria-label="quant projection tushare-first task status handoff"', page)
+        self.assertLess(page.index('aria-label="candidate radar first screen task status"'), page.index('aria-label="quant projection confirm chain explanation details"'))
+        self.assertLess(page.index('aria-label="quant projection tushare-first task status handoff"'), page.index('aria-label="quant projection confirm chain explanation details"'))
         self.assertLess(page.index('aria-label="quant projection confirm chain explanation details"'), page.index("搜票推演记录详情"))
         self.assertNotIn("普通入口只保留一个确认按钮", page)
         self.assertIn('label: "仅供研究"', page)
@@ -5115,8 +5133,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("本地快扫只重建缓存和标记覆盖缺口", page)
         self.assertIn("最近操作记录", page)
         self.assertLess(page.index("本地快扫只重建缓存和标记覆盖缺口"), page.index("最近操作记录"))
-        self.assertLess(page.index('aria-label="quant projection tushare-first task status"'), page.index("最近操作记录"))
-        self.assertLess(page.index('aria-label="quant projection tushare-first task status"'), page.index("快速雷达扫描"))
+        self.assertLess(page.index('aria-label="quant projection tushare-first task status handoff"'), page.index("最近操作记录"))
+        self.assertLess(page.index('aria-label="quant projection tushare-first task status handoff"'), page.index("快速雷达扫描"))
         self.assertLess(
             page.index("最近操作记录"),
             page.index("<TaskLaunchReceipt receipt={taskReceipt} />", page.index("最近操作记录")),

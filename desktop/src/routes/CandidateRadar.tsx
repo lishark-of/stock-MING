@@ -2408,6 +2408,11 @@ export default function CandidateRadar() {
           {quantProjectionTaskPanelVisible ? (
             <div aria-label="candidate radar first screen task status">
               <TaskLaunchReceipt receipt={taskReceipt} />
+              <div aria-label="quant projection task success refresh checklist">
+                <h3>任务成功后自动回读</h3>
+                <p className="risk-note">TaskStatusPanel success 后调用 refreshQuantProjectionReadback：只回读 CandidateRadar cache 和 bootstrap status，再让用户看 P2 三面与 P3 结果入口；不会创建第二个 task。</p>
+                <DataLineageTable rows={quantProjectionTaskSuccessRefreshRows} />
+              </div>
               <TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />
             </div>
           ) : null}
@@ -2948,14 +2953,8 @@ export default function CandidateRadar() {
             ) : null}
           </details>
           {quantProjectionTaskPanelVisible ? (
-            <div aria-label="quant projection tushare-first task status">
-              <TaskLaunchReceipt receipt={taskReceipt} />
-              <div aria-label="quant projection task success refresh checklist">
-                <h3>任务成功后自动回读</h3>
-                <p className="risk-note">TaskStatusPanel success 后调用 refreshQuantProjectionReadback：只回读 CandidateRadar cache 和 bootstrap status，再让用户看 P2 三面与 P3 结果入口；不会创建第二个 task。</p>
-                <DataLineageTable rows={quantProjectionTaskSuccessRefreshRows} />
-              </div>
-              <TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshQuantProjectionReadback} />
+            <div aria-label="quant projection tushare-first task status handoff">
+              <p className="ordinary-status-note">任务状态面板已固定在确认后一屏结果；这里保留回放提示，避免同一任务在普通入口重复轮询。</p>
             </div>
           ) : null}
           {quantProjectionTaskPanelStaleNotice ? (
