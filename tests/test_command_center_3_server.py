@@ -1968,9 +1968,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(one_click["success_handoff_visible"])
         self.assertEqual(
             one_click["success_handoff_label"],
-            "联通成功后打开下一票雷达确认输入区，输入股票代码；只有确认按钮创建 Tushare-first POST task，DeepSeek 保持 governed/skipped。",
+            "联通成功后回到今日作战台首页确认股票代码；需要详情再打开下一票雷达。只有确认按钮创建 Tushare-first POST task，DeepSeek 保持 governed/skipped。",
         )
-        self.assertEqual(one_click["success_handoff_href"], "#candidates/candidate-radar-search-quant-projection")
+        self.assertEqual(one_click["success_handoff_href"], "#home")
         self.assertIn("页面切换和输入不外联", one_click["success_handoff_boundary"])
         self.assertEqual(desktop["p0_recovery_steps"], one_click["ordinary_recovery_steps"])
         recovery_titles = [row["title"] for row in one_click["ordinary_recovery_steps"]]
@@ -2084,7 +2084,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(p0_receipt["diagnostic_surfaces"], one_click["diagnostic_surfaces"])
         self.assertTrue(p0_receipt["success_handoff_visible"])
         self.assertEqual(p0_receipt["success_handoff_label"], one_click["success_handoff_label"])
-        self.assertEqual(p0_receipt["success_handoff_href"], "#candidates/candidate-radar-search-quant-projection")
+        self.assertEqual(p0_receipt["success_handoff_href"], "#home")
         self.assertEqual(p0_receipt["success_handoff_boundary"], one_click["success_handoff_boundary"])
         self.assertEqual(p0_receipt["ordinary_recovery_steps"], one_click["ordinary_recovery_steps"])
         self.assertEqual(p0_receipt["ordinary_recovery_step_count"], 3)
@@ -2222,14 +2222,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertTrue(readback_row["does_not_modify_strategy_action"])
         self.assertEqual(
             [row["步骤"] for row in p0_to_p1_rows],
-            ["1. 确认本地联通", "2. 进入下一票雷达", "3. 点击确认并生成", "4. 回放本地结果"],
+            ["1. 确认本地联通", "2. 首页确认股票代码", "3. 点击确认并生成", "4. 回放本地结果"],
         )
-        self.assertIn("下一票雷达", p0_to_p1_rows[1]["用户动作"])
-        self.assertIn("确认输入区", p0_to_p1_rows[1]["用户动作"])
+        self.assertIn("今日作战台首页确认卡", p0_to_p1_rows[1]["用户动作"])
+        self.assertIn("需要详情再进下一票雷达", p0_to_p1_rows[1]["用户动作"])
         self.assertIn("Tushare-first POST task", p0_to_p1_rows[2]["边界"])
         self.assertIn("cache / ledger / packet", p0_to_p1_rows[3]["当前状态"])
         self.assertEqual(desktop["counts"]["p0_to_p1_ordinary_handoff_row_count"], 4)
-        self.assertIn("下一票雷达", desktop["runtime"]["p0_to_p1_next_user_action"])
+        self.assertIn("首页确认股票代码", desktop["runtime"]["p0_to_p1_next_user_action"])
         self.assertTrue(desktop["policy"]["p0_to_p1_ordinary_handoff_rows_are_cache_only"])
         self.assertTrue(desktop["policy"]["p0_to_p1_ordinary_handoff_rows_do_not_create_task"])
         self.assertTrue(desktop["policy"]["p0_to_p1_ordinary_handoff_rows_do_not_call_provider_model"])
@@ -2253,7 +2253,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("scripts/start_command_center_3.command", desktop["runtime"]["p0_ordinary_reconnect_entry"])
         self.assertIn("scripts/check_command_center_3.command", one_click["ordinary_recovery_steps"][1]["action"])
         self.assertIn("check-only 不启动 FastAPI/Vite", one_click["ordinary_recovery_steps"][1]["checks"])
-        self.assertEqual(p0_reconnect_rows[2]["入口"], "#candidates/candidate-radar-search-quant-projection")
+        self.assertEqual(p0_reconnect_rows[2]["入口"], "#home")
         self.assertIn("确认按钮之前不创建 POST task", p0_reconnect_rows[2]["边界"])
         self.assertTrue(p0_reconnect_rows[3]["may_create_task_after_confirm"])
         self.assertIn("不是 14 LTG strict closeout", p0_reconnect_rows[3]["边界"])
@@ -2324,10 +2324,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(check_only_row["release_ready_evidence"])
         self.assertEqual(
             [row["快速行动"] for row in p0_quick_action_rows],
-            ["1. 本地联通变绿", "2. 打开下一票雷达", "3. 确认并生成", "4. 回放本地结果"],
+            ["1. 本地联通变绿", "2. 首页确认股票代码", "3. 确认并生成", "4. 回放本地结果"],
         )
         self.assertEqual(desktop["counts"]["p0_ordinary_quick_action_row_count"], 4)
-        self.assertIn("下一票雷达", desktop["runtime"]["p0_ordinary_quick_action_next"])
+        self.assertIn("首页确认股票代码", desktop["runtime"]["p0_ordinary_quick_action_next"])
         self.assertTrue(desktop["policy"]["p0_ordinary_quick_action_rows_are_cache_only"])
         self.assertTrue(desktop["policy"]["p0_ordinary_quick_action_rows_do_not_create_task"])
         self.assertTrue(desktop["policy"]["p0_ordinary_quick_action_rows_do_not_call_provider_model"])
@@ -2352,14 +2352,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(desktop["counts"]["p0_current_next_action_row_count"], 2)
         self.assertEqual(desktop["counts"]["p0_current_next_action_visible_count"], 2)
-        self.assertEqual(desktop["runtime"]["p0_current_next_action_entry"], "#candidates/candidate-radar-search-quant-projection")
-        self.assertIn("下一票雷达", desktop["runtime"]["p0_current_next_action_next"])
+        self.assertEqual(desktop["runtime"]["p0_current_next_action_entry"], "#home")
+        self.assertIn("首页确认股票代码", desktop["runtime"]["p0_current_next_action_next"])
         self.assertTrue(desktop["runtime"]["p0_current_next_action_p1_enabled"])
         self.assertTrue(desktop["policy"]["p0_current_next_action_rows_are_cache_only"])
         self.assertTrue(desktop["policy"]["p0_current_next_action_rows_do_not_create_task"])
         self.assertTrue(desktop["policy"]["p0_current_next_action_rows_do_not_call_provider_model"])
         self.assertTrue(desktop["policy"]["p0_current_next_action_rows_require_confirm_button_for_tushare"])
-        self.assertEqual(p0_current_next_action_rows[0]["入口"], "#candidates/candidate-radar-search-quant-projection")
+        self.assertEqual(p0_current_next_action_rows[0]["入口"], "#home")
         self.assertTrue(p0_current_next_action_rows[0]["p0_ready_now"])
         self.assertTrue(p0_current_next_action_rows[0]["p1_entry_enabled"])
         self.assertIn("确认按钮才触发 Tushare-first", p0_current_next_action_rows[0]["用户下一步"])
@@ -2440,8 +2440,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(desktop["counts"]["p0_ordinary_one_screen_row_count"], 3)
         self.assertEqual(desktop["counts"]["p0_ordinary_one_screen_visible_count"], 3)
-        self.assertIn("下一票雷达", desktop["runtime"]["p0_ordinary_one_screen_next"])
-        self.assertEqual(desktop["runtime"]["p0_ordinary_one_screen_entry"], "#candidates/candidate-radar-search-quant-projection")
+        self.assertIn("首页确认股票代码", desktop["runtime"]["p0_ordinary_one_screen_next"])
+        self.assertEqual(desktop["runtime"]["p0_ordinary_one_screen_entry"], "#home")
         self.assertTrue(desktop["policy"]["p0_ordinary_one_screen_rows_are_cache_only"])
         self.assertTrue(desktop["policy"]["p0_ordinary_one_screen_rows_do_not_start_services"])
         self.assertTrue(desktop["policy"]["p0_ordinary_one_screen_rows_do_not_create_task"])

@@ -8,6 +8,7 @@ import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
 
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
+const HOME_CONFIRM_HREF = "#home";
 
 function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
@@ -63,17 +64,17 @@ export default function DesktopShellPreflight() {
         {
           行动: "2. 看四段联通",
           当前状态: p0ConnectionReady ? "4/4 ready" : "check",
-          用户下一步: "4/4 ready 后进入下一票雷达确认输入区；少于 4/4 时按失败段看日志和端口。",
+          用户下一步: "4/4 ready 后回首页确认股票代码；少于 4/4 时按失败段看日志和端口。",
           证据: "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
           入口: "#desktop",
           边界: "本行只读 desktop preflight cache；不探测当前运行时、不创建 task、不调用 provider/model。"
         },
         {
           行动: "3. 进入 P1 确认",
-          当前状态: p0ConnectionReady ? "ready：可以进入下一票雷达确认输入区" : "blocked：P0 未 ready，先留在预检页",
-          用户下一步: p0ConnectionReady ? "进入下一票雷达确认输入区，输入股票代码；确认按钮才触发 Tushare-first。" : "留在桌面壳预检，按四段恢复。",
+          当前状态: p0ConnectionReady ? "ready：可以回首页确认股票代码" : "blocked：P0 未 ready，先留在预检页",
+          用户下一步: p0ConnectionReady ? "回首页输入股票代码；确认按钮才触发 Tushare-first；需要详情再进下一票雷达。" : "留在桌面壳预检，按四段恢复。",
           证据: "p0_current_next_action_rows",
-          入口: p0ConnectionReady ? CANDIDATE_CONFIRM_HREF : "#desktop",
+          入口: p0ConnectionReady ? HOME_CONFIRM_HREF : "#desktop",
           边界: "页面切换和输入保持静默；只有确认按钮创建 Tushare-first POST task，DeepSeek 继续 governed/skipped。"
         }
       ];
@@ -91,7 +92,7 @@ export default function DesktopShellPreflight() {
         {
           速读项: "2. 四段联通",
           当前状态: p0ConnectionReady ? "4/4 ready" : "check",
-          用户下一步: p0ConnectionReady ? "进入下一票雷达确认输入区。" : "少于 4/4 时按失败段处理；4/4 时进入下一票雷达确认输入区。",
+          用户下一步: p0ConnectionReady ? "回首页确认股票代码。" : "少于 4/4 时按失败段处理；4/4 时回首页确认股票代码。",
           证据: "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
           入口: "#desktop",
           边界: "GET preflight 和 React render 不启动服务、不创建 task。"
@@ -117,7 +118,7 @@ export default function DesktopShellPreflight() {
           当前状态: p0ConnectionReady ? "ready：进入 P1 搜票确认" : "check：继续 P0 恢复",
           用户下一步: p0ConnectionReady ? "输入股票代码；确认按钮才创建 Tushare-first POST task。" : "先恢复 P0 四段联通。",
           证据: "p0_current_next_action_rows",
-          入口: p0ConnectionReady ? CANDIDATE_CONFIRM_HREF : "#desktop",
+          入口: p0ConnectionReady ? HOME_CONFIRM_HREF : "#desktop",
           边界: "输入股票代码保持静默；确认按钮之前不调用 provider/model。"
         },
         {
@@ -175,15 +176,15 @@ export default function DesktopShellPreflight() {
           步骤: "1. 确认本地联通",
           用户动作: "先看 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 四段是否 ready。",
           当前状态: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready：可以进入普通投研入口" : "check：先恢复本地一键入口",
-          下一步: oneClickStartupSummary.frontend_backend_connection_ready === true ? "打开下一票雷达确认输入区，输入股票代码。" : "回到启动器诊断或桌面壳预检。",
+          下一步: oneClickStartupSummary.frontend_backend_connection_ready === true ? "回到今日作战台首页确认股票代码；需要详情再打开下一票雷达。" : "回到启动器诊断或桌面壳预检。",
           边界: "只读 GET health / preflight cache；不启动服务、不创建 task。"
         },
         {
-          步骤: "2. 进入下一票雷达",
-          用户动作: "去下一票雷达的搜票量化推演确认输入区。",
+          步骤: "2. 首页确认股票代码",
+          用户动作: "去今日作战台首页确认卡输入股票代码；需要详情再进下一票雷达。",
           当前状态: "只读导航提示",
-          下一步: "在搜票量化推演卡的确认输入区输入 6 位 A 股代码或带后缀代码。",
-          边界: "页面切换和输入不会调用 Tushare、DeepSeek 或 GitHub。"
+          下一步: "在首页确认卡输入 6 位 A 股代码或带后缀代码。",
+          边界: "页面切换和输入不会调用 Tushare、DeepSeek 或 GitHub；下一票雷达只作为详情入口。"
         },
         {
           步骤: "3. 点击确认并生成",
@@ -226,8 +227,8 @@ export default function DesktopShellPreflight() {
         {
           用户状态: "四段联通变绿",
           当前状态: p0ConnectionReady ? "ready" : "check",
-          用户下一步: "打开下一票雷达确认输入区，输入股票代码。",
-          入口: CANDIDATE_CONFIRM_HREF,
+          用户下一步: "回到今日作战台首页确认股票代码；需要详情再打开下一票雷达。",
+          入口: HOME_CONFIRM_HREF,
           通过信号: "P0 联通 ready 后才进入普通投研入口。",
           边界: "页面切换和输入代码不外联；确认按钮之前不创建 POST task。",
           strict_closeout_evidence: false,
@@ -237,7 +238,7 @@ export default function DesktopShellPreflight() {
           用户状态: "准备生成基础投研结果",
           当前状态: p0ConnectionReady ? "ready" : "check",
           用户下一步: "点击确认按钮创建 Tushare-first P1 task；DeepSeek 仍保持 governed/skipped。",
-          入口: "下一票雷达确认按钮",
+          入口: "首页确认按钮 / 下一票雷达确认按钮",
           通过信号: "TaskStatusPanel 显示本地任务编号，结果回放来自 cache / ledger / packet。",
           边界: "只有确认按钮可进入 P1 task；本清单不是 14 LTG strict closeout 或 release ready 证据。",
           strict_closeout_evidence: false,
@@ -366,8 +367,8 @@ export default function DesktopShellPreflight() {
   const p0SuccessHandoffRows = [
     {
       状态: p0ConnectionReady ? "ready" : "check",
-      用户下一步: String(p0LocalConnectionReceipt.success_handoff_label ?? oneClickStartupSummary.success_handoff_label ?? "联通成功后打开下一票雷达，输入股票代码；只有确认按钮创建 Tushare-first POST task，DeepSeek 保持 governed/skipped。"),
-      入口: String(p0LocalConnectionReceipt.success_handoff_href ?? oneClickStartupSummary.success_handoff_href ?? CANDIDATE_CONFIRM_HREF),
+      用户下一步: String(p0LocalConnectionReceipt.success_handoff_label ?? oneClickStartupSummary.success_handoff_label ?? "联通成功后回到今日作战台首页确认股票代码；需要详情再打开下一票雷达。只有确认按钮创建 Tushare-first POST task，DeepSeek 保持 governed/skipped。"),
+      入口: String(p0LocalConnectionReceipt.success_handoff_href ?? oneClickStartupSummary.success_handoff_href ?? HOME_CONFIRM_HREF),
       证据: String(p0LocalConnectionReceipt.success_handoff_visible ?? oneClickStartupSummary.success_handoff_visible ?? false),
       边界: String(p0LocalConnectionReceipt.success_handoff_boundary ?? oneClickStartupSummary.success_handoff_boundary ?? "启动器和预检页只暴露下一步；页面切换和输入不外联，确认按钮才进入 P1 task。"),
       creates_task_from_readback: false,
@@ -400,7 +401,7 @@ export default function DesktopShellPreflight() {
     },
     {
       label: "普通下一步",
-      value: p0ConnectionReady ? "去下一票雷达" : "先修复联通",
+      value: p0ConnectionReady ? "首页确认股票代码" : "先修复联通",
       tone: p0ConnectionReady ? ("good" as const) : ("warn" as const)
     },
     {
@@ -409,23 +410,23 @@ export default function DesktopShellPreflight() {
       tone: Number(frontendBackendAutoLinkContract.candidate_count ?? apiBaseInfo.api_base_candidate_count ?? 0) > 0 ? ("good" as const) : ("warn" as const)
     }
   ];
-  const p0OrdinaryPrimaryActionHref = p0ConnectionReady ? CANDIDATE_CONFIRM_HREF : "#desktop";
-  const p0OrdinaryPrimaryActionLabel = p0ConnectionReady ? "去下一票雷达确认代码" : "留在一键启动预检排障";
+  const p0OrdinaryPrimaryActionHref = p0ConnectionReady ? HOME_CONFIRM_HREF : "#desktop";
+  const p0OrdinaryPrimaryActionLabel = p0ConnectionReady ? "去首页确认股票代码" : "留在一键启动预检排障";
   const p0OrdinaryPrimaryActionBoundary = p0ConnectionReady
-    ? "只切换到下一票雷达；输入代码不外联，点击确认才创建 Tushare-first POST task；链接直达确认输入区。"
+    ? "只切换到今日作战台首页；输入代码不外联，点击确认才创建 Tushare-first POST task；下一票雷达保留为详情入口。"
     : "只查看本页恢复步骤和日志指引；React render 不启动 FastAPI/Vite、不创建 task、不调用 provider/model。";
   const p0OrdinaryReadyGateRows = [
     {
       闸门: "P0 可继续",
       当前状态: p0ConnectionReady ? "ready：四段联通完成，可以进入 P1 搜票确认" : "check：先留在一键启动预检恢复四段联通",
-      用户下一步: p0ConnectionReady ? "点击“去下一票雷达确认代码”，输入股票代码后再点确认按钮" : "按 FastAPI / bootstrap status / desktop preflight cache / React/Vite 失败段排障",
+      用户下一步: p0ConnectionReady ? "点击“去首页确认股票代码”，输入股票代码后再点确认按钮" : "按 FastAPI / bootstrap status / desktop preflight cache / React/Vite 失败段排障",
       证据: "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
       边界: "这只是本地前后端联通闸门；不调用 Tushare/DeepSeek/GitHub，不创建 task，不代表 release ready 或 14 LTG 完成。"
     },
     {
       闸门: "P1 进入条件",
-      当前状态: p0ConnectionReady ? "允许切换到下一票雷达确认输入区" : "未满足：不要进入 P1 投研入口",
-      用户下一步: p0ConnectionReady ? "页面切换和输入保持静默；只有确认按钮触发 Tushare-first POST task" : "先让四段联通 ready，再回到今日作战台或下一票雷达",
+      当前状态: p0ConnectionReady ? "允许切换到首页确认股票代码" : "未满足：不要进入 P1 投研入口",
+      用户下一步: p0ConnectionReady ? "页面切换和输入保持静默；只有确认按钮触发 Tushare-first POST task；需要详情再进下一票雷达" : "先让四段联通 ready，再回到今日作战台",
       证据: "p0_local_connection_receipt + one_click_startup_summary",
       边界: "预检页只读 GET /api/desktop/preflight-cache；不会启动 FastAPI/Vite、写配置、写 cache 或真实交易。"
     }
@@ -436,7 +437,7 @@ export default function DesktopShellPreflight() {
         {
           行动项: "1. 当前主入口",
           当前状态: p0ConnectionReady ? "ready：进入 P1 搜票确认" : "check：先恢复 P0 本地联通",
-          用户下一步: p0ConnectionReady ? "进入下一票雷达确认输入区，输入股票代码；输入保持静默，确认按钮才触发 Tushare-first。" : "留在桌面壳预检，按四段恢复。",
+          用户下一步: p0ConnectionReady ? "回首页确认股票代码；输入保持静默，确认按钮才触发 Tushare-first；需要详情再进下一票雷达。" : "留在桌面壳预检，按四段恢复。",
           入口: p0OrdinaryPrimaryActionHref,
           边界: p0OrdinaryPrimaryActionBoundary
         },
@@ -444,7 +445,7 @@ export default function DesktopShellPreflight() {
           行动项: "2. P1 确认按钮",
           当前状态: p0ConnectionReady ? "可点击前必须先满足 P0 ready" : "暂不进入 P1",
           用户下一步: "代码通过本地校验后点击确认按钮，才创建 Tushare-first POST task；DeepSeek skipped。",
-          入口: "下一票雷达确认按钮",
+          入口: "首页确认按钮 / 下一票雷达确认按钮",
           边界: "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker。"
         }
       ];
@@ -476,7 +477,7 @@ export default function DesktopShellPreflight() {
         </div>
         <div aria-label="p0 ordinary one screen action readback">
           <h3>P0 一屏行动</h3>
-          <p className="risk-note">普通用户先看这 3 行：打开或恢复一键入口、确认四段联通、再去下一票雷达；这张表只读回放，不启动服务、不创建 task。</p>
+          <p className="risk-note">普通用户先看这 3 行：打开或恢复一键入口、确认四段联通、再回首页确认股票代码；这张表只读回放，不启动服务、不创建 task。</p>
           <DataLineageTable rows={p0OrdinaryOneScreenRows} />
         </div>
         <div aria-label="p0 startup 30s quick read">
@@ -486,12 +487,12 @@ export default function DesktopShellPreflight() {
         </div>
         <div aria-label="p0 ordinary ready gate">
           <h3>P0 可继续闸门</h3>
-          <p className="risk-note">普通用户先看这个闸门：四段联通 ready 才去下一票雷达；未 ready 就留在预检页按失败段恢复。</p>
+          <p className="risk-note">普通用户先看这个闸门：四段联通 ready 才回首页确认股票代码；未 ready 就留在预检页按失败段恢复。</p>
           <DataLineageTable rows={p0OrdinaryReadyGateRows} />
         </div>
         <div aria-label="p0 current next action readback">
           <h3>当前下一步</h3>
-          <p className="risk-note">优先读取 desktop preflight 的 p0_current_next_action_rows：未 ready 留在预检恢复；ready 后只切到下一票雷达，确认按钮才触发 Tushare-first。</p>
+          <p className="risk-note">优先读取 desktop preflight 的 p0_current_next_action_rows：未 ready 留在预检恢复；ready 后回首页确认股票代码，确认按钮才触发 Tushare-first。</p>
           <DataLineageTable rows={p0CurrentNextActionRows} />
         </div>
         <p>下一步：{String(oneClickStartupSummary.what_user_should_click_next ?? "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。")}</p>
@@ -510,12 +511,12 @@ export default function DesktopShellPreflight() {
         <p className="risk-note">{p0OrdinaryPrimaryActionBoundary}</p>
         <div aria-label="p0 ordinary reconnect to research checklist">
           <h3>P0 恢复到投研路径</h3>
-          <p className="risk-note">优先读取 p0_ordinary_reconnect_rows：离线先恢复本地四段联通，联通后去下一票雷达；确认按钮之前不创建 task，这不是 14 LTG strict closeout 或 release ready 证据。</p>
+          <p className="risk-note">优先读取 p0_ordinary_reconnect_rows：离线先恢复本地四段联通，联通后回首页确认股票代码；确认按钮之前不创建 task，这不是 14 LTG strict closeout 或 release ready 证据。</p>
           <DataLineageTable rows={p0OrdinaryReconnectRows} />
         </div>
         <div aria-label="p0 success handoff to p1 confirm">
           <h3>联通成功后的下一步</h3>
-          <p className="risk-note">这条行动清单与启动器成功日志对齐：四段 ready 后去下一票雷达，输入不外联，确认按钮才创建 Tushare-first 任务。</p>
+          <p className="risk-note">这条行动清单与预检 packet 对齐：四段 ready 后回首页确认股票代码，输入不外联，确认按钮才创建 Tushare-first 任务。</p>
           <DataLineageTable rows={p0SuccessHandoffRows} />
         </div>
         <div aria-label="p0 ordinary launcher mode choices">
@@ -553,7 +554,7 @@ export default function DesktopShellPreflight() {
         </div>
         <div aria-label="p0 to p1 ordinary handoff">
           <h3>联通后搜票路径</h3>
-          <p className="risk-note">预检页只说明下一步；真正的 Tushare-first 工作仍要到下一票雷达点击确认按钮。</p>
+          <p className="risk-note">预检页只说明下一步；真正的 Tushare-first 工作仍要点首页或下一票雷达的确认按钮。</p>
           <DataLineageTable rows={p0ToP1OrdinaryHandoffRows} />
         </div>
         <p>普通用户只看四段联通状态；完整工程行表在下方开发 / 审计详情。</p>
