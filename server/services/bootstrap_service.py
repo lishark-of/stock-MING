@@ -975,11 +975,19 @@ def _latest_live_bootstrap_task_status_surface() -> dict[str, Any]:
 
 
 def _latest_search_quant_projection_status_surface() -> dict[str, Any]:
+    def durable_quant_task(task: dict[str, Any]) -> bool:
+        storage_source = str(task.get("storage_source") or "")
+        return (
+            task.get("task_type") == SEARCH_QUANT_PROJECTION_TASK_TYPE
+            and task.get("cache_replay_only") is not True
+            and storage_source in {"memory_and_sqlite", "sqlite_meta"}
+        )
+
     latest_task = next(
         (
             task
             for task in task_service.list_task_statuses()
-            if task.get("task_type") == SEARCH_QUANT_PROJECTION_TASK_TYPE
+            if durable_quant_task(task)
         ),
         None,
     )
@@ -1104,11 +1112,19 @@ def _latest_search_quant_projection_status_surface() -> dict[str, Any]:
 
 
 def _latest_search_quant_projection_provider_model_status_surface() -> dict[str, Any]:
+    def durable_provider_model_task(task: dict[str, Any]) -> bool:
+        storage_source = str(task.get("storage_source") or "")
+        return (
+            task.get("task_type") == SEARCH_QUANT_PROVIDER_MODEL_TASK_TYPE
+            and task.get("cache_replay_only") is not True
+            and storage_source in {"memory_and_sqlite", "sqlite_meta"}
+        )
+
     latest_task = next(
         (
             task
             for task in task_service.list_task_statuses()
-            if task.get("task_type") == SEARCH_QUANT_PROVIDER_MODEL_TASK_TYPE
+            if durable_provider_model_task(task)
         ),
         None,
     )

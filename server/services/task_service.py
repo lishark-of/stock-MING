@@ -17,7 +17,10 @@ _TASKS: dict[str, dict[str, Any]] = {}
 TASK_STATUSES = {"pending", "running", "success", "failed", "cancelled"}
 SECRET_KEYWORDS = ("token", "api_key", "secret", "password", "authorization", "bearer", "cookie")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
-SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
+DEFAULT_SNAPSHOT_CACHE_PATH = PROJECT_ROOT / ".stock_ming_cache" / "command_center_latest.json"
+SQLITE_META_PATH = DEFAULT_SQLITE_META_PATH
 TUSHARE_OPTIONAL_EXTENDED_APIS = [
     "margin_detail",
     "top_list",
@@ -3739,7 +3742,38 @@ def build_task_record(
     return record
 
 
-def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] | None:
+def _same_path(left: Path, right: Path) -> bool:
+    try:
+        return left.resolve() == right.resolve()
+    except Exception:
+        return left == right
+
+
+def _candidate_cache_replay_packet() -> dict[str, Any] | None:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet("command_center_3_candidate_radar_cache")
+    except Exception:
+        packet = None
+    if isinstance(packet, dict):
+        return packet
+
+    try:
+        from . import packet_service
+
+        snapshot_cache_path = Path(packet_service.SNAPSHOT_CACHE_PATH)
+        task_meta_is_default = _same_path(Path(SQLITE_META_PATH), DEFAULT_SQLITE_META_PATH)
+        snapshot_is_isolated = not _same_path(snapshot_cache_path, DEFAULT_SNAPSHOT_CACHE_PATH)
+        if task_meta_is_default or snapshot_is_isolated:
+            snapshot = packet_service.load_snapshot_cache()
+            packet = snapshot.get("command_center_3_candidate_radar_cache") if isinstance(snapshot, dict) else None
+            if isinstance(packet, dict):
+                return packet
+    except Exception:
+        pass
+
+    if not _same_path(Path(SQLITE_META_PATH), DEFAULT_SQLITE_META_PATH):
+        return None
+
     try:
         from . import candidate_service
 
@@ -3751,6 +3785,11 @@ def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] |
             packet = packet_service.read_packet("command_center_3_candidate_radar_cache")
         except Exception:
             return None
+    return packet if isinstance(packet, dict) else None
+
+
+def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] | None:
+    packet = _candidate_cache_replay_packet()
     if not isinstance(packet, dict) or packet.get("status") == "cache_missing":
         return None
     receipt = packet.get("search_quant_projection_receipt") if isinstance(packet.get("search_quant_projection_receipt"), dict) else {}
