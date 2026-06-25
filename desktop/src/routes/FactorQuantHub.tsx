@@ -103,13 +103,24 @@ export default function FactorQuantHub() {
     (candidateRadarReceiptCallLedger[0]?.request_params_safe as Record<string, unknown> | undefined) ?? {};
   const ordinaryQuantPostConfirmReplayContract =
     (candidateRadarReceiptRequestParams.ordinary_post_confirm_replay_contract as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarConfirmedSymbol = String(
+    packet.latest_confirmed_symbol ??
+      candidateRadarCache.latest_confirmed_symbol ??
+      factorPacketCandidateHandoff.symbol ??
+      candidateRadarReceipt.symbol ??
+      candidateRadarSmallDataWriteback.symbol ??
+      candidateRadarInterpretation.symbol ??
+      ""
+  );
   const candidateRadarLatestTaskId = String(
-    candidateRadarCache.search_quant_projection_latest_task_id ??
+    packet.latest_confirmed_task_id ??
+      candidateRadarCache.latest_confirmed_task_id ??
+      factorPacketCandidateHandoff.source_task_id ??
+      candidateRadarCache.search_quant_projection_latest_task_id ??
       candidateRadarCache.latest_task_id ??
       candidateRadarReceipt.latest_task_id ??
       candidateRadarReceipt.task_id ??
       candidateRadarSmallDataWriteback.latest_task_id ??
-      factorPacketCandidateHandoff.source_task_id ??
       ""
   );
   const candidateRadarConfirmedTaskReceiptRows = toRows(
@@ -121,7 +132,10 @@ export default function FactorQuantHub() {
       candidateRadarSmallDataWriteback.ordinary_task_readback_rows
   );
   const candidateRadarLatestTaskStep = String(
-    candidateRadarReceipt.latest_task_current_step ??
+    packet.latest_confirmed_task_current_step ??
+      candidateRadarCache.latest_confirmed_task_current_step ??
+      factorPacketCandidateHandoff.source_task_current_step ??
+      candidateRadarReceipt.latest_task_current_step ??
       candidateRadarSmallDataWriteback.latest_task_current_step ??
       factorPacketCandidateHandoff.status ??
       candidateRadarReceipt.status ??
@@ -375,8 +389,7 @@ export default function FactorQuantHub() {
         candidateRadarSmallDataWriteback.summary_label ??
         ""
     );
-    const confirmedSymbol = String(candidateRadarReceipt.symbol ?? "");
-    if (confirmedSymbol && upstreamStage) return `${confirmedSymbol} Tushare-first：${upstreamStage}`;
+    if (candidateRadarConfirmedSymbol && upstreamStage) return `${candidateRadarConfirmedSymbol} Tushare-first：${upstreamStage}`;
     if (upstreamStage) return `Tushare-first：${upstreamStage}`;
     return ordinaryQuantGlobalTushareSourceLabel;
   })();
@@ -543,8 +556,8 @@ export default function FactorQuantHub() {
   const ordinaryQuantFallbackLatestCandidateCheckpointItems: MetricItem[] = [
     {
       label: "确认标的",
-      value: String(candidateRadarReceipt.symbol ?? "--"),
-      tone: candidateRadarReceipt.symbol ? "good" : "warn"
+      value: candidateRadarConfirmedSymbol || "--",
+      tone: candidateRadarConfirmedSymbol ? "good" : "warn"
     },
     {
       label: "任务编号",
@@ -979,7 +992,7 @@ export default function FactorQuantHub() {
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_checkpoint_rows，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在量化页首屏直接回放；本卡不创建 task、不补调数据源或模型。</p>
           <MetricGrid
             items={[
-              { label: "标的", value: String(candidateRadarReceipt.symbol ?? "--"), tone: candidateRadarReceipt.symbol ? "good" : "warn" },
+              { label: "标的", value: candidateRadarConfirmedSymbol || "--", tone: candidateRadarConfirmedSymbol ? "good" : "warn" },
               { label: "可读结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
               { label: "下一步", value: candidateRadarReadableNextStep },
               { label: "P2 小数据", value: String(candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "已回放" : "等待回放"), tone: candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },

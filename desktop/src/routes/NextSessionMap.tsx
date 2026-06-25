@@ -235,7 +235,9 @@ export default function NextSessionMap() {
   );
   const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const candidateRadarConfirmedSymbol = String(
-    packetCandidateRadarP3HandoffSymbol ||
+    packet.latest_confirmed_symbol ||
+      candidateRadarCache.latest_confirmed_symbol ||
+      packetCandidateRadarP3HandoffSymbol ||
       candidateRadarReceipt.symbol ||
       candidateRadarSmallDataWriteback.symbol ||
       candidateRadarInterpretation.symbol ||
@@ -245,7 +247,9 @@ export default function NextSessionMap() {
     ? `当前确认标的：${candidateRadarConfirmedSymbol}`
     : "等待下一票雷达确认标的";
   const candidateRadarSourceTaskLabel = String(
-    packetCandidateRadarP3HandoffSourceTask ||
+    packet.latest_confirmed_task_id ||
+      candidateRadarCache.latest_confirmed_task_id ||
+      packetCandidateRadarP3HandoffSourceTask ||
       candidateRadarCache.search_quant_projection_latest_task_id ||
       candidateRadarCache.latest_task_id ||
       candidateRadarReceipt.latest_task_id ||
