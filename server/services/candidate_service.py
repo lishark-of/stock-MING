@@ -58,6 +58,9 @@ QUANT_PROJECTION_SMALL_DATA_READBACK_CHECKPOINT_SCHEMA_VERSION = (
 QUANT_PROJECTION_WRITEBACK_CHECKPOINT_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_writeback_checkpoint.v1"
 )
+QUANT_PROJECTION_P2_THREE_SURFACE_CHECKPOINT_SCHEMA_VERSION = (
+    "candidate_radar_p2_three_surface_checkpoint.v1"
+)
 QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_interpretation.v1"
 )
@@ -15410,6 +15413,77 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "candidate_is_not_buy_instruction": True,
         "production_quant_projection_complete": False,
     }
+    if provider_ready:
+        p2_checkpoint_status = "p2_three_surface_ready"
+        p2_checkpoint_label = (
+            f"P2 三面 checkpoint：cache / call_ledger / packet 已可回放；"
+            f"Tushare ledger {provider_api_success_count}/{provider_api_call_count}，GET cache 不补调 provider。"
+        )
+        p2_checkpoint_next_action = "继续查看量化推演和次日图谱只读结果；DeepSeek 留到 P5 governed executor。"
+    elif credential_missing_count:
+        p2_checkpoint_status = "p2_three_surface_blocked_missing_tushare_credentials"
+        p2_checkpoint_label = (
+            "P2 三面 checkpoint：cache / packet 可回放，call_ledger 写入本地阻断；"
+            "缺少服务端 Tushare 凭据，未调用 provider。"
+        )
+        p2_checkpoint_next_action = "配置服务端 Tushare 凭据后重新点击确认；GET cache 和 React render 不会自动补调。"
+    elif provider_ledger_visible:
+        p2_checkpoint_status = "p2_three_surface_partial_provider_ledger"
+        p2_checkpoint_label = (
+            f"P2 三面 checkpoint：部分 Tushare ledger 可回放 "
+            f"{provider_api_success_count}/{provider_api_call_count}；仍需补齐接口账本。"
+        )
+        p2_checkpoint_next_action = "补齐 Tushare light ledger 后再把 P2 视为 ready。"
+    elif provider_receipt_ready and not provider_ledger:
+        p2_checkpoint_status = "p2_three_surface_blocked_missing_provider_call_ledger"
+        p2_checkpoint_label = "P2 三面 checkpoint：provider receipt 可见，但接口级 call_ledger 缺失。"
+        p2_checkpoint_next_action = "重新点击确认按钮生成 Tushare-first POST task ledger；GET cache 不会补调 provider。"
+    elif execution_request or quant_receipt:
+        p2_checkpoint_status = "p2_three_surface_waiting_provider_ledger"
+        p2_checkpoint_label = "P2 三面 checkpoint：本地输入/申请已写入，等待确认链路回写 Tushare-first ledger。"
+        p2_checkpoint_next_action = "点击确认并等待 TaskStatusPanel success 后刷新本地回放。"
+    else:
+        p2_checkpoint_status = "p2_three_surface_waiting_symbol_confirm"
+        p2_checkpoint_label = "P2 三面 checkpoint：等待输入股票代码并点击确认。"
+        p2_checkpoint_next_action = "先输入 6 位 A 股代码，再点击确认并生成 3.0 量化推演。"
+    ordinary_p2_three_surface_checkpoint = {
+        "schema_version": QUANT_PROJECTION_P2_THREE_SURFACE_CHECKPOINT_SCHEMA_VERSION,
+        "status": p2_checkpoint_status,
+        "ordinary_label": p2_checkpoint_label,
+        "ordinary_next_action": p2_checkpoint_next_action,
+        "source_task_route": "POST /api/candidate-radar/quant-projection",
+        "readback_route": "GET /api/candidate-radar/cache",
+        "packet_key": PACKET_KEY,
+        "surfaces": ["cache", "call_ledger", "packet"],
+        "surface_count": 3,
+        "readable_surface_count": readable_surface_count,
+        "complete_surface_count": complete_surface_count,
+        "cache_written": cache_packet_written,
+        "call_ledger_state": call_ledger_checkpoint_state,
+        "call_ledger_readable": readable_call_ledger_written,
+        "call_ledger_complete": provider_ready,
+        "local_blocker_ledger_written": bool(credential_missing_count),
+        "packet_written": cache_packet_written,
+        "provider_call_source": provider_call_source,
+        "provider_ledger_ready": provider_ready,
+        "provider_api_success_count": provider_api_success_count,
+        "provider_api_call_count": provider_api_call_count,
+        "credential_missing_provider_count": credential_missing_count,
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "readback_creates_task": False,
+        "readback_external_calls_triggered": False,
+        "get_cache_external_calls": False,
+        "react_render_external_calls": False,
+        "search_input_external_calls": False,
+        "deepseek_called_from_readback": False,
+        "uses_deepseek_output": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "production_quant_projection_complete": False,
+    }
     ordinary_writeback_receipt_rows = [
         {
             "receipt_key": "cache_receipt",
@@ -16862,6 +16936,12 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_writeback_checkpoint_is_cache_only": True,
         "ordinary_writeback_checkpoint_creates_task": False,
         "ordinary_writeback_checkpoint_is_not_trade_signal": True,
+        "ordinary_p2_three_surface_checkpoint": ordinary_p2_three_surface_checkpoint,
+        "ordinary_p2_three_surface_checkpoint_is_cache_only": True,
+        "ordinary_p2_three_surface_checkpoint_creates_task": False,
+        "ordinary_p2_three_surface_checkpoint_calls_provider_from_readback": False,
+        "ordinary_p2_three_surface_checkpoint_uses_model_output": False,
+        "ordinary_p2_three_surface_checkpoint_is_not_trade_signal": True,
         "ordinary_writeback_action_rows": ordinary_writeback_action_rows,
         "ordinary_writeback_action_row_count": len(ordinary_writeback_action_rows),
         "ordinary_writeback_action_rows_are_cache_only": True,
@@ -17021,6 +17101,12 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         "ordinary_p1_shortest_path_checkpoint_creates_task",
         "ordinary_p1_shortest_path_checkpoint_calls_provider_from_readback",
         "ordinary_p1_shortest_path_checkpoint_is_not_trade_signal",
+        "ordinary_p2_three_surface_checkpoint",
+        "ordinary_p2_three_surface_checkpoint_is_cache_only",
+        "ordinary_p2_three_surface_checkpoint_creates_task",
+        "ordinary_p2_three_surface_checkpoint_calls_provider_from_readback",
+        "ordinary_p2_three_surface_checkpoint_uses_model_output",
+        "ordinary_p2_three_surface_checkpoint_is_not_trade_signal",
         "ordinary_task_readback_rows",
         "ordinary_task_readback_row_count",
         "ordinary_task_readback_rows_are_cache_only",
@@ -17124,6 +17210,17 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     )
     counts["search_quant_projection_p1_shortest_path_tushare_ready"] = (
         _as_dict(summary.get("ordinary_p1_shortest_path_checkpoint")).get("tushare_first_ledger_ready") is True
+    )
+    p2_three_surface_checkpoint = _as_dict(summary.get("ordinary_p2_three_surface_checkpoint"))
+    counts["search_quant_projection_p2_three_surface_checkpoint_visible"] = bool(p2_three_surface_checkpoint)
+    counts["search_quant_projection_p2_three_surface_checkpoint_ready"] = (
+        p2_three_surface_checkpoint.get("status") == "p2_three_surface_ready"
+    )
+    counts["search_quant_projection_p2_three_surface_checkpoint_readable_surface_count"] = (
+        p2_three_surface_checkpoint.get("readable_surface_count", 0)
+    )
+    counts["search_quant_projection_p2_three_surface_checkpoint_complete_surface_count"] = (
+        p2_three_surface_checkpoint.get("complete_surface_count", 0)
     )
     counts["search_quant_projection_task_readback_row_count"] = summary.get(
         "ordinary_task_readback_row_count", 0
@@ -17293,6 +17390,11 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_p1_shortest_path_checkpoint_creates_task"] = False
     policy["search_quant_projection_p1_shortest_path_checkpoint_calls_provider_from_readback"] = False
     policy["search_quant_projection_p1_shortest_path_checkpoint_is_not_trade_signal"] = True
+    policy["search_quant_projection_p2_three_surface_checkpoint_is_cache_only"] = True
+    policy["search_quant_projection_p2_three_surface_checkpoint_creates_task"] = False
+    policy["search_quant_projection_p2_three_surface_checkpoint_calls_provider_from_readback"] = False
+    policy["search_quant_projection_p2_three_surface_checkpoint_uses_model_output"] = False
+    policy["search_quant_projection_p2_three_surface_checkpoint_is_not_trade_signal"] = True
     policy["search_quant_projection_task_readback_rows_are_cache_only"] = True
     policy["search_quant_projection_task_readback_rows_create_task"] = False
     policy["search_quant_projection_task_readback_rows_are_not_trade_signals"] = True

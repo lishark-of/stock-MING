@@ -333,6 +333,9 @@ export default function CandidateRadar() {
   const searchQuantProjectionP1ShortestPathCheckpoint =
     (cache.ordinary_p1_shortest_path_checkpoint as Record<string, unknown> | undefined) ??
     (searchQuantProjectionSmallDataWriteback.ordinary_p1_shortest_path_checkpoint as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionP2ThreeSurfaceCheckpoint =
+    (cache.ordinary_p2_three_surface_checkpoint as Record<string, unknown> | undefined) ??
+    (searchQuantProjectionSmallDataWriteback.ordinary_p2_three_surface_checkpoint as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionInterpretation = (cache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionResultCheckpoint =
     (cache.search_quant_projection_result_checkpoint as Record<string, unknown> | undefined) ??
@@ -1003,6 +1006,10 @@ export default function CandidateRadar() {
     `complete ${quantProjectionWritebackCompleteSurfaceCount}/${quantProjectionWritebackSurfaceCount}`,
     String(searchQuantProjectionWritebackCheckpoint.call_ledger_state ?? "waiting_confirm_task")
   ].join(" / ");
+  const quantProjectionP2ThreeSurfaceCheckpointLabel =
+    String(searchQuantProjectionP2ThreeSurfaceCheckpoint.ordinary_label ?? "") ||
+    String(searchQuantProjectionP2ThreeSurfaceCheckpoint.status ?? "") ||
+    quantProjectionWritebackCheckpointLabel;
   const quantProjectionSmallDataProvenance =
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_provenance_summary ?? "") ||
     "当前读回来自 GET cache 的本地 packet；provider 证据只由 POST task call_ledger 证明，React render 不补调 provider/model。";
@@ -2701,6 +2708,7 @@ export default function CandidateRadar() {
               { label: "三面状态", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "三面组成", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "完整度", value: quantProjectionWritebackCheckpointLabel, tone: quantProjectionWritebackReadableSurfaceCount === quantProjectionWritebackSurfaceCount ? "good" : "warn" },
+              { label: "P2 写入证据", value: quantProjectionP2ThreeSurfaceCheckpointLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "下一步", value: quantProjectionSmallDataNextStep },
               { label: "边界", value: quantProjectionSmallDataReadbackContract, tone: "good" }
             ]}
