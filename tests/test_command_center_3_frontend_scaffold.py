@@ -1986,6 +1986,19 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("dailyCommandP2CheckpointStatus", home_source)
         self.assertIn("dailyCommandP2CheckpointNextAction", home_source)
         self.assertIn("dailyCommandP2CheckpointBoundary", home_source)
+        self.assertIn("candidates.search_quant_projection_p2_three_surface_summary", home_source)
+        self.assertIn("candidates.search_quant_projection_p2_three_surface_status", home_source)
+        self.assertIn("candidates.search_quant_projection_p2_three_surface_next_step", home_source)
+        self.assertIn("candidates.search_quant_projection_p2_three_surface_boundary", home_source)
+        self.assertIn("candidates.search_quant_projection_p2_three_surface_ready", home_source)
+        self.assertLess(
+            home_source.index("candidates.search_quant_projection_p2_three_surface_summary"),
+            home_source.index("candidateQuantP2ThreeSurfaceCheckpoint.ordinary_label"),
+        )
+        self.assertLess(
+            home_source.index("candidates.search_quant_projection_p2_three_surface_ready"),
+            home_source.index('candidateQuantP2ThreeSurfaceCheckpoint.status === "p2_three_surface_ready"'),
+        )
         self.assertIn('aria-label="daily command p2 three surface checkpoint"', home_source)
         self.assertIn("P2 三面 checkpoint", home_source)
         self.assertIn("优先读取 CandidateRadar 的 ordinary_p2_three_surface_checkpoint", home_source)

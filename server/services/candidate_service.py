@@ -17443,6 +17443,28 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     view["search_quant_projection_p2_three_surface_readable"] = small_data_readback_checkpoint[
         "p2_three_surface_readable"
     ]
+    view["search_quant_projection_p2_three_surface_status"] = p2_three_surface_checkpoint.get("status") or ""
+    view["search_quant_projection_p2_three_surface_summary"] = (
+        p2_three_surface_checkpoint.get("ordinary_label")
+        or small_data_readback_checkpoint.get("ordinary_readback_summary")
+        or summary.get("summary_label")
+        or ""
+    )
+    view["search_quant_projection_p2_three_surface_next_step"] = (
+        p2_three_surface_checkpoint.get("ordinary_next_action")
+        or small_data_readback_checkpoint.get("ordinary_readback_next_step")
+        or summary.get("next_action")
+        or ""
+    )
+    view["search_quant_projection_p2_three_surface_boundary"] = (
+        "P2 三面只读 CandidateRadar cache / call_ledger / packet；GET cache 和 React render 不创建 task、"
+        "不补调 provider/model、不生成交易动作。"
+    )
+    view["search_quant_projection_p2_three_surface_cache_only"] = True
+    view["search_quant_projection_p2_three_surface_creates_task"] = False
+    view["search_quant_projection_p2_three_surface_calls_provider_from_readback"] = False
+    view["search_quant_projection_p2_three_surface_uses_model_output"] = False
+    view["search_quant_projection_p2_three_surface_is_not_trade_signal"] = True
     counts["search_quant_projection_small_data_readback_checkpoint_ready"] = small_data_readback_checkpoint[
         "ready"
     ]
@@ -17486,6 +17508,11 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_p2_three_surface_checkpoint_calls_provider_from_readback"] = False
     policy["search_quant_projection_p2_three_surface_checkpoint_uses_model_output"] = False
     policy["search_quant_projection_p2_three_surface_checkpoint_is_not_trade_signal"] = True
+    policy["search_quant_projection_p2_three_surface_is_cache_only"] = True
+    policy["search_quant_projection_p2_three_surface_creates_task"] = False
+    policy["search_quant_projection_p2_three_surface_calls_provider_from_readback"] = False
+    policy["search_quant_projection_p2_three_surface_uses_model_output"] = False
+    policy["search_quant_projection_p2_three_surface_is_not_trade_signal"] = True
     policy["search_quant_projection_task_readback_rows_are_cache_only"] = True
     policy["search_quant_projection_task_readback_rows_create_task"] = False
     policy["search_quant_projection_task_readback_rows_are_not_trade_signals"] = True

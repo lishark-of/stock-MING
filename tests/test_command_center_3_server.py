@@ -40195,6 +40195,35 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(small_data["packet_ready"])
         self.assertTrue(small_data["p2_three_surface_ready"])
         self.assertTrue(small_data["p2_three_surface_readable"])
+        p2_checkpoint = packet["ordinary_p2_three_surface_checkpoint"]
+        self.assertTrue(packet["search_quant_projection_p2_three_surface_ready"])
+        self.assertEqual(
+            packet["search_quant_projection_p2_three_surface_status"],
+            p2_checkpoint["status"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_p2_three_surface_summary"],
+            p2_checkpoint["ordinary_label"],
+        )
+        self.assertEqual(
+            packet["search_quant_projection_p2_three_surface_next_step"],
+            p2_checkpoint["ordinary_next_action"],
+        )
+        self.assertIn(
+            "GET cache 和 React render 不创建 task",
+            packet["search_quant_projection_p2_three_surface_boundary"],
+        )
+        self.assertTrue(packet["search_quant_projection_p2_three_surface_cache_only"])
+        self.assertFalse(packet["search_quant_projection_p2_three_surface_creates_task"])
+        self.assertFalse(packet["search_quant_projection_p2_three_surface_calls_provider_from_readback"])
+        self.assertFalse(packet["search_quant_projection_p2_three_surface_uses_model_output"])
+        self.assertTrue(packet["search_quant_projection_p2_three_surface_is_not_trade_signal"])
+        policy = packet["policy"]
+        self.assertTrue(policy["search_quant_projection_p2_three_surface_is_cache_only"])
+        self.assertFalse(policy["search_quant_projection_p2_three_surface_creates_task"])
+        self.assertFalse(policy["search_quant_projection_p2_three_surface_calls_provider_from_readback"])
+        self.assertFalse(policy["search_quant_projection_p2_three_surface_uses_model_output"])
+        self.assertTrue(policy["search_quant_projection_p2_three_surface_is_not_trade_signal"])
         self.assertIn(
             "provider 证据只由 POST task call_ledger 证明",
             small_data["ordinary_readback_provenance_summary"],

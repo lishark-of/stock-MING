@@ -487,17 +487,20 @@ export default function CommandCenterHome() {
       0
   );
   const dailyCommandP2CheckpointLabel = String(
-    candidateQuantP2ThreeSurfaceCheckpoint.ordinary_label ??
+    candidates.search_quant_projection_p2_three_surface_summary ??
+      candidateQuantP2ThreeSurfaceCheckpoint.ordinary_label ??
       candidateQuantSmallDataReadbackCheckpoint.ordinary_readback_summary ??
       dailyCommandSmallDataWritebackState
   );
   const dailyCommandP2CheckpointStatus = String(
-    candidateQuantP2ThreeSurfaceCheckpoint.status ??
+    candidates.search_quant_projection_p2_three_surface_status ??
+      candidateQuantP2ThreeSurfaceCheckpoint.status ??
       candidateQuantSmallDataReadbackCheckpoint.status ??
       "p2_three_surface_waiting_symbol_confirm"
   );
   const dailyCommandP2CheckpointNextAction = String(
-    candidateQuantP2ThreeSurfaceCheckpoint.ordinary_next_action ??
+    candidates.search_quant_projection_p2_three_surface_next_step ??
+      candidateQuantP2ThreeSurfaceCheckpoint.ordinary_next_action ??
       candidateQuantSmallDataReadbackCheckpoint.next_action ??
       (dailyCommandP2CheckpointStatus === "p2_three_surface_ready"
         ? "继续查看量化推演和次日图谱只读结果；DeepSeek 留到 P5 governed executor。"
@@ -512,6 +515,7 @@ export default function CommandCenterHome() {
   const dailyCommandP2SurfaceCompletionLabel =
     `${dailyCommandP2ReadableSurfaceCount}/${dailyCommandP2SurfaceCount} 面可读，${dailyCommandP2CompleteSurfaceCount}/${dailyCommandP2SurfaceCount} 面完整`;
   const dailyCommandP2ThreeSurfaceReady =
+    candidates.search_quant_projection_p2_three_surface_ready === true ||
     candidateQuantP2ThreeSurfaceCheckpoint.status === "p2_three_surface_ready" ||
     candidateQuantSmallDataReadbackCheckpoint.p2_three_surface_ready === true ||
     candidateQuantSmallDataWriteback.p2_three_surface_ready === true;
@@ -533,8 +537,10 @@ export default function CommandCenterHome() {
     candidates.search_quant_projection_p2_packet_ready === true;
   const dailyCommandSmallDataWritebackBoundary =
     "P2 小数据只从 CandidateRadar cache / call_ledger / packet 回放；首页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示 token/key 或 raw log。";
-  const dailyCommandP2CheckpointBoundary =
-    "P2 三面 checkpoint 只读 CandidateRadar cache / call_ledger / packet；不创建第二个 task、不补调 provider/model、不生成交易动作。";
+  const dailyCommandP2CheckpointBoundary = String(
+    candidates.search_quant_projection_p2_three_surface_boundary ??
+      "P2 三面 checkpoint 只读 CandidateRadar cache / call_ledger / packet；不创建第二个 task、不补调 provider/model、不生成交易动作。"
+  );
   const dailyCommandP2ThreeSurfaceProofItems: MetricItem[] = [
     {
       label: "cache",
@@ -1572,7 +1578,7 @@ export default function CommandCenterHome() {
     { label: "链路 checkpoint", value: homeQuantP1P2P3CheckpointLabel, tone: homeQuantP1P2P3CheckpointReady ? "good" : "warn" },
     { label: "Tushare-first", value: "确认按钮才 POST；DeepSeek skipped，成功后通过 GET cache 回放", tone: "good" },
     { label: "浏览器验收", value: homeP1BrowserEvidenceLabel, tone: "warn" },
-    { label: "P2/P3 回放", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+    { label: "P2/P3 回放", value: dailyCommandSmallDataWritebackState, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
     { label: "边界", value: "首页输入静默；不从页面打开、输入、React render 或 GET cache 外联；不交易、不改 action", tone: "good" }
   ];
   const homeQuantConfirmButtonChainRows = [
@@ -1606,7 +1612,7 @@ export default function CommandCenterHome() {
     },
     {
       链路段: "5. 写回回放",
-      当前状态: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "P2/P3 已从 cache / call_ledger / packet 回放" : "等待任务写入本地三面",
+      当前状态: dailyCommandP2ThreeSurfaceReady ? "P2/P3 已从 cache / call_ledger / packet 回放" : "等待任务写入本地三面",
       用户下一步: "看股票量化推演、次日图谱和下一票雷达详情",
       证据: "CandidateRadar cache / call_ledger / packet",
       边界: "回放不创建第二个 task、不补调 provider/model、不读取 token/key。"
@@ -1635,13 +1641,13 @@ export default function CommandCenterHome() {
         { label: "任务编号", value: homeQuantVisibleTaskId || "等待确认按钮返回 task id", tone: homeQuantVisibleTaskId ? "good" : "warn" },
         { label: "任务来源", value: homeQuantVisibleTaskSource, tone: homeQuantVisibleTaskId ? "good" : "warn" },
         { label: "先看哪里", value: homeQuantPostConfirmNextStepLabel, tone: dailyCommandP2ThreeSurfaceReady || dailyCommandP3OneGlanceReadable ? "good" : "warn" },
-        { label: "P2 写回", value: "cache / call_ledger / packet 三面回放", tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+        { label: "P2 写回", value: "cache / call_ledger / packet 三面回放", tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
         { label: "P3 结果", value: "股票量化推演 + 次日图谱 + 下一票雷达详情", tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
         { label: "DeepSeek", value: "skipped/pending 不阻塞；P5 governed executor 单独补", tone: "good" },
         { label: "安全边界", value: "回放不创建第二个 task，不下单，不改 strategy action", tone: "good" }
       ];
   const homeQuantPostConfirmReadableSentence = homeQuantVisibleTaskId
-    ? `已看到 ${homeQuantVisibleTaskId}（${homeQuantVisibleTaskSource}）；${candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "P2 三面已可读" : "P2 三面等待本地回放"}；${dailyCommandP3OneGlanceReadable ? `P3 结论：${dailyCommandExplainableResultLabel}` : "P3 结论等待本地 cache 回放"}；下一步看股票量化推演和次日图谱。`
+    ? `已看到 ${homeQuantVisibleTaskId}（${homeQuantVisibleTaskSource}）；${dailyCommandP2ThreeSurfaceReady ? "P2 三面已可读" : "P2 三面等待本地回放"}；${dailyCommandP3OneGlanceReadable ? `P3 结论：${dailyCommandExplainableResultLabel}` : "P3 结论等待本地 cache 回放"}；下一步看股票量化推演和次日图谱。`
     : "确认后会在这里显示任务编号、P2 三面、P3 结论和下一步入口。";
   const homeQuantPostConfirmReadbackState = homeQuantSubmitting
     ? "提交中：等待 FastAPI 返回 task id；不会重复创建第二个 task。"
@@ -1685,7 +1691,7 @@ export default function CommandCenterHome() {
     },
     {
       交接项: "股票量化推演",
-      当前状态: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "P2/P3 本地回放已可读" : "等待 task 写入 cache / ledger / packet",
+      当前状态: dailyCommandP2ThreeSurfaceReady ? "P2/P3 本地回放已可读" : "等待 task 写入 cache / ledger / packet",
       用户下一步: "打开股票量化推演，复核支持/压制和 P3 可读结论",
       入口: "#factor",
       边界: "链接只切换本地模块；Factor 页 GET cache 不补调 Tushare/DeepSeek。"
