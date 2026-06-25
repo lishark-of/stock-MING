@@ -7,6 +7,8 @@ import StateClarityRail from "./StateClarityRail";
 import StatusBadge from "./StatusBadge";
 import TaskBoundarySummary from "./TaskBoundarySummary";
 
+const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
+
 type Props = {
   taskId: string;
   onSuccess?: () => void;
@@ -230,10 +232,10 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
           边界: "只读本地图谱；不生成交易指令、不覆盖 strategy action。"
         },
         {
-          结果入口: "下一票雷达",
-          当前状态: "可回到候选页复核候选来源、分组和一屏行动",
-          用户下一步: "把结果当研究线索，不当买入指令",
-          入口: "#candidates",
+          结果入口: "下一票雷达确认输入区",
+          当前状态: "可回到确认输入区复核候选来源、分组和一屏行动",
+          用户下一步: "换标的时重新输入代码并点击确认；把结果当研究线索，不当买入指令",
+          入口: CANDIDATE_CONFIRM_HREF,
           边界: "Radar candidate 不是买入指令；真实交易路径继续隔离。"
         }
       ]
@@ -257,7 +259,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     ? [
         { href: "#factor", label: "查看股票量化推演", title: "切换到股票量化推演模块；只读 cache / ledger / packet", aria: "open stock quant result from task status" },
         { href: "#next", label: "查看次日图谱", title: "切换到次日图谱模块；只读本地 next-session cache", aria: "open next session map from task status" },
-        { href: "#candidates", label: "回到下一票雷达", title: "切换到下一票雷达；复核候选来源和确认链路", aria: "open candidate radar from task status" }
+        { href: CANDIDATE_CONFIRM_HREF, label: "回到下一票雷达确认", title: "切换到下一票雷达确认输入区；复核候选来源和确认链路", aria: "open candidate radar confirm input from task status" }
       ]
     : [
         { href: "#packets", label: "查看 Packet", title: "切换到 Packet 注册表；只读本地输出", aria: "open packet registry from task status" },
@@ -274,9 +276,9 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     },
     {
       恢复项: "手动回到原入口",
-      当前状态: candidateRadarResultReplay ? "可回下一票雷达重新确认标的" : "可回任务列表或 Packet 注册表定位入口",
+      当前状态: candidateRadarResultReplay ? "可回下一票雷达确认输入区重新确认标的" : "可回任务列表或 Packet 注册表定位入口",
       用户下一步: candidateRadarResultReplay ? "核对股票代码后再点确认一次" : "从任务列表查看来源，再回原页面手动操作",
-      入口: candidateRadarResultReplay ? "#candidates" : "#tasks",
+      入口: candidateRadarResultReplay ? CANDIDATE_CONFIRM_HREF : "#tasks",
       边界: "只有用户再次点击确认按钮才会创建任务；搜索输入和页面切换不外联。"
     },
     {
@@ -289,7 +291,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   ];
   const taskFailureRecoveryLinks = [
     { href: "#desktop", label: "查看一键启动预检", title: "回到桌面预检；只读确认前后端联通", aria: "open desktop preflight from failed task status" },
-    { href: candidateRadarResultReplay ? "#candidates" : "#tasks", label: candidateRadarResultReplay ? "回到下一票雷达" : "查看任务列表", title: "回到本地入口；再次确认前不会创建任务", aria: "open local recovery entry from failed task status" },
+    { href: candidateRadarResultReplay ? CANDIDATE_CONFIRM_HREF : "#tasks", label: candidateRadarResultReplay ? "回到下一票雷达确认" : "查看任务列表", title: "回到本地入口；再次确认前不会创建任务", aria: "open local recovery entry from failed task status" },
     { href: "#packets", label: "查看 Packet", title: "打开 Packet 注册表；只读查看本地输出", aria: "open packet registry from failed task status" }
   ];
   const taskOrdinarySummaryItems: MetricItem[] = [
