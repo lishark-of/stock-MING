@@ -764,7 +764,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinary_post_confirm_replay_contract", self.page)
         self.assertIn("quantProjectionReceiptRequestParams", self.page)
         self.assertIn("quantProjectionPostConfirmReplayContractRows", self.page)
-        self.assertIn('aria-label="candidate radar post confirm backend replay contract"', one_screen_result_slice)
+        self.assertIn(
+            '<details className="developer-audit-details" aria-label="candidate radar post confirm backend replay contract">',
+            one_screen_result_slice,
+        )
+        self.assertIn("<summary>后端回放合同</summary>", one_screen_result_slice)
         self.assertIn("后端回放合同", one_screen_result_slice)
         self.assertIn("优先读取后端 task payload_safe", one_screen_result_slice)
         self.assertIn("任务编号、TaskStatusPanel、GET cache、cache/call_ledger/packet、量化推演和次日图谱", one_screen_result_slice)

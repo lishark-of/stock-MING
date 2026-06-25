@@ -2443,11 +2443,11 @@ export default function CandidateRadar() {
             <h3>确认后一屏结果</h3>
             <p className="risk-note">点击确认后先看这条结果：任务是否接收、P2 三面是否回放、P3 结论是否可读和下一步入口都在一屏内；这条结果条只读本地 task receipt 与 cache / ledger / packet，不创建第二个 task。</p>
             <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
-            <div aria-label="candidate radar post confirm backend replay contract">
-              <h3>后端回放合同</h3>
+            <details className="developer-audit-details" aria-label="candidate radar post confirm backend replay contract">
+              <summary>后端回放合同</summary>
               <p className="risk-note">优先读取后端 task payload_safe 的 ordinary_post_confirm_replay_contract：确认后按任务编号、TaskStatusPanel、GET cache、cache/call_ledger/packet、量化推演和次日图谱顺序回放；这张表只读合同，不创建 task。</p>
               <DataLineageTable rows={quantProjectionPostConfirmReplayContractRows} />
-            </div>
+            </details>
             <div className="actions" aria-label="candidate radar post confirm local replay actions">
               <button
                 onClick={refreshQuantProjectionReadback}
