@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getBootstrapStatus, getCandidateRadarCache, getDesktopPreflightCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { getTasks, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
@@ -113,6 +114,7 @@ export default function CandidateRadar() {
   const [bootstrapEnvelopeWarnings, setBootstrapEnvelopeWarnings] = useState<Array<string>>([]);
   const [desktopPreflight, setDesktopPreflight] = useState<Record<string, unknown>>({});
   const [desktopPreflightEnvelopeLedger, setDesktopPreflightEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [quantProjectionSubmitting, setQuantProjectionSubmitting] = useState(false);
@@ -166,9 +168,13 @@ export default function CandidateRadar() {
       setBootstrapEnvelopeWarnings(res.warnings ?? []);
     });
   };
+  const refreshTaskIndex = () => {
+    void getTasks().then((res) => setTaskIndex(res.data));
+  };
   const refreshQuantProjectionReadback = () => {
     refreshCache();
     refreshBootstrapStatus();
+    refreshTaskIndex();
   };
   const refreshDesktopPreflight = () => {
     void getDesktopPreflightCache().then((res) => {
@@ -304,6 +310,7 @@ export default function CandidateRadar() {
     refreshCache();
     refreshBootstrapStatus();
     refreshDesktopPreflight();
+    refreshTaskIndex();
   }, []);
   useEffect(() => {
     const anchor = candidateRadarRouteAnchorFromHash();
@@ -1518,6 +1525,82 @@ export default function CandidateRadar() {
       ? "等待 Tushare-first 回放；普通页只看回放状态"
       : "输入代码并确认后创建 Tushare-first 任务";
   const quantProjectionDisplayTaskId = taskId || quantProjectionPersistedTaskId;
+  const taskIndexLatestTask = taskIndex?.tasks?.[0];
+  const taskIndexLatestConfirmedSymbol = String(
+    taskIndex?.latest_confirmed_symbol ??
+      (taskIndexLatestTask?.payload_safe as Record<string, unknown> | undefined)?.symbol ??
+      ""
+  );
+  const taskIndexLatestConfirmedTaskId = String(
+    taskIndex?.latest_confirmed_task_id ??
+      taskIndex?.latest_task_id ??
+      taskIndexLatestTask?.task_id ??
+      ""
+  );
+  const taskIndexLatestConfirmedStatus = String(
+    taskIndex?.latest_confirmed_task_status ??
+      taskIndex?.latest_task_status ??
+      taskIndexLatestTask?.status ??
+      ""
+  );
+  const taskIndexLatestConfirmedStep = String(
+    taskIndex?.latest_confirmed_task_current_step ??
+      taskIndexLatestTask?.current_step ??
+      ""
+  );
+  const taskIndexReadbackSafe =
+    taskIndex !== null &&
+    taskIndex.external_calls_triggered !== true &&
+    taskIndex.readback_external_calls_triggered !== true &&
+    taskIndex.latest_confirmed_symbol_readback_external_calls_triggered !== true &&
+    taskIndex.latest_confirmed_symbol_creates_task_from_readback !== true;
+  const quantProjectionProgressWatchTaskId = taskIndexLatestConfirmedTaskId || quantProjectionDisplayTaskId;
+  const quantProjectionProgressWatchSymbol = taskIndexLatestConfirmedSymbol || quantProjectionDisplaySymbol;
+  const quantProjectionProgressWatchStatus =
+    taskIndexLatestConfirmedStatus ||
+    (quantProjectionDisplayTaskId ? "cache_replay" : "waiting_confirm");
+  const quantProjectionProgressWatchStep =
+    taskIndexLatestConfirmedStep ||
+    quantProjectionPersistedTaskStep ||
+    "等待确认按钮后的本地任务状态";
+  const quantProjectionProgressWatchLabel = quantProjectionProgressWatchTaskId
+    ? `${quantProjectionProgressWatchSymbol || "当前标的"} / ${quantProjectionProgressWatchStatus}`
+    : "等待确认按钮后的任务进度";
+  const quantProjectionProgressWatchNext = quantProjectionProgressWatchTaskId
+    ? "查看任务目录；成功后回放股票量化推演和次日图谱"
+    : "先输入股票代码并点击确认按钮；输入本身保持静默";
+  const quantProjectionTaskIndexProgressItems: MetricItem[] = [
+    {
+      label: "边用边看",
+      value: quantProjectionProgressWatchLabel,
+      tone: quantProjectionProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "最新确认标的",
+      value: quantProjectionProgressWatchSymbol || "等待确认股票代码",
+      tone: quantProjectionProgressWatchSymbol ? "good" : "neutral"
+    },
+    {
+      label: "最新任务",
+      value: quantProjectionProgressWatchTaskId || "等待确认按钮",
+      tone: quantProjectionProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "当前步骤",
+      value: quantProjectionProgressWatchStep,
+      tone: quantProjectionProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "只读来源",
+      value: "GET /api/tasks + CandidateRadar cache",
+      tone: "good"
+    },
+    {
+      label: "安全边界",
+      value: taskIndexReadbackSafe ? "任务索引回读未触发外联、未创建 task" : "等待任务索引只读边界回放",
+      tone: taskIndexReadbackSafe ? "good" : "warn"
+    }
+  ];
   const quantProjectionLastResult = [
     `当前标的：${quantProjectionDisplaySymbol || "--"}`,
     `本地记录：${String(searchQuantProjectionReceipt.status ?? "暂无")}`,
@@ -1532,6 +1615,8 @@ export default function CandidateRadar() {
       : `最近任务：${String(taskReceipt.data?.task_id ?? taskReceipt.data?.task?.task_id ?? "--")} / ${taskReceipt.ok ? "已接收" : "创建失败"} / ${String(taskReceipt.data?.task?.current_step ?? taskReceipt.error ?? "等待状态轮询")}`
     : quantProjectionPersistedTaskId
       ? `最近任务：${quantProjectionPersistedTaskId} / cache 回放 / ${quantProjectionPersistedTaskStep || "等待状态"}`
+      : taskIndexLatestConfirmedTaskId
+        ? `最近任务：${taskIndexLatestConfirmedTaskId} / ${taskIndexLatestConfirmedStatus || "任务索引回放"} / ${taskIndexLatestConfirmedStep || "等待状态"}`
       : "最近任务：暂无；点击确认按钮后显示本地任务编号";
   const quantProjectionTushareFirstOrdinaryStage = quantProjectionSubmitError
     ? "P1 blocked：确认任务未创建；先恢复本地 FastAPI 后再重新点击确认"
@@ -1971,6 +2056,11 @@ export default function CandidateRadar() {
         ? "已可读：打开股票量化推演和次日图谱回放本地结果"
         : quantProjectionReplayDestinationState,
       tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "边用边看",
+      value: quantProjectionProgressWatchLabel,
+      tone: quantProjectionProgressWatchTaskId ? "good" : "warn"
     },
     {
       label: "现在点哪",
@@ -2604,6 +2694,16 @@ export default function CandidateRadar() {
           <h3>现在可用状态</h3>
           <MetricGrid items={quantProjectionUsableNowItems} />
           <p className="risk-note">这条只合成本地 FastAPI、确认按钮、最近任务和 P2/P3 回放状态；不创建 task、不调用 Tushare/DeepSeek、不改 strategy action。</p>
+        </div>
+        <div aria-label="candidate radar local task index progress watch">
+          <h3>本地任务进度</h3>
+          <MetricGrid items={quantProjectionTaskIndexProgressItems} />
+          <div className="actions" aria-label="candidate radar local task index progress actions">
+            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from candidate radar progress watch">任务目录</a>
+            <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar progress watch">股票量化推演</a>
+            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar progress watch">次日图谱</a>
+          </div>
+          <p className="risk-note">边用边看：{quantProjectionProgressWatchNext}；这只来自 GET /api/tasks 和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易。</p>
         </div>
         <div aria-label="candidate radar ordinary progress checkpoint">
           <h3>当前进度 checkpoint</h3>

@@ -74,12 +74,30 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "确认按钮"',
             'label: "最近任务"',
             'label: "结果回放"',
+            'label: "边用边看"',
             'label: "现在点哪"',
         ):
             self.assertIn(usable_label, self.page)
         self.assertIn("这条只合成本地 FastAPI、确认按钮、最近任务和 P2/P3 回放状态", summary_primary_slice)
+        self.assertIn("getTasks", self.page)
+        self.assertIn("const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);", self.page)
+        self.assertIn("taskIndex?.latest_confirmed_symbol", self.page)
+        self.assertIn("taskIndex?.latest_confirmed_task_id", self.page)
+        self.assertIn("taskIndex?.latest_confirmed_task_status", self.page)
+        self.assertIn("taskIndex?.latest_confirmed_task_current_step", self.page)
+        self.assertIn("quantProjectionTaskIndexProgressItems", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar local task index progress watch"', summary_primary_slice)
+        self.assertIn("本地任务进度", summary_primary_slice)
+        self.assertIn("GET /api/tasks + CandidateRadar cache", self.page)
+        self.assertIn("任务索引回读未触发外联、未创建 task", self.page)
+        self.assertIn("边用边看：{quantProjectionProgressWatchNext}", summary_primary_slice)
+        self.assertIn("这只来自 GET /api/tasks 和 CandidateRadar cache，不创建第二个 task", summary_primary_slice)
         self.assertLess(
             summary_primary_slice.index('aria-label="candidate radar ordinary usable now strip"'),
+            summary_primary_slice.index('aria-label="candidate radar local task index progress watch"'),
+        )
+        self.assertLess(
+            summary_primary_slice.index('aria-label="candidate radar local task index progress watch"'),
             summary_primary_slice.index('aria-label="candidate radar ordinary progress checkpoint"'),
         )
         for downshifted_label in (
@@ -440,6 +458,34 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", checkpoint)
         self.assertNotIn("postCandidateRadarQuantProjection", checkpoint)
         self.assertNotIn("launchQuantProjection", checkpoint)
+
+    def test_candidate_radar_task_index_progress_watch_is_read_only(self):
+        summary_start = self.page.index('title="普通用户雷达摘要"')
+        summary_end = self.page.index('aria-label="candidate radar ordinary progress checkpoint"', summary_start)
+        summary = self.page[summary_start:summary_end]
+        watch_start = summary.index('aria-label="candidate radar local task index progress watch"')
+        watch = summary[watch_start:]
+
+        self.assertIn("本地任务进度", watch)
+        self.assertIn("quantProjectionTaskIndexProgressItems", watch)
+        self.assertIn('label: "边用边看"', self.page)
+        self.assertIn('label: "最新确认标的"', self.page)
+        self.assertIn('label: "最新任务"', self.page)
+        self.assertIn('label: "当前步骤"', self.page)
+        self.assertIn('label: "只读来源"', self.page)
+        self.assertIn("GET /api/tasks + CandidateRadar cache", self.page)
+        self.assertIn("taskIndexReadbackSafe", self.page)
+        self.assertIn("taskIndex.external_calls_triggered !== true", self.page)
+        self.assertIn("taskIndex.latest_confirmed_symbol_creates_task_from_readback !== true", self.page)
+        self.assertIn('aria-label="candidate radar local task index progress actions"', watch)
+        self.assertIn('href="#tasks"', watch)
+        self.assertIn('href="#factor"', watch)
+        self.assertIn('href="#next"', watch)
+        self.assertIn("这只来自 GET /api/tasks 和 CandidateRadar cache", watch)
+        self.assertIn("不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易", watch)
+        self.assertNotIn("onClick=", watch)
+        self.assertNotIn("postCandidateRadarQuantProjection", watch)
+        self.assertNotIn("launchQuantProjection", watch)
 
     def test_candidate_radar_p1_direct_handoff_is_local_navigation_only(self):
         direct_start = self.page.index('aria-label="candidate radar p1 direct confirmation handoff"')
