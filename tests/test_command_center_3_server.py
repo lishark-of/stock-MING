@@ -11581,6 +11581,120 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(persisted["github_called"])
         self.assertTrue(persisted["does_not_modify_strategy_action"])
 
+    def test_tushare_trade_cal_provider_acceptance_splits_multi_exchange_scope(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        start = _dt.date(2024, 1, 1)
+        end = start + _dt.timedelta(days=820)
+
+        def rows_for(exchange: str) -> list[dict[str, Any]]:
+            rows = []
+            cursor = start
+            previous_open = ""
+            while cursor <= end:
+                is_open = cursor.weekday() < 5
+                rows.append(
+                    {
+                        "cal_date": cursor.strftime("%Y%m%d"),
+                        "is_open": 1 if is_open else 0,
+                        "pretrade_date": previous_open,
+                    }
+                )
+                if is_open:
+                    previous_open = cursor.strftime("%Y%m%d")
+                cursor += _dt.timedelta(days=1)
+            return rows
+
+        class MultiExchangeTradeCalAdapter:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, Any]] = []
+
+            def get_trade_cal(self, **params):
+                self.calls.append(dict(params))
+                return {"ok": True, "data": rows_for(str(params["exchange"])), "error": ""}
+
+        adapter = MultiExchangeTradeCalAdapter()
+        task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": ["trade_cal"],
+                "exchange": ["SSE", "SZSE"],
+                "start_date": start.strftime("%Y%m%d"),
+                "end_date": end.strftime("%Y%m%d"),
+                "acceptance_mode": "provider_backed_trade_cal_long_window",
+                "freshness_replay_passed": True,
+                "freshness_replay_scenario_count": 8,
+                "failure_modes_validated": True,
+                "failure_mode_validated_count": 6,
+                "token": "SHOULD_DROP",
+            },
+            adapter=adapter,
+        )
+
+        self.assertEqual([call["exchange"] for call in adapter.calls], ["SSE", "SZSE"])
+        self.assertEqual(task["status"], "success")
+        ledger_row = task["call_ledger"][0]
+        self.assertEqual(ledger_row["request_params_safe"]["exchange"], ["SSE", "SZSE"])
+        self.assertEqual(ledger_row["exchange_call_count"], 2)
+        self.assertEqual(ledger_row["exchange_success_count"], 2)
+        self.assertEqual(ledger_row["exchange_failed_count"], 0)
+        self.assertEqual(ledger_row["row_count"], len(rows_for("SSE")) * 2)
+        self.assertTrue(ledger_row["provider_backed_long_window_acceptance_done"])
+        self.assertTrue(ledger_row["provider_backed_trade_cal_acceptance_done"])
+        self.assertEqual(ledger_row["provider_acceptance_blocker_count"], 0)
+        self.assertTrue(ledger_row["minimum_window_days_passed"])
+        self.assertGreater(ledger_row["open_day_count"], 0)
+        self.assertGreater(ledger_row["closed_day_count"], 0)
+        self.assertFalse(ledger_row["deepseek_called"])
+        self.assertFalse(ledger_row["github_called"])
+        self.assertTrue(ledger_row["does_not_execute_trades"])
+        self.assertTrue(ledger_row["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        persisted_row = persisted["call_ledger"][0]
+        self.assertEqual(persisted_row["request_params_safe"]["exchange"], ["SSE", "SZSE"])
+        self.assertEqual(persisted_row["exchange_call_count"], 2)
+        self.assertTrue(persisted_row["provider_backed_long_window_acceptance_done"])
+        self.assertTrue(persisted["tushare_called"])
+        self.assertFalse(persisted["deepseek_called"])
+        self.assertFalse(persisted["github_called"])
+        self.assertTrue(persisted["does_not_execute_trades"])
+        self.assertTrue(persisted["does_not_modify_strategy_action"])
+
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        class EmptySecondExchangeAdapter:
+            def get_trade_cal(self, **params):
+                if params["exchange"] == "SZSE":
+                    return {"ok": True, "data": [], "error": ""}
+                return {"ok": True, "data": rows_for(str(params["exchange"])), "error": ""}
+
+        blocked_task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": ["trade_cal"],
+                "exchange": "SSE,SZSE",
+                "start_date": start.strftime("%Y%m%d"),
+                "end_date": end.strftime("%Y%m%d"),
+                "acceptance_mode": "provider_backed_trade_cal_long_window",
+                "freshness_replay_passed": True,
+                "freshness_replay_scenario_count": 8,
+                "failure_modes_validated": True,
+                "failure_mode_validated_count": 6,
+            },
+            adapter=EmptySecondExchangeAdapter(),
+        )
+        blocked_row = blocked_task["call_ledger"][0]
+        self.assertEqual(blocked_task["status"], "failed")
+        self.assertEqual(blocked_row["request_params_safe"]["exchange"], ["SSE", "SZSE"])
+        self.assertEqual(blocked_row["exchange_call_count"], 2)
+        self.assertEqual(blocked_row["exchange_success_count"], 2)
+        self.assertEqual(blocked_row["exchange_empty_count"], 1)
+        self.assertFalse(blocked_row["provider_backed_long_window_acceptance_done"])
+        self.assertIn("trade_cal_call_not_success", blocked_row["provider_acceptance_blockers"])
+
     def test_tushare_target_sample_run_preserves_prior_trade_cal_direct_evidence(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()

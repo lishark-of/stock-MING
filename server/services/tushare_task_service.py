@@ -3146,6 +3146,22 @@ def _request_params_for_api(api: str, payload: Any) -> dict[str, Any]:
     return params
 
 
+def _trade_cal_exchange_values(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    raw_items = value
+    if isinstance(value, str):
+        raw_items = value.replace(";", ",").split(",")
+    elif not isinstance(value, (list, tuple, set)):
+        raw_items = [value]
+    exchanges: list[str] = []
+    for item in raw_items:
+        exchange = "".join(ch for ch in str(item or "").upper() if ch.isalnum())
+        if exchange and exchange not in exchanges:
+            exchanges.append(exchange)
+    return exchanges
+
+
 def _required_preflight_params(api: str) -> list[str]:
     params = list(REFRESH_API_SPECS[api].get("params") or [])
     return ["ts_code"] if "ts_code" in params else []
@@ -3920,6 +3936,10 @@ def _call_ledger_row(
         "parquet_dataset": (parquet_result or {}).get("dataset"),
         "parquet_status": (parquet_result or {}).get("status", "not_enabled"),
         "parquet_row_count": int((parquet_result or {}).get("row_count") or 0),
+        "exchange_call_count": int(result.get("exchange_call_count") or (1 if api == "trade_cal" and params.get("exchange") else 0)),
+        "exchange_success_count": int(result.get("exchange_success_count") or 0),
+        "exchange_empty_count": int(result.get("exchange_empty_count") or 0),
+        "exchange_failed_count": int(result.get("exchange_failed_count") or 0),
         "external": True,
         "external_calls_triggered": True,
         "tushare_called": True,
@@ -3938,6 +3958,86 @@ def _call_ledger_row(
         )
     )
     return row
+
+
+def _call_tushare_api(
+    *,
+    fn: Any,
+    api: str,
+    params: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if api != "trade_cal":
+        try:
+            result = fn(**params)
+            if not isinstance(result, Mapping):
+                result = {"ok": False, "data": None, "error": f"invalid result type: {type(result).__name__}"}
+        except Exception as exc:
+            result = {"ok": False, "data": None, "error": _safe_text(exc)}
+        return dict(result), params
+
+    exchanges = _trade_cal_exchange_values(params.get("exchange"))
+    if len(exchanges) <= 1:
+        call_params = dict(params)
+        if exchanges:
+            call_params["exchange"] = exchanges[0]
+        try:
+            result = fn(**call_params)
+            if not isinstance(result, Mapping):
+                result = {"ok": False, "data": None, "error": f"invalid result type: {type(result).__name__}"}
+        except Exception as exc:
+            result = {"ok": False, "data": None, "error": _safe_text(exc)}
+        return dict(result), call_params
+
+    combined_rows: list[dict[str, Any]] = []
+    errors: list[str] = []
+    empty_exchanges: list[str] = []
+    ok_count = 0
+    empty_count = 0
+    for exchange in exchanges:
+        call_params = {**params, "exchange": exchange}
+        try:
+            result = fn(**call_params)
+            if not isinstance(result, Mapping):
+                result = {"ok": False, "data": None, "error": f"invalid result type: {type(result).__name__}"}
+        except Exception as exc:
+            result = {"ok": False, "data": None, "error": _safe_text(exc)}
+        rows = _trade_cal_acceptance_rows_from_data(result.get("data") if isinstance(result, Mapping) else None)
+        if result.get("ok"):
+            ok_count += 1
+            if not rows:
+                empty_count += 1
+                empty_exchanges.append(exchange)
+        else:
+            errors.append(f"{exchange}:{_safe_text(result.get('error') if isinstance(result, Mapping) else 'unknown')}")
+        for row in rows:
+            safe_row = dict(row)
+            safe_row.setdefault("exchange", exchange)
+            combined_rows.append(safe_row)
+
+    safe_params = {**params, "exchange": exchanges}
+    combined_ok = ok_count == len(exchanges) and empty_count == 0
+    if combined_ok:
+        error = ""
+    elif empty_exchanges:
+        error = f"trade_cal empty result for exchange: {','.join(empty_exchanges)}"
+        if errors:
+            error = f"{error}; {'; '.join(errors)}"
+    elif errors:
+        error = "; ".join(errors)
+    else:
+        error = "trade_cal multi-exchange call returned no successful exchange"
+    return (
+        {
+            "ok": combined_ok,
+            "data": combined_rows,
+            "error": error,
+            "exchange_call_count": len(exchanges),
+            "exchange_success_count": ok_count,
+            "exchange_empty_count": empty_count,
+            "exchange_failed_count": len(exchanges) - ok_count,
+        },
+        safe_params,
+    )
 
 
 def _blocked_missing_param_ledger_row(api: str, *, params: dict[str, Any], missing_param: str, now: str) -> dict[str, Any]:
@@ -4021,16 +4121,16 @@ def run_tushare_refresh_task(
             import tushare_adapter as adapter_module
         try:
             fn = getattr(adapter_module, str(REFRESH_API_SPECS[api]["method"]))
-            result = fn(**params)
-            if not isinstance(result, Mapping):
-                result = {"ok": False, "data": None, "error": f"invalid result type: {type(result).__name__}"}
         except Exception as exc:
             result = {"ok": False, "data": None, "error": _safe_text(exc)}
+            safe_params = params
+        else:
+            result, safe_params = _call_tushare_api(fn=fn, api=api, params=params)
         parquet_result = _write_parquet_dataset(api, result.get("data")) if bool(result.get("ok")) else {"status": "not_written_failed_call"}
         call_ledger.append(
             _call_ledger_row(
                 api,
-                params=params,
+                params=safe_params,
                 result=dict(result),
                 parquet_result=parquet_result,
                 now=now,
