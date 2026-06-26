@@ -5718,6 +5718,11 @@ def _freshness_durable_evidence_recipe(
         producer_local_current_cache_coverage_done
         and producer_provider_backed_trade_cal_acceptance_evidence_done
     )
+    provider_acceptance_missing_evidence = (
+        []
+        if producer_provider_backed_trade_cal_acceptance_evidence_done
+        else ["provider-backed trade_cal acceptance evidence"]
+    )
     local_release_gate_status = _safe_text(local_release_gate_evidence.get("status"), limit=160)
     local_release_gate_observed = local_release_gate_evidence.get("fresh_local_gate_run_observed") is True
     local_release_gate_head_matches_current = (
@@ -5777,19 +5782,17 @@ def _freshness_durable_evidence_recipe(
     if producer_durable_direct_evidence_done:
         producer_coverage_missing_evidence = []
     elif producer_local_current_cache_coverage_done:
-        producer_coverage_missing_evidence = [
-            "provider-backed trade_cal acceptance evidence",
-        ]
+        producer_coverage_missing_evidence = provider_acceptance_missing_evidence
     elif producer_cache_refresh_direct_evidence_done:
         producer_coverage_missing_evidence = [
             "current cache producer expected_trade_date/data_date/freshness_state coverage",
-            "provider-backed trade_cal acceptance evidence",
+            *provider_acceptance_missing_evidence,
         ]
     elif producer_generation_ready and producer_generation_cache_pending:
         producer_coverage_missing_evidence = [
             "current cache refresh with generated producer freshness context",
             "current cache producer expected_trade_date/data_date/freshness_state coverage",
-            "provider-backed trade_cal acceptance evidence",
+            *provider_acceptance_missing_evidence,
         ]
     else:
         producer_coverage_missing_evidence = [
