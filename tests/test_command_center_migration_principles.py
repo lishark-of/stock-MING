@@ -1713,6 +1713,19 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("scripts/push_gate_3_0.sh", ci_workflow)
         self.assertIn("Bootstrap runtime contract", push_gate)
         self.assertIn("scripts/bootstrap_runtime_contract.py", push_gate)
+        self.assertIn("BOOTSTRAP_RUNTIME_ALLOWED_BLOCKERS", push_gate)
+        self.assertIn(
+            'run_local_contract_step "Bootstrap runtime contract" scripts/bootstrap_runtime_contract.py "$BOOTSTRAP_RUNTIME_ALLOWED_BLOCKERS"',
+            push_gate,
+        )
+        self.assertIn(
+            "runtime_frontend_enablement_gate_blocks_stage_04_until_browser_wiring_evidence",
+            push_gate,
+        )
+        self.assertIn(
+            "runtime_frontend_enablement_promotion_contract_blocks_stage_04_until_evidence_chain_complete",
+            push_gate,
+        )
         self.assertIn("local_gate_pass_is_not_remote_ci: true", push_gate)
         self.assertIn("remote_actions_status_known: false", push_gate)
         self.assertIn("latest_remote_run_verified_green: false", push_gate)

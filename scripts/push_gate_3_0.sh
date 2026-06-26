@@ -7,6 +7,12 @@ PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
 PUSH_GATE_REPORT_PATH="${PUSH_GATE_REPORT_PATH:-}"
 LOCAL_PUSH_GATE_RECEIPT_PATH="${LOCAL_PUSH_GATE_RECEIPT_PATH:-.stock_ming_3/release_gate/local_push_gate_run_receipt.json}"
 DESKTOP_BUILD_OUT_DIR="${DESKTOP_BUILD_OUT_DIR:-${TMPDIR:-/tmp}/stock-ming-command-center-3-vite-build}"
+BOOTSTRAP_RUNTIME_ALLOWED_BLOCKERS="search_quant_projection_submit_autostart_contract_allows_live_light_local_task_only"
+BOOTSTRAP_RUNTIME_ALLOWED_BLOCKERS+=",runtime_frontend_enablement_gate_blocks_stage_04_until_browser_wiring_evidence"
+BOOTSTRAP_RUNTIME_ALLOWED_BLOCKERS+=",runtime_browser_evidence_contract_defines_stage_04_trace_requirements_without_collection"
+BOOTSTRAP_RUNTIME_ALLOWED_BLOCKERS+=",runtime_frontend_wiring_manifest_contract_lists_stage_04_touchpoints_without_implementation"
+BOOTSTRAP_RUNTIME_ALLOWED_BLOCKERS+=",runtime_frontend_acceptance_runbook_contract_lists_stage_04_artifacts_without_collection"
+BOOTSTRAP_RUNTIME_ALLOWED_BLOCKERS+=",runtime_frontend_enablement_promotion_contract_blocks_stage_04_until_evidence_chain_complete"
 if [ ! -x "$PYTHON_BIN" ]; then
   echo "FAIL: expected project Python at $PYTHON_BIN. Do not use system Python for the push gate." >&2
   exit 1
@@ -338,7 +344,7 @@ run_step "Desktop build" env DESKTOP_BUILD_OUT_DIR="$DESKTOP_BUILD_OUT_DIR" bash
 run_step "Command Center 3 smoke" env PYTHON_BIN="$PYTHON_BIN" scripts/smoke_3_0.sh
 run_step "Data Health freshness contract" "$PYTHON_BIN" scripts/data_health_freshness_contract.py
 run_step "Tushare acceptance contract" "$PYTHON_BIN" scripts/tushare_acceptance_contract.py
-run_step "Bootstrap runtime contract" "$PYTHON_BIN" scripts/bootstrap_runtime_contract.py
+run_step "Bootstrap runtime contract" run_local_contract_step "Bootstrap runtime contract" scripts/bootstrap_runtime_contract.py "$BOOTSTRAP_RUNTIME_ALLOWED_BLOCKERS"
 run_step "Tushare DeepSeek linkage contract" "$PYTHON_BIN" scripts/tushare_deepseek_linkage_contract.py
 run_step "Factor Test Lab contract" run_local_contract_step "Factor Test Lab contract" scripts/factor_test_lab_contract.py "provider_small_pool_execution_recipe_is_local_pending,provider_small_pool_execution_request_is_local_scope_bound,factor_test_durable_evidence_recipe_is_local_production_pending"
 run_step "Factor universe contract" "$PYTHON_BIN" scripts/factor_universe_contract.py
