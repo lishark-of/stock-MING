@@ -278,9 +278,13 @@ def build_contract() -> dict[str, Any]:
     target_sample_execution_request_catalog = _catalog_by_type(
         "run_tushare_provider_target_sample_execution_request"
     )
+    trade_cal_execution_request_catalog = _catalog_by_type(
+        "run_trade_cal_provider_acceptance_execution_request"
+    )
     factor_refresh_catalog = _catalog_by_type("refresh_factor_data")
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/tushare_acceptance_contract.py")
+    tushare_service_source = _read_script("server/services/tushare_task_service.py")
 
     api_count = len(tushare_task_service.REFRESH_API_SPECS)
     core_apis = list(tushare_task_service.CORE_REFRESH_APIS)
@@ -678,6 +682,23 @@ def build_contract() -> dict[str, Any]:
             for row in production_stage_scope_rows
         )
     )
+    trade_cal_provider_execution_gate_source_ready = all(
+        snippet in tushare_service_source
+        for snippet in (
+            "def _trade_cal_provider_execution_gate(",
+            "adapter is None",
+            'selected_apis == ["trade_cal"]',
+            "acceptance_mode == TRADE_CAL_PROVIDER_ACCEPTANCE_MODE",
+            "missing_trade_cal_provider_acceptance_execution_request",
+            "scope_hash_not_bound_to_latest_execution_request",
+            "exchange_scope_not_bound_to_execution_request",
+            "date_window_not_bound_to_execution_request",
+            "trade_cal_provider_acceptance_execution_gate_blocked_before_provider_adapter_load",
+            "local_trade_cal_provider_acceptance_execution_gate",
+            '"tushare_called": False',
+            '"provider_execution_gate_passed": True',
+        )
+    )
 
     rows = [
         _row(
@@ -693,6 +714,10 @@ def build_contract() -> dict[str, Any]:
             and refresh_catalog.get("provider_acceptance_modes")
             == ["provider_backed_trade_cal_long_window", "provider_target_sample_acceptance"]
             and refresh_catalog.get("trade_cal_provider_acceptance_mode_requires_explicit_payload") is True
+            and refresh_catalog.get("trade_cal_provider_acceptance_real_route_requires_execution_request") is True
+            and refresh_catalog.get("trade_cal_provider_acceptance_requires_bound_execution_request_scope_hash") is True
+            and refresh_catalog.get("trade_cal_provider_acceptance_requires_execution_request_exchange_window_match") is True
+            and refresh_catalog.get("trade_cal_provider_acceptance_gate_blocks_before_provider_adapter_load") is True
             and refresh_catalog.get("trade_cal_provider_acceptance_is_full_interface_acceptance") is False
             and refresh_catalog.get("provider_target_sample_acceptance_mode_requires_explicit_payload") is True
             and refresh_catalog.get("provider_target_sample_acceptance_is_full_interface_acceptance") is False
@@ -741,6 +766,36 @@ def build_contract() -> dict[str, Any]:
             and trade_cal_full_acceptance.get("production_tushare_pipeline_complete") is False
             and trade_cal_full_acceptance.get("does_not_modify_strategy_action") is True,
             "trade_cal provider-backed long-window acceptance requires explicit payload, 730-day schema/window evidence, freshness replay evidence, and failure-mode evidence.",
+        ),
+        _row(
+            "trade_cal_provider_execution_request_gate_is_release_guarded",
+            trade_cal_execution_request_catalog.get("route")
+            == "POST /api/data-health/trade-cal-provider-acceptance-execution-request"
+            and trade_cal_execution_request_catalog.get("button_gated") is True
+            and trade_cal_execution_request_catalog.get("possible_external_sources") == []
+            and trade_cal_execution_request_catalog.get("future_external_sources") == ["tushare"]
+            and trade_cal_execution_request_catalog.get("local_execution_request_only") is True
+            and trade_cal_execution_request_catalog.get("requires_prior_task_type")
+            == "run_trade_cal_provider_acceptance_dry_run"
+            and trade_cal_execution_request_catalog.get("requires_bound_scope_hash") is True
+            and trade_cal_execution_request_catalog.get("target_provider_task_route")
+            == "POST /api/tasks/refresh-tushare-facts"
+            and trade_cal_execution_request_catalog.get("target_provider_task_type") == "refresh_tushare_facts"
+            and trade_cal_execution_request_catalog.get("target_acceptance_mode")
+            == "provider_backed_trade_cal_long_window"
+            and trade_cal_execution_request_catalog.get("allowed_apis") == ["trade_cal"]
+            and trade_cal_execution_request_catalog.get("requires_user_confirmation") is True
+            and trade_cal_execution_request_catalog.get("creates_provider_task") is False
+            and trade_cal_execution_request_catalog.get("provider_task_executed_by_request") is False
+            and trade_cal_execution_request_catalog.get("provider_execution_implemented") is False
+            and trade_cal_execution_request_catalog.get("cache_get_external_calls") is False
+            and trade_cal_execution_request_catalog.get("react_render_direct_provider_calls") is False
+            and trade_cal_execution_request_catalog.get("server_secret_values_read") is False
+            and trade_cal_execution_request_catalog.get("credential_values_exposed") is False
+            and trade_cal_execution_request_catalog.get("does_not_execute_trades") is True
+            and trade_cal_execution_request_catalog.get("does_not_modify_strategy_action") is True
+            and trade_cal_provider_execution_gate_source_ready,
+            "The real trade_cal provider route must be release-gated by a prior local execution-request ticket, matching scope hash, exchange, and date window before the provider adapter can load.",
         ),
         _row(
             "matrix_only_rows_not_verified",
@@ -1437,7 +1492,7 @@ def build_contract() -> dict[str, Any]:
         "schema_version": "command_center_3_tushare_acceptance_contract.v1",
         "status": "tushare_acceptance_contract_passed" if not blockers else "tushare_acceptance_contract_blocked",
         "scope": "local_matrix_and_readiness_contract_no_provider_execution",
-        "ltg": "LTG-02/LTG-11",
+        "ltg": "LTG-01/LTG-02/LTG-11",
         "contract_ready": not blockers,
         "provider_backed_acceptance_done": False,
         "production_tushare_pipeline_complete": False,
@@ -1536,6 +1591,23 @@ def build_contract() -> dict[str, Any]:
             "trade_cal_acceptance_done_when_replay_and_failure_evidence_present": trade_cal_full_acceptance.get(
                 "provider_backed_long_window_acceptance_done"
             ),
+            "trade_cal_provider_execution_request_route": trade_cal_execution_request_catalog.get("route"),
+            "trade_cal_provider_execution_request_local_only": trade_cal_execution_request_catalog.get(
+                "local_execution_request_only"
+            ),
+            "trade_cal_provider_execution_request_target_mode": trade_cal_execution_request_catalog.get(
+                "target_acceptance_mode"
+            ),
+            "trade_cal_provider_execution_request_allowed_apis": trade_cal_execution_request_catalog.get(
+                "allowed_apis"
+            ),
+            "trade_cal_provider_execution_request_creates_task": trade_cal_execution_request_catalog.get(
+                "creates_provider_task"
+            ),
+            "trade_cal_provider_execution_request_calls_provider": trade_cal_execution_request_catalog.get(
+                "provider_task_executed_by_request"
+            ),
+            "trade_cal_provider_execution_gate_source_ready": trade_cal_provider_execution_gate_source_ready,
             "multi_target_sample_acceptance_requested_count": multi_target_acceptance.get("requested_target_count"),
             "multi_target_sample_acceptance_ready_count": multi_target_acceptance.get("ready_target_count"),
             "multi_target_sample_acceptance_targets": multi_target_acceptance.get("requested_targets"),

@@ -13968,6 +13968,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("target_sample_execution_recipe_is_local_not_execution", script)
         self.assertIn("multi_target_sample_execution_recipe_ready_review_pending_without_promotion", script)
         self.assertIn("interface_group_scope_complete_but_provider_acceptance_pending", script)
+        self.assertIn("trade_cal_provider_execution_request_gate_is_release_guarded", script)
         self.assertIn("tushare_production_stage_scope_manifest", script)
         self.assertIn("tushare_production_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("tushare_durable_evidence_recipe", script)
@@ -14019,6 +14020,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertFalse(payload["observed"]["provider_sample_activation_ready_for_explicit_task"])
         self.assertGreater(payload["observed"]["provider_sample_activation_blocker_count"], 0)
+        self.assertEqual(
+            payload["observed"]["trade_cal_provider_execution_request_route"],
+            "POST /api/data-health/trade-cal-provider-acceptance-execution-request",
+        )
+        self.assertTrue(payload["observed"]["trade_cal_provider_execution_request_local_only"])
+        self.assertEqual(
+            payload["observed"]["trade_cal_provider_execution_request_target_mode"],
+            "provider_backed_trade_cal_long_window",
+        )
+        self.assertEqual(payload["observed"]["trade_cal_provider_execution_request_allowed_apis"], ["trade_cal"])
+        self.assertFalse(payload["observed"]["trade_cal_provider_execution_request_creates_task"])
+        self.assertFalse(payload["observed"]["trade_cal_provider_execution_request_calls_provider"])
+        self.assertTrue(payload["observed"]["trade_cal_provider_execution_gate_source_ready"])
         self.assertEqual(payload["observed"]["multi_target_sample_acceptance_requested_count"], 5)
         self.assertEqual(payload["observed"]["multi_target_sample_acceptance_ready_count"], 5)
         self.assertEqual(
@@ -14203,6 +14217,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("target_sample_execution_recipe_is_local_not_execution", criteria)
         self.assertIn("multi_target_sample_execution_recipe_ready_review_pending_without_promotion", criteria)
         self.assertIn("interface_group_scope_complete_but_provider_acceptance_pending", criteria)
+        self.assertIn("trade_cal_provider_execution_request_gate_is_release_guarded", criteria)
         self.assertIn("tushare_production_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("tushare_durable_evidence_recipe_is_local_provider_pending", criteria)
 
@@ -18239,6 +18254,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_requires_long_window_days"], 730)
         self.assertTrue(by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_requires_failure_mode_evidence"])
         self.assertTrue(by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_requires_freshness_replay"])
+        self.assertTrue(
+            by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_real_route_requires_execution_request"]
+        )
+        self.assertTrue(
+            by_type["refresh_tushare_facts"][
+                "trade_cal_provider_acceptance_requires_bound_execution_request_scope_hash"
+            ]
+        )
+        self.assertTrue(
+            by_type["refresh_tushare_facts"][
+                "trade_cal_provider_acceptance_requires_execution_request_exchange_window_match"
+            ]
+        )
+        self.assertTrue(
+            by_type["refresh_tushare_facts"][
+                "trade_cal_provider_acceptance_gate_blocks_before_provider_adapter_load"
+            ]
+        )
         self.assertFalse(by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_is_full_interface_acceptance"])
         self.assertFalse(by_type["refresh_tushare_facts"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
