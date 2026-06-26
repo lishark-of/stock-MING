@@ -10,7 +10,7 @@ from storage import parquet_store
 from storage.sqlite_meta import SQLiteMetaStore
 
 from . import storage_service
-from .task_service import create_task_record, update_task_status
+from .task_service import create_task_record, list_task_statuses, update_task_status
 
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
@@ -272,6 +272,10 @@ PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_SEED_ROUTE = "POST /api/tasks/tushare-pr
 PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_PACKET_KEY = "command_center_tushare_provider_target_sample_execution_recipe_packet"
 PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE = "run_tushare_provider_target_sample_execution_request"
 PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_ROUTE = "POST /api/tasks/tushare-provider-target-sample-execution-request"
+TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE = "run_trade_cal_provider_acceptance_execution_request"
+TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_READY_STATUS = (
+    "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending"
+)
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS = 730
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_FAILURE_MODES = len(EXPECTED_FAILURE_MODE_QA)
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS = 8
@@ -335,6 +339,19 @@ def _safe_payload(payload: Any = None) -> dict[str, Any]:
         elif isinstance(value, list):
             result[str(key)] = [_safe_text(item) for item in value if isinstance(item, (str, int, float, bool))][:20]
     return result
+
+
+def _safe_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on", "approved", "confirm", "confirmed"}:
+        return True
+    if text in {"0", "false", "no", "n", "off", "rejected", "deny", "denied"}:
+        return False
+    return default
 
 
 def _payload_field(payload: Any, key: str, default: Any = None) -> Any:
@@ -4066,6 +4083,192 @@ def _blocked_missing_param_ledger_row(api: str, *, params: dict[str, Any], missi
     }
 
 
+def _scope_hash_short_text(value: Any) -> str:
+    text = "".join(ch for ch in str(value or "").strip().lower() if ch in "0123456789abcdef")
+    return text[:16]
+
+
+def _payload_provider_execution_approved(payload: Any) -> bool:
+    if not isinstance(payload, Mapping):
+        return False
+    for key in (
+        "approved_by_user",
+        "user_confirmation",
+        "confirm_provider_task_request",
+        "approved",
+        "operator_approved",
+    ):
+        if key in payload and _safe_bool(payload.get(key), False):
+            return True
+    return False
+
+
+def _payload_requested_scope_hash_short(payload: Any) -> str:
+    if not isinstance(payload, Mapping):
+        return ""
+    for key in (
+        "acceptance_scope_hash_short",
+        "scope_hash_short",
+        "dry_run_scope_hash_short",
+        "requested_scope_hash_short",
+        "acceptance_scope_hash",
+        "scope_hash",
+        "dry_run_scope_hash",
+    ):
+        value = payload.get(key)
+        if value not in (None, ""):
+            return _scope_hash_short_text(value)
+    return ""
+
+
+def _trade_cal_payload_exchange_values(payload: Any) -> list[str]:
+    return _trade_cal_exchange_values(_payload_field(payload, "exchange", []))
+
+
+def _latest_trade_cal_provider_acceptance_execution_request() -> dict[str, Any]:
+    for task in list_task_statuses():
+        if task.get("task_type") != TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE:
+            continue
+        payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), Mapping) else {}
+        receipt = payload_safe.get("trade_cal_provider_acceptance_execution_request_receipt")
+        if not isinstance(receipt, Mapping):
+            continue
+        return {
+            "task_id": task.get("task_id"),
+            "task_status": task.get("status"),
+            "current_step": task.get("current_step"),
+            "created_at": task.get("created_at"),
+            "receipt": dict(receipt),
+        }
+    return {}
+
+
+def _trade_cal_provider_execution_gate(payload: Any, *, selected_apis: list[str], adapter: Any) -> dict[str, Any]:
+    acceptance_mode = str(_payload_field(payload, "acceptance_mode", "") or "")
+    applies = (
+        adapter is None
+        and selected_apis == ["trade_cal"]
+        and acceptance_mode == TRADE_CAL_PROVIDER_ACCEPTANCE_MODE
+    )
+    if not applies:
+        return {"applies": False, "ready": True, "status": "not_applicable"}
+
+    latest = _latest_trade_cal_provider_acceptance_execution_request()
+    receipt = latest.get("receipt") if isinstance(latest.get("receipt"), Mapping) else {}
+    target_payload = receipt.get("target_payload_safe") if isinstance(receipt.get("target_payload_safe"), Mapping) else {}
+    requested_scope_hash_short = _payload_requested_scope_hash_short(payload)
+    receipt_scope_hash_short = _scope_hash_short_text(
+        receipt.get("requested_scope_hash_short")
+        or target_payload.get("acceptance_scope_hash_short")
+        or receipt.get("latest_dry_run_scope_hash_short")
+    )
+    approved = _payload_provider_execution_approved(payload)
+    receipt_ready = bool(
+        receipt
+        and receipt.get("status") == TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_READY_STATUS
+        and receipt.get("local_execution_request_ready") is True
+        and receipt.get("ready_for_manual_provider_task_submission") is True
+        and receipt.get("scope_hash_matches_latest_dry_run") is True
+    )
+    scope_matches = bool(requested_scope_hash_short and requested_scope_hash_short == receipt_scope_hash_short)
+
+    expected_exchange = _trade_cal_exchange_values(receipt.get("exchange") or target_payload.get("exchange"))
+    requested_exchange = _trade_cal_payload_exchange_values(payload)
+    exchange_matches = bool(expected_exchange and requested_exchange and requested_exchange == expected_exchange)
+    expected_start = str(receipt.get("start_date") or target_payload.get("start_date") or "")
+    expected_end = str(receipt.get("end_date") or target_payload.get("end_date") or "")
+    requested_start = str(_payload_field(payload, "start_date", "") or "")
+    requested_end = str(_payload_field(payload, "end_date", "") or "")
+    window_matches = bool(expected_start and expected_end and requested_start == expected_start and requested_end == expected_end)
+
+    blockers: list[str] = []
+    if not receipt:
+        blockers.append("missing_trade_cal_provider_acceptance_execution_request")
+    if receipt and not receipt_ready:
+        blockers.append("latest_execution_request_not_ready")
+    if not approved:
+        blockers.append("explicit_provider_execution_approval_missing")
+    if not scope_matches:
+        blockers.append("scope_hash_not_bound_to_latest_execution_request")
+    if not exchange_matches:
+        blockers.append("exchange_scope_not_bound_to_execution_request")
+    if not window_matches:
+        blockers.append("date_window_not_bound_to_execution_request")
+
+    ready = not blockers
+    return {
+        "applies": True,
+        "ready": ready,
+        "status": "trade_cal_provider_execution_gate_passed" if ready else "trade_cal_provider_execution_gate_blocked",
+        "blockers": blockers,
+        "current_step": (
+            "trade_cal_provider_acceptance_execution_gate_passed_scope_bound"
+            if ready
+            else f"trade_cal_provider_acceptance_execution_gate_blocked_{blockers[0]}_no_provider_call"
+        ),
+        "error_message_safe": "" if ready else blockers[0],
+        "requested_scope_hash_short": requested_scope_hash_short,
+        "latest_execution_request_scope_hash_short": receipt_scope_hash_short,
+        "scope_hash_matches_latest_execution_request": scope_matches,
+        "approved_by_user": approved,
+        "latest_execution_request_task_id": latest.get("task_id"),
+        "latest_execution_request_status": receipt.get("status") or "missing",
+        "latest_execution_request_task_status": latest.get("task_status") or "",
+        "exchange_matches_execution_request": exchange_matches,
+        "date_window_matches_execution_request": window_matches,
+        "requested_exchange": requested_exchange,
+        "expected_exchange": expected_exchange,
+        "requested_start_date": requested_start,
+        "requested_end_date": requested_end,
+        "expected_start_date": expected_start,
+        "expected_end_date": expected_end,
+    }
+
+
+def _trade_cal_provider_execution_gate_ledger_row(gate: Mapping[str, Any], *, selected_apis: list[str], payload: Any, now: str) -> dict[str, Any]:
+    params = {
+        "selected_apis": list(selected_apis),
+        "acceptance_mode": _safe_text(_payload_field(payload, "acceptance_mode", "")),
+        "approved_by_user": gate.get("approved_by_user") is True,
+        "requested_scope_hash_short": gate.get("requested_scope_hash_short") or "",
+        "latest_execution_request_task_id": gate.get("latest_execution_request_task_id") or "",
+        "latest_execution_request_status": gate.get("latest_execution_request_status") or "missing",
+        "scope_hash_matches_latest_execution_request": gate.get("scope_hash_matches_latest_execution_request") is True,
+        "exchange_matches_execution_request": gate.get("exchange_matches_execution_request") is True,
+        "date_window_matches_execution_request": gate.get("date_window_matches_execution_request") is True,
+        "requested_exchange": list(gate.get("requested_exchange") or []),
+        "expected_exchange": list(gate.get("expected_exchange") or []),
+        "requested_start_date": gate.get("requested_start_date") or "",
+        "requested_end_date": gate.get("requested_end_date") or "",
+        "expected_start_date": gate.get("expected_start_date") or "",
+        "expected_end_date": gate.get("expected_end_date") or "",
+    }
+    return {
+        "api": "local_trade_cal_provider_acceptance_execution_gate",
+        "endpoint": "POST /api/tasks/refresh-tushare-facts",
+        "request_params_safe": params,
+        "row_count": 1,
+        "data_date": params["requested_end_date"] or None,
+        "local_fetched_at": now,
+        "call_status": str(gate.get("status") or "trade_cal_provider_execution_gate_blocked"),
+        "failure_mode": "missing_or_mismatched_execution_request",
+        "failure_mode_status": "preflight_blocked_no_external_call",
+        "safe_failure_mode_visible": True,
+        "error_message_safe": _safe_text(gate.get("error_message_safe") or ""),
+        "parquet_dataset": PARQUET_DATASETS.get("trade_cal"),
+        "parquet_status": "not_written_provider_execution_gate_blocked",
+        "parquet_row_count": 0,
+        "provider_execution_gate_passed": gate.get("ready") is True,
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def run_tushare_refresh_task(
     payload: Any = None,
     *,
@@ -4093,6 +4296,25 @@ def run_tushare_refresh_task(
     )
     if task.get("dedupe_reused_existing"):
         return task
+    execution_gate = _trade_cal_provider_execution_gate(payload, selected_apis=selected_apis, adapter=adapter)
+    if execution_gate.get("applies") is True and execution_gate.get("ready") is not True:
+        gate_ledger = [
+            _trade_cal_provider_execution_gate_ledger_row(
+                execution_gate,
+                selected_apis=selected_apis,
+                payload=payload,
+                now=_now_iso(),
+            )
+        ]
+        return update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step=str(execution_gate.get("current_step") or "trade_cal_provider_execution_gate_blocked_no_provider_call"),
+            error_message_safe=str(execution_gate.get("error_message_safe") or "trade_cal_provider_execution_gate_blocked"),
+            call_ledger=gate_ledger,
+            warning="trade_cal_provider_acceptance_execution_gate_blocked_before_provider_adapter_load",
+        ) or task
     update_task_status(task["task_id"], status="running", progress=0.05, current_step="preparing_tushare_refresh")
     adapter_module = adapter
     call_ledger: list[dict[str, Any]] = []
@@ -4127,16 +4349,25 @@ def run_tushare_refresh_task(
         else:
             result, safe_params = _call_tushare_api(fn=fn, api=api, params=params)
         parquet_result = _write_parquet_dataset(api, result.get("data")) if bool(result.get("ok")) else {"status": "not_written_failed_call"}
-        call_ledger.append(
-            _call_ledger_row(
-                api,
-                params=safe_params,
-                result=dict(result),
-                parquet_result=parquet_result,
-                now=now,
-                payload=payload,
-            )
+        ledger_row = _call_ledger_row(
+            api,
+            params=safe_params,
+            result=dict(result),
+            parquet_result=parquet_result,
+            now=now,
+            payload=payload,
         )
+        if execution_gate.get("applies") is True and execution_gate.get("ready") is True and api == "trade_cal":
+            ledger_row.update(
+                {
+                    "provider_execution_gate_passed": True,
+                    "execution_request_task_id": execution_gate.get("latest_execution_request_task_id") or "",
+                    "execution_request_scope_hash_short": execution_gate.get("requested_scope_hash_short") or "",
+                    "execution_request_scope_hash_matches_latest": True,
+                    "execution_request_payload_matches_scope": True,
+                }
+            )
+        call_ledger.append(ledger_row)
 
     success_or_empty = [row for row in call_ledger if row.get("call_status") in {"success", "empty"}]
     failed = [row for row in call_ledger if row.get("call_status") == "failed"]

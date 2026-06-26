@@ -15,7 +15,13 @@ from pathlib import Path
 import config as app_config
 from server.services import audit_service, bootstrap_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, tushare_task_service, worker_service
 from server.services import migration_status_service
-from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
+from server.services.task_service import (
+    clear_task_statuses_for_tests,
+    create_task_record,
+    create_task_stub,
+    read_task_status,
+    update_task_status,
+)
 from storage.sqlite_meta import SQLiteMetaStore
 
 
@@ -11580,6 +11586,172 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(persisted["deepseek_called"])
         self.assertFalse(persisted["github_called"])
         self.assertTrue(persisted["does_not_modify_strategy_action"])
+
+    def test_tushare_trade_cal_provider_acceptance_real_route_requires_execution_request_gate(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": ["trade_cal"],
+                "exchange": ["SSE", "SZSE"],
+                "start_date": "20240101",
+                "end_date": "20260401",
+                "acceptance_mode": "provider_backed_trade_cal_long_window",
+                "approved_by_user": True,
+                "acceptance_scope_hash_short": "deadbeefdeadbeef",
+                "freshness_replay_passed": True,
+                "freshness_replay_scenario_count": 8,
+                "failure_modes_validated": True,
+                "failure_mode_validated_count": 6,
+                "token": "SHOULD_DROP",
+            },
+            adapter=None,
+        )
+
+        self.assertEqual(task["status"], "failed")
+        self.assertIn("trade_cal_provider_acceptance_execution_gate_blocked", task["current_step"])
+        self.assertIn("no_provider_call", task["current_step"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertEqual(len(task["call_ledger"]), 1)
+        ledger = task["call_ledger"][0]
+        self.assertEqual(ledger["api"], "local_trade_cal_provider_acceptance_execution_gate")
+        self.assertEqual(ledger["call_status"], "trade_cal_provider_execution_gate_blocked")
+        self.assertEqual(ledger["error_message_safe"], "missing_trade_cal_provider_acceptance_execution_request")
+        self.assertFalse(ledger["external"])
+        self.assertFalse(ledger["external_calls_triggered"])
+        self.assertFalse(ledger["tushare_called"])
+        self.assertFalse(ledger["deepseek_called"])
+        self.assertFalse(ledger["github_called"])
+        request_params = ledger["request_params_safe"]
+        self.assertEqual(request_params["selected_apis"], ["trade_cal"])
+        self.assertEqual(request_params["acceptance_mode"], "provider_backed_trade_cal_long_window")
+        self.assertTrue(request_params["approved_by_user"])
+        self.assertEqual(request_params["requested_scope_hash_short"], "deadbeefdeadbeef")
+        self.assertEqual(request_params["latest_execution_request_status"], "missing")
+        self.assertFalse(request_params["scope_hash_matches_latest_execution_request"])
+        self.assertEqual(request_params["requested_exchange"], ["SSE", "SZSE"])
+        self.assertEqual(request_params["requested_start_date"], "20240101")
+        self.assertEqual(request_params["requested_end_date"], "20260401")
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+    def test_tushare_trade_cal_provider_acceptance_real_route_rejects_mismatched_execution_scope(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        ready_scope = "1234567890abcdef"
+        ready_receipt = {
+            "schema_version": "data_health_trade_cal_provider_acceptance_execution_request.v1",
+            "status": "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending",
+            "selected_apis": ["trade_cal"],
+            "acceptance_mode": "provider_backed_trade_cal_long_window",
+            "exchange": ["SSE", "SZSE"],
+            "start_date": "20240101",
+            "end_date": "20260401",
+            "latest_dry_run_scope_hash_short": ready_scope,
+            "requested_scope_hash_short": ready_scope,
+            "scope_hash_matches_latest_dry_run": True,
+            "local_execution_request_ready": True,
+            "ready_for_manual_provider_task_submission": True,
+            "target_payload_safe": {
+                "apis": ["trade_cal"],
+                "acceptance_mode": "provider_backed_trade_cal_long_window",
+                "exchange": ["SSE", "SZSE"],
+                "start_date": "20240101",
+                "end_date": "20260401",
+                "acceptance_scope_hash_short": ready_scope,
+            },
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        request_task = create_task_record(
+            "run_trade_cal_provider_acceptance_execution_request",
+            output_packet_key="command_center_data_health_timeline_packet",
+            payload={
+                "trade_cal_provider_acceptance_execution_request_receipt": ready_receipt,
+                "execution_request_only": True,
+                "token": "SHOULD_DROP",
+            },
+            current_step="trade_cal_execution_request_ready_manual_provider_task_pending_no_provider_call",
+        )
+        update_task_status(
+            request_task["task_id"],
+            status="success",
+            progress=1.0,
+            current_step="trade_cal_execution_request_ready_manual_provider_task_pending_no_provider_call",
+            call_ledger=[
+                {
+                    "api": "local_trade_cal_provider_acceptance_execution_request",
+                    "request_params_safe": {"requested_scope_hash_short": ready_scope},
+                    "row_count": 1,
+                    "data_date": "20260401",
+                    "local_fetched_at": "2026-06-26T10:00:00",
+                    "call_status": "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending",
+                    "error_message_safe": "",
+                    "external": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                }
+            ],
+        )
+
+        task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": ["trade_cal"],
+                "exchange": ["SSE", "SZSE"],
+                "start_date": "20240101",
+                "end_date": "20260401",
+                "acceptance_mode": "provider_backed_trade_cal_long_window",
+                "approved_by_user": True,
+                "acceptance_scope_hash_short": "0000000000000000",
+                "freshness_replay_passed": True,
+                "freshness_replay_scenario_count": 8,
+                "failure_modes_validated": True,
+                "failure_mode_validated_count": 6,
+                "token": "SHOULD_DROP",
+            },
+            adapter=None,
+        )
+
+        self.assertEqual(task["status"], "failed")
+        self.assertEqual(
+            task["current_step"],
+            "trade_cal_provider_acceptance_execution_gate_blocked_scope_hash_not_bound_to_latest_execution_request_no_provider_call",
+        )
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        ledger = task["call_ledger"][0]
+        self.assertEqual(ledger["api"], "local_trade_cal_provider_acceptance_execution_gate")
+        self.assertEqual(ledger["error_message_safe"], "scope_hash_not_bound_to_latest_execution_request")
+        request_params = ledger["request_params_safe"]
+        self.assertEqual(request_params["latest_execution_request_task_id"], request_task["task_id"])
+        self.assertEqual(
+            request_params["latest_execution_request_status"],
+            "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending",
+        )
+        self.assertEqual(request_params["requested_scope_hash_short"], "0000000000000000")
+        self.assertFalse(request_params["scope_hash_matches_latest_execution_request"])
+        self.assertTrue(request_params["exchange_matches_execution_request"])
+        self.assertTrue(request_params["date_window_matches_execution_request"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
 
     def test_tushare_trade_cal_provider_acceptance_splits_multi_exchange_scope(self):
         db_path = self._with_meta_store()
