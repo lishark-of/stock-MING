@@ -14,6 +14,7 @@ VITE_URL="${COMMAND_CENTER_3_VITE_URL:-http://127.0.0.1:5173}"
 APP_URL="${COMMAND_CENTER_3_APP_URL:-${VITE_URL%/}/#home}"
 LAUNCHER_CHECK_ONLY="${COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY:-0}"
 LAUNCHER_SKIP_OPEN="${COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN:-0}"
+LAUNCHER_OPEN_MODE="${COMMAND_CENTER_3_LAUNCHER_OPEN_MODE:-reuse}"
 P0_STABILITY_DWELL_SECONDS="${COMMAND_CENTER_3_P0_STABILITY_DWELL_SECONDS:-2}"
 
 resolve_python() {
@@ -196,6 +197,43 @@ required_markers = [
 ]
 sys.exit(0 if all(marker in body for marker in required_markers) else 1)
 PY
+}
+
+focus_existing_browser_tab() {
+  local url_prefix="$1"
+  if [ "${LAUNCHER_OPEN_MODE:-reuse}" != "reuse" ]; then
+    return 1
+  fi
+  if ! command -v osascript >/dev/null 2>&1; then
+    return 1
+  fi
+  local result
+  result="$(osascript - "$url_prefix" <<'APPLESCRIPT' 2>/dev/null || true
+on run argv
+  set targetPrefix to item 1 of argv
+  tell application "System Events"
+    if not (exists process "Google Chrome") then return "not_running"
+  end tell
+  tell application "Google Chrome"
+    repeat with w in windows
+      set tabIndex to 1
+      repeat with t in tabs of w
+        set tabUrl to URL of t
+        if tabUrl starts with targetPrefix then
+          set active tab index of w to tabIndex
+          set index of w to 1
+          activate
+          return "focused"
+        end if
+        set tabIndex to tabIndex + 1
+      end repeat
+    end repeat
+  end tell
+  return "not_found"
+end run
+APPLESCRIPT
+)"
+  [ "$result" = "focused" ]
 }
 
 bootstrap_status_ready() {
@@ -407,11 +445,11 @@ print_post_startup_readback_checklist() {
   if [ "${LAUNCHER_SKIP_OPEN:-0}" = "1" ]; then
     echo "  4. React/Vite 前端：${VITE_URL_DISPLAY} 已返回 Command Center 3.0 HTML；skip-open 已启用，请手动打开普通首页 ${APP_URL_DISPLAY}。"
   else
-    echo "  4. React/Vite 前端：${VITE_URL_DISPLAY} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL_DISPLAY}，先看今日作战台的一键启动预检。"
+    echo "  4. React/Vite 前端：${VITE_URL_DISPLAY} 已返回 Command Center 3.0 HTML；启动器会先复用已有本地页面，找不到时再打开普通首页 ${APP_URL_DISPLAY}。"
   fi
   echo "  5. P0 stability check：短暂 dwell 后复读 health、bootstrap status、desktop preflight cache 和 React/Vite 仍 ready，P0_STABILITY_READY=1。"
   echo "  6. 联通后下一步：回首页确认股票代码（#home）；需要详情再打开下一票雷达确认输入区（#candidates/candidate-radar-search-quant-projection）。输入本身保持静默；只有确认按钮会创建 Tushare-first POST task，DeepSeek 仍保持 governed/pending。"
-  echo "  7. P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
+  echo "  7. P0 success handoff: after readiness, launcher reuses an existing local Command Center tab or opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
   echo "边界：启动后复核只读本地 GET 结果；不创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
 }
 
@@ -431,6 +469,7 @@ API_BASE_DISPLAY="$(safe_display_url "$API_BASE")"
 VITE_URL_DISPLAY="$(safe_display_url "$VITE_URL")"
 APP_OPEN_URL="$(safe_display_open_url "$APP_URL")"
 APP_URL_DISPLAY="$APP_OPEN_URL"
+APP_URL_REUSE_PREFIX="$(safe_display_url "$APP_URL")"
 API_HEALTH_DISPLAY="$(safe_display_url "${API_BASE%/}/health")"
 BOOTSTRAP_STATUS_DISPLAY="$(safe_display_url "${API_BASE%/}/api/bootstrap/status")"
 DESKTOP_PREFLIGHT_DISPLAY="$(safe_display_url "${API_BASE%/}/api/desktop/preflight-cache")"
@@ -466,6 +505,7 @@ echo "Open route: ${APP_URL_DISPLAY}"
 echo "Logs: ${LOG_DIR}"
 echo "Check only: ${LAUNCHER_CHECK_ONLY}"
 echo "Browser open: $([ "$LAUNCHER_SKIP_OPEN" = "1" ] && printf "skipped" || printf "enabled")"
+echo "Browser open mode: ${LAUNCHER_OPEN_MODE}"
 echo "P0: local one-click launcher starts/checks FastAPI, bootstrap status, desktop preflight cache, and React/Vite before opening the page."
 echo "Mode: server config controls runtime mode; cache_only remains the safe default unless explicitly configured."
 echo "Link check: launcher verifies ${API_HEALTH_DISPLAY}, ${BOOTSTRAP_STATUS_DISPLAY}, and ${DESKTOP_PREFLIGHT_DISPLAY} before opening the page."
@@ -474,7 +514,8 @@ echo "Bootstrap check: /api/bootstrap/status must return command_center_3_bootst
 echo "Desktop preflight check: /api/desktop/preflight-cache must return command_center_3_desktop_shell_preflight_cache JSON before the page opens."
 echo "Frontend check: Vite must serve stock-MING Command Center 3.0 index HTML before the page opens."
 echo "Open target: ordinary Command Center home route (#home), so startup does not land on developer/audit details from localStorage."
-echo "P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
+echo "P0 success handoff: after readiness, launcher reuses an existing local Command Center tab or opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
+echo "Duplicate-tab guard: open mode '${LAUNCHER_OPEN_MODE}' first focuses an existing Chrome tab whose URL starts with ${APP_URL_REUSE_PREFIX}; only if none exists does it open ${APP_URL_DISPLAY}."
 echo "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution."
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
 echo "URL safety: displayed and opened launcher URLs are sanitized; simple local open routes like #home may be shown, while query/userinfo are stripped and non-local API/frontend/open URLs are blocked before any probe."
@@ -485,7 +526,7 @@ if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
   echo "Check-only wrapper command: scripts/check_command_center_3.command"
   echo "Check-only dependency boundary: does not require desktop/node_modules or npm because it only prints sanitized local launcher configuration."
   echo "Check-only endpoints: health=${API_HEALTH_DISPLAY}; bootstrap=${BOOTSTRAP_STATUS_DISPLAY}; desktop_preflight=${DESKTOP_PREFLIGHT_DISPLAY}; frontend=${VITE_URL_DISPLAY}; open_route=${APP_URL_DISPLAY}"
-  echo "Check-only next action: unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher to start or reuse local FastAPI/Vite, wait for all four readiness checks plus P0 stability dwell, then open ${APP_URL_DISPLAY}."
+  echo "Check-only next action: unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher to start or reuse local FastAPI/Vite, wait for all four readiness checks plus P0 stability dwell, then reuse an existing local tab or open ${APP_URL_DISPLAY}."
   exit 0
 fi
 
@@ -561,6 +602,8 @@ fi
 if [ "$LAUNCHER_SKIP_OPEN" = "1" ]; then
   echo "Skip-open mode: FastAPI, bootstrap status, desktop preflight cache, and React/Vite are ready; browser was not opened automatically."
   echo "请在浏览器打开：${APP_URL_DISPLAY}"
+elif focus_existing_browser_tab "$APP_URL_REUSE_PREFIX"; then
+  echo "Browser handoff reused existing local tab: ${APP_URL_DISPLAY}"
 elif command -v open >/dev/null 2>&1; then
   if open "$APP_OPEN_URL"; then
     echo "Browser handoff opened: ${APP_URL_DISPLAY}"

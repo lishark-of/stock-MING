@@ -298,6 +298,58 @@ LTG_NEXT_PRIORITY_ORDER = [
     "P10 LTG-12 real-trading isolation invariant",
 ]
 
+LTG_REBASE_CYCLE_1_WORKTREE_GROUPS = [
+    {
+        "group_id": "p0_local_startup_link",
+        "group_label": "P0 本地启动和前后端联通",
+        "file_paths": [
+            "desktop/src/routes/HealthStatus.tsx",
+            "scripts/start_command_center_3.command",
+            "server/services/desktop_service.py",
+            "tests/test_command_center_3_tauri_preflight.py",
+        ],
+        "commit_scope": "启动器复用本地页面、等待 FastAPI/React ready、check-only 不开浏览器",
+        "rollback_scope": "若一键启动回归，只回退启动器/desktop preflight 合同和对应测试",
+    },
+    {
+        "group_id": "p1_p3_ordinary_research_readback",
+        "group_label": "P1/P2/P3 搜票后普通投研回放",
+        "file_paths": [
+            "desktop/src/routes/CandidateRadar.tsx",
+            "desktop/src/routes/FactorQuantHub.tsx",
+            "desktop/src/routes/NextSessionMap.tsx",
+            "server/services/candidate_service.py",
+            "server/services/next_session_service.py",
+            "tests/test_candidate_radar_provider_state_frontend.py",
+        ],
+        "commit_scope": "确认标的、Tushare-first 回放、Factor handoff 和次日图谱普通预览",
+        "rollback_scope": "若搜票回放有问题，回退三页读回和 Next Session 普通预览，不碰启动器",
+    },
+    {
+        "group_id": "p4_daily_home_audit_demotion",
+        "group_label": "P4 普通首页降噪和审计下沉",
+        "file_paths": [
+            "desktop/src/routes/CommandCenterHome.tsx",
+            "tests/test_command_center_3_frontend_scaffold.py",
+        ],
+        "commit_scope": "首页先显示本地已接上、当前标的、最近结果、下一步，审计详情折叠",
+        "rollback_scope": "若首页可读性回归，只回退首页和前端 scaffold 断言",
+    },
+    {
+        "group_id": "server_contract_regression",
+        "group_label": "服务端总账和纵切边界测试",
+        "file_paths": [
+            "desktop/src/routes/MigrationStatus.tsx",
+            "docs/migration_map.md",
+            "server/services/data_health_service.py",
+            "server/services/migration_status_service.py",
+            "tests/test_command_center_3_server.py",
+        ],
+        "commit_scope": "锁住 P0-P5 usable checkpoint、P6 strict closeout handoff、LTG 不关闭边界和迁移图 checkpoint",
+        "rollback_scope": "若服务端总账或文档口径过窄，只回退总账/文档/测试断言，不改变生产路径",
+    },
+]
+
 LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
     {
         "queue_id": "p1_trade_cal_provider_acceptance",
@@ -666,6 +718,23 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         ],
     },
 ]
+
+LTG_HARDENING_QUEUE_BY_ID = {
+    "LTG-01": "p1_trade_cal_provider_acceptance",
+    "LTG-02": "p2_tushare_target_sample_acceptance",
+    "LTG-03": "p3_factor_small_pool_provider_validation",
+    "LTG-04": "p3_factor_universe_worker_batch_research",
+    "LTG-05": "p4_storage_physical_execution",
+    "LTG-06": "p4_worker_runtime_qa",
+    "LTG-07": "p5_deepseek_provider_benchmark_scope",
+    "LTG-08": "p5_next_session_map_browser_qa",
+    "LTG-09": "p6_tauri_package_readiness_review",
+    "LTG-10": "p7_streamlit_retirement_review",
+    "LTG-11": "p0_release_gate_push_readiness",
+    "LTG-12": "p10_trade_isolation_release_guard",
+    "LTG-13": "p3_candidate_radar_provider_worker_promotion",
+    "LTG-14": "p8_motion_production_promotion_review",
+}
 
 LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
     "p1_trade_cal_provider_acceptance": [
@@ -1493,6 +1562,1068 @@ def _build_ltg_acceptance_runway_rows(rows: list[dict[str, Any]]) -> list[dict[s
     return runway_rows
 
 
+def _build_ltg_rebase_cycle_1_status(
+    long_term_goal_rows: list[dict[str, Any]],
+    ltg_stage_scope_observed_rows: list[dict[str, Any]],
+    usable_path_current_checkpoint_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    observed_by_id = {str(row.get("id") or ""): row for row in ltg_stage_scope_observed_rows}
+    worktree_group_rows: list[dict[str, Any]] = []
+    grouped_files: list[str] = []
+    for group in LTG_REBASE_CYCLE_1_WORKTREE_GROUPS:
+        files = list(group["file_paths"])
+        grouped_files.extend(files)
+        worktree_group_rows.append(
+            {
+                "group_id": group["group_id"],
+                "group_label": group["group_label"],
+                "file_paths": files,
+                "file_count": len(files),
+                "commit_scope": group["commit_scope"],
+                "rollback_scope": group["rollback_scope"],
+                "grouped_for_commit_or_review": True,
+                "cache_only_readback": True,
+                "creates_task_from_get": False,
+                "creates_task_from_render": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "production_evidence": False,
+            }
+        )
+
+    ledger_rows: list[dict[str, Any]] = []
+    for row in long_term_goal_rows:
+        goal_id = str(row.get("id") or "")
+        observed = observed_by_id.get(goal_id, {})
+        next_evidence_required = list(row.get("next_evidence_required") or [])
+        ledger_rows.append(
+            {
+                "id": goal_id,
+                "goal": row.get("goal"),
+                "completion_bucket": row.get("completion_bucket"),
+                "completion_estimate": row.get("completion_estimate"),
+                "existing_evidence_summary": row.get("current_state") or "",
+                "gap_summary": row.get("not_complete_because") or "",
+                "cannot_close_reason": row.get("not_complete_because") or "",
+                "next_step": row.get("next_step") or "",
+                "static_production_complete": row.get("production_complete") is True,
+                "observed_stage_scope_manifest_status": row.get("observed_stage_scope_manifest_status")
+                or observed.get("status")
+                or "",
+                "observed_stage_scope_pending_count": int(
+                    row.get("observed_stage_scope_pending_count")
+                    if row.get("observed_stage_scope_pending_count") is not None
+                    else observed.get("pending_stage_count") or 0
+                ),
+                "observed_stage_scope_direct_evidence_count": int(
+                    row.get("observed_stage_scope_direct_evidence_count")
+                    if row.get("observed_stage_scope_direct_evidence_count") is not None
+                    else observed.get("direct_evidence_stage_count") or 0
+                ),
+                "observed_stage_scope_production_blocker_count": int(
+                    observed.get("production_blocker_count")
+                    if observed.get("production_blocker_count") is not None
+                    else row.get("observed_stage_scope_pending_count") or 0
+                ),
+                "next_direct_evidence": next_evidence_required,
+                "next_direct_evidence_count": len(next_evidence_required),
+                "can_close_ltg_now": False,
+                "can_close_from_usable_path_checkpoint": False,
+                "can_close_from_observed_row": observed.get("can_close_from_observed_row") is True,
+                "requires_current_head_direct_evidence": True,
+                "requires_production_promotion_review": True,
+                "cache_only_readback": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "evidence_boundary": "rebase_cycle_1_ltg_ledger_row_is_status_alignment_not_closeout",
+            }
+        )
+
+    unique_grouped_files = sorted(set(grouped_files))
+    usable_phase_set = {str(row.get("phase") or "") for row in usable_path_current_checkpoint_rows}
+    all_ltg_not_closeable = all(
+        row.get("static_production_complete") is False and row.get("can_close_ltg_now") is False
+        for row in ledger_rows
+    )
+    observed_rows_all_block_closeout = all(
+        row.get("can_close_from_observed_row") is not True for row in ltg_stage_scope_observed_rows
+    )
+    summary = {
+        "schema_version": "ltg_rebase_cycle_1_status.v1",
+        "status": "usable_path_rebase_baseline_ready_not_ltg_closeout",
+        "main_goal": "固化 P0-P5 使用者可用化纵切为可维护基线",
+        "support_goal": "校准 14 LTG 静态总账、实时观察行和普通首页文案的边界",
+        "scope": "no_new_feature_no_full_live_light_no_14_ltg_strict_closeout",
+        "expected_modified_file_count": len(unique_grouped_files),
+        "worktree_group_count": len(worktree_group_rows),
+        "worktree_grouped_file_count": len(unique_grouped_files),
+        "worktree_grouped_files": unique_grouped_files,
+        "ordinary_user_path_first_screen": [
+            "本地已接上",
+            "当前标的",
+            "最近结果",
+            "下一步按钮",
+        ],
+        "ordinary_home_audit_detail_rule": "task_id/ledger/packet/boundary/DeepSeek detail stay under research_audit_details",
+        "usable_checkpoint_phase_count": len(usable_phase_set),
+        "usable_checkpoint_phases": sorted(usable_phase_set),
+        "ltg_ledger_row_count": len(ledger_rows),
+        "ltg_observed_stage_scope_row_count": len(ltg_stage_scope_observed_rows),
+        "ltg_static_row_count": len(long_term_goal_rows),
+        "ltg_strict_closeout": f"0/{len(long_term_goal_rows)}",
+        "all_ltg_not_closeable": all_ltg_not_closeable,
+        "observed_rows_all_block_closeout": observed_rows_all_block_closeout,
+        "static_and_observed_ledger_consistent": (
+            len(ledger_rows) == 14
+            and len(ltg_stage_scope_observed_rows) == 14
+            and all_ltg_not_closeable
+            and observed_rows_all_block_closeout
+        ),
+        "next_goal_candidate": "select_one_ltg_direct_evidence_slice_after_rebase_baseline",
+        "recommended_first_ltg_after_rebase": "LTG-13 or LTG-02, only after this baseline is committed or checkpointed",
+        "cache_only_readback": True,
+        "creates_task_from_get": False,
+        "creates_task_from_render": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_evidence": False,
+        "evidence_boundary": "rebase_cycle_1_is_usable_path_status_alignment_not_provider_model_executor_or_ltg_closeout",
+    }
+    return summary, worktree_group_rows, ledger_rows
+
+
+def _hardening_row(
+    *,
+    hardening_area: str,
+    area_label: str,
+    ltg_ids: list[str],
+    queue_ids: list[str],
+    current_boundary: str,
+    next_direct_evidence: str,
+    acceptance_command: str,
+    blocker: str,
+    not_production_evidence: list[str],
+    not_allowed_next_steps: list[str],
+) -> dict[str, Any]:
+    return {
+        "hardening_area": hardening_area,
+        "area_label": area_label,
+        "ltg_ids": ltg_ids,
+        "queue_ids": queue_ids,
+        "status": "next_direct_evidence_ready_production_pending",
+        "current_boundary": current_boundary,
+        "next_direct_evidence": next_direct_evidence,
+        "acceptance_command": acceptance_command,
+        "blocker": blocker,
+        "not_production_evidence": not_production_evidence,
+        "not_allowed_next_steps": not_allowed_next_steps,
+        "can_close_ltg_from_row": False,
+        "cache_only_readback": True,
+        "creates_task_from_get": False,
+        "creates_task_from_render": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "evidence_boundary": "production_hardening_row_is_next_evidence_planning_not_closeout",
+    }
+
+
+def _build_production_hardening_matrix(
+    long_term_goal_rows: list[dict[str, Any]],
+    ltg_next_acceptance_action_rows: list[dict[str, Any]],
+    long_term_goal_summary: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    goals_by_id = {str(row.get("id") or ""): row for row in long_term_goal_rows}
+    actions_by_queue = {str(row.get("queue_id") or ""): row for row in ltg_next_acceptance_action_rows}
+    hardening_rows = [
+        _hardening_row(
+            hardening_area="storage_boundaries",
+            area_label="Storage / cache ledger packet SQLite DuckDB Parquet",
+            ltg_ids=["LTG-05"],
+            queue_ids=["p4_storage_physical_execution"],
+            current_boundary="cache / ledger / packet / SQLite / DuckDB / Parquet are local readback or scoped receipts until explicit physical execution and durable promotion evidence exist.",
+            next_direct_evidence="Run scoped physical storage phases with schema, partition, manifest, compaction, TTL, cleanup, durable review evidence.",
+            acceptance_command=str(
+                actions_by_queue.get("p4_storage_physical_execution", {}).get("next_local_step")
+                or actions_by_queue.get("p4_storage_physical_execution", {}).get("first_allowed_route")
+                or "POST /api/storage/physical-execution-request"
+            ),
+            blocker=str(goals_by_id.get("LTG-05", {}).get("not_complete_because") or ""),
+            not_production_evidence=["local packet", "receipt shape", "matrix", "dry-run", "read-only DuckDB query"],
+            not_allowed_next_steps=[
+                "write Parquet from GET cache or React render",
+                "delete or compact artifacts from render",
+                "treat execution-request ticket as physical execution",
+            ],
+        ),
+        _hardening_row(
+            hardening_area="worker_runtime_boundaries",
+            area_label="Worker / Celery / Redis / local fallback",
+            ltg_ids=["LTG-06"],
+            queue_ids=["p4_worker_runtime_qa"],
+            current_boundary="task lifecycle and local fallback are useful UI evidence, but they are not Celery/Redis process orchestration or queue dispatch proof.",
+            next_direct_evidence="Bind and run explicit worker runtime QA with broker health, queue binding, synthetic round trip, durable logs, fallback rollback, and promotion review.",
+            acceptance_command=str(
+                actions_by_queue.get("p4_worker_runtime_qa", {}).get("next_local_step")
+                or actions_by_queue.get("p4_worker_runtime_qa", {}).get("first_allowed_route")
+                or "POST /api/worker/runtime-qa-execution-request"
+            ),
+            blocker=str(goals_by_id.get("LTG-06", {}).get("not_complete_because") or ""),
+            not_production_evidence=["task index", "local fallback", "dry-run receipt", "scope ticket"],
+            not_allowed_next_steps=[
+                "start Celery or ping Redis from cache render",
+                "dispatch provider/model work from runtime QA tickets",
+                "mark worker complete from local fallback",
+            ],
+        ),
+        _hardening_row(
+            hardening_area="tauri_desktop_package",
+            area_label="Tauri desktop entry / backend link / offline UX / package gap",
+            ltg_ids=["LTG-09"],
+            queue_ids=["p6_tauri_package_readiness_review"],
+            current_boundary="desktop preflight and local launcher prove dev entry readiness, not repeatable signed packaged runtime or distribution QA.",
+            next_direct_evidence="Run explicit Tauri dev/build and packaged runtime QA, backend-offline UX proof, config/log path validation, signing/notarization or local distribution review.",
+            acceptance_command=str(
+                actions_by_queue.get("p6_tauri_package_readiness_review", {}).get("future_provider_route")
+                or "future explicit Tauri build and packaged runtime QA"
+            ),
+            blocker=str(goals_by_id.get("LTG-09", {}).get("not_complete_because") or ""),
+            not_production_evidence=["desktop preflight", "release manifest", "artifact detection", "dev launcher check"],
+            not_allowed_next_steps=[
+                "run npm/cargo/Tauri from GET cache",
+                "open packaged app from React render",
+                "claim production package from preflight receipts",
+            ],
+        ),
+        _hardening_row(
+            hardening_area="ci_smoke_security_release_gate",
+            area_label="CI / smoke / safety scan / release blocker",
+            ltg_ids=["LTG-11", "LTG-14"],
+            queue_ids=["p0_release_gate_push_readiness", "p8_motion_production_promotion_review"],
+            current_boundary="local gate, smoke, diff check, secret scan, artifact scan, and motion artifact review are release inputs; remote CI still needs matching-head review.",
+            next_direct_evidence="Pair fresh local gate for current head with reviewed remote CI green run or safe failure excerpt, then keep push behind explicit user confirmation.",
+            acceptance_command=str(
+                actions_by_queue.get("p0_release_gate_push_readiness", {}).get("future_provider_route")
+                or "fresh local push gate plus remote CI verification"
+            ),
+            blocker=str(goals_by_id.get("LTG-11", {}).get("not_complete_because") or ""),
+            not_production_evidence=["old local gate", "workflow file presence", "unreviewed CI email", "local-only smoke"],
+            not_allowed_next_steps=[
+                "call GitHub API from cache route",
+                "push from render or queue display",
+                "dismiss CI failure without matching head logs",
+            ],
+        ),
+        _hardening_row(
+            hardening_area="deepseek_governed_executor",
+            area_label="DeepSeek governed executor prerequisites",
+            ltg_ids=["LTG-07"],
+            queue_ids=["p5_deepseek_provider_benchmark_scope"],
+            current_boundary="DeepSeek is explanation-only and nonblocking; it is never a data source, action writer, or prerequisite for Tushare/Radar/Next Session basics.",
+            next_direct_evidence="Collect approved benchmark scope, model ledger/hash, response_format, retry/repair, cost, redaction, sanitizer, and output-acceptance evidence.",
+            acceptance_command=str(
+                actions_by_queue.get("p5_deepseek_provider_benchmark_scope", {}).get("first_allowed_route")
+                or "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket"
+            ),
+            blocker=str(goals_by_id.get("LTG-07", {}).get("not_complete_because") or ""),
+            not_production_evidence=["prompt preview", "sanitizer only", "scope ticket", "local receipt", "mock output"],
+            not_allowed_next_steps=[
+                "call DeepSeek from GET cache or React render",
+                "treat model text as market data",
+                "overwrite price/factor/operation_zones/strategy action",
+            ],
+        ),
+        _hardening_row(
+            hardening_area="streamlit_legacy_admin_debug",
+            area_label="Streamlit stays legacy/admin/debug",
+            ltg_ids=["LTG-10"],
+            queue_ids=["p7_streamlit_retirement_review"],
+            current_boundary="Streamlit remains legacy/admin/debug fallback until React/Tauri ordinary workflows are proven easier, clearer, and safer with direct UX evidence.",
+            next_direct_evidence="Collect ordinary capability replacement, fallback dependency, admin/debug retention, no-feature-cut, and fallback retirement review evidence after replacements pass.",
+            acceptance_command=str(
+                actions_by_queue.get("p7_streamlit_retirement_review", {}).get("future_provider_route")
+                or "future explicit Streamlit fallback retirement review"
+            ),
+            blocker=str(goals_by_id.get("LTG-10", {}).get("not_complete_because") or ""),
+            not_production_evidence=["route inventory", "local receipt", "legacy tab name", "no-feature-loss matrix"],
+            not_allowed_next_steps=[
+                "open Streamlit from GET cache",
+                "delete app.py before replacement evidence",
+                "treat local retirement receipt as fallback retirement",
+            ],
+        ),
+        _hardening_row(
+            hardening_area="ltg_total_ledger_closeout_queue",
+            area_label="14 LTG direct evidence ledger",
+            ltg_ids=[str(row.get("id") or "") for row in long_term_goal_rows],
+            queue_ids=[str(row.get("queue_id") or "") for row in ltg_next_acceptance_action_rows],
+            current_boundary="Each LTG needs current-head direct evidence, blocker, and acceptance command; strict closeout remains 0/14.",
+            next_direct_evidence="Use production_hardening_ltg_direct_evidence_rows to pick one LTG at a time and gather domain-specific current-head proof.",
+            acceptance_command="select one LTG row, run its allowed local/preflight command, then collect real provider/worker/storage/browser/package/CI evidence in a separate approved step",
+            blocker=f"strict_closeout={long_term_goal_summary.get('strict_closeout') or '0/14'}; local receipts and matrices cannot close LTGs",
+            not_production_evidence=["local receipt", "matrix", "mock", "sanitizer", "dry-run", "stage-scope manifest"],
+            not_allowed_next_steps=[
+                "close LTG from local-only row",
+                "mix unrelated LTGs into one closeout",
+                "skip release gate, safety scan, or remote CI review",
+            ],
+        ),
+    ]
+    ltg_direct_rows: list[dict[str, Any]] = []
+    for goal in long_term_goal_rows:
+        goal_id = str(goal.get("id") or "")
+        queue_id = LTG_HARDENING_QUEUE_BY_ID.get(goal_id, "")
+        action = actions_by_queue.get(queue_id, {})
+        next_command = str(
+            action.get("next_local_step")
+            or action.get("first_allowed_route")
+            or action.get("future_provider_route")
+            or goal.get("next_step")
+            or ""
+        )
+        ltg_direct_rows.append(
+            {
+                "id": goal_id,
+                "goal": goal.get("goal"),
+                "completion_bucket": goal.get("completion_bucket"),
+                "existing_evidence_summary": goal.get("current_state") or "",
+                "blocker": goal.get("not_complete_because") or "",
+                "next_direct_evidence": list(goal.get("next_evidence_required") or []),
+                "next_direct_evidence_count": int(goal.get("next_evidence_required_count") or 0),
+                "acceptance_command": next_command,
+                "acceptance_queue_id": queue_id,
+                "acceptance_queue_status": action.get("local_receipt_status") or "missing_queue_status",
+                "next_local_step_ready_for_clean_receipt": action.get("next_local_step_ready_for_clean_receipt") is True,
+                "can_close_ltg_now": False,
+                "production_complete": False,
+                "requires_current_head_direct_evidence": True,
+                "not_production_evidence": "local receipt / matrix / mock / sanitizer / dry-run / stage-scope manifest",
+                "cache_only_readback": True,
+                "creates_task_from_get": False,
+                "creates_task_from_render": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "evidence_boundary": "ltg_direct_evidence_row_is_next_step_not_strict_closeout",
+            }
+        )
+    summary = {
+        "schema_version": "production_hardening_direct_evidence_matrix.v1",
+        "status": "production_hardening_next_evidence_ready_not_closeout",
+        "hardening_area_count": len(hardening_rows),
+        "ltg_direct_evidence_row_count": len(ltg_direct_rows),
+        "strict_closeout": long_term_goal_summary.get("strict_closeout") or "0/14",
+        "strict_closeout_done_count": long_term_goal_summary.get("strict_closeout_done_count") or 0,
+        "strict_closeout_total_count": long_term_goal_summary.get("strict_closeout_total_count") or 14,
+        "all_ltg_closeout_blocked": True,
+        "storage_boundary_visible": True,
+        "worker_boundary_visible": True,
+        "tauri_boundary_visible": True,
+        "ci_smoke_security_boundary_visible": True,
+        "deepseek_governed_executor_nonblocking": True,
+        "streamlit_legacy_admin_debug_only": True,
+        "local_receipts_are_not_production_evidence": True,
+        "matrix_is_not_production_evidence": True,
+        "safe_to_start_one_ltg_strict_closeout": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "evidence_boundary": "production_hardening_matrix_is_closeout_preparation_not_completion",
+    }
+    return summary, hardening_rows, ltg_direct_rows
+
+
+def _production_hardening_gate_row(
+    *,
+    gate_id: str,
+    area_label: str,
+    ltg_ids: list[str],
+    queue_ids: list[str],
+    source_schema_version: str,
+    source_status: str,
+    direct_evidence_stage_keys: list[str],
+    direct_evidence_layer: str,
+    next_gate: str,
+    remaining_blocker: str,
+    required_production_evidence: list[str],
+    not_production_evidence: list[str],
+    remote_ci_review_required: bool = True,
+    latest_remote_run_verified_green: bool = False,
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    stage_keys = [str(item) for item in direct_evidence_stage_keys]
+    row: dict[str, Any] = {
+        "gate_id": gate_id,
+        "area_label": area_label,
+        "ltg_ids": ltg_ids,
+        "queue_ids": queue_ids,
+        "source_schema_version": source_schema_version,
+        "source_status": source_status,
+        "gate_status": "local_direct_evidence_visible_production_pending"
+        if stage_keys
+        else "next_direct_evidence_pending",
+        "local_direct_evidence_available": bool(stage_keys),
+        "local_direct_evidence_stage_count": len(stage_keys),
+        "local_direct_evidence_stage_keys": stage_keys,
+        "direct_evidence_layer": direct_evidence_layer or "L1_static_contract",
+        "next_gate": next_gate,
+        "remaining_blocker": remaining_blocker,
+        "required_production_evidence": required_production_evidence,
+        "not_production_evidence": not_production_evidence,
+        "remote_ci_review_required": remote_ci_review_required,
+        "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "strict_closeout_allowed_from_gate": False,
+        "production_complete": False,
+        "cache_only_readback": True,
+        "creates_task_from_get": False,
+        "creates_task_from_render": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "evidence_boundary": "production_hardening_gate_row_is_direct_evidence_readiness_not_closeout",
+    }
+    if extra:
+        row.update(dict(extra))
+    return row
+
+
+def _build_production_hardening_gate_rows(
+    *,
+    long_term_goal_rows: list[dict[str, Any]],
+    ltg_next_acceptance_action_rows: list[dict[str, Any]],
+    ltg_stage_scope_observed_rows: list[dict[str, Any]],
+    production_hardening_summary: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    goals_by_id = {str(row.get("id") or ""): row for row in long_term_goal_rows}
+    actions_by_queue = {str(row.get("queue_id") or ""): row for row in ltg_next_acceptance_action_rows}
+    observed_by_id = {str(row.get("id") or ""): row for row in ltg_stage_scope_observed_rows}
+
+    storage = _latest_storage_direct_execution_evidence_summary()
+    worker = _latest_worker_direct_runtime_evidence_summary()
+    tauri = _latest_tauri_package_direct_evidence_summary()
+    release_gate = _latest_release_gate_direct_evidence_summary()
+    deepseek_observed = observed_by_id.get("LTG-07", {})
+    streamlit_observed = observed_by_id.get("LTG-10", {})
+    all_observed_stage_keys = sorted(
+        {
+            str(stage_key)
+            for row in ltg_stage_scope_observed_rows
+            for stage_key in (row.get("direct_evidence_stage_keys") or [])
+            if stage_key
+        }
+    )
+
+    rows = [
+        _production_hardening_gate_row(
+            gate_id="storage_boundaries",
+            area_label="Storage physical storage readiness",
+            ltg_ids=["LTG-05"],
+            queue_ids=["p4_storage_physical_execution"],
+            source_schema_version=str(storage.get("schema_version") or "missing"),
+            source_status=str(storage.get("status") or "missing"),
+            direct_evidence_stage_keys=list(storage.get("direct_evidence_stage_keys") or []),
+            direct_evidence_layer=str(storage.get("direct_evidence_layer") or "L1_static_contract"),
+            next_gate="run explicit physical storage phases, then durable promotion review and release gate",
+            remaining_blocker=str(goals_by_id.get("LTG-05", {}).get("not_complete_because") or ""),
+            required_production_evidence=[
+                "physical schema validation",
+                "dataset version manifest",
+                "DuckDB read validation",
+                "partition / compaction / TTL evidence",
+                "artifact cleanup review",
+                "remote CI review after local gate",
+            ],
+            not_production_evidence=["local packet", "matrix", "dry-run", "read-only DuckDB query"],
+            extra={
+                "physical_schema_validation_done": storage.get("physical_schema_validation_done") is True,
+                "duckdb_read_validation_done": storage.get("duckdb_read_validation_done") is True,
+                "storage_physical_execution_request_ready": storage.get("storage_physical_execution_request_ready")
+                is True,
+                "local_packet_is_production_storage": False,
+            },
+        ),
+        _production_hardening_gate_row(
+            gate_id="worker_runtime_boundaries",
+            area_label="Worker runtime readiness",
+            ltg_ids=["LTG-06"],
+            queue_ids=["p4_worker_runtime_qa"],
+            source_schema_version=str(worker.get("schema_version") or "missing"),
+            source_status=str(worker.get("status") or "missing"),
+            direct_evidence_stage_keys=list(worker.get("direct_evidence_stage_keys") or []),
+            direct_evidence_layer=str(worker.get("direct_evidence_layer") or "L1_static_contract"),
+            next_gate="complete worker runtime QA with durable process/broker/log evidence before promotion review",
+            remaining_blocker=str(goals_by_id.get("LTG-06", {}).get("not_complete_because") or ""),
+            required_production_evidence=[
+                "synthetic task round trip",
+                "durable task log",
+                "Celery process evidence",
+                "Redis broker evidence",
+                "scheduler default-off boundary",
+                "worker production promotion review",
+            ],
+            not_production_evidence=["task index", "local fallback", "scope ticket", "dry-run receipt"],
+            extra={
+                "runtime_qa_execution_done": worker.get("runtime_qa_execution_done") is True,
+                "celery_process_evidence_verified": worker.get("celery_process_evidence_verified") is True,
+                "redis_broker_evidence_verified": worker.get("redis_broker_evidence_verified") is True,
+                "worker_started_by_gate": False,
+            },
+        ),
+        _production_hardening_gate_row(
+            gate_id="tauri_desktop_package",
+            area_label="Tauri package readiness",
+            ltg_ids=["LTG-09"],
+            queue_ids=["p6_tauri_package_readiness_review"],
+            source_schema_version=str(tauri.get("schema_version") or "missing"),
+            source_status=str(tauri.get("status") or "missing"),
+            direct_evidence_stage_keys=list(tauri.get("direct_evidence_stage_keys") or []),
+            direct_evidence_layer=str(tauri.get("direct_evidence_layer") or "L1_static_contract"),
+            next_gate="collect packaged app runtime, offline UX, config/log, signing, and promotion evidence",
+            remaining_blocker=str(goals_by_id.get("LTG-09", {}).get("not_complete_because") or ""),
+            required_production_evidence=[
+                "release binary artifact QA",
+                "packaged app launch smoke",
+                "backend offline UX screenshot",
+                "backend startup runtime review",
+                "config/log runtime path review",
+                "signing/notarization review",
+            ],
+            not_production_evidence=["desktop preflight", "dev launcher", "artifact detection alone"],
+            extra={
+                "packaged_app_launch_smoke_done": tauri.get("packaged_app_launch_smoke_done") is True,
+                "backend_offline_packaged_ux_verified": tauri.get("backend_offline_packaged_ux_verified") is True,
+                "production_package_complete": False,
+            },
+        ),
+        _production_hardening_gate_row(
+            gate_id="ci_smoke_security_release_gate",
+            area_label="CI / smoke / safety release gate",
+            ltg_ids=["LTG-11", "LTG-14"],
+            queue_ids=["p0_release_gate_push_readiness", "p8_motion_production_promotion_review"],
+            source_schema_version=str(release_gate.get("schema_version") or "missing"),
+            source_status=str(release_gate.get("status") or "missing"),
+            direct_evidence_stage_keys=list(release_gate.get("direct_evidence_stage_keys") or []),
+            direct_evidence_layer=str(release_gate.get("direct_evidence_layer") or "L1_static_contract"),
+            next_gate="run fresh local gate for current head, then review matching remote CI before release or push",
+            remaining_blocker=str(goals_by_id.get("LTG-11", {}).get("not_complete_because") or ""),
+            required_production_evidence=[
+                "python unittest",
+                "desktop build",
+                "Command Center smoke",
+                "diff whitespace check",
+                "high-risk secret scan",
+                "generated artifact scan",
+                "matching remote CI review",
+            ],
+            not_production_evidence=["old local gate", "local-only green", "workflow file presence"],
+            remote_ci_review_required=True,
+            latest_remote_run_verified_green=release_gate.get("latest_remote_run_verified_green") is True,
+            extra={
+                "fresh_local_gate_run_observed": release_gate.get("fresh_local_gate_run_observed") is True,
+                "required_local_gate_checks_present": release_gate.get("required_local_gate_checks_present") is True,
+                "remote_actions_status_known": release_gate.get("remote_actions_status_known") is True,
+                "release_gate_complete": False,
+                "did_not_push": True,
+            },
+        ),
+        _production_hardening_gate_row(
+            gate_id="deepseek_governed_executor",
+            area_label="DeepSeek governed executor readiness",
+            ltg_ids=["LTG-07"],
+            queue_ids=["p5_deepseek_provider_benchmark_scope"],
+            source_schema_version="ltg_stage_scope_observed_rows.v1",
+            source_status=str(deepseek_observed.get("status") or "missing"),
+            direct_evidence_stage_keys=list(deepseek_observed.get("direct_evidence_stage_keys") or []),
+            direct_evidence_layer=str(deepseek_observed.get("direct_evidence_layer") or "L1_static_contract"),
+            next_gate=str(
+                actions_by_queue.get("p5_deepseek_provider_benchmark_scope", {}).get("next_local_step")
+                or "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket"
+            ),
+            remaining_blocker=str(goals_by_id.get("LTG-07", {}).get("not_complete_because") or ""),
+            required_production_evidence=[
+                "approved benchmark scope",
+                "model ledger/hash",
+                "response_format contract",
+                "retry/repair evidence",
+                "redaction and sanitizer review",
+                "output acceptance evidence",
+            ],
+            not_production_evidence=["prompt preview", "sanitizer only", "scope ticket", "mock output"],
+            extra={
+                "deepseek_is_data_source": False,
+                "deepseek_blocks_tushare_radar_next_session": False,
+                "model_execution_required_before_completion": True,
+            },
+        ),
+        _production_hardening_gate_row(
+            gate_id="streamlit_legacy_admin_debug",
+            area_label="Streamlit legacy/admin/debug fallback readiness",
+            ltg_ids=["LTG-10"],
+            queue_ids=["p7_streamlit_retirement_review"],
+            source_schema_version="ltg_stage_scope_observed_rows.v1",
+            source_status=str(streamlit_observed.get("status") or "missing"),
+            direct_evidence_stage_keys=list(streamlit_observed.get("direct_evidence_stage_keys") or []),
+            direct_evidence_layer=str(streamlit_observed.get("direct_evidence_layer") or "L1_static_contract"),
+            next_gate=str(
+                actions_by_queue.get("p7_streamlit_retirement_review", {}).get("future_provider_route")
+                or "future explicit Streamlit fallback retirement review"
+            ),
+            remaining_blocker=str(goals_by_id.get("LTG-10", {}).get("not_complete_because") or ""),
+            required_production_evidence=[
+                "ordinary workflow replacement evidence",
+                "admin/debug fallback decision",
+                "no-feature-cut review",
+                "fallback dependency review",
+                "retirement promotion review",
+            ],
+            not_production_evidence=["route inventory", "legacy tab name", "local retirement receipt"],
+            extra={
+                "streamlit_is_ordinary_main_flow": False,
+                "streamlit_fallback_retirement_allowed_now": False,
+                "legacy_admin_debug_retained": True,
+            },
+        ),
+        _production_hardening_gate_row(
+            gate_id="ltg_total_ledger_closeout_queue",
+            area_label="14 LTG strict closeout readiness",
+            ltg_ids=[str(row.get("id") or "") for row in long_term_goal_rows],
+            queue_ids=[str(row.get("queue_id") or "") for row in ltg_next_acceptance_action_rows],
+            source_schema_version=str(production_hardening_summary.get("schema_version") or "missing"),
+            source_status=str(production_hardening_summary.get("status") or "missing"),
+            direct_evidence_stage_keys=all_observed_stage_keys,
+            direct_evidence_layer="L2_observed_stage_scope_plus_local_direct_evidence",
+            next_gate="pick exactly one LTG and collect its current-head provider/worker/storage/browser/package/CI evidence",
+            remaining_blocker=f"strict_closeout={production_hardening_summary.get('strict_closeout') or '0/14'}",
+            required_production_evidence=[
+                "one LTG at a time",
+                "current-head direct evidence",
+                "durable receipt",
+                "release gate",
+                "remote CI review",
+                "safety scan",
+            ],
+            not_production_evidence=["local receipt", "matrix", "mock", "sanitizer", "dry-run", "stage-scope manifest"],
+            extra={
+                "strict_closeout": production_hardening_summary.get("strict_closeout") or "0/14",
+                "strict_closeout_done_count": production_hardening_summary.get("strict_closeout_done_count") or 0,
+                "safe_to_start_one_ltg_strict_closeout": False,
+                "all_ltg_closeout_blocked": True,
+            },
+        ),
+    ]
+    summary = {
+        "schema_version": "production_hardening_gate_summary.v1",
+        "status": "production_hardening_gates_visible_strict_closeout_blocked",
+        "gate_row_count": len(rows),
+        "local_direct_evidence_area_count": sum(
+            1 for row in rows if row.get("local_direct_evidence_available") is True
+        ),
+        "remote_ci_review_required": True,
+        "latest_remote_run_verified_green": False,
+        "safe_to_start_one_ltg_strict_closeout": False,
+        "all_gates_are_read_only": all(row.get("cache_only_readback") is True for row in rows),
+        "all_gates_block_strict_closeout": all(
+            row.get("strict_closeout_allowed_from_gate") is False for row in rows
+        ),
+        "all_gates_production_pending": all(row.get("production_complete") is False for row in rows),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "evidence_boundary": "production_hardening_gates_are_readiness_rows_not_ltg_closeout",
+    }
+    return summary, rows
+
+
+def _ltg_ids_from_priority_order() -> list[str]:
+    ordered: list[str] = []
+    for item in LTG_NEXT_PRIORITY_ORDER:
+        for part in str(item).replace(":", " ").split():
+            if (
+                part.startswith("LTG-")
+                and len(part) >= 6
+                and part[4:6].isdigit()
+                and part[:6] not in ordered
+            ):
+                part = part[:6]
+                ordered.append(part)
+    for item in LONG_TERM_GOAL_PROGRESS:
+        goal_id = str(item.get("id") or "")
+        if goal_id and goal_id not in ordered:
+            ordered.append(goal_id)
+    return ordered
+
+
+def _build_ltg_strict_closeout_work_order_rows(
+    *,
+    long_term_goal_rows: list[dict[str, Any]],
+    ltg_next_acceptance_action_rows: list[dict[str, Any]],
+    production_hardening_gate_rows: list[dict[str, Any]],
+    production_hardening_ltg_direct_evidence_rows: list[dict[str, Any]],
+    long_term_goal_summary: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    goals_by_id = {str(row.get("id") or ""): row for row in long_term_goal_rows}
+    actions_by_queue = {str(row.get("queue_id") or ""): row for row in ltg_next_acceptance_action_rows}
+    gate_by_id = {str(row.get("gate_id") or ""): row for row in production_hardening_gate_rows}
+    release_gate_direct_evidence = _latest_release_gate_direct_evidence_summary()
+    release_gate_blockers = [
+        str(item)
+        for item in release_gate_direct_evidence.get("local_push_gate_receipt_freshness_blockers") or []
+        if str(item)
+    ]
+    direct_by_id = {
+        str(row.get("id") or ""): row for row in production_hardening_ltg_direct_evidence_rows
+    }
+    primary_gate_by_ltg = {
+        "LTG-04": "worker_runtime_boundaries",
+        "LTG-05": "storage_boundaries",
+        "LTG-06": "worker_runtime_boundaries",
+        "LTG-07": "deepseek_governed_executor",
+        "LTG-09": "tauri_desktop_package",
+        "LTG-10": "streamlit_legacy_admin_debug",
+        "LTG-11": "ci_smoke_security_release_gate",
+        "LTG-13": "ci_smoke_security_release_gate",
+        "LTG-14": "ci_smoke_security_release_gate",
+    }
+    recommended_first_candidates = {"LTG-13", "LTG-02"}
+    rows: list[dict[str, Any]] = []
+    for index, goal_id in enumerate(_ltg_ids_from_priority_order(), start=1):
+        goal = goals_by_id.get(goal_id, {})
+        queue_id = LTG_HARDENING_QUEUE_BY_ID.get(goal_id, "")
+        action = actions_by_queue.get(queue_id, {})
+        direct_row = direct_by_id.get(goal_id, {})
+        primary_gate = primary_gate_by_ltg.get(goal_id, "ltg_total_ledger_closeout_queue")
+        gate_ids = [primary_gate]
+        if "ci_smoke_security_release_gate" not in gate_ids:
+            gate_ids.append("ci_smoke_security_release_gate")
+        if "ltg_total_ledger_closeout_queue" not in gate_ids:
+            gate_ids.append("ltg_total_ledger_closeout_queue")
+        gate_status_rows = [
+            {
+                "gate_id": gate_id,
+                "gate_status": gate_by_id.get(gate_id, {}).get("gate_status") or "missing",
+                "local_direct_evidence_stage_count": int(
+                    gate_by_id.get(gate_id, {}).get("local_direct_evidence_stage_count") or 0
+                ),
+                "production_complete": gate_by_id.get(gate_id, {}).get("production_complete") is True,
+                "strict_closeout_allowed_from_gate": gate_by_id.get(gate_id, {}).get(
+                    "strict_closeout_allowed_from_gate"
+                )
+                is True,
+            }
+            for gate_id in gate_ids
+        ]
+        next_direct_evidence = list(
+            direct_row.get("next_direct_evidence") or goal.get("next_evidence_required") or []
+        )
+        acceptance_command = str(
+            direct_row.get("acceptance_command")
+            or action.get("next_local_step")
+            or action.get("first_allowed_route")
+            or action.get("future_provider_route")
+            or goal.get("next_step")
+            or ""
+        )
+        rows.append(
+            {
+                "work_order_id": f"strict_closeout_work_order_{goal_id.lower()}",
+                "id": goal_id,
+                "goal": goal.get("goal"),
+                "priority_order": index,
+                "recommended_first_candidate": goal_id in recommended_first_candidates,
+                "recommended_reason": "good first strict-closeout slice after baseline"
+                if goal_id == "LTG-13"
+                else "provider target-sample path is a useful first data LTG"
+                if goal_id == "LTG-02"
+                else "follow after earlier work-order blockers are reduced",
+                "acceptance_queue_id": queue_id,
+                "acceptance_queue_status": action.get("local_receipt_status") or "missing_queue_status",
+                "acceptance_command": acceptance_command,
+                "first_allowed_local_step": action.get("next_local_step") or action.get("first_allowed_route") or "",
+                "future_provider_route": action.get("future_provider_route") or "",
+                "primary_gate_id": primary_gate,
+                "required_gate_ids": gate_ids,
+                "required_gate_status_rows": gate_status_rows,
+                "existing_evidence_summary": direct_row.get("existing_evidence_summary")
+                or goal.get("current_state")
+                or "",
+                "blocker": direct_row.get("blocker") or goal.get("not_complete_because") or "",
+                "next_direct_evidence": next_direct_evidence,
+                "next_direct_evidence_count": len(next_direct_evidence),
+                "production_evidence_required_before_closeout": next_direct_evidence
+                + [
+                    "clean worktree before fresh local gate receipt",
+                    "current-head durable receipt",
+                    "fresh local gate",
+                    "remote CI review",
+                    "safety scan",
+                    "no secret / no trade / no action mutation review",
+                ],
+                "one_ltg_only": True,
+                "ready_to_select_for_next_closeout_slice": True,
+                "strict_closeout_claim_allowed": False,
+                "can_close_ltg_now": False,
+                "production_complete": False,
+                "requires_current_head_direct_evidence": True,
+                "requires_durable_receipt": True,
+                "requires_clean_worktree_before_fresh_gate": True,
+                "requires_fresh_local_gate": True,
+                "requires_remote_ci_review": True,
+                "requires_safety_scan": True,
+                "must_not_mix_with_other_ltg": True,
+                "not_production_evidence": [
+                    "local receipt",
+                    "matrix",
+                    "mock",
+                    "sanitizer",
+                    "dry-run",
+                    "stage-scope manifest",
+                    "old local gate",
+                    "dirty worktree",
+                    "remote CI unknown",
+                ],
+                "forbidden_shortcuts": [
+                    "close from this work-order row",
+                    "close from local-only receipt",
+                    "close multiple LTGs in one evidence claim",
+                    "run release gate from a dirty worktree",
+                    "skip fresh local gate",
+                    "skip remote CI review",
+                    "treat DeepSeek output as market data",
+                    "execute or imply real trading",
+                ],
+                "cache_only_readback": True,
+                "creates_task_from_get": False,
+                "creates_task_from_render": False,
+                "release_gate_current_status": release_gate_direct_evidence.get("status"),
+                "release_gate_fresh_local_gate_run_observed": (
+                    release_gate_direct_evidence.get("fresh_local_gate_run_observed") is True
+                ),
+                "release_gate_worktree_clean": release_gate_direct_evidence.get("local_worktree_clean") is True,
+                "release_gate_worktree_dirty_file_count": int(
+                    release_gate_direct_evidence.get("local_worktree_dirty_file_count") or 0
+                ),
+                "release_gate_worktree_blocks_fresh_local_gate": (
+                    release_gate_direct_evidence.get("local_worktree_blocks_local_gate_receipt") is True
+                ),
+                "release_gate_worktree_raw_paths_emitted": False,
+                "release_gate_worktree_raw_status_lines_emitted": False,
+                "release_gate_receipt_head_matches_current": (
+                    release_gate_direct_evidence.get("local_push_gate_receipt_head_matches_current") is True
+                ),
+                "release_gate_current_blockers": release_gate_blockers,
+                "release_gate_remote_actions_status_known": False,
+                "release_gate_latest_remote_run_verified_green": False,
+                "release_gate_local_git_status_is_not_ci_status": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "evidence_boundary": "ltg_strict_closeout_work_order_is_selection_plan_not_closeout",
+            }
+        )
+    summary = {
+        "schema_version": "ltg_strict_closeout_work_order_summary.v1",
+        "status": "one_ltg_closeout_work_order_ready_for_selection_closeout_claim_blocked",
+        "work_order_row_count": len(rows),
+        "recommended_first_candidate_ids": sorted(recommended_first_candidates),
+        "recommended_first_candidate_count": sum(
+            1 for row in rows if row.get("recommended_first_candidate") is True
+        ),
+        "strict_closeout": long_term_goal_summary.get("strict_closeout") or "0/14",
+        "strict_closeout_done_count": long_term_goal_summary.get("strict_closeout_done_count") or 0,
+        "strict_closeout_total_count": long_term_goal_summary.get("strict_closeout_total_count") or 14,
+        "ready_to_select_one_ltg_next_slice": True,
+        "strict_closeout_claim_allowed": False,
+        "all_rows_one_ltg_only": all(row.get("one_ltg_only") is True for row in rows),
+        "all_rows_require_current_head_direct_evidence": all(
+            row.get("requires_current_head_direct_evidence") is True for row in rows
+        ),
+        "all_rows_require_clean_worktree_before_fresh_gate": all(
+            row.get("requires_clean_worktree_before_fresh_gate") is True for row in rows
+        ),
+        "all_rows_require_remote_ci_review": all(
+            row.get("requires_remote_ci_review") is True for row in rows
+        ),
+        "all_rows_block_closeout_claim": all(
+            row.get("strict_closeout_claim_allowed") is False for row in rows
+        ),
+        "all_rows_cache_only": all(row.get("cache_only_readback") is True for row in rows),
+        "release_gate_current_status": release_gate_direct_evidence.get("status"),
+        "release_gate_fresh_local_gate_run_observed": (
+            release_gate_direct_evidence.get("fresh_local_gate_run_observed") is True
+        ),
+        "release_gate_worktree_clean": release_gate_direct_evidence.get("local_worktree_clean") is True,
+        "release_gate_worktree_dirty_file_count": int(
+            release_gate_direct_evidence.get("local_worktree_dirty_file_count") or 0
+        ),
+        "release_gate_worktree_blocks_fresh_local_gate": (
+            release_gate_direct_evidence.get("local_worktree_blocks_local_gate_receipt") is True
+        ),
+        "release_gate_worktree_raw_paths_emitted": False,
+        "release_gate_worktree_raw_status_lines_emitted": False,
+        "release_gate_current_blockers": release_gate_blockers,
+        "release_gate_remote_actions_status_known": False,
+        "release_gate_latest_remote_run_verified_green": False,
+        "release_gate_local_git_status_is_not_ci_status": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "evidence_boundary": "ltg_strict_closeout_work_order_prepares_one_ltg_selection_not_completion",
+    }
+    return summary, rows
+
+
+def _build_usable_path_medium_goal_checkpoint(
+    *,
+    ltg_rebase_cycle_1_summary: Mapping[str, Any],
+    production_hardening_summary: Mapping[str, Any],
+    production_hardening_gate_summary: Mapping[str, Any],
+    ltg_strict_closeout_work_order_summary: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    rows = [
+        {
+            "goal_id": "MG-01",
+            "goal_label": "封版当前使用者可用化基线",
+            "status": "complete",
+            "evidence_surfaces": [
+                "ltg_rebase_cycle_1_summary",
+                "ltg_rebase_cycle_1_worktree_group_rows",
+                "ordinary home first-screen cards",
+            ],
+            "completed_meaning": "普通首页先看本地已接上、当前标的、最近结果和下一步，工程审计下沉。",
+            "not_completed_meaning": "不是 14 LTG strict closeout，不证明远端 CI、provider/model executor 或生产验收。",
+            "cache_only_readback": True,
+            "creates_task_from_get": False,
+            "creates_task_from_render": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "goal_id": "MG-02",
+            "goal_label": "Tushare-first 候选雷达粗筛/细筛可用切片",
+            "status": "complete",
+            "evidence_surfaces": [
+                "coarse_fine_screening_contract",
+                "coarse_screening_rows",
+                "fine_screening_rows",
+                "top_watch_excluded_group_rows",
+            ],
+            "completed_meaning": "候选雷达能把 Top / Watch / Excluded、粗筛和细筛结果回放给普通用户。",
+            "not_completed_meaning": "不是 full-pool/deep-scan production radar，也不是买卖指令或 strategy action。",
+            "cache_only_readback": True,
+            "creates_task_from_get": False,
+            "creates_task_from_render": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "goal_id": "MG-03",
+            "goal_label": "生产化硬化和 LTG direct evidence 收口准备",
+            "status": "complete",
+            "evidence_surfaces": [
+                "production_hardening_summary",
+                "production_hardening_gate_rows",
+                "production_hardening_ltg_direct_evidence_rows",
+                "ltg_strict_closeout_work_order_rows",
+            ],
+            "completed_meaning": "7 个硬化门、14 条 LTG direct evidence 行和 14 条下一轮 work order 已可见。",
+            "not_completed_meaning": "硬化矩阵和 work order 只是下一轮准备，不能关闭任何 LTG。",
+            "cache_only_readback": True,
+            "creates_task_from_get": False,
+            "creates_task_from_render": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+    ]
+    completed_count = sum(1 for row in rows if row["status"] == "complete")
+    summary = {
+        "schema_version": "usable_path_three_medium_goal_checkpoint.v1",
+        "status": "three_medium_goals_complete_not_ltg_closeout",
+        "completed_medium_goal_count": completed_count,
+        "total_medium_goal_count": len(rows),
+        "all_medium_goals_complete": completed_count == len(rows),
+        "worktree_grouped_file_count": ltg_rebase_cycle_1_summary.get("worktree_grouped_file_count") or 0,
+        "worktree_group_count": ltg_rebase_cycle_1_summary.get("worktree_group_count") or 0,
+        "production_hardening_gate_row_count": production_hardening_gate_summary.get("gate_row_count") or 0,
+        "ltg_direct_evidence_row_count": production_hardening_summary.get("ltg_direct_evidence_row_count") or 0,
+        "ltg_strict_closeout_work_order_row_count": ltg_strict_closeout_work_order_summary.get("work_order_row_count") or 0,
+        "strict_closeout": ltg_strict_closeout_work_order_summary.get("strict_closeout") or "0/14",
+        "strict_closeout_claim_allowed": False,
+        "not_14_ltg_closeout": True,
+        "next_recommended_action": "select_one_ltg_direct_evidence_slice",
+        "recommended_first_ltg_after_medium_goals": ["LTG-13", "LTG-02"],
+        "cache_only_readback": True,
+        "creates_task_from_get": False,
+        "creates_task_from_render": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "evidence_boundary": "medium_goals_checkpoint_is_usable_path_closeout_not_14_ltg_closeout",
+    }
+    return summary, rows
+
+
 def _task_statuses_by_type() -> dict[str, list[dict[str, Any]]]:
     by_type: dict[str, list[dict[str, Any]]] = {}
     for task in task_service.list_task_statuses():
@@ -1953,10 +3084,19 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         from server.services import audit_service
 
         receipt = audit_service._read_local_push_gate_run_receipt()
+        worktree, _worktree_rows = audit_service._local_worktree_cleanliness_audit()
     except Exception:
         receipt = {}
+        worktree = {}
     receipt_map = receipt if isinstance(receipt, dict) else {}
+    worktree_map = worktree if isinstance(worktree, dict) else {}
     checks = [str(item) for item in receipt_map.get("checks") or []]
+    receipt_blockers = [str(item) for item in receipt_map.get("freshness_blockers") or [] if str(item)]
+    worktree_clean = worktree_map.get("worktree_clean") is True
+    worktree_blocks_local_gate = worktree_map.get("blocks_local_push_gate_receipt") is True
+    freshness_blockers = list(receipt_blockers)
+    if worktree_blocks_local_gate and "worktree_dirty" not in freshness_blockers:
+        freshness_blockers.append("worktree_dirty")
     required_checks = {
         "python_unittest",
         "desktop_build",
@@ -1972,6 +3112,7 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         and receipt_map.get("status") == "local_push_gate_passed_current_head"
         and receipt_map.get("fresh_local_gate_run_observed") is True
         and receipt_map.get("head_matches_current") is True
+        and worktree_clean
         and required_checks.issubset(set(checks))
         and receipt_map.get("did_not_push") is True
         and receipt_map.get("git_add_dot_used") is False
@@ -2004,6 +3145,31 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "local_push_gate_receipt_current_head": str(receipt_map.get("current_head") or ""),
         "local_push_gate_check_count": len(checks),
         "required_local_gate_checks_present": required_checks.issubset(set(checks)),
+        "local_push_gate_receipt_freshness_blockers": freshness_blockers,
+        "local_push_gate_receipt_freshness_blocker_count": len(freshness_blockers),
+        "local_worktree_cleanliness_status": str(worktree_map.get("status") or "unknown"),
+        "local_worktree_clean": worktree_clean,
+        "local_worktree_status_known": worktree_map.get("status_known") is True,
+        "local_worktree_dirty_file_count": int(worktree_map.get("dirty_file_count") or 0),
+        "local_worktree_tracked_change_count": int(worktree_map.get("tracked_change_count") or 0),
+        "local_worktree_untracked_file_count": int(worktree_map.get("untracked_file_count") or 0),
+        "local_worktree_blocks_local_gate_receipt": worktree_blocks_local_gate,
+        "local_worktree_clean_required_before_gate_receipt": True,
+        "local_worktree_raw_paths_emitted": False,
+        "local_worktree_raw_status_lines_emitted": False,
+        "fresh_local_gate_blocked_by_dirty_worktree": worktree_blocks_local_gate,
+        "fresh_local_gate_blocked_by_head_mismatch": "head_mismatch"
+        in set(freshness_blockers),
+        "fresh_local_gate_blocked_by_required_checks": "required_checks_missing"
+        in set(freshness_blockers),
+        "fresh_local_gate_blocked_by_boundary_flags": bool(
+            set(freshness_blockers).intersection(
+                {
+                    "safety_boundary_flags_invalid",
+                    "push_confirmation_boundary_missing_or_invalid",
+                }
+            )
+        ),
         "remote_actions_status_known": False,
         "latest_remote_run_verified_green": False,
         "release_gate_complete": False,
@@ -7229,6 +8395,40 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_push_gate_receipt_head": direct_evidence.get("local_push_gate_receipt_head") or "",
                 "local_push_gate_receipt_current_head": direct_evidence.get("local_push_gate_receipt_current_head")
                 or "",
+                "local_push_gate_receipt_freshness_blockers": direct_evidence.get(
+                    "local_push_gate_receipt_freshness_blockers"
+                )
+                or [],
+                "local_push_gate_receipt_freshness_blocker_count": int(
+                    direct_evidence.get("local_push_gate_receipt_freshness_blocker_count") or 0
+                ),
+                "fresh_local_gate_blocked_by_head_mismatch": direct_evidence.get(
+                    "fresh_local_gate_blocked_by_head_mismatch"
+                )
+                is True,
+                "fresh_local_gate_blocked_by_dirty_worktree": direct_evidence.get(
+                    "fresh_local_gate_blocked_by_dirty_worktree"
+                )
+                is True,
+                "fresh_local_gate_blocked_by_required_checks": direct_evidence.get(
+                    "fresh_local_gate_blocked_by_required_checks"
+                )
+                is True,
+                "fresh_local_gate_blocked_by_boundary_flags": direct_evidence.get(
+                    "fresh_local_gate_blocked_by_boundary_flags"
+                )
+                is True,
+                "local_worktree_clean": direct_evidence.get("local_worktree_clean") is True,
+                "local_worktree_dirty_file_count": int(
+                    direct_evidence.get("local_worktree_dirty_file_count") or 0
+                ),
+                "local_worktree_blocks_local_gate_receipt": direct_evidence.get(
+                    "local_worktree_blocks_local_gate_receipt"
+                )
+                is True,
+                "local_worktree_clean_required_before_gate_receipt": True,
+                "local_worktree_raw_paths_emitted": False,
+                "local_worktree_raw_status_lines_emitted": False,
                 "local_push_gate_check_count": int(direct_evidence.get("local_push_gate_check_count") or 0),
                 "required_local_gate_checks_present": direct_evidence.get("required_local_gate_checks_present")
                 is True,
@@ -8576,6 +9776,43 @@ def build_migration_status() -> dict[str, Any]:
     usable_path_current_checkpoint_rows = _build_usable_path_current_checkpoint_rows(
         usable_path_strict_closeout_handoff_rows
     )
+    ltg_rebase_cycle_1_summary, ltg_rebase_cycle_1_worktree_group_rows, ltg_rebase_cycle_1_ltg_ledger_rows = (
+        _build_ltg_rebase_cycle_1_status(
+            long_term_goal_rows,
+            ltg_stage_scope_observed_rows,
+            usable_path_current_checkpoint_rows,
+        )
+    )
+    production_hardening_summary, production_hardening_rows, production_hardening_ltg_direct_evidence_rows = (
+        _build_production_hardening_matrix(
+            long_term_goal_rows,
+            ltg_next_acceptance_action_rows,
+            long_term_goal_summary,
+        )
+    )
+    production_hardening_gate_summary, production_hardening_gate_rows = _build_production_hardening_gate_rows(
+        long_term_goal_rows=long_term_goal_rows,
+        ltg_next_acceptance_action_rows=ltg_next_acceptance_action_rows,
+        ltg_stage_scope_observed_rows=ltg_stage_scope_observed_rows,
+        production_hardening_summary=production_hardening_summary,
+    )
+    ltg_strict_closeout_work_order_summary, ltg_strict_closeout_work_order_rows = (
+        _build_ltg_strict_closeout_work_order_rows(
+            long_term_goal_rows=long_term_goal_rows,
+            ltg_next_acceptance_action_rows=ltg_next_acceptance_action_rows,
+            production_hardening_gate_rows=production_hardening_gate_rows,
+            production_hardening_ltg_direct_evidence_rows=production_hardening_ltg_direct_evidence_rows,
+            long_term_goal_summary=long_term_goal_summary,
+        )
+    )
+    usable_path_medium_goal_checkpoint_summary, usable_path_medium_goal_checkpoint_rows = (
+        _build_usable_path_medium_goal_checkpoint(
+            ltg_rebase_cycle_1_summary=ltg_rebase_cycle_1_summary,
+            production_hardening_summary=production_hardening_summary,
+            production_hardening_gate_summary=production_hardening_gate_summary,
+            ltg_strict_closeout_work_order_summary=ltg_strict_closeout_work_order_summary,
+        )
+    )
     p6_direct_evidence_reentry_rows = _build_p6_direct_evidence_reentry_rows(
         long_term_goal_summary,
         usable_path_strict_closeout_handoff_rows,
@@ -8606,6 +9843,27 @@ def build_migration_status() -> dict[str, Any]:
         "long_term_goal_rows": long_term_goal_rows,
         "ltg_acceptance_runway_rows": ltg_acceptance_runway_rows,
         "ltg_next_acceptance_action_rows": ltg_next_acceptance_action_rows,
+        "ltg_rebase_cycle_1_summary": ltg_rebase_cycle_1_summary,
+        "ltg_rebase_cycle_1_worktree_group_rows": ltg_rebase_cycle_1_worktree_group_rows,
+        "ltg_rebase_cycle_1_worktree_group_row_count": len(ltg_rebase_cycle_1_worktree_group_rows),
+        "ltg_rebase_cycle_1_ltg_ledger_rows": ltg_rebase_cycle_1_ltg_ledger_rows,
+        "ltg_rebase_cycle_1_ltg_ledger_row_count": len(ltg_rebase_cycle_1_ltg_ledger_rows),
+        "production_hardening_summary": production_hardening_summary,
+        "production_hardening_rows": production_hardening_rows,
+        "production_hardening_row_count": len(production_hardening_rows),
+        "production_hardening_ltg_direct_evidence_rows": production_hardening_ltg_direct_evidence_rows,
+        "production_hardening_ltg_direct_evidence_row_count": len(
+            production_hardening_ltg_direct_evidence_rows
+        ),
+        "production_hardening_gate_summary": production_hardening_gate_summary,
+        "production_hardening_gate_rows": production_hardening_gate_rows,
+        "production_hardening_gate_row_count": len(production_hardening_gate_rows),
+        "ltg_strict_closeout_work_order_summary": ltg_strict_closeout_work_order_summary,
+        "ltg_strict_closeout_work_order_rows": ltg_strict_closeout_work_order_rows,
+        "ltg_strict_closeout_work_order_row_count": len(ltg_strict_closeout_work_order_rows),
+        "usable_path_medium_goal_checkpoint_summary": usable_path_medium_goal_checkpoint_summary,
+        "usable_path_medium_goal_checkpoint_rows": usable_path_medium_goal_checkpoint_rows,
+        "usable_path_medium_goal_checkpoint_row_count": len(usable_path_medium_goal_checkpoint_rows),
         "usable_path_current_checkpoint_rows": usable_path_current_checkpoint_rows,
         "usable_path_current_checkpoint_row_count": len(usable_path_current_checkpoint_rows),
         "usable_path_strict_closeout_handoff_rows": usable_path_strict_closeout_handoff_rows,
@@ -8650,6 +9908,13 @@ def build_migration_status() -> dict[str, Any]:
                 + len(long_term_goal_rows)
                 + len(ltg_acceptance_runway_rows)
                 + len(ltg_next_acceptance_action_rows)
+                + len(ltg_rebase_cycle_1_worktree_group_rows)
+                + len(ltg_rebase_cycle_1_ltg_ledger_rows)
+                + len(production_hardening_rows)
+                + len(production_hardening_ltg_direct_evidence_rows)
+                + len(production_hardening_gate_rows)
+                + len(ltg_strict_closeout_work_order_rows)
+                + len(usable_path_medium_goal_checkpoint_rows)
                 + len(usable_path_current_checkpoint_rows)
                 + len(usable_path_strict_closeout_handoff_rows)
                 + len(p6_direct_evidence_reentry_rows)
@@ -8670,6 +9935,21 @@ def build_migration_status() -> dict[str, Any]:
                     legacy_audit_latest_observation.get("direct_user_evidence_recorded") is True
                 ),
                 "ltg_stage_scope_observed_row_count": len(ltg_stage_scope_observed_rows),
+                "ltg_rebase_cycle_1_worktree_group_row_count": len(
+                    ltg_rebase_cycle_1_worktree_group_rows
+                ),
+                "ltg_rebase_cycle_1_ltg_ledger_row_count": len(ltg_rebase_cycle_1_ltg_ledger_rows),
+                "production_hardening_row_count": len(production_hardening_rows),
+                "production_hardening_ltg_direct_evidence_row_count": len(
+                    production_hardening_ltg_direct_evidence_rows
+                ),
+                "production_hardening_gate_row_count": len(production_hardening_gate_rows),
+                "ltg_strict_closeout_work_order_row_count": len(
+                    ltg_strict_closeout_work_order_rows
+                ),
+                "usable_path_medium_goal_checkpoint_row_count": len(
+                    usable_path_medium_goal_checkpoint_rows
+                ),
                 "usable_path_current_checkpoint_row_count": len(usable_path_current_checkpoint_rows),
                 "usable_path_strict_closeout_handoff_row_count": len(
                     usable_path_strict_closeout_handoff_rows
@@ -8709,6 +9989,10 @@ def build_migration_status() -> dict[str, Any]:
             "GET /api/migration/status 只读展示用户提供的长期迁移基线；不会重新估算、外联或触发任务。",
             "LTG stage-scope observed rows 只读取本地 cache 或静态合同里的阶段清单；它们不是生产完成证据。",
             "14 个长期目标严格关闭数仍为 0/14；scaffold / preflight / mock / matrix / sanitizer / dry-run / local receipt 不能作为生产完成证据。",
+            "production_hardening_* rows 只读展示 Storage/Worker/Tauri/CI/DeepSeek/Streamlit 和 14 LTG 下一步 direct evidence；不是 strict closeout。",
+            "production_hardening_gate_rows 把散落的 direct evidence 摘要收束成 Storage/Worker/Tauri/CI/DeepSeek/Streamlit/LTG gate；它们仍然只读、remote CI pending、不能关闭 LTG。",
+            "ltg_strict_closeout_work_order_rows 可以选一个 LTG 进入下一轮 direct evidence 收集；它们不是 closeout claim，不能跳过 fresh local gate、remote CI review 或 safety scan。",
+            "usable_path_medium_goal_checkpoint_summary 只表示三个中目标已完成并可进入下一轮 LTG 切片；它不是 14 LTG strict closeout。",
             "Tushare / DeepSeek 联动按四层审查：cache/render 安静、POST task 门控、task 内真实 provider/model execution、production promotion ledger；真实执行与生产提升仍需后续显式验收。",
             "legacy_audit_latest_observation 只读回放显式 observation dry-run；不会创建任务、升级 KEEP 或退场 Streamlit。",
             "进度表用于规划判断，不代表自动完成迁移；后续阶段仍需逐项实现和测试。",

@@ -42,9 +42,12 @@ CONTRACT_KEYS = [
     "latest_trade_cal_provider_acceptance_promotion_review",
     "latest_producer_cache_refresh_execution_request",
     "latest_producer_cache_refresh",
+    "producer_cache_refresh_direct_evidence",
     "latest_tushare_provider_target_sample_execution_request",
+    "freshness_local_release_gate_evidence",
     "current_evidence_freshness_qa_contract",
     "current_evidence_decision_surface_audit",
+    "decision_surface_isolation_direct_evidence",
     "current_evidence_producer_coverage_audit",
     "current_evidence_producer_generation_contract",
     "current_evidence_producer_cache_refresh_readiness",
@@ -122,6 +125,13 @@ def _as_list(value: Any) -> list[Any]:
 
 def _serialized(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _freshness_production_stage_scope_rows() -> list[dict[str, Any]]:
@@ -582,6 +592,7 @@ def build_contract() -> dict[str, Any]:
     next_execution_recipe_rows = _as_list(packet.get("trade_cal_provider_acceptance_next_execution_rows"))
     latest_execution_request = _get(packet, "latest_trade_cal_provider_acceptance_execution_request")
     durable_evidence_recipe = _get(packet, "freshness_durable_evidence_recipe")
+    local_release_gate_evidence = _get(packet, "freshness_local_release_gate_evidence")
     durable_evidence_rows = [
         row for row in _as_list(packet.get("freshness_durable_evidence_rows")) if isinstance(row, dict)
     ]
@@ -594,6 +605,7 @@ def build_contract() -> dict[str, Any]:
     durable_blocking_keys = set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
     current = _get(packet, "current_evidence_freshness_qa_contract")
     surfaces = _get(packet, "current_evidence_decision_surface_audit")
+    surface_isolation_evidence = _get(packet, "decision_surface_isolation_direct_evidence")
     producers = _get(packet, "current_evidence_producer_coverage_audit")
     producer_generation = _get(packet, "current_evidence_producer_generation_contract")
     producer_generation_rows = [
@@ -615,6 +627,7 @@ def build_contract() -> dict[str, Any]:
         for row in _as_list(packet.get("latest_producer_cache_refresh_rows"))
         if isinstance(row, dict)
     ]
+    producer_cache_refresh_evidence = _get(packet, "producer_cache_refresh_direct_evidence")
     producer_refresh = _as_dict(dry_run_cases.get("producer_refresh"))
     producer_refresh_payload = _as_dict(producer_refresh.get("payload_safe"))
     producer_refresh_receipt = _as_dict(producer_refresh_payload.get("producer_cache_refresh_receipt"))
@@ -664,6 +677,39 @@ def build_contract() -> dict[str, Any]:
             and row.get("contains_secret") is False
             and len(_as_list(row.get("missing_evidence"))) >= 7
             for row in production_stage_scope_rows
+        )
+    )
+    provider_backed_trade_cal_acceptance_observed = (
+        blockers_audit.get("provider_backed_trade_cal_acceptance_done") is True
+        or promotion.get("provider_backed_long_window_acceptance_done") is True
+        or local_tushare_refresh.get("provider_backed_long_window_acceptance_done") is True
+    )
+    provider_backed_trade_cal_evidence_row_count = _int(
+        counts.get("trade_cal_provider_acceptance_evidence_row_count")
+    )
+    local_tushare_trade_cal_evidence_row_count = _int(
+        counts.get("local_tushare_refresh_packet_trade_cal_evidence_row_count")
+    )
+    provider_backed_trade_cal_acceptance_source = (
+        "local_prior_provider_evidence_replay"
+        if provider_backed_trade_cal_acceptance_observed
+        else "not_observed_in_local_cache"
+    )
+    provider_backed_trade_cal_observation_consistent = (
+        (
+            provider_backed_trade_cal_acceptance_observed
+            and (provider_backed_trade_cal_evidence_row_count > 0 or local_tushare_trade_cal_evidence_row_count > 0)
+            and (
+                blockers_audit.get("provider_backed_trade_cal_acceptance_done") is True
+                or promotion.get("provider_backed_long_window_acceptance_done") is True
+                or local_tushare_refresh.get("provider_backed_long_window_acceptance_done") is True
+            )
+        )
+        or (
+            not provider_backed_trade_cal_acceptance_observed
+            and blockers_audit.get("provider_backed_trade_cal_acceptance_done") is not True
+            and promotion.get("provider_backed_long_window_acceptance_done") is not True
+            and local_tushare_refresh.get("provider_backed_long_window_acceptance_done") is not True
         )
     )
 
@@ -765,6 +811,23 @@ def build_contract() -> dict[str, Any]:
             and blockers_audit.get("does_not_execute_trades") is True
             and blockers_audit.get("does_not_modify_strategy_action") is True,
             "Freshness production blocker audit must stay local/read-only and must not claim production completion, even after direct provider and producer evidence is visible.",
+        ),
+        _row(
+            "provider_backed_trade_cal_acceptance_observation_is_explicit",
+            provider_backed_trade_cal_observation_consistent
+            and blockers_audit.get("production_freshness_gate_complete") is False
+            and promotion.get("production_freshness_gate_complete") is False
+            and local_tushare_refresh.get("production_tushare_pipeline_complete") is False
+            and _flag_false(blockers_audit, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and _flag_false(promotion, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and _flag_false(
+                local_tushare_refresh,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            ),
+            "When prior provider-backed trade_cal evidence exists, the push-gate contract must expose it as local evidence replay while keeping provider execution and production freshness promotion disabled.",
         ),
         _row(
             "provider_acceptance_readiness_receipt_is_local",
@@ -884,6 +947,42 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("real_trade_cal_long_window_validation_done") is False
             and durable_evidence_recipe.get("provider_execution_implemented") is False
             and durable_evidence_recipe.get("provider_refresh_called_by_recipe") is False
+            and local_release_gate_evidence.get("schema_version")
+            == "data_health_freshness_local_release_gate_evidence.v1"
+            and local_release_gate_evidence.get("scope")
+            == "local_release_gate_receipt_readback_no_push_no_github_api"
+            and local_release_gate_evidence.get("production_freshness_gate_complete") is False
+            and local_release_gate_evidence.get("github_api_called") is False
+            and local_release_gate_evidence.get("local_worktree_clean_required_before_gate_receipt") is True
+            and local_release_gate_evidence.get("local_worktree_raw_paths_emitted") is False
+            and local_release_gate_evidence.get("local_worktree_raw_status_lines_emitted") is False
+            and isinstance(local_release_gate_evidence.get("local_worktree_dirty_file_count"), int)
+            and (
+                local_release_gate_evidence.get("local_worktree_clean") is True
+                or local_release_gate_evidence.get("local_worktree_blocks_local_gate_receipt") is True
+            )
+            and _flag_false(
+                local_release_gate_evidence,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and local_release_gate_evidence.get("does_not_execute_trades") is True
+            and local_release_gate_evidence.get("does_not_modify_strategy_action") is True
+            and durable_evidence_recipe.get("local_release_gate_evidence_status")
+            == local_release_gate_evidence.get("status")
+            and durable_evidence_recipe.get("remote_ci_review_required") is True
+            and durable_evidence_recipe.get("latest_remote_run_verified_green") is False
+            and durable_evidence_recipe.get("release_review_complete") is False
+            and durable_evidence_recipe.get("production_promotion_review_done") is False
+            and durable_evidence_recipe.get("local_worktree_clean")
+            is local_release_gate_evidence.get("local_worktree_clean")
+            and durable_evidence_recipe.get("local_worktree_blocks_local_gate_receipt")
+            is local_release_gate_evidence.get("local_worktree_blocks_local_gate_receipt")
+            and durable_evidence_recipe.get("local_worktree_raw_paths_emitted") is False
+            and durable_evidence_recipe.get("local_worktree_raw_status_lines_emitted") is False
             and durable_evidence_recipe.get("producer_generation_contract_status")
             == "producer_generation_contract_ready_current_cache_refresh_pending"
             and durable_evidence_recipe.get("producer_generation_contract_ready") is True
@@ -947,9 +1046,44 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("does_not_execute_trades") is True for row in durable_evidence_rows)
             and all(row.get("does_not_modify_strategy_action") is True for row in durable_evidence_rows)
             and all(row.get("contains_secret") is False for row in durable_evidence_rows)
+            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
+                "local_release_gate_evidence_status"
+            )
+            == local_release_gate_evidence.get("status")
+            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
+                "local_worktree_clean"
+            )
+            is local_release_gate_evidence.get("local_worktree_clean")
+            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
+                "local_worktree_blocks_local_gate_receipt"
+            )
+            is local_release_gate_evidence.get("local_worktree_blocks_local_gate_receipt")
+            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
+                "local_worktree_raw_paths_emitted"
+            )
+            is False
+            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
+                "local_worktree_raw_status_lines_emitted"
+            )
+            is False
+            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
+                "remote_ci_review_required"
+            )
+            is True
+            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
+                "latest_remote_run_verified_green"
+            )
+            is False
+            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
+                "release_review_blocks_production_completion"
+            )
+            is True
             and producer_durable_row.get("current_status")
             in {
                 "producer_generation_ready_current_cache_refresh_pending",
+                "producer_cache_refresh_local_direct_evidence_provider_pending",
+                "producer_cache_refresh_local_coverage_provider_pending",
+                "producer_cache_refresh_local_coverage_provider_acceptance_observed",
                 "local_clear",
             }
             and producer_durable_row.get("producer_generation_contract_ready") is True
@@ -969,13 +1103,42 @@ def build_contract() -> dict[str, Any]:
             and producer_durable_row.get("producer_cache_refresh_creates_task") is False
             and producer_durable_row.get("producer_cache_refresh_calls_provider") is False
             and producer_durable_row.get("producer_cache_refresh_is_not_provider_acceptance") is True
+            and producer_durable_row.get("producer_cache_refresh_direct_evidence_is_not_provider_acceptance")
+            is True
             and (
                 producer_durable_row.get("current_status") == "local_clear"
+                or (
+                    producer_durable_row.get("producer_local_current_cache_coverage_done") is True
+                    and "current cache producer expected_trade_date/data_date/freshness_state coverage"
+                    not in _as_list(producer_durable_row.get("missing_evidence"))
+                )
+                or (
+                    producer_durable_row.get("producer_cache_refresh_direct_evidence_done") is True
+                    and "current cache refresh with generated producer freshness context"
+                    not in _as_list(producer_durable_row.get("missing_evidence"))
+                )
                 or "current cache refresh with generated producer freshness context"
                 in _as_list(producer_durable_row.get("missing_evidence"))
             )
-            and "provider-backed trade_cal acceptance evidence"
-            in _as_list(producer_durable_row.get("missing_evidence"))
+            and (
+                producer_durable_row.get("producer_local_current_cache_coverage_done") is True
+                or "current cache producer expected_trade_date/data_date/freshness_state coverage"
+                in _as_list(producer_durable_row.get("missing_evidence"))
+            )
+            and (
+                (
+                    producer_durable_row.get("producer_provider_backed_trade_cal_acceptance_evidence_done")
+                    is True
+                    and "provider-backed trade_cal acceptance evidence"
+                    not in _as_list(producer_durable_row.get("missing_evidence"))
+                )
+                or (
+                    producer_durable_row.get("producer_provider_backed_trade_cal_acceptance_evidence_done")
+                    is not True
+                    and "provider-backed trade_cal acceptance evidence"
+                    in _as_list(producer_durable_row.get("missing_evidence"))
+                )
+            )
             and _as_list(durable_evidence_recipe.get("call_ledger"))
             and _as_dict(_as_list(durable_evidence_recipe.get("call_ledger"))[0]).get("api")
             == "local_freshness_durable_evidence_recipe"
@@ -1622,6 +1785,32 @@ def build_contract() -> dict[str, Any]:
             "Decision-surface audit must stay read-only and cannot prove provider-backed freshness.",
         ),
         _row(
+            "decision_surface_isolation_direct_evidence_is_local",
+            surface_isolation_evidence.get("schema_version")
+            == "data_health_decision_surface_isolation_direct_evidence.v1"
+            and surface_isolation_evidence.get("scope")
+            == "local_decision_surface_rows_no_rescore_no_action_mutation"
+            and surface_isolation_evidence.get("direct_evidence_done") is True
+            and int(surface_isolation_evidence.get("proof_line_count") or 0) == 5
+            and surface_isolation_evidence.get("blocked_surface_count") == 0
+            and surface_isolation_evidence.get("score_support_evidence_preview_isolated") is True
+            and surface_isolation_evidence.get("next_session_bridge_preview_isolated") is True
+            and surface_isolation_evidence.get("strategy_action_non_mutation_proof") is True
+            and surface_isolation_evidence.get("provider_backed_long_window_acceptance_done") is False
+            and surface_isolation_evidence.get("production_freshness_gate_complete") is False
+            and _flag_false(
+                surface_isolation_evidence,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and surface_isolation_evidence.get("does_not_execute_trades") is True
+            and surface_isolation_evidence.get("does_not_modify_strategy_action") is True
+            and surface_isolation_evidence.get("contains_secret") is False,
+            "Decision-surface isolation proof lines must be current-head local evidence only, not provider acceptance.",
+        ),
+        _row(
             "producer_coverage_audit_is_read_only",
             producers.get("schema_version") == "data_health_current_evidence_producer_coverage.v1"
             and producers.get("does_not_build_missing_packets") is True
@@ -1807,6 +1996,51 @@ def build_contract() -> dict[str, Any]:
             "Latest producer cache-refresh lookup must be GET-only metadata replay. The POST route may write local SQLite packets, but cache GET must not write, call providers, or promote production freshness.",
         ),
         _row(
+            "producer_cache_refresh_direct_evidence_is_local_not_acceptance",
+            producer_cache_refresh_evidence.get("schema_version")
+            == "data_health_producer_cache_refresh_direct_evidence.v1"
+            and producer_cache_refresh_evidence.get("scope")
+            == "local_latest_producer_cache_refresh_metadata_no_provider_acceptance"
+            and producer_cache_refresh_evidence.get("status")
+            in {
+                "producer_cache_refresh_direct_evidence_pending",
+                "producer_cache_refresh_direct_evidence_local_sqlite_written",
+            }
+            and (
+                producer_cache_refresh_evidence.get("direct_evidence_done") is False
+                or (
+                    producer_cache_refresh_evidence.get("direct_evidence_done") is True
+                    and int(producer_cache_refresh_evidence.get("local_sqlite_packet_write_count") or 0) == 3
+                    and int(producer_cache_refresh_evidence.get("local_sqlite_write_row_count") or 0) == 3
+                    and set(_as_list(producer_cache_refresh_evidence.get("written_packet_keys")))
+                    == {
+                        "command_center_3_candidate_radar_cache",
+                        "command_center_evidence_radar_packet",
+                        "market_packet",
+                    }
+                    and producer_cache_refresh_evidence.get("writes_local_sqlite_packets") is True
+                )
+            )
+            and producer_cache_refresh_evidence.get("writes_snapshot_cache") is False
+            and producer_cache_refresh_evidence.get("does_not_refresh_provider") is True
+            and producer_cache_refresh_evidence.get("provider_backed_long_window_acceptance_done") is False
+            and producer_cache_refresh_evidence.get("production_freshness_gate_complete") is False
+            and _flag_false(
+                producer_cache_refresh_evidence,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and producer_cache_refresh_evidence.get("does_not_execute_trades") is True
+            and producer_cache_refresh_evidence.get("does_not_modify_strategy_action") is True
+            and producer_cache_refresh_evidence.get("contains_secret") is False
+            and policy.get("producer_cache_refresh_direct_evidence_is_local") is True
+            and policy.get("producer_cache_refresh_direct_evidence_calls_provider") is False
+            and policy.get("producer_cache_refresh_direct_evidence_is_not_provider_acceptance") is True,
+            "Producer cache-refresh direct evidence may prove local SQLite packet writes, but it must not prove provider-backed acceptance or production freshness.",
+        ),
+        _row(
             "producer_cache_refresh_task_writes_local_sqlite_only",
             producer_refresh_receipt.get("schema_version")
             == "data_health_current_evidence_producer_cache_refresh.v1"
@@ -1898,6 +2132,7 @@ def build_contract() -> dict[str, Any]:
             and int(counts.get("latest_producer_cache_refresh_execution_request_found") or 0) >= 0
             and int(counts.get("current_evidence_freshness_qa_row_count") or 0) >= 8
             and int(counts.get("current_evidence_decision_surface_row_count") or 0) >= 5
+            and int(counts.get("decision_surface_isolation_proof_line_count") or 0) == 5
             and int(counts.get("current_evidence_producer_coverage_row_count") or 0) >= 6
             and int(counts.get("current_evidence_producer_generation_row_count") or 0) == 3
             and int(counts.get("current_evidence_producer_cache_refresh_row_count") or 0) == 3,
@@ -1911,7 +2146,14 @@ def build_contract() -> dict[str, Any]:
         "scope": "local_cache_contract_no_provider_execution",
         "ltg": "LTG-01/LTG-11",
         "contract_ready": not blockers,
-        "provider_backed_trade_cal_acceptance_done": False,
+        "provider_backed_trade_cal_acceptance_done": provider_backed_trade_cal_acceptance_observed,
+        "provider_backed_trade_cal_acceptance_observed": provider_backed_trade_cal_acceptance_observed,
+        "provider_backed_trade_cal_acceptance_source": provider_backed_trade_cal_acceptance_source,
+        "provider_backed_trade_cal_acceptance_evidence_row_count": provider_backed_trade_cal_evidence_row_count,
+        "local_tushare_refresh_packet_trade_cal_evidence_row_count": local_tushare_trade_cal_evidence_row_count,
+        "contract_executed_provider_task": False,
+        "provider_backed_trade_cal_acceptance_does_not_close_ltg": True,
+        "ltg01_closeout_claim_allowed": False,
         "production_freshness_gate_complete": False,
         "cache_only": True,
         "external_calls_triggered": False,
@@ -1937,6 +2179,12 @@ def build_contract() -> dict[str, Any]:
             "freshness_acceptance_scenario_count": counts.get("freshness_acceptance_scenario_count"),
             "current_evidence_freshness_qa_row_count": counts.get("current_evidence_freshness_qa_row_count"),
             "current_evidence_decision_surface_row_count": counts.get("current_evidence_decision_surface_row_count"),
+            "decision_surface_isolation_proof_line_count": counts.get(
+                "decision_surface_isolation_proof_line_count"
+            ),
+            "decision_surface_isolation_direct_evidence_done": counts.get(
+                "decision_surface_isolation_direct_evidence_done"
+            ),
             "current_evidence_producer_coverage_row_count": counts.get("current_evidence_producer_coverage_row_count"),
             "current_evidence_producer_generation_row_count": counts.get(
                 "current_evidence_producer_generation_row_count"
@@ -1970,6 +2218,34 @@ def build_contract() -> dict[str, Any]:
             "latest_producer_cache_refresh_execution_request_status": (
                 latest_producer_cache_refresh_request.get("execution_request_status")
             ),
+            "producer_cache_refresh_direct_evidence_done": counts.get(
+                "producer_cache_refresh_direct_evidence_done"
+            ),
+            "producer_cache_refresh_direct_evidence_written_packet_count": counts.get(
+                "producer_cache_refresh_direct_evidence_written_packet_count"
+            ),
+            "freshness_local_release_gate_evidence_status": local_release_gate_evidence.get("status"),
+            "freshness_local_release_gate_run_observed": counts.get(
+                "freshness_local_release_gate_run_observed"
+            ),
+            "freshness_local_release_gate_worktree_clean": counts.get(
+                "freshness_local_release_gate_worktree_clean"
+            ),
+            "freshness_local_release_gate_worktree_dirty_file_count": counts.get(
+                "freshness_local_release_gate_worktree_dirty_file_count"
+            ),
+            "freshness_local_release_gate_worktree_blocks_gate": counts.get(
+                "freshness_local_release_gate_worktree_blocks_gate"
+            ),
+            "freshness_local_release_gate_head_matches_current": counts.get(
+                "freshness_local_release_gate_head_matches_current"
+            ),
+            "freshness_local_release_gate_required_checks_present": counts.get(
+                "freshness_local_release_gate_required_checks_present"
+            ),
+            "freshness_local_release_gate_blocker_count": counts.get(
+                "freshness_local_release_gate_blocker_count"
+            ),
             "trade_cal_provider_acceptance_pending_count": counts.get("trade_cal_provider_acceptance_pending_count"),
             "trade_cal_provider_acceptance_promotion_blocker_count": counts.get(
                 "trade_cal_provider_acceptance_promotion_blocker_count"
@@ -1981,6 +2257,9 @@ def build_contract() -> dict[str, Any]:
                 "local_tushare_refresh_packet_trade_cal_evidence_row_count"
             ),
             "freshness_production_blocker_count": counts.get("freshness_production_blocker_count"),
+            "provider_backed_trade_cal_acceptance_observed": provider_backed_trade_cal_acceptance_observed,
+            "provider_backed_trade_cal_acceptance_source": provider_backed_trade_cal_acceptance_source,
+            "contract_executed_provider_task": False,
             "freshness_provider_acceptance_readiness_blocker_count": counts.get(
                 "freshness_provider_acceptance_readiness_blocker_count"
             ),
@@ -2050,7 +2329,11 @@ def main() -> int:
         print(f"data_health_freshness_contract: {contract['status']}")
         print(
             "rows: {row_count}; blockers: {blocking_criterion_count}; "
-            "provider_backed_trade_cal_acceptance_done: false".format(**contract)
+            "provider_backed_trade_cal_acceptance_done: {provider_done}; "
+            "production_freshness_gate_complete: false".format(
+                provider_done=str(contract["provider_backed_trade_cal_acceptance_done"]).lower(),
+                **contract,
+            )
         )
         print(
             "external_calls_triggered: false; tushare_called: false; "

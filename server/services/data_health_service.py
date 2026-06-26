@@ -75,6 +75,9 @@ TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS = 8
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_FAILURE_MODES = 6
 TRADE_CAL_PROVIDER_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
 FRESHNESS_DURABLE_EVIDENCE_SCHEMA_VERSION = "data_health_freshness_durable_evidence_recipe.v1"
+FRESHNESS_LOCAL_RELEASE_GATE_EVIDENCE_SCHEMA_VERSION = (
+    "data_health_freshness_local_release_gate_evidence.v1"
+)
 FRESHNESS_DURABLE_EVIDENCE_KEYS = (
     "local_freshness_matrix_regression",
     "local_trade_cal_artifact_validation",
@@ -891,6 +894,99 @@ def _current_evidence_decision_surface_audit(
         "note": "This audits only decision surfaces visible in the local snapshot. Missing packets are reported as not_observed, not as production proof.",
     }
     return contract, rows
+
+
+DECISION_SURFACE_ISOLATION_REQUIRED_SURFACES = (
+    "composite_score",
+    "support_factors",
+    "evidence_preview",
+    "next_session_bridge.preview",
+    "strategy_action",
+)
+
+
+def _decision_surface_isolation_direct_evidence(
+    decision_surface: Mapping[str, Any],
+    decision_surface_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    rows_by_surface = {
+        str(row.get("surface") or ""): row for row in decision_surface_rows if isinstance(row, Mapping)
+    }
+    proof_rows = [
+        rows_by_surface[surface]
+        for surface in DECISION_SURFACE_ISOLATION_REQUIRED_SURFACES
+        if surface in rows_by_surface
+    ]
+    blocked_surfaces = [
+        str(row.get("surface") or "")
+        for row in proof_rows
+        if str(row.get("status") or "").startswith("blocked_")
+    ]
+    missing_surfaces = [
+        surface for surface in DECISION_SURFACE_ISOLATION_REQUIRED_SURFACES if surface not in rows_by_surface
+    ]
+    proof_done = bool(
+        len(proof_rows) == len(DECISION_SURFACE_ISOLATION_REQUIRED_SURFACES)
+        and not blocked_surfaces
+        and not missing_surfaces
+        and decision_surface.get("schema_version")
+        == "data_health_current_evidence_decision_surface_audit.v1"
+        and decision_surface.get("does_not_rescore") is True
+        and decision_surface.get("does_not_filter_packet") is True
+        and decision_surface.get("does_not_mutate_decision_surfaces") is True
+        and decision_surface.get("external_calls_triggered") is False
+        and decision_surface.get("tushare_called") is False
+        and decision_surface.get("deepseek_called") is False
+        and decision_surface.get("github_called") is False
+        and decision_surface.get("does_not_execute_trades") is True
+        and decision_surface.get("does_not_modify_strategy_action") is True
+        and all(row.get("read_only_snapshot_audit") is True for row in proof_rows)
+        and all(row.get("does_not_rescore") is True for row in proof_rows)
+        and all(row.get("does_not_filter_packet") is True for row in proof_rows)
+        and all(row.get("external_calls_triggered") is False for row in proof_rows)
+        and all(row.get("tushare_called") is False for row in proof_rows)
+        and all(row.get("deepseek_called") is False for row in proof_rows)
+        and all(row.get("github_called") is False for row in proof_rows)
+        and all(row.get("does_not_execute_trades") is True for row in proof_rows)
+        and all(row.get("does_not_modify_strategy_action") is True for row in proof_rows)
+    )
+    return {
+        "schema_version": "data_health_decision_surface_isolation_direct_evidence.v1",
+        "status": "decision_surface_isolation_direct_evidence_local_clear"
+        if proof_done
+        else "decision_surface_isolation_direct_evidence_blocked",
+        "scope": "local_decision_surface_rows_no_rescore_no_action_mutation",
+        "direct_evidence_done": proof_done,
+        "required_surfaces": list(DECISION_SURFACE_ISOLATION_REQUIRED_SURFACES),
+        "proof_line_count": len(proof_rows),
+        "blocked_surface_count": len(blocked_surfaces),
+        "blocked_surfaces": blocked_surfaces,
+        "missing_surfaces": missing_surfaces,
+        "proof_surface_statuses": {
+            surface: str(rows_by_surface.get(surface, {}).get("status") or "missing")
+            for surface in DECISION_SURFACE_ISOLATION_REQUIRED_SURFACES
+        },
+        "score_support_evidence_preview_isolated": all(
+            str(rows_by_surface.get(surface, {}).get("status") or "").startswith("blocked_") is False
+            for surface in ("composite_score", "support_factors", "evidence_preview")
+        ),
+        "next_session_bridge_preview_isolated": not str(
+            rows_by_surface.get("next_session_bridge.preview", {}).get("status") or ""
+        ).startswith("blocked_"),
+        "strategy_action_non_mutation_proof": (
+            rows_by_surface.get("strategy_action", {}).get("does_not_modify_strategy_action") is True
+        ),
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
 
 
 CURRENT_EVIDENCE_PRODUCER_SPECS: tuple[dict[str, Any], ...] = (
@@ -3557,6 +3653,88 @@ def _latest_producer_cache_refresh_from_tasks() -> tuple[dict[str, Any], list[di
     return latest_receipt, row_list
 
 
+def _producer_cache_refresh_direct_evidence(
+    latest_refresh: Mapping[str, Any],
+    latest_refresh_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    expected_packet_keys = sorted(str(spec["packet_key"]) for spec in PRODUCER_CACHE_REFRESH_PACKET_SPECS)
+    written_packet_keys = sorted(str(key) for key in _as_list(latest_refresh.get("written_packet_keys")))
+    generated_ready_rows = [
+        row
+        for row in latest_refresh_rows
+        if isinstance(row, Mapping)
+        and row.get("status") == "producer_packet_ready_for_local_write"
+        and row.get("passed") is True
+    ]
+    local_write_rows = [
+        row
+        for row in latest_refresh_rows
+        if isinstance(row, Mapping)
+        and row.get("phase") == "local_sqlite_packet_written"
+        and row.get("status") == "written_local_sqlite_packet"
+        and row.get("passed") is True
+    ]
+    missing_packet_keys = [key for key in expected_packet_keys if key not in written_packet_keys]
+    direct_evidence_done = bool(
+        latest_refresh.get("schema_version") == "data_health_latest_producer_cache_refresh.v1"
+        and latest_refresh.get("status") == "latest_producer_cache_refresh_visible"
+        and latest_refresh.get("refresh_status") == "producer_cache_refresh_completed_local_sqlite_only"
+        and latest_refresh.get("latest_task_found") is True
+        and latest_refresh.get("local_cache_refresh_executed") is True
+        and latest_refresh.get("writes_snapshot_cache") is False
+        and latest_refresh.get("writes_local_sqlite_packets") is True
+        and latest_refresh.get("does_not_refresh_provider") is True
+        and int(latest_refresh.get("local_sqlite_packet_write_count") or 0) == len(expected_packet_keys)
+        and written_packet_keys == expected_packet_keys
+        and len(generated_ready_rows) == len(expected_packet_keys)
+        and len(local_write_rows) == len(expected_packet_keys)
+        and latest_refresh.get("provider_backed_long_window_acceptance_done") is False
+        and latest_refresh.get("production_freshness_gate_complete") is False
+        and latest_refresh.get("external_calls_triggered") is False
+        and latest_refresh.get("tushare_called") is False
+        and latest_refresh.get("deepseek_called") is False
+        and latest_refresh.get("github_called") is False
+        and latest_refresh.get("does_not_execute_trades") is True
+        and latest_refresh.get("does_not_modify_strategy_action") is True
+        and all(row.get("writes_snapshot_cache") is False for row in latest_refresh_rows)
+        and all(row.get("external_calls_triggered") is False for row in latest_refresh_rows)
+        and all(row.get("tushare_called") is False for row in latest_refresh_rows)
+        and all(row.get("deepseek_called") is False for row in latest_refresh_rows)
+        and all(row.get("github_called") is False for row in latest_refresh_rows)
+        and all(row.get("does_not_execute_trades") is True for row in latest_refresh_rows)
+        and all(row.get("does_not_modify_strategy_action") is True for row in latest_refresh_rows)
+    )
+    return {
+        "schema_version": "data_health_producer_cache_refresh_direct_evidence.v1",
+        "status": "producer_cache_refresh_direct_evidence_local_sqlite_written"
+        if direct_evidence_done
+        else "producer_cache_refresh_direct_evidence_pending",
+        "scope": "local_latest_producer_cache_refresh_metadata_no_provider_acceptance",
+        "direct_evidence_done": direct_evidence_done,
+        "latest_task_id": latest_refresh.get("latest_task_id"),
+        "refresh_status": latest_refresh.get("refresh_status"),
+        "expected_packet_keys": expected_packet_keys,
+        "written_packet_keys": written_packet_keys,
+        "missing_packet_keys": missing_packet_keys,
+        "generated_ready_row_count": len(generated_ready_rows),
+        "local_sqlite_packet_write_count": int(latest_refresh.get("local_sqlite_packet_write_count") or 0),
+        "local_sqlite_write_row_count": len(local_write_rows),
+        "writes_snapshot_cache": False,
+        "writes_local_sqlite_packets": latest_refresh.get("writes_local_sqlite_packets") is True,
+        "does_not_refresh_provider": True,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
 def _latest_tushare_provider_target_sample_execution_request_from_tasks() -> tuple[
     dict[str, Any],
     list[dict[str, Any]],
@@ -3839,7 +4017,17 @@ def _local_tushare_refresh_packet_for_data_health() -> dict[str, Any]:
 
 def _local_tushare_refresh_packet_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
     historical_rows = _as_list(packet.get("prior_direct_evidence_rows"))
-    call_ledger = historical_rows if historical_rows else _as_list(packet.get("call_ledger"))
+    current_rows = _as_list(packet.get("call_ledger"))
+    call_ledger = []
+    seen_ledger_rows: set[str] = set()
+    for row in [*historical_rows, *current_rows]:
+        if not isinstance(row, Mapping):
+            continue
+        signature = json.dumps(_json_safe(row), ensure_ascii=False, sort_keys=True, default=str)
+        if signature in seen_ledger_rows:
+            continue
+        seen_ledger_rows.add(signature)
+        call_ledger.append(row)
     trade_cal_rows = [
         row
         for row in call_ledger
@@ -5337,6 +5525,115 @@ def _freshness_durable_evidence_recipe_row(
     return row
 
 
+def _freshness_local_release_gate_evidence() -> dict[str, Any]:
+    try:
+        from server.services import audit_service
+
+        receipt = audit_service._read_local_push_gate_run_receipt()
+        worktree, _worktree_rows = audit_service._local_worktree_cleanliness_audit()
+    except Exception:
+        receipt = {}
+        worktree = {}
+
+    receipt_map = receipt if isinstance(receipt, Mapping) else {}
+    worktree_map = worktree if isinstance(worktree, Mapping) else {}
+    freshness_blockers = [
+        str(item) for item in _as_list(receipt_map.get("freshness_blockers")) if str(item)
+    ]
+    worktree_blocks_local_gate = worktree_map.get("blocks_local_push_gate_receipt") is True
+    if worktree_blocks_local_gate and "worktree_dirty" not in freshness_blockers:
+        freshness_blockers.append("worktree_dirty")
+    missing_required_checks = [
+        str(item) for item in _as_list(receipt_map.get("missing_required_checks")) if str(item)
+    ]
+    fresh_local_gate_run_observed = receipt_map.get("fresh_local_gate_run_observed") is True
+    head_matches_current = receipt_map.get("head_matches_current") is True
+    required_checks_present = receipt_map.get("required_local_gate_checks_present") is True
+    remote_actions_status_known = receipt_map.get("remote_actions_status_known") is True
+    latest_remote_run_verified_green = receipt_map.get("latest_remote_run_verified_green") is True
+    worktree_clean = worktree_map.get("worktree_clean") is True
+    if fresh_local_gate_run_observed and worktree_clean:
+        status = "freshness_local_release_gate_observed_remote_ci_pending"
+    elif worktree_blocks_local_gate:
+        status = "freshness_local_release_gate_blocked_dirty_worktree"
+    elif "head_mismatch" in freshness_blockers:
+        status = "freshness_local_release_gate_blocked_head_mismatch"
+    elif "required_checks_missing" in freshness_blockers:
+        status = "freshness_local_release_gate_blocked_required_checks_missing"
+    elif receipt_map.get("read_status") == "receipt_missing" or not receipt_map:
+        status = "freshness_local_release_gate_missing_current_head_receipt"
+    else:
+        status = "freshness_local_release_gate_blocked_local_receipt"
+    return {
+        "schema_version": FRESHNESS_LOCAL_RELEASE_GATE_EVIDENCE_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_release_gate_receipt_readback_no_push_no_github_api",
+        "ltg": "LTG-01/LTG-11",
+        "source": "audit_service_local_push_gate_run_receipt_and_worktree_cleanliness",
+        "local_push_gate_run_receipt_status": _safe_text(receipt_map.get("status"), limit=120),
+        "local_push_gate_run_receipt_read_status": _safe_text(receipt_map.get("read_status"), limit=80),
+        "local_push_gate_run_receipt_head": receipt_map.get("head"),
+        "local_push_gate_run_receipt_current_head": receipt_map.get("current_head"),
+        "local_push_gate_run_receipt_head_matches_current": head_matches_current,
+        "local_worktree_cleanliness_status": _safe_text(worktree_map.get("status"), limit=120),
+        "local_worktree_clean": worktree_clean,
+        "local_worktree_status_known": worktree_map.get("status_known") is True,
+        "local_worktree_dirty_file_count": int(worktree_map.get("dirty_file_count") or 0),
+        "local_worktree_tracked_change_count": int(worktree_map.get("tracked_change_count") or 0),
+        "local_worktree_untracked_file_count": int(worktree_map.get("untracked_file_count") or 0),
+        "local_worktree_blocks_local_gate_receipt": worktree_blocks_local_gate,
+        "local_worktree_clean_required_before_gate_receipt": True,
+        "local_worktree_raw_paths_emitted": bool(worktree_map.get("raw_paths_emitted")),
+        "local_worktree_raw_status_lines_emitted": bool(worktree_map.get("raw_status_lines_emitted")),
+        "fresh_local_gate_run_observed": fresh_local_gate_run_observed,
+        "required_local_gate_checks_present": required_checks_present,
+        "missing_required_checks": missing_required_checks,
+        "freshness_blockers": freshness_blockers,
+        "freshness_blocker_count": len(freshness_blockers),
+        "fresh_local_gate_blocked_by_dirty_worktree": worktree_blocks_local_gate,
+        "fresh_local_gate_blocked_by_head_mismatch": "head_mismatch" in freshness_blockers,
+        "fresh_local_gate_blocked_by_required_checks": "required_checks_missing" in freshness_blockers,
+        "fresh_local_gate_blocked_by_boundary_flags": any(
+            item in freshness_blockers
+            for item in (
+                "safety_boundary_flags_invalid",
+                "push_confirmation_boundary_missing_or_invalid",
+            )
+        ),
+        "remote_actions_status_known": remote_actions_status_known,
+        "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "remote_ci_review_required": True,
+        "release_review_complete": False,
+        "local_gate_pass_is_not_ci_status": True,
+        "production_freshness_gate_complete": False,
+        "cache_get_creates_task": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "github_api_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": [
+            {
+                "api": "local_freshness_release_gate_receipt_readback",
+                "source": "ignored local push-gate receipt plus local git status counts",
+                "call_status": status,
+                "local_fetched_at": _now_iso(),
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "github_api_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+    }
+
+
 def _freshness_durable_evidence_recipe(
     *,
     freshness_acceptance_summary: Mapping[str, Any],
@@ -5347,10 +5644,14 @@ def _freshness_durable_evidence_recipe(
     next_execution_recipe: Mapping[str, Any],
     current_evidence: Mapping[str, Any],
     decision_surface: Mapping[str, Any],
+    decision_surface_rows: list[dict[str, Any]],
     producer_coverage: Mapping[str, Any],
     producer_generation: Mapping[str, Any],
     producer_cache_refresh: Mapping[str, Any],
+    latest_producer_cache_refresh: Mapping[str, Any],
+    latest_producer_cache_refresh_rows: list[dict[str, Any]],
     provider_promotion: Mapping[str, Any],
+    local_release_gate_evidence: Mapping[str, Any],
 ) -> dict[str, Any]:
     matrix_visible = freshness_acceptance_summary.get("scope") == "local_contract_not_real_trade_cal_validation"
     local_trade_cal_visible = trade_cal_physical.get("scope") == "local_physical_trade_cal_parquet_validation"
@@ -5379,26 +5680,123 @@ def _freshness_durable_evidence_recipe(
     provider_call_ledger_done = provider_promotion.get("provider_call_ledger_evidence_done") is True
     provider_freshness_replay_done = provider_promotion.get("freshness_replay_provider_evidence_done") is True
     provider_failure_mode_done = provider_promotion.get("failure_mode_provider_evidence_done") is True
+    producer_provider_backed_trade_cal_acceptance_evidence_done = bool(
+        provider_promotion.get("provider_backed_long_window_acceptance_done") is True
+        and explicit_provider_trade_cal_task_done
+        and provider_call_ledger_done
+        and provider_freshness_replay_done
+        and provider_failure_mode_done
+    )
+    decision_surface_evidence = _decision_surface_isolation_direct_evidence(
+        decision_surface,
+        decision_surface_rows,
+    )
+    decision_surface_direct_evidence_done = decision_surface_evidence.get("direct_evidence_done") is True
+    producer_cache_refresh_evidence = _producer_cache_refresh_direct_evidence(
+        latest_producer_cache_refresh,
+        latest_producer_cache_refresh_rows,
+    )
+    producer_cache_refresh_direct_evidence_done = (
+        producer_cache_refresh_evidence.get("direct_evidence_done") is True
+    )
+    producer_cache_refresh_expected_packet_keys = sorted(
+        str(key) for key in producer_cache_refresh_evidence.get("expected_packet_keys") or []
+    )
+    producer_cache_refresh_context_packet_keys = sorted(
+        str(key) for key in producer_cache_refresh_evidence.get("written_packet_keys") or []
+    )
+    producer_cache_refresh_current_packet_context_done = bool(
+        producer_cache_refresh_direct_evidence_done
+        and producer_cache_refresh_expected_packet_keys
+        and producer_cache_refresh_context_packet_keys == producer_cache_refresh_expected_packet_keys
+    )
+    producer_local_current_cache_coverage_done = bool(
+        producer_cache_refresh_direct_evidence_done
+        and producer_cache_refresh_current_packet_context_done
+    )
+    producer_durable_direct_evidence_done = bool(
+        producer_local_current_cache_coverage_done
+        and producer_provider_backed_trade_cal_acceptance_evidence_done
+    )
+    local_release_gate_status = _safe_text(local_release_gate_evidence.get("status"), limit=160)
+    local_release_gate_observed = local_release_gate_evidence.get("fresh_local_gate_run_observed") is True
+    local_release_gate_head_matches_current = (
+        local_release_gate_evidence.get("local_push_gate_run_receipt_head_matches_current") is True
+    )
+    local_release_gate_required_checks_present = (
+        local_release_gate_evidence.get("required_local_gate_checks_present") is True
+    )
+    local_worktree_clean = local_release_gate_evidence.get("local_worktree_clean") is True
+    local_worktree_blocks_gate = local_release_gate_evidence.get("local_worktree_blocks_local_gate_receipt") is True
+    local_worktree_dirty_file_count = int(local_release_gate_evidence.get("local_worktree_dirty_file_count") or 0)
+    local_release_gate_blockers = [
+        str(item)
+        for item in _as_list(local_release_gate_evidence.get("freshness_blockers"))
+        if str(item)
+    ]
+    remote_ci_reviewed_green = local_release_gate_evidence.get("latest_remote_run_verified_green") is True
+    production_promotion_missing_evidence: list[str] = []
+    if not provider_promotion_ready:
+        production_promotion_missing_evidence.append("provider-backed acceptance promotion marker")
+    if local_worktree_blocks_gate:
+        production_promotion_missing_evidence.append("clean worktree before fresh local push-gate receipt")
+    if not local_release_gate_observed:
+        production_promotion_missing_evidence.append("fresh current-head local push-gate output")
+    if not local_release_gate_head_matches_current:
+        production_promotion_missing_evidence.append("current HEAD matching local push-gate receipt")
+    if not local_release_gate_required_checks_present:
+        production_promotion_missing_evidence.append("required local push-gate checks in receipt")
+    if not remote_ci_reviewed_green:
+        production_promotion_missing_evidence.append("matching remote CI review after local gate")
+    production_promotion_missing_evidence.append(
+        "release review that production_freshness_gate_complete may become true"
+    )
+    if not provider_promotion_ready:
+        production_promotion_status = "provider_promotion_review_pending"
+    elif local_worktree_blocks_gate:
+        production_promotion_status = "local_release_gate_dirty_worktree_pending"
+    elif not local_release_gate_observed:
+        production_promotion_status = "local_release_gate_current_head_receipt_pending"
+    elif not remote_ci_reviewed_green:
+        production_promotion_status = "local_release_gate_observed_remote_ci_pending"
+    else:
+        production_promotion_status = "release_review_pending"
     producer_coverage_status = (
         "local_clear"
         if current_evidence_ready and producer_coverage_clear
+        else "producer_cache_refresh_local_coverage_provider_acceptance_observed"
+        if producer_durable_direct_evidence_done
+        else "producer_cache_refresh_local_coverage_provider_pending"
+        if producer_local_current_cache_coverage_done
+        else "producer_cache_refresh_local_direct_evidence_provider_pending"
+        if producer_cache_refresh_direct_evidence_done
         else "producer_generation_ready_current_cache_refresh_pending"
         if producer_generation_ready and producer_generation_cache_pending
         else "producer_coverage_pending"
     )
-    producer_coverage_missing_evidence = (
-        [
+    if producer_durable_direct_evidence_done:
+        producer_coverage_missing_evidence = []
+    elif producer_local_current_cache_coverage_done:
+        producer_coverage_missing_evidence = [
+            "provider-backed trade_cal acceptance evidence",
+        ]
+    elif producer_cache_refresh_direct_evidence_done:
+        producer_coverage_missing_evidence = [
+            "current cache producer expected_trade_date/data_date/freshness_state coverage",
+            "provider-backed trade_cal acceptance evidence",
+        ]
+    elif producer_generation_ready and producer_generation_cache_pending:
+        producer_coverage_missing_evidence = [
             "current cache refresh with generated producer freshness context",
             "current cache producer expected_trade_date/data_date/freshness_state coverage",
             "provider-backed trade_cal acceptance evidence",
         ]
-        if producer_generation_ready and producer_generation_cache_pending
-        else [
+    else:
+        producer_coverage_missing_evidence = [
             "producer expected_trade_date coverage",
             "producer data_date coverage",
             "producer freshness_state coverage",
         ]
-    )
     local_recipe_ready = bool(
         matrix_visible
         and local_trade_cal_visible
@@ -5510,9 +5908,10 @@ def _freshness_durable_evidence_recipe(
             target_status="all current-evidence producers expose expected_trade_date/data_date/freshness_state",
             local_prerequisite_visible=bool(
                 (current_evidence_ready and producer_coverage_clear)
+                or producer_local_current_cache_coverage_done
                 or (producer_generation_ready and producer_generation_cache_pending)
             ),
-            direct_evidence_required=True,
+            direct_evidence_required=not producer_durable_direct_evidence_done,
             missing_evidence=producer_coverage_missing_evidence,
             extra_fields={
                 "producer_generation_contract_status": producer_generation_status,
@@ -5541,31 +5940,105 @@ def _freshness_durable_evidence_recipe(
                     or producer_cache_refresh.get("github_called")
                 ),
                 "producer_cache_refresh_is_not_provider_acceptance": True,
+                "producer_cache_refresh_direct_evidence_status": (
+                    producer_cache_refresh_evidence.get("status")
+                ),
+                "producer_cache_refresh_direct_evidence_done": (
+                    producer_cache_refresh_direct_evidence_done
+                ),
+                "producer_cache_refresh_latest_task_id": (
+                    producer_cache_refresh_evidence.get("latest_task_id")
+                ),
+                "producer_cache_refresh_written_packet_keys": list(
+                    producer_cache_refresh_evidence.get("written_packet_keys") or []
+                ),
+                "producer_cache_refresh_expected_packet_keys": list(
+                    producer_cache_refresh_evidence.get("expected_packet_keys") or []
+                ),
+                "producer_cache_refresh_context_packet_keys": producer_cache_refresh_context_packet_keys,
+                "producer_cache_refresh_current_packet_context_done": (
+                    producer_cache_refresh_current_packet_context_done
+                ),
+                "producer_cache_refresh_local_sqlite_write_row_count": int(
+                    producer_cache_refresh_evidence.get("local_sqlite_write_row_count") or 0
+                ),
+                "producer_cache_refresh_direct_evidence_is_not_provider_acceptance": True,
+                "producer_provider_backed_trade_cal_acceptance_evidence_done": (
+                    producer_provider_backed_trade_cal_acceptance_evidence_done
+                ),
+                "producer_coverage_audit_blocker_count": int(
+                    producer_coverage.get("blocked_producer_count") or 0
+                ),
+                "producer_local_current_cache_coverage_done": producer_local_current_cache_coverage_done,
+                "producer_durable_direct_evidence_done": producer_durable_direct_evidence_done,
             },
         ),
         _freshness_durable_evidence_recipe_row(
             "decision_surface_isolation",
-            current_status="local_clear" if decision_surface_clear else "decision_surface_review_pending",
+            current_status="local_direct_evidence_clear"
+            if decision_surface_direct_evidence_done
+            else "local_clear"
+            if decision_surface_clear
+            else "decision_surface_review_pending",
             target_status="stale/research-only evidence is blocked from score/support/preview/action surfaces",
-            local_prerequisite_visible=decision_surface_clear,
-            direct_evidence_required=True,
-            missing_evidence=[
+            local_prerequisite_visible=bool(decision_surface_clear and decision_surface_evidence),
+            direct_evidence_required=not decision_surface_direct_evidence_done,
+            missing_evidence=[]
+            if decision_surface_direct_evidence_done
+            else [
                 "score/support/evidence preview isolation proof",
                 "next-session bridge preview isolation proof",
                 "strategy action non-mutation proof",
             ],
+            extra_fields={
+                "decision_surface_direct_evidence_status": decision_surface_evidence.get("status"),
+                "decision_surface_direct_evidence_done": decision_surface_direct_evidence_done,
+                "decision_surface_proof_line_count": int(decision_surface_evidence.get("proof_line_count") or 0),
+                "decision_surface_required_surfaces": list(
+                    decision_surface_evidence.get("required_surfaces") or []
+                ),
+                "decision_surface_blocked_surfaces": list(
+                    decision_surface_evidence.get("blocked_surfaces") or []
+                ),
+                "score_support_evidence_preview_isolated": bool(
+                    decision_surface_evidence.get("score_support_evidence_preview_isolated")
+                ),
+                "next_session_bridge_preview_isolated": bool(
+                    decision_surface_evidence.get("next_session_bridge_preview_isolated")
+                ),
+                "strategy_action_non_mutation_proof": bool(
+                    decision_surface_evidence.get("strategy_action_non_mutation_proof")
+                ),
+            },
         ),
         _freshness_durable_evidence_recipe_row(
             "production_promotion_review",
-            current_status="promotion_review_pending",
-            target_status="production freshness promotion is reviewed after direct provider evidence is attached",
+            current_status=production_promotion_status,
+            target_status="production freshness promotion is reviewed after provider evidence, fresh local gate, remote CI, and release review",
             local_prerequisite_visible=provider_promotion_ready,
             direct_evidence_required=True,
-            missing_evidence=[
-                "provider-backed acceptance promotion marker",
-                "fresh push-gate output",
-                "release review that production_freshness_gate_complete may become true",
-            ],
+            missing_evidence=production_promotion_missing_evidence,
+            extra_fields={
+                "provider_promotion_ready": provider_promotion_ready,
+                "provider_backed_acceptance_promotion_marker_done": provider_promotion_ready,
+                "producer_durable_direct_evidence_done": producer_durable_direct_evidence_done,
+                "local_release_gate_evidence_status": local_release_gate_status,
+                "local_worktree_clean": local_worktree_clean,
+                "local_worktree_dirty_file_count": local_worktree_dirty_file_count,
+                "local_worktree_blocks_local_gate_receipt": local_worktree_blocks_gate,
+                "local_worktree_clean_required_before_gate_receipt": True,
+                "local_worktree_raw_paths_emitted": False,
+                "local_worktree_raw_status_lines_emitted": False,
+                "fresh_local_gate_run_observed": local_release_gate_observed,
+                "local_push_gate_receipt_head_matches_current": local_release_gate_head_matches_current,
+                "required_local_gate_checks_present": local_release_gate_required_checks_present,
+                "local_push_gate_receipt_freshness_blockers": local_release_gate_blockers,
+                "remote_ci_review_required": True,
+                "latest_remote_run_verified_green": False,
+                "release_review_complete": False,
+                "local_gate_pass_is_not_ci_status": True,
+                "release_review_blocks_production_completion": True,
+            },
         ),
     ]
     blocked_rows = [row for row in rows if row["production_blocker"]]
@@ -5593,6 +6066,27 @@ def _freshness_durable_evidence_recipe(
         "producer_cache_refresh_ready": producer_cache_refresh_ready,
         "producer_cache_refresh_required_count": producer_cache_refresh_required_count,
         "producer_cache_refresh_is_not_provider_acceptance": True,
+        "producer_cache_refresh_direct_evidence_status": producer_cache_refresh_evidence.get("status"),
+        "producer_cache_refresh_direct_evidence_done": producer_cache_refresh_direct_evidence_done,
+        "producer_cache_refresh_direct_evidence_is_not_provider_acceptance": True,
+        "decision_surface_direct_evidence_status": decision_surface_evidence.get("status"),
+        "decision_surface_direct_evidence_done": decision_surface_direct_evidence_done,
+        "decision_surface_proof_line_count": int(decision_surface_evidence.get("proof_line_count") or 0),
+        "local_release_gate_evidence_status": local_release_gate_status,
+        "local_worktree_clean": local_worktree_clean,
+        "local_worktree_dirty_file_count": local_worktree_dirty_file_count,
+        "local_worktree_blocks_local_gate_receipt": local_worktree_blocks_gate,
+        "local_worktree_clean_required_before_gate_receipt": True,
+        "local_worktree_raw_paths_emitted": False,
+        "local_worktree_raw_status_lines_emitted": False,
+        "fresh_local_gate_run_observed": local_release_gate_observed,
+        "local_push_gate_receipt_head_matches_current": local_release_gate_head_matches_current,
+        "required_local_gate_checks_present": local_release_gate_required_checks_present,
+        "local_push_gate_receipt_freshness_blockers": local_release_gate_blockers,
+        "remote_ci_review_required": True,
+        "latest_remote_run_verified_green": False,
+        "release_review_complete": False,
+        "production_promotion_review_done": False,
         "feature_boundary": "stale_expired_historical_unknown_remain_research_only_until_direct_provider_evidence",
         "allowed_next_step": "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence",
         "not_allowed_next_steps": [
@@ -5715,6 +6209,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             current_evidence_freshness_qa_contract,
         )
     )
+    decision_surface_isolation_direct_evidence = _decision_surface_isolation_direct_evidence(
+        current_evidence_decision_surface_audit,
+        current_evidence_decision_surface_rows,
+    )
     current_evidence_producer_coverage_audit, current_evidence_producer_coverage_rows = (
         _current_evidence_producer_coverage_audit(snapshot_map)
     )
@@ -5803,6 +6301,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         latest_tushare_provider_target_sample_execution_request,
         latest_tushare_provider_target_sample_execution_request_rows,
     ) = _latest_tushare_provider_target_sample_execution_request_from_tasks()
+    freshness_local_release_gate_evidence = _freshness_local_release_gate_evidence()
     freshness_durable_evidence_recipe = _freshness_durable_evidence_recipe(
         freshness_acceptance_summary=freshness_acceptance_summary,
         trade_cal_physical=trade_cal_physical_validation,
@@ -5812,12 +6311,20 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         next_execution_recipe=trade_cal_provider_acceptance_next_execution_recipe,
         current_evidence=current_evidence_freshness_qa_contract,
         decision_surface=current_evidence_decision_surface_audit,
+        decision_surface_rows=current_evidence_decision_surface_rows,
         producer_coverage=current_evidence_producer_coverage_audit,
         producer_generation=current_evidence_producer_generation_contract,
         producer_cache_refresh=current_evidence_producer_cache_refresh_readiness,
+        latest_producer_cache_refresh=latest_producer_cache_refresh,
+        latest_producer_cache_refresh_rows=latest_producer_cache_refresh_rows,
         provider_promotion=trade_cal_provider_acceptance_promotion_audit,
+        local_release_gate_evidence=freshness_local_release_gate_evidence,
     )
     freshness_durable_evidence_rows = _as_list(freshness_durable_evidence_recipe.get("rows"))
+    producer_cache_refresh_direct_evidence = _producer_cache_refresh_direct_evidence(
+        latest_producer_cache_refresh,
+        latest_producer_cache_refresh_rows,
+    )
 
     timeline_rows = _combined_rows(
         (timeline_value, "data_health_timeline", "event"),
@@ -5893,10 +6400,13 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "latest_trade_cal_provider_acceptance_promotion_review",
             "latest_producer_cache_refresh_execution_request",
             "latest_producer_cache_refresh",
+            "producer_cache_refresh_direct_evidence",
             "latest_tushare_provider_target_sample_execution_request",
+            "freshness_local_release_gate_evidence",
             "freshness_durable_evidence_recipe",
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
+            "decision_surface_isolation_direct_evidence",
             "current_evidence_producer_coverage_audit",
             "current_evidence_producer_generation_contract",
             "current_evidence_producer_cache_refresh_readiness",
@@ -5965,18 +6475,21 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         ),
         "latest_producer_cache_refresh": latest_producer_cache_refresh,
         "latest_producer_cache_refresh_rows": latest_producer_cache_refresh_rows,
+        "producer_cache_refresh_direct_evidence": producer_cache_refresh_direct_evidence,
         "latest_tushare_provider_target_sample_execution_request": (
             latest_tushare_provider_target_sample_execution_request
         ),
         "latest_tushare_provider_target_sample_execution_request_rows": (
             latest_tushare_provider_target_sample_execution_request_rows
         ),
+        "freshness_local_release_gate_evidence": freshness_local_release_gate_evidence,
         "freshness_durable_evidence_recipe": freshness_durable_evidence_recipe,
         "freshness_durable_evidence_rows": freshness_durable_evidence_rows,
         "current_evidence_freshness_qa_contract": current_evidence_freshness_qa_contract,
         "current_evidence_freshness_qa_rows": current_evidence_freshness_qa_rows,
         "current_evidence_decision_surface_audit": current_evidence_decision_surface_audit,
         "current_evidence_decision_surface_rows": current_evidence_decision_surface_rows,
+        "decision_surface_isolation_direct_evidence": decision_surface_isolation_direct_evidence,
         "current_evidence_producer_coverage_audit": current_evidence_producer_coverage_audit,
         "current_evidence_producer_coverage_rows": current_evidence_producer_coverage_rows,
         "current_evidence_producer_generation_contract": current_evidence_producer_generation_contract,
@@ -6106,6 +6619,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "latest_producer_cache_refresh_written_packet_count": int(
                 latest_producer_cache_refresh.get("local_sqlite_packet_write_count") or 0
             ),
+            "producer_cache_refresh_direct_evidence_done": (
+                1 if producer_cache_refresh_direct_evidence.get("direct_evidence_done") is True else 0
+            ),
+            "producer_cache_refresh_direct_evidence_written_packet_count": int(
+                producer_cache_refresh_direct_evidence.get("local_sqlite_packet_write_count") or 0
+            ),
             "latest_tushare_provider_target_sample_execution_request_found": (
                 1
                 if latest_tushare_provider_target_sample_execution_request.get("latest_task_found") is True
@@ -6116,6 +6635,34 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             ),
             "latest_tushare_provider_target_sample_execution_request_blocking_row_count": int(
                 latest_tushare_provider_target_sample_execution_request.get("blocking_row_count") or 0
+            ),
+            "freshness_local_release_gate_run_observed": (
+                1 if freshness_local_release_gate_evidence.get("fresh_local_gate_run_observed") is True else 0
+            ),
+            "freshness_local_release_gate_worktree_clean": (
+                1 if freshness_local_release_gate_evidence.get("local_worktree_clean") is True else 0
+            ),
+            "freshness_local_release_gate_worktree_dirty_file_count": int(
+                freshness_local_release_gate_evidence.get("local_worktree_dirty_file_count") or 0
+            ),
+            "freshness_local_release_gate_worktree_blocks_gate": (
+                1
+                if freshness_local_release_gate_evidence.get("local_worktree_blocks_local_gate_receipt") is True
+                else 0
+            ),
+            "freshness_local_release_gate_head_matches_current": (
+                1
+                if freshness_local_release_gate_evidence.get("local_push_gate_run_receipt_head_matches_current")
+                is True
+                else 0
+            ),
+            "freshness_local_release_gate_required_checks_present": (
+                1
+                if freshness_local_release_gate_evidence.get("required_local_gate_checks_present") is True
+                else 0
+            ),
+            "freshness_local_release_gate_blocker_count": int(
+                freshness_local_release_gate_evidence.get("freshness_blocker_count") or 0
             ),
             "freshness_durable_evidence_row_count": len(freshness_durable_evidence_rows),
             "freshness_durable_evidence_blocker_count": int(
@@ -6128,6 +6675,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_decision_surface_row_count": len(current_evidence_decision_surface_rows),
             "current_evidence_decision_surface_blocker_count": int(
                 current_evidence_decision_surface_audit.get("blocked_surface_count") or 0
+            ),
+            "decision_surface_isolation_proof_line_count": int(
+                decision_surface_isolation_direct_evidence.get("proof_line_count") or 0
+            ),
+            "decision_surface_isolation_direct_evidence_done": (
+                1 if decision_surface_isolation_direct_evidence.get("direct_evidence_done") is True else 0
             ),
             "current_evidence_producer_coverage_row_count": len(current_evidence_producer_coverage_rows),
             "current_evidence_producer_coverage_blocker_count": int(
@@ -6253,6 +6806,11 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_durable_evidence_recipe_is_not_provider_acceptance": True,
             "freshness_durable_evidence_recipe_is_not_production_completion": True,
             "freshness_durable_evidence_requires_provider_call_ledger": True,
+            "freshness_local_release_gate_evidence_is_local": True,
+            "freshness_local_release_gate_evidence_calls_github": False,
+            "freshness_local_release_gate_evidence_is_not_ci_status": True,
+            "freshness_local_release_gate_worktree_evidence_emits_no_paths": True,
+            "freshness_local_release_gate_worktree_dirty_blocks_current_head_receipt": True,
             "current_evidence_freshness_qa_is_local_contract": True,
             "current_evidence_requires_expected_trade_date": True,
             "historical_samples_are_research_only": True,
@@ -6260,6 +6818,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_decision_surface_audit_is_local": True,
             "current_evidence_decision_surface_audit_rescores": False,
             "current_evidence_decision_surface_audit_mutates_action": False,
+            "decision_surface_isolation_direct_evidence_is_local": True,
+            "decision_surface_isolation_direct_evidence_calls_provider": False,
+            "decision_surface_isolation_direct_evidence_is_not_provider_acceptance": True,
             "current_evidence_producer_coverage_audit_is_local": True,
             "current_evidence_producer_coverage_audit_builds_missing_packets": False,
             "current_evidence_producer_coverage_requires_expected_trade_date": True,
@@ -6288,6 +6849,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "producer_cache_refresh_route_calls_provider": False,
             "producer_cache_refresh_route_writes_parquet": False,
             "producer_cache_refresh_route_is_not_provider_acceptance": True,
+            "producer_cache_refresh_direct_evidence_is_local": True,
+            "producer_cache_refresh_direct_evidence_calls_provider": False,
+            "producer_cache_refresh_direct_evidence_is_not_provider_acceptance": True,
         },
         "call_ledger": [
             {
@@ -6484,6 +7048,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "latest_producer_cache_refresh_blocking_row_count": int(
                     latest_producer_cache_refresh.get("blocking_row_count") or 0
                 ),
+                "producer_cache_refresh_direct_evidence_status": (
+                    producer_cache_refresh_direct_evidence.get("status")
+                ),
+                "producer_cache_refresh_direct_evidence_done": bool(
+                    producer_cache_refresh_direct_evidence.get("direct_evidence_done")
+                ),
                 "latest_tushare_provider_target_sample_execution_request_status": (
                     latest_tushare_provider_target_sample_execution_request.get("execution_request_status")
                 ),
@@ -6523,6 +7093,15 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "current_evidence_decision_surface_audit_status": current_evidence_decision_surface_audit.get("status"),
                 "current_evidence_decision_surface_blocker_count": int(
                     current_evidence_decision_surface_audit.get("blocked_surface_count") or 0
+                ),
+                "decision_surface_isolation_direct_evidence_status": (
+                    decision_surface_isolation_direct_evidence.get("status")
+                ),
+                "decision_surface_isolation_direct_evidence_done": bool(
+                    decision_surface_isolation_direct_evidence.get("direct_evidence_done")
+                ),
+                "decision_surface_isolation_proof_line_count": int(
+                    decision_surface_isolation_direct_evidence.get("proof_line_count") or 0
                 ),
                 "current_evidence_producer_coverage_audit_status": current_evidence_producer_coverage_audit.get(
                     "status"

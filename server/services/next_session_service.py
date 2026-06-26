@@ -3093,9 +3093,36 @@ def read_next_session_cache() -> dict[str, Any]:
     packet["next_session_production_stage_scope_pending_count"] = production_stage_scope["pending_stage_count"]
     packet["next_session_production_stage_scope_blocker_count"] = production_stage_scope["production_blocker_count"]
     ordinary_result_replay = _next_session_ordinary_result_replay(packet)
+    ordinary_next_session_preview_rows = [
+        {
+            "预览项": str(row.get("surface") or row.get("step") or "次日图谱预览"),
+            "当前状态": str(row.get("readable_result") or "等待本地回放"),
+            "用户下一步": str(row.get("next_step") or "继续只读查看本地结果"),
+            "证据": str(row.get("evidence") or "ordinary_result_replay_rows"),
+            "边界": str(row.get("boundary") or "只读本地 cache；不创建 task、不调用 provider/model、不生成交易动作"),
+            "readback_source": "ordinary_result_replay_rows",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_provider_or_model": False,
+            "is_trade_signal": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        }
+        for row in _as_list(ordinary_result_replay.get("result_rows"))
+        if isinstance(row, dict)
+    ]
     packet["ordinary_result_replay_summary"] = ordinary_result_replay
     packet["ordinary_result_replay_status"] = ordinary_result_replay["status"]
     packet["ordinary_result_replay_rows"] = ordinary_result_replay["result_rows"]
+    packet["ordinary_next_session_preview_rows"] = ordinary_next_session_preview_rows
+    packet["ordinary_next_session_preview_row_count"] = len(ordinary_next_session_preview_rows)
+    packet["ordinary_summary"] = (
+        "次日图谱已可读：路径、参考线和操作区来自本地 cache。"
+        if ordinary_result_replay["chart_ready_for_confirmed_symbol"]
+        else "上游 P3 结果已接上；完整次日图谱待手动生成，本页只读展示预览和边界。"
+        if ordinary_result_replay["status"] == "candidate_readable_result_replay_chart_pending"
+        else "等待确认标的或本地图谱 cache。"
+    )
     packet["ordinary_chart_review_rows"] = ordinary_result_replay["chart_review_rows"]
     packet["ordinary_condition_quick_read_rows"] = ordinary_result_replay["condition_quick_read_rows"]
     counts = _as_dict(packet.get("counts"))
@@ -3120,6 +3147,7 @@ def read_next_session_cache() -> dict[str, Any]:
                 "blocking_review_count"
             ],
             "next_session_ordinary_result_replay_row_count": ordinary_result_replay["row_count"],
+            "next_session_ordinary_preview_row_count": len(ordinary_next_session_preview_rows),
             "next_session_ordinary_chart_review_row_count": ordinary_result_replay["chart_review_row_count"],
             "next_session_ordinary_condition_quick_read_row_count": ordinary_result_replay[
                 "condition_quick_read_row_count"
@@ -3153,6 +3181,10 @@ def read_next_session_cache() -> dict[str, Any]:
             "next_session_ordinary_result_replay_rows_create_task": False,
             "next_session_ordinary_result_replay_rows_call_provider_or_model": False,
             "next_session_ordinary_result_replay_rows_are_not_trade_signals": True,
+            "ordinary_next_session_preview_rows_are_cache_only": True,
+            "ordinary_next_session_preview_rows_create_task": False,
+            "ordinary_next_session_preview_rows_call_provider_or_model": False,
+            "ordinary_next_session_preview_rows_are_not_trade_signals": True,
             "next_session_ordinary_condition_quick_read_rows_are_cache_only": True,
             "next_session_ordinary_condition_quick_read_rows_call_provider_or_model": False,
             "next_session_ordinary_condition_quick_read_rows_are_not_trade_signals": True,
@@ -3743,6 +3775,16 @@ def _local_exact_next_session_sample_packet(
         ],
         "y_axis_range": [9.0, 12.0],
         "deepseek_status": "not_called",
+        "position_conflict": {
+            "status": "local_preview_conflict_visible",
+            "conflict_flags": ["cost_price_conflict"],
+            "source_packet": "button_gated_local_preview_position_context",
+        },
+        "data_trust_summary": {
+            "facts": [{"fact_key": "moneyflow", "call_status": "local_preview_not_provider_verified"}],
+            "human_summary": ["按钮门控本地预览：不代表真实 provider 验收", "持仓冲突展示：仅验证可视化边界"],
+            "deepseek": {"label": "DeepSeek", "status": "not_called"},
+        },
         "warnings": [
             "按钮门控本地预览用于让当前确认标的先有可读图谱；不是 provider-backed market data。",
             "GET cache 和 React render 不会生成该预览；只有 POST /api/next-session/generate 可写入。",

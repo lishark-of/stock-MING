@@ -238,7 +238,7 @@ export default function NextSessionMap() {
     "回放入口只切换本地模块路由（#candidates/... 直达确认输入区，#factor 到量化推演）；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones";
   const nextSessionOperationZoneBoundary = "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
   const nextSessionPacketHandoffLabel = packetCandidateRadarP3HandoffReady
-    ? `本地次日图谱数据已接上 ${packetCandidateRadarP3HandoffSymbol || "当前标的"} / task=${packetCandidateRadarP3HandoffSourceTask || "本地回放"}`
+    ? `本地次日图谱数据已接上 ${packetCandidateRadarP3HandoffSymbol || "当前标的"}`
     : "本地次日图谱数据等待 CandidateRadar P3 结果";
   const candidateRadarWritebackSurfaceRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
   const candidateRadarWritebackSurfaceReady =
@@ -251,8 +251,8 @@ export default function NextSessionMap() {
     );
   const candidateRadarWritebackSurfaceStatus = candidateRadarWritebackSurfaceReady
     ? packetCandidateRadarP2HandoffReady
-      ? "P2 三面已由 next-session handoff 回放：cache / call_ledger / packet 可读"
-      : "P2 三面已回放：cache / call_ledger / packet 都可读"
+      ? "P2 三面已由 next-session handoff 回放：本地缓存、数据凭证、结果包可读；cache / call_ledger / packet 可读"
+      : "P2 三面已回放：本地缓存、数据凭证、结果包可读；cache / call_ledger / packet 都可读"
     : `P2 三面等待：${String(
         candidateRadarSmallDataWriteback.ordinary_readback_stage_label ??
           candidateRadarSmallDataWriteback.summary_label ??
@@ -559,7 +559,7 @@ export default function NextSessionMap() {
     {
       label: "P2 三面",
       value: candidateRadarWritebackSurfaceReady
-        ? "已回放：cache / call_ledger / packet"
+        ? "已回放：本地缓存、数据凭证、结果包"
         : candidateRadarWritebackSurfaceStatus,
       tone: candidateRadarWritebackSurfaceReady ? "good" : "warn"
     },

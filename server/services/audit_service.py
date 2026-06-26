@@ -2081,6 +2081,16 @@ def _release_gate_push_readiness_receipt(
         "local_push_gate_run_receipt_head_matches_current": local_run_receipt.get("head_matches_current") is True,
         "local_push_gate_run_receipt_freshness_blockers": local_receipt_freshness_blockers,
         "local_push_gate_run_receipt_freshness_blocker_count": len(local_receipt_freshness_blockers),
+        "fresh_local_gate_blocked_by_head_mismatch": "head_mismatch" in local_receipt_freshness_blockers,
+        "fresh_local_gate_blocked_by_required_checks": "required_checks_missing" in local_receipt_freshness_blockers,
+        "fresh_local_gate_blocked_by_boundary_flags": any(
+            item
+            in {
+                "safety_boundary_flags_invalid",
+                "push_confirmation_boundary_missing_or_invalid",
+            }
+            for item in local_receipt_freshness_blockers
+        ),
         "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
         "can_clear_failure_email_without_matching_head_and_logs": False,
@@ -2136,6 +2146,10 @@ def _release_gate_stage_scope_rows(
         release_gate_push_readiness_receipt.get("fresh_local_gate_run_observed") is True
         or _as_dict(local_push_gate_run_receipt).get("fresh_local_gate_run_observed") is True
     )
+    local_receipt = _as_dict(local_push_gate_run_receipt)
+    local_receipt_freshness_blockers = [
+        str(item) for item in _as_list(local_receipt.get("freshness_blockers"))
+    ]
     rows: list[dict[str, Any]] = []
     for stage_key in sorted(REQUIRED_RELEASE_GATE_STAGE_KEYS):
         stage_complete = (
@@ -2156,8 +2170,22 @@ def _release_gate_stage_scope_rows(
                 "ci_mirror_ready": ci_mirror_ready,
                 "ready_for_explicit_push_sequence": for_push_ready,
                 "fresh_local_gate_run_observed": fresh_local_gate_run_observed,
-                "local_push_gate_receipt_head": _as_dict(local_push_gate_run_receipt).get("head", ""),
-                "local_push_gate_receipt_current_head": _as_dict(local_push_gate_run_receipt).get("current_head", ""),
+                "local_push_gate_receipt_status": local_receipt.get("status", ""),
+                "local_push_gate_receipt_head": local_receipt.get("head", ""),
+                "local_push_gate_receipt_current_head": local_receipt.get("current_head", ""),
+                "local_push_gate_receipt_head_matches_current": local_receipt.get("head_matches_current") is True,
+                "local_push_gate_receipt_freshness_blockers": local_receipt_freshness_blockers,
+                "local_push_gate_receipt_freshness_blocker_count": len(local_receipt_freshness_blockers),
+                "fresh_local_gate_blocked_by_head_mismatch": "head_mismatch" in local_receipt_freshness_blockers,
+                "fresh_local_gate_blocked_by_required_checks": "required_checks_missing" in local_receipt_freshness_blockers,
+                "fresh_local_gate_blocked_by_boundary_flags": any(
+                    item
+                    in {
+                        "safety_boundary_flags_invalid",
+                        "push_confirmation_boundary_missing_or_invalid",
+                    }
+                    for item in local_receipt_freshness_blockers
+                ),
                 "remote_actions_status_known": False,
                 "latest_remote_run_verified_green": False,
                 "failure_email_has_matching_head_and_logs": False,

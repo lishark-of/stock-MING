@@ -198,7 +198,7 @@ export default function HealthStatus() {
       用户动作: "代码通过本地校验后点击确认按钮。",
       当前状态: "确认按钮才是 P1 工作入口",
       下一步: "看本地任务编号、TaskStatusPanel 和 cache 回放。",
-      边界: "只有确认按钮可创建 Tushare-first POST task / worker；DeepSeek skipped。"
+      边界: "只有确认按钮可创建 Tushare-first POST task / worker；模型解释单独补证。"
     },
     {
       步骤: "4. 回放本地结果",

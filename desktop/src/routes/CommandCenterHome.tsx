@@ -315,7 +315,7 @@ export default function CommandCenterHome() {
         {
           行动项: "2. P1 确认按钮",
           当前状态: "等待 P0 ready",
-          用户下一步: "代码通过本地校验后点击确认按钮，才创建 Tushare-first POST task；DeepSeek skipped。",
+          用户下一步: "代码通过本地校验后点击确认按钮，才创建 Tushare-first POST task；模型解释单独补证。",
           入口: "下一票雷达确认按钮",
           边界: "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker。"
         }
@@ -394,15 +394,15 @@ export default function CommandCenterHome() {
       "等待确认按钮创建 Tushare-first task"
   );
   const dailyCommandTushareFirstLedgerLabel = dailyCommandTushareFirstLedgerReady
-    ? `Tushare-first ledger 已回放：${dailyCommandTushareFirstSuccessCount}/${dailyCommandTushareFirstApiCount} 个接口`
-    : "等待确认按钮后的 Tushare-first provider ledger";
+    ? `Tushare-first 数据已回放：${dailyCommandTushareFirstSuccessCount}/${dailyCommandTushareFirstApiCount} 个接口`
+    : "等待确认按钮后的 Tushare-first 数据回放";
   const dailyCommandTushareFirstDeepSeekLabel =
     candidateQuantConfirmChainCheckpoint.deepseek_called_from_confirm_chain === false ||
     candidateQuantReceipt.p1_deepseek_skipped_by_request === true
-      ? "DeepSeek skipped：P5 governed executor 单独补"
+      ? "模型解释单独补证：P5 governed executor 单独补"
       : "DeepSeek 等 governed executor；不阻塞 P1/P2/P3";
   const dailyCommandTushareFirstBoundary =
-    "P1 只允许首页或下一票雷达确认按钮创建 Tushare-first POST task；首页回放卡只读 cache / ledger / packet，不创建第二个 task。";
+    "P1 只允许首页或下一票雷达确认按钮创建 Tushare-first 后台确认；首页回放卡只读本地结果，不重复启动确认链。";
   const dailyCommandP1ShortestPathReady =
     candidates.search_quant_projection_p1_shortest_path_ready === true ||
     candidateQuantP1ShortestPathCheckpoint.tushare_first_ledger_ready === true ||
@@ -426,7 +426,7 @@ export default function CommandCenterHome() {
   );
   const dailyCommandP1ShortestPathBoundary = String(
     candidates.search_quant_projection_p1_shortest_path_boundary ??
-      "P1 最短路径 checkpoint 只读 CandidateRadar cache；不创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key、不交易。"
+      "P1 最短路径 checkpoint 只读 CandidateRadar cache；不创建第二个 task、不补调 Tushare/DeepSeek、不展示敏感凭据、不交易。"
   );
   const dailyCommandTushareFirstRows = candidateQuantTushareFirstRows.length
     ? candidateQuantTushareFirstRows.map((row) => ({
@@ -452,11 +452,11 @@ export default function CommandCenterHome() {
           边界: dailyCommandTushareFirstBoundary
         },
         {
-          链路段: "3. Tushare ledger",
+          链路段: "3. Tushare 数据",
           当前状态: dailyCommandTushareFirstLedgerLabel,
-          用户下一步: "ledger 可回放后继续看 P2 三面和 P3 结论",
-          证据: "post_task_call_ledger",
-          边界: "Tushare 只允许按钮门控 task / worker 调用；GET cache 只读回放。"
+          用户下一步: "数据可回放后继续看 P2 三面和 P3 结论",
+          证据: "确认任务回放",
+          边界: "Tushare 只允许按钮门控后台确认调用；GET cache 只读回放。"
         },
         {
           链路段: "4. DeepSeek",
@@ -485,7 +485,7 @@ export default function CommandCenterHome() {
   const dailyCommandSmallDataWritebackState = String(
     candidateQuantSmallDataWriteback.ordinary_readback_stage_label ??
       candidateQuantSmallDataWriteback.summary_label ??
-      "等待确认按钮后的 cache / ledger / packet 回放"
+      "等待确认按钮后的本地三面回放"
   );
   const dailyCommandP2SurfaceCount = Number(
     candidateQuantP2ThreeSurfaceCheckpoint.surface_count ??
@@ -520,7 +520,7 @@ export default function CommandCenterHome() {
       candidateQuantSmallDataReadbackCheckpoint.next_action ??
       (dailyCommandP2CheckpointStatus === "p2_three_surface_ready"
         ? "继续查看量化推演和次日图谱只读结果；DeepSeek 留到 P5 governed executor。"
-        : "确认任务完成后刷新本地 cache / ledger / packet 回放。")
+        : "确认任务完成后刷新本地三面回放。")
   );
   const dailyCommandP2CallLedgerState = String(
     candidateQuantP2ThreeSurfaceCheckpoint.call_ledger_state ??
@@ -551,11 +551,36 @@ export default function CommandCenterHome() {
     candidateQuantSmallDataWriteback.packet_ready === true ||
     candidateQuantSmallDataWriteback.cache_packet_written === true ||
     candidates.search_quant_projection_p2_packet_ready === true;
+  const dailyCommandP2MissingSurfaces = [
+    dailyCommandP2CacheReady ? "" : "缓存",
+    dailyCommandP2LedgerReady ? "" : "数据凭证",
+    dailyCommandP2PacketReady ? "" : "结果包"
+  ].filter(Boolean);
+  const dailyCommandP2MissingSurfaceLabel = dailyCommandP2MissingSurfaces.length
+    ? dailyCommandP2MissingSurfaces.join(" / ")
+    : "无缺口";
+  const dailyCommandP2SymbolLabel = String(
+    candidateQuantP2ThreeSurfaceCheckpoint.symbol ??
+      candidateQuantSmallDataReadbackCheckpoint.symbol ??
+      candidateQuantSmallDataWriteback.symbol ??
+      "等待当前标的"
+  );
+  const dailyCommandP2OrdinaryOneLine = dailyCommandP2ThreeSurfaceReady
+    ? `${dailyCommandP2SymbolLabel} P2 三面齐备：缓存、数据凭证、结果包都可回放；下一步看股票量化推演和次日图谱。`
+    : `${dailyCommandP2SymbolLabel} P2 还缺 ${dailyCommandP2MissingSurfaceLabel}；先看确认进度，完成后刷新本地三面。`;
+  const dailyCommandP2VisibleWritebackSentence = dailyCommandP2ThreeSurfaceReady
+    ? `${dailyCommandP2SymbolLabel} P2 写入已可见：cache 可刷新回放，call_ledger 来自确认任务，packet=command_center_3_candidate_radar_cache；只读回放，不等于生产验收完成。`
+    : `${dailyCommandP2SymbolLabel} P2 写入待齐：还缺 ${dailyCommandP2MissingSurfaceLabel}；不要从回放卡重复创建任务，等确认任务完成后刷新本地三面。`;
+  const dailyCommandP2OrdinaryNextAction = dailyCommandP2ThreeSurfaceReady
+    ? "直接打开股票量化推演和次日图谱"
+    : dailyCommandP2LedgerReady || dailyCommandP2CacheReady || dailyCommandP2PacketReady
+      ? "按缺口补齐本地三面；不要从回放卡重复创建任务"
+      : "先点击确认按钮并等待本地回放";
   const dailyCommandSmallDataWritebackBoundary =
-    "P2 小数据只从 CandidateRadar cache / call_ledger / packet 回放；首页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示 token/key 或 raw log。";
+    "P2 小数据只从 CandidateRadar 本地三面结果回放；首页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示敏感凭据或原始日志。";
   const dailyCommandP2CheckpointBoundary = String(
     candidates.search_quant_projection_p2_three_surface_boundary ??
-      "P2 三面 checkpoint 只读 CandidateRadar cache / call_ledger / packet；不创建第二个 task、不补调 provider/model、不生成交易动作。"
+      "P2 三面 checkpoint 只读 CandidateRadar 本地三面结果；不重复启动确认链、不补调数据源或模型、不生成交易动作。"
   );
   const dailyCommandP2ThreeSurfaceProofItems: MetricItem[] = [
     {
@@ -585,7 +610,7 @@ export default function CommandCenterHome() {
     },
     {
       label: "安全边界",
-      value: "只读三面证明；不创建 task、不补调 provider/model、不展示 token/key/raw log",
+      value: "只读三面证明；不创建 task、不补调 provider/model、不展示敏感凭据或 raw log；不展示 token/key/raw log",
       tone: "good"
     }
   ];
@@ -690,7 +715,7 @@ export default function CommandCenterHome() {
       candidateQuantSmallDataWriteback.latest_task_id ??
       candidateQuantReceipt.latest_task_id ??
       candidateQuantReceipt.task_id ??
-      "等待下一票雷达确认 task"
+      "等待下一票雷达确认回执"
   );
   const dailyCommandP3OneGlanceReadable =
     candidates.search_quant_projection_p3_readable_result_ready === true ||
@@ -703,7 +728,7 @@ export default function CommandCenterHome() {
     candidateQuantInterpretation.uses_tushare_ledger === true;
   const dailyCommandP3OneGlanceEvidence = String(
     candidateQuantInterpretation.ordinary_result_evidence ??
-      `source=${String(candidateQuantResultCheckpoint.evidence_source ?? "CandidateRadar cache / ledger / packet")}; missing=${String(candidateQuantResultCheckpoint.missing_evidence_count ?? 0)}`
+      `来源=${String(candidateQuantResultCheckpoint.evidence_source ?? "下一票雷达本地三面结果")}; 缺口=${String(candidateQuantResultCheckpoint.missing_evidence_count ?? 0)}`
   );
   const dailyCommandP3OneGlanceModelStateRaw = String(
     candidates.ordinary_result_deepseek_governed_executor_status ??
@@ -722,7 +747,7 @@ export default function CommandCenterHome() {
       ? "DeepSeek 不用等：Tushare-first 和基础图谱可先看；P5 governed executor 单独补"
       : dailyCommandP3OneGlanceModelStateRaw.includes("pending")
         ? "DeepSeek 待治理：不阻塞 Tushare-first、P2 写入或 P3 基础图谱"
-        : "DeepSeek governed executor 单独补；普通结果只读本地 cache / ledger / packet";
+        : "DeepSeek governed executor 单独补；普通结果只读本地三面结果";
   const dailyCommandExplainableResultRows = candidateQuantQuickRows.length
     ? candidateQuantQuickRows.map((row) => ({
         速读项: String(row["结论"] ?? row.quick_read_item ?? "结果速读"),
@@ -741,7 +766,7 @@ export default function CommandCenterHome() {
         },
         {
           速读项: "结果从哪里回放",
-          当前状态: "等待 CandidateRadar cache / ledger / packet 写入",
+          当前状态: "等待下一票雷达本地三面结果写入",
           用户下一步: "完成确认任务后回放股票量化推演和次日图谱",
           证据: "ordinary_result_quick_read_rows pending",
           边界: "首页只读展示 P3 结果速读；不补调 Tushare、DeepSeek 或 GitHub。"
@@ -775,7 +800,7 @@ export default function CommandCenterHome() {
       candidateQuantSmallDataWriteback.latest_task_id ??
       candidateQuantReceipt.latest_task_id ??
       candidateQuantReceipt.task_id ??
-      "等待确认任务"
+      "等待确认回执"
   );
   const dailyCommandP3ReadableEntranceNames = candidateQuantHandoffRows.length
     ? candidateQuantHandoffRows
@@ -786,7 +811,7 @@ export default function CommandCenterHome() {
     ? `结果入口 ${String(dailyCommandP3ReadableEntranceNames.length)} 个：${dailyCommandP3ReadableEntranceNames.slice(0, 3).join(" / ")}`
     : "下一票雷达 / 股票量化推演 / 次日图谱";
   const dailyCommandP3OneGlanceSource = String(
-    candidateQuantResultCheckpoint.evidence_source ?? "CandidateRadar cache / ledger / packet"
+    candidateQuantResultCheckpoint.evidence_source ?? "下一票雷达本地三面结果"
   );
   const dailyCommandP3MissingEvidenceItems = Array.isArray(candidateQuantResultCheckpoint.missing_evidence)
     ? candidateQuantResultCheckpoint.missing_evidence.map(dailyCommandReadableGap).filter(Boolean)
@@ -802,6 +827,21 @@ export default function CommandCenterHome() {
       candidateQuantResultCheckpoint.missing_evidence_count ??
       dailyCommandP3MissingEvidenceItems.length
   );
+  const dailyCommandP3OrdinarySourceLine = dailyCommandP3OneGlanceProviderVerified
+    ? `来源已接上：${dailyCommandP3OneGlanceSource}`
+    : `来源待确认：${dailyCommandP3OneGlanceSource}`;
+  const dailyCommandP3OrdinaryGapLine = dailyCommandP3ExplainableMissingEvidenceCount
+    ? `仍有 ${String(dailyCommandP3ExplainableMissingEvidenceCount)} 项缺口：${dailyCommandP3OneGlanceMissingEvidence}`
+    : "暂无额外缺口；仍只作为研究线索";
+  const dailyCommandP3OrdinaryActionLine = dailyCommandP3OneGlanceUsesModelOutput
+    ? "先回 P5 模型治理检查，再决定是否展示模型摘要"
+    : dailyCommandExplainableResultNext;
+  const dailyCommandP3OrdinaryOneLine = dailyCommandP3OneGlanceReadable
+    ? `${dailyCommandConfirmedSymbolLabel} P3 可读：${dailyCommandExplainableResultLabel}；${dailyCommandP3OrdinarySourceLine}；${dailyCommandP3OrdinaryGapLine}；下一步：${dailyCommandP3OrdinaryActionLine}`
+    : `${dailyCommandConfirmedSymbolLabel} P3 等待可读结论；先完成确认按钮和 P2 三面回放。`;
+  const dailyCommandP3VisibleExplainableSentence = dailyCommandP3OneGlanceReadable
+    ? `${dailyCommandConfirmedSymbolLabel} P3 结果可解释：结论=${dailyCommandExplainableResultLabel}；来源=${dailyCommandP3OrdinarySourceLine}；缺口=${dailyCommandP3OrdinaryGapLine}；下一步=${dailyCommandP3OrdinaryActionLine}；边界=只读本地 cache / ledger / packet，不调用 DeepSeek、不生成买卖动作。`
+    : `${dailyCommandConfirmedSymbolLabel} P3 等待可解释结果：先完成 P1 确认和 P2 三面，结果只从本地 cache / ledger / packet 回放。`;
   const dailyCommandP3ExplainableCheckpointStatus = String(
     dailyCommandP3ExplainableCheckpoint.status ??
       dailyCommandP3OneGlanceStatus
@@ -932,7 +972,7 @@ export default function CommandCenterHome() {
       当前状态: Number(candidateCounts?.search_quant_projection_task_readback_row_count ?? 0) ? "可回放 task id / safe current_step" : "等待本地 task id 写入 packet",
       用户下一步: "只看任务编号和安全步骤；成功后刷新本地 cache",
       证据: "CandidateRadar ordinary_task_readback_rows",
-      边界: candidatePolicy.search_quant_projection_task_readback_rows_are_cache_only === false ? "待复核，只能回雷达详情排查" : "首页只读 packet；不展示 raw log、token/key 或 provider error"
+      边界: candidatePolicy.search_quant_projection_task_readback_rows_are_cache_only === false ? "待复核，只能回雷达详情排查" : "首页只读 packet；不展示 raw log、token/key 或 provider error；敏感凭据仍下沉且不展示"
     },
     {
       回放入口: "3. P2 写回三面",
@@ -1011,6 +1051,38 @@ export default function CommandCenterHome() {
   const modelStrategyP5Boundary = String(
     modelStrategyGovernedExecutor.ordinary_nonblocking_boundary ?? dailyCommandDeepSeekGovernanceBoundary
   );
+  const dailyCommandP5OrdinaryOneLine = dailyCommandP3OneGlanceUsesModelOutput
+    ? "检测到模型输出：先回 P5 governed executor 审核；基础投研仍以 Tushare-first、小数据写入和本地图谱为准。"
+    : "DeepSeek 当前不参与数据链：P1/P2/P3 已可用；模型解释等 P5 governed executor、model_ledger、sanitizer 和 output acceptance 完成后再补。";
+  const dailyCommandP5VisibleGovernanceSentence = dailyCommandP3OneGlanceUsesModelOutput
+    ? `${dailyCommandConfirmedSymbolLabel} P5 只露出非阻塞状态，P4/P6 下沉到摘要和审计；P5 需要先审：检测到模型输出；展示前必须回查 model_ledger、sanitizer、output acceptance 和白名单字段，不覆盖价格、因子、operation_zones 或 strategy action。`
+    : `${dailyCommandConfirmedSymbolLabel} P5 只露出非阻塞状态，P4/P6 下沉到摘要和审计；P5 单独补：DeepSeek 当前 skipped/pending，不阻塞 P1 Tushare-first、P2 写入或 P3 基础图谱；真实模型调用等 model_ledger、sanitizer、output acceptance 和白名单字段后再说。`;
+  const dailyCommandP5WhyNotBlocking =
+    "P5 是解释补证，不是价格、持仓、factor、operation_zones 或 strategy action 的数据源。";
+  const dailyCommandP5ReleaseGate =
+    "放行前必须有 model_ledger、sanitizer、output acceptance、白名单字段和失败回退。";
+  const dailyCommandP5SafeOutput =
+    "未来只允许 source / gap / next_step / safety_summary 安全摘要，不展示 raw prompt/output 或敏感凭据。";
+  const dailyCommandP5OrdinaryRows = [
+    {
+      检查项: "普通状态",
+      当前状态: dailyCommandP5OrdinaryOneLine,
+      用户下一步: modelStrategyP5NextAllowedAction,
+      边界: dailyCommandDeepSeekGovernanceBoundary
+    },
+    {
+      检查项: "为什么不阻塞",
+      当前状态: dailyCommandP5WhyNotBlocking,
+      用户下一步: "继续确认按钮、Tushare-first 写入和基础图谱回放",
+      边界: "DeepSeek 不作为数据源，也不生成买卖动作。"
+    },
+    {
+      检查项: "放行条件",
+      当前状态: dailyCommandP5ReleaseGate,
+      用户下一步: "等 P5 governed executor 单独补齐后再看模型解释缓存",
+      边界: dailyCommandP5SafeOutput
+    }
+  ];
   const modelStrategyP5BlockerCount = Number(
     modelStrategyGovernedExecutor.real_call_blocker_count ?? modelStrategyP5RealCallGateRows.length
   );
@@ -1156,7 +1228,7 @@ export default function CommandCenterHome() {
     ? `Factor 已接上 ${dailyCommandFactorCandidateHandoffSymbol || "当前标的"} / task=${dailyCommandFactorCandidateHandoffTask}`
     : "Factor handoff 等待本地 cache";
   const dailyCommandFactorCandidateHandoffBoundary =
-    "只读 /api/factor-quant/cache 的 CandidateRadar handoff；不创建 task、不补调 Tushare/DeepSeek、不展示 token/key/raw log。";
+    "只读 /api/factor-quant/cache 的 CandidateRadar handoff；不创建 task、不补调 Tushare/DeepSeek、不展示敏感凭据或 raw log。";
   const dailyCommandFactorCandidateHandoffReadbackRows = factorCandidateHandoffRows.length
     ? factorCandidateHandoffRows
     : [
@@ -1174,6 +1246,8 @@ export default function CommandCenterHome() {
     ? `量化缓存已降级为本地可读：上次 ${String(factorFailedCacheSummary.task_type ?? "provider task")} ${String(factorFailedCacheSummary.status ?? "failed")}；继续按 cache-only 回放`
     : "量化缓存直接可读；未检测到失败持久化 packet 降级";
   const dailyCommandFactorCacheFallbackBoundary =
+    "量化缓存降级只返回安全摘要和本地 builder 结果；首页不展开 raw failed packet、provider error、敏感凭据或 call_ledger。";
+  const dailyCommandFactorCacheFallbackTokenBoundary =
     "量化缓存降级只返回安全摘要和本地 builder 结果；首页不展开 raw failed packet、provider error、token/key 或 call_ledger。";
   const dailyCommandFactorCacheFallbackRows = [
     {
@@ -1190,7 +1264,7 @@ export default function CommandCenterHome() {
         ? "继续按 P3 回放；需要更新时回下一票雷达确认按钮重新生成"
         : "继续按 P3 回放；无需展开工程审计",
       证据: dailyCommandFactorCacheFallbackActive ? "failed_factor_quant_cache_summary 安全摘要" : "cache_source / mode",
-      边界: dailyCommandFactorCacheFallbackBoundary
+      边界: `${dailyCommandFactorCacheFallbackBoundary} ${dailyCommandFactorCacheFallbackTokenBoundary}`
     }
   ];
   const nextPayloadLedger = (next.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -1207,7 +1281,7 @@ export default function CommandCenterHome() {
   const dailyCommandNextSessionPreviewSource =
     next.button_gated_local_confirmed_symbol_preview === true
       ? "按钮门控本地预览，非 provider-backed"
-      : "本地 next-session cache";
+      : "本地次日图谱缓存";
   const dailyCommandNextSessionStatusRaw = String(next.status ?? "");
   const dailyCommandNextSessionReadableStatus =
     dailyCommandNextSessionChartReady
@@ -1259,6 +1333,37 @@ export default function CommandCenterHome() {
       candidateQuantReceipt.latest_task_current_step ??
       "等待本地任务状态回放"
   );
+  const dailyCommandLatestTaskStepLower = dailyCommandLatestTaskStep.toLowerCase();
+  const dailyCommandLatestConfirmReadableStatus = dailyCommandLatestTaskStepLower.includes("tushare_first_chain_submitted_deepseek_skipped")
+    ? "Tushare-first 已回放；模型解释单独补证"
+    : dailyCommandLatestTaskStepLower.includes("blocked_missing_credentials")
+      ? "缺服务端 Tushare 凭据；未调用 provider"
+      : dailyCommandLatestTaskStepLower.includes("blocked_p0_confirm_gate")
+        ? "P0 本地联通闸门未通过；未调用 provider"
+        : dailyCommandLatestTaskStepLower.includes("blocked_provider_ledger_missing")
+          ? "Tushare 账本未写齐；等待补齐 call ledger"
+          : dailyCommandLatestTaskStepLower.includes("blocked_execution_request")
+            ? "执行申请未 ready；等待本地申请补齐"
+            : dailyCommandLatestTaskStepLower.includes("blocked_invalid_symbol")
+              ? "代码格式阻断；重新输入后再确认"
+              : dailyCommandLatestTaskId
+                ? `本地确认已接收：${dailyCommandLatestTaskStatus}`
+                : "等待确认按钮";
+  const dailyCommandLatestConfirmNextAction = dailyCommandLatestTaskStepLower.includes("tushare_first_chain_submitted_deepseek_skipped")
+    ? "直接看股票量化推演和次日图谱回放"
+    : dailyCommandLatestTaskStepLower.includes("blocked_missing_credentials")
+      ? "配置服务端 Tushare 凭据后，再点击确认按钮"
+      : dailyCommandLatestTaskStepLower.includes("blocked_p0_confirm_gate")
+        ? "先让一键启动和本地 FastAPI/预检联通变绿，再重新确认"
+        : dailyCommandLatestTaskStepLower.includes("blocked_provider_ledger_missing")
+          ? "查看进度明细里的 call ledger；需要时重新确认补齐"
+          : dailyCommandLatestTaskStepLower.includes("blocked_execution_request")
+            ? "查看本地申请明细；确认 scope ready 后再补 Tushare-first"
+            : dailyCommandLatestTaskStepLower.includes("blocked_invalid_symbol")
+              ? "输入 6 位 A 股代码或带后缀代码，再点击确认"
+              : dailyCommandLatestTaskId
+                ? "继续看本地进度；成功后刷新 P1/P2/P3 回放"
+                : "在首页输入股票代码，点击确认按钮";
   const dailyCommandLatestTaskSource = String(
     dailyCommandCandidateLatestTaskId
       ? candidateQuantSmallDataWriteback.task_readback_source ?? candidateQuantReceipt.task_readback_source ?? "candidate_radar_cache_latest_task"
@@ -1270,42 +1375,42 @@ export default function CommandCenterHome() {
     dailyCommandLatestTaskType.includes("candidate_radar_quant_projection");
   const dailyCommandLatestTaskIsReplay = dailyCommandLatestTask.cache_replay_only === true || Boolean(dailyCommandCandidateLatestTaskId && !dailyCommandLatestTask.task_id);
   const dailyCommandLatestTaskLabel = dailyCommandLatestTaskId
-    ? `${dailyCommandLatestTaskStatus}: ${dailyCommandLatestTaskType}`
-    : "暂无本地任务；先在首页确认股票代码，需要详情再进下一票雷达";
+    ? `已看到本地确认进度：${dailyCommandLatestTaskStatus}`
+    : "暂无本地确认；先在首页确认股票代码，需要详情再进下一票雷达";
   const dailyCommandLatestTaskNext = dailyCommandLatestTaskId
     ? dailyCommandLatestTaskIsCandidate
-      ? "看下方任务状态；成功后进入股票量化推演和次日图谱回放"
-      : "看下方任务状态；按任务输出 packet 回放结果"
+      ? "看下方确认进度；成功后进入股票量化推演和次日图谱回放"
+      : "看下方确认进度；按本地结果回放"
     : "在首页输入股票代码，点击“确认股票并启动 Tushare-first”";
   const dailyCommandFastApiProgressWatchLabel = dailyCommandConfirmedSymbol
     ? `${dailyCommandConfirmedSymbol} / ${dailyCommandLatestTaskStatus}`
     : dailyCommandLatestTaskId
       ? `${dailyCommandLatestTaskId} / ${dailyCommandLatestTaskStatus}`
-      : "等待确认按钮后的任务进度";
+      : "等待确认按钮后的进度";
   const dailyCommandFastApiProgressWatchNext = dailyCommandLatestTaskId
-    ? "查看任务进度；再回股票量化推演和次日图谱"
+    ? "查看确认进度；再回股票量化推演和次日图谱"
     : "先在首页确认股票代码；输入本身保持静默";
   const dailyCommandLatestTaskRows = [
     {
-      速读项: "最近任务",
+      速读项: "最近确认",
       当前状态: dailyCommandLatestTaskLabel,
       用户下一步: dailyCommandLatestTaskNext,
-      证据: dailyCommandLatestTaskId || "GET /api/tasks",
-      边界: "首页只读任务目录；不会创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
+      证据: dailyCommandLatestTaskId ? "本地确认记录" : "等待确认按钮",
+      边界: "首页只读确认进度；不会创建新确认、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
     },
     {
-      速读项: "任务来源",
-      当前状态: dailyCommandLatestTaskIsReplay ? "来自 CandidateRadar cache 只读回放" : dailyCommandLatestTaskSource,
-      用户下一步: dailyCommandLatestTaskIsReplay ? "把它当最近确认链的进度回放，不当新的生产验收证据" : "继续看任务状态和输出 packet",
-      证据: dailyCommandLatestTaskSource,
-      边界: "cache replay 不创建任务、不补调 provider/model；只帮助普通用户看到已有进度。"
+      速读项: "确认来源",
+      当前状态: dailyCommandLatestTaskIsReplay ? "来自下一票雷达本地只读回放" : "来自本机确认记录",
+      用户下一步: dailyCommandLatestTaskIsReplay ? "把它当最近确认链的进度回放，不当新的生产验收证据" : "继续看确认状态和本地结果",
+      证据: dailyCommandLatestTaskIsReplay ? "下一票雷达本地回放" : "本机确认记录",
+      边界: "本地回放不创建任务、不补调 provider/model；只帮助普通用户看到已有进度。"
     },
     {
-      速读项: "当前步骤",
-      当前状态: dailyCommandLatestTaskStep,
-      用户下一步: dailyCommandLatestTaskStatus === "success" ? "刷新本地结果页回放" : "等待状态变化或回到下一票雷达重新确认",
-      证据: "task.current_step",
-      边界: "TaskStatusPanel 只轮询本地 FastAPI；不会自动重试、不会下单、不改 strategy action。"
+      速读项: "当前进度",
+      当前状态: dailyCommandLatestConfirmReadableStatus,
+      用户下一步: dailyCommandLatestConfirmNextAction,
+      证据: "本地进度回读",
+      边界: "进度面板只轮询本地 FastAPI；不会自动重试、不会下单、不改交易策略。"
     }
   ];
   const envelopeLedgerRows = [
@@ -1326,8 +1431,11 @@ export default function CommandCenterHome() {
   const dailyCommandHealthOk = String(health.status ?? "") === "ok";
   const dailyCommandHealthChecked = Object.keys(health).length > 0;
   const dailyCommandCacheWarning = dailyCommandHealthOk && error ? `本地 cache 回读提示：${error}` : "";
+  const dailyCommandP0ReadbackPending = loading && !dailyCommandHealthChecked && !error;
+  const dailyCommandStartupRecoveryGateExpression =
+    "!dailyCommandHealthOk && (loading || Boolean(error) || !dailyCommandHealthChecked)";
   const dailyCommandNeedsStartupRecovery =
-    !dailyCommandHealthOk && (loading || Boolean(error) || !dailyCommandHealthChecked);
+    !dailyCommandHealthOk && !dailyCommandP0ReadbackPending && (Boolean(error) || dailyCommandHealthChecked);
   const dailyCommandP0QuickActionPacket = String(
     desktopRuntime?.p0_ordinary_quick_action_next ?? p0OrdinaryQuickActionRows[0]?.["用户下一步"] ?? ""
   );
@@ -1339,19 +1447,27 @@ export default function CommandCenterHome() {
   );
   const dailyCommandNextClick = dailyCommandNeedsStartupRecovery
     ? "先查看一键启动预检，恢复本地 FastAPI / React 联通"
+    : dailyCommandP0ReadbackPending
+    ? "正在回读本地 FastAPI、bootstrap 和 desktop preflight；请稍等几秒，不需要先去预检"
     : dailyCommandP0QuickAction
     ? dailyCommandP0QuickAction
     : "在首页输入代码并点击确认；需要详情再进下一票雷达";
   const dailyCommandPrimaryActionLabel = dailyCommandNeedsStartupRecovery
     ? "查看一键启动预检"
+    : dailyCommandP0ReadbackPending
+    ? "正在确认本地联通"
     : "首页确认股票代码";
   const dailyCommandHomeConfirmHref = "#home-p1-symbol-confirm";
   const dailyCommandCandidateConfirmHref = "#candidates/candidate-radar-search-quant-projection";
   const dailyCommandPrimaryActionHref = dailyCommandNeedsStartupRecovery
     ? "#desktop"
+    : dailyCommandP0ReadbackPending
+    ? "#home"
     : dailyCommandHomeConfirmHref;
   const dailyCommandPrimaryActionBoundary = dailyCommandNeedsStartupRecovery
     ? "主下一步只打开桌面壳预检，不启动服务、不创建 task、不刷新 provider/model"
+    : dailyCommandP0ReadbackPending
+    ? "加载态只等待本地 GET 回读；不启动服务、不创建 task、不刷新 provider/model"
     : "主下一步可在首页输入代码并确认；输入保持静默，确认按钮才创建 Tushare-first POST task";
   const dailyCommandCacheSourceLabel = snapshotAvailable ? "本地缓存可用" : "等待本地缓存";
   const dailyCommandTushareSourceLabel = liveLight.tushare_on_open === true
@@ -1392,6 +1508,26 @@ export default function CommandCenterHome() {
     migrationLongTermSummary?.strict_closeout === "14/14" ? "" : "长期生产验收收口",
     liveLightActivationReceipt.ready_for_provider_execution === true ? "" : "数据源/模型验收"
   ].filter(Boolean).join(" / ") || "核心缓存已可见；生产级证据仍在长期验收中";
+  const dailyCommandP6StrictCloseoutTotal = Number(
+    migrationLongTermSummary?.strict_closeout_total_count ?? migrationLongTermGoals?.length ?? 14
+  );
+  const dailyCommandP6StrictCloseoutDone = Number(
+    migrationLongTermSummary?.strict_closeout_done_count ?? 0
+  );
+  const dailyCommandP6StrictCloseoutRemaining = Number(
+    migrationLongTermSummary?.strict_closeout_remaining_count ??
+      Math.max(dailyCommandP6StrictCloseoutTotal - dailyCommandP6StrictCloseoutDone, 0)
+  );
+  const dailyCommandP6StrictCloseoutState = String(
+    migrationLongTermSummary?.strict_closeout ??
+      (dailyCommandP6StrictCloseoutTotal ? `${dailyCommandP6StrictCloseoutDone}/${dailyCommandP6StrictCloseoutTotal}` : "待迁移状态页回读")
+  );
+  const dailyCommandP6OrdinaryOneLine =
+    dailyCommandP6StrictCloseoutRemaining > 0
+      ? `14 LTG strict closeout 尚余 ${String(dailyCommandP6StrictCloseoutRemaining)} 项；P6 只是回归门，不是完成声明。`
+      : "14 LTG strict closeout 计数需要迁移状态页复核；首页不会把可用化 checkpoint 升级成完成声明。";
+  const dailyCommandP6NextEvidence =
+    "打开迁移状态页，按 LTG next acceptance action rows 逐项补证；下一步只按 current-head direct evidence、CI、浏览器、provider、worker、storage、package gate 逐项关闭。";
   const dailyCommandBlockedState = error
     ? `前端错误: ${error}`
     : loading
@@ -1433,7 +1569,7 @@ export default function CommandCenterHome() {
     ? `已联通本地后端：${dailyCommandFrontendBackendSelectedApiBase}`
     : `自动尝试本地 FastAPI：${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")}`;
   const dailyCommandFrontendBackendAutoLinkBoundary =
-    "前端 API client 只在本地 FastAPI 候选地址内自动联通；失败显示离线提示，不启动服务、不创建 task、不调用 provider/model、不读取 token/key";
+    "前端 API client 只在本地 FastAPI 候选地址内自动联通；失败显示离线提示，不启动服务、不创建 task、不调用 provider/model、不读取敏感凭据";
   const dailyCommandP0LocalConnectionReceipt =
     (desktopPreflight.p0_local_connection_receipt as Record<string, unknown> | undefined) ?? {};
   const dailyCommandP0StabilityReady =
@@ -1460,6 +1596,8 @@ export default function CommandCenterHome() {
     dailyCommandP0ContractEvidenceReady;
   const dailyCommandP0LocalReadinessLabel = dailyCommandP0LocalReadinessReady
     ? `P0 ready：${dailyCommandFrontendBackendSelectedApiBase} 已联通，当前 React 页面已加载；可在首页确认股票代码`
+    : dailyCommandP0ReadbackPending
+    ? "P0 回读中：正在读取 health、bootstrap status 和 desktop preflight；暂不判断失败"
     : "P0 check：先让 health、bootstrap status、desktop preflight cache 变绿；未 ready 不进入 P1";
   const dailyCommandP0LocalReadinessBoundary =
     "P0 ready 只证明本地前后端联通；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。";
@@ -1524,6 +1662,8 @@ export default function CommandCenterHome() {
     : "暂无当前确认标的；请手动输入 6 位 A 股代码或带后缀代码";
   const homeQuantSubmitDisabledReason = homeQuantSubmitting
     ? "正在创建 Tushare-first 后台 task；请等待本地任务编号"
+    : dailyCommandP0ReadbackPending
+      ? "P0 回读中：正在确认本地 FastAPI、bootstrap 和 desktop preflight；请稍等几秒"
     : !dailyCommandP0LocalReadinessReady
       ? "P0 未 ready：先让本地 FastAPI、bootstrap、desktop preflight 和 P0 connection evidence 变绿"
       : homeQuantSymbolValidation.valid
@@ -1531,6 +1671,11 @@ export default function CommandCenterHome() {
         : homeQuantSymbol.trim()
           ? `代码格式阻断：${homeQuantSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ`
           : "先输入股票代码；输入本身不会创建 task 或调用 Tushare/DeepSeek";
+  const homeQuantSubmitActionHint = homeQuantCanSubmit
+    ? `${homeQuantSymbolValidation.normalized} 可确认：点击一次会创建 Tushare-first POST task，返回 task id 后自动回读 cache / call_ledger / packet；模型解释单独补证，不交易、不改交易策略。`
+    : homeQuantSubmitDisabledReason;
+  const homeQuantP1ServerContractLine =
+    "点击确认只创建一个本地后台任务：POST /api/candidate-radar/quant-projection -> run_candidate_radar_quant_projection；Tushare-first 开启，模型解释单独补证，成功后只读回放 cache / call_ledger / packet。";
   const homeQuantP0ConfirmGateEvidence = {
     schema_version: "candidate_radar_p0_confirm_gate.v1",
     p0_ready: dailyCommandP0LocalReadinessReady,
@@ -1582,15 +1727,42 @@ export default function CommandCenterHome() {
   const homeQuantP1P2P3CheckpointLabel = homeQuantP1P2P3CheckpointReady
     ? `已完成 P1/P2/P3 本地回放：${homeQuantVisibleTaskId}；Factor handoff ${dailyCommandFactorCandidateHandoffReady ? "已接上" : "待回放"}`
     : `等待 ${homeQuantP1P2P3CheckpointGaps.join(" / ") || "本地回放"}`;
+  const dailyCommandP1VisibleProgressSentence = homeQuantVisibleTaskId
+    ? `${dailyCommandConfirmedSymbolLabel} P1 已有本地确认链：task=${homeQuantVisibleTaskId}，${dailyCommandTushareFirstLedgerLabel}，${dailyCommandTushareFirstDeepSeekLabel}；这不是 14 LTG 完成声明。`
+    : dailyCommandP0LocalReadinessReady
+      ? "P1 等待手动确认：输入股票代码后点击确认按钮才创建 Tushare-first POST task，输入和页面打开保持静默。"
+      : "P1 暂停：先让 P0 本地 FastAPI / React 联通变绿，再确认股票代码。";
   const homeQuantP1P2P3CheckpointItems: MetricItem[] = [
     { label: "一眼 checkpoint", value: homeQuantP1P2P3CheckpointLabel, tone: homeQuantP1P2P3CheckpointReady ? "good" : "warn" },
+    { label: "P1 当前进度", value: dailyCommandP1VisibleProgressSentence, tone: homeQuantVisibleTaskId ? "good" : dailyCommandP0LocalReadinessReady ? "warn" : "bad" },
     { label: "P1 最短路径", value: dailyCommandP1ShortestPathLabel, tone: dailyCommandP1ShortestPathReady ? "good" : "warn" },
     { label: "P1 task", value: homeQuantVisibleTaskId || "等待确认按钮返回 task id", tone: homeQuantVisibleTaskId ? "good" : "warn" },
     { label: "Tushare ledger", value: dailyCommandTushareFirstLedgerLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
     { label: "P2 三面", value: dailyCommandP2CheckpointLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
     { label: "P3 结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
     { label: "Factor handoff", value: dailyCommandFactorCandidateHandoffLabel, tone: dailyCommandFactorCandidateHandoffReady ? "good" : "warn" },
+    { label: "链路 checkpoint", value: homeQuantP1P2P3CheckpointLabel, tone: homeQuantP1P2P3CheckpointReady ? "good" : "warn" },
     { label: "边界", value: "checkpoint 只合成现有 cache / ledger / packet；不创建 task、不补调 provider/model", tone: "good" }
+  ];
+  const dailyCommandUsableNowOneGlanceItems: MetricItem[] = [
+    { label: "现在能不能用", value: dailyCommandP0LocalReadinessReady ? "能用：本地前后端已接上" : "先恢复：本地联通未完整 ready", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
+    { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
+    { label: "最近任务", value: homeQuantVisibleTaskId ? `${homeQuantVisibleTaskId}（${homeQuantVisibleTaskSource}）` : "等待确认按钮返回 task id", tone: homeQuantVisibleTaskId ? "good" : "warn" },
+    {
+      label: "P2/P3",
+      value: dailyCommandP2ThreeSurfaceReady && dailyCommandP3OneGlanceReadable
+        ? "P2 三面与 P3 结论已本地回放"
+        : homeQuantP1P2P3CheckpointLabel,
+      tone: dailyCommandP2ThreeSurfaceReady && dailyCommandP3OneGlanceReadable ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: dailyCommandP0LocalReadinessReady
+        ? dailyCommandP3OneGlanceReadable ? "看股票量化推演和次日图谱" : "在首页确认股票代码"
+        : "打开一键启动预检",
+      tone: dailyCommandP0LocalReadinessReady ? "good" : "warn"
+    },
+    { label: "边界", value: "只读已有 cache / ledger / packet；输入静默；确认按钮才创建 Tushare-first task；模型解释单独补证", tone: "good" }
   ];
   const dailyCommandCurrentResearchSnapshotItems: MetricItem[] = [
     { label: "最近标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
@@ -1601,7 +1773,7 @@ export default function CommandCenterHome() {
     { label: "P3 结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
     { label: "次日图谱", value: dailyCommandNextSessionReadableStatus, tone: dailyCommandNextSessionTone },
     { label: "下一步", value: dailyCommandP3OneGlanceReadable ? "看股票量化推演和次日图谱" : "先确认股票代码，等待本地回放", tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
-    { label: "边界", value: "首屏快照只读已有 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek", tone: "good" }
+    { label: "边界", value: "首屏快照只读已有 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek；不会读取 token/key、不会交易或修改 strategy action", tone: "good" }
   ];
   const dailyCommandCurrentResearchSnapshotReadableSentence = homeQuantP1P2P3CheckpointReady
     ? `${dailyCommandConfirmedSymbolLabel} 已有最近确认结果：${dailyCommandExplainableResultLabel}；${dailyCommandTushareFirstLedgerLabel}；P2 ${dailyCommandP2SurfaceCompletionLabel}；${dailyCommandNextSessionReadableStatus}；下一步看股票量化推演和次日图谱。`
@@ -1610,24 +1782,162 @@ export default function CommandCenterHome() {
         ? `${dailyCommandConfirmedSymbolLabel} 已有本地回放线索；${homeQuantP1P2P3CheckpointLabel}；需要更新时再手动点击确认按钮。`
         : "本地联通已 ready；先在首页输入股票代码并点击确认，输入本身保持静默。"
       : "P0 本地联通还没全部 ready；先看一键启动预检，等 FastAPI、bootstrap、desktop preflight 和 React 变绿。";
+  const ordinaryHomeCurrentSymbol = homeQuantSymbolValidation.valid
+    ? homeQuantSymbolValidation.normalized
+    : dailyCommandConfirmedSymbol || "待输入";
+  const ordinaryHomeConfirmedSymbolNormalized = dailyCommandConfirmedSymbol.trim().toUpperCase();
+  const ordinaryHomeUserEditedNewSymbol =
+    homeQuantSymbolTouched &&
+    homeQuantSymbolValidation.valid &&
+    homeQuantSymbolValidation.normalized !== ordinaryHomeConfirmedSymbolNormalized;
+  const ordinaryHomeLocalDataSourceContract = {
+    schema_version: "ordinary_home_local_data_source_contract.v1",
+    cache_ready: dailyCommandP2CacheReady,
+    ledger_ready: dailyCommandP2LedgerReady,
+    packet_ready: dailyCommandP2PacketReady,
+    three_surface_ready: dailyCommandP2ThreeSurfaceReady,
+    label_when_ready: "本地数据已齐",
+    label_when_writing: "本地数据写入中",
+    label_before_confirm: "等待确认股票",
+    cache_get_external_calls: false,
+    readback_creates_task: false,
+    ordinary_home_renders_engineering_terms: false
+  };
+  const ordinaryHomeLocalData = dailyCommandP2ThreeSurfaceReady
+    ? ordinaryHomeLocalDataSourceContract.label_when_ready
+    : homeQuantVisibleTaskId
+      ? ordinaryHomeLocalDataSourceContract.label_when_writing
+      : dailyCommandP0LocalReadinessReady
+        ? ordinaryHomeLocalDataSourceContract.label_before_confirm
+        : "等待连接";
+  const ordinaryHomeRecentResultSymbol = ordinaryHomeCurrentSymbol === "待输入" ? "" : `${ordinaryHomeCurrentSymbol} `;
+  const ordinaryHomeExplainableSource = dailyCommandP3OneGlanceProviderVerified ? "来源已接上" : "来源待确认";
+  const ordinaryHomeExplainableGap = dailyCommandP3ExplainableMissingEvidenceCount
+    ? `仍有 ${String(dailyCommandP3ExplainableMissingEvidenceCount)} 项待补`
+    : "暂无额外缺口";
+  const ordinaryHomeExplainableResult = `${ordinaryHomeRecentResultSymbol}可解释：${ordinaryHomeExplainableSource}，${ordinaryHomeExplainableGap}；${ordinaryHomeLocalData}`;
+  const ordinaryHomeRecentResult = dailyCommandP3OneGlanceReadable
+    ? ordinaryHomeExplainableResult
+    : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
+      ? `${ordinaryHomeLocalData}，等待结论`
+      : "暂无最近结果";
+  const ordinaryHomeResultHint = dailyCommandP3OneGlanceReadable
+    ? ordinaryHomeUserEditedNewSymbol ? "点击确认新标的" : homeQuantTaskId ? "刷新刚确认的结果" : "下一步看结果"
+    : homeQuantTaskId || homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
+      ? ordinaryHomeUserEditedNewSymbol ? "点击确认新标的" : "稍后刷新本地回放，或先看股票量化推演"
+      : dailyCommandP0LocalReadinessReady
+        ? "输入股票代码并确认"
+        : "先恢复本地连接";
+  const ordinaryHomeNextLabel = dailyCommandNeedsStartupRecovery
+    ? "恢复本地连接"
+    : ordinaryHomeUserEditedNewSymbol
+      ? "确认股票"
+    : homeQuantTaskId
+      ? "刷新结果"
+    : dailyCommandP3OneGlanceReadable
+      ? "查看结果"
+      : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
+        ? "刷新结果"
+      : "确认股票";
+  const ordinaryHomeNextHref = dailyCommandNeedsStartupRecovery
+    ? "#desktop"
+    : dailyCommandP3OneGlanceReadable
+      ? "#factor/factor-score"
+      : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
+        ? "#home"
+        : dailyCommandHomeConfirmHref;
+  const ordinaryHomeConfirmTitle = homeQuantCanSubmit
+    ? `确认 ${homeQuantSymbolValidation.normalized}`
+    : homeQuantSymbol.trim()
+      ? "修正代码后再确认"
+      : "先输入股票代码";
+  const ordinaryHomeRefreshTitle = homeQuantReadbackRefreshing
+    ? "正在刷新本地结果"
+    : "只刷新本地结果";
+  const ordinaryHomeRecoveryTitle = "打开一键启动预检；按页面提示恢复本地连接";
+  const ordinaryHomePrimaryActionKind = dailyCommandNeedsStartupRecovery
+    ? "link"
+    : ordinaryHomeUserEditedNewSymbol
+      ? "confirm"
+    : homeQuantTaskId
+      ? "refresh"
+    : dailyCommandP3OneGlanceReadable
+      ? "link"
+    : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
+      ? "refresh"
+      : "confirm";
+  const ordinaryHomePrimaryActionDisabled = ordinaryHomePrimaryActionKind === "refresh"
+    ? homeQuantReadbackRefreshing
+    : ordinaryHomePrimaryActionKind === "confirm"
+      ? !homeQuantCanSubmit
+      : false;
+  const ordinaryHomePrimaryActionTitle = ordinaryHomePrimaryActionKind === "refresh"
+    ? ordinaryHomeRefreshTitle
+    : ordinaryHomePrimaryActionKind === "confirm"
+      ? ordinaryHomeConfirmTitle
+      : dailyCommandNeedsStartupRecovery
+        ? ordinaryHomeRecoveryTitle
+      : dailyCommandP3OneGlanceReadable
+        ? "只切换到结果入口：先看股票量化推演，再打开次日图谱；不会重新确认、不会刷新外部数据"
+        : ordinaryHomeResultHint;
+  const ordinaryHomePrimaryActionText = ordinaryHomePrimaryActionKind === "refresh" && homeQuantReadbackRefreshing
+    ? "刷新中..."
+    : ordinaryHomePrimaryActionKind === "confirm" && homeQuantSubmitting
+      ? "确认中..."
+      : ordinaryHomeNextLabel;
+  const ordinaryHomeRecoveryAuditNote =
+    "一键启动排障补充：失败时先运行 scripts/check_command_center_3.command 做 check-only 安全自检，不启动服务、不外联。";
+  const ordinaryHomeConfirmStatusLine = homeQuantSubmitting
+    ? "确认中：正在启动本地数据链，稍后自动回读结果。"
+    : homeQuantSubmitError
+      ? "确认失败：请先检查本地连接，再重新确认。"
+    : dailyCommandP3OneGlanceReadable
+      ? "已有结果：可以直接查看股票量化推演和次日图谱。"
+    : homeQuantTaskId || homeQuantVisibleTaskId
+      ? "已确认：本地数据正在回读，稍后刷新结果。"
+    : dailyCommandP2ThreeSurfaceReady
+      ? "本地数据已齐：等待可解释结论刷新。"
+    : dailyCommandP0LocalReadinessReady
+      ? "准备就绪：输入股票代码后点击确认。"
+      : "待恢复：先把本地连接接上。";
+  const ordinaryHomeStatusItems: MetricItem[] = [
+    {
+      label: "本地已接上",
+      value: dailyCommandP0LocalReadinessReady ? "已接上" : dailyCommandP0ReadbackPending ? "连接中" : "待恢复",
+      tone: dailyCommandP0LocalReadinessReady ? "good" : "warn"
+    },
+    {
+      label: "当前标的",
+      value: ordinaryHomeCurrentSymbol,
+      tone: ordinaryHomeCurrentSymbol === "待输入" ? "warn" : "good"
+    },
+    {
+      label: "最近结果",
+      value: ordinaryHomeRecentResult,
+      tone: dailyCommandP3OneGlanceReadable ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
+    }
+  ];
   const homeQuantReadbackRefreshLabel = homeQuantReadbackRefreshing
     ? "正在回读 CandidateRadar / Factor / Next / Tasks"
     : homeQuantReadbackLastRefresh
       ? `最近回读 ${homeQuantReadbackLastRefresh}`
       : "等待确认按钮后的本地回读";
+  const homeQuantManualReadbackButtonLabel = homeQuantReadbackRefreshing
+    ? "正在只读刷新本地回放"
+    : "只读刷新本地回放";
+  const homeQuantManualReadbackBoundary =
+    "只重新读取 CandidateRadar / Factor / Next / Tasks 本地 GET cache；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不交易";
   const homeQuantConfirmItems: MetricItem[] = [
     { label: "输入代码", value: homeQuantSymbolValidation.valid ? homeQuantSymbolValidation.normalized : homeQuantSubmitDisabledReason, tone: homeQuantSymbolValidation.valid ? "good" : "warn" },
     { label: "确认按钮", value: homeQuantCanSubmit ? `可点击：${homeQuantSymbolValidation.normalized} 将创建 Tushare-first POST task` : `不可点击：${homeQuantSubmitDisabledReason}`, tone: homeQuantCanSubmit ? "good" : "warn" },
     { label: "P0 闸门", value: dailyCommandP0LocalReadinessReady ? "ready：可点击确认" : "check：先恢复本地联通", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
     { label: "P1 手动确认", value: homeP1ManualConfirmLabel, tone: homeP1ManualConfirmReady ? "good" : "warn" },
-    { label: "P1 runtime", value: homeP1ManualConfirmStatus, tone: homeP1ManualConfirmReady ? "good" : "warn" },
     { label: "任务状态", value: homeQuantReadbackStatus, tone: homeQuantVisibleTaskId ? "good" : "warn" },
     { label: "回读刷新", value: homeQuantReadbackRefreshLabel, tone: homeQuantReadbackRefreshing || homeQuantReadbackLastRefresh ? "good" : "warn" },
-    { label: "链路 checkpoint", value: homeQuantP1P2P3CheckpointLabel, tone: homeQuantP1P2P3CheckpointReady ? "good" : "warn" },
-    { label: "Tushare-first", value: "确认按钮才 POST；DeepSeek skipped，成功后通过 GET cache 回放", tone: "good" },
-    { label: "浏览器验收", value: homeP1BrowserEvidenceLabel, tone: "warn" },
+    { label: "本地回放", value: homeQuantP1P2P3CheckpointLabel, tone: homeQuantP1P2P3CheckpointReady ? "good" : "warn" },
+    { label: "Tushare-first", value: "确认按钮才 POST；模型解释单独补证，成功后通过 GET cache 回放", tone: "good" },
     { label: "P2/P3 回放", value: dailyCommandSmallDataWritebackState, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
-    { label: "边界", value: "首页输入静默；不从页面打开、输入、React render 或 GET cache 外联；不交易、不改 action", tone: "good" }
+    { label: "边界", value: "首页输入静默；不从页面打开、输入、React render 或 GET cache 外联；不交易、不改交易策略", tone: "good" }
   ];
   const homeQuantConfirmButtonChainRows = [
     {
@@ -1646,7 +1956,7 @@ export default function CommandCenterHome() {
     },
     {
       链路段: "3. 确认按钮",
-      当前状态: homeP1ManualConfirmReady ? "点击后创建 Tushare-first POST task" : "等待 P1 runtime ready",
+      当前状态: homeP1ManualConfirmReady ? "点击后创建 Tushare-first POST task" : "等待按钮链路 ready",
       用户下一步: "点击一次确认按钮，然后看任务编号",
       证据: "POST /api/candidate-radar/quant-projection；include_tushare=true；include_deepseek=false",
       边界: "只有显式点击按钮才创建 task；页面打开、搜索输入、React render 和 GET cache 不外联。"
@@ -1663,7 +1973,7 @@ export default function CommandCenterHome() {
       当前状态: dailyCommandP2ThreeSurfaceReady ? "P2/P3 已从 cache / call_ledger / packet 回放" : "等待任务写入本地三面",
       用户下一步: "看股票量化推演、次日图谱和下一票雷达详情",
       证据: "CandidateRadar cache / call_ledger / packet",
-      边界: "回放不创建第二个 task、不补调 provider/model、不读取 token/key。"
+      边界: "回放不创建第二个 task、不补调 provider/model、不读取敏感凭据。"
     }
   ];
   const homeQuantPostConfirmNextStepLabel = dailyCommandP2ThreeSurfaceReady || dailyCommandP3OneGlanceReadable
@@ -1671,7 +1981,53 @@ export default function CommandCenterHome() {
     : homeQuantVisibleTaskId
       ? "先看任务进度；success 后刷新本地回放"
       : "先输入股票代码并点击确认按钮";
-  const homeQuantPostConfirmOneGlanceItems: MetricItem[] = candidateQuantPostConfirmOneGlanceRows.length
+  const homeQuantPostConfirmStageLabel = homeQuantSubmitting
+    ? "提交中：等待本地 task id"
+    : homeQuantReadbackRefreshing
+      ? "回读中：刷新下一票雷达、量化推演、次日图谱和任务目录"
+      : homeQuantP1P2P3CheckpointReady
+        ? "已回放：P1/P2/P3 可读"
+        : homeQuantVisibleTaskCanPoll
+          ? `进度中：${dailyCommandLatestConfirmReadableStatus}`
+          : homeQuantVisibleTaskId
+            ? `已接收：${dailyCommandLatestConfirmReadableStatus}`
+            : "未开始：等待确认按钮";
+  const homeQuantPostConfirmStageNext = homeQuantP1P2P3CheckpointReady
+    ? "任务编号出现或从本地 cache 恢复后，先看任务进度；成功后按股票量化推演和次日图谱回放；换标的再手动确认"
+    : homeQuantVisibleTaskId
+      ? homeQuantPostConfirmNextStepLabel
+      : "输入股票代码后点击确认按钮；输入本身不创建 task";
+  const homeQuantPostConfirmLocalProgressItems: MetricItem[] = [
+    {
+      label: "确认后阶段",
+      value: homeQuantPostConfirmStageLabel,
+      tone: homeQuantP1P2P3CheckpointReady || homeQuantVisibleTaskId ? "good" : "warn"
+    },
+    {
+      label: "同一链路",
+      value: homeQuantVisibleTaskId
+        ? `${dailyCommandConfirmedSymbolLabel} / ${homeQuantVisibleTaskId}`
+        : "等待确认按钮返回回执",
+      tone: homeQuantVisibleTaskId ? "good" : "warn"
+    },
+    {
+      label: "三面结果",
+      value: dailyCommandP2ThreeSurfaceReady && dailyCommandP3OneGlanceReadable
+        ? "P2 三面与 P3 结论同源回放"
+        : dailyCommandP2ThreeSurfaceReady
+          ? "P2 三面已回放，P3 结论等待刷新"
+          : "等待数据写入三面回放",
+      tone: dailyCommandP2ThreeSurfaceReady && dailyCommandP3OneGlanceReadable ? "good" : "warn"
+    },
+    {
+      label: "回放入口",
+      value: dailyCommandP3OneGlanceReadable
+        ? "股票量化推演和次日图谱按同一次确认打开"
+        : "任务 success 后刷新，再看股票量化推演和次日图谱",
+      tone: dailyCommandP3OneGlanceReadable ? "good" : "warn"
+    }
+  ];
+  const homeQuantPostConfirmBackendItems: MetricItem[] = candidateQuantPostConfirmOneGlanceRows.length
     ? candidateQuantPostConfirmOneGlanceRows.map((row) => {
         const rowTone = String(row.tone ?? "neutral");
         const tone = ["good", "warn", "bad", "neutral"].includes(rowTone) ? rowTone as MetricItem["tone"] : "neutral";
@@ -1686,26 +2042,91 @@ export default function CommandCenterHome() {
         };
       })
     : [
-        { label: "任务编号", value: homeQuantVisibleTaskId || "等待确认按钮返回 task id", tone: homeQuantVisibleTaskId ? "good" : "warn" },
-        { label: "任务来源", value: homeQuantVisibleTaskSource, tone: homeQuantVisibleTaskId ? "good" : "warn" },
+        { label: "确认回执", value: homeQuantVisibleTaskId || "等待确认按钮返回回执", tone: homeQuantVisibleTaskId ? "good" : "warn" },
+        { label: "确认来源", value: homeQuantVisibleTaskSource, tone: homeQuantVisibleTaskId ? "good" : "warn" },
+        { label: "确认后阶段", value: homeQuantPostConfirmStageLabel, tone: homeQuantVisibleTaskId || homeQuantP1P2P3CheckpointReady ? "good" : "warn" },
         { label: "先看哪里", value: homeQuantPostConfirmNextStepLabel, tone: dailyCommandP2ThreeSurfaceReady || dailyCommandP3OneGlanceReadable ? "good" : "warn" },
-        { label: "P2 写回", value: "cache / call_ledger / packet 三面回放", tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+        { label: "数据写入", value: "三面结果回放", tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
         { label: "P3 结果", value: "股票量化推演 + 次日图谱 + 下一票雷达详情", tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
-        { label: "DeepSeek", value: "skipped/pending 不阻塞；P5 governed executor 单独补", tone: "good" },
-        { label: "安全边界", value: "回放不创建第二个 task，不下单，不改 strategy action", tone: "good" }
+        { label: "DeepSeek", value: "单独治理，不阻塞当前结果", tone: "good" },
+        { label: "安全边界", value: "回放不重复启动确认链，不下单，不改交易策略", tone: "good" }
       ];
+  const homeQuantPostConfirmOneGlanceItems: MetricItem[] = [
+    ...homeQuantPostConfirmBackendItems,
+    ...homeQuantPostConfirmLocalProgressItems
+  ];
   const homeQuantPostConfirmReadableSentence = homeQuantVisibleTaskId
-    ? `已看到 ${homeQuantVisibleTaskId}（${homeQuantVisibleTaskSource}）；${dailyCommandP2ThreeSurfaceReady ? "P2 三面已可读" : "P2 三面等待本地回放"}；${dailyCommandP3OneGlanceReadable ? `P3 结论：${dailyCommandExplainableResultLabel}` : "P3 结论等待本地 cache 回放"}；下一步看股票量化推演和次日图谱。`
-    : "确认后会在这里显示任务编号、P2 三面、P3 结论和下一步入口。";
+    ? `${homeQuantPostConfirmStageLabel}；已拿到确认回执 ${homeQuantVisibleTaskId}（${homeQuantVisibleTaskSource}）；${dailyCommandP2ThreeSurfaceReady ? "P2 三面已可读" : "P2 三面等待本地回放"}；${dailyCommandP3OneGlanceReadable ? `P3 结论：${dailyCommandExplainableResultLabel}` : "P3 结论等待本地结果回放"}；下一步：${homeQuantPostConfirmStageNext}。`
+    : `${homeQuantPostConfirmStageLabel}；确认后会在这里显示确认回执、P2 三面、P3 结论和下一步入口。`;
+  const homeQuantResultRouteReady = dailyCommandP3OneGlanceReadable || dailyCommandP2ThreeSurfaceReady;
+  const homeQuantResultRouteSentence = homeQuantResultRouteReady
+    ? `${dailyCommandConfirmedSymbolLabel} 结果路标：先读 P3 结论，再看股票量化推演支持/压制，最后打开次日图谱；换标的仍回确认输入区。`
+    : "结果路标：确认前先看按钮说明；确认后按任务进度、P2 三面、P3 结论、股票量化推演、次日图谱顺序读。";
+  const homeQuantResultRouteBoundary =
+    "结果路标只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不交易、不改交易策略";
+  const homeQuantResultRouteItems: MetricItem[] = [
+    { label: "当前结果", value: dailyCommandP3OneGlanceReadable ? dailyCommandExplainableResultLabel : homeQuantPostConfirmStageLabel, tone: homeQuantResultRouteReady ? "good" : "warn" },
+    { label: "先看哪里", value: dailyCommandP3OneGlanceReadable ? "股票量化推演支持/压制" : "任务进度和 P2 三面写回", tone: homeQuantResultRouteReady ? "good" : "warn" },
+    { label: "图谱", value: dailyCommandNextSessionReadableStatus, tone: dailyCommandNextSessionTone },
+    { label: "换标的", value: "回确认输入区；输入静默，确认按钮才创建 Tushare-first task", tone: "good" },
+    { label: "边界", value: homeQuantResultRouteBoundary, tone: "good" }
+  ];
   const homeQuantPostConfirmReadbackState = homeQuantSubmitting
-    ? "提交中：等待 FastAPI 返回 task id；不会重复创建第二个 task。"
+    ? "提交中：等待本地后端返回确认回执；不会重复创建第二次确认。"
     : homeQuantReadbackRefreshing
-      ? "任务已接收：正在回读 CandidateRadar、股票量化推演、次日图谱和任务目录；这只是本地 GET 回读。"
+      ? "确认已接收：正在回读下一票雷达、股票量化推演、次日图谱和任务目录；这只是本地结果回读。"
     : homeQuantVisibleTaskCanPoll
-      ? "任务已接收：TaskStatusPanel 正在轮询本地 FastAPI，success 后自动刷新 CandidateRadar / Factor / Next / tasks 回读。"
+      ? "确认已接收：本地进度面板正在等待完成，成功后自动刷新下一票雷达、量化推演、次日图谱和任务目录。"
       : homeQuantVisibleTaskId
-        ? "最近确认链来自本地 cache 回放；首页不启动第二个 TaskStatusPanel，也不创建第二个 task。"
-        : "确认后首页会回读 CandidateRadar、股票量化推演、次日图谱和任务目录；输入代码本身保持静默。";
+        ? "最近确认链来自本地回放；首页不重复启动进度面板，也不创建第二次确认。"
+        : "确认后首页会回读下一票雷达、股票量化推演、次日图谱和任务目录；输入代码本身保持静默。";
+  const homeQuantImmediateReceiptSentence = homeQuantSubmitting
+    ? "正在提交：等待本地后端返回 task id；按钮临时禁用，避免重复点击。"
+    : homeQuantSubmitError
+      ? `确认未完成：${homeQuantSubmitError}；先复核 P0 四段，再由用户手动重试。`
+      : homeQuantTaskPanelTaskId
+        ? `本次确认已接收：task=${homeQuantTaskPanelTaskId}；下方任务进度会等待 success，成功后自动回读 CandidateRadar / Factor / Next / Tasks。`
+        : homeQuantRecoveredTaskId
+          ? `已有最近确认回放：task=${homeQuantRecoveredTaskId}；这是本地 cache 回放，不会重新启动进度面板。`
+          : "点击确认后这里立即显示 task id、下一步和安全边界；输入本身保持静默。";
+  const homeQuantImmediateReceiptItems: MetricItem[] = [
+    {
+      label: "本次确认回执",
+      value: homeQuantSubmitting
+        ? "提交中，等待 task id"
+        : homeQuantTaskPanelTaskId
+          ? `已接收 ${homeQuantTaskPanelTaskId}`
+          : homeQuantSubmitError
+            ? "未创建，先看恢复提示"
+            : homeQuantRecoveredTaskId
+              ? `最近回放 ${homeQuantRecoveredTaskId}`
+              : "等待确认按钮",
+      tone: homeQuantTaskPanelTaskId || homeQuantRecoveredTaskId ? "good" : homeQuantSubmitError ? "bad" : "warn"
+    },
+    {
+      label: "确认来源",
+      value: homeQuantTaskPanelTaskId
+        ? "本次首页确认按钮"
+        : homeQuantRecoveredTaskId
+          ? homeQuantVisibleTaskSource
+          : "等待用户点击确认",
+      tone: homeQuantTaskPanelTaskId || homeQuantRecoveredTaskId ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: homeQuantTaskPanelTaskId
+        ? "看任务进度；success 后自动回读三面"
+        : homeQuantRecoveredTaskId
+          ? "按最近确认链只读回放；换标的再手动确认"
+          : "输入代码后点击确认按钮",
+      tone: homeQuantTaskPanelTaskId || homeQuantRecoveredTaskId ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "只有再次显式点击才会创建新的确认 task；不自动调用 DeepSeek、不下单、不改交易策略",
+      tone: "good"
+    }
+  ];
   const homeQuantSubmitFailureRecoveryRows = [
     {
       恢复项: "1. 失败先停住",
@@ -1739,7 +2160,7 @@ export default function CommandCenterHome() {
     },
     {
       交接项: "股票量化推演",
-      当前状态: dailyCommandP2ThreeSurfaceReady ? "P2/P3 本地回放已可读" : "等待 task 写入 cache / ledger / packet",
+      当前状态: dailyCommandP2ThreeSurfaceReady ? "P2/P3 本地回放已可读" : "等待确认结果写入本地三面",
       用户下一步: "打开股票量化推演，复核支持/压制和 P3 可读结论",
       入口: "#factor",
       边界: "链接只切换本地模块；Factor 页 GET cache 不补调 Tushare/DeepSeek。"
@@ -1753,10 +2174,10 @@ export default function CommandCenterHome() {
     },
     {
       交接项: "下一票雷达结果",
-      当前状态: dailyCommandP3OneGlanceReadable ? "P3 可解释结果可回放" : "等待 CandidateRadar checkpoint",
+      当前状态: dailyCommandP3OneGlanceReadable ? "P3 可解释结果可回放" : "等待下一票雷达结果检查点",
       用户下一步: "需要换标的时回下一票雷达确认输入区；输入仍保持静默，确认按钮才创建 task",
       入口: "#candidates/candidate-radar-search-quant-projection",
-      边界: "结果回放只读 CandidateRadar cache / ledger / packet；不调用模型。"
+      边界: "结果回放只读 CandidateRadar cache / ledger / packet；不调用模型；结果回放只读下一票雷达本地三面结果。"
     }
   ];
   const dailyCommandFrontendBackendAutoLinkRows = [
@@ -1901,7 +2322,7 @@ export default function CommandCenterHome() {
       当前状态: dailyCommandConnectionState,
       用户下一步: dailyCommandNeedsStartupRecovery ? "先打开一键启动预检，按四段回读恢复本地联通" : "联通已通过，先在首页输入股票代码",
       证据: "GET /health + bootstrap status + desktop preflight cache",
-      边界: "页面打开、React render 和 GET cache 只读；不启动服务、不外联、不读取 token/key"
+      边界: "页面打开、React render 和 GET cache 只读；不启动服务、不外联、不读取 token/key；敏感凭据也不读取"
     },
     {
       阶段: "P1 确认按钮触发 Tushare-first",
@@ -1918,14 +2339,14 @@ export default function CommandCenterHome() {
       证据: dailyCommandTushareFirstLedgerReady
         ? "CandidateRadar small_data_writeback_summary + source task call_ledger"
         : "CandidateRadar 搜票确认 POST task contract",
-      边界: "搜索输入只做本地校验；只有确认按钮创建 POST task / worker，DeepSeek skipped"
+      边界: "搜索输入只做本地校验；只有确认按钮创建 POST task / worker，模型解释单独补证"
     },
     {
       阶段: "P2 小数据写入 cache / ledger / packet",
       当前状态: dailyCommandSmallDataWritebackState,
       用户下一步: "看 task id 和 TaskStatusPanel，成功后刷新本地 cache / ledger / packet 回放",
       证据: "ordinary_writeback_surface_summary_rows + call_ledger + packet",
-      边界: "GET cache 只读回放；不补调 Tushare、DeepSeek，不展示 token/key/raw log"
+      边界: "GET cache 只读回放；不补调 Tushare、DeepSeek，不展示敏感凭据或 raw log"
     },
     {
       阶段: "P3 候选、量化推演、次日图谱",
@@ -1950,8 +2371,8 @@ export default function CommandCenterHome() {
     },
     {
       阶段: "P6 回到 14 LTG direct evidence",
-      当前状态: "re-entry gate visible；strict closeout 仍是 0/14",
-      用户下一步: "按 LTG next acceptance action rows 逐项补 current-head direct evidence",
+      当前状态: `re-entry gate visible；strict closeout ${dailyCommandP6StrictCloseoutState}`,
+      用户下一步: dailyCommandP6NextEvidence,
       证据: "usable_path_strict_closeout_handoff_rows.P6",
       边界: "P0-P6 当前 checkpoint 不是 14 LTG 完成；P0-P5 可用化 checkpoint 不是 14 LTG 完成；mock、matrix、sanitizer、local receipt 不能关闭 LTG"
     }
@@ -1965,9 +2386,16 @@ export default function CommandCenterHome() {
       边界: "P0-P6 当前 checkpoint 不是 14 LTG 完成；P0-P5 可用化 checkpoint 不是 14 LTG 完成"
     },
     {
+      回归项: "1a. strict closeout 状态",
+      当前状态: "re-entry gate visible；LTG closeout 未关闭",
+      用户下一步: "保持 LTG closeout 关闭，后续按 direct evidence 补证",
+      入口: "#migration",
+      边界: "只读迁移状态，不关闭 LTG"
+    },
+    {
       回归项: "2. strict closeout 入口",
-      当前状态: "strict closeout 仍是 0/14；只按 current-head direct evidence 关闭",
-      用户下一步: "打开迁移状态页，按 LTG next acceptance action rows 逐项补证",
+      当前状态: `只按 current-head direct evidence 关闭；当前 closeout=${dailyCommandP6StrictCloseoutState}；remaining=${String(dailyCommandP6StrictCloseoutRemaining)}`,
+      用户下一步: dailyCommandP6NextEvidence,
       入口: "#migration",
       边界: "mock、matrix、sanitizer、local receipt 不能关闭 LTG"
     },
@@ -2070,7 +2498,7 @@ export default function CommandCenterHome() {
     { label: "普通下一步", value: dailyCommandPrimaryActionLabel, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
     { label: "P5", value: "DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱", tone: "good" },
     { label: "P6", value: "14 LTG strict closeout 只作为回归门，不混入普通投研路径", tone: "warn" },
-    { label: "边界", value: "普通优先模式不展示 raw packet、raw log、token/key、provider error 或未脱敏模型输出", tone: "good" }
+    { label: "边界", value: "普通优先模式不展示 raw packet、raw log、敏感凭据、provider error 或未脱敏模型输出", tone: "good" }
   ];
   const dailyCommandConnectivityPriority = dailyCommandNeedsStartupRecovery
     ? "先恢复本地联通；缓存和投研入口等 health/preflight 变绿后再看"
@@ -2260,6 +2688,58 @@ export default function CommandCenterHome() {
       边界: dailyCommandDeepSeekGovernanceBoundary
     }
   ];
+  const dailyCommandP2P3ConnectionReady = dailyCommandP2ThreeSurfaceReady && dailyCommandP3OneGlanceReadable;
+  const dailyCommandP2P3ConnectionSentence = dailyCommandP2P3ConnectionReady
+    ? `${dailyCommandConfirmedSymbolLabel} P2/P3 已接通：P2 cache / call_ledger / packet 三面和 P3 可读结果都能从首页同一条确认链回放。`
+    : `${dailyCommandConfirmedSymbolLabel} P2/P3 等待接通：${dailyCommandP2ThreeSurfaceReady ? "P2 三面已回放" : `P2 还缺 ${dailyCommandP2MissingSurfaceLabel}`}；${dailyCommandP3OneGlanceReadable ? "P3 可读结果已回放" : "P3 可读结果待回放"}。`;
+  const dailyCommandP2P3ConnectionPrimaryHref = dailyCommandP2P3ConnectionReady
+    ? "#factor"
+    : dailyCommandLatestTaskId
+      ? "#tasks"
+      : dailyCommandCandidateConfirmHref;
+  const dailyCommandP2P3ConnectionPrimaryLabel = dailyCommandP2P3ConnectionReady
+    ? "去股票量化推演复核"
+    : dailyCommandLatestTaskId
+      ? "看最近确认进度"
+      : "确认一只股票";
+  const dailyCommandP2P3ConnectionActionBoundary =
+    "P2/P3 接通入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek、不交易";
+  const dailyCommandP2P3ConnectionItems: MetricItem[] = [
+    {
+      label: "P2 三面",
+      value: dailyCommandP2ThreeSurfaceReady ? dailyCommandP2SurfaceCompletionLabel : `缺口：${dailyCommandP2MissingSurfaceLabel}`,
+      tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn"
+    },
+    {
+      label: "P3 结果",
+      value: dailyCommandP3OneGlanceReadable ? dailyCommandExplainableResultLabel : "等待可读结论",
+      tone: dailyCommandP3OneGlanceReadable ? "good" : "warn"
+    },
+    {
+      label: "同源确认",
+      value: dailyCommandP3OneGlanceSourceTask || dailyCommandLatestTaskId || "等待确认 task",
+      tone: dailyCommandP3OneGlanceSourceTask && dailyCommandP3OneGlanceSourceTask !== "等待确认回执" ? "good" : dailyCommandLatestTaskId ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: dailyCommandP2P3ConnectionReady
+        ? "打开股票量化推演和次日图谱复核；不要把结果当买入指令"
+        : dailyCommandP2ThreeSurfaceReady
+          ? "等待 P3 可读结果回放；不要从首页重复启动确认链"
+          : "先看最近确认进度；任务完成后刷新本地三面回放",
+      tone: dailyCommandP2P3ConnectionReady ? "good" : "warn"
+    },
+    {
+      label: "主入口",
+      value: dailyCommandP2P3ConnectionPrimaryLabel,
+      tone: dailyCommandP2P3ConnectionReady ? "good" : dailyCommandLatestTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "边界",
+      value: dailyCommandP2P3ConnectionActionBoundary,
+      tone: "good"
+    }
+  ];
   const dailyCommandSummaryPrimaryItems: MetricItem[] = [
     { label: "下一步", value: dailyCommandNextClick },
     { label: "本地联通", value: dailyCommandConnectionState, tone: dailyCommandHealthOk ? "good" : "warn" },
@@ -2281,6 +2761,7 @@ export default function CommandCenterHome() {
     { label: "启动成功条件", value: dailyCommandStartupSuccessCondition, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
     { label: "启动诊断", value: dailyCommandStartupDiagnosticSurfaces, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
     { label: "启动失败处理", value: dailyCommandStartupFailureAction, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+    { label: "恢复闸门表达式", value: dailyCommandStartupRecoveryGateExpression, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
     { label: "恢复回读", value: dailyCommandStartupReadbackLabel, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
     { label: "回读顺序", value: dailyCommandStartupReadbackOrder, tone: "good" },
     { label: "回读边界", value: dailyCommandStartupReadbackBoundary, tone: "good" },
@@ -2389,6 +2870,7 @@ export default function CommandCenterHome() {
       if (!res.ok || !nextTaskId) {
         setHomeQuantSubmitError(res.error ?? "home_quant_projection_task_not_created");
       } else {
+        setHomeQuantSymbolTouched(false);
         refreshHomeResearchReadback();
       }
     }).catch((err) => {
@@ -2440,10 +2922,43 @@ export default function CommandCenterHome() {
       <div className="page-head">
         <div>
           <h1>今日作战台</h1>
-          <p>先看下一步、数据来源、缺少证据和仅供研究边界。</p>
+          <p>先看能不能用、当前标的、最近结果和下一步。</p>
         </div>
         <StatusBadge label={dailyCommandStatusLabel} tone={dailyCommandHealthOk ? "good" : "warn"} />
       </div>
+      <PacketCard title="今日可用" subtitle="普通首页只看能不能用、看哪只票、有没有结果、下一步点哪里" status={dailyCommandP0LocalReadinessReady ? "ready" : "check"}>
+        <MetricGrid items={ordinaryHomeStatusItems} />
+        <div id="home-p1-symbol-confirm" className="actions" aria-label="daily command ordinary home primary controls">
+          <input
+            value={homeQuantSymbol}
+            onChange={(event) => {
+              setHomeQuantSymbolTouched(true);
+              setHomeQuantSymbol(event.target.value);
+              setHomeQuantSubmitError("");
+            }}
+            placeholder="002008.SZ 或 002008"
+            aria-label="ordinary home stock symbol"
+            title="输入只做本地校验"
+          />
+          {ordinaryHomePrimaryActionKind === "link" ? (
+            <a href={ordinaryHomeNextHref} title={ordinaryHomePrimaryActionTitle} aria-label="open ordinary home next action">{ordinaryHomePrimaryActionText}</a>
+          ) : (
+            <button
+              disabled={ordinaryHomePrimaryActionDisabled}
+              onClick={ordinaryHomePrimaryActionKind === "refresh" ? refreshHomeResearchReadback : launchHomeQuantProjection}
+              title={ordinaryHomePrimaryActionTitle}
+              aria-label="run ordinary home next action"
+            >{ordinaryHomePrimaryActionText}</button>
+          )}
+        </div>
+        {homeQuantSubmitError ? <p className="ordinary-status-note" aria-live="polite">确认失败：请检查本地连接后重试。</p> : null}
+        <p className="ordinary-status-note" aria-label="ordinary home confirm status" aria-live="polite">{ordinaryHomeConfirmStatusLine}</p>
+      </PacketCard>
+      <details className="developer-audit-details" aria-label="daily command research assist audit details">
+        <summary>研究辅助 / 审计详情</summary>
+        {/* Regression guard: 先看下一步、数据来源、缺少证据和仅供研究边界。 */}
+        <p className="risk-note">这里保留任务编号、数据凭证、结果包、边界说明和模型治理状态；普通使用先看上方“今日可用”。</p>
+        <p className="risk-note">{ordinaryHomeRecoveryAuditNote}</p>
       <PageStateBanner
         loading={loading}
         error={error}
@@ -2462,10 +2977,15 @@ export default function CommandCenterHome() {
             { label: "安全边界", value: "打开页面和输入代码不外联；确认按钮才触发 Tushare-first", tone: "good" }
           ]}
         />
+        <div aria-label="daily command usable now one glance">
+          <h3>今日可用状态</h3>
+          <MetricGrid items={dailyCommandUsableNowOneGlanceItems} />
+          <p className="risk-note">打开软件后先看这六格：本地能不能用、当前标的、最近任务、P2/P3、下一步和安全边界；它只读本地回放，不创建 task。</p>
+        </div>
         <div aria-label="daily command local fastapi open proof">
           <h3>打开后接线证明</h3>
           <MetricGrid items={dailyCommandOpenFastApiProofItems} />
-          <p className="risk-note">这条证明只合成当前页面已拿到的 health、bootstrap、desktop preflight 和 React 状态；它不启动 FastAPI/Vite、不创建 task、不调用 Tushare/DeepSeek/GitHub，也不读取或展示 token/key。</p>
+          <p className="risk-note">这条证明只合成当前页面已拿到的 health、bootstrap、desktop preflight 和 React 状态；它不启动 FastAPI/Vite、不创建 task、不调用 Tushare/DeepSeek/GitHub，也不读取或展示 token/key 或敏感凭据。</p>
         </div>
         <div className="actions" aria-label="daily command fastapi connected user actions">
           <a href={dailyCommandPrimaryActionHref} aria-label="open primary action after local fastapi connection">{dailyCommandPrimaryActionLabel}</a>
@@ -2483,7 +3003,7 @@ export default function CommandCenterHome() {
               { label: "接口读法", value: "多接口本地聚合：health / bootstrap / preflight / radar / factor / next / tasks", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" }
             ]}
           />
-          <p className="risk-note">接线地址来自前端本机 FastAPI auto-link ledger；候选地址只展示本机 127.0.0.1/localhost fallback。该卡只读 FastAPI health、bootstrap status 和 desktop preflight cache；不会启动服务、不会创建 task、不会调用 Tushare/DeepSeek/GitHub，也不会暴露 token/key。</p>
+          <p className="risk-note">接线地址来自前端本机 FastAPI auto-link ledger；候选地址只展示本机 127.0.0.1/localhost fallback。该卡只读 FastAPI health、bootstrap status 和 desktop preflight cache；不会启动服务、不会创建 task、不会调用 Tushare/DeepSeek/GitHub，也不会暴露 token/key 或敏感凭据。</p>
           <div aria-label="daily command home aggregate readback">
             <h3>首页多接口回读</h3>
             <p className="risk-note">首页是多个本地只读接口合成的作战台，不依赖单个总 cache URL；看到某个猜测 URL 不存在，不代表软件没接上。</p>
@@ -2503,9 +3023,13 @@ export default function CommandCenterHome() {
         <p className="ordinary-status-note" aria-label="daily command usable path front readable status" aria-live="polite">{homeQuantP1P2P3CheckpointLabel}</p>
         <div aria-label="daily command current research snapshot">
           <h3>最近确认投研快照</h3>
+          <p className="ordinary-status-note" aria-label="daily command p1 visible progress sentence" aria-live="polite">{dailyCommandP1VisibleProgressSentence}</p>
+          <p className="ordinary-status-note" aria-label="daily command p2 visible writeback sentence" aria-live="polite">{dailyCommandP2VisibleWritebackSentence}</p>
+          <p className="ordinary-status-note" aria-label="daily command p3 visible explainable sentence" aria-live="polite">{dailyCommandP3VisibleExplainableSentence}</p>
+          <p className="ordinary-status-note" aria-label="daily command p5 visible governance sentence" aria-live="polite">{dailyCommandP5VisibleGovernanceSentence}</p>
           <p className="ordinary-status-note" aria-label="daily command current research snapshot readable sentence" aria-live="polite">{dailyCommandCurrentResearchSnapshotReadableSentence}</p>
           <MetricGrid items={dailyCommandCurrentResearchSnapshotItems} />
-          <p className="risk-note">这张首屏快照只读最近确认 task、Tushare-first ledger、P2 三面、P3 可读结论和次日图谱回放；不会创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key，也不交易或修改 strategy action。</p>
+          <p className="risk-note">这张首屏快照只读最近确认 task、Tushare-first ledger、P2 三面、P3 可读结论和次日图谱回放；P5 governed 状态只作非阻塞摘要；不会创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key 或敏感凭据，也不交易或修改 strategy action。</p>
         </div>
         <DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows} />
         <div className="actions" aria-label="daily command usable path front actions">
@@ -2513,7 +3037,7 @@ export default function CommandCenterHome() {
           <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读回放本地 P2/P3 结果" aria-label="open stock quant from usable path progress">股票量化推演</a>
           <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读回放本地图谱数据" aria-label="open next session from usable path progress">次日图谱</a>
         </div>
-        <p className="risk-note">这张进度卡只读首页已回放的 health、CandidateRadar cache、task index 和本地结果；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不会读取 token/key、不会交易或修改 strategy action。</p>
+        <p className="risk-note">这张进度卡只读首页已回放的 health、CandidateRadar cache、task index 和本地结果；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不会读取 token/key、不会交易或修改 strategy action；敏感凭据仍不展示。</p>
       </PacketCard>
       <PacketCard title="P0 现在能不能用" subtitle="普通用户打开软件后的 10 秒判断" status={dailyCommandP0LocalReadinessReady ? "ready" : "check"}>
         <MetricGrid
@@ -2533,13 +3057,8 @@ export default function CommandCenterHome() {
         <p className="risk-note">P0 ready 只说明本机前后端已接上；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。</p>
       </PacketCard>
       <PacketCard title="首页确认股票代码" subtitle="P1 普通入口：输入静默，点击确认才创建 Tushare-first task" status={homeQuantVisibleTaskId ? "task_visible" : dailyCommandP0LocalReadinessReady ? "ready" : "p0_check"}>
-        <div id="home-p1-symbol-confirm" aria-label="daily command home p1 symbol confirmation">
+        <div aria-label="daily command home p1 symbol confirmation">
           <MetricGrid items={homeQuantConfirmItems} />
-          <div aria-label="daily command home p1 confirm button chain proof">
-            <h3>确认按钮链路证明</h3>
-            <p className="risk-note">点击前先看这五步：输入静默、P0 gate、确认按钮创建 task、任务进度、本地三面回放；本表只解释链路，不创建 task。</p>
-            <DataLineageTable rows={homeQuantConfirmButtonChainRows} />
-          </div>
           <div className="actions" aria-label="daily command home p1 symbol confirm actions">
             <input
               value={homeQuantSymbol}
@@ -2565,44 +3084,89 @@ export default function CommandCenterHome() {
             <button
               disabled={!homeQuantCanSubmit}
               onClick={launchHomeQuantProjection}
-              title={homeQuantSubmitDisabledReason}
-              aria-label={homeQuantSubmitDisabledReason}
+              title={homeQuantSubmitActionHint}
+              aria-label={homeQuantSubmitActionHint}
             >{homeQuantSubmitting ? "提交中..." : "确认股票并启动 Tushare-first"}</button>
+            <button
+              disabled={homeQuantReadbackRefreshing}
+              onClick={refreshHomeResearchReadback}
+              title={homeQuantManualReadbackBoundary}
+              aria-label="refresh home local research readback only"
+            >{homeQuantManualReadbackButtonLabel}</button>
             <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达详情页；同一条 P1 确认链路" aria-label="open candidate radar detail from home p1 confirm">下一票雷达详情</a>
           </div>
+          <p className="ordinary-status-note" aria-label="daily command home p1 confirm action hint" aria-live="polite">{homeQuantSubmitActionHint}</p>
+          <p className="ordinary-status-note" aria-label="daily command home manual readback boundary">{homeQuantManualReadbackBoundary}</p>
+          <p className="ordinary-status-note" aria-label="daily command home p1 server contract line">{homeQuantP1ServerContractLine}</p>
+          <details className="developer-audit-details" aria-label="daily command home p1 confirm button chain proof">
+            <summary>查看确认链路证明</summary>
+            <h3>确认按钮链路证明</h3>
+            <p className="risk-note">点击前先看这五步：输入静默、P0 gate、确认按钮创建 task、任务进度、本地三面回放；需要排查时再看这五步：输入静默、P0 gate、确认按钮创建 task、任务进度、本地三面回放；本表只解释链路，不创建 task。</p>
+            <p className="risk-note">浏览器网络证据：{homeP1BrowserEvidenceLabel}；它不阻塞手动确认使用，也不作为生产验收完成声明。</p>
+            <DataLineageTable rows={homeQuantConfirmButtonChainRows} />
+          </details>
           <p className="risk-note" aria-label="daily command home p1 symbol autofill boundary">当前标的自动填入只来自 CandidateRadar cache；不会自动点击确认、不创建 task、不调用 Tushare/DeepSeek，手动修改后不再覆盖输入。</p>
           <p className="ordinary-status-note" aria-label="daily command home post confirm readback state" aria-live="polite">{homeQuantPostConfirmReadbackState}</p>
+          <div aria-label="daily command home p1 immediate receipt">
+            <p className="ordinary-status-note" aria-label="daily command home p1 immediate receipt sentence" aria-live="polite">{homeQuantImmediateReceiptSentence}</p>
+            <MetricGrid items={homeQuantImmediateReceiptItems} />
+          </div>
+          <div aria-label="daily command home post confirm handoff">
+            <h3>确认后看板</h3>
+            <p className="risk-note">确认后下一步常驻在这里：没有回执时先看点击后会出现什么；任务编号出现或从本地 cache 恢复后，先看任务进度；成功后按股票量化推演和次日图谱回放。这里的链接只切换本地页面，不重复启动确认链。</p>
+            <p className="ordinary-status-note" aria-label="daily command home post confirm readable result" aria-live="polite">{homeQuantPostConfirmReadableSentence}</p>
+            <div aria-label="daily command home result route strip">
+              <h3>确认后结果路标</h3>
+              <p className="ordinary-status-note" aria-label="daily command home result route sentence" aria-live="polite">{homeQuantResultRouteSentence}</p>
+              <MetricGrid items={homeQuantResultRouteItems} />
+              <div className="actions" aria-label="daily command home result route actions">
+                <a href="#factor/factor-score" title="股票量化推演入口：切换到支持/压制摘要；只读回放本地结果" aria-label="open factor support suppress from home result route">股票量化推演</a>
+                <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读回放本地图谱" aria-label="open next chart from home result route">次日图谱</a>
+                <a href={dailyCommandCandidateConfirmHref} title="切换到确认输入区；换标的仍需确认按钮" aria-label="open confirm input from home result route">换一只票</a>
+              </div>
+              <p className="risk-note">{homeQuantResultRouteBoundary}</p>
+            </div>
+            {homeQuantVisibleTaskId ? (
+              <>
+                <div aria-label="daily command home p1 p2 p3 checkpoint">
+                  <h3>P1/P2/P3 一眼 checkpoint</h3>
+                  <MetricGrid items={homeQuantP1P2P3CheckpointItems} />
+                  <p className="risk-note">这条 checkpoint 只合成现有确认回执、Tushare 数据回放、P2 三面、P3 可读结论和量化推演入口；这条 checkpoint 只合成现有 task id、Tushare ledger、P2 三面、P3 可读结论和 Factor handoff；不创建 task、不补调 provider/model、不展示 raw packet；不重复启动确认链、不补调数据源或模型、不展示原始包。</p>
+                </div>
+              </>
+            ) : null}
+            <div aria-label="daily command home post confirm one glance">
+              <MetricGrid items={homeQuantPostConfirmOneGlanceItems} />
+            </div>
+            <div aria-label="daily command home post confirm p2 three surfaces">
+              <h3>P2 三面写回</h3>
+              <MetricGrid items={dailyCommandP2ThreeSurfaceProofItems} />
+              <p className="risk-note">确认后先看这三面：cache 能刷新回放、call_ledger 来自确认任务、packet 是本地结果包；本区只读已有三面，不创建第二个 task、不补调 Tushare/DeepSeek。</p>
+            </div>
+            <div aria-label="daily command home post confirm p3 explainable result">
+              <h3>P3 可解释结果</h3>
+              <p className="ordinary-status-note" aria-live="polite">{dailyCommandP3VisibleExplainableSentence}</p>
+              <MetricGrid items={dailyCommandP3ExplainableProofItems} />
+              <p className="risk-note">确认后再看这组解释：结论、来源、缺口、模型状态和结果入口都来自本地 cache / ledger / packet；这里只读回放，不创建 task、不调用 DeepSeek、不生成买卖动作；不会创建 task、不会调用 DeepSeek、不会交易或修改 strategy action。</p>
+            </div>
+            <DataLineageTable rows={homeQuantPostConfirmHandoffRows} />
+            <div className="actions" aria-label="daily command home post confirm handoff actions">
+              <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after home symbol confirm">查看任务进度</a>
+              <a href="#factor" title="切换到股票量化推演；只读回放确认后的本地结果" aria-label="open factor after home symbol confirm">股票量化推演</a>
+              <a href="#next" title="切换到次日图谱；只读回放确认后的本地图谱" aria-label="open next session after home symbol confirm">次日图谱</a>
+              <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="open candidate radar confirm input after home symbol confirm">下一票雷达确认输入区</a>
+            </div>
+            <p className="risk-note">确认前看板只是预览；确认后只回放本地确认结果和数据写入状态。它不自动点击确认、不调用 Tushare/DeepSeek、不下单、不改交易策略。</p>
+          </div>
           {homeQuantSubmitError ? (
             <div aria-label="daily command home p1 submit failure recovery">
               <p className="risk-note" aria-live="polite">首页确认任务创建失败：{homeQuantSubmitError}</p>
               <DataLineageTable rows={homeQuantSubmitFailureRecoveryRows} />
             </div>
           ) : null}
-          {homeQuantVisibleTaskId ? (
-            <div aria-label="daily command home post confirm handoff">
-              <h3>确认后下一步</h3>
-              <p className="risk-note">任务编号出现或从本地 cache 恢复后，先看任务进度；成功后按股票量化推演和次日图谱回放。这里的链接只切换本地页面，不创建第二个 task。</p>
-              <p className="ordinary-status-note" aria-label="daily command home post confirm readable result" aria-live="polite">{homeQuantPostConfirmReadableSentence}</p>
-              <div aria-label="daily command home p1 p2 p3 checkpoint">
-                <h3>P1/P2/P3 一眼 checkpoint</h3>
-                <MetricGrid items={homeQuantP1P2P3CheckpointItems} />
-                <p className="risk-note">这条 checkpoint 只合成现有 task id、Tushare ledger、P2 三面、P3 可读结论和 Factor handoff；不创建 task、不补调 provider/model、不展示 raw packet。</p>
-              </div>
-              <div aria-label="daily command home post confirm one glance">
-                <MetricGrid items={homeQuantPostConfirmOneGlanceItems} />
-              </div>
-              <DataLineageTable rows={homeQuantPostConfirmHandoffRows} />
-              <div className="actions" aria-label="daily command home post confirm handoff actions">
-                <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after home symbol confirm">查看任务进度</a>
-                <a href="#factor" title="切换到股票量化推演；只读回放确认后的本地结果" aria-label="open factor after home symbol confirm">股票量化推演</a>
-                <a href="#next" title="切换到次日图谱；只读回放确认后的本地图谱" aria-label="open next session after home symbol confirm">次日图谱</a>
-                <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="open candidate radar confirm input after home symbol confirm">下一票雷达确认输入区</a>
-              </div>
-            </div>
-          ) : null}
           {homeQuantVisibleTaskCanPoll ? <TaskStatusPanel taskId={homeQuantVisibleTaskId} onSuccess={refreshHomeResearchReadback} /> : null}
           {homeQuantVisibleTaskId && !homeQuantVisibleTaskCanPoll ? (
-            <p className="risk-note" aria-label="daily command home recovered task cache-only notice">最近确认 task 来自 CandidateRadar cache 只读回放；当前任务目录没有可轮询记录，首页不会启动 TaskStatusPanel，也不会创建第二个 task。</p>
+            <p className="risk-note" aria-label="daily command home recovered task cache-only notice">最近确认 task 来自 CandidateRadar cache 只读回放；最近任务来自 CandidateRadar cache 只读回放，不启动 TaskStatusPanel 轮询；当前任务目录没有可轮询记录，首页不会启动 TaskStatusPanel，也不会创建第二个 task。</p>
           ) : null}
           {homeQuantReceipt ? (
             <details className="developer-audit-details" aria-label="daily command home p1 receipt audit details">
@@ -2611,16 +3175,19 @@ export default function CommandCenterHome() {
               <TaskLaunchReceipt receipt={homeQuantReceipt} />
             </details>
           ) : null}
-          <p className="risk-note">首页确认按钮复用 POST /api/candidate-radar/quant-projection：P0 gate 通过后才启用；成功后只从 CandidateRadar cache / call_ledger / packet 回放 P2/P3。P1 手动确认链路已接入本地 runtime；浏览器网络证据和自动提交仍单独补，不当作生产验收。页面打开、输入、React render 和 GET cache 不外联，不调用 DeepSeek，不交易、不改 strategy action。</p>
+          <details className="developer-audit-details" aria-label="daily command home p1 technical boundary details">
+            <summary>确认按钮技术边界</summary>
+            <p className="risk-note">首页确认按钮复用 POST /api/candidate-radar/quant-projection：P0 gate 通过后才启用；成功后只从 CandidateRadar cache / call_ledger / packet 回放 P2/P3。P1 手动确认链路已接入本地 runtime；浏览器网络证据和自动提交仍单独补，不当作生产验收。页面打开、输入、React render 和 GET cache 不外联，不调用 DeepSeek，不交易、不改交易策略。</p>
+          </details>
         </div>
       </PacketCard>
-      <PacketCard title="P1 Tushare-first 链路速读" subtitle="确认按钮、Tushare ledger、DeepSeek skipped 和回放边界" status={dailyCommandTushareFirstLedgerReady ? "ledger_ready" : "waiting_confirm"}>
+      <PacketCard title="P1 Tushare-first 链路速读" subtitle="确认按钮、数据回放、DeepSeek 单独治理和安全边界" status={dailyCommandTushareFirstLedgerReady ? "ledger_ready" : "waiting_confirm"}>
         <MetricGrid
           items={[
             { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
             { label: "P1 最短路径", value: dailyCommandP1ShortestPathLabel, tone: dailyCommandP1ShortestPathReady ? "good" : "warn" },
             { label: "确认链", value: dailyCommandTushareFirstStatus, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
-            { label: "Tushare ledger", value: dailyCommandTushareFirstLedgerLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
+            { label: "数据回放", value: dailyCommandTushareFirstLedgerLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
             { label: "DeepSeek", value: dailyCommandTushareFirstDeepSeekLabel, tone: "good" },
             { label: "下一步", value: dailyCommandTushareFirstLedgerReady ? "继续看 P2 三面和 P3 结论" : "先在首页或下一票雷达点击确认按钮", tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
             { label: "边界", value: dailyCommandTushareFirstBoundary, tone: "good" }
@@ -2638,43 +3205,48 @@ export default function CommandCenterHome() {
           />
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_p1_shortest_path_checkpoint：普通用户直接看确认按钮后的 Tushare-first 是否跑通、下一步去哪，不需要展开 raw packet 或工程审计。</p>
         </div>
-        <div aria-label="daily command p1 tushare first front row">
-          <h3>P1 链路四步</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_tushare_first_chain_rows：普通用户只看输入是否静默、确认按钮是否创建 task、Tushare ledger 是否回放、DeepSeek 是否 skipped；工程明细继续下沉。</p>
-          <DataLineageTable rows={dailyCommandTushareFirstRows} />
-        </div>
-        <div aria-label="daily command p1 confirm task readback proof">
-          <h3>P1 确认任务回放</h3>
-          <MetricGrid
-            items={[
-              { label: "确认回执", value: candidateQuantConfirmedTaskReceiptRows.length ? `${candidateQuantConfirmedTaskReceiptRows.length} 行已回放` : "等待确认回执", tone: candidateQuantConfirmedTaskReceiptRows.length ? "good" : "warn" },
-              { label: "任务状态", value: candidateQuantTaskReadbackRows.length ? `${candidateQuantTaskReadbackRows.length} 行已回放` : "等待 task 状态", tone: candidateQuantTaskReadbackRows.length ? "good" : "warn" },
-              { label: "来源任务", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
-              { label: "回放边界", value: "只读 search_quant_projection_confirmed_task_receipt_rows / task_readback_rows；不创建第二个 task", tone: "good" }
-            ]}
-          />
-          <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_confirmed_task_receipt_rows 和 search_quant_projection_task_readback_rows，让点击确认后的 task id、安全步骤和 TaskStatusPanel 回放直接可见。</p>
-          <DataLineageTable rows={dailyCommandP1ConfirmTaskReadbackRows} />
-        </div>
+        <details className="developer-audit-details" aria-label="daily command p1 table details demoted">
+          <summary>P1 链路表格明细</summary>
+          <p className="risk-note">普通路径先看上方 P1 总览、确认后看板、P2 三面和 P3 结论；P1 四步表和确认回执表只在排障或验收时展开。</p>
+          <div aria-label="daily command p1 tushare first front row">
+            <h3>P1 链路四步</h3>
+            <p className="risk-note">优先读取 CandidateRadar 的 ordinary_tushare_first_chain_rows：普通用户只看输入是否静默、确认是否接收、Tushare 数据是否回放、DeepSeek 是否单独治理；输入是否静默、确认按钮是否创建 task、Tushare ledger 是否回放、DeepSeek 是否 skipped；工程明细继续下沉。</p>
+            <DataLineageTable rows={dailyCommandTushareFirstRows} />
+          </div>
+          <div aria-label="daily command p1 confirm task readback proof">
+            <h3>P1 确认回执</h3>
+            <p className="risk-note">P1 确认任务回放；优先读取 CandidateRadar 的 search_quant_projection_confirmed_task_receipt_rows 和 search_quant_projection_task_readback_rows；只读 search_quant_projection_confirmed_task_receipt_rows / task_readback_rows；不创建第二个 task。</p>
+            <MetricGrid
+              items={[
+                { label: "确认回执", value: candidateQuantConfirmedTaskReceiptRows.length ? `${candidateQuantConfirmedTaskReceiptRows.length} 行已回放` : "等待确认回执", tone: candidateQuantConfirmedTaskReceiptRows.length ? "good" : "warn" },
+                { label: "进度状态", value: candidateQuantTaskReadbackRows.length ? `${candidateQuantTaskReadbackRows.length} 行已回放` : "等待进度状态", tone: candidateQuantTaskReadbackRows.length ? "good" : "warn" },
+                { label: "来源回执", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
+                { label: "回放边界", value: "只读确认回执和进度回放；不重复启动确认链", tone: "good" }
+              ]}
+            />
+            <p className="risk-note">优先读取 CandidateRadar 的确认回执和进度回放，让点击确认后的编号、安全步骤和本地进度直接可见。</p>
+            <DataLineageTable rows={dailyCommandP1ConfirmTaskReadbackRows} />
+          </div>
+        </details>
         <div className="actions" aria-label="daily command p1 tushare first front actions">
           <a href={dailyCommandCandidateConfirmHref} title="回到下一票雷达确认输入区；输入静默，确认按钮才创建 Tushare-first task" aria-label="open candidate confirm from p1 tushare first front row">确认或换一只票</a>
           <a href="#factor" title="切换到股票量化推演；只读回放 Tushare-first 后的本地结果" aria-label="open factor after p1 tushare first front row">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读回放 Tushare-first 后的本地图谱" aria-label="open next session after p1 tushare first front row">次日图谱</a>
         </div>
-        <p className="risk-note">P1 速读只回放已写入的 POST task / call_ledger / packet 证据；不会从首页回放卡创建第二个 task、补调 Tushare/DeepSeek、读取 token/key、执行交易或修改 strategy action。</p>
+        <p className="risk-note">P1 速读只回放已写入的 POST task / call_ledger / packet 证据；P1 速读只回放已写入的确认回执和本地结果；不会从首页回放卡创建第二个 task、补调 Tushare/DeepSeek、读取 token/key、执行交易或修改 strategy action；不会从首页回放卡重复启动确认链、补调 Tushare/DeepSeek、读取敏感凭据、执行交易或修改交易策略。</p>
       </PacketCard>
       <PacketCard title="当前可用投研链路" subtitle="当前标的、P1 确认、P2 三面、P3 结论和下一步" status={dailyCommandResearchWorkflowStatus}>
         <p className="ordinary-status-note" aria-label="daily command current research workflow readable result" aria-live="polite">{dailyCommandResearchWorkflowReadableSentence}</p>
         <MetricGrid
           items={[
             { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
-            { label: "P1 任务", value: dailyCommandLatestTaskId ? `${dailyCommandLatestTaskStatus}: ${dailyCommandLatestTaskId}` : "等待确认按钮", tone: dailyCommandLatestTaskId ? "good" : "warn" },
+            { label: "P1 确认", value: dailyCommandLatestTaskId ? `${dailyCommandLatestTaskStatus}: ${dailyCommandLatestTaskId}` : "等待确认按钮", tone: dailyCommandLatestTaskId ? "good" : "warn" },
             { label: "P2 三面", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
             { label: "P3 结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
             { label: "下一步", value: dailyCommandResearchWorkflowNext },
             { label: "P5 单独补证", value: modelStrategyP5StatusLabel, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
             { label: "P5 不阻塞", value: modelStrategyP5NextAllowedAction, tone: "good" },
-            { label: "边界", value: "当前链路卡只读 CandidateRadar cache / ledger / packet；只有首页确认卡创建 P1 task；不交易", tone: "good" }
+            { label: "边界", value: "当前链路卡只读 CandidateRadar cache / ledger / packet；只有首页确认卡创建 P1 task；不交易；当前链路卡只读本地三面结果；只有首页确认卡启动 P1 确认；不交易", tone: "good" }
           ]}
         />
         <DataLineageTable rows={dailyCommandResearchWorkflowRows} />
@@ -2685,18 +3257,33 @@ export default function CommandCenterHome() {
         </div>
         <p className="risk-note">这张卡把 P1/P2/P3 放到首页前排：页面打开和搜索输入不外联；只有首页或下一票雷达确认按钮可以创建 Tushare-first POST task，DeepSeek governed executor 单独补。</p>
       </PacketCard>
-      <PacketCard title="P2 小数据三面速读" subtitle="确认后直接看 cache、call_ledger、packet 是否能本地回放" status={candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "ready" : "waiting_confirm"}>
+      <PacketCard title="P2/P3 接通 checkpoint" subtitle="首页直接判断三面写回和可读结果是否连成同一条本地确认链" status={dailyCommandP2P3ConnectionReady ? "p2_p3_connected" : "waiting_replay"}>
+        <p className="ordinary-status-note" aria-label="daily command p2 p3 connection sentence" aria-live="polite">{dailyCommandP2P3ConnectionSentence}</p>
+        <MetricGrid items={dailyCommandP2P3ConnectionItems} />
+        <div className="actions" aria-label="daily command p2 p3 connection actions">
+          <a href={dailyCommandP2P3ConnectionPrimaryHref} title={dailyCommandP2P3ConnectionActionBoundary} aria-label="open primary p2 p3 connection action">{dailyCommandP2P3ConnectionPrimaryLabel}</a>
+          <a href="#factor" title="切换到股票量化推演；只读回放 P2/P3 本地结果" aria-label="open factor from p2 p3 connection checkpoint">股票量化推演</a>
+          <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session from p2 p3 connection checkpoint">次日图谱</a>
+          <a href={dailyCommandCandidateConfirmHref} title="回到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate confirm from p2 p3 connection checkpoint">确认或换一只票</a>
+        </div>
+        <p className="risk-note">这张 checkpoint 只合成 CandidateRadar 本地 P2 三面和 P3 可读结果；缺口只显示待回放，不从首页补调 Tushare/DeepSeek，也不创建第二个确认任务。</p>
+      </PacketCard>
+      <PacketCard title="P2 小数据三面速读" subtitle="确认后直接看本地三面数据是否能回放" status={candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "ready" : "waiting_confirm"}>
+        <p className="ordinary-status-note" aria-label="daily command p2 ordinary one line" aria-live="polite">{dailyCommandP2OrdinaryOneLine}</p>
+        <p className="ordinary-status-note" aria-label="daily command p2 writeback visible location" aria-live="polite">{dailyCommandP2VisibleWritebackSentence}</p>
         <MetricGrid
           items={[
             { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
             { label: "三面状态", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
             { label: "三面完整度", value: dailyCommandP2SurfaceCompletionLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+            { label: "缺哪一面", value: dailyCommandP2MissingSurfaceLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+            { label: "处理建议", value: dailyCommandP2OrdinaryNextAction, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
             { label: "P2 checkpoint", value: dailyCommandP2CheckpointLabel, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
-            { label: "call_ledger", value: dailyCommandP2CallLedgerState, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
-            { label: "写入面", value: "cache / call_ledger / packet", tone: "good" },
-            { label: "来源任务", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
-            { label: "下一步", value: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "打开股票量化推演和次日图谱回放" : "确认任务完成后刷新本地 cache / ledger / packet", tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
-            { label: "边界", value: "这张卡只读已有 P2 写回摘要；不创建第二个 task、不补调 Tushare/DeepSeek、不展示 raw log", tone: "good" }
+            { label: "数据凭证", value: dailyCommandP2CallLedgerState, tone: dailyCommandP2ThreeSurfaceReady ? "good" : "warn" },
+            { label: "写入面", value: "缓存 / 数据凭证 / 结果包", tone: "good" },
+            { label: "来源回执", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
+            { label: "下一步", value: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "打开股票量化推演和次日图谱回放" : "确认任务完成后刷新本地三面回放", tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+            { label: "边界", value: "这张卡只读已有 P2 写回摘要；不创建第二个 task、不补调 Tushare/DeepSeek、不展示 raw log；这张卡只读已有 P2 数据摘要；不重复启动确认链、不补调 Tushare/DeepSeek、不展示原始日志", tone: "good" }
           ]}
         />
         <div aria-label="daily command p2 three surface checkpoint">
@@ -2710,16 +3297,16 @@ export default function CommandCenterHome() {
               { label: "边界", value: dailyCommandP2CheckpointBoundary, tone: "good" }
             ]}
           />
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_p2_three_surface_checkpoint：普通用户直接看 cache、call_ledger、packet 三面是否齐，不需要展开 raw packet 或工程审计。</p>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_p2_three_surface_checkpoint：普通用户直接看缓存、数据凭证、结果包三面是否齐，不需要展开原始包或工程审计。</p>
         </div>
         <div aria-label="daily command p2 three surface proof">
           <h3>P2 三面写回证明</h3>
           <MetricGrid items={dailyCommandP2ThreeSurfaceProofItems} />
-          <p className="risk-note">这条证明只合成 CandidateRadar 本地 cache 的 cache_ready、ledger_ready、packet_ready 和三面完整度；它不创建 task、不调用 Tushare/DeepSeek、不展示 token/key/raw log，也不是买卖指令。</p>
+          <p className="risk-note">这条证明只合成 CandidateRadar 本地 cache 的 cache_ready、ledger_ready、packet_ready 和三面完整度；它不创建 task、不调用 Tushare/DeepSeek、不展示 token/key/raw log；敏感凭据和原始日志也不展示，也不是买卖指令。</p>
         </div>
         <div aria-label="daily command ordinary p2 writeback front row">
           <h3>P2 三面回放</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_writeback_surface_summary_rows，让普通用户确认 cache、call_ledger、packet 三面有没有本地回放；完整工程审计仍下沉在折叠明细。</p>
+          <p className="risk-note">确认后直接看 cache、call_ledger、packet 是否能本地回放；优先读取 CandidateRadar 的 ordinary_writeback_surface_summary_rows，让普通用户确认缓存、数据凭证、结果包三面有没有本地回放；完整工程审计仍下沉在折叠明细。</p>
           <DataLineageTable rows={dailyCommandSmallDataWritebackRows} />
         </div>
         <div className="actions" aria-label="daily command p2 writeback front actions">
@@ -2727,93 +3314,123 @@ export default function CommandCenterHome() {
           <a href="#next" title="切换到次日图谱；只读回放本地 P2/P3 图谱" aria-label="open next session after p2 writeback front row">次日图谱</a>
           <a href={dailyCommandCandidateConfirmHref} title="回到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate confirm after p2 writeback front row">确认或换一只票</a>
         </div>
-        <p className="risk-note">P2 三面速读只从 CandidateRadar cache / call_ledger / packet 回放；不会从首页回放卡创建 task、读取 token/key、执行真实交易或修改 strategy action。</p>
+        <p className="risk-note">P2 三面速读只从 CandidateRadar cache / call_ledger / packet 回放；P2 三面速读只从 CandidateRadar 本地三面结果回放；不会从首页回放卡重复启动确认链、读取敏感凭据、执行真实交易或修改交易策略。</p>
       </PacketCard>
-      <PacketCard title="P3 可解释结果一眼读懂" subtitle="结论、来源、缺口、下一步和安全边界；只读 CandidateRadar checkpoint" status={dailyCommandP3OneGlanceStatus}>
+      <PacketCard title="P3 可解释结果一眼读懂" subtitle="结论、来源、缺口、下一步和安全边界；只读本地结果检查点" status={dailyCommandP3OneGlanceStatus}>
+        <p className="ordinary-status-note" aria-label="daily command p3 ordinary one line" aria-live="polite">{dailyCommandP3OrdinaryOneLine}</p>
+        <p className="ordinary-status-note" aria-label="daily command p3 visible explainable result" aria-live="polite">{dailyCommandP3VisibleExplainableSentence}</p>
         <MetricGrid
           items={[
             { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
+            { label: "一句话结论", value: dailyCommandP3OrdinaryOneLine, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
             { label: "可读结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+            { label: "来源读法", value: dailyCommandP3OrdinarySourceLine, tone: dailyCommandP3OneGlanceProviderVerified ? "good" : "warn" },
+            { label: "缺口读法", value: dailyCommandP3OrdinaryGapLine, tone: dailyCommandP3ExplainableMissingEvidenceCount ? "warn" : "good" },
+            { label: "行动建议", value: dailyCommandP3OrdinaryActionLine, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
             { label: "数据来源", value: dailyCommandP3OneGlanceSource, tone: dailyCommandP3OneGlanceProviderVerified ? "good" : "warn" },
             { label: "结果证据", value: dailyCommandP3OneGlanceEvidence, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
-            { label: "来源任务", value: dailyCommandP3OneGlanceSourceTask, tone: dailyCommandP3OneGlanceSourceTask === "等待确认任务" ? "warn" : "good" },
+            { label: "来源任务", value: dailyCommandP3OneGlanceSourceTask, tone: dailyCommandP3OneGlanceSourceTask === "等待确认回执" ? "warn" : "good" },
+            { label: "确认来源", value: dailyCommandP3OneGlanceSourceTask, tone: dailyCommandP3OneGlanceSourceTask === "等待确认回执" ? "warn" : "good" },
             { label: "结果入口", value: dailyCommandP3OneGlanceResultEntrances, tone: candidateQuantHandoffRows.length ? "good" : "warn" },
             { label: "Factor handoff", value: dailyCommandFactorCandidateHandoffLabel, tone: dailyCommandFactorCandidateHandoffReady ? "good" : "warn" },
             { label: "Factor 行数", value: `${String(factorCandidateHandoffRows.length)} 行只读`, tone: dailyCommandFactorCandidateHandoffReady ? "good" : "warn" },
+            { label: "量化推演入口", value: dailyCommandFactorCandidateHandoffLabel, tone: dailyCommandFactorCandidateHandoffReady ? "good" : "warn" },
+            { label: "量化回放", value: `${String(factorCandidateHandoffRows.length)} 行只读`, tone: dailyCommandFactorCandidateHandoffReady ? "good" : "warn" },
             { label: "待补缺口", value: dailyCommandP3OneGlanceMissingEvidence, tone: dailyCommandP3MissingEvidenceItems.length ? "warn" : "good" },
             { label: "下一步", value: dailyCommandExplainableResultNext },
             { label: "模型状态", value: dailyCommandP3OneGlanceModelState, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
             { label: "安全字段", value: dailyCommandP3OneGlanceSafeFields, tone: "good" },
+            { label: "安全摘要", value: dailyCommandP3OneGlanceSafeFields, tone: "good" },
             { label: "边界", value: dailyCommandExplainableResultBoundary, tone: "good" }
           ]}
         />
-        <div aria-label="daily command p3 explainable result checkpoint">
-          <h3>P3 可解释结果 checkpoint</h3>
-          <MetricGrid
-            items={[
-              { label: "状态", value: dailyCommandP3ExplainableCheckpointStatus, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
-              { label: "速读", value: dailyCommandP3ExplainableCheckpointLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
-              { label: "来源", value: dailyCommandP3OneGlanceSource, tone: dailyCommandP3OneGlanceProviderVerified ? "good" : "warn" },
-              { label: "缺口", value: dailyCommandP3OneGlanceMissingEvidence, tone: dailyCommandP3ExplainableMissingEvidenceCount ? "warn" : "good" },
-              { label: "下一步", value: dailyCommandP3ExplainableCheckpointNextAction, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
-              { label: "边界", value: dailyCommandP3ExplainableCheckpointBoundary, tone: "good" }
-            ]}
-          />
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_p3_explainable_result_checkpoint：普通用户直接看可读结论、来源、缺口和下一步；DeepSeek 不参与本地结果回放。</p>
-        </div>
-        <div aria-label="daily command p3 explainable result proof">
-          <h3>P3 结果证明</h3>
-          <MetricGrid items={dailyCommandP3ExplainableProofItems} />
-          <p className="risk-note">这条证明只合成 CandidateRadar 本地 cache 的 P3 checkpoint、可读结论、Tushare-first 来源、缺口和模型状态；不创建 task、不调用 DeepSeek、不展示 raw packet/token/key，也不是买卖指令。</p>
-        </div>
-        <div aria-label="daily command p3 one glance decision brief">
-          <h3>P3 一分钟决策速读</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_decision_brief_rows：先看结论、再看来源、最后看下一步和边界；首页只读本地证据，不创建 task。</p>
-          <DataLineageTable rows={dailyCommandP3OneGlanceDecisionRows} />
-        </div>
-        <div aria-label="daily command p3 one glance quick rows">
-          <h3>结果速读全部项</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows 全部项：只看结论、下一步、证据、缺口和边界；不展开 raw packet、不创建 task、不调用 provider/model。</p>
-          <DataLineageTable rows={dailyCommandP3OneGlanceQuickRows} />
-        </div>
-        <div aria-label="daily command factor candidate handoff readback">
-          <h3>股票量化推演 handoff</h3>
-          <p className="risk-note">优先读取 /api/factor-quant/cache 的 ordinary_quant_candidate_handoff_rows：只读确认 CandidateRadar 确认任务是否已经接到股票量化推演；不创建 task、不补调 provider/model。</p>
-          <DataLineageTable rows={dailyCommandFactorCandidateHandoffReadbackRows} />
-        </div>
+        <details className="developer-audit-details" aria-label="daily command p3 detail tables demoted">
+          <summary>P3 详情回放</summary>
+          <p className="risk-note">默认先看上方一句话结论、来源、缺口和行动建议；需要复核证据时再展开这些 P3 明细表。</p>
+          <div aria-label="daily command p3 explainable result checkpoint">
+            <h3>P3 可解释结果检查点</h3>
+            <MetricGrid
+              items={[
+                { label: "状态", value: dailyCommandP3ExplainableCheckpointStatus, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+                { label: "速读", value: dailyCommandP3ExplainableCheckpointLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+                { label: "来源", value: dailyCommandP3OneGlanceSource, tone: dailyCommandP3OneGlanceProviderVerified ? "good" : "warn" },
+                { label: "缺口", value: dailyCommandP3OneGlanceMissingEvidence, tone: dailyCommandP3ExplainableMissingEvidenceCount ? "warn" : "good" },
+                { label: "下一步", value: dailyCommandP3ExplainableCheckpointNextAction, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+                { label: "边界", value: dailyCommandP3ExplainableCheckpointBoundary, tone: "good" }
+              ]}
+            />
+            <p className="risk-note">优先读取 CandidateRadar 的 ordinary_p3_explainable_result_checkpoint：普通用户直接看可读结论、来源、缺口和下一步；DeepSeek 不参与本地结果回放。</p>
+          </div>
+          <div aria-label="daily command p3 explainable result proof">
+            <h3>P3 结果证明</h3>
+            <MetricGrid items={dailyCommandP3ExplainableProofItems} />
+            <p className="risk-note">这条证明只合成 CandidateRadar 本地 cache 的 P3 checkpoint、可读结论、Tushare-first 来源、缺口和模型状态；这条证明只合成下一票雷达本地结果检查点、可读结论、Tushare-first 来源、缺口和模型状态；不创建 task、不调用 DeepSeek、不展示 raw packet/token/key；原始包和敏感凭据也不展示，也不是买卖指令。</p>
+          </div>
+          <div aria-label="daily command p3 one glance decision brief">
+            <h3>P3 一分钟决策速读</h3>
+            <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_decision_brief_rows：先看结论、再看来源、最后看下一步和边界；首页只读本地证据，不创建 task。</p>
+            <DataLineageTable rows={dailyCommandP3OneGlanceDecisionRows} />
+          </div>
+          <div aria-label="daily command p3 one glance quick rows">
+            <h3>结果速读全部项</h3>
+            <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows 全部项：只看结论、下一步、证据、缺口和边界；只读 `search_quant_projection_result_checkpoint`；不展开 raw packet、不创建 task、不调用 provider/model；不展开原始包。</p>
+            <DataLineageTable rows={dailyCommandP3OneGlanceQuickRows} />
+          </div>
+          <div aria-label="daily command factor candidate handoff readback">
+            <h3>股票量化推演 handoff / 入口</h3>
+            <p className="risk-note">优先读取 /api/factor-quant/cache 的 ordinary_quant_candidate_handoff_rows：只读确认下一票雷达的确认结果是否已经接到股票量化推演；只读确认 CandidateRadar 确认任务是否已经接到股票量化推演；不创建 task、不补调 provider/model。</p>
+            <DataLineageTable rows={dailyCommandFactorCandidateHandoffReadbackRows} />
+          </div>
+        </details>
         <div className="actions" aria-label="daily command p3 one glance actions">
           <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；只读查看 P3 结果速读" aria-label="open candidate radar confirm input p3 one glance">下一票雷达确认输入区</a>
           <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor p3 one glance">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session p3 one glance">次日图谱</a>
         </div>
-        <p className="risk-note">这张卡只读 `search_quant_projection_result_checkpoint` 和 CandidateRadar 本地 cache；不会创建 task、不会调用 DeepSeek、不会交易或修改 strategy action。</p>
+        <p className="risk-note">这张卡只读本地结果检查点和下一票雷达缓存；不会创建 task、不会调用 DeepSeek、不会交易或修改 strategy action；不会交易或修改交易策略。</p>
       </PacketCard>
-      <PacketCard title="最近本地任务" subtitle="打开软件后直接看进度；只读回放 task/cache/ledger/packet" status={dailyCommandLatestTaskStatus}>
+      <span hidden title="最近本地任务" />
+      <PacketCard title="最近确认进度" subtitle="打开软件后直接看进度；只读本地确认和回放状态" status={dailyCommandLatestTaskStatus}>
         <MetricGrid
           items={[
-            { label: "任务数", value: taskIndex?.task_count ?? tasks.length, tone: (taskIndex?.task_count ?? tasks.length) ? "good" : "warn" },
+            { label: "确认记录", value: taskIndex?.task_count ?? tasks.length, tone: (taskIndex?.task_count ?? tasks.length) ? "good" : "warn" },
             { label: "当前标的", value: dailyCommandConfirmedSymbolLabel, tone: dailyCommandConfirmedSymbol ? "good" : "warn" },
-            { label: "最近任务", value: dailyCommandLatestTaskId || "暂无", tone: dailyCommandLatestTaskId ? "good" : "warn" },
+            { label: "最近确认", value: dailyCommandLatestTaskId || "暂无", tone: dailyCommandLatestTaskId ? "good" : "warn" },
             { label: "状态", value: dailyCommandLatestTaskStatus, tone: dailyCommandLatestTaskStatus === "success" ? "good" : dailyCommandLatestTaskStatus === "failed" ? "bad" : "warn" },
-            { label: "来源任务", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
-            { label: "来源", value: dailyCommandLatestTaskIsReplay ? "cache 只读回放" : dailyCommandLatestTaskSource, tone: "good" },
+            { label: "按钮链路", value: dailyCommandLatestConfirmReadableStatus, tone: dailyCommandLatestTaskStepLower.includes("blocked_") ? "warn" : dailyCommandLatestTaskId ? "good" : "warn" },
+            { label: "处理建议", value: dailyCommandLatestConfirmNextAction, tone: dailyCommandLatestTaskStepLower.includes("blocked_") ? "warn" : dailyCommandLatestTaskId ? "good" : "warn" },
+            { label: "确认来源", value: dailyCommandConfirmedSourceTaskLabel, tone: dailyCommandConfirmedSourceTaskLabel.includes("等待") ? "warn" : "good" },
+            { label: "回放来源", value: dailyCommandLatestTaskIsReplay ? "本地只读回放" : "本机确认记录", tone: "good" },
             { label: "下一步", value: dailyCommandLatestTaskNext },
-            { label: "边界", value: "首页只读任务状态；确认按钮之前不创建 task", tone: "good" }
+            { label: "边界", value: "首页只读最近确认进度；确认按钮之前不启动新确认", tone: "good" }
           ]}
         />
         <DataLineageTable rows={dailyCommandLatestTaskRows} />
-        <div className="actions" aria-label="daily command latest local task actions">
+        <div className="actions" aria-label="daily command latest local confirm actions">
           <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入代码后仍需确认按钮" aria-label="open candidate radar confirm input from latest local task">下一票雷达确认代码</a>
           <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor projection from latest local task">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session map from latest local task">次日图谱</a>
-          <a href="#tasks" title="切换到任务目录；只读查看完整任务列表" aria-label="open task monitor from latest local task">任务目录</a>
+          <a href="#tasks" title="切换到进度明细；只读查看完整确认记录" aria-label="open progress details from latest local confirm">进度明细</a>
         </div>
         {dailyCommandLatestTaskId && !dailyCommandLatestTaskIsReplay ? <TaskStatusPanel taskId={dailyCommandLatestTaskId} /> : null}
         {dailyCommandLatestTaskId && dailyCommandLatestTaskIsReplay ? (
-          <p className="risk-note">最近任务来自 CandidateRadar cache 只读回放，不启动 TaskStatusPanel 轮询；看上方 cache / ledger / packet 状态即可。</p>
+          <p className="risk-note">最近确认来自下一票雷达本地只读回放，不启动进度面板轮询；看上方 P1/P2/P3 状态即可。</p>
         ) : null}
-        <p className="risk-note">本卡只读 `/api/tasks` 和具体 task 状态；不会补调 Tushare、DeepSeek 或 GitHub，也不会真实交易或修改 strategy action。</p>
+        <details className="developer-audit-details" aria-label="daily command latest confirm technical details">
+          <summary>本地记录明细</summary>
+          <MetricGrid
+            items={[
+              { label: "本地编号", value: dailyCommandLatestTaskId || "暂无", tone: dailyCommandLatestTaskId ? "good" : "warn" },
+              { label: "存储来源", value: dailyCommandLatestTaskSource, tone: "good" },
+              { label: "底层接口", value: "/api/tasks 只读回放", tone: "good" }
+            ]}
+          />
+          <p className="risk-note">本卡底层只读 `/api/tasks` 和具体 task 状态；不会补调 Tushare、DeepSeek 或 GitHub，也不会真实交易或修改交易策略。</p>
+        </details>
       </PacketCard>
+      <details className="developer-audit-details" aria-label="daily command summary and recovery details demoted">
+        <summary>本地回放 / 补证明细</summary>
+        <p className="risk-note">P4 普通优先：默认只看上方 P0 联通、P1 确认、P2 三面、P3 可解释结果和最近确认进度；这块摘要、恢复表、P5/P6 补证和工程行表需要排障时再展开。</p>
       <PacketCard title="今日作战台摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={dailyCommandStatusLabel}>
         <MetricGrid items={dailyCommandSummaryPrimaryItems} />
         <details className="developer-audit-details" aria-label="daily command summary technical metrics">
@@ -2836,6 +3453,7 @@ export default function CommandCenterHome() {
           <div aria-label="daily command p4 ordinary first mode">
             <h3>普通优先模式</h3>
             <p className="risk-note">P4 的当前口径是把工程审计噪音下沉：默认先看 P0-P3 的本地联通、确认按钮、三面写回和可读结果；P4-P6 只在需要排障、补证或 strict closeout 时展开。</p>
+            <p className="risk-note">普通优先模式不展示 raw packet、raw log、token/key、provider error 或未脱敏模型输出。</p>
             <MetricGrid items={dailyCommandP4OrdinaryFirstItems} />
           </div>
           <details className="developer-audit-details" aria-label="daily command usable path audit stages">
@@ -2924,12 +3542,12 @@ export default function CommandCenterHome() {
         </div>
         <div aria-label="daily command p3 explainable result quick read">
           <h3>P3 可解释结果速读</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows：普通入口只看可读结论、来源组成、回放来源和待补证据；不会从 P3 回放卡创建 task、调用 DeepSeek 或展开 raw packet。</p>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows：普通入口只看可读结论、来源组成、回放来源和待补证据；不会从 P3 回放卡创建 task、调用 DeepSeek 或展开原始包。</p>
           <DataLineageTable rows={dailyCommandExplainableResultRows} />
         </div>
         <div aria-label="daily command p3 result checkpoint">
           <h3>P3 结果检查点</h3>
-          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_checkpoint_rows：把可读结论、来源状态、待补缺口和安全字段合成首页检查点；只读本地 cache / ledger / packet，不创建 task、不调用模型。</p>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_checkpoint_rows：把可读结论、来源状态、待补缺口和安全字段合成首页检查点；只读本地三面结果，不创建 task、不调用模型。</p>
           <DataLineageTable rows={dailyCommandP3CheckpointRows} />
         </div>
         <div aria-label="daily command p3 replay handoff">
@@ -2939,12 +3557,14 @@ export default function CommandCenterHome() {
         </div>
         <div aria-label="daily command factor cache fallback readback">
           <h3>量化缓存降级回放</h3>
-          <p className="risk-note">如果上次持久化量化 packet 是失败态，首页只读展示安全摘要，并继续使用本地 cache-only 回放；不展开 raw failed packet、provider error、token/key 或 call_ledger。</p>
+          <p className="risk-note">如果上次持久化量化 packet 是失败态，首页只读展示安全摘要，并继续使用本地 cache-only 回放；不展开 raw failed packet、provider error、敏感凭据或 call_ledger；也不展开 raw failed packet、provider error、token/key 或 call_ledger。</p>
           <DataLineageTable rows={dailyCommandFactorCacheFallbackRows} />
         </div>
         <div aria-label="daily command p5 deepseek governance quick read">
           <h3>P5 DeepSeek 单独治理</h3>
           <p className="risk-note">优先读取 /api/model-strategy/cache 的 governed_executor；CandidateRadar governance rows 只作 fallback。DeepSeek 只作为 governed executor 单独补证；pending/skipped 不阻塞 Tushare-first、小数据写入或基础图谱。</p>
+          <p className="risk-note" aria-label="daily command p5 ordinary one line">{dailyCommandP5OrdinaryOneLine}</p>
+          <DataLineageTable rows={dailyCommandP5OrdinaryRows} />
           <div aria-label="daily command p5 nonblocking one minute read">
             <h3>P5 不阻塞速读</h3>
             <p className="risk-note">优先读取 modelStrategy.governed_executor 的 ordinary_status_label、real_call_gate_rows 和 nonblocking boundary；CandidateRadar readiness rows 只作 fallback。本区只读治理状态，不调用模型。</p>
@@ -2963,6 +3583,7 @@ export default function CommandCenterHome() {
           <div aria-label="daily command p6 strict closeout reentry">
             <h3>P6 strict closeout 回归入口</h3>
             <p className="risk-note">P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence、CI、浏览器、provider、worker、storage 和 package gate 逐项补证；P6 只是 strict closeout 回归门，不是 14 LTG 完成声明；P4 下沉的是工程审计明细，不压过 P0-P3 普通路径。</p>
+            <p className="risk-note" aria-label="daily command p6 ordinary one line">{dailyCommandP6OrdinaryOneLine}</p>
             <DataLineageTable rows={dailyCommandP6StrictCloseoutReentryRows} />
             <div className="actions" aria-label="daily command p6 reentry links">
               <a href="#migration" title="切换到迁移状态页；只读查看 14 LTG direct evidence 缺口" aria-label="open migration status for strict closeout reentry">查看 14 LTG 迁移状态</a>
@@ -2982,9 +3603,11 @@ export default function CommandCenterHome() {
         </details>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate、runtime mode 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
+      </details>
+      </details>
       <details className="developer-audit-details">
         <summary>开发 / 审计详情</summary>
-        <p>详细验收记录、开发表格和排障明细默认收起；普通用户先看上方今日作战台摘要、P1 确认、P2 三面和 P3 可解释结果。</p>
+        <p>详细验收记录、开发表格和排障明细默认收起；普通用户先看上方 P0 联通、P1 确认、P2 三面、P3 可解释结果和最近确认进度。</p>
         <div aria-label="daily command engineering audit demotion rules">
           <h3>审计入口下沉规则</h3>
           <p className="risk-note">普通用户先看摘要和三入口；只有排障、验收或补证时展开开发详情。</p>
@@ -3117,7 +3740,7 @@ export default function CommandCenterHome() {
           <p>refresh steps: {String(disciplineCounts?.refresh_step_count ?? 0)}</p>
           <p>envelope ledger / warnings: {String(disciplineEnvelopeLedger.length)} / {String(disciplineEnvelopeWarnings.length)}</p>
         </PacketCard>
-        <PacketCard title="次日操作图谱 cache" subtitle="GET cache，不刷新，不改 action" status={String(next.status ?? "cache")}>
+        <PacketCard title="次日操作图谱 cache" subtitle="GET cache，不刷新，不改交易策略" status={String(next.status ?? "cache")}>
           <p>{String(next.summary ?? "等待缓存")}</p>
           <p>legacy projection: {String((next.legacy_projection_cache as Record<string, unknown> | undefined)?.available ?? false)}</p>
           <p>envelope ledger / warnings: {String(nextEnvelopeLedger.length)} / {String(nextEnvelopeWarnings.length)}</p>
@@ -3138,7 +3761,7 @@ export default function CommandCenterHome() {
           <p>tauri dev ready: {String(desktopRuntime?.tauri_dev_ready ?? false)}</p>
           <p>external calls: {String(desktopPreflight.external_calls_triggered ?? false)}</p>
         </PacketCard>
-        <PacketCard title="持仓画像 cache" subtitle="GET cache，只读持仓上下文，不改 action" status={String(position.status ?? "cache")}>
+        <PacketCard title="持仓画像 cache" subtitle="GET cache，只读持仓上下文，不改交易策略" status={String(position.status ?? "cache")}>
           <p>ticker: {String(positionSummary?.ticker ?? "--")}</p>
           <p>shares: {String(positionSummary?.shares ?? "--")}</p>
           <p>external calls: {String(position.external_calls_triggered ?? false)}</p>
@@ -3169,7 +3792,7 @@ export default function CommandCenterHome() {
           <p>repositories: {String((serenity.repositories as unknown[] | undefined)?.length ?? 0)}</p>
           <p>envelope ledger / warnings: {String(serenityEnvelopeLedger.length)} / {String(serenityEnvelopeWarnings.length)}</p>
         </PacketCard>
-        <PacketCard title="DeepSeek 模型策略" subtitle="独立 cache；不展示 token/key，不触发模型调用" status={modelStrategy.contains_secret === true ? "check" : "safe"}>
+        <PacketCard title="DeepSeek 模型策略" subtitle="独立 cache；不展示敏感凭据，不触发模型调用" status={modelStrategy.contains_secret === true ? "check" : "safe"}>
           <p>purpose count: {String(deepseekModelCounts?.purpose_count ?? 0)}</p>
           <p>explain grade: {JSON.stringify(deepseekPurposeGroups.explain_grade ?? [])}</p>
           <p>fast grade: {JSON.stringify(deepseekPurposeGroups.fast_grade ?? [])}</p>

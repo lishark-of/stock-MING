@@ -350,6 +350,13 @@ export default function MigrationStatus() {
   const usablePathCurrentCheckpointRows = (packet.usable_path_current_checkpoint_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const usablePathStrictCloseoutHandoffRows = (packet.usable_path_strict_closeout_handoff_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const p6DirectEvidenceReentryRows = (packet.p6_direct_evidence_reentry_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const productionHardeningSummary = (packet.production_hardening_summary as Record<string, unknown> | undefined) ?? {};
+  const productionHardeningRows = (packet.production_hardening_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const productionHardeningLtgRows = (packet.production_hardening_ltg_direct_evidence_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const productionHardeningGateSummary = (packet.production_hardening_gate_summary as Record<string, unknown> | undefined) ?? {};
+  const productionHardeningGateRows = (packet.production_hardening_gate_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const ltgStrictCloseoutWorkOrderSummary = (packet.ltg_strict_closeout_work_order_summary as Record<string, unknown> | undefined) ?? {};
+  const ltgStrictCloseoutWorkOrderRows = (packet.ltg_strict_closeout_work_order_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgNextAcceptanceActionRows = (packet.ltg_next_acceptance_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgNextAcceptanceReceiptRows = ltgNextAcceptanceActionRows.map((row) => ({
     queue_id: row.queue_id,
@@ -639,6 +646,10 @@ export default function MigrationStatus() {
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length },
           { label: "P0-P6 checkpoint rows", value: usablePathCurrentCheckpointRows.length, tone: usablePathCurrentCheckpointRows.length ? "good" : "warn" },
+          { label: "hardening areas", value: productionHardeningRows.length, tone: productionHardeningRows.length ? "warn" : "neutral" },
+          { label: "LTG evidence rows", value: productionHardeningLtgRows.length, tone: productionHardeningLtgRows.length ? "warn" : "neutral" },
+          { label: "hardening gates", value: productionHardeningGateRows.length, tone: productionHardeningGateRows.length ? "warn" : "neutral" },
+          { label: "LTG work orders", value: ltgStrictCloseoutWorkOrderRows.length, tone: ltgStrictCloseoutWorkOrderRows.length ? "warn" : "neutral" },
           { label: "planning baseline", value: baselinePolicy?.use_as_planning_baseline === true, tone: baselinePolicy?.use_as_planning_baseline === true ? "good" : "warn" },
           { label: "cache only", value: policy?.cache_only === true, tone: policy?.cache_only === true ? "good" : "warn" },
           { label: "external calls", value: policy?.external_calls_triggered === true ? "存在" : "无", tone: policy?.external_calls_triggered === true ? "bad" : "good" },
@@ -652,6 +663,56 @@ export default function MigrationStatus() {
         <h3>P0-P6 当前可用化 checkpoint 速读</h3>
         <p className="risk-note">这张表只说明普通用户当前能先做什么和下一步去哪；它只读本地状态，不创建 task、不调用外部服务，也不能关闭 14 LTG。</p>
         <DataLineageTable rows={usablePathCurrentCheckpointRows} />
+      </div>
+      <div aria-label="production hardening direct evidence matrix">
+        <h3>生产硬化 direct evidence 准备矩阵</h3>
+        <p className="risk-note">Storage、Worker、Tauri、CI/smoke/安全、DeepSeek governed executor、Streamlit legacy 和 14 LTG 下一步证据集中展示；只读，不创建 task，不外联，不关闭 LTG。</p>
+        <MetricGrid
+          items={[
+            { label: "matrix status", value: String(productionHardeningSummary.status ?? "missing"), tone: productionHardeningRows.length ? "warn" : "neutral" },
+            { label: "hardening areas", value: Number(productionHardeningSummary.hardening_area_count ?? productionHardeningRows.length) },
+            { label: "LTG rows", value: Number(productionHardeningSummary.ltg_direct_evidence_row_count ?? productionHardeningLtgRows.length) },
+            { label: "strict closeout", value: String(productionHardeningSummary.strict_closeout ?? "0/14"), tone: Number(productionHardeningSummary.strict_closeout_done_count ?? 0) === 0 ? "warn" : "good" },
+            { label: "storage", value: productionHardeningSummary.storage_boundary_visible === true ? "visible" : "missing", tone: productionHardeningSummary.storage_boundary_visible === true ? "warn" : "neutral" },
+            { label: "worker", value: productionHardeningSummary.worker_boundary_visible === true ? "visible" : "missing", tone: productionHardeningSummary.worker_boundary_visible === true ? "warn" : "neutral" },
+            { label: "tauri", value: productionHardeningSummary.tauri_boundary_visible === true ? "visible" : "missing", tone: productionHardeningSummary.tauri_boundary_visible === true ? "warn" : "neutral" },
+            { label: "CI/smoke/safety", value: productionHardeningSummary.ci_smoke_security_boundary_visible === true ? "visible" : "missing", tone: productionHardeningSummary.ci_smoke_security_boundary_visible === true ? "warn" : "neutral" },
+            { label: "DeepSeek", value: productionHardeningSummary.deepseek_governed_executor_nonblocking === true ? "nonblocking" : "missing", tone: productionHardeningSummary.deepseek_governed_executor_nonblocking === true ? "good" : "neutral" },
+            { label: "Streamlit", value: productionHardeningSummary.streamlit_legacy_admin_debug_only === true ? "legacy/admin/debug" : "missing", tone: productionHardeningSummary.streamlit_legacy_admin_debug_only === true ? "good" : "neutral" },
+            { label: "safe closeout start", value: productionHardeningSummary.safe_to_start_one_ltg_strict_closeout === true ? "ready" : "blocked", tone: productionHardeningSummary.safe_to_start_one_ltg_strict_closeout === true ? "bad" : "good" },
+            { label: "external calls", value: productionHardeningSummary.external_calls_triggered === true ? "存在" : "无", tone: productionHardeningSummary.external_calls_triggered === true ? "bad" : "good" }
+          ]}
+        />
+        <MetricGrid
+          items={[
+            { label: "gate status", value: String(productionHardeningGateSummary.status ?? "missing"), tone: productionHardeningGateRows.length ? "warn" : "neutral" },
+            { label: "gate rows", value: Number(productionHardeningGateSummary.gate_row_count ?? productionHardeningGateRows.length) },
+            { label: "local evidence areas", value: Number(productionHardeningGateSummary.local_direct_evidence_area_count ?? 0), tone: Number(productionHardeningGateSummary.local_direct_evidence_area_count ?? 0) ? "warn" : "neutral" },
+            { label: "remote CI review", value: productionHardeningGateSummary.latest_remote_run_verified_green === true ? "green" : "pending", tone: productionHardeningGateSummary.latest_remote_run_verified_green === true ? "bad" : "good" },
+            { label: "read only gates", value: productionHardeningGateSummary.all_gates_are_read_only === true, tone: productionHardeningGateSummary.all_gates_are_read_only === true ? "good" : "warn" },
+            { label: "closeout blocked", value: productionHardeningGateSummary.all_gates_block_strict_closeout === true, tone: productionHardeningGateSummary.all_gates_block_strict_closeout === true ? "good" : "bad" },
+            { label: "production pending", value: productionHardeningGateSummary.all_gates_production_pending === true, tone: productionHardeningGateSummary.all_gates_production_pending === true ? "warn" : "bad" },
+            { label: "external calls", value: productionHardeningGateSummary.external_calls_triggered === true ? "存在" : "无", tone: productionHardeningGateSummary.external_calls_triggered === true ? "bad" : "good" }
+          ]}
+        />
+        <p className="risk-note">Gate 表只把散落的 Storage / Worker / Tauri / release gate / DeepSeek / Streamlit 证据摘要接到同一处；local evidence 只是下一步收口依据，remote CI 和 safety gate 未满足前仍不能 strict closeout。</p>
+        <MetricGrid
+          items={[
+            { label: "work order status", value: String(ltgStrictCloseoutWorkOrderSummary.status ?? "missing"), tone: ltgStrictCloseoutWorkOrderRows.length ? "warn" : "neutral" },
+            { label: "work orders", value: Number(ltgStrictCloseoutWorkOrderSummary.work_order_row_count ?? ltgStrictCloseoutWorkOrderRows.length) },
+            { label: "recommended first", value: Number(ltgStrictCloseoutWorkOrderSummary.recommended_first_candidate_count ?? 0), tone: Number(ltgStrictCloseoutWorkOrderSummary.recommended_first_candidate_count ?? 0) ? "warn" : "neutral" },
+            { label: "select one LTG", value: ltgStrictCloseoutWorkOrderSummary.ready_to_select_one_ltg_next_slice === true, tone: ltgStrictCloseoutWorkOrderSummary.ready_to_select_one_ltg_next_slice === true ? "warn" : "neutral" },
+            { label: "closeout claim", value: ltgStrictCloseoutWorkOrderSummary.strict_closeout_claim_allowed === true ? "allowed" : "blocked", tone: ltgStrictCloseoutWorkOrderSummary.strict_closeout_claim_allowed === true ? "bad" : "good" },
+            { label: "current-head required", value: ltgStrictCloseoutWorkOrderSummary.all_rows_require_current_head_direct_evidence === true, tone: ltgStrictCloseoutWorkOrderSummary.all_rows_require_current_head_direct_evidence === true ? "good" : "warn" },
+            { label: "remote CI required", value: ltgStrictCloseoutWorkOrderSummary.all_rows_require_remote_ci_review === true, tone: ltgStrictCloseoutWorkOrderSummary.all_rows_require_remote_ci_review === true ? "good" : "warn" },
+            { label: "external calls", value: ltgStrictCloseoutWorkOrderSummary.external_calls_triggered === true ? "存在" : "无", tone: ltgStrictCloseoutWorkOrderSummary.external_calls_triggered === true ? "bad" : "good" }
+          ]}
+        />
+        <p className="risk-note">Work order 可以用来选择下一轮只做一个 LTG 的 direct evidence 收集；它不代表已经能关闭 LTG，也不允许把 local receipt、matrix、mock、sanitizer 或 dry-run 当 production evidence。</p>
+        <DataLineageTable rows={productionHardeningRows} />
+        <DataLineageTable rows={productionHardeningGateRows} />
+        <DataLineageTable rows={ltgStrictCloseoutWorkOrderRows} />
+        <DataLineageTable rows={productionHardeningLtgRows} />
       </div>
       <h3>14 个长期目标完成度</h3>
       <p className="risk-note">严格关闭数保持 {String(longTermGoalSummary.strict_closeout ?? "0/14")}；scaffold / preflight / mock / matrix / sanitizer / dry-run / local receipt 不能作为生产完成证据。</p>

@@ -722,7 +722,13 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。",
         "日志定位：FastAPI=${FASTAPI_LOG}；React/Vite=${VITE_LOG}。",
         "安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。",
-        "P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped.",
+        "P0 success handoff: after readiness, launcher reuses an existing local Command Center tab or opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped.",
+        "COMMAND_CENTER_3_LAUNCHER_OPEN_MODE",
+        "Browser open mode:",
+        "APP_URL_REUSE_PREFIX",
+        "focus_existing_browser_tab",
+        "Browser handoff reused existing local tab",
+        "Duplicate-tab guard: open mode",
         "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution.",
         "scripts/dev_server.sh",
         "npm run dev",
@@ -857,6 +863,23 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
             "不会打开非本机页面 URL",
         )
     )
+    launcher_open_mode_default_reuse = 'LAUNCHER_OPEN_MODE="${COMMAND_CENTER_3_LAUNCHER_OPEN_MODE:-reuse}"' in source
+    duplicate_tab_guard_supported = all(
+        marker in source
+        for marker in (
+            "COMMAND_CENTER_3_LAUNCHER_OPEN_MODE",
+            "APP_URL_REUSE_PREFIX",
+            "focus_existing_browser_tab",
+            "Browser open mode:",
+            "Duplicate-tab guard: open mode",
+        )
+    )
+    launcher_reuses_existing_local_tab_before_open = (
+        "Browser handoff reused existing local tab" in source
+        and 'elif focus_existing_browser_tab "$APP_URL_REUSE_PREFIX"; then' in source
+        and 'open "$APP_OPEN_URL"' in source
+        and source.find('elif focus_existing_browser_tab "$APP_URL_REUSE_PREFIX"; then') < source.rfind('open "$APP_OPEN_URL"')
+    )
     local_ready = (
         COMMAND_CENTER_3_LAUNCHER.exists()
         and COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER.exists()
@@ -905,6 +928,12 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "one_click_fastapi_reload_disabled": "STOCK_MING_FASTAPI_RELOAD=0" in source,
         "starts_vite_when_user_runs": "npm run dev" in source,
         "opens_local_browser_when_user_runs": 'open "$APP_OPEN_URL"' in source,
+        "launcher_open_mode_default": "reuse" if launcher_open_mode_default_reuse else "legacy_open",
+        "launcher_open_mode_default_reuse": launcher_open_mode_default_reuse,
+        "launcher_open_mode_env_var": "COMMAND_CENTER_3_LAUNCHER_OPEN_MODE",
+        "duplicate_tab_guard_supported": duplicate_tab_guard_supported,
+        "launcher_reuses_existing_local_tab_before_open": launcher_reuses_existing_local_tab_before_open,
+        "ordinary_open_behavior_label": "复用已有本地页面；找不到才打开普通首页",
         "check_only_mode_supported": "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY" in source
         and "Check-only mode: resolved launcher configuration without starting FastAPI" in source,
         "check_only_mode_starts_services": False,
@@ -1061,7 +1090,7 @@ def _one_click_startup_summary(
         and "P0 stability check failed" in launcher_source
     )
     success_handoff_visible = (
-        "P0 success handoff: after readiness, launcher opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
+        "P0 success handoff: after readiness, launcher reuses an existing local Command Center tab or opens #home by default; user can open #candidates/candidate-radar-search-quant-projection next; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
         in launcher_source
     )
     frontend_api_client_local = "http://127.0.0.1:8710" in client_source and bool(api_base_info.get("is_localhost"))
@@ -1135,7 +1164,14 @@ def _one_click_startup_summary(
         row(
             "p0_success_handoff_to_p1_confirm_visible",
             success_handoff_visible,
-            "launcher prints the next ordinary action after readiness: open #home by default, let the user open #candidates/candidate-radar-search-quant-projection next, type silently, confirm to create the Tushare-first POST task, and keep DeepSeek governed/skipped",
+            "launcher prints the next ordinary action after readiness: reuse an existing local Command Center tab or open #home by default, let the user open #candidates/candidate-radar-search-quant-projection next, type silently, confirm to create the Tushare-first POST task, and keep DeepSeek governed/skipped",
+        ),
+        row(
+            "duplicate_tab_guard_reuses_existing_local_page",
+            desktop_launcher_contract.get("duplicate_tab_guard_supported") is True
+            and desktop_launcher_contract.get("launcher_reuses_existing_local_tab_before_open") is True
+            and desktop_launcher_contract.get("launcher_open_mode_default_reuse") is True,
+            "launcher open mode defaults to reuse, focuses an existing local Command Center Chrome tab first, and only opens #home when none exists",
         ),
         row(
             "frontend_api_client_uses_local_fastapi",
@@ -1271,6 +1307,11 @@ def _one_click_startup_summary(
         "skip_open_mode_supported": desktop_launcher_contract.get("skip_open_mode_supported") is True,
         "skip_open_waits_for_frontend_backend_ready": desktop_launcher_contract.get("skip_open_waits_for_frontend_backend_ready") is True,
         "skip_open_mode_opens_browser": False,
+        "launcher_open_mode_default_reuse": desktop_launcher_contract.get("launcher_open_mode_default_reuse") is True,
+        "duplicate_tab_guard_supported": desktop_launcher_contract.get("duplicate_tab_guard_supported") is True,
+        "launcher_reuses_existing_local_tab_before_open": desktop_launcher_contract.get("launcher_reuses_existing_local_tab_before_open")
+        is True,
+        "ordinary_open_behavior_label": desktop_launcher_contract.get("ordinary_open_behavior_label"),
         "get_preflight_cache_starts_services": False,
         "react_render_starts_services": False,
         "search_typing_starts_services": False,

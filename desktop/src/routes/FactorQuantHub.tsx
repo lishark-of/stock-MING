@@ -499,8 +499,7 @@ export default function FactorQuantHub() {
     );
     if (ordinaryQuantTushareFirstProviderSuccessCount > 0) {
       const symbolLabel = candidateRadarConfirmedSymbol ? `${candidateRadarConfirmedSymbol} ` : "";
-      const taskLabel = candidateRadarLatestTaskId ? `；task=${candidateRadarLatestTaskId}` : "";
-      return `${symbolLabel}Tushare-first：ledger 已回放 ${ordinaryQuantTushareFirstProviderLedgerRatio} 个接口${taskLabel}`;
+      return `${symbolLabel}Tushare-first：数据已回放 ${ordinaryQuantTushareFirstProviderLedgerRatio} 个接口`;
     }
     if (candidateRadarConfirmedSymbol && upstreamStage) return `${candidateRadarConfirmedSymbol} Tushare-first：${upstreamStage}`;
     if (upstreamStage) return `Tushare-first：${upstreamStage}`;
@@ -543,6 +542,121 @@ export default function FactorQuantHub() {
     cacheCallLedger.length || ordinaryQuantDataLedgerRows.length ? "ledger 回放可用" : "等待本地 ledger 回放";
   const ordinaryQuantPacketSourceLabel =
     Object.keys(packet).length ? "packet 回放可用" : "等待本地 packet";
+  const ordinaryQuantP2CacheReady =
+    candidateRadarSmallDataWriteback.cache_ready === true ||
+    candidateRadarSmallDataWriteback.cache_written === true ||
+    candidateRadarSmallDataWriteback.small_data_writeback_ready === true ||
+    candidateRadarWritebackSurfaceRows.some((row) =>
+      String(row["写入面"] ?? row.surface ?? "").toLowerCase().includes("cache") &&
+      !String(row["当前状态"] ?? row.status ?? "").includes("等待")
+    );
+  const ordinaryQuantP2LedgerReady =
+    candidateRadarSmallDataWriteback.provider_call_ledger_replayed_from_source_task === true ||
+    candidateRadarSmallDataWriteback.provider_call_ledger_written === true ||
+    candidateRadarReceiptCallLedger.length > 0 ||
+    candidateRadarWritebackSurfaceRows.some((row) =>
+      String(row["写入面"] ?? row.surface ?? "").toLowerCase().includes("ledger") &&
+      !String(row["当前状态"] ?? row.status ?? "").includes("等待")
+    );
+  const ordinaryQuantP2PacketReady =
+    candidateRadarSmallDataWriteback.packet_ready === true ||
+    candidateRadarSmallDataWriteback.packet_written === true ||
+    candidateRadarSmallDataWriteback.cache_packet_written === true ||
+    Boolean(candidateRadarReceipt.status) ||
+    candidateRadarWritebackSurfaceRows.some((row) =>
+      String(row["写入面"] ?? row.surface ?? "").toLowerCase().includes("packet") &&
+      !String(row["当前状态"] ?? row.status ?? "").includes("等待")
+    );
+  const ordinaryQuantP2ReadySurfaceCount = [
+    ordinaryQuantP2CacheReady,
+    ordinaryQuantP2LedgerReady,
+    ordinaryQuantP2PacketReady
+  ].filter(Boolean).length;
+  const ordinaryQuantP2MissingSurfaces = [
+    ordinaryQuantP2CacheReady ? "" : "本地缓存",
+    ordinaryQuantP2LedgerReady ? "" : "数据凭证",
+    ordinaryQuantP2PacketReady ? "" : "结果包"
+  ].filter(Boolean);
+  const ordinaryQuantP2MissingSurfaceLabel = ordinaryQuantP2MissingSurfaces.length
+    ? ordinaryQuantP2MissingSurfaces.join(" / ")
+    : "无缺口";
+  const ordinaryQuantP2ThreeSurfaceFrontSentence = ordinaryQuantP2ReadySurfaceCount === 3
+    ? `${candidateRadarConfirmedSymbol || "当前标的"} P2 本地数据已可从量化页回放：本地缓存、数据凭证、结果包都已接上；继续看支持/压制和次日图谱。`
+    : `${candidateRadarConfirmedSymbol || "当前标的"} P2 三面还缺 ${ordinaryQuantP2MissingSurfaceLabel}；先看任务进度或回下一票雷达确认，不从量化页重复创建任务。`;
+  const ordinaryQuantP2ThreeSurfaceFrontItems: MetricItem[] = [
+    {
+      label: "本地缓存",
+      value: ordinaryQuantP2CacheReady ? "已回放到本地缓存" : "等待确认后写入本地缓存",
+      tone: ordinaryQuantP2CacheReady ? "good" : "warn"
+    },
+    {
+      label: "数据凭证",
+      value: ordinaryQuantP2LedgerReady ? "已看到确认后的数据凭证" : "等待确认后写入数据凭证",
+      tone: ordinaryQuantP2LedgerReady ? "good" : "warn"
+    },
+    {
+      label: "结果包",
+      value: ordinaryQuantP2PacketReady ? "已接上结果包回放" : "等待结果包回放",
+      tone: ordinaryQuantP2PacketReady ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: ordinaryQuantP2MissingSurfaceLabel,
+      tone: ordinaryQuantP2ReadySurfaceCount === 3 ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: ordinaryQuantP2ReadySurfaceCount === 3 ? "看支持/压制和次日图谱" : "先看任务进度；需要换标的再回下一票雷达确认",
+      tone: ordinaryQuantP2ReadySurfaceCount === 3 ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "量化页只读三面回放；不创建第二个 task、不补调 Tushare/DeepSeek、不展示敏感凭据",
+      tone: "good"
+    }
+  ];
+  const ordinaryQuantP2P3ConnectionReady =
+    ordinaryQuantP2ReadySurfaceCount === 3 && ordinaryQuantCandidateRadarP3Ready;
+  const ordinaryQuantP2P3ConnectionPrimaryHref = ordinaryQuantP2P3ConnectionReady
+    ? "#factor-score"
+    : candidateRadarLatestTaskId
+      ? "#tasks"
+      : CANDIDATE_CONFIRM_HREF;
+  const ordinaryQuantP2P3ConnectionPrimaryLabel = ordinaryQuantP2P3ConnectionReady
+    ? "看支持/压制"
+    : candidateRadarLatestTaskId
+      ? "看任务进度"
+      : "回下一票雷达确认";
+  const ordinaryQuantP2P3ConnectionSentence = ordinaryQuantP2P3ConnectionReady
+    ? `${candidateRadarConfirmedSymbol || "当前标的"} P2/P3 已从同一条确认链接到量化页：三面可读，P3 结果可解释；下一步复核支持/压制和次日图谱。`
+    : `${candidateRadarConfirmedSymbol || "当前标的"} P2/P3 仍在接通中：P2 三面 ${ordinaryQuantP2ReadySurfaceCount}/3，P3=${ordinaryQuantCandidateRadarP3Ready ? "可读" : "等待可读结果"}；缺口只显示待回放。`;
+  const ordinaryQuantP2P3ConnectionItems: MetricItem[] = [
+    {
+      label: "同源结果",
+      value: candidateRadarLatestTaskId ? "最近确认结果已接上" : "等待下一票雷达确认",
+      tone: candidateRadarLatestTaskId ? "good" : "warn"
+    },
+    {
+      label: "P2 三面",
+      value: ordinaryQuantP2ReadySurfaceCount === 3 ? "本地缓存 / 数据凭证 / 结果包已可读" : `缺 ${ordinaryQuantP2MissingSurfaceLabel}`,
+      tone: ordinaryQuantP2ReadySurfaceCount === 3 ? "good" : "warn"
+    },
+    {
+      label: "P3 结果",
+      value: ordinaryQuantCandidateRadarP3Ready ? candidateRadarReadableResult : "等待可读结果回放",
+      tone: ordinaryQuantCandidateRadarP3Ready ? "good" : "warn"
+    },
+    {
+      label: "主入口",
+      value: ordinaryQuantP2P3ConnectionPrimaryLabel,
+      tone: ordinaryQuantP2P3ConnectionReady ? "good" : candidateRadarLatestTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "边界",
+      value: "量化页只读合成 P2/P3 本地回放；入口只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantHandoffLocation =
     "交接清单：下一票雷达确认按钮 → Tushare-first task → Factor cache / call_ledger / packet → 次日图谱预览";
   const ordinaryQuantMissingEvidence = [
@@ -617,6 +731,69 @@ export default function FactorQuantHub() {
   const ordinaryQuantP3Boundary = ordinaryQuantCandidateRadarP3Ready
     ? `P3 边界：${candidateRadarReadableBoundary}`
     : "P3 边界：普通摘要只读 Factor cache、Next Session preview 和 DeepSeek status；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
+  const ordinaryQuantP3ExplainableSourceLine = ordinaryQuantCandidateRadarP3Ready
+    ? `来源已接上：最近确认结果已回放；${ordinaryQuantTushareFirstDataChainLabel}；P2 三面 ${ordinaryQuantP2ReadySurfaceCount}/3`
+    : empty
+      ? "来源待确认：先回下一票雷达确认代码，等待本地缓存、数据凭证和结果包回放"
+      : `来源回放：Factor cache / Next Session preview；${ordinaryQuantTushareFirstDataChainLabel}`;
+  const ordinaryQuantP3ExplainableGapLine = ordinaryQuantP2ReadySurfaceCount < 3
+    ? `P2 三面还缺 ${ordinaryQuantP2MissingSurfaceLabel}；先看任务进度或回下一票雷达确认`
+    : ordinaryQuantCandidateRadarP3Ready
+      ? "暂无阻断性 P3 缺口；仍只作为研究线索"
+      : ordinaryQuantMissingEvidence;
+  const ordinaryQuantP3ExplainableNextStep = ordinaryQuantCandidateRadarP3Ready
+    ? candidateRadarReadableNextStep
+    : empty
+      ? "回下一票雷达确认输入区输入代码并点击确认"
+      : "先看支持/压制，再看次日图谱预览；DeepSeek 状态只作 P5 治理提示";
+  const ordinaryQuantP3ExplainableSentence = ordinaryQuantCandidateRadarP3Ready
+    ? `P3 可解释结果：${candidateRadarReadableResult}；${ordinaryQuantP3ExplainableSourceLine}；${ordinaryQuantP3ExplainableGapLine}；下一步=${ordinaryQuantP3ExplainableNextStep}。`
+    : `P3 等待可解释结果：${ordinaryQuantP3ExplainableSourceLine}；${ordinaryQuantP3ExplainableGapLine}；下一步=${ordinaryQuantP3ExplainableNextStep}。`;
+  const ordinaryQuantP3ExplainableFrontItems: MetricItem[] = [
+    {
+      label: "结论",
+      value: ordinaryQuantCandidateRadarP3Ready ? candidateRadarReadableResult : ordinaryQuantP3ReadableConclusion,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "来源",
+      value: ordinaryQuantP3ExplainableSourceLine,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: ordinaryQuantP3ExplainableGapLine,
+      tone: ordinaryQuantP2ReadySurfaceCount === 3 && ordinaryQuantCandidateRadarP3Ready ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: ordinaryQuantP3ExplainableNextStep,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "图谱入口",
+      value: "打开完整次日图谱只切换本地 #next/next-session-chart",
+      tone: "good"
+    },
+    {
+      label: "边界",
+      value: "P3 解释条只读本地结果与次日图谱预览；不调用 DeepSeek、不下单、不改交易策略",
+      tone: "good"
+    }
+  ];
+  const ordinaryQuantResultRouteReady = ordinaryQuantCandidateRadarP3Ready || !empty;
+  const ordinaryQuantResultRouteSentence = ordinaryQuantResultRouteReady
+    ? `${candidateRadarConfirmedSymbol || "当前标的"} 量化结果路标：先看支持/压制，再打开完整次日图谱；换标的回下一票雷达确认。`
+    : "量化结果路标：先回下一票雷达确认代码；确认完成后再看支持/压制和完整次日图谱。";
+  const ordinaryQuantResultRouteBoundary =
+    "量化结果路标只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不交易、不改交易策略";
+  const ordinaryQuantResultRouteItems: MetricItem[] = [
+    { label: "当前结果", value: ordinaryQuantP3ReadableConclusion, tone: ordinaryQuantResultRouteReady ? "good" : "warn" },
+    { label: "先看哪里", value: ordinaryQuantResultRouteReady ? "支持/压制摘要" : "下一票雷达确认输入区", tone: ordinaryQuantResultRouteReady ? "good" : "warn" },
+    { label: "图谱", value: ordinaryQuantFullNextSessionHandoff, tone: ordinaryQuantResultRouteReady ? "good" : "warn" },
+    { label: "换标的", value: "回下一票雷达确认输入区；输入静默，确认按钮才创建 Tushare-first task", tone: "good" },
+    { label: "边界", value: ordinaryQuantResultRouteBoundary, tone: "good" }
+  ];
   const ordinaryQuantP3OneScreenItems: MetricItem[] = factorPacketP3OneScreenRows.length
     ? factorPacketP3OneScreenRows.map((row) => {
         const tone = String(row.tone ?? "neutral");
@@ -628,13 +805,45 @@ export default function FactorQuantHub() {
       })
     : [
         { label: "当前结论", value: candidateRadarReadableResult, tone: ordinaryQuantCandidateRadarP3Ready ? "good" : "warn" },
-        { label: "来源 task", value: candidateRadarLatestTaskId || "等待下一票雷达确认 task", tone: candidateRadarLatestTaskId ? "good" : "warn" },
+        { label: "来源状态", value: candidateRadarLatestTaskId ? "最近确认结果已回放" : "等待下一票雷达确认", tone: candidateRadarLatestTaskId ? "good" : "warn" },
         { label: "Tushare-first", value: ordinaryQuantTushareFirstDataChainLabel, tone: ordinaryQuantTushareFirstProviderSuccessCount > 0 ? "good" : "warn" },
         { label: "支持/压制", value: ordinaryQuantResultComposition, tone: empty ? "warn" : "good" },
         { label: "下一步", value: candidateRadarReadableNextStep },
         { label: "DeepSeek", value: candidateRadarOrdinaryDeepSeekState, tone: candidateRadarUsesModelOutput ? "warn" : "good" },
         { label: "边界", value: "只读 cache / handoff；不创建 task、不外联、不交易、不改 action", tone: "good" }
       ];
+  const ordinaryQuantCrossPageReplayItems: MetricItem[] = [
+    {
+      label: "同源标的",
+      value: candidateRadarConfirmedSymbol || "等待下一票雷达确认",
+      tone: candidateRadarConfirmedSymbol ? "good" : "warn"
+    },
+    {
+      label: "来源任务",
+      value: candidateRadarLatestTaskId || "等待确认 task",
+      tone: candidateRadarLatestTaskId ? "good" : "warn"
+    },
+    {
+      label: "本页结果",
+      value: ordinaryQuantP3ReadableConclusion,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "去图谱",
+      value: ordinaryQuantFullNextSessionHandoff,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "换标的",
+      value: "回下一票雷达确认输入区；输入仍静默，确认按钮才创建 Tushare-first task",
+      tone: "good"
+    },
+    {
+      label: "边界",
+      value: "Factor / Next / Radar 只做本地路由回放；不创建第二个 task、不调用 Tushare/DeepSeek、不改交易策略",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantPostConfirmReplayContractReady =
     ordinaryQuantPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
   const ordinaryQuantPostConfirmReplaySequence = Array.isArray(ordinaryQuantPostConfirmReplayContract.readback_sequence)
@@ -818,7 +1027,7 @@ export default function FactorQuantHub() {
           当前状态: `${ordinaryQuantLedgerSourceLabel} / ${ordinaryQuantPacketSourceLabel}`,
           用户下一步: "按 cache、call_ledger、packet 三面确认结果来源",
           入口: "Factor cache / call_ledger / packet",
-          边界: "写回只读本地 cache / ledger / packet；不补调 provider/model、不展示 token/key。"
+          边界: "写回只读本地 cache / ledger / packet；不补调 provider/model、不展示敏感凭据。"
         },
         {
           行动: "4. 结果",
@@ -867,7 +1076,7 @@ export default function FactorQuantHub() {
     .join(" / ");
   const ordinaryQuantSmallDataWritebackState = candidateRadarSmallDataStateLabel;
   const ordinaryQuantP2WritebackBoundary =
-    "P2 小数据只从 CandidateRadar cache / call_ledger / packet 回放；Factor 页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示 token/key 或 raw log。";
+    "P2 小数据只从 CandidateRadar cache / call_ledger / packet 回放；Factor 页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示 token/key 或 raw log；不展示敏感凭据或 raw log。";
   const ordinaryQuantUpstreamP2WritebackRows = candidateRadarWritebackSurfaceRows.length
     ? candidateRadarWritebackSurfaceRows.map((row) => ({
         写入面: String(row["写入面"] ?? row.surface ?? "writeback"),
@@ -972,7 +1181,7 @@ export default function FactorQuantHub() {
       交接段: "call_ledger",
       用户看到: ordinaryQuantLedgerSourceLabel,
       写入位置: "外联证据只看 task/worker 留下的 call_ledger 或 cache envelope ledger",
-      边界: "ledger 只展示状态、接口、行数和时间；token/key 不进前端、日志、packet 或 cache"
+      边界: "ledger 只展示状态、接口、行数和时间；敏感凭据不进前端、日志、packet 或 cache"
     },
     {
       交接段: "packet",
@@ -1025,6 +1234,33 @@ export default function FactorQuantHub() {
       当前状态: ordinaryQuantDeepSeekSourceLabel,
       用户看到: "模型解释只辅助阅读，不覆盖价格、factor、持仓、operation_zones 或 strategy action",
       边界: "不真实交易、不下单、不生成买入指令"
+    }
+  ];
+  const ordinaryQuantP5StandaloneGovernanceReady =
+    Boolean(deepseekValidation.model_call_status && deepseekValidation.model_call_status !== "not_called");
+  const ordinaryQuantP5StandaloneGovernanceSentence = ordinaryQuantP5StandaloneGovernanceReady
+    ? "P5 单独补证：已有受控模型状态记录；仍需复核 model_ledger / sanitizer / output acceptance / 白名单字段 / fallback 后再开放真实模型解释。DeepSeek 当前不参与 P1-P3 数据链。"
+    : "P5 单独补证：DeepSeek 当前不参与 P1-P3 数据链；Tushare-first、cache/ledger/packet 和次日图谱先可用，真实模型解释等待 governed executor。";
+  const ordinaryQuantP5StandaloneGovernanceItems: MetricItem[] = [
+    {
+      label: "P5 单独补证",
+      value: ordinaryDeepSeekGovernedExecutorState,
+      tone: candidateRadarUsesModelOutput ? "warn" : "good"
+    },
+    {
+      label: "不阻塞",
+      value: "DeepSeek 当前不参与 P1-P3 数据链；P1 Tushare-first、P2 cache/ledger/packet、P3 支持/压制和次日图谱可先读",
+      tone: "good"
+    },
+    {
+      label: "放行条件",
+      value: "model_ledger / sanitizer / output acceptance / 白名单字段 / fallback 齐备后，才进入 governed executor 按钮任务",
+      tone: "warn"
+    },
+    {
+      label: "输出边界",
+      value: "模型解释不覆盖价格、因子、operation_zones 或 strategy action；不作为数据源、不真实交易、不下单",
+      tone: "good"
     }
   ];
   const ordinaryQuantRuntimeModeLabel = `运行模式：${runtimeModeLabel(ordinaryQuantRuntimeMode)}`;
@@ -1136,6 +1372,46 @@ export default function FactorQuantHub() {
           <MetricGrid items={ordinaryQuantP3OneScreenItems} />
           <p className="risk-note">优先读取 /api/factor-quant/cache 的 ordinary_quant_p3_one_screen_summary；只读本地 cache / CandidateRadar handoff，不创建 task、不调用 Tushare/DeepSeek、不交易、不改 strategy action。</p>
         </div>
+        <div id="stock-quant-readable-result" aria-label="stock quant p3 explainable front result">
+          <h3>P3 可解释结果</h3>
+          <p className="ordinary-status-note" aria-label="stock quant p3 explainable front sentence" aria-live="polite">{ordinaryQuantP3ExplainableSentence}</p>
+          <MetricGrid items={ordinaryQuantP3ExplainableFrontItems} />
+          <div aria-label="stock quant result route strip">
+            <h3>量化结果路标</h3>
+            <p className="ordinary-status-note" aria-label="stock quant result route sentence" aria-live="polite">{ordinaryQuantResultRouteSentence}</p>
+            <MetricGrid items={ordinaryQuantResultRouteItems} />
+            <div className="actions" aria-label="stock quant result route actions">
+              <a href="#factor-score" title="跳到支持/压制摘要；只读 Factor cache" aria-label="open support suppress from stock quant result route">支持/压制</a>
+              <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱图表区域；只读本地次日图谱数据" aria-label="open next chart from stock quant result route">完整次日图谱</a>
+              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；换标的仍需确认按钮" aria-label="open candidate confirm from stock quant result route">换一只票</a>
+            </div>
+            <p className="risk-note">{ordinaryQuantResultRouteBoundary}</p>
+          </div>
+          <p className="risk-note">这张解释条只把结论、来源、缺口、下一步和次日图谱入口合成普通读法；不调用 DeepSeek、不生成买卖动作、不覆盖 operation_zones。</p>
+        </div>
+        <div aria-label="stock quant cross page replay handoff">
+          <h3>跨页面同源回放</h3>
+          <MetricGrid items={ordinaryQuantCrossPageReplayItems} />
+          <p className="risk-note">这一条把下一票雷达、股票量化推演和次日图谱连成同一条本地回放线；只切换本地页面或锚点，不创建第二个 task。</p>
+        </div>
+        <div aria-label="stock quant p2 three surface front status">
+          <h3>P2 三面状态</h3>
+          <p className="ordinary-status-note" aria-label="stock quant p2 three surface front sentence" aria-live="polite">{ordinaryQuantP2ThreeSurfaceFrontSentence}</p>
+          <MetricGrid items={ordinaryQuantP2ThreeSurfaceFrontItems} />
+          <p className="risk-note">这张状态条只合成下一票雷达确认后的本地缓存、数据凭证和结果包三面；量化页只读回放，不创建第二个确认任务。</p>
+        </div>
+        <div aria-label="stock quant p2 p3 connection handoff">
+          <h3>P2/P3 接通和下一步</h3>
+          <p className="ordinary-status-note" aria-label="stock quant p2 p3 connection sentence" aria-live="polite">{ordinaryQuantP2P3ConnectionSentence}</p>
+          <MetricGrid items={ordinaryQuantP2P3ConnectionItems} />
+          <div className="actions" aria-label="stock quant p2 p3 connection actions">
+            <a href={ordinaryQuantP2P3ConnectionPrimaryHref} title="只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek" aria-label="open stock quant p2 p3 primary action">{ordinaryQuantP2P3ConnectionPrimaryLabel}</a>
+            <a href="#factor-score" title="跳到支持/压制摘要；只读 Factor cache" aria-label="open support suppress from stock quant p2 p3 handoff">支持/压制</a>
+            <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱；只读本地次日图谱数据" aria-label="open next session from stock quant p2 p3 handoff">次日图谱</a>
+            <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入仍静默" aria-label="open candidate confirm from stock quant p2 p3 handoff">确认或换一只票</a>
+          </div>
+          <p className="risk-note">这条行动条只把下一票雷达确认、P2 三面和 P3 可读结果在量化页串成同一条本地回放；缺口只提示待回放，不补调数据源或模型。</p>
+        </div>
         <details className="developer-audit-details" aria-label="stock quant ordinary summary extra details">
           <summary>更多量化摘要字段</summary>
           <p className="risk-note">普通首屏只保留当前标的、结论、下一步、数据链、图谱/解释和安全边界；P1/P2/P3 完整字段、运行模式、回放位置、缺口和补证方式默认收起。</p>
@@ -1148,8 +1424,11 @@ export default function FactorQuantHub() {
           steps={ordinaryQuantResultRailSteps}
         />
         <p className="risk-note">普通结果状态：雷达确认 / Factor cache / 次日图谱 / DeepSeek 状态；这条状态轨只读本地 cache，不创建 task、不补调 Tushare 或 DeepSeek。</p>
-        <div id="stock-quant-readable-result" aria-label="stock quant latest candidate readable result">
+        <span hidden aria-label="stock quant latest candidate readable result" />
+        <details className="developer-audit-details" aria-label="stock quant latest candidate readable result demoted">
+          <summary>最近搜票明细 / 旧结果回放</summary>
           <h3>最近搜票可读结论</h3>
+          <p className="risk-note">普通路径先看上方 P3 可解释结果；这块保留旧结果回放、来源行和本地跳转，排查或复核时再展开。</p>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_checkpoint_rows，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在量化页首屏直接回放；本卡不创建 task、不补调数据源或模型。</p>
           <MetricGrid
             items={[
@@ -1174,7 +1453,7 @@ export default function FactorQuantHub() {
             {candidateRadarResultCheckpointRows.length ? <DataLineageTable rows={candidateRadarResultCheckpointRows} /> : null}
             {factorPacketCandidateHandoffRows.length ? <DataLineageTable rows={factorPacketCandidateHandoffRows} /> : null}
           </details>
-        </div>
+        </details>
         <details className="developer-audit-details" aria-label="stock quant ordinary task provenance details">
           <summary>任务来源和回放细节</summary>
           <p className="risk-note">task id、P1 确认、P2 三面、任务索引和后端回放合同默认收起；需要排查来源时再展开。本区仍只读 cache / ledger / packet，不创建 task、不补调 Tushare/DeepSeek。</p>
@@ -1246,6 +1525,12 @@ export default function FactorQuantHub() {
         <details className="developer-audit-details" aria-label="stock quant ordinary p5 governance details">
           <summary>P5 解释治理单独补证状态</summary>
           <p className="risk-note">普通主线先复核 P3 支持/压制、次日图谱预览和缺失证据；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
+          <div aria-label="stock quant p5 standalone governance status">
+            <h3>P5 模型解释补证</h3>
+            <p className="ordinary-status-note" aria-label="stock quant p5 standalone governance sentence" aria-live="polite">{ordinaryQuantP5StandaloneGovernanceSentence}</p>
+            <MetricGrid items={ordinaryQuantP5StandaloneGovernanceItems} />
+            <p className="risk-note">P5 只说明模型解释是否达到 governed executor 放行条件；普通投研主线仍先使用 P1/P2/P3 的本地回放结果。</p>
+          </div>
           <div aria-label="stock quant ordinary deepseek governance">
             <h3>DeepSeek 单独治理状态</h3>
             <p className="risk-note">DeepSeek 解释单独补证；不阻塞 Tushare-first、支持/压制和次日图谱；普通页不展示 prompt/output。</p>
@@ -1673,7 +1958,7 @@ export default function FactorQuantHub() {
       <DataLineageTable rows={factorTestProviderSampleActivationCriterionRows} />
       <DataLineageTable rows={factorTestProviderSampleActivationRows} />
       <h3>Factor Test provider 小股票池 dry-run ticket</h3>
-      <p className="risk-note">provider_small_pool_acceptance_dry_run 只绑定未来真实小池验收范围、凭据存在布尔和 scope hash；不调用 Tushare，不计算生产 IC，不泄露 token/key，不代表 provider-backed validation。</p>
+      <p className="risk-note">provider_small_pool_acceptance_dry_run 只绑定未来真实小池验收范围、凭据存在布尔和 scope hash；不调用 Tushare，不计算生产 IC，不泄露敏感凭据，不代表 provider-backed validation。</p>
       <DataLineageTable rows={factorTestProviderSmallPoolDryRunCriterionRows} />
       <DataLineageTable rows={factorTestProviderSmallPoolDryRunRows} />
       <h3>Factor Test provider 小股票池 execution recipe</h3>

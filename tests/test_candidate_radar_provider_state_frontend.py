@@ -10,6 +10,9 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
     def test_search_panel_replays_cached_tushare_state_without_model_claim(self):
+        summary_start = self.page.index('title="普通用户雷达摘要"')
+        summary_end = self.page.index('title="下一票候选池"', summary_start)
+        summary_panel = self.page[summary_start:summary_end]
         search_panel_start = self.page.index('title="搜票量化推演"')
         search_panel_end = self.page.index('title="快速雷达扫描"', search_panel_start)
         search_panel = self.page[search_panel_start:search_panel_end]
@@ -85,11 +88,86 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("普通入口保留“确认并生成”作为 P1 主按钮", search_panel)
         self.assertIn("点击后在本卡显示任务接收和状态", search_panel)
         self.assertIn("title={quantProjectionSubmitButtonLabel}", search_panel)
+        self.assertIn('aria-label="candidate radar ordinary visible progress watch"', summary_panel)
+        self.assertIn("边用边看进度", summary_panel)
+        self.assertIn("MetricGrid items={quantProjectionTaskIndexProgressItems}", summary_panel)
+        self.assertIn("coarseFineScreening", self.page)
+        self.assertIn("coarse_fine_screening_contract", self.page)
+        self.assertIn("coarse_screening_rows", self.page)
+        self.assertIn("fine_screening_rows", self.page)
+        self.assertIn("top_watch_excluded_group_rows", self.page)
+        self.assertIn("ordinaryCoarseFineItems", self.page)
+        self.assertIn("ordinaryCoarseFineGroupRows", self.page)
+        self.assertIn("ordinaryCoarseFineStageRows", self.page)
+        self.assertIn('aria-label="candidate radar coarse fine screening ordinary summary"', summary_panel)
+        self.assertIn("粗筛/细筛候选分组", summary_panel)
+        self.assertIn("Top / Watch / Excluded", summary_panel)
+        self.assertIn("cache-only / local fallback / Tushare-backed sample", summary_panel)
+        self.assertIn("direct evidence slice；不是 production closeout", summary_panel)
+        self.assertIn("GET cache、搜索输入和页面渲染不补调外部数据或模型", summary_panel)
+        self.assertIn("rows={ordinaryCoarseFineGroupRows}", summary_panel)
+        self.assertIn("rows={ordinaryCoarseFineStageRows}", summary_panel)
+        self.assertLess(
+            summary_panel.index('aria-label="candidate radar coarse fine screening ordinary summary"'),
+            summary_panel.index('aria-label="candidate radar ordinary task progress details"'),
+        )
+        self.assertIn('aria-label="refresh candidate radar visible progress readback"', summary_panel)
+        self.assertIn("进度回放只确认 task id、任务步骤、P2/P3 和结果入口", summary_panel)
+        self.assertIn('aria-label="candidate radar optional local actions details"', summary_panel)
+        self.assertIn("<summary>可选本地操作</summary>", summary_panel)
+        self.assertIn("这里保留缓存刷新、本地快扫和重复确认入口，默认收起", summary_panel)
+        self.assertIn('aria-label="candidate radar next user actions"', summary_panel)
+        self.assertLess(
+            summary_panel.index('aria-label="candidate radar ordinary visible progress watch"'),
+            summary_panel.index('aria-label="candidate radar ordinary task progress details"'),
+        )
+        self.assertLess(
+            summary_panel.index('aria-label="candidate radar primary next action"'),
+            summary_panel.index('aria-label="candidate radar optional local actions details"'),
+        )
+        self.assertLess(
+            summary_panel.index('aria-label="candidate radar optional local actions details"'),
+            summary_panel.index('aria-label="candidate radar ordinary audit shortcuts"'),
+        )
+        self.assertIn("quantProjectionOrdinaryOneGlanceItems", self.page)
+        ordinary_one_glance_start = self.page.index("const quantProjectionOrdinaryOneGlanceItems")
+        ordinary_one_glance_end = self.page.index("const quantProjectionFailedSubmitLedgerRows", ordinary_one_glance_start)
+        ordinary_one_glance_definition = self.page[ordinary_one_glance_start:ordinary_one_glance_end]
+        self.assertIn('aria-label="quant projection ordinary one glance state"', search_panel_top)
+        self.assertIn("确认后一眼看懂", search_panel_top)
+        self.assertIn("MetricGrid items={quantProjectionOrdinaryOneGlanceItems}", search_panel_top)
+        self.assertIn('label: "结果入口"', self.page)
+        self.assertIn("股票量化推演 / 次日图谱按同一次确认回放", self.page)
+        self.assertIn("不交易、不改交易策略", ordinary_one_glance_definition)
+        self.assertNotIn("不交易、不改 action", ordinary_one_glance_definition)
+        self.assertIn('aria-label="quant projection ordinary input and submit notes"', search_panel_top)
+        self.assertIn("<summary>输入与按钮状态</summary>", search_panel_top)
+        ordinary_visible_end = search_panel_top.index(
+            '<details className="developer-audit-details" aria-label="quant projection ordinary input and submit notes">'
+        )
+        ordinary_visible_top = search_panel_top[:ordinary_visible_end]
+        self.assertIn("输入代码并确认后生成本地投研结果；模型解释作为高级能力单独补", ordinary_visible_top)
+        self.assertIn("本地 FastAPI 已接上：可以输入股票代码；只有确认按钮会启动本地投研数据链。", self.page)
+        self.assertNotIn("POST task", ordinary_visible_top)
+        self.assertNotIn("DeepSeek skipped", ordinary_visible_top)
+        self.assertNotIn("Tushare-first", ordinary_visible_top)
+        submit_label_start = self.page.index("const quantProjectionSubmitButtonLabel")
+        submit_label_end = self.page.index("const quantProjectionSubmitAriaLabel", submit_label_start)
+        submit_label_definition = self.page[submit_label_start:submit_label_end]
+        self.assertIn("确认 ${quantProjectionSymbolValidation.normalized} 并生成本地投研结果", submit_label_definition)
+        self.assertNotIn("POST task", submit_label_definition)
+        self.assertNotIn("DeepSeek skipped", submit_label_definition)
+        self.assertNotIn("Tushare-first", submit_label_definition)
+        self.assertNotIn("task id", submit_label_definition)
+        self.assertLess(
+            search_panel_top.index('aria-label="quant projection ordinary one glance state"'),
+            search_panel_top.index('label="quant projection ordinary task status"'),
+        )
         self.assertIn(
             'aria-label="quant projection ordinary p1 p2 engineering details"',
             search_panel,
         )
-        self.assertIn("<summary>P1/P2 任务与写入详情</summary>", search_panel)
+        self.assertIn("<summary>查看任务与回放明细</summary>", search_panel)
         self.assertIn("普通主视图先保留状态轨、可读结论和回放入口", search_panel)
         self.assertNotIn('aria-label="quant projection p1 confirm gate checklist"', search_panel_top)
         self.assertNotIn('aria-label="quant projection ordinary p2 writeback integrity"', search_panel_top)
@@ -117,7 +195,7 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("任务状态面板已固定在确认后一屏结果", handoff)
         self.assertNotIn("TaskStatusPanel", handoff)
         self.assertIn("后台补证申请待准备", self.page)
-        self.assertIn("普通页只看回放状态", self.page)
+        self.assertIn("普通页只看结果状态", self.page)
         self.assertIn("不额外刷新外部数据或模型", self.page)
         self.assertNotIn("确认 Tushare-first 补证", search_panel)
         self.assertNotIn("生成 provider/model execution request", search_panel_top)
@@ -130,11 +208,16 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
             search_panel,
         )
         self.assertIn("普通页不展示 prompt/output", search_panel)
-        self.assertIn("不改 action", self.page)
-        self.assertIn('aria-label="quant projection ordinary p1 p2 immediate readback"', search_panel_top)
+        self.assertIn("不改交易策略", self.page)
+        self.assertIn("敏感凭据", self.page)
+        self.assertNotIn("不改 action", self.page)
+        self.assertNotIn("token/key", self.page)
+        self.assertIn('className="developer-audit-details" aria-label="quant projection ordinary p1 p2 immediate readback"', search_panel_top)
+        self.assertIn("<summary>P1/P2 即时回读表</summary>", search_panel_top)
         self.assertIn("P1/P2 即时回读", search_panel_top)
         self.assertIn("ordinary_confirm_outcome_rows 与 ordinary_writeback_surface_summary_rows", search_panel_top)
-        self.assertIn("只读本地 cache，不创建第二个 task", search_panel_top)
+        self.assertIn("这两张 P1/P2 回放表默认收起", search_panel_top)
+        self.assertIn("不创建第二个 task", search_panel_top)
         self.assertIn("rows={quantProjectionOrdinaryConfirmOutcomeRows}", search_panel_top)
         self.assertIn("rows={quantProjectionWritebackSurfaceRows}", search_panel_top)
         self.assertLess(

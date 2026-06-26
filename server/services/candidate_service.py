@@ -97,6 +97,7 @@ CANDIDATE_PROVIDER_PARITY_EXECUTION_REQUEST_ROUTE = "POST /api/candidate-radar/p
 CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_SCHEMA_VERSION = "candidate_radar_provider_parity_acceptance.v1"
 CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_TASK_TYPE = "run_candidate_radar_provider_parity_acceptance"
 CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_ROUTE = "POST /api/candidate-radar/provider-parity-acceptance"
+CANDIDATE_COARSE_FINE_SCREENING_SCHEMA_VERSION = "candidate_radar_coarse_fine_screening.v1"
 PROVIDER_PARITY_ACCEPTANCE_API_ALIASES = {
     "holdertrade": "stk_holdertrade",
     "pledge": "pledge_stat",
@@ -3470,6 +3471,451 @@ def _candidate_priority_explanation_contract(
         "rows": rows,
         "note": "This contract explains visible cached candidate rank/score and missing evidence fields. It does not rescore, reorder, refresh providers, call models, or create trading instructions.",
     }
+
+
+def _coarse_fine_provider_status(coverage: Mapping[str, Any], signal_group: str) -> tuple[str, str]:
+    for row in _as_list(coverage.get("provider_coverage_rows")):
+        if not isinstance(row, dict) or str(row.get("signal_group") or "") != signal_group:
+            continue
+        return str(row.get("coverage_status") or "missing_provider_data"), str(
+            row.get("label") or signal_group
+        )
+    return "missing_provider_data", signal_group
+
+
+def _coarse_fine_receipt_summary(*receipts: Mapping[str, Any]) -> dict[str, Any]:
+    provider_api_call_count = 0
+    provider_api_success_count = 0
+    direct_evidence_verified = False
+    tushare_call_ledger_evidence_done = False
+    deepseek_skipped_by_request = False
+    receipt_sources: list[str] = []
+    for receipt in receipts:
+        item = _as_dict(receipt)
+        if not item:
+            continue
+        provider_api_call_count = max(provider_api_call_count, int(item.get("provider_api_call_count") or 0))
+        provider_api_success_count = max(
+            provider_api_success_count,
+            int(item.get("provider_api_success_count") or 0),
+        )
+        direct_evidence_verified = direct_evidence_verified or item.get("direct_evidence_verified") is True
+        tushare_call_ledger_evidence_done = (
+            tushare_call_ledger_evidence_done or item.get("tushare_call_ledger_evidence_done") is True
+        )
+        deepseek_skipped_by_request = deepseek_skipped_by_request or item.get("deepseek_skipped_by_request") is True
+        if item.get("schema_version"):
+            receipt_sources.append(str(item.get("schema_version")))
+    provider_backed_sample = bool(
+        (direct_evidence_verified or tushare_call_ledger_evidence_done) and provider_api_success_count > 0
+    )
+    return {
+        "provider_backed_sample": provider_backed_sample,
+        "tushare_backed": provider_backed_sample,
+        "tushare_call_ledger_evidence_done": bool(tushare_call_ledger_evidence_done),
+        "direct_evidence_verified": bool(direct_evidence_verified),
+        "provider_api_call_count": provider_api_call_count,
+        "provider_api_success_count": provider_api_success_count,
+        "deepseek_skipped_by_request": bool(deepseek_skipped_by_request),
+        "receipt_sources": receipt_sources,
+    }
+
+
+def _coarse_fine_screening_row(
+    *,
+    phase: str,
+    criterion: str,
+    label: str,
+    status: str,
+    evidence: str,
+    source_mode: str,
+    gap_visible: bool,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "criterion": criterion,
+        "label": label,
+        "status": status,
+        "evidence": evidence,
+        "source_mode": source_mode,
+        "gap_visible": bool(gap_visible),
+        "manual_review_required": True,
+        "candidate_is_not_buy_instruction": True,
+        "does_not_recompute_score": True,
+        "does_not_sort_candidates": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+    }
+
+
+def _candidate_gap_summary(row: Mapping[str, Any]) -> str:
+    gaps = [str(item) for item in _as_list(row.get("data_gaps")) if item not in (None, "", [], {})]
+    if gaps:
+        return " / ".join(gaps[:3])
+    missing = _candidate_explanation_missing_fields(row)
+    if missing:
+        return "missing:" + ",".join(missing[:3])
+    return "未标记关键缺口"
+
+
+def _coarse_fine_candidate_group_row(
+    row: Mapping[str, Any],
+    *,
+    index: int,
+    group: str,
+    source_mode: str,
+    receipt_summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    gap_count = _candidate_data_gap_count(row)
+    reason = (
+        row.get("evidence_chain_summary")
+        or row.get("trigger_condition")
+        or row.get("action_state")
+        or row.get("status_label")
+        or "按现有候选缓存顺序进入复核"
+    )
+    fine_reason = (
+        "Factor light=score present"
+        if row.get("score") not in (None, "")
+        else "Factor light=score missing"
+    )
+    return {
+        "group": group,
+        "display_rank": row.get("rank") or index,
+        "ticker": row.get("ticker"),
+        "name": row.get("name"),
+        "cached_score": row.get("score"),
+        "reason": reason,
+        "coarse_reason": "优先按本地候选顺序、基础字段和可见缺口复核",
+        "fine_reason": fine_reason,
+        "data_source": row.get("source") or source_mode,
+        "source_mode": source_mode,
+        "gap_summary": _candidate_gap_summary(row),
+        "data_gap_count": gap_count,
+        "tushare_backed": receipt_summary.get("tushare_backed") is True,
+        "cache_only": source_mode == "cache_only",
+        "manual_review_required": True,
+        "candidate_is_not_buy_instruction": True,
+        "does_not_recompute_score": True,
+        "does_not_sort_candidates": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def _coarse_fine_excluded_row(raw: Any, *, index: int, source_mode: str) -> dict[str, Any]:
+    item = _as_dict(raw)
+    ticker = item.get("ticker") or item.get("symbol") or item.get("ts_code") or item.get("code")
+    reason = item.get("reason") or item.get("status_label") or item.get("data_gaps") or item.get("action")
+    if not item and raw not in (None, "", [], {}):
+        ticker = raw
+        reason = "excluded_candidates cache entry"
+    return {
+        "group": "Excluded",
+        "display_rank": index,
+        "ticker": ticker or f"excluded_{index}",
+        "name": item.get("name"),
+        "cached_score": item.get("score"),
+        "reason": reason or "排除或等待补证",
+        "coarse_reason": "排除项或输入跳过项显式下沉展示",
+        "fine_reason": "缺少复核所需证据，先不进入 Top/Watch",
+        "data_source": item.get("source") or source_mode,
+        "source_mode": source_mode,
+        "gap_summary": reason or "excluded",
+        "data_gap_count": 1,
+        "tushare_backed": False,
+        "cache_only": source_mode == "cache_only",
+        "manual_review_required": True,
+        "candidate_is_not_buy_instruction": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+    }
+
+
+def _coarse_fine_screening_contract(
+    candidate_rows: list[dict[str, Any]],
+    excluded_candidates: list[Any],
+    *,
+    scan_mode: str,
+    coverage: Mapping[str, Any],
+    local_pool_audit: Mapping[str, Any],
+    candidate_priority_explanation_contract: Mapping[str, Any],
+    search_quant_provider_model_acceptance_receipt: Mapping[str, Any],
+    provider_parity_acceptance_receipt: Mapping[str, Any],
+    full_pool_local_execution_receipt: Mapping[str, Any],
+    deep_scan_local_review_receipt: Mapping[str, Any],
+    skipped_reason_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    receipt_summary = _coarse_fine_receipt_summary(
+        search_quant_provider_model_acceptance_receipt,
+        provider_parity_acceptance_receipt,
+    )
+    local_input_visible = bool(
+        scan_mode in LOCAL_POOL_SCAN_MODES
+        or local_pool_audit.get("normalized_candidate_count")
+        or full_pool_local_execution_receipt.get("local_full_pool_execution_done") is True
+        or deep_scan_local_review_receipt.get("local_deep_scan_review_done") is True
+    )
+    source_mode = (
+        "tushare_backed_sample"
+        if receipt_summary["provider_backed_sample"]
+        else "local_fallback"
+        if local_input_visible
+        else "cache_only"
+        if candidate_rows
+        else "empty_cache"
+    )
+    moneyflow_status, moneyflow_label = _coarse_fine_provider_status(coverage, "moneyflow")
+    hard_risk_status, hard_risk_label = _coarse_fine_provider_status(coverage, "hard_risk")
+    provider_gap_count = int(_as_dict(coverage.get("coverage_detail_summary")).get("provider_blocked_group_count") or 0) + int(
+        _as_dict(coverage.get("coverage_detail_summary")).get("stale_input_group_count") or 0
+    ) + int(_as_dict(coverage.get("coverage_detail_summary")).get("missing_provider_data_group_count") or 0)
+    candidate_gap_count = sum(_candidate_data_gap_count(row) for row in candidate_rows)
+    score_present_count = sum(1 for row in candidate_rows if row.get("score") not in (None, ""))
+    freshness_state = _as_dict(coverage.get("freshness_state"))
+    freshness_ready = freshness_state.get("source") != "missing" and str(freshness_state.get("state") or "").lower() not in {
+        "stale",
+        "expired",
+        "historical",
+        "unknown",
+    }
+    top_candidates = [
+        _coarse_fine_candidate_group_row(
+            row,
+            index=index,
+            group="Top",
+            source_mode=source_mode,
+            receipt_summary=receipt_summary,
+        )
+        for index, row in enumerate(candidate_rows[:3], start=1)
+    ]
+    watch_candidates = [
+        _coarse_fine_candidate_group_row(
+            row,
+            index=index,
+            group="Watch",
+            source_mode=source_mode,
+            receipt_summary=receipt_summary,
+        )
+        for index, row in enumerate(candidate_rows[3:12], start=4)
+    ]
+    excluded_rows = [
+        _coarse_fine_excluded_row(row, index=index, source_mode=source_mode)
+        for index, row in enumerate(excluded_candidates[:8], start=1)
+    ]
+    if not excluded_rows:
+        visible_skips = [
+            row
+            for row in skipped_reason_rows
+            if str(row.get("reason") or "").startswith("local_candidate")
+            or str(row.get("reason") or "").startswith("local_pool_candidate")
+            or str(row.get("reason") or "") in {"excluded_candidates_present", "candidate_rows_display_capped"}
+        ]
+        excluded_rows = [
+            _coarse_fine_excluded_row(row, index=index, source_mode=source_mode)
+            for index, row in enumerate(visible_skips[:5], start=1)
+        ]
+    coarse_rows = [
+        _coarse_fine_screening_row(
+            phase="coarse",
+            criterion="liquidity",
+            label="流动性",
+            status="provider_available" if moneyflow_status == "available" else "gap_visible_review_required",
+            evidence=f"{moneyflow_label}:{moneyflow_status}; source_mode={source_mode}",
+            source_mode=source_mode,
+            gap_visible=moneyflow_status != "available",
+        ),
+        _coarse_fine_screening_row(
+            phase="coarse",
+            criterion="trend",
+            label="趋势",
+            status="local_candidate_signal_present" if candidate_rows else "empty_cache",
+            evidence=f"candidate_rows={len(candidate_rows)}; score_present={score_present_count}",
+            source_mode=source_mode,
+            gap_visible=not candidate_rows,
+        ),
+        _coarse_fine_screening_row(
+            phase="coarse",
+            criterion="turnover",
+            label="成交",
+            status="provider_available" if moneyflow_status == "available" else "provider_pending_local_review",
+            evidence=f"moneyflow coverage={moneyflow_status}",
+            source_mode=source_mode,
+            gap_visible=moneyflow_status != "available",
+        ),
+        _coarse_fine_screening_row(
+            phase="coarse",
+            criterion="basic_data",
+            label="基础数据可用性",
+            status="freshness_ready" if freshness_ready else "freshness_gap_visible",
+            evidence=f"freshness={freshness_state.get('state') or 'unknown'}; source={freshness_state.get('source') or 'missing'}",
+            source_mode=source_mode,
+            gap_visible=not freshness_ready,
+        ),
+        _coarse_fine_screening_row(
+            phase="coarse",
+            criterion="risk_gap",
+            label="风险缺口",
+            status="gap_visible_review_required" if candidate_gap_count or provider_gap_count or excluded_rows else "no_gap_marked",
+            evidence=f"candidate_gap_count={candidate_gap_count}; provider_gap_count={provider_gap_count}; excluded={len(excluded_rows)}",
+            source_mode=source_mode,
+            gap_visible=bool(candidate_gap_count or provider_gap_count or excluded_rows),
+        ),
+    ]
+    fine_rows = [
+        _coarse_fine_screening_row(
+            phase="fine",
+            criterion="factor_light",
+            label="Factor light",
+            status="local_score_present" if score_present_count else "score_missing",
+            evidence=f"score_present={score_present_count}/{len(candidate_rows)}",
+            source_mode=source_mode,
+            gap_visible=score_present_count < len(candidate_rows),
+        ),
+        _coarse_fine_screening_row(
+            phase="fine",
+            criterion="moneyflow",
+            label="moneyflow",
+            status="tushare_backed" if receipt_summary["provider_backed_sample"] and moneyflow_status == "available" else "provider_pending_or_gap",
+            evidence=f"provider_api_success={receipt_summary['provider_api_success_count']}/{receipt_summary['provider_api_call_count']}; coverage={moneyflow_status}",
+            source_mode=source_mode,
+            gap_visible=not (receipt_summary["provider_backed_sample"] and moneyflow_status == "available"),
+        ),
+        _coarse_fine_screening_row(
+            phase="fine",
+            criterion="daily_basic",
+            label="daily_basic",
+            status="tushare_backed" if receipt_summary["provider_backed_sample"] else "provider_pending_or_local_basic_only",
+            evidence=f"tushare_backed={receipt_summary['provider_backed_sample']}; freshness={freshness_state.get('state') or 'unknown'}",
+            source_mode=source_mode,
+            gap_visible=not receipt_summary["provider_backed_sample"],
+        ),
+        _coarse_fine_screening_row(
+            phase="fine",
+            criterion="next_session",
+            label="Next Session 状态",
+            status="local_replay_or_pending",
+            evidence="next_session is read from local cache/replay only in this slice",
+            source_mode=source_mode,
+            gap_visible=True,
+        ),
+        _coarse_fine_screening_row(
+            phase="fine",
+            criterion="candidate_explanation",
+            label="候选解释",
+            status=str(candidate_priority_explanation_contract.get("status") or "missing"),
+            evidence=f"explained={candidate_priority_explanation_contract.get('explained_candidate_count') or 0}; hard_risk={hard_risk_status}",
+            source_mode=source_mode,
+            gap_visible=bool(candidate_priority_explanation_contract.get("explanation_gap_count") or hard_risk_status != "available"),
+        ),
+    ]
+    group_rows = top_candidates + watch_candidates + excluded_rows
+    status = (
+        "coarse_fine_screening_ready_tushare_backed_sample"
+        if receipt_summary["provider_backed_sample"]
+        else "coarse_fine_screening_ready_local_fallback"
+        if local_input_visible or candidate_rows
+        else "coarse_fine_screening_empty_cache"
+    )
+    return {
+        "schema_version": CANDIDATE_COARSE_FINE_SCREENING_SCHEMA_VERSION,
+        "status": status,
+        "scan_mode": scan_mode,
+        "source_mode": source_mode,
+        "cache_only": source_mode == "cache_only",
+        "local_fallback_evidence_visible": bool(local_input_visible),
+        "tushare_backed": receipt_summary["tushare_backed"],
+        "provider_backed_sample": receipt_summary["provider_backed_sample"],
+        "tushare_call_ledger_evidence_done": receipt_summary["tushare_call_ledger_evidence_done"],
+        "direct_evidence_verified": receipt_summary["direct_evidence_verified"],
+        "provider_api_success_count": receipt_summary["provider_api_success_count"],
+        "provider_api_call_count": receipt_summary["provider_api_call_count"],
+        "deepseek_called": False,
+        "deepseek_status": "governed_pending",
+        "deepseek_skipped_by_request": receipt_summary["deepseek_skipped_by_request"],
+        "candidate_is_not_buy_instruction": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "github_called": False,
+        "does_not_recompute_score": True,
+        "does_not_sort_candidates": True,
+        "button_gated_workflow_only": True,
+        "get_cache_external_calls": False,
+        "react_render_external_calls": False,
+        "search_input_external_calls": False,
+        "ltg13_direct_evidence_slice": True,
+        "ltg13_production_complete": False,
+        "top_count": len(top_candidates),
+        "watch_count": len(watch_candidates),
+        "excluded_count": len(excluded_rows),
+        "coarse_row_count": len(coarse_rows),
+        "fine_row_count": len(fine_rows),
+        "gap_visible_count": sum(1 for row in coarse_rows + fine_rows if row.get("gap_visible")),
+        "top_candidates": top_candidates,
+        "watch_candidates": watch_candidates,
+        "excluded_candidates": excluded_rows,
+        "group_rows": group_rows,
+        "coarse_screening_rows": coarse_rows,
+        "fine_screening_rows": fine_rows,
+        "note": "Rank-preserving coarse/fine candidate grouping for user review. This slice reads local cache/receipts only; it does not scan a full market, call providers/models from GET/render, rescore, or create trading instructions.",
+    }
+
+
+def _attach_coarse_fine_screening_contract(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    candidate_rows = [row for row in _as_list(view.get("candidate_rows")) if isinstance(row, dict)]
+    contract = _coarse_fine_screening_contract(
+        candidate_rows,
+        _as_list(view.get("excluded_candidates")),
+        scan_mode=str(view.get("scan_mode") or "cache_only"),
+        coverage={
+            "provider_coverage_rows": _as_list(view.get("provider_coverage_rows")),
+            "coverage_detail_summary": _as_dict(view.get("coverage_detail_summary")),
+            "freshness_state": _as_dict(view.get("freshness_state")),
+        },
+        local_pool_audit=_as_dict(view.get("local_candidate_pool_audit")),
+        candidate_priority_explanation_contract=_as_dict(view.get("candidate_priority_explanation_contract")),
+        search_quant_provider_model_acceptance_receipt=_as_dict(
+            view.get("search_quant_provider_model_acceptance_receipt")
+        ),
+        provider_parity_acceptance_receipt=_as_dict(view.get("provider_parity_acceptance_receipt")),
+        full_pool_local_execution_receipt=_as_dict(view.get("full_pool_local_execution_receipt")),
+        deep_scan_local_review_receipt=_as_dict(view.get("deep_scan_local_review_receipt")),
+        skipped_reason_rows=[row for row in _as_list(view.get("skipped_reason_rows")) if isinstance(row, dict)],
+    )
+    view["coarse_fine_screening_contract"] = contract
+    view["coarse_screening_rows"] = contract["coarse_screening_rows"]
+    view["fine_screening_rows"] = contract["fine_screening_rows"]
+    view["top_watch_excluded_group_rows"] = contract["group_rows"]
+    view["top_candidates"] = contract["top_candidates"]
+    view["watch_candidates"] = contract["watch_candidates"]
+    counts = dict(_as_dict(view.get("counts")))
+    counts["coarse_fine_top_count"] = contract["top_count"]
+    counts["coarse_fine_watch_count"] = contract["watch_count"]
+    counts["coarse_fine_excluded_count"] = contract["excluded_count"]
+    counts["coarse_fine_gap_visible_count"] = contract["gap_visible_count"]
+    counts["coarse_fine_coarse_row_count"] = contract["coarse_row_count"]
+    counts["coarse_fine_fine_row_count"] = contract["fine_row_count"]
+    counts["coarse_fine_provider_api_success_count"] = contract["provider_api_success_count"]
+    view["counts"] = counts
+    policy = dict(_as_dict(view.get("policy")))
+    policy["coarse_fine_screening_contract_is_local"] = True
+    policy["coarse_fine_screening_button_gated_workflow_only"] = True
+    policy["coarse_fine_screening_get_cache_external_calls"] = False
+    policy["coarse_fine_screening_react_render_external_calls"] = False
+    policy["coarse_fine_screening_search_input_external_calls"] = False
+    policy["coarse_fine_screening_is_not_trade_signal"] = True
+    policy["coarse_fine_screening_does_not_modify_strategy_action"] = True
+    policy["coarse_fine_screening_ltg13_direct_evidence_slice"] = True
+    policy["coarse_fine_screening_ltg13_production_complete"] = False
+    view["policy"] = policy
+    return view
 
 
 def _has_any_candidate_field(candidate_rows: list[dict[str, Any]], fields: list[str]) -> bool:
@@ -8923,11 +9369,22 @@ def _candidate_radar_durable_evidence_recipe(
     provider_call_ledger_evidence_done = bool(
         provider_parity_call_ledger_done or search_quant_provider_model_evidence_done
     )
-    local_browser_visual_perf_reviewed = bool(
-        browser_evidence.get("candidate_visual_qa_evidence_passed") is True
+    browser_visual_perf_artifact_evidence_done = bool(
+        browser_evidence.get("candidate_browser_qa_evidence_ready") is True
+        and browser_evidence.get("local_browser_qa_evidence_found") is True
+        and browser_evidence.get("candidate_visual_qa_evidence_passed") is True
         and browser_evidence.get("candidate_browser_performance_evidence_passed") is True
-        and browser_review.get("local_browser_qa_review_ready") is True
-        and promotion.get("browser_evidence_blocker_count") == 0
+        and browser_evidence.get("production_radar_replacement_complete") is False
+        and browser_evidence.get("legacy_retirement_ready") is False
+    )
+    local_browser_visual_perf_reviewed = bool(
+        browser_visual_perf_artifact_evidence_done
+        or (
+            browser_review.get("local_browser_qa_review_ready") is True
+            and browser_review.get("candidate_visual_qa_evidence_passed") is True
+            and browser_review.get("candidate_browser_performance_evidence_passed") is True
+            and promotion.get("browser_evidence_blocker_count") == 0
+        )
     )
     browser_visual_perf_done = local_browser_visual_perf_reviewed
     deepseek_model_ledger_done = False
@@ -13896,6 +14353,7 @@ def _build_candidate_radar_packet(
     if not candidate_rows:
         packet["warnings"].append("当前没有可展示候选；3.0 cache 页不会自动刷新或扫描。")
     packet = _preserve_candidate_radar_persisted_receipts(packet, previous_map)
+    packet = _attach_coarse_fine_screening_contract(packet)
     packet = _attach_quick_scan_receipt_contract(packet)
     task_pipeline_contract, task_pipeline_rows = _fast_scan_task_pipeline_contract(packet)
     counts = dict(_as_dict(packet.get("counts")))
@@ -14152,6 +14610,7 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view["does_not_execute_trades"] = True
     view["does_not_modify_strategy_action"] = True
     view["contains_secret"] = False
+    view = _attach_coarse_fine_screening_contract(view)
     view = _attach_quick_scan_receipt_contract(view)
     task_pipeline_contract, task_pipeline_rows = _fast_scan_task_pipeline_contract(view)
     counts = dict(_as_dict(view.get("counts")))

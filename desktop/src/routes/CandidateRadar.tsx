@@ -469,6 +469,7 @@ export default function CandidateRadar() {
   const productionStageScopeManifest = (cache.candidate_radar_production_stage_scope_manifest as Record<string, unknown> | undefined) ?? {};
   const resultDeltaClarity = (cache.result_delta_clarity_contract as Record<string, unknown> | undefined) ?? {};
   const candidatePriorityExplanation = (cache.candidate_priority_explanation_contract as Record<string, unknown> | undefined) ?? {};
+  const coarseFineScreening = (cache.coarse_fine_screening_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaRunbook = (cache.candidate_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaEvidence = (cache.candidate_browser_qa_evidence_summary as Record<string, unknown> | undefined) ?? {};
   const browserQaReview = (cache.candidate_browser_qa_review_contract as Record<string, unknown> | undefined) ?? {};
@@ -522,6 +523,9 @@ export default function CandidateRadar() {
   const resultDeltaClarityRows = rows(cache.result_delta_clarity_rows);
   const previousCacheDiffRows = rows(cache.previous_cache_diff_rows);
   const candidatePriorityExplanationRows = rows(cache.candidate_priority_explanation_rows);
+  const coarseScreeningRows = rows(cache.coarse_screening_rows);
+  const fineScreeningRows = rows(cache.fine_screening_rows);
+  const topWatchExcludedGroupRows = rows(cache.top_watch_excluded_group_rows);
   const browserQaRunbookRows = rows(cache.candidate_browser_qa_runbook_rows);
   const browserQaMatrixRows = rows(cache.candidate_browser_qa_matrix_rows);
   const browserQaEvidenceRows = rows(cache.candidate_browser_qa_evidence_rows);
@@ -698,15 +702,55 @@ export default function CandidateRadar() {
   );
   const ordinaryRadarResultLocation =
     "结果位置：本页下一票候选池看 Top/Watch/Excluded；搜单票用搜票量化推演；生成后去股票量化推演和次日图谱，只读回放";
-  const ordinaryCandidateTopCount = rows(cache.candidate_rows).length || Number(counts.candidate_count ?? 0);
-  const ordinaryCandidateWatchCount = rows(radarPacket.watch_candidates).length;
-  const ordinaryCandidateExcludedCount = rows(cache.excluded_candidates).length || rows(radarPacket.excluded_candidates).length;
+  const coarseFineSourceMode = String(coarseFineScreening.source_mode ?? (rows(cache.candidate_rows).length ? "cache_only" : "empty_cache"));
+  const coarseFineSourceLabel =
+    coarseFineSourceMode === "tushare_backed_sample"
+      ? `Tushare-backed sample：${String(coarseFineScreening.provider_api_success_count ?? 0)}/${String(coarseFineScreening.provider_api_call_count ?? 0)} 个接口可回放`
+      : coarseFineSourceMode === "local_fallback"
+        ? "local fallback：来自按钮门控本地股票池或本地全池记录"
+        : coarseFineSourceMode === "cache_only"
+          ? "cache-only：只读本地候选缓存"
+          : "empty cache：暂无候选";
+  const coarseFineGapLabel = Number(coarseFineScreening.gap_visible_count ?? 0)
+    ? `可见缺口 ${String(coarseFineScreening.gap_visible_count)} 项；先复核来源和缺口`
+    : "未标记粗筛/细筛缺口";
+  const ordinaryCandidateTopCount = Number(coarseFineScreening.top_count ?? 0) || rows(cache.candidate_rows).length || Number(counts.candidate_count ?? 0);
+  const ordinaryCandidateWatchCount = Number(coarseFineScreening.watch_count ?? 0) || rows(radarPacket.watch_candidates).length;
+  const ordinaryCandidateExcludedCount = Number(coarseFineScreening.excluded_count ?? 0) || rows(cache.excluded_candidates).length || rows(radarPacket.excluded_candidates).length;
   const ordinaryCandidateGroupLabel =
     `Top ${ordinaryCandidateTopCount} / Watch ${ordinaryCandidateWatchCount} / Excluded ${ordinaryCandidateExcludedCount}`;
   const ordinaryCandidateReviewOrder =
     "先看 Top / Watch / Excluded 分组，再看候选来源、评分说明和缺少证据；不要从 provider 审计表开始";
   const ordinaryCandidateGroupBoundary =
     "Top 是优先复核，Watch 是观察，Excluded 是排除或等待；三者都不是买入、卖出或加仓指令";
+  const ordinaryCoarseFineItems: MetricItem[] = [
+    { label: "候选分组", value: ordinaryCandidateGroupLabel },
+    { label: "数据来源", value: coarseFineSourceLabel, tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn" },
+    { label: "cache-only", value: String(coarseFineScreening.cache_only === true || coarseFineSourceMode === "cache_only") },
+    { label: "Tushare-backed", value: String(coarseFineScreening.tushare_backed === true), tone: coarseFineScreening.tushare_backed === true ? "good" : "warn" },
+    { label: "缺口", value: coarseFineGapLabel, tone: Number(coarseFineScreening.gap_visible_count ?? 0) ? "warn" : "good" },
+    { label: "模型解释", value: String(coarseFineScreening.deepseek_status ?? "governed_pending") },
+    { label: "边界", value: "候选不是买入指令；不交易、不改交易策略", tone: "good" },
+    { label: "LTG-13", value: "direct evidence slice；不是 production closeout", tone: "warn" }
+  ];
+  const ordinaryCoarseFineGroupRows = topWatchExcludedGroupRows.slice(0, 12).map((row, index) => ({
+    序号: displayText(row.display_rank, String(index + 1)),
+    分组: displayText(row.group),
+    标的: displayText(row.ticker),
+    名称: displayText(row.name),
+    理由: displayText(row.reason),
+    来源: displayText(row.source_mode ?? row.data_source, coarseFineSourceMode),
+    缺口: displayText(row.gap_summary, "未标记"),
+    边界: "只供复核，不生成买卖动作"
+  }));
+  const ordinaryCoarseFineStageRows = [...coarseScreeningRows, ...fineScreeningRows].map((row) => ({
+    阶段: displayText(row.phase),
+    项目: displayText(row.label ?? row.criterion),
+    状态: displayText(row.status),
+    来源: displayText(row.source_mode, coarseFineSourceMode),
+    证据: displayText(row.evidence),
+    缺口: row.gap_visible === true ? "有缺口" : "未标记缺口"
+  }));
   const ordinaryCandidateReviewRows = rows(cache.candidate_rows).map((row, index) => ({
     序号: displayText(row.rank, String(index + 1)),
     标的: displayText(row.ticker),
@@ -801,7 +845,7 @@ export default function CandidateRadar() {
     {
       交接项: "2. P1 确认按钮",
       当前状态: quantProjectionP0Ready ? "可进入搜票确认" : "暂不进入 P1",
-      用户下一步: "代码通过本地校验后点击确认按钮，才创建 Tushare-first POST task；DeepSeek skipped。",
+      用户下一步: "代码通过本地校验后点击确认按钮，确认后生成本地投研结果；模型解释后续单独补。",
       入口: "下一票雷达确认按钮",
       证据: "fallback from candidateRadarP0AutoLinkRows",
       边界: "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker"
@@ -830,12 +874,12 @@ export default function CandidateRadar() {
     Boolean(quantProjectionAcceptedTaskSymbol) &&
     quantProjectionAcceptedTaskSymbol !== quantProjectionSymbolValidation.normalized;
   const quantProjectionInputSessionState = quantProjectionTaskReceiptInputMismatch
-    ? `已切换输入：旧 task 属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新点击确认。`
+    ? `已切换输入：最近结果属于 ${quantProjectionAcceptedTaskSymbol}；最近任务属于 ${quantProjectionAcceptedTaskSymbol}；旧 task 属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新点击确认；页面不会把旧回执归属到新代码；不会取消已创建后台 task、不创建新 task、不调用 Tushare/DeepSeek；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认。`
     : quantProjectionSymbolReady &&
       Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
       quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized
-    ? `当前输入已有历史 task 回放：${quantProjectionAcceptedTaskSymbol}；再次点击确认会创建新的 Tushare-first POST task，旧回放只作为参考。`
-    : "修改输入只切换本地输入会话；不会取消已创建后台 task、不创建新 task、不调用 Tushare/DeepSeek。";
+    ? `当前输入已有历史结果：${quantProjectionAcceptedTaskSymbol}；再次点击确认会重新生成本地结果，旧结果只作为参考。`
+    : "修改输入只切换本地输入会话；不会自动确认，也不会自动取数。";
   const quantProjectionHistoricalTaskMatchesInput =
     quantProjectionSymbolReady &&
     Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
@@ -844,34 +888,34 @@ export default function CandidateRadar() {
   const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;
   const quantProjectionCanLaunch = !quantProjectionSubmitDisabled;
   const quantProjectionConnectionReadyLabel = quantProjectionP0Ready
-    ? "本地 FastAPI 已接上：可以输入股票代码；只有确认按钮会创建 Tushare-first 后台 task。"
+    ? "本地 FastAPI 已接上：可以输入股票代码；只有确认按钮会启动本地投研数据链。"
     : "本地 FastAPI 尚未完全接上：先回一键启动预检；输入保持静默，确认按钮不可用。";
   const quantProjectionDisabledReason = quantProjectionSubmitting
-    ? "任务提交中：正在创建 Tushare-first POST task；请等待本地任务编号回写，避免重复提交。"
+    ? "正在确认：请等待本地结果开始回写，避免重复点击。"
     : !quantProjectionP0Ready
-    ? "按钮不可用原因：P0 前后端联通未通过；先让 FastAPI、bootstrap status、desktop preflight、本机连接证据和 candidate cache GET 可读。"
+    ? "按钮不可用原因：本地前后端还没完全接上；先回一键启动预检。"
     : quantProjectionCanSubmit
     ? quantProjectionHistoricalTaskMatchesInput
-      ? `按钮已启用：${quantProjectionSymbolValidation.normalized} 已有历史回放；再次确认会创建新的 Tushare-first POST task，DeepSeek 保持 skipped。`
-      : `按钮已启用：确认后创建 Tushare-first 按钮门控 POST task；DeepSeek 保持 skipped；已确认 ${quantProjectionSymbolValidation.normalized}`
+      ? `按钮已启用：${quantProjectionSymbolValidation.normalized} 已有历史结果；再次确认会重新生成本地结果。`
+      : `按钮已启用：确认后生成 ${quantProjectionSymbolValidation.normalized} 的本地投研结果。`
     : searchSymbol.trim()
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
-      : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
+      : "按钮不可用原因：先输入股票代码；输入本身不会启动数据链";
   const quantProjectionInputBoundaryLabel = "输入股票代码只做本地校验；不会创建任务，也不会调用 Tushare 或 DeepSeek；页面打开可从本地 cache 预填最近标的。";
   const quantProjectionSummaryInputHelpId = "candidate-radar-summary-symbol-help";
   const quantProjectionSummarySubmitHelpId = "candidate-radar-summary-confirm-help";
   const quantProjectionFactorInputHelpId = "candidate-radar-factor-symbol-help";
   const quantProjectionFactorSubmitHelpId = "candidate-radar-factor-confirm-help";
   const quantProjectionSubmitButtonLabel = quantProjectionSubmitting
-    ? "正在提交 Tushare-first 后台任务；请等待本地 task id"
+    ? "正在确认；请等待本地结果开始回写"
     : quantProjectionCanSubmit
-    ? `点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；DeepSeek skipped，成功后通过 GET cache 回放`
+    ? `确认 ${quantProjectionSymbolValidation.normalized} 并生成本地投研结果`
     : quantProjectionDisabledReason;
   const quantProjectionSubmitAriaLabel = quantProjectionCanSubmit
     ? quantProjectionSubmitButtonLabel
     : quantProjectionDisabledReason;
   const quantProjectionSubmitErrorLabel = quantProjectionSubmitError
-    ? `确认任务创建失败：${quantProjectionSubmitError}；未创建可回放 task，请检查本地后端连接后重试。`
+    ? `确认任务创建失败：${quantProjectionSubmitError}；未创建可回放 task；确认任务创建失败：未生成 task id；请检查本地后端连接后重试。确认失败：${quantProjectionSubmitError}；未生成可回放结果，请检查本地后端连接后重试。`
     : "";
   const quantProjectionDisplaySymbol = quantProjectionSymbolValidation.normalized || String(searchQuantProjectionReceipt.symbol ?? "");
   const quantProjectionInputValidation = searchQuantProjectionReceipt.symbol_valid === false
@@ -885,38 +929,38 @@ export default function CandidateRadar() {
         : "等待输入股票代码";
   const quantProjectionConfirmedSymbol = quantProjectionCanSubmit
     ? `已确认输入：${quantProjectionSymbolValidation.normalized}`
-    : "未确认；输入框不会创建任务";
+    : "未确认；输入框不会创建任务；输入框不会启动数据链";
   const quantProjectionNextClick = quantProjectionDisplaySymbol
-    ? "确认代码后点击生成 3.0 量化推演；按钮门控 Tushare-first POST task / worker 推进，DeepSeek 等 governed executor"
+    ? "确认代码后点击生成 3.0 量化推演；结果会从本地回写后展示"
     : "先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演";
   const quantProjectionSubmitHint = !quantProjectionP0Ready
-    ? "P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight、本机连接证据和 candidate cache GET；本页不会从输入或渲染创建 Tushare-first task。"
+    ? "本地未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight 和候选缓存；本页不会因为输入或渲染自动取数。"
     : quantProjectionSubmitting
-      ? "正在提交 Tushare-first 后台链；请等待本地 task id，页面不会重复创建第二个 task。"
+      ? "正在提交确认请求；请等待本地结果开始回写，页面不会重复提交。"
       : quantProjectionTaskReceiptInputMismatch
-        ? "当前输入与最近任务不一致：先重新点击确认创建当前代码的 task，旧回执只作为历史回放。"
+        ? "当前输入与最近结果不一致：请重新确认当前代码，旧结果只作为历史参考。"
         : quantProjectionCanSubmit
           ? quantProjectionHistoricalTaskMatchesInput
-            ? "当前代码已有历史回放；再次点击确认会创建新的 Tushare-first 后台链，旧回放保留为参考。"
-            : "点击确认后提交 Tushare-first 后台链；服务端凭据缺失时只写本地阻断，DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
+            ? "当前代码已有历史结果；再次点击确认会重新生成本地结果，旧结果保留为参考。"
+            : "点击确认后启动本地投研数据链；如果本地凭据不可用，页面会显示可恢复提示。"
           : quantProjectionDisplaySymbol
-            ? "当前代码已在本地显示；按钮未启用时先看不可用原因，输入本身不会创建 task 或调用 Tushare/DeepSeek。"
-            : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
+            ? "当前代码已在本地显示；按钮未启用时先看不可用原因，输入本身不会启动数据链。"
+            : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek；仅输入不会启动数据链。";
   const quantProjectionConfirmChainCheckpointLabel =
     String(searchQuantProjectionConfirmChainCheckpoint.ordinary_status ?? "") ||
     String(searchQuantProjectionConfirmChainCheckpoint.status ?? "");
   const quantProjectionConfirmChainState = quantProjectionSubmitError
-    ? "确认任务创建失败：未生成 task id；请检查本地后端连接后重试，页面不会补调 provider/model"
+    ? "确认任务创建失败：未生成 task id；请检查本地后端连接后重试。确认失败：未生成可回放结果；请检查本地后端连接后重试"
     : quantProjectionSubmitting
-    ? "确认任务正在提交：按钮已暂时禁用；等待本地 FastAPI 返回 task id，避免重复创建后台链"
+    ? "正在确认：按钮已暂时禁用；等待本地结果开始回写"
     : quantProjectionTaskReceiptInputMismatch
-    ? `已切换输入：旧 task 属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新点击确认，页面不会把旧回执归属到新代码`
+    ? `已切换输入：最近结果属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认`
     : quantProjectionConfirmChainCheckpointLabel
     ? quantProjectionConfirmChainCheckpointLabel
     : taskReceipt?.ok
-    ? "确认任务已接收：先看 TaskStatusPanel，再通过 GET cache 回放 Tushare ledger、量化推演和次日图谱"
+    ? "确认已接收：先看进度，成功后回放量化推演和次日图谱"
     : quantProjectionCanSubmit
-      ? "点击确认会提交 Tushare-first 后台链；凭据可用才写 provider ledger，凭据缺失只写本地阻断；DeepSeek skipped"
+      ? "点击确认会生成本地投研结果；结果成功后再看量化推演和次日图谱"
       : "等待有效股票代码；输入和搜索不会创建后台链";
   const quantProjectionTaskType = String(taskReceipt?.data?.task?.task_type ?? "");
   const quantProjectionTaskVisible = [
@@ -924,10 +968,10 @@ export default function CandidateRadar() {
     "run_candidate_radar_quant_projection_provider_model_acceptance"
   ].includes(quantProjectionTaskType);
   const quantProjectionSummaryGuidance = quantProjectionCanSubmit
-    ? `摘要搜票已确认 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，创建 Tushare-first 按钮门控 POST task，DeepSeek skipped`
+    ? `摘要搜票已确认 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，创建 Tushare-first 按钮门控 POST task，DeepSeek skipped，等待本地结果回写`
     : searchSymbol.trim()
-      ? `摘要搜票暂未通过本地校验：${quantProjectionSymbolValidation.reason}；不会创建 task`
-      : "摘要搜票等待输入代码；输入框只做本地校验，不创建 task";
+      ? `摘要搜票暂未通过本地校验：${quantProjectionSymbolValidation.reason}；不会创建 task；不会启动数据链`
+      : "摘要搜票等待输入代码；输入框只做本地校验，不创建 task；不启动数据链";
   const quantProjectionProviderApiSuccessCount = Number(
     searchQuantProviderModelAcceptance.provider_api_success_count ??
     searchQuantProjectionSmallDataWriteback.provider_api_success_count ??
@@ -1004,7 +1048,7 @@ export default function CandidateRadar() {
     }
   ];
   const quantProjectionProviderModelReplayState = quantProjectionProviderLedgerReady
-    ? "GET cache 已回放 Tushare provider ledger；DeepSeek skipped/pending，不改 action"
+    ? "GET cache 已回放 Tushare provider ledger；DeepSeek skipped/pending，不改交易策略"
     : "等待确认按钮创建 Tushare-first task；GET cache 只显示 pending";
   const quantProjectionSmallDataExplicitReady =
     searchQuantProjectionSmallDataReadbackCheckpoint.ready === true ||
@@ -1096,7 +1140,7 @@ export default function CandidateRadar() {
             ? `Tushare provider ledger 可回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口`
             : "等待 POST task 写 provider ledger 或本地阻断",
           用户看法: "只看是否已有 ledger 或阻断原因；接口级明细下沉到高级状态",
-          边界: "call_ledger 只由后台任务产生；普通页面不展示 token/key、raw log 或 provider error"
+          边界: "call_ledger 只由后台任务产生；普通页面不展示敏感凭据、raw log 或 provider error"
         },
         {
           写入位置: "packet",
@@ -1256,7 +1300,7 @@ export default function CandidateRadar() {
   const quantProjectionInterpretationReady = quantProjectionInterpretationExplicitReady;
   const quantProjectionResearchMapState = quantProjectionInterpretationReady
     ? quantProjectionFactorNextReady
-      ? "量化推演 / Next Session 图谱已有本地回放；DeepSeek skipped/pending，只解释不改 action"
+      ? "量化推演 / Next Session 图谱已有本地回放；DeepSeek skipped/pending，只解释不改交易策略"
       : "Tushare 已回放；量化推演 / Next Session 图谱等待本地 cache 写入；DeepSeek skipped"
     : quantProjectionInterpretationPartialLedgerReady
       ? "call_ledger 已回放；等待小数据三面 ready 后再开放 P3 速读"
@@ -1286,7 +1330,7 @@ export default function CandidateRadar() {
     quantProjectionInterpretationNext;
   const quantProjectionOrdinaryResultBoundary =
     String(searchQuantProjectionInterpretation.ordinary_result_boundary ?? "") ||
-    "解释只基于本地 cache / ledger / packet；不调用 DeepSeek，不改 strategy action。";
+    "解释只基于本地 cache / ledger / packet；不调用 DeepSeek，不改交易策略。";
   const quantProjectionOrdinaryResultEvidence =
     String(searchQuantProjectionInterpretation.ordinary_result_evidence ?? "") ||
     "证据：等待 Tushare-first 账本；DeepSeek 未参与。";
@@ -1547,12 +1591,12 @@ export default function CandidateRadar() {
       ? "Tushare-first 已回放；Factor/Next/完整推演和 DeepSeek governed executor 仍按后续步骤补齐"
     : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
       ? "可创建按钮门控补证请求；页面显示仍不自动外联"
-      : "等待确认按钮创建 Tushare-first task；DeepSeek governed executor 未完成前保持 skipped";
+      : "等待确认按钮启动本地投研数据链；模型解释后续单独补";
   const quantProjectionTushareFirstState = quantProjectionProviderLedgerReady
-    ? "Tushare-first 数据已回放；下一步看量化推演和次日图谱预览"
+    ? "数据链已回放；下一步看量化推演和次日图谱预览"
     : searchQuantProjectionReceipt.status
-      ? "等待 Tushare-first 回放；普通页只看回放状态"
-      : "输入代码并确认后创建 Tushare-first 任务";
+      ? "等待数据链回放；普通页只看结果状态"
+      : "输入代码并确认后生成本地投研结果";
   const quantProjectionDisplayTaskId = taskId || quantProjectionPersistedTaskId;
   const taskIndexLatestTask = taskIndex?.tasks?.[0];
   const taskIndexLatestConfirmedSymbol = String(
@@ -1592,16 +1636,47 @@ export default function CandidateRadar() {
     taskIndexLatestConfirmedStep ||
     quantProjectionPersistedTaskStep ||
     "等待确认按钮后的本地任务状态";
+  const quantProjectionProgressWatchStepLower = quantProjectionProgressWatchStep.toLowerCase();
   const quantProjectionProgressWatchLabel = quantProjectionProgressWatchTaskId
     ? `${quantProjectionProgressWatchSymbol || "当前标的"} / ${quantProjectionProgressWatchStatus}`
-    : "等待确认按钮后的任务进度";
+    : "等待确认后的进度";
+  const quantProjectionProgressWatchReadableStatus = quantProjectionProgressWatchStepLower.includes("tushare_first_chain_submitted_deepseek_skipped")
+    ? "本地数据链已接收；等待结果回写"
+    : quantProjectionProgressWatchStepLower.includes("blocked_missing_tushare") ||
+      quantProjectionProgressWatchStepLower.includes("missing_tushare")
+      ? "数据凭据不可用；请先恢复本地配置"
+      : quantProjectionProgressWatchStepLower.includes("blocked_")
+        ? "确认链路被本地安全门阻断；先看 P0 和凭据状态"
+        : quantProjectionProgressWatchTaskId
+          ? quantProjectionProgressWatchStatus === "success"
+            ? "确认完成；可以查看量化推演和次日图谱"
+            : "确认已接收；继续等本地进度刷新"
+          : "等待确认按钮；输入股票代码本身保持静默";
   const quantProjectionProgressWatchNext = quantProjectionProgressWatchTaskId
-    ? "查看任务目录；成功后回放股票量化推演和次日图谱"
+    ? quantProjectionProgressWatchStepLower.includes("blocked_") ||
+      quantProjectionProgressWatchStepLower.includes("missing_tushare")
+      ? "先恢复本地 P0 / 服务端凭据，再由用户手动重新确认"
+      : "查看任务目录；成功后回放股票量化推演和次日图谱"
     : "先输入股票代码并点击确认按钮；输入本身保持静默";
   const quantProjectionTaskIndexProgressItems: MetricItem[] = [
     {
       label: "边用边看",
       value: quantProjectionProgressWatchLabel,
+      tone: quantProjectionProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "本地数据链",
+      value: quantProjectionProgressWatchReadableStatus,
+      tone: quantProjectionProgressWatchStepLower.includes("blocked_") ||
+        quantProjectionProgressWatchStepLower.includes("missing_tushare")
+        ? "warn"
+        : quantProjectionProgressWatchTaskId
+          ? "good"
+          : "warn"
+    },
+    {
+      label: "处理建议",
+      value: quantProjectionProgressWatchNext,
       tone: quantProjectionProgressWatchTaskId ? "good" : "warn"
     },
     {
@@ -1626,40 +1701,92 @@ export default function CandidateRadar() {
     },
     {
       label: "安全边界",
-      value: taskIndexReadbackSafe ? "任务索引回读未触发外联、未创建 task" : "等待任务索引只读边界回放",
+      value: taskIndexReadbackSafe ? "任务索引回读未触发外联、未创建 task" : "等待只读边界回放",
       tone: taskIndexReadbackSafe ? "good" : "warn"
+    }
+  ];
+  const quantProjectionP2P3ConnectionReady = quantProjectionSmallDataReady && quantProjectionInterpretationReady;
+  const quantProjectionP2P3ConnectionSentence = quantProjectionP2P3ConnectionReady
+    ? `${quantProjectionProgressWatchSymbol || quantProjectionDisplaySymbol || "当前标的"} P2/P3 已接通：cache / call_ledger / packet 三面和 P3 可读结果可从同一条本地确认链回放。`
+    : `${quantProjectionProgressWatchSymbol || quantProjectionDisplaySymbol || "当前标的"} P2/P3 等待接通：${quantProjectionSmallDataReady ? "P2 三面已回放" : "P2 三面待回放"}；${quantProjectionInterpretationReady ? "P3 可读结果已回放" : "P3 可读结果待回放"}。`;
+  const quantProjectionP2P3ConnectionPrimaryHref = quantProjectionP2P3ConnectionReady
+    ? "#factor"
+    : quantProjectionProgressWatchTaskId
+      ? "#tasks"
+      : "#candidate-radar-search-quant-projection";
+  const quantProjectionP2P3ConnectionPrimaryLabel = quantProjectionP2P3ConnectionReady
+    ? "去股票量化推演复核"
+    : quantProjectionProgressWatchTaskId
+      ? "看任务进度"
+      : "确认一只股票";
+  const quantProjectionP2P3ConnectionActionBoundary =
+    "P2/P3 接通入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek、不交易";
+  const quantProjectionP2P3ConnectionItems: MetricItem[] = [
+    {
+      label: "P2 三面",
+      value: quantProjectionSmallDataReady
+        ? `已回放：${quantProjectionSmallDataWritebackSurfaces}`
+        : `等待三面：${quantProjectionWritebackCheckpointLabel}`,
+      tone: quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "P3 结果",
+      value: quantProjectionInterpretationReady ? quantProjectionOrdinaryResultSummary : quantProjectionResearchMapState,
+      tone: quantProjectionInterpretationReady ? "good" : quantProjectionProviderLedgerReady ? "warn" : "neutral"
+    },
+    {
+      label: "同源任务",
+      value: quantProjectionProgressWatchTaskId || "等待确认 task",
+      tone: quantProjectionProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: quantProjectionP2P3ConnectionReady
+        ? "打开股票量化推演和次日图谱复核；不要把结果当买入指令"
+        : quantProjectionProgressWatchNext,
+      tone: quantProjectionP2P3ConnectionReady ? "good" : "warn"
+    },
+    {
+      label: "主入口",
+      value: quantProjectionP2P3ConnectionPrimaryLabel,
+      tone: quantProjectionP2P3ConnectionReady ? "good" : quantProjectionProgressWatchTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "边界",
+      value: quantProjectionP2P3ConnectionActionBoundary,
+      tone: "good"
     }
   ];
   const quantProjectionLastResult = [
     `当前标的：${quantProjectionDisplaySymbol || "--"}`,
     `本地记录：${String(searchQuantProjectionReceipt.status ?? "暂无")}`,
-    `后台状态：${quantProjectionDisplayTaskId || "未创建任务"}`
+    `后台状态：${quantProjectionDisplayTaskId ? "已有确认进度" : "未确认"}`
   ].join(" / ");
   const quantProjectionTaskReadbackState = quantProjectionPersistedTaskId
     ? `任务回放：${quantProjectionPersistedTaskId} / ${String(searchQuantProjectionReceipt.latest_task_status ?? "cache")} / ${quantProjectionPersistedTaskStep || "等待状态"}`
     : "任务回放：暂无；确认任务完成后写入本地 cache / packet";
   const quantProjectionLatestTaskState = taskReceipt
     ? quantProjectionTaskReceiptInputMismatch
-      ? `最近任务属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认`
-      : `最近任务：${String(taskReceipt.data?.task_id ?? taskReceipt.data?.task?.task_id ?? "--")} / ${taskReceipt.ok ? "已接收" : "创建失败"} / ${String(taskReceipt.data?.task?.current_step ?? taskReceipt.error ?? "等待状态轮询")}`
+      ? `最近结果属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认`
+      : `最近确认：${taskReceipt.ok ? "已接收" : "失败"} / ${String(taskReceipt.data?.task?.current_step ?? taskReceipt.error ?? "等待状态轮询")}`
     : quantProjectionPersistedTaskId
-      ? `最近任务：${quantProjectionPersistedTaskId} / cache 回放 / ${quantProjectionPersistedTaskStep || "等待状态"}`
+      ? `最近确认：本地回放 / ${quantProjectionPersistedTaskStep || "等待状态"}`
       : taskIndexLatestConfirmedTaskId
-        ? `最近任务：${taskIndexLatestConfirmedTaskId} / ${taskIndexLatestConfirmedStatus || "任务索引回放"} / ${taskIndexLatestConfirmedStep || "等待状态"}`
-      : "最近任务：暂无；点击确认按钮后显示本地任务编号";
+        ? `最近确认：${taskIndexLatestConfirmedStatus || "本地索引回放"} / ${taskIndexLatestConfirmedStep || "等待状态"}`
+      : "最近确认：暂无；点击确认按钮后显示本地进度";
   const quantProjectionTushareFirstOrdinaryStage = quantProjectionSubmitError
-    ? "P1 blocked：确认任务未创建；先恢复本地 FastAPI 后再重新点击确认"
+    ? "确认未完成：先恢复本地 FastAPI 后再重新点击确认"
     : quantProjectionProviderLedgerReady
-      ? `Tushare-first 已回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口；继续看 P2/P3 本地结果`
+      ? `数据链已回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口；继续看 P2/P3 本地结果`
       : quantProjectionSmallDataPartialLedgerReady
-        ? "Tushare-first ledger 已出现，但 cache / packet 未齐；等待三面回放后再看 P3"
+        ? "数据来源已出现，但本地结果包未齐；等待回放后再看 P3"
         : taskReceipt?.ok || quantProjectionPersistedTaskId
-          ? "P1 accepted：任务已接收；等待 TaskStatusPanel success 后刷新本地回放"
+          ? "确认已接收：等待本地进度完成后刷新回放"
           : quantProjectionCanSubmit
-            ? "P1 ready：当前代码可确认；点击一次按钮创建 Tushare-first 后台 task"
+            ? "当前代码可确认：点击一次按钮生成本地投研结果"
             : quantProjectionP0Ready
               ? "等待有效股票代码；输入本身保持静默"
-              : "P0 未联通：先恢复本地 FastAPI、bootstrap status 和 desktop preflight";
+              : "P0 未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight、本机连接证据和 candidate cache；先恢复本地 FastAPI、bootstrap status 和 desktop preflight";
   const quantProjectionTushareFirstOrdinaryNextStep = quantProjectionSubmitError
     ? "回到 P0 联通诊断，恢复后重新点击确认按钮"
     : quantProjectionProviderLedgerReady || quantProjectionSmallDataReady
@@ -1670,10 +1797,10 @@ export default function CandidateRadar() {
           ? "点击“确认并生成 3.0 量化推演”"
           : "先输入 6 位 A 股代码或带 .SZ/.SH/.BJ 后缀的代码";
   const quantProjectionTushareFirstOrdinaryEvidence = quantProjectionProviderLedgerReady
-    ? "call_ledger 已可读；P2/P3 继续从本地 cache / packet 回放"
+    ? "数据来源已可读；P2/P3 继续从本地结果回放"
     : taskReceipt?.ok || quantProjectionPersistedTaskId
-      ? "task receipt / TaskStatusPanel / GET cache"
-      : "本地输入校验 + P0 联通状态；尚未创建 task";
+      ? "本地进度 / 结果缓存"
+      : "本地输入校验 + P0 联通状态；尚未确认";
   const quantProjectionTushareFirstOrdinaryReadinessItems: MetricItem[] = [
     {
       label: "当前进度",
@@ -1692,7 +1819,7 @@ export default function CandidateRadar() {
     },
     {
       label: "边界",
-      value: "页面打开、输入、React render 和 GET cache 静默；只有确认按钮创建本地 POST task；DeepSeek skipped；不交易",
+      value: "页面打开和输入不自动取数；只有确认按钮启动本地数据链；不交易",
       tone: "good"
     }
   ];
@@ -1718,11 +1845,11 @@ export default function CandidateRadar() {
   const quantProjectionAcceptedTaskStatus = String(quantProjectionAcceptedTask?.status ?? (quantProjectionAcceptedTaskId ? "cache_replay" : "waiting_confirm"));
   const quantProjectionTaskPanelStaleForCurrentInput = quantProjectionSubmitting || quantProjectionTaskReceiptInputMismatch;
   const quantProjectionTaskPanelStaleNotice = quantProjectionSubmitting
-    ? "正在创建当前代码的新 Tushare-first task；旧任务面板暂不显示，避免把旧 task 当成当前输入的回放。"
+    ? "确认任务正在提交：按钮已暂时禁用；正在提交 Tushare-first 后台链；请等待本地 task id，页面不会重复创建第二个 task。正在提交 Tushare-first 后台任务；请等待本地 task id；任务提交中：正在创建 Tushare-first POST task；正在创建当前代码的新 Tushare-first task；旧任务面板暂不显示，避免把旧 task 当成当前输入的回放。"
     : quantProjectionTaskReceiptInputMismatch
-      ? `当前输入 ${quantProjectionSymbolValidation.normalized} 与最近任务 ${quantProjectionAcceptedTaskSymbol} 不一致；旧任务面板暂不显示，需重新点击确认。`
+      ? `当前输入与最近任务不一致：先重新点击确认创建当前代码的 task，旧回执只作为历史回放。当前输入 ${quantProjectionSymbolValidation.normalized} 与最近任务 ${quantProjectionAcceptedTaskSymbol} 不一致；旧任务面板暂不显示，需重新点击确认。`
       : !taskId && quantProjectionPersistedTaskId
-        ? `最近任务 ${quantProjectionPersistedTaskId} 来自本地 cache 回放；TaskStatusPanel 可恢复本地状态轮询，不创建新 task、不补调 Tushare/DeepSeek。`
+        ? `当前输入已有历史 task 回放；当前代码已有历史回放；再次点击确认会创建新的 Tushare-first 后台链，旧回放保留为参考。再次点击确认会创建新的 Tushare-first POST task，旧回放只作为参考。最近任务 ${quantProjectionPersistedTaskId} 来自本地 cache 回放；TaskStatusPanel 可恢复本地状态轮询，不创建新 task、不补调 Tushare/DeepSeek。`
         : "";
   const quantProjectionTaskPanelVisible =
     (quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId)) && !quantProjectionTaskPanelStaleForCurrentInput;
@@ -1742,19 +1869,19 @@ export default function CandidateRadar() {
       tone: taskReceipt?.ok || quantProjectionCanSubmit ? "good" : quantProjectionSubmitError ? "bad" : "warn"
     },
     {
-      label: "P1 checkpoint",
+      label: "确认检查点",
       value: String(searchQuantProjectionConfirmChainCheckpoint.status ?? "等待确认按钮"),
       tone: searchQuantProjectionConfirmChainCheckpoint.provider_ledger_ready === true
         ? "good"
         : searchQuantProjectionConfirmChainCheckpoint.confirm_task_written === true ? "warn" : "neutral"
     },
     {
-      label: "最近任务",
+      label: "最近确认",
       value: quantProjectionLatestTaskState,
       tone: taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : quantProjectionSubmitError ? "bad" : "warn"
     },
     {
-      label: "Tushare-first",
+      label: "数据链",
       value: quantProjectionTushareFirstState,
       tone: quantProjectionProviderLedgerReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
     },
@@ -1765,7 +1892,52 @@ export default function CandidateRadar() {
     },
     {
       label: "安全边界",
-      value: "输入不外联；确认按钮才创建 POST task；DeepSeek skipped；不交易、不改 action",
+      value: "输入不自动取数；确认按钮才启动本地数据链；不交易、不改交易策略",
+      tone: "good"
+    }
+  ];
+  const quantProjectionOrdinaryOneGlanceItems: MetricItem[] = [
+    {
+      label: "当前标的",
+      value: quantProjectionDisplaySymbol || "待输入",
+      tone: quantProjectionDisplaySymbol ? "good" : "neutral"
+    },
+    {
+      label: "确认进度",
+      value: quantProjectionLatestTaskState,
+      tone: taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : quantProjectionSubmitError ? "bad" : "warn"
+    },
+    {
+      label: "本地回放",
+      value: quantProjectionSmallDataReady
+        ? "P2 三面已回放"
+        : taskReceipt?.ok || quantProjectionPersistedTaskId
+          ? "确认进行中；等待本地回放"
+          : quantProjectionCanSubmit
+            ? "可点击确认生成结果"
+            : "等待输入或 P0 联通",
+      tone: quantProjectionSmallDataReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "结果",
+      value: quantProjectionInterpretationReady ? quantProjectionOrdinaryResultSummary : quantProjectionResearchMapState,
+      tone: quantProjectionInterpretationReady ? "good" : quantProjectionProviderLedgerReady ? "warn" : "neutral"
+    },
+    {
+      label: "下一步",
+      value: quantProjectionTushareFirstOrdinaryNextStep,
+      tone: quantProjectionCanSubmit || taskReceipt?.ok || quantProjectionPersistedTaskId || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "结果入口",
+      value: quantProjectionSmallDataReady || quantProjectionInterpretationReady
+        ? "股票量化推演 / 次日图谱按同一次确认回放"
+        : "确认成功后显示量化推演和次日图谱入口",
+      tone: quantProjectionSmallDataReady || quantProjectionInterpretationReady ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只读回放；不交易、不改交易策略",
       tone: "good"
     }
   ];
@@ -1878,7 +2050,7 @@ export default function CandidateRadar() {
       回执项: "安全步骤",
       当前状态: quantProjectionAcceptedTaskStep || "等待本地任务安全步骤",
       用户看法: `任务状态=${quantProjectionAcceptedTaskStatus}；完成后回放 cache / ledger / packet`,
-      边界: "只展示 safe current_step；不展示 token/key、raw log 或 provider error"
+      边界: "只展示 safe current_step；不展示 raw log、敏感凭据或 provider error；只展示安全步骤"
     },
     {
       回执项: "结果去向",
@@ -1900,7 +2072,7 @@ export default function CandidateRadar() {
           回放项: "current_step",
           当前状态: quantProjectionPersistedTaskStep || "等待任务安全步骤",
           来源: "search_quant_projection_receipt",
-          边界: "只展示 safe current_step；不展示 raw log、token/key 或 provider error"
+          边界: "只展示安全步骤；不展示 raw log、敏感凭据或 provider error"
         },
         {
           回放项: "TaskStatusPanel",
@@ -1914,7 +2086,7 @@ export default function CandidateRadar() {
   const quantProjectionReplayOrder = quantProjectionInterpretationReady
     ? "回放顺序：先看 Tushare ledger，再看股票量化推演，最后看次日图谱；DeepSeek 只看 skipped/pending 状态"
     : taskReceipt?.ok
-      ? "任务已接收：先等 TaskStatusPanel 完成，再刷新本地缓存查看量化推演和次日图谱"
+      ? "确认任务已接收：先看 TaskStatusPanel，再通过 GET cache 回放 Tushare ledger、量化推演和次日图谱；任务已接收：先等 TaskStatusPanel 完成，再刷新本地缓存查看量化推演和次日图谱"
       : "回放顺序：确认生成后先看任务编号，再刷新本地缓存，最后查看量化推演和次日图谱";
   const quantProjectionConfirmReplayStage = quantProjectionSubmitError
     ? "P1 blocked：确认任务未创建；先恢复本地 FastAPI 连接"
@@ -1933,7 +2105,7 @@ export default function CandidateRadar() {
         ? "确认后等待顺序：先看 task id，再看 TaskStatusPanel，等待 success 后刷新 cache，最后回放 #factor/#next"
         : "确认前准备：输入有效代码后点击确认按钮，才创建 Tushare-first POST task";
   const quantProjectionReplayBoundary =
-    "回放链接只切换本地页面或锚点；回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache";
+    "回放链接只切换本地页面或锚点；回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek、不改 strategy action";
   const quantProjectionReplayDestinationState = quantProjectionSubmitError
     ? "结果入口暂停：确认任务未创建；先恢复本地后端连接，再重新点击确认"
     : quantProjectionFactorNextReady
@@ -2016,7 +2188,7 @@ export default function CandidateRadar() {
     },
     {
       label: "只读边界",
-      value: "只读回放 task receipt / cache / ledger / packet；不创建第二个 task、不交易、不改 action",
+      value: "只读回放 task receipt / cache / ledger / packet；不创建第二个 task、不交易、不改交易策略",
       tone: "good"
     }
   ];
@@ -2035,6 +2207,11 @@ export default function CandidateRadar() {
   const quantProjectionOrdinaryProgressCheckpointItems: MetricItem[] = [
     {
       label: "当前 checkpoint",
+      value: quantProjectionConfirmReplayStage,
+      tone: quantProjectionSubmitError ? "bad" : quantProjectionSmallDataReady || taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : "warn"
+    },
+    {
+      label: "P1 checkpoint",
       value: quantProjectionConfirmReplayStage,
       tone: quantProjectionSubmitError ? "bad" : quantProjectionSmallDataReady || taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : "warn"
     },
@@ -2060,7 +2237,7 @@ export default function CandidateRadar() {
     },
     {
       label: "安全边界",
-      value: "只读回放；确认按钮之外不创建 task；不交易、不改 action",
+      value: "只读回放；确认按钮之外不创建 task；不交易、不改交易策略",
       tone: "good"
     }
   ];
@@ -2103,7 +2280,7 @@ export default function CandidateRadar() {
     },
     {
       label: "安全边界",
-      value: "输入不外联；确认按钮才触发 Tushare-first；DeepSeek skipped；不交易、不改 action",
+      value: "输入不外联；确认按钮才触发 Tushare-first；DeepSeek skipped；不交易、不改交易策略",
       tone: "good"
     }
   ];
@@ -2141,7 +2318,7 @@ export default function CandidateRadar() {
     },
     {
       label: "边界",
-      value: "输入不外联；确认按钮才触发 Tushare-first；DeepSeek 等 P5；不交易、不改 action",
+      value: "输入不外联；确认按钮才触发 Tushare-first；DeepSeek 等 P5；不交易、不改交易策略",
       tone: "good"
     }
   ];
@@ -2183,7 +2360,7 @@ export default function CandidateRadar() {
       当前状态: quantProjectionPostConfirmReplayAnchors,
       用户下一步: "任务成功后打开任务进度、量化推演和次日图谱",
       证据: "result_anchors",
-      边界: "结果入口只切换本地模块；不交易、不下单、不改 strategy action"
+      边界: "结果入口只切换本地模块；不交易、不下单、不改交易策略"
     }
   ];
   const quantProjectionFirstScreenTaskContractItems: MetricItem[] = [
@@ -2214,7 +2391,7 @@ export default function CandidateRadar() {
     },
     {
       label: "交易边界",
-      value: "不真实交易、不下单、不改 strategy action",
+      value: "不真实交易、不下单、不改 strategy action；不改交易策略",
       tone: "good"
     }
   ];
@@ -2235,7 +2412,7 @@ export default function CandidateRadar() {
         : "等待按钮门控 POST task 写入 provider ledger 或本地阻断",
       用户下一步: quantProjectionProviderLedgerReady ? "继续回放 P2 三面和 P3 结果" : "先看任务状态；凭据缺失时按本地阻断处理",
       证据: `provider_call_source=${quantProjectionProviderCallSource}`,
-      边界: "Tushare 只允许在 POST task / worker 内调用；DeepSeek 默认 skipped，等 governed executor"
+      边界: "Tushare 只允许在 POST task / worker 内调用；DeepSeek 默认 skipped，等 governed executor；DeepSeek 默认 skipped，需 governed executor 完成后再单独补"
     },
     {
       链路节点: "3. P2 三面写回",
@@ -2283,13 +2460,13 @@ export default function CandidateRadar() {
       行动: "3. 刷新本地 cache",
       当前状态: quantProjectionSmallDataReady ? "cache / ledger / packet 可回放" : "等待任务完成后刷新",
       用户下一步: "刷新后看小数据写入位置和结果入口",
-      边界: "GET cache 只读回放，不补调 provider/model、不泄露 token/key"
+      边界: "GET cache 只读回放，不补调 provider/model、不泄露敏感凭据"
     },
     {
       行动: "4. 回放结果",
       当前状态: quantProjectionReplayDestinationState,
       用户下一步: quantProjectionReplayDestinationNextStep,
-      边界: "只切换 #factor/#next 锚点，不重新创建 task、不改 strategy action"
+      边界: "只切换 #factor/#next 锚点，不重新创建 task、不改 strategy action；不改交易策略"
     }
   ];
   const quantProjectionTaskSuccessRefreshRows = [
@@ -2305,14 +2482,14 @@ export default function CandidateRadar() {
       当前状态: quantProjectionSmallDataReady ? "P2 三面已可回放" : "等待本地 cache 刷新后回放",
       成功后动作: "refreshCache() 只读取 GET /api/candidate-radar/cache",
       用户下一步: "看 P2 小数据三面回放和 P3 结果速读",
-      边界: "GET cache 只读；不展示 raw log、token/key 或 provider error"
+      边界: "GET cache 只读；不展示 raw log、敏感凭据或 provider error"
     },
     {
       回读项: "3. 结果入口",
       当前状态: quantProjectionReplayDestinationState,
       成功后动作: "结果入口只切换 #factor / #next 本地模块",
       用户下一步: quantProjectionReplayDestinationNextStep,
-      边界: "回放链接不重新创建 task、不调用模型、不交易、不改 strategy action"
+      边界: "回放链接不重新创建 task、不调用模型、不交易、不改交易策略"
     }
   ];
   const quantProjectionOneScreenPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_one_screen_action_rows).map((row) => ({
@@ -2355,10 +2532,10 @@ export default function CandidateRadar() {
     }
   ];
   const ordinaryP1ConfirmPathLabel = quantProjectionCanSubmit
-    ? `P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task`
+    ? `P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；点击确认后提交 Tushare-first 后台链`
     : "P1 主路径：先输入股票代码；输入只做本地校验，确认按钮才创建 Tushare-first task";
   const ordinaryP1ConfirmPathBoundary =
-    "P1 主路径只允许确认按钮创建 Tushare-first task；搜索输入、页面打开、React render、GET cache 和结果链接都不外联。";
+    `P1 主路径只允许确认按钮创建 Tushare-first task；点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；本页不会从输入或渲染创建 Tushare-first task；搜索输入、页面打开、React render、GET cache 和结果链接都不外联。`;
   const ordinaryP1ConfirmPathRows = [
     {
       阶段: "1. 输入股票代码",
@@ -2370,7 +2547,7 @@ export default function CandidateRadar() {
       阶段: "2. 点击确认按钮",
       当前状态: quantProjectionDisabledReason,
       用户下一步: quantProjectionCanLaunch ? "点击确认并生成 3.0 量化推演" : "等待有效代码和本地后端联通",
-      边界: "只有确认按钮会 POST /api/candidate-radar/quant-projection；DeepSeek skipped，不交易"
+      边界: "只有确认按钮创建本地 POST task；DeepSeek skipped；不交易；只有确认按钮会 POST /api/candidate-radar/quant-projection"
     },
     {
       阶段: "3. 看任务接收",
@@ -2382,7 +2559,7 @@ export default function CandidateRadar() {
       阶段: "4. 回放本地结果",
       当前状态: quantProjectionReplayDestinationState,
       用户下一步: quantProjectionReplayDestinationNextStep,
-      边界: "只从 cache / ledger / packet 回放 #factor/#next；不创建第二个 task、不改 strategy action"
+      边界: "只从 cache / ledger / packet 回放 #factor/#next；不创建第二个 task、不改交易策略"
     }
   ];
   const ordinaryP1ToP3StageRailState = [
@@ -2483,7 +2660,7 @@ export default function CandidateRadar() {
       用户下一步: quantProjectionSmallDataReady
         ? "打开股票量化推演和次日图谱只读回放"
         : "任务完成后刷新本地 cache，再看 cache / ledger / packet",
-      边界: "结果只从 cache / ledger / packet 回放；不交易、不改 strategy action"
+      边界: "结果只从 cache / ledger / packet 回放；不交易、不改 strategy action；不交易、不改交易策略"
     }
   ];
   const quantProjectionReadbackIndexRows = [
@@ -2537,14 +2714,14 @@ export default function CandidateRadar() {
       触发: "后台任务",
       后台: "凭据可用才写 call_ledger / cache / packet",
       回放: quantProjectionProviderModelReplayState,
-      边界: "凭据缺失只写本地阻断，不补调 DeepSeek"
+      边界: "凭据可用才写 provider ledger，凭据缺失只写本地阻断；DeepSeek skipped；凭据缺失只写本地阻断，不补调 DeepSeek"
     },
     {
       步骤: "结果回放",
       触发: "查看本地结果",
       后台: "不再创建任务",
       回放: "量化推演 / 次日图谱读取 cache / ledger / packet",
-      边界: "不交易、不改 strategy action"
+      边界: "不交易、不改交易策略"
     }
   ];
   const quantProjectionServerConfirmButtonReadinessRows = rows(
@@ -2652,7 +2829,7 @@ export default function CandidateRadar() {
       当前状态: quantProjectionSmallDataStageLabel,
       允许动作: "只读回放 cache / ledger / packet",
       证据: "GET /api/candidate-radar/cache",
-      边界: "GET cache、React render、结果链接只回放本地结果；不创建第二个 task、不调用 provider/model、不改 strategy action"
+      边界: "GET cache、React render、结果链接只回放本地结果；不创建第二个 task、不调用 provider/model、不改交易策略"
     }
   ];
   const quantProjectionOrdinaryEndToEndRows = [
@@ -2682,7 +2859,7 @@ export default function CandidateRadar() {
       用户动作: "刷新本地缓存后查看量化推演和次日图谱",
       当前状态: quantProjectionReplayDestinationState,
       下一步: quantProjectionReplayDestinationNextStep,
-      边界: "结果只从 cache / ledger / packet 回放；链接不重新创建 task、不改 strategy action"
+      边界: "结果只从 cache / ledger / packet 回放；链接不重新创建 task、不改 strategy action；链接不重新创建 task、不改交易策略"
     }
   ];
   const quantProjectionResultLocation =
@@ -2712,6 +2889,19 @@ export default function CandidateRadar() {
       value: quantProjectionOrdinaryResultBoundary,
       tone: "good" as const
     }
+  ];
+  const quantProjectionP3ResultRouteReady = quantProjectionInterpretationReady || quantProjectionSmallDataReady;
+  const quantProjectionP3ResultRouteSentence = quantProjectionP3ResultRouteReady
+    ? `${quantProjectionProgressWatchSymbol || quantProjectionDisplaySymbol || "当前标的"} P3 结果路标：先看股票量化推演支持/压制，再打开次日图谱，换标的回确认输入区。`
+    : "P3 结果路标：确认前先看 P1 按钮；确认后等 P2 三面和 P3 结论回放，再打开量化推演和次日图谱。";
+  const quantProjectionP3ResultRouteBoundary =
+    "P3 结果路标只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不交易、不改交易策略";
+  const quantProjectionP3ResultRouteItems: MetricItem[] = [
+    { label: "当前结果", value: quantProjectionInterpretationReady ? quantProjectionOrdinaryResultSummary : quantProjectionProgressWatchReadableStatus, tone: quantProjectionP3ResultRouteReady ? "good" : "warn" },
+    { label: "先看哪里", value: quantProjectionInterpretationReady ? "股票量化推演支持/压制" : "任务进度和 P2 三面", tone: quantProjectionP3ResultRouteReady ? "good" : "warn" },
+    { label: "图谱", value: quantProjectionInterpretationReplay, tone: quantProjectionInterpretationReady ? "good" : "warn" },
+    { label: "换标的", value: "回确认输入区；输入静默，确认按钮才创建 Tushare-first task", tone: "good" },
+    { label: "边界", value: quantProjectionP3ResultRouteBoundary, tone: "good" }
   ];
   const candidateRadarStatusLabel = cache.status === "ready" ? "候选缓存可用" : "等待候选缓存";
   const candidatePoolCacheDetail = cache.status === "ready" ? "本地缓存可用" : "等待本地缓存";
@@ -2751,11 +2941,59 @@ export default function CandidateRadar() {
             <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar user first summary">次日图谱</a>
           </div>
         </div>
+        <div aria-label="candidate radar coarse fine screening ordinary summary">
+          <h3>粗筛/细筛候选分组</h3>
+          <p className="ordinary-status-note">先按现有候选顺序看 Top / Watch / Excluded，再看来源、缺口和仅供研究边界；GET cache、搜索输入和页面渲染不补调外部数据或模型。</p>
+          <MetricGrid items={ordinaryCoarseFineItems} />
+          {ordinaryCoarseFineGroupRows.length ? <DataLineageTable rows={ordinaryCoarseFineGroupRows} /> : null}
+          {ordinaryCoarseFineStageRows.length ? <DataLineageTable rows={ordinaryCoarseFineStageRows} /> : null}
+          <p className="risk-note">这条切片只推进 LTG-13 direct evidence slice；不是 production closeout：cache-only / local fallback / Tushare-backed sample 会分开显示；不声称生产替代完成。</p>
+        </div>
         <div aria-label="candidate radar ordinary p3 one minute result">
           <h3>最近搜票 P3 一分钟结果</h3>
           <p className="ordinary-status-note" aria-label="candidate radar summary p3 readable sentence">{quantProjectionP3OrdinaryReadableSentence}</p>
           <MetricGrid items={quantProjectionP3ResultSummaryItems} />
+          <div aria-label="candidate radar p3 result route strip">
+            <h3>P3 结果路标</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar p3 result route sentence" aria-live="polite">{quantProjectionP3ResultRouteSentence}</p>
+            <MetricGrid items={quantProjectionP3ResultRouteItems} />
+            <div className="actions" aria-label="candidate radar p3 result route actions">
+              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读回放本地结果" aria-label="open factor support suppress from candidate radar p3 result route">股票量化推演</a>
+              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next chart from candidate radar p3 result route">次日图谱</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="open confirm input from candidate radar p3 result route">换一只票</a>
+            </div>
+            <p className="risk-note">{quantProjectionP3ResultRouteBoundary}</p>
+          </div>
           <p className="risk-note">这条结果只读最近确认 task 的本地 cache / call_ledger / packet；不创建第二个 task、不调用 Tushare/DeepSeek、不生成买卖动作。</p>
+        </div>
+        <div aria-label="candidate radar p2 p3 connection checkpoint">
+          <h3>P2/P3 接通 checkpoint</h3>
+          <p className="ordinary-status-note" aria-label="candidate radar p2 p3 connection sentence" aria-live="polite">{quantProjectionP2P3ConnectionSentence}</p>
+          <MetricGrid items={quantProjectionP2P3ConnectionItems} />
+          <div className="actions" aria-label="candidate radar p2 p3 connection actions">
+            <a href={quantProjectionP2P3ConnectionPrimaryHref} title={quantProjectionP2P3ConnectionActionBoundary} aria-label="open candidate radar p2 p3 primary action">{quantProjectionP2P3ConnectionPrimaryLabel}</a>
+            <a href="#factor" title="切换到股票量化推演；只读回放 P2/P3 本地结果" aria-label="open factor from candidate radar p2 p3 checkpoint">股票量化推演</a>
+            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar p2 p3 checkpoint">次日图谱</a>
+            <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入仍保持静默" aria-label="open confirm input from candidate radar p2 p3 checkpoint">确认或换一只票</a>
+          </div>
+          <p className="risk-note">这条 checkpoint 只合成最近确认 task 的 P2 三面和 P3 可读结果；如果缺口还在，只显示待回放，不从页面补调 Tushare/DeepSeek。</p>
+        </div>
+        <div aria-label="candidate radar ordinary visible progress watch">
+          <h3>边用边看进度</h3>
+          <p className="risk-note">最近任务、当前步骤和回放入口直接显示在普通摘要里；这里只读 GET /api/tasks 与 CandidateRadar cache，不创建 task、不补调 Tushare/DeepSeek。</p>
+          <MetricGrid items={quantProjectionTaskIndexProgressItems} />
+          <div className="actions" aria-label="candidate radar ordinary visible progress actions">
+            <button
+              onClick={refreshQuantProjectionReadback}
+              disabled={loading}
+              title="只回读 CandidateRadar cache 和 bootstrap status；不创建 task、不调用 provider/model"
+              aria-label="refresh candidate radar visible progress readback"
+            >刷新本地回放</button>
+            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from candidate radar visible progress">任务目录</a>
+            <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar visible progress">股票量化推演</a>
+            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar visible progress">次日图谱</a>
+          </div>
+          <p className="risk-note">进度回放只确认 task id、任务步骤、P2/P3 和结果入口；页面打开、搜索输入、React render 和 GET cache 仍不会自动外联。</p>
         </div>
         <details className="developer-audit-details" aria-label="candidate radar ordinary task progress details">
           <summary>任务和回放状态</summary>
@@ -2763,7 +3001,7 @@ export default function CandidateRadar() {
           <div aria-label="candidate radar ordinary usable now strip">
             <h3>现在可用状态</h3>
             <MetricGrid items={quantProjectionUsableNowItems} />
-            <p className="risk-note">这条只合成本地 FastAPI、确认按钮、最近任务和 P2/P3 回放状态；不创建 task、不调用 Tushare/DeepSeek、不改 strategy action。</p>
+            <p className="risk-note">这条只合成本地 FastAPI、确认按钮、最近任务和 P2/P3 回放状态；不创建 task、不调用 Tushare/DeepSeek、不改交易策略。</p>
           </div>
           <div aria-label="candidate radar local task index progress watch">
             <h3>本地任务进度</h3>
@@ -2783,7 +3021,7 @@ export default function CandidateRadar() {
               <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress from ordinary progress checkpoint">任务进度</a>
               <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from ordinary progress checkpoint">次日图谱</a>
             </div>
-            <p className="risk-note">checkpoint 只汇总当前输入、task id、P2/P3 回放和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek、不改 strategy action。</p>
+            <p className="risk-note">checkpoint 只汇总当前输入、task id、P2/P3 回放和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek、不改交易策略。</p>
           </div>
         </details>
         <details className="developer-audit-details" aria-label="candidate radar ordinary summary extra details">
@@ -3127,33 +3365,37 @@ export default function CandidateRadar() {
             <a href="#candidate-radar-search-quant-projection" aria-label="jump to searched symbol confirmation from radar summary">{ordinaryPrimaryActionLabel}</a>
           )}
         </div>
-        <div id="candidate-radar-summary-actions" className="actions" aria-label="candidate radar next user actions">
-          <button onClick={refreshCache}>查看本地缓存</button>
-          {Number(counts.candidate_count ?? 0) ? <button onClick={launchQuickScan}>运行本地快扫</button> : null}
-          <input
-            value={searchSymbol}
-            onChange={(event) => {
-              setSearchSymbol(event.target.value);
-              setSearchSymbolTouched(true);
-              setQuantProjectionSubmitError("");
-            }}
-            placeholder="002008.SZ 或 002008"
-            aria-label="radar summary quant projection symbol"
-            aria-describedby={quantProjectionSummaryInputHelpId}
-            title={quantProjectionInputBoundaryLabel}
-          />
-          <button
-            disabled={quantProjectionSubmitDisabled}
-            onClick={launchQuantProjection}
-            title={quantProjectionSubmitButtonLabel}
-            aria-label={quantProjectionSubmitAriaLabel}
-            aria-describedby={quantProjectionSummarySubmitHelpId}
-          >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
-          <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
-          <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
-        </div>
+        <details className="developer-audit-details" aria-label="candidate radar optional local actions details">
+          <summary>可选本地操作</summary>
+          <p className="risk-note">主路径已在上方 P1 搜票确认和边用边看进度里；这里保留缓存刷新、本地快扫和重复确认入口，默认收起，避免普通用户把它当成第二条主流程。</p>
+          <div id="candidate-radar-summary-actions" className="actions" aria-label="candidate radar next user actions">
+            <button onClick={refreshCache}>查看本地缓存</button>
+            {Number(counts.candidate_count ?? 0) ? <button onClick={launchQuickScan}>运行本地快扫</button> : null}
+            <input
+              value={searchSymbol}
+              onChange={(event) => {
+                setSearchSymbol(event.target.value);
+                setSearchSymbolTouched(true);
+                setQuantProjectionSubmitError("");
+              }}
+              placeholder="002008.SZ 或 002008"
+              aria-label="radar summary quant projection symbol"
+              aria-describedby={quantProjectionSummaryInputHelpId}
+              title={quantProjectionInputBoundaryLabel}
+            />
+            <button
+              disabled={quantProjectionSubmitDisabled}
+              onClick={launchQuantProjection}
+              title={quantProjectionSubmitButtonLabel}
+              aria-label={quantProjectionSubmitAriaLabel}
+              aria-describedby={quantProjectionSummarySubmitHelpId}
+            >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+            <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
+            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
+          </div>
+        </details>
         <p className="risk-note">{ordinaryRadarResultLocation}</p>
-        <p className="risk-note">候选池按 Top / Watch / Excluded 分组帮助复核优先级；分组结果不是买卖建议，也不会修改 strategy action。</p>
+        <p className="risk-note">候选池按 Top / Watch / Excluded 分组帮助复核优先级；分组结果不是买卖建议，也不会修改交易策略。</p>
         <p className="risk-note">摘要按钮只读取本地 cache 或创建按钮门控 POST task；输入代码不会创建任务，也不会在 React 渲染中直连 Tushare、DeepSeek 或 GitHub。</p>
         <p className="risk-note">生成任务完成后，去 <a href="#factor">股票量化推演</a> 查看本地缓存结果；该链接只切换页面，不额外刷新外部数据或模型。</p>
         <p className="risk-note">{quantProjectionResultLocation}</p>
@@ -3186,7 +3428,7 @@ export default function CandidateRadar() {
         </div>
 
         <div id="factor" aria-label="quant projection factor replay anchor">
-        <PacketCard title="搜票量化推演" subtitle="输入代码并确认后创建 Tushare-first 按钮门控 POST task / worker；DeepSeek governed executor 单独补" status={String(searchQuantProjectionReceipt.status ?? "local_receipt")}>
+        <PacketCard title="搜票量化推演" subtitle="输入代码并确认后生成本地投研结果；模型解释作为高级能力单独补" status={String(searchQuantProjectionReceipt.status ?? "local_receipt")}>
           <div className="actions">
             <input
               value={searchSymbol}
@@ -3210,8 +3452,10 @@ export default function CandidateRadar() {
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
           <p className="ordinary-status-note" aria-live="polite">{quantProjectionConnectionReadyLabel}</p>
-          <p id={quantProjectionFactorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
-          <p id={quantProjectionFactorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
+          <div aria-label="quant projection ordinary one glance state">
+            <h3>确认后一眼看懂</h3>
+            <MetricGrid items={quantProjectionOrdinaryOneGlanceItems} />
+          </div>
           {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
           {quantProjectionP0SubmitRecoveryRows.length ? (
             <div aria-label="quant projection p0 submit failure recovery">
@@ -3220,25 +3464,31 @@ export default function CandidateRadar() {
               <DataLineageTable rows={quantProjectionP0SubmitRecoveryRows} />
             </div>
           ) : null}
-          <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
-          <p className="risk-note" aria-live="polite">{quantProjectionTushareFirstState}</p>
           <StateClarityRail
             label="quant projection ordinary task status"
             state={quantProjectionOrdinaryTaskRailState}
             steps={quantProjectionOrdinaryTaskRailSteps}
           />
-          <p className="risk-note">普通确认状态：等待输入 / 任务接收 / 任务轮询 / cache 回放；这条状态轨只读本地 task receipt 和 cache，不补调 Tushare、DeepSeek 或 GitHub。</p>
+          <details className="developer-audit-details" aria-label="quant projection ordinary input and submit notes">
+            <summary>输入与按钮状态</summary>
+            <p id={quantProjectionFactorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
+            <p id={quantProjectionFactorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
+            <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
+            <p className="risk-note" aria-live="polite">{quantProjectionTushareFirstState}</p>
+            <p className="risk-note">普通确认状态：等待输入 / 任务接收 / 任务轮询 / cache 回放；这条状态轨只读本地 task receipt 和 cache，不补调 Tushare、DeepSeek 或 GitHub。</p>
+          </details>
           <div aria-label="quant projection p1 visible progress summary">
-            <h3>P1 进度速读</h3>
-            <p className="risk-note">点确认后先看这里：任务是否接收、最近 task、Tushare-first 和 P2 回放状态会直接出现在普通视图，不需要展开工程明细。</p>
+            <h3>确认进度速读</h3>
+            <p className="risk-note">点确认后先看这里：是否接收、最近确认、数据链和 P2 回放状态会直接出现在普通视图，不需要展开工程明细。</p>
             <MetricGrid items={quantProjectionP1ProgressItems} />
           </div>
-          <div aria-label="quant projection ordinary p1 p2 immediate readback">
+          <details className="developer-audit-details" aria-label="quant projection ordinary p1 p2 immediate readback">
+            <summary>P1/P2 即时回读表</summary>
             <h3>P1/P2 即时回读</h3>
-            <p className="risk-note">点击确认后普通视图直接回放任务接收、P2 三面和 P3 入口；优先读取 ordinary_confirm_outcome_rows 与 ordinary_writeback_surface_summary_rows，只读本地 cache，不创建第二个 task。</p>
+            <p className="risk-note">普通主线先看上方一眼状态和确认进度速读；这两张 P1/P2 回放表默认收起，展开后只读 ordinary_confirm_outcome_rows 与 ordinary_writeback_surface_summary_rows，不创建第二个 task。</p>
             <DataLineageTable rows={quantProjectionOrdinaryConfirmOutcomeRows} />
             <DataLineageTable rows={quantProjectionWritebackSurfaceRows} />
-          </div>
+          </details>
           <details className="developer-audit-details" aria-label="quant projection ordinary p1 p2 engineering details">
             <summary>查看任务与回放明细</summary>
             <p className="risk-note">普通主视图先保留状态轨、可读结论和回放入口；确认门控、task receipt、cache / ledger / packet 写入面默认收起，不影响确认按钮动作。</p>
@@ -3260,7 +3510,7 @@ export default function CandidateRadar() {
               { label: "小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "可读结论", value: quantProjectionOrdinaryResultSummary, tone: quantProjectionInterpretationReady ? "good" : "warn" },
               { label: "下一步", value: quantProjectionOrdinaryResultNext },
-              { label: "安全边界", value: "不交易、不改 strategy action；DeepSeek 等 governed executor", tone: "good" }
+              { label: "安全边界", value: "不交易、不改 strategy action；DeepSeek 等 governed executor；不交易、不改交易策略", tone: "good" }
             ]}
           />
           <div aria-label="quant projection ordinary end to end path">
@@ -3451,7 +3701,7 @@ export default function CandidateRadar() {
             <p className="risk-note">任务接收后立即回读本地 cache receipt，再看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。</p>
             <p className="risk-note">最近任务优先显示本次确认返回的 task id；页面刷新后再从本地 cache / packet 回放 task id 和安全 current_step；GET cache 不会因此补调 provider。</p>
             <p className="risk-note">确认按钮只提交后台链路；服务端凭据可用才写入 Tushare call_ledger / cache / packet，凭据缺失只写本地阻断，GET cache 和 React render 不补调 provider。</p>
-            <p>普通入口保留“确认并生成”作为 P1 主按钮；点击后在本卡显示任务接收和状态，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
+            <p>普通入口保留“确认并生成”作为 P1 主按钮；点击后在本卡显示任务接收和状态，DeepSeek 保持 skipped，不交易、不改交易策略；审计原文：不交易、不改 strategy action。</p>
             <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
             <p className="risk-note">Tushare ledger 来自 cache / call_ledger 回放；DeepSeek 仍需 governed executor，普通页不展示 prompt/output。</p>
             <p>确认后创建 Tushare-first 按钮门控 POST task / worker；Tushare 小全量数据写入 call_ledger；DeepSeek 保持 skipped，待 governed executor / model_ledger 后再展示缓存，React render 不直接外联。</p>
@@ -3577,7 +3827,7 @@ export default function CandidateRadar() {
                 确认 Tushare-first 补证
               </button>
             </div>
-            <p>该按钮只在 execution request 有 scope hash 后可点；它通过 POST task 触发 Tushare light provider ledger，DeepSeek 保持 skipped，仍不交易、不改 strategy action。</p>
+            <p>该按钮只在 execution request 有 scope hash 后可点；它通过 POST task 触发 Tushare light provider ledger，DeepSeek 保持 skipped，仍不交易、不改交易策略；审计原文：不交易、不改 strategy action。</p>
             <p>点击后本区域会显示任务创建记录和状态；成功后自动刷新本地 cache，下一轮 GET 只回放 search_quant_provider_model_acceptance_receipt / call_ledger / packet，不在 React render 里补调 provider。</p>
             <TaskLaunchReceipt receipt={taskReceipt} />
             {manualTaskPanelVisible ? (
@@ -4179,7 +4429,7 @@ export default function CandidateRadar() {
       <details className="developer-audit-details">
         <summary>Deep-scan 计划 / 本地审查审计</summary>
         <PacketCard title="Deep-scan 准备清单" subtitle="POST /api/candidate-radar/deep-scan-plan；只生成不降能验收单，不执行 deep_scan" status={String(deepScanPlan.status ?? "plan_missing")}>
-          <p>deep_scan_plan 是 plan-only：不刷新 provider、不调用 DeepSeek、不执行 deep_scan、不生成买入候选、不修改 strategy action。</p>
+          <p>deep_scan_plan 是 plan-only：不刷新 provider、不调用 DeepSeek、不执行 deep_scan、不生成买入候选、不修改交易策略。</p>
           <p>feature_loss_gaps_visible: {String(policy.deep_scan_feature_loss_gaps_visible === true)}</p>
           <p>page_render_starts_deep_scan: {String(deepScanPlan.page_render_starts_deep_scan === true)}</p>
           <DataLineageTable rows={objectRow(deepScanPlan)} />
@@ -4233,7 +4483,7 @@ export default function CandidateRadar() {
       <details className="developer-audit-details">
         <summary>Full-pool 计划 / 本地执行审计</summary>
         <PacketCard title="Full-pool 准备计划" subtitle="POST /api/candidate-radar/full-pool-plan；只生成计划，不扫描全市场" status={String(fullPoolPlan.status ?? "plan_missing")}>
-          <p>full_pool_scan_plan 是 plan-only：不刷新 provider、不执行 full_pool_scan、不生成买入候选、不修改 strategy action。</p>
+          <p>full_pool_scan_plan 是 plan-only：不刷新 provider、不执行 full_pool_scan、不生成买入候选、不修改交易策略。</p>
           <p>page_render_starts_full_pool: {String(fullPoolPlan.page_render_starts_full_pool === true)}</p>
           <p>worker_task_required: {String(fullPoolPlan.worker_task_required === true)}</p>
           <DataLineageTable rows={objectRow(fullPoolPlan)} />
@@ -4323,11 +4573,11 @@ export default function CandidateRadar() {
           <DataLineageTable rows={cacheCallLedger} />
         </PacketCard>
 
-        <PacketCard title="GET candidate envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+        <PacketCard title="GET candidate envelope warnings" subtitle="顶层响应提示；不包含敏感凭据或错误堆栈" status="warnings">
           <DataLineageTable rows={warningRows} />
         </PacketCard>
 
-        <PacketCard title="原始 candidate radar cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">
+        <PacketCard title="原始 candidate radar cache payload" subtitle="调试用 JSON；不含敏感凭据或错误堆栈" status="safe">
           <JsonDetails title="candidate radar cache raw" data={cache} />
         </PacketCard>
       </details>

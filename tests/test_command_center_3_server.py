@@ -414,6 +414,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         return receipt_path
 
+    def _with_clean_worktree_status(self):
+        original_reader = audit_service._read_git_status_short_lines
+        audit_service._read_git_status_short_lines = lambda: ("local_git_status_short_read", 0, [])
+        self.addCleanup(setattr, audit_service, "_read_git_status_short_lines", original_reader)
+
     def _with_parquet_root(self):
         original_root = storage_service.PARQUET_ROOT
         temp_dir = tempfile.TemporaryDirectory()
@@ -731,6 +736,150 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["ltg_acceptance_runway_rows"]), 14)
         self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 14)
+        self.assertEqual(migration["ltg_rebase_cycle_1_worktree_group_row_count"], 4)
+        self.assertEqual(migration["ltg_rebase_cycle_1_ltg_ledger_row_count"], 14)
+        rebase_summary = migration["ltg_rebase_cycle_1_summary"]
+        self.assertEqual(
+            rebase_summary["status"],
+            "usable_path_rebase_baseline_ready_not_ltg_closeout",
+        )
+        self.assertEqual(rebase_summary["scope"], "no_new_feature_no_full_live_light_no_14_ltg_strict_closeout")
+        self.assertEqual(rebase_summary["expected_modified_file_count"], 17)
+        self.assertEqual(rebase_summary["worktree_group_count"], 4)
+        self.assertEqual(rebase_summary["worktree_grouped_file_count"], 17)
+        self.assertEqual(rebase_summary["ltg_ledger_row_count"], 14)
+        self.assertEqual(rebase_summary["ltg_observed_stage_scope_row_count"], 14)
+        self.assertEqual(rebase_summary["ltg_static_row_count"], 14)
+        self.assertEqual(rebase_summary["ltg_strict_closeout"], "0/14")
+        self.assertTrue(rebase_summary["all_ltg_not_closeable"])
+        self.assertTrue(rebase_summary["observed_rows_all_block_closeout"])
+        self.assertTrue(rebase_summary["static_and_observed_ledger_consistent"])
+        self.assertEqual(
+            rebase_summary["ordinary_user_path_first_screen"],
+            ["本地已接上", "当前标的", "最近结果", "下一步按钮"],
+        )
+        self.assertIn("research_audit_details", rebase_summary["ordinary_home_audit_detail_rule"])
+        self.assertEqual(
+            rebase_summary["evidence_boundary"],
+            "rebase_cycle_1_is_usable_path_status_alignment_not_provider_model_executor_or_ltg_closeout",
+        )
+        self.assertFalse(rebase_summary["external_calls_triggered"])
+        self.assertFalse(rebase_summary["tushare_called"])
+        self.assertFalse(rebase_summary["deepseek_called"])
+        self.assertFalse(rebase_summary["github_called"])
+        self.assertFalse(rebase_summary["contains_secret"])
+        self.assertTrue(rebase_summary["does_not_execute_trades"])
+        self.assertTrue(rebase_summary["does_not_modify_strategy_action"])
+        rebase_groups = {
+            row["group_id"]: row for row in migration["ltg_rebase_cycle_1_worktree_group_rows"]
+        }
+        self.assertEqual(
+            set(rebase_groups),
+            {
+                "p0_local_startup_link",
+                "p1_p3_ordinary_research_readback",
+                "p4_daily_home_audit_demotion",
+                "server_contract_regression",
+            },
+        )
+        grouped_files = [
+            file_path
+            for row in migration["ltg_rebase_cycle_1_worktree_group_rows"]
+            for file_path in row["file_paths"]
+        ]
+        self.assertEqual(len(grouped_files), 17)
+        self.assertEqual(len(set(grouped_files)), 17)
+        self.assertIn("desktop/src/routes/CommandCenterHome.tsx", grouped_files)
+        self.assertIn("desktop/src/routes/HealthStatus.tsx", grouped_files)
+        self.assertIn("desktop/src/routes/MigrationStatus.tsx", grouped_files)
+        self.assertIn("scripts/start_command_center_3.command", grouped_files)
+        self.assertIn("docs/migration_map.md", grouped_files)
+        self.assertIn("server/services/candidate_service.py", grouped_files)
+        self.assertIn("server/services/data_health_service.py", grouped_files)
+        self.assertIn("server/services/migration_status_service.py", grouped_files)
+        self.assertIn("tests/test_command_center_3_server.py", grouped_files)
+        self.assertEqual(rebase_groups["p0_local_startup_link"]["file_count"], 4)
+        self.assertEqual(rebase_groups["p1_p3_ordinary_research_readback"]["file_count"], 6)
+        self.assertEqual(rebase_groups["p4_daily_home_audit_demotion"]["file_count"], 2)
+        self.assertEqual(rebase_groups["server_contract_regression"]["file_count"], 5)
+        self.assertTrue(
+            all(row["grouped_for_commit_or_review"] for row in migration["ltg_rebase_cycle_1_worktree_group_rows"])
+        )
+        self.assertFalse(
+            any(row["production_evidence"] for row in migration["ltg_rebase_cycle_1_worktree_group_rows"])
+        )
+        rebase_ltg_rows = {
+            row["id"]: row for row in migration["ltg_rebase_cycle_1_ltg_ledger_rows"]
+        }
+        self.assertEqual(set(rebase_ltg_rows), {f"LTG-{index:02d}" for index in range(1, 15)})
+        self.assertTrue(all(row["can_close_ltg_now"] is False for row in rebase_ltg_rows.values()))
+        self.assertTrue(
+            all(row["can_close_from_usable_path_checkpoint"] is False for row in rebase_ltg_rows.values())
+        )
+        self.assertTrue(all(row["static_production_complete"] is False for row in rebase_ltg_rows.values()))
+        self.assertTrue(all(row["requires_current_head_direct_evidence"] for row in rebase_ltg_rows.values()))
+        self.assertTrue(all(row["requires_production_promotion_review"] for row in rebase_ltg_rows.values()))
+        self.assertTrue(all(row["cache_only_readback"] for row in rebase_ltg_rows.values()))
+        self.assertTrue(all(row["existing_evidence_summary"] for row in rebase_ltg_rows.values()))
+        self.assertTrue(all(row["gap_summary"] for row in rebase_ltg_rows.values()))
+        self.assertTrue(all(row["cannot_close_reason"] for row in rebase_ltg_rows.values()))
+        self.assertTrue(all(row["next_step"] for row in rebase_ltg_rows.values()))
+        self.assertTrue(all(row["next_direct_evidence_count"] > 0 for row in rebase_ltg_rows.values()))
+        self.assertFalse(any(row["external_calls_triggered"] for row in rebase_ltg_rows.values()))
+        self.assertFalse(any(row["tushare_called"] for row in rebase_ltg_rows.values()))
+        self.assertFalse(any(row["deepseek_called"] for row in rebase_ltg_rows.values()))
+        self.assertFalse(any(row["github_called"] for row in rebase_ltg_rows.values()))
+        self.assertFalse(any(row["contains_secret"] for row in rebase_ltg_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in rebase_ltg_rows.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in rebase_ltg_rows.values()))
+        self.assertEqual(
+            rebase_ltg_rows["LTG-13"]["evidence_boundary"],
+            "rebase_cycle_1_ltg_ledger_row_is_status_alignment_not_closeout",
+        )
+        medium_goal_summary = migration["usable_path_medium_goal_checkpoint_summary"]
+        medium_goal_rows = {
+            row["goal_id"]: row for row in migration["usable_path_medium_goal_checkpoint_rows"]
+        }
+        self.assertEqual(
+            medium_goal_summary["schema_version"],
+            "usable_path_three_medium_goal_checkpoint.v1",
+        )
+        self.assertEqual(
+            medium_goal_summary["status"],
+            "three_medium_goals_complete_not_ltg_closeout",
+        )
+        self.assertEqual(medium_goal_summary["completed_medium_goal_count"], 3)
+        self.assertEqual(medium_goal_summary["total_medium_goal_count"], 3)
+        self.assertTrue(medium_goal_summary["all_medium_goals_complete"])
+        self.assertEqual(medium_goal_summary["worktree_grouped_file_count"], 17)
+        self.assertEqual(medium_goal_summary["production_hardening_gate_row_count"], 7)
+        self.assertEqual(medium_goal_summary["ltg_direct_evidence_row_count"], 14)
+        self.assertEqual(medium_goal_summary["ltg_strict_closeout_work_order_row_count"], 14)
+        self.assertEqual(medium_goal_summary["strict_closeout"], "0/14")
+        self.assertFalse(medium_goal_summary["strict_closeout_claim_allowed"])
+        self.assertTrue(medium_goal_summary["not_14_ltg_closeout"])
+        self.assertEqual(
+            medium_goal_summary["evidence_boundary"],
+            "medium_goals_checkpoint_is_usable_path_closeout_not_14_ltg_closeout",
+        )
+        self.assertFalse(medium_goal_summary["external_calls_triggered"])
+        self.assertFalse(medium_goal_summary["tushare_called"])
+        self.assertFalse(medium_goal_summary["deepseek_called"])
+        self.assertFalse(medium_goal_summary["github_called"])
+        self.assertFalse(medium_goal_summary["contains_secret"])
+        self.assertTrue(medium_goal_summary["does_not_execute_trades"])
+        self.assertTrue(medium_goal_summary["does_not_modify_strategy_action"])
+        self.assertEqual(set(medium_goal_rows), {"MG-01", "MG-02", "MG-03"})
+        self.assertIn("普通首页", medium_goal_rows["MG-01"]["completed_meaning"])
+        self.assertIn("coarse_fine_screening_contract", medium_goal_rows["MG-02"]["evidence_surfaces"])
+        self.assertIn("ltg_strict_closeout_work_order_rows", medium_goal_rows["MG-03"]["evidence_surfaces"])
+        self.assertTrue(all(row["status"] == "complete" for row in medium_goal_rows.values()))
+        self.assertTrue(all(row["cache_only_readback"] for row in medium_goal_rows.values()))
+        self.assertFalse(any(row["creates_task_from_get"] for row in medium_goal_rows.values()))
+        self.assertFalse(any(row["creates_task_from_render"] for row in medium_goal_rows.values()))
+        self.assertFalse(any(row["external_calls_triggered"] for row in medium_goal_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in medium_goal_rows.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in medium_goal_rows.values()))
         self.assertEqual(migration["usable_path_current_checkpoint_row_count"], 7)
         self.assertEqual(len(migration["usable_path_current_checkpoint_rows"]), 7)
         current_checkpoint_rows = {
@@ -2081,6 +2230,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(one_click["skip_open_mode_supported"])
         self.assertTrue(one_click["skip_open_waits_for_frontend_backend_ready"])
         self.assertFalse(one_click["skip_open_mode_opens_browser"])
+        self.assertTrue(one_click["launcher_open_mode_default_reuse"])
+        self.assertTrue(one_click["duplicate_tab_guard_supported"])
+        self.assertTrue(one_click["launcher_reuses_existing_local_tab_before_open"])
+        self.assertEqual(one_click["ordinary_open_behavior_label"], "复用已有本地页面；找不到才打开普通首页")
         self.assertFalse(one_click["get_preflight_cache_starts_services"])
         self.assertFalse(one_click["react_render_starts_services"])
         self.assertFalse(one_click["search_typing_starts_services"])
@@ -2105,6 +2258,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("running_vite_reused_without_npm_path", one_click_rows)
         self.assertIn("p0_stability_check_before_open", one_click_rows)
         self.assertIn("p0_success_handoff_to_p1_confirm_visible", one_click_rows)
+        self.assertIn("duplicate_tab_guard_reuses_existing_local_page", one_click_rows)
         self.assertIn("browser_handoff_failure_nonfatal_after_readiness", one_click_rows)
         self.assertIn(
             "before checking npm PATH",
@@ -2119,9 +2273,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("command_center_3_desktop_shell_preflight_cache", one_click_rows["desktop_preflight_cache_wait_before_open"]["evidence"])
         self.assertIn("Command Center 3.0 index HTML", one_click_rows["vite_wait_before_open"]["evidence"])
         self.assertIn("P0_STABILITY_READY=1", one_click_rows["p0_stability_check_before_open"]["evidence"])
+        self.assertIn("reuse an existing local Command Center tab", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
         self.assertIn("#home by default", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
         self.assertIn("#candidates/candidate-radar-search-quant-projection", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
         self.assertIn("Tushare-first POST task", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
+        self.assertIn("only opens #home when none exists", one_click_rows["duplicate_tab_guard_reuses_existing_local_page"]["evidence"])
         self.assertTrue(desktop["policy"]["one_click_startup_summary_is_local"])
         self.assertTrue(desktop["policy"]["one_click_startup_summary_is_user_run_only"])
         self.assertTrue(desktop["policy"]["one_click_startup_summary_does_not_run_from_get_cache"])
@@ -2584,6 +2740,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(launcher["one_click_fastapi_reload_disabled"])
         self.assertTrue(launcher["starts_vite_when_user_runs"])
         self.assertTrue(launcher["opens_local_browser_when_user_runs"])
+        self.assertEqual(launcher["launcher_open_mode_default"], "reuse")
+        self.assertTrue(launcher["launcher_open_mode_default_reuse"])
+        self.assertEqual(launcher["launcher_open_mode_env_var"], "COMMAND_CENTER_3_LAUNCHER_OPEN_MODE")
+        self.assertTrue(launcher["duplicate_tab_guard_supported"])
+        self.assertTrue(launcher["launcher_reuses_existing_local_tab_before_open"])
+        self.assertEqual(launcher["ordinary_open_behavior_label"], "复用已有本地页面；找不到才打开普通首页")
         self.assertTrue(launcher["check_only_mode_supported"])
         self.assertFalse(launcher["check_only_mode_starts_services"])
         self.assertFalse(launcher["check_only_mode_probes_urls"])
@@ -2631,6 +2793,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertTrue(launcher_rows["launcher_marker:safe_display_url"]["passed"])
         self.assertTrue(launcher_rows["launcher_marker:url_is_local"]["passed"])
+        self.assertTrue(launcher_rows["launcher_marker:COMMAND_CENTER_3_LAUNCHER_OPEN_MODE"]["passed"])
+        self.assertTrue(launcher_rows["launcher_marker:Browser open mode:"]["passed"])
+        self.assertTrue(launcher_rows["launcher_marker:APP_URL_REUSE_PREFIX"]["passed"])
+        self.assertTrue(launcher_rows["launcher_marker:focus_existing_browser_tab"]["passed"])
+        self.assertTrue(launcher_rows["launcher_marker:Browser handoff reused existing local tab"]["passed"])
+        self.assertTrue(launcher_rows["launcher_marker:Duplicate-tab guard: open mode"]["passed"])
         self.assertTrue(
             launcher_rows[
                 "launcher_marker:普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。"
@@ -4054,6 +4222,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(set(ordinary_rows), {"下一票雷达", "股票量化推演", "次日图谱"})
         self.assertIn("Tushare daily close", ordinary_rows["股票量化推演"]["readable_result"])
         self.assertIn("情景=1 / 参考线=6 / 操作区=1", ordinary_rows["次日图谱"]["readable_result"])
+        preview_rows = {row["预览项"]: row for row in service_packet["ordinary_next_session_preview_rows"]}
+        self.assertEqual(set(preview_rows), {"下一票雷达", "股票量化推演", "次日图谱"})
+        self.assertIn("Tushare daily close", preview_rows["股票量化推演"]["当前状态"])
+        self.assertIn("情景=1 / 参考线=6 / 操作区=1", preview_rows["次日图谱"]["当前状态"])
+        self.assertEqual(service_packet["ordinary_next_session_preview_row_count"], 3)
+        self.assertEqual(service_packet["counts"]["next_session_ordinary_preview_row_count"], 3)
+        self.assertTrue(service_packet["policy"]["ordinary_next_session_preview_rows_are_cache_only"])
+        self.assertFalse(service_packet["policy"]["ordinary_next_session_preview_rows_create_task"])
+        self.assertFalse(service_packet["policy"]["ordinary_next_session_preview_rows_call_provider_or_model"])
+        self.assertTrue(service_packet["policy"]["ordinary_next_session_preview_rows_are_not_trade_signals"])
+        self.assertTrue(all(row["cache_only_readback"] for row in preview_rows.values()))
+        self.assertFalse(any(row["creates_task_from_readback"] for row in preview_rows.values()))
+        self.assertFalse(any(row["calls_provider_or_model"] for row in preview_rows.values()))
+        self.assertFalse(any(row["is_trade_signal"] for row in preview_rows.values()))
+        self.assertFalse(any(row["contains_secret"] for row in preview_rows.values()))
         chart_review_rows = {row["复核项"]: row for row in service_packet["ordinary_chart_review_rows"]}
         self.assertEqual(set(chart_review_rows), {"图表路径", "参考线", "操作区", "缺少证据"})
         self.assertIn("latest close=10.4", chart_review_rows["参考线"]["证据"])
@@ -11461,6 +11644,59 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(target_contract["full_interface_acceptance_done"])
         self.assertFalse(target_contract["production_tushare_pipeline_complete"])
 
+    def test_data_health_tushare_summary_includes_current_ledger_after_prior_direct_evidence(self):
+        prior_rows = [
+            {
+                "api": "trade_cal",
+                "request_params_safe": {"start_date": "20240101", "end_date": "20260620"},
+                "row_count": 902,
+                "data_date": "20260620",
+                "local_fetched_at": f"2026-06-20T00:{index:02d}:00",
+                "call_status": "success",
+                "external": True,
+                "external_calls_triggered": True,
+                "tushare_called": True,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "provider_backed_long_window_acceptance_done": True,
+            }
+            for index in range(80)
+        ]
+        current_row = {
+            "api": "trade_cal",
+            "request_params_safe": {"start_date": "20240101", "end_date": "20260626"},
+            "row_count": 908,
+            "data_date": "20260626",
+            "local_fetched_at": "2026-06-26T10:00:00",
+            "call_status": "success",
+            "external": True,
+            "external_calls_triggered": True,
+            "tushare_called": True,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "provider_backed_long_window_acceptance_done": True,
+        }
+
+        summary = data_health_service._local_tushare_refresh_packet_summary(
+            {
+                "status": "success",
+                "selected_apis": ["trade_cal"],
+                "prior_direct_evidence_rows": prior_rows,
+                "call_ledger": [current_row],
+            }
+        )
+
+        self.assertEqual(summary["trade_cal_provider_call_ledger_observed_count"], 81)
+        self.assertEqual(summary["trade_cal_provider_observed_row_count"], 908)
+        self.assertTrue(summary["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(summary["external_calls_triggered"])
+        self.assertFalse(summary["tushare_called"])
+        self.assertFalse(summary["production_tushare_pipeline_complete"])
+
     def test_tushare_target_sample_acceptance_records_reviewable_target_without_full_promotion(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()
@@ -12656,7 +12892,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("scripts/smoke_3_0.sh", script)
         self.assertIn("scripts/data_health_freshness_contract.py", script)
         self.assertIn("Data Health freshness contract", script)
-        self.assertIn("data_health_freshness_contract: passed_local_contract_provider_execution_pending", script)
+        self.assertIn(
+            "data_health_freshness_contract: passed_local_contract_provider_evidence_observed_or_pending_production_gate_blocked",
+            script,
+        )
         self.assertIn("scripts/tushare_acceptance_contract.py", script)
         self.assertIn("Tushare acceptance contract", script)
         self.assertIn("tushare_acceptance_contract: passed_local_contract_provider_execution_pending", script)
@@ -13017,6 +13256,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("freshness_production_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("data_health_freshness_durable_evidence_recipe.v1", script)
         self.assertIn("freshness_durable_evidence_recipe_is_local_provider_pending", script)
+        self.assertIn("freshness_local_release_gate_evidence", script)
+        self.assertIn("data_health_freshness_local_release_gate_evidence.v1", script)
+        self.assertIn("local_release_gate_receipt_readback_no_push_no_github_api", script)
+        self.assertIn("local_worktree_clean_required_before_gate_receipt", script)
+        self.assertIn("local_worktree_raw_paths_emitted", script)
+        self.assertIn("local_worktree_blocks_local_gate_receipt", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -13034,7 +13279,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["schema_version"], "data_health_freshness_push_gate_contract.v1")
         self.assertEqual(payload["scope"], "local_cache_contract_no_provider_execution")
         self.assertEqual(payload["status"], "data_health_freshness_contract_passed")
-        self.assertFalse(payload["provider_backed_trade_cal_acceptance_done"])
+        self.assertIsInstance(payload["provider_backed_trade_cal_acceptance_done"], bool)
+        self.assertEqual(
+            payload["provider_backed_trade_cal_acceptance_done"],
+            payload["provider_backed_trade_cal_acceptance_observed"],
+        )
+        self.assertIn(
+            payload["provider_backed_trade_cal_acceptance_source"],
+            {"local_prior_provider_evidence_replay", "not_observed_in_local_cache"},
+        )
+        self.assertEqual(
+            payload["observed_counts"]["provider_backed_trade_cal_acceptance_observed"],
+            payload["provider_backed_trade_cal_acceptance_observed"],
+        )
+        self.assertEqual(
+            payload["observed_counts"]["provider_backed_trade_cal_acceptance_source"],
+            payload["provider_backed_trade_cal_acceptance_source"],
+        )
+        self.assertFalse(payload["contract_executed_provider_task"])
+        self.assertTrue(payload["provider_backed_trade_cal_acceptance_does_not_close_ltg"])
+        self.assertFalse(payload["ltg01_closeout_claim_allowed"])
+        if payload["provider_backed_trade_cal_acceptance_observed"]:
+            self.assertGreater(payload["provider_backed_trade_cal_acceptance_evidence_row_count"], 0)
         self.assertFalse(payload["production_freshness_gate_complete"])
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
@@ -13065,17 +13331,43 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["freshness_durable_evidence_recipe_status"],
             "freshness_durable_evidence_recipe_ready_provider_pending",
         )
+        self.assertIn(
+            payload["observed_counts"]["freshness_local_release_gate_evidence_status"],
+            {
+                "freshness_local_release_gate_observed_remote_ci_pending",
+                "freshness_local_release_gate_blocked_dirty_worktree",
+                "freshness_local_release_gate_blocked_head_mismatch",
+                "freshness_local_release_gate_blocked_required_checks_missing",
+                "freshness_local_release_gate_missing_current_head_receipt",
+                "freshness_local_release_gate_blocked_local_receipt",
+            },
+        )
+        self.assertIn(payload["observed_counts"]["freshness_local_release_gate_run_observed"], {0, 1})
+        self.assertIn(payload["observed_counts"]["freshness_local_release_gate_worktree_clean"], {0, 1})
+        self.assertIn(payload["observed_counts"]["freshness_local_release_gate_worktree_blocks_gate"], {0, 1})
+        self.assertGreaterEqual(
+            payload["observed_counts"]["freshness_local_release_gate_worktree_dirty_file_count"],
+            0,
+        )
+        self.assertIn(payload["observed_counts"]["freshness_local_release_gate_head_matches_current"], {0, 1})
+        self.assertIn(payload["observed_counts"]["freshness_local_release_gate_required_checks_present"], {0, 1})
+        self.assertGreaterEqual(payload["observed_counts"]["freshness_local_release_gate_blocker_count"], 0)
         self.assertFalse(payload["freshness_durable_evidence_complete"])
         self.assertGreater(payload["freshness_durable_evidence_blocker_count"], 0)
         row_map = {row["criterion"]: row for row in payload["rows"]}
         self.assertTrue(row_map["freshness_production_blocker_audit_is_local_not_completion"]["passed"])
+        self.assertTrue(row_map["provider_backed_trade_cal_acceptance_observation_is_explicit"]["passed"])
         self.assertTrue(row_map["trade_cal_next_execution_recipe_is_local_and_not_execution"]["passed"])
         self.assertTrue(row_map["freshness_durable_evidence_recipe_is_local_provider_pending"]["passed"])
+        self.assertTrue(row_map["decision_surface_isolation_direct_evidence_is_local"]["passed"])
         self.assertTrue(row_map["trade_cal_next_execution_recipe_binds_dry_run_scope_without_execution"]["passed"])
         self.assertTrue(row_map["producer_generation_contract_is_local_refresh_pending"]["passed"])
         self.assertTrue(row_map["producer_cache_refresh_readiness_is_local_no_write"]["passed"])
         self.assertTrue(row_map["producer_cache_refresh_execution_request_lookup_is_local_no_write"]["passed"])
+        self.assertTrue(row_map["producer_cache_refresh_direct_evidence_is_local_not_acceptance"]["passed"])
         self.assertEqual(payload["observed_counts"]["current_evidence_producer_generation_row_count"], 3)
+        self.assertEqual(payload["observed_counts"]["decision_surface_isolation_proof_line_count"], 5)
+        self.assertEqual(payload["observed_counts"]["decision_surface_isolation_direct_evidence_done"], 1)
         self.assertEqual(payload["observed_counts"]["current_evidence_producer_generation_blocker_count"], 0)
         self.assertEqual(
             payload["observed_counts"]["current_evidence_producer_generation_status"],
@@ -13104,6 +13396,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(
             payload["observed_counts"]["latest_producer_cache_refresh_execution_request_blocking_row_count"],
+            0,
+        )
+        self.assertGreaterEqual(payload["observed_counts"]["producer_cache_refresh_direct_evidence_done"], 0)
+        self.assertGreaterEqual(
+            payload["observed_counts"]["producer_cache_refresh_direct_evidence_written_packet_count"],
             0,
         )
         self.assertIn(
@@ -13196,10 +13493,43 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertIn("provider_freshness_replay", blocking_keys)
         if durable_rows_by_key["provider_failure_mode_evidence"].get("direct_evidence_required"):
             self.assertIn("provider_failure_mode_evidence", blocking_keys)
+        production_row = durable_rows_by_key["production_promotion_review"]
+        self.assertIn(
+            production_row["current_status"],
+            {
+                "provider_promotion_review_pending",
+                "local_release_gate_dirty_worktree_pending",
+                "local_release_gate_current_head_receipt_pending",
+                "local_release_gate_observed_remote_ci_pending",
+                "release_review_pending",
+            },
+        )
+        self.assertEqual(
+            production_row["local_release_gate_evidence_status"],
+            payload["observed_counts"]["freshness_local_release_gate_evidence_status"],
+        )
+        self.assertIsInstance(production_row["local_worktree_dirty_file_count"], int)
+        self.assertFalse(production_row["local_worktree_raw_paths_emitted"])
+        self.assertFalse(production_row["local_worktree_raw_status_lines_emitted"])
+        self.assertTrue(production_row["local_worktree_clean_required_before_gate_receipt"])
+        if production_row["local_worktree_blocks_local_gate_receipt"]:
+            self.assertIn("clean worktree before fresh local push-gate receipt", production_row["missing_evidence"])
+        self.assertTrue(production_row["remote_ci_review_required"])
+        self.assertFalse(production_row["latest_remote_run_verified_green"])
+        self.assertFalse(production_row["release_review_complete"])
+        self.assertTrue(production_row["local_gate_pass_is_not_ci_status"])
+        self.assertTrue(production_row["release_review_blocks_production_completion"])
+        self.assertIn(
+            "release review that production_freshness_gate_complete may become true",
+            production_row["missing_evidence"],
+        )
         self.assertIn(
             durable_rows_by_key["current_evidence_producer_coverage"]["current_status"],
             {
                 "producer_generation_ready_current_cache_refresh_pending",
+                "producer_cache_refresh_local_direct_evidence_provider_pending",
+                "producer_cache_refresh_local_coverage_provider_pending",
+                "producer_cache_refresh_local_coverage_provider_acceptance_observed",
                 "local_clear",
             },
         )
@@ -13225,10 +13555,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(
             durable_rows_by_key["current_evidence_producer_coverage"]["producer_generation_ready_is_not_completion"]
         )
-        self.assertIn(
-            "current cache refresh with generated producer freshness context",
-            durable_rows_by_key["current_evidence_producer_coverage"]["missing_evidence"],
-        )
+        producer_missing = durable_rows_by_key["current_evidence_producer_coverage"]["missing_evidence"]
+        if durable_rows_by_key["current_evidence_producer_coverage"].get(
+            "producer_cache_refresh_direct_evidence_done"
+        ):
+            self.assertNotIn("current cache refresh with generated producer freshness context", producer_missing)
+        else:
+            self.assertIn("current cache refresh with generated producer freshness context", producer_missing)
+        if durable_rows_by_key["current_evidence_producer_coverage"].get(
+            "producer_provider_backed_trade_cal_acceptance_evidence_done"
+        ):
+            self.assertNotIn("provider-backed trade_cal acceptance evidence", producer_missing)
+        else:
+            self.assertIn("provider-backed trade_cal acceptance evidence", producer_missing)
         for row in durable_rows:
             self.assertEqual(row["scope"], "freshness_durable_evidence_recipe")
             self.assertFalse(row["provider_backed_trade_cal_acceptance_done"])
@@ -20710,6 +21049,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
     def test_release_gate_local_run_receipt_marks_current_head_without_ci_claim(self):
         self._with_meta_store()
         receipt_path = self._with_release_gate_receipt_path()
+        self._with_clean_worktree_status()
         current_head = audit_service._current_git_head_summary()
         self.assertTrue(current_head["head_full"])
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -20802,6 +21142,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(ltg11["release_gate_direct_evidence_layer"], "L3_local_release_gate_execution_evidence")
         self.assertTrue(ltg11["fresh_local_gate_run_observed"])
         self.assertTrue(ltg11["local_push_gate_receipt_head_matches_current"])
+        self.assertTrue(ltg11["local_worktree_clean"])
+        self.assertEqual(ltg11["local_worktree_dirty_file_count"], 0)
+        self.assertFalse(ltg11["local_worktree_blocks_local_gate_receipt"])
+        self.assertFalse(ltg11["fresh_local_gate_blocked_by_dirty_worktree"])
+        self.assertFalse(ltg11["local_worktree_raw_paths_emitted"])
+        self.assertFalse(ltg11["local_worktree_raw_status_lines_emitted"])
         self.assertEqual(ltg11["local_push_gate_receipt_head"], current_head["head"])
         self.assertEqual(ltg11["local_push_gate_receipt_current_head"], current_head["head"])
         self.assertEqual(ltg11["local_push_gate_check_count"], len(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS))
@@ -20826,6 +21172,119 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-11"]["observed_stage_scope_pending_count"], 5)
         self.assertFalse(migration_goals["LTG-11"]["observed_stage_scope_can_close_goal"])
+
+    def test_release_gate_stale_local_run_receipt_surfaces_head_mismatch_blocker(self):
+        self._with_meta_store()
+        receipt_path = self._with_release_gate_receipt_path()
+        self._with_clean_worktree_status()
+        current_head = audit_service._current_git_head_summary()
+        stale_head_full = "0" * 40 if current_head["head_full"] != "0" * 40 else "1" * 40
+        stale_head = stale_head_full[:7]
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "command_center_3_local_push_gate_run_receipt.v1",
+                    "status": "local_push_gate_passed_current_head",
+                    "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+                    "generated_at_utc": "2026-06-16T00:00:00Z",
+                    "branch": current_head["branch"],
+                    "head": stale_head,
+                    "head_full": stale_head_full,
+                    "checks": sorted(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS),
+                    "did_not_push": True,
+                    "git_add_dot_used": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                    "local_gate_pass_is_not_ci_status": True,
+                    "remote_actions_status_known": False,
+                    "latest_remote_run_verified_green": False,
+                    "explicit_user_push_confirmation_before_push": False,
+                    "push_confirmation_state": "not_requested_no_push",
+                    "release_claim_decision": "blocked_remote_ci_unverified",
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        packet = audit_service.read_call_ledger_audit_cache()
+
+        local_receipt = packet["local_push_gate_run_receipt"]
+        self.assertEqual(local_receipt["status"], "local_push_gate_passed_current_head")
+        self.assertFalse(local_receipt["fresh_local_gate_run_observed"])
+        self.assertFalse(local_receipt["head_matches_current"])
+        self.assertEqual(local_receipt["head"], stale_head)
+        self.assertEqual(local_receipt["current_head"], current_head["head"])
+        self.assertEqual(local_receipt["freshness_blockers"], ["head_mismatch"])
+        self.assertEqual(local_receipt["freshness_blocker_count"], 1)
+        self.assertTrue(local_receipt["required_local_gate_checks_present"])
+        self.assertTrue(local_receipt["boundary_flags_valid"])
+        self.assertTrue(local_receipt["safety_boundary_flags_valid"])
+        self.assertTrue(local_receipt["push_confirmation_boundary_valid"])
+
+        push_receipt = packet["release_gate_push_readiness_receipt"]
+        self.assertEqual(
+            push_receipt["status"],
+            "push_readiness_receipt_ready_local_gate_required_remote_ci_pending",
+        )
+        self.assertFalse(push_receipt["fresh_local_gate_run_observed"])
+        self.assertFalse(push_receipt["local_push_gate_run_receipt_head_matches_current"])
+        self.assertEqual(push_receipt["local_push_gate_run_receipt_freshness_blockers"], ["head_mismatch"])
+        self.assertEqual(push_receipt["local_push_gate_run_receipt_freshness_blocker_count"], 1)
+        self.assertTrue(push_receipt["fresh_local_gate_blocked_by_head_mismatch"])
+        self.assertFalse(push_receipt["fresh_local_gate_blocked_by_required_checks"])
+        self.assertFalse(push_receipt["fresh_local_gate_blocked_by_boundary_flags"])
+        self.assertIn("fresh_local_push_gate_command_output", push_receipt["missing_evidence_items"])
+
+        stage_rows = {row["stage_key"]: row for row in packet["release_gate_stage_scope_rows"]}
+        fresh_stage = stage_rows["fresh_local_gate_command_run"]
+        self.assertFalse(fresh_stage["stage_complete"])
+        self.assertFalse(fresh_stage["fresh_local_gate_run_observed"])
+        self.assertEqual(fresh_stage["local_push_gate_receipt_status"], "local_push_gate_passed_current_head")
+        self.assertEqual(fresh_stage["local_push_gate_receipt_head"], stale_head)
+        self.assertEqual(fresh_stage["local_push_gate_receipt_current_head"], current_head["head"])
+        self.assertFalse(fresh_stage["local_push_gate_receipt_head_matches_current"])
+        self.assertEqual(fresh_stage["local_push_gate_receipt_freshness_blockers"], ["head_mismatch"])
+        self.assertEqual(fresh_stage["local_push_gate_receipt_freshness_blocker_count"], 1)
+        self.assertTrue(fresh_stage["fresh_local_gate_blocked_by_head_mismatch"])
+        self.assertFalse(fresh_stage["fresh_local_gate_blocked_by_required_checks"])
+        self.assertFalse(fresh_stage["fresh_local_gate_blocked_by_boundary_flags"])
+        self.assertFalse(packet["counts"]["local_push_gate_run_observed"])
+        self.assertFalse(packet["counts"]["local_push_gate_receipt_head_matches_current"])
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg11 = observed_stage_rows["LTG-11"]
+        self.assertEqual(ltg11["status"], "observed_in_audit_cache_release_gate_contract")
+        self.assertEqual(ltg11["direct_evidence_stage_count"], 0)
+        self.assertEqual(ltg11["pending_stage_count"], 6)
+        self.assertFalse(ltg11["fresh_local_gate_run_observed"])
+        self.assertFalse(ltg11["local_push_gate_receipt_head_matches_current"])
+        self.assertTrue(ltg11["local_worktree_clean"])
+        self.assertEqual(ltg11["local_worktree_dirty_file_count"], 0)
+        self.assertFalse(ltg11["local_worktree_blocks_local_gate_receipt"])
+        self.assertFalse(ltg11["fresh_local_gate_blocked_by_dirty_worktree"])
+        self.assertEqual(ltg11["local_push_gate_receipt_head"], stale_head)
+        self.assertEqual(ltg11["local_push_gate_receipt_current_head"], current_head["head"])
+        self.assertEqual(ltg11["local_push_gate_receipt_freshness_blockers"], ["head_mismatch"])
+        self.assertEqual(ltg11["local_push_gate_receipt_freshness_blocker_count"], 1)
+        self.assertTrue(ltg11["fresh_local_gate_blocked_by_head_mismatch"])
+        self.assertFalse(ltg11["fresh_local_gate_blocked_by_required_checks"])
+        self.assertFalse(ltg11["fresh_local_gate_blocked_by_boundary_flags"])
+        self.assertFalse(ltg11["release_gate_complete"])
+        self.assertFalse(ltg11["remote_actions_status_known"])
+        self.assertFalse(ltg11["latest_remote_run_verified_green"])
+        self.assertFalse(ltg11["github_api_called"])
+        self.assertFalse(ltg11["external_calls_triggered"])
+        self.assertTrue(ltg11["does_not_execute_trades"])
+        self.assertFalse(ltg11["can_close_from_observed_row"])
 
     def test_release_gate_local_run_receipt_requires_push_confirmation_boundary_fields(self):
         self._with_meta_store()
@@ -22138,6 +22597,23 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("Tushare-first 账本已回放", ordinary_rows["股票量化推演"]["readable_result"])
         self.assertIn("本次 GET cache 未外联", ordinary_rows["股票量化推演"]["readable_result"])
         self.assertIn("完整 next-session 图谱待手动生成", ordinary_rows["次日图谱"]["readable_result"])
+        preview_rows = {row["预览项"]: row for row in packet["ordinary_next_session_preview_rows"]}
+        self.assertEqual(set(preview_rows), {"下一票雷达", "股票量化推演", "次日图谱"})
+        self.assertIn("上游结果可读", preview_rows["下一票雷达"]["当前状态"])
+        self.assertIn("Tushare-first 账本已回放", preview_rows["股票量化推演"]["当前状态"])
+        self.assertIn("完整 next-session 图谱待手动生成", preview_rows["次日图谱"]["当前状态"])
+        self.assertEqual(packet["ordinary_next_session_preview_row_count"], 3)
+        self.assertEqual(packet["counts"]["next_session_ordinary_preview_row_count"], 3)
+        self.assertTrue(packet["policy"]["ordinary_next_session_preview_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["ordinary_next_session_preview_rows_create_task"])
+        self.assertFalse(packet["policy"]["ordinary_next_session_preview_rows_call_provider_or_model"])
+        self.assertTrue(packet["policy"]["ordinary_next_session_preview_rows_are_not_trade_signals"])
+        self.assertTrue(all(row["cache_only_readback"] for row in preview_rows.values()))
+        self.assertFalse(any(row["creates_task_from_readback"] for row in preview_rows.values()))
+        self.assertFalse(any(row["calls_provider_or_model"] for row in preview_rows.values()))
+        self.assertFalse(any(row["is_trade_signal"] for row in preview_rows.values()))
+        self.assertFalse(any(row["contains_secret"] for row in preview_rows.values()))
+        self.assertIn("上游 P3 结果已接上", packet["ordinary_summary"])
         condition_rows = {row["速读项"]: row for row in packet["ordinary_condition_quick_read_rows"]}
         self.assertIn("上游搜票结论可读", condition_rows["1. 来源"]["当前状态"])
         self.assertIn("不要把上游可读结论当完整图谱", condition_rows["3. 失效"]["当前状态"])
@@ -23229,11 +23705,61 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["latest_producer_cache_refresh_found"], 1)
         self.assertEqual(packet["counts"]["latest_producer_cache_refresh_written_packet_count"], 3)
         self.assertEqual(packet["counts"]["current_evidence_producer_cache_refresh_required_count"], 0)
+        self.assertEqual(packet["counts"]["producer_cache_refresh_direct_evidence_done"], 1)
+        self.assertEqual(packet["counts"]["producer_cache_refresh_direct_evidence_written_packet_count"], 3)
+        direct_evidence = packet["producer_cache_refresh_direct_evidence"]
+        self.assertEqual(
+            direct_evidence["schema_version"],
+            "data_health_producer_cache_refresh_direct_evidence.v1",
+        )
+        self.assertEqual(
+            direct_evidence["status"],
+            "producer_cache_refresh_direct_evidence_local_sqlite_written",
+        )
+        self.assertTrue(direct_evidence["direct_evidence_done"])
+        self.assertEqual(direct_evidence["local_sqlite_packet_write_count"], 3)
+        self.assertEqual(set(direct_evidence["written_packet_keys"]), set(receipt["written_packet_keys"]))
+        self.assertFalse(direct_evidence["writes_snapshot_cache"])
+        self.assertTrue(direct_evidence["writes_local_sqlite_packets"])
+        self.assertTrue(direct_evidence["does_not_refresh_provider"])
+        self.assertFalse(direct_evidence["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(direct_evidence["production_freshness_gate_complete"])
+        self.assertFalse(direct_evidence["external_calls_triggered"])
+        self.assertTrue(direct_evidence["does_not_execute_trades"])
+        self.assertTrue(direct_evidence["does_not_modify_strategy_action"])
+        durable_rows = {
+            row["evidence_key"]: row
+            for row in packet["freshness_durable_evidence_rows"]
+        }
+        producer_row = durable_rows["current_evidence_producer_coverage"]
+        self.assertEqual(
+            producer_row["current_status"],
+            "producer_cache_refresh_local_coverage_provider_pending",
+        )
+        self.assertTrue(producer_row["producer_cache_refresh_direct_evidence_done"])
+        self.assertTrue(producer_row["producer_cache_refresh_current_packet_context_done"])
+        self.assertEqual(
+            set(producer_row["producer_cache_refresh_context_packet_keys"]),
+            set(receipt["written_packet_keys"]),
+        )
+        self.assertTrue(producer_row["producer_local_current_cache_coverage_done"])
+        self.assertNotIn(
+            "current cache refresh with generated producer freshness context",
+            producer_row["missing_evidence"],
+        )
+        self.assertNotIn(
+            "current cache producer expected_trade_date/data_date/freshness_state coverage",
+            producer_row["missing_evidence"],
+        )
+        self.assertIn("provider-backed trade_cal acceptance evidence", producer_row["missing_evidence"])
         self.assertTrue(packet["policy"]["latest_producer_cache_refresh_lookup_is_local"])
         self.assertFalse(packet["policy"]["latest_producer_cache_refresh_lookup_creates_task"])
         self.assertFalse(packet["policy"]["latest_producer_cache_refresh_lookup_writes_snapshot_cache"])
         self.assertFalse(packet["policy"]["latest_producer_cache_refresh_lookup_writes_local_sqlite_packets"])
         self.assertFalse(packet["policy"]["latest_producer_cache_refresh_lookup_calls_provider"])
+        self.assertTrue(packet["policy"]["producer_cache_refresh_direct_evidence_is_local"])
+        self.assertFalse(packet["policy"]["producer_cache_refresh_direct_evidence_calls_provider"])
+        self.assertTrue(packet["policy"]["producer_cache_refresh_direct_evidence_is_not_provider_acceptance"])
         self.assertTrue(packet["policy"]["producer_cache_refresh_route_is_button_gated"])
         self.assertTrue(packet["policy"]["producer_cache_refresh_route_requires_execution_request"])
         self.assertFalse(packet["policy"]["producer_cache_refresh_route_calls_provider"])
@@ -34075,6 +34601,282 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 14)
         runway_rows = {row["id"]: row for row in migration["data"]["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["data"]["ltg_next_acceptance_action_rows"]}
+        hardening_summary = migration["data"]["production_hardening_summary"]
+        hardening_rows = {
+            row["hardening_area"]: row for row in migration["data"]["production_hardening_rows"]
+        }
+        hardening_ltg_rows = {
+            row["id"]: row for row in migration["data"]["production_hardening_ltg_direct_evidence_rows"]
+        }
+        hardening_gate_summary = migration["data"]["production_hardening_gate_summary"]
+        hardening_gate_rows = {
+            row["gate_id"]: row for row in migration["data"]["production_hardening_gate_rows"]
+        }
+        work_order_summary = migration["data"]["ltg_strict_closeout_work_order_summary"]
+        work_order_rows = {
+            row["id"]: row for row in migration["data"]["ltg_strict_closeout_work_order_rows"]
+        }
+        self.assertEqual(
+            hardening_summary["schema_version"],
+            "production_hardening_direct_evidence_matrix.v1",
+        )
+        self.assertEqual(
+            hardening_summary["status"],
+            "production_hardening_next_evidence_ready_not_closeout",
+        )
+        self.assertEqual(hardening_summary["hardening_area_count"], 7)
+        self.assertEqual(hardening_summary["ltg_direct_evidence_row_count"], 14)
+        self.assertEqual(migration["data"]["production_hardening_row_count"], 7)
+        self.assertEqual(migration["data"]["production_hardening_ltg_direct_evidence_row_count"], 14)
+        self.assertEqual(hardening_summary["strict_closeout"], "0/14")
+        self.assertEqual(hardening_summary["strict_closeout_done_count"], 0)
+        self.assertEqual(hardening_summary["strict_closeout_total_count"], 14)
+        self.assertTrue(hardening_summary["all_ltg_closeout_blocked"])
+        self.assertTrue(hardening_summary["storage_boundary_visible"])
+        self.assertTrue(hardening_summary["worker_boundary_visible"])
+        self.assertTrue(hardening_summary["tauri_boundary_visible"])
+        self.assertTrue(hardening_summary["ci_smoke_security_boundary_visible"])
+        self.assertTrue(hardening_summary["deepseek_governed_executor_nonblocking"])
+        self.assertTrue(hardening_summary["streamlit_legacy_admin_debug_only"])
+        self.assertTrue(hardening_summary["local_receipts_are_not_production_evidence"])
+        self.assertTrue(hardening_summary["matrix_is_not_production_evidence"])
+        self.assertFalse(hardening_summary["safe_to_start_one_ltg_strict_closeout"])
+        self.assertFalse(hardening_summary["external_calls_triggered"])
+        self.assertFalse(hardening_summary["tushare_called"])
+        self.assertFalse(hardening_summary["deepseek_called"])
+        self.assertFalse(hardening_summary["github_called"])
+        self.assertTrue(hardening_summary["does_not_execute_trades"])
+        self.assertTrue(hardening_summary["does_not_modify_strategy_action"])
+        self.assertEqual(
+            hardening_gate_summary["schema_version"],
+            "production_hardening_gate_summary.v1",
+        )
+        self.assertEqual(
+            hardening_gate_summary["status"],
+            "production_hardening_gates_visible_strict_closeout_blocked",
+        )
+        self.assertEqual(hardening_gate_summary["gate_row_count"], 7)
+        self.assertEqual(migration["data"]["production_hardening_gate_row_count"], 7)
+        self.assertGreaterEqual(hardening_gate_summary["local_direct_evidence_area_count"], 0)
+        self.assertLessEqual(hardening_gate_summary["local_direct_evidence_area_count"], 7)
+        self.assertTrue(hardening_gate_summary["remote_ci_review_required"])
+        self.assertFalse(hardening_gate_summary["latest_remote_run_verified_green"])
+        self.assertFalse(hardening_gate_summary["safe_to_start_one_ltg_strict_closeout"])
+        self.assertTrue(hardening_gate_summary["all_gates_are_read_only"])
+        self.assertTrue(hardening_gate_summary["all_gates_block_strict_closeout"])
+        self.assertTrue(hardening_gate_summary["all_gates_production_pending"])
+        self.assertFalse(hardening_gate_summary["external_calls_triggered"])
+        self.assertFalse(hardening_gate_summary["tushare_called"])
+        self.assertFalse(hardening_gate_summary["deepseek_called"])
+        self.assertFalse(hardening_gate_summary["github_called"])
+        self.assertTrue(hardening_gate_summary["does_not_execute_trades"])
+        self.assertTrue(hardening_gate_summary["does_not_modify_strategy_action"])
+        self.assertEqual(
+            set(hardening_gate_rows),
+            {
+                "storage_boundaries",
+                "worker_runtime_boundaries",
+                "tauri_desktop_package",
+                "ci_smoke_security_release_gate",
+                "deepseek_governed_executor",
+                "streamlit_legacy_admin_debug",
+                "ltg_total_ledger_closeout_queue",
+            },
+        )
+        self.assertEqual(hardening_gate_rows["storage_boundaries"]["ltg_ids"], ["LTG-05"])
+        self.assertFalse(hardening_gate_rows["storage_boundaries"]["local_packet_is_production_storage"])
+        self.assertIn(
+            "remote CI review after local gate",
+            hardening_gate_rows["storage_boundaries"]["required_production_evidence"],
+        )
+        self.assertFalse(hardening_gate_rows["worker_runtime_boundaries"]["worker_started_by_gate"])
+        self.assertIn(
+            "Celery process evidence",
+            hardening_gate_rows["worker_runtime_boundaries"]["required_production_evidence"],
+        )
+        self.assertFalse(hardening_gate_rows["tauri_desktop_package"]["production_package_complete"])
+        self.assertIn(
+            "backend offline UX screenshot",
+            hardening_gate_rows["tauri_desktop_package"]["required_production_evidence"],
+        )
+        self.assertTrue(hardening_gate_rows["ci_smoke_security_release_gate"]["remote_ci_review_required"])
+        self.assertFalse(hardening_gate_rows["ci_smoke_security_release_gate"]["latest_remote_run_verified_green"])
+        self.assertFalse(hardening_gate_rows["ci_smoke_security_release_gate"]["release_gate_complete"])
+        self.assertIn(
+            "high-risk secret scan",
+            hardening_gate_rows["ci_smoke_security_release_gate"]["required_production_evidence"],
+        )
+        self.assertFalse(hardening_gate_rows["deepseek_governed_executor"]["deepseek_is_data_source"])
+        self.assertFalse(
+            hardening_gate_rows["deepseek_governed_executor"]["deepseek_blocks_tushare_radar_next_session"]
+        )
+        self.assertTrue(
+            hardening_gate_rows["deepseek_governed_executor"]["model_execution_required_before_completion"]
+        )
+        self.assertFalse(hardening_gate_rows["streamlit_legacy_admin_debug"]["streamlit_is_ordinary_main_flow"])
+        self.assertFalse(
+            hardening_gate_rows["streamlit_legacy_admin_debug"]["streamlit_fallback_retirement_allowed_now"]
+        )
+        self.assertTrue(hardening_gate_rows["streamlit_legacy_admin_debug"]["legacy_admin_debug_retained"])
+        self.assertEqual(
+            hardening_gate_rows["ltg_total_ledger_closeout_queue"]["strict_closeout"],
+            "0/14",
+        )
+        self.assertTrue(hardening_gate_rows["ltg_total_ledger_closeout_queue"]["all_ltg_closeout_blocked"])
+        self.assertTrue(all(row["cache_only_readback"] for row in hardening_gate_rows.values()))
+        self.assertFalse(any(row["creates_task_from_get"] for row in hardening_gate_rows.values()))
+        self.assertFalse(any(row["creates_task_from_render"] for row in hardening_gate_rows.values()))
+        self.assertFalse(any(row["external_calls_triggered"] for row in hardening_gate_rows.values()))
+        self.assertFalse(any(row["strict_closeout_allowed_from_gate"] for row in hardening_gate_rows.values()))
+        self.assertTrue(all(row["production_complete"] is False for row in hardening_gate_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in hardening_gate_rows.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in hardening_gate_rows.values()))
+        self.assertEqual(
+            work_order_summary["schema_version"],
+            "ltg_strict_closeout_work_order_summary.v1",
+        )
+        self.assertEqual(
+            work_order_summary["status"],
+            "one_ltg_closeout_work_order_ready_for_selection_closeout_claim_blocked",
+        )
+        self.assertEqual(work_order_summary["work_order_row_count"], 14)
+        self.assertEqual(migration["data"]["ltg_strict_closeout_work_order_row_count"], 14)
+        self.assertEqual(set(work_order_rows.keys()), {f"LTG-{index:02d}" for index in range(1, 15)})
+        self.assertEqual(work_order_summary["strict_closeout"], "0/14")
+        self.assertEqual(work_order_summary["strict_closeout_done_count"], 0)
+        self.assertEqual(work_order_summary["strict_closeout_total_count"], 14)
+        self.assertTrue(work_order_summary["ready_to_select_one_ltg_next_slice"])
+        self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
+        self.assertTrue(work_order_summary["all_rows_one_ltg_only"])
+        self.assertTrue(work_order_summary["all_rows_require_current_head_direct_evidence"])
+        self.assertTrue(work_order_summary["all_rows_require_clean_worktree_before_fresh_gate"])
+        self.assertTrue(work_order_summary["all_rows_require_remote_ci_review"])
+        self.assertTrue(work_order_summary["all_rows_block_closeout_claim"])
+        self.assertTrue(work_order_summary["all_rows_cache_only"])
+        self.assertIn(
+            work_order_summary["release_gate_current_status"],
+            {
+                "release_gate_direct_evidence_visible_remote_ci_pending",
+                "release_gate_direct_evidence_missing",
+            },
+        )
+        self.assertIn(work_order_summary["release_gate_fresh_local_gate_run_observed"], {True, False})
+        self.assertIn(work_order_summary["release_gate_worktree_clean"], {True, False})
+        self.assertIsInstance(work_order_summary["release_gate_worktree_dirty_file_count"], int)
+        self.assertIn(work_order_summary["release_gate_worktree_blocks_fresh_local_gate"], {True, False})
+        self.assertFalse(work_order_summary["release_gate_worktree_raw_paths_emitted"])
+        self.assertFalse(work_order_summary["release_gate_worktree_raw_status_lines_emitted"])
+        self.assertIsInstance(work_order_summary["release_gate_current_blockers"], list)
+        self.assertFalse(work_order_summary["release_gate_remote_actions_status_known"])
+        self.assertFalse(work_order_summary["release_gate_latest_remote_run_verified_green"])
+        self.assertTrue(work_order_summary["release_gate_local_git_status_is_not_ci_status"])
+        self.assertFalse(work_order_summary["external_calls_triggered"])
+        self.assertFalse(work_order_summary["tushare_called"])
+        self.assertFalse(work_order_summary["deepseek_called"])
+        self.assertFalse(work_order_summary["github_called"])
+        self.assertTrue(work_order_summary["does_not_execute_trades"])
+        self.assertTrue(work_order_summary["does_not_modify_strategy_action"])
+        self.assertEqual(set(work_order_summary["recommended_first_candidate_ids"]), {"LTG-02", "LTG-13"})
+        self.assertTrue(work_order_rows["LTG-13"]["recommended_first_candidate"])
+        self.assertTrue(work_order_rows["LTG-02"]["recommended_first_candidate"])
+        self.assertLess(work_order_rows["LTG-01"]["priority_order"], work_order_rows["LTG-10"]["priority_order"])
+        self.assertEqual(work_order_rows["LTG-05"]["primary_gate_id"], "storage_boundaries")
+        self.assertEqual(work_order_rows["LTG-06"]["primary_gate_id"], "worker_runtime_boundaries")
+        self.assertEqual(work_order_rows["LTG-07"]["primary_gate_id"], "deepseek_governed_executor")
+        self.assertEqual(work_order_rows["LTG-09"]["primary_gate_id"], "tauri_desktop_package")
+        self.assertEqual(work_order_rows["LTG-10"]["primary_gate_id"], "streamlit_legacy_admin_debug")
+        self.assertEqual(work_order_rows["LTG-11"]["primary_gate_id"], "ci_smoke_security_release_gate")
+        self.assertIn(
+            "clean worktree before fresh local gate receipt",
+            work_order_rows["LTG-11"]["production_evidence_required_before_closeout"],
+        )
+        self.assertTrue(work_order_rows["LTG-11"]["requires_clean_worktree_before_fresh_gate"])
+        self.assertIn("dirty worktree", work_order_rows["LTG-11"]["not_production_evidence"])
+        self.assertIn("run release gate from a dirty worktree", work_order_rows["LTG-11"]["forbidden_shortcuts"])
+        self.assertEqual(
+            work_order_rows["LTG-11"]["release_gate_worktree_clean"],
+            work_order_summary["release_gate_worktree_clean"],
+        )
+        self.assertEqual(
+            work_order_rows["LTG-11"]["release_gate_worktree_blocks_fresh_local_gate"],
+            work_order_summary["release_gate_worktree_blocks_fresh_local_gate"],
+        )
+        self.assertFalse(work_order_rows["LTG-11"]["release_gate_worktree_raw_paths_emitted"])
+        self.assertFalse(work_order_rows["LTG-11"]["release_gate_worktree_raw_status_lines_emitted"])
+        self.assertFalse(work_order_rows["LTG-11"]["release_gate_latest_remote_run_verified_green"])
+        self.assertTrue(work_order_rows["LTG-11"]["release_gate_local_git_status_is_not_ci_status"])
+        self.assertIn("remote CI review", work_order_rows["LTG-05"]["production_evidence_required_before_closeout"])
+        self.assertIn("safety scan", work_order_rows["LTG-13"]["production_evidence_required_before_closeout"])
+        self.assertIn("remote CI unknown", work_order_rows["LTG-14"]["not_production_evidence"])
+        self.assertIn("skip remote CI review", work_order_rows["LTG-02"]["forbidden_shortcuts"])
+        self.assertIn("treat DeepSeek output as market data", work_order_rows["LTG-07"]["forbidden_shortcuts"])
+        self.assertTrue(all(row["ready_to_select_for_next_closeout_slice"] for row in work_order_rows.values()))
+        self.assertTrue(all(row["one_ltg_only"] for row in work_order_rows.values()))
+        self.assertTrue(all(row["must_not_mix_with_other_ltg"] for row in work_order_rows.values()))
+        self.assertTrue(all(row["requires_current_head_direct_evidence"] for row in work_order_rows.values()))
+        self.assertTrue(all(row["requires_clean_worktree_before_fresh_gate"] for row in work_order_rows.values()))
+        self.assertTrue(all(row["requires_remote_ci_review"] for row in work_order_rows.values()))
+        self.assertTrue(all(row["requires_safety_scan"] for row in work_order_rows.values()))
+        self.assertFalse(any(row["strict_closeout_claim_allowed"] for row in work_order_rows.values()))
+        self.assertFalse(any(row["can_close_ltg_now"] for row in work_order_rows.values()))
+        self.assertFalse(any(row["external_calls_triggered"] for row in work_order_rows.values()))
+        self.assertFalse(any(row["creates_task_from_get"] for row in work_order_rows.values()))
+        self.assertFalse(any(row["creates_task_from_render"] for row in work_order_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in work_order_rows.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in work_order_rows.values()))
+        self.assertIn("local packet", hardening_rows["storage_boundaries"]["not_production_evidence"])
+        self.assertIn(
+            "start Celery or ping Redis from cache render",
+            hardening_rows["worker_runtime_boundaries"]["not_allowed_next_steps"],
+        )
+        self.assertIn(
+            "DeepSeek is explanation-only",
+            hardening_rows["deepseek_governed_executor"]["current_boundary"],
+        )
+        self.assertIn(
+            "legacy/admin/debug",
+            hardening_rows["streamlit_legacy_admin_debug"]["current_boundary"],
+        )
+        self.assertEqual(
+            hardening_ltg_rows["LTG-05"]["acceptance_queue_id"],
+            "p4_storage_physical_execution",
+        )
+        self.assertEqual(
+            hardening_ltg_rows["LTG-06"]["acceptance_queue_id"],
+            "p4_worker_runtime_qa",
+        )
+        self.assertEqual(
+            hardening_ltg_rows["LTG-07"]["acceptance_queue_id"],
+            "p5_deepseek_provider_benchmark_scope",
+        )
+        self.assertEqual(
+            hardening_ltg_rows["LTG-09"]["acceptance_queue_id"],
+            "p6_tauri_package_readiness_review",
+        )
+        self.assertEqual(
+            hardening_ltg_rows["LTG-10"]["acceptance_queue_id"],
+            "p7_streamlit_retirement_review",
+        )
+        self.assertEqual(
+            hardening_ltg_rows["LTG-11"]["acceptance_queue_id"],
+            "p0_release_gate_push_readiness",
+        )
+        self.assertEqual(
+            hardening_ltg_rows["LTG-14"]["acceptance_queue_id"],
+            "p8_motion_production_promotion_review",
+        )
+        self.assertEqual(set(hardening_ltg_rows.keys()), {f"LTG-{index:02d}" for index in range(1, 15)})
+        self.assertTrue(all(row["can_close_ltg_now"] is False for row in hardening_ltg_rows.values()))
+        self.assertTrue(all(row["production_complete"] is False for row in hardening_ltg_rows.values()))
+        self.assertTrue(
+            all(row["requires_current_head_direct_evidence"] is True for row in hardening_ltg_rows.values())
+        )
+        self.assertFalse(any(row["external_calls_triggered"] for row in hardening_ltg_rows.values()))
+        self.assertFalse(any(row["tushare_called"] for row in hardening_ltg_rows.values()))
+        self.assertFalse(any(row["deepseek_called"] for row in hardening_ltg_rows.values()))
+        self.assertFalse(any(row["github_called"] for row in hardening_ltg_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in hardening_ltg_rows.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in hardening_ltg_rows.values()))
         self.assertIn("P1", runway_rows["LTG-01"]["priority"])
         self.assertIn("P2", runway_rows["LTG-02"]["priority"])
         self.assertIn("P3", runway_rows["LTG-03"]["priority"])
@@ -39189,11 +39991,110 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_priority_explanation_uses_existing_score_only"])
         self.assertTrue(packet["policy"]["candidate_priority_explanation_is_not_trade_signal"])
         self.assertGreaterEqual(packet["counts"]["priority_explanation_row_count"], 1)
+        coarse_fine = packet["coarse_fine_screening_contract"]
+        self.assertEqual(coarse_fine["schema_version"], candidate_service.CANDIDATE_COARSE_FINE_SCREENING_SCHEMA_VERSION)
+        self.assertEqual(coarse_fine["source_mode"], "cache_only")
+        self.assertTrue(coarse_fine["cache_only"])
+        self.assertFalse(coarse_fine["tushare_backed"])
+        self.assertFalse(coarse_fine["provider_backed_sample"])
+        self.assertEqual(coarse_fine["top_count"], 1)
+        self.assertEqual(coarse_fine["watch_count"], 0)
+        self.assertTrue(coarse_fine["candidate_is_not_buy_instruction"])
+        self.assertTrue(coarse_fine["does_not_modify_strategy_action"])
+        self.assertFalse(coarse_fine["ltg13_production_complete"])
+        self.assertEqual(
+            {row["criterion"] for row in packet["coarse_screening_rows"]},
+            {"liquidity", "trend", "turnover", "basic_data", "risk_gap"},
+        )
+        self.assertEqual(
+            {row["criterion"] for row in packet["fine_screening_rows"]},
+            {"factor_light", "moneyflow", "daily_basic", "next_session", "candidate_explanation"},
+        )
+        self.assertEqual(packet["top_watch_excluded_group_rows"][0]["group"], "Top")
+        self.assertEqual(packet["top_watch_excluded_group_rows"][0]["ticker"], "002837.SZ")
+        self.assertTrue(packet["policy"]["coarse_fine_screening_contract_is_local"])
+        self.assertTrue(packet["policy"]["coarse_fine_screening_button_gated_workflow_only"])
+        self.assertFalse(packet["policy"]["coarse_fine_screening_get_cache_external_calls"])
+        self.assertFalse(packet["policy"]["coarse_fine_screening_ltg13_production_complete"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
         self.assertFalse(packet["github_called"])
         self.assertIn("GET /api/candidate-radar/cache", cache["warnings"][0])
+
+    def test_candidate_radar_custom_pool_coarse_fine_groups_are_local_fallback(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存"},
+                "data_freshness": {"state": "fresh", "source": "unit_test_cache"},
+            }
+        )
+
+        response = self.client.post(
+            "/api/candidate-radar/scan-quick",
+            json={
+                "scan_mode": "custom_pool_scan",
+                "universe_mode": "manual_input",
+                "custom_candidates": [
+                    {"ticker": "002008.SZ", "name": "大族激光", "score": 88, "action_state": "优先复核"},
+                    {
+                        "ticker": "002837.SZ",
+                        "name": "英维克",
+                        "score": 72,
+                        "data_gaps": ["moneyflow_pending"],
+                    },
+                    {"ticker": "600519.SH", "name": "贵州茅台", "score": 66},
+                    {"ticker": "300750.SZ", "name": "宁德时代", "score": 55},
+                    {"ticker": "000001.SZ", "name": "平安银行", "enabled": False},
+                ],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_candidate_radar_custom_pool_scan")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["scan_mode"], "custom_pool_scan")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["normalized_candidate_count"], 4)
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        coarse_fine = packet["coarse_fine_screening_contract"]
+        self.assertEqual(packet["scan_mode"], "custom_pool_scan")
+        self.assertEqual(coarse_fine["source_mode"], "local_fallback")
+        self.assertTrue(coarse_fine["local_fallback_evidence_visible"])
+        self.assertFalse(coarse_fine["tushare_backed"])
+        self.assertFalse(coarse_fine["provider_backed_sample"])
+        self.assertEqual(coarse_fine["top_count"], 3)
+        self.assertEqual(coarse_fine["watch_count"], 1)
+        self.assertEqual(coarse_fine["excluded_count"], 1)
+        groups = packet["top_watch_excluded_group_rows"]
+        self.assertEqual([row["group"] for row in groups[:5]], ["Top", "Top", "Top", "Watch", "Excluded"])
+        self.assertEqual(groups[0]["ticker"], "002008.SZ")
+        self.assertEqual(groups[3]["ticker"], "300750.SZ")
+        self.assertEqual(groups[4]["ticker"], "000001.SZ")
+        self.assertIn("moneyflow_pending", groups[1]["gap_summary"])
+        self.assertTrue(all(row["candidate_is_not_buy_instruction"] for row in groups))
+        self.assertTrue(packet["policy"]["coarse_fine_screening_contract_is_local"])
+        self.assertTrue(packet["policy"]["coarse_fine_screening_is_not_trade_signal"])
+        self.assertTrue(packet["policy"]["coarse_fine_screening_ltg13_direct_evidence_slice"])
+        self.assertFalse(packet["policy"]["coarse_fine_screening_ltg13_production_complete"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
 
     def test_candidate_radar_quant_projection_endpoint_is_button_gated_local_receipt(self):
         self._with_meta_store()
@@ -44050,6 +44951,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "provider-backed trade_cal acceptance evidence",
             durable_rows["current_evidence_producer_coverage"]["missing_evidence"],
         )
+        self.assertEqual(
+            durable_rows["decision_surface_isolation"]["current_status"],
+            "local_direct_evidence_clear",
+        )
+        self.assertTrue(durable_rows["decision_surface_isolation"]["local_prerequisite_visible"])
+        self.assertFalse(durable_rows["decision_surface_isolation"]["production_blocker"])
+        self.assertFalse(durable_rows["decision_surface_isolation"]["direct_evidence_required"])
+        self.assertEqual(durable_rows["decision_surface_isolation"]["missing_evidence"], [])
+        self.assertTrue(durable_rows["decision_surface_isolation"]["decision_surface_direct_evidence_done"])
+        self.assertEqual(durable_rows["decision_surface_isolation"]["decision_surface_proof_line_count"], 5)
+        self.assertEqual(durable_rows["decision_surface_isolation"]["decision_surface_blocked_surfaces"], [])
+        self.assertTrue(durable_rows["decision_surface_isolation"]["score_support_evidence_preview_isolated"])
+        self.assertTrue(durable_rows["decision_surface_isolation"]["next_session_bridge_preview_isolated"])
+        self.assertTrue(durable_rows["decision_surface_isolation"]["strategy_action_non_mutation_proof"])
         self.assertTrue(durable_rows["explicit_provider_trade_cal_task"]["direct_evidence_required"])
         self.assertTrue(durable_rows["safe_provider_call_ledger"]["production_blocker"])
         self.assertTrue(durable_rows["provider_freshness_replay"]["production_blocker"])
@@ -44116,6 +45031,27 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(decision_surface_rows["support_factors"]["status"], "not_observed")
         self.assertEqual(decision_surface_rows["next_session_bridge.preview"]["status"], "not_observed")
         self.assertEqual(decision_surface_rows["strategy_action"]["status"], "not_observed")
+        surface_isolation_evidence = packet["decision_surface_isolation_direct_evidence"]
+        self.assertEqual(
+            surface_isolation_evidence["schema_version"],
+            "data_health_decision_surface_isolation_direct_evidence.v1",
+        )
+        self.assertEqual(
+            surface_isolation_evidence["status"],
+            "decision_surface_isolation_direct_evidence_local_clear",
+        )
+        self.assertTrue(surface_isolation_evidence["direct_evidence_done"])
+        self.assertEqual(surface_isolation_evidence["proof_line_count"], 5)
+        self.assertEqual(surface_isolation_evidence["blocked_surfaces"], [])
+        self.assertTrue(surface_isolation_evidence["score_support_evidence_preview_isolated"])
+        self.assertTrue(surface_isolation_evidence["next_session_bridge_preview_isolated"])
+        self.assertTrue(surface_isolation_evidence["strategy_action_non_mutation_proof"])
+        self.assertFalse(surface_isolation_evidence["external_calls_triggered"])
+        self.assertFalse(surface_isolation_evidence["tushare_called"])
+        self.assertFalse(surface_isolation_evidence["deepseek_called"])
+        self.assertFalse(surface_isolation_evidence["github_called"])
+        self.assertTrue(surface_isolation_evidence["does_not_execute_trades"])
+        self.assertTrue(surface_isolation_evidence["does_not_modify_strategy_action"])
         self.assertEqual(producer_coverage["schema_version"], "data_health_current_evidence_producer_coverage.v1")
         self.assertEqual(producer_coverage["status"], "producer_freshness_coverage_ready_no_observed_blockers")
         self.assertEqual(producer_coverage["scope"], "local_snapshot_only_expected_date_field_coverage")
@@ -44635,6 +45571,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(response["ok"])
         packet = response["data"]
         audit = packet["current_evidence_decision_surface_audit"]
+        surface_isolation_evidence = packet["decision_surface_isolation_direct_evidence"]
         rows = {row["surface"]: row for row in packet["current_evidence_decision_surface_rows"]}
         self.assertEqual(audit["schema_version"], "data_health_current_evidence_decision_surface_audit.v1")
         self.assertEqual(audit["status"], "decision_surface_audit_ready_blockers_visible")
@@ -44653,6 +45590,23 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(rows["next_session_bridge.preview"]["status"], "blocked_bad_freshness_state_observed")
         self.assertEqual(rows["strategy_action"]["status"], "observed_read_only")
         self.assertTrue(rows["strategy_action"]["does_not_modify_strategy_action"])
+        self.assertEqual(
+            surface_isolation_evidence["status"],
+            "decision_surface_isolation_direct_evidence_blocked",
+        )
+        self.assertFalse(surface_isolation_evidence["direct_evidence_done"])
+        self.assertEqual(surface_isolation_evidence["proof_line_count"], 5)
+        self.assertEqual(surface_isolation_evidence["blocked_surface_count"], 4)
+        self.assertEqual(
+            surface_isolation_evidence["blocked_surfaces"],
+            ["composite_score", "support_factors", "evidence_preview", "next_session_bridge.preview"],
+        )
+        self.assertFalse(surface_isolation_evidence["score_support_evidence_preview_isolated"])
+        self.assertFalse(surface_isolation_evidence["next_session_bridge_preview_isolated"])
+        self.assertTrue(surface_isolation_evidence["strategy_action_non_mutation_proof"])
+        self.assertFalse(surface_isolation_evidence["external_calls_triggered"])
+        self.assertTrue(surface_isolation_evidence["does_not_execute_trades"])
+        self.assertTrue(surface_isolation_evidence["does_not_modify_strategy_action"])
         self.assertTrue(audit["does_not_rescore"])
         self.assertTrue(audit["does_not_filter_packet"])
         self.assertTrue(audit["does_not_mutate_decision_surfaces"])
