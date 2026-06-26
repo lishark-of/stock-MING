@@ -13498,6 +13498,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             production_row["current_status"],
             {
                 "provider_promotion_review_pending",
+                "local_promotion_review_task_pending",
+                "local_promotion_review_blocked",
                 "local_release_gate_dirty_worktree_pending",
                 "local_release_gate_current_head_receipt_pending",
                 "local_release_gate_observed_remote_ci_pending",
@@ -45822,6 +45824,177 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["freshness_production_blocker_count"], 0)
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
+
+    def test_data_health_durable_recipe_consumes_ready_trade_cal_promotion_review_without_closing_ltg(self):
+        if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        import pandas as pd
+
+        self._with_meta_store()
+        root = self._with_parquet_root()
+        self._with_bootstrap_env(TUSHARE_TOKEN="TS_OK")
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        today = _dt.date.today()
+        start = today - _dt.timedelta(days=820)
+        end = today + _dt.timedelta(days=20)
+        rows = []
+        cursor = start
+        previous_open = ""
+        while cursor <= end:
+            is_open = cursor.weekday() < 5
+            rows.append(
+                {
+                    "exchange": "SSE",
+                    "cal_date": cursor.strftime("%Y%m%d"),
+                    "is_open": 1 if is_open else 0,
+                    "pretrade_date": previous_open,
+                }
+            )
+            if is_open:
+                previous_open = cursor.strftime("%Y%m%d")
+            cursor += _dt.timedelta(days=1)
+        storage_service.parquet_store.write_dataset(pd.DataFrame(rows), root=root, name="trade_cal")
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "fresh",
+                    "expected_trade_date": today.strftime("%Y-%m-%d"),
+                    "data_date": today.strftime("%Y-%m-%d"),
+                },
+                "data_health_ledger": {
+                    "rows": [
+                        {
+                            "api": "trade_cal",
+                            "call_status": "success",
+                            "external": True,
+                            "provider_called": True,
+                            "row_count": 841,
+                            "window_days": 841,
+                            "open_day_count": 600,
+                            "data_date": today.strftime("%Y-%m-%d"),
+                            "window_end": today.strftime("%Y-%m-%d"),
+                            "local_fetched_at": "2026-06-13T10:00:00",
+                            "acceptance_mode": "provider_backed_trade_cal_long_window",
+                            "provider_backed_long_window_acceptance_done": True,
+                            "freshness_replay_passed": True,
+                            "freshness_replay_scenario_count": 8,
+                            "failure_modes_validated": True,
+                            "failure_mode_validated_count": 6,
+                            "error_message_safe": "",
+                        }
+                    ]
+                },
+            }
+        )
+
+        dry_run_response = self.client.post(
+            "/api/data-health/trade-cal-provider-acceptance-dry-run",
+            json={
+                "approved_by_user": True,
+                "apis": ["trade_cal"],
+                "exchange": ["SSE", "SZSE"],
+                "start_date": "20240614",
+                "end_date": "20260614",
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run_receipt = dry_run_response["data"]["task"]["payload_safe"][
+            "trade_cal_provider_acceptance_dry_run_receipt"
+        ]
+        execution_response = self.client.post(
+            "/api/data-health/trade-cal-provider-acceptance-execution-request",
+            json={
+                "approved_by_user": True,
+                "acceptance_scope_hash_short": dry_run_receipt["acceptance_scope_hash_short"],
+                "apis": ["trade_cal"],
+                "exchange": ["SSE", "SZSE"],
+                "start_date": "20240614",
+                "end_date": "20260614",
+            },
+        ).json()
+        self.assertTrue(execution_response["ok"])
+        execution_task = execution_response["data"]["task"]
+        review_response = self.client.post(
+            "/api/data-health/trade-cal-provider-acceptance-promotion-review",
+            json={
+                "approved_by_user": True,
+                "requested_by": "unit_test",
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(review_response["ok"])
+        review_task = review_response["data"]["task"]
+        review_receipt = review_task["payload_safe"]["trade_cal_provider_acceptance_promotion_review_receipt"]
+        self.assertEqual(
+            review_receipt["status"],
+            "trade_cal_provider_acceptance_promotion_review_ready_for_release_review",
+        )
+        self.assertTrue(review_receipt["promotion_review_ready_for_release"])
+        self.assertTrue(review_receipt["ready_for_production_freshness_release_review"])
+        self.assertTrue(review_receipt["latest_execution_request_found"])
+        self.assertEqual(review_receipt["latest_execution_request_task_id"], execution_task["task_id"])
+        self.assertFalse(review_receipt["creates_provider_task"])
+        self.assertFalse(review_receipt["provider_task_executed_by_review"])
+        self.assertFalse(review_receipt["provider_execution_implemented"])
+        self.assertFalse(review_receipt["production_freshness_gate_complete"])
+        self.assertFalse(review_receipt["external_calls_triggered"])
+        self.assertFalse(review_receipt["tushare_called"])
+        self.assertFalse(review_receipt["deepseek_called"])
+        self.assertFalse(review_receipt["github_called"])
+        self.assertTrue(review_receipt["does_not_execute_trades"])
+        self.assertTrue(review_receipt["does_not_modify_strategy_action"])
+
+        cache_response = self.client.get("/api/data-health/cache").json()
+
+        self.assertTrue(cache_response["ok"])
+        packet = cache_response["data"]
+        latest_review = packet["latest_trade_cal_provider_acceptance_promotion_review"]
+        durable = packet["freshness_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in packet["freshness_durable_evidence_rows"]}
+        production_review_row = durable_rows["production_promotion_review"]
+
+        self.assertTrue(latest_review["promotion_review_ready_for_release"])
+        self.assertEqual(latest_review["latest_task_id"], review_task["task_id"])
+        self.assertTrue(durable["local_promotion_review_visible"])
+        self.assertTrue(durable["local_promotion_review_ready_for_release"])
+        self.assertEqual(durable["local_promotion_review_task_id"], review_task["task_id"])
+        self.assertEqual(
+            durable["local_promotion_review_status"],
+            "trade_cal_provider_acceptance_promotion_review_ready_for_release_review",
+        )
+        self.assertTrue(durable["production_promotion_review_done"])
+        self.assertFalse(durable["durable_evidence_complete"])
+        self.assertFalse(durable["durable_promotion_ready"])
+        self.assertFalse(durable["provider_backed_trade_cal_acceptance_done"])
+        self.assertFalse(durable["production_freshness_gate_complete"])
+        self.assertFalse(durable["local_promotion_review_creates_provider_task"])
+        self.assertFalse(durable["local_promotion_review_calls_provider"])
+        self.assertTrue(durable["local_promotion_review_is_not_production_completion"])
+        self.assertIn("production_promotion_review", durable["blocking_evidence_keys"])
+        self.assertIn("matching remote CI review after local gate", durable["missing_evidence_items"])
+        self.assertIn(
+            "release review that production_freshness_gate_complete may become true",
+            durable["missing_evidence_items"],
+        )
+        self.assertTrue(production_review_row["local_promotion_review_visible"])
+        self.assertTrue(production_review_row["local_promotion_review_ready_for_release"])
+        self.assertEqual(production_review_row["local_promotion_review_task_id"], review_task["task_id"])
+        self.assertFalse(production_review_row["local_promotion_review_creates_provider_task"])
+        self.assertFalse(production_review_row["local_promotion_review_calls_provider"])
+        self.assertTrue(production_review_row["local_promotion_review_is_not_production_completion"])
+        self.assertTrue(production_review_row["production_blocker"])
+        self.assertFalse(production_review_row["production_freshness_gate_complete"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(cache_response, ensure_ascii=False))
+        self.assertNotIn("TS_OK", json.dumps(cache_response, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache_response, ensure_ascii=False))
 
     def test_data_health_reads_persisted_tushare_trade_cal_acceptance_packet_without_snapshot_ledger(self):
         if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
