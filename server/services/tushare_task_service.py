@@ -3872,12 +3872,12 @@ def _trade_cal_provider_acceptance_fields(
     }
 
 
-def _dataframe_for_write(data: Any) -> Any:
+def _dataframe_for_write(data: Any, *, api: str = "") -> Any:
     if data is None:
         return None
     if hasattr(data, "to_parquet"):
         return data
-    rows = _rows_from_data(data)
+    rows = _trade_cal_acceptance_rows_from_data(data) if api == "trade_cal" else _rows_from_data(data)
     if not rows:
         return None
     try:
@@ -3892,7 +3892,7 @@ def _write_parquet_dataset(api: str, data: Any) -> dict[str, Any]:
     dataset = PARQUET_DATASETS.get(api)
     if not dataset:
         return {"status": "not_enabled", "dataset": None, "row_count": 0, "path": ""}
-    df = _dataframe_for_write(data)
+    df = _dataframe_for_write(data, api=api)
     if df is None:
         return {
             "status": "empty",

@@ -11354,6 +11354,27 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(persisted["provider_sample_activation_ready_for_explicit_task"])
         self.assertGreater(persisted["provider_sample_activation_blocker_count"], 0)
 
+    def test_trade_cal_parquet_write_keeps_long_window_rows_not_preview_slice(self):
+        self._with_parquet_root()
+        today = _dt.date.today()
+        rows = []
+        for index in range(260):
+            day = today - _dt.timedelta(days=259 - index)
+            rows.append(
+                {
+                    "exchange": "SSE",
+                    "cal_date": day.strftime("%Y%m%d"),
+                    "is_open": 1 if day.weekday() < 5 else 0,
+                }
+            )
+
+        result = tushare_task_service._write_parquet_dataset("trade_cal", rows)
+
+        self.assertEqual(result["status"], "written")
+        self.assertEqual(result["row_count"], 260)
+        status = storage_service.parquet_dataset_status("trade_cal", limit=10000)
+        self.assertEqual(status["query"]["row_count"], 260)
+
     def test_tushare_acceptance_audit_requires_non_empty_success_for_full_interface_completion(self):
         call_ledger = []
         for index, api in enumerate(tushare_task_service.REFRESH_API_SPECS):
