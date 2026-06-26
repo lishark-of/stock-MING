@@ -200,11 +200,11 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('detail: "governed"', source)
         self.assertIn('detail: "0/14"', source)
         self.assertIn('阶段: "P6 回到 14 LTG direct evidence"', source)
-        self.assertIn("re-entry gate visible；strict closeout 仍是 0/14", source)
+        self.assertIn("re-entry gate visible；strict closeout ${dailyCommandP6StrictCloseoutState}", source)
         self.assertIn('回归项: "1. 可用化 checkpoint"', source)
         self.assertIn('回归项: "2. strict closeout 入口"', source)
         self.assertIn('回归项: "3. 任务证据回放"', source)
-        self.assertIn("strict closeout 仍是 0/14；只按 current-head direct evidence 关闭", source)
+        self.assertIn("14 LTG strict closeout 仍需 current-head direct evidence", source)
         self.assertIn("打开迁移状态页，按 LTG next acceptance action rows 逐项补证", source)
         self.assertIn("P0-P5 可用化 checkpoint 不是 14 LTG 完成", source)
         self.assertIn("mock、matrix、sanitizer、local receipt 不能关闭 LTG", source)
@@ -828,11 +828,12 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         task_panel_start = card.index("<TaskStatusPanel taskId={homeQuantVisibleTaskId} onSuccess={refreshHomeResearchReadback} />")
         cache_notice_start = card.index('aria-label="daily command home recovered task cache-only notice"')
         receipt_details_start = card.index('<details className="developer-audit-details" aria-label="daily command home p1 receipt audit details">')
-        chain_slice = card[chain_start:actions_start]
+        chain_end = card.index('aria-label="daily command home p1 symbol autofill boundary"', chain_start)
+        chain_slice = card[chain_start:chain_end]
         autofill_slice = source[autofill_start:autofill_end]
         fill_symbol_slice = card[fill_symbol_start:confirm_button_start]
         handoff_slice = card[handoff_start:receipt_details_start]
-        self.assertLess(chain_start, actions_start)
+        self.assertLess(actions_start, chain_start)
         self.assertLess(fill_symbol_start, confirm_button_start)
         self.assertIn("setHomeQuantSymbol(dailyCommandConfirmedSymbol)", autofill_slice)
         self.assertNotIn("postCandidateRadarQuantProjection(", autofill_slice)
@@ -932,7 +933,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("desktopPreflight.p0_current_next_action_rows", source)
         self.assertIn("DataLineageTable rows={p0CurrentNextActionRows}", source)
         self.assertIn("等待 desktop preflight 当前下一步回读", source)
-        self.assertIn("代码通过本地校验后点击确认按钮，才创建 Tushare-first POST task；DeepSeek skipped。", source)
+        self.assertIn("代码通过本地校验后点击确认按钮，才创建 Tushare-first POST task；模型解释单独补证。", source)
         self.assertIn("页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker。", source)
         self.assertIn("DataLineageTable rows={p0LauncherCheckOnlyRows}", source)
         self.assertIn("联通通过后先在首页输入代码并确认；需要详情再进下一票雷达，同样只有确认按钮触发 Tushare-first 任务", source)
