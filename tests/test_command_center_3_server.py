@@ -13354,6 +13354,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreaterEqual(payload["observed_counts"]["freshness_local_release_gate_blocker_count"], 0)
         self.assertFalse(payload["freshness_durable_evidence_complete"])
         self.assertGreater(payload["freshness_durable_evidence_blocker_count"], 0)
+        self.assertEqual(
+            payload["production_promotion_review_done"],
+            payload["local_promotion_review_ready_for_release"],
+        )
+        self.assertEqual(
+            payload["observed_counts"]["production_promotion_review_done"],
+            1 if payload["production_promotion_review_done"] else 0,
+        )
+        self.assertEqual(
+            payload["observed_counts"]["local_promotion_review_ready_for_release"],
+            1 if payload["local_promotion_review_ready_for_release"] else 0,
+        )
         row_map = {row["criterion"]: row for row in payload["rows"]}
         self.assertTrue(row_map["freshness_production_blocker_audit_is_local_not_completion"]["passed"])
         self.assertTrue(row_map["provider_backed_trade_cal_acceptance_observation_is_explicit"]["passed"])
@@ -13516,6 +13528,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(production_row["local_worktree_clean_required_before_gate_receipt"])
         if production_row["local_worktree_blocks_local_gate_receipt"]:
             self.assertIn("clean worktree before fresh local push-gate receipt", production_row["missing_evidence"])
+        self.assertEqual(
+            production_row["local_promotion_review_ready_for_release"],
+            payload["local_promotion_review_ready_for_release"],
+        )
+        self.assertFalse(production_row["local_promotion_review_creates_provider_task"])
+        self.assertFalse(production_row["local_promotion_review_calls_provider"])
+        self.assertTrue(production_row["local_promotion_review_is_not_production_completion"])
+        if payload["local_promotion_review_ready_for_release"]:
+            self.assertNotIn(
+                "explicit local trade_cal provider acceptance promotion review",
+                production_row["missing_evidence"],
+            )
+            self.assertNotIn(
+                "promotion review blockers cleared before release review",
+                production_row["missing_evidence"],
+            )
         self.assertTrue(production_row["remote_ci_review_required"])
         self.assertFalse(production_row["latest_remote_run_verified_green"])
         self.assertFalse(production_row["release_review_complete"])

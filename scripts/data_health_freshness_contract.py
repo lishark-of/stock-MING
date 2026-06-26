@@ -602,6 +602,10 @@ def build_contract() -> dict[str, Any]:
     provider_call_ledger_done = durable_evidence_recipe.get("provider_call_ledger_evidence_done") is True
     freshness_replay_done = durable_evidence_recipe.get("freshness_replay_provider_evidence_done") is True
     failure_mode_done = durable_evidence_recipe.get("failure_mode_provider_evidence_done") is True
+    local_promotion_review_visible = durable_evidence_recipe.get("local_promotion_review_visible") is True
+    local_promotion_review_ready = durable_evidence_recipe.get("local_promotion_review_ready_for_release") is True
+    production_promotion_review_done = durable_evidence_recipe.get("production_promotion_review_done") is True
+    production_promotion_row = _as_dict(durable_evidence_rows_by_key.get("production_promotion_review"))
     durable_blocking_keys = set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
     current = _get(packet, "current_evidence_freshness_qa_contract")
     surfaces = _get(packet, "current_evidence_decision_surface_audit")
@@ -976,7 +980,14 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("remote_ci_review_required") is True
             and durable_evidence_recipe.get("latest_remote_run_verified_green") is False
             and durable_evidence_recipe.get("release_review_complete") is False
-            and durable_evidence_recipe.get("production_promotion_review_done") is False
+            and production_promotion_review_done is local_promotion_review_ready
+            and durable_evidence_recipe.get("local_promotion_review_visible") is local_promotion_review_visible
+            and durable_evidence_recipe.get("local_promotion_review_ready_for_release") is local_promotion_review_ready
+            and isinstance(durable_evidence_recipe.get("local_promotion_review_status"), str)
+            and isinstance(durable_evidence_recipe.get("local_promotion_review_blocking_row_count"), int)
+            and durable_evidence_recipe.get("local_promotion_review_creates_provider_task") is False
+            and durable_evidence_recipe.get("local_promotion_review_calls_provider") is False
+            and durable_evidence_recipe.get("local_promotion_review_is_not_production_completion") is True
             and durable_evidence_recipe.get("local_worktree_clean")
             is local_release_gate_evidence.get("local_worktree_clean")
             and durable_evidence_recipe.get("local_worktree_blocks_local_gate_receipt")
@@ -1046,38 +1057,37 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("does_not_execute_trades") is True for row in durable_evidence_rows)
             and all(row.get("does_not_modify_strategy_action") is True for row in durable_evidence_rows)
             and all(row.get("contains_secret") is False for row in durable_evidence_rows)
-            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
-                "local_release_gate_evidence_status"
-            )
+            and production_promotion_row.get("local_release_gate_evidence_status")
             == local_release_gate_evidence.get("status")
-            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
-                "local_worktree_clean"
-            )
+            and production_promotion_row.get("local_worktree_clean")
             is local_release_gate_evidence.get("local_worktree_clean")
-            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
-                "local_worktree_blocks_local_gate_receipt"
-            )
+            and production_promotion_row.get("local_worktree_blocks_local_gate_receipt")
             is local_release_gate_evidence.get("local_worktree_blocks_local_gate_receipt")
-            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
-                "local_worktree_raw_paths_emitted"
-            )
+            and production_promotion_row.get("local_worktree_raw_paths_emitted")
             is False
-            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
-                "local_worktree_raw_status_lines_emitted"
-            )
+            and production_promotion_row.get("local_worktree_raw_status_lines_emitted")
             is False
-            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
-                "remote_ci_review_required"
-            )
+            and production_promotion_row.get("remote_ci_review_required")
             is True
-            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
-                "latest_remote_run_verified_green"
-            )
+            and production_promotion_row.get("latest_remote_run_verified_green")
             is False
-            and durable_evidence_rows_by_key.get("production_promotion_review", {}).get(
-                "release_review_blocks_production_completion"
-            )
+            and production_promotion_row.get("release_review_blocks_production_completion")
             is True
+            and production_promotion_row.get("local_promotion_review_visible") is local_promotion_review_visible
+            and production_promotion_row.get("local_promotion_review_ready_for_release") is local_promotion_review_ready
+            and production_promotion_row.get("local_promotion_review_creates_provider_task") is False
+            and production_promotion_row.get("local_promotion_review_calls_provider") is False
+            and production_promotion_row.get("local_promotion_review_is_not_production_completion") is True
+            and (
+                not local_promotion_review_ready
+                or "explicit local trade_cal provider acceptance promotion review"
+                not in _as_list(production_promotion_row.get("missing_evidence"))
+            )
+            and (
+                not local_promotion_review_ready
+                or "promotion review blockers cleared before release review"
+                not in _as_list(production_promotion_row.get("missing_evidence"))
+            )
             and producer_durable_row.get("current_status")
             in {
                 "producer_generation_ready_current_cache_refresh_pending",
@@ -2170,6 +2180,11 @@ def build_contract() -> dict[str, Any]:
         "freshness_durable_evidence_blocker_count": durable_evidence_recipe.get(
             "durable_evidence_blocker_count"
         ),
+        "local_promotion_review_visible": local_promotion_review_visible,
+        "local_promotion_review_ready_for_release": local_promotion_review_ready,
+        "local_promotion_review_status": durable_evidence_recipe.get("local_promotion_review_status"),
+        "local_promotion_review_task_id": durable_evidence_recipe.get("local_promotion_review_task_id"),
+        "production_promotion_review_done": production_promotion_review_done,
         "blocking_criterion_count": len(blockers),
         "blockers": blockers,
         "rows": rows,
@@ -2311,6 +2326,9 @@ def build_contract() -> dict[str, Any]:
             "freshness_durable_evidence_blocker_count": durable_evidence_recipe.get(
                 "durable_evidence_blocker_count"
             ),
+            "local_promotion_review_visible": 1 if local_promotion_review_visible else 0,
+            "local_promotion_review_ready_for_release": 1 if local_promotion_review_ready else 0,
+            "production_promotion_review_done": 1 if production_promotion_review_done else 0,
             "freshness_durable_evidence_blocking_keys": durable_evidence_recipe.get("blocking_evidence_keys"),
         },
         "note": "This is a local push-gate contract. Pending/provider-backed blockers are expected until explicit provider acceptance is run later.",
