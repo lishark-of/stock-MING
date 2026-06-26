@@ -569,7 +569,7 @@ export default function CommandCenterHome() {
     ? `${dailyCommandP2SymbolLabel} P2 三面齐备：缓存、数据凭证、结果包都可回放；下一步看股票量化推演和次日图谱。`
     : `${dailyCommandP2SymbolLabel} P2 还缺 ${dailyCommandP2MissingSurfaceLabel}；先看确认进度，完成后刷新本地三面。`;
   const dailyCommandP2VisibleWritebackSentence = dailyCommandP2ThreeSurfaceReady
-    ? `${dailyCommandP2SymbolLabel} P2 写入已可见：cache 可刷新回放，call_ledger 来自确认任务，packet=command_center_3_candidate_radar_cache；只读回放，不等于生产验收完成。`
+    ? `${dailyCommandP2SymbolLabel} P2 写入已可见：本地缓存可刷新回放，来源记录来自确认任务，结果链已落到本地；只读回放，不等于生产验收完成。`
     : `${dailyCommandP2SymbolLabel} P2 写入待齐：还缺 ${dailyCommandP2MissingSurfaceLabel}；不要从回放卡重复创建任务，等确认任务完成后刷新本地三面。`;
   const dailyCommandP2OrdinaryNextAction = dailyCommandP2ThreeSurfaceReady
     ? "直接打开股票量化推演和次日图谱"
@@ -840,8 +840,8 @@ export default function CommandCenterHome() {
     ? `${dailyCommandConfirmedSymbolLabel} P3 可读：${dailyCommandExplainableResultLabel}；${dailyCommandP3OrdinarySourceLine}；${dailyCommandP3OrdinaryGapLine}；下一步：${dailyCommandP3OrdinaryActionLine}`
     : `${dailyCommandConfirmedSymbolLabel} P3 等待可读结论；先完成确认按钮和 P2 三面回放。`;
   const dailyCommandP3VisibleExplainableSentence = dailyCommandP3OneGlanceReadable
-    ? `${dailyCommandConfirmedSymbolLabel} P3 结果可解释：结论=${dailyCommandExplainableResultLabel}；来源=${dailyCommandP3OrdinarySourceLine}；缺口=${dailyCommandP3OrdinaryGapLine}；下一步=${dailyCommandP3OrdinaryActionLine}；边界=只读本地 cache / ledger / packet，不调用 DeepSeek、不生成买卖动作。`
-    : `${dailyCommandConfirmedSymbolLabel} P3 等待可解释结果：先完成 P1 确认和 P2 三面，结果只从本地 cache / ledger / packet 回放。`;
+    ? `${dailyCommandConfirmedSymbolLabel} P3 结果可解释：结论=${dailyCommandExplainableResultLabel}；来源=${dailyCommandP3OrdinarySourceLine}；缺口=${dailyCommandP3OrdinaryGapLine}；下一步=${dailyCommandP3OrdinaryActionLine}；安全说明=只读本地结果链，不调用 DeepSeek、不生成买卖动作。`
+    : `${dailyCommandConfirmedSymbolLabel} P3 等待可解释结果：先完成 P1 确认和 P2 三面，结果只从本地结果链回放。`;
   const dailyCommandP3ExplainableCheckpointStatus = String(
     dailyCommandP3ExplainableCheckpoint.status ??
       dailyCommandP3OneGlanceStatus
@@ -1056,7 +1056,7 @@ export default function CommandCenterHome() {
     : "DeepSeek 当前不参与数据链：P1/P2/P3 已可用；模型解释等 P5 governed executor、model_ledger、sanitizer 和 output acceptance 完成后再补。";
   const dailyCommandP5VisibleGovernanceSentence = dailyCommandP3OneGlanceUsesModelOutput
     ? `${dailyCommandConfirmedSymbolLabel} P5 只露出非阻塞状态，P4/P6 下沉到摘要和审计；P5 需要先审：检测到模型输出；展示前必须回查 model_ledger、sanitizer、output acceptance 和白名单字段，不覆盖价格、因子、operation_zones 或 strategy action。`
-    : `${dailyCommandConfirmedSymbolLabel} P5 只露出非阻塞状态，P4/P6 下沉到摘要和审计；P5 单独补：DeepSeek 当前 skipped/pending，不阻塞 P1 Tushare-first、P2 写入或 P3 基础图谱；真实模型调用等 model_ledger、sanitizer、output acceptance 和白名单字段后再说。`;
+    : `${dailyCommandConfirmedSymbolLabel} P5 只露出非阻塞状态，P4/P6 下沉到摘要和审计；P5 单独补：模型解释当前待治理/未启用，不阻塞 P1 Tushare-first、P2 写入或 P3 基础图谱；真实模型调用等 model_ledger、sanitizer、output acceptance 和白名单字段后再说。`;
   const dailyCommandP5WhyNotBlocking =
     "P5 是解释补证，不是价格、持仓、factor、operation_zones 或 strategy action 的数据源。";
   const dailyCommandP5ReleaseGate =
@@ -3003,7 +3003,7 @@ export default function CommandCenterHome() {
               { label: "接口读法", value: "多接口本地聚合：health / bootstrap / preflight / radar / factor / next / tasks", tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" }
             ]}
           />
-          <p className="risk-note">接线地址来自前端本机 FastAPI auto-link ledger；候选地址只展示本机 127.0.0.1/localhost fallback。该卡只读 FastAPI health、bootstrap status 和 desktop preflight cache；不会启动服务、不会创建 task、不会调用 Tushare/DeepSeek/GitHub，也不会暴露 token/key 或敏感凭据。</p>
+          <p className="risk-note">接线地址来自前端本机 FastAPI 自动接线记录；候选地址只展示本机 127.0.0.1/localhost fallback。该卡只读 FastAPI health、bootstrap status 和 desktop preflight cache；不会启动服务、不会创建任务、不会调用 Tushare/DeepSeek/GitHub，也不会暴露敏感凭据。</p>
           <div aria-label="daily command home aggregate readback">
             <h3>首页多接口回读</h3>
             <p className="risk-note">首页是多个本地只读接口合成的作战台，不依赖单个总 cache URL；看到某个猜测 URL 不存在，不代表软件没接上。</p>
@@ -3029,7 +3029,7 @@ export default function CommandCenterHome() {
           <p className="ordinary-status-note" aria-label="daily command p5 visible governance sentence" aria-live="polite">{dailyCommandP5VisibleGovernanceSentence}</p>
           <p className="ordinary-status-note" aria-label="daily command current research snapshot readable sentence" aria-live="polite">{dailyCommandCurrentResearchSnapshotReadableSentence}</p>
           <MetricGrid items={dailyCommandCurrentResearchSnapshotItems} />
-          <p className="risk-note">这张首屏快照只读最近确认 task、Tushare-first ledger、P2 三面、P3 可读结论和次日图谱回放；P5 governed 状态只作非阻塞摘要；不会创建第二个 task、不补调 Tushare/DeepSeek、不展示 token/key 或敏感凭据，也不交易或修改 strategy action。</p>
+          <p className="risk-note">这张首屏快照只读最近确认任务、Tushare-first 数据链、P2 三面、P3 可读结论和次日图谱回放；P5 governed 状态只作非阻塞摘要；不会重复创建任务、不补调 Tushare/DeepSeek、不展示敏感凭据，也不交易或修改 strategy action。</p>
         </div>
         <DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows} />
         <div className="actions" aria-label="daily command usable path front actions">
@@ -3037,7 +3037,7 @@ export default function CommandCenterHome() {
           <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读回放本地 P2/P3 结果" aria-label="open stock quant from usable path progress">股票量化推演</a>
           <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读回放本地图谱数据" aria-label="open next session from usable path progress">次日图谱</a>
         </div>
-        <p className="risk-note">这张进度卡只读首页已回放的 health、CandidateRadar cache、task index 和本地结果；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不会读取 token/key、不会交易或修改 strategy action；敏感凭据仍不展示。</p>
+        <p className="risk-note">这张进度卡只读首页已回放的 health、CandidateRadar cache、任务索引和本地结果；不会创建任务、不会调用 Tushare/DeepSeek/GitHub、不会读取敏感凭据、不会交易或修改 strategy action；敏感凭据仍不展示。</p>
       </PacketCard>
       <PacketCard title="P0 现在能不能用" subtitle="普通用户打开软件后的 10 秒判断" status={dailyCommandP0LocalReadinessReady ? "ready" : "check"}>
         <MetricGrid

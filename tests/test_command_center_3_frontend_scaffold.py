@@ -1855,7 +1855,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("P1 等待手动确认：输入股票代码后点击确认按钮才创建 Tushare-first POST task", home_source)
         self.assertIn('aria-label="daily command p1 visible progress sentence"', home_source)
         self.assertIn("dailyCommandP2VisibleWritebackSentence", home_source)
-        self.assertIn("P2 写入已可见：cache 可刷新回放，call_ledger 来自确认任务，packet=command_center_3_candidate_radar_cache", home_source)
+        self.assertIn("P2 写入已可见：本地缓存可刷新回放，来源记录来自确认任务，结果链已落到本地", home_source)
         self.assertIn("只读回放，不等于生产验收完成", home_source)
         self.assertIn("P2 写入待齐：还缺 ${dailyCommandP2MissingSurfaceLabel}", home_source)
         self.assertIn("不要从回放卡重复创建任务", home_source)
@@ -1866,13 +1866,13 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("来源=${dailyCommandP3OrdinarySourceLine}", home_source)
         self.assertIn("缺口=${dailyCommandP3OrdinaryGapLine}", home_source)
         self.assertIn("下一步=${dailyCommandP3OrdinaryActionLine}", home_source)
-        self.assertIn("边界=只读本地 cache / ledger / packet，不调用 DeepSeek、不生成买卖动作。", home_source)
+        self.assertIn("安全说明=只读本地结果链，不调用 DeepSeek、不生成买卖动作。", home_source)
         self.assertIn("P3 等待可解释结果：先完成 P1 确认和 P2 三面", home_source)
         self.assertIn('aria-label="daily command p3 visible explainable sentence"', home_source)
         self.assertIn('aria-label="daily command p3 visible explainable result"', home_source)
         self.assertIn("dailyCommandP5VisibleGovernanceSentence", home_source)
         self.assertIn("P5 只露出非阻塞状态，P4/P6 下沉到摘要和审计", home_source)
-        self.assertIn("P5 单独补：DeepSeek 当前 skipped/pending，不阻塞 P1 Tushare-first、P2 写入或 P3 基础图谱", home_source)
+        self.assertIn("P5 单独补：模型解释当前待治理/未启用，不阻塞 P1 Tushare-first、P2 写入或 P3 基础图谱", home_source)
         self.assertIn("真实模型调用等 model_ledger、sanitizer、output acceptance 和白名单字段后再说", home_source)
         self.assertIn("检测到模型输出；展示前必须回查 model_ledger、sanitizer、output acceptance 和白名单字段", home_source)
         self.assertIn("不覆盖价格、因子、operation_zones 或 strategy action", home_source)
@@ -1884,6 +1884,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('aria-label="daily command p2 visible writeback sentence"', current_snapshot)
         self.assertIn('aria-label="daily command p3 visible explainable sentence"', current_snapshot)
         self.assertIn('aria-label="daily command p5 visible governance sentence"', current_snapshot)
+        for forbidden in ("task_id", "ledger", "packet", "boundary", "DeepSeek skipped"):
+            self.assertNotIn(forbidden, current_snapshot)
         self.assertLess(
             current_snapshot.index('aria-label="daily command p1 visible progress sentence"'),
             current_snapshot.index('aria-label="daily command p2 visible writeback sentence"')
