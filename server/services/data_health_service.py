@@ -3659,6 +3659,55 @@ def _producer_cache_refresh_direct_evidence(
 ) -> dict[str, Any]:
     expected_packet_keys = sorted(str(spec["packet_key"]) for spec in PRODUCER_CACHE_REFRESH_PACKET_SPECS)
     written_packet_keys = sorted(str(key) for key in _as_list(latest_refresh.get("written_packet_keys")))
+    sqlite_packet_keys: list[str] = []
+    sqlite_packet_rows: list[dict[str, Any]] = []
+    try:
+        store = SQLiteMetaStore(packet_service.SQLITE_META_PATH)
+        for spec in PRODUCER_CACHE_REFRESH_PACKET_SPECS:
+            packet_key = str(spec["packet_key"])
+            packet = store.read_packet(packet_key)
+            if not isinstance(packet, Mapping):
+                continue
+            packet_valid = bool(
+                packet.get("packet_key") == packet_key
+                and packet.get("schema_version") == "current_evidence_producer_cache_packet.v1"
+                and packet.get("producer_cache_refresh_scope")
+                == "local_sqlite_packet_write_no_provider_execution"
+                and _producer_cache_refresh_date_text(packet, "expected_trade_date")
+                and _producer_cache_refresh_date_text(packet, "data_date")
+                and _safe_text(packet.get("freshness_state"), limit=40)
+                and packet.get("provider_backed_trade_cal_acceptance_done") is False
+                and packet.get("production_freshness_gate_complete") is False
+                and packet.get("external_calls_triggered") is False
+                and packet.get("tushare_called") is False
+                and packet.get("deepseek_called") is False
+                and packet.get("github_called") is False
+                and packet.get("does_not_execute_trades") is True
+                and packet.get("does_not_modify_strategy_action") is True
+            )
+            if packet_valid:
+                sqlite_packet_keys.append(packet_key)
+            sqlite_packet_rows.append(
+                {
+                    "phase": "sqlite_packet_replay",
+                    "producer": str(spec["producer"]),
+                    "packet_key": packet_key,
+                    "status": "replayed_local_sqlite_packet"
+                    if packet_valid
+                    else "blocked_invalid_local_sqlite_packet",
+                    "passed": packet_valid,
+                    "writes_snapshot_cache": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                }
+            )
+    except Exception:
+        sqlite_packet_keys = []
+        sqlite_packet_rows = []
     generated_ready_rows = [
         row
         for row in latest_refresh_rows
@@ -3674,8 +3723,7 @@ def _producer_cache_refresh_direct_evidence(
         and row.get("status") == "written_local_sqlite_packet"
         and row.get("passed") is True
     ]
-    missing_packet_keys = [key for key in expected_packet_keys if key not in written_packet_keys]
-    direct_evidence_done = bool(
+    task_direct_evidence_done = bool(
         latest_refresh.get("schema_version") == "data_health_latest_producer_cache_refresh.v1"
         and latest_refresh.get("status") == "latest_producer_cache_refresh_visible"
         and latest_refresh.get("refresh_status") == "producer_cache_refresh_completed_local_sqlite_only"
@@ -3704,6 +3752,25 @@ def _producer_cache_refresh_direct_evidence(
         and all(row.get("does_not_execute_trades") is True for row in latest_refresh_rows)
         and all(row.get("does_not_modify_strategy_action") is True for row in latest_refresh_rows)
     )
+    sqlite_packet_evidence_done = bool(sorted(sqlite_packet_keys) == expected_packet_keys)
+    direct_evidence_done = task_direct_evidence_done or sqlite_packet_evidence_done
+    evidence_source = (
+        "latest_task_metadata"
+        if task_direct_evidence_done
+        else "sqlite_packet_replay"
+        if sqlite_packet_evidence_done
+        else "pending"
+    )
+    effective_written_packet_keys = written_packet_keys if task_direct_evidence_done else sorted(sqlite_packet_keys)
+    missing_packet_keys = [key for key in expected_packet_keys if key not in effective_written_packet_keys]
+    effective_write_count = (
+        int(latest_refresh.get("local_sqlite_packet_write_count") or 0)
+        if task_direct_evidence_done
+        else len(sqlite_packet_keys)
+    )
+    effective_local_write_row_count = (
+        len(local_write_rows) if task_direct_evidence_done else len([row for row in sqlite_packet_rows if row.get("passed")])
+    )
     return {
         "schema_version": "data_health_producer_cache_refresh_direct_evidence.v1",
         "status": "producer_cache_refresh_direct_evidence_local_sqlite_written"
@@ -3711,16 +3778,19 @@ def _producer_cache_refresh_direct_evidence(
         else "producer_cache_refresh_direct_evidence_pending",
         "scope": "local_latest_producer_cache_refresh_metadata_no_provider_acceptance",
         "direct_evidence_done": direct_evidence_done,
+        "evidence_source": evidence_source,
+        "task_metadata_evidence_done": task_direct_evidence_done,
+        "sqlite_packet_evidence_done": sqlite_packet_evidence_done,
         "latest_task_id": latest_refresh.get("latest_task_id"),
         "refresh_status": latest_refresh.get("refresh_status"),
         "expected_packet_keys": expected_packet_keys,
-        "written_packet_keys": written_packet_keys,
+        "written_packet_keys": effective_written_packet_keys,
         "missing_packet_keys": missing_packet_keys,
-        "generated_ready_row_count": len(generated_ready_rows),
-        "local_sqlite_packet_write_count": int(latest_refresh.get("local_sqlite_packet_write_count") or 0),
-        "local_sqlite_write_row_count": len(local_write_rows),
+        "generated_ready_row_count": len(generated_ready_rows) or len(sqlite_packet_keys),
+        "local_sqlite_packet_write_count": effective_write_count,
+        "local_sqlite_write_row_count": effective_local_write_row_count,
         "writes_snapshot_cache": False,
-        "writes_local_sqlite_packets": latest_refresh.get("writes_local_sqlite_packets") is True,
+        "writes_local_sqlite_packets": direct_evidence_done,
         "does_not_refresh_provider": True,
         "provider_backed_long_window_acceptance_done": False,
         "production_freshness_gate_complete": False,

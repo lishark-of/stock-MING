@@ -23772,6 +23772,33 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(refresh_response, ensure_ascii=False))
         self.assertNotIn("SHOULD_DROP", json.dumps(cache_response, ensure_ascii=False))
 
+        clear_task_statuses_for_tests(clear_persisted=True)
+        replay_cache = self.client.get("/api/data-health/cache").json()["data"]
+        replay_latest = replay_cache["latest_producer_cache_refresh"]
+        replay_direct_evidence = replay_cache["producer_cache_refresh_direct_evidence"]
+        replay_producer_row = {
+            row["evidence_key"]: row
+            for row in replay_cache["freshness_durable_evidence_rows"]
+        }["current_evidence_producer_coverage"]
+        self.assertEqual(replay_latest["status"], "no_producer_cache_refresh_task_found")
+        self.assertTrue(replay_direct_evidence["direct_evidence_done"])
+        self.assertEqual(replay_direct_evidence["evidence_source"], "sqlite_packet_replay")
+        self.assertFalse(replay_direct_evidence["task_metadata_evidence_done"])
+        self.assertTrue(replay_direct_evidence["sqlite_packet_evidence_done"])
+        self.assertEqual(replay_direct_evidence["local_sqlite_packet_write_count"], 3)
+        self.assertEqual(set(replay_direct_evidence["written_packet_keys"]), set(receipt["written_packet_keys"]))
+        self.assertTrue(replay_producer_row["producer_cache_refresh_direct_evidence_done"])
+        self.assertTrue(replay_producer_row["producer_cache_refresh_current_packet_context_done"])
+        self.assertTrue(replay_producer_row["producer_local_current_cache_coverage_done"])
+        self.assertNotIn(
+            "current cache refresh with generated producer freshness context",
+            replay_producer_row["missing_evidence"],
+        )
+        self.assertNotIn(
+            "current cache producer expected_trade_date/data_date/freshness_state coverage",
+            replay_producer_row["missing_evidence"],
+        )
+
     def test_producer_cache_refresh_fallback_fills_thin_snapshot_freshness_fields(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()
