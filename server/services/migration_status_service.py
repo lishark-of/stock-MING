@@ -5687,6 +5687,52 @@ def _build_ltg_next_action_submission_preview_rows(
     safe_context: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     safe_context = dict(safe_context or {})
+
+    def _disabled_handoff_preview(
+        *,
+        step_kind: str,
+        disabled_reason: str,
+        safe_payload_summary: str,
+        required_prior_phase_key: str = "",
+        required_prior_material: str = "",
+        required_prior_receipt_visible: bool = False,
+        required_prior_material_visible: bool = False,
+        requires_separate_user_approved_provider_task: bool = False,
+        requires_remote_ci_review: bool = False,
+        requires_separate_real_trading_project: bool = False,
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "next_local_step": next_local_step,
+                "step_kind": step_kind,
+                "local_button_available": False,
+                "ready_for_clean_local_receipt": False,
+                "disabled_reason": disabled_reason,
+                "safe_payload_summary": safe_payload_summary,
+                "required_prior_phase_key": required_prior_phase_key,
+                "required_prior_material": required_prior_material,
+                "required_prior_receipt_visible": required_prior_receipt_visible,
+                "required_prior_material_visible": required_prior_material_visible,
+                "manual_scope_hash_required": False,
+                "requires_separate_user_approved_provider_task": requires_separate_user_approved_provider_task,
+                "requires_remote_ci_review": requires_remote_ci_review,
+                "requires_separate_real_trading_project": requires_separate_real_trading_project,
+                "would_create_provider_task": False,
+                "would_start_worker": False,
+                "would_call_model": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_goal": False,
+                "production_complete": False,
+                "evidence_boundary": "submission_preview_is_read_only_not_task_execution",
+            }
+        ]
+
     route_specs: dict[str, dict[str, Any]] = {
         "POST /api/data-health/trade-cal-provider-acceptance-dry-run": {
             "step_kind": "dry_run_scope_ticket",
@@ -5962,6 +6008,71 @@ def _build_ltg_next_action_submission_preview_rows(
     }
     spec = route_specs.get(next_local_step)
     if spec is None:
+        if next_local_step == "POST /api/tasks/refresh-tushare-facts":
+            execution_step = _local_step_row_by_phase(
+                local_step_rows, "trade_cal_execution_request_ticket"
+            )
+            execution_request_ready = bool(
+                execution_step.get("receipt_visible") is True
+                and execution_step.get("receipt_durable_in_sqlite") is True
+                and execution_step.get("receipt_ready_for_manual_provider_task_submission") is True
+            )
+            return _disabled_handoff_preview(
+                step_kind="future_provider_handoff_requires_explicit_approval",
+                disabled_reason=(
+                    "requires_separate_user_approved_provider_task"
+                    if execution_request_ready
+                    else "provider_handoff_requires_durable_execution_request"
+                ),
+                safe_payload_summary=(
+                    "future_handoff_preview_rows contains the bound trade_cal provider payload; "
+                    "this queue does not submit the provider task"
+                ),
+                required_prior_phase_key="trade_cal_execution_request_ticket",
+                required_prior_material="ready_for_manual_provider_task_submission",
+                required_prior_receipt_visible=execution_step.get("receipt_visible") is True,
+                required_prior_material_visible=execution_request_ready,
+                requires_separate_user_approved_provider_task=True,
+            )
+        if next_local_step == "fresh local push gate plus remote CI verification":
+            push_step = _local_step_row_by_phase(
+                local_step_rows, "release_gate_push_readiness_receipt"
+            )
+            push_status = str(push_step.get("receipt_status") or "")
+            fresh_local_gate_seen = "local_gate_passed" in push_status
+            return _disabled_handoff_preview(
+                step_kind="manual_release_gate_and_remote_ci_review",
+                disabled_reason=(
+                    "remote_ci_review_required_after_fresh_local_gate"
+                    if fresh_local_gate_seen
+                    else "fresh_local_push_gate_required_before_remote_ci_review"
+                ),
+                safe_payload_summary=(
+                    "run scripts/push_gate_3_0.sh, then push only with explicit user confirmation "
+                    "and review matching remote CI outside cache/render paths"
+                ),
+                required_prior_phase_key="release_gate_push_readiness_receipt",
+                required_prior_material="fresh_local_gate_run_observed",
+                required_prior_receipt_visible=push_step.get("receipt_visible") is True,
+                required_prior_material_visible=fresh_local_gate_seen,
+                requires_remote_ci_review=True,
+            )
+        if next_local_step == "separate approved real-trading integration project only":
+            trade_step = _local_step_row_by_phase(
+                local_step_rows, "trade_isolation_release_receipt"
+            )
+            return _disabled_handoff_preview(
+                step_kind="trade_isolation_separate_project_guard",
+                disabled_reason="real_trading_integration_not_allowed_in_command_center_3_migration",
+                safe_payload_summary=(
+                    "Command Center 3 stays research-only; real trading requires a separate approved project"
+                ),
+                required_prior_phase_key="trade_isolation_release_receipt",
+                required_prior_material="research_release_only",
+                required_prior_receipt_visible=trade_step.get("receipt_visible") is True,
+                required_prior_material_visible=trade_step.get("local_ready") is True,
+                requires_separate_real_trading_project=True,
+            )
         return [
             {
                 "next_local_step": next_local_step,

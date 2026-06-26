@@ -1220,12 +1220,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("LTG-11", action_rows["p0_release_gate_push_readiness"]["ltg_ids"])
         self.assertEqual(action_rows["p0_release_gate_push_readiness"]["local_receipt_step_count"], 3)
         self.assertEqual(action_rows["p0_release_gate_push_readiness"]["first_allowed_route"], "GET /api/audit/cache")
+        p0_preview = action_rows["p0_release_gate_push_readiness"]["next_local_step_preview_rows"][0]
+        self.assertEqual(p0_preview["step_kind"], "manual_release_gate_and_remote_ci_review")
+        self.assertFalse(p0_preview["ready_for_clean_local_receipt"])
+        self.assertIn(
+            p0_preview["disabled_reason"],
+            {
+                "fresh_local_push_gate_required_before_remote_ci_review",
+                "remote_ci_review_required_after_fresh_local_gate",
+            },
+        )
+        self.assertTrue(p0_preview["requires_remote_ci_review"])
+        self.assertFalse(p0_preview["external_calls_triggered"])
+        self.assertTrue(p0_preview["does_not_execute_trades"])
         self.assertIn("LTG-12", action_rows["p10_trade_isolation_release_guard"]["ltg_ids"])
         self.assertEqual(action_rows["p10_trade_isolation_release_guard"]["local_receipt_step_count"], 1)
         self.assertEqual(
             action_rows["p10_trade_isolation_release_guard"]["first_allowed_route"],
             "GET /api/risk/cache",
         )
+        p10_preview = action_rows["p10_trade_isolation_release_guard"]["next_local_step_preview_rows"][0]
+        self.assertEqual(p10_preview["step_kind"], "trade_isolation_separate_project_guard")
+        self.assertFalse(p10_preview["ready_for_clean_local_receipt"])
+        self.assertEqual(
+            p10_preview["disabled_reason"],
+            "real_trading_integration_not_allowed_in_command_center_3_migration",
+        )
+        self.assertTrue(p10_preview["requires_separate_real_trading_project"])
+        self.assertFalse(p10_preview["external_calls_triggered"])
+        self.assertTrue(p10_preview["does_not_execute_trades"])
         self.assertIn("LTG-09", action_rows["p6_tauri_package_readiness_review"]["ltg_ids"])
         self.assertIn("LTG-10", action_rows["p7_streamlit_retirement_review"]["ltg_ids"])
         self.assertEqual(action_rows["p6_tauri_package_readiness_review"]["local_receipt_step_count"], 2)
@@ -46020,6 +46043,25 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+
+        migration = migration_status_service.build_migration_status()
+        p1_row = {
+            row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]
+        }["p1_trade_cal_provider_acceptance"]
+        self.assertEqual(p1_row["next_local_step"], "POST /api/tasks/refresh-tushare-facts")
+        self.assertFalse(p1_row["next_local_step_ready_for_clean_receipt"])
+        p1_preview = p1_row["next_local_step_preview_rows"][0]
+        self.assertEqual(p1_preview["step_kind"], "future_provider_handoff_requires_explicit_approval")
+        self.assertEqual(
+            p1_preview["disabled_reason"],
+            "requires_separate_user_approved_provider_task",
+        )
+        self.assertTrue(p1_preview["requires_separate_user_approved_provider_task"])
+        self.assertFalse(p1_preview["would_create_provider_task"])
+        self.assertFalse(p1_preview["external_calls_triggered"])
+        self.assertFalse(p1_preview["tushare_called"])
+        self.assertTrue(p1_preview["does_not_execute_trades"])
+
         self.assertNotIn("SHOULD_DROP", json.dumps(cache_response, ensure_ascii=False))
         self.assertNotIn("TS_OK", json.dumps(cache_response, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache_response, ensure_ascii=False))
