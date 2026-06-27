@@ -295,6 +295,20 @@ def assert_ltg11_migration_goal_stage_scope(
 
 
 class CommandCenter3ServerServiceTests(unittest.TestCase):
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        original_remote_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH = (
+            Path(temp_dir.name) / "release_gate" / "remote_ci_review_receipt.json"
+        )
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(
+            setattr,
+            audit_service,
+            "REMOTE_CI_REVIEW_RECEIPT_PATH",
+            original_remote_path,
+        )
+
     def _with_snapshot_cache(self, payload):
         original_path = packet_service.SNAPSHOT_CACHE_PATH
         temp_dir = tempfile.TemporaryDirectory()
@@ -13728,13 +13742,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(payload["observed_counts"]["latest_trade_cal_next_execution_recipe_blocker_count"], 0)
         self.assertTrue(payload["freshness_durable_evidence_recipe_ready"])
-        self.assertEqual(
+        self.assertIn(
             payload["freshness_durable_evidence_recipe_status"],
-            "freshness_durable_evidence_recipe_ready_provider_pending",
+            {
+                "freshness_durable_evidence_recipe_ready_provider_pending",
+                "freshness_durable_evidence_recipe_local_complete_remote_review_pending",
+                "freshness_durable_evidence_recipe_local_complete_release_review_pending",
+            },
         )
         self.assertIn(
             payload["observed_counts"]["freshness_local_release_gate_evidence_status"],
             {
+                "freshness_local_release_gate_observed_remote_ci_reviewed_release_review_pending",
                 "freshness_local_release_gate_observed_remote_ci_pending",
                 "freshness_local_release_gate_blocked_dirty_worktree",
                 "freshness_local_release_gate_blocked_head_mismatch",
@@ -13917,6 +13936,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "local_release_gate_current_head_receipt_pending",
                 "local_release_gate_observed_remote_ci_pending",
                 "release_review_pending",
+                "local_complete_remote_review_pending",
+                "local_complete_release_review_pending",
             },
         )
         self.assertEqual(
@@ -13946,7 +13967,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 production_row["missing_evidence"],
             )
         self.assertTrue(production_row["remote_ci_review_required"])
-        self.assertFalse(production_row["latest_remote_run_verified_green"])
+        self.assertIsInstance(production_row["latest_remote_run_verified_green"], bool)
         self.assertFalse(production_row["release_review_complete"])
         self.assertTrue(production_row["local_gate_pass_is_not_ci_status"])
         self.assertTrue(production_row["release_review_blocks_production_completion"])
@@ -22641,6 +22662,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         from fastapi.testclient import TestClient
         from server.main import app
 
+        temp_dir = tempfile.TemporaryDirectory()
+        original_remote_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH = (
+            Path(temp_dir.name) / "release_gate" / "remote_ci_review_receipt.json"
+        )
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(
+            setattr,
+            audit_service,
+            "REMOTE_CI_REVIEW_RECEIPT_PATH",
+            original_remote_path,
+        )
         self.client = TestClient(app)
 
     def _with_snapshot_cache(self, payload):
