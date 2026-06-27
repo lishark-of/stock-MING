@@ -317,6 +317,15 @@ def _project_venv_command_available(command_name: str) -> bool:
         return False
 
 
+def _active_python_env_command_available(command_name: str) -> bool:
+    try:
+        executable = Path(sys.executable)
+        command_path = executable.parent / command_name
+        return command_path.is_file() and os.access(command_path, os.X_OK)
+    except Exception:
+        return False
+
+
 def _known_executable_path_available(paths: tuple[str, ...]) -> bool:
     try:
         return any(Path(path).is_file() and os.access(path, os.X_OK) for path in paths)
@@ -342,7 +351,12 @@ def _worker_runtime_dependency_preflight(
 ) -> dict[str, Any]:
     celery_command_path_available = _command_available("celery")
     celery_project_venv_command_available = _project_venv_command_available("celery")
-    celery_command_available = celery_command_path_available or celery_project_venv_command_available
+    celery_active_python_env_command_available = _active_python_env_command_available("celery")
+    celery_command_available = (
+        celery_command_path_available
+        or celery_project_venv_command_available
+        or celery_active_python_env_command_available
+    )
     redis_server_path_available = _command_available("redis-server")
     redis_server_known_path_available = _known_executable_path_available(LOCAL_REDIS_SERVER_CANDIDATE_PATHS)
     redis_server_binary_available = redis_server_path_available or redis_server_known_path_available
@@ -353,6 +367,8 @@ def _worker_runtime_dependency_preflight(
         celery_command_status = "available_path"
     elif celery_project_venv_command_available:
         celery_command_status = "available_project_venv"
+    elif celery_active_python_env_command_available:
+        celery_command_status = "available_active_python_env"
     else:
         celery_command_status = "missing"
     redis_server_resolution = (
@@ -395,7 +411,10 @@ def _worker_runtime_dependency_preflight(
             "status": celery_command_status,
             "required_for_production_worker": True,
             "blocks_manual_runtime_evidence": not celery_command_available,
-            "evidence": "PATH command lookup or project .venv/bin/celery executable check only",
+            "evidence": (
+                "PATH command lookup, project .venv/bin/celery executable check, "
+                "or active Python env sibling executable check only"
+            ),
         },
         {
             "check": "redis_server_binary",
@@ -446,6 +465,7 @@ def _worker_runtime_dependency_preflight(
         "celery_command_available": celery_command_available,
         "celery_command_path_available": celery_command_path_available,
         "celery_project_venv_command_available": celery_project_venv_command_available,
+        "celery_active_python_env_command_available": celery_active_python_env_command_available,
         "celery_command_resolution": celery_command_status,
         "redis_server_binary_available": redis_server_binary_available,
         "redis_server_path_available": redis_server_path_available,

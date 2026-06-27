@@ -50681,9 +50681,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIsInstance(dependency_preflight["celery_command_available"], bool)
         self.assertIsInstance(dependency_preflight["celery_command_path_available"], bool)
         self.assertIsInstance(dependency_preflight["celery_project_venv_command_available"], bool)
+        self.assertIsInstance(dependency_preflight["celery_active_python_env_command_available"], bool)
         self.assertIn(
             dependency_preflight["celery_command_resolution"],
-            {"available_path", "available_project_venv", "missing"},
+            {"available_path", "available_project_venv", "available_active_python_env", "missing"},
         )
         self.assertIsInstance(dependency_preflight["redis_server_binary_available"], bool)
         self.assertIsInstance(dependency_preflight["redis_server_path_available"], bool)
@@ -50742,11 +50743,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(
             dependency_preflight["celery_command_available"],
             dependency_preflight["celery_command_path_available"]
-            or dependency_preflight["celery_project_venv_command_available"],
+            or dependency_preflight["celery_project_venv_command_available"]
+            or dependency_preflight["celery_active_python_env_command_available"],
         )
         self.assertEqual(celery_row["blocks_manual_runtime_evidence"], not dependency_preflight["celery_command_available"])
         self.assertEqual(celery_row["status"], dependency_preflight["celery_command_resolution"])
         self.assertIn("project .venv/bin/celery", celery_row["evidence"])
+        self.assertIn("active Python env sibling executable check", celery_row["evidence"])
         if (worker_service.PROJECT_ROOT / ".venv" / "bin" / "celery").exists():
             self.assertTrue(dependency_preflight["celery_project_venv_command_available"])
             self.assertFalse(celery_row["blocks_manual_runtime_evidence"])

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
 LAUNCHER="${PROJECT_ROOT}/scripts/start_command_center_3.command"
 DESKTOP_DIR="${STOCK_MING_DESKTOP_DIR:-${HOME}/Desktop}"
 TARGET_NAME="${STOCK_MING_DESKTOP_SHORTCUT_NAME:-stock-MING Command Center 3.command}"

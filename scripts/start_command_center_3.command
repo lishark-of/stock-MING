@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="${COMMAND_CENTER_3_PROJECT_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+PROJECT_ROOT="${COMMAND_CENTER_3_PROJECT_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd -P)}"
+PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 DESKTOP_ROOT="${PROJECT_ROOT}/desktop"
 LOG_DIR="${PROJECT_ROOT}/.stock_ming_3/logs"
 FASTAPI_LOG="${LOG_DIR}/command_center_3_fastapi.log"
@@ -20,6 +21,10 @@ P0_STABILITY_DWELL_SECONDS="${COMMAND_CENTER_3_P0_STABILITY_DWELL_SECONDS:-2}"
 resolve_python() {
   if [ -n "${STOCK_MING_PYTHON:-}" ]; then
     printf "%s\n" "${STOCK_MING_PYTHON}"
+    return 0
+  fi
+  if [ -n "${PYTHON_BIN:-}" ] && [ -x "${PYTHON_BIN}" ]; then
+    printf "%s\n" "${PYTHON_BIN}"
     return 0
   fi
   if [ -x "${PROJECT_ROOT}/.venv/bin/python" ]; then

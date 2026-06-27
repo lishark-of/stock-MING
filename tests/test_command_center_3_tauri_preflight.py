@@ -150,6 +150,9 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("npm run dev", source)
         self.assertIn("VITE_API_BASE_URL", source)
         self.assertIn("STOCK_MING_ALLOW_SYSTEM_PYTHON", source)
+        self.assertIn('if [ -n "${PYTHON_BIN:-}" ] && [ -x "${PYTHON_BIN}" ]; then', source)
+        self.assertIn('SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"', source)
+        self.assertIn('PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"', source)
         self.assertIn("COMMAND_CENTER_3_PROJECT_ROOT", source)
         self.assertIn("desktop/node_modules", source)
         self.assertIn(".stock_ming_3/logs", source)
@@ -375,6 +378,8 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
     def test_command_center_3_shortcut_installer_is_safe_and_verifiable(self):
         source = Path("scripts/install_command_center_3_desktop_shortcut.sh").read_text(encoding="utf-8")
 
+        self.assertIn('SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"', source)
+        self.assertIn('PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"', source)
         self.assertIn("Install safety: existing non-symlink target will not be overwritten.", source)
         self.assertIn("desktop target already exists and is not a symlink", source)
         self.assertIn("STOCK_MING_DESKTOP_SHORTCUT_NAME", source)
