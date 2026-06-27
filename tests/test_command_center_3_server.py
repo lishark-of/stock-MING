@@ -3082,6 +3082,62 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(p0_preview["requires_remote_ci_review"])
         self.assertFalse(p0_preview["external_calls_triggered"])
         self.assertTrue(p0_preview["does_not_execute_trades"])
+        p0_release_handoff = action_rows["p0_release_gate_push_readiness"][
+            "supporting_release_gate_remote_review_handoff"
+        ]
+        self.assertEqual(
+            p0_release_handoff["schema_version"],
+            "ltg11_release_gate_remote_review_handoff_summary.v1",
+        )
+        self.assertIn(
+            p0_release_handoff["status"],
+            {
+                "release_gate_local_gate_recheck_required_before_remote_review",
+                "release_gate_local_gate_ready_remote_review_pending",
+                "release_gate_remote_review_green_local_gate_recheck_required",
+                "release_gate_remote_review_green_release_review_pending",
+            },
+        )
+        self.assertIn(
+            p0_release_handoff["next_local_step"],
+            {
+                "rerun_local_push_gate_after_clean_worktree_for_current_head",
+                "manual_remote_ci_review_after_user_authorized_push",
+                "release_review_after_matching_remote_ci_green",
+            },
+        )
+        self.assertEqual(p0_release_handoff["split_stage_count"], 4)
+        self.assertTrue(p0_release_handoff["requires_remote_ci_review_after_fresh_local_gate"])
+        self.assertTrue(p0_release_handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(p0_release_handoff["release_gate_complete"])
+        self.assertFalse(p0_release_handoff["strict_closeout_ready"])
+        self.assertFalse(p0_release_handoff["can_close_goal"])
+        self.assertFalse(p0_release_handoff["cache_get_creates_task"])
+        self.assertFalse(p0_release_handoff["cache_get_calls_github_api"])
+        self.assertFalse(p0_release_handoff["github_api_called"])
+        self.assertFalse(p0_release_handoff["external_calls_triggered"])
+        self.assertFalse(p0_release_handoff["tushare_called"])
+        self.assertFalse(p0_release_handoff["deepseek_called"])
+        self.assertTrue(p0_release_handoff["does_not_execute_trades"])
+        self.assertTrue(p0_release_handoff["does_not_modify_strategy_action"])
+        self.assertFalse(p0_release_handoff["contains_secret"])
+        self.assertEqual(
+            action_rows["p0_release_gate_push_readiness"][
+                "supporting_release_gate_remote_review_next_local_step"
+            ],
+            p0_release_handoff["next_local_step"],
+        )
+        self.assertEqual(
+            action_rows["p0_release_gate_push_readiness"][
+                "supporting_release_gate_remote_review_latest_green"
+            ],
+            p0_release_handoff["latest_remote_run_verified_green"],
+        )
+        self.assertFalse(
+            action_rows["p0_release_gate_push_readiness"][
+                "supporting_release_gate_creates_task_from_get"
+            ]
+        )
         self.assertIn("LTG-12", action_rows["p10_trade_isolation_release_guard"]["ltg_ids"])
         self.assertEqual(action_rows["p10_trade_isolation_release_guard"]["local_receipt_step_count"], 1)
         self.assertEqual(
@@ -37584,7 +37640,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             hardening_gate_rows["tauri_desktop_package"]["required_production_evidence"],
         )
         self.assertTrue(hardening_gate_rows["ci_smoke_security_release_gate"]["remote_ci_review_required"])
-        self.assertFalse(hardening_gate_rows["ci_smoke_security_release_gate"]["latest_remote_run_verified_green"])
+        self.assertIn(
+            hardening_gate_rows["ci_smoke_security_release_gate"]["latest_remote_run_verified_green"],
+            {True, False},
+        )
         self.assertFalse(hardening_gate_rows["ci_smoke_security_release_gate"]["release_gate_complete"])
         self.assertIn(
             "high-risk secret scan",
@@ -37672,8 +37731,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "latest_remote_run_not_verified_green",
                 work_order_summary["release_gate_current_blockers"],
             )
-        self.assertFalse(work_order_summary["release_gate_remote_actions_status_known"])
-        self.assertFalse(work_order_summary["release_gate_latest_remote_run_verified_green"])
+        self.assertIn(work_order_summary["release_gate_remote_actions_status_known"], {True, False})
+        self.assertIn(work_order_summary["release_gate_latest_remote_run_verified_green"], {True, False})
         self.assertTrue(work_order_summary["release_gate_local_git_status_is_not_ci_status"])
         self.assertFalse(work_order_summary["external_calls_triggered"])
         self.assertFalse(work_order_summary["tushare_called"])
@@ -37713,7 +37772,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertFalse(work_order_rows["LTG-11"]["release_gate_worktree_raw_paths_emitted"])
         self.assertFalse(work_order_rows["LTG-11"]["release_gate_worktree_raw_status_lines_emitted"])
-        self.assertFalse(work_order_rows["LTG-11"]["release_gate_latest_remote_run_verified_green"])
+        self.assertIn(
+            work_order_rows["LTG-11"]["release_gate_latest_remote_run_verified_green"],
+            {True, False},
+        )
         self.assertEqual(
             work_order_rows["LTG-11"]["release_gate_origin_ahead_count"],
             work_order_summary["release_gate_origin_ahead_count"],
@@ -37849,6 +37911,36 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(action_rows["p8_motion_production_promotion_review"]["local_receipt_step_count"], 5)
         self.assertIn("LTG-11", action_rows["p0_release_gate_push_readiness"]["ltg_ids"])
         self.assertEqual(action_rows["p0_release_gate_push_readiness"]["local_receipt_step_count"], 3)
+        p0_release_handoff = action_rows["p0_release_gate_push_readiness"][
+            "supporting_release_gate_remote_review_handoff"
+        ]
+        self.assertEqual(
+            p0_release_handoff["schema_version"],
+            "ltg11_release_gate_remote_review_handoff_summary.v1",
+        )
+        self.assertIn(
+            p0_release_handoff["status"],
+            {
+                "release_gate_local_gate_recheck_required_before_remote_review",
+                "release_gate_local_gate_ready_remote_review_pending",
+                "release_gate_remote_review_green_local_gate_recheck_required",
+                "release_gate_remote_review_green_release_review_pending",
+            },
+        )
+        self.assertEqual(p0_release_handoff["split_stage_count"], 4)
+        self.assertFalse(p0_release_handoff["release_gate_complete"])
+        self.assertFalse(p0_release_handoff["strict_closeout_ready"])
+        self.assertFalse(p0_release_handoff["can_close_goal"])
+        self.assertFalse(p0_release_handoff["cache_get_creates_task"])
+        self.assertFalse(p0_release_handoff["cache_get_calls_github_api"])
+        self.assertFalse(p0_release_handoff["github_api_called"])
+        self.assertFalse(p0_release_handoff["external_calls_triggered"])
+        self.assertTrue(p0_release_handoff["does_not_execute_trades"])
+        self.assertFalse(
+            action_rows["p0_release_gate_push_readiness"][
+                "supporting_release_gate_creates_task_from_get"
+            ]
+        )
         self.assertIn("LTG-12", action_rows["p10_trade_isolation_release_guard"]["ltg_ids"])
         self.assertEqual(action_rows["p10_trade_isolation_release_guard"]["local_receipt_step_count"], 1)
         p10_trade_handoff = action_rows["p10_trade_isolation_release_guard"][

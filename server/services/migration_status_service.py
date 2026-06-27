@@ -3740,6 +3740,107 @@ def _build_release_gate_remote_review_split_rows(
     ]
 
 
+def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
+    release_gate = _latest_release_gate_direct_evidence_summary()
+    split_rows = _build_release_gate_remote_review_split_rows(release_gate)
+    split_stage_statuses = {
+        str(row.get("split_stage") or ""): str(
+            row.get("status")
+            or row.get("remote_review_status")
+            or row.get("release_review_status")
+            or ""
+        )
+        for row in split_rows
+    }
+    local_complete = release_gate.get("local_complete") is True
+    worktree_clean = release_gate.get("local_worktree_clean") is True
+    remote_actions_status_known = release_gate.get("remote_actions_status_known") is True
+    latest_remote_run_verified_green = release_gate.get("latest_remote_run_verified_green") is True
+    remote_receipt_head_matches_current = (
+        release_gate.get("remote_ci_review_receipt_head_matches_current") is True
+    )
+    local_receipt_head_matches_current = (
+        release_gate.get("local_push_gate_receipt_head_matches_current") is True
+    )
+    local_commits_not_pushed = release_gate.get("local_commits_not_pushed_for_remote_ci") is True
+    local_recheck_required = not (
+        local_complete
+        and worktree_clean
+        and local_receipt_head_matches_current
+        and not local_commits_not_pushed
+    )
+    if local_complete and latest_remote_run_verified_green and remote_receipt_head_matches_current:
+        status = "release_gate_remote_review_green_release_review_pending"
+        next_step = "release_review_after_matching_remote_ci_green"
+    elif latest_remote_run_verified_green and remote_receipt_head_matches_current:
+        status = "release_gate_remote_review_green_local_gate_recheck_required"
+        next_step = "rerun_local_push_gate_after_clean_worktree_for_current_head"
+    elif local_complete:
+        status = "release_gate_local_gate_ready_remote_review_pending"
+        next_step = "manual_remote_ci_review_after_user_authorized_push"
+    else:
+        status = "release_gate_local_gate_recheck_required_before_remote_review"
+        next_step = "rerun_local_push_gate_after_clean_worktree_for_current_head"
+    return {
+        "schema_version": "ltg11_release_gate_remote_review_handoff_summary.v1",
+        "source_packet_key": "local_push_gate_run_receipt+remote_ci_review_receipt",
+        "source_summary_schema_version": release_gate.get("schema_version", ""),
+        "status": status,
+        "direct_evidence_status": release_gate.get("status", ""),
+        "local_complete": local_complete,
+        "fresh_local_gate_run_observed": release_gate.get("fresh_local_gate_run_observed") is True,
+        "local_push_gate_receipt_head_matches_current": local_receipt_head_matches_current,
+        "local_push_gate_receipt_origin_ahead_count": int(
+            release_gate.get("local_push_gate_receipt_origin_ahead_count") or 0
+        ),
+        "local_push_gate_receipt_current_origin_ahead_count": int(
+            release_gate.get("local_push_gate_receipt_current_origin_ahead_count") or 0
+        ),
+        "local_commits_not_pushed_for_remote_ci": local_commits_not_pushed,
+        "local_worktree_clean": worktree_clean,
+        "local_worktree_dirty_file_count": int(
+            release_gate.get("local_worktree_dirty_file_count") or 0
+        ),
+        "requires_clean_worktree_before_local_gate": not worktree_clean,
+        "requires_current_head_local_gate_recheck": local_recheck_required,
+        "remote_actions_status_known": remote_actions_status_known,
+        "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "remote_ci_review_receipt_status": release_gate.get("remote_ci_review_receipt_status", ""),
+        "remote_ci_review_receipt_run_id": release_gate.get("remote_ci_review_receipt_run_id", ""),
+        "remote_ci_review_receipt_head_matches_current": remote_receipt_head_matches_current,
+        "remote_ci_review_receipt_is_not_release_review": True,
+        "release_review_pending": release_gate.get("release_review_pending") is True,
+        "release_review_status": release_gate.get("release_review_status", ""),
+        "requires_remote_ci_review_after_fresh_local_gate": True,
+        "requires_release_review_after_remote_green": True,
+        "release_gate_complete": False,
+        "strict_closeout_ready": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "split_stage_count": len(split_rows),
+        "split_stage_statuses": split_stage_statuses,
+        "missing_evidence_items": list(release_gate.get("missing_evidence_items") or []),
+        "cache_get_creates_task": False,
+        "cache_get_calls_github_api": False,
+        "creates_push_from_get": False,
+        "push_requires_explicit_user_confirmation": True,
+        "did_not_push": True,
+        "git_add_dot_used": False,
+        "github_api_called": False,
+        "github_called": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "next_local_step": next_step,
+        "evidence_boundary": (
+            "release_gate_remote_review_handoff_is_local_receipt_readback_not_github_polling_release_review_or_ltg_closeout"
+        ),
+    }
+
+
 def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str, Any]:
     source = ""
     source_packet_key = ""
@@ -8986,6 +9087,11 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_streamlit_retirement_handoff: dict[str, Any] = {}
         supporting_motion_production_handoff: dict[str, Any] = {}
         supporting_trade_isolation_release_guard_handoff: dict[str, Any] = {}
+        supporting_release_gate_remote_review_handoff: dict[str, Any] = {}
+        if action["queue_id"] == "p0_release_gate_push_readiness":
+            supporting_release_gate_remote_review_handoff = (
+                _latest_release_gate_remote_review_handoff_summary()
+            )
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -9176,6 +9282,42 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_current_evidence_producer_cache_refresh_creates_task_from_get": (
                     supporting_current_evidence_producer_cache_refresh_handoff.get("creates_task_from_get")
+                    is True
+                ),
+                "supporting_release_gate_remote_review_handoff": (
+                    supporting_release_gate_remote_review_handoff
+                ),
+                "supporting_release_gate_remote_review_next_local_step": (
+                    supporting_release_gate_remote_review_handoff.get("next_local_step", "")
+                ),
+                "supporting_release_gate_remote_review_remote_status_known": (
+                    supporting_release_gate_remote_review_handoff.get("remote_actions_status_known")
+                    is True
+                ),
+                "supporting_release_gate_remote_review_latest_green": (
+                    supporting_release_gate_remote_review_handoff.get("latest_remote_run_verified_green")
+                    is True
+                ),
+                "supporting_release_gate_remote_review_head_matches_current": (
+                    supporting_release_gate_remote_review_handoff.get(
+                        "remote_ci_review_receipt_head_matches_current"
+                    )
+                    is True
+                ),
+                "supporting_release_gate_requires_clean_worktree": (
+                    supporting_release_gate_remote_review_handoff.get(
+                        "requires_clean_worktree_before_local_gate"
+                    )
+                    is True
+                ),
+                "supporting_release_gate_local_commits_not_pushed": (
+                    supporting_release_gate_remote_review_handoff.get(
+                        "local_commits_not_pushed_for_remote_ci"
+                    )
+                    is True
+                ),
+                "supporting_release_gate_creates_task_from_get": (
+                    supporting_release_gate_remote_review_handoff.get("cache_get_creates_task")
                     is True
                 ),
                 "supporting_tushare_target_sample_evidence_handoff": (
