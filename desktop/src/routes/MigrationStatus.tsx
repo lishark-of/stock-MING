@@ -351,6 +351,8 @@ export default function MigrationStatus() {
   const usablePathCurrentCheckpointRows = (packet.usable_path_current_checkpoint_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const usablePathStrictCloseoutHandoffRows = (packet.usable_path_strict_closeout_handoff_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const p6DirectEvidenceReentryRows = (packet.p6_direct_evidence_reentry_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const releaseGateRemoteReviewSplitSummary = (packet.release_gate_remote_review_split_summary as Record<string, unknown> | undefined) ?? {};
+  const releaseGateRemoteReviewSplitRows = (packet.release_gate_remote_review_split_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const productionHardeningSummary = (packet.production_hardening_summary as Record<string, unknown> | undefined) ?? {};
   const productionHardeningRows = (packet.production_hardening_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const productionHardeningLtgRows = (packet.production_hardening_ltg_direct_evidence_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -840,6 +842,56 @@ export default function MigrationStatus() {
         <h3>P6 direct evidence 回归门禁</h3>
         <p className="risk-note">这张表只列出回到 14 LTG strict closeout 前必须满足的 current-head direct evidence 门禁；它不是完成声明，也不会从页面渲染、搜索输入或 GET cache 创建 task。</p>
         <DataLineageTable rows={p6DirectEvidenceReentryRows} />
+      </div>
+      <div aria-label="ltg11 release gate remote review split">
+        <h3>LTG-11 release gate 远端查收分离</h3>
+        <p className="risk-note">这里把本地 gate、push 边界、匹配 HEAD 的远端 Actions 查收和 release review 拆开显示；本地领先远端或 receipt head 不匹配时，上一轮绿色 run 不能证明当前 HEAD，也不能关闭 LTG。</p>
+        <MetricGrid
+          items={[
+            {
+              label: "split status",
+              value: String(releaseGateRemoteReviewSplitSummary.status ?? "missing"),
+              tone: releaseGateRemoteReviewSplitSummary.latest_remote_run_verified_green === true ? "warn" : "good"
+            },
+            {
+              label: "current ahead",
+              value: Number(releaseGateRemoteReviewSplitSummary.local_push_gate_receipt_current_origin_ahead_count ?? 0),
+              tone: Number(releaseGateRemoteReviewSplitSummary.local_push_gate_receipt_current_origin_ahead_count ?? 0) ? "warn" : "good"
+            },
+            {
+              label: "remote receipt head",
+              value: releaseGateRemoteReviewSplitSummary.remote_ci_review_receipt_head_matches_current === true ? "matches" : "mismatch",
+              tone: releaseGateRemoteReviewSplitSummary.remote_ci_review_receipt_head_matches_current === true ? "good" : "warn"
+            },
+            {
+              label: "remote green",
+              value: releaseGateRemoteReviewSplitSummary.latest_remote_run_verified_green === true,
+              tone: releaseGateRemoteReviewSplitSummary.latest_remote_run_verified_green === true ? "warn" : "good"
+            },
+            {
+              label: "worktree clean",
+              value: releaseGateRemoteReviewSplitSummary.local_worktree_clean === true,
+              tone: releaseGateRemoteReviewSplitSummary.local_worktree_clean === true ? "good" : "warn"
+            },
+            {
+              label: "release gate",
+              value: releaseGateRemoteReviewSplitSummary.release_gate_complete === true ? "complete" : "blocked",
+              tone: releaseGateRemoteReviewSplitSummary.release_gate_complete === true ? "bad" : "good"
+            },
+            {
+              label: "strict closeout",
+              value: releaseGateRemoteReviewSplitSummary.strict_closeout_ready === true ? "ready" : "blocked",
+              tone: releaseGateRemoteReviewSplitSummary.strict_closeout_ready === true ? "bad" : "good"
+            },
+            {
+              label: "GitHub API from GET",
+              value: releaseGateRemoteReviewSplitSummary.github_api_called === true ? "called" : "not called",
+              tone: releaseGateRemoteReviewSplitSummary.github_api_called === true ? "bad" : "good"
+            }
+          ]}
+        />
+        <DataLineageTable rows={[releaseGateRemoteReviewSplitSummary]} />
+        <DataLineageTable rows={releaseGateRemoteReviewSplitRows} />
       </div>
       <h3>14 LTG acceptance runway</h3>
       <p className="risk-note">这张表把每个长期目标的优先级、下一步验收动作和 observed pending 数集中到一处；它只读已有 roadmap/cache 合同，不创建任务、不调用外部服务，也不能关闭目标。</p>

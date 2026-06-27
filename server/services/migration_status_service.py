@@ -3383,6 +3383,82 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     }
 
 
+def _build_release_gate_remote_review_split_rows(
+    release_gate_summary: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "split_stage": "local_current_head_gate",
+            "status": release_gate_summary.get("status"),
+            "local_complete": release_gate_summary.get("local_complete") is True,
+            "fresh_local_gate_run_observed": release_gate_summary.get("fresh_local_gate_run_observed") is True,
+            "local_push_gate_receipt_head_matches_current": (
+                release_gate_summary.get("local_push_gate_receipt_head_matches_current") is True
+            ),
+            "local_worktree_clean": release_gate_summary.get("local_worktree_clean") is True,
+            "local_worktree_blocks_local_gate_receipt": (
+                release_gate_summary.get("local_worktree_blocks_local_gate_receipt") is True
+            ),
+            "local_worktree_dirty_file_count": int(
+                release_gate_summary.get("local_worktree_dirty_file_count") or 0
+            ),
+            "not_remote_ci_status": True,
+            "evidence_boundary": "local_gate_and_worktree_state_do_not_prove_remote_actions_green",
+        },
+        {
+            "split_stage": "push_boundary_for_remote_ci",
+            "local_push_gate_receipt_origin_ahead_count": int(
+                release_gate_summary.get("local_push_gate_receipt_origin_ahead_count") or 0
+            ),
+            "local_push_gate_receipt_current_origin_ahead_count": int(
+                release_gate_summary.get("local_push_gate_receipt_current_origin_ahead_count") or 0
+            ),
+            "local_push_gate_receipt_origin_ahead_count_stale": (
+                release_gate_summary.get("local_push_gate_receipt_origin_ahead_count_stale") is True
+            ),
+            "local_commits_not_pushed_for_remote_ci": (
+                release_gate_summary.get("local_commits_not_pushed_for_remote_ci") is True
+            ),
+            "remote_review_blocked_by_unpushed_local_commits": (
+                release_gate_summary.get("remote_review_blocked_by_unpushed_local_commits") is True
+            ),
+            "did_not_push": True,
+            "push_requires_explicit_user_confirmation": True,
+            "not_remote_ci_status": True,
+            "evidence_boundary": "unpushed_local_commits_cannot_have_matching_remote_actions_review",
+        },
+        {
+            "split_stage": "matching_remote_actions_review",
+            "remote_review_status": release_gate_summary.get("remote_review_status"),
+            "remote_actions_status_known": release_gate_summary.get("remote_actions_status_known") is True,
+            "latest_remote_run_verified_green": (
+                release_gate_summary.get("latest_remote_run_verified_green") is True
+            ),
+            "remote_ci_review_receipt_status": release_gate_summary.get("remote_ci_review_receipt_status"),
+            "remote_ci_review_receipt_run_id": release_gate_summary.get("remote_ci_review_receipt_run_id"),
+            "remote_ci_review_receipt_head_matches_current": (
+                release_gate_summary.get("remote_ci_review_receipt_head_matches_current") is True
+            ),
+            "github_api_called": False,
+            "external_calls_triggered": False,
+            "not_release_review": True,
+            "evidence_boundary": "manual_remote_ci_receipt_must_match_current_head_before_release_review",
+        },
+        {
+            "split_stage": "release_review_and_strict_closeout_boundary",
+            "release_review_status": release_gate_summary.get("release_review_status"),
+            "release_review_pending": release_gate_summary.get("release_review_pending") is True,
+            "release_gate_complete": False,
+            "strict_closeout_ready": False,
+            "can_close_from_observed_row": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "evidence_boundary": "remote_ci_green_still_requires_release_review_and_does_not_close_ltg",
+        },
+    ]
+
+
 def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str, Any]:
     source = ""
     source_packet_key = ""
@@ -11037,6 +11113,10 @@ def build_migration_status() -> dict[str, Any]:
         long_term_goal_summary,
         usable_path_strict_closeout_handoff_rows,
     )
+    release_gate_remote_review_split_summary = _latest_release_gate_direct_evidence_summary()
+    release_gate_remote_review_split_rows = _build_release_gate_remote_review_split_rows(
+        release_gate_remote_review_split_summary
+    )
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
     tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(
@@ -11090,6 +11170,9 @@ def build_migration_status() -> dict[str, Any]:
         "usable_path_strict_closeout_handoff_row_count": len(usable_path_strict_closeout_handoff_rows),
         "p6_direct_evidence_reentry_rows": p6_direct_evidence_reentry_rows,
         "p6_direct_evidence_reentry_row_count": len(p6_direct_evidence_reentry_rows),
+        "release_gate_remote_review_split_summary": release_gate_remote_review_split_summary,
+        "release_gate_remote_review_split_rows": release_gate_remote_review_split_rows,
+        "release_gate_remote_review_split_row_count": len(release_gate_remote_review_split_rows),
         "ltg_stage_scope_observed_rows": ltg_stage_scope_observed_rows,
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
         "tushare_deepseek_linkage_rows": tushare_deepseek_linkage_rows,
@@ -11138,6 +11221,7 @@ def build_migration_status() -> dict[str, Any]:
                 + len(usable_path_current_checkpoint_rows)
                 + len(usable_path_strict_closeout_handoff_rows)
                 + len(p6_direct_evidence_reentry_rows)
+                + len(release_gate_remote_review_split_rows)
                 + len(ltg_stage_scope_observed_rows)
                 + len(tushare_deepseek_linkage_rows)
                 + len(tushare_deepseek_mode_layer_rows)

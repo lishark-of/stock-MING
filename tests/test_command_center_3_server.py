@@ -23385,6 +23385,55 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
 
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        release_split = migration["release_gate_remote_review_split_summary"]
+        release_split_rows = {
+            row["split_stage"]: row for row in migration["release_gate_remote_review_split_rows"]
+        }
+        self.assertEqual(
+            release_split["schema_version"],
+            "migration_release_gate_direct_evidence_summary.v1",
+        )
+        self.assertEqual(release_split["status"], "release_gate_direct_evidence_visible_remote_ci_pending")
+        self.assertTrue(release_split["local_complete"])
+        self.assertTrue(release_split["fresh_local_gate_run_observed"])
+        self.assertTrue(release_split["local_push_gate_receipt_head_matches_current"])
+        self.assertEqual(release_split["local_push_gate_receipt_current_origin_ahead_count"], 2)
+        self.assertTrue(release_split["local_commits_not_pushed_for_remote_ci"])
+        self.assertTrue(release_split["remote_review_blocked_by_unpushed_local_commits"])
+        self.assertEqual(release_split["remote_review_status"], "remote_review_waiting_for_push")
+        self.assertFalse(release_split["remote_actions_status_known"])
+        self.assertFalse(release_split["latest_remote_run_verified_green"])
+        self.assertFalse(release_split["remote_ci_review_receipt_head_matches_current"])
+        self.assertFalse(release_split["release_gate_complete"])
+        self.assertFalse(release_split["github_api_called"])
+        self.assertFalse(release_split["external_calls_triggered"])
+        self.assertTrue(release_split["does_not_execute_trades"])
+        self.assertEqual(migration["release_gate_remote_review_split_row_count"], 4)
+        self.assertEqual(
+            set(release_split_rows),
+            {
+                "local_current_head_gate",
+                "push_boundary_for_remote_ci",
+                "matching_remote_actions_review",
+                "release_review_and_strict_closeout_boundary",
+            },
+        )
+        self.assertTrue(release_split_rows["local_current_head_gate"]["not_remote_ci_status"])
+        self.assertTrue(
+            release_split_rows["push_boundary_for_remote_ci"][
+                "remote_review_blocked_by_unpushed_local_commits"
+            ]
+        )
+        self.assertFalse(
+            release_split_rows["matching_remote_actions_review"][
+                "remote_ci_review_receipt_head_matches_current"
+            ]
+        )
+        self.assertFalse(
+            release_split_rows["release_review_and_strict_closeout_boundary"][
+                "can_close_from_observed_row"
+            ]
+        )
         ltg11 = observed_stage_rows["LTG-11"]
         self.assertEqual(ltg11["status"], "observed_release_gate_direct_evidence_remote_ci_pending")
         self.assertEqual(ltg11["row_count"], 8)
