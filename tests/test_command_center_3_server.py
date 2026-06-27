@@ -1841,15 +1841,33 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()
         original_remote_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        original_local_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
+        original_next_session_local_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH = (
             Path(temp_dir.name) / "release_gate" / "remote_ci_review_receipt.json"
         )
+        audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = (
+            Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
+        )
+        next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(
             setattr,
             audit_service,
             "REMOTE_CI_REVIEW_RECEIPT_PATH",
             original_remote_path,
+        )
+        self.addCleanup(
+            setattr,
+            audit_service,
+            "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH",
+            original_local_path,
+        )
+        self.addCleanup(
+            setattr,
+            next_session_service,
+            "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH",
+            original_next_session_local_path,
         )
 
     def _with_snapshot_cache(self, payload):
@@ -24882,15 +24900,33 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         temp_dir = tempfile.TemporaryDirectory()
         original_remote_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        original_local_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
+        original_next_session_local_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH = (
             Path(temp_dir.name) / "release_gate" / "remote_ci_review_receipt.json"
         )
+        audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = (
+            Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
+        )
+        next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(
             setattr,
             audit_service,
             "REMOTE_CI_REVIEW_RECEIPT_PATH",
             original_remote_path,
+        )
+        self.addCleanup(
+            setattr,
+            audit_service,
+            "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH",
+            original_local_path,
+        )
+        self.addCleanup(
+            setattr,
+            next_session_service,
+            "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH",
+            original_next_session_local_path,
         )
         self.client = TestClient(app)
 
@@ -53211,6 +53247,119 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["motion_durable_evidence_recipe_is_not_production_completion"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+
+    def test_remote_ci_review_receipt_recorder_writes_matching_green_without_release_completion(self):
+        self._with_meta_store()
+        self._with_release_gate_receipt_path()
+        current_head = audit_service._current_git_head_summary()
+        receipt_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        run_id = 123456789
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "record_remote_ci_review_receipt.py"
+        artifact_name = f"command-center-3-push-gate-evidence-{run_id}"
+        artifact_digest = "sha256:" + ("a" * 64)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--output",
+                str(receipt_path),
+                "--branch",
+                str(current_head["branch"]),
+                "--head",
+                str(current_head["head"]),
+                "--head-full",
+                str(current_head["head_full"]),
+                "--run-id",
+                str(run_id),
+                "--run-url",
+                f"https://github.com/lishark-of/stock-MING/actions/runs/{run_id}",
+                "--artifact-name",
+                artifact_name,
+                "--artifact-digest",
+                artifact_digest,
+                "--reviewed-at-utc",
+                "2026-06-27T20:19:58Z",
+                "--review-authorized",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["status"], "remote_ci_review_verified_green")
+        self.assertTrue(summary["remote_actions_status_known"])
+        self.assertTrue(summary["latest_remote_run_verified_green"])
+        self.assertFalse(summary["github_api_called"])
+        self.assertFalse(summary["external_calls_triggered"])
+        self.assertTrue(summary["does_not_execute_trades"])
+
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["schema_version"], audit_service.REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION)
+        self.assertEqual(payload["head_full"], current_head["head_full"])
+        self.assertEqual(payload["run_id"], run_id)
+        self.assertEqual(payload["artifact_name"], artifact_name)
+        self.assertEqual(payload["artifact_digest"], artifact_digest)
+        self.assertTrue(payload["explicit_user_actions_review_authorized"])
+        self.assertFalse(payload["cache_get_calls_github_api"])
+        self.assertFalse(payload["github_api_called"])
+        self.assertFalse(payload["external_calls_triggered"])
+        self.assertFalse(payload["tushare_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertTrue(payload["does_not_execute_trades"])
+        self.assertFalse(payload["release_gate_complete"])
+        self.assertFalse(payload["production_release_complete"])
+
+        script_source = script_path.read_text(encoding="utf-8")
+        self.assertNotIn("api.github.com", script_source)
+        self.assertNotIn("requests", script_source)
+        self.assertNotIn("httpx", script_source)
+        self.assertNotIn("curl", script_source)
+
+        packet = audit_service.read_call_ledger_audit_cache()
+        remote_receipt = packet["remote_ci_review_receipt"]
+        self.assertEqual(remote_receipt["status"], "remote_ci_review_verified_green")
+        self.assertTrue(remote_receipt["head_matches_current"])
+        self.assertTrue(remote_receipt["remote_actions_status_known"])
+        self.assertTrue(remote_receipt["latest_remote_run_verified_green"])
+        self.assertTrue(remote_receipt["remote_ci_review_ready"])
+        self.assertFalse(remote_receipt["release_review_complete"])
+        self.assertFalse(remote_receipt["release_gate_complete"])
+        self.assertEqual(remote_receipt["release_claim_decision"], "remote_ci_green_release_review_pending")
+        self.assertFalse(remote_receipt["github_api_called"])
+        self.assertFalse(remote_receipt["external_calls_triggered"])
+        self.assertTrue(remote_receipt["does_not_execute_trades"])
+
+        push_receipt = packet["release_gate_push_readiness_receipt"]
+        self.assertTrue(push_receipt["remote_actions_status_known"])
+        self.assertTrue(push_receipt["latest_remote_run_verified_green"])
+        self.assertFalse(push_receipt["fresh_local_gate_run_observed"])
+        self.assertNotIn("matching_remote_actions_run_status", push_receipt["missing_evidence_items"])
+        self.assertNotIn("latest_remote_run_green_evidence", push_receipt["missing_evidence_items"])
+        self.assertIn("fresh_local_push_gate_command_output", push_receipt["missing_evidence_items"])
+        self.assertIn("release_review_after_remote_ci_green", push_receipt["missing_evidence_items"])
+        self.assertEqual(push_receipt["release_claim_decision"], "remote_ci_green_release_review_pending")
+        self.assertFalse(push_receipt["github_api_called"])
+        self.assertFalse(push_receipt["external_calls_triggered"])
+        self.assertTrue(push_receipt["does_not_execute_trades"])
+
+        stage_rows = {row["stage_key"]: row for row in packet["release_gate_stage_scope_rows"]}
+        self.assertTrue(stage_rows["matching_remote_actions_status"]["stage_complete"])
+        self.assertFalse(stage_rows["fresh_local_gate_command_run"]["stage_complete"])
+        for row in stage_rows.values():
+            self.assertFalse(row["release_gate_complete"])
+            self.assertFalse(row["github_api_called"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertTrue(row["does_not_execute_trades"])
+
+        self.assertTrue(packet["counts"]["remote_ci_review_receipt_ready"])
+        self.assertTrue(packet["counts"]["remote_ci_review_receipt_remote_status_known"])
+        self.assertTrue(packet["counts"]["remote_ci_review_receipt_latest_green"])
+        self.assertTrue(packet["counts"]["push_readiness_remote_status_known"])
+        self.assertFalse(packet["counts"]["release_gate_complete"])
 
     def test_motion_browser_qa_review_task_is_button_gated_local_only(self):
         self._with_meta_store()
