@@ -43,6 +43,7 @@ NEXT_SESSION_LTG08_OBSERVED_STATUSES = {
 RELEASE_GATE_LTG11_OBSERVED_STATUSES = {
     "observed_in_audit_cache_release_gate_contract",
     "observed_release_gate_direct_evidence_remote_ci_pending",
+    "observed_release_gate_direct_evidence_remote_ci_reviewed_release_review_pending",
 }
 TRADE_ISOLATION_LTG12_OBSERVED_STATUSES = {
     "observed_in_trade_isolation_static_contract",
@@ -971,11 +972,21 @@ def assert_ltg11_release_gate_stage_scope(
     test_case.assertEqual(row["stage_scope_manifest"], "release_gate_stage_scope_manifest")
     test_case.assertIn(row["status"], RELEASE_GATE_LTG11_OBSERVED_STATUSES)
     test_case.assertEqual(row["row_count"], 8)
-    test_case.assertEqual(row["pending_stage_count"], 5 if direct_count else 6)
+    test_case.assertEqual(row["pending_stage_count"], max(6 - direct_count, 0))
     test_case.assertEqual(row["local_evidence_stage_count"], 8)
+    expected_direct_keys = []
     if direct_count:
+        expected_direct_keys.append("fresh_local_gate_command_run")
+    if direct_count >= 2:
+        expected_direct_keys.append("matching_remote_actions_status")
+    test_case.assertEqual(row["direct_evidence_stage_keys"], expected_direct_keys)
+    if direct_count >= 2:
+        test_case.assertEqual(
+            row["status"],
+            "observed_release_gate_direct_evidence_remote_ci_reviewed_release_review_pending",
+        )
+    elif direct_count:
         test_case.assertEqual(row["status"], "observed_release_gate_direct_evidence_remote_ci_pending")
-        test_case.assertEqual(row["direct_evidence_stage_keys"], ["fresh_local_gate_command_run"])
         test_case.assertEqual(row["release_gate_direct_evidence_layer"], "L3_local_release_gate_execution_evidence")
         test_case.assertTrue(row["fresh_local_gate_run_observed"])
         test_case.assertTrue(row["local_push_gate_receipt_head_matches_current"])
@@ -984,13 +995,47 @@ def assert_ltg11_release_gate_stage_scope(
     else:
         test_case.assertEqual(row["status"], "observed_in_audit_cache_release_gate_contract")
         test_case.assertFalse(row["fresh_local_gate_run_observed"])
+    test_case.assertEqual(row["local_complete"], direct_count > 0)
+    test_case.assertEqual(row["local_completion_status"], "local_complete" if direct_count else "local_evidence_pending")
+    test_case.assertEqual(row["local_blocker_count"], 0 if direct_count else row["pending_stage_count"])
+    test_case.assertTrue(row["remote_review_required_after_local_complete"])
+    test_case.assertEqual(row["remote_review_pending"], direct_count == 1)
+    test_case.assertEqual(
+        row["remote_review_status"],
+        "remote_review_green_release_review_pending"
+        if direct_count >= 2
+        else "remote_review_pending"
+        if direct_count == 1
+        else "remote_review_waiting_for_local_complete",
+    )
+    test_case.assertEqual(row["remote_review_pending_count"], 1 if direct_count == 1 else 0)
+    test_case.assertTrue(row["release_review_required_after_remote_green"])
+    test_case.assertEqual(row["release_review_pending"], direct_count >= 2)
+    test_case.assertEqual(
+        row["release_review_status"],
+        "release_review_pending"
+        if direct_count >= 2
+        else "release_review_waiting_for_remote_green"
+        if direct_count == 1
+        else "release_review_waiting_for_local_and_remote_complete",
+    )
+    test_case.assertEqual(row["release_review_pending_count"], 1 if direct_count >= 2 else 0)
+    test_case.assertFalse(row["strict_closeout_ready"])
+    test_case.assertIn("fresh local gate run for current HEAD", row["missing_evidence_items"])
+    test_case.assertIn("matching remote Actions status for current HEAD", row["missing_evidence_items"])
+    test_case.assertIn("release review after matching remote CI green", row["missing_evidence_items"])
     test_case.assertTrue(row["local_gate_ready"])
     test_case.assertTrue(row["ci_mirror_ready"])
     test_case.assertTrue(row["push_readiness_receipt_ready"])
     test_case.assertTrue(row["ready_for_explicit_push_sequence"])
     test_case.assertFalse(row["release_gate_complete"])
-    test_case.assertFalse(row["remote_actions_status_known"])
-    test_case.assertFalse(row["latest_remote_run_verified_green"])
+    if direct_count >= 2:
+        test_case.assertTrue(row["remote_actions_status_known"])
+        test_case.assertTrue(row["latest_remote_run_verified_green"])
+    else:
+        test_case.assertFalse(row["latest_remote_run_verified_green"])
+        if direct_count == 0:
+            test_case.assertFalse(row["remote_actions_status_known"])
     test_case.assertFalse(row["failure_email_has_matching_head_and_logs"])
     test_case.assertFalse(row["can_dismiss_failure_email_without_matching_head_and_logs"])
     test_case.assertFalse(row["periodic_allowlist_review_ready"])
@@ -1018,9 +1063,42 @@ def assert_ltg11_migration_goal_stage_scope(
     if expected_direct_count is not None:
         test_case.assertEqual(direct_count, expected_direct_count)
     test_case.assertIn(row["observed_stage_scope_manifest_status"], RELEASE_GATE_LTG11_OBSERVED_STATUSES)
-    test_case.assertEqual(row["observed_stage_scope_pending_count"], 5 if direct_count else 6)
+    test_case.assertEqual(row["observed_stage_scope_pending_count"], max(6 - direct_count, 0))
+    expected_direct_keys = []
     if direct_count:
-        test_case.assertEqual(row["observed_stage_scope_direct_evidence_keys"], ["fresh_local_gate_command_run"])
+        expected_direct_keys.append("fresh_local_gate_command_run")
+    if direct_count >= 2:
+        expected_direct_keys.append("matching_remote_actions_status")
+    test_case.assertEqual(row["observed_stage_scope_direct_evidence_keys"], expected_direct_keys)
+    test_case.assertEqual(row["observed_local_complete"], direct_count > 0)
+    test_case.assertEqual(
+        row["observed_local_completion_status"],
+        "local_complete" if direct_count else "local_evidence_pending",
+    )
+    test_case.assertEqual(row["observed_local_blocker_count"], 0 if direct_count else row["observed_stage_scope_pending_count"])
+    test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
+    test_case.assertEqual(row["observed_remote_review_pending"], direct_count == 1)
+    test_case.assertEqual(
+        row["observed_remote_review_status"],
+        "remote_review_green_release_review_pending"
+        if direct_count >= 2
+        else "remote_review_pending"
+        if direct_count == 1
+        else "remote_review_waiting_for_local_complete",
+    )
+    test_case.assertTrue(row["observed_release_review_required_after_remote_green"])
+    test_case.assertEqual(row["observed_release_review_pending"], direct_count >= 2)
+    test_case.assertEqual(
+        row["observed_release_review_status"],
+        "release_review_pending"
+        if direct_count >= 2
+        else "release_review_waiting_for_remote_green"
+        if direct_count == 1
+        else "release_review_waiting_for_local_and_remote_complete",
+    )
+    test_case.assertFalse(row["observed_strict_closeout_ready"])
+    test_case.assertIn("fresh local gate run for current HEAD", row["observed_missing_evidence_items"])
+    test_case.assertIn("release review after matching remote CI green", row["observed_missing_evidence_items"])
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 

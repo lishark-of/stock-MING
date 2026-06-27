@@ -3164,6 +3164,13 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     local_complete = fresh_gate_run_done
     remote_review_pending = bool(local_complete and not latest_remote_run_verified_green)
     release_review_pending = bool(local_complete and latest_remote_run_verified_green)
+    release_review_status = (
+        "release_review_pending"
+        if release_review_pending
+        else "release_review_waiting_for_remote_green"
+        if remote_review_pending
+        else "release_review_waiting_for_local_and_remote_complete"
+    )
     return {
         "schema_version": "migration_release_gate_direct_evidence_summary.v1",
         "source_packet_key": "local_push_gate_run_receipt+remote_ci_review_receipt",
@@ -3172,6 +3179,7 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "local_complete": local_complete,
         "local_completion_status": "local_complete" if local_complete else "local_evidence_pending",
         "remote_review_pending": remote_review_pending,
+        "remote_review_required_after_local_complete": True,
         "remote_review_status": (
             "remote_review_pending"
             if remote_review_pending
@@ -3179,8 +3187,19 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
             if local_complete and latest_remote_run_verified_green
             else "remote_review_waiting_for_local_complete"
         ),
+        "remote_review_pending_count": 1 if remote_review_pending else 0,
         "release_review_pending": release_review_pending,
+        "release_review_required_after_remote_green": True,
+        "release_review_status": release_review_status,
+        "release_review_pending_count": 1 if release_review_pending else 0,
         "strict_closeout_ready": False,
+        "missing_evidence_items": [
+            "fresh local gate run for current HEAD",
+            "matching remote Actions status for current HEAD",
+            "latest green remote run evidence",
+            "periodic allowlist review evidence",
+            "release review after matching remote CI green",
+        ],
         "available": bool(direct_stage_keys),
         "direct_evidence_stage_keys": direct_stage_keys,
         "direct_evidence_stage_count": len(direct_stage_keys),
@@ -8920,7 +8939,13 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "goal": "测试 / CI / smoke / 安全扫描标准化",
                 "stage_scope_manifest": "release_gate_stage_scope_manifest",
                 "status": (
-                    "observed_release_gate_direct_evidence_remote_ci_pending"
+                    "observed_release_gate_direct_evidence_remote_ci_reviewed_release_review_pending"
+                    if (
+                        stage_rows
+                        and str(direct_evidence.get("status") or "")
+                        == "release_gate_direct_evidence_visible_remote_ci_reviewed_release_review_pending"
+                    )
+                    else "observed_release_gate_direct_evidence_remote_ci_pending"
                     if stage_rows and direct_evidence_count
                     else (
                         "observed_in_audit_cache_release_gate_contract"
@@ -8948,6 +8973,13 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     if direct_evidence.get("local_complete") is True
                     else "local_evidence_pending"
                 ),
+                "local_blocker_count": 0
+                if direct_evidence.get("local_complete") is True
+                else pending_count,
+                "remote_review_required_after_local_complete": direct_evidence.get(
+                    "remote_review_required_after_local_complete"
+                )
+                is True,
                 "remote_review_pending": direct_evidence.get("remote_review_pending") is True,
                 "remote_review_status": direct_evidence.get("remote_review_status")
                 or (
@@ -8955,8 +8987,32 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     if direct_evidence.get("remote_review_pending") is True
                     else "remote_review_waiting_for_local_complete"
                 ),
+                "remote_review_pending_count": int(direct_evidence.get("remote_review_pending_count") or 0),
+                "release_review_required_after_remote_green": direct_evidence.get(
+                    "release_review_required_after_remote_green"
+                )
+                is True,
                 "release_review_pending": direct_evidence.get("release_review_pending") is True,
+                "release_review_status": direct_evidence.get("release_review_status")
+                or (
+                    "release_review_pending"
+                    if direct_evidence.get("release_review_pending") is True
+                    else "release_review_waiting_for_remote_green"
+                    if direct_evidence.get("remote_review_pending") is True
+                    else "release_review_waiting_for_local_and_remote_complete"
+                ),
+                "release_review_pending_count": int(
+                    direct_evidence.get("release_review_pending_count") or 0
+                ),
                 "strict_closeout_ready": direct_evidence.get("strict_closeout_ready") is True,
+                "missing_evidence_items": direct_evidence.get("missing_evidence_items")
+                or [
+                    "fresh local gate run for current HEAD",
+                    "matching remote Actions status for current HEAD",
+                    "latest green remote run evidence",
+                    "periodic allowlist review evidence",
+                    "release review after matching remote CI green",
+                ],
                 "local_gate_ready": release_gate.get("local_gate_ready") is True,
                 "ci_mirror_ready": release_gate.get("ci_mirror_ready") is True,
                 "push_readiness_receipt_ready": push_receipt.get("local_receipt_ready") is True,
@@ -9008,8 +9064,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_push_gate_check_count": int(direct_evidence.get("local_push_gate_check_count") or 0),
                 "required_local_gate_checks_present": direct_evidence.get("required_local_gate_checks_present")
                 is True,
-                "remote_actions_status_known": False,
-                "latest_remote_run_verified_green": False,
+                "remote_actions_status_known": direct_evidence.get("remote_actions_status_known") is True,
+                "latest_remote_run_verified_green": direct_evidence.get("latest_remote_run_verified_green")
+                is True,
                 "failure_email_has_matching_head_and_logs": False,
                 "can_dismiss_failure_email_without_matching_head_and_logs": False,
                 "periodic_allowlist_review_ready": False,
