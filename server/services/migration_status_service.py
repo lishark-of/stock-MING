@@ -3837,15 +3837,18 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
             ci_triage_contract, _ = audit_service._ci_notification_triage_contract(release_gate, workflow_rows)
             ci_triage_contract = ci_triage_contract if isinstance(ci_triage_contract, dict) else {}
             local_gate_run_receipt = audit_service._read_local_push_gate_run_receipt()
+            remote_ci_review_receipt = audit_service._read_remote_ci_review_receipt()
             push_receipt, _ = audit_service._release_gate_push_readiness_receipt(
                 release_gate,
                 ci_triage_contract,
                 local_gate_run_receipt,
+                remote_ci_review_receipt,
             )
             packet = {
                 "release_gate_readiness_audit": release_gate,
                 "ci_notification_triage_contract": ci_triage_contract,
                 "local_push_gate_run_receipt": local_gate_run_receipt,
+                "remote_ci_review_receipt": remote_ci_review_receipt,
                 "release_gate_push_readiness_receipt": push_receipt if isinstance(push_receipt, dict) else {},
             }
         except Exception:
@@ -7147,22 +7150,37 @@ def _build_ltg_next_action_submission_preview_rows(
                 local_step_rows, "release_gate_push_readiness_receipt"
             )
             push_status = str(push_step.get("receipt_status") or "")
-            fresh_local_gate_seen = "local_gate_passed" in push_status
+            remote_ci_reviewed = "remote_ci_reviewed" in push_status
+            fresh_local_gate_seen = "local_gate_passed" in push_status or remote_ci_reviewed
+            try:
+                from server.services import audit_service
+
+                worktree_audit, _ = audit_service._local_worktree_cleanliness_audit()
+                worktree_clean = worktree_audit.get("worktree_clean") is True
+            except Exception:
+                worktree_clean = True
+            worktree_blocks_release_review = fresh_local_gate_seen and not worktree_clean
             return _disabled_handoff_preview(
                 step_kind="manual_release_gate_and_remote_ci_review",
                 disabled_reason=(
-                    "remote_ci_review_required_after_fresh_local_gate"
+                    "clean_worktree_required_before_release_review_after_remote_ci_green"
+                    if remote_ci_reviewed and worktree_blocks_release_review
+                    else "release_review_pending_after_remote_ci_green"
+                    if remote_ci_reviewed
+                    else "clean_worktree_required_before_remote_ci_review_after_fresh_local_gate"
+                    if worktree_blocks_release_review
+                    else "remote_ci_review_required_after_fresh_local_gate"
                     if fresh_local_gate_seen
                     else "fresh_local_push_gate_required_before_remote_ci_review"
                 ),
                 safe_payload_summary=(
-                    "run scripts/push_gate_3_0.sh, then push only with explicit user confirmation "
-                    "and review matching remote CI outside cache/render paths"
+                    "run scripts/push_gate_3_0.sh from a clean worktree, then push only with explicit "
+                    "user confirmation and review matching remote CI outside cache/render paths"
                 ),
                 required_prior_phase_key="release_gate_push_readiness_receipt",
-                required_prior_material="fresh_local_gate_run_observed",
+                required_prior_material="clean_worktree_and_fresh_local_gate_run_observed",
                 required_prior_receipt_visible=push_step.get("receipt_visible") is True,
-                required_prior_material_visible=fresh_local_gate_seen,
+                required_prior_material_visible=fresh_local_gate_seen and not worktree_blocks_release_review,
                 requires_remote_ci_review=True,
             )
         if next_local_step == "separate approved real-trading integration project only":
@@ -10738,10 +10756,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         ci_triage_contract, _ = audit_service._ci_notification_triage_contract(release_gate, workflow_rows)
         ci_triage_contract = ci_triage_contract if isinstance(ci_triage_contract, dict) else {}
         local_gate_run_receipt = audit_service._read_local_push_gate_run_receipt()
+        remote_ci_review_receipt = audit_service._read_remote_ci_review_receipt()
         push_receipt, _ = audit_service._release_gate_push_readiness_receipt(
             release_gate,
             ci_triage_contract,
             local_gate_run_receipt,
+            remote_ci_review_receipt,
         )
         push_receipt = push_receipt if isinstance(push_receipt, dict) else {}
         stage_rows = audit_service._release_gate_stage_scope_rows(
@@ -10749,6 +10769,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             push_receipt,
             ci_triage_contract,
             local_gate_run_receipt,
+            remote_ci_review_receipt,
         )
         stage_rows = stage_rows if isinstance(stage_rows, list) else []
         direct_evidence = _latest_release_gate_direct_evidence_summary()

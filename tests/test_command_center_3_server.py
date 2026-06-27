@@ -2363,6 +2363,58 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("?token=", desktop_dump)
         self.assertNotIn("#secret", desktop_dump)
 
+    def test_p0_remote_ci_green_preview_still_requires_clean_worktree_for_release_review(self):
+        original_worktree_audit = audit_service._local_worktree_cleanliness_audit
+
+        def dirty_worktree_audit():
+            return (
+                {
+                    "schema_version": "local_worktree_cleanliness_audit.v1",
+                    "status": "local_worktree_dirty",
+                    "worktree_clean": False,
+                    "dirty_file_count": 1,
+                    "blocks_local_push_gate_receipt": True,
+                },
+                [],
+            )
+
+        audit_service._local_worktree_cleanliness_audit = dirty_worktree_audit
+        try:
+            preview_rows = migration_status_service._build_ltg_next_action_submission_preview_rows(
+                "fresh local push gate plus remote CI verification",
+                [
+                    {
+                        "phase_key": "release_gate_push_readiness_receipt",
+                        "receipt_status": (
+                            "push_readiness_receipt_ready_remote_ci_reviewed_release_review_pending"
+                        ),
+                        "receipt_visible": True,
+                    }
+                ],
+            )
+        finally:
+            audit_service._local_worktree_cleanliness_audit = original_worktree_audit
+
+        self.assertEqual(len(preview_rows), 1)
+        preview = preview_rows[0]
+        self.assertEqual(preview["step_kind"], "manual_release_gate_and_remote_ci_review")
+        self.assertFalse(preview["ready_for_clean_local_receipt"])
+        self.assertEqual(
+            preview["disabled_reason"],
+            "clean_worktree_required_before_release_review_after_remote_ci_green",
+        )
+        self.assertEqual(
+            preview["required_prior_material"],
+            "clean_worktree_and_fresh_local_gate_run_observed",
+        )
+        self.assertTrue(preview["required_prior_receipt_visible"])
+        self.assertFalse(preview["required_prior_material_visible"])
+        self.assertTrue(preview["requires_remote_ci_review"])
+        self.assertFalse(preview["external_calls_triggered"])
+        self.assertFalse(preview["github_called"])
+        self.assertTrue(preview["does_not_execute_trades"])
+        self.assertFalse(preview["can_close_goal"])
+
     def test_cache_builders_do_not_call_external_sources(self):
         self._with_meta_store()
         self._with_release_gate_receipt_path()
@@ -3004,6 +3056,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             {
                 "fresh_local_push_gate_required_before_remote_ci_review",
                 "remote_ci_review_required_after_fresh_local_gate",
+                "release_review_pending_after_remote_ci_green",
+                "clean_worktree_required_before_remote_ci_review_after_fresh_local_gate",
+                "clean_worktree_required_before_release_review_after_remote_ci_green",
             },
         )
         self.assertTrue(p0_preview["requires_remote_ci_review"])
