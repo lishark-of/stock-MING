@@ -5383,6 +5383,197 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
     }
 
 
+def _latest_worker_runtime_qa_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import worker_service
+
+        packet = worker_service.read_worker_runtime_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    dependency = _latest_worker_runtime_dependency_preflight_preview()
+    direct_evidence = _latest_worker_direct_runtime_evidence_summary()
+    plan = _dict_or_empty(packet_map.get("worker_production_evidence_plan_receipt"))
+    recipe = _dict_or_empty(packet_map.get("worker_runtime_qa_execution_recipe"))
+    request = _dict_or_empty(packet_map.get("worker_runtime_qa_execution_request_receipt"))
+    dry_run = _dict_or_empty(packet_map.get("worker_runtime_qa_dry_run_receipt"))
+    execution = _dict_or_empty(packet_map.get("worker_runtime_qa_execution_receipt"))
+    durable_recipe = _dict_or_empty(packet_map.get("worker_runtime_durable_evidence_recipe"))
+    promotion = _dict_or_empty(packet_map.get("worker_production_promotion_review_receipt"))
+
+    plan_ready = bool(
+        plan.get("evidence_plan_ready") is True
+        and plan.get("production_worker_complete") is False
+        and plan.get("external_calls_triggered") is False
+        and plan.get("tushare_called") is False
+        and plan.get("deepseek_called") is False
+        and plan.get("github_called") is False
+        and plan.get("does_not_execute_trades") is True
+        and plan.get("does_not_modify_strategy_action") is True
+        and plan.get("contains_secret") is False
+    )
+    recipe_ready = bool(
+        recipe.get("local_recipe_ready") is True
+        and recipe.get("production_worker_complete") is False
+        and recipe.get("worker_started") is False
+        and recipe.get("redis_pinged") is False
+        and recipe.get("scheduler_started") is False
+        and recipe.get("task_dispatched") is False
+        and recipe.get("provider_model_task_dispatched") is False
+        and recipe.get("external_calls_triggered") is False
+        and recipe.get("tushare_called") is False
+        and recipe.get("deepseek_called") is False
+        and recipe.get("github_called") is False
+        and recipe.get("does_not_execute_trades") is True
+        and recipe.get("does_not_modify_strategy_action") is True
+        and recipe.get("contains_secret") is False
+    )
+    request_ready = direct_evidence.get("runtime_qa_execution_request_ready") is True
+    dry_run_ready = direct_evidence.get("runtime_qa_dry_run_ready") is True
+    execution_done = direct_evidence.get("runtime_qa_execution_done") is True
+    promotion_ready = direct_evidence.get("production_promotion_review_ready") is True
+    durable_recipe_ready = bool(
+        durable_recipe.get("local_recipe_ready") is True
+        and durable_recipe.get("production_worker_complete") is False
+        and durable_recipe.get("worker_started") is False
+        and durable_recipe.get("redis_pinged") is False
+        and durable_recipe.get("scheduler_started") is False
+        and durable_recipe.get("task_dispatched") is False
+        and durable_recipe.get("provider_model_task_dispatched") is False
+        and durable_recipe.get("external_calls_triggered") is False
+        and durable_recipe.get("tushare_called") is False
+        and durable_recipe.get("deepseek_called") is False
+        and durable_recipe.get("github_called") is False
+        and durable_recipe.get("does_not_execute_trades") is True
+        and durable_recipe.get("does_not_modify_strategy_action") is True
+        and durable_recipe.get("contains_secret") is False
+    )
+    production_worker_complete = bool(
+        direct_evidence.get("production_worker_complete") is True
+        or durable_recipe.get("production_worker_complete") is True
+        or promotion.get("production_worker_complete") is True
+    )
+    if production_worker_complete:
+        status = "worker_runtime_qa_handoff_claim_rejected_production_completion_requires_review"
+        next_local_step = "re-audit worker production completion evidence"
+    elif promotion_ready:
+        status = "worker_runtime_qa_promotion_review_visible_production_closeout_pending"
+        next_local_step = "future worker production closeout review after remote CI and release review"
+    elif execution_done:
+        status = "worker_runtime_qa_local_execution_visible_promotion_review_needed"
+        next_local_step = "POST /api/worker/production-promotion-review"
+    elif dry_run_ready:
+        status = "worker_runtime_qa_dry_run_ready_execution_needed"
+        next_local_step = "POST /api/worker/runtime-qa-execution"
+    elif request_ready:
+        status = "worker_runtime_qa_execution_request_ready_dry_run_needed"
+        next_local_step = "POST /api/worker/runtime-qa-dry-run"
+    elif plan_ready and recipe_ready:
+        status = "worker_runtime_qa_recipe_ready_execution_request_needed"
+        next_local_step = "POST /api/worker/runtime-qa-execution-request"
+    else:
+        status = "worker_runtime_qa_preflight_needed"
+        next_local_step = "POST /api/worker/synthetic-healthcheck"
+
+    runtime_scope_hash = str(
+        execution.get("runtime_qa_scope_hash")
+        or dry_run.get("runtime_qa_scope_hash")
+        or request.get("runtime_qa_scope_hash")
+        or recipe.get("runtime_qa_scope_hash")
+        or ""
+    )
+    runtime_scope_hash_short = str(
+        execution.get("runtime_qa_scope_hash_short")
+        or dry_run.get("runtime_qa_scope_hash_short")
+        or request.get("runtime_qa_scope_hash_short")
+        or recipe.get("runtime_qa_scope_hash_short")
+        or runtime_scope_hash[:12]
+    )
+    return {
+        "schema_version": "ltg06_worker_runtime_qa_handoff_summary.v1",
+        "source_packet_key": "command_center_3_worker_runtime_cache",
+        "source_execution_request_packet_key": "command_center_3_worker_runtime_qa_execution_request_packet",
+        "source_dry_run_packet_key": "command_center_3_worker_runtime_qa_dry_run_packet",
+        "source_execution_packet_key": "command_center_3_worker_runtime_qa_execution_packet",
+        "status": status,
+        "dependency_preflight_status": str(dependency.get("preflight_status") or "missing"),
+        "evidence_plan_status": str(plan.get("status") or "missing"),
+        "execution_recipe_status": str(recipe.get("status") or "missing"),
+        "execution_request_status": str(request.get("status") or "missing"),
+        "dry_run_status": str(dry_run.get("status") or "missing"),
+        "runtime_execution_status": str(execution.get("status") or "missing"),
+        "durable_recipe_status": str(durable_recipe.get("status") or "missing"),
+        "production_promotion_review_status": str(promotion.get("status") or "missing"),
+        "direct_evidence_status": str(direct_evidence.get("status") or ""),
+        "direct_evidence_layer": str(direct_evidence.get("direct_evidence_layer") or ""),
+        "direct_evidence_stage_count": int(direct_evidence.get("direct_evidence_stage_count") or 0),
+        "dependency_preflight_visible": dependency.get("preflight_visible") is True,
+        "local_non_redis_runtime_ready": dependency.get("local_non_redis_runtime_evidence_ready") is True,
+        "redis_manual_resolution_required": dependency.get("redis_manual_resolution_required") is True,
+        "redis_manual_resolution_blockers": dependency.get("redis_manual_resolution_blockers") or [],
+        "evidence_plan_ready": plan_ready,
+        "runtime_qa_execution_recipe_ready": recipe_ready,
+        "runtime_qa_execution_request_ready": request_ready,
+        "runtime_qa_dry_run_ready": dry_run_ready,
+        "runtime_qa_execution_done": execution_done,
+        "production_promotion_review_ready": promotion_ready,
+        "durable_recipe_ready": durable_recipe_ready,
+        "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
+        "durable_promotion_ready": durable_recipe.get("durable_promotion_ready") is True,
+        "celery_process_evidence_verified": direct_evidence.get("celery_process_evidence_verified") is True,
+        "redis_broker_evidence_verified": direct_evidence.get("redis_broker_evidence_verified") is True,
+        "local_fallback_round_trip_verified": direct_evidence.get("local_fallback_round_trip_verified") is True,
+        "cross_process_task_control_verified": direct_evidence.get("cross_process_task_control_verified") is True,
+        "append_only_worker_log_verified": direct_evidence.get("append_only_worker_log_verified") is True,
+        "scheduler_default_off_runtime_verified": (
+            direct_evidence.get("scheduler_default_off_runtime_verified") is True
+        ),
+        "provider_model_no_autoschedule_boundary_verified": (
+            direct_evidence.get("provider_model_no_autoschedule_boundary_verified") is True
+        ),
+        "no_trade_no_action_boundary_verified": direct_evidence.get("no_trade_no_action_boundary_verified") is True,
+        "runtime_qa_scope_hash_short": runtime_scope_hash_short,
+        "runtime_qa_execution_task_id": str(execution.get("execution_task_id") or ""),
+        "production_promotion_review_task_id": str(promotion.get("review_task_id") or ""),
+        "target_worker_task_route": str(
+            request.get("target_worker_task_route") or "future POST /api/worker/runtime-qa-execution"
+        ),
+        "target_worker_task_type": str(request.get("target_worker_task_type") or "run_worker_runtime_qa_execution"),
+        "target_acceptance_mode": "worker_runtime_qa_and_promotion",
+        "next_local_step": next_local_step,
+        "missing_durable_evidence_after_promotion_review": list(
+            direct_evidence.get("missing_durable_evidence_after_promotion_review") or []
+        ),
+        "requires_production_worker_closeout": True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "local_runtime_qa_task_created": execution.get("runtime_qa_task_created") is True,
+        "local_runtime_qa_task_executed": execution.get("runtime_qa_task_executed") is True,
+        "runtime_qa_execution_implemented": execution.get("runtime_qa_execution_implemented") is True,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "cache_get_creates_task": False,
+        "cache_get_starts_worker": False,
+        "cache_get_pings_redis": False,
+        "cache_get_dispatches_task": False,
+        "cache_get_calls_provider": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_worker_complete": False,
+        "evidence_boundary": "ltg06_worker_handoff_reads_local_runtime_receipts_not_production_worker_closeout",
+    }
+
+
 def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import next_session_service
@@ -7625,6 +7816,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_factor_test_lab_provider_validation_handoff: dict[str, Any] = {}
         supporting_factor_universe_worker_batch_handoff: dict[str, Any] = {}
         supporting_storage_physical_execution_handoff: dict[str, Any] = {}
+        supporting_worker_runtime_qa_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -7669,6 +7861,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             safe_context["worker_runtime_dependency_preflight_preview"] = (
                 _latest_worker_runtime_dependency_preflight_preview()
             )
+            supporting_worker_runtime_qa_handoff = _latest_worker_runtime_qa_handoff_summary()
         submission_preview_rows = _build_ltg_next_action_submission_preview_rows(
             next_local_step,
             local_step_rows,
@@ -7867,6 +8060,19 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "supporting_storage_physical_execution_creates_task_from_get": (
                     supporting_storage_physical_execution_handoff.get("cache_get_creates_task")
                     is True
+                ),
+                "supporting_worker_runtime_qa_handoff": supporting_worker_runtime_qa_handoff,
+                "supporting_worker_runtime_qa_next_local_step": (
+                    supporting_worker_runtime_qa_handoff.get("next_local_step", "")
+                ),
+                "supporting_worker_runtime_qa_execution_done": (
+                    supporting_worker_runtime_qa_handoff.get("runtime_qa_execution_done") is True
+                ),
+                "supporting_worker_runtime_qa_promotion_review_ready": (
+                    supporting_worker_runtime_qa_handoff.get("production_promotion_review_ready") is True
+                ),
+                "supporting_worker_runtime_qa_creates_task_from_get": (
+                    supporting_worker_runtime_qa_handoff.get("cache_get_creates_task") is True
                 ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
                 "local_receipt_lookup_creates_task": False,

@@ -51760,6 +51760,53 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg06["production_worker_complete"])
         self.assertFalse(ltg06["can_close_from_observed_row"])
         assert_ltg06_worker_stage_scope(self, ltg06, expected_direct_count=expected_direct_count)
+        handoff = worker_action["supporting_worker_runtime_qa_handoff"]
+        self.assertEqual(handoff["schema_version"], "ltg06_worker_runtime_qa_handoff_summary.v1")
+        self.assertEqual(
+            handoff["status"],
+            "worker_runtime_qa_promotion_review_visible_production_closeout_pending",
+        )
+        self.assertEqual(handoff["direct_evidence_stage_count"], expected_direct_count)
+        self.assertTrue(handoff["runtime_qa_execution_request_ready"])
+        self.assertTrue(handoff["runtime_qa_dry_run_ready"])
+        self.assertTrue(handoff["runtime_qa_execution_done"])
+        self.assertTrue(handoff["production_promotion_review_ready"])
+        self.assertTrue(handoff["durable_recipe_ready"])
+        self.assertFalse(handoff["durable_evidence_complete"])
+        self.assertTrue(handoff["requires_production_worker_closeout"])
+        self.assertTrue(handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(handoff["requires_release_review_after_remote_green"])
+        self.assertEqual(handoff["target_worker_task_route"], "future POST /api/worker/runtime-qa-execution")
+        self.assertEqual(handoff["target_worker_task_type"], "run_worker_runtime_qa_execution")
+        self.assertEqual(handoff["target_acceptance_mode"], "worker_runtime_qa_and_promotion")
+        self.assertEqual(
+            handoff["next_local_step"],
+            "future worker production closeout review after remote CI and release review",
+        )
+        self.assertFalse(handoff["worker_started"])
+        self.assertFalse(handoff["celery_worker_started"])
+        self.assertFalse(handoff["redis_pinged"])
+        self.assertFalse(handoff["scheduler_started"])
+        self.assertFalse(handoff["task_dispatched"])
+        self.assertFalse(handoff["provider_model_task_dispatched"])
+        self.assertFalse(handoff["cache_get_creates_task"])
+        self.assertFalse(handoff["cache_get_starts_worker"])
+        self.assertFalse(handoff["cache_get_pings_redis"])
+        self.assertFalse(handoff["cache_get_dispatches_task"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["tushare_called"])
+        self.assertFalse(handoff["deepseek_called"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertFalse(handoff["production_worker_complete"])
+        self.assertFalse(handoff["can_close_goal"])
+        self.assertEqual(
+            handoff["evidence_boundary"],
+            "ltg06_worker_handoff_reads_local_runtime_receipts_not_production_worker_closeout",
+        )
+        self.assertTrue(worker_action["supporting_worker_runtime_qa_execution_done"])
+        self.assertTrue(worker_action["supporting_worker_runtime_qa_promotion_review_ready"])
+        self.assertFalse(worker_action["supporting_worker_runtime_qa_creates_task_from_get"])
 
     def test_ltg_stage_scope_observes_worker_runtime_direct_evidence_without_completion(self):
         self._with_meta_store()

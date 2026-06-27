@@ -706,6 +706,75 @@ export default function MigrationStatus() {
         evidence_boundary: handoff.evidence_boundary
       }];
     });
+  const ltgWorkerRuntimeQaHandoffRows = ltgNextAcceptanceActionRows
+    .flatMap((row) => {
+      const handoff = (row.supporting_worker_runtime_qa_handoff as Record<string, unknown> | undefined) ?? {};
+      if (!Object.keys(handoff).length) {
+        return [];
+      }
+      return [{
+        queue_id: row.queue_id,
+        priority: row.priority,
+        status: handoff.status,
+        direct_evidence_status: handoff.direct_evidence_status,
+        direct_evidence_layer: handoff.direct_evidence_layer,
+        direct_evidence_stage_count: handoff.direct_evidence_stage_count,
+        dependency_preflight_status: handoff.dependency_preflight_status,
+        evidence_plan_status: handoff.evidence_plan_status,
+        execution_recipe_status: handoff.execution_recipe_status,
+        execution_request_status: handoff.execution_request_status,
+        dry_run_status: handoff.dry_run_status,
+        runtime_execution_status: handoff.runtime_execution_status,
+        durable_recipe_status: handoff.durable_recipe_status,
+        production_promotion_review_status: handoff.production_promotion_review_status,
+        local_non_redis_runtime_ready: handoff.local_non_redis_runtime_ready,
+        redis_manual_resolution_required: handoff.redis_manual_resolution_required,
+        evidence_plan_ready: handoff.evidence_plan_ready,
+        runtime_qa_execution_recipe_ready: handoff.runtime_qa_execution_recipe_ready,
+        runtime_qa_execution_request_ready: handoff.runtime_qa_execution_request_ready,
+        runtime_qa_dry_run_ready: handoff.runtime_qa_dry_run_ready,
+        runtime_qa_execution_done: handoff.runtime_qa_execution_done,
+        production_promotion_review_ready: handoff.production_promotion_review_ready,
+        durable_recipe_ready: handoff.durable_recipe_ready,
+        durable_evidence_complete: handoff.durable_evidence_complete,
+        celery_process_evidence_verified: handoff.celery_process_evidence_verified,
+        redis_broker_evidence_verified: handoff.redis_broker_evidence_verified,
+        local_fallback_round_trip_verified: handoff.local_fallback_round_trip_verified,
+        cross_process_task_control_verified: handoff.cross_process_task_control_verified,
+        append_only_worker_log_verified: handoff.append_only_worker_log_verified,
+        scheduler_default_off_runtime_verified: handoff.scheduler_default_off_runtime_verified,
+        provider_model_no_autoschedule_boundary_verified: handoff.provider_model_no_autoschedule_boundary_verified,
+        no_trade_no_action_boundary_verified: handoff.no_trade_no_action_boundary_verified,
+        runtime_qa_scope_hash_short: handoff.runtime_qa_scope_hash_short,
+        target_worker_task_route: handoff.target_worker_task_route,
+        target_worker_task_type: handoff.target_worker_task_type,
+        target_acceptance_mode: handoff.target_acceptance_mode,
+        next_local_step: handoff.next_local_step,
+        requires_production_worker_closeout: handoff.requires_production_worker_closeout,
+        requires_remote_ci_review_after_local_complete: handoff.requires_remote_ci_review_after_local_complete,
+        local_runtime_qa_task_created: handoff.local_runtime_qa_task_created,
+        local_runtime_qa_task_executed: handoff.local_runtime_qa_task_executed,
+        runtime_qa_execution_implemented: handoff.runtime_qa_execution_implemented,
+        worker_started: handoff.worker_started,
+        celery_worker_started: handoff.celery_worker_started,
+        redis_pinged: handoff.redis_pinged,
+        scheduler_started: handoff.scheduler_started,
+        task_dispatched: handoff.task_dispatched,
+        provider_model_task_dispatched: handoff.provider_model_task_dispatched,
+        cache_get_creates_task: handoff.cache_get_creates_task,
+        cache_get_starts_worker: handoff.cache_get_starts_worker,
+        cache_get_pings_redis: handoff.cache_get_pings_redis,
+        cache_get_dispatches_task: handoff.cache_get_dispatches_task,
+        external_calls_triggered: handoff.external_calls_triggered,
+        tushare_called: handoff.tushare_called,
+        deepseek_called: handoff.deepseek_called,
+        github_called: handoff.github_called,
+        does_not_execute_trades: handoff.does_not_execute_trades,
+        production_worker_complete: handoff.production_worker_complete,
+        can_close_goal: handoff.can_close_goal,
+        evidence_boundary: handoff.evidence_boundary
+      }];
+    });
   const ltgCurrentEvidenceProducerCacheRefreshHandoffRows = ltgNextAcceptanceActionRows
     .flatMap((row) => {
       const handoff = (row.supporting_current_evidence_producer_cache_refresh_handoff as Record<string, unknown> | undefined) ?? {};
@@ -1283,6 +1352,8 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgFactorUniverseWorkerBatchHandoffRows} />
       <p className="risk-note">LTG-05 Storage handoff 只显示本地 readiness / activation / execution recipe / execution-request / phase-A evidence / durable recipe 和仍缺的 production promotion closeout / remote CI review；它不从 GET cache 创建任务、不写 Parquet/manifest、不删除 artifacts，也不能关闭 Storage 生产验证。</p>
       <DataLineageTable rows={ltgStoragePhysicalExecutionHandoffRows} />
+      <p className="risk-note">LTG-06 Worker handoff 只显示本地 dependency preflight / runtime QA request / dry-run / local fallback execution / durable recipe / promotion review 和仍缺的 production worker closeout / remote CI review；它不从 GET cache 创建任务、不启动 Celery/Redis、不派发 provider/model task，也不能关闭 Worker 生产验证。</p>
+      <DataLineageTable rows={ltgWorkerRuntimeQaHandoffRows} />
       <DataLineageTable rows={ltgCurrentEvidenceProducerCacheRefreshHandoffRows} />
       <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />
