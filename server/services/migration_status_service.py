@@ -7402,6 +7402,138 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     }
 
 
+def _latest_candidate_radar_production_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import candidate_service
+
+        packet = candidate_service.read_candidate_radar_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    worker_request = _dict_or_empty(packet_map.get("candidate_radar_worker_execution_request_receipt"))
+    production_review = _dict_or_empty(
+        packet_map.get("candidate_radar_production_replacement_review_receipt")
+    )
+    promotion_dry_run = _dict_or_empty(
+        packet_map.get("candidate_radar_production_promotion_dry_run_receipt")
+    )
+    legacy_review = _dict_or_empty(packet_map.get("candidate_radar_legacy_retirement_review_receipt"))
+    promotion_review = _dict_or_empty(
+        packet_map.get("candidate_radar_production_promotion_review_receipt")
+    )
+    durable_recipe = _dict_or_empty(packet_map.get("candidate_radar_durable_evidence_recipe"))
+    stage_manifest = _dict_or_empty(packet_map.get("candidate_radar_production_stage_scope_manifest"))
+    direct_summary = _latest_candidate_radar_direct_evidence_summary()
+    direct_stage_keys = [str(key) for key in direct_summary.get("direct_evidence_stage_keys") or []]
+    pending_stage_keys = [str(key) for key in stage_manifest.get("pending_stage_keys") or []]
+    worker_request_ready = bool(
+        worker_request.get("schema_version") == "candidate_radar_worker_execution_request.v1"
+        and worker_request.get("local_execution_request_ready") is True
+        and worker_request.get("worker_task_created") is False
+        and worker_request.get("worker_task_executed") is False
+        and worker_request.get("worker_started") is False
+        and worker_request.get("external_calls_triggered") is False
+        and worker_request.get("tushare_called") is False
+        and worker_request.get("deepseek_called") is False
+        and worker_request.get("github_called") is False
+        and worker_request.get("does_not_execute_trades") is True
+        and worker_request.get("does_not_modify_strategy_action") is True
+        and worker_request.get("contains_secret") is False
+    )
+    production_review_ready = production_review.get("local_review_ready") is True
+    promotion_dry_run_ready = promotion_dry_run.get("ready_for_local_promotion_review") is True
+    legacy_review_ready = legacy_review.get("local_review_ready") is True
+    promotion_review_ready = promotion_review.get("local_review_ready") is True
+    if promotion_review_ready:
+        status = "candidate_radar_promotion_review_ready_worker_provider_release_blocked"
+        next_local_step = "future explicit worker/provider/browser/release evidence before production replacement"
+    elif legacy_review_ready and promotion_dry_run_ready:
+        status = "candidate_radar_legacy_review_ready_promotion_review_needed"
+        next_local_step = "POST /api/candidate-radar/production-promotion-review"
+    elif promotion_dry_run_ready:
+        status = "candidate_radar_promotion_dry_run_ready_legacy_review_needed"
+        next_local_step = "POST /api/candidate-radar/legacy-retirement-review"
+    elif production_review_ready:
+        status = "candidate_radar_production_review_ready_promotion_dry_run_needed"
+        next_local_step = "POST /api/candidate-radar/production-promotion-dry-run"
+    elif worker_request_ready:
+        status = "candidate_radar_worker_request_ready_production_review_needed"
+        next_local_step = "POST /api/candidate-radar/production-replacement-review"
+    else:
+        status = "candidate_radar_local_receipts_visible_worker_request_needed"
+        next_local_step = "POST /api/candidate-radar/worker-execution-request"
+    return {
+        "schema_version": "ltg13_candidate_radar_production_handoff_summary.v1",
+        "source_packet_key": "command_center_3_candidate_radar_cache",
+        "status": status,
+        "next_local_step": next_local_step,
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": len(direct_stage_keys),
+        "pending_stage_keys": pending_stage_keys,
+        "pending_stage_count": len(pending_stage_keys),
+        "production_blocker_count": int(
+            stage_manifest.get("production_blocker_count")
+            or direct_summary.get("production_promotion_review_blocker_count")
+            or 0
+        ),
+        "worker_execution_request_ready": worker_request_ready,
+        "worker_execution_request_status": str(worker_request.get("status") or ""),
+        "worker_execution_scope_hash_matches_latest": (
+            worker_request.get("requested_worker_execution_scope_hash_matches_latest") is True
+        ),
+        "production_replacement_review_ready": production_review_ready,
+        "production_replacement_review_status": str(production_review.get("status") or ""),
+        "production_promotion_dry_run_ready": promotion_dry_run_ready,
+        "production_promotion_dry_run_status": str(promotion_dry_run.get("status") or ""),
+        "legacy_retirement_review_ready": legacy_review_ready,
+        "legacy_retirement_review_status": str(legacy_review.get("status") or ""),
+        "production_promotion_review_ready": promotion_review_ready,
+        "production_promotion_review_status": str(promotion_review.get("status") or ""),
+        "durable_evidence_recipe_visible": bool(durable_recipe),
+        "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
+        "requires_worker_full_pool_execution": True,
+        "requires_worker_deep_scan_execution": True,
+        "requires_provider_backed_parity_acceptance": True,
+        "requires_browser_visual_performance_promotion": True,
+        "requires_legacy_retirement_review": True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "worker_full_pool_execution_done": False,
+        "worker_deep_scan_execution_done": False,
+        "provider_backed_acceptance_done": False,
+        "worker_backed_execution_done": False,
+        "deepseek_model_ledger_complete": False,
+        "browser_visual_performance_promoted": False,
+        "legacy_retirement_ready": False,
+        "production_radar_replacement_complete": False,
+        "ready_to_mark_production_radar_replacement_complete": False,
+        "cache_get_creates_task": False,
+        "cache_get_starts_worker": False,
+        "cache_get_calls_provider": False,
+        "cache_get_calls_model": False,
+        "cache_get_calls_github": False,
+        "creates_worker_task_from_get": False,
+        "worker_task_created_by_handoff": False,
+        "worker_execution_implemented_by_handoff": False,
+        "worker_started_by_handoff": False,
+        "provider_model_task_created_by_handoff": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": (
+            "ltg13_candidate_radar_handoff_reads_local_receipts_not_worker_provider_or_production_replacement"
+        ),
+    }
+
+
 def _build_ltg_next_action_submission_preview_rows(
     next_local_step: str,
     local_step_rows: list[dict[str, Any]],
@@ -8734,6 +8866,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_current_evidence_producer_cache_refresh_handoff: dict[str, Any] = {}
         supporting_tushare_target_sample_evidence_handoff: dict[str, Any] = {}
         supporting_factor_test_lab_provider_validation_handoff: dict[str, Any] = {}
+        supporting_candidate_radar_production_handoff: dict[str, Any] = {}
         supporting_factor_universe_worker_batch_handoff: dict[str, Any] = {}
         supporting_storage_physical_execution_handoff: dict[str, Any] = {}
         supporting_worker_runtime_qa_handoff: dict[str, Any] = {}
@@ -8769,6 +8902,9 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             )
             safe_context["worker_runtime_dependency_preflight_preview"] = (
                 _latest_worker_runtime_dependency_preflight_preview()
+            )
+            supporting_candidate_radar_production_handoff = (
+                _latest_candidate_radar_production_handoff_summary()
             )
         if action["queue_id"] == "p3_factor_universe_worker_batch_research":
             safe_context["worker_runtime_dependency_preflight_preview"] = (
@@ -8969,6 +9105,38 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_factor_test_lab_provider_validation_creates_task_from_get": (
                     supporting_factor_test_lab_provider_validation_handoff.get("cache_get_creates_task")
+                    is True
+                ),
+                "supporting_candidate_radar_production_handoff": (
+                    supporting_candidate_radar_production_handoff
+                ),
+                "supporting_candidate_radar_production_next_local_step": (
+                    supporting_candidate_radar_production_handoff.get("next_local_step", "")
+                ),
+                "supporting_candidate_radar_worker_execution_request_ready": (
+                    supporting_candidate_radar_production_handoff.get(
+                        "worker_execution_request_ready"
+                    )
+                    is True
+                ),
+                "supporting_candidate_radar_production_promotion_review_ready": (
+                    supporting_candidate_radar_production_handoff.get(
+                        "production_promotion_review_ready"
+                    )
+                    is True
+                ),
+                "supporting_candidate_radar_requires_worker_execution": (
+                    supporting_candidate_radar_production_handoff.get(
+                        "requires_worker_full_pool_execution"
+                    )
+                    is True
+                    or supporting_candidate_radar_production_handoff.get(
+                        "requires_worker_deep_scan_execution"
+                    )
+                    is True
+                ),
+                "supporting_candidate_radar_production_creates_task_from_get": (
+                    supporting_candidate_radar_production_handoff.get("cache_get_creates_task")
                     is True
                 ),
                 "supporting_factor_universe_worker_batch_handoff": (

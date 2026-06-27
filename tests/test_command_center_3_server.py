@@ -46792,10 +46792,63 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(handoff["production_complete"])
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         ltg13 = observed_stage_rows["LTG-13"]
-
-        self.assertEqual(ltg13["status"], "observed_candidate_radar_direct_evidence_production_pending")
         ltg13_direct_keys = set(ltg13["direct_evidence_stage_keys"])
         ltg13_pending_keys = set(ltg13["pending_stage_keys"])
+        production_handoff = radar_action["supporting_candidate_radar_production_handoff"]
+        self.assertEqual(
+            production_handoff["schema_version"],
+            "ltg13_candidate_radar_production_handoff_summary.v1",
+        )
+        self.assertEqual(
+            production_handoff["status"],
+            "candidate_radar_promotion_review_ready_worker_provider_release_blocked",
+        )
+        self.assertTrue(production_handoff["worker_execution_request_ready"])
+        self.assertTrue(production_handoff["worker_execution_scope_hash_matches_latest"])
+        self.assertTrue(production_handoff["production_replacement_review_ready"])
+        self.assertTrue(production_handoff["production_promotion_dry_run_ready"])
+        self.assertTrue(production_handoff["legacy_retirement_review_ready"])
+        self.assertTrue(production_handoff["production_promotion_review_ready"])
+        self.assertTrue(production_handoff["durable_evidence_recipe_visible"])
+        self.assertFalse(production_handoff["durable_evidence_complete"])
+        self.assertEqual(
+            set(production_handoff["direct_evidence_stage_keys"]),
+            ltg13_direct_keys,
+        )
+        self.assertEqual(production_handoff["direct_evidence_stage_count"], len(ltg13_direct_keys))
+        self.assertEqual(set(production_handoff["pending_stage_keys"]), ltg13_pending_keys)
+        self.assertEqual(production_handoff["pending_stage_count"], len(ltg13_pending_keys))
+        self.assertTrue(production_handoff["requires_worker_full_pool_execution"])
+        self.assertTrue(production_handoff["requires_worker_deep_scan_execution"])
+        self.assertTrue(production_handoff["requires_provider_backed_parity_acceptance"])
+        self.assertTrue(production_handoff["requires_browser_visual_performance_promotion"])
+        self.assertFalse(production_handoff["worker_full_pool_execution_done"])
+        self.assertFalse(production_handoff["worker_deep_scan_execution_done"])
+        self.assertFalse(production_handoff["provider_backed_acceptance_done"])
+        self.assertFalse(production_handoff["worker_backed_execution_done"])
+        self.assertFalse(production_handoff["cache_get_creates_task"])
+        self.assertFalse(production_handoff["cache_get_starts_worker"])
+        self.assertFalse(production_handoff["cache_get_calls_provider"])
+        self.assertFalse(production_handoff["cache_get_calls_model"])
+        self.assertFalse(production_handoff["worker_task_created_by_handoff"])
+        self.assertFalse(production_handoff["worker_execution_implemented_by_handoff"])
+        self.assertFalse(production_handoff["provider_model_task_created_by_handoff"])
+        self.assertFalse(production_handoff["external_calls_triggered"])
+        self.assertFalse(production_handoff["tushare_called"])
+        self.assertFalse(production_handoff["deepseek_called"])
+        self.assertFalse(production_handoff["github_called"])
+        self.assertTrue(production_handoff["does_not_execute_trades"])
+        self.assertTrue(production_handoff["does_not_modify_strategy_action"])
+        self.assertTrue(production_handoff["candidate_is_not_buy_instruction"])
+        self.assertFalse(production_handoff["contains_secret"])
+        self.assertFalse(production_handoff["production_radar_replacement_complete"])
+        self.assertFalse(production_handoff["can_close_goal"])
+        self.assertTrue(radar_action["supporting_candidate_radar_worker_execution_request_ready"])
+        self.assertTrue(radar_action["supporting_candidate_radar_production_promotion_review_ready"])
+        self.assertTrue(radar_action["supporting_candidate_radar_requires_worker_execution"])
+        self.assertFalse(radar_action["supporting_candidate_radar_production_creates_task_from_get"])
+
+        self.assertEqual(ltg13["status"], "observed_candidate_radar_direct_evidence_production_pending")
         self.assertEqual(ltg13["row_count"], len(stage_keys))
         self.assertEqual(ltg13["pending_stage_count"], len(ltg13_pending_keys))
         self.assertEqual(ltg13["production_blocker_count"], len(ltg13_pending_keys))
