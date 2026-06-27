@@ -46602,6 +46602,186 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("TS_OK", json.dumps(cache_response, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache_response, ensure_ascii=False))
 
+    def test_data_health_durable_recipe_keeps_remote_green_at_release_review_boundary(self):
+        packet_keys = [
+            spec["packet_key"] for spec in data_health_service.PRODUCER_CACHE_REFRESH_PACKET_SPECS
+        ]
+
+        def no_call_flags():
+            return {
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+
+        producer_refresh_rows = []
+        for spec in data_health_service.PRODUCER_CACHE_REFRESH_PACKET_SPECS:
+            producer_refresh_rows.append(
+                {
+                    "phase": f"generated_{spec['producer']}_packet_ready",
+                    "status": "producer_packet_ready_for_local_write",
+                    "passed": True,
+                    "packet_key": spec["packet_key"],
+                    "writes_snapshot_cache": False,
+                    **no_call_flags(),
+                }
+            )
+            producer_refresh_rows.append(
+                {
+                    "phase": "local_sqlite_packet_written",
+                    "status": "written_local_sqlite_packet",
+                    "passed": True,
+                    "packet_key": spec["packet_key"],
+                    "writes_snapshot_cache": False,
+                    **no_call_flags(),
+                }
+            )
+        decision_surface_rows = [
+            {
+                "surface": surface,
+                "status": "passed_read_only_contract",
+                "read_only_snapshot_audit": True,
+                "does_not_rescore": True,
+                "does_not_filter_packet": True,
+                **no_call_flags(),
+            }
+            for surface in data_health_service.DECISION_SURFACE_ISOLATION_REQUIRED_SURFACES
+        ]
+
+        recipe = data_health_service._freshness_durable_evidence_recipe(
+            freshness_acceptance_summary={"scope": "local_contract_not_real_trade_cal_validation"},
+            trade_cal_physical={
+                "scope": "local_physical_trade_cal_parquet_validation",
+                "local_trade_cal_physical_validation_done": True,
+            },
+            readiness_receipt={
+                "schema_version": "data_health_freshness_provider_acceptance_readiness_receipt.v1",
+                "ready_for_explicit_provider_task": True,
+            },
+            activation_receipt={
+                "schema_version": "data_health_freshness_provider_acceptance_activation_receipt.v1",
+                "ready_for_explicit_provider_task": True,
+            },
+            latest_dry_run={"latest_task_found": True},
+            next_execution_recipe={
+                "schema_version": "data_health_trade_cal_provider_acceptance_next_execution_recipe.v1",
+                "requires_prior_dry_run_scope_ticket": True,
+                "recipe_ready_for_user_confirmation": True,
+            },
+            current_evidence={"current_evidence_candidate_status": "current_evidence_ready"},
+            decision_surface={
+                "schema_version": "data_health_current_evidence_decision_surface_audit.v1",
+                "blocked_surface_count": 0,
+                "does_not_rescore": True,
+                "does_not_filter_packet": True,
+                "does_not_mutate_decision_surfaces": True,
+                **no_call_flags(),
+            },
+            decision_surface_rows=decision_surface_rows,
+            producer_coverage={"blocked_producer_count": 0},
+            producer_generation={
+                "status": "producer_generation_contract_ready_current_cache_refresh_pending",
+                "local_generation_contract_ready": True,
+                "current_cache_refresh_pending": True,
+            },
+            producer_cache_refresh={
+                "status": "producer_cache_refresh_readiness_ready_manual_refresh_pending",
+                "local_cache_refresh_ready": True,
+                "current_cache_refresh_required_count": 3,
+            },
+            latest_producer_cache_refresh={
+                "schema_version": "data_health_latest_producer_cache_refresh.v1",
+                "status": "latest_producer_cache_refresh_visible",
+                "refresh_status": "producer_cache_refresh_completed_local_sqlite_only",
+                "latest_task_found": True,
+                "local_cache_refresh_executed": True,
+                "writes_snapshot_cache": False,
+                "writes_local_sqlite_packets": True,
+                "does_not_refresh_provider": True,
+                "local_sqlite_packet_write_count": len(packet_keys),
+                "written_packet_keys": packet_keys,
+                "provider_backed_long_window_acceptance_done": False,
+                "production_freshness_gate_complete": False,
+                **no_call_flags(),
+            },
+            latest_producer_cache_refresh_rows=producer_refresh_rows,
+            provider_promotion={
+                "promotion_ready": True,
+                "provider_backed_long_window_acceptance_done": True,
+                "explicit_provider_trade_cal_task_done": True,
+                "provider_call_ledger_evidence_done": True,
+                "freshness_replay_provider_evidence_done": True,
+                "failure_mode_provider_evidence_done": True,
+            },
+            latest_promotion_review={
+                "latest_task_found": True,
+                "receipt_visible": True,
+                "promotion_review_ready_for_release": True,
+                "status": "trade_cal_provider_acceptance_promotion_review_ready_for_release_review",
+                "latest_task_id": "local-test-promotion-review",
+                "blocking_row_count": 0,
+            },
+            local_release_gate_evidence={
+                "status": "freshness_local_release_gate_observed_remote_ci_reviewed_release_review_pending",
+                "fresh_local_gate_run_observed": True,
+                "local_push_gate_run_receipt_head_matches_current": True,
+                "required_local_gate_checks_present": True,
+                "local_worktree_clean": True,
+                "local_worktree_blocks_local_gate_receipt": False,
+                "local_worktree_dirty_file_count": 0,
+                "freshness_blockers": [],
+                "latest_remote_run_verified_green": True,
+                "remote_actions_status_known": True,
+            },
+        )
+        production_review_row = {
+            row["evidence_key"]: row for row in recipe["rows"]
+        }["production_promotion_review"]
+
+        self.assertEqual(
+            recipe["status"],
+            "freshness_durable_evidence_recipe_local_complete_release_review_pending",
+        )
+        self.assertTrue(recipe["local_complete"])
+        self.assertEqual(recipe["local_completion_status"], "local_complete")
+        self.assertFalse(recipe["remote_review_pending"])
+        self.assertEqual(recipe["remote_review_pending_count"], 0)
+        self.assertEqual(
+            recipe["remote_review_status"],
+            "remote_review_green_release_review_pending",
+        )
+        self.assertTrue(recipe["release_review_pending"])
+        self.assertEqual(recipe["release_review_pending_count"], 1)
+        self.assertFalse(recipe["strict_closeout_ready"])
+        self.assertFalse(recipe["production_freshness_gate_complete"])
+        self.assertFalse(recipe["durable_evidence_complete"])
+        self.assertFalse(recipe["durable_promotion_ready"])
+        self.assertIn("production_promotion_review", recipe["blocking_evidence_keys"])
+        self.assertNotIn("matching remote CI review after local gate", recipe["missing_evidence_items"])
+        self.assertEqual(
+            recipe["missing_evidence_items"],
+            ["release review that production_freshness_gate_complete may become true"],
+        )
+        self.assertEqual(
+            recipe["allowed_next_step"],
+            "user_release_review_before_setting_production_freshness_gate_complete",
+        )
+        self.assertTrue(production_review_row["local_complete"])
+        self.assertFalse(production_review_row["remote_review_pending"])
+        self.assertTrue(production_review_row["release_review_pending"])
+        self.assertTrue(production_review_row["latest_remote_run_verified_green"])
+        self.assertFalse(production_review_row["strict_closeout_ready"])
+        self.assertFalse(production_review_row["production_freshness_gate_complete"])
+        self.assertFalse(recipe["external_calls_triggered"])
+        self.assertFalse(recipe["tushare_called"])
+        self.assertFalse(recipe["deepseek_called"])
+        self.assertFalse(recipe["github_called"])
+        self.assertTrue(recipe["does_not_execute_trades"])
+        self.assertTrue(recipe["does_not_modify_strategy_action"])
+
     def test_data_health_reads_persisted_tushare_trade_cal_acceptance_packet_without_snapshot_ledger(self):
         if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
             self.skipTest("pyarrow/pandas parquet dependency missing")
