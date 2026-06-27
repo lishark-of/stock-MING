@@ -6891,6 +6891,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         local_evidence_count = sum(
             1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
         )
+        ltg02_local_complete = False
+        ltg02_local_completion_status = (
+            "local_provider_direct_evidence_partial"
+            if provider_call_ledger_done
+            else "local_static_contract_only"
+        )
         rows.append(
             {
                 "id": "LTG-02",
@@ -6911,6 +6917,27 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_evidence_stage_count": local_evidence_count + (1 if provider_call_ledger_done else 0),
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": direct_evidence_stage_keys,
+                "local_complete": ltg02_local_complete,
+                "local_completion_status": ltg02_local_completion_status,
+                "local_blocker_count": observed_pending_count,
+                "remote_review_required_after_local_complete": True,
+                "remote_review_pending": False,
+                "remote_review_status": "remote_review_waiting_for_local_complete",
+                "remote_review_pending_count": 0,
+                "release_review_required_after_remote_green": True,
+                "release_review_pending": False,
+                "release_review_status": "release_review_waiting_for_local_and_remote_complete",
+                "release_review_pending_count": 0,
+                "strict_closeout_ready": False,
+                "missing_evidence_items": [
+                    "full-interface provider-backed target samples",
+                    "full-interface selection evidence",
+                    "failure-mode provider evidence",
+                    "request-parameter provider window evidence",
+                    "Parquet/storage promotion review",
+                    "local completion before remote CI review",
+                    "release review after matching remote CI green",
+                ],
                 "production_blocker_count": observed_pending_count,
                 "provider_backed_acceptance_done": False,
                 "production_tushare_pipeline_complete": False,
@@ -9118,6 +9145,23 @@ def _merge_ltg_stage_scope_observations(
             item["observed_stage_scope_direct_evidence_count"] = observed.get("direct_evidence_stage_count", 0)
             item["observed_stage_scope_direct_evidence_keys"] = observed.get("direct_evidence_stage_keys", [])
             item["observed_stage_scope_can_close_goal"] = False
+            for evidence_key in (
+                "local_complete",
+                "local_completion_status",
+                "local_blocker_count",
+                "remote_review_required_after_local_complete",
+                "remote_review_pending",
+                "remote_review_status",
+                "remote_review_pending_count",
+                "release_review_required_after_remote_green",
+                "release_review_pending",
+                "release_review_status",
+                "release_review_pending_count",
+                "strict_closeout_ready",
+                "missing_evidence_items",
+            ):
+                if evidence_key in observed:
+                    item[f"observed_{evidence_key}"] = observed.get(evidence_key)
             if str(item.get("id") or "") == "LTG-13":
                 item["observed_candidate_direct_evidence_layer"] = observed.get("candidate_direct_evidence_layer")
                 item["observed_worker_runtime_round_trip_link_verified"] = observed.get(

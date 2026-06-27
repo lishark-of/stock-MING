@@ -35558,6 +35558,28 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("latest target-sample request cache visibility", migration_goals["LTG-02"]["current_state"])
         self.assertIn("React Data Health target-sample request visibility", migration_goals["LTG-02"]["current_state"])
         self.assertIn("provider target samples", migration_goals["LTG-02"]["next_evidence_required"])
+        self.assertFalse(migration_goals["LTG-02"]["observed_local_complete"])
+        self.assertIn(
+            migration_goals["LTG-02"]["observed_local_completion_status"],
+            {"local_static_contract_only", "local_provider_direct_evidence_partial"},
+        )
+        self.assertTrue(migration_goals["LTG-02"]["observed_remote_review_required_after_local_complete"])
+        self.assertFalse(migration_goals["LTG-02"]["observed_remote_review_pending"])
+        self.assertEqual(
+            migration_goals["LTG-02"]["observed_remote_review_status"],
+            "remote_review_waiting_for_local_complete",
+        )
+        self.assertTrue(migration_goals["LTG-02"]["observed_release_review_required_after_remote_green"])
+        self.assertFalse(migration_goals["LTG-02"]["observed_release_review_pending"])
+        self.assertEqual(
+            migration_goals["LTG-02"]["observed_release_review_status"],
+            "release_review_waiting_for_local_and_remote_complete",
+        )
+        self.assertFalse(migration_goals["LTG-02"]["observed_strict_closeout_ready"])
+        self.assertIn(
+            "release review after matching remote CI green",
+            migration_goals["LTG-02"]["observed_missing_evidence_items"],
+        )
         self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
         self.assertEqual(
             migration_goals["LTG-03"]["stage_scope_manifest"],
@@ -35606,17 +35628,62 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             observed_stage_rows["LTG-02"]["stage_scope_manifest"],
             "tushare_production_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-02"]["status"], "observed_in_tushare_acceptance_static_contract")
+        ltg02_direct_evidence_count = observed_stage_rows["LTG-02"]["direct_evidence_stage_count"]
+        if ltg02_direct_evidence_count:
+            self.assertEqual(
+                observed_stage_rows["LTG-02"]["status"],
+                "observed_prior_tushare_provider_call_ledger_target_acceptance_pending",
+            )
+            self.assertEqual(observed_stage_rows["LTG-02"]["pending_stage_count"], 9)
+            self.assertTrue(observed_stage_rows["LTG-02"]["provider_call_ledger_evidence_done"])
+            self.assertEqual(
+                observed_stage_rows["LTG-02"]["local_completion_status"],
+                "local_provider_direct_evidence_partial",
+            )
+        else:
+            self.assertEqual(
+                observed_stage_rows["LTG-02"]["status"],
+                "observed_in_tushare_acceptance_static_contract",
+            )
+            self.assertEqual(observed_stage_rows["LTG-02"]["pending_stage_count"], 10)
+            self.assertFalse(observed_stage_rows["LTG-02"]["provider_call_ledger_evidence_done"])
+            self.assertEqual(
+                observed_stage_rows["LTG-02"]["local_completion_status"],
+                "local_static_contract_only",
+            )
         self.assertEqual(observed_stage_rows["LTG-02"]["row_count"], 10)
-        self.assertEqual(observed_stage_rows["LTG-02"]["pending_stage_count"], 10)
         self.assertGreaterEqual(observed_stage_rows["LTG-02"]["local_evidence_stage_count"], 2)
+        self.assertFalse(observed_stage_rows["LTG-02"]["local_complete"])
+        self.assertEqual(observed_stage_rows["LTG-02"]["local_blocker_count"], observed_stage_rows["LTG-02"]["pending_stage_count"])
+        self.assertTrue(observed_stage_rows["LTG-02"]["remote_review_required_after_local_complete"])
+        self.assertFalse(observed_stage_rows["LTG-02"]["remote_review_pending"])
+        self.assertEqual(
+            observed_stage_rows["LTG-02"]["remote_review_status"],
+            "remote_review_waiting_for_local_complete",
+        )
+        self.assertEqual(observed_stage_rows["LTG-02"]["remote_review_pending_count"], 0)
+        self.assertTrue(observed_stage_rows["LTG-02"]["release_review_required_after_remote_green"])
+        self.assertFalse(observed_stage_rows["LTG-02"]["release_review_pending"])
+        self.assertEqual(
+            observed_stage_rows["LTG-02"]["release_review_status"],
+            "release_review_waiting_for_local_and_remote_complete",
+        )
+        self.assertEqual(observed_stage_rows["LTG-02"]["release_review_pending_count"], 0)
+        self.assertFalse(observed_stage_rows["LTG-02"]["strict_closeout_ready"])
+        self.assertIn(
+            "full-interface provider-backed target samples",
+            observed_stage_rows["LTG-02"]["missing_evidence_items"],
+        )
+        self.assertIn(
+            "release review after matching remote CI green",
+            observed_stage_rows["LTG-02"]["missing_evidence_items"],
+        )
         self.assertFalse(observed_stage_rows["LTG-02"]["provider_backed_acceptance_done"])
         self.assertFalse(observed_stage_rows["LTG-02"]["production_tushare_pipeline_complete"])
         self.assertFalse(observed_stage_rows["LTG-02"]["full_interface_acceptance_done"])
         self.assertTrue(observed_stage_rows["LTG-02"]["real_provider_sample_still_required"])
         self.assertTrue(observed_stage_rows["LTG-02"]["provider_promotion_still_required"])
         self.assertFalse(observed_stage_rows["LTG-02"]["provider_execution_implemented"])
-        self.assertFalse(observed_stage_rows["LTG-02"]["provider_call_ledger_evidence_done"])
         self.assertFalse(observed_stage_rows["LTG-02"]["full_interface_selection_done"])
         self.assertFalse(observed_stage_rows["LTG-02"]["failure_mode_evidence_done"])
         self.assertFalse(observed_stage_rows["LTG-02"]["request_parameter_provider_window_done"])
