@@ -40629,6 +40629,44 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg09["does_not_execute_trades"])
         self.assertFalse(ltg09["contains_secret"])
         self.assertFalse(ltg09["can_close_from_observed_row"])
+        queue_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        tauri_queue = queue_rows["p6_tauri_package_readiness_review"]
+        handoff = tauri_queue["supporting_tauri_package_handoff"]
+        self.assertEqual(handoff["schema_version"], "ltg09_tauri_package_handoff_summary.v1")
+        self.assertEqual(
+            handoff["status"],
+            "tauri_package_local_promotion_review_ready_signing_or_distribution_blocked",
+        )
+        self.assertEqual(handoff["direct_evidence_stage_count"], 8)
+        self.assertEqual(
+            handoff["direct_gap_evidence_stage_keys"],
+            ["signing_notarization_gap_review", "production_package_promotion_blocker_review"],
+        )
+        self.assertTrue(handoff["production_package_readiness_receipt_ready"])
+        self.assertTrue(handoff["tauri_package_durable_evidence_recipe_ready"])
+        self.assertEqual(handoff["tauri_package_durable_evidence_blocker_count"], 1)
+        self.assertTrue(handoff["production_package_promotion_review_ready"])
+        self.assertTrue(handoff["production_package_promotion_review_blocked"])
+        self.assertTrue(handoff["local_package_direct_evidence_ready"])
+        self.assertTrue(handoff["local_package_review_chain_visible_for_release_evidence"])
+        self.assertTrue(handoff["requires_signing_notarization_or_distribution_waiver"])
+        self.assertTrue(handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(handoff["production_signing_notarization_ready"])
+        self.assertFalse(handoff["packaged_runtime_qa_done"])
+        self.assertFalse(handoff["production_package_complete"])
+        self.assertFalse(handoff["cache_get_creates_task"])
+        self.assertFalse(handoff["cache_get_runs_tauri_build"])
+        self.assertFalse(handoff["cache_get_opens_packaged_app"])
+        self.assertFalse(handoff["cache_get_starts_backend"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertFalse(handoff["can_close_goal"])
+        self.assertFalse(tauri_queue["future_handoff_ready_from_local_receipt"])
+        self.assertTrue(tauri_queue["supporting_tauri_package_local_direct_evidence_ready"])
+        self.assertTrue(tauri_queue["supporting_tauri_package_requires_signing_or_distribution_waiver"])
+        self.assertFalse(tauri_queue["supporting_tauri_package_creates_task_from_get"])
 
     def test_trade_review_cache_endpoint_returns_sanitized_local_records(self):
         self._with_trade_review_log(

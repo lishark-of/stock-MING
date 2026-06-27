@@ -6397,6 +6397,110 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
     }
 
 
+def _latest_tauri_package_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import desktop_service
+
+        packet = desktop_service.read_desktop_shell_preflight_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    direct = _latest_tauri_package_direct_evidence_summary()
+    readiness_receipt = _dict_or_empty(packet_map.get("production_package_readiness_receipt"))
+    durable_recipe = _dict_or_empty(packet_map.get("tauri_package_durable_evidence_recipe"))
+    direct_stage_count = int(direct.get("direct_evidence_stage_count") or 0)
+    promotion_review_ready = direct.get("production_package_promotion_review_ready") is True
+    promotion_review_blocked = direct.get("production_package_promotion_review_blocked") is True
+    signing_notarization_ready = direct.get("signing_notarization_review_ready") is True
+    production_signing_ready = direct.get("production_signing_notarization_ready") is True
+    durable_evidence_blocker_count = int(
+        durable_recipe.get("durable_evidence_blocker_count")
+        or direct.get("promotion_review_blocker_count")
+        or 0
+    )
+    if promotion_review_ready and promotion_review_blocked:
+        status = "tauri_package_local_promotion_review_ready_signing_or_distribution_blocked"
+        next_local_step = (
+            "resolve macOS signing/notarization or explicit distribution waiver before remote CI/release review"
+        )
+    elif direct_stage_count >= 8 and signing_notarization_ready:
+        status = "tauri_package_direct_evidence_ready_promotion_review_needed"
+        next_local_step = "POST /api/desktop/tauri-production-package-promotion-review"
+    elif direct_stage_count:
+        status = "tauri_package_direct_evidence_partial_packaged_runtime_review_needed"
+        next_local_step = "future explicit Tauri build and packaged runtime QA"
+    else:
+        status = "tauri_package_readiness_receipts_visible_runtime_evidence_pending"
+        next_local_step = "future explicit Tauri build and packaged runtime QA"
+    return {
+        "schema_version": "ltg09_tauri_package_handoff_summary.v1",
+        "source_packet_key": "command_center_3_desktop_shell_preflight_cache",
+        "status": status,
+        "next_local_step": next_local_step,
+        "direct_evidence_status": str(direct.get("status") or "missing"),
+        "direct_evidence_layer": str(direct.get("direct_evidence_layer") or ""),
+        "direct_evidence_stage_keys": list(direct.get("direct_evidence_stage_keys") or []),
+        "direct_evidence_stage_count": direct_stage_count,
+        "direct_gap_evidence_stage_keys": list(direct.get("direct_gap_evidence_stage_keys") or []),
+        "direct_gap_evidence_stage_count": int(direct.get("direct_gap_evidence_stage_count") or 0),
+        "production_package_readiness_receipt_ready": _receipt_local_ready(readiness_receipt),
+        "production_package_readiness_receipt_status": str(readiness_receipt.get("status") or ""),
+        "tauri_package_durable_evidence_recipe_ready": _receipt_local_ready(durable_recipe),
+        "tauri_package_durable_evidence_recipe_status": str(durable_recipe.get("status") or ""),
+        "tauri_package_durable_evidence_blocker_count": durable_evidence_blocker_count,
+        "production_package_promotion_review_ready": promotion_review_ready,
+        "production_package_promotion_review_status": str(
+            direct.get("production_package_promotion_review_status") or ""
+        ),
+        "production_package_promotion_review_blocked": promotion_review_blocked,
+        "production_package_promotion_review_blocker_count": int(
+            direct.get("promotion_review_blocker_count") or 0
+        ),
+        "production_package_promotion_remaining_blockers": list(
+            direct.get("production_package_promotion_remaining_blockers") or []
+        ),
+        "signing_notarization_review_ready": signing_notarization_ready,
+        "signing_notarization_review_status": str(direct.get("signing_notarization_review_status") or ""),
+        "production_signing_notarization_ready": production_signing_ready,
+        "signing_notarization_done": direct.get("signing_notarization_done") is True,
+        "durable_promotion_ready": direct.get("durable_promotion_ready") is True,
+        "packaged_runtime_qa_done": False,
+        "production_package_complete": False,
+        "local_package_direct_evidence_ready": direct_stage_count >= 8,
+        "local_package_review_chain_visible_for_release_evidence": bool(
+            direct_stage_count >= 8 and promotion_review_ready
+        ),
+        "requires_signing_notarization_or_distribution_waiver": not production_signing_ready,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "cache_get_creates_task": False,
+        "cache_get_runs_tauri_build": False,
+        "cache_get_runs_npm_or_cargo": False,
+        "cache_get_opens_packaged_app": False,
+        "cache_get_starts_backend": False,
+        "cache_get_reads_config_values": False,
+        "cache_get_writes_logs": False,
+        "cache_get_calls_provider": False,
+        "cache_get_calls_model": False,
+        "cache_get_calls_github": False,
+        "creates_task_from_get": False,
+        "runs_tauri_build_from_get": False,
+        "opens_packaged_app_from_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": (
+            "ltg09_tauri_handoff_reads_local_package_receipts_not_packaged_runtime_or_production_closeout"
+        ),
+    }
+
+
 def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import candidate_service
@@ -8190,6 +8294,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_storage_physical_execution_handoff: dict[str, Any] = {}
         supporting_worker_runtime_qa_handoff: dict[str, Any] = {}
         supporting_next_session_production_replacement_handoff: dict[str, Any] = {}
+        supporting_tauri_package_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -8242,6 +8347,8 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             supporting_next_session_production_replacement_handoff = (
                 _latest_next_session_production_replacement_handoff_summary()
             )
+        if action["queue_id"] == "p6_tauri_package_readiness_review":
+            supporting_tauri_package_handoff = _latest_tauri_package_handoff_summary()
         submission_preview_rows = _build_ltg_next_action_submission_preview_rows(
             next_local_step,
             local_step_rows,
@@ -8493,6 +8600,22 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "supporting_next_session_production_replacement_creates_task_from_get": (
                     supporting_next_session_production_replacement_handoff.get("cache_get_creates_task")
                     is True
+                ),
+                "supporting_tauri_package_handoff": supporting_tauri_package_handoff,
+                "supporting_tauri_package_next_local_step": supporting_tauri_package_handoff.get(
+                    "next_local_step", ""
+                ),
+                "supporting_tauri_package_local_direct_evidence_ready": (
+                    supporting_tauri_package_handoff.get("local_package_direct_evidence_ready") is True
+                ),
+                "supporting_tauri_package_requires_signing_or_distribution_waiver": (
+                    supporting_tauri_package_handoff.get(
+                        "requires_signing_notarization_or_distribution_waiver"
+                    )
+                    is True
+                ),
+                "supporting_tauri_package_creates_task_from_get": (
+                    supporting_tauri_package_handoff.get("cache_get_creates_task") is True
                 ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
                 "local_receipt_lookup_creates_task": False,
