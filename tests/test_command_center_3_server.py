@@ -1578,6 +1578,8 @@ def assert_ltg11_release_gate_stage_scope(
         row["remote_review_status"],
         "remote_review_green_release_review_pending"
         if direct_count >= 2
+        else "remote_review_waiting_for_push"
+        if direct_count == 1 and row.get("local_commits_not_pushed_for_remote_ci") is True
         else "remote_review_pending"
         if direct_count == 1
         else "remote_review_waiting_for_local_complete",
@@ -23252,6 +23254,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                     "branch": current_head["branch"],
                     "head": current_head["head"],
                     "head_full": current_head["head_full"],
+                    "origin_ahead_count": 2,
                     "checks": sorted(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS),
                     "did_not_push": True,
                     "git_add_dot_used": False,
@@ -23342,6 +23345,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(ltg11["local_worktree_raw_status_lines_emitted"])
         self.assertEqual(ltg11["local_push_gate_receipt_head"], current_head["head"])
         self.assertEqual(ltg11["local_push_gate_receipt_current_head"], current_head["head"])
+        self.assertEqual(ltg11["local_push_gate_receipt_origin_ahead_count"], 2)
+        self.assertTrue(ltg11["local_commits_not_pushed_for_remote_ci"])
+        self.assertEqual(ltg11["remote_review_status"], "remote_review_waiting_for_push")
         self.assertEqual(ltg11["local_push_gate_check_count"], len(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS))
         self.assertTrue(ltg11["required_local_gate_checks_present"])
         self.assertFalse(ltg11["remote_actions_status_known"])
@@ -23388,10 +23394,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "latest_remote_run_not_verified_green",
             work_order_summary["release_gate_current_blockers"],
         )
+        self.assertEqual(work_order_summary["release_gate_origin_ahead_count"], 2)
+        self.assertTrue(work_order_summary["release_gate_local_commits_not_pushed_for_remote_ci"])
+        self.assertIn(
+            "local_commits_not_pushed_for_remote_ci",
+            work_order_summary["release_gate_current_blockers"],
+        )
         self.assertEqual(
             work_order_rows["LTG-11"]["release_gate_current_blockers"],
             work_order_summary["release_gate_current_blockers"],
         )
+        self.assertEqual(work_order_rows["LTG-11"]["release_gate_origin_ahead_count"], 2)
+        self.assertTrue(work_order_rows["LTG-11"]["release_gate_local_commits_not_pushed_for_remote_ci"])
         self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
         self.assertEqual(work_order_summary["strict_closeout"], "0/14")
 
@@ -37049,7 +37063,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn(work_order_summary["release_gate_worktree_blocks_fresh_local_gate"], {True, False})
         self.assertFalse(work_order_summary["release_gate_worktree_raw_paths_emitted"])
         self.assertFalse(work_order_summary["release_gate_worktree_raw_status_lines_emitted"])
+        self.assertIsInstance(work_order_summary["release_gate_origin_ahead_count"], int)
+        self.assertIn(work_order_summary["release_gate_local_commits_not_pushed_for_remote_ci"], {True, False})
         self.assertIsInstance(work_order_summary["release_gate_current_blockers"], list)
+        if work_order_summary["release_gate_origin_ahead_count"] > 0:
+            self.assertTrue(work_order_summary["release_gate_local_commits_not_pushed_for_remote_ci"])
+            self.assertIn(
+                "local_commits_not_pushed_for_remote_ci",
+                work_order_summary["release_gate_current_blockers"],
+            )
         if (
             work_order_summary["release_gate_fresh_local_gate_run_observed"]
             and not work_order_summary["release_gate_latest_remote_run_verified_green"]
@@ -37105,6 +37127,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(work_order_rows["LTG-11"]["release_gate_worktree_raw_paths_emitted"])
         self.assertFalse(work_order_rows["LTG-11"]["release_gate_worktree_raw_status_lines_emitted"])
         self.assertFalse(work_order_rows["LTG-11"]["release_gate_latest_remote_run_verified_green"])
+        self.assertEqual(
+            work_order_rows["LTG-11"]["release_gate_origin_ahead_count"],
+            work_order_summary["release_gate_origin_ahead_count"],
+        )
+        self.assertEqual(
+            work_order_rows["LTG-11"]["release_gate_local_commits_not_pushed_for_remote_ci"],
+            work_order_summary["release_gate_local_commits_not_pushed_for_remote_ci"],
+        )
         if work_order_rows["LTG-11"]["release_gate_fresh_local_gate_run_observed"]:
             self.assertIn("remote_ci_review_pending", work_order_rows["LTG-11"]["release_gate_current_blockers"])
         self.assertTrue(work_order_rows["LTG-11"]["release_gate_local_git_status_is_not_ci_status"])
