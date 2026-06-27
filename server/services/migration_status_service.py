@@ -8218,6 +8218,20 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         direct_evidence = _latest_next_session_direct_evidence_summary()
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
         observed_pending_count = max(0, row_count - direct_evidence_count) if row_count else pending_count
+        release_gate_evidence = _latest_release_gate_direct_evidence_summary()
+        latest_remote_run_verified_green = (
+            release_gate_evidence.get("latest_remote_run_verified_green") is True
+        )
+        ltg08_local_complete = bool(row_count and direct_evidence_count >= row_count)
+        ltg08_remote_review_pending = bool(ltg08_local_complete and not latest_remote_run_verified_green)
+        ltg08_release_review_pending = bool(ltg08_local_complete and latest_remote_run_verified_green)
+        ltg08_local_completion_status = (
+            "local_next_session_direct_evidence_complete"
+            if ltg08_local_complete
+            else "local_next_session_direct_evidence_partial"
+            if direct_evidence_count
+            else "local_static_contract_only"
+        )
         next_session_status = (
             "observed_next_session_direct_evidence_production_pending"
             if direct_evidence_count
@@ -8241,6 +8255,38 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_evidence_stage_count": local_evidence_count,
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": list(direct_evidence.get("direct_evidence_stage_keys") or []),
+                "local_complete": ltg08_local_complete,
+                "local_completion_status": ltg08_local_completion_status,
+                "local_blocker_count": 0 if ltg08_local_complete else observed_pending_count,
+                "remote_review_required_after_local_complete": True,
+                "remote_review_pending": ltg08_remote_review_pending,
+                "remote_review_status": (
+                    "remote_review_pending"
+                    if ltg08_remote_review_pending
+                    else "remote_review_green_release_review_pending"
+                    if ltg08_release_review_pending
+                    else "remote_review_waiting_for_local_complete"
+                ),
+                "remote_review_pending_count": 1 if ltg08_remote_review_pending else 0,
+                "release_review_required_after_remote_green": True,
+                "release_review_pending": ltg08_release_review_pending,
+                "release_review_status": (
+                    "release_review_pending"
+                    if ltg08_release_review_pending
+                    else "release_review_waiting_for_remote_green"
+                    if ltg08_remote_review_pending
+                    else "release_review_waiting_for_local_and_remote_complete"
+                ),
+                "release_review_pending_count": 1 if ltg08_release_review_pending else 0,
+                "strict_closeout_ready": False,
+                "missing_evidence_items": [
+                    "next-session direct production evidence for all stage rows",
+                    "same-packet retained signal/capability coverage evidence",
+                    "durable CI/release evidence for Next Session replacement",
+                    "production replacement promotion review",
+                    "matching remote CI review after local Next Session evidence",
+                    "release review after matching remote CI green",
+                ],
                 "production_blocker_count": observed_pending_count,
                 "production_replacement_complete": next_session_contract.get("production_replacement_complete") is True,
                 "streamlit_parity_complete": next_session_contract.get("streamlit_parity_complete") is True,
