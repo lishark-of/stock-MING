@@ -6501,6 +6501,145 @@ def _latest_tauri_package_handoff_summary() -> dict[str, Any]:
     }
 
 
+def _latest_streamlit_retirement_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import legacy_service
+
+        packet = legacy_service.read_legacy_bridge_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    readiness_receipt = _dict_or_empty(packet_map.get("streamlit_retirement_readiness_receipt"))
+    durable_recipe = _dict_or_empty(packet_map.get("streamlit_retirement_durable_evidence_recipe"))
+    parity_review = _dict_or_empty(packet_map.get("streamlit_ordinary_workflow_parity_review"))
+    fallback_review = _dict_or_empty(packet_map.get("streamlit_fallback_retirement_review"))
+    parity_review_ready = parity_review.get("local_review_ready") is True
+    parity_direct_evidence_verified = parity_review.get("direct_evidence_verified") is True
+    fallback_review_ready = fallback_review.get("local_review_ready") is True
+    fallback_direct_evidence_verified = fallback_review.get("direct_evidence_verified") is True
+    candidate_radar_direct_evidence = _latest_candidate_radar_direct_evidence_summary()
+    candidate_radar_direct_keys = {
+        str(item) for item in candidate_radar_direct_evidence.get("direct_evidence_stage_keys") or []
+    }
+    next_session_direct_evidence = _latest_next_session_direct_evidence_summary()
+    next_session_direct_keys = {
+        str(item) for item in next_session_direct_evidence.get("direct_evidence_stage_keys") or []
+    }
+    candidate_radar_parity_done = bool(
+        {"worker_full_pool_execution", "worker_deep_scan_execution", "legacy_retirement_review"}.issubset(
+            candidate_radar_direct_keys
+        )
+    )
+    provider_backed_parity_done = bool(
+        {"provider_parity_acceptance", "search_quant_provider_model_acceptance"}.issubset(
+            candidate_radar_direct_keys
+        )
+    )
+    browser_performance_qa_done = bool(
+        "browser_visual_performance_promotion" in candidate_radar_direct_keys
+        and "browser_performance_trace" in next_session_direct_keys
+    )
+    direct_evidence_stage_keys = []
+    if parity_direct_evidence_verified:
+        direct_evidence_stage_keys.append("ordinary_workflow_replacement_parity")
+    if candidate_radar_parity_done:
+        direct_evidence_stage_keys.append("candidate_radar_replacement_parity")
+    if provider_backed_parity_done:
+        direct_evidence_stage_keys.append("provider_backed_parity_acceptance")
+    if browser_performance_qa_done:
+        direct_evidence_stage_keys.append("browser_performance_qa")
+    if fallback_direct_evidence_verified:
+        direct_evidence_stage_keys.append("fallback_retirement_change_review")
+    direct_stage_count = len(direct_evidence_stage_keys)
+    pending_stage_count = max(8 - direct_stage_count, 0)
+    requires_provider_backed_parity = provider_backed_parity_done is not True
+    requires_browser_performance_qa = browser_performance_qa_done is not True
+    requires_admin_debug_decision = parity_review.get("admin_debug_retention_decision_done") is not True
+    requires_app_py_decision = fallback_review.get("app_py_deleted_by_review") is not True
+    if fallback_review_ready:
+        status = "streamlit_local_fallback_retirement_review_ready_retirement_blocked"
+        next_local_step = "collect provider/browser/admin-debug/app.py decision evidence before fallback removal"
+    elif parity_review_ready:
+        status = "streamlit_ordinary_capability_review_ready_fallback_review_needed"
+        next_local_step = "POST /api/legacy/fallback-retirement-review"
+    else:
+        status = "streamlit_retirement_readiness_receipts_visible_replacement_evidence_pending"
+        next_local_step = "POST /api/legacy/ordinary-workflow-parity-review"
+    return {
+        "schema_version": "ltg10_streamlit_retirement_handoff_summary.v1",
+        "source_packet_key": "command_center_3_legacy_bridge_cache",
+        "status": status,
+        "next_local_step": next_local_step,
+        "direct_evidence_stage_keys": direct_evidence_stage_keys,
+        "direct_evidence_stage_count": direct_stage_count,
+        "pending_stage_count": pending_stage_count,
+        "production_blocker_count": pending_stage_count,
+        "streamlit_retirement_readiness_receipt_ready": _receipt_local_ready(readiness_receipt),
+        "streamlit_retirement_readiness_receipt_status": str(readiness_receipt.get("status") or ""),
+        "streamlit_retirement_durable_evidence_recipe_ready": _receipt_local_ready(durable_recipe),
+        "streamlit_retirement_durable_evidence_recipe_status": str(durable_recipe.get("status") or ""),
+        "streamlit_retirement_durable_evidence_blocker_count": int(
+            durable_recipe.get("production_blocker_count") or pending_stage_count
+        ),
+        "streamlit_ordinary_workflow_parity_review_ready": parity_review_ready,
+        "streamlit_ordinary_workflow_parity_review_status": str(parity_review.get("status") or ""),
+        "streamlit_ordinary_workflow_parity_direct_evidence_verified": (
+            parity_direct_evidence_verified
+        ),
+        "streamlit_fallback_retirement_review_ready": fallback_review_ready,
+        "streamlit_fallback_retirement_review_status": str(fallback_review.get("status") or ""),
+        "streamlit_fallback_retirement_direct_evidence_verified": fallback_direct_evidence_verified,
+        "candidate_radar_parity_complete": candidate_radar_parity_done,
+        "candidate_radar_dependency_direct_evidence_keys": sorted(candidate_radar_direct_keys),
+        "provider_backed_parity_done": provider_backed_parity_done,
+        "browser_performance_qa_done": browser_performance_qa_done,
+        "next_session_dependency_direct_evidence_keys": sorted(next_session_direct_keys),
+        "admin_debug_retention_decision_done": parity_review.get("admin_debug_retention_decision_done")
+        is True,
+        "app_py_removal_or_retention_decision_done": False,
+        "ordinary_workflow_exit_complete": False,
+        "streamlit_fallback_removal_ready": False,
+        "full_streamlit_removal_ready": False,
+        "streamlit_fallback_retained": True,
+        "legacy_fallback_required": True,
+        "feature_parity_required_before_removal": True,
+        "no_feature_cut_allowed": True,
+        "local_retirement_review_chain_visible": bool(parity_review_ready and fallback_review_ready),
+        "requires_provider_backed_parity_acceptance": requires_provider_backed_parity,
+        "requires_browser_performance_qa": requires_browser_performance_qa,
+        "requires_admin_debug_retention_decision": requires_admin_debug_decision,
+        "requires_app_py_removal_or_retention_decision": requires_app_py_decision,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "cache_get_creates_task": False,
+        "cache_get_opens_streamlit": False,
+        "cache_get_runs_legacy_tools": False,
+        "cache_get_removes_fallback": False,
+        "cache_get_deletes_app_py": False,
+        "cache_get_calls_provider": False,
+        "cache_get_calls_model": False,
+        "cache_get_calls_github": False,
+        "creates_task_from_get": False,
+        "opens_streamlit_from_get": False,
+        "runs_legacy_tools_from_get": False,
+        "removes_fallback_from_get": False,
+        "deletes_app_py_from_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": (
+            "ltg10_streamlit_handoff_reads_local_retirement_receipts_not_fallback_removal_or_complete_exit"
+        ),
+    }
+
+
 def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import candidate_service
@@ -8295,6 +8434,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_worker_runtime_qa_handoff: dict[str, Any] = {}
         supporting_next_session_production_replacement_handoff: dict[str, Any] = {}
         supporting_tauri_package_handoff: dict[str, Any] = {}
+        supporting_streamlit_retirement_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -8349,6 +8489,8 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             )
         if action["queue_id"] == "p6_tauri_package_readiness_review":
             supporting_tauri_package_handoff = _latest_tauri_package_handoff_summary()
+        if action["queue_id"] == "p7_streamlit_retirement_review":
+            supporting_streamlit_retirement_handoff = _latest_streamlit_retirement_handoff_summary()
         submission_preview_rows = _build_ltg_next_action_submission_preview_rows(
             next_local_step,
             local_step_rows,
@@ -8616,6 +8758,33 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_tauri_package_creates_task_from_get": (
                     supporting_tauri_package_handoff.get("cache_get_creates_task") is True
+                ),
+                "supporting_streamlit_retirement_handoff": supporting_streamlit_retirement_handoff,
+                "supporting_streamlit_retirement_next_local_step": (
+                    supporting_streamlit_retirement_handoff.get("next_local_step", "")
+                ),
+                "supporting_streamlit_retirement_local_review_chain_visible": (
+                    supporting_streamlit_retirement_handoff.get("local_retirement_review_chain_visible")
+                    is True
+                ),
+                "supporting_streamlit_retirement_requires_remaining_evidence": (
+                    supporting_streamlit_retirement_handoff.get(
+                        "requires_provider_backed_parity_acceptance"
+                    )
+                    is True
+                    or supporting_streamlit_retirement_handoff.get("requires_browser_performance_qa")
+                    is True
+                    or supporting_streamlit_retirement_handoff.get(
+                        "requires_admin_debug_retention_decision"
+                    )
+                    is True
+                    or supporting_streamlit_retirement_handoff.get(
+                        "requires_app_py_removal_or_retention_decision"
+                    )
+                    is True
+                ),
+                "supporting_streamlit_retirement_creates_task_from_get": (
+                    supporting_streamlit_retirement_handoff.get("cache_get_creates_task") is True
                 ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
                 "local_receipt_lookup_creates_task": False,

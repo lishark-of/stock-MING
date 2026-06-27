@@ -7559,6 +7559,51 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(observed_rows["LTG-10"]["streamlit_fallback_removal_ready"])
         self.assertFalse(observed_rows["LTG-10"]["full_streamlit_removal_ready"])
         self.assertFalse(observed_rows["LTG-10"]["can_close_from_observed_row"])
+        queue_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        streamlit_queue = queue_rows["p7_streamlit_retirement_review"]
+        handoff = streamlit_queue["supporting_streamlit_retirement_handoff"]
+        self.assertEqual(handoff["schema_version"], "ltg10_streamlit_retirement_handoff_summary.v1")
+        self.assertEqual(
+            handoff["status"],
+            "streamlit_local_fallback_retirement_review_ready_retirement_blocked",
+        )
+        self.assertEqual(handoff["direct_evidence_stage_count"], 2)
+        self.assertEqual(
+            handoff["direct_evidence_stage_keys"],
+            ["ordinary_workflow_replacement_parity", "fallback_retirement_change_review"],
+        )
+        self.assertEqual(handoff["pending_stage_count"], 6)
+        self.assertTrue(handoff["streamlit_retirement_readiness_receipt_ready"])
+        self.assertTrue(handoff["streamlit_retirement_durable_evidence_recipe_ready"])
+        self.assertTrue(handoff["streamlit_ordinary_workflow_parity_review_ready"])
+        self.assertTrue(handoff["streamlit_ordinary_workflow_parity_direct_evidence_verified"])
+        self.assertTrue(handoff["streamlit_fallback_retirement_review_ready"])
+        self.assertTrue(handoff["streamlit_fallback_retirement_direct_evidence_verified"])
+        self.assertTrue(handoff["local_retirement_review_chain_visible"])
+        self.assertTrue(handoff["requires_provider_backed_parity_acceptance"])
+        self.assertTrue(handoff["requires_browser_performance_qa"])
+        self.assertTrue(handoff["requires_admin_debug_retention_decision"])
+        self.assertTrue(handoff["requires_app_py_removal_or_retention_decision"])
+        self.assertTrue(handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(handoff["ordinary_workflow_exit_complete"])
+        self.assertFalse(handoff["streamlit_fallback_removal_ready"])
+        self.assertFalse(handoff["full_streamlit_removal_ready"])
+        self.assertTrue(handoff["streamlit_fallback_retained"])
+        self.assertFalse(handoff["cache_get_creates_task"])
+        self.assertFalse(handoff["cache_get_opens_streamlit"])
+        self.assertFalse(handoff["cache_get_runs_legacy_tools"])
+        self.assertFalse(handoff["cache_get_removes_fallback"])
+        self.assertFalse(handoff["cache_get_deletes_app_py"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertTrue(handoff["does_not_modify_holdings"])
+        self.assertFalse(handoff["can_close_goal"])
+        self.assertFalse(streamlit_queue["future_handoff_ready_from_local_receipt"])
+        self.assertTrue(streamlit_queue["supporting_streamlit_retirement_local_review_chain_visible"])
+        self.assertTrue(streamlit_queue["supporting_streamlit_retirement_requires_remaining_evidence"])
+        self.assertFalse(streamlit_queue["supporting_streamlit_retirement_creates_task_from_get"])
 
     def test_streamlit_retirement_observes_candidate_and_browser_dependency_evidence_without_removal(self):
         self._with_meta_store()
