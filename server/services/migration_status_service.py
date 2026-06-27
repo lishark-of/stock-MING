@@ -1689,8 +1689,9 @@ def _build_ltg_rebase_cycle_1_status(
             and all_ltg_not_closeable
             and observed_rows_all_block_closeout
         ),
-        "next_goal_candidate": "select_one_ltg_direct_evidence_slice_after_rebase_baseline",
-        "recommended_first_ltg_after_rebase": "LTG-13 or LTG-02, only after this baseline is committed or checkpointed",
+        "next_goal_candidate": "resolve_current_head_remote_review_then_ltg01_trade_cal_provider_acceptance_slice",
+        "recommended_first_ltg_after_rebase": "LTG-01, with LTG-11 as the remote-review support target",
+        "support_ltg_for_next_slice": ["LTG-11"],
         "cache_only_readback": True,
         "creates_task_from_get": False,
         "creates_task_from_render": False,
@@ -2319,7 +2320,8 @@ def _build_ltg_strict_closeout_work_order_rows(
         "LTG-13": "ci_smoke_security_release_gate",
         "LTG-14": "ci_smoke_security_release_gate",
     }
-    recommended_first_candidates = {"LTG-13", "LTG-02"}
+    recommended_first_candidates = {"LTG-01"}
+    support_candidates = {"LTG-11"}
     rows: list[dict[str, Any]] = []
     for index, goal_id in enumerate(_ltg_ids_from_priority_order(), start=1):
         goal = goals_by_id.get(goal_id, {})
@@ -2365,10 +2367,11 @@ def _build_ltg_strict_closeout_work_order_rows(
                 "goal": goal.get("goal"),
                 "priority_order": index,
                 "recommended_first_candidate": goal_id in recommended_first_candidates,
-                "recommended_reason": "good first strict-closeout slice after baseline"
-                if goal_id == "LTG-13"
-                else "provider target-sample path is a useful first data LTG"
-                if goal_id == "LTG-02"
+                "support_candidate_for_next_slice": goal_id in support_candidates,
+                "recommended_reason": "first remaining provider-backed trade_cal acceptance slice after usability checkpoint"
+                if goal_id == "LTG-01"
+                else "support current HEAD remote review split before remote evidence claims"
+                if goal_id == "LTG-11"
                 else "follow after earlier work-order blockers are reduced",
                 "acceptance_queue_id": queue_id,
                 "acceptance_queue_status": action.get("local_receipt_status") or "missing_queue_status",
@@ -2468,8 +2471,12 @@ def _build_ltg_strict_closeout_work_order_rows(
         "status": "one_ltg_closeout_work_order_ready_for_selection_closeout_claim_blocked",
         "work_order_row_count": len(rows),
         "recommended_first_candidate_ids": sorted(recommended_first_candidates),
+        "support_candidate_ids": sorted(support_candidates),
         "recommended_first_candidate_count": sum(
             1 for row in rows if row.get("recommended_first_candidate") is True
+        ),
+        "support_candidate_count": sum(
+            1 for row in rows if row.get("support_candidate_for_next_slice") is True
         ),
         "strict_closeout": long_term_goal_summary.get("strict_closeout") or "0/14",
         "strict_closeout_done_count": long_term_goal_summary.get("strict_closeout_done_count") or 0,
@@ -2617,8 +2624,13 @@ def _build_usable_path_medium_goal_checkpoint(
         "strict_closeout": ltg_strict_closeout_work_order_summary.get("strict_closeout") or "0/14",
         "strict_closeout_claim_allowed": False,
         "not_14_ltg_closeout": True,
-        "next_recommended_action": "select_one_ltg_direct_evidence_slice",
-        "recommended_first_ltg_after_medium_goals": ["LTG-13", "LTG-02"],
+        "active_remaining_goal_mode": "strict_ltg_closeout_evidence_spine_with_remote_review_split",
+        "completed_medium_goals_removed_from_active_plan": True,
+        "next_recommended_action": "resolve_current_head_remote_review_then_ltg01_trade_cal_provider_acceptance_slice",
+        "recommended_first_ltg_after_medium_goals": ["LTG-01"],
+        "support_ltg_for_next_slice": ["LTG-11"],
+        "remote_review_split_required_before_remote_claim": True,
+        "local_complete_can_stand_without_remote_claim": True,
         "cache_only_readback": True,
         "creates_task_from_get": False,
         "creates_task_from_render": False,

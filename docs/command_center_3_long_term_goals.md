@@ -469,11 +469,15 @@ Configured source or release switches remain operator intent in this roadmap. `C
 
 ## Remaining Goals Snapshot
 
-Current snapshot date: 2026-06-16.
+Current snapshot date: 2026-06-27.
 
-Strict completion status: none of the 14 long-term goals should be closed as fully complete yet. LTG-11 and LTG-12 are the closest to stable operating policy, but they still remain ongoing release boundaries rather than one-time completed features.
+Strict completion status: none of the 14 long-term goals should be closed as fully complete yet. The user-usable medium goals have been removed from the active LTG target plan because they are already checkpointed as local usability work. LTG-11 and LTG-12 are the closest to stable operating policy, but they still remain ongoing release boundaries rather than one-time completed features.
 
-Progress summary as of 2026-06-16: the Command Center 3.0 migration foundation is roughly 70-75% established, while production acceptance across the 14 LTGs is roughly 25-35% complete. The strict closeout count remains `0 / 14` because every LTG still has at least one provider-backed, packaged-runtime, browser-performance, worker/storage, or retirement acceptance item pending.
+Progress summary as of 2026-06-27: the Command Center 3.0 migration foundation is roughly 70-75% established, while production acceptance across the 14 LTGs is roughly 25-35% complete. The strict closeout count remains `0 / 14` because every LTG still has at least one provider-backed, packaged-runtime, browser-performance, worker/storage, or retirement acceptance item pending.
+
+Active target mode is now `Strict LTG Closeout Evidence Spine with Remote Review Split` / `14 LTG 严格收口证据脊柱 + 远端查收分离模式`. The active target plan deletes already checkpointed local usability items from the work list and continues only the unclosed LTGs. A local slice can end as `local_complete`, but missing matching GitHub Actions or release review must be tracked as `remote_review_pending` instead of repeatedly marking the local goal blocked. Only local direct evidence, matching remote CI green, and release review together can move an LTG toward `strict_closeout_ready`.
+
+Current local checkpoint note: the latest known local line was `main...origin/main [ahead 1]` at commit `998e8cb1`, so the immediate support target remains LTG-11 remote review split before claiming any remote evidence. This note is a planning snapshot, not a push authorization and not remote CI evidence.
 
 | bucket | count | goals | current meaning |
 |---|---:|---|---|

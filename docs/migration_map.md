@@ -24,7 +24,7 @@
 
 本轮 `Command Center 3.0 LTG Rebase Cycle 1` 只把已完成的 P0-P5 使用者可用化纵切收口成可维护基线，并校准 14 LTG 总账。它不新增功能、不实现完整 `live_light`、不追 `14 LTG strict closeout`，也不把普通首页、receipt、matrix、mock、sanitizer 或本地回放当成 production evidence。
 
-当前 15 个未提交改动按可提交/可回退边界分为四组：
+该 checkpoint 覆盖 15 个文件改动，按可提交/可回退边界分为四组：
 
 | group | files | commit / rollback meaning |
 |---|---:|---|
@@ -35,7 +35,32 @@
 
 `GET /api/migration/status` 暴露 `ltg_rebase_cycle_1_summary`、`ltg_rebase_cycle_1_worktree_group_rows` 和 `ltg_rebase_cycle_1_ltg_ledger_rows` 作为本轮只读总账。14 个 LTG 在该总账里必须全部保持 `can_close_ltg_now=false`；实时观察行即使显示 provider、browser、worker、storage 或 package 证据，也只能更新“已有证据/缺口/下一步 direct evidence”，不能关闭 LTG。
 
-三个中目标的查收 checkpoint 由 `usable_path_medium_goal_checkpoint_summary` 和 `usable_path_medium_goal_checkpoint_rows` 输出：MG-01 使用者可用化基线、MG-02 Tushare-first 候选雷达粗筛/细筛切片、MG-03 生产硬化与 LTG direct-evidence 工单准备都可标为短期中目标完成；该 checkpoint 的边界固定为 `not_14_ltg_closeout=true`、`strict_closeout=0/14`、GET/cache/render 不创建任务、不外联、不交易、不改 strategy action。下一轮只能从 `LTG-13` 或 `LTG-02` 中选择一个 direct evidence slice 继续，不能把三中目标完成误报为满血迁移完成。
+三个中目标的查收 checkpoint 由 `usable_path_medium_goal_checkpoint_summary` 和 `usable_path_medium_goal_checkpoint_rows` 输出：MG-01 使用者可用化基线、MG-02 Tushare-first 候选雷达粗筛/细筛切片、MG-03 生产硬化与 LTG direct-evidence 工单准备都可标为短期中目标完成；该 checkpoint 的边界固定为 `not_14_ltg_closeout=true`、`strict_closeout=0/14`、GET/cache/render 不创建任务、不外联、不交易、不改 strategy action。下一轮推荐先处理 `LTG-11` 当前 HEAD 远端查收分离，再做 `LTG-01` trade_cal provider-backed acceptance local evidence slice，不能把三中目标完成误报为满血迁移完成。
+
+### Active Remaining Goal Plan
+
+当前执行模式改为 `Strict LTG Closeout Evidence Spine with Remote Review Split` / `14 LTG 严格收口证据脊柱 + 远端查收分离模式`。已完成的使用者可用化中目标、首页降噪、本地 FastAPI 接线、候选雷达粗筛/细筛、生产硬化工单准备和 remote-review split 本地提交不再进入 active plan。它们只作为历史 checkpoint 和后续回归边界保留。
+
+当前 active plan 只罗列未完成项：`strict_closeout=0/14`，本地 HEAD 若领先远端则先处理 `remote_review_pending`，再进入单个 LTG direct evidence slice。本地完成标记为 `local_complete`；GitHub Actions / release review 缺失标记为 `remote_review_pending`；只有 matching remote CI green 加 release review ready 后，才允许进入 `strict_closeout_ready`。
+
+| order | active remaining target | current blocker | next action |
+|---:|---|---|---|
+| 1 | LTG-11 测试 / CI / smoke / 安全扫描标准化 | 每个 push candidate 都需要 fresh local gate、matching remote CI 和 release review；failed 邮件必须先匹配当前 HEAD。 | 若 HEAD ahead，先获得 push 授权；push 后只读检查 Actions，不重跑 workflow。 |
+| 2 | LTG-12 真实交易链路继续隔离 | 永久 release invariant，不能作为一次性完成项关闭。 | 每个 LTG slice 都继续证明 no broker / no order / no action mutation。 |
+| 3 | LTG-01 A 股交易日历级 freshness 生产化 | provider-backed long-window `trade_cal` acceptance 与 promotion evidence pending。 | 做 `trade_cal` provider-backed acceptance local evidence slice，再等待 remote review。 |
+| 4 | LTG-02 Tushare 全接口生产流水线 | full-interface provider-backed samples 与 promotion evidence incomplete。 | staged target samples，保留 safe call ledger 和 failure-mode evidence。 |
+| 5 | LTG-03 Factor Test Lab 完整生产化 | real provider-backed small-pool validation、rolling/cost/neutralization/bias evidence pending。 | 单独做 provider-backed small-pool validation，不进 strategy action。 |
+| 6 | LTG-05 Storage / DuckDB / Parquet 生产化 | physical schema validation、migration、partition、compaction、TTL、cleanup 和 durable promotion pending。 | 分阶段执行 physical storage evidence，只走显式任务。 |
+| 7 | LTG-06 Worker / Celery / Redis 生产化 | real Celery/Redis、broker healthcheck、runtime QA、durable task logs pending。 | 做 runtime QA evidence，不从 GET/cache/render 启动 worker。 |
+| 8 | LTG-04 Factor 全市场 / 股票池研究 | worker-backed batch execution、rank/zscore、neutralization、full-pool validation pending。 | 依赖 Storage/Worker 后做 full-pool research slice。 |
+| 9 | LTG-13 下一票雷达快扫生产化 | real worker full-pool/deep-scan、provider-backed radar signal、browser performance、legacy retirement pending。 | 绑定 worker/provider/browser/legacy evidence 后再 promotion。 |
+| 10 | LTG-08 ECharts 次日操作图谱成熟版 | retained signal/capability coverage、durable CI/release evidence、production replacement pending。 | 做 same-packet coverage 与 browser/performance promotion。 |
+| 11 | LTG-07 DeepSeek pro 稳定解释生产化 | real benchmark、response_format、retry/repair、model ledger、cost/redaction、live_light model execution pending。 | 单独 governed executor slice，不阻塞 Tushare/Factor/Radar。 |
+| 12 | LTG-09 Tauri desktop production package | tauri dev/build、`.app`/DMG、packaged runtime QA、signing/notarization pending。 | 普通路径稳定后做 package QA。 |
+| 13 | LTG-10 Streamlit 完全退出普通主流程 | React/Tauri ordinary capability replacement、fallback retirement、app.py 去留 review pending。 | 等 capability replacement 和 fallback safety 过后再退场。 |
+| 14 | LTG-14 动效与可视化清晰度优化 | durable browser visual QA、performance trace、CI/release evidence、final visual promotion pending。 | 核心数据/worker/desktop/radar 稳定后再做最终 visual promotion。 |
+
+推荐下一轮小目标：主目标 `LTG-01 trade_cal provider-backed acceptance local evidence slice`，支撑目标 `LTG-11 current HEAD remote review split`。本轮不做完整 `live_light`、不做 DeepSeek executor、不做 Tauri package、不真实交易、不把 local receipt / matrix / mock / sanitizer 当 production evidence。
 
 ## Legacy Bug / UX Audit Seed
 

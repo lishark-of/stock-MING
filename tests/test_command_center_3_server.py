@@ -798,6 +798,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(rebase_summary["observed_rows_all_block_closeout"])
         self.assertTrue(rebase_summary["static_and_observed_ledger_consistent"])
         self.assertEqual(
+            rebase_summary["next_goal_candidate"],
+            "resolve_current_head_remote_review_then_ltg01_trade_cal_provider_acceptance_slice",
+        )
+        self.assertEqual(
+            rebase_summary["recommended_first_ltg_after_rebase"],
+            "LTG-01, with LTG-11 as the remote-review support target",
+        )
+        self.assertEqual(rebase_summary["support_ltg_for_next_slice"], ["LTG-11"])
+        self.assertEqual(
             rebase_summary["ordinary_user_path_first_screen"],
             ["本地已接上", "当前标的", "最近结果", "下一步按钮"],
         )
@@ -901,6 +910,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(medium_goal_summary["strict_closeout"], "0/14")
         self.assertFalse(medium_goal_summary["strict_closeout_claim_allowed"])
         self.assertTrue(medium_goal_summary["not_14_ltg_closeout"])
+        self.assertEqual(
+            medium_goal_summary["active_remaining_goal_mode"],
+            "strict_ltg_closeout_evidence_spine_with_remote_review_split",
+        )
+        self.assertTrue(medium_goal_summary["completed_medium_goals_removed_from_active_plan"])
+        self.assertEqual(
+            medium_goal_summary["next_recommended_action"],
+            "resolve_current_head_remote_review_then_ltg01_trade_cal_provider_acceptance_slice",
+        )
+        self.assertEqual(medium_goal_summary["recommended_first_ltg_after_medium_goals"], ["LTG-01"])
+        self.assertEqual(medium_goal_summary["support_ltg_for_next_slice"], ["LTG-11"])
+        self.assertTrue(medium_goal_summary["remote_review_split_required_before_remote_claim"])
+        self.assertTrue(medium_goal_summary["local_complete_can_stand_without_remote_claim"])
         self.assertEqual(
             medium_goal_summary["evidence_boundary"],
             "medium_goals_checkpoint_is_usable_path_closeout_not_14_ltg_closeout",
@@ -35341,9 +35363,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(work_order_summary["github_called"])
         self.assertTrue(work_order_summary["does_not_execute_trades"])
         self.assertTrue(work_order_summary["does_not_modify_strategy_action"])
-        self.assertEqual(set(work_order_summary["recommended_first_candidate_ids"]), {"LTG-02", "LTG-13"})
-        self.assertTrue(work_order_rows["LTG-13"]["recommended_first_candidate"])
-        self.assertTrue(work_order_rows["LTG-02"]["recommended_first_candidate"])
+        self.assertEqual(work_order_summary["recommended_first_candidate_ids"], ["LTG-01"])
+        self.assertEqual(work_order_summary["support_candidate_ids"], ["LTG-11"])
+        self.assertEqual(work_order_summary["recommended_first_candidate_count"], 1)
+        self.assertEqual(work_order_summary["support_candidate_count"], 1)
+        self.assertTrue(work_order_rows["LTG-01"]["recommended_first_candidate"])
+        self.assertTrue(work_order_rows["LTG-11"]["support_candidate_for_next_slice"])
+        self.assertFalse(work_order_rows["LTG-13"]["recommended_first_candidate"])
+        self.assertFalse(work_order_rows["LTG-02"]["recommended_first_candidate"])
         self.assertLess(work_order_rows["LTG-01"]["priority_order"], work_order_rows["LTG-10"]["priority_order"])
         self.assertEqual(work_order_rows["LTG-05"]["primary_gate_id"], "storage_boundaries")
         self.assertEqual(work_order_rows["LTG-06"]["primary_gate_id"], "worker_runtime_boundaries")
