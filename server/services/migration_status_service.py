@@ -9597,6 +9597,20 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         )
         direct_evidence_count = len(direct_stage_keys)
         pending_stage_count = max(row_count - direct_evidence_count, 0) if direct_evidence_count else pending_count
+        release_gate_evidence = _latest_release_gate_direct_evidence_summary()
+        latest_remote_run_verified_green = (
+            release_gate_evidence.get("latest_remote_run_verified_green") is True
+        )
+        ltg14_local_complete = bool(row_count and direct_evidence_count >= row_count)
+        ltg14_remote_review_pending = bool(ltg14_local_complete and not latest_remote_run_verified_green)
+        ltg14_release_review_pending = bool(ltg14_local_complete and latest_remote_run_verified_green)
+        ltg14_local_completion_status = (
+            "local_motion_direct_evidence_complete"
+            if ltg14_local_complete
+            else "local_motion_direct_evidence_partial"
+            if direct_evidence_count
+            else "local_static_contract_only"
+        )
         rows.append(
             {
                 "id": "LTG-14",
@@ -9625,6 +9639,39 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": direct_stage_keys,
                 "production_blocker_count": pending_stage_count,
+                "local_complete": ltg14_local_complete,
+                "local_completion_status": ltg14_local_completion_status,
+                "local_blocker_count": 0 if ltg14_local_complete else pending_stage_count,
+                "remote_review_required_after_local_complete": True,
+                "remote_review_pending": ltg14_remote_review_pending,
+                "remote_review_status": (
+                    "remote_review_pending"
+                    if ltg14_remote_review_pending
+                    else "remote_review_green_release_review_pending"
+                    if ltg14_release_review_pending
+                    else "remote_review_waiting_for_local_complete"
+                ),
+                "remote_review_pending_count": 1 if ltg14_remote_review_pending else 0,
+                "release_review_required_after_remote_green": True,
+                "release_review_pending": ltg14_release_review_pending,
+                "release_review_status": (
+                    "release_review_pending"
+                    if ltg14_release_review_pending
+                    else "release_review_waiting_for_remote_green"
+                    if ltg14_remote_review_pending
+                    else "release_review_waiting_for_local_and_remote_complete"
+                ),
+                "release_review_pending_count": 1 if ltg14_release_review_pending else 0,
+                "strict_closeout_ready": False,
+                "missing_evidence_items": [
+                    "route-wide motion clarity acceptance",
+                    "full browser visual QA promotion",
+                    "full browser performance trace promotion",
+                    "durable reduced-motion accessibility promotion",
+                    "durable release evidence with matching remote CI review",
+                    "motion production promotion review",
+                    "release review after matching remote CI green",
+                ],
                 "production_motion_complete": motion_contract.get("production_motion_complete") is True,
                 "visual_qa_complete": browser_visual_ready,
                 "browser_performance_verified": browser_performance_ready,
@@ -9686,6 +9733,23 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "pending_stage_count": 0,
                 "local_evidence_stage_count": 0,
                 "production_blocker_count": 0,
+                "local_complete": False,
+                "local_completion_status": "local_observation_failed",
+                "local_blocker_count": 1,
+                "remote_review_required_after_local_complete": True,
+                "remote_review_pending": False,
+                "remote_review_status": "remote_review_waiting_for_local_complete",
+                "remote_review_pending_count": 0,
+                "release_review_required_after_remote_green": True,
+                "release_review_pending": False,
+                "release_review_status": "release_review_waiting_for_local_and_remote_complete",
+                "release_review_pending_count": 0,
+                "strict_closeout_ready": False,
+                "missing_evidence_items": [
+                    "motion stage-scope observation",
+                    "durable release evidence with matching remote CI review",
+                    "release review after matching remote CI green",
+                ],
                 "production_motion_complete": False,
                 "visual_qa_complete": False,
                 "browser_performance_verified": False,
