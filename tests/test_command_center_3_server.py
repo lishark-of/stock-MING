@@ -2885,6 +2885,42 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
         )
         self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 3)
+        p1_producer_handoff = action_rows["p1_trade_cal_provider_acceptance"][
+            "supporting_current_evidence_producer_cache_refresh_handoff"
+        ]
+        self.assertEqual(
+            p1_producer_handoff["schema_version"],
+            "ltg01_current_evidence_producer_cache_refresh_handoff_summary.v1",
+        )
+        self.assertEqual(
+            action_rows["p1_trade_cal_provider_acceptance"][
+                "supporting_current_evidence_producer_cache_refresh_next_step"
+            ],
+            "POST /api/data-health/producer-cache-refresh-execution-request",
+        )
+        self.assertTrue(
+            action_rows["p1_trade_cal_provider_acceptance"][
+                "supporting_current_evidence_producer_cache_refresh_ready"
+            ]
+        )
+        self.assertTrue(
+            action_rows["p1_trade_cal_provider_acceptance"][
+                "supporting_current_evidence_producer_cache_refresh_requires_user_confirmation"
+            ]
+        )
+        self.assertFalse(
+            action_rows["p1_trade_cal_provider_acceptance"][
+                "supporting_current_evidence_producer_cache_refresh_creates_task_from_get"
+            ]
+        )
+        self.assertEqual(
+            p1_producer_handoff["evidence_boundary"],
+            "producer_cache_refresh_handoff_is_local_readiness_not_provider_acceptance_or_ltg_closeout",
+        )
+        self.assertFalse(p1_producer_handoff["external_calls_triggered"])
+        self.assertFalse(p1_producer_handoff["tushare_called"])
+        self.assertTrue(p1_producer_handoff["does_not_execute_trades"])
+        self.assertFalse(p1_producer_handoff["can_close_goal"])
         self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p3_factor_universe_worker_batch_research"]["local_receipt_step_count"], 5)
@@ -37342,6 +37378,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertFalse(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_lookup_creates_task"])
         self.assertFalse(action_rows["p1_trade_cal_provider_acceptance"]["creates_task_from_get"])
+        p1_producer_handoff = action_rows["p1_trade_cal_provider_acceptance"][
+            "supporting_current_evidence_producer_cache_refresh_handoff"
+        ]
+        self.assertEqual(
+            p1_producer_handoff["execution_request_route"],
+            "POST /api/data-health/producer-cache-refresh-execution-request",
+        )
+        self.assertEqual(
+            p1_producer_handoff["target_local_refresh_route"],
+            "POST /api/data-health/producer-cache-refresh",
+        )
+        self.assertTrue(p1_producer_handoff["requires_user_confirmation"])
+        self.assertFalse(p1_producer_handoff["cache_get_creates_task"])
+        self.assertFalse(p1_producer_handoff["cache_get_external_calls"])
+        self.assertFalse(p1_producer_handoff["provider_execution_implemented"])
+        self.assertFalse(p1_producer_handoff["production_freshness_gate_complete"])
         self.assertFalse(action_rows["p2_tushare_target_sample_acceptance"]["external_calls_triggered"])
         self.assertTrue(action_rows["p3_candidate_radar_provider_worker_promotion"]["does_not_modify_strategy_action"])
         self.assertFalse(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_lookup_calls_provider"])

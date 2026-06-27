@@ -6676,6 +6676,93 @@ def _build_ltg_future_handoff_preview_rows(
     ]
 
 
+def _latest_current_evidence_producer_cache_refresh_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import data_health_service
+
+        packet = data_health_service.read_data_health_timeline_cache()
+    except Exception:
+        packet = {}
+    packet_map = _dict_or_empty(packet)
+    counts = _dict_or_empty(packet_map.get("counts"))
+    readiness = _dict_or_empty(packet_map.get("current_evidence_producer_cache_refresh_readiness"))
+    latest_request = _dict_or_empty(packet_map.get("latest_producer_cache_refresh_execution_request"))
+    readiness_ready = readiness.get("local_cache_refresh_ready") is True
+    current_refresh_required = int(readiness.get("current_cache_refresh_required_count") or 0)
+    latest_request_found = latest_request.get("latest_task_found") is True
+    ready_for_refresh_submission = (
+        latest_request.get("ready_for_manual_local_refresh_task_submission") is True
+    )
+    execution_request_route = str(
+        latest_request.get("route") or "POST /api/data-health/producer-cache-refresh-execution-request"
+    )
+    target_refresh_route = "POST /api/data-health/producer-cache-refresh"
+    next_route = (
+        target_refresh_route
+        if latest_request_found and ready_for_refresh_submission
+        else execution_request_route
+    )
+    return {
+        "schema_version": "ltg01_current_evidence_producer_cache_refresh_handoff_summary.v1",
+        "status": (
+            "producer_cache_refresh_execution_request_ready_for_manual_refresh"
+            if latest_request_found and ready_for_refresh_submission
+            else "producer_cache_refresh_execution_request_needed"
+            if readiness_ready and current_refresh_required > 0
+            else "producer_cache_refresh_no_current_refresh_required"
+            if readiness_ready
+            else "producer_cache_refresh_readiness_pending"
+        ),
+        "source_packet_key": "command_center_3_data_health_timeline_cache",
+        "readiness_status": str(readiness.get("status") or "missing"),
+        "readiness_scope_hash_short": str(readiness.get("readiness_scope_hash_short") or ""),
+        "readiness_scope_hash": str(readiness.get("readiness_scope_hash") or ""),
+        "producer_count": int(readiness.get("producer_count") or 0),
+        "current_cache_ready_count": int(readiness.get("current_cache_ready_count") or 0),
+        "current_cache_refresh_required_count": current_refresh_required,
+        "blocked_producer_count": int(readiness.get("blocked_producer_count") or 0),
+        "local_cache_refresh_ready": readiness_ready,
+        "execution_request_route": execution_request_route,
+        "target_local_refresh_route": target_refresh_route,
+        "next_local_step": next_route,
+        "latest_execution_request_found": latest_request_found,
+        "latest_execution_request_status": str(
+            latest_request.get("execution_request_status") or latest_request.get("status") or "missing"
+        ),
+        "latest_execution_request_task_id": str(latest_request.get("latest_task_id") or ""),
+        "latest_execution_request_row_count": int(
+            counts.get("latest_producer_cache_refresh_execution_request_row_count") or 0
+        ),
+        "latest_execution_request_blocking_row_count": int(
+            counts.get("latest_producer_cache_refresh_execution_request_blocking_row_count") or 0
+        ),
+        "ready_for_manual_local_refresh_task_submission": ready_for_refresh_submission,
+        "requires_user_confirmation": True,
+        "requires_execution_request_before_refresh": not latest_request_found,
+        "cache_get_creates_task": False,
+        "cache_get_writes_snapshot_cache": False,
+        "cache_get_external_calls": False,
+        "creates_task_from_get": False,
+        "writes_snapshot_cache": False,
+        "builds_missing_packets": False,
+        "provider_execution_implemented": False,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": (
+            "producer_cache_refresh_handoff_is_local_readiness_not_provider_acceptance_or_ltg_closeout"
+        ),
+    }
+
+
 def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows_by_id = {str(row.get("id") or ""): row for row in rows}
     tasks_by_type = _task_statuses_by_type()
@@ -6721,6 +6808,11 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             next_local_step = str(action["future_provider_route"])
         latest_observed = observed_steps[-1] if observed_steps else {}
         safe_context: dict[str, Any] = {}
+        supporting_current_evidence_producer_cache_refresh_handoff: dict[str, Any] = {}
+        if action["queue_id"] == "p1_trade_cal_provider_acceptance":
+            supporting_current_evidence_producer_cache_refresh_handoff = (
+                _latest_current_evidence_producer_cache_refresh_handoff_summary()
+            )
         if action["queue_id"] == "p2_tushare_target_sample_acceptance":
             safe_context["tushare_target_sample_execution_recipe_preview"] = (
                 _latest_tushare_target_sample_execution_recipe_preview()
@@ -6812,6 +6904,24 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "future_handoff_preview_rows": future_handoff_preview_rows,
                 "future_handoff_preview_row_count": len(future_handoff_preview_rows),
                 "future_handoff_ready_from_local_receipt": future_handoff_ready,
+                "supporting_current_evidence_producer_cache_refresh_handoff": (
+                    supporting_current_evidence_producer_cache_refresh_handoff
+                ),
+                "supporting_current_evidence_producer_cache_refresh_next_step": (
+                    supporting_current_evidence_producer_cache_refresh_handoff.get("next_local_step", "")
+                ),
+                "supporting_current_evidence_producer_cache_refresh_ready": (
+                    supporting_current_evidence_producer_cache_refresh_handoff.get("local_cache_refresh_ready")
+                    is True
+                ),
+                "supporting_current_evidence_producer_cache_refresh_requires_user_confirmation": (
+                    supporting_current_evidence_producer_cache_refresh_handoff.get("requires_user_confirmation")
+                    is True
+                ),
+                "supporting_current_evidence_producer_cache_refresh_creates_task_from_get": (
+                    supporting_current_evidence_producer_cache_refresh_handoff.get("creates_task_from_get")
+                    is True
+                ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
                 "local_receipt_lookup_creates_task": False,
                 "local_receipt_lookup_calls_provider": False,
