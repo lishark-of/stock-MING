@@ -304,6 +304,7 @@ export default function MigrationStatus() {
   const longTermNextPriority = (longTermGoalSummary.next_priority_order as Array<string> | undefined) ?? [];
   const ltgStageScopeObservedRows = (packet.ltg_stage_scope_observed_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const motionGoalObservedRow = ltgStageScopeObservedRows.find((row) => row.id === "LTG-14") ?? {};
+  const tradeIsolationGoalObservedRow = ltgStageScopeObservedRows.find((row) => row.id === "LTG-12") ?? {};
   const tushareDeepseekLinkage = (packet.tushare_deepseek_linkage_review as Record<string, unknown> | undefined) ?? {};
   const tushareDeepseekLinkageRows = (packet.tushare_deepseek_linkage_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const tushareDeepseekModeLayerRows = (packet.tushare_deepseek_mode_layer_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -492,6 +493,66 @@ export default function MigrationStatus() {
         evidence_boundary: handoff.evidence_boundary
       }];
     });
+  const tradeIsolationReleaseGuardQueueRow = ltgNextAcceptanceActionRows.find(
+    (row) => row.queue_id === "p10_trade_isolation_release_guard"
+  ) ?? {};
+  const tradeIsolationReleaseGuardRows = [
+    {
+      evidence_slice: "research_release_trade_isolation_receipt",
+      queue_id: tradeIsolationReleaseGuardQueueRow.queue_id,
+      status: tradeIsolationGoalObservedRow.status,
+      receipt_ready: tradeIsolationGoalObservedRow.trade_isolation_release_receipt_ready === true,
+      receipt_status: tradeIsolationGoalObservedRow.trade_isolation_release_receipt_status,
+      direct_evidence_stage_count: tradeIsolationGoalObservedRow.direct_evidence_stage_count,
+      pending_stage_count: tradeIsolationGoalObservedRow.pending_stage_count,
+      release_receipt_is_trading_approval: tradeIsolationGoalObservedRow.release_receipt_is_trading_approval,
+      evidence_boundary: tradeIsolationGoalObservedRow.evidence_boundary
+    },
+    {
+      evidence_slice: "no_broker_order_or_trade_execution_api",
+      real_trading_connected: tradeIsolationGoalObservedRow.real_trading_connected,
+      broker_adapter_connected: tradeIsolationGoalObservedRow.broker_adapter_connected,
+      order_endpoint_present: tradeIsolationGoalObservedRow.order_endpoint_present,
+      trade_execution_api_enabled: tradeIsolationGoalObservedRow.trade_execution_api_enabled,
+      order_route_present: tradeIsolationGoalObservedRow.order_route_present,
+      frontend_trade_controls_present: tradeIsolationGoalObservedRow.frontend_trade_controls_present,
+      broker_called: tradeIsolationGoalObservedRow.broker_called,
+      order_submitted: tradeIsolationGoalObservedRow.order_submitted
+    },
+    {
+      evidence_slice: "no_action_mutation_from_model_provider_or_cache",
+      model_or_provider_can_modify_action: tradeIsolationGoalObservedRow.model_or_provider_can_modify_action,
+      strategy_action_mutated_by_contract: tradeIsolationGoalObservedRow.strategy_action_mutated_by_contract,
+      does_not_execute_trades: tradeIsolationGoalObservedRow.does_not_execute_trades,
+      does_not_modify_strategy_action: tradeIsolationGoalObservedRow.does_not_modify_strategy_action,
+      does_not_modify_holdings: tradeIsolationGoalObservedRow.does_not_modify_holdings,
+      external_calls_triggered: tradeIsolationGoalObservedRow.external_calls_triggered,
+      tushare_called: tradeIsolationGoalObservedRow.tushare_called,
+      deepseek_called: tradeIsolationGoalObservedRow.deepseek_called,
+      github_called: tradeIsolationGoalObservedRow.github_called
+    },
+    {
+      evidence_slice: "separate_real_trading_project_required",
+      ready_for_real_trading_integration: tradeIsolationGoalObservedRow.ready_for_real_trading_integration,
+      future_real_trading_requires_separate_project: tradeIsolationGoalObservedRow.future_real_trading_requires_separate_project,
+      separate_project_approved: tradeIsolationGoalObservedRow.separate_project_approved,
+      paper_trading_sandbox_ready: tradeIsolationGoalObservedRow.paper_trading_sandbox_ready,
+      continued_no_broker_proof_required: tradeIsolationGoalObservedRow.continued_no_broker_proof_required,
+      continued_no_order_proof_required: tradeIsolationGoalObservedRow.continued_no_order_proof_required,
+      continued_no_action_mutation_proof_required: tradeIsolationGoalObservedRow.continued_no_action_mutation_proof_required
+    },
+    {
+      evidence_slice: "remote_review_split_before_strict_closeout",
+      local_complete: tradeIsolationGoalObservedRow.local_complete,
+      local_completion_status: tradeIsolationGoalObservedRow.local_completion_status,
+      remote_review_required_after_local_complete: tradeIsolationGoalObservedRow.remote_review_required_after_local_complete,
+      remote_review_pending: tradeIsolationGoalObservedRow.remote_review_pending,
+      release_review_required_after_remote_green: tradeIsolationGoalObservedRow.release_review_required_after_remote_green,
+      release_review_pending: tradeIsolationGoalObservedRow.release_review_pending,
+      strict_closeout_ready: tradeIsolationGoalObservedRow.strict_closeout_ready,
+      can_close_from_observed_row: tradeIsolationGoalObservedRow.can_close_from_observed_row
+    }
+  ];
   const missingLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
     (total, row) => total + Number(row.missing_local_receipt_step_count ?? 0),
     0
@@ -1009,6 +1070,54 @@ export default function MigrationStatus() {
         ]}
       />
       <DataLineageTable rows={[motionGoalObservedRow]} />
+      <h3>LTG-12 真实交易隔离 release guard</h3>
+      <p className="risk-note">release receipt 可作为研究客户端发布证据，但不是真实交易批准；这里单独下沉 p10_trade_isolation_release_guard，确认它不是 broker/order/trade-execution 集成，也不能绕过远端查收和 release review。</p>
+      <MetricGrid
+        items={[
+          {
+            label: "release receipt",
+            value: String(tradeIsolationGoalObservedRow.trade_isolation_release_receipt_status ?? "missing"),
+            tone: tradeIsolationGoalObservedRow.trade_isolation_release_receipt_ready === true ? "good" : "warn"
+          },
+          {
+            label: "direct evidence",
+            value: Number(tradeIsolationGoalObservedRow.direct_evidence_stage_count ?? 0),
+            tone: Number(tradeIsolationGoalObservedRow.direct_evidence_stage_count ?? 0) ? "warn" : "neutral"
+          },
+          {
+            label: "pending stages",
+            value: Number(tradeIsolationGoalObservedRow.pending_stage_count ?? 0),
+            tone: Number(tradeIsolationGoalObservedRow.pending_stage_count ?? 0) ? "warn" : "good"
+          },
+          {
+            label: "real trading",
+            value: tradeIsolationGoalObservedRow.real_trading_connected === true ? "connected" : "isolated",
+            tone: tradeIsolationGoalObservedRow.real_trading_connected === true ? "bad" : "good"
+          },
+          {
+            label: "broker adapter",
+            value: tradeIsolationGoalObservedRow.broker_adapter_connected === true ? "connected" : "absent",
+            tone: tradeIsolationGoalObservedRow.broker_adapter_connected === true ? "bad" : "good"
+          },
+          {
+            label: "order endpoint",
+            value: tradeIsolationGoalObservedRow.order_endpoint_present === true ? "present" : "absent",
+            tone: tradeIsolationGoalObservedRow.order_endpoint_present === true ? "bad" : "good"
+          },
+          {
+            label: "separate project",
+            value: tradeIsolationGoalObservedRow.future_real_trading_requires_separate_project === true ? "required" : "missing",
+            tone: tradeIsolationGoalObservedRow.future_real_trading_requires_separate_project === true ? "good" : "bad"
+          },
+          {
+            label: "strict closeout",
+            value: tradeIsolationGoalObservedRow.can_close_from_observed_row === true ? "ready" : "blocked",
+            tone: tradeIsolationGoalObservedRow.can_close_from_observed_row === true ? "bad" : "good"
+          }
+        ]}
+      />
+      <DataLineageTable rows={tradeIsolationReleaseGuardRows} />
+      <DataLineageTable rows={[tradeIsolationGoalObservedRow]} />
       <h3>LTG stage-scope observed rows</h3>
       <p className="risk-note">这些 observed rows 只读取本地 cache 或静态合同里的阶段清单，用来让长期目标总览对齐具体页面证据；它们不是生产完成证据。</p>
       <DataLineageTable rows={ltgStageScopeObservedRows} />
