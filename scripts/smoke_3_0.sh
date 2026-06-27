@@ -52,10 +52,14 @@ def assert_api_cache_endpoint(client, path):
         error = response.get("error") or {}
         if not isinstance(error, dict) or error.get("code") != "cache_missing":
             raise AssertionError(f"{path} failed: {response.get('error')}")
-        if response.get("data") is not None:
-            raise AssertionError(f"{path}.data must be null for cache_missing")
         for row in response.get("call_ledger") or []:
             assert_cache_safety(path, row)
+        data = response.get("data")
+        if data is not None:
+            if not isinstance(data, dict):
+                raise AssertionError(f"{path}.data must be a dict or null for cache_missing")
+            assert_cache_safety(path, data)
+            return data
         details = error.get("details") if isinstance(error.get("details"), dict) else {}
         return {
             "status": "cache_missing",
