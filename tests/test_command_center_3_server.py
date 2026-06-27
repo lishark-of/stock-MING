@@ -2236,6 +2236,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 )
 
     def test_model_strategy_cache_exposes_p5_output_contract_without_external_sources(self):
+        self._with_meta_store()
         model_strategy = model_strategy_service.read_deepseek_model_strategy_cache()
         governed_executor = model_strategy["governed_executor"]
 
@@ -2893,11 +2894,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertTrue(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
         self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 7)
-        self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 3)
         self.assertEqual(
             action_rows["p5_deepseek_provider_benchmark_scope"]["first_allowed_route"],
             "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+        )
+        self.assertEqual(
+            action_rows["p5_deepseek_provider_benchmark_scope"]["second_allowed_route"],
+            "POST /api/factor-quant/deepseek-provider-benchmark-execution-request",
         )
         self.assertEqual(
             action_rows["p5_next_session_map_browser_qa"]["first_allowed_route"],
@@ -37180,7 +37185,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 7)
         self.assertIn("LTG-07", action_rows["p5_deepseek_provider_benchmark_scope"]["ltg_ids"])
         self.assertIn("LTG-08", action_rows["p5_next_session_map_browser_qa"]["ltg_ids"])
-        self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 3)
         self.assertIn("LTG-09", action_rows["p6_tauri_package_readiness_review"]["ltg_ids"])
         self.assertIn("LTG-10", action_rows["p7_streamlit_retirement_review"]["ltg_ids"])
@@ -54979,6 +54984,32 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertNotIn("SHOULD_DROP", json.dumps(model_strategy, ensure_ascii=False))
 
+        migration = self.client.get("/api/migration/status").json()
+        self.assertTrue(migration["ok"])
+        ltg07 = next(
+            row
+            for row in migration["data"]["ltg_next_acceptance_action_rows"]
+            if row["queue_id"] == "p5_deepseek_provider_benchmark_scope"
+        )
+        self.assertEqual(ltg07["local_receipt_step_count"], 2)
+        self.assertEqual(ltg07["ready_local_receipt_step_count"], 1)
+        self.assertEqual(
+            ltg07["missing_local_receipt_steps"],
+            ["deepseek_provider_benchmark_execution_request_ticket"],
+        )
+        self.assertEqual(
+            ltg07["next_local_step"],
+            "POST /api/factor-quant/deepseek-provider-benchmark-execution-request",
+        )
+        request_preview = ltg07["next_local_step_preview_rows"][0]
+        self.assertEqual(
+            request_preview["step_kind"],
+            "scope_bound_model_benchmark_execution_request",
+        )
+        self.assertTrue(request_preview["ready_for_clean_local_receipt"])
+        self.assertFalse(request_preview["deepseek_called"])
+        self.assertTrue(request_preview["does_not_execute_trades"])
+
     def test_deepseek_provider_benchmark_execution_request_endpoint_is_scope_bound_local_only(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -55077,6 +55108,44 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(model_strategy["data"]["contains_secret"])
         self.assertIn("execution-request ticket 已本地回读", governed_executor["ordinary_status_label"])
         self.assertNotIn("SHOULD_DROP", json.dumps(model_strategy, ensure_ascii=False))
+
+        migration = self.client.get("/api/migration/status").json()
+        self.assertTrue(migration["ok"])
+        ltg07 = next(
+            row
+            for row in migration["data"]["ltg_next_acceptance_action_rows"]
+            if row["queue_id"] == "p5_deepseek_provider_benchmark_scope"
+        )
+        self.assertEqual(ltg07["local_receipt_step_count"], 2)
+        self.assertEqual(ltg07["ready_local_receipt_step_count"], 2)
+        self.assertEqual(ltg07["missing_local_receipt_step_count"], 0)
+        self.assertEqual(
+            ltg07["next_local_step"],
+            "future explicit DeepSeek provider benchmark task",
+        )
+        local_steps = {row["phase_key"]: row for row in ltg07["local_step_rows"]}
+        request_step = local_steps["deepseek_provider_benchmark_execution_request_ticket"]
+        self.assertTrue(request_step["receipt_ready_for_manual_provider_model_task_submission"])
+        self.assertEqual(
+            request_step["receipt_target_post_task_route"],
+            "future POST /api/factor-quant/deepseek-provider-benchmark",
+        )
+        self.assertEqual(request_step["receipt_target_task_type"], "run_deepseek_provider_benchmark")
+        self.assertFalse(request_step["receipt_model_task_created"])
+        self.assertFalse(request_step["receipt_model_execution_implemented"])
+        self.assertTrue(ltg07["future_handoff_ready_from_local_receipt"])
+        handoff = ltg07["future_handoff_preview_rows"][0]
+        self.assertEqual(handoff["status"], "future_model_handoff_preview_ready")
+        self.assertEqual(
+            handoff["future_route"],
+            "future POST /api/factor-quant/deepseek-provider-benchmark",
+        )
+        self.assertEqual(handoff["future_task_type"], "run_deepseek_provider_benchmark")
+        self.assertTrue(handoff["requires_separate_user_approved_model_task"])
+        self.assertFalse(handoff["model_task_created_by_preview"])
+        self.assertFalse(handoff["model_execution_implemented_by_preview"])
+        self.assertFalse(handoff["deepseek_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
 
     def test_deepseek_explain_endpoint_is_guarded_and_sanitized(self):
         self._with_meta_store()

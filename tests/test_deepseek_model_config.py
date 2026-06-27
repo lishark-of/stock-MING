@@ -1,13 +1,14 @@
 import ast
 import os
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
 import command_center_next_session_projection as next_session_projection
 import command_center_projection as projection
 import config
-from server.services import model_strategy_service
+from server.services import factor_service, model_strategy_service
 
 
 class DeepSeekModelConfigTests(unittest.TestCase):
@@ -25,6 +26,9 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         }
         self._original_loader = config._load_local_streamlit_secrets
         self._original_streamlit_secret = config._get_streamlit_secret
+        self._original_factor_meta_path = factor_service.SQLITE_META_PATH
+        self._temp_meta_dir = tempfile.TemporaryDirectory()
+        factor_service.SQLITE_META_PATH = Path(self._temp_meta_dir.name) / "meta.sqlite"
         config._load_local_streamlit_secrets = lambda: {}
         config._get_streamlit_secret = lambda name, default=None: default
         for key in self._original_env:
@@ -38,6 +42,8 @@ class DeepSeekModelConfigTests(unittest.TestCase):
                 os.environ[key] = value
         config._load_local_streamlit_secrets = self._original_loader
         config._get_streamlit_secret = self._original_streamlit_secret
+        factor_service.SQLITE_META_PATH = self._original_factor_meta_path
+        self._temp_meta_dir.cleanup()
 
     def test_default_strategy_uses_pro_for_explain_and_flash_for_fast(self):
         self.assertEqual(config.get_deepseek_model("default"), "deepseek-v4-pro")

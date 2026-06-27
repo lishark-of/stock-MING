@@ -539,15 +539,16 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "queue_id": "p5_deepseek_provider_benchmark_scope",
         "priority": "P5",
         "ltg_ids": ["LTG-07"],
-        "action_label": "Bind DeepSeek provider benchmark scope ticket",
+        "action_label": "Bind DeepSeek provider benchmark scope/request tickets",
         "mode_layer": "button_task_then_model_execution",
-        "current_phase": "provider_benchmark_scope_ticket_required",
+        "current_phase": "provider_benchmark_scope_ticket_and_execution_request_required",
         "first_allowed_route": "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
-        "second_allowed_route": "",
+        "second_allowed_route": "POST /api/factor-quant/deepseek-provider-benchmark-execution-request",
         "future_provider_route": "future explicit DeepSeek provider benchmark task",
         "target_acceptance_mode": "deepseek_provider_benchmark_and_promotion",
         "required_evidence": [
             "approved provider benchmark scope ticket",
+            "scope-bound local execution request ticket",
             "server-side secret presence boolean only",
             "provider benchmark model ledger",
             "provider response_format/json_schema execution evidence",
@@ -558,6 +559,8 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
             "call DeepSeek from GET cache",
             "call DeepSeek from React render",
             "treat scope ticket as provider benchmark evidence",
+            "treat execution request as provider benchmark evidence",
+            "create model task from GET cache",
             "override numeric values or strategy action",
         ],
     },
@@ -967,6 +970,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_deepseek_provider_benchmark_scope_ticket",
             "receipt_key": "deepseek_provider_benchmark_scope_ticket_receipt",
             "route": "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+        },
+        {
+            "phase_key": "deepseek_provider_benchmark_execution_request_ticket",
+            "task_type": "run_deepseek_provider_benchmark_execution_request",
+            "receipt_key": "deepseek_provider_benchmark_execution_request_receipt",
+            "route": "POST /api/factor-quant/deepseek-provider-benchmark-execution-request",
         },
     ],
     "p5_next_session_map_browser_qa": [
@@ -3493,6 +3502,7 @@ def _receipt_target_payload_safe_summary(receipt: dict[str, Any]) -> dict[str, A
     target_route = str(
         receipt.get("target_post_task_route")
         or receipt.get("target_provider_task_route")
+        or receipt.get("target_model_task_route")
         or receipt.get("target_worker_task_route")
         or receipt.get("target_worker_full_pool_route")
         or ""
@@ -3500,6 +3510,7 @@ def _receipt_target_payload_safe_summary(receipt: dict[str, Any]) -> dict[str, A
     target_task_type = str(
         receipt.get("target_task_type")
         or receipt.get("target_provider_task_type")
+        or receipt.get("target_model_task_type")
         or receipt.get("target_worker_task_type")
         or receipt.get("target_worker_full_pool_task_type")
         or ""
@@ -3534,6 +3545,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "ready_for_manual_provider_parity_task_submission",
         "ready_for_manual_worker_task_submission",
         "ready_for_manual_provider_model_task_submission",
+        "ready_for_manual_model_task_submission",
         "ready_for_manual_physical_task_submission",
         "ready_for_manual_runtime_qa_task_submission",
         "activation_review_ready",
@@ -3717,6 +3729,7 @@ def _build_ltg_next_action_local_step_rows(
                 ),
                 "receipt_ready_for_manual_provider_model_task_submission": (
                     receipt_map.get("ready_for_manual_provider_model_task_submission") is True
+                    or receipt_map.get("ready_for_manual_model_task_submission") is True
                 ),
                 "receipt_ready_for_manual_physical_task_submission": (
                     receipt_map.get("ready_for_manual_physical_task_submission") is True
@@ -3727,6 +3740,8 @@ def _build_ltg_next_action_local_step_rows(
                 "receipt_creates_provider_task": receipt_map.get("creates_provider_task") is True,
                 "receipt_provider_task_created": receipt_map.get("provider_task_created") is True,
                 "receipt_provider_execution_implemented": receipt_map.get("provider_execution_implemented") is True,
+                "receipt_model_task_created": receipt_map.get("model_task_created") is True,
+                "receipt_model_execution_implemented": receipt_map.get("model_execution_implemented") is True,
                 "receipt_creates_worker_task": receipt_map.get("creates_worker_task") is True,
                 "receipt_worker_task_created": receipt_map.get("worker_task_created") is True,
                 "receipt_worker_execution_implemented": receipt_map.get("worker_execution_implemented") is True,
@@ -6110,6 +6125,13 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "",
             "required_prior_material": "",
         },
+        "POST /api/factor-quant/deepseek-provider-benchmark-execution-request": {
+            "step_kind": "scope_bound_model_benchmark_execution_request",
+            "safe_payload_summary": "approved_by_user plus latest DeepSeek provider benchmark scope hash; local request only",
+            "expected_local_receipt": "deepseek_provider_benchmark_execution_request_receipt",
+            "required_prior_phase_key": "deepseek_provider_benchmark_scope_ticket",
+            "required_prior_material": "receipt_scope_hash",
+        },
         "POST /api/next-session/browser-qa-review": {
             "step_kind": "local_browser_qa_artifact_review",
             "safe_payload_summary": "review_scope=next_session_browser_qa_local_artifact; reads ignored local reports only",
@@ -6445,6 +6467,8 @@ def _build_ltg_future_handoff_preview_rows(
         and latest_ready_step.get("receipt_creates_provider_task") is False
         and latest_ready_step.get("receipt_provider_task_created") is False
         and latest_ready_step.get("receipt_provider_execution_implemented") is False
+        and latest_ready_step.get("receipt_model_task_created") is False
+        and latest_ready_step.get("receipt_model_execution_implemented") is False
         and latest_ready_step.get("receipt_creates_worker_task") is False
         and latest_ready_step.get("receipt_worker_task_created") is False
         and latest_ready_step.get("receipt_worker_execution_implemented") is False
@@ -6455,6 +6479,8 @@ def _build_ltg_future_handoff_preview_rows(
             status = "future_worker_handoff_preview_ready"
         elif latest_ready_step.get("receipt_ready_for_manual_provider_task_submission") is True:
             status = "future_provider_handoff_preview_ready"
+        elif latest_ready_step.get("receipt_ready_for_manual_provider_model_task_submission") is True:
+            status = "future_model_handoff_preview_ready"
         else:
             status = "future_execution_handoff_preview_ready"
         disabled_reason = ""
@@ -6513,6 +6539,8 @@ def _build_ltg_future_handoff_preview_rows(
             "creates_provider_task_from_preview": False,
             "provider_task_created_by_preview": False,
             "provider_execution_implemented_by_preview": False,
+            "model_task_created_by_preview": False,
+            "model_execution_implemented_by_preview": False,
             "worker_task_created_by_preview": False,
             "worker_execution_implemented_by_preview": False,
             "worker_started_by_preview": False,
@@ -6522,6 +6550,10 @@ def _build_ltg_future_handoff_preview_rows(
             is True,
             "requires_separate_user_approved_worker_task": latest_ready_step.get(
                 "receipt_ready_for_manual_worker_task_submission"
+            )
+            is True,
+            "requires_separate_user_approved_model_task": latest_ready_step.get(
+                "receipt_ready_for_manual_provider_model_task_submission"
             )
             is True,
             "supporting_worker_runtime_dependency_preflight_visible": dependency_visible,

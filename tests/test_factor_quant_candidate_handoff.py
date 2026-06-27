@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import factor_service
+from server.services import factor_service, packet_service
 from storage.sqlite_meta import SQLiteMetaStore
 
 
@@ -11,10 +11,13 @@ class FactorQuantCandidateHandoffTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tmp.name) / "meta.sqlite"
         self.original_meta_path = factor_service.SQLITE_META_PATH
+        self.original_packet_meta_path = packet_service.SQLITE_META_PATH
         factor_service.SQLITE_META_PATH = self.db_path
+        packet_service.SQLITE_META_PATH = self.db_path
 
     def tearDown(self):
         factor_service.SQLITE_META_PATH = self.original_meta_path
+        packet_service.SQLITE_META_PATH = self.original_packet_meta_path
         self.tmp.cleanup()
 
     def _write_candidate_packet(self, **overrides):
