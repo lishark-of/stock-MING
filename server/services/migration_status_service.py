@@ -7534,6 +7534,116 @@ def _latest_candidate_radar_production_handoff_summary() -> dict[str, Any]:
     }
 
 
+def _latest_trade_isolation_release_guard_handoff_summary() -> dict[str, Any]:
+    try:
+        from scripts import trade_isolation_contract
+
+        contract = trade_isolation_contract.build_contract()
+    except Exception:
+        contract = {}
+    contract_map = contract if isinstance(contract, dict) else {}
+    observed = _dict_or_empty(contract_map.get("observed"))
+    stage_rows = contract_map.get("trade_isolation_stage_scope_rows")
+    stage_row_list = stage_rows if isinstance(stage_rows, list) else []
+    stage_keys = [
+        str(row.get("stage_key") or "")
+        for row in stage_row_list
+        if isinstance(row, dict) and row.get("stage_key")
+    ]
+    release_receipt_ready = bool(
+        contract_map.get("trade_isolation_release_receipt_ready") is True
+        and contract_map.get("trade_isolation_release_receipt_status")
+        == "trade_isolation_release_receipt_ready_research_release_only"
+        and contract_map.get("real_trading_connected") is False
+        and contract_map.get("broker_adapter_connected") is False
+        and contract_map.get("order_endpoint_present") is False
+        and contract_map.get("trade_execution_api_enabled") is False
+        and contract_map.get("external_calls_triggered") is False
+        and contract_map.get("tushare_called") is False
+        and contract_map.get("deepseek_called") is False
+        and contract_map.get("github_called") is False
+        and contract_map.get("does_not_execute_trades") is True
+        and contract_map.get("does_not_modify_strategy_action") is True
+        and contract_map.get("does_not_modify_holdings") is True
+        and contract_map.get("contains_secret") is False
+    )
+    direct_stage_keys = ["research_release_trade_isolation_receipt"] if release_receipt_ready else []
+    status = (
+        "trade_isolation_release_guard_ready_separate_project_required"
+        if release_receipt_ready
+        else "trade_isolation_release_guard_contract_visible_receipt_pending"
+        if contract_map
+        else "trade_isolation_release_guard_missing"
+    )
+    return {
+        "schema_version": "ltg12_trade_isolation_release_guard_handoff_summary.v1",
+        "source_contract": "scripts.trade_isolation_contract.build_contract",
+        "source_packet_key": "command_center_3_risk_guardrails_cache",
+        "status": status,
+        "next_local_step": "separate approved real-trading integration project only",
+        "contract_ready": contract_map.get("contract_ready") is True,
+        "trade_isolation_release_receipt_ready": release_receipt_ready,
+        "trade_isolation_release_receipt_status": str(
+            contract_map.get("trade_isolation_release_receipt_status") or ""
+        ),
+        "stage_scope_manifest": "trade_isolation_stage_scope_manifest",
+        "stage_scope_keys": stage_keys,
+        "stage_scope_count": int(
+            observed.get("trade_isolation_stage_scope_count") or len(stage_row_list) or 0
+        ),
+        "pending_stage_count": max(
+            int(observed.get("trade_isolation_stage_scope_pending_count") or 0)
+            - len(direct_stage_keys),
+            0,
+        ),
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": len(direct_stage_keys),
+        "local_evidence_stage_count": len(stage_row_list),
+        "per_slice_trade_isolation_recheck_required": True,
+        "continued_no_broker_proof_required": True,
+        "continued_no_order_proof_required": True,
+        "continued_no_action_mutation_proof_required": True,
+        "current_slice_no_broker_no_order_no_action_proof_ready": release_receipt_ready,
+        "ready_for_real_trading_integration": False,
+        "real_trading_connected": False,
+        "broker_adapter_connected": False,
+        "order_endpoint_present": False,
+        "trade_execution_api_enabled": False,
+        "order_route_present": False,
+        "frontend_trade_controls_present": False,
+        "model_or_provider_can_modify_action": False,
+        "strategy_action_mutated_by_contract": False,
+        "paper_trading_sandbox_ready": False,
+        "separate_project_approved": False,
+        "future_real_trading_requires_separate_project": True,
+        "release_receipt_is_trading_approval": False,
+        "broker_called": False,
+        "order_submitted": False,
+        "cache_get_creates_task": False,
+        "cache_get_calls_broker": False,
+        "cache_get_calls_order_endpoint": False,
+        "cache_get_calls_provider": False,
+        "cache_get_calls_model": False,
+        "cache_get_calls_github": False,
+        "creates_trading_task_from_get": False,
+        "creates_order_endpoint_from_handoff": False,
+        "broker_adapter_created_by_handoff": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": (
+            "ltg12_trade_isolation_handoff_replays_local_contract_not_real_trading_integration"
+        ),
+    }
+
+
 def _build_ltg_next_action_submission_preview_rows(
     next_local_step: str,
     local_step_rows: list[dict[str, Any]],
@@ -8875,6 +8985,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_tauri_package_handoff: dict[str, Any] = {}
         supporting_streamlit_retirement_handoff: dict[str, Any] = {}
         supporting_motion_production_handoff: dict[str, Any] = {}
+        supporting_trade_isolation_release_guard_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -8940,6 +9051,10 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             supporting_streamlit_retirement_handoff = _latest_streamlit_retirement_handoff_summary()
         if action["queue_id"] == "p8_motion_production_promotion_review":
             supporting_motion_production_handoff = _latest_motion_production_handoff_summary()
+        if action["queue_id"] == "p10_trade_isolation_release_guard":
+            supporting_trade_isolation_release_guard_handoff = (
+                _latest_trade_isolation_release_guard_handoff_summary()
+            )
         submission_preview_rows = _build_ltg_next_action_submission_preview_rows(
             next_local_step,
             local_step_rows,
@@ -9314,6 +9429,32 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_motion_production_creates_task_from_get": (
                     supporting_motion_production_handoff.get("cache_get_creates_task") is True
+                ),
+                "supporting_trade_isolation_release_guard_handoff": (
+                    supporting_trade_isolation_release_guard_handoff
+                ),
+                "supporting_trade_isolation_release_guard_next_local_step": (
+                    supporting_trade_isolation_release_guard_handoff.get("next_local_step", "")
+                ),
+                "supporting_trade_isolation_release_receipt_ready": (
+                    supporting_trade_isolation_release_guard_handoff.get(
+                        "trade_isolation_release_receipt_ready"
+                    )
+                    is True
+                ),
+                "supporting_trade_isolation_requires_separate_project": (
+                    supporting_trade_isolation_release_guard_handoff.get(
+                        "future_real_trading_requires_separate_project"
+                    )
+                    is True
+                ),
+                "supporting_trade_isolation_real_trading_connected": (
+                    supporting_trade_isolation_release_guard_handoff.get("real_trading_connected")
+                    is True
+                ),
+                "supporting_trade_isolation_creates_task_from_get": (
+                    supporting_trade_isolation_release_guard_handoff.get("cache_get_creates_task")
+                    is True
                 ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
                 "local_receipt_lookup_creates_task": False,
