@@ -6839,6 +6839,121 @@ def _latest_current_evidence_producer_cache_refresh_handoff_summary() -> dict[st
     }
 
 
+def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import data_health_service
+
+        packet = data_health_service.read_data_health_timeline_cache()
+    except Exception:
+        packet = {}
+    packet_map = _dict_or_empty(packet)
+    counts = _dict_or_empty(packet_map.get("counts"))
+    provider_evidence = _latest_tushare_direct_provider_evidence_summary()
+    promotion = _dict_or_empty(packet_map.get("trade_cal_provider_acceptance_promotion_audit"))
+    production_blocker = _dict_or_empty(packet_map.get("freshness_production_blocker_audit"))
+    durable_recipe = _dict_or_empty(packet_map.get("freshness_durable_evidence_recipe"))
+    latest_dry_run = _dict_or_empty(packet_map.get("latest_trade_cal_provider_acceptance_dry_run"))
+    latest_execution_request = _dict_or_empty(
+        packet_map.get("latest_trade_cal_provider_acceptance_execution_request")
+    )
+    latest_promotion_review = _dict_or_empty(
+        packet_map.get("latest_trade_cal_provider_acceptance_promotion_review")
+    )
+    provider_evidence_visible = provider_evidence.get("provider_backed_acceptance_done") is True
+    promotion_ready = promotion.get("status") == "trade_cal_provider_acceptance_promotion_ready"
+    promotion_review_found = latest_promotion_review.get("latest_task_found") is True
+    promotion_review_ready = (
+        latest_promotion_review.get("ready_for_production_freshness_release_review") is True
+    )
+    next_step = (
+        "release_review_after_matching_remote_ci_green"
+        if promotion_review_found and promotion_review_ready
+        else "POST /api/data-health/trade-cal-provider-acceptance-promotion-review"
+        if provider_evidence_visible and promotion_ready
+        else "POST /api/data-health/trade-cal-provider-acceptance-dry-run"
+    )
+    return {
+        "schema_version": "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary.v1",
+        "status": (
+            "provider_acceptance_promotion_review_ready_for_release_review"
+            if promotion_review_found and promotion_review_ready
+            else "prior_provider_acceptance_evidence_visible_promotion_review_needed"
+            if provider_evidence_visible and promotion_ready
+            else "provider_acceptance_task_receipt_chain_needed"
+        ),
+        "source_packet_key": "command_center_3_data_health_timeline_cache",
+        "provider_direct_evidence_source": provider_evidence.get("source_packet_key"),
+        "provider_direct_evidence_status": provider_evidence.get("source_status"),
+        "provider_direct_evidence_layer": provider_evidence.get("direct_evidence_layer"),
+        "provider_evidence_visible": provider_evidence_visible,
+        "provider_backed_acceptance_done_by_blocker_audit": (
+            production_blocker.get("provider_backed_trade_cal_acceptance_done") is True
+        ),
+        "provider_backed_acceptance_done_by_durable_recipe": (
+            durable_recipe.get("provider_backed_trade_cal_acceptance_done") is True
+        ),
+        "promotion_audit_status": promotion.get("status") or "missing",
+        "promotion_audit_ready": promotion_ready,
+        "promotion_audit_blocker_count": int(promotion.get("blocking_criterion_count") or 0),
+        "production_blocker_audit_status": production_blocker.get("status") or "missing",
+        "freshness_production_blocker_count": int(
+            production_blocker.get("production_blocker_count") or 0
+        ),
+        "durable_recipe_status": durable_recipe.get("status") or "missing",
+        "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
+        "production_freshness_gate_complete": False,
+        "trade_cal_provider_call_ledger_observed_count": int(
+            provider_evidence.get("trade_cal_provider_call_ledger_observed_count") or 0
+        ),
+        "trade_cal_provider_observed_row_count": int(
+            provider_evidence.get("trade_cal_provider_observed_row_count") or 0
+        ),
+        "freshness_replay_provider_evidence_done": (
+            provider_evidence.get("freshness_replay_provider_evidence_done") is True
+        ),
+        "freshness_replay_scenario_count": int(
+            provider_evidence.get("freshness_replay_scenario_count") or 0
+        ),
+        "failure_mode_provider_evidence_done": (
+            provider_evidence.get("failure_mode_provider_evidence_done") is True
+        ),
+        "latest_dry_run_found": latest_dry_run.get("latest_task_found") is True,
+        "latest_execution_request_found": latest_execution_request.get("latest_task_found") is True,
+        "latest_promotion_review_found": promotion_review_found,
+        "latest_promotion_review_ready_for_release": promotion_review_ready,
+        "latest_promotion_review_status": latest_promotion_review.get("status") or "missing",
+        "latest_promotion_review_task_id": latest_promotion_review.get("latest_task_id") or "",
+        "latest_dry_run_row_count": int(
+            counts.get("latest_trade_cal_provider_acceptance_dry_run_row_count") or 0
+        ),
+        "latest_execution_request_row_count": int(
+            counts.get("latest_trade_cal_provider_acceptance_execution_request_row_count") or 0
+        ),
+        "latest_promotion_review_row_count": int(
+            counts.get("latest_trade_cal_provider_acceptance_promotion_review_row_count") or 0
+        ),
+        "next_local_step": next_step,
+        "requires_promotion_review_task": not promotion_review_found,
+        "requires_release_review_after_remote_green": True,
+        "cache_get_creates_task": False,
+        "cache_get_calls_provider": False,
+        "creates_provider_task_from_get": False,
+        "provider_execution_implemented_by_handoff": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": (
+            "prior_provider_acceptance_evidence_handoff_is_not_task_receipt_chain_or_ltg_closeout"
+        ),
+    }
+
+
 def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows_by_id = {str(row.get("id") or ""): row for row in rows}
     tasks_by_type = _task_statuses_by_type()
@@ -6884,8 +6999,12 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             next_local_step = str(action["future_provider_route"])
         latest_observed = observed_steps[-1] if observed_steps else {}
         safe_context: dict[str, Any] = {}
+        supporting_trade_cal_provider_acceptance_evidence_handoff: dict[str, Any] = {}
         supporting_current_evidence_producer_cache_refresh_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
+            supporting_trade_cal_provider_acceptance_evidence_handoff = (
+                _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
+            )
             supporting_current_evidence_producer_cache_refresh_handoff = (
                 _latest_current_evidence_producer_cache_refresh_handoff_summary()
             )
@@ -6980,6 +7099,26 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "future_handoff_preview_rows": future_handoff_preview_rows,
                 "future_handoff_preview_row_count": len(future_handoff_preview_rows),
                 "future_handoff_ready_from_local_receipt": future_handoff_ready,
+                "supporting_trade_cal_provider_acceptance_evidence_handoff": (
+                    supporting_trade_cal_provider_acceptance_evidence_handoff
+                ),
+                "supporting_trade_cal_provider_acceptance_evidence_next_step": (
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get("next_local_step", "")
+                ),
+                "supporting_trade_cal_provider_acceptance_evidence_visible": (
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get("provider_evidence_visible")
+                    is True
+                ),
+                "supporting_trade_cal_provider_acceptance_requires_promotion_review": (
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get(
+                        "requires_promotion_review_task"
+                    )
+                    is True
+                ),
+                "supporting_trade_cal_provider_acceptance_creates_task_from_get": (
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get("cache_get_creates_task")
+                    is True
+                ),
                 "supporting_current_evidence_producer_cache_refresh_handoff": (
                     supporting_current_evidence_producer_cache_refresh_handoff
                 ),

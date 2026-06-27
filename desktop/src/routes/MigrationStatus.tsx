@@ -462,6 +462,47 @@ export default function MigrationStatus() {
       external_calls_triggered: handoff.external_calls_triggered
     }));
   });
+  const ltgTradeCalProviderAcceptanceEvidenceHandoffRows = ltgNextAcceptanceActionRows
+    .flatMap((row) => {
+      const handoff = (row.supporting_trade_cal_provider_acceptance_evidence_handoff as Record<string, unknown> | undefined) ?? {};
+      if (!Object.keys(handoff).length) {
+        return [];
+      }
+      return [{
+        queue_id: row.queue_id,
+        priority: row.priority,
+        status: handoff.status,
+        provider_direct_evidence_source: handoff.provider_direct_evidence_source,
+        provider_direct_evidence_status: handoff.provider_direct_evidence_status,
+        provider_direct_evidence_layer: handoff.provider_direct_evidence_layer,
+        provider_evidence_visible: handoff.provider_evidence_visible,
+        promotion_audit_status: handoff.promotion_audit_status,
+        promotion_audit_ready: handoff.promotion_audit_ready,
+        durable_recipe_status: handoff.durable_recipe_status,
+        provider_backed_acceptance_done_by_blocker_audit: handoff.provider_backed_acceptance_done_by_blocker_audit,
+        provider_backed_acceptance_done_by_durable_recipe: handoff.provider_backed_acceptance_done_by_durable_recipe,
+        trade_cal_provider_call_ledger_observed_count: handoff.trade_cal_provider_call_ledger_observed_count,
+        trade_cal_provider_observed_row_count: handoff.trade_cal_provider_observed_row_count,
+        freshness_replay_provider_evidence_done: handoff.freshness_replay_provider_evidence_done,
+        failure_mode_provider_evidence_done: handoff.failure_mode_provider_evidence_done,
+        latest_dry_run_found: handoff.latest_dry_run_found,
+        latest_execution_request_found: handoff.latest_execution_request_found,
+        latest_promotion_review_found: handoff.latest_promotion_review_found,
+        next_local_step: handoff.next_local_step,
+        requires_promotion_review_task: handoff.requires_promotion_review_task,
+        requires_release_review_after_remote_green: handoff.requires_release_review_after_remote_green,
+        cache_get_creates_task: handoff.cache_get_creates_task,
+        cache_get_calls_provider: handoff.cache_get_calls_provider,
+        provider_execution_implemented_by_handoff: handoff.provider_execution_implemented_by_handoff,
+        production_freshness_gate_complete: handoff.production_freshness_gate_complete,
+        external_calls_triggered: handoff.external_calls_triggered,
+        tushare_called: handoff.tushare_called,
+        deepseek_called: handoff.deepseek_called,
+        does_not_execute_trades: handoff.does_not_execute_trades,
+        can_close_goal: handoff.can_close_goal,
+        evidence_boundary: handoff.evidence_boundary
+      }];
+    });
   const ltgCurrentEvidenceProducerCacheRefreshHandoffRows = ltgNextAcceptanceActionRows
     .flatMap((row) => {
       const handoff = (row.supporting_current_evidence_producer_cache_refresh_handoff as Record<string, unknown> | undefined) ?? {};
@@ -1010,6 +1051,11 @@ export default function MigrationStatus() {
             tone: ltgCurrentEvidenceProducerCacheRefreshHandoffRows.length ? "good" : "warn"
           },
           {
+            label: "trade_cal evidence handoffs",
+            value: ltgTradeCalProviderAcceptanceEvidenceHandoffRows.length,
+            tone: ltgTradeCalProviderAcceptanceEvidenceHandoffRows.length ? "good" : "warn"
+          },
+          {
             label: "lookup creates task",
             value: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_creates_task === true),
             tone: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_creates_task === true) ? "bad" : "good"
@@ -1024,6 +1070,8 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgNextAcceptanceReceiptRows} />
       <DataLineageTable rows={ltgNextAcceptancePreviewRows} />
       <DataLineageTable rows={ltgFutureHandoffPreviewRows} />
+      <p className="risk-note">LTG-01 provider acceptance handoff 只显示 prior provider call-ledger / freshness replay / failure-mode evidence 与缺失的本地 promotion-review/release review；它不从 GET cache 创建任务、不调用 Tushare，也不能关闭 freshness production gate。</p>
+      <DataLineageTable rows={ltgTradeCalProviderAcceptanceEvidenceHandoffRows} />
       <DataLineageTable rows={ltgCurrentEvidenceProducerCacheRefreshHandoffRows} />
       <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />

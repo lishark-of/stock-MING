@@ -2921,6 +2921,44 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(p1_producer_handoff["tushare_called"])
         self.assertTrue(p1_producer_handoff["does_not_execute_trades"])
         self.assertFalse(p1_producer_handoff["can_close_goal"])
+        p1_provider_handoff = action_rows["p1_trade_cal_provider_acceptance"][
+            "supporting_trade_cal_provider_acceptance_evidence_handoff"
+        ]
+        self.assertEqual(
+            p1_provider_handoff["schema_version"],
+            "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary.v1",
+        )
+        self.assertIn(
+            p1_provider_handoff["next_local_step"],
+            {
+                "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+                "POST /api/data-health/trade-cal-provider-acceptance-promotion-review",
+                "release_review_after_matching_remote_ci_green",
+            },
+        )
+        self.assertEqual(
+            action_rows["p1_trade_cal_provider_acceptance"][
+                "supporting_trade_cal_provider_acceptance_evidence_next_step"
+            ],
+            p1_provider_handoff["next_local_step"],
+        )
+        self.assertFalse(
+            action_rows["p1_trade_cal_provider_acceptance"][
+                "supporting_trade_cal_provider_acceptance_creates_task_from_get"
+            ]
+        )
+        self.assertFalse(p1_provider_handoff["cache_get_creates_task"])
+        self.assertFalse(p1_provider_handoff["cache_get_calls_provider"])
+        self.assertFalse(p1_provider_handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(p1_provider_handoff["production_freshness_gate_complete"])
+        self.assertFalse(p1_provider_handoff["external_calls_triggered"])
+        self.assertFalse(p1_provider_handoff["tushare_called"])
+        self.assertTrue(p1_provider_handoff["does_not_execute_trades"])
+        self.assertFalse(p1_provider_handoff["can_close_goal"])
+        self.assertEqual(
+            p1_provider_handoff["evidence_boundary"],
+            "prior_provider_acceptance_evidence_handoff_is_not_task_receipt_chain_or_ltg_closeout",
+        )
         self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p3_factor_universe_worker_batch_research"]["local_receipt_step_count"], 5)
