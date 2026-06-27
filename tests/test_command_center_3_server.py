@@ -53870,6 +53870,47 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg14["durable_ci_evidence_complete"])
         self.assertFalse(ltg14["production_motion_complete"])
         self.assertFalse(ltg14["can_close_from_observed_row"])
+        queue_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        motion_queue = queue_rows["p8_motion_production_promotion_review"]
+        handoff = motion_queue["supporting_motion_production_handoff"]
+        self.assertEqual(handoff["schema_version"], "ltg14_motion_production_handoff_summary.v1")
+        self.assertEqual(
+            handoff["status"],
+            "motion_visual_performance_promotion_review_ready_ci_release_blocked",
+        )
+        self.assertEqual(handoff["direct_evidence_stage_count"], 7)
+        self.assertIn("browser_visual_promotion_evidence", handoff["direct_evidence_stage_keys"])
+        self.assertIn("browser_performance_trace_promotion", handoff["direct_evidence_stage_keys"])
+        self.assertIn("reduced_motion_durable_promotion", handoff["direct_evidence_stage_keys"])
+        self.assertTrue(handoff["motion_production_activation_receipt_ready"])
+        self.assertTrue(handoff["motion_browser_qa_review_ready"])
+        self.assertTrue(handoff["motion_promotion_dry_run_ready"])
+        self.assertTrue(handoff["motion_visual_performance_promotion_review_ready"])
+        self.assertTrue(handoff["motion_durable_evidence_recipe_ready"])
+        self.assertTrue(handoff["browser_visual_qa_promoted"])
+        self.assertTrue(handoff["browser_performance_promoted"])
+        self.assertTrue(handoff["reduced_motion_durable_evidence_promoted"])
+        self.assertFalse(handoff["durable_ci_evidence_complete"])
+        self.assertFalse(handoff["production_motion_complete"])
+        self.assertTrue(handoff["local_motion_review_chain_ready_for_release_evidence"])
+        self.assertTrue(handoff["requires_durable_ci_release_evidence"])
+        self.assertTrue(handoff["requires_production_motion_review"])
+        self.assertTrue(handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(handoff["cache_get_creates_task"])
+        self.assertFalse(handoff["cache_get_opens_browser"])
+        self.assertFalse(handoff["cache_get_runs_motion_runner"])
+        self.assertFalse(handoff["cache_get_writes_artifacts"])
+        self.assertFalse(handoff["cache_get_calls_github"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertFalse(handoff["can_close_goal"])
+        self.assertFalse(motion_queue["future_handoff_ready_from_local_receipt"])
+        self.assertTrue(motion_queue["supporting_motion_production_review_chain_ready_for_release_evidence"])
+        self.assertTrue(motion_queue["supporting_motion_production_requires_durable_ci_release_evidence"])
+        self.assertTrue(motion_queue["supporting_motion_production_requires_final_review"])
+        self.assertFalse(motion_queue["supporting_motion_production_creates_task_from_get"])
 
     def test_motion_durable_recipe_observes_current_head_local_release_gate_without_ci_claim(self):
         self._with_meta_store()

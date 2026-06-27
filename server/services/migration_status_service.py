@@ -6640,6 +6640,183 @@ def _latest_streamlit_retirement_handoff_summary() -> dict[str, Any]:
     }
 
 
+def _latest_motion_production_handoff_summary() -> dict[str, Any]:
+    try:
+        from scripts import motion_viewport_qa_contract
+
+        motion_contract = motion_viewport_qa_contract.build_contract()
+    except Exception:
+        motion_contract = {}
+    motion_contract_map = motion_contract if isinstance(motion_contract, dict) else {}
+    local_push_gate_receipt: dict[str, Any] = {}
+    try:
+        from server.services import audit_service
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        audit_packet = SQLiteMetaStore(audit_service.SQLITE_META_PATH).read_packet(
+            "command_center_3_call_ledger_audit_cache"
+        )
+        local_push_gate_receipt = audit_service._read_local_push_gate_run_receipt()
+    except Exception:
+        audit_packet = {}
+        local_push_gate_receipt = {}
+    packet_map = audit_packet if isinstance(audit_packet, dict) else {}
+    evidence = _dict_or_empty(packet_map.get("motion_browser_qa_evidence_contract"))
+    review = _dict_or_empty(packet_map.get("motion_browser_qa_review_contract"))
+    activation = _dict_or_empty(packet_map.get("motion_production_activation_receipt"))
+    dry_run = _dict_or_empty(packet_map.get("motion_promotion_dry_run_receipt"))
+    promotion_review = _dict_or_empty(
+        packet_map.get("motion_visual_performance_promotion_review_receipt")
+    )
+    durable_recipe = _dict_or_empty(packet_map.get("motion_durable_evidence_recipe"))
+    browser_visual_ready = evidence.get("visual_qa_complete") is True
+    browser_performance_ready = evidence.get("browser_performance_verified") is True
+    reduced_motion_ready = evidence.get("reduced_motion_passed") is True
+    browser_qa_review_ready = review.get("local_browser_qa_review_ready") is True
+    activation_ready = activation.get("local_activation_receipt_ready") is True
+    dry_run_ready = dry_run.get("ready_for_local_promotion_review") is True
+    visual_performance_review_ready = (
+        promotion_review.get("local_visual_performance_promotion_review_ready") is True
+    )
+    durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
+    browser_visual_promoted = promotion_review.get("browser_visual_qa_promoted") is True
+    browser_performance_promoted = promotion_review.get("browser_performance_promoted") is True
+    reduced_motion_promoted = (
+        promotion_review.get("reduced_motion_durable_evidence_promoted") is True
+    )
+    local_release_gate_evidence_observed = bool(
+        (
+            durable_recipe.get("local_release_gate_evidence_observed") is True
+            or local_push_gate_receipt.get("fresh_local_gate_run_observed") is True
+        )
+        and local_push_gate_receipt.get("head_matches_current") is True
+        and local_push_gate_receipt.get("required_local_gate_checks_present") is True
+        and local_push_gate_receipt.get("remote_actions_status_known") is False
+        and local_push_gate_receipt.get("latest_remote_run_verified_green") is False
+        and local_push_gate_receipt.get("github_api_called") is False
+        and local_push_gate_receipt.get("external_calls_triggered") is False
+        and local_push_gate_receipt.get("tushare_called") is False
+        and local_push_gate_receipt.get("deepseek_called") is False
+        and local_push_gate_receipt.get("github_called") is False
+        and local_push_gate_receipt.get("does_not_execute_trades") is True
+        and local_push_gate_receipt.get("does_not_modify_strategy_action") is True
+        and local_push_gate_receipt.get("contains_secret") is False
+    )
+    direct_stage_keys: list[str] = []
+    if browser_visual_ready:
+        direct_stage_keys.append("viewport_visual_qa_execution")
+    if browser_performance_ready:
+        direct_stage_keys.append("browser_performance_trace_execution")
+    if reduced_motion_ready:
+        direct_stage_keys.append("reduced_motion_accessibility_review")
+    if browser_qa_review_ready:
+        direct_stage_keys.append("local_artifact_review")
+    if browser_visual_promoted:
+        direct_stage_keys.append("browser_visual_promotion_evidence")
+    if browser_performance_promoted:
+        direct_stage_keys.append("browser_performance_trace_promotion")
+    if reduced_motion_promoted:
+        direct_stage_keys.append("reduced_motion_durable_promotion")
+    if local_release_gate_evidence_observed:
+        direct_stage_keys.append("local_release_gate_evidence")
+    direct_stage_count = len(direct_stage_keys)
+    try:
+        row_count = int(
+            motion_contract_map.get("motion_production_stage_scope_count")
+            or durable_recipe.get("row_count")
+            or 0
+        )
+    except (TypeError, ValueError):
+        row_count = 0
+    pending_stage_count = max(row_count - direct_stage_count, 0) if row_count else 0
+    production_blocker_count = int(
+        promotion_review.get("production_blocker_count")
+        or durable_recipe.get("production_blocker_count")
+        or pending_stage_count
+        or 0
+    )
+    durable_ci_evidence_complete = bool(
+        promotion_review.get("durable_ci_evidence_complete") is True
+        or durable_recipe.get("durable_ci_evidence_complete") is True
+        or promotion_review.get("ci_evidence_complete") is True
+        or durable_recipe.get("ci_evidence_complete") is True
+    )
+    if visual_performance_review_ready:
+        status = "motion_visual_performance_promotion_review_ready_ci_release_blocked"
+        next_local_step = "attach durable CI/release evidence and final motion production review before closeout"
+    elif dry_run_ready:
+        status = "motion_promotion_dry_run_ready_visual_performance_review_needed"
+        next_local_step = "POST /api/audit/motion-visual-performance-promotion-review"
+    elif browser_qa_review_ready:
+        status = "motion_browser_qa_review_ready_promotion_dry_run_needed"
+        next_local_step = "POST /api/audit/motion-production-promotion-dry-run"
+    elif activation_ready:
+        status = "motion_activation_receipt_ready_browser_qa_review_needed"
+        next_local_step = "POST /api/audit/motion-browser-qa-review"
+    else:
+        status = "motion_activation_receipts_visible_browser_qa_pending"
+        next_local_step = "POST /api/audit/motion-browser-qa-review"
+    return {
+        "schema_version": "ltg14_motion_production_handoff_summary.v1",
+        "source_packet_key": "command_center_3_call_ledger_audit_cache",
+        "status": status,
+        "next_local_step": next_local_step,
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": direct_stage_count,
+        "pending_stage_count": pending_stage_count,
+        "production_blocker_count": production_blocker_count,
+        "motion_production_activation_receipt_ready": activation_ready,
+        "motion_production_activation_receipt_status": str(activation.get("status") or ""),
+        "motion_browser_qa_review_ready": browser_qa_review_ready,
+        "motion_browser_qa_review_status": str(review.get("status") or ""),
+        "motion_promotion_dry_run_ready": dry_run_ready,
+        "motion_promotion_dry_run_status": str(dry_run.get("status") or ""),
+        "motion_visual_performance_promotion_review_ready": visual_performance_review_ready,
+        "motion_visual_performance_promotion_review_status": str(
+            promotion_review.get("status") or ""
+        ),
+        "motion_visual_performance_promotion_review_task_id": str(
+            promotion_review.get("promotion_review_task_id") or ""
+        ),
+        "motion_durable_evidence_recipe_ready": durable_recipe_ready,
+        "motion_durable_evidence_recipe_status": str(durable_recipe.get("status") or ""),
+        "browser_visual_qa_promoted": browser_visual_promoted,
+        "browser_performance_promoted": browser_performance_promoted,
+        "reduced_motion_durable_evidence_promoted": reduced_motion_promoted,
+        "local_release_gate_evidence_observed": local_release_gate_evidence_observed,
+        "durable_ci_evidence_complete": durable_ci_evidence_complete,
+        "production_motion_complete": False,
+        "local_motion_review_chain_ready_for_release_evidence": visual_performance_review_ready,
+        "requires_durable_ci_release_evidence": not durable_ci_evidence_complete,
+        "requires_production_motion_review": True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "cache_get_creates_task": False,
+        "cache_get_opens_browser": False,
+        "cache_get_runs_motion_runner": False,
+        "cache_get_writes_artifacts": False,
+        "cache_get_calls_provider": False,
+        "cache_get_calls_model": False,
+        "cache_get_calls_github": False,
+        "creates_task_from_get": False,
+        "opens_browser_from_get": False,
+        "runs_motion_runner_from_get": False,
+        "writes_artifacts_from_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": (
+            "ltg14_motion_handoff_reads_local_motion_receipts_not_browser_ci_or_production_motion"
+        ),
+    }
+
+
 def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import candidate_service
@@ -8435,6 +8612,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_next_session_production_replacement_handoff: dict[str, Any] = {}
         supporting_tauri_package_handoff: dict[str, Any] = {}
         supporting_streamlit_retirement_handoff: dict[str, Any] = {}
+        supporting_motion_production_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -8491,6 +8669,8 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             supporting_tauri_package_handoff = _latest_tauri_package_handoff_summary()
         if action["queue_id"] == "p7_streamlit_retirement_review":
             supporting_streamlit_retirement_handoff = _latest_streamlit_retirement_handoff_summary()
+        if action["queue_id"] == "p8_motion_production_promotion_review":
+            supporting_motion_production_handoff = _latest_motion_production_handoff_summary()
         submission_preview_rows = _build_ltg_next_action_submission_preview_rows(
             next_local_step,
             local_step_rows,
@@ -8785,6 +8965,26 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_streamlit_retirement_creates_task_from_get": (
                     supporting_streamlit_retirement_handoff.get("cache_get_creates_task") is True
+                ),
+                "supporting_motion_production_handoff": supporting_motion_production_handoff,
+                "supporting_motion_production_next_local_step": (
+                    supporting_motion_production_handoff.get("next_local_step", "")
+                ),
+                "supporting_motion_production_review_chain_ready_for_release_evidence": (
+                    supporting_motion_production_handoff.get(
+                        "local_motion_review_chain_ready_for_release_evidence"
+                    )
+                    is True
+                ),
+                "supporting_motion_production_requires_durable_ci_release_evidence": (
+                    supporting_motion_production_handoff.get("requires_durable_ci_release_evidence")
+                    is True
+                ),
+                "supporting_motion_production_requires_final_review": (
+                    supporting_motion_production_handoff.get("requires_production_motion_review") is True
+                ),
+                "supporting_motion_production_creates_task_from_get": (
+                    supporting_motion_production_handoff.get("cache_get_creates_task") is True
                 ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
                 "local_receipt_lookup_creates_task": False,
