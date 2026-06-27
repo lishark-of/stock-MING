@@ -5911,6 +5911,90 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
     }
 
 
+def _latest_next_session_production_replacement_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import next_session_service
+
+        packet = next_session_service.read_next_session_cache()
+    except Exception:
+        packet = {}
+    packet_map = _dict_or_empty(packet)
+    direct = _latest_next_session_direct_evidence_summary()
+    stage_scope = _dict_or_empty(packet_map.get("next_session_production_stage_scope_manifest"))
+    browser_ready = direct.get("local_browser_qa_review_ready") is True
+    same_packet_ready = direct.get("same_packet_no_loss_review_ready") is True
+    promotion_review_ready = direct.get("local_production_promotion_review_ready") is True
+    durable_ci_complete = (
+        direct.get("local_release_gate_evidence_observed") is True
+        or stage_scope.get("durable_ci_evidence_complete") is True
+    )
+    if promotion_review_ready:
+        status = "next_session_local_promotion_review_ready_release_evidence_pending"
+        next_local_step = "attach durable CI/release evidence and remote review before production replacement"
+    elif same_packet_ready:
+        status = "next_session_same_packet_review_ready_promotion_review_needed"
+        next_local_step = "POST /api/next-session/production-promotion-review"
+    elif browser_ready:
+        status = "next_session_browser_qa_review_ready_signal_capability_review_needed"
+        next_local_step = "POST /api/next-session/streamlit-parity-review"
+    else:
+        status = "next_session_browser_qa_review_needed"
+        next_local_step = "POST /api/next-session/browser-qa-review"
+    pending_stage_count = int(
+        stage_scope.get("pending_stage_count")
+        or max(0, 8 - int(direct.get("direct_evidence_stage_count") or 0))
+    )
+    production_blocker_count = int(
+        stage_scope.get("production_blocker_count")
+        or (1 if promotion_review_ready and not durable_ci_complete else pending_stage_count)
+    )
+    return {
+        "schema_version": "ltg08_next_session_production_replacement_handoff_summary.v1",
+        "source_packet_key": "command_center_next_session_projection_packet",
+        "status": status,
+        "next_local_step": next_local_step,
+        "direct_evidence_status": str(direct.get("status") or "missing"),
+        "direct_evidence_layer": str(direct.get("direct_evidence_layer") or ""),
+        "direct_evidence_stage_keys": list(direct.get("direct_evidence_stage_keys") or []),
+        "direct_evidence_stage_count": int(direct.get("direct_evidence_stage_count") or 0),
+        "pending_stage_count": pending_stage_count,
+        "production_blocker_count": production_blocker_count,
+        "local_browser_qa_review_ready": browser_ready,
+        "same_packet_no_loss_review_ready": same_packet_ready,
+        "local_streamlit_parity_review_ready": direct.get("local_streamlit_parity_review_ready") is True,
+        "local_production_promotion_review_ready": promotion_review_ready,
+        "local_review_chain_ready_for_release_evidence": bool(browser_ready and same_packet_ready and promotion_review_ready),
+        "durable_ci_evidence_complete": False,
+        "durable_ci_or_release_evidence_complete": durable_ci_complete,
+        "requires_retained_signal_capability_release_evidence": True,
+        "requires_durable_ci_release_evidence": durable_ci_complete is not True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_production_replacement_release_review": True,
+        "streamlit_parity_complete": False,
+        "legacy_fallback_removed": False,
+        "production_replacement_complete": False,
+        "ready_to_mark_production_replacement_complete": False,
+        "cache_get_creates_task": False,
+        "cache_get_opens_browser": False,
+        "cache_get_calls_provider": False,
+        "cache_get_calls_model": False,
+        "cache_get_calls_github": False,
+        "creates_task_from_get": False,
+        "opens_browser_from_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": "ltg08_next_session_handoff_reads_local_reviews_not_browser_ci_or_production_replacement",
+    }
+
+
 def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import desktop_service
@@ -8105,6 +8189,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_factor_universe_worker_batch_handoff: dict[str, Any] = {}
         supporting_storage_physical_execution_handoff: dict[str, Any] = {}
         supporting_worker_runtime_qa_handoff: dict[str, Any] = {}
+        supporting_next_session_production_replacement_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -8153,6 +8238,10 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 _latest_worker_runtime_dependency_preflight_preview()
             )
             supporting_worker_runtime_qa_handoff = _latest_worker_runtime_qa_handoff_summary()
+        if action["queue_id"] == "p5_next_session_map_browser_qa":
+            supporting_next_session_production_replacement_handoff = (
+                _latest_next_session_production_replacement_handoff_summary()
+            )
         submission_preview_rows = _build_ltg_next_action_submission_preview_rows(
             next_local_step,
             local_step_rows,
@@ -8382,6 +8471,28 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_worker_runtime_qa_creates_task_from_get": (
                     supporting_worker_runtime_qa_handoff.get("cache_get_creates_task") is True
+                ),
+                "supporting_next_session_production_replacement_handoff": (
+                    supporting_next_session_production_replacement_handoff
+                ),
+                "supporting_next_session_production_replacement_next_step": (
+                    supporting_next_session_production_replacement_handoff.get("next_local_step", "")
+                ),
+                "supporting_next_session_local_review_chain_ready_for_release_evidence": (
+                    supporting_next_session_production_replacement_handoff.get(
+                        "local_review_chain_ready_for_release_evidence"
+                    )
+                    is True
+                ),
+                "supporting_next_session_requires_durable_ci_release_evidence": (
+                    supporting_next_session_production_replacement_handoff.get(
+                        "requires_durable_ci_release_evidence"
+                    )
+                    is True
+                ),
+                "supporting_next_session_production_replacement_creates_task_from_get": (
+                    supporting_next_session_production_replacement_handoff.get("cache_get_creates_task")
+                    is True
                 ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
                 "local_receipt_lookup_creates_task": False,

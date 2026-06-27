@@ -50486,6 +50486,39 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg08["github_called"])
         self.assertTrue(ltg08["does_not_execute_trades"])
         self.assertTrue(ltg08["does_not_modify_strategy_action"])
+        queue_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        next_session_queue = queue_rows["p5_next_session_map_browser_qa"]
+        handoff = next_session_queue["supporting_next_session_production_replacement_handoff"]
+        self.assertEqual(
+            handoff["schema_version"], "ltg08_next_session_production_replacement_handoff_summary.v1"
+        )
+        self.assertEqual(
+            handoff["status"], "next_session_local_promotion_review_ready_release_evidence_pending"
+        )
+        self.assertTrue(handoff["local_review_chain_ready_for_release_evidence"])
+        self.assertTrue(handoff["local_browser_qa_review_ready"])
+        self.assertTrue(handoff["same_packet_no_loss_review_ready"])
+        self.assertTrue(handoff["local_production_promotion_review_ready"])
+        self.assertEqual(handoff["direct_evidence_stage_count"], 7)
+        self.assertEqual(handoff["pending_stage_count"], 1)
+        self.assertTrue(handoff["requires_retained_signal_capability_release_evidence"])
+        self.assertTrue(handoff["requires_durable_ci_release_evidence"])
+        self.assertTrue(handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertFalse(handoff["durable_ci_evidence_complete"])
+        self.assertFalse(handoff["production_replacement_complete"])
+        self.assertFalse(handoff["ready_to_mark_production_replacement_complete"])
+        self.assertFalse(handoff["cache_get_creates_task"])
+        self.assertFalse(handoff["opens_browser_from_get"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertFalse(handoff["can_close_goal"])
+        self.assertFalse(next_session_queue["future_handoff_ready_from_local_receipt"])
+        self.assertTrue(
+            next_session_queue["supporting_next_session_local_review_chain_ready_for_release_evidence"]
+        )
+        self.assertTrue(next_session_queue["supporting_next_session_requires_durable_ci_release_evidence"])
+        self.assertFalse(next_session_queue["supporting_next_session_production_replacement_creates_task_from_get"])
 
     def test_next_session_stage_scope_observes_current_head_local_release_gate_without_ci_claim(self):
         self._with_meta_store()
