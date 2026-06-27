@@ -56296,6 +56296,53 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(handoff["model_execution_implemented_by_preview"])
         self.assertFalse(handoff["deepseek_called"])
         self.assertTrue(handoff["does_not_execute_trades"])
+        governed_handoff = ltg07["supporting_deepseek_governed_executor_handoff"]
+        self.assertEqual(
+            governed_handoff["schema_version"],
+            "ltg07_deepseek_governed_executor_handoff_summary.v1",
+        )
+        self.assertEqual(
+            governed_handoff["status"],
+            "deepseek_execution_request_ready_model_benchmark_blocked",
+        )
+        self.assertEqual(governed_handoff["direct_model_evidence_stage_count"], 0)
+        self.assertIn(
+            "provider_benchmark_scope_ticket_ready",
+            governed_handoff["local_governance_stage_keys"],
+        )
+        self.assertIn(
+            "provider_benchmark_execution_request_ready",
+            governed_handoff["local_governance_stage_keys"],
+        )
+        self.assertTrue(governed_handoff["deepseek_provider_benchmark_scope_ticket_ready"])
+        self.assertTrue(governed_handoff["deepseek_provider_benchmark_execution_request_ready"])
+        self.assertTrue(
+            governed_handoff[
+                "deepseek_provider_benchmark_execution_request_scope_hash_matches_latest"
+            ]
+        )
+        self.assertTrue(governed_handoff["requires_separate_user_approved_model_task"])
+        self.assertTrue(governed_handoff["requires_provider_benchmark_execution"])
+        self.assertTrue(governed_handoff["requires_model_ledger_evidence"])
+        self.assertTrue(governed_handoff["requires_provider_response_format_execution"])
+        self.assertTrue(governed_handoff["requires_bounded_retry_repair_execution"])
+        self.assertFalse(governed_handoff["provider_benchmark_done"])
+        self.assertFalse(governed_handoff["model_ledger_evidence_done"])
+        self.assertFalse(governed_handoff["cache_get_creates_task"])
+        self.assertFalse(governed_handoff["cache_get_calls_model"])
+        self.assertFalse(governed_handoff["creates_model_task_from_get"])
+        self.assertFalse(governed_handoff["model_execution_implemented_by_handoff"])
+        self.assertFalse(governed_handoff["deepseek_called"])
+        self.assertFalse(governed_handoff["external_calls_triggered"])
+        self.assertTrue(governed_handoff["does_not_execute_trades"])
+        self.assertTrue(governed_handoff["does_not_modify_strategy_action"])
+        self.assertTrue(governed_handoff["does_not_override_numeric_values"])
+        self.assertTrue(governed_handoff["does_not_output_strategy_action"])
+        self.assertFalse(governed_handoff["can_close_goal"])
+        self.assertFalse(ltg07["supporting_deepseek_governed_executor_creates_task_from_get"])
+        self.assertTrue(ltg07["supporting_deepseek_governed_executor_scope_ticket_ready"])
+        self.assertTrue(ltg07["supporting_deepseek_governed_executor_execution_request_ready"])
+        self.assertTrue(ltg07["supporting_deepseek_governed_executor_requires_model_benchmark"])
 
     def test_deepseek_explain_endpoint_is_guarded_and_sanitized(self):
         self._with_meta_store()

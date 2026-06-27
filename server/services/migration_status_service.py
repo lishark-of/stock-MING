@@ -6817,6 +6817,134 @@ def _latest_motion_production_handoff_summary() -> dict[str, Any]:
     }
 
 
+def _latest_deepseek_governed_executor_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import factor_service
+
+        packet = factor_service.read_factor_quant_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    json_audit = _dict_or_empty(packet_map.get("deepseek_json_stability_audit"))
+    response_review = _dict_or_empty(packet_map.get("deepseek_response_format_review_contract"))
+    retry_repair = _dict_or_empty(packet_map.get("deepseek_retry_repair_dry_run_contract"))
+    activation = _dict_or_empty(packet_map.get("deepseek_production_activation_receipt"))
+    benchmark_recipe = _dict_or_empty(packet_map.get("deepseek_provider_benchmark_execution_recipe"))
+    scope_ticket = _dict_or_empty(packet_map.get("deepseek_provider_benchmark_scope_ticket_receipt"))
+    execution_request = _dict_or_empty(
+        packet_map.get("deepseek_provider_benchmark_execution_request_receipt")
+    )
+    durable_recipe = _dict_or_empty(packet_map.get("deepseek_durable_evidence_recipe"))
+    json_audit_ready = json_audit.get("manual_explanation_ready") is True
+    response_review_ready = response_review.get("local_response_format_review_ready") is True
+    retry_repair_ready = retry_repair.get("local_retry_repair_dry_run_ready") is True
+    activation_ready = activation.get("local_activation_receipt_ready") is True
+    benchmark_recipe_ready = benchmark_recipe.get("local_recipe_ready") is True
+    scope_ticket_ready = scope_ticket.get("local_scope_ticket_ready") is True
+    execution_request_ready = execution_request.get("local_execution_request_ready") is True
+    durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
+    local_governance_stage_keys: list[str] = []
+    if json_audit_ready:
+        local_governance_stage_keys.append("json_stability_audit_visible")
+    if response_review_ready:
+        local_governance_stage_keys.append("response_format_review_visible")
+    if retry_repair_ready:
+        local_governance_stage_keys.append("retry_repair_dry_run_visible")
+    if activation_ready:
+        local_governance_stage_keys.append("production_activation_receipt_visible")
+    if benchmark_recipe_ready:
+        local_governance_stage_keys.append("provider_benchmark_execution_recipe_visible")
+    if durable_recipe_ready:
+        local_governance_stage_keys.append("durable_evidence_recipe_visible")
+    if scope_ticket_ready:
+        local_governance_stage_keys.append("provider_benchmark_scope_ticket_ready")
+    if execution_request_ready:
+        local_governance_stage_keys.append("provider_benchmark_execution_request_ready")
+    durable_blocker_count = int(
+        durable_recipe.get("durable_evidence_blocker_count")
+        or durable_recipe.get("production_blocker_count")
+        or 0
+    )
+    if execution_request_ready:
+        status = "deepseek_execution_request_ready_model_benchmark_blocked"
+        next_local_step = "future explicit DeepSeek provider benchmark task with model ledger and redaction review"
+    elif scope_ticket_ready:
+        status = "deepseek_scope_ticket_ready_execution_request_needed"
+        next_local_step = "POST /api/factor-quant/deepseek-provider-benchmark-execution-request"
+    elif benchmark_recipe_ready and activation_ready:
+        status = "deepseek_governance_recipe_ready_scope_ticket_needed"
+        next_local_step = "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket"
+    else:
+        status = "deepseek_local_governance_visible_scope_ticket_pending"
+        next_local_step = "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket"
+    return {
+        "schema_version": "ltg07_deepseek_governed_executor_handoff_summary.v1",
+        "source_packet_key": "command_center_factor_quant_hub_packet",
+        "status": status,
+        "next_local_step": next_local_step,
+        "local_governance_stage_keys": local_governance_stage_keys,
+        "local_governance_stage_count": len(local_governance_stage_keys),
+        "direct_model_evidence_stage_count": 0,
+        "deepseek_json_stability_audit_ready": json_audit_ready,
+        "deepseek_response_format_review_ready": response_review_ready,
+        "deepseek_retry_repair_dry_run_ready": retry_repair_ready,
+        "deepseek_activation_receipt_ready": activation_ready,
+        "deepseek_provider_benchmark_execution_recipe_ready": benchmark_recipe_ready,
+        "deepseek_durable_evidence_recipe_ready": durable_recipe_ready,
+        "deepseek_durable_evidence_blocker_count": durable_blocker_count,
+        "deepseek_provider_benchmark_scope_ticket_ready": scope_ticket_ready,
+        "deepseek_provider_benchmark_scope_ticket_status": str(scope_ticket.get("status") or ""),
+        "deepseek_provider_benchmark_scope_hash_safe_to_bind": bool(
+            scope_ticket_ready and str(scope_ticket.get("benchmark_scope_hash") or "")
+        ),
+        "deepseek_provider_benchmark_execution_request_ready": execution_request_ready,
+        "deepseek_provider_benchmark_execution_request_status": str(
+            execution_request.get("status") or ""
+        ),
+        "deepseek_provider_benchmark_execution_request_scope_hash_matches_latest": (
+            execution_request.get("requested_scope_hash_matches_latest") is True
+        ),
+        "target_model_task_route": str(execution_request.get("target_model_task_route") or ""),
+        "target_model_task_type": str(execution_request.get("target_model_task_type") or ""),
+        "provider_benchmark_done": False,
+        "model_ledger_evidence_done": False,
+        "provider_response_format_enforced": False,
+        "bounded_retry_repair_executed": False,
+        "token_budget_cost_evidence_complete": False,
+        "auto_after_task_production_ready": False,
+        "production_deepseek_explanation_complete": False,
+        "requires_separate_user_approved_model_task": True,
+        "requires_provider_benchmark_execution": True,
+        "requires_model_ledger_evidence": True,
+        "requires_provider_response_format_execution": True,
+        "requires_bounded_retry_repair_execution": True,
+        "requires_token_cost_redaction_review": True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "cache_get_creates_task": False,
+        "cache_get_calls_model": False,
+        "cache_get_calls_provider": False,
+        "cache_get_calls_github": False,
+        "creates_model_task_from_get": False,
+        "model_execution_implemented_by_handoff": False,
+        "model_task_created_by_handoff": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": (
+            "ltg07_deepseek_handoff_reads_local_governance_receipts_not_model_execution_or_provider_benchmark"
+        ),
+    }
+
+
 def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import candidate_service
@@ -8609,6 +8737,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_factor_universe_worker_batch_handoff: dict[str, Any] = {}
         supporting_storage_physical_execution_handoff: dict[str, Any] = {}
         supporting_worker_runtime_qa_handoff: dict[str, Any] = {}
+        supporting_deepseek_governed_executor_handoff: dict[str, Any] = {}
         supporting_next_session_production_replacement_handoff: dict[str, Any] = {}
         supporting_tauri_package_handoff: dict[str, Any] = {}
         supporting_streamlit_retirement_handoff: dict[str, Any] = {}
@@ -8661,6 +8790,10 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 _latest_worker_runtime_dependency_preflight_preview()
             )
             supporting_worker_runtime_qa_handoff = _latest_worker_runtime_qa_handoff_summary()
+        if action["queue_id"] == "p5_deepseek_provider_benchmark_scope":
+            supporting_deepseek_governed_executor_handoff = (
+                _latest_deepseek_governed_executor_handoff_summary()
+            )
         if action["queue_id"] == "p5_next_session_map_browser_qa":
             supporting_next_session_production_replacement_handoff = (
                 _latest_next_session_production_replacement_handoff_summary()
@@ -8900,6 +9033,34 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_worker_runtime_qa_creates_task_from_get": (
                     supporting_worker_runtime_qa_handoff.get("cache_get_creates_task") is True
+                ),
+                "supporting_deepseek_governed_executor_handoff": (
+                    supporting_deepseek_governed_executor_handoff
+                ),
+                "supporting_deepseek_governed_executor_next_local_step": (
+                    supporting_deepseek_governed_executor_handoff.get("next_local_step", "")
+                ),
+                "supporting_deepseek_governed_executor_scope_ticket_ready": (
+                    supporting_deepseek_governed_executor_handoff.get(
+                        "deepseek_provider_benchmark_scope_ticket_ready"
+                    )
+                    is True
+                ),
+                "supporting_deepseek_governed_executor_execution_request_ready": (
+                    supporting_deepseek_governed_executor_handoff.get(
+                        "deepseek_provider_benchmark_execution_request_ready"
+                    )
+                    is True
+                ),
+                "supporting_deepseek_governed_executor_requires_model_benchmark": (
+                    supporting_deepseek_governed_executor_handoff.get(
+                        "requires_provider_benchmark_execution"
+                    )
+                    is True
+                ),
+                "supporting_deepseek_governed_executor_creates_task_from_get": (
+                    supporting_deepseek_governed_executor_handoff.get("cache_get_creates_task")
+                    is True
                 ),
                 "supporting_next_session_production_replacement_handoff": (
                     supporting_next_session_production_replacement_handoff
