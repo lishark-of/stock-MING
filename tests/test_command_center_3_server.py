@@ -580,6 +580,129 @@ def assert_ltg06_migration_goal_stage_scope(
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 
+def assert_ltg13_candidate_radar_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("direct_evidence_stage_count") or 0)
+    row_count = int(row.get("row_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertEqual(row["stage_scope_manifest"], "candidate_radar_production_stage_scope_manifest")
+    test_case.assertIn(
+        row["status"],
+        {
+            "observed_in_candidate_radar_cache",
+            "observed_candidate_radar_direct_evidence_production_pending",
+        },
+    )
+    test_case.assertGreaterEqual(row_count, 10)
+    test_case.assertEqual(row["pending_stage_count"], len(row.get("pending_stage_keys") or []))
+    test_case.assertEqual(row["local_complete"], bool(row_count and direct_count >= row_count))
+    if direct_count >= row_count and row_count:
+        test_case.assertEqual(row["local_completion_status"], "local_candidate_radar_direct_evidence_complete")
+        test_case.assertEqual(row["local_blocker_count"], 0)
+        test_case.assertIn(
+            row["remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+    elif direct_count:
+        test_case.assertEqual(row["local_completion_status"], "local_candidate_radar_direct_evidence_partial")
+        test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    else:
+        test_case.assertEqual(row["local_completion_status"], "local_static_contract_only")
+        test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    test_case.assertTrue(row["remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["release_review_required_after_remote_green"])
+    test_case.assertEqual(row["remote_review_pending_count"], 1 if row["remote_review_pending"] else 0)
+    test_case.assertEqual(row["release_review_pending_count"], 1 if row["release_review_pending"] else 0)
+    test_case.assertFalse(row["strict_closeout_ready"])
+    test_case.assertIn(
+        "provider-backed radar signal/capability production acceptance",
+        row["missing_evidence_items"],
+    )
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["missing_evidence_items"],
+    )
+    test_case.assertFalse(row["production_radar_replacement_complete"])
+    test_case.assertFalse(row["legacy_retirement_ready"])
+    test_case.assertFalse(row["full_pool_scan_done"])
+    test_case.assertFalse(row["deep_scan_done"])
+    test_case.assertFalse(row["provider_backed_acceptance_done"])
+    test_case.assertFalse(row["external_calls_triggered"])
+    test_case.assertFalse(row["tushare_called"])
+    test_case.assertFalse(row["deepseek_called"])
+    test_case.assertFalse(row["github_called"])
+    test_case.assertTrue(row["does_not_execute_trades"])
+    test_case.assertTrue(row["candidate_is_not_buy_instruction"])
+    test_case.assertFalse(row["contains_secret"])
+    test_case.assertFalse(row["can_close_from_observed_row"])
+
+
+def assert_ltg13_migration_goal_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("observed_stage_scope_direct_evidence_count") or 0)
+    row_count = int(row.get("observed_stage_scope_row_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertIn(
+        row["observed_stage_scope_manifest_status"],
+        {
+            "observed_in_candidate_radar_cache",
+            "observed_candidate_radar_direct_evidence_production_pending",
+        },
+    )
+    test_case.assertGreaterEqual(row_count, 10)
+    test_case.assertEqual(row["observed_local_complete"], bool(row_count and direct_count >= row_count))
+    if direct_count >= row_count and row_count:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_candidate_radar_direct_evidence_complete")
+        test_case.assertEqual(row["observed_local_blocker_count"], 0)
+        test_case.assertIn(
+            row["observed_remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+    elif direct_count:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_candidate_radar_direct_evidence_partial")
+        test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["observed_release_review_pending"])
+        test_case.assertEqual(
+            row["observed_release_review_status"],
+            "release_review_waiting_for_local_and_remote_complete",
+        )
+    else:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_static_contract_only")
+        test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+    test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["observed_release_review_required_after_remote_green"])
+    test_case.assertFalse(row["observed_strict_closeout_ready"])
+    test_case.assertIn(
+        "provider-backed radar signal/capability production acceptance",
+        row["observed_missing_evidence_items"],
+    )
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["observed_missing_evidence_items"],
+    )
+    test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
+
+
 def assert_ltg11_release_gate_stage_scope(
     test_case: unittest.TestCase,
     row: dict,
@@ -2446,6 +2569,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             else ltg13_goal_stage_count,
         )
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
+        assert_ltg13_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-13"],
+            expected_direct_count=ltg13_goal_direct_count,
+        )
         self.assertEqual(
             migration_goals["LTG-13"]["observed_production_promotion_dry_run_status"],
             "candidate_radar_production_promotion_dry_run_missing",
@@ -36629,6 +36757,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             else ltg13_goal_stage_count,
         )
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
+        assert_ltg13_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-13"],
+            expected_direct_count=ltg13_goal_direct_count,
+        )
         self.assertEqual(
             migration_goals["LTG-14"]["observed_stage_scope_manifest_status"],
             "observed_in_motion_viewport_static_contract",
@@ -44776,6 +44909,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg13["candidate_is_not_buy_instruction"])
         self.assertFalse(ltg13["contains_secret"])
         self.assertFalse(ltg13["can_close_from_observed_row"])
+        assert_ltg13_candidate_radar_stage_scope(
+            self,
+            ltg13,
+            expected_direct_count=len(ltg13_direct_keys),
+        )
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
         self.assertEqual(
@@ -44792,6 +44930,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "worker_transport_round_trip_smoke" in ltg13_direct_keys,
         )
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
+        assert_ltg13_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-13"],
+            expected_direct_count=len(ltg13_direct_keys),
+        )
 
     def test_candidate_radar_persisted_packet_exposes_expected_trade_date_for_data_health(self):
         self._with_meta_store()
