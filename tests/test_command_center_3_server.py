@@ -8782,6 +8782,26 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(storage_action["supporting_storage_physical_execution_request_ready"])
         self.assertFalse(storage_action["supporting_storage_physical_execution_phase_a_visible"])
         self.assertFalse(storage_action["supporting_storage_physical_execution_creates_task_from_get"])
+        self.assertTrue(storage_action["future_handoff_ready_from_local_receipt"])
+        self.assertEqual(storage_action["future_handoff_preview_row_count"], 1)
+        handoff_preview = storage_action["future_handoff_preview_rows"][0]
+        self.assertEqual(handoff_preview["status"], "future_storage_handoff_preview_ready")
+        self.assertEqual(handoff_preview["future_route"], "future POST /api/storage/physical-execution")
+        self.assertEqual(handoff_preview["future_task_type"], "run_storage_physical_execution")
+        self.assertEqual(handoff_preview["target_acceptance_mode"], "storage_physical_execution_and_promotion")
+        self.assertEqual(handoff_preview["source_local_phase_key"], "storage_physical_execution_request_ticket")
+        self.assertTrue(handoff_preview["source_local_receipt_durable_in_sqlite"])
+        self.assertTrue(handoff_preview["handoff_ready_from_local_receipt"])
+        self.assertTrue(handoff_preview["requires_separate_user_approved_physical_task"])
+        self.assertFalse(handoff_preview["physical_task_created_by_preview"])
+        self.assertFalse(handoff_preview["physical_task_executed_by_preview"])
+        self.assertFalse(handoff_preview["physical_execution_implemented_by_preview"])
+        self.assertFalse(handoff_preview["writes_parquet_by_preview"])
+        self.assertFalse(handoff_preview["writes_manifest_by_preview"])
+        self.assertFalse(handoff_preview["deletes_artifacts_by_preview"])
+        self.assertFalse(handoff_preview["refreshes_providers_by_preview"])
+        self.assertFalse(handoff_preview["production_complete"])
+        self.assertFalse(handoff_preview["can_close_goal"])
 
     def test_storage_physical_execution_phase_a_records_local_evidence_without_writes(self):
         missing_dependency = next(

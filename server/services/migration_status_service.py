@@ -3925,6 +3925,7 @@ def _receipt_target_payload_safe_summary(receipt: dict[str, Any]) -> dict[str, A
         or receipt.get("target_model_task_route")
         or receipt.get("target_worker_task_route")
         or receipt.get("target_worker_full_pool_route")
+        or receipt.get("target_storage_task_route")
         or ""
     )
     target_task_type = str(
@@ -3933,8 +3934,14 @@ def _receipt_target_payload_safe_summary(receipt: dict[str, Any]) -> dict[str, A
         or receipt.get("target_model_task_type")
         or receipt.get("target_worker_task_type")
         or receipt.get("target_worker_full_pool_task_type")
+        or receipt.get("target_storage_task_type")
         or ""
     )
+    target_acceptance_mode = str(payload_map.get("acceptance_mode") or receipt.get("target_acceptance_mode") or "")
+    if not target_acceptance_mode and (
+        receipt.get("target_storage_task_route") or receipt.get("target_storage_task_type")
+    ):
+        target_acceptance_mode = "storage_physical_execution_and_promotion"
     return {
         "target_payload_present": bool(payload_map),
         "target_route": target_route,
@@ -3943,7 +3950,7 @@ def _receipt_target_payload_safe_summary(receipt: dict[str, Any]) -> dict[str, A
         "target_payload_groups": [
             str(item) for item in payload_map.get("target_sample_acceptance_groups") or [] if str(item or "")
         ],
-        "target_payload_acceptance_mode": str(payload_map.get("acceptance_mode") or receipt.get("target_acceptance_mode") or ""),
+        "target_payload_acceptance_mode": target_acceptance_mode,
         "target_payload_ts_code": str(payload_map.get("ts_code") or ""),
         "target_payload_trade_date": str(payload_map.get("trade_date") or ""),
         "target_payload_start_date": str(payload_map.get("start_date") or ""),
@@ -4128,7 +4135,11 @@ def _build_ltg_next_action_local_step_rows(
                 "receipt_blocker_count": _receipt_blocker_count(receipt_map) if receipt_visible else 0,
                 "receipt_target_post_task_route": target_payload_summary.get("target_route") or "",
                 "receipt_target_task_type": target_payload_summary.get("target_task_type") or "",
-                "receipt_target_acceptance_mode": receipt_map.get("target_acceptance_mode") or "",
+                "receipt_target_acceptance_mode": (
+                    receipt_map.get("target_acceptance_mode")
+                    or target_payload_summary.get("target_payload_acceptance_mode")
+                    or ""
+                ),
                 "receipt_target_payload_present": target_payload_summary.get("target_payload_present") is True,
                 "receipt_target_payload_apis": target_payload_summary.get("target_payload_apis") or [],
                 "receipt_target_payload_groups": target_payload_summary.get("target_payload_groups") or [],
@@ -4168,6 +4179,15 @@ def _build_ltg_next_action_local_step_rows(
                 "receipt_worker_task_created": receipt_map.get("worker_task_created") is True,
                 "receipt_worker_execution_implemented": receipt_map.get("worker_execution_implemented") is True,
                 "receipt_worker_started": receipt_map.get("worker_started") is True,
+                "receipt_physical_task_created": receipt_map.get("physical_task_created") is True,
+                "receipt_physical_task_executed": receipt_map.get("physical_task_executed") is True,
+                "receipt_physical_execution_implemented": (
+                    receipt_map.get("physical_execution_implemented") is True
+                ),
+                "receipt_writes_parquet": receipt_map.get("writes_parquet") is True,
+                "receipt_writes_manifest": receipt_map.get("writes_manifest") is True,
+                "receipt_deletes_artifacts": receipt_map.get("deletes_artifacts") is True,
+                "receipt_refreshes_providers": receipt_map.get("refreshes_providers") is True,
                 "local_ready": local_ready,
                 "local_blocked": bool(local_queue_required and receipt_visible and not local_ready),
                 "creates_task_from_lookup": False,
@@ -7470,6 +7490,13 @@ def _build_ltg_future_handoff_preview_rows(
         and latest_ready_step.get("receipt_worker_task_created") is False
         and latest_ready_step.get("receipt_worker_execution_implemented") is False
         and latest_ready_step.get("receipt_worker_started") is False
+        and latest_ready_step.get("receipt_physical_task_created") is False
+        and latest_ready_step.get("receipt_physical_task_executed") is False
+        and latest_ready_step.get("receipt_physical_execution_implemented") is False
+        and latest_ready_step.get("receipt_writes_parquet") is False
+        and latest_ready_step.get("receipt_writes_manifest") is False
+        and latest_ready_step.get("receipt_deletes_artifacts") is False
+        and latest_ready_step.get("receipt_refreshes_providers") is False
     )
     if handoff_ready:
         if latest_ready_step.get("receipt_ready_for_manual_worker_task_submission") is True:
@@ -7478,6 +7505,8 @@ def _build_ltg_future_handoff_preview_rows(
             status = "future_provider_handoff_preview_ready"
         elif latest_ready_step.get("receipt_ready_for_manual_provider_model_task_submission") is True:
             status = "future_model_handoff_preview_ready"
+        elif latest_ready_step.get("receipt_ready_for_manual_physical_task_submission") is True:
+            status = "future_storage_handoff_preview_ready"
         else:
             status = "future_execution_handoff_preview_ready"
         disabled_reason = ""
@@ -7541,6 +7570,13 @@ def _build_ltg_future_handoff_preview_rows(
             "worker_task_created_by_preview": False,
             "worker_execution_implemented_by_preview": False,
             "worker_started_by_preview": False,
+            "physical_task_created_by_preview": False,
+            "physical_task_executed_by_preview": False,
+            "physical_execution_implemented_by_preview": False,
+            "writes_parquet_by_preview": False,
+            "writes_manifest_by_preview": False,
+            "deletes_artifacts_by_preview": False,
+            "refreshes_providers_by_preview": False,
             "requires_separate_user_approved_provider_task": latest_ready_step.get(
                 "receipt_ready_for_manual_provider_task_submission"
             )
@@ -7551,6 +7587,10 @@ def _build_ltg_future_handoff_preview_rows(
             is True,
             "requires_separate_user_approved_model_task": latest_ready_step.get(
                 "receipt_ready_for_manual_provider_model_task_submission"
+            )
+            is True,
+            "requires_separate_user_approved_physical_task": latest_ready_step.get(
+                "receipt_ready_for_manual_physical_task_submission"
             )
             is True,
             "supporting_worker_runtime_dependency_preflight_visible": dependency_visible,
@@ -7608,7 +7648,7 @@ def _build_ltg_future_handoff_preview_rows(
             "contains_secret": False,
             "can_close_goal": False,
             "production_complete": False,
-            "evidence_boundary": "future_handoff_preview_is_read_only_not_provider_or_worker_execution",
+            "evidence_boundary": "future_handoff_preview_is_read_only_not_provider_worker_or_storage_execution",
         }
     ]
 
