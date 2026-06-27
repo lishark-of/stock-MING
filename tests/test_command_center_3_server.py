@@ -116,6 +116,22 @@ def assert_ltg03_factor_test_stage_scope(test_case: unittest.TestCase, row: dict
         test_case.assertTrue(row["provider_small_pool_execution_recipe_ready"])
         test_case.assertTrue(row["provider_small_pool_execution_request_ready"])
         test_case.assertEqual(row["factor_test_direct_evidence_layer"], "L3_local_factor_test_scope_evidence")
+        test_case.assertEqual(row["local_completion_status"], "local_factor_test_scope_evidence_partial")
+    else:
+        test_case.assertEqual(row["local_completion_status"], "local_static_contract_only")
+    test_case.assertFalse(row["local_complete"])
+    test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+    test_case.assertTrue(row["remote_review_required_after_local_complete"])
+    test_case.assertFalse(row["remote_review_pending"])
+    test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+    test_case.assertEqual(row["remote_review_pending_count"], 0)
+    test_case.assertTrue(row["release_review_required_after_remote_green"])
+    test_case.assertFalse(row["release_review_pending"])
+    test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    test_case.assertEqual(row["release_review_pending_count"], 0)
+    test_case.assertFalse(row["strict_closeout_ready"])
+    test_case.assertIn("provider-backed small-pool samples", row["missing_evidence_items"])
+    test_case.assertIn("release review after matching remote CI green", row["missing_evidence_items"])
     test_case.assertFalse(row["provider_backed_small_pool_validation_done"])
     test_case.assertFalse(row["full_market_validation_done"])
     test_case.assertFalse(row["production_factor_test_validation_complete"])
@@ -152,6 +168,29 @@ def assert_ltg03_migration_goal_stage_scope(
     test_case.assertEqual(row["observed_stage_scope_pending_count"], max(10 - direct_count, 0))
     if direct_count:
         test_case.assertIn("provider_small_pool_scope_ticket", row["observed_stage_scope_direct_evidence_keys"])
+        test_case.assertEqual(
+            row["observed_local_completion_status"],
+            "local_factor_test_scope_evidence_partial",
+        )
+    else:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_static_contract_only")
+    test_case.assertFalse(row["observed_local_complete"])
+    test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+    test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
+    test_case.assertFalse(row["observed_remote_review_pending"])
+    test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+    test_case.assertTrue(row["observed_release_review_required_after_remote_green"])
+    test_case.assertFalse(row["observed_release_review_pending"])
+    test_case.assertEqual(
+        row["observed_release_review_status"],
+        "release_review_waiting_for_local_and_remote_complete",
+    )
+    test_case.assertFalse(row["observed_strict_closeout_ready"])
+    test_case.assertIn("provider-backed small-pool samples", row["observed_missing_evidence_items"])
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["observed_missing_evidence_items"],
+    )
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 

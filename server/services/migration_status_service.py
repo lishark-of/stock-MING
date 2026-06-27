@@ -7027,6 +7027,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         direct_evidence = _latest_factor_test_lab_direct_research_evidence_summary()
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
         effective_pending_count = max(pending_count - direct_evidence_count, 0)
+        ltg03_local_complete = False
+        ltg03_local_completion_status = (
+            "local_factor_test_scope_evidence_partial"
+            if direct_evidence_count
+            else "local_static_contract_only"
+        )
         status = (
             "observed_factor_test_lab_direct_evidence_production_pending"
             if stage_rows and direct_evidence_count
@@ -7053,6 +7059,30 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_evidence_stage_count": local_evidence_count,
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": direct_evidence.get("direct_evidence_stage_keys", []),
+                "local_complete": ltg03_local_complete,
+                "local_completion_status": ltg03_local_completion_status,
+                "local_blocker_count": effective_pending_count,
+                "remote_review_required_after_local_complete": True,
+                "remote_review_pending": False,
+                "remote_review_status": "remote_review_waiting_for_local_complete",
+                "remote_review_pending_count": 0,
+                "release_review_required_after_remote_green": True,
+                "release_review_pending": False,
+                "release_review_status": "release_review_waiting_for_local_and_remote_complete",
+                "release_review_pending_count": 0,
+                "strict_closeout_ready": False,
+                "missing_evidence_items": [
+                    "provider-backed small-pool samples",
+                    "safe provider call ledger rows for target pool",
+                    "multi-horizon forward-return labels",
+                    "rolling IC/Rank IC/ICIR evidence",
+                    "cost and turnover assumption review",
+                    "neutralization stability evidence",
+                    "PIT, lookahead, and survivorship evidence",
+                    "manual Factor Test production promotion review",
+                    "local completion before remote CI review",
+                    "release review after matching remote CI green",
+                ],
                 "factor_test_direct_evidence_layer": direct_evidence.get("direct_evidence_layer"),
                 "local_light_metric_baseline_verified": direct_evidence.get("local_light_metric_baseline_verified")
                 is True,
