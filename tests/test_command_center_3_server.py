@@ -25,6 +25,12 @@ from server.services.task_service import (
 from storage.sqlite_meta import SQLiteMetaStore
 
 
+FRESHNESS_LTG01_OBSERVED_STATUSES = {
+    "observed_in_data_health_freshness_static_contract",
+    "observed_prior_trade_cal_provider_call_ledger_long_window_pending",
+    "observed_prior_trade_cal_provider_call_ledger_and_replay_failure_modes_pending",
+    "observed_prior_trade_cal_provider_acceptance_promotion_ready",
+}
 FACTOR_TEST_LTG03_OBSERVED_STATUSES = {
     "observed_in_factor_test_lab_static_contract",
     "observed_factor_test_lab_direct_evidence_production_pending",
@@ -109,6 +115,104 @@ def assert_contract_result_allows_only_known_pending(
     if "contains_secret" in payload:
         test_case.assertFalse(payload.get("contains_secret"))
     return payload
+
+
+def assert_ltg01_freshness_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("direct_evidence_stage_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertEqual(row["stage_scope_manifest"], "freshness_production_stage_scope_manifest")
+    test_case.assertIn(row["status"], FRESHNESS_LTG01_OBSERVED_STATUSES)
+    test_case.assertEqual(row["row_count"], 10)
+    test_case.assertEqual(row["pending_stage_count"], max(10 - direct_count, 0))
+    expected_direct_keys = []
+    if direct_count:
+        expected_direct_keys.append("trade_cal_provider_call_ledger")
+    if direct_count >= 2:
+        expected_direct_keys.append("provider_freshness_replay_evidence")
+    if direct_count >= 3:
+        expected_direct_keys.append("provider_failure_mode_evidence")
+    if direct_count >= 4:
+        expected_direct_keys.append("current_evidence_producer_coverage")
+    test_case.assertEqual(row["direct_evidence_stage_keys"], expected_direct_keys)
+    test_case.assertFalse(row["local_complete"])
+    test_case.assertEqual(row["local_completion_status"], "local_evidence_pending")
+    test_case.assertGreaterEqual(row["local_blocker_count"], 0)
+    test_case.assertTrue(row["remote_review_required_after_local_complete"])
+    test_case.assertFalse(row["remote_review_pending"])
+    test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+    test_case.assertEqual(row["remote_review_pending_count"], 0)
+    test_case.assertTrue(row["release_review_required_after_remote_green"])
+    test_case.assertFalse(row["release_review_pending"])
+    test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    test_case.assertEqual(row["release_review_pending_count"], 0)
+    test_case.assertFalse(row["strict_closeout_ready"])
+    test_case.assertIn(
+        "provider-backed 730-day trade_cal long-window acceptance",
+        row["missing_evidence_items"],
+    )
+    test_case.assertIn("provider freshness replay evidence", row["missing_evidence_items"])
+    test_case.assertIn("release review after matching remote CI green", row["missing_evidence_items"])
+    if direct_count < 4:
+        test_case.assertFalse(row["provider_backed_trade_cal_acceptance_done"])
+    test_case.assertFalse(row["production_freshness_gate_complete"])
+    test_case.assertFalse(row["provider_refresh_called_by_contract"])
+    test_case.assertFalse(row["decision_surface_mutated_by_contract"])
+    test_case.assertFalse(row["external_calls_triggered"])
+    test_case.assertFalse(row["tushare_called"])
+    test_case.assertFalse(row["deepseek_called"])
+    test_case.assertFalse(row["github_called"])
+    test_case.assertTrue(row["does_not_execute_trades"])
+    test_case.assertTrue(row["does_not_modify_strategy_action"])
+    test_case.assertFalse(row["contains_secret"])
+    test_case.assertFalse(row["can_close_from_observed_row"])
+
+
+def assert_ltg01_migration_goal_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("observed_stage_scope_direct_evidence_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertIn(row["observed_stage_scope_manifest_status"], FRESHNESS_LTG01_OBSERVED_STATUSES)
+    test_case.assertEqual(row["observed_stage_scope_pending_count"], max(10 - direct_count, 0))
+    expected_direct_keys = []
+    if direct_count:
+        expected_direct_keys.append("trade_cal_provider_call_ledger")
+    if direct_count >= 2:
+        expected_direct_keys.append("provider_freshness_replay_evidence")
+    if direct_count >= 3:
+        expected_direct_keys.append("provider_failure_mode_evidence")
+    if direct_count >= 4:
+        expected_direct_keys.append("current_evidence_producer_coverage")
+    test_case.assertEqual(row["observed_stage_scope_direct_evidence_keys"], expected_direct_keys)
+    test_case.assertFalse(row["observed_local_complete"])
+    test_case.assertEqual(row["observed_local_completion_status"], "local_evidence_pending")
+    test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
+    test_case.assertFalse(row["observed_remote_review_pending"])
+    test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+    test_case.assertTrue(row["observed_release_review_required_after_remote_green"])
+    test_case.assertFalse(row["observed_release_review_pending"])
+    test_case.assertEqual(
+        row["observed_release_review_status"],
+        "release_review_waiting_for_local_and_remote_complete",
+    )
+    test_case.assertFalse(row["observed_strict_closeout_ready"])
+    test_case.assertIn(
+        "provider-backed 730-day trade_cal long-window acceptance",
+        row["observed_missing_evidence_items"],
+    )
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["observed_missing_evidence_items"],
+    )
+    test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 
 def assert_ltg03_factor_test_stage_scope(test_case: unittest.TestCase, row: dict, expected_direct_count: int | None = None):
@@ -2455,6 +2559,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-01"]["github_called"])
         self.assertTrue(observed_stage_rows["LTG-01"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-01"]["can_close_from_observed_row"])
+        assert_ltg01_freshness_stage_scope(self, observed_stage_rows["LTG-01"], expected_direct_count=0)
         self.assertEqual(
             observed_stage_rows["LTG-02"]["stage_scope_manifest"],
             "tushare_production_stage_scope_manifest",
@@ -2815,6 +2920,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration_goals["LTG-01"]["observed_stage_scope_direct_evidence_count"], 0)
         self.assertEqual(migration_goals["LTG-01"]["observed_stage_scope_direct_evidence_keys"], [])
         self.assertFalse(migration_goals["LTG-01"]["observed_stage_scope_can_close_goal"])
+        assert_ltg01_migration_goal_stage_scope(self, migration_goals["LTG-01"], expected_direct_count=0)
         self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
         self.assertIn("latest target-sample request cache visibility", migration_goals["LTG-02"]["current_state"])
@@ -4391,6 +4497,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(ltg01["tushare_called"])
         self.assertTrue(ltg01["does_not_execute_trades"])
         self.assertFalse(ltg01["can_close_from_observed_row"])
+        assert_ltg01_freshness_stage_scope(self, ltg01, expected_direct_count=1)
 
         self.assertEqual(ltg02["pending_stage_count"], 9)
         self.assertEqual(ltg02["direct_evidence_stage_count"], 1)
@@ -4418,6 +4525,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             ["tushare_provider_call_ledger"],
         )
         self.assertFalse(migration_goals["LTG-01"]["observed_stage_scope_can_close_goal"])
+        assert_ltg01_migration_goal_stage_scope(self, migration_goals["LTG-01"], expected_direct_count=1)
         self.assertFalse(migration_goals["LTG-02"]["observed_stage_scope_can_close_goal"])
 
     def test_ltg_stage_scope_maps_trade_cal_provider_promotion_without_completion(self):
@@ -4508,10 +4616,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(ltg01["github_called"])
         self.assertTrue(ltg01["does_not_execute_trades"])
         self.assertFalse(ltg01["can_close_from_observed_row"])
+        assert_ltg01_freshness_stage_scope(self, ltg01, expected_direct_count=4)
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
         self.assertEqual(migration_goals["LTG-01"]["observed_stage_scope_direct_evidence_count"], 4)
         self.assertFalse(migration_goals["LTG-01"]["production_complete"])
+        assert_ltg01_migration_goal_stage_scope(self, migration_goals["LTG-01"], expected_direct_count=4)
 
     def test_ltg_next_action_queue_prebinds_tushare_target_sample_recipe(self):
         db_path = self._with_meta_store()
@@ -36520,6 +36630,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-01"]["github_called"])
         self.assertTrue(observed_stage_rows["LTG-01"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-01"]["can_close_from_observed_row"])
+        assert_ltg01_freshness_stage_scope(self, observed_stage_rows["LTG-01"], expected_direct_count=0)
         self.assertEqual(
             observed_stage_rows["LTG-02"]["stage_scope_manifest"],
             "tushare_production_stage_scope_manifest",
@@ -36970,6 +37081,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-01"]["observed_stage_scope_pending_count"], 10)
         self.assertFalse(migration_goals["LTG-01"]["observed_stage_scope_can_close_goal"])
+        assert_ltg01_migration_goal_stage_scope(self, migration_goals["LTG-01"], expected_direct_count=0)
         self.assertEqual(
             migration_goals["LTG-02"]["observed_stage_scope_manifest_status"],
             "observed_in_tushare_acceptance_static_contract",

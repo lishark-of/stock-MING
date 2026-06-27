@@ -6746,8 +6746,44 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         except Exception:
             durable_recipe = {}
         ltg01_local_complete = durable_recipe.get("local_complete") is True
-        ltg01_remote_review_pending = durable_recipe.get("remote_review_pending") is True
-        ltg01_release_review_pending = durable_recipe.get("release_review_pending") is True
+        release_gate_evidence = _latest_release_gate_direct_evidence_summary()
+        latest_remote_run_verified_green = (
+            release_gate_evidence.get("latest_remote_run_verified_green") is True
+        )
+        ltg01_remote_review_pending = (
+            durable_recipe.get("remote_review_pending") is True
+            or bool(ltg01_local_complete and not latest_remote_run_verified_green)
+        )
+        ltg01_release_review_pending = (
+            durable_recipe.get("release_review_pending") is True
+            or bool(ltg01_local_complete and latest_remote_run_verified_green)
+        )
+        ltg01_release_review_status = (
+            durable_recipe.get("release_review_status")
+            or (
+                "release_review_pending"
+                if ltg01_release_review_pending
+                else "release_review_waiting_for_remote_green"
+                if ltg01_remote_review_pending
+                else "release_review_waiting_for_local_and_remote_complete"
+            )
+        )
+        ltg01_missing_evidence_items = [
+            "provider-backed 730-day trade_cal long-window acceptance",
+            "safe trade_cal provider call ledger",
+            "provider freshness replay evidence",
+            "provider failure-mode evidence",
+            "current evidence producer coverage",
+            "decision-surface isolation review",
+            "matching remote CI review after local freshness evidence",
+            "release review after matching remote CI green",
+        ]
+        durable_missing_evidence_items = [
+            str(item) for item in durable_recipe.get("missing_evidence_items") or [] if str(item)
+        ]
+        ltg01_missing_evidence_items = list(
+            dict.fromkeys(ltg01_missing_evidence_items + durable_missing_evidence_items)
+        )
         rows.append(
             {
                 "id": "LTG-01",
@@ -6775,6 +6811,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_complete": ltg01_local_complete,
                 "local_completion_status": durable_recipe.get("local_completion_status")
                 or ("local_complete" if ltg01_local_complete else "local_evidence_pending"),
+                "local_blocker_count": int(durable_recipe.get("local_blocker_count") or observed_pending_count),
+                "remote_review_required_after_local_complete": True,
                 "remote_review_pending": ltg01_remote_review_pending,
                 "remote_review_status": durable_recipe.get("remote_review_status")
                 or (
@@ -6782,11 +6820,19 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     if ltg01_remote_review_pending
                     else "remote_review_waiting_for_local_complete"
                 ),
+                "remote_review_pending_count": int(
+                    durable_recipe.get("remote_review_pending_count")
+                    or (1 if ltg01_remote_review_pending else 0)
+                ),
+                "release_review_required_after_remote_green": True,
                 "release_review_pending": ltg01_release_review_pending,
+                "release_review_status": ltg01_release_review_status,
+                "release_review_pending_count": int(
+                    durable_recipe.get("release_review_pending_count")
+                    or (1 if ltg01_release_review_pending else 0)
+                ),
                 "strict_closeout_ready": durable_recipe.get("strict_closeout_ready") is True,
-                "local_blocker_count": int(durable_recipe.get("local_blocker_count") or 0),
-                "remote_review_pending_count": int(durable_recipe.get("remote_review_pending_count") or 0),
-                "release_review_pending_count": int(durable_recipe.get("release_review_pending_count") or 0),
+                "missing_evidence_items": ltg01_missing_evidence_items,
                 "local_durable_recipe_status": durable_recipe.get("status") or "missing",
                 "production_blocker_count": observed_pending_count,
                 "provider_backed_trade_cal_acceptance_done": (
