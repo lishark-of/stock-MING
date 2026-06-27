@@ -8849,6 +8849,20 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             direct_evidence_stage_keys.append("fallback_retirement_change_review")
         direct_evidence_count = len(direct_evidence_stage_keys)
         observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        release_gate_evidence = _latest_release_gate_direct_evidence_summary()
+        latest_remote_run_verified_green = (
+            release_gate_evidence.get("latest_remote_run_verified_green") is True
+        )
+        ltg10_local_complete = bool(row_count and direct_evidence_count >= row_count)
+        ltg10_remote_review_pending = bool(ltg10_local_complete and not latest_remote_run_verified_green)
+        ltg10_release_review_pending = bool(ltg10_local_complete and latest_remote_run_verified_green)
+        ltg10_local_completion_status = (
+            "local_streamlit_retirement_direct_evidence_complete"
+            if ltg10_local_complete
+            else "local_streamlit_retirement_direct_evidence_partial"
+            if direct_evidence_count
+            else "local_static_contract_only"
+        )
         rows.append(
             {
                 "id": "LTG-10",
@@ -8879,6 +8893,40 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": direct_evidence_stage_keys,
                 "production_blocker_count": observed_pending_count,
+                "local_complete": ltg10_local_complete,
+                "local_completion_status": ltg10_local_completion_status,
+                "local_blocker_count": 0 if ltg10_local_complete else observed_pending_count,
+                "remote_review_required_after_local_complete": True,
+                "remote_review_pending": ltg10_remote_review_pending,
+                "remote_review_status": (
+                    "remote_review_pending"
+                    if ltg10_remote_review_pending
+                    else "remote_review_green_release_review_pending"
+                    if ltg10_release_review_pending
+                    else "remote_review_waiting_for_local_complete"
+                ),
+                "remote_review_pending_count": 1 if ltg10_remote_review_pending else 0,
+                "release_review_required_after_remote_green": True,
+                "release_review_pending": ltg10_release_review_pending,
+                "release_review_status": (
+                    "release_review_pending"
+                    if ltg10_release_review_pending
+                    else "release_review_waiting_for_remote_green"
+                    if ltg10_remote_review_pending
+                    else "release_review_waiting_for_local_and_remote_complete"
+                ),
+                "release_review_pending_count": 1 if ltg10_release_review_pending else 0,
+                "strict_closeout_ready": False,
+                "missing_evidence_items": [
+                    "React/Tauri ordinary capability replacement evidence",
+                    "candidate radar replacement parity evidence",
+                    "provider-backed parity acceptance",
+                    "browser performance QA",
+                    "durable Streamlit retirement evidence",
+                    "full Streamlit fallback removal review",
+                    "matching remote CI review after local Streamlit retirement evidence",
+                    "release review after matching remote CI green",
+                ],
                 "ordinary_workflow_exit_complete": streamlit_contract.get("ordinary_workflow_exit_complete")
                 is True,
                 "streamlit_fallback_removal_ready": streamlit_contract.get("streamlit_fallback_removal_ready")
@@ -8965,6 +9013,23 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "pending_stage_count": 0,
                 "local_evidence_stage_count": 0,
                 "production_blocker_count": 0,
+                "local_complete": False,
+                "local_completion_status": "local_observation_failed",
+                "local_blocker_count": 1,
+                "remote_review_required_after_local_complete": True,
+                "remote_review_pending": False,
+                "remote_review_status": "remote_review_waiting_for_local_complete",
+                "remote_review_pending_count": 0,
+                "release_review_required_after_remote_green": True,
+                "release_review_pending": False,
+                "release_review_status": "release_review_waiting_for_local_and_remote_complete",
+                "release_review_pending_count": 0,
+                "strict_closeout_ready": False,
+                "missing_evidence_items": [
+                    "streamlit stage-scope observation",
+                    "matching remote CI review after local Streamlit retirement evidence",
+                    "release review after matching remote CI green",
+                ],
                 "ordinary_workflow_exit_complete": False,
                 "streamlit_fallback_removal_ready": False,
                 "full_streamlit_removal_ready": False,

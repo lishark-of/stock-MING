@@ -59,6 +59,11 @@ TAURI_LTG09_OBSERVED_STATUSES = {
     "observed_in_tauri_desktop_static_contract",
     "observed_tauri_release_binary_direct_evidence_production_pending",
 }
+STREAMLIT_LTG10_OBSERVED_STATUSES = {
+    "observed_in_streamlit_legacy_static_contract",
+    "observed_streamlit_direct_parity_evidence_retirement_pending",
+    "observed_streamlit_fallback_retirement_review_evidence_retirement_pending",
+}
 MOTION_LTG14_OBSERVED_STATUSES = {
     "observed_in_motion_viewport_static_contract",
     "observed_motion_direct_evidence_production_pending",
@@ -1093,6 +1098,149 @@ def assert_ltg09_migration_goal_stage_scope(
         row["observed_missing_evidence_items"],
     )
     test_case.assertIn("production package promotion review", row["observed_missing_evidence_items"])
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["observed_missing_evidence_items"],
+    )
+    test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
+
+
+def assert_ltg10_streamlit_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("direct_evidence_stage_count") or 0)
+    row_count = int(row.get("row_count") or 0)
+    direct_keys = set(row.get("direct_evidence_stage_keys") or [])
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertEqual(row["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
+    test_case.assertIn(row["status"], STREAMLIT_LTG10_OBSERVED_STATUSES)
+    test_case.assertEqual(row_count, 8)
+    test_case.assertEqual(row["pending_stage_count"], max(row_count - direct_count, 0))
+    test_case.assertEqual(row["production_blocker_count"], row["pending_stage_count"])
+    test_case.assertEqual(row["local_evidence_stage_count"], 8)
+    test_case.assertEqual(row["local_complete"], bool(row_count and direct_count >= row_count))
+    if row_count and direct_count >= row_count:
+        test_case.assertEqual(row["local_completion_status"], "local_streamlit_retirement_direct_evidence_complete")
+        test_case.assertEqual(row["local_blocker_count"], 0)
+        test_case.assertIn(
+            row["remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+    elif direct_count:
+        test_case.assertEqual(row["local_completion_status"], "local_streamlit_retirement_direct_evidence_partial")
+        test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    else:
+        test_case.assertEqual(row["local_completion_status"], "local_static_contract_only")
+        test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    test_case.assertEqual(
+        row["streamlit_ordinary_workflow_parity_direct_evidence_verified"],
+        "ordinary_workflow_replacement_parity" in direct_keys,
+    )
+    test_case.assertEqual(
+        row["fallback_retirement_change_review_done"],
+        "fallback_retirement_change_review" in direct_keys,
+    )
+    test_case.assertEqual(
+        row["candidate_radar_parity_complete"],
+        "candidate_radar_replacement_parity" in direct_keys,
+    )
+    test_case.assertEqual(row["provider_backed_parity_done"], "provider_backed_parity_acceptance" in direct_keys)
+    test_case.assertEqual(row["browser_performance_qa_done"], "browser_performance_qa" in direct_keys)
+    test_case.assertTrue(row["remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["release_review_required_after_remote_green"])
+    test_case.assertEqual(row["remote_review_pending_count"], 1 if row["remote_review_pending"] else 0)
+    test_case.assertEqual(row["release_review_pending_count"], 1 if row["release_review_pending"] else 0)
+    test_case.assertFalse(row["strict_closeout_ready"])
+    test_case.assertIn(
+        "React/Tauri ordinary capability replacement evidence",
+        row["missing_evidence_items"],
+    )
+    test_case.assertIn("full Streamlit fallback removal review", row["missing_evidence_items"])
+    test_case.assertIn("release review after matching remote CI green", row["missing_evidence_items"])
+    test_case.assertFalse(row["ordinary_workflow_exit_complete"])
+    test_case.assertFalse(row["streamlit_fallback_removal_ready"])
+    test_case.assertFalse(row["full_streamlit_removal_ready"])
+    test_case.assertTrue(row["streamlit_fallback_retained"])
+    test_case.assertTrue(row["legacy_fallback_required"])
+    test_case.assertTrue(row["feature_parity_required_before_removal"])
+    test_case.assertTrue(row["no_feature_cut_allowed"])
+    test_case.assertFalse(row["streamlit_retirement_durable_evidence_complete"])
+    test_case.assertFalse(row["replacement_parity_complete"])
+    test_case.assertFalse(row["fallback_removed_by_contract"])
+    test_case.assertFalse(row["app_py_deleted_by_contract"])
+    test_case.assertFalse(row["streamlit_opened_by_contract"])
+    test_case.assertFalse(row["legacy_tools_run_by_contract"])
+    test_case.assertFalse(row["tasks_created_by_contract"])
+    test_case.assertFalse(row["provider_model_task_dispatched_by_contract"])
+    test_case.assertFalse(row["external_calls_triggered"])
+    test_case.assertFalse(row["tushare_called"])
+    test_case.assertFalse(row["deepseek_called"])
+    test_case.assertFalse(row["github_called"])
+    test_case.assertTrue(row["does_not_execute_trades"])
+    test_case.assertTrue(row["does_not_modify_holdings"])
+    test_case.assertFalse(row["contains_secret"])
+    test_case.assertFalse(row["can_close_from_observed_row"])
+
+
+def assert_ltg10_migration_goal_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("observed_stage_scope_direct_evidence_count") or 0)
+    row_count = int(row.get("observed_stage_scope_row_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertIn(row["observed_stage_scope_manifest_status"], STREAMLIT_LTG10_OBSERVED_STATUSES)
+    test_case.assertEqual(row_count, 8)
+    test_case.assertEqual(row["observed_stage_scope_pending_count"], max(row_count - direct_count, 0))
+    test_case.assertEqual(row["observed_local_complete"], bool(row_count and direct_count >= row_count))
+    if row_count and direct_count >= row_count:
+        test_case.assertEqual(
+            row["observed_local_completion_status"],
+            "local_streamlit_retirement_direct_evidence_complete",
+        )
+        test_case.assertEqual(row["observed_local_blocker_count"], 0)
+        test_case.assertIn(
+            row["observed_remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+    elif direct_count:
+        test_case.assertEqual(
+            row["observed_local_completion_status"],
+            "local_streamlit_retirement_direct_evidence_partial",
+        )
+        test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["observed_release_review_pending"])
+        test_case.assertEqual(
+            row["observed_release_review_status"],
+            "release_review_waiting_for_local_and_remote_complete",
+        )
+    else:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_static_contract_only")
+        test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+    test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["observed_release_review_required_after_remote_green"])
+    test_case.assertFalse(row["observed_strict_closeout_ready"])
+    test_case.assertIn(
+        "React/Tauri ordinary capability replacement evidence",
+        row["observed_missing_evidence_items"],
+    )
     test_case.assertIn(
         "release review after matching remote CI green",
         row["observed_missing_evidence_items"],
@@ -2926,9 +3074,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             observed_stage_rows["LTG-10"]["stage_scope_manifest"],
             "streamlit_retirement_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-10"]["status"], "observed_in_streamlit_legacy_static_contract")
+        self.assertIn(observed_stage_rows["LTG-10"]["status"], STREAMLIT_LTG10_OBSERVED_STATUSES)
+        ltg10_direct_count = int(observed_stage_rows["LTG-10"].get("direct_evidence_stage_count") or 0)
         self.assertEqual(observed_stage_rows["LTG-10"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-10"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-10"]["pending_stage_count"], max(8 - ltg10_direct_count, 0))
         self.assertEqual(observed_stage_rows["LTG-10"]["local_evidence_stage_count"], 8)
         self.assertFalse(observed_stage_rows["LTG-10"]["ordinary_workflow_exit_complete"])
         self.assertFalse(observed_stage_rows["LTG-10"]["streamlit_fallback_removal_ready"])
@@ -2956,6 +3105,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-10"]["does_not_execute_trades"])
         self.assertTrue(observed_stage_rows["LTG-10"]["does_not_modify_holdings"])
         self.assertFalse(observed_stage_rows["LTG-10"]["can_close_from_observed_row"])
+        assert_ltg10_streamlit_stage_scope(
+            self,
+            observed_stage_rows["LTG-10"],
+            expected_direct_count=ltg10_direct_count,
+        )
         assert_ltg11_release_gate_stage_scope(self, observed_stage_rows["LTG-11"])
         assert_ltg12_trade_isolation_stage_scope(
             self,
@@ -3210,12 +3364,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("React/Tauri ordinary capability replacement evidence", migration_goals["LTG-10"]["next_evidence_required"])
         self.assertIn("fallback retirement review", migration_goals["LTG-10"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-10"]["production_complete"])
-        self.assertEqual(
-            migration_goals["LTG-10"]["observed_stage_scope_manifest_status"],
-            "observed_in_streamlit_legacy_static_contract",
+        ltg10_goal_direct_count = int(
+            migration_goals["LTG-10"].get("observed_stage_scope_direct_evidence_count") or 0
         )
-        self.assertEqual(migration_goals["LTG-10"]["observed_stage_scope_pending_count"], 8)
+        self.assertIn(
+            migration_goals["LTG-10"]["observed_stage_scope_manifest_status"],
+            STREAMLIT_LTG10_OBSERVED_STATUSES,
+        )
+        self.assertEqual(
+            migration_goals["LTG-10"]["observed_stage_scope_pending_count"],
+            max(8 - ltg10_goal_direct_count, 0),
+        )
         self.assertFalse(migration_goals["LTG-10"]["observed_stage_scope_can_close_goal"])
+        assert_ltg10_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-10"],
+            expected_direct_count=ltg10_goal_direct_count,
+        )
         self.assertEqual(migration_goals["LTG-11"]["stage_scope_manifest"], "release_gate_stage_scope_manifest")
         self.assertIn("release gate stage-scope manifest", migration_goals["LTG-11"]["current_state"])
         self.assertIn("fresh local gate run", migration_goals["LTG-11"]["next_evidence_required"])
@@ -6619,6 +6784,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(observed_rows["LTG-10"]["pending_stage_count"], 7)
         self.assertEqual(observed_rows["LTG-10"]["production_blocker_count"], 7)
+        assert_ltg10_streamlit_stage_scope(self, observed_rows["LTG-10"], expected_direct_count=1)
         self.assertTrue(observed_rows["LTG-10"]["streamlit_ordinary_workflow_parity_direct_evidence_verified"])
         self.assertFalse(observed_rows["LTG-10"]["ordinary_workflow_exit_complete"])
         self.assertFalse(observed_rows["LTG-10"]["streamlit_fallback_removal_ready"])
@@ -6734,6 +6900,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(observed_rows["LTG-10"]["pending_stage_count"], 6)
         self.assertEqual(observed_rows["LTG-10"]["production_blocker_count"], 6)
+        assert_ltg10_streamlit_stage_scope(self, observed_rows["LTG-10"], expected_direct_count=2)
         self.assertTrue(observed_rows["LTG-10"]["streamlit_fallback_retirement_direct_evidence_verified"])
         self.assertTrue(observed_rows["LTG-10"]["fallback_retirement_change_review_done"])
         self.assertFalse(observed_rows["LTG-10"]["ordinary_workflow_exit_complete"])
@@ -37129,9 +37296,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             observed_stage_rows["LTG-10"]["stage_scope_manifest"],
             "streamlit_retirement_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-10"]["status"], "observed_in_streamlit_legacy_static_contract")
+        self.assertIn(observed_stage_rows["LTG-10"]["status"], STREAMLIT_LTG10_OBSERVED_STATUSES)
+        ltg10_direct_count = int(observed_stage_rows["LTG-10"].get("direct_evidence_stage_count") or 0)
         self.assertEqual(observed_stage_rows["LTG-10"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-10"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-10"]["pending_stage_count"], max(8 - ltg10_direct_count, 0))
         self.assertEqual(observed_stage_rows["LTG-10"]["local_evidence_stage_count"], 8)
         self.assertFalse(observed_stage_rows["LTG-10"]["ordinary_workflow_exit_complete"])
         self.assertFalse(observed_stage_rows["LTG-10"]["streamlit_fallback_removal_ready"])
@@ -37159,6 +37327,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-10"]["does_not_execute_trades"])
         self.assertTrue(observed_stage_rows["LTG-10"]["does_not_modify_holdings"])
         self.assertFalse(observed_stage_rows["LTG-10"]["can_close_from_observed_row"])
+        assert_ltg10_streamlit_stage_scope(
+            self,
+            observed_stage_rows["LTG-10"],
+            expected_direct_count=ltg10_direct_count,
+        )
         assert_ltg11_release_gate_stage_scope(self, observed_stage_rows["LTG-11"])
         assert_ltg12_trade_isolation_stage_scope(
             self,
@@ -37367,12 +37540,23 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("React/Tauri ordinary capability replacement evidence", migration_goals["LTG-10"]["next_evidence_required"])
         self.assertIn("fallback retirement review", migration_goals["LTG-10"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-10"]["production_complete"])
-        self.assertEqual(
-            migration_goals["LTG-10"]["observed_stage_scope_manifest_status"],
-            "observed_in_streamlit_legacy_static_contract",
+        ltg10_goal_direct_count = int(
+            migration_goals["LTG-10"].get("observed_stage_scope_direct_evidence_count") or 0
         )
-        self.assertEqual(migration_goals["LTG-10"]["observed_stage_scope_pending_count"], 8)
+        self.assertIn(
+            migration_goals["LTG-10"]["observed_stage_scope_manifest_status"],
+            STREAMLIT_LTG10_OBSERVED_STATUSES,
+        )
+        self.assertEqual(
+            migration_goals["LTG-10"]["observed_stage_scope_pending_count"],
+            max(8 - ltg10_goal_direct_count, 0),
+        )
         self.assertFalse(migration_goals["LTG-10"]["observed_stage_scope_can_close_goal"])
+        assert_ltg10_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-10"],
+            expected_direct_count=ltg10_goal_direct_count,
+        )
         self.assertEqual(migration_goals["LTG-11"]["stage_scope_manifest"], "release_gate_stage_scope_manifest")
         self.assertIn("release gate stage-scope manifest", migration_goals["LTG-11"]["current_state"])
         self.assertIn("fresh local gate run", migration_goals["LTG-11"]["next_evidence_required"])
