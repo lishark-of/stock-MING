@@ -4756,6 +4756,193 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
     }
 
 
+def _latest_storage_physical_execution_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import storage_service
+
+        overview = storage_service.storage_overview()
+    except Exception:
+        overview = {}
+    overview_map = overview if isinstance(overview, dict) else {}
+    readiness = _dict_or_empty(overview_map.get("storage_production_readiness_receipt"))
+    activation = _dict_or_empty(overview_map.get("storage_physical_migration_activation_receipt"))
+    recipe = _dict_or_empty(overview_map.get("storage_physical_execution_recipe"))
+    request = _dict_or_empty(overview_map.get("storage_physical_execution_request"))
+    durable_recipe = _dict_or_empty(overview_map.get("storage_physical_durable_evidence_recipe"))
+    phase_a = _dict_or_empty(overview_map.get("storage_physical_execution_phase_a"))
+    direct_evidence = _latest_storage_direct_execution_evidence_summary()
+
+    readiness_ready = bool(readiness and readiness.get("production_storage_complete") is False)
+    activation_ready = bool(
+        activation.get("status") == "storage_physical_migration_activation_receipt_ready_execution_pending"
+        and activation.get("production_storage_complete") is False
+    )
+    recipe_ready = bool(
+        recipe.get("local_recipe_ready") is True
+        and recipe.get("production_storage_complete") is False
+        and recipe.get("external_calls_triggered") is False
+        and recipe.get("tushare_called") is False
+        and recipe.get("deepseek_called") is False
+        and recipe.get("github_called") is False
+        and recipe.get("does_not_execute_trades") is True
+        and recipe.get("does_not_modify_strategy_action") is True
+        and recipe.get("contains_secret") is False
+    )
+    request_ready = bool(
+        request.get("local_execution_request_ready") is True
+        and request.get("ready_for_manual_physical_task_submission") is True
+        and request.get("production_storage_complete") is False
+        and request.get("writes_parquet") is False
+        and request.get("writes_manifest") is False
+        and request.get("deletes_artifacts") is False
+        and request.get("refreshes_providers") is False
+        and request.get("external_calls_triggered") is False
+        and request.get("tushare_called") is False
+        and request.get("deepseek_called") is False
+        and request.get("github_called") is False
+        and request.get("does_not_execute_trades") is True
+        and request.get("does_not_modify_strategy_action") is True
+        and request.get("contains_secret") is False
+    )
+    durable_recipe_ready = bool(
+        durable_recipe.get("local_recipe_ready") is True
+        and durable_recipe.get("production_storage_complete") is False
+        and durable_recipe.get("writes_parquet") is False
+        and durable_recipe.get("writes_manifest") is False
+        and durable_recipe.get("deletes_artifacts") is False
+        and durable_recipe.get("external_calls_triggered") is False
+        and durable_recipe.get("tushare_called") is False
+        and durable_recipe.get("deepseek_called") is False
+        and durable_recipe.get("github_called") is False
+        and durable_recipe.get("does_not_execute_trades") is True
+        and durable_recipe.get("does_not_modify_strategy_action") is True
+        and durable_recipe.get("contains_secret") is False
+    )
+    phase_a_visible = bool(
+        phase_a.get("local_phase_a_execution_ready") is True
+        and phase_a.get("phase_a_local_evidence_done") is True
+        and phase_a.get("production_storage_complete") is False
+        and phase_a.get("writes_parquet") is False
+        and phase_a.get("writes_manifest") is False
+        and phase_a.get("deletes_artifacts") is False
+        and phase_a.get("refreshes_providers") is False
+        and phase_a.get("external_calls_triggered") is False
+        and phase_a.get("tushare_called") is False
+        and phase_a.get("deepseek_called") is False
+        and phase_a.get("github_called") is False
+        and phase_a.get("does_not_execute_trades") is True
+        and phase_a.get("does_not_modify_strategy_action") is True
+        and phase_a.get("contains_secret") is False
+    )
+    production_storage_complete = bool(
+        direct_evidence.get("production_storage_complete") is True
+        or durable_recipe.get("production_storage_complete") is True
+        or phase_a.get("production_storage_complete") is True
+    )
+    if production_storage_complete:
+        status = "storage_physical_execution_handoff_claim_rejected_production_completion_requires_review"
+        next_local_step = "re-audit storage production completion evidence"
+    elif phase_a_visible:
+        status = "storage_physical_execution_phase_a_visible_production_closeout_pending"
+        next_local_step = "future storage production promotion closeout review after remote CI and safety evidence"
+    elif request_ready:
+        status = "storage_physical_execution_request_ready_physical_task_pending"
+        next_local_step = "future explicit physical storage execution tasks"
+    elif recipe_ready:
+        status = "storage_physical_execution_recipe_ready_execution_request_needed"
+        next_local_step = "POST /api/storage/physical-execution-request"
+    else:
+        status = "storage_physical_execution_recipe_needed"
+        next_local_step = "POST /api/storage/backtest-results/schema-seed"
+
+    scope_hash = str(
+        request.get("physical_execution_scope_hash")
+        or phase_a.get("physical_execution_scope_hash")
+        or recipe.get("physical_execution_scope_hash")
+        or ""
+    )
+    scope_hash_short = str(
+        request.get("physical_execution_scope_hash_short")
+        or phase_a.get("physical_execution_scope_hash_short")
+        or recipe.get("physical_execution_scope_hash_short")
+        or scope_hash[:12]
+    )
+    return {
+        "schema_version": "ltg05_storage_physical_execution_handoff_summary.v1",
+        "source_packet_key": "command_center_3_storage_overview",
+        "source_execution_request_packet_key": "command_center_3_storage_physical_execution_request_packet",
+        "source_phase_a_packet_key": "command_center_3_storage_physical_execution_phase_a_packet",
+        "status": status,
+        "readiness_status": str(readiness.get("status") or "missing"),
+        "activation_status": str(activation.get("status") or "missing"),
+        "execution_recipe_status": str(recipe.get("status") or "missing"),
+        "execution_request_status": str(request.get("status") or "missing"),
+        "durable_recipe_status": str(durable_recipe.get("status") or "missing"),
+        "phase_a_status": str(phase_a.get("status") or "missing"),
+        "direct_evidence_status": str(direct_evidence.get("status") or ""),
+        "direct_evidence_layer": str(direct_evidence.get("direct_evidence_layer") or ""),
+        "direct_evidence_stage_count": int(direct_evidence.get("direct_evidence_stage_count") or 0),
+        "storage_production_readiness_receipt_ready": readiness_ready,
+        "storage_physical_migration_activation_ready": activation_ready,
+        "storage_physical_execution_recipe_ready": recipe_ready,
+        "storage_physical_execution_request_ready": request_ready,
+        "storage_physical_execution_phase_a_visible": phase_a_visible,
+        "phase_a_local_evidence_done": phase_a.get("phase_a_local_evidence_done") is True,
+        "phase_a_local_evidence_stage_count": int(phase_a.get("phase_a_local_evidence_stage_count") or 0),
+        "durable_recipe_ready": durable_recipe_ready,
+        "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
+        "durable_promotion_ready": durable_recipe.get("durable_promotion_ready") is True,
+        "production_promotion_review_done": durable_recipe.get("production_promotion_review_done") is True,
+        "production_promotion_review_status": str(
+            durable_recipe.get("production_promotion_review_status") or "missing"
+        ),
+        "production_promotion_review_production_blocker_count": int(
+            durable_recipe.get("production_promotion_review_production_blocker_count") or 0
+        ),
+        "physical_execution_scope_hash_short": scope_hash_short,
+        "target_storage_task_route": str(
+            request.get("target_storage_task_route") or "future POST /api/storage/physical-execution"
+        ),
+        "target_storage_task_type": str(request.get("target_storage_task_type") or "run_storage_physical_execution"),
+        "target_acceptance_mode": "storage_physical_execution_and_promotion",
+        "next_local_step": next_local_step,
+        "requires_schema_migration_execution": direct_evidence.get("schema_migration_executed") is not True,
+        "requires_manifest_validation": direct_evidence.get("dataset_version_manifest_validated") is not True,
+        "requires_partition_migration": direct_evidence.get("partition_migration_metadata_validation_done") is not True,
+        "requires_physical_compaction": direct_evidence.get("physical_compaction_metadata_validation_done") is not True,
+        "requires_cache_ttl_refresh": direct_evidence.get("cache_ttl_refresh_metadata_validation_done") is not True,
+        "requires_artifact_cleanup_review": direct_evidence.get("artifact_cleanup_review_done") is not True,
+        "requires_duckdb_post_migration_validation": direct_evidence.get("duckdb_read_validation_done") is not True,
+        "requires_production_promotion_closeout": True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "physical_task_created": phase_a.get("physical_task_created") is True,
+        "physical_task_executed": phase_a.get("physical_task_executed") is True,
+        "physical_execution_implemented": phase_a.get("physical_execution_implemented") is True,
+        "physical_execution_complete": False,
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "deletes_artifacts": False,
+        "refreshes_providers": False,
+        "reads_row_payloads": False,
+        "cache_get_creates_task": False,
+        "cache_get_writes_parquet": False,
+        "cache_get_writes_manifest": False,
+        "cache_get_deletes_artifacts": False,
+        "cache_get_calls_provider": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_storage_complete": False,
+        "evidence_boundary": "ltg05_storage_handoff_reads_local_receipts_not_storage_production_closeout",
+    }
+
+
 def _latest_worker_runtime_qa_context_preview() -> dict[str, Any]:
     try:
         from server.services import worker_service
@@ -7437,6 +7624,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_tushare_target_sample_evidence_handoff: dict[str, Any] = {}
         supporting_factor_test_lab_provider_validation_handoff: dict[str, Any] = {}
         supporting_factor_universe_worker_batch_handoff: dict[str, Any] = {}
+        supporting_storage_physical_execution_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -7472,6 +7660,9 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         if action["queue_id"] == "p4_storage_physical_execution":
             safe_context["storage_physical_execution_recipe_preview"] = (
                 _latest_storage_physical_execution_recipe_preview()
+            )
+            supporting_storage_physical_execution_handoff = (
+                _latest_storage_physical_execution_handoff_summary()
             )
         if action["queue_id"] == "p4_worker_runtime_qa":
             safe_context["worker_runtime_qa_context_preview"] = _latest_worker_runtime_qa_context_preview()
@@ -7653,6 +7844,28 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_factor_universe_worker_batch_creates_task_from_get": (
                     supporting_factor_universe_worker_batch_handoff.get("cache_get_creates_task")
+                    is True
+                ),
+                "supporting_storage_physical_execution_handoff": (
+                    supporting_storage_physical_execution_handoff
+                ),
+                "supporting_storage_physical_execution_next_local_step": (
+                    supporting_storage_physical_execution_handoff.get("next_local_step", "")
+                ),
+                "supporting_storage_physical_execution_request_ready": (
+                    supporting_storage_physical_execution_handoff.get(
+                        "storage_physical_execution_request_ready"
+                    )
+                    is True
+                ),
+                "supporting_storage_physical_execution_phase_a_visible": (
+                    supporting_storage_physical_execution_handoff.get(
+                        "storage_physical_execution_phase_a_visible"
+                    )
+                    is True
+                ),
+                "supporting_storage_physical_execution_creates_task_from_get": (
+                    supporting_storage_physical_execution_handoff.get("cache_get_creates_task")
                     is True
                 ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",

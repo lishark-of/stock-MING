@@ -645,6 +645,67 @@ export default function MigrationStatus() {
         evidence_boundary: handoff.evidence_boundary
       }];
     });
+  const ltgStoragePhysicalExecutionHandoffRows = ltgNextAcceptanceActionRows
+    .flatMap((row) => {
+      const handoff = (row.supporting_storage_physical_execution_handoff as Record<string, unknown> | undefined) ?? {};
+      if (!Object.keys(handoff).length) {
+        return [];
+      }
+      return [{
+        queue_id: row.queue_id,
+        priority: row.priority,
+        status: handoff.status,
+        direct_evidence_status: handoff.direct_evidence_status,
+        direct_evidence_layer: handoff.direct_evidence_layer,
+        direct_evidence_stage_count: handoff.direct_evidence_stage_count,
+        readiness_status: handoff.readiness_status,
+        activation_status: handoff.activation_status,
+        execution_recipe_status: handoff.execution_recipe_status,
+        execution_request_status: handoff.execution_request_status,
+        durable_recipe_status: handoff.durable_recipe_status,
+        phase_a_status: handoff.phase_a_status,
+        storage_physical_execution_request_ready: handoff.storage_physical_execution_request_ready,
+        storage_physical_execution_phase_a_visible: handoff.storage_physical_execution_phase_a_visible,
+        phase_a_local_evidence_done: handoff.phase_a_local_evidence_done,
+        production_promotion_review_done: handoff.production_promotion_review_done,
+        production_promotion_review_status: handoff.production_promotion_review_status,
+        production_promotion_review_production_blocker_count: handoff.production_promotion_review_production_blocker_count,
+        physical_execution_scope_hash_short: handoff.physical_execution_scope_hash_short,
+        target_storage_task_route: handoff.target_storage_task_route,
+        target_storage_task_type: handoff.target_storage_task_type,
+        target_acceptance_mode: handoff.target_acceptance_mode,
+        next_local_step: handoff.next_local_step,
+        requires_schema_migration_execution: handoff.requires_schema_migration_execution,
+        requires_manifest_validation: handoff.requires_manifest_validation,
+        requires_partition_migration: handoff.requires_partition_migration,
+        requires_physical_compaction: handoff.requires_physical_compaction,
+        requires_cache_ttl_refresh: handoff.requires_cache_ttl_refresh,
+        requires_artifact_cleanup_review: handoff.requires_artifact_cleanup_review,
+        requires_duckdb_post_migration_validation: handoff.requires_duckdb_post_migration_validation,
+        requires_production_promotion_closeout: handoff.requires_production_promotion_closeout,
+        requires_remote_ci_review_after_local_complete: handoff.requires_remote_ci_review_after_local_complete,
+        physical_task_created: handoff.physical_task_created,
+        physical_task_executed: handoff.physical_task_executed,
+        physical_execution_implemented: handoff.physical_execution_implemented,
+        physical_execution_complete: handoff.physical_execution_complete,
+        writes_parquet: handoff.writes_parquet,
+        writes_manifest: handoff.writes_manifest,
+        deletes_artifacts: handoff.deletes_artifacts,
+        refreshes_providers: handoff.refreshes_providers,
+        cache_get_creates_task: handoff.cache_get_creates_task,
+        cache_get_writes_parquet: handoff.cache_get_writes_parquet,
+        cache_get_writes_manifest: handoff.cache_get_writes_manifest,
+        cache_get_deletes_artifacts: handoff.cache_get_deletes_artifacts,
+        external_calls_triggered: handoff.external_calls_triggered,
+        tushare_called: handoff.tushare_called,
+        deepseek_called: handoff.deepseek_called,
+        github_called: handoff.github_called,
+        does_not_execute_trades: handoff.does_not_execute_trades,
+        production_storage_complete: handoff.production_storage_complete,
+        can_close_goal: handoff.can_close_goal,
+        evidence_boundary: handoff.evidence_boundary
+      }];
+    });
   const ltgCurrentEvidenceProducerCacheRefreshHandoffRows = ltgNextAcceptanceActionRows
     .flatMap((row) => {
       const handoff = (row.supporting_current_evidence_producer_cache_refresh_handoff as Record<string, unknown> | undefined) ?? {};
@@ -1220,6 +1281,8 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgFactorTestProviderValidationHandoffRows} />
       <p className="risk-note">LTG-04 Factor Universe handoff 只显示本地 worker-batch scope ticket、execution-request、local research receipt、worker dependency preflight 和仍缺的 worker runtime / storage-read / rank-zscore-neutralization / full-pool / promotion review；它不从 GET cache 创建任务、不启动 Celery/Redis，也不能关闭 Factor Universe 生产验证。</p>
       <DataLineageTable rows={ltgFactorUniverseWorkerBatchHandoffRows} />
+      <p className="risk-note">LTG-05 Storage handoff 只显示本地 readiness / activation / execution recipe / execution-request / phase-A evidence / durable recipe 和仍缺的 production promotion closeout / remote CI review；它不从 GET cache 创建任务、不写 Parquet/manifest、不删除 artifacts，也不能关闭 Storage 生产验证。</p>
+      <DataLineageTable rows={ltgStoragePhysicalExecutionHandoffRows} />
       <DataLineageTable rows={ltgCurrentEvidenceProducerCacheRefreshHandoffRows} />
       <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />

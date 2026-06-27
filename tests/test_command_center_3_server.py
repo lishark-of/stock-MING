@@ -8531,6 +8531,49 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         durable_rows = {row["evidence_key"]: row for row in refreshed["storage_physical_durable_evidence_rows"]}
         self.assertEqual(durable_rows["physical_execution_request_visible"]["status"], "passed")
 
+        migration = migration_status_service.build_migration_status()
+        storage_action = {
+            row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]
+        }["p4_storage_physical_execution"]
+        handoff = storage_action["supporting_storage_physical_execution_handoff"]
+        self.assertEqual(handoff["schema_version"], "ltg05_storage_physical_execution_handoff_summary.v1")
+        self.assertEqual(handoff["status"], "storage_physical_execution_request_ready_physical_task_pending")
+        self.assertTrue(handoff["storage_physical_execution_request_ready"])
+        self.assertFalse(handoff["storage_physical_execution_phase_a_visible"])
+        self.assertEqual(handoff["physical_execution_scope_hash_short"], scope_hash[:12])
+        self.assertEqual(handoff["target_storage_task_route"], "future POST /api/storage/physical-execution")
+        self.assertEqual(handoff["target_storage_task_type"], "run_storage_physical_execution")
+        self.assertEqual(handoff["target_acceptance_mode"], "storage_physical_execution_and_promotion")
+        self.assertEqual(handoff["next_local_step"], "future explicit physical storage execution tasks")
+        self.assertTrue(handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(handoff["physical_task_created"])
+        self.assertFalse(handoff["physical_task_executed"])
+        self.assertFalse(handoff["physical_execution_implemented"])
+        self.assertFalse(handoff["physical_execution_complete"])
+        self.assertFalse(handoff["writes_parquet"])
+        self.assertFalse(handoff["writes_manifest"])
+        self.assertFalse(handoff["deletes_artifacts"])
+        self.assertFalse(handoff["refreshes_providers"])
+        self.assertFalse(handoff["cache_get_creates_task"])
+        self.assertFalse(handoff["cache_get_writes_parquet"])
+        self.assertFalse(handoff["cache_get_writes_manifest"])
+        self.assertFalse(handoff["cache_get_deletes_artifacts"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["tushare_called"])
+        self.assertFalse(handoff["deepseek_called"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertFalse(handoff["production_storage_complete"])
+        self.assertFalse(handoff["can_close_goal"])
+        self.assertEqual(
+            handoff["evidence_boundary"],
+            "ltg05_storage_handoff_reads_local_receipts_not_storage_production_closeout",
+        )
+        self.assertTrue(storage_action["supporting_storage_physical_execution_request_ready"])
+        self.assertFalse(storage_action["supporting_storage_physical_execution_phase_a_visible"])
+        self.assertFalse(storage_action["supporting_storage_physical_execution_creates_task_from_get"])
+
     def test_storage_physical_execution_phase_a_records_local_evidence_without_writes(self):
         missing_dependency = next(
             (
