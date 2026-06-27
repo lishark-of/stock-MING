@@ -5699,6 +5699,44 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(preview["does_not_execute_trades"])
         self.assertTrue(preview["does_not_modify_strategy_action"])
         self.assertFalse(preview["contains_secret"])
+        pipeline_handoff = p2["supporting_tushare_full_interface_pipeline_handoff"]
+        self.assertEqual(
+            pipeline_handoff["schema_version"],
+            "ltg02_tushare_full_interface_pipeline_handoff_summary.v1",
+        )
+        self.assertEqual(
+            pipeline_handoff["status"],
+            "full_interface_pipeline_execution_recipe_ready_request_ticket_needed",
+        )
+        self.assertEqual(
+            p2["supporting_tushare_full_interface_next_local_step"],
+            "POST /api/tasks/tushare-provider-target-sample-execution-request",
+        )
+        self.assertTrue(p2["supporting_tushare_full_interface_recipe_ready"])
+        self.assertFalse(p2["supporting_tushare_full_interface_selection_done"])
+        self.assertTrue(p2["supporting_tushare_full_interface_requires_provider_task"])
+        self.assertFalse(p2["supporting_tushare_full_interface_creates_task_from_get"])
+        self.assertEqual(pipeline_handoff["requested_targets"], ["margin_financing"])
+        self.assertEqual(pipeline_handoff["selected_apis"], ["margin_detail"])
+        self.assertTrue(pipeline_handoff["recipe_ready_for_user_confirmation"])
+        self.assertFalse(pipeline_handoff["latest_execution_request_ready_for_manual_provider_task_submission"])
+        self.assertFalse(pipeline_handoff["target_sample_acceptance_ready_for_review"])
+        self.assertFalse(pipeline_handoff["full_interface_selection_done"])
+        self.assertFalse(pipeline_handoff["full_interface_acceptance_done"])
+        self.assertFalse(pipeline_handoff["production_tushare_pipeline_complete"])
+        self.assertIn("full-interface selected API set", pipeline_handoff["missing_evidence_items"])
+        self.assertFalse(pipeline_handoff["cache_get_creates_task"])
+        self.assertFalse(pipeline_handoff["cache_get_calls_provider"])
+        self.assertFalse(pipeline_handoff["cache_get_calls_tushare"])
+        self.assertFalse(pipeline_handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(pipeline_handoff["external_calls_triggered"])
+        self.assertFalse(pipeline_handoff["tushare_called"])
+        self.assertFalse(pipeline_handoff["deepseek_called"])
+        self.assertFalse(pipeline_handoff["github_called"])
+        self.assertTrue(pipeline_handoff["does_not_execute_trades"])
+        self.assertTrue(pipeline_handoff["does_not_modify_strategy_action"])
+        self.assertFalse(pipeline_handoff["contains_secret"])
+        self.assertFalse(pipeline_handoff["can_close_goal"])
 
         tushare_task_service.run_tushare_provider_target_sample_execution_request(
             {
@@ -5718,6 +5756,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         p2_after_request = action_rows_after_request["p2_tushare_target_sample_acceptance"]
         handoff = p2_after_request["future_handoff_preview_rows"][0]
         evidence_handoff = p2_after_request["supporting_tushare_target_sample_evidence_handoff"]
+        pipeline_handoff_after_request = p2_after_request[
+            "supporting_tushare_full_interface_pipeline_handoff"
+        ]
 
         self.assertEqual(
             p2_after_request["local_receipt_status"],
@@ -5761,6 +5802,33 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(evidence_handoff["tushare_called"])
         self.assertTrue(evidence_handoff["does_not_execute_trades"])
         self.assertFalse(evidence_handoff["can_close_goal"])
+        self.assertEqual(
+            pipeline_handoff_after_request["status"],
+            "full_interface_pipeline_execution_request_ready_provider_task_pending",
+        )
+        self.assertEqual(
+            p2_after_request["supporting_tushare_full_interface_next_local_step"],
+            "POST /api/tasks/refresh-tushare-facts",
+        )
+        self.assertTrue(
+            pipeline_handoff_after_request[
+                "latest_execution_request_ready_for_manual_provider_task_submission"
+            ]
+        )
+        self.assertFalse(pipeline_handoff_after_request["target_sample_acceptance_ready_for_review"])
+        self.assertFalse(pipeline_handoff_after_request["full_interface_selection_done"])
+        self.assertFalse(pipeline_handoff_after_request["full_interface_acceptance_done"])
+        self.assertFalse(pipeline_handoff_after_request["production_tushare_pipeline_complete"])
+        self.assertTrue(
+            pipeline_handoff_after_request["requires_separate_user_approved_provider_task"]
+        )
+        self.assertFalse(pipeline_handoff_after_request["cache_get_creates_task"])
+        self.assertFalse(pipeline_handoff_after_request["cache_get_calls_provider"])
+        self.assertFalse(pipeline_handoff_after_request["provider_execution_implemented_by_handoff"])
+        self.assertFalse(pipeline_handoff_after_request["external_calls_triggered"])
+        self.assertFalse(pipeline_handoff_after_request["tushare_called"])
+        self.assertTrue(pipeline_handoff_after_request["does_not_execute_trades"])
+        self.assertFalse(pipeline_handoff_after_request["can_close_goal"])
         self.assertFalse(handoff["provider_execution_implemented_by_preview"])
         self.assertFalse(handoff["external_calls_triggered"])
         self.assertFalse(handoff["tushare_called"])
@@ -53169,10 +53237,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(push_receipt["latest_remote_run_verified_green"])
         self.assertEqual(push_receipt["remote_review_status"], "remote_review_waiting_for_local_gate")
         self.assertEqual(push_receipt["local_push_gate_run_receipt_origin_ahead_count"], 0)
-        self.assertFalse(push_receipt["local_commits_not_pushed_for_remote_ci"])
-        self.assertFalse(push_receipt["remote_review_blocked_by_unpushed_local_commits"])
-        self.assertEqual(push_receipt["remote_review_blockers"], [])
-        self.assertEqual(push_receipt["remote_review_blocker_count"], 0)
+        self.assertIsInstance(push_receipt["local_push_gate_run_receipt_current_origin_ahead_count"], int)
+        current_origin_ahead_count = push_receipt["local_push_gate_run_receipt_current_origin_ahead_count"]
+        self.assertEqual(
+            push_receipt["local_commits_not_pushed_for_remote_ci"],
+            current_origin_ahead_count > 0,
+        )
+        self.assertEqual(
+            push_receipt["remote_review_blocked_by_unpushed_local_commits"],
+            current_origin_ahead_count > 0,
+        )
+        if current_origin_ahead_count > 0:
+            self.assertIn("local_commits_not_pushed_for_remote_ci", push_receipt["remote_review_blockers"])
+        else:
+            self.assertEqual(push_receipt["remote_review_blockers"], [])
+        self.assertEqual(
+            push_receipt["remote_review_blocker_count"],
+            len(push_receipt["remote_review_blockers"]),
+        )
         self.assertFalse(push_receipt["can_clear_failure_email_without_matching_head_and_logs"])
         self.assertTrue(push_receipt["local_gate_pass_is_not_ci_status"])
         self.assertTrue(push_receipt["static_ci_mirror_is_not_ci_status"])

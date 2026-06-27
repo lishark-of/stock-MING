@@ -9028,6 +9028,165 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
     }
 
 
+def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import data_health_service
+
+        timeline_packet = data_health_service.read_data_health_timeline_cache()
+    except Exception:
+        timeline_packet = {}
+    timeline_map = _dict_or_empty(timeline_packet)
+    try:
+        refresh_packet = packet_service.read_packet("command_center_tushare_refresh_packet")
+    except Exception:
+        refresh_packet = {}
+    refresh_map = _dict_or_empty(refresh_packet)
+    recipe_preview = _latest_tushare_target_sample_execution_recipe_preview()
+    target_sample_handoff = _latest_tushare_target_sample_evidence_handoff_summary()
+    provider_direct_evidence = _latest_tushare_direct_provider_evidence_summary()
+    durable_recipe = _dict_or_empty(refresh_map.get("tushare_durable_evidence_recipe"))
+    target_contract = _dict_or_empty(refresh_map.get("provider_target_sample_acceptance_contract"))
+    failure_mode_qa = _dict_or_empty(refresh_map.get("failure_mode_qa_contract"))
+    request_parameter_qa = _dict_or_empty(refresh_map.get("request_parameter_qa_contract"))
+    promotion = _dict_or_empty(refresh_map.get("provider_acceptance_promotion_audit"))
+    selected_apis = [
+        str(item)
+        for item in (
+            provider_direct_evidence.get("selected_apis")
+            or recipe_preview.get("selected_apis")
+            or target_sample_handoff.get("selected_apis")
+            or []
+        )
+        if str(item or "")
+    ]
+    requested_targets = [
+        str(item)
+        for item in (
+            target_sample_handoff.get("requested_targets")
+            or recipe_preview.get("requested_targets")
+            or target_contract.get("requested_targets")
+            or []
+        )
+        if str(item or "")
+    ]
+    full_interface_selection_done = provider_direct_evidence.get("full_interface_selection_done") is True
+    target_sample_review_ready = (
+        target_sample_handoff.get("target_sample_acceptance_ready_for_review") is True
+    )
+    execution_request_ready = (
+        target_sample_handoff.get("latest_execution_request_ready_for_manual_provider_task_submission")
+        is True
+    )
+    recipe_ready = recipe_preview.get("recipe_ready_for_user_confirmation") is True
+    durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
+    durable_blocker_count = int(durable_recipe.get("durable_evidence_blocker_count") or 0)
+    provider_call_ledger_count = int(provider_direct_evidence.get("call_ledger_count") or 0)
+    failure_mode_done = (
+        failure_mode_qa.get("status") == "failure_mode_qa_ready_provider_acceptance_pending"
+        and int(failure_mode_qa.get("unsafe_row_count") or 0) == 0
+    )
+    request_parameter_done = (
+        request_parameter_qa.get("status") == "request_parameter_qa_ready_provider_acceptance_pending"
+        and int(request_parameter_qa.get("missing_required_count") or 0) == 0
+        and int(request_parameter_qa.get("unsafe_param_count") or 0) == 0
+    )
+    promotion_ready = promotion.get("promotion_ready") is True
+    missing_evidence_items: list[str] = []
+    if not full_interface_selection_done:
+        missing_evidence_items.append("full-interface selected API set")
+    if not target_sample_review_ready:
+        missing_evidence_items.append("provider-backed target-sample acceptance review")
+    if not provider_call_ledger_count:
+        missing_evidence_items.append("provider call ledger")
+    if not failure_mode_done:
+        missing_evidence_items.append("failure-mode provider evidence")
+    if not request_parameter_done:
+        missing_evidence_items.append("request-parameter provider window evidence")
+    if not promotion_ready:
+        missing_evidence_items.append("provider acceptance promotion review")
+    missing_evidence_items.extend(
+        [
+            "storage or no-storage promotion review",
+            "matching remote CI review after local gate",
+            "release review after matching remote CI green",
+        ]
+    )
+    if target_sample_review_ready and durable_recipe_ready:
+        status = "full_interface_pipeline_target_sample_review_ready_promotion_pending"
+        next_step = "full_interface_storage_promotion_review_after_provider_sample"
+    elif execution_request_ready:
+        status = "full_interface_pipeline_execution_request_ready_provider_task_pending"
+        next_step = "POST /api/tasks/refresh-tushare-facts"
+    elif recipe_ready:
+        status = "full_interface_pipeline_execution_recipe_ready_request_ticket_needed"
+        next_step = "POST /api/tasks/tushare-provider-target-sample-execution-request"
+    else:
+        status = "full_interface_pipeline_target_sample_scope_needed"
+        next_step = "prepare_target_sample_execution_recipe"
+    return {
+        "schema_version": "ltg02_tushare_full_interface_pipeline_handoff_summary.v1",
+        "status": status,
+        "source_packet_key": (
+            "command_center_3_data_health_timeline_cache+command_center_tushare_refresh_packet+"
+            "command_center_tushare_provider_target_sample_execution_recipe_packet"
+        ),
+        "stage_scope_manifest": "tushare_production_stage_scope_manifest",
+        "timeline_status": timeline_map.get("status") or "missing",
+        "refresh_packet_status": refresh_map.get("status") or "missing",
+        "target_sample_handoff_status": target_sample_handoff.get("status") or "missing",
+        "recipe_visible": recipe_preview.get("recipe_visible") is True,
+        "recipe_ready_for_user_confirmation": recipe_ready,
+        "execution_recipe_scope_hash_short": recipe_preview.get("execution_recipe_scope_hash_short", ""),
+        "latest_execution_request_ready_for_manual_provider_task_submission": execution_request_ready,
+        "target_sample_acceptance_ready_for_review": target_sample_review_ready,
+        "target_sample_acceptance_is_full_interface_acceptance": False,
+        "requested_targets": requested_targets,
+        "requested_target_count": len(requested_targets),
+        "selected_apis": selected_apis,
+        "selected_api_count": len(selected_apis),
+        "full_interface_selection_done": full_interface_selection_done,
+        "full_interface_acceptance_done": False,
+        "provider_call_ledger_evidence_done": provider_call_ledger_count > 0,
+        "provider_call_ledger_count": provider_call_ledger_count,
+        "prior_provider_evidence_observed": provider_call_ledger_count > 0,
+        "prior_provider_evidence_is_not_new_call": True,
+        "failure_mode_evidence_done": failure_mode_done,
+        "request_parameter_provider_window_done": request_parameter_done,
+        "provider_promotion_ready": promotion_ready,
+        "durable_recipe_ready": durable_recipe_ready,
+        "durable_recipe_status": durable_recipe.get("status") or "missing",
+        "durable_evidence_blocker_count": durable_blocker_count,
+        "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
+        "durable_recipe_is_not_completion": True,
+        "missing_evidence_items": missing_evidence_items,
+        "missing_evidence_count": len(missing_evidence_items),
+        "production_tushare_pipeline_complete": False,
+        "requires_separate_user_approved_provider_task": not target_sample_review_ready,
+        "requires_full_interface_selection": not full_interface_selection_done,
+        "requires_storage_or_no_storage_promotion_review": True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "cache_get_creates_task": False,
+        "cache_get_calls_provider": False,
+        "cache_get_calls_tushare": False,
+        "creates_provider_task_from_get": False,
+        "provider_execution_implemented_by_handoff": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "next_local_step": next_step,
+        "evidence_boundary": (
+            "tushare_full_interface_pipeline_handoff_is_local_evidence_readback_not_provider_execution_or_ltg_closeout"
+        ),
+    }
+
+
 def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows_by_id = {str(row.get("id") or ""): row for row in rows}
     tasks_by_type = _task_statuses_by_type()
@@ -9076,6 +9235,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_trade_cal_provider_acceptance_evidence_handoff: dict[str, Any] = {}
         supporting_current_evidence_producer_cache_refresh_handoff: dict[str, Any] = {}
         supporting_tushare_target_sample_evidence_handoff: dict[str, Any] = {}
+        supporting_tushare_full_interface_pipeline_handoff: dict[str, Any] = {}
         supporting_factor_test_lab_provider_validation_handoff: dict[str, Any] = {}
         supporting_candidate_radar_production_handoff: dict[str, Any] = {}
         supporting_factor_universe_worker_batch_handoff: dict[str, Any] = {}
@@ -9105,6 +9265,9 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             )
             supporting_tushare_target_sample_evidence_handoff = (
                 _latest_tushare_target_sample_evidence_handoff_summary()
+            )
+            supporting_tushare_full_interface_pipeline_handoff = (
+                _latest_tushare_full_interface_pipeline_handoff_summary()
             )
         if action["queue_id"] == "p3_factor_small_pool_provider_validation":
             supporting_factor_test_lab_provider_validation_handoff = (
@@ -9340,6 +9503,40 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_tushare_target_sample_creates_task_from_get": (
                     supporting_tushare_target_sample_evidence_handoff.get("cache_get_creates_task")
+                    is True
+                ),
+                "supporting_tushare_full_interface_pipeline_handoff": (
+                    supporting_tushare_full_interface_pipeline_handoff
+                ),
+                "supporting_tushare_full_interface_next_local_step": (
+                    supporting_tushare_full_interface_pipeline_handoff.get("next_local_step", "")
+                ),
+                "supporting_tushare_full_interface_recipe_ready": (
+                    supporting_tushare_full_interface_pipeline_handoff.get(
+                        "recipe_ready_for_user_confirmation"
+                    )
+                    is True
+                ),
+                "supporting_tushare_full_interface_selection_done": (
+                    supporting_tushare_full_interface_pipeline_handoff.get(
+                        "full_interface_selection_done"
+                    )
+                    is True
+                ),
+                "supporting_tushare_full_interface_requires_provider_task": (
+                    supporting_tushare_full_interface_pipeline_handoff.get(
+                        "requires_separate_user_approved_provider_task"
+                    )
+                    is True
+                ),
+                "supporting_tushare_full_interface_durable_blocker_count": int(
+                    supporting_tushare_full_interface_pipeline_handoff.get(
+                        "durable_evidence_blocker_count"
+                    )
+                    or 0
+                ),
+                "supporting_tushare_full_interface_creates_task_from_get": (
+                    supporting_tushare_full_interface_pipeline_handoff.get("cache_get_creates_task")
                     is True
                 ),
                 "supporting_factor_test_lab_provider_validation_handoff": (
