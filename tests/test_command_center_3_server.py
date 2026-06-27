@@ -13283,6 +13283,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("candidate_radar_production_promotion_dry_run_is_scope_bound_local_only", script)
         self.assertIn("candidate_radar_legacy_retirement_review_is_local_retirement_blocked", script)
         self.assertIn("candidate_radar_production_promotion_review_is_local_production_blocked", script)
+        self.assertIn("search_quant_projection_execution_request_is_scope_bound_ticket_only", script)
         self.assertIn("scripts/candidate_radar_browser_qa_runbook.py", script)
         self.assertIn("Candidate Radar browser QA runbook", script)
         self.assertIn("candidate_radar_browser_qa_runbook: passed_runbook_execution_pending", script)
