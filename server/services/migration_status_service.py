@@ -3214,6 +3214,22 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         if remote_review_pending
         else "release_review_waiting_for_local_and_remote_complete"
     )
+    missing_evidence_items: list[str] = []
+    if not fresh_gate_run_done:
+        missing_evidence_items.append("fresh local gate run for current HEAD")
+    if not latest_remote_run_verified_green:
+        missing_evidence_items.extend(
+            [
+                "matching remote Actions status for current HEAD",
+                "latest green remote run evidence",
+            ]
+        )
+    missing_evidence_items.extend(
+        [
+            "periodic allowlist review evidence",
+            "release review after matching remote CI green",
+        ]
+    )
     return {
         "schema_version": "migration_release_gate_direct_evidence_summary.v1",
         "source_packet_key": "local_push_gate_run_receipt+remote_ci_review_receipt",
@@ -3236,13 +3252,7 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "release_review_status": release_review_status,
         "release_review_pending_count": 1 if release_review_pending else 0,
         "strict_closeout_ready": False,
-        "missing_evidence_items": [
-            "fresh local gate run for current HEAD",
-            "matching remote Actions status for current HEAD",
-            "latest green remote run evidence",
-            "periodic allowlist review evidence",
-            "release review after matching remote CI green",
-        ],
+        "missing_evidence_items": missing_evidence_items,
         "available": bool(direct_stage_keys),
         "direct_evidence_stage_keys": direct_stage_keys,
         "direct_evidence_stage_count": len(direct_stage_keys),

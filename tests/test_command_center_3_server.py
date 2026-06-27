@@ -1595,8 +1595,16 @@ def assert_ltg11_release_gate_stage_scope(
     )
     test_case.assertEqual(row["release_review_pending_count"], 1 if direct_count >= 2 else 0)
     test_case.assertFalse(row["strict_closeout_ready"])
-    test_case.assertIn("fresh local gate run for current HEAD", row["missing_evidence_items"])
-    test_case.assertIn("matching remote Actions status for current HEAD", row["missing_evidence_items"])
+    if direct_count:
+        test_case.assertNotIn("fresh local gate run for current HEAD", row["missing_evidence_items"])
+    else:
+        test_case.assertIn("fresh local gate run for current HEAD", row["missing_evidence_items"])
+    if direct_count >= 2:
+        test_case.assertNotIn("matching remote Actions status for current HEAD", row["missing_evidence_items"])
+        test_case.assertNotIn("latest green remote run evidence", row["missing_evidence_items"])
+    else:
+        test_case.assertIn("matching remote Actions status for current HEAD", row["missing_evidence_items"])
+        test_case.assertIn("latest green remote run evidence", row["missing_evidence_items"])
     test_case.assertIn("release review after matching remote CI green", row["missing_evidence_items"])
     test_case.assertTrue(row["local_gate_ready"])
     test_case.assertTrue(row["ci_mirror_ready"])
@@ -1671,7 +1679,10 @@ def assert_ltg11_migration_goal_stage_scope(
         else "release_review_waiting_for_local_and_remote_complete",
     )
     test_case.assertFalse(row["observed_strict_closeout_ready"])
-    test_case.assertIn("fresh local gate run for current HEAD", row["observed_missing_evidence_items"])
+    if direct_count:
+        test_case.assertNotIn("fresh local gate run for current HEAD", row["observed_missing_evidence_items"])
+    else:
+        test_case.assertIn("fresh local gate run for current HEAD", row["observed_missing_evidence_items"])
     test_case.assertIn("release review after matching remote CI green", row["observed_missing_evidence_items"])
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
@@ -23313,6 +23324,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(ltg11["direct_evidence_stage_count"], 1)
         self.assertEqual(ltg11["direct_evidence_stage_keys"], ["fresh_local_gate_command_run"])
         self.assertEqual(ltg11["release_gate_direct_evidence_layer"], "L3_local_release_gate_execution_evidence")
+        self.assertNotIn("fresh local gate run for current HEAD", ltg11["missing_evidence_items"])
+        self.assertIn("matching remote Actions status for current HEAD", ltg11["missing_evidence_items"])
+        self.assertIn("latest green remote run evidence", ltg11["missing_evidence_items"])
         self.assertTrue(ltg11["fresh_local_gate_run_observed"])
         self.assertTrue(ltg11["local_push_gate_receipt_head_matches_current"])
         self.assertTrue(ltg11["local_worktree_clean"])
@@ -23344,6 +23358,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             ["fresh_local_gate_command_run"],
         )
         self.assertEqual(migration_goals["LTG-11"]["observed_stage_scope_pending_count"], 5)
+        self.assertNotIn(
+            "fresh local gate run for current HEAD",
+            migration_goals["LTG-11"]["observed_missing_evidence_items"],
+        )
+        self.assertIn(
+            "matching remote Actions status for current HEAD",
+            migration_goals["LTG-11"]["observed_missing_evidence_items"],
+        )
         self.assertFalse(migration_goals["LTG-11"]["observed_stage_scope_can_close_goal"])
 
     def test_release_gate_stale_local_run_receipt_surfaces_head_mismatch_blocker(self):
