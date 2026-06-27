@@ -7833,6 +7833,22 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             for row in stage_rows
             if isinstance(row, dict) and row.get("current_status") == "local_governance_or_dry_run_only"
         )
+        direct_evidence_stage_keys: list[str] = []
+        direct_evidence_count = len(direct_evidence_stage_keys)
+        release_gate_evidence = _latest_release_gate_direct_evidence_summary()
+        latest_remote_run_verified_green = (
+            release_gate_evidence.get("latest_remote_run_verified_green") is True
+        )
+        ltg07_local_complete = bool(row_count and direct_evidence_count >= row_count)
+        ltg07_remote_review_pending = bool(ltg07_local_complete and not latest_remote_run_verified_green)
+        ltg07_release_review_pending = bool(ltg07_local_complete and latest_remote_run_verified_green)
+        ltg07_local_completion_status = (
+            "local_deepseek_direct_evidence_complete"
+            if ltg07_local_complete
+            else "local_deepseek_direct_evidence_partial"
+            if direct_evidence_count
+            else "local_static_contract_only"
+        )
         rows.append(
             {
                 "id": "LTG-07",
@@ -7847,6 +7863,43 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "row_count": row_count,
                 "pending_stage_count": pending_count,
                 "local_evidence_stage_count": local_evidence_count,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": direct_evidence_stage_keys,
+                "local_complete": ltg07_local_complete,
+                "local_completion_status": ltg07_local_completion_status,
+                "local_blocker_count": 0 if ltg07_local_complete else pending_count,
+                "remote_review_required_after_local_complete": True,
+                "remote_review_pending": ltg07_remote_review_pending,
+                "remote_review_status": (
+                    "remote_review_pending"
+                    if ltg07_remote_review_pending
+                    else "remote_review_green_release_review_pending"
+                    if ltg07_release_review_pending
+                    else "remote_review_waiting_for_local_complete"
+                ),
+                "remote_review_pending_count": 1 if ltg07_remote_review_pending else 0,
+                "release_review_required_after_remote_green": True,
+                "release_review_pending": ltg07_release_review_pending,
+                "release_review_status": (
+                    "release_review_pending"
+                    if ltg07_release_review_pending
+                    else "release_review_waiting_for_remote_green"
+                    if ltg07_remote_review_pending
+                    else "release_review_waiting_for_local_and_remote_complete"
+                ),
+                "release_review_pending_count": 1 if ltg07_release_review_pending else 0,
+                "strict_closeout_ready": False,
+                "missing_evidence_items": [
+                    "provider-backed DeepSeek benchmark report",
+                    "provider response_format/json_schema enforcement evidence",
+                    "bounded retry/repair provider execution evidence",
+                    "model ledger hash/dedupe and redaction evidence",
+                    "token/cost budget evidence",
+                    "auto-after-task mode gate evidence",
+                    "production DeepSeek promotion review",
+                    "matching remote CI review after local DeepSeek evidence",
+                    "release review after matching remote CI green",
+                ],
                 "production_blocker_count": pending_count,
                 "provider_benchmark_done": False,
                 "response_format_enforced": False,
