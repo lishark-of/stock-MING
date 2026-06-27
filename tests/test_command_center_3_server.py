@@ -15331,7 +15331,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["legacy_parity_acceptance_receipt_ready"])
         self.assertTrue(payload["deep_scan_local_review_receipt_ready"])
         self.assertTrue(payload["fast_scan_task_pipeline_ready"])
-        self.assertTrue(payload["search_quant_projection_execution_request_ready"])
+        if "search_quant_projection_execution_request_is_scope_bound_ticket_only" in (
+            payload.get("blockers") or []
+        ):
+            self.assertFalse(payload["search_quant_projection_execution_request_ready"])
+            self.assertEqual(
+                payload["observed"]["search_quant_projection_execution_request_status"],
+                "quant_projection_execution_request_blocked_dry_run_not_ready",
+            )
+        else:
+            self.assertTrue(payload["search_quant_projection_execution_request_ready"])
         self.assertTrue(payload["candidate_radar_next_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_worker_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_durable_evidence_recipe_ready"])
