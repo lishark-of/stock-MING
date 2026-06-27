@@ -2511,8 +2511,14 @@ def _build_ltg_strict_closeout_work_order_rows(
                 "release_gate_receipt_head_matches_current": (
                     release_gate_direct_evidence.get("local_push_gate_receipt_head_matches_current") is True
                 ),
-                "release_gate_origin_ahead_count": int(
+                "release_gate_receipt_reported_origin_ahead_count": int(
                     release_gate_direct_evidence.get("local_push_gate_receipt_origin_ahead_count") or 0
+                ),
+                "release_gate_origin_ahead_count": int(
+                    release_gate_direct_evidence.get("local_push_gate_receipt_current_origin_ahead_count") or 0
+                ),
+                "release_gate_origin_ahead_count_stale": (
+                    release_gate_direct_evidence.get("local_push_gate_receipt_origin_ahead_count_stale") is True
                 ),
                 "release_gate_local_commits_not_pushed_for_remote_ci": (
                     release_gate_direct_evidence.get("local_commits_not_pushed_for_remote_ci") is True
@@ -2579,8 +2585,14 @@ def _build_ltg_strict_closeout_work_order_rows(
         ),
         "release_gate_worktree_raw_paths_emitted": False,
         "release_gate_worktree_raw_status_lines_emitted": False,
-        "release_gate_origin_ahead_count": int(
+        "release_gate_receipt_reported_origin_ahead_count": int(
             release_gate_direct_evidence.get("local_push_gate_receipt_origin_ahead_count") or 0
+        ),
+        "release_gate_origin_ahead_count": int(
+            release_gate_direct_evidence.get("local_push_gate_receipt_current_origin_ahead_count") or 0
+        ),
+        "release_gate_origin_ahead_count_stale": (
+            release_gate_direct_evidence.get("local_push_gate_receipt_origin_ahead_count_stale") is True
         ),
         "release_gate_local_commits_not_pushed_for_remote_ci": (
             release_gate_direct_evidence.get("local_commits_not_pushed_for_remote_ci") is True
@@ -3194,6 +3206,15 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         local_receipt_origin_ahead_count = int(receipt_map.get("origin_ahead_count") or 0)
     except (TypeError, ValueError):
         local_receipt_origin_ahead_count = 0
+    current_origin_ahead_raw = receipt_map.get("current_origin_ahead_count")
+    try:
+        local_receipt_current_origin_ahead_count = (
+            int(current_origin_ahead_raw)
+            if current_origin_ahead_raw is not None
+            else local_receipt_origin_ahead_count
+        )
+    except (TypeError, ValueError):
+        local_receipt_current_origin_ahead_count = local_receipt_origin_ahead_count
     checks = [str(item) for item in receipt_map.get("checks") or []]
     receipt_blockers = [str(item) for item in receipt_map.get("freshness_blockers") or [] if str(item)]
     worktree_clean = worktree_map.get("worktree_clean") is True
@@ -3232,7 +3253,7 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     )
     remote_actions_status_known = remote_receipt_map.get("remote_actions_status_known") is True
     latest_remote_run_verified_green = remote_receipt_map.get("latest_remote_run_verified_green") is True
-    local_commits_not_pushed = bool(fresh_gate_run_done and local_receipt_origin_ahead_count > 0)
+    local_commits_not_pushed = local_receipt_current_origin_ahead_count > 0
     direct_stage_keys = ["fresh_local_gate_command_run"] if fresh_gate_run_done else []
     if fresh_gate_run_done and latest_remote_run_verified_green:
         direct_stage_keys.append("matching_remote_actions_status")
@@ -3278,7 +3299,9 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "remote_review_required_after_local_complete": True,
         "remote_review_blocked_by_unpushed_local_commits": local_commits_not_pushed,
         "remote_review_status": (
-            "remote_review_waiting_for_push"
+            "remote_review_waiting_for_local_complete"
+            if not local_complete
+            else "remote_review_waiting_for_push"
             if local_commits_not_pushed
             else "remote_review_pending"
             if remote_review_pending
@@ -3301,6 +3324,10 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "local_push_gate_receipt_head": str(receipt_map.get("head") or ""),
         "local_push_gate_receipt_current_head": str(receipt_map.get("current_head") or ""),
         "local_push_gate_receipt_origin_ahead_count": local_receipt_origin_ahead_count,
+        "local_push_gate_receipt_current_origin_ahead_count": local_receipt_current_origin_ahead_count,
+        "local_push_gate_receipt_origin_ahead_count_stale": (
+            local_receipt_origin_ahead_count != local_receipt_current_origin_ahead_count
+        ),
         "local_commits_not_pushed_for_remote_ci": local_commits_not_pushed,
         "local_push_gate_check_count": len(checks),
         "required_local_gate_checks_present": required_checks.issubset(set(checks)),
@@ -9320,6 +9347,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 or "",
                 "local_push_gate_receipt_origin_ahead_count": int(
                     direct_evidence.get("local_push_gate_receipt_origin_ahead_count") or 0
+                ),
+                "local_push_gate_receipt_current_origin_ahead_count": int(
+                    direct_evidence.get("local_push_gate_receipt_current_origin_ahead_count") or 0
+                ),
+                "local_push_gate_receipt_origin_ahead_count_stale": (
+                    direct_evidence.get("local_push_gate_receipt_origin_ahead_count_stale") is True
                 ),
                 "local_commits_not_pushed_for_remote_ci": (
                     direct_evidence.get("local_commits_not_pushed_for_remote_ci") is True

@@ -23278,7 +23278,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        packet = audit_service.read_call_ledger_audit_cache()
+        original_origin_ahead_summary = audit_service._current_origin_ahead_summary
+        audit_service._current_origin_ahead_summary = lambda: {
+            "read_status": "local_git_origin_ahead_count_present",
+            "ahead_count": 2,
+            "external": False,
+        }
+        try:
+            packet = audit_service.read_call_ledger_audit_cache()
+            migration = migration_status_service.build_migration_status()
+        finally:
+            audit_service._current_origin_ahead_summary = original_origin_ahead_summary
 
         local_receipt = packet["local_push_gate_run_receipt"]
         self.assertEqual(local_receipt["status"], "local_push_gate_passed_current_head")
@@ -23300,8 +23310,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(push_receipt["status"], "push_readiness_receipt_ready_local_gate_passed_remote_ci_pending")
         self.assertTrue(push_receipt["fresh_local_gate_run_observed"])
         self.assertTrue(push_receipt["local_push_gate_run_receipt_head_matches_current"])
+        self.assertEqual(push_receipt["local_push_gate_run_receipt_origin_ahead_count"], 2)
+        self.assertEqual(push_receipt["local_push_gate_run_receipt_current_origin_ahead_count"], 2)
+        self.assertFalse(push_receipt["local_push_gate_run_receipt_origin_ahead_count_stale"])
+        self.assertTrue(push_receipt["local_commits_not_pushed_for_remote_ci"])
         self.assertFalse(push_receipt["remote_actions_status_known"])
         self.assertFalse(push_receipt["latest_remote_run_verified_green"])
+        self.assertEqual(push_receipt["remote_review_status"], "remote_review_waiting_for_push")
+        self.assertTrue(push_receipt["remote_review_blocked_by_unpushed_local_commits"])
+        self.assertIn("remote_ci_review_pending", push_receipt["remote_review_blockers"])
+        self.assertIn("matching_remote_actions_status_missing", push_receipt["remote_review_blockers"])
+        self.assertIn("latest_remote_run_not_verified_green", push_receipt["remote_review_blockers"])
+        self.assertIn("local_commits_not_pushed_for_remote_ci", push_receipt["remote_review_blockers"])
+        self.assertEqual(
+            push_receipt["remote_review_blocker_count"],
+            len(push_receipt["remote_review_blockers"]),
+        )
+        self.assertEqual(push_receipt["blocking_criterion_count"], 0)
         self.assertNotIn("fresh_local_push_gate_command_output", push_receipt["missing_evidence_items"])
         self.assertIn("matching_remote_actions_run_status", push_receipt["missing_evidence_items"])
         self.assertTrue(push_receipt["did_not_push"])
@@ -23323,7 +23348,6 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
 
-        migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         ltg11 = observed_stage_rows["LTG-11"]
         self.assertEqual(ltg11["status"], "observed_release_gate_direct_evidence_remote_ci_pending")
@@ -23346,6 +23370,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(ltg11["local_push_gate_receipt_head"], current_head["head"])
         self.assertEqual(ltg11["local_push_gate_receipt_current_head"], current_head["head"])
         self.assertEqual(ltg11["local_push_gate_receipt_origin_ahead_count"], 2)
+        self.assertEqual(ltg11["local_push_gate_receipt_current_origin_ahead_count"], 2)
+        self.assertFalse(ltg11["local_push_gate_receipt_origin_ahead_count_stale"])
         self.assertTrue(ltg11["local_commits_not_pushed_for_remote_ci"])
         self.assertEqual(ltg11["remote_review_status"], "remote_review_waiting_for_push")
         self.assertEqual(ltg11["local_push_gate_check_count"], len(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS))
@@ -23395,6 +23421,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             work_order_summary["release_gate_current_blockers"],
         )
         self.assertEqual(work_order_summary["release_gate_origin_ahead_count"], 2)
+        self.assertEqual(work_order_summary["release_gate_receipt_reported_origin_ahead_count"], 2)
+        self.assertFalse(work_order_summary["release_gate_origin_ahead_count_stale"])
         self.assertTrue(work_order_summary["release_gate_local_commits_not_pushed_for_remote_ci"])
         self.assertIn(
             "local_commits_not_pushed_for_remote_ci",
@@ -23405,9 +23433,53 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             work_order_summary["release_gate_current_blockers"],
         )
         self.assertEqual(work_order_rows["LTG-11"]["release_gate_origin_ahead_count"], 2)
+        self.assertEqual(work_order_rows["LTG-11"]["release_gate_receipt_reported_origin_ahead_count"], 2)
+        self.assertFalse(work_order_rows["LTG-11"]["release_gate_origin_ahead_count_stale"])
         self.assertTrue(work_order_rows["LTG-11"]["release_gate_local_commits_not_pushed_for_remote_ci"])
         self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
         self.assertEqual(work_order_summary["strict_closeout"], "0/14")
+
+    def test_release_gate_push_readiness_uses_current_ahead_over_stale_receipt(self):
+        receipt, _rows = audit_service._release_gate_push_readiness_receipt(
+            {
+                "status": "release_gate_ready",
+                "local_gate_ready": True,
+                "ci_mirror_ready": True,
+                "workflow_count": 1,
+                "false_positive_allowlist_review_ready": False,
+                "no_git_add_dot": True,
+                "does_not_execute_trades": True,
+            },
+            {
+                "remote_actions_status_known": False,
+                "latest_remote_run_verified_green": False,
+                "old_email_may_be_stale": True,
+            },
+            {
+                "status": "local_push_gate_passed_current_head",
+                "fresh_local_gate_run_observed": True,
+                "head": "abc1234",
+                "current_head": "abc1234",
+                "head_matches_current": True,
+                "origin_ahead_count": 2,
+                "current_origin_ahead_count": 0,
+                "freshness_blockers": [],
+            },
+            {},
+        )
+
+        self.assertEqual(receipt["status"], "push_readiness_receipt_ready_local_gate_passed_remote_ci_pending")
+        self.assertEqual(receipt["local_push_gate_run_receipt_origin_ahead_count"], 2)
+        self.assertEqual(receipt["local_push_gate_run_receipt_current_origin_ahead_count"], 0)
+        self.assertTrue(receipt["local_push_gate_run_receipt_origin_ahead_count_stale"])
+        self.assertFalse(receipt["local_commits_not_pushed_for_remote_ci"])
+        self.assertEqual(receipt["remote_review_status"], "remote_review_pending")
+        self.assertFalse(receipt["remote_review_blocked_by_unpushed_local_commits"])
+        self.assertNotIn("local_commits_not_pushed_for_remote_ci", receipt["remote_review_blockers"])
+        self.assertIn("remote_ci_review_pending", receipt["remote_review_blockers"])
+        self.assertFalse(receipt["github_api_called"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertTrue(receipt["does_not_execute_trades"])
 
     def test_release_gate_stale_local_run_receipt_surfaces_head_mismatch_blocker(self):
         self._with_meta_store()
@@ -52161,6 +52233,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(push_receipt["fresh_local_gate_run_observed"])
         self.assertFalse(push_receipt["remote_actions_status_known"])
         self.assertFalse(push_receipt["latest_remote_run_verified_green"])
+        self.assertEqual(push_receipt["remote_review_status"], "remote_review_waiting_for_local_gate")
+        self.assertEqual(push_receipt["local_push_gate_run_receipt_origin_ahead_count"], 0)
+        self.assertFalse(push_receipt["local_commits_not_pushed_for_remote_ci"])
+        self.assertFalse(push_receipt["remote_review_blocked_by_unpushed_local_commits"])
+        self.assertEqual(push_receipt["remote_review_blockers"], [])
+        self.assertEqual(push_receipt["remote_review_blocker_count"], 0)
         self.assertFalse(push_receipt["can_clear_failure_email_without_matching_head_and_logs"])
         self.assertTrue(push_receipt["local_gate_pass_is_not_ci_status"])
         self.assertTrue(push_receipt["static_ci_mirror_is_not_ci_status"])

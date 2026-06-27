@@ -497,6 +497,42 @@ def _current_git_head_summary() -> dict[str, Any]:
     }
 
 
+def _current_origin_ahead_summary() -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "rev-list", "--count", "origin/main..HEAD"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=5,
+        )
+    except Exception as exc:
+        return {
+            "read_status": f"local_git_origin_ahead_failed:{_safe_text(type(exc).__name__, limit=80)}",
+            "ahead_count": None,
+            "external": False,
+        }
+    if completed.returncode != 0:
+        return {
+            "read_status": "local_git_origin_ahead_unavailable",
+            "ahead_count": None,
+            "external": False,
+        }
+    try:
+        ahead_count = int((completed.stdout or "0").strip() or 0)
+    except ValueError:
+        return {
+            "read_status": "local_git_origin_ahead_parse_failed",
+            "ahead_count": None,
+            "external": False,
+        }
+    return {
+        "read_status": "local_git_origin_ahead_count_present",
+        "ahead_count": ahead_count,
+        "external": False,
+    }
+
+
 def _read_git_status_short_lines() -> tuple[str, int | None, list[str]]:
     try:
         completed = subprocess.run(
@@ -627,6 +663,7 @@ def _local_worktree_cleanliness_audit(
 
 def _read_local_push_gate_run_receipt() -> dict[str, Any]:
     current_head = _current_git_head_summary()
+    current_origin_ahead = _current_origin_ahead_summary()
     if not LOCAL_PUSH_GATE_RUN_RECEIPT_PATH.exists():
         return {
             "schema_version": LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION,
@@ -637,6 +674,8 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "current_head": current_head.get("head"),
             "current_head_full": current_head.get("head_full"),
             "current_branch": current_head.get("branch"),
+            "current_origin_ahead_count": current_origin_ahead.get("ahead_count"),
+            "current_origin_ahead_read_status": current_origin_ahead.get("read_status"),
             "head_matches_current": False,
             "boundary_flags_valid": False,
             "safety_boundary_flags_valid": False,
@@ -674,6 +713,8 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "current_head": current_head.get("head"),
             "current_head_full": current_head.get("head_full"),
             "current_branch": current_head.get("branch"),
+            "current_origin_ahead_count": current_origin_ahead.get("ahead_count"),
+            "current_origin_ahead_read_status": current_origin_ahead.get("read_status"),
             "head_matches_current": False,
             "boundary_flags_valid": False,
             "safety_boundary_flags_valid": False,
@@ -758,6 +799,8 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "current_head": current_head_short,
             "current_head_full": current_head_full,
             "current_branch": current_head.get("branch"),
+            "current_origin_ahead_count": current_origin_ahead.get("ahead_count"),
+            "current_origin_ahead_read_status": current_origin_ahead.get("read_status"),
             "head_matches_current": head_matches_current,
             "boundary_flags_valid": boundary_ok,
             "safety_boundary_flags_valid": safety_boundary_ok,
@@ -2153,6 +2196,19 @@ def _release_gate_push_readiness_receipt(
     local_receipt_freshness_blockers = [
         str(item) for item in _as_list(local_run_receipt.get("freshness_blockers"))
     ]
+    try:
+        local_run_reported_origin_ahead_count = int(local_run_receipt.get("origin_ahead_count") or 0)
+    except (TypeError, ValueError):
+        local_run_reported_origin_ahead_count = 0
+    current_origin_ahead_raw = local_run_receipt.get("current_origin_ahead_count")
+    try:
+        local_run_current_origin_ahead_count = (
+            int(current_origin_ahead_raw)
+            if current_origin_ahead_raw is not None
+            else local_run_reported_origin_ahead_count
+        )
+    except (TypeError, ValueError):
+        local_run_current_origin_ahead_count = local_run_reported_origin_ahead_count
     remote_review = _as_dict(remote_ci_review_receipt)
     remote_actions_status_known = (
         ci_notification_triage_contract.get("remote_actions_status_known") is True
@@ -2165,6 +2221,30 @@ def _release_gate_push_readiness_receipt(
     false_positive_allowlist_review_ready = (
         release_gate_readiness_audit.get("false_positive_allowlist_review_ready") is True
     )
+    local_commits_not_pushed_for_remote_ci = local_run_current_origin_ahead_count > 0
+    remote_review_blockers = []
+    if fresh_local_gate_run_observed and not remote_actions_status_known:
+        remote_review_blockers.append("matching_remote_actions_status_missing")
+    if fresh_local_gate_run_observed and not latest_remote_run_verified_green:
+        remote_review_blockers.extend(
+            [
+                "remote_ci_review_pending",
+                "latest_remote_run_not_verified_green",
+            ]
+        )
+    if local_commits_not_pushed_for_remote_ci:
+        remote_review_blockers.append("local_commits_not_pushed_for_remote_ci")
+    remote_review_blockers = list(dict.fromkeys(remote_review_blockers))
+    if not fresh_local_gate_run_observed:
+        remote_review_status = "remote_review_waiting_for_local_gate"
+    elif local_commits_not_pushed_for_remote_ci:
+        remote_review_status = "remote_review_waiting_for_push"
+    elif fresh_local_gate_run_observed and latest_remote_run_verified_green:
+        remote_review_status = "remote_review_green_release_review_pending"
+    elif fresh_local_gate_run_observed:
+        remote_review_status = "remote_review_pending"
+    else:
+        remote_review_status = "remote_review_waiting_for_local_gate"
     ready_for_explicit_push_sequence = local_gate_ready and ci_mirror_ready
     rows = [
         _release_gate_row(
@@ -2302,6 +2382,12 @@ def _release_gate_push_readiness_receipt(
         "local_push_gate_run_receipt_head": local_run_receipt.get("head"),
         "local_push_gate_run_receipt_current_head": local_run_receipt.get("current_head"),
         "local_push_gate_run_receipt_head_matches_current": local_run_receipt.get("head_matches_current") is True,
+        "local_push_gate_run_receipt_origin_ahead_count": local_run_reported_origin_ahead_count,
+        "local_push_gate_run_receipt_current_origin_ahead_count": local_run_current_origin_ahead_count,
+        "local_push_gate_run_receipt_origin_ahead_count_stale": (
+            local_run_reported_origin_ahead_count != local_run_current_origin_ahead_count
+        ),
+        "local_commits_not_pushed_for_remote_ci": local_commits_not_pushed_for_remote_ci,
         "local_push_gate_run_receipt_freshness_blockers": local_receipt_freshness_blockers,
         "local_push_gate_run_receipt_freshness_blocker_count": len(local_receipt_freshness_blockers),
         "fresh_local_gate_blocked_by_head_mismatch": "head_mismatch" in local_receipt_freshness_blockers,
@@ -2320,6 +2406,10 @@ def _release_gate_push_readiness_receipt(
         "remote_ci_review_receipt_status": remote_review.get("status"),
         "remote_ci_review_receipt_run_id": remote_review.get("run_id"),
         "remote_ci_review_receipt_head_matches_current": remote_review.get("head_matches_current") is True,
+        "remote_review_status": remote_review_status,
+        "remote_review_blockers": remote_review_blockers,
+        "remote_review_blocker_count": len(remote_review_blockers),
+        "remote_review_blocked_by_unpushed_local_commits": local_commits_not_pushed_for_remote_ci,
         "can_clear_failure_email_without_matching_head_and_logs": False,
         "old_failure_email_may_be_stale": ci_notification_triage_contract.get("old_email_may_be_stale") is True,
         "local_gate_pass_is_not_ci_status": True,
@@ -2357,6 +2447,8 @@ def _release_gate_push_readiness_receipt(
                 "fresh_local_gate_run_observed": fresh_local_gate_run_observed,
                 "remote_actions_status_known": remote_actions_status_known,
                 "latest_remote_run_verified_green": latest_remote_run_verified_green,
+                "remote_review_status": remote_review_status,
+                "remote_review_blocker_count": len(remote_review_blockers),
                 "local_fetched_at": _now_iso(),
                 "external": False,
             }
