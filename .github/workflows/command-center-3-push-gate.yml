@@ -74,6 +74,30 @@ jobs:
           set -o pipefail
           scripts/push_gate_3_0.sh 2>&1 | tee "$PUSH_GATE_LOG_PATH"
 
+      - name: Summarize Command Center 3 push gate failure
+        if: failure()
+        run: |
+          log_path="${{ runner.temp }}/command-center-3-push-gate.log"
+          summary_path="${{ runner.temp }}/command-center-3-push-gate-failure-summary.md"
+          last_gate_step="unknown_before_first_gate_marker"
+          if [ -s "$log_path" ]; then
+            last_gate_step="$(awk '/^==> / {sub(/^==> /, ""); step=$0} END {print step}' "$log_path")"
+            if [ -z "$last_gate_step" ]; then
+              last_gate_step="unknown_before_first_gate_marker"
+            fi
+          fi
+          escaped_gate_step="${last_gate_step//'%'/'%25'}"
+          escaped_gate_step="${escaped_gate_step//$'\n'/'%0A'}"
+          escaped_gate_step="${escaped_gate_step//$'\r'/'%0D'}"
+          {
+            echo "### Command Center 3 Push Gate Failure"
+            echo
+            echo "- last_safe_gate_marker: \`$last_gate_step\`"
+            echo "- full_log_artifact: \`command-center-3-push-gate-evidence-${{ github.run_id }}\`"
+            echo "- boundary: safe marker only; inspect uploaded log/report/receipt before any release claim"
+          } | tee "$summary_path" >> "$GITHUB_STEP_SUMMARY"
+          printf '::error title=Command Center 3 push gate failure::last_safe_gate_marker=%s; artifact=command-center-3-push-gate-evidence-${{ github.run_id }}; review uploaded log/report/receipt before release claim\n' "$escaped_gate_step"
+
       - name: Upload Command Center 3 push gate evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -82,6 +106,7 @@ jobs:
           path: |
             ${{ runner.temp }}/command-center-3-push-gate.log
             ${{ runner.temp }}/command-center-3-push-gate-report.md
+            ${{ runner.temp }}/command-center-3-push-gate-failure-summary.md
             ${{ runner.temp }}/command-center-3-local-push-gate-run-receipt.json
           if-no-files-found: warn
           retention-days: 7

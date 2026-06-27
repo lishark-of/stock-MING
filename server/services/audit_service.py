@@ -832,6 +832,12 @@ def _release_gate_workflow_rows() -> list[dict[str, Any]]:
             and "command-center-3-push-gate-report.md" in text
             and "command-center-3-local-push-gate-run-receipt.json" in text
         )
+        contains_failure_summary_annotation = (
+            "Summarize Command Center 3 push gate failure" in text
+            and "last_safe_gate_marker" in text
+            and "command-center-3-push-gate-failure-summary.md" in text
+            and "::error title=Command Center 3 push gate failure::" in text
+        )
         rows.append(
             {
                 "workflow": _relative_path(path),
@@ -848,6 +854,7 @@ def _release_gate_workflow_rows() -> list[dict[str, Any]]:
                     "local_push_gate_receipt_artifact_policy_scan" in text
                     and "LOCAL_PUSH_GATE_RECEIPT_PATH must be ignored" in text
                 ),
+                "contains_failure_summary_annotation": contains_failure_summary_annotation,
                 "contains_push_gate_evidence_artifact_upload": contains_evidence_artifact_upload,
                 "push_gate_evidence_artifact_name": (
                     "command-center-3-push-gate-evidence-${{ github.run_id }}"
@@ -1232,10 +1239,16 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(row.get("contains_push_gate_evidence_artifact_upload"))
         for row in workflow_rows
     )
+    ci_mirror_includes_failure_summary_annotation = any(
+        bool(row.get("mirrors_local_push_gate"))
+        and bool(row.get("contains_failure_summary_annotation"))
+        for row in workflow_rows
+    )
     ci_mirror_ready = (
         ci_mirror_includes_migration_principle_docs_guard
         and ci_mirror_includes_receipt_artifact_policy
         and ci_mirror_includes_evidence_artifact_upload
+        and ci_mirror_includes_failure_summary_annotation
     )
     false_positive_allowlist_review_ready = False
     local_gate_ready = all(
@@ -1732,6 +1745,11 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             evidence="command-center-3-push-gate workflow uploads log/report/receipt artifact on success or failure",
         ),
         _release_gate_row(
+            "ci_mirror_failure_summary_annotation",
+            ci_mirror_includes_failure_summary_annotation,
+            evidence="command-center-3-push-gate workflow emits a safe last_gate_marker annotation when the opaque push gate step fails",
+        ),
+        _release_gate_row(
             "remote_ci_review_required_for_release_gate_complete",
             False,
             evidence="static local audit cannot verify matching remote Actions green status or reviewed failure logs",
@@ -1777,6 +1795,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "ci_mirror_includes_migration_principle_docs_guard": ci_mirror_includes_migration_principle_docs_guard,
         "ci_mirror_includes_receipt_artifact_policy": ci_mirror_includes_receipt_artifact_policy,
         "ci_mirror_includes_evidence_artifact_upload": ci_mirror_includes_evidence_artifact_upload,
+        "ci_mirror_includes_failure_summary_annotation": ci_mirror_includes_failure_summary_annotation,
         "remote_ci_review_ready": remote_ci_review_ready,
         "remote_actions_status_known": False,
         "latest_remote_run_verified_green": False,

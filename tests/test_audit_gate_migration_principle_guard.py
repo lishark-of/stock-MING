@@ -20,6 +20,7 @@ class AuditGateMigrationPrincipleGuardTests(unittest.TestCase):
         self.assertTrue(audit["migration_principle_commit_checkpoint_surfaces"])
         self.assertTrue(audit["ci_mirror_includes_migration_principle_docs_guard"])
         self.assertTrue(audit["ci_mirror_includes_receipt_artifact_policy"])
+        self.assertTrue(audit["ci_mirror_includes_failure_summary_annotation"])
         self.assertTrue(audit["local_push_gate_receipt_path_policy_ok"])
         self.assertFalse(audit["remote_ci_review_ready"])
         self.assertFalse(audit["remote_actions_status_known"])
@@ -43,6 +44,7 @@ class AuditGateMigrationPrincipleGuardTests(unittest.TestCase):
             "migration_principle_commit_checkpoint_surfaces",
             "ci_mirror_migration_principle_docs_guard",
             "ci_mirror_local_push_gate_receipt_artifact_policy",
+            "ci_mirror_failure_summary_annotation",
             "local_push_gate_receipt_path_policy_ok",
         ):
             self.assertTrue(row_by_criterion[criterion]["passed"])
@@ -59,6 +61,7 @@ class AuditGateMigrationPrincipleGuardTests(unittest.TestCase):
         self.assertTrue(
             any(row.get("contains_local_push_gate_receipt_artifact_policy_step") for row in workflow_rows)
         )
+        self.assertTrue(any(row.get("contains_failure_summary_annotation") for row in workflow_rows))
         self.assertTrue(all(row.get("external_calls_triggered") is False for row in workflow_rows))
 
     def test_release_gate_receipt_path_policy_is_static_no_command(self) -> None:

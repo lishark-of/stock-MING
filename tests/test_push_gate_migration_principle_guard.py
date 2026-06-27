@@ -101,11 +101,16 @@ class PushGateMigrationPrincipleGuardTests(unittest.TestCase):
             self.workflow,
         )
         self.assertIn('scripts/push_gate_3_0.sh 2>&1 | tee "$PUSH_GATE_LOG_PATH"', self.workflow)
+        self.assertIn("Summarize Command Center 3 push gate failure", self.workflow)
+        self.assertIn("last_safe_gate_marker", self.workflow)
+        self.assertIn("command-center-3-push-gate-failure-summary.md", self.workflow)
+        self.assertIn("::error title=Command Center 3 push gate failure::", self.workflow)
         self.assertIn("uses: actions/upload-artifact@v4", self.workflow)
         self.assertIn("if: always()", self.workflow)
         self.assertIn("command-center-3-push-gate-evidence-${{ github.run_id }}", self.workflow)
         self.assertIn("${{ runner.temp }}/command-center-3-push-gate.log", self.workflow)
         self.assertIn("${{ runner.temp }}/command-center-3-push-gate-report.md", self.workflow)
+        self.assertIn("${{ runner.temp }}/command-center-3-push-gate-failure-summary.md", self.workflow)
         self.assertIn(
             "${{ runner.temp }}/command-center-3-local-push-gate-run-receipt.json",
             self.workflow,

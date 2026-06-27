@@ -49614,6 +49614,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(release_gate["ci_mirror_includes_migration_principle_docs_guard"])
         self.assertTrue(release_gate["ci_mirror_includes_receipt_artifact_policy"])
         self.assertTrue(release_gate["ci_mirror_includes_evidence_artifact_upload"])
+        self.assertTrue(release_gate["ci_mirror_includes_failure_summary_annotation"])
         self.assertFalse(release_gate["remote_ci_review_ready"])
         self.assertFalse(release_gate["remote_actions_status_known"])
         self.assertFalse(release_gate["latest_remote_run_verified_green"])
@@ -49806,6 +49807,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ci_workflow["contains_migration_principle_docs_guard_step"])
         self.assertTrue(ci_workflow["contains_smoke_step"])
         self.assertTrue(ci_workflow["contains_push_gate_evidence_artifact_upload"])
+        self.assertTrue(ci_workflow["contains_failure_summary_annotation"])
         self.assertEqual(
             ci_workflow["push_gate_evidence_artifact_name"],
             "command-center-3-push-gate-evidence-${{ github.run_id }}",
