@@ -7192,6 +7192,20 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         direct_evidence = _latest_factor_universe_direct_research_evidence_summary()
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
         effective_pending_count = max(pending_count - direct_evidence_count, 0)
+        release_gate_evidence = _latest_release_gate_direct_evidence_summary()
+        latest_remote_run_verified_green = (
+            release_gate_evidence.get("latest_remote_run_verified_green") is True
+        )
+        ltg04_local_complete = bool(row_count and direct_evidence_count >= row_count)
+        ltg04_remote_review_pending = bool(ltg04_local_complete and not latest_remote_run_verified_green)
+        ltg04_release_review_pending = bool(ltg04_local_complete and latest_remote_run_verified_green)
+        ltg04_local_completion_status = (
+            "local_factor_universe_direct_research_evidence_complete"
+            if ltg04_local_complete
+            else "local_factor_universe_direct_research_evidence_partial"
+            if direct_evidence_count
+            else "local_static_contract_only"
+        )
         rows.append(
             {
                 "id": "LTG-04",
@@ -7217,6 +7231,37 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_evidence_stage_count": local_evidence_count,
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": direct_evidence.get("direct_evidence_stage_keys", []),
+                "local_complete": ltg04_local_complete,
+                "local_completion_status": ltg04_local_completion_status,
+                "local_blocker_count": 0 if ltg04_local_complete else effective_pending_count,
+                "remote_review_required_after_local_complete": True,
+                "remote_review_pending": ltg04_remote_review_pending,
+                "remote_review_status": (
+                    "remote_review_pending"
+                    if ltg04_remote_review_pending
+                    else "remote_review_green_release_review_pending"
+                    if ltg04_release_review_pending
+                    else "remote_review_waiting_for_local_complete"
+                ),
+                "remote_review_pending_count": 1 if ltg04_remote_review_pending else 0,
+                "release_review_required_after_remote_green": True,
+                "release_review_pending": ltg04_release_review_pending,
+                "release_review_status": (
+                    "release_review_pending"
+                    if ltg04_release_review_pending
+                    else "release_review_waiting_for_remote_green"
+                    if ltg04_remote_review_pending
+                    else "release_review_waiting_for_local_and_remote_complete"
+                ),
+                "release_review_pending_count": 1 if ltg04_release_review_pending else 0,
+                "strict_closeout_ready": False,
+                "missing_evidence_items": [
+                    "factor universe direct research evidence for all stage rows",
+                    "production worker-backed batch execution evidence",
+                    "neutralization and full-pool validation evidence",
+                    "matching remote CI review after local Factor universe evidence",
+                    "release review after matching remote CI green",
+                ],
                 "factor_universe_direct_evidence_layer": direct_evidence.get("direct_evidence_layer"),
                 "local_rank_zscore_research_preview_verified": direct_evidence.get(
                     "local_rank_zscore_research_preview_verified"

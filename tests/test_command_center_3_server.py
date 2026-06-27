@@ -209,6 +209,7 @@ def assert_ltg04_factor_universe_stage_scope(
     test_case.assertEqual(row["row_count"], 8)
     test_case.assertEqual(row["pending_stage_count"], max(8 - direct_count, 0))
     test_case.assertEqual(row["local_evidence_stage_count"], 8)
+    test_case.assertEqual(row["local_complete"], direct_count >= 8)
     if direct_count:
         test_case.assertEqual(
             row["status"],
@@ -230,8 +231,43 @@ def assert_ltg04_factor_universe_stage_scope(
         test_case.assertGreater(row["local_rank_zscore_preview_row_count"], 0)
         test_case.assertGreater(row["local_rank_zscore_eligible_group_count"], 0)
         test_case.assertGreaterEqual(row["local_rank_zscore_usable_row_count"], 5)
+        test_case.assertEqual(
+            row["local_completion_status"],
+            "local_factor_universe_direct_research_evidence_complete"
+            if direct_count >= 8
+            else "local_factor_universe_direct_research_evidence_partial",
+        )
     else:
         test_case.assertEqual(row["status"], "observed_in_factor_universe_static_contract")
+        test_case.assertEqual(row["local_completion_status"], "local_static_contract_only")
+    test_case.assertEqual(row["local_blocker_count"], 0 if direct_count >= 8 else row["pending_stage_count"])
+    test_case.assertTrue(row["remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["release_review_required_after_remote_green"])
+    if direct_count >= 8:
+        test_case.assertIn(
+            row["remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+        test_case.assertNotEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    else:
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    test_case.assertEqual(
+        row["remote_review_pending_count"],
+        1 if row["remote_review_pending"] else 0,
+    )
+    test_case.assertEqual(
+        row["release_review_pending_count"],
+        1 if row["release_review_pending"] else 0,
+    )
+    test_case.assertFalse(row["strict_closeout_ready"])
+    test_case.assertIn("production worker-backed batch execution evidence", row["missing_evidence_items"])
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["missing_evidence_items"],
+    )
     test_case.assertEqual(row["worker_execution_implemented"], direct_count >= 2)
     test_case.assertEqual(row["worker_batch_executed"], direct_count >= 2)
     test_case.assertFalse(row["large_universe_pipeline_done"])
@@ -261,11 +297,48 @@ def assert_ltg04_migration_goal_stage_scope(
         test_case.assertEqual(direct_count, expected_direct_count)
     test_case.assertIn(row["observed_stage_scope_manifest_status"], FACTOR_UNIVERSE_LTG04_OBSERVED_STATUSES)
     test_case.assertEqual(row["observed_stage_scope_pending_count"], max(8 - direct_count, 0))
+    test_case.assertEqual(row["observed_local_complete"], direct_count >= 8)
     if direct_count:
         expected_keys = ["local_rank_zscore_research_preview"]
         if direct_count >= 2:
             expected_keys.append("local_worker_batch_execution_evidence")
         test_case.assertEqual(row["observed_stage_scope_direct_evidence_keys"], expected_keys)
+        test_case.assertEqual(
+            row["observed_local_completion_status"],
+            "local_factor_universe_direct_research_evidence_complete"
+            if direct_count >= 8
+            else "local_factor_universe_direct_research_evidence_partial",
+        )
+    else:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_static_contract_only")
+    test_case.assertEqual(
+        row["observed_local_blocker_count"],
+        0 if direct_count >= 8 else row["observed_stage_scope_pending_count"],
+    )
+    test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["observed_release_review_required_after_remote_green"])
+    if direct_count >= 8:
+        test_case.assertIn(
+            row["observed_remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+    else:
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["observed_release_review_pending"])
+        test_case.assertEqual(
+            row["observed_release_review_status"],
+            "release_review_waiting_for_local_and_remote_complete",
+        )
+    test_case.assertFalse(row["observed_strict_closeout_ready"])
+    test_case.assertIn(
+        "production worker-backed batch execution evidence",
+        row["observed_missing_evidence_items"],
+    )
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["observed_missing_evidence_items"],
+    )
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 
