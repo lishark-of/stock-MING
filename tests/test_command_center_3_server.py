@@ -2103,6 +2103,26 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(summary["strict_closeout_total_count"], 14)
         self.assertTrue(all(row["production_complete"] is False for row in goal_rows))
         self.assertTrue(all(row["observed_stage_scope_can_close_goal"] is False for row in goal_rows))
+        self.assertEqual(summary["observed_review_split_required_field_count"], len(required_review_fields))
+        self.assertEqual(summary["observed_review_split_complete_count"], 14)
+        self.assertEqual(summary["observed_review_split_missing_count"], 0)
+        self.assertEqual(summary["observed_review_split_missing_goal_ids"], [])
+        self.assertTrue(summary["observed_review_split_all_goals_covered"])
+        self.assertTrue(summary["remote_review_split_required_before_remote_claim"])
+        self.assertEqual(
+            summary["observed_local_complete_count"],
+            sum(1 for row in goal_rows if row["observed_local_complete"] is True),
+        )
+        self.assertEqual(
+            summary["observed_remote_review_pending_count"],
+            sum(1 for row in goal_rows if row["observed_remote_review_pending"] is True),
+        )
+        self.assertEqual(
+            summary["observed_release_review_pending_count"],
+            sum(1 for row in goal_rows if row["observed_release_review_pending"] is True),
+        )
+        self.assertEqual(summary["observed_strict_closeout_ready_count"], 0)
+        self.assertEqual(summary["observed_strict_closeout_ready_goal_ids"], [])
 
         for row in goal_rows:
             missing_fields = required_review_fields - set(row)

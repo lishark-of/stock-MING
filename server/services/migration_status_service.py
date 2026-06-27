@@ -1122,6 +1122,32 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for row in rows
         if row.get("observed_stage_scope_manifest_status")
     )
+    observed_review_split_required_fields = (
+        "observed_local_complete",
+        "observed_local_completion_status",
+        "observed_local_blocker_count",
+        "observed_remote_review_required_after_local_complete",
+        "observed_remote_review_pending",
+        "observed_remote_review_status",
+        "observed_remote_review_pending_count",
+        "observed_release_review_required_after_remote_green",
+        "observed_release_review_pending",
+        "observed_release_review_status",
+        "observed_release_review_pending_count",
+        "observed_strict_closeout_ready",
+        "observed_missing_evidence_items",
+    )
+    observed_review_split_missing_goal_ids = [
+        str(row.get("id") or "")
+        for row in rows
+        if any(field not in row for field in observed_review_split_required_fields)
+    ]
+    observed_review_split_complete_count = goal_count - len(observed_review_split_missing_goal_ids)
+    observed_strict_closeout_ready_goal_ids = [
+        str(row.get("id") or "")
+        for row in rows
+        if row.get("observed_strict_closeout_ready") is True
+    ]
     return {
         "goal_count": goal_count,
         "closed_count": production_complete_count,
@@ -1137,6 +1163,23 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "observed_stage_scope_manifest_count": observed_stage_scope_manifest_count,
         "observed_stage_scope_pending_count": observed_stage_scope_pending_count,
+        "observed_review_split_required_field_count": len(observed_review_split_required_fields),
+        "observed_review_split_complete_count": observed_review_split_complete_count,
+        "observed_review_split_missing_count": len(observed_review_split_missing_goal_ids),
+        "observed_review_split_missing_goal_ids": observed_review_split_missing_goal_ids,
+        "observed_review_split_all_goals_covered": observed_review_split_complete_count == goal_count,
+        "observed_local_complete_count": sum(
+            1 for row in rows if row.get("observed_local_complete") is True
+        ),
+        "observed_remote_review_pending_count": sum(
+            1 for row in rows if row.get("observed_remote_review_pending") is True
+        ),
+        "observed_release_review_pending_count": sum(
+            1 for row in rows if row.get("observed_release_review_pending") is True
+        ),
+        "observed_strict_closeout_ready_count": len(observed_strict_closeout_ready_goal_ids),
+        "observed_strict_closeout_ready_goal_ids": observed_strict_closeout_ready_goal_ids,
+        "remote_review_split_required_before_remote_claim": True,
         "goals_with_next_evidence_count": sum(1 for row in rows if int(row.get("next_evidence_required_count") or 0) > 0),
         "can_close_from_local_contracts_count": sum(
             1 for row in rows if row.get("can_close_from_local_contracts") is True
