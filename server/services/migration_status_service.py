@@ -4062,6 +4062,7 @@ def _build_ltg_next_action_local_step_rows(
             or receipt_map.get("runtime_qa_scope_hash")
             or receipt_map.get("benchmark_scope_hash")
             or receipt_map.get("worker_batch_scope_hash")
+            or receipt_map.get("worker_execution_scope_hash")
             or receipt_map.get("scope_hash")
             or ""
         )
@@ -4074,6 +4075,7 @@ def _build_ltg_next_action_local_step_rows(
             or receipt_map.get("runtime_qa_scope_hash_short")
             or receipt_map.get("benchmark_scope_hash_short")
             or receipt_map.get("worker_batch_scope_hash_short")
+            or receipt_map.get("worker_execution_scope_hash_short")
             or receipt_map.get("scope_hash_short")
             or (receipt_scope_hash[:16] if receipt_scope_hash else "")
         )
@@ -4317,6 +4319,113 @@ def _latest_candidate_radar_production_replacement_review_preview() -> dict[str,
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
         "evidence_boundary": "latest_candidate_radar_replacement_review_preview_is_read_only_not_promotion",
+    }
+
+
+def _latest_candidate_radar_worker_execution_request_preview() -> dict[str, Any]:
+    source_packet_key = "command_center_3_candidate_radar_cache"
+    try:
+        from server.services import candidate_service
+
+        packet = candidate_service.read_candidate_radar_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    recipe = _dict_or_empty(packet_map.get("candidate_radar_worker_execution_recipe"))
+    full_pool = _dict_or_empty(packet_map.get("full_pool_local_execution_receipt"))
+    deep_scan = _dict_or_empty(packet_map.get("deep_scan_local_review_receipt"))
+    provider_dry_run = _dict_or_empty(packet_map.get("provider_parity_dry_run_receipt"))
+    provider_request = _dict_or_empty(packet_map.get("provider_parity_execution_request_receipt"))
+    worker_scope_hash = str(recipe.get("worker_execution_scope_hash") or "")
+    provider_scope_hash = str(
+        provider_request.get("provider_parity_scope_hash")
+        or provider_request.get("acceptance_scope_hash")
+        or provider_dry_run.get("acceptance_scope_hash")
+        or ""
+    )
+    recipe_ready = bool(
+        recipe.get("local_worker_execution_recipe_ready") is True
+        and recipe.get("production_radar_replacement_complete") is False
+        and recipe.get("worker_execution_implemented") is False
+        and recipe.get("worker_started") is not True
+        and recipe.get("external_calls_triggered") is False
+        and recipe.get("tushare_called") is False
+        and recipe.get("deepseek_called") is False
+        and recipe.get("github_called") is False
+        and recipe.get("does_not_execute_trades") is True
+        and recipe.get("does_not_modify_strategy_action") is True
+        and recipe.get("contains_secret") is False
+        and bool(worker_scope_hash)
+    )
+    provider_request_ready = bool(
+        provider_request.get("local_execution_request_ready") is True
+        and provider_request.get("provider_task_created") is False
+        and provider_request.get("provider_task_executed") is False
+        and provider_request.get("provider_execution_implemented") is False
+        and provider_request.get("model_execution_implemented") is False
+        and provider_request.get("external_calls_triggered") is False
+        and provider_request.get("tushare_called") is False
+        and provider_request.get("deepseek_called") is False
+        and provider_request.get("github_called") is False
+        and provider_request.get("does_not_execute_trades") is True
+        and provider_request.get("does_not_modify_strategy_action") is True
+        and provider_request.get("contains_secret") is False
+        and bool(provider_scope_hash)
+    )
+    local_full_pool_receipt_visible = bool(
+        full_pool.get("schema_version") == "candidate_radar_full_pool_local_execution_receipt.v1"
+    )
+    local_deep_scan_review_visible = bool(
+        deep_scan.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1"
+    )
+    local_deep_scan_review_done = bool(
+        local_deep_scan_review_visible and deep_scan.get("local_deep_scan_review_done") is True
+    )
+    can_prebind = bool(
+        recipe_ready
+        and provider_request_ready
+        and local_full_pool_receipt_visible
+        and local_deep_scan_review_visible
+    )
+    missing_prerequisites = []
+    if not recipe_ready:
+        missing_prerequisites.append("worker_execution_recipe_scope_hash")
+    if not provider_request_ready:
+        missing_prerequisites.append("provider_parity_execution_request")
+    if not local_full_pool_receipt_visible:
+        missing_prerequisites.append("full_pool_local_receipt")
+    if not local_deep_scan_review_visible:
+        missing_prerequisites.append("deep_scan_local_review")
+    return {
+        "recipe_visible": bool(recipe),
+        "recipe_status": str(recipe.get("status") or ""),
+        "worker_execution_scope_hash": worker_scope_hash,
+        "worker_execution_scope_hash_short": str(
+            recipe.get("worker_execution_scope_hash_short") or worker_scope_hash[:16]
+        ),
+        "provider_parity_execution_request_ready": provider_request_ready,
+        "provider_parity_scope_hash": provider_scope_hash,
+        "provider_parity_scope_hash_short": str(
+            provider_request.get("provider_parity_scope_hash_short")
+            or provider_request.get("acceptance_scope_hash_short")
+            or provider_dry_run.get("acceptance_scope_hash_short")
+            or provider_scope_hash[:16]
+        ),
+        "local_full_pool_receipt_visible": local_full_pool_receipt_visible,
+        "local_deep_scan_review_visible": local_deep_scan_review_visible,
+        "local_deep_scan_review_done": local_deep_scan_review_done,
+        "can_prebind_worker_execution_scope_hash": can_prebind,
+        "missing_prerequisites": missing_prerequisites,
+        "source_packet_key": source_packet_key,
+        "source_receipt_key": "candidate_radar_worker_execution_recipe",
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "evidence_boundary": "latest_candidate_radar_worker_execution_request_preview_is_read_only_not_worker_execution",
     }
 
 
@@ -6770,6 +6879,29 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "radar_quant_projection_dry_run_scope_ticket",
             "required_prior_material": "receipt_scope_hash",
         },
+        "POST /api/candidate-radar/provider-parity-dry-run": {
+            "step_kind": "provider_parity_dry_run_scope_ticket",
+            "safe_payload_summary": "candidate symbols, selected signal groups, include_tushare/include_deepseek booleans, user approval; no provider/model call",
+            "expected_local_receipt": "provider_parity_dry_run_receipt",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
+        "POST /api/candidate-radar/provider-parity-execution-request": {
+            "step_kind": "scope_bound_provider_parity_execution_request",
+            "safe_payload_summary": "operator_approved plus latest provider parity dry-run scope hash; local request only",
+            "expected_local_receipt": "provider_parity_execution_request_receipt",
+            "required_prior_phase_key": "radar_provider_parity_dry_run_scope_ticket",
+            "required_prior_material": "receipt_scope_hash",
+        },
+        "POST /api/candidate-radar/worker-execution-request": {
+            "step_kind": "scope_bound_candidate_radar_worker_execution_request",
+            "safe_payload_summary": "operator_approved plus worker execution recipe scope hash; local request only, no worker start",
+            "expected_local_receipt": "candidate_radar_worker_execution_request_receipt",
+            "required_prior_phase_key": "radar_provider_parity_execution_request_ticket",
+            "required_prior_material": "receipt_scope_hash",
+            "manual_scope_hash_required": True,
+            "context_key": "candidate_radar_worker_execution_request_preview",
+        },
         "POST /api/candidate-radar/full-pool-worker-scan": {
             "step_kind": "scope_bound_local_full_pool_worker_fallback",
             "safe_payload_summary": "operator_approved plus worker execution scope hash and local universe rows; no worker start",
@@ -6783,6 +6915,7 @@ def _build_ltg_next_action_submission_preview_rows(
             "expected_local_receipt": "candidate_radar_deep_scan_worker_fallback_receipt",
             "required_prior_phase_key": "radar_full_pool_worker_fallback_receipt",
             "required_prior_material": "receipt_scope_hash",
+            "context_key": "candidate_radar_worker_execution_request_preview",
         },
         "POST /api/candidate-radar/production-promotion-dry-run": {
             "step_kind": "manual_scope_bound_promotion_dry_run",
@@ -7100,6 +7233,34 @@ def _build_ltg_next_action_submission_preview_rows(
         prior_visible = bool(context_map.get("review_visible"))
         material_visible = bool(context_map.get("review_scope_hash"))
         manual_scope_hash_required = not bool(context_map.get("can_prebind_review_scope_hash"))
+    if context_key == "candidate_radar_worker_execution_request_preview":
+        if next_local_step == "POST /api/candidate-radar/deep-scan-worker":
+            prior_visible = bool(
+                prior_step.get("receipt_visible")
+                and context_map.get("recipe_visible")
+                and context_map.get("local_full_pool_receipt_visible")
+            )
+            material_visible = bool(
+                (
+                    prior_step.get(required_material)
+                    or prior_step.get("receipt_scope_hash")
+                    or prior_step.get("receipt_scope_hash_short")
+                )
+                and context_map.get("local_deep_scan_review_done")
+            )
+            manual_scope_hash_required = False
+        else:
+            prior_visible = bool(
+                context_map.get("recipe_visible")
+                and context_map.get("provider_parity_execution_request_ready")
+            )
+            material_visible = bool(
+                context_map.get("worker_execution_scope_hash")
+                and context_map.get("provider_parity_scope_hash")
+                and context_map.get("local_full_pool_receipt_visible")
+                and context_map.get("local_deep_scan_review_visible")
+            )
+            manual_scope_hash_required = not bool(context_map.get("can_prebind_worker_execution_scope_hash"))
     if context_key == "storage_physical_execution_recipe_preview":
         prior_visible = bool(context_map.get("recipe_visible"))
         material_visible = bool(context_map.get("physical_execution_scope_hash"))
@@ -7148,6 +7309,23 @@ def _build_ltg_next_action_submission_preview_rows(
         and manual_scope_hash_required
     ):
         disabled_reason = "latest_candidate_radar_production_replacement_review_not_ready"
+    elif context_key == "candidate_radar_worker_execution_request_preview" and not prior_visible:
+        disabled_reason = "latest_candidate_radar_worker_request_prerequisites_missing"
+    elif (
+        context_key == "candidate_radar_worker_execution_request_preview"
+        and next_local_step == "POST /api/candidate-radar/deep-scan-worker"
+        and prior_visible
+        and not context_map.get("local_deep_scan_review_done")
+    ):
+        disabled_reason = "latest_candidate_radar_deep_scan_local_review_not_ready"
+    elif context_key == "candidate_radar_worker_execution_request_preview" and prior_visible and not material_visible:
+        disabled_reason = "latest_candidate_radar_worker_request_scope_material_missing"
+    elif (
+        context_key == "candidate_radar_worker_execution_request_preview"
+        and prior_visible
+        and manual_scope_hash_required
+    ):
+        disabled_reason = "latest_candidate_radar_worker_request_not_ready"
     elif context_key == "storage_physical_execution_recipe_preview" and not prior_visible:
         disabled_reason = "latest_storage_physical_execution_recipe_missing"
     elif context_key == "storage_physical_execution_recipe_preview" and prior_visible and not material_visible:
@@ -7188,6 +7366,12 @@ def _build_ltg_next_action_submission_preview_rows(
             "prepared_context_source_receipt_key": context_map.get("source_receipt_key") or "",
             "prepared_review_scope_hash": context_map.get("review_scope_hash") or "",
             "prepared_review_scope_hash_short": context_map.get("review_scope_hash_short") or "",
+            "prepared_worker_execution_scope_hash": context_map.get("worker_execution_scope_hash") or "",
+            "prepared_worker_execution_scope_hash_short": context_map.get("worker_execution_scope_hash_short") or "",
+            "prepared_provider_parity_scope_hash": context_map.get("provider_parity_scope_hash") or "",
+            "prepared_provider_parity_scope_hash_short": context_map.get("provider_parity_scope_hash_short") or "",
+            "prepared_worker_request_missing_prerequisites": list(context_map.get("missing_prerequisites") or []),
+            "prepared_local_deep_scan_review_done": context_map.get("local_deep_scan_review_done") is True,
             "prepared_physical_execution_scope_hash": context_map.get("physical_execution_scope_hash") or "",
             "prepared_physical_execution_scope_hash_short": context_map.get("physical_execution_scope_hash_short") or "",
             "prepared_evidence_plan_scope_hash": context_map.get("evidence_plan_scope_hash")
@@ -7884,6 +8068,9 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         if action["queue_id"] == "p3_candidate_radar_provider_worker_promotion":
             safe_context["candidate_radar_production_replacement_review_preview"] = (
                 _latest_candidate_radar_production_replacement_review_preview()
+            )
+            safe_context["candidate_radar_worker_execution_request_preview"] = (
+                _latest_candidate_radar_worker_execution_request_preview()
             )
             safe_context["worker_runtime_dependency_preflight_preview"] = (
                 _latest_worker_runtime_dependency_preflight_preview()

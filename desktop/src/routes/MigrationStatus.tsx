@@ -156,6 +156,57 @@ function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknow
       source: "migration_status_ltg_next_action"
     };
   }
+  if (route === "POST /api/candidate-radar/provider-parity-dry-run") {
+    return {
+      candidate_symbols: [DEFAULT_LTG_QUEUE_SYMBOL, "002837.SZ"],
+      selected_signal_groups: ["moneyflow", "dragon_tiger", "hard_risk"],
+      include_tushare: true,
+      include_deepseek: false,
+      user_approved: true,
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/candidate-radar/provider-parity-execution-request") {
+    return {
+      operator_approved: true,
+      acceptance_scope_hash: scopeHash(row, "radar_provider_parity_dry_run_scope_ticket"),
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/candidate-radar/worker-execution-request") {
+    const preview = nextLocalStepPreview(row);
+    return {
+      requested_from: "migration_status_ltg_next_action",
+      operator_approved: true,
+      worker_execution_scope_hash: String(preview.prepared_worker_execution_scope_hash ?? ""),
+      provider_parity_scope_hash: String(preview.prepared_provider_parity_scope_hash ?? ""),
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/candidate-radar/full-pool-worker-scan") {
+    return {
+      scan_mode: "full_pool_worker_fallback",
+      operator_approved: true,
+      worker_execution_scope_hash: scopeHash(row, "radar_worker_execution_request_ticket"),
+      local_universe_candidates: [
+        { ticker: DEFAULT_LTG_QUEUE_SYMBOL, name: "migration-status-local-candidate", score: 0 },
+        { ticker: "002837.SZ", name: "migration-status-local-candidate", score: 0 }
+      ],
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/candidate-radar/deep-scan-worker") {
+    return {
+      scan_mode: "deep_scan_worker_fallback",
+      operator_approved: true,
+      worker_execution_scope_hash: scopeHash(row, "radar_full_pool_worker_fallback_receipt"),
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
   if (route === "POST /api/candidate-radar/production-promotion-dry-run") {
     const preview = nextLocalStepPreview(row);
     return {

@@ -3148,6 +3148,128 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(memory_only_handoff["status"], "future_provider_handoff_waiting_for_durable_local_receipt")
         self.assertFalse(memory_only_handoff["handoff_ready_from_local_receipt"])
         self.assertEqual(memory_only_handoff["disabled_reason"], "local_execution_request_receipt_not_durable_in_sqlite")
+        radar_provider_dry_run_preview = migration_status_service._build_ltg_next_action_submission_preview_rows(
+            "POST /api/candidate-radar/provider-parity-dry-run",
+            [],
+        )[0]
+        self.assertEqual(radar_provider_dry_run_preview["step_kind"], "provider_parity_dry_run_scope_ticket")
+        self.assertTrue(radar_provider_dry_run_preview["local_button_available"])
+        self.assertTrue(radar_provider_dry_run_preview["ready_for_clean_local_receipt"])
+        self.assertEqual(radar_provider_dry_run_preview["expected_local_receipt"], "provider_parity_dry_run_receipt")
+        self.assertFalse(radar_provider_dry_run_preview["would_create_provider_task"])
+        self.assertFalse(radar_provider_dry_run_preview["would_start_worker"])
+        self.assertFalse(radar_provider_dry_run_preview["would_call_model"])
+        self.assertFalse(radar_provider_dry_run_preview["external_calls_triggered"])
+        self.assertFalse(radar_provider_dry_run_preview["tushare_called"])
+        self.assertFalse(radar_provider_dry_run_preview["deepseek_called"])
+        self.assertFalse(radar_provider_dry_run_preview["github_called"])
+        self.assertTrue(radar_provider_dry_run_preview["does_not_execute_trades"])
+        radar_provider_execution_preview = migration_status_service._build_ltg_next_action_submission_preview_rows(
+            "POST /api/candidate-radar/provider-parity-execution-request",
+            [
+                {
+                    "phase_key": "radar_provider_parity_dry_run_scope_ticket",
+                    "receipt_visible": True,
+                    "receipt_scope_hash": "b" * 64,
+                }
+            ],
+        )[0]
+        self.assertEqual(
+            radar_provider_execution_preview["step_kind"],
+            "scope_bound_provider_parity_execution_request",
+        )
+        self.assertTrue(radar_provider_execution_preview["ready_for_clean_local_receipt"])
+        self.assertEqual(
+            radar_provider_execution_preview["required_prior_phase_key"],
+            "radar_provider_parity_dry_run_scope_ticket",
+        )
+        self.assertFalse(radar_provider_execution_preview["would_create_provider_task"])
+        self.assertFalse(radar_provider_execution_preview["would_call_model"])
+        self.assertFalse(radar_provider_execution_preview["external_calls_triggered"])
+        radar_worker_execution_preview = migration_status_service._build_ltg_next_action_submission_preview_rows(
+            "POST /api/candidate-radar/worker-execution-request",
+            [
+                {
+                    "phase_key": "radar_provider_parity_execution_request_ticket",
+                    "receipt_visible": True,
+                    "receipt_scope_hash": "c" * 64,
+                }
+            ],
+            safe_context={
+                "candidate_radar_worker_execution_request_preview": {
+                    "recipe_visible": True,
+                    "provider_parity_execution_request_ready": True,
+                    "worker_execution_scope_hash": "d" * 64,
+                    "worker_execution_scope_hash_short": "d" * 16,
+                    "provider_parity_scope_hash": "c" * 64,
+                    "provider_parity_scope_hash_short": "c" * 16,
+                    "local_full_pool_receipt_visible": True,
+                    "local_deep_scan_review_visible": True,
+                    "can_prebind_worker_execution_scope_hash": True,
+                    "missing_prerequisites": [],
+                }
+            },
+        )[0]
+        self.assertEqual(
+            radar_worker_execution_preview["step_kind"],
+            "scope_bound_candidate_radar_worker_execution_request",
+        )
+        self.assertTrue(radar_worker_execution_preview["ready_for_clean_local_receipt"])
+        self.assertEqual(radar_worker_execution_preview["prepared_worker_execution_scope_hash"], "d" * 64)
+        self.assertEqual(radar_worker_execution_preview["prepared_provider_parity_scope_hash"], "c" * 64)
+        self.assertFalse(radar_worker_execution_preview["would_start_worker"])
+        self.assertFalse(radar_worker_execution_preview["would_call_model"])
+        self.assertFalse(radar_worker_execution_preview["external_calls_triggered"])
+        radar_deep_scan_context = {
+            "candidate_radar_worker_execution_request_preview": {
+                "recipe_visible": True,
+                "provider_parity_execution_request_ready": True,
+                "worker_execution_scope_hash": "d" * 64,
+                "worker_execution_scope_hash_short": "d" * 16,
+                "provider_parity_scope_hash": "c" * 64,
+                "provider_parity_scope_hash_short": "c" * 16,
+                "local_full_pool_receipt_visible": True,
+                "local_deep_scan_review_visible": True,
+                "local_deep_scan_review_done": False,
+                "can_prebind_worker_execution_scope_hash": True,
+                "missing_prerequisites": [],
+            }
+        }
+        radar_deep_scan_preview = migration_status_service._build_ltg_next_action_submission_preview_rows(
+            "POST /api/candidate-radar/deep-scan-worker",
+            [
+                {
+                    "phase_key": "radar_full_pool_worker_fallback_receipt",
+                    "receipt_visible": True,
+                    "receipt_scope_hash": "d" * 64,
+                }
+            ],
+            safe_context=radar_deep_scan_context,
+        )[0]
+        self.assertFalse(radar_deep_scan_preview["ready_for_clean_local_receipt"])
+        self.assertEqual(
+            radar_deep_scan_preview["disabled_reason"],
+            "latest_candidate_radar_deep_scan_local_review_not_ready",
+        )
+        self.assertFalse(radar_deep_scan_preview["manual_scope_hash_required"])
+        self.assertFalse(radar_deep_scan_preview["prepared_local_deep_scan_review_done"])
+        radar_deep_scan_context["candidate_radar_worker_execution_request_preview"][
+            "local_deep_scan_review_done"
+        ] = True
+        radar_deep_scan_ready_preview = migration_status_service._build_ltg_next_action_submission_preview_rows(
+            "POST /api/candidate-radar/deep-scan-worker",
+            [
+                {
+                    "phase_key": "radar_full_pool_worker_fallback_receipt",
+                    "receipt_visible": True,
+                    "receipt_scope_hash": "d" * 64,
+                }
+            ],
+            safe_context=radar_deep_scan_context,
+        )[0]
+        self.assertTrue(radar_deep_scan_ready_preview["ready_for_clean_local_receipt"])
+        self.assertEqual(radar_deep_scan_ready_preview["disabled_reason"], "")
+        self.assertTrue(radar_deep_scan_ready_preview["prepared_local_deep_scan_review_done"])
         radar_promotion_preview = migration_status_service._build_ltg_next_action_submission_preview_rows(
             "POST /api/candidate-radar/production-promotion-dry-run",
             [],
@@ -5777,6 +5899,20 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(p3["ready_local_receipt_step_count"], 2)
         self.assertGreaterEqual(p3["durable_local_receipt_step_count"], 2)
         self.assertEqual(p3["next_local_step"], "POST /api/candidate-radar/provider-parity-dry-run")
+        self.assertTrue(p3["next_local_step_ready_for_clean_receipt"])
+        self.assertEqual(p3["next_local_step_disabled_reason"], "")
+        preview = p3["next_local_step_preview_rows"][0]
+        self.assertEqual(preview["step_kind"], "provider_parity_dry_run_scope_ticket")
+        self.assertTrue(preview["ready_for_clean_local_receipt"])
+        self.assertEqual(preview["expected_local_receipt"], "provider_parity_dry_run_receipt")
+        self.assertFalse(preview["would_create_provider_task"])
+        self.assertFalse(preview["would_start_worker"])
+        self.assertFalse(preview["would_call_model"])
+        self.assertFalse(preview["external_calls_triggered"])
+        self.assertFalse(preview["tushare_called"])
+        self.assertFalse(preview["deepseek_called"])
+        self.assertFalse(preview["github_called"])
+        self.assertTrue(preview["does_not_execute_trades"])
         self.assertTrue(steps["radar_quant_projection_dry_run_scope_ticket"]["receipt_visible"])
         self.assertTrue(steps["radar_quant_projection_execution_request_ticket"]["receipt_visible"])
         self.assertFalse(steps["radar_provider_parity_dry_run_scope_ticket"]["receipt_visible"])
