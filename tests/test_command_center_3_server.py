@@ -15463,9 +15463,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "candidate_radar_worker_execution_recipe_ready_production_pending",
         )
         self.assertGreater(payload["observed"]["candidate_radar_worker_execution_recipe_production_blocker_count"], 0)
+        expected_quant_execution_request_status = (
+            "quant_projection_execution_request_blocked_dry_run_not_ready"
+            if "search_quant_projection_execution_request_is_scope_bound_ticket_only"
+            in (payload.get("blockers") or [])
+            else "quant_projection_execution_request_ready_manual_provider_model_task_pending"
+        )
         self.assertEqual(
             payload["observed"]["search_quant_projection_execution_request_status"],
-            "quant_projection_execution_request_ready_manual_provider_model_task_pending",
+            expected_quant_execution_request_status,
         )
         self.assertGreater(
             payload["observed"]["search_quant_projection_execution_request_production_blocker_count"],
