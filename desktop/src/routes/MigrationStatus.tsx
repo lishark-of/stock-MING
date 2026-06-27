@@ -592,6 +592,59 @@ export default function MigrationStatus() {
         evidence_boundary: handoff.evidence_boundary
       }];
     });
+  const ltgFactorUniverseWorkerBatchHandoffRows = ltgNextAcceptanceActionRows
+    .flatMap((row) => {
+      const handoff = (row.supporting_factor_universe_worker_batch_handoff as Record<string, unknown> | undefined) ?? {};
+      if (!Object.keys(handoff).length) {
+        return [];
+      }
+      return [{
+        queue_id: row.queue_id,
+        priority: row.priority,
+        status: handoff.status,
+        direct_evidence_status: handoff.direct_evidence_status,
+        direct_evidence_layer: handoff.direct_evidence_layer,
+        local_rank_zscore_research_preview_verified: handoff.local_rank_zscore_research_preview_verified,
+        worker_batch_dry_run_ready: handoff.worker_batch_dry_run_ready,
+        worker_batch_execution_recipe_ready: handoff.worker_batch_execution_recipe_ready,
+        worker_batch_execution_request_ready: handoff.worker_batch_execution_request_ready,
+        worker_batch_research_receipt_ready: handoff.worker_batch_research_receipt_ready,
+        ready_for_worker_runtime_evidence_collection: handoff.ready_for_worker_runtime_evidence_collection,
+        worker_dependency_preflight_visible: handoff.worker_dependency_preflight_visible,
+        worker_dependency_preflight_status: handoff.worker_dependency_preflight_status,
+        worker_dependency_preflight_blocker_count: handoff.worker_dependency_preflight_blocker_count,
+        worker_dependency_local_non_redis_runtime_ready: handoff.worker_dependency_local_non_redis_runtime_ready,
+        durable_recipe_ready: handoff.durable_recipe_ready,
+        durable_evidence_complete: handoff.durable_evidence_complete,
+        worker_task_created: handoff.worker_task_created,
+        worker_task_executed: handoff.worker_task_executed,
+        worker_execution_implemented: handoff.worker_execution_implemented,
+        worker_started: handoff.worker_started,
+        celery_worker_started: handoff.celery_worker_started,
+        redis_pinged: handoff.redis_pinged,
+        large_universe_pipeline_done: handoff.large_universe_pipeline_done,
+        cross_sectional_rank_zscore_done: handoff.cross_sectional_rank_zscore_done,
+        neutralization_done: handoff.neutralization_done,
+        factor_combination_research_done: handoff.factor_combination_research_done,
+        full_pool_validation_done: handoff.full_pool_validation_done,
+        production_factor_universe_complete: handoff.production_factor_universe_complete,
+        partial_pool_is_full_market_proof: handoff.partial_pool_is_full_market_proof,
+        frontend_computes_rank_zscore: handoff.frontend_computes_rank_zscore,
+        next_local_step: handoff.next_local_step,
+        requires_separate_user_approved_worker_task: handoff.requires_separate_user_approved_worker_task,
+        requires_worker_runtime_binding: handoff.requires_worker_runtime_binding,
+        requires_storage_read_execution: handoff.requires_storage_read_execution,
+        requires_full_pool_validation: handoff.requires_full_pool_validation,
+        cache_get_creates_task: handoff.cache_get_creates_task,
+        cache_get_starts_worker: handoff.cache_get_starts_worker,
+        external_calls_triggered: handoff.external_calls_triggered,
+        tushare_called: handoff.tushare_called,
+        deepseek_called: handoff.deepseek_called,
+        does_not_execute_trades: handoff.does_not_execute_trades,
+        can_close_goal: handoff.can_close_goal,
+        evidence_boundary: handoff.evidence_boundary
+      }];
+    });
   const ltgCurrentEvidenceProducerCacheRefreshHandoffRows = ltgNextAcceptanceActionRows
     .flatMap((row) => {
       const handoff = (row.supporting_current_evidence_producer_cache_refresh_handoff as Record<string, unknown> | undefined) ?? {};
@@ -1165,6 +1218,8 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgTushareTargetSampleEvidenceHandoffRows} />
       <p className="risk-note">LTG-03 Factor Test handoff 只显示本地 scope ticket、execution recipe、execution-request、durable recipe 和仍缺的 provider call-ledger / sample rows / rolling-cost-neutralization-bias / full-market / promotion review；它不从 GET cache 创建任务、不调用 Tushare，也不能关闭 Factor Test 生产验证。</p>
       <DataLineageTable rows={ltgFactorTestProviderValidationHandoffRows} />
+      <p className="risk-note">LTG-04 Factor Universe handoff 只显示本地 worker-batch scope ticket、execution-request、local research receipt、worker dependency preflight 和仍缺的 worker runtime / storage-read / rank-zscore-neutralization / full-pool / promotion review；它不从 GET cache 创建任务、不启动 Celery/Redis，也不能关闭 Factor Universe 生产验证。</p>
+      <DataLineageTable rows={ltgFactorUniverseWorkerBatchHandoffRows} />
       <DataLineageTable rows={ltgCurrentEvidenceProducerCacheRefreshHandoffRows} />
       <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />

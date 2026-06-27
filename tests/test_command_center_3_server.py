@@ -54856,6 +54856,51 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_starts_process"])
         self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_pings_redis"])
         self.assertFalse(handoff["external_calls_triggered"])
+        universe_handoff = ltg04["supporting_factor_universe_worker_batch_handoff"]
+        self.assertEqual(
+            universe_handoff["schema_version"],
+            "ltg04_factor_universe_worker_batch_handoff_summary.v1",
+        )
+        self.assertEqual(
+            universe_handoff["status"],
+            "factor_universe_execution_request_ready_local_research_receipt_needed",
+        )
+        self.assertTrue(universe_handoff["worker_batch_execution_request_ready"])
+        self.assertFalse(universe_handoff["worker_batch_research_receipt_ready"])
+        self.assertEqual(
+            universe_handoff["target_worker_task_route"],
+            "POST /api/factor-quant/universe-worker-batch-research",
+        )
+        self.assertEqual(
+            universe_handoff["target_acceptance_mode"],
+            "worker_backed_factor_universe_batch_research",
+        )
+        self.assertEqual(universe_handoff["worker_batch_scope_hash_short"], dry_run_receipt["worker_batch_scope_hash_short"])
+        self.assertEqual(universe_handoff["symbol_count"], 24)
+        self.assertEqual(
+            ltg04["supporting_factor_universe_worker_batch_next_local_step"],
+            "POST /api/factor-quant/universe-worker-batch-research",
+        )
+        self.assertTrue(ltg04["supporting_factor_universe_worker_batch_execution_request_ready"])
+        self.assertFalse(ltg04["supporting_factor_universe_worker_batch_research_receipt_ready"])
+        self.assertFalse(ltg04["supporting_factor_universe_worker_batch_creates_task_from_get"])
+        self.assertFalse(universe_handoff["worker_task_created"])
+        self.assertFalse(universe_handoff["worker_task_executed"])
+        self.assertFalse(universe_handoff["worker_execution_implemented"])
+        self.assertFalse(universe_handoff["worker_started"])
+        self.assertFalse(universe_handoff["celery_worker_started"])
+        self.assertFalse(universe_handoff["redis_pinged"])
+        self.assertFalse(universe_handoff["large_universe_pipeline_done"])
+        self.assertFalse(universe_handoff["full_pool_validation_done"])
+        self.assertFalse(universe_handoff["production_factor_universe_complete"])
+        self.assertFalse(universe_handoff["cache_get_creates_task"])
+        self.assertFalse(universe_handoff["cache_get_starts_worker"])
+        self.assertFalse(universe_handoff["external_calls_triggered"])
+        self.assertFalse(universe_handoff["tushare_called"])
+        self.assertFalse(universe_handoff["deepseek_called"])
+        self.assertFalse(universe_handoff["github_called"])
+        self.assertTrue(universe_handoff["does_not_execute_trades"])
+        self.assertFalse(universe_handoff["can_close_goal"])
 
     def test_factor_universe_worker_batch_research_receipt_is_local_task_record_only(self):
         self._with_meta_store()
@@ -55023,6 +55068,41 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_starts_process"])
         self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_pings_redis"])
         self.assertFalse(handoff["external_calls_triggered"])
+        universe_handoff = ltg04["supporting_factor_universe_worker_batch_handoff"]
+        self.assertEqual(
+            universe_handoff["status"],
+            "factor_universe_local_research_receipt_ready_worker_runtime_evidence_pending",
+        )
+        self.assertTrue(universe_handoff["worker_batch_execution_request_ready"])
+        self.assertTrue(universe_handoff["worker_batch_research_receipt_ready"])
+        self.assertTrue(universe_handoff["ready_for_worker_runtime_evidence_collection"])
+        self.assertTrue(universe_handoff["local_worker_task_record_created"])
+        self.assertEqual(universe_handoff["latest_research_receipt_task_id"], task["task_id"])
+        self.assertEqual(
+            ltg04["supporting_factor_universe_worker_batch_next_local_step"],
+            "future worker runtime storage metric and promotion evidence",
+        )
+        self.assertTrue(ltg04["supporting_factor_universe_worker_batch_research_receipt_ready"])
+        self.assertFalse(ltg04["supporting_factor_universe_worker_batch_creates_task_from_get"])
+        self.assertFalse(universe_handoff["worker_task_created"])
+        self.assertFalse(universe_handoff["worker_task_executed"])
+        self.assertFalse(universe_handoff["worker_execution_implemented"])
+        self.assertFalse(universe_handoff["worker_started"])
+        self.assertFalse(universe_handoff["celery_worker_started"])
+        self.assertFalse(universe_handoff["redis_pinged"])
+        self.assertFalse(universe_handoff["large_universe_pipeline_done"])
+        self.assertFalse(universe_handoff["full_pool_validation_done"])
+        self.assertFalse(universe_handoff["production_factor_universe_complete"])
+        self.assertFalse(universe_handoff["partial_pool_is_full_market_proof"])
+        self.assertFalse(universe_handoff["frontend_computes_rank_zscore"])
+        self.assertFalse(universe_handoff["cache_get_creates_task"])
+        self.assertFalse(universe_handoff["cache_get_starts_worker"])
+        self.assertFalse(universe_handoff["external_calls_triggered"])
+        self.assertFalse(universe_handoff["tushare_called"])
+        self.assertFalse(universe_handoff["deepseek_called"])
+        self.assertFalse(universe_handoff["github_called"])
+        self.assertTrue(universe_handoff["does_not_execute_trades"])
+        self.assertFalse(universe_handoff["can_close_goal"])
 
     def test_factor_universe_worker_batch_research_can_record_local_execution_evidence(self):
         self._with_meta_store()

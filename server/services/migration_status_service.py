@@ -3310,6 +3310,165 @@ def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]
     }
 
 
+def _latest_factor_universe_worker_batch_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import factor_service
+
+        packet = factor_service.read_factor_quant_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    contract = _dict_or_empty(packet_map.get("universe_research_contract"))
+    dry_run = _dict_or_empty(packet_map.get("universe_worker_batch_dry_run_receipt"))
+    recipe = _dict_or_empty(packet_map.get("universe_worker_batch_execution_recipe"))
+    request = _dict_or_empty(packet_map.get("universe_worker_batch_execution_request_receipt"))
+    research = _dict_or_empty(packet_map.get("universe_worker_batch_research_receipt"))
+    durable_recipe = _dict_or_empty(packet_map.get("universe_durable_evidence_recipe"))
+    direct_evidence = _latest_factor_universe_direct_research_evidence_summary()
+    worker_dependency = _latest_worker_runtime_dependency_preflight_preview()
+
+    dry_run_ready = dry_run.get("local_dry_run_ready") is True
+    recipe_ready = recipe.get("local_recipe_ready") is True
+    execution_request_ready = (
+        request.get("local_execution_request_ready") is True
+        and request.get("ready_for_manual_worker_task_submission") is True
+        and request.get("worker_task_created") is False
+        and request.get("worker_task_executed") is False
+        and request.get("worker_execution_implemented") is False
+        and int(request.get("blocking_criterion_count") or 0) == 0
+    )
+    research_receipt_ready = (
+        research.get("local_worker_research_receipt_ready") is True
+        and research.get("ready_for_worker_runtime_evidence_collection") is True
+        and research.get("worker_task_created") is False
+        and research.get("worker_task_executed") is False
+        and research.get("worker_execution_implemented") is False
+    )
+    durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
+    next_step = (
+        "future worker runtime storage metric and promotion evidence"
+        if research_receipt_ready
+        else "POST /api/factor-quant/universe-worker-batch-research"
+        if execution_request_ready
+        else "POST /api/factor-quant/universe-worker-batch-execution-request"
+        if dry_run_ready or recipe_ready
+        else "POST /api/factor-quant/universe-worker-batch-dry-run"
+    )
+    return {
+        "schema_version": "ltg04_factor_universe_worker_batch_handoff_summary.v1",
+        "status": (
+            "factor_universe_local_research_receipt_ready_worker_runtime_evidence_pending"
+            if research_receipt_ready
+            else "factor_universe_execution_request_ready_local_research_receipt_needed"
+            if execution_request_ready
+            else "factor_universe_scope_ticket_ready_execution_request_needed"
+            if dry_run_ready or recipe_ready
+            else "factor_universe_worker_batch_scope_ticket_needed"
+        ),
+        "source_packet_key": "command_center_factor_quant_hub_packet",
+        "direct_evidence_status": direct_evidence.get("status"),
+        "direct_evidence_layer": direct_evidence.get("direct_evidence_layer"),
+        "local_rank_zscore_research_preview_verified": (
+            direct_evidence.get("local_rank_zscore_research_preview_verified") is True
+        ),
+        "worker_batch_dry_run_ready": dry_run_ready,
+        "worker_batch_execution_recipe_ready": recipe_ready,
+        "worker_batch_execution_request_ready": execution_request_ready,
+        "worker_batch_research_receipt_ready": research_receipt_ready,
+        "worker_batch_scope_hash_short": (
+            research.get("worker_batch_scope_hash_short")
+            or request.get("worker_batch_scope_hash_short")
+            or dry_run.get("worker_batch_scope_hash_short")
+            or ""
+        ),
+        "target_worker_task_route": (
+            research.get("target_worker_task_route")
+            or request.get("target_worker_task_route")
+            or "POST /api/factor-quant/universe-worker-batch-research"
+        ),
+        "target_worker_task_type": (
+            research.get("target_worker_task_type")
+            or request.get("target_worker_task_type")
+            or "run_factor_universe_worker_batch_research"
+        ),
+        "target_acceptance_mode": (
+            research.get("target_acceptance_mode")
+            or request.get("target_acceptance_mode")
+            or "worker_backed_factor_universe_batch_research"
+        ),
+        "universe_mode": research.get("universe_mode") or request.get("universe_mode") or dry_run.get("universe_mode") or "",
+        "symbol_count": int(research.get("symbol_count") or request.get("symbol_count") or dry_run.get("symbol_count") or 0),
+        "required_stage_count": len(research.get("required_stages") or request.get("required_stages") or dry_run.get("required_stages") or []),
+        "latest_execution_request_task_id": str(
+            research.get("latest_execution_request_task_id") or request.get("task_id") or ""
+        ),
+        "latest_research_receipt_task_id": str(research.get("task_id") or ""),
+        "local_worker_task_record_created": research.get("local_worker_task_record_created") is True,
+        "ready_for_worker_runtime_evidence_collection": research_receipt_ready,
+        "durable_recipe_status": durable_recipe.get("status") or "missing",
+        "durable_recipe_ready": durable_recipe_ready,
+        "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
+        "durable_promotion_ready": durable_recipe.get("durable_promotion_ready") is True,
+        "worker_dependency_preflight_visible": worker_dependency.get("preflight_visible") is True,
+        "worker_dependency_preflight_status": worker_dependency.get("preflight_status") or "missing",
+        "worker_dependency_preflight_blocker_count": int(worker_dependency.get("blocker_count") or 0),
+        "worker_dependency_local_non_redis_runtime_ready": (
+            worker_dependency.get("local_non_redis_runtime_evidence_ready") is True
+        ),
+        "worker_dependency_preflight_starts_process": False,
+        "worker_dependency_preflight_pings_redis": False,
+        "requires_separate_user_approved_worker_task": True,
+        "requires_worker_runtime_binding": True,
+        "requires_storage_read_execution": True,
+        "requires_cross_sectional_rank_zscore": True,
+        "requires_neutralization": True,
+        "requires_factor_combination": True,
+        "requires_result_summary_persistence": True,
+        "requires_full_pool_validation": True,
+        "requires_promotion_review": True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_execution_implemented": False,
+        "worker_process_started": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "storage_read_executed": research.get("storage_read_executed") is True,
+        "large_universe_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": research.get("cross_sectional_rank_zscore_done") is True,
+        "zscore_done": research.get("zscore_done") is True,
+        "neutralization_done": research.get("neutralization_done") is True,
+        "factor_combination_research_done": research.get("factor_combination_research_done") is True,
+        "result_summary_persisted": research.get("result_summary_persisted") is True,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "partial_pool_is_full_market_proof": False,
+        "page_render_starts_full_pool": False,
+        "frontend_computes_rank_zscore": False,
+        "cache_get_creates_task": False,
+        "cache_get_calls_provider": False,
+        "cache_get_starts_worker": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "contract_worker_batch_research_receipt_ready": (
+            contract.get("worker_batch_research_receipt_ready") is True
+        ),
+        "next_local_step": next_step,
+        "evidence_boundary": (
+            "factor_universe_worker_batch_handoff_is_local_receipt_and_dependency_review_not_worker_execution_or_ltg_closeout"
+        ),
+    }
+
+
 def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import audit_service
@@ -7277,6 +7436,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_current_evidence_producer_cache_refresh_handoff: dict[str, Any] = {}
         supporting_tushare_target_sample_evidence_handoff: dict[str, Any] = {}
         supporting_factor_test_lab_provider_validation_handoff: dict[str, Any] = {}
+        supporting_factor_universe_worker_batch_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -7305,6 +7465,9 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         if action["queue_id"] == "p3_factor_universe_worker_batch_research":
             safe_context["worker_runtime_dependency_preflight_preview"] = (
                 _latest_worker_runtime_dependency_preflight_preview()
+            )
+            supporting_factor_universe_worker_batch_handoff = (
+                _latest_factor_universe_worker_batch_handoff_summary()
             )
         if action["queue_id"] == "p4_storage_physical_execution":
             safe_context["storage_physical_execution_recipe_preview"] = (
@@ -7462,6 +7625,34 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_factor_test_lab_provider_validation_creates_task_from_get": (
                     supporting_factor_test_lab_provider_validation_handoff.get("cache_get_creates_task")
+                    is True
+                ),
+                "supporting_factor_universe_worker_batch_handoff": (
+                    supporting_factor_universe_worker_batch_handoff
+                ),
+                "supporting_factor_universe_worker_batch_next_local_step": (
+                    supporting_factor_universe_worker_batch_handoff.get("next_local_step", "")
+                ),
+                "supporting_factor_universe_worker_batch_execution_request_ready": (
+                    supporting_factor_universe_worker_batch_handoff.get(
+                        "worker_batch_execution_request_ready"
+                    )
+                    is True
+                ),
+                "supporting_factor_universe_worker_batch_research_receipt_ready": (
+                    supporting_factor_universe_worker_batch_handoff.get(
+                        "worker_batch_research_receipt_ready"
+                    )
+                    is True
+                ),
+                "supporting_factor_universe_worker_batch_requires_worker_task": (
+                    supporting_factor_universe_worker_batch_handoff.get(
+                        "requires_separate_user_approved_worker_task"
+                    )
+                    is True
+                ),
+                "supporting_factor_universe_worker_batch_creates_task_from_get": (
+                    supporting_factor_universe_worker_batch_handoff.get("cache_get_creates_task")
                     is True
                 ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
