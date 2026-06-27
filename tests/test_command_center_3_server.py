@@ -1735,6 +1735,15 @@ def assert_ltg12_trade_isolation_stage_scope(
             row["trade_isolation_release_receipt_status"],
             "trade_isolation_release_receipt_ready_research_release_only",
         )
+    test_case.assertTrue(row["per_slice_trade_isolation_recheck_required"])
+    test_case.assertTrue(row["continued_no_broker_proof_required"])
+    test_case.assertTrue(row["continued_no_order_proof_required"])
+    test_case.assertTrue(row["continued_no_action_mutation_proof_required"])
+    test_case.assertEqual(
+        row["current_slice_no_broker_no_order_no_action_proof_ready"],
+        bool(direct_count),
+    )
+    test_case.assertFalse(row["one_time_closeout_allowed"])
     test_case.assertFalse(row["ready_for_real_trading_integration"])
     test_case.assertFalse(row["real_trading_connected"])
     test_case.assertFalse(row["broker_adapter_connected"])
@@ -1803,6 +1812,15 @@ def assert_ltg12_migration_goal_stage_scope(
     test_case.assertFalse(row["observed_strict_closeout_ready"])
     test_case.assertIn("separate real-trading project approval", row["observed_missing_evidence_items"])
     test_case.assertIn("release review after matching remote CI green", row["observed_missing_evidence_items"])
+    test_case.assertTrue(row["observed_per_slice_trade_isolation_recheck_required"])
+    test_case.assertTrue(row["observed_continued_no_broker_proof_required"])
+    test_case.assertTrue(row["observed_continued_no_order_proof_required"])
+    test_case.assertTrue(row["observed_continued_no_action_mutation_proof_required"])
+    test_case.assertEqual(
+        row["observed_current_slice_no_broker_no_order_no_action_proof_ready"],
+        bool(direct_count),
+    )
+    test_case.assertFalse(row["observed_one_time_closeout_allowed"])
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 

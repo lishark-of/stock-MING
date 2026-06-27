@@ -9465,6 +9465,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "trade_isolation_release_receipt_status": isolation_contract.get(
                     "trade_isolation_release_receipt_status"
                 ),
+                "per_slice_trade_isolation_recheck_required": True,
+                "continued_no_broker_proof_required": True,
+                "continued_no_order_proof_required": True,
+                "continued_no_action_mutation_proof_required": True,
+                "current_slice_no_broker_no_order_no_action_proof_ready": release_receipt_ready,
+                "one_time_closeout_allowed": False,
                 "ready_for_real_trading_integration": False,
                 "real_trading_connected": False,
                 "broker_adapter_connected": isolation_contract.get("broker_adapter_connected") is True,
@@ -9509,6 +9515,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "production_blocker_count": 0,
                 "trade_isolation_release_receipt_ready": False,
                 "trade_isolation_release_receipt_status": "",
+                "per_slice_trade_isolation_recheck_required": True,
+                "continued_no_broker_proof_required": True,
+                "continued_no_order_proof_required": True,
+                "continued_no_action_mutation_proof_required": True,
+                "current_slice_no_broker_no_order_no_action_proof_ready": False,
+                "one_time_closeout_allowed": False,
                 "ready_for_real_trading_integration": False,
                 "real_trading_connected": False,
                 "broker_adapter_connected": False,
@@ -9853,6 +9865,12 @@ def _merge_ltg_stage_scope_observations(
                 "release_review_pending_count",
                 "strict_closeout_ready",
                 "missing_evidence_items",
+                "per_slice_trade_isolation_recheck_required",
+                "continued_no_broker_proof_required",
+                "continued_no_order_proof_required",
+                "continued_no_action_mutation_proof_required",
+                "current_slice_no_broker_no_order_no_action_proof_ready",
+                "one_time_closeout_allowed",
             ):
                 if evidence_key in observed:
                     item[f"observed_{evidence_key}"] = observed.get(evidence_key)
