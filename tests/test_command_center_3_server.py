@@ -2077,6 +2077,75 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, trade_review_service, "TRADE_REVIEW_LOG_PATH", original_path)
         return log_path
 
+    def test_all_ltg_review_split_fields_are_present_without_strict_closeout(self):
+        migration = migration_status_service.build_migration_status()
+        summary = migration["long_term_goal_summary"]
+        goal_rows = migration["long_term_goal_rows"]
+        required_review_fields = {
+            "observed_local_complete",
+            "observed_local_completion_status",
+            "observed_local_blocker_count",
+            "observed_remote_review_required_after_local_complete",
+            "observed_remote_review_pending",
+            "observed_remote_review_status",
+            "observed_remote_review_pending_count",
+            "observed_release_review_required_after_remote_green",
+            "observed_release_review_pending",
+            "observed_release_review_status",
+            "observed_release_review_pending_count",
+            "observed_strict_closeout_ready",
+            "observed_missing_evidence_items",
+        }
+
+        self.assertEqual({row["id"] for row in goal_rows}, {f"LTG-{index:02d}" for index in range(1, 15)})
+        self.assertEqual(summary["strict_closeout"], "0/14")
+        self.assertEqual(summary["strict_closeout_done_count"], 0)
+        self.assertEqual(summary["strict_closeout_total_count"], 14)
+        self.assertTrue(all(row["production_complete"] is False for row in goal_rows))
+        self.assertTrue(all(row["observed_stage_scope_can_close_goal"] is False for row in goal_rows))
+
+        for row in goal_rows:
+            missing_fields = required_review_fields - set(row)
+            self.assertFalse(missing_fields, f"{row['id']} missing review split fields: {sorted(missing_fields)}")
+            self.assertIsInstance(row["observed_missing_evidence_items"], list)
+            self.assertTrue(row["observed_missing_evidence_items"], row["id"])
+            self.assertIn(
+                "release review after matching remote CI green",
+                row["observed_missing_evidence_items"],
+            )
+            self.assertTrue(row["observed_remote_review_required_after_local_complete"])
+            self.assertTrue(row["observed_release_review_required_after_remote_green"])
+            self.assertEqual(
+                row["observed_remote_review_pending_count"],
+                1 if row["observed_remote_review_pending"] else 0,
+            )
+            self.assertEqual(
+                row["observed_release_review_pending_count"],
+                1 if row["observed_release_review_pending"] else 0,
+            )
+            self.assertFalse(row["observed_strict_closeout_ready"])
+            self.assertFalse(row["observed_stage_scope_can_close_goal"])
+
+            if row["observed_local_complete"]:
+                self.assertEqual(row["observed_local_blocker_count"], 0)
+                self.assertIn(
+                    row["observed_remote_review_status"],
+                    {"remote_review_pending", "remote_review_green_release_review_pending"},
+                )
+                self.assertIn(
+                    row["observed_release_review_status"],
+                    {"release_review_waiting_for_remote_green", "release_review_pending"},
+                )
+            else:
+                self.assertGreaterEqual(row["observed_local_blocker_count"], 0)
+                self.assertFalse(row["observed_remote_review_pending"])
+                self.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+                self.assertFalse(row["observed_release_review_pending"])
+                self.assertEqual(
+                    row["observed_release_review_status"],
+                    "release_review_waiting_for_local_and_remote_complete",
+                )
+
     def test_model_strategy_cache_exposes_p5_output_contract_without_external_sources(self):
         model_strategy = model_strategy_service.read_deepseek_model_strategy_cache()
         governed_executor = model_strategy["governed_executor"]
