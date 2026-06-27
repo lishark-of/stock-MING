@@ -978,7 +978,10 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("local_release_gate_evidence_status")
             == local_release_gate_evidence.get("status")
             and durable_evidence_recipe.get("remote_ci_review_required") is True
-            and durable_evidence_recipe.get("latest_remote_run_verified_green") is False
+            and durable_evidence_recipe.get("latest_remote_run_verified_green")
+            is local_release_gate_evidence.get("latest_remote_run_verified_green")
+            and durable_evidence_recipe.get("remote_actions_status_known")
+            is local_release_gate_evidence.get("remote_actions_status_known")
             and durable_evidence_recipe.get("release_review_complete") is False
             and production_promotion_review_done is local_promotion_review_ready
             and durable_evidence_recipe.get("local_promotion_review_visible") is local_promotion_review_visible
@@ -1070,7 +1073,9 @@ def build_contract() -> dict[str, Any]:
             and production_promotion_row.get("remote_ci_review_required")
             is True
             and production_promotion_row.get("latest_remote_run_verified_green")
-            is False
+            is local_release_gate_evidence.get("latest_remote_run_verified_green")
+            and production_promotion_row.get("remote_actions_status_known")
+            is local_release_gate_evidence.get("remote_actions_status_known")
             and production_promotion_row.get("release_review_blocks_production_completion")
             is True
             and production_promotion_row.get("local_promotion_review_visible") is local_promotion_review_visible

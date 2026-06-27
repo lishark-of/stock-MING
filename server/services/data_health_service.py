@@ -5600,12 +5600,15 @@ def _freshness_local_release_gate_evidence() -> dict[str, Any]:
         from server.services import audit_service
 
         receipt = audit_service._read_local_push_gate_run_receipt()
+        remote_receipt = audit_service._read_remote_ci_review_receipt()
         worktree, _worktree_rows = audit_service._local_worktree_cleanliness_audit()
     except Exception:
         receipt = {}
+        remote_receipt = {}
         worktree = {}
 
     receipt_map = receipt if isinstance(receipt, Mapping) else {}
+    remote_receipt_map = remote_receipt if isinstance(remote_receipt, Mapping) else {}
     worktree_map = worktree if isinstance(worktree, Mapping) else {}
     freshness_blockers = [
         str(item) for item in _as_list(receipt_map.get("freshness_blockers")) if str(item)
@@ -5619,10 +5622,12 @@ def _freshness_local_release_gate_evidence() -> dict[str, Any]:
     fresh_local_gate_run_observed = receipt_map.get("fresh_local_gate_run_observed") is True
     head_matches_current = receipt_map.get("head_matches_current") is True
     required_checks_present = receipt_map.get("required_local_gate_checks_present") is True
-    remote_actions_status_known = receipt_map.get("remote_actions_status_known") is True
-    latest_remote_run_verified_green = receipt_map.get("latest_remote_run_verified_green") is True
+    remote_actions_status_known = remote_receipt_map.get("remote_actions_status_known") is True
+    latest_remote_run_verified_green = remote_receipt_map.get("latest_remote_run_verified_green") is True
     worktree_clean = worktree_map.get("worktree_clean") is True
-    if fresh_local_gate_run_observed and worktree_clean:
+    if fresh_local_gate_run_observed and worktree_clean and latest_remote_run_verified_green:
+        status = "freshness_local_release_gate_observed_remote_ci_reviewed_release_review_pending"
+    elif fresh_local_gate_run_observed and worktree_clean:
         status = "freshness_local_release_gate_observed_remote_ci_pending"
     elif worktree_blocks_local_gate:
         status = "freshness_local_release_gate_blocked_dirty_worktree"
@@ -5672,6 +5677,14 @@ def _freshness_local_release_gate_evidence() -> dict[str, Any]:
         ),
         "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "remote_ci_review_receipt_status": _safe_text(remote_receipt_map.get("status"), limit=120),
+        "remote_ci_review_receipt_read_status": _safe_text(remote_receipt_map.get("read_status"), limit=80),
+        "remote_ci_review_receipt_head_matches_current": remote_receipt_map.get("head_matches_current") is True,
+        "remote_ci_review_receipt_run_id": remote_receipt_map.get("run_id"),
+        "remote_ci_review_receipt_release_claim_decision": _safe_text(
+            remote_receipt_map.get("release_claim_decision"),
+            limit=120,
+        ),
         "remote_ci_review_required": True,
         "release_review_complete": False,
         "local_gate_pass_is_not_ci_status": True,
@@ -5691,6 +5704,8 @@ def _freshness_local_release_gate_evidence() -> dict[str, Any]:
                 "api": "local_freshness_release_gate_receipt_readback",
                 "source": "ignored local push-gate receipt plus local git status counts",
                 "call_status": status,
+                "remote_actions_status_known": remote_actions_status_known,
+                "latest_remote_run_verified_green": latest_remote_run_verified_green,
                 "local_fetched_at": _now_iso(),
                 "external": False,
                 "tushare_called": False,
@@ -6145,7 +6160,8 @@ def _freshness_durable_evidence_recipe(
                 "required_local_gate_checks_present": local_release_gate_required_checks_present,
                 "local_push_gate_receipt_freshness_blockers": local_release_gate_blockers,
                 "remote_ci_review_required": True,
-                "latest_remote_run_verified_green": False,
+                "remote_actions_status_known": remote_ci_reviewed_green,
+                "latest_remote_run_verified_green": remote_ci_reviewed_green,
                 "release_review_complete": False,
                 "local_gate_pass_is_not_ci_status": True,
                 "release_review_blocks_production_completion": True,
@@ -6195,7 +6211,8 @@ def _freshness_durable_evidence_recipe(
         "required_local_gate_checks_present": local_release_gate_required_checks_present,
         "local_push_gate_receipt_freshness_blockers": local_release_gate_blockers,
         "remote_ci_review_required": True,
-        "latest_remote_run_verified_green": False,
+        "remote_actions_status_known": remote_ci_reviewed_green,
+        "latest_remote_run_verified_green": remote_ci_reviewed_green,
         "release_review_complete": False,
         "local_promotion_review_visible": local_promotion_review_visible,
         "local_promotion_review_ready_for_release": local_promotion_review_ready_for_release,

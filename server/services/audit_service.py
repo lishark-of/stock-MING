@@ -45,6 +45,7 @@ CI_NOTIFICATION_TRIAGE_SCHEMA_VERSION = "command_center_3_ci_notification_triage
 PUSH_READINESS_RECEIPT_SCHEMA_VERSION = "command_center_3_push_readiness_receipt.v1"
 LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION = "command_center_3_local_push_gate_run_receipt.v1"
 REMOTE_CI_REVIEW_SEED_SCHEMA_VERSION = "command_center_3_remote_ci_review_seed.v1"
+REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION = "command_center_3_remote_ci_review_receipt.v1"
 LOCAL_WORKTREE_CLEANLINESS_SCHEMA_VERSION = "command_center_3_local_worktree_cleanliness_audit.v1"
 MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
 LOCAL_PUSH_GATE_REQUIRED_CHECKS = {
@@ -101,6 +102,7 @@ RELEASE_GATE_STAGE_LABELS = {
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "local_push_gate_run_receipt.json"
+REMOTE_CI_REVIEW_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "remote_ci_review_receipt.json"
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
 MIGRATION_PRINCIPLE_TEST_PATH = PROJECT_ROOT / "tests" / "test_command_center_migration_principles.py"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
@@ -788,6 +790,197 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "contains_secret": False,
+        }
+    )
+    return receipt
+
+
+def _read_remote_ci_review_receipt() -> dict[str, Any]:
+    current_head = _current_git_head_summary()
+    missing_base = {
+        "schema_version": REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION,
+        "scope": "ignored_manual_remote_ci_review_receipt_no_cache_github_api",
+        "receipt_path": _relative_path(REMOTE_CI_REVIEW_RECEIPT_PATH),
+        "current_head": current_head.get("head"),
+        "current_head_full": current_head.get("head_full"),
+        "current_branch": current_head.get("branch"),
+        "head_matches_current": False,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
+        "remote_ci_review_ready": False,
+        "safe_failure_logs_reviewed": False,
+        "release_review_complete": False,
+        "release_gate_complete": False,
+        "production_release_complete": False,
+        "cache_get_external_calls": False,
+        "cache_get_calls_github_api": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "github_api_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    if not REMOTE_CI_REVIEW_RECEIPT_PATH.exists():
+        return {
+            **missing_base,
+            "status": "remote_ci_review_receipt_missing",
+            "read_status": "receipt_missing",
+            "release_claim_decision": "blocked_remote_ci_unverified",
+            "missing_evidence": ["matching remote Actions run review receipt"],
+            "missing_evidence_count": 1,
+            "call_ledger": [
+                {
+                    "api": "local_remote_ci_review_receipt_readback",
+                    "source": "ignored local remote CI review receipt",
+                    "call_status": "receipt_missing",
+                    "external": False,
+                    "github_called": False,
+                    "local_fetched_at": _now_iso(),
+                }
+            ],
+        }
+    try:
+        raw = json.loads(REMOTE_CI_REVIEW_RECEIPT_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            **missing_base,
+            "status": "remote_ci_review_receipt_unreadable",
+            "read_status": "receipt_read_failed",
+            "release_claim_decision": "blocked_remote_ci_unverified",
+            "missing_evidence": ["readable matching remote Actions run review receipt"],
+            "missing_evidence_count": 1,
+            "call_ledger": [
+                {
+                    "api": "local_remote_ci_review_receipt_readback",
+                    "source": "ignored local remote CI review receipt",
+                    "call_status": "receipt_read_failed",
+                    "external": False,
+                    "github_called": False,
+                    "local_fetched_at": _now_iso(),
+                }
+            ],
+        }
+
+    raw_receipt = _as_dict(raw)
+    receipt = _as_dict(_safe_value(raw_receipt))
+    receipt_head_full = str(raw_receipt.get("head_full") or "")
+    receipt_head = str(raw_receipt.get("head") or "")
+    current_head_full = str(current_head.get("head_full") or "")
+    current_head_short = str(current_head.get("head") or "")
+    head_matches_current = bool(
+        current_head_full
+        and (
+            receipt_head_full == current_head_full
+            or (receipt_head and current_head_short and receipt_head == current_head_short)
+        )
+    )
+    schema_ok = raw_receipt.get("schema_version") == REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION
+    status_ok = raw_receipt.get("status") == "remote_ci_review_verified_green"
+    run_status_ok = raw_receipt.get("actions_status") == "completed"
+    conclusion_ok = raw_receipt.get("actions_conclusion") == "success"
+    workflow_ok = str(raw_receipt.get("workflow_name") or "") == "Command Center 3 Push Gate"
+    event_ok = str(raw_receipt.get("event") or "") == "push"
+    artifact_ok = str(raw_receipt.get("artifact_name") or "").startswith("command-center-3-push-gate-evidence-")
+    run_url = str(raw_receipt.get("run_url") or "")
+    run_url_ok = run_url.startswith("https://github.com/lishark-of/stock-MING/actions/runs/")
+    review_authorized = raw_receipt.get("explicit_user_actions_review_authorized") is True
+    safety_ok = (
+        raw_receipt.get("cache_get_external_calls") is False
+        and raw_receipt.get("cache_get_calls_github_api") is False
+        and raw_receipt.get("external_calls_triggered") is False
+        and raw_receipt.get("tushare_called") is False
+        and raw_receipt.get("deepseek_called") is False
+        and raw_receipt.get("github_called") is False
+        and raw_receipt.get("github_api_called") is False
+        and raw_receipt.get("does_not_execute_trades") is True
+        and raw_receipt.get("does_not_modify_strategy_action") is True
+        and raw_receipt.get("contains_secret") is False
+    )
+    missing_evidence: list[str] = []
+    if not schema_ok:
+        missing_evidence.append("remote CI review receipt schema")
+    if not status_ok:
+        missing_evidence.append("remote CI review verified-green status")
+    if not head_matches_current:
+        missing_evidence.append("current HEAD matching remote CI review")
+    if not run_status_ok:
+        missing_evidence.append("completed remote Actions run status")
+    if not conclusion_ok:
+        missing_evidence.append("successful remote Actions conclusion")
+    if not workflow_ok:
+        missing_evidence.append("Command Center 3 Push Gate workflow name")
+    if not event_ok:
+        missing_evidence.append("push event for remote Actions run")
+    if not artifact_ok:
+        missing_evidence.append("push-gate evidence artifact name")
+    if not run_url_ok:
+        missing_evidence.append("safe GitHub Actions run URL")
+    if not review_authorized:
+        missing_evidence.append("explicit user authorization for Actions review")
+    if not safety_ok:
+        missing_evidence.append("cache read no-external/no-provider/no-trade boundary flags")
+
+    verified_green = not missing_evidence
+    status = (
+        "remote_ci_review_verified_green"
+        if verified_green
+        else "remote_ci_review_receipt_present_but_not_verified"
+    )
+    receipt.update(
+        {
+            "schema_version": str(receipt.get("schema_version") or REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION),
+            "status": status,
+            "scope": "ignored_manual_remote_ci_review_receipt_no_cache_github_api",
+            "receipt_path": _relative_path(REMOTE_CI_REVIEW_RECEIPT_PATH),
+            "read_status": "receipt_present",
+            "current_head": current_head_short,
+            "current_head_full": current_head_full,
+            "current_branch": current_head.get("branch"),
+            "head_matches_current": head_matches_current,
+            "remote_actions_status_known": verified_green,
+            "latest_remote_run_verified_green": verified_green,
+            "remote_ci_review_ready": verified_green,
+            "safe_failure_logs_reviewed": False,
+            "release_review_complete": False,
+            "release_gate_complete": False,
+            "production_release_complete": False,
+            "release_claim_decision": (
+                "remote_ci_green_release_review_pending"
+                if verified_green
+                else "blocked_remote_ci_unverified"
+            ),
+            "missing_evidence": missing_evidence,
+            "missing_evidence_count": len(missing_evidence),
+            "local_gate_pass_is_not_ci_status": True,
+            "remote_ci_review_receipt_is_not_release_review": True,
+            "cache_get_external_calls": False,
+            "cache_get_calls_github_api": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "github_api_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "call_ledger": [
+                {
+                    "api": "local_remote_ci_review_receipt_readback",
+                    "source": "ignored local remote CI review receipt",
+                    "call_status": status,
+                    "remote_actions_status_known": verified_green,
+                    "latest_remote_run_verified_green": verified_green,
+                    "local_fetched_at": _now_iso(),
+                    "external": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                }
+            ],
         }
     )
     return receipt
@@ -1951,6 +2144,7 @@ def _release_gate_push_readiness_receipt(
     release_gate_readiness_audit: Mapping[str, Any],
     ci_notification_triage_contract: Mapping[str, Any],
     local_push_gate_run_receipt: Mapping[str, Any] | None = None,
+    remote_ci_review_receipt: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     local_gate_ready = release_gate_readiness_audit.get("local_gate_ready") is True
     ci_mirror_ready = release_gate_readiness_audit.get("ci_mirror_ready") is True
@@ -1959,8 +2153,15 @@ def _release_gate_push_readiness_receipt(
     local_receipt_freshness_blockers = [
         str(item) for item in _as_list(local_run_receipt.get("freshness_blockers"))
     ]
-    remote_actions_status_known = ci_notification_triage_contract.get("remote_actions_status_known") is True
-    latest_remote_run_verified_green = ci_notification_triage_contract.get("latest_remote_run_verified_green") is True
+    remote_review = _as_dict(remote_ci_review_receipt)
+    remote_actions_status_known = (
+        ci_notification_triage_contract.get("remote_actions_status_known") is True
+        or remote_review.get("remote_actions_status_known") is True
+    )
+    latest_remote_run_verified_green = (
+        ci_notification_triage_contract.get("latest_remote_run_verified_green") is True
+        or remote_review.get("latest_remote_run_verified_green") is True
+    )
     false_positive_allowlist_review_ready = (
         release_gate_readiness_audit.get("false_positive_allowlist_review_ready") is True
     )
@@ -2057,6 +2258,8 @@ def _release_gate_push_readiness_receipt(
     pending_rows = [row for row in rows if str(row.get("status") or "").startswith("pending")]
     if blocking_rows:
         status = "push_readiness_receipt_blocked"
+    elif ready_for_explicit_push_sequence and fresh_local_gate_run_observed and latest_remote_run_verified_green:
+        status = "push_readiness_receipt_ready_remote_ci_reviewed_release_review_pending"
     elif ready_for_explicit_push_sequence and fresh_local_gate_run_observed:
         status = "push_readiness_receipt_ready_local_gate_passed_remote_ci_pending"
     elif ready_for_explicit_push_sequence:
@@ -2083,11 +2286,12 @@ def _release_gate_push_readiness_receipt(
         ],
         "missing_evidence_items": (
             ([] if fresh_local_gate_run_observed else ["fresh_local_push_gate_command_output"])
+            + ([] if remote_actions_status_known else ["matching_remote_actions_run_status"])
+            + ([] if latest_remote_run_verified_green else ["latest_remote_run_green_evidence"])
             + [
-                "matching_remote_actions_run_status",
-                "latest_remote_run_green_evidence",
                 "periodic_secret_artifact_allowlist_review",
                 "explicit_user_push_confirmation_before_push",
+                "release_review_after_remote_ci_green",
             ]
         ),
         "local_gate_contract_ready": local_gate_ready,
@@ -2112,6 +2316,10 @@ def _release_gate_push_readiness_receipt(
         ),
         "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "remote_ci_review_receipt": remote_review,
+        "remote_ci_review_receipt_status": remote_review.get("status"),
+        "remote_ci_review_receipt_run_id": remote_review.get("run_id"),
+        "remote_ci_review_receipt_head_matches_current": remote_review.get("head_matches_current") is True,
         "can_clear_failure_email_without_matching_head_and_logs": False,
         "old_failure_email_may_be_stale": ci_notification_triage_contract.get("old_email_may_be_stale") is True,
         "local_gate_pass_is_not_ci_status": True,
@@ -2119,7 +2327,11 @@ def _release_gate_push_readiness_receipt(
         "optional_report_is_not_ci_status": True,
         "explicit_user_push_confirmation_before_push": False,
         "push_confirmation_state": "not_requested_no_push",
-        "release_claim_decision": "blocked_remote_ci_unverified",
+        "release_claim_decision": (
+            "remote_ci_green_release_review_pending"
+            if latest_remote_run_verified_green
+            else "blocked_remote_ci_unverified"
+        ),
         "periodic_allowlist_review_ready": false_positive_allowlist_review_ready,
         "row_count": len(rows),
         "pending_evidence_count": len(pending_rows),
@@ -2140,14 +2352,16 @@ def _release_gate_push_readiness_receipt(
         "call_ledger": [
             {
                 "api": "local_release_gate_push_readiness_receipt",
-                "source": "local release gate, local push gate run receipt, and CI notification triage contracts",
+                "source": "local release gate, local push gate run receipt, remote CI receipt, and CI notification triage contracts",
                 "call_status": "cache_read",
                 "fresh_local_gate_run_observed": fresh_local_gate_run_observed,
+                "remote_actions_status_known": remote_actions_status_known,
+                "latest_remote_run_verified_green": latest_remote_run_verified_green,
                 "local_fetched_at": _now_iso(),
                 "external": False,
             }
         ],
-        "note": "This receipt selects the safe push sequence. It does not run the gate, call GitHub, push commits, or prove remote CI is green.",
+        "note": "This receipt selects the safe push sequence and may read an ignored manual remote-CI review receipt. GET cache does not run the gate, call GitHub, push commits, or complete release review.",
     }
     return receipt, rows
 
@@ -2157,6 +2371,7 @@ def _release_gate_stage_scope_rows(
     release_gate_push_readiness_receipt: Mapping[str, Any],
     ci_notification_triage_contract: Mapping[str, Any],
     local_push_gate_run_receipt: Mapping[str, Any] | None = None,
+    remote_ci_review_receipt: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     local_gate_ready = release_gate_readiness_audit.get("local_gate_ready") is True
     ci_mirror_ready = release_gate_readiness_audit.get("ci_mirror_ready") is True
@@ -2166,6 +2381,9 @@ def _release_gate_stage_scope_rows(
         or _as_dict(local_push_gate_run_receipt).get("fresh_local_gate_run_observed") is True
     )
     local_receipt = _as_dict(local_push_gate_run_receipt)
+    remote_review = _as_dict(remote_ci_review_receipt)
+    remote_actions_status_known = remote_review.get("remote_actions_status_known") is True
+    latest_remote_run_verified_green = remote_review.get("latest_remote_run_verified_green") is True
     local_receipt_freshness_blockers = [
         str(item) for item in _as_list(local_receipt.get("freshness_blockers"))
     ]
@@ -2177,6 +2395,8 @@ def _release_gate_stage_scope_rows(
         )
         if stage_key == "fresh_local_gate_command_run":
             stage_complete = fresh_local_gate_run_observed
+        if stage_key == "matching_remote_actions_status":
+            stage_complete = latest_remote_run_verified_green
         rows.append(
             {
                 "stage_key": stage_key,
@@ -2205,8 +2425,11 @@ def _release_gate_stage_scope_rows(
                     }
                     for item in local_receipt_freshness_blockers
                 ),
-                "remote_actions_status_known": False,
-                "latest_remote_run_verified_green": False,
+                "remote_actions_status_known": remote_actions_status_known,
+                "latest_remote_run_verified_green": latest_remote_run_verified_green,
+                "remote_ci_review_receipt_status": remote_review.get("status", ""),
+                "remote_ci_review_receipt_run_id": remote_review.get("run_id", ""),
+                "remote_ci_review_receipt_head_matches_current": remote_review.get("head_matches_current") is True,
                 "failure_email_has_matching_head_and_logs": False,
                 "can_dismiss_failure_email_without_matching_head_and_logs": False,
                 "periodic_allowlist_review_ready": False,
@@ -4290,16 +4513,19 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         release_gate_workflow_rows,
     )
     local_push_gate_run_receipt = _read_local_push_gate_run_receipt()
+    remote_ci_review_receipt = _read_remote_ci_review_receipt()
     release_gate_push_readiness_receipt, release_gate_push_readiness_rows = _release_gate_push_readiness_receipt(
         release_gate_readiness_audit,
         ci_notification_triage_contract,
         local_push_gate_run_receipt,
+        remote_ci_review_receipt,
     )
     release_gate_stage_scope_rows = _release_gate_stage_scope_rows(
         release_gate_readiness_audit,
         release_gate_push_readiness_receipt,
         ci_notification_triage_contract,
         local_push_gate_run_receipt,
+        remote_ci_review_receipt,
     )
     remote_ci_review_seed_contract = _remote_ci_review_seed_contract()
     remote_ci_review_seed_rows = _as_list(remote_ci_review_seed_contract.get("seed_row"))
@@ -4414,6 +4640,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "release_gate_stage_scope_rows": release_gate_stage_scope_rows,
         "remote_ci_review_seed_contract": remote_ci_review_seed_contract,
         "remote_ci_review_seed_rows": remote_ci_review_seed_rows,
+        "remote_ci_review_receipt": remote_ci_review_receipt,
         "local_worktree_cleanliness_audit": local_worktree_cleanliness_audit,
         "local_worktree_status_code_rows": local_worktree_status_code_rows,
         "ci_notification_triage_contract": ci_notification_triage_contract,
@@ -4481,6 +4708,16 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             is True,
             "remote_ci_review_seed_remote_status_known": remote_ci_review_seed_contract.get(
                 "remote_actions_status_known"
+            )
+            is True,
+            "remote_ci_review_receipt_present": remote_ci_review_receipt.get("read_status") == "receipt_present",
+            "remote_ci_review_receipt_ready": remote_ci_review_receipt.get("remote_ci_review_ready") is True,
+            "remote_ci_review_receipt_remote_status_known": remote_ci_review_receipt.get(
+                "remote_actions_status_known"
+            )
+            is True,
+            "remote_ci_review_receipt_latest_green": remote_ci_review_receipt.get(
+                "latest_remote_run_verified_green"
             )
             is True,
             "local_worktree_clean": local_worktree_cleanliness_audit.get("worktree_clean") is True,
@@ -4602,6 +4839,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "remote_ci_review_seed_row_is_local": True,
             "remote_ci_review_seed_row_calls_no_github_api": True,
             "remote_ci_review_seed_row_is_not_remote_ci_evidence": True,
+            "remote_ci_review_receipt_is_local_ignored": True,
+            "remote_ci_review_receipt_calls_no_github_api_from_cache": True,
+            "remote_ci_review_receipt_is_not_release_review": True,
             "local_worktree_cleanliness_audit_is_local": True,
             "local_worktree_cleanliness_audit_calls_no_github_api": True,
             "local_worktree_cleanliness_audit_emits_no_file_paths": True,
@@ -4662,6 +4902,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "push_readiness_receipt_status": release_gate_push_readiness_receipt.get("status"),
                 "local_push_gate_run_receipt_status": local_push_gate_run_receipt.get("status"),
                 "local_push_gate_run_observed": local_push_gate_run_receipt.get("fresh_local_gate_run_observed"),
+                "remote_ci_review_receipt_status": remote_ci_review_receipt.get("status"),
+                "remote_ci_review_receipt_ready": remote_ci_review_receipt.get("remote_ci_review_ready"),
                 "push_readiness_allowed_next_step": release_gate_push_readiness_receipt.get("allowed_next_step"),
                 "push_readiness_remote_status_known": release_gate_push_readiness_receipt.get(
                     "remote_actions_status_known"

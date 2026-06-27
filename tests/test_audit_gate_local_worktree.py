@@ -2,8 +2,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from server.services import audit_service
+from server.services import audit_service, data_health_service
 
 
 class AuditGateLocalWorktreeTests(unittest.TestCase):
@@ -122,7 +123,12 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
                 audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = original_path
 
     def test_push_readiness_keeps_explicit_push_confirmation_pending(self):
-        packet = audit_service.read_call_ledger_audit_cache()
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            audit_service,
+            "REMOTE_CI_REVIEW_RECEIPT_PATH",
+            Path(temp_dir) / "missing-remote-ci-review-receipt.json",
+        ):
+            packet = audit_service.read_call_ledger_audit_cache()
         receipt = packet["release_gate_push_readiness_receipt"]
 
         self.assertFalse(receipt["explicit_user_push_confirmation_before_push"])
@@ -148,6 +154,129 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
         self.assertFalse(approval_row["stage_complete"])
         self.assertFalse(approval_row["explicit_user_push_confirmation_before_push"])
         self.assertEqual(approval_row["push_confirmation_state"], "not_requested_no_push")
+
+    def test_remote_ci_review_receipt_verifies_matching_green_run_without_release_closeout(self):
+        current = audit_service._current_git_head_summary()
+        clean_worktree = {
+            "status": "worktree_clean_release_gate_ready",
+            "worktree_clean": True,
+            "status_known": True,
+            "dirty_file_count": 0,
+            "tracked_change_count": 0,
+            "untracked_file_count": 0,
+            "blocks_local_push_gate_receipt": False,
+            "raw_paths_emitted": False,
+            "raw_status_lines_emitted": False,
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            local_path = Path(temp_dir) / "local-push-gate-receipt.json"
+            remote_path = Path(temp_dir) / "remote-ci-review-receipt.json"
+            local_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "command_center_3_local_push_gate_run_receipt.v1",
+                        "status": "local_push_gate_passed_current_head",
+                        "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+                        "branch": current["branch"],
+                        "head": current["head"],
+                        "head_full": current["head_full"],
+                        "checks": sorted(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS),
+                        "did_not_push": True,
+                        "git_add_dot_used": False,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "github_api_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                        "contains_secret": False,
+                        "local_gate_pass_is_not_ci_status": True,
+                        "remote_actions_status_known": False,
+                        "latest_remote_run_verified_green": False,
+                        "explicit_user_push_confirmation_before_push": False,
+                        "push_confirmation_state": "not_requested_no_push",
+                        "release_claim_decision": "blocked_remote_ci_unverified",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            remote_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "command_center_3_remote_ci_review_receipt.v1",
+                        "status": "remote_ci_review_verified_green",
+                        "branch": current["branch"],
+                        "head": current["head"],
+                        "head_full": current["head_full"],
+                        "run_id": 28277376120,
+                        "run_url": "https://github.com/lishark-of/stock-MING/actions/runs/28277376120",
+                        "workflow_name": "Command Center 3 Push Gate",
+                        "event": "push",
+                        "actions_status": "completed",
+                        "actions_conclusion": "success",
+                        "job_name": "push-gate",
+                        "job_conclusion": "success",
+                        "artifact_name": "command-center-3-push-gate-evidence-28277376120",
+                        "explicit_user_actions_review_authorized": True,
+                        "remote_actions_status_known": True,
+                        "latest_remote_run_verified_green": True,
+                        "release_claim_decision": "remote_ci_green_release_review_pending",
+                        "cache_get_external_calls": False,
+                        "cache_get_calls_github_api": False,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "github_api_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                        "contains_secret": False,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(audit_service, "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH", local_path), patch.object(
+                audit_service,
+                "REMOTE_CI_REVIEW_RECEIPT_PATH",
+                remote_path,
+            ), patch.object(audit_service, "_local_worktree_cleanliness_audit", return_value=(clean_worktree, [])):
+                remote = audit_service._read_remote_ci_review_receipt()
+                self.assertEqual(remote["status"], "remote_ci_review_verified_green")
+                self.assertTrue(remote["remote_actions_status_known"])
+                self.assertTrue(remote["latest_remote_run_verified_green"])
+                self.assertTrue(remote["head_matches_current"])
+                self.assertFalse(remote["github_api_called"])
+                self.assertFalse(remote["external_calls_triggered"])
+                self.assertTrue(remote["does_not_execute_trades"])
+                self.assertFalse(remote["release_review_complete"])
+                self.assertFalse(remote["release_gate_complete"])
+
+                packet = audit_service.read_call_ledger_audit_cache()
+                receipt = packet["release_gate_push_readiness_receipt"]
+                self.assertEqual(
+                    receipt["status"],
+                    "push_readiness_receipt_ready_remote_ci_reviewed_release_review_pending",
+                )
+                self.assertTrue(receipt["remote_actions_status_known"])
+                self.assertTrue(receipt["latest_remote_run_verified_green"])
+                self.assertNotIn("matching_remote_actions_run_status", receipt["missing_evidence_items"])
+                self.assertIn("release_review_after_remote_ci_green", receipt["missing_evidence_items"])
+                stage_rows = {row["stage_key"]: row for row in packet["release_gate_stage_scope_rows"]}
+                self.assertTrue(stage_rows["matching_remote_actions_status"]["stage_complete"])
+
+                local_release_gate = data_health_service._freshness_local_release_gate_evidence()
+                self.assertEqual(
+                    local_release_gate["status"],
+                    "freshness_local_release_gate_observed_remote_ci_reviewed_release_review_pending",
+                )
+                self.assertTrue(local_release_gate["remote_actions_status_known"])
+                self.assertTrue(local_release_gate["latest_remote_run_verified_green"])
+                self.assertFalse(local_release_gate["release_review_complete"])
+                self.assertFalse(local_release_gate["production_freshness_gate_complete"])
 
     def test_push_readiness_surfaces_local_receipt_freshness_blockers(self):
         original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH

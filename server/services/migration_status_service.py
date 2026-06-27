@@ -2446,8 +2446,12 @@ def _build_ltg_strict_closeout_work_order_rows(
                     release_gate_direct_evidence.get("local_push_gate_receipt_head_matches_current") is True
                 ),
                 "release_gate_current_blockers": release_gate_blockers,
-                "release_gate_remote_actions_status_known": False,
-                "release_gate_latest_remote_run_verified_green": False,
+                "release_gate_remote_actions_status_known": (
+                    release_gate_direct_evidence.get("remote_actions_status_known") is True
+                ),
+                "release_gate_latest_remote_run_verified_green": (
+                    release_gate_direct_evidence.get("latest_remote_run_verified_green") is True
+                ),
                 "release_gate_local_git_status_is_not_ci_status": True,
                 "external_calls_triggered": False,
                 "tushare_called": False,
@@ -2500,8 +2504,14 @@ def _build_ltg_strict_closeout_work_order_rows(
         "release_gate_worktree_raw_paths_emitted": False,
         "release_gate_worktree_raw_status_lines_emitted": False,
         "release_gate_current_blockers": release_gate_blockers,
-        "release_gate_remote_actions_status_known": False,
-        "release_gate_latest_remote_run_verified_green": False,
+        "release_gate_remote_actions_status_known": release_gate_direct_evidence.get(
+            "remote_actions_status_known"
+        )
+        is True,
+        "release_gate_latest_remote_run_verified_green": release_gate_direct_evidence.get(
+            "latest_remote_run_verified_green"
+        )
+        is True,
         "release_gate_local_git_status_is_not_ci_status": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -3084,11 +3094,14 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         from server.services import audit_service
 
         receipt = audit_service._read_local_push_gate_run_receipt()
+        remote_receipt = audit_service._read_remote_ci_review_receipt()
         worktree, _worktree_rows = audit_service._local_worktree_cleanliness_audit()
     except Exception:
         receipt = {}
+        remote_receipt = {}
         worktree = {}
     receipt_map = receipt if isinstance(receipt, dict) else {}
+    remote_receipt_map = remote_receipt if isinstance(remote_receipt, dict) else {}
     worktree_map = worktree if isinstance(worktree, dict) else {}
     checks = [str(item) for item in receipt_map.get("checks") or []]
     receipt_blockers = [str(item) for item in receipt_map.get("freshness_blockers") or [] if str(item)]
@@ -3125,17 +3138,22 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         and receipt_map.get("does_not_modify_strategy_action") is True
         and receipt_map.get("contains_secret") is False
         and receipt_map.get("local_gate_pass_is_not_ci_status") is True
-        and receipt_map.get("remote_actions_status_known") is False
-        and receipt_map.get("latest_remote_run_verified_green") is False
     )
+    remote_actions_status_known = remote_receipt_map.get("remote_actions_status_known") is True
+    latest_remote_run_verified_green = remote_receipt_map.get("latest_remote_run_verified_green") is True
     direct_stage_keys = ["fresh_local_gate_command_run"] if fresh_gate_run_done else []
+    if fresh_gate_run_done and latest_remote_run_verified_green:
+        direct_stage_keys.append("matching_remote_actions_status")
+    status = "release_gate_direct_evidence_missing"
+    if direct_stage_keys:
+        status = "release_gate_direct_evidence_visible_remote_ci_pending"
+    if fresh_gate_run_done and latest_remote_run_verified_green:
+        status = "release_gate_direct_evidence_visible_remote_ci_reviewed_release_review_pending"
     return {
         "schema_version": "migration_release_gate_direct_evidence_summary.v1",
-        "source_packet_key": "local_push_gate_run_receipt",
+        "source_packet_key": "local_push_gate_run_receipt+remote_ci_review_receipt",
         "source_status": str(receipt_map.get("status") or "missing"),
-        "status": "release_gate_direct_evidence_visible_remote_ci_pending"
-        if direct_stage_keys
-        else "release_gate_direct_evidence_missing",
+        "status": status,
         "available": bool(direct_stage_keys),
         "direct_evidence_stage_keys": direct_stage_keys,
         "direct_evidence_stage_count": len(direct_stage_keys),
@@ -3170,8 +3188,11 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
                 }
             )
         ),
-        "remote_actions_status_known": False,
-        "latest_remote_run_verified_green": False,
+        "remote_actions_status_known": remote_actions_status_known,
+        "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "remote_ci_review_receipt_status": str(remote_receipt_map.get("status") or "missing"),
+        "remote_ci_review_receipt_run_id": str(remote_receipt_map.get("run_id") or ""),
+        "remote_ci_review_receipt_head_matches_current": remote_receipt_map.get("head_matches_current") is True,
         "release_gate_complete": False,
         "did_not_push": True,
         "git_add_dot_used": False,
@@ -3186,7 +3207,11 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "direct_evidence_layer": "L3_local_release_gate_execution_evidence"
         if direct_stage_keys
         else "L1_static_contract",
-        "evidence_boundary": "fresh_local_push_gate_direct_evidence_is_not_remote_ci_or_push_completion",
+        "evidence_boundary": (
+            "fresh_local_push_gate_and_remote_ci_review_are_not_release_review_or_ltg_closeout"
+            if latest_remote_run_verified_green
+            else "fresh_local_push_gate_direct_evidence_is_not_remote_ci_or_push_completion"
+        ),
     }
 
 
