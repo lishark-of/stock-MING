@@ -44,6 +44,10 @@ RELEASE_GATE_LTG11_OBSERVED_STATUSES = {
     "observed_in_audit_cache_release_gate_contract",
     "observed_release_gate_direct_evidence_remote_ci_pending",
 }
+TRADE_ISOLATION_LTG12_OBSERVED_STATUSES = {
+    "observed_in_trade_isolation_static_contract",
+    "observed_trade_isolation_release_direct_evidence_research_only",
+}
 TAURI_LTG09_OBSERVED_STATUSES = {
     "observed_in_tauri_desktop_static_contract",
     "observed_tauri_release_binary_direct_evidence_production_pending",
@@ -1017,6 +1021,136 @@ def assert_ltg11_migration_goal_stage_scope(
     test_case.assertEqual(row["observed_stage_scope_pending_count"], 5 if direct_count else 6)
     if direct_count:
         test_case.assertEqual(row["observed_stage_scope_direct_evidence_keys"], ["fresh_local_gate_command_run"])
+    test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
+
+
+def assert_ltg12_trade_isolation_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("direct_evidence_stage_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertEqual(row["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
+    test_case.assertIn(row["status"], TRADE_ISOLATION_LTG12_OBSERVED_STATUSES)
+    test_case.assertEqual(row["row_count"], 8)
+    test_case.assertEqual(row["pending_stage_count"], max(8 - direct_count, 0))
+    test_case.assertEqual(row["local_evidence_stage_count"], 8)
+    test_case.assertEqual(
+        row["direct_evidence_stage_keys"],
+        ["research_release_trade_isolation_receipt"] if direct_count else [],
+    )
+    test_case.assertEqual(row["local_complete"], direct_count >= 8)
+    if direct_count >= 8:
+        test_case.assertEqual(row["local_completion_status"], "local_trade_isolation_direct_evidence_complete")
+        test_case.assertEqual(row["local_blocker_count"], 0)
+        test_case.assertIn(
+            row["remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+    elif direct_count:
+        test_case.assertEqual(row["local_completion_status"], "local_trade_isolation_direct_evidence_partial")
+        test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    else:
+        test_case.assertEqual(row["local_completion_status"], "local_static_contract_only")
+        test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    test_case.assertTrue(row["remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["release_review_required_after_remote_green"])
+    test_case.assertEqual(row["remote_review_pending_count"], 1 if row["remote_review_pending"] else 0)
+    test_case.assertEqual(row["release_review_pending_count"], 1 if row["release_review_pending"] else 0)
+    test_case.assertFalse(row["strict_closeout_ready"])
+    test_case.assertIn("separate real-trading project approval", row["missing_evidence_items"])
+    test_case.assertIn("broker adapter design review", row["missing_evidence_items"])
+    test_case.assertIn("order endpoint security review", row["missing_evidence_items"])
+    test_case.assertIn("paper or simulated trade sandbox evidence", row["missing_evidence_items"])
+    test_case.assertIn(
+        "matching remote CI review after local trade-isolation evidence",
+        row["missing_evidence_items"],
+    )
+    test_case.assertEqual(row["production_blocker_count"], row["pending_stage_count"])
+    if direct_count:
+        test_case.assertTrue(row["trade_isolation_release_receipt_ready"])
+        test_case.assertEqual(
+            row["trade_isolation_release_receipt_status"],
+            "trade_isolation_release_receipt_ready_research_release_only",
+        )
+    test_case.assertFalse(row["ready_for_real_trading_integration"])
+    test_case.assertFalse(row["real_trading_connected"])
+    test_case.assertFalse(row["broker_adapter_connected"])
+    test_case.assertFalse(row["order_endpoint_present"])
+    test_case.assertFalse(row["trade_execution_api_enabled"])
+    test_case.assertFalse(row["order_route_present"])
+    test_case.assertFalse(row["frontend_trade_controls_present"])
+    test_case.assertFalse(row["model_or_provider_can_modify_action"])
+    test_case.assertFalse(row["strategy_action_mutated_by_contract"])
+    test_case.assertFalse(row["paper_trading_sandbox_ready"])
+    test_case.assertFalse(row["separate_project_approved"])
+    test_case.assertTrue(row["future_real_trading_requires_separate_project"])
+    test_case.assertFalse(row["release_receipt_is_trading_approval"])
+    test_case.assertFalse(row["broker_called"])
+    test_case.assertFalse(row["order_submitted"])
+    test_case.assertFalse(row["external_calls_triggered"])
+    test_case.assertFalse(row["tushare_called"])
+    test_case.assertFalse(row["deepseek_called"])
+    test_case.assertFalse(row["github_called"])
+    test_case.assertTrue(row["does_not_execute_trades"])
+    test_case.assertTrue(row["does_not_modify_strategy_action"])
+    test_case.assertTrue(row["does_not_modify_holdings"])
+    test_case.assertFalse(row["contains_secret"])
+    test_case.assertFalse(row["can_close_from_observed_row"])
+
+
+def assert_ltg12_migration_goal_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("observed_stage_scope_direct_evidence_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertIn(row["observed_stage_scope_manifest_status"], TRADE_ISOLATION_LTG12_OBSERVED_STATUSES)
+    test_case.assertEqual(row["observed_stage_scope_pending_count"], max(8 - direct_count, 0))
+    test_case.assertEqual(
+        row["observed_stage_scope_direct_evidence_keys"],
+        ["research_release_trade_isolation_receipt"] if direct_count else [],
+    )
+    test_case.assertEqual(row["observed_local_complete"], direct_count >= 8)
+    if direct_count >= 8:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_trade_isolation_direct_evidence_complete")
+        test_case.assertEqual(row["observed_local_blocker_count"], 0)
+        test_case.assertIn(
+            row["observed_remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+    elif direct_count:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_trade_isolation_direct_evidence_partial")
+        test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["observed_release_review_pending"])
+        test_case.assertEqual(
+            row["observed_release_review_status"],
+            "release_review_waiting_for_local_and_remote_complete",
+        )
+    else:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_static_contract_only")
+        test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+    test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["observed_release_review_required_after_remote_green"])
+    test_case.assertFalse(row["observed_strict_closeout_ready"])
+    test_case.assertIn("separate real-trading project approval", row["observed_missing_evidence_items"])
+    test_case.assertIn("release review after matching remote CI green", row["observed_missing_evidence_items"])
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 
@@ -2465,6 +2599,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-10"]["does_not_modify_holdings"])
         self.assertFalse(observed_stage_rows["LTG-10"]["can_close_from_observed_row"])
         assert_ltg11_release_gate_stage_scope(self, observed_stage_rows["LTG-11"])
+        assert_ltg12_trade_isolation_stage_scope(
+            self,
+            observed_stage_rows["LTG-12"],
+            expected_direct_count=1,
+        )
         self.assertEqual(observed_stage_rows["LTG-12"]["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
         self.assertEqual(
             observed_stage_rows["LTG-12"]["status"],
@@ -2724,6 +2863,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("continued no-broker proof", migration_goals["LTG-12"]["next_evidence_required"])
         self.assertIn("continued no-order proof", migration_goals["LTG-12"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-12"]["production_complete"])
+        assert_ltg12_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-12"],
+            expected_direct_count=1,
+        )
         self.assertEqual(
             migration_goals["LTG-12"]["observed_stage_scope_manifest_status"],
             "observed_trade_isolation_release_direct_evidence_research_only",
@@ -36630,6 +36774,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-10"]["does_not_modify_holdings"])
         self.assertFalse(observed_stage_rows["LTG-10"]["can_close_from_observed_row"])
         assert_ltg11_release_gate_stage_scope(self, observed_stage_rows["LTG-11"])
+        assert_ltg12_trade_isolation_stage_scope(
+            self,
+            observed_stage_rows["LTG-12"],
+            expected_direct_count=1,
+        )
         self.assertEqual(observed_stage_rows["LTG-12"]["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
         self.assertEqual(
             observed_stage_rows["LTG-12"]["status"],
@@ -36843,6 +36992,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("continued no-broker proof", migration_goals["LTG-12"]["next_evidence_required"])
         self.assertIn("continued no-order proof", migration_goals["LTG-12"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-12"]["production_complete"])
+        assert_ltg12_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-12"],
+            expected_direct_count=1,
+        )
         self.assertEqual(
             migration_goals["LTG-12"]["observed_stage_scope_manifest_status"],
             "observed_trade_isolation_release_direct_evidence_research_only",
