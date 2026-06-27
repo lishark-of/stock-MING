@@ -3053,6 +3053,128 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
     }
 
 
+def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import factor_service
+
+        packet = factor_service.read_factor_quant_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    factor_tests = _dict_or_empty(packet_map.get("factor_tests"))
+    acceptance = _dict_or_empty(factor_tests.get("acceptance_contract"))
+    provider_blocker = _dict_or_empty(factor_tests.get("provider_validation_blocker_audit"))
+    readiness = _dict_or_empty(factor_tests.get("provider_sample_readiness_receipt"))
+    activation = _dict_or_empty(factor_tests.get("provider_sample_activation_receipt"))
+    dry_run = _dict_or_empty(factor_tests.get("provider_small_pool_acceptance_dry_run_receipt"))
+    recipe = _dict_or_empty(factor_tests.get("provider_small_pool_execution_recipe"))
+    request = _dict_or_empty(factor_tests.get("provider_small_pool_execution_request_receipt"))
+    durable_recipe = _dict_or_empty(factor_tests.get("durable_evidence_recipe"))
+    direct_evidence = _latest_factor_test_lab_direct_research_evidence_summary()
+
+    dry_run_ready = dry_run.get("local_dry_run_ready") is True
+    recipe_ready = recipe.get("local_recipe_ready") is True
+    execution_request_ready = (
+        request.get("local_execution_request_ready") is True
+        and request.get("ready_for_manual_provider_task_submission") is True
+        and request.get("provider_execution_implemented") is False
+        and int(request.get("blocking_criterion_count") or 0) == 0
+    )
+    local_scope_evidence_visible = direct_evidence.get("provider_small_pool_scope_ticket_verified") is True
+    durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
+    next_step = (
+        "future explicit provider-backed factor validation task"
+        if execution_request_ready
+        else "POST /api/factor-quant/provider-small-pool-execution-request"
+        if dry_run_ready or recipe_ready
+        else "POST /api/factor-quant/provider-small-pool-dry-run"
+    )
+    return {
+        "schema_version": "ltg03_factor_test_provider_validation_handoff_summary.v1",
+        "status": (
+            "factor_test_execution_request_ready_provider_task_pending"
+            if execution_request_ready
+            else "factor_test_scope_ticket_ready_execution_request_needed"
+            if dry_run_ready or recipe_ready or local_scope_evidence_visible
+            else "factor_test_provider_small_pool_scope_ticket_needed"
+        ),
+        "source_packet_key": "command_center_factor_quant_hub_packet",
+        "direct_evidence_status": direct_evidence.get("status"),
+        "direct_evidence_layer": direct_evidence.get("direct_evidence_layer"),
+        "local_light_metric_baseline_verified": (
+            direct_evidence.get("local_light_metric_baseline_verified") is True
+        ),
+        "provider_small_pool_scope_ticket_verified": local_scope_evidence_visible,
+        "provider_small_pool_dry_run_ready": dry_run_ready,
+        "provider_small_pool_execution_recipe_ready": recipe_ready,
+        "provider_small_pool_execution_request_ready": execution_request_ready,
+        "provider_small_pool_scope_hash_short": (
+            request.get("acceptance_scope_hash_short")
+            or direct_evidence.get("provider_small_pool_scope_hash_short")
+            or ""
+        ),
+        "provider_sample_readiness_status": readiness.get("status") or "missing",
+        "provider_sample_activation_status": activation.get("status") or "missing",
+        "provider_validation_blocker_status": provider_blocker.get("status") or "missing",
+        "provider_validation_blocker_count": int(provider_blocker.get("production_blocker_count") or 0),
+        "ready_for_explicit_provider_small_pool_task": (
+            readiness.get("ready_for_explicit_provider_small_pool_task") is True
+        ),
+        "activation_ready_for_provider_task": (
+            activation.get("ready_for_explicit_provider_small_pool_task") is True
+        ),
+        "execution_request_task_id": str(request.get("task_id") or ""),
+        "target_provider_task_route": request.get("target_provider_task_route")
+        or "future POST /api/factor-quant/provider-small-pool-acceptance",
+        "target_provider_task_type": request.get("target_provider_task_type")
+        or "run_factor_test_provider_small_pool_acceptance",
+        "target_acceptance_mode": request.get("target_acceptance_mode")
+        or "provider_backed_factor_test_small_pool_validation",
+        "symbol_count": int(request.get("symbol_count") or dry_run.get("symbol_count") or 0),
+        "metric_count": len(request.get("metrics") or dry_run.get("metrics") or []),
+        "durable_recipe_status": durable_recipe.get("status") or "missing",
+        "durable_recipe_ready": durable_recipe_ready,
+        "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
+        "durable_promotion_ready": durable_recipe.get("durable_promotion_ready") is True,
+        "provider_task_created": False,
+        "provider_execution_implemented_by_handoff": False,
+        "provider_call_ledger_evidence_done": False,
+        "sample_rows_collected": False,
+        "multi_horizon_forward_returns_done": False,
+        "rolling_window_validation_done": False,
+        "cost_assumption_validation_done": False,
+        "neutralization_stability_done": False,
+        "pit_bias_controls_done": False,
+        "provider_backed_small_pool_validation_done": False,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "next_local_step": next_step,
+        "requires_separate_user_approved_provider_task": True,
+        "requires_provider_call_ledger": True,
+        "requires_sample_rows": True,
+        "requires_multi_horizon_rolling_cost_neutralization_bias_evidence": True,
+        "requires_full_market_boundary_review": True,
+        "requires_promotion_review": True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "cache_get_creates_task": False,
+        "cache_get_calls_provider": False,
+        "creates_provider_task_from_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": (
+            "factor_test_provider_validation_handoff_is_local_scope_and_recipe_review_not_provider_execution_or_ltg_closeout"
+        ),
+    }
+
+
 def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import factor_service
@@ -7154,6 +7276,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_trade_cal_provider_acceptance_evidence_handoff: dict[str, Any] = {}
         supporting_current_evidence_producer_cache_refresh_handoff: dict[str, Any] = {}
         supporting_tushare_target_sample_evidence_handoff: dict[str, Any] = {}
+        supporting_factor_test_lab_provider_validation_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -7167,6 +7290,10 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             )
             supporting_tushare_target_sample_evidence_handoff = (
                 _latest_tushare_target_sample_evidence_handoff_summary()
+            )
+        if action["queue_id"] == "p3_factor_small_pool_provider_validation":
+            supporting_factor_test_lab_provider_validation_handoff = (
+                _latest_factor_test_lab_provider_validation_handoff_summary()
             )
         if action["queue_id"] == "p3_candidate_radar_provider_worker_promotion":
             safe_context["candidate_radar_production_replacement_review_preview"] = (
@@ -7313,6 +7440,28 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_tushare_target_sample_creates_task_from_get": (
                     supporting_tushare_target_sample_evidence_handoff.get("cache_get_creates_task")
+                    is True
+                ),
+                "supporting_factor_test_lab_provider_validation_handoff": (
+                    supporting_factor_test_lab_provider_validation_handoff
+                ),
+                "supporting_factor_test_lab_provider_validation_next_local_step": (
+                    supporting_factor_test_lab_provider_validation_handoff.get("next_local_step", "")
+                ),
+                "supporting_factor_test_lab_provider_validation_execution_request_ready": (
+                    supporting_factor_test_lab_provider_validation_handoff.get(
+                        "provider_small_pool_execution_request_ready"
+                    )
+                    is True
+                ),
+                "supporting_factor_test_lab_provider_validation_requires_provider_task": (
+                    supporting_factor_test_lab_provider_validation_handoff.get(
+                        "requires_separate_user_approved_provider_task"
+                    )
+                    is True
+                ),
+                "supporting_factor_test_lab_provider_validation_creates_task_from_get": (
+                    supporting_factor_test_lab_provider_validation_handoff.get("cache_get_creates_task")
                     is True
                 ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",

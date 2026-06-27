@@ -5354,6 +5354,42 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(migration_goals["LTG-01"]["production_complete"])
         assert_ltg01_migration_goal_stage_scope(self, migration_goals["LTG-01"], expected_direct_count=4)
 
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        p3_factor = action_rows["p3_factor_small_pool_provider_validation"]
+        factor_handoff = p3_factor["supporting_factor_test_lab_provider_validation_handoff"]
+        self.assertEqual(
+            factor_handoff["schema_version"],
+            "ltg03_factor_test_provider_validation_handoff_summary.v1",
+        )
+        self.assertIn(
+            factor_handoff["status"],
+            {
+                "factor_test_execution_request_ready_provider_task_pending",
+                "factor_test_scope_ticket_ready_execution_request_needed",
+                "factor_test_provider_small_pool_scope_ticket_needed",
+            },
+        )
+        self.assertEqual(
+            p3_factor["supporting_factor_test_lab_provider_validation_next_local_step"],
+            factor_handoff["next_local_step"],
+        )
+        self.assertTrue(p3_factor["supporting_factor_test_lab_provider_validation_requires_provider_task"])
+        self.assertFalse(p3_factor["supporting_factor_test_lab_provider_validation_creates_task_from_get"])
+        self.assertFalse(factor_handoff["provider_task_created"])
+        self.assertFalse(factor_handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(factor_handoff["provider_call_ledger_evidence_done"])
+        self.assertFalse(factor_handoff["provider_backed_small_pool_validation_done"])
+        self.assertFalse(factor_handoff["full_market_validation_done"])
+        self.assertFalse(factor_handoff["production_factor_test_validation_complete"])
+        self.assertFalse(factor_handoff["cache_get_creates_task"])
+        self.assertFalse(factor_handoff["cache_get_calls_provider"])
+        self.assertFalse(factor_handoff["external_calls_triggered"])
+        self.assertFalse(factor_handoff["tushare_called"])
+        self.assertFalse(factor_handoff["deepseek_called"])
+        self.assertFalse(factor_handoff["github_called"])
+        self.assertTrue(factor_handoff["does_not_execute_trades"])
+        self.assertFalse(factor_handoff["can_close_goal"])
+
     def test_ltg_next_action_queue_prebinds_tushare_target_sample_recipe(self):
         db_path = self._with_meta_store()
 
@@ -54022,6 +54058,54 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(factor, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(factor, ensure_ascii=False))
+
+        migration = migration_status_service.build_migration_status()
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        p3_factor = action_rows["p3_factor_small_pool_provider_validation"]
+        handoff = p3_factor["supporting_factor_test_lab_provider_validation_handoff"]
+        self.assertEqual(
+            handoff["status"],
+            "factor_test_execution_request_ready_provider_task_pending",
+        )
+        self.assertTrue(handoff["provider_small_pool_execution_request_ready"])
+        self.assertEqual(
+            handoff["target_provider_task_route"],
+            "future POST /api/factor-quant/provider-small-pool-acceptance",
+        )
+        self.assertEqual(
+            handoff["target_provider_task_type"],
+            "run_factor_test_provider_small_pool_acceptance",
+        )
+        self.assertEqual(
+            handoff["target_acceptance_mode"],
+            "provider_backed_factor_test_small_pool_validation",
+        )
+        self.assertEqual(handoff["provider_small_pool_scope_hash_short"], dry_run_receipt["acceptance_scope_hash_short"])
+        self.assertEqual(handoff["symbol_count"], 5)
+        self.assertEqual(handoff["metric_count"], 9)
+        self.assertEqual(
+            p3_factor["supporting_factor_test_lab_provider_validation_next_local_step"],
+            "future explicit provider-backed factor validation task",
+        )
+        self.assertTrue(p3_factor["supporting_factor_test_lab_provider_validation_execution_request_ready"])
+        self.assertFalse(p3_factor["supporting_factor_test_lab_provider_validation_creates_task_from_get"])
+        self.assertFalse(handoff["provider_task_created"])
+        self.assertFalse(handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(handoff["provider_call_ledger_evidence_done"])
+        self.assertFalse(handoff["sample_rows_collected"])
+        self.assertFalse(handoff["rolling_window_validation_done"])
+        self.assertFalse(handoff["neutralization_stability_done"])
+        self.assertFalse(handoff["provider_backed_small_pool_validation_done"])
+        self.assertFalse(handoff["full_market_validation_done"])
+        self.assertFalse(handoff["production_factor_test_validation_complete"])
+        self.assertFalse(handoff["cache_get_creates_task"])
+        self.assertFalse(handoff["cache_get_calls_provider"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["tushare_called"])
+        self.assertFalse(handoff["deepseek_called"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertFalse(handoff["can_close_goal"])
 
     def test_factor_test_provider_small_pool_execution_request_rejects_scope_mismatch(self):
         self._with_meta_store()

@@ -546,6 +546,52 @@ export default function MigrationStatus() {
         evidence_boundary: handoff.evidence_boundary
       }];
     });
+  const ltgFactorTestProviderValidationHandoffRows = ltgNextAcceptanceActionRows
+    .flatMap((row) => {
+      const handoff = (row.supporting_factor_test_lab_provider_validation_handoff as Record<string, unknown> | undefined) ?? {};
+      if (!Object.keys(handoff).length) {
+        return [];
+      }
+      return [{
+        queue_id: row.queue_id,
+        priority: row.priority,
+        status: handoff.status,
+        direct_evidence_status: handoff.direct_evidence_status,
+        direct_evidence_layer: handoff.direct_evidence_layer,
+        local_light_metric_baseline_verified: handoff.local_light_metric_baseline_verified,
+        provider_small_pool_scope_ticket_verified: handoff.provider_small_pool_scope_ticket_verified,
+        provider_small_pool_dry_run_ready: handoff.provider_small_pool_dry_run_ready,
+        provider_small_pool_execution_recipe_ready: handoff.provider_small_pool_execution_recipe_ready,
+        provider_small_pool_execution_request_ready: handoff.provider_small_pool_execution_request_ready,
+        ready_for_explicit_provider_small_pool_task: handoff.ready_for_explicit_provider_small_pool_task,
+        activation_ready_for_provider_task: handoff.activation_ready_for_provider_task,
+        provider_validation_blocker_count: handoff.provider_validation_blocker_count,
+        durable_recipe_ready: handoff.durable_recipe_ready,
+        durable_evidence_complete: handoff.durable_evidence_complete,
+        provider_task_created: handoff.provider_task_created,
+        provider_execution_implemented_by_handoff: handoff.provider_execution_implemented_by_handoff,
+        provider_call_ledger_evidence_done: handoff.provider_call_ledger_evidence_done,
+        sample_rows_collected: handoff.sample_rows_collected,
+        rolling_window_validation_done: handoff.rolling_window_validation_done,
+        neutralization_stability_done: handoff.neutralization_stability_done,
+        provider_backed_small_pool_validation_done: handoff.provider_backed_small_pool_validation_done,
+        full_market_validation_done: handoff.full_market_validation_done,
+        production_factor_test_validation_complete: handoff.production_factor_test_validation_complete,
+        next_local_step: handoff.next_local_step,
+        requires_separate_user_approved_provider_task: handoff.requires_separate_user_approved_provider_task,
+        requires_provider_call_ledger: handoff.requires_provider_call_ledger,
+        requires_full_market_boundary_review: handoff.requires_full_market_boundary_review,
+        requires_remote_ci_review_after_local_complete: handoff.requires_remote_ci_review_after_local_complete,
+        cache_get_creates_task: handoff.cache_get_creates_task,
+        cache_get_calls_provider: handoff.cache_get_calls_provider,
+        external_calls_triggered: handoff.external_calls_triggered,
+        tushare_called: handoff.tushare_called,
+        deepseek_called: handoff.deepseek_called,
+        does_not_execute_trades: handoff.does_not_execute_trades,
+        can_close_goal: handoff.can_close_goal,
+        evidence_boundary: handoff.evidence_boundary
+      }];
+    });
   const ltgCurrentEvidenceProducerCacheRefreshHandoffRows = ltgNextAcceptanceActionRows
     .flatMap((row) => {
       const handoff = (row.supporting_current_evidence_producer_cache_refresh_handoff as Record<string, unknown> | undefined) ?? {};
@@ -1117,6 +1163,8 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgTradeCalProviderAcceptanceEvidenceHandoffRows} />
       <p className="risk-note">LTG-02 target-sample handoff 只显示本地 execution-request、已有 provider call-ledger 可见性、durable recipe 和仍缺的 full-interface / storage promotion / remote review；它不从 GET cache 创建任务、不调用 Tushare，也不能关闭 Tushare 生产流水线。</p>
       <DataLineageTable rows={ltgTushareTargetSampleEvidenceHandoffRows} />
+      <p className="risk-note">LTG-03 Factor Test handoff 只显示本地 scope ticket、execution recipe、execution-request、durable recipe 和仍缺的 provider call-ledger / sample rows / rolling-cost-neutralization-bias / full-market / promotion review；它不从 GET cache 创建任务、不调用 Tushare，也不能关闭 Factor Test 生产验证。</p>
+      <DataLineageTable rows={ltgFactorTestProviderValidationHandoffRows} />
       <DataLineageTable rows={ltgCurrentEvidenceProducerCacheRefreshHandoffRows} />
       <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />
