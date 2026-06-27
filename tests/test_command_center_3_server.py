@@ -942,6 +942,164 @@ def assert_ltg08_migration_goal_stage_scope(
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 
+def assert_ltg09_tauri_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("direct_evidence_stage_count") or 0)
+    row_count = int(row.get("row_count") or 0)
+    direct_keys = set(row.get("direct_evidence_stage_keys") or [])
+    local_blocker_count = int(row.get("local_blocker_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertEqual(row["stage_scope_manifest"], "tauri_production_package_stage_scope_manifest")
+    test_case.assertIn(row["status"], TAURI_LTG09_OBSERVED_STATUSES)
+    test_case.assertEqual(row_count, 8)
+    test_case.assertEqual(row["pending_stage_count"], max(row_count - direct_count, 0))
+    test_case.assertEqual(row["local_evidence_stage_count"], 8)
+    test_case.assertEqual(row["local_complete"], bool(row_count and direct_count >= row_count and not local_blocker_count))
+    if direct_count >= row_count and row_count and local_blocker_count:
+        test_case.assertEqual(row["local_completion_status"], "local_tauri_package_direct_evidence_blocked")
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    elif direct_count >= row_count and row_count:
+        test_case.assertEqual(row["local_completion_status"], "local_tauri_package_direct_evidence_complete")
+        test_case.assertEqual(local_blocker_count, 0)
+        test_case.assertIn(
+            row["remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+    elif direct_count:
+        test_case.assertEqual(row["local_completion_status"], "local_tauri_package_direct_evidence_partial")
+        test_case.assertGreaterEqual(local_blocker_count, row["pending_stage_count"])
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    else:
+        test_case.assertEqual(row["local_completion_status"], "local_static_contract_only")
+        test_case.assertGreaterEqual(local_blocker_count, row["pending_stage_count"])
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    if direct_count:
+        test_case.assertIn("release_binary_artifact_qa", direct_keys)
+    if direct_count > 1:
+        test_case.assertIn("tauri_build_repeatability", direct_keys)
+    test_case.assertTrue(row["remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["release_review_required_after_remote_green"])
+    test_case.assertEqual(row["remote_review_pending_count"], 1 if row["remote_review_pending"] else 0)
+    test_case.assertEqual(row["release_review_pending_count"], 1 if row["release_review_pending"] else 0)
+    test_case.assertFalse(row["strict_closeout_ready"])
+    test_case.assertIn(
+        "macOS signing/notarization or explicit distribution waiver",
+        row["missing_evidence_items"],
+    )
+    test_case.assertIn("production package promotion review", row["missing_evidence_items"])
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["missing_evidence_items"],
+    )
+    test_case.assertEqual(row["release_binary_artifact_qa_done"], "release_binary_artifact_qa" in direct_keys)
+    test_case.assertEqual(row["tauri_build_repeatability_done"], "tauri_build_repeatability" in direct_keys)
+    test_case.assertEqual(row["app_bundle_artifact_qa_done"], "app_bundle_artifact_qa" in direct_keys)
+    test_case.assertEqual(row["app_bundle_detected"], "app_bundle_artifact_qa" in direct_keys)
+    test_case.assertEqual(row["dmg_distribution_detected"], "dmg_distribution_artifact_qa" in direct_keys)
+    test_case.assertEqual(row["backend_startup_runtime_validated"], "backend_startup_runtime" in direct_keys)
+    test_case.assertEqual(row["backend_offline_packaged_ux_verified"], "backend_offline_packaged_ux" in direct_keys)
+    test_case.assertEqual(row["config_log_runtime_paths_validated"], "config_log_runtime_paths" in direct_keys)
+    test_case.assertFalse(row["production_package_complete"])
+    test_case.assertFalse(row["tauri_build_executed"])
+    test_case.assertFalse(row["packaged_runtime_qa_done"])
+    test_case.assertFalse(row["tauri_package_durable_evidence_complete"])
+    test_case.assertFalse(row["release_binary_is_completion"])
+    test_case.assertFalse(row["signing_notarization_done"])
+    test_case.assertFalse(row["tauri_runtime_started_by_contract"])
+    test_case.assertFalse(row["packaged_app_opened_by_contract"])
+    test_case.assertFalse(row["fastapi_started_by_contract"])
+    test_case.assertFalse(row["config_values_read_by_contract"])
+    test_case.assertFalse(row["log_files_written_by_contract"])
+    test_case.assertFalse(row["provider_model_task_dispatched_by_contract"])
+    test_case.assertFalse(row["external_calls_triggered"])
+    test_case.assertFalse(row["tushare_called"])
+    test_case.assertFalse(row["deepseek_called"])
+    test_case.assertFalse(row["github_called"])
+    test_case.assertTrue(row["does_not_execute_trades"])
+    test_case.assertFalse(row["contains_secret"])
+    test_case.assertFalse(row["can_close_from_observed_row"])
+
+
+def assert_ltg09_migration_goal_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("observed_stage_scope_direct_evidence_count") or 0)
+    row_count = int(row.get("observed_stage_scope_row_count") or 0)
+    local_blocker_count = int(row.get("observed_local_blocker_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertIn(row["observed_stage_scope_manifest_status"], TAURI_LTG09_OBSERVED_STATUSES)
+    test_case.assertEqual(row_count, 8)
+    test_case.assertEqual(row["observed_stage_scope_pending_count"], max(row_count - direct_count, 0))
+    test_case.assertEqual(
+        row["observed_local_complete"],
+        bool(row_count and direct_count >= row_count and not local_blocker_count),
+    )
+    if direct_count >= row_count and row_count and local_blocker_count:
+        test_case.assertEqual(
+            row["observed_local_completion_status"],
+            "local_tauri_package_direct_evidence_blocked",
+        )
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["observed_release_review_pending"])
+        test_case.assertEqual(
+            row["observed_release_review_status"],
+            "release_review_waiting_for_local_and_remote_complete",
+        )
+    elif direct_count >= row_count and row_count:
+        test_case.assertEqual(
+            row["observed_local_completion_status"],
+            "local_tauri_package_direct_evidence_complete",
+        )
+        test_case.assertEqual(local_blocker_count, 0)
+        test_case.assertIn(
+            row["observed_remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+    elif direct_count:
+        test_case.assertEqual(
+            row["observed_local_completion_status"],
+            "local_tauri_package_direct_evidence_partial",
+        )
+        test_case.assertGreaterEqual(local_blocker_count, row["observed_stage_scope_pending_count"])
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+    else:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_static_contract_only")
+        test_case.assertGreaterEqual(local_blocker_count, row["observed_stage_scope_pending_count"])
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+    test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["observed_release_review_required_after_remote_green"])
+    test_case.assertFalse(row["observed_strict_closeout_ready"])
+    test_case.assertIn(
+        "macOS signing/notarization or explicit distribution waiver",
+        row["observed_missing_evidence_items"],
+    )
+    test_case.assertIn("production package promotion review", row["observed_missing_evidence_items"])
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["observed_missing_evidence_items"],
+    )
+    test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
+
+
 def assert_ltg13_candidate_radar_stage_scope(
     test_case: unittest.TestCase,
     row: dict,
@@ -2730,10 +2888,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_package_durable_evidence_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["release_binary_is_completion"])
-        self.assertFalse(observed_stage_rows["LTG-09"]["dmg_distribution_detected"])
-        self.assertFalse(observed_stage_rows["LTG-09"]["backend_startup_runtime_validated"])
-        self.assertFalse(observed_stage_rows["LTG-09"]["backend_offline_packaged_ux_verified"])
-        self.assertFalse(observed_stage_rows["LTG-09"]["config_log_runtime_paths_validated"])
+        self.assertEqual(
+            observed_stage_rows["LTG-09"]["dmg_distribution_detected"],
+            "dmg_distribution_artifact_qa" in observed_stage_rows["LTG-09"].get("direct_evidence_stage_keys", []),
+        )
+        self.assertEqual(
+            observed_stage_rows["LTG-09"]["backend_startup_runtime_validated"],
+            "backend_startup_runtime" in observed_stage_rows["LTG-09"].get("direct_evidence_stage_keys", []),
+        )
+        self.assertEqual(
+            observed_stage_rows["LTG-09"]["backend_offline_packaged_ux_verified"],
+            "backend_offline_packaged_ux" in observed_stage_rows["LTG-09"].get("direct_evidence_stage_keys", []),
+        )
+        self.assertEqual(
+            observed_stage_rows["LTG-09"]["config_log_runtime_paths_validated"],
+            "config_log_runtime_paths" in observed_stage_rows["LTG-09"].get("direct_evidence_stage_keys", []),
+        )
         self.assertFalse(observed_stage_rows["LTG-09"]["signing_notarization_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_runtime_started_by_contract"])
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_app_opened_by_contract"])
@@ -2747,6 +2917,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-09"]["github_called"])
         self.assertTrue(observed_stage_rows["LTG-09"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-09"]["can_close_from_observed_row"])
+        assert_ltg09_tauri_stage_scope(
+            self,
+            observed_stage_rows["LTG-09"],
+            expected_direct_count=ltg09_direct_count,
+        )
         self.assertEqual(
             observed_stage_rows["LTG-10"]["stage_scope_manifest"],
             "streamlit_retirement_stage_scope_manifest",
@@ -3025,6 +3200,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                     or migration_goals["LTG-09"].get("direct_gap_evidence_stage_count", 0) > 0
                 )
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
+        assert_ltg09_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-09"],
+            expected_direct_count=ltg09_goal_direct_count,
+        )
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
         self.assertIn("React/Tauri ordinary capability replacement evidence", migration_goals["LTG-10"]["next_evidence_required"])
@@ -36911,10 +37091,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_package_durable_evidence_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["release_binary_is_completion"])
-        self.assertFalse(observed_stage_rows["LTG-09"]["dmg_distribution_detected"])
-        self.assertFalse(observed_stage_rows["LTG-09"]["backend_startup_runtime_validated"])
-        self.assertFalse(observed_stage_rows["LTG-09"]["backend_offline_packaged_ux_verified"])
-        self.assertFalse(observed_stage_rows["LTG-09"]["config_log_runtime_paths_validated"])
+        self.assertEqual(
+            observed_stage_rows["LTG-09"]["dmg_distribution_detected"],
+            "dmg_distribution_artifact_qa" in observed_stage_rows["LTG-09"].get("direct_evidence_stage_keys", []),
+        )
+        self.assertEqual(
+            observed_stage_rows["LTG-09"]["backend_startup_runtime_validated"],
+            "backend_startup_runtime" in observed_stage_rows["LTG-09"].get("direct_evidence_stage_keys", []),
+        )
+        self.assertEqual(
+            observed_stage_rows["LTG-09"]["backend_offline_packaged_ux_verified"],
+            "backend_offline_packaged_ux" in observed_stage_rows["LTG-09"].get("direct_evidence_stage_keys", []),
+        )
+        self.assertEqual(
+            observed_stage_rows["LTG-09"]["config_log_runtime_paths_validated"],
+            "config_log_runtime_paths" in observed_stage_rows["LTG-09"].get("direct_evidence_stage_keys", []),
+        )
         self.assertFalse(observed_stage_rows["LTG-09"]["signing_notarization_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_runtime_started_by_contract"])
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_app_opened_by_contract"])
@@ -36928,6 +37120,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-09"]["github_called"])
         self.assertTrue(observed_stage_rows["LTG-09"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-09"]["can_close_from_observed_row"])
+        assert_ltg09_tauri_stage_scope(
+            self,
+            observed_stage_rows["LTG-09"],
+            expected_direct_count=ltg09_direct_count,
+        )
         self.assertEqual(
             observed_stage_rows["LTG-10"]["stage_scope_manifest"],
             "streamlit_retirement_stage_scope_manifest",
@@ -37160,6 +37357,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             if "app_bundle_artifact_qa" in ltg09_goal_direct_keys:
                 self.assertIn("app_bundle_artifact_qa", ltg09_goal_direct_keys)
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
+        assert_ltg09_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-09"],
+            expected_direct_count=ltg09_goal_direct_count,
+        )
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
         self.assertIn("React/Tauri ordinary capability replacement evidence", migration_goals["LTG-10"]["next_evidence_required"])
