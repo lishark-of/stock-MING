@@ -479,6 +479,37 @@ export default function MigrationStatus() {
         promotion_audit_status: handoff.promotion_audit_status,
         promotion_audit_ready: handoff.promotion_audit_ready,
         durable_recipe_status: handoff.durable_recipe_status,
+        durable_recipe_ready: handoff.durable_recipe_ready,
+        durable_evidence_complete: handoff.durable_evidence_complete,
+        durable_promotion_ready: handoff.durable_promotion_ready,
+        local_complete: handoff.local_complete,
+        local_completion_status: handoff.local_completion_status,
+        local_blocker_count: handoff.local_blocker_count,
+        local_promotion_review_ready_for_release: handoff.local_promotion_review_ready_for_release,
+        local_promotion_review_status: handoff.local_promotion_review_status,
+        local_promotion_review_creates_provider_task: handoff.local_promotion_review_creates_provider_task,
+        local_promotion_review_calls_provider: handoff.local_promotion_review_calls_provider,
+        local_promotion_review_is_not_production_completion: handoff.local_promotion_review_is_not_production_completion,
+        production_promotion_review_done: handoff.production_promotion_review_done,
+        local_release_gate_complete: handoff.local_release_gate_complete,
+        local_release_gate_evidence_status: handoff.local_release_gate_evidence_status,
+        local_worktree_clean_required_before_gate_receipt: handoff.local_worktree_clean_required_before_gate_receipt,
+        local_worktree_raw_paths_emitted: handoff.local_worktree_raw_paths_emitted,
+        local_worktree_raw_status_lines_emitted: handoff.local_worktree_raw_status_lines_emitted,
+        fresh_local_gate_run_observed: handoff.fresh_local_gate_run_observed,
+        local_push_gate_receipt_head_matches_current: handoff.local_push_gate_receipt_head_matches_current,
+        required_local_gate_checks_present: handoff.required_local_gate_checks_present,
+        remote_ci_review_required: handoff.remote_ci_review_required,
+        remote_review_status: handoff.remote_review_status,
+        remote_review_pending: handoff.remote_review_pending,
+        remote_review_pending_count: handoff.remote_review_pending_count,
+        remote_actions_status_known: handoff.remote_actions_status_known,
+        latest_remote_run_verified_green: handoff.latest_remote_run_verified_green,
+        release_review_pending: handoff.release_review_pending,
+        release_review_pending_count: handoff.release_review_pending_count,
+        release_review_complete: handoff.release_review_complete,
+        strict_closeout_ready: handoff.strict_closeout_ready,
+        allowed_next_step: handoff.allowed_next_step,
         provider_backed_acceptance_done_by_blocker_audit: handoff.provider_backed_acceptance_done_by_blocker_audit,
         provider_backed_acceptance_done_by_durable_recipe: handoff.provider_backed_acceptance_done_by_durable_recipe,
         trade_cal_provider_call_ledger_observed_count: handoff.trade_cal_provider_call_ledger_observed_count,
@@ -1342,7 +1373,7 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgNextAcceptanceReceiptRows} />
       <DataLineageTable rows={ltgNextAcceptancePreviewRows} />
       <DataLineageTable rows={ltgFutureHandoffPreviewRows} />
-      <p className="risk-note">LTG-01 provider acceptance handoff 只显示 prior provider call-ledger / freshness replay / failure-mode evidence 与缺失的本地 promotion-review/release review；它不从 GET cache 创建任务、不调用 Tushare，也不能关闭 freshness production gate。</p>
+      <p className="risk-note">LTG-01 provider acceptance handoff 只显示 prior provider call-ledger / freshness replay / failure-mode evidence、本地 promotion review、fresh local gate、remote CI review、release review 和 strict closeout 的分离状态；它不从 GET cache 创建任务、不调用 Tushare/GitHub，也不能关闭 freshness production gate。</p>
       <DataLineageTable rows={ltgTradeCalProviderAcceptanceEvidenceHandoffRows} />
       <p className="risk-note">LTG-02 target-sample handoff 只显示本地 execution-request、已有 provider call-ledger 可见性、durable recipe 和仍缺的 full-interface / storage promotion / remote review；它不从 GET cache 创建任务、不调用 Tushare，也不能关闭 Tushare 生产流水线。</p>
       <DataLineageTable rows={ltgTushareTargetSampleEvidenceHandoffRows} />

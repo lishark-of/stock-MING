@@ -48786,6 +48786,47 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(p1_preview["external_calls_triggered"])
         self.assertFalse(p1_preview["tushare_called"])
         self.assertTrue(p1_preview["does_not_execute_trades"])
+        handoff = p1_row["supporting_trade_cal_provider_acceptance_evidence_handoff"]
+        self.assertEqual(
+            handoff["schema_version"],
+            "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary.v1",
+        )
+        self.assertEqual(
+            handoff["status"],
+            "provider_acceptance_promotion_review_ready_for_release_review",
+        )
+        self.assertFalse(handoff["provider_evidence_visible"])
+        self.assertFalse(handoff["provider_backed_acceptance_done_by_durable_recipe"])
+        self.assertTrue(handoff["promotion_audit_ready"])
+        self.assertTrue(handoff["durable_recipe_ready"])
+        self.assertTrue(handoff["latest_dry_run_found"])
+        self.assertTrue(handoff["latest_execution_request_found"])
+        self.assertTrue(handoff["latest_promotion_review_found"])
+        self.assertTrue(handoff["latest_promotion_review_ready_for_release"])
+        self.assertTrue(handoff["local_promotion_review_ready_for_release"])
+        self.assertTrue(handoff["production_promotion_review_done"])
+        self.assertFalse(handoff["local_promotion_review_creates_provider_task"])
+        self.assertFalse(handoff["local_promotion_review_calls_provider"])
+        self.assertTrue(handoff["local_promotion_review_is_not_production_completion"])
+        self.assertTrue(handoff["local_worktree_clean_required_before_gate_receipt"])
+        self.assertFalse(handoff["local_worktree_raw_paths_emitted"])
+        self.assertFalse(handoff["local_worktree_raw_status_lines_emitted"])
+        self.assertTrue(handoff["remote_ci_review_required"])
+        self.assertFalse(handoff["release_review_complete"])
+        self.assertFalse(handoff["strict_closeout_ready"])
+        self.assertFalse(handoff["durable_evidence_complete"])
+        self.assertFalse(handoff["durable_promotion_ready"])
+        self.assertFalse(handoff["production_freshness_gate_complete"])
+        self.assertFalse(handoff["cache_get_creates_task"])
+        self.assertFalse(handoff["cache_get_calls_provider"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["tushare_called"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertFalse(handoff["can_close_goal"])
+        self.assertTrue(p1_row["supporting_trade_cal_provider_acceptance_local_promotion_review_ready"])
+        self.assertFalse(p1_row["supporting_trade_cal_provider_acceptance_creates_task_from_get"])
+        self.assertFalse(p1_row["supporting_trade_cal_provider_acceptance_strict_closeout_ready"])
 
         self.assertNotIn("SHOULD_DROP", json.dumps(cache_response, ensure_ascii=False))
         self.assertNotIn("TS_OK", json.dumps(cache_response, ensure_ascii=False))

@@ -7559,7 +7559,39 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
             production_blocker.get("production_blocker_count") or 0
         ),
         "durable_recipe_status": durable_recipe.get("status") or "missing",
+        "durable_recipe_ready": durable_recipe.get("local_recipe_ready") is True,
         "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
+        "durable_promotion_ready": durable_recipe.get("durable_promotion_ready") is True,
+        "local_complete": durable_recipe.get("local_complete") is True,
+        "local_completion_status": durable_recipe.get("local_completion_status") or "local_evidence_pending",
+        "local_blocker_count": int(durable_recipe.get("local_blocker_count") or 0),
+        "local_release_gate_complete": durable_recipe.get("local_release_gate_complete") is True,
+        "local_release_gate_evidence_status": (
+            durable_recipe.get("local_release_gate_evidence_status") or "missing"
+        ),
+        "local_worktree_clean_required_before_gate_receipt": (
+            durable_recipe.get("local_worktree_clean_required_before_gate_receipt") is True
+        ),
+        "local_worktree_raw_paths_emitted": durable_recipe.get("local_worktree_raw_paths_emitted") is True,
+        "local_worktree_raw_status_lines_emitted": (
+            durable_recipe.get("local_worktree_raw_status_lines_emitted") is True
+        ),
+        "fresh_local_gate_run_observed": durable_recipe.get("fresh_local_gate_run_observed") is True,
+        "local_push_gate_receipt_head_matches_current": (
+            durable_recipe.get("local_push_gate_receipt_head_matches_current") is True
+        ),
+        "required_local_gate_checks_present": durable_recipe.get("required_local_gate_checks_present") is True,
+        "remote_ci_review_required": durable_recipe.get("remote_ci_review_required") is True,
+        "remote_review_status": durable_recipe.get("remote_review_status") or "remote_review_waiting_for_local_complete",
+        "remote_review_pending": durable_recipe.get("remote_review_pending") is True,
+        "remote_review_pending_count": int(durable_recipe.get("remote_review_pending_count") or 0),
+        "remote_actions_status_known": durable_recipe.get("remote_actions_status_known") is True,
+        "latest_remote_run_verified_green": durable_recipe.get("latest_remote_run_verified_green") is True,
+        "release_review_pending": durable_recipe.get("release_review_pending") is True,
+        "release_review_pending_count": int(durable_recipe.get("release_review_pending_count") or 0),
+        "release_review_complete": durable_recipe.get("release_review_complete") is True,
+        "strict_closeout_ready": durable_recipe.get("strict_closeout_ready") is True,
+        "allowed_next_step": durable_recipe.get("allowed_next_step") or next_step,
         "production_freshness_gate_complete": False,
         "trade_cal_provider_call_ledger_observed_count": int(
             provider_evidence.get("trade_cal_provider_call_ledger_observed_count") or 0
@@ -7582,6 +7614,20 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         "latest_promotion_review_ready_for_release": promotion_review_ready,
         "latest_promotion_review_status": latest_promotion_review.get("status") or "missing",
         "latest_promotion_review_task_id": latest_promotion_review.get("latest_task_id") or "",
+        "local_promotion_review_ready_for_release": (
+            durable_recipe.get("local_promotion_review_ready_for_release") is True
+        ),
+        "local_promotion_review_status": durable_recipe.get("local_promotion_review_status") or "missing",
+        "local_promotion_review_creates_provider_task": (
+            durable_recipe.get("local_promotion_review_creates_provider_task") is True
+        ),
+        "local_promotion_review_calls_provider": (
+            durable_recipe.get("local_promotion_review_calls_provider") is True
+        ),
+        "local_promotion_review_is_not_production_completion": (
+            durable_recipe.get("local_promotion_review_is_not_production_completion") is True
+        ),
+        "production_promotion_review_done": durable_recipe.get("production_promotion_review_done") is True,
         "latest_dry_run_row_count": int(
             counts.get("latest_trade_cal_provider_acceptance_dry_run_row_count") or 0
         ),
@@ -7943,6 +7989,24 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                     supporting_trade_cal_provider_acceptance_evidence_handoff.get(
                         "requires_promotion_review_task"
                     )
+                    is True
+                ),
+                "supporting_trade_cal_provider_acceptance_local_promotion_review_ready": (
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get(
+                        "local_promotion_review_ready_for_release"
+                    )
+                    is True
+                ),
+                "supporting_trade_cal_provider_acceptance_remote_review_pending": (
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get("remote_review_pending")
+                    is True
+                ),
+                "supporting_trade_cal_provider_acceptance_release_review_pending": (
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get("release_review_pending")
+                    is True
+                ),
+                "supporting_trade_cal_provider_acceptance_strict_closeout_ready": (
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get("strict_closeout_ready")
                     is True
                 ),
                 "supporting_trade_cal_provider_acceptance_creates_task_from_get": (
