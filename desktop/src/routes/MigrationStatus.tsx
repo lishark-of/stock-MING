@@ -503,6 +503,49 @@ export default function MigrationStatus() {
         evidence_boundary: handoff.evidence_boundary
       }];
     });
+  const ltgTushareTargetSampleEvidenceHandoffRows = ltgNextAcceptanceActionRows
+    .flatMap((row) => {
+      const handoff = (row.supporting_tushare_target_sample_evidence_handoff as Record<string, unknown> | undefined) ?? {};
+      if (!Object.keys(handoff).length) {
+        return [];
+      }
+      return [{
+        queue_id: row.queue_id,
+        priority: row.priority,
+        status: handoff.status,
+        latest_execution_request_found: handoff.latest_execution_request_found,
+        latest_execution_request_status: handoff.latest_execution_request_status,
+        latest_execution_request_ready_for_manual_provider_task_submission: handoff.latest_execution_request_ready_for_manual_provider_task_submission,
+        latest_execution_request_scope_hash_matches: handoff.latest_execution_request_scope_hash_matches,
+        latest_execution_request_row_count: handoff.latest_execution_request_row_count,
+        target_post_task_route: handoff.target_post_task_route,
+        target_acceptance_mode: handoff.target_acceptance_mode,
+        requested_target_count: handoff.requested_target_count,
+        selected_api_count: handoff.selected_api_count,
+        target_sample_acceptance_ready_for_review: handoff.target_sample_acceptance_ready_for_review,
+        target_sample_acceptance_ready_count: handoff.target_sample_acceptance_ready_count,
+        provider_call_ledger_visible: handoff.provider_call_ledger_visible,
+        full_interface_selection_done: handoff.full_interface_selection_done,
+        failure_mode_evidence_done: handoff.failure_mode_evidence_done,
+        request_parameter_provider_window_done: handoff.request_parameter_provider_window_done,
+        durable_recipe_ready: handoff.durable_recipe_ready,
+        durable_evidence_complete: handoff.durable_evidence_complete,
+        next_local_step: handoff.next_local_step,
+        requires_separate_user_approved_provider_task: handoff.requires_separate_user_approved_provider_task,
+        requires_full_interface_selection: handoff.requires_full_interface_selection,
+        requires_remote_ci_review_after_local_complete: handoff.requires_remote_ci_review_after_local_complete,
+        cache_get_creates_task: handoff.cache_get_creates_task,
+        cache_get_calls_provider: handoff.cache_get_calls_provider,
+        provider_execution_implemented_by_handoff: handoff.provider_execution_implemented_by_handoff,
+        production_tushare_pipeline_complete: handoff.production_tushare_pipeline_complete,
+        external_calls_triggered: handoff.external_calls_triggered,
+        tushare_called: handoff.tushare_called,
+        deepseek_called: handoff.deepseek_called,
+        does_not_execute_trades: handoff.does_not_execute_trades,
+        can_close_goal: handoff.can_close_goal,
+        evidence_boundary: handoff.evidence_boundary
+      }];
+    });
   const ltgCurrentEvidenceProducerCacheRefreshHandoffRows = ltgNextAcceptanceActionRows
     .flatMap((row) => {
       const handoff = (row.supporting_current_evidence_producer_cache_refresh_handoff as Record<string, unknown> | undefined) ?? {};
@@ -1072,6 +1115,8 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgFutureHandoffPreviewRows} />
       <p className="risk-note">LTG-01 provider acceptance handoff 只显示 prior provider call-ledger / freshness replay / failure-mode evidence 与缺失的本地 promotion-review/release review；它不从 GET cache 创建任务、不调用 Tushare，也不能关闭 freshness production gate。</p>
       <DataLineageTable rows={ltgTradeCalProviderAcceptanceEvidenceHandoffRows} />
+      <p className="risk-note">LTG-02 target-sample handoff 只显示本地 execution-request、已有 provider call-ledger 可见性、durable recipe 和仍缺的 full-interface / storage promotion / remote review；它不从 GET cache 创建任务、不调用 Tushare，也不能关闭 Tushare 生产流水线。</p>
+      <DataLineageTable rows={ltgTushareTargetSampleEvidenceHandoffRows} />
       <DataLineageTable rows={ltgCurrentEvidenceProducerCacheRefreshHandoffRows} />
       <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />

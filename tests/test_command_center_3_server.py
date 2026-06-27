@@ -5430,6 +5430,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         }
         p2_after_request = action_rows_after_request["p2_tushare_target_sample_acceptance"]
         handoff = p2_after_request["future_handoff_preview_rows"][0]
+        evidence_handoff = p2_after_request["supporting_tushare_target_sample_evidence_handoff"]
 
         self.assertEqual(
             p2_after_request["local_receipt_status"],
@@ -5453,6 +5454,26 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(handoff["durable_local_receipt_required_for_handoff"])
         self.assertFalse(handoff["creates_provider_task_from_preview"])
         self.assertFalse(handoff["provider_task_created_by_preview"])
+        self.assertEqual(
+            evidence_handoff["status"],
+            "target_sample_execution_request_ready_provider_task_pending",
+        )
+        self.assertTrue(
+            evidence_handoff["latest_execution_request_ready_for_manual_provider_task_submission"]
+        )
+        self.assertEqual(evidence_handoff["target_post_task_route"], "POST /api/tasks/refresh-tushare-facts")
+        self.assertEqual(evidence_handoff["target_acceptance_mode"], "provider_target_sample_acceptance")
+        self.assertEqual(evidence_handoff["selected_apis"], ["margin_detail"])
+        self.assertEqual(evidence_handoff["requested_targets"], ["margin_financing"])
+        self.assertEqual(evidence_handoff["next_local_step"], "POST /api/tasks/refresh-tushare-facts")
+        self.assertFalse(evidence_handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(evidence_handoff["provider_backed_target_sample_acceptance_done"])
+        self.assertFalse(evidence_handoff["full_interface_acceptance_done"])
+        self.assertFalse(evidence_handoff["production_tushare_pipeline_complete"])
+        self.assertFalse(evidence_handoff["cache_get_creates_task"])
+        self.assertFalse(evidence_handoff["tushare_called"])
+        self.assertTrue(evidence_handoff["does_not_execute_trades"])
+        self.assertFalse(evidence_handoff["can_close_goal"])
         self.assertFalse(handoff["provider_execution_implemented_by_preview"])
         self.assertFalse(handoff["external_calls_triggered"])
         self.assertFalse(handoff["tushare_called"])
@@ -37481,6 +37502,36 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(p1_producer_handoff["cache_get_external_calls"])
         self.assertFalse(p1_producer_handoff["provider_execution_implemented"])
         self.assertFalse(p1_producer_handoff["production_freshness_gate_complete"])
+        p2_target_sample_handoff = action_rows["p2_tushare_target_sample_acceptance"][
+            "supporting_tushare_target_sample_evidence_handoff"
+        ]
+        self.assertEqual(
+            p2_target_sample_handoff["schema_version"],
+            "ltg02_tushare_target_sample_evidence_handoff_summary.v1",
+        )
+        self.assertIn(
+            p2_target_sample_handoff["status"],
+            {
+                "target_sample_execution_request_needed",
+                "target_sample_execution_request_visible_but_blocked",
+                "target_sample_execution_request_ready_provider_task_pending",
+                "target_sample_provider_evidence_visible_promotion_review_needed",
+            },
+        )
+        self.assertEqual(
+            action_rows["p2_tushare_target_sample_acceptance"][
+                "supporting_tushare_target_sample_next_local_step"
+            ],
+            p2_target_sample_handoff["next_local_step"],
+        )
+        self.assertFalse(p2_target_sample_handoff["cache_get_creates_task"])
+        self.assertFalse(p2_target_sample_handoff["cache_get_calls_provider"])
+        self.assertFalse(p2_target_sample_handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(p2_target_sample_handoff["production_tushare_pipeline_complete"])
+        self.assertFalse(p2_target_sample_handoff["external_calls_triggered"])
+        self.assertFalse(p2_target_sample_handoff["tushare_called"])
+        self.assertTrue(p2_target_sample_handoff["does_not_execute_trades"])
+        self.assertFalse(p2_target_sample_handoff["can_close_goal"])
         self.assertFalse(action_rows["p2_tushare_target_sample_acceptance"]["external_calls_triggered"])
         self.assertTrue(action_rows["p3_candidate_radar_provider_worker_promotion"]["does_not_modify_strategy_action"])
         self.assertFalse(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_lookup_calls_provider"])

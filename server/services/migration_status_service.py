@@ -6954,6 +6954,158 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
     }
 
 
+def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import data_health_service
+
+        packet = data_health_service.read_data_health_timeline_cache()
+    except Exception:
+        packet = {}
+    packet_map = _dict_or_empty(packet)
+    counts = _dict_or_empty(packet_map.get("counts"))
+    latest_request = _dict_or_empty(
+        packet_map.get("latest_tushare_provider_target_sample_execution_request")
+    )
+    try:
+        refresh_packet = packet_service.read_packet("command_center_tushare_refresh_packet")
+    except Exception:
+        refresh_packet = {}
+    refresh_map = _dict_or_empty(refresh_packet)
+    target_contract = _dict_or_empty(refresh_map.get("provider_target_sample_acceptance_contract"))
+    durable_recipe = _dict_or_empty(refresh_map.get("tushare_durable_evidence_recipe"))
+    failure_mode_qa = _dict_or_empty(refresh_map.get("failure_mode_qa_contract"))
+    request_parameter_qa = _dict_or_empty(refresh_map.get("request_parameter_qa_contract"))
+    provider_promotion = _dict_or_empty(refresh_map.get("provider_acceptance_promotion_audit"))
+    provider_direct_evidence = _latest_tushare_direct_provider_evidence_summary()
+
+    latest_request_found = latest_request.get("latest_task_found") is True
+    execution_request_ready = (
+        latest_request.get("local_execution_request_ready") is True
+        and latest_request.get("ready_for_manual_provider_task_submission") is True
+        and latest_request.get("execution_recipe_scope_hash_matches_latest") is True
+        and int(latest_request.get("blocking_row_count") or 0) == 0
+    )
+    target_sample_review_ready = (
+        target_contract.get("target_sample_acceptance_ready_for_review") is True
+        and int(target_contract.get("ready_target_count") or 0) > 0
+    )
+    provider_call_ledger_visible = bool(
+        int(provider_direct_evidence.get("call_ledger_count") or 0) > 0
+        or int(refresh_map.get("call_count") or 0) > 0
+    )
+    durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
+    provider_promotion_ready = provider_promotion.get("promotion_ready") is True
+    full_interface_selection_done = provider_direct_evidence.get("full_interface_selection_done") is True
+    failure_mode_evidence_done = (
+        failure_mode_qa.get("status") == "failure_mode_qa_ready_provider_acceptance_pending"
+        and int(failure_mode_qa.get("unsafe_row_count") or 0) == 0
+    )
+    request_parameter_window_done = (
+        request_parameter_qa.get("status") == "request_parameter_qa_ready_provider_acceptance_pending"
+    )
+    next_step = (
+        "full_interface_storage_promotion_review_after_provider_sample"
+        if target_sample_review_ready and durable_recipe_ready
+        else "POST /api/tasks/refresh-tushare-facts"
+        if execution_request_ready
+        else "POST /api/tasks/tushare-provider-target-sample-execution-request"
+    )
+    selected_apis = [
+        str(item)
+        for item in (latest_request.get("selected_apis") or refresh_map.get("selected_apis") or [])
+        if str(item or "")
+    ]
+    requested_targets = [
+        str(item)
+        for item in (
+            latest_request.get("requested_targets") or target_contract.get("requested_targets") or []
+        )
+        if str(item or "")
+    ]
+    return {
+        "schema_version": "ltg02_tushare_target_sample_evidence_handoff_summary.v1",
+        "status": (
+            "target_sample_provider_evidence_visible_promotion_review_needed"
+            if target_sample_review_ready
+            else "target_sample_execution_request_ready_provider_task_pending"
+            if execution_request_ready
+            else "target_sample_execution_request_visible_but_blocked"
+            if latest_request_found
+            else "target_sample_execution_request_needed"
+        ),
+        "source_packet_key": "command_center_3_data_health_timeline_cache+command_center_tushare_refresh_packet",
+        "latest_execution_request_found": latest_request_found,
+        "latest_execution_request_status": latest_request.get("execution_request_status")
+        or latest_request.get("status")
+        or "missing",
+        "latest_execution_request_task_id": str(latest_request.get("latest_task_id") or ""),
+        "latest_execution_request_ready_for_manual_provider_task_submission": execution_request_ready,
+        "latest_execution_request_scope_hash_matches": (
+            latest_request.get("execution_recipe_scope_hash_matches_latest") is True
+        ),
+        "latest_execution_request_row_count": int(
+            counts.get("latest_tushare_provider_target_sample_execution_request_row_count") or 0
+        ),
+        "latest_execution_request_blocking_row_count": int(
+            counts.get("latest_tushare_provider_target_sample_execution_request_blocking_row_count")
+            or latest_request.get("blocking_row_count")
+            or 0
+        ),
+        "target_post_task_route": latest_request.get("target_post_task_route")
+        or "POST /api/tasks/refresh-tushare-facts",
+        "target_task_type": latest_request.get("target_task_type") or "refresh_tushare_facts",
+        "target_acceptance_mode": latest_request.get("target_acceptance_mode")
+        or "provider_target_sample_acceptance",
+        "requested_targets": requested_targets,
+        "requested_target_count": len(requested_targets),
+        "selected_apis": selected_apis,
+        "selected_api_count": len(selected_apis),
+        "target_sample_acceptance_status": target_contract.get("status") or "missing",
+        "target_sample_acceptance_ready_for_review": target_sample_review_ready,
+        "target_sample_acceptance_ready_count": int(target_contract.get("ready_target_count") or 0),
+        "target_sample_acceptance_requested_count": int(
+            target_contract.get("requested_target_count") or 0
+        ),
+        "target_sample_acceptance_is_full_interface_acceptance": False,
+        "provider_call_ledger_visible": provider_call_ledger_visible,
+        "provider_call_ledger_count": int(provider_direct_evidence.get("call_ledger_count") or 0),
+        "provider_direct_evidence_layer": provider_direct_evidence.get("direct_evidence_layer"),
+        "full_interface_selection_done": full_interface_selection_done,
+        "failure_mode_evidence_done": failure_mode_evidence_done,
+        "request_parameter_provider_window_done": request_parameter_window_done,
+        "provider_promotion_ready": provider_promotion_ready,
+        "durable_recipe_status": durable_recipe.get("status") or "missing",
+        "durable_recipe_ready": durable_recipe_ready,
+        "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
+        "durable_recipe_is_not_completion": True,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "next_local_step": next_step,
+        "requires_separate_user_approved_provider_task": not target_sample_review_ready,
+        "requires_full_interface_selection": not full_interface_selection_done,
+        "requires_storage_or_no_storage_promotion_review": True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "cache_get_creates_task": False,
+        "cache_get_calls_provider": False,
+        "creates_provider_task_from_get": False,
+        "provider_execution_implemented_by_handoff": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "evidence_boundary": (
+            "tushare_target_sample_handoff_is_local_scope_and_evidence_review_not_provider_execution_or_ltg_closeout"
+        ),
+    }
+
+
 def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows_by_id = {str(row.get("id") or ""): row for row in rows}
     tasks_by_type = _task_statuses_by_type()
@@ -7001,6 +7153,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         safe_context: dict[str, Any] = {}
         supporting_trade_cal_provider_acceptance_evidence_handoff: dict[str, Any] = {}
         supporting_current_evidence_producer_cache_refresh_handoff: dict[str, Any] = {}
+        supporting_tushare_target_sample_evidence_handoff: dict[str, Any] = {}
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
@@ -7011,6 +7164,9 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         if action["queue_id"] == "p2_tushare_target_sample_acceptance":
             safe_context["tushare_target_sample_execution_recipe_preview"] = (
                 _latest_tushare_target_sample_execution_recipe_preview()
+            )
+            supporting_tushare_target_sample_evidence_handoff = (
+                _latest_tushare_target_sample_evidence_handoff_summary()
             )
         if action["queue_id"] == "p3_candidate_radar_provider_worker_promotion":
             safe_context["candidate_radar_production_replacement_review_preview"] = (
@@ -7135,6 +7291,28 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_current_evidence_producer_cache_refresh_creates_task_from_get": (
                     supporting_current_evidence_producer_cache_refresh_handoff.get("creates_task_from_get")
+                    is True
+                ),
+                "supporting_tushare_target_sample_evidence_handoff": (
+                    supporting_tushare_target_sample_evidence_handoff
+                ),
+                "supporting_tushare_target_sample_next_local_step": (
+                    supporting_tushare_target_sample_evidence_handoff.get("next_local_step", "")
+                ),
+                "supporting_tushare_target_sample_execution_request_ready": (
+                    supporting_tushare_target_sample_evidence_handoff.get(
+                        "latest_execution_request_ready_for_manual_provider_task_submission"
+                    )
+                    is True
+                ),
+                "supporting_tushare_target_sample_requires_provider_task": (
+                    supporting_tushare_target_sample_evidence_handoff.get(
+                        "requires_separate_user_approved_provider_task"
+                    )
+                    is True
+                ),
+                "supporting_tushare_target_sample_creates_task_from_get": (
+                    supporting_tushare_target_sample_evidence_handoff.get("cache_get_creates_task")
                     is True
                 ),
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
