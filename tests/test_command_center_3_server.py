@@ -23373,6 +23373,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertFalse(migration_goals["LTG-11"]["observed_stage_scope_can_close_goal"])
 
+        work_order_summary = migration["ltg_strict_closeout_work_order_summary"]
+        work_order_rows = {row["id"]: row for row in migration["ltg_strict_closeout_work_order_rows"]}
+        self.assertEqual(
+            work_order_summary["release_gate_current_status"],
+            "release_gate_direct_evidence_visible_remote_ci_pending",
+        )
+        self.assertIn("remote_ci_review_pending", work_order_summary["release_gate_current_blockers"])
+        self.assertIn(
+            "matching_remote_actions_status_missing",
+            work_order_summary["release_gate_current_blockers"],
+        )
+        self.assertIn(
+            "latest_remote_run_not_verified_green",
+            work_order_summary["release_gate_current_blockers"],
+        )
+        self.assertEqual(
+            work_order_rows["LTG-11"]["release_gate_current_blockers"],
+            work_order_summary["release_gate_current_blockers"],
+        )
+        self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
+        self.assertEqual(work_order_summary["strict_closeout"], "0/14")
+
     def test_release_gate_stale_local_run_receipt_surfaces_head_mismatch_blocker(self):
         self._with_meta_store()
         receipt_path = self._with_release_gate_receipt_path()
@@ -37028,6 +37050,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(work_order_summary["release_gate_worktree_raw_paths_emitted"])
         self.assertFalse(work_order_summary["release_gate_worktree_raw_status_lines_emitted"])
         self.assertIsInstance(work_order_summary["release_gate_current_blockers"], list)
+        if (
+            work_order_summary["release_gate_fresh_local_gate_run_observed"]
+            and not work_order_summary["release_gate_latest_remote_run_verified_green"]
+        ):
+            self.assertIn("remote_ci_review_pending", work_order_summary["release_gate_current_blockers"])
+            self.assertIn(
+                "matching_remote_actions_status_missing",
+                work_order_summary["release_gate_current_blockers"],
+            )
+            self.assertIn(
+                "latest_remote_run_not_verified_green",
+                work_order_summary["release_gate_current_blockers"],
+            )
         self.assertFalse(work_order_summary["release_gate_remote_actions_status_known"])
         self.assertFalse(work_order_summary["release_gate_latest_remote_run_verified_green"])
         self.assertTrue(work_order_summary["release_gate_local_git_status_is_not_ci_status"])
@@ -37070,6 +37105,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(work_order_rows["LTG-11"]["release_gate_worktree_raw_paths_emitted"])
         self.assertFalse(work_order_rows["LTG-11"]["release_gate_worktree_raw_status_lines_emitted"])
         self.assertFalse(work_order_rows["LTG-11"]["release_gate_latest_remote_run_verified_green"])
+        if work_order_rows["LTG-11"]["release_gate_fresh_local_gate_run_observed"]:
+            self.assertIn("remote_ci_review_pending", work_order_rows["LTG-11"]["release_gate_current_blockers"])
         self.assertTrue(work_order_rows["LTG-11"]["release_gate_local_git_status_is_not_ci_status"])
         self.assertIn("remote CI review", work_order_rows["LTG-05"]["production_evidence_required_before_closeout"])
         self.assertIn("safety scan", work_order_rows["LTG-13"]["production_evidence_required_before_closeout"])

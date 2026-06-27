@@ -2358,6 +2358,15 @@ def _build_ltg_strict_closeout_work_order_rows(
         for item in release_gate_direct_evidence.get("local_push_gate_receipt_freshness_blockers") or []
         if str(item)
     ]
+    if release_gate_direct_evidence.get("remote_review_pending") is True:
+        release_gate_blockers.extend(
+            [
+                "remote_ci_review_pending",
+                "matching_remote_actions_status_missing",
+                "latest_remote_run_not_verified_green",
+            ]
+        )
+    release_gate_blockers = list(dict.fromkeys(release_gate_blockers))
     direct_by_id = {
         str(row.get("id") or ""): row for row in production_hardening_ltg_direct_evidence_rows
     }
