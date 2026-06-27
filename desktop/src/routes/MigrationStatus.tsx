@@ -459,6 +459,39 @@ export default function MigrationStatus() {
       external_calls_triggered: handoff.external_calls_triggered
     }));
   });
+  const ltgCurrentEvidenceProducerCacheRefreshHandoffRows = ltgNextAcceptanceActionRows
+    .flatMap((row) => {
+      const handoff = (row.supporting_current_evidence_producer_cache_refresh_handoff as Record<string, unknown> | undefined) ?? {};
+      if (!Object.keys(handoff).length) {
+        return [];
+      }
+      return [{
+        queue_id: row.queue_id,
+        priority: row.priority,
+        status: handoff.status,
+        readiness_status: handoff.readiness_status,
+        next_local_step: handoff.next_local_step,
+        execution_request_route: handoff.execution_request_route,
+        target_local_refresh_route: handoff.target_local_refresh_route,
+        readiness_scope_hash_short: handoff.readiness_scope_hash_short,
+        current_cache_refresh_required_count: handoff.current_cache_refresh_required_count,
+        local_cache_refresh_ready: handoff.local_cache_refresh_ready,
+        latest_execution_request_found: handoff.latest_execution_request_found,
+        requires_user_confirmation: handoff.requires_user_confirmation,
+        requires_execution_request_before_refresh: handoff.requires_execution_request_before_refresh,
+        cache_get_creates_task: handoff.cache_get_creates_task,
+        cache_get_writes_snapshot_cache: handoff.cache_get_writes_snapshot_cache,
+        cache_get_external_calls: handoff.cache_get_external_calls,
+        provider_execution_implemented: handoff.provider_execution_implemented,
+        production_freshness_gate_complete: handoff.production_freshness_gate_complete,
+        external_calls_triggered: handoff.external_calls_triggered,
+        tushare_called: handoff.tushare_called,
+        deepseek_called: handoff.deepseek_called,
+        does_not_execute_trades: handoff.does_not_execute_trades,
+        can_close_goal: handoff.can_close_goal,
+        evidence_boundary: handoff.evidence_boundary
+      }];
+    });
   const missingLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
     (total, row) => total + Number(row.missing_local_receipt_step_count ?? 0),
     0
@@ -816,6 +849,7 @@ export default function MigrationStatus() {
       <p className="risk-note">这里集中显示 P1-P5 的下一步显式验收路径：只读展示允许的 POST 路由、未来 provider/worker/model/browser/storage 证据和禁止事项；GET cache 和页面渲染不会创建任务或调用外部服务。</p>
       <p className="risk-note">按钮会先看 `next_local_step_preview_rows`：如果缺前置本地回执、scope hash、review hash 或执行请求 task id，就只展示缺口并禁用按钮，避免生成已知 blocked 的回执。</p>
       <p className="risk-note">`future_handoff_preview_rows` 只把本地 execution-request 已绑定的未来 provider/worker payload 摘要列出来；它不提交 provider task、不调用 Tushare/DeepSeek/GitHub，也不能关闭 LTG。</p>
+      <p className="risk-note">LTG-01 producer cache refresh 支撑 handoff 只显示本地 readiness 和 execution-request route；它不新增按钮、不写 cache、不调用 provider，也不是 trade_cal provider-backed acceptance。</p>
       <p className="risk-note">handoff ready 还要求本地 execution-request receipt 已落到 SQLite；memory-only receipt 只算临时可见，不作为跨进程验收证据。</p>
       <div className="actions">
         {ltgNextAcceptanceActionRows.map((row) => {
@@ -858,6 +892,11 @@ export default function MigrationStatus() {
             tone: ltgFutureHandoffPreviewRows.some((row) => row.handoff_ready_from_local_receipt === true) ? "good" : "warn"
           },
           {
+            label: "producer refresh handoffs",
+            value: ltgCurrentEvidenceProducerCacheRefreshHandoffRows.length,
+            tone: ltgCurrentEvidenceProducerCacheRefreshHandoffRows.length ? "good" : "warn"
+          },
+          {
             label: "lookup creates task",
             value: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_creates_task === true),
             tone: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_creates_task === true) ? "bad" : "good"
@@ -872,6 +911,7 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgNextAcceptanceReceiptRows} />
       <DataLineageTable rows={ltgNextAcceptancePreviewRows} />
       <DataLineageTable rows={ltgFutureHandoffPreviewRows} />
+      <DataLineageTable rows={ltgCurrentEvidenceProducerCacheRefreshHandoffRows} />
       <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />
       <DataLineageTable rows={longTermGoalRows} />
