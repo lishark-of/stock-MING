@@ -3149,11 +3149,26 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         status = "release_gate_direct_evidence_visible_remote_ci_pending"
     if fresh_gate_run_done and latest_remote_run_verified_green:
         status = "release_gate_direct_evidence_visible_remote_ci_reviewed_release_review_pending"
+    local_complete = fresh_gate_run_done
+    remote_review_pending = bool(local_complete and not latest_remote_run_verified_green)
+    release_review_pending = bool(local_complete and latest_remote_run_verified_green)
     return {
         "schema_version": "migration_release_gate_direct_evidence_summary.v1",
         "source_packet_key": "local_push_gate_run_receipt+remote_ci_review_receipt",
         "source_status": str(receipt_map.get("status") or "missing"),
         "status": status,
+        "local_complete": local_complete,
+        "local_completion_status": "local_complete" if local_complete else "local_evidence_pending",
+        "remote_review_pending": remote_review_pending,
+        "remote_review_status": (
+            "remote_review_pending"
+            if remote_review_pending
+            else "remote_review_green_release_review_pending"
+            if local_complete and latest_remote_run_verified_green
+            else "remote_review_waiting_for_local_complete"
+        ),
+        "release_review_pending": release_review_pending,
+        "strict_closeout_ready": False,
         "available": bool(direct_stage_keys),
         "direct_evidence_stage_keys": direct_stage_keys,
         "direct_evidence_stage_count": len(direct_stage_keys),
@@ -6691,6 +6706,17 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         local_evidence_count = sum(
             1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
         )
+        try:
+            from server.services import data_health_service
+
+            data_health_packet = data_health_service.read_data_health_timeline_cache()
+            durable_recipe = data_health_packet.get("freshness_durable_evidence_recipe")
+            durable_recipe = durable_recipe if isinstance(durable_recipe, dict) else {}
+        except Exception:
+            durable_recipe = {}
+        ltg01_local_complete = durable_recipe.get("local_complete") is True
+        ltg01_remote_review_pending = durable_recipe.get("remote_review_pending") is True
+        ltg01_release_review_pending = durable_recipe.get("release_review_pending") is True
         rows.append(
             {
                 "id": "LTG-01",
@@ -6715,6 +6741,22 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_evidence_stage_count": local_evidence_count + (1 if provider_call_ledger_done else 0),
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": direct_evidence_stage_keys,
+                "local_complete": ltg01_local_complete,
+                "local_completion_status": durable_recipe.get("local_completion_status")
+                or ("local_complete" if ltg01_local_complete else "local_evidence_pending"),
+                "remote_review_pending": ltg01_remote_review_pending,
+                "remote_review_status": durable_recipe.get("remote_review_status")
+                or (
+                    "remote_review_pending"
+                    if ltg01_remote_review_pending
+                    else "remote_review_waiting_for_local_complete"
+                ),
+                "release_review_pending": ltg01_release_review_pending,
+                "strict_closeout_ready": durable_recipe.get("strict_closeout_ready") is True,
+                "local_blocker_count": int(durable_recipe.get("local_blocker_count") or 0),
+                "remote_review_pending_count": int(durable_recipe.get("remote_review_pending_count") or 0),
+                "release_review_pending_count": int(durable_recipe.get("release_review_pending_count") or 0),
+                "local_durable_recipe_status": durable_recipe.get("status") or "missing",
                 "production_blocker_count": observed_pending_count,
                 "provider_backed_trade_cal_acceptance_done": (
                     tushare_direct_evidence.get("provider_backed_acceptance_done") is True
@@ -8551,6 +8593,22 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "direct_evidence_stage_keys": direct_evidence.get("direct_evidence_stage_keys", []),
                 "release_gate_direct_evidence_layer": direct_evidence.get("direct_evidence_layer"),
                 "production_blocker_count": pending_count,
+                "local_complete": direct_evidence.get("local_complete") is True,
+                "local_completion_status": direct_evidence.get("local_completion_status")
+                or (
+                    "local_complete"
+                    if direct_evidence.get("local_complete") is True
+                    else "local_evidence_pending"
+                ),
+                "remote_review_pending": direct_evidence.get("remote_review_pending") is True,
+                "remote_review_status": direct_evidence.get("remote_review_status")
+                or (
+                    "remote_review_pending"
+                    if direct_evidence.get("remote_review_pending") is True
+                    else "remote_review_waiting_for_local_complete"
+                ),
+                "release_review_pending": direct_evidence.get("release_review_pending") is True,
+                "strict_closeout_ready": direct_evidence.get("strict_closeout_ready") is True,
                 "local_gate_ready": release_gate.get("local_gate_ready") is True,
                 "ci_mirror_ready": release_gate.get("ci_mirror_ready") is True,
                 "push_readiness_receipt_ready": push_receipt.get("local_receipt_ready") is True,

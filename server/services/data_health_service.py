@@ -5878,9 +5878,9 @@ def _freshness_durable_evidence_recipe(
     elif not local_release_gate_observed:
         production_promotion_status = "local_release_gate_current_head_receipt_pending"
     elif not remote_ci_reviewed_green:
-        production_promotion_status = "local_release_gate_observed_remote_ci_pending"
+        production_promotion_status = "local_complete_remote_review_pending"
     else:
-        production_promotion_status = "release_review_pending"
+        production_promotion_status = "local_complete_release_review_pending"
     producer_coverage_status = (
         "local_clear"
         if current_evidence_ready and producer_coverage_clear
@@ -5924,6 +5924,48 @@ def _freshness_durable_evidence_recipe(
         == "data_health_freshness_provider_acceptance_activation_receipt.v1"
         and next_execution_recipe.get("schema_version")
         == "data_health_trade_cal_provider_acceptance_next_execution_recipe.v1"
+    )
+    local_release_gate_complete = bool(
+        local_release_gate_observed
+        and local_release_gate_head_matches_current
+        and local_release_gate_required_checks_present
+        and local_worktree_clean
+        and not local_worktree_blocks_gate
+    )
+    local_complete = bool(
+        local_recipe_ready
+        and producer_durable_direct_evidence_done
+        and decision_surface_direct_evidence_done
+        and provider_promotion_ready
+        and local_promotion_review_ready_for_release
+        and local_release_gate_complete
+    )
+    remote_review_pending = bool(local_complete and not remote_ci_reviewed_green)
+    release_review_pending = bool(local_complete and remote_ci_reviewed_green)
+    strict_closeout_ready = False
+    local_completion_status = "local_complete" if local_complete else "local_evidence_pending"
+    remote_review_status = (
+        "remote_review_pending"
+        if remote_review_pending
+        else "remote_review_green_release_review_pending"
+        if local_complete and remote_ci_reviewed_green
+        else "remote_review_waiting_for_local_complete"
+    )
+    local_evidence_missing_items = []
+    if not local_recipe_ready:
+        local_evidence_missing_items.append("local durable evidence recipe contract")
+    if not producer_durable_direct_evidence_done:
+        local_evidence_missing_items.append("current-evidence producer coverage direct evidence")
+    if not decision_surface_direct_evidence_done:
+        local_evidence_missing_items.append("decision-surface isolation direct evidence")
+    local_evidence_missing_items.extend(
+        item
+        for item in production_promotion_missing_evidence
+        if item
+        not in {
+            "matching remote CI review after local gate",
+            "release review that production_freshness_gate_complete may become true",
+        }
     )
     rows = [
         _freshness_durable_evidence_recipe_row(
@@ -6137,6 +6179,15 @@ def _freshness_durable_evidence_recipe(
             direct_evidence_required=True,
             missing_evidence=production_promotion_missing_evidence,
             extra_fields={
+                "local_complete": local_complete,
+                "local_completion_status": local_completion_status,
+                "local_evidence_missing_items": local_evidence_missing_items,
+                "local_evidence_blocker_count": len(local_evidence_missing_items),
+                "local_release_gate_complete": local_release_gate_complete,
+                "remote_review_pending": remote_review_pending,
+                "remote_review_status": remote_review_status,
+                "release_review_pending": release_review_pending,
+                "strict_closeout_ready": strict_closeout_ready,
                 "provider_promotion_ready": provider_promotion_ready,
                 "provider_backed_acceptance_promotion_marker_done": provider_promotion_ready,
                 "local_promotion_review_visible": local_promotion_review_visible,
@@ -6169,14 +6220,35 @@ def _freshness_durable_evidence_recipe(
         ),
     ]
     blocked_rows = [row for row in rows if row["production_blocker"]]
+    local_blocker_count = 0 if local_complete else len(local_evidence_missing_items)
+    remote_review_pending_count = 1 if remote_review_pending else 0
+    release_review_pending_count = 1 if release_review_pending else 0
+    status = (
+        "freshness_durable_evidence_recipe_local_complete_remote_review_pending"
+        if local_complete and remote_review_pending
+        else "freshness_durable_evidence_recipe_local_complete_release_review_pending"
+        if local_complete and remote_ci_reviewed_green
+        else "freshness_durable_evidence_recipe_ready_provider_pending"
+        if local_recipe_ready
+        else "freshness_durable_evidence_recipe_blocked_local_contract"
+    )
     return {
         "schema_version": FRESHNESS_DURABLE_EVIDENCE_SCHEMA_VERSION,
-        "status": "freshness_durable_evidence_recipe_ready_provider_pending"
-        if local_recipe_ready
-        else "freshness_durable_evidence_recipe_blocked_local_contract",
+        "status": status,
         "scope": "local_freshness_durable_evidence_recipe_no_provider_execution",
         "ltg": "LTG-01",
         "local_recipe_ready": local_recipe_ready,
+        "local_complete": local_complete,
+        "local_completion_status": local_completion_status,
+        "local_evidence_missing_items": local_evidence_missing_items,
+        "local_blocker_count": local_blocker_count,
+        "local_release_gate_complete": local_release_gate_complete,
+        "remote_review_pending": remote_review_pending,
+        "remote_review_status": remote_review_status,
+        "remote_review_pending_count": remote_review_pending_count,
+        "release_review_pending": release_review_pending,
+        "release_review_pending_count": release_review_pending_count,
+        "strict_closeout_ready": strict_closeout_ready,
         "durable_evidence_complete": False,
         "durable_promotion_ready": False,
         "provider_backed_trade_cal_acceptance_done": False,
@@ -6284,6 +6356,11 @@ def _freshness_durable_evidence_recipe(
                 "local_promotion_review_status": local_promotion_review_status,
                 "local_promotion_review_task_id": local_promotion_review_task_id,
                 "local_promotion_review_blocking_row_count": local_promotion_review_blocking_row_count,
+                "local_complete": local_complete,
+                "remote_review_pending": remote_review_pending,
+                "remote_review_status": remote_review_status,
+                "release_review_pending": release_review_pending,
+                "strict_closeout_ready": strict_closeout_ready,
                 "call_status": "local_durable_evidence_recipe",
                 "local_fetched_at": _now_iso(),
                 "external": False,

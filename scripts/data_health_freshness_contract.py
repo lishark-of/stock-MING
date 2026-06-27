@@ -941,6 +941,8 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("status")
             in {
                 "freshness_durable_evidence_recipe_ready_provider_pending",
+                "freshness_durable_evidence_recipe_local_complete_remote_review_pending",
+                "freshness_durable_evidence_recipe_local_complete_release_review_pending",
                 "freshness_durable_evidence_recipe_blocked_local_contract",
             }
             and durable_evidence_recipe.get("local_recipe_ready") is True
@@ -983,6 +985,29 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("remote_actions_status_known")
             is local_release_gate_evidence.get("remote_actions_status_known")
             and durable_evidence_recipe.get("release_review_complete") is False
+            and durable_evidence_recipe.get("strict_closeout_ready") is False
+            and durable_evidence_recipe.get("local_complete")
+            is (
+                durable_evidence_recipe.get("local_blocker_count") == 0
+                and durable_evidence_recipe.get("local_completion_status") == "local_complete"
+            )
+            and (
+                not durable_evidence_recipe.get("local_complete")
+                or durable_evidence_recipe.get("status")
+                in {
+                    "freshness_durable_evidence_recipe_local_complete_remote_review_pending",
+                    "freshness_durable_evidence_recipe_local_complete_release_review_pending",
+                }
+            )
+            and durable_evidence_recipe.get("remote_review_pending")
+            is (
+                durable_evidence_recipe.get("local_complete") is True
+                and durable_evidence_recipe.get("latest_remote_run_verified_green") is False
+            )
+            and int(durable_evidence_recipe.get("remote_review_pending_count") or 0)
+            == (1 if durable_evidence_recipe.get("remote_review_pending") is True else 0)
+            and int(durable_evidence_recipe.get("release_review_pending_count") or 0)
+            == (1 if durable_evidence_recipe.get("release_review_pending") is True else 0)
             and production_promotion_review_done is local_promotion_review_ready
             and durable_evidence_recipe.get("local_promotion_review_visible") is local_promotion_review_visible
             and durable_evidence_recipe.get("local_promotion_review_ready_for_release") is local_promotion_review_ready
@@ -1078,6 +1103,11 @@ def build_contract() -> dict[str, Any]:
             is local_release_gate_evidence.get("remote_actions_status_known")
             and production_promotion_row.get("release_review_blocks_production_completion")
             is True
+            and production_promotion_row.get("local_complete")
+            is durable_evidence_recipe.get("local_complete")
+            and production_promotion_row.get("remote_review_pending")
+            is durable_evidence_recipe.get("remote_review_pending")
+            and production_promotion_row.get("strict_closeout_ready") is False
             and production_promotion_row.get("local_promotion_review_visible") is local_promotion_review_visible
             and production_promotion_row.get("local_promotion_review_ready_for_release") is local_promotion_review_ready
             and production_promotion_row.get("local_promotion_review_creates_provider_task") is False
