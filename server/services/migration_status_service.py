@@ -3631,17 +3631,40 @@ def _local_step_row_by_phase(local_step_rows: list[dict[str, Any]], phase_key: s
 def _latest_tushare_target_sample_execution_recipe_preview() -> dict[str, Any]:
     source_packet_key = "command_center_tushare_refresh_packet"
     try:
-        packet = packet_service.read_packet("command_center_tushare_refresh_packet")
+        refresh_packet = packet_service.read_packet("command_center_tushare_refresh_packet")
     except Exception:
-        packet = {}
-    recipe = packet.get("provider_target_sample_execution_recipe") if isinstance(packet, dict) else {}
-    if not isinstance(recipe, dict) or not recipe:
+        refresh_packet = {}
+    try:
+        seed_packet = packet_service.read_packet(
+            "command_center_tushare_provider_target_sample_execution_recipe_packet"
+        )
+    except Exception:
+        seed_packet = {}
+    refresh_recipe = (
+        refresh_packet.get("provider_target_sample_execution_recipe")
+        if isinstance(refresh_packet, dict)
+        else {}
+    )
+    seed_recipe = (
+        seed_packet.get("provider_target_sample_execution_recipe")
+        if isinstance(seed_packet, dict)
+        else {}
+    )
+    refresh_ready = bool(
+        isinstance(refresh_recipe, dict)
+        and refresh_recipe.get("status") == "target_sample_execution_recipe_ready_user_confirmation_required"
+        and refresh_recipe.get("recipe_ready_for_user_confirmation") is True
+    )
+    seed_ready = bool(
+        isinstance(seed_recipe, dict)
+        and seed_recipe.get("status") == "target_sample_execution_recipe_ready_user_confirmation_required"
+        and seed_recipe.get("recipe_ready_for_user_confirmation") is True
+    )
+    if isinstance(refresh_recipe, dict) and refresh_recipe and (refresh_ready or not seed_ready):
+        recipe = refresh_recipe
+    else:
         source_packet_key = "command_center_tushare_provider_target_sample_execution_recipe_packet"
-        try:
-            packet = packet_service.read_packet(source_packet_key)
-        except Exception:
-            packet = {}
-        recipe = packet.get("provider_target_sample_execution_recipe") if isinstance(packet, dict) else {}
+        recipe = seed_recipe
     recipe_map = recipe if isinstance(recipe, dict) else {}
     rows = [row for row in recipe_map.get("rows", []) if isinstance(row, dict)]
     selected_apis: list[str] = []
@@ -6009,9 +6032,20 @@ def _build_ltg_next_action_submission_preview_rows(
     spec = route_specs.get(next_local_step)
     if spec is None:
         if next_local_step == "POST /api/tasks/refresh-tushare-facts":
-            execution_step = _local_step_row_by_phase(
+            target_sample_step = _local_step_row_by_phase(
+                local_step_rows, "target_sample_execution_request_ticket"
+            )
+            trade_cal_step = _local_step_row_by_phase(
                 local_step_rows, "trade_cal_execution_request_ticket"
             )
+            if target_sample_step.get("receipt_visible") is True:
+                execution_step = target_sample_step
+                execution_phase_key = "target_sample_execution_request_ticket"
+                payload_label = "target-sample provider payload"
+            else:
+                execution_step = trade_cal_step
+                execution_phase_key = "trade_cal_execution_request_ticket"
+                payload_label = "trade_cal provider payload"
             execution_request_ready = bool(
                 execution_step.get("receipt_visible") is True
                 and execution_step.get("receipt_durable_in_sqlite") is True
@@ -6025,10 +6059,10 @@ def _build_ltg_next_action_submission_preview_rows(
                     else "provider_handoff_requires_durable_execution_request"
                 ),
                 safe_payload_summary=(
-                    "future_handoff_preview_rows contains the bound trade_cal provider payload; "
+                    f"future_handoff_preview_rows contains the bound {payload_label}; "
                     "this queue does not submit the provider task"
                 ),
-                required_prior_phase_key="trade_cal_execution_request_ticket",
+                required_prior_phase_key=execution_phase_key,
                 required_prior_material="ready_for_manual_provider_task_submission",
                 required_prior_receipt_visible=execution_step.get("receipt_visible") is True,
                 required_prior_material_visible=execution_request_ready,

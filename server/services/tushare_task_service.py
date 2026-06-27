@@ -2247,14 +2247,35 @@ def _direct_evidence_rows_from_packet(packet: Mapping[str, Any] | None) -> list[
 
 def _latest_tushare_target_sample_execution_recipe_packet() -> dict[str, Any]:
     refresh_packet = _latest_tushare_refresh_packet()
-    recipe = refresh_packet.get("provider_target_sample_execution_recipe") if isinstance(refresh_packet, Mapping) else {}
-    if isinstance(recipe, Mapping) and recipe:
-        return refresh_packet
+    recipe = (
+        refresh_packet.get("provider_target_sample_execution_recipe")
+        if isinstance(refresh_packet, Mapping)
+        else {}
+    )
     try:
-        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_PACKET_KEY)
+        seed_packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(
+            PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_PACKET_KEY
+        )
     except Exception:
-        packet = {}
-    return dict(packet) if isinstance(packet, Mapping) else {}
+        seed_packet = {}
+    seed_recipe = (
+        seed_packet.get("provider_target_sample_execution_recipe") if isinstance(seed_packet, Mapping) else {}
+    )
+    refresh_recipe_ready = bool(
+        isinstance(recipe, Mapping)
+        and recipe.get("status") == "target_sample_execution_recipe_ready_user_confirmation_required"
+        and recipe.get("recipe_ready_for_user_confirmation") is True
+    )
+    seed_recipe_ready = bool(
+        isinstance(seed_recipe, Mapping)
+        and seed_recipe.get("status") == "target_sample_execution_recipe_ready_user_confirmation_required"
+        and seed_recipe.get("recipe_ready_for_user_confirmation") is True
+    )
+    if isinstance(recipe, Mapping) and recipe and (refresh_recipe_ready or not seed_recipe_ready):
+        return refresh_packet
+    if isinstance(seed_packet, Mapping) and seed_packet:
+        return dict(seed_packet)
+    return refresh_packet if isinstance(refresh_packet, dict) else {}
 
 
 def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[str, Any]:

@@ -12482,6 +12482,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         from server.main import app
         from storage.sqlite_meta import SQLiteMetaStore
 
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_tushare_refresh_packet",
+            {
+                "packet_key": "command_center_tushare_refresh_packet",
+                "provider_target_sample_execution_recipe": {
+                    "schema_version": "tushare_provider_target_sample_execution_recipe.v1",
+                    "status": "target_sample_execution_recipe_blocked_or_not_requested",
+                    "recipe_ready_for_user_confirmation": False,
+                    "execution_recipe_scope_hash": "blocked-refresh-recipe-hash",
+                    "execution_recipe_scope_hash_short": "blocked-refresh",
+                    "requested_targets": [],
+                    "rows": [],
+                    "provider_task_created_by_recipe": False,
+                    "provider_execution_implemented_by_recipe": False,
+                    "recipe_external_calls_triggered": False,
+                    "tushare_called_by_recipe": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                },
+            },
+        )
+
         seed_response = TestClient(app).post(
             "/api/tasks/tushare-provider-target-sample-execution-recipe-seed",
             json={
@@ -12591,6 +12616,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(p2_after_request["durable_local_receipt_step_count"], 1)
         self.assertTrue(p2_after_request["local_receipts_all_durable"])
         self.assertTrue(p2_after_request["future_handoff_ready_from_local_receipt"])
+        handoff_preview = p2_after_request["next_local_step_preview_rows"][0]
+        self.assertEqual(
+            handoff_preview["required_prior_phase_key"],
+            "target_sample_execution_request_ticket",
+        )
+        self.assertEqual(
+            handoff_preview["disabled_reason"],
+            "requires_separate_user_approved_provider_task",
+        )
+        self.assertTrue(handoff_preview["required_prior_receipt_visible"])
+        self.assertTrue(handoff_preview["required_prior_material_visible"])
+        self.assertIn("target-sample provider payload", handoff_preview["safe_payload_summary"])
 
     def test_tushare_target_sample_acceptance_supports_multiple_review_ready_domains_without_promotion(self):
         db_path = self._with_meta_store()
