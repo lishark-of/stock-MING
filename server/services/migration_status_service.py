@@ -6811,7 +6811,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 else "release_review_waiting_for_local_and_remote_complete"
             )
         )
-        ltg01_missing_evidence_items = [
+        ltg01_local_missing_evidence_items = [
             "provider-backed 730-day trade_cal long-window acceptance",
             "safe trade_cal provider call ledger",
             "provider freshness replay evidence",
@@ -6824,8 +6824,17 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         durable_missing_evidence_items = [
             str(item) for item in durable_recipe.get("missing_evidence_items") or [] if str(item)
         ]
+        ltg01_remote_release_missing_evidence_items = [
+            "matching remote CI review after local freshness evidence",
+            "release review after matching remote CI green",
+        ]
+        ltg01_missing_evidence_items = (
+            ltg01_remote_release_missing_evidence_items + durable_missing_evidence_items
+            if ltg01_local_complete
+            else ltg01_local_missing_evidence_items + durable_missing_evidence_items
+        )
         ltg01_missing_evidence_items = list(
-            dict.fromkeys(ltg01_missing_evidence_items + durable_missing_evidence_items)
+            dict.fromkeys(ltg01_missing_evidence_items)
         )
         rows.append(
             {
@@ -6854,7 +6863,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_complete": ltg01_local_complete,
                 "local_completion_status": durable_recipe.get("local_completion_status")
                 or ("local_complete" if ltg01_local_complete else "local_evidence_pending"),
-                "local_blocker_count": int(durable_recipe.get("local_blocker_count") or observed_pending_count),
+                "local_blocker_count": 0
+                if ltg01_local_complete
+                else int(durable_recipe.get("local_blocker_count") or observed_pending_count),
                 "remote_review_required_after_local_complete": True,
                 "remote_review_pending": ltg01_remote_review_pending,
                 "remote_review_status": durable_recipe.get("remote_review_status")

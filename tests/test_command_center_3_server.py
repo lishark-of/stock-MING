@@ -144,23 +144,43 @@ def assert_ltg01_freshness_stage_scope(
     if direct_count >= 4:
         expected_direct_keys.append("current_evidence_producer_coverage")
     test_case.assertEqual(row["direct_evidence_stage_keys"], expected_direct_keys)
-    test_case.assertFalse(row["local_complete"])
-    test_case.assertEqual(row["local_completion_status"], "local_evidence_pending")
-    test_case.assertGreaterEqual(row["local_blocker_count"], 0)
     test_case.assertTrue(row["remote_review_required_after_local_complete"])
-    test_case.assertFalse(row["remote_review_pending"])
-    test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
-    test_case.assertEqual(row["remote_review_pending_count"], 0)
     test_case.assertTrue(row["release_review_required_after_remote_green"])
-    test_case.assertFalse(row["release_review_pending"])
-    test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
-    test_case.assertEqual(row["release_review_pending_count"], 0)
+    if row["local_complete"]:
+        test_case.assertEqual(row["local_completion_status"], "local_complete")
+        test_case.assertEqual(row["local_blocker_count"], 0)
+        test_case.assertIn(
+            row["remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+        test_case.assertEqual(
+            row["remote_review_pending_count"],
+            1 if row["remote_review_pending"] else 0,
+        )
+        test_case.assertIn(
+            row["release_review_status"],
+            {"release_review_waiting_for_remote_green", "release_review_pending"},
+        )
+        test_case.assertEqual(
+            row["release_review_pending_count"],
+            1 if row["release_review_pending"] else 0,
+        )
+    else:
+        test_case.assertEqual(row["local_completion_status"], "local_evidence_pending")
+        test_case.assertGreaterEqual(row["local_blocker_count"], 0)
+        test_case.assertFalse(row["remote_review_pending"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertEqual(row["remote_review_pending_count"], 0)
+        test_case.assertFalse(row["release_review_pending"])
+        test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+        test_case.assertEqual(row["release_review_pending_count"], 0)
     test_case.assertFalse(row["strict_closeout_ready"])
-    test_case.assertIn(
-        "provider-backed 730-day trade_cal long-window acceptance",
-        row["missing_evidence_items"],
-    )
-    test_case.assertIn("provider freshness replay evidence", row["missing_evidence_items"])
+    if not row["local_complete"]:
+        test_case.assertIn(
+            "provider-backed 730-day trade_cal long-window acceptance",
+            row["missing_evidence_items"],
+        )
+        test_case.assertIn("provider freshness replay evidence", row["missing_evidence_items"])
     test_case.assertIn("release review after matching remote CI green", row["missing_evidence_items"])
     if direct_count < 4:
         test_case.assertFalse(row["provider_backed_trade_cal_acceptance_done"])
@@ -197,22 +217,42 @@ def assert_ltg01_migration_goal_stage_scope(
     if direct_count >= 4:
         expected_direct_keys.append("current_evidence_producer_coverage")
     test_case.assertEqual(row["observed_stage_scope_direct_evidence_keys"], expected_direct_keys)
-    test_case.assertFalse(row["observed_local_complete"])
-    test_case.assertEqual(row["observed_local_completion_status"], "local_evidence_pending")
     test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
-    test_case.assertFalse(row["observed_remote_review_pending"])
-    test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
     test_case.assertTrue(row["observed_release_review_required_after_remote_green"])
-    test_case.assertFalse(row["observed_release_review_pending"])
-    test_case.assertEqual(
-        row["observed_release_review_status"],
-        "release_review_waiting_for_local_and_remote_complete",
-    )
+    if row["observed_local_complete"]:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_complete")
+        test_case.assertEqual(row["observed_local_blocker_count"], 0)
+        test_case.assertIn(
+            row["observed_remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+        test_case.assertEqual(
+            row["observed_remote_review_pending_count"],
+            1 if row["observed_remote_review_pending"] else 0,
+        )
+        test_case.assertIn(
+            row["observed_release_review_status"],
+            {"release_review_waiting_for_remote_green", "release_review_pending"},
+        )
+        test_case.assertEqual(
+            row["observed_release_review_pending_count"],
+            1 if row["observed_release_review_pending"] else 0,
+        )
+    else:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_evidence_pending")
+        test_case.assertFalse(row["observed_remote_review_pending"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["observed_release_review_pending"])
+        test_case.assertEqual(
+            row["observed_release_review_status"],
+            "release_review_waiting_for_local_and_remote_complete",
+        )
     test_case.assertFalse(row["observed_strict_closeout_ready"])
-    test_case.assertIn(
-        "provider-backed 730-day trade_cal long-window acceptance",
-        row["observed_missing_evidence_items"],
-    )
+    if not row["observed_local_complete"]:
+        test_case.assertIn(
+            "provider-backed 730-day trade_cal long-window acceptance",
+            row["observed_missing_evidence_items"],
+        )
     test_case.assertIn(
         "release review after matching remote CI green",
         row["observed_missing_evidence_items"],
