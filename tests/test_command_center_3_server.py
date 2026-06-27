@@ -269,6 +269,114 @@ def assert_ltg04_migration_goal_stage_scope(
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 
+def assert_ltg05_storage_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("direct_evidence_stage_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertEqual(row["stage_scope_manifest"], "storage_physical_migration_stage_scope_manifest")
+    test_case.assertIn(
+        row["status"],
+        {
+            "observed_in_storage_static_contract",
+            "observed_storage_direct_execution_evidence_production_pending",
+        },
+    )
+    test_case.assertEqual(row["row_count"], 8)
+    test_case.assertEqual(row["pending_stage_count"], 8 - direct_count)
+    test_case.assertEqual(row["local_evidence_stage_count"], 8)
+    test_case.assertEqual(row["local_complete"], direct_count >= 8)
+    if direct_count >= 8:
+        test_case.assertEqual(row["local_completion_status"], "local_storage_direct_evidence_complete")
+        test_case.assertEqual(row["local_blocker_count"], 0)
+        test_case.assertIn(
+            row["remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+        test_case.assertNotEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
+    elif direct_count:
+        test_case.assertEqual(row["local_completion_status"], "local_storage_direct_evidence_partial")
+        test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["remote_review_pending"])
+    else:
+        test_case.assertEqual(row["local_completion_status"], "local_static_contract_only")
+        test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+        test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
+        test_case.assertFalse(row["remote_review_pending"])
+    test_case.assertTrue(row["remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["release_review_required_after_remote_green"])
+    test_case.assertEqual(
+        row["remote_review_pending_count"],
+        1 if row["remote_review_pending"] else 0,
+    )
+    test_case.assertEqual(
+        row["release_review_pending_count"],
+        1 if row["release_review_pending"] else 0,
+    )
+    test_case.assertFalse(row["strict_closeout_ready"])
+    test_case.assertIn("production storage promotion review", row["missing_evidence_items"])
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["missing_evidence_items"],
+    )
+    test_case.assertFalse(row["production_storage_complete"])
+    test_case.assertFalse(row["writes_parquet_on_get"])
+    test_case.assertFalse(row["writes_parquet_by_contract"])
+    test_case.assertFalse(row["external_calls_triggered"])
+    test_case.assertFalse(row["tushare_called"])
+    test_case.assertFalse(row["deepseek_called"])
+    test_case.assertFalse(row["github_called"])
+    test_case.assertTrue(row["does_not_execute_trades"])
+    test_case.assertFalse(row["can_close_from_observed_row"])
+
+
+def assert_ltg05_migration_goal_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("observed_stage_scope_direct_evidence_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertIn(
+        row["observed_stage_scope_manifest_status"],
+        {
+            "observed_in_storage_static_contract",
+            "observed_storage_direct_execution_evidence_production_pending",
+        },
+    )
+    test_case.assertEqual(row["observed_stage_scope_pending_count"], 8 - direct_count)
+    test_case.assertEqual(row["observed_local_complete"], direct_count >= 8)
+    if direct_count >= 8:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_storage_direct_evidence_complete")
+        test_case.assertEqual(row["observed_local_blocker_count"], 0)
+        test_case.assertIn(
+            row["observed_remote_review_status"],
+            {"remote_review_pending", "remote_review_green_release_review_pending"},
+        )
+    elif direct_count:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_storage_direct_evidence_partial")
+        test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+    else:
+        test_case.assertEqual(row["observed_local_completion_status"], "local_static_contract_only")
+        test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+        test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
+    test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
+    test_case.assertTrue(row["observed_release_review_required_after_remote_green"])
+    test_case.assertFalse(row["observed_strict_closeout_ready"])
+    test_case.assertIn("production storage promotion review", row["observed_missing_evidence_items"])
+    test_case.assertIn(
+        "release review after matching remote CI green",
+        row["observed_missing_evidence_items"],
+    )
+    test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
+
+
 def assert_ltg11_release_gate_stage_scope(
     test_case: unittest.TestCase,
     row: dict,
@@ -1589,6 +1697,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             observed_stage_rows["LTG-05"]["stage_scope_manifest"],
             "storage_physical_migration_stage_scope_manifest",
         )
+        assert_ltg05_storage_stage_scope(self, observed_stage_rows["LTG-05"], expected_direct_count=0)
         self.assertEqual(observed_stage_rows["LTG-05"]["status"], "observed_in_storage_static_contract")
         self.assertEqual(observed_stage_rows["LTG-05"]["row_count"], 8)
         self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 8)
@@ -1996,6 +2105,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             migration_goals["LTG-05"]["observed_stage_scope_manifest_status"],
             "observed_in_storage_static_contract",
         )
+        assert_ltg05_migration_goal_stage_scope(self, migration_goals["LTG-05"], expected_direct_count=0)
         self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 8)
         self.assertFalse(migration_goals["LTG-05"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-06"]["stage_scope_manifest"], "worker_runtime_evidence_stage_scope_manifest")
@@ -35748,6 +35858,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(observed_stage_rows["LTG-05"]["row_count"], 8)
         ltg05_direct_count = int(observed_stage_rows["LTG-05"].get("direct_evidence_stage_count") or 0)
+        assert_ltg05_storage_stage_scope(
+            self,
+            observed_stage_rows["LTG-05"],
+            expected_direct_count=ltg05_direct_count,
+        )
         self.assertIn(ltg05_direct_count, {0, 2, 3, 4, 5, 6, 7, 8})
         ltg05_direct_keys = list(observed_stage_rows["LTG-05"].get("direct_evidence_stage_keys") or [])
         self.assertEqual(len(ltg05_direct_keys), ltg05_direct_count)
@@ -36162,6 +36277,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "observed_in_storage_static_contract",
                 "observed_storage_direct_execution_evidence_production_pending",
             },
+        )
+        assert_ltg05_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-05"],
+            expected_direct_count=ltg05_direct_count,
         )
         self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 8 - ltg05_direct_count)
         self.assertEqual(
