@@ -37748,6 +37748,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         work_order_rows = {
             row["id"]: row for row in migration["data"]["ltg_strict_closeout_work_order_rows"]
         }
+        spine_summary = migration["data"]["ltg_strict_closeout_evidence_spine_summary"]
+        spine_rows = {
+            row["id"]: row for row in migration["data"]["ltg_strict_closeout_evidence_spine_rows"]
+        }
+        migration_call_ledger = migration["data"]["call_ledger"][0]
         self.assertEqual(
             hardening_summary["schema_version"],
             "production_hardening_direct_evidence_matrix.v1",
@@ -37998,6 +38003,110 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(any(row["creates_task_from_render"] for row in work_order_rows.values()))
         self.assertTrue(all(row["does_not_execute_trades"] for row in work_order_rows.values()))
         self.assertTrue(all(row["does_not_modify_strategy_action"] for row in work_order_rows.values()))
+        self.assertEqual(
+            spine_summary["schema_version"],
+            "ltg_strict_closeout_evidence_spine_summary.v1",
+        )
+        self.assertEqual(
+            spine_summary["status"],
+            "ltg_strict_closeout_evidence_spine_visible_closeout_blocked",
+        )
+        self.assertEqual(spine_summary["spine_visible_count"], 14)
+        self.assertEqual(spine_summary["spine_total_count"], 14)
+        self.assertEqual(spine_summary["spine_missing_ltg_ids"], [])
+        self.assertEqual(spine_summary["spine_row_count"], 14)
+        self.assertEqual(migration["data"]["ltg_strict_closeout_evidence_spine_row_count"], 14)
+        self.assertEqual(set(spine_rows.keys()), {f"LTG-{index:02d}" for index in range(1, 15)})
+        self.assertTrue(spine_summary["all_ltg_handoffs_visible"])
+        self.assertEqual(spine_summary["handoff_summary_visible_count"], 17)
+        self.assertEqual(spine_summary["handoff_summary_total_count"], 17)
+        self.assertTrue(spine_summary["all_handoff_summaries_visible"])
+        self.assertEqual(spine_summary["strict_closeout"], "0/14")
+        self.assertEqual(spine_summary["strict_closeout_done_count"], 0)
+        self.assertEqual(spine_summary["strict_closeout_total_count"], 14)
+        self.assertEqual(spine_summary["strict_closeout_remaining_count"], 14)
+        self.assertFalse(spine_summary["strict_closeout_claim_allowed"])
+        self.assertTrue(spine_summary["all_rows_block_closeout_claim"])
+        self.assertTrue(spine_summary["all_rows_block_production_complete"])
+        self.assertTrue(spine_summary["remote_review_split_required"])
+        self.assertTrue(spine_summary["requires_remote_ci_review"])
+        self.assertTrue(spine_summary["requires_release_review_after_remote_green"])
+        self.assertTrue(spine_summary["spine_rows_are_not_production_evidence"])
+        self.assertFalse(spine_summary["cache_get_creates_task"])
+        self.assertFalse(spine_summary["creates_task_from_get"])
+        self.assertFalse(spine_summary["creates_task_from_render"])
+        self.assertFalse(spine_summary["external_calls_triggered"])
+        self.assertFalse(spine_summary["tushare_called"])
+        self.assertFalse(spine_summary["deepseek_called"])
+        self.assertFalse(spine_summary["github_called"])
+        self.assertFalse(spine_summary["contains_secret"])
+        self.assertTrue(spine_summary["does_not_execute_trades"])
+        self.assertTrue(spine_summary["does_not_modify_strategy_action"])
+        self.assertEqual(spine_rows["LTG-01"]["handoff_count"], 2)
+        self.assertIn(
+            "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary",
+            spine_rows["LTG-01"]["handoff_keys"],
+        )
+        self.assertIn(
+            "ltg01_current_evidence_producer_cache_refresh_handoff_summary",
+            spine_rows["LTG-01"]["handoff_keys"],
+        )
+        self.assertEqual(spine_rows["LTG-02"]["handoff_count"], 2)
+        self.assertEqual(spine_rows["LTG-03"]["handoff_count"], 2)
+        self.assertEqual(
+            spine_rows["LTG-11"]["handoff_keys"],
+            ["ltg11_release_gate_remote_review_handoff_summary"],
+        )
+        self.assertEqual(
+            spine_rows["LTG-12"]["handoff_keys"],
+            ["ltg12_trade_isolation_release_guard_handoff_summary"],
+        )
+        self.assertEqual(
+            spine_rows["LTG-14"]["handoff_keys"],
+            ["ltg14_motion_production_handoff_summary"],
+        )
+        self.assertEqual(
+            spine_rows["LTG-14"]["schema_versions_by_key"][
+                "ltg14_motion_production_handoff_summary"
+            ],
+            "ltg14_motion_production_handoff_summary.v1",
+        )
+        self.assertTrue(all(row["handoff_visible"] for row in spine_rows.values()))
+        self.assertTrue(
+            all(row["handoff_count"] == row["expected_handoff_count"] for row in spine_rows.values())
+        )
+        self.assertTrue(all(row["all_handoffs_block_closeout"] for row in spine_rows.values()))
+        self.assertTrue(
+            all(row["all_handoffs_block_production_complete"] for row in spine_rows.values())
+        )
+        self.assertFalse(any(row["strict_closeout_claim_allowed"] for row in spine_rows.values()))
+        self.assertFalse(any(row["can_close_ltg_now"] for row in spine_rows.values()))
+        self.assertFalse(any(row["production_complete"] for row in spine_rows.values()))
+        self.assertTrue(all(row["remote_review_split_required"] for row in spine_rows.values()))
+        self.assertTrue(all(row["requires_remote_ci_review"] for row in spine_rows.values()))
+        self.assertTrue(
+            all(row["requires_release_review_after_remote_green"] for row in spine_rows.values())
+        )
+        self.assertTrue(all(row["spine_row_is_not_production_evidence"] for row in spine_rows.values()))
+        self.assertTrue(all(row["cache_only_readback"] for row in spine_rows.values()))
+        self.assertFalse(any(row["cache_get_creates_task"] for row in spine_rows.values()))
+        self.assertFalse(any(row["creates_task_from_get"] for row in spine_rows.values()))
+        self.assertFalse(any(row["creates_task_from_render"] for row in spine_rows.values()))
+        self.assertFalse(any(row["external_calls_triggered"] for row in spine_rows.values()))
+        self.assertFalse(any(row["tushare_called"] for row in spine_rows.values()))
+        self.assertFalse(any(row["deepseek_called"] for row in spine_rows.values()))
+        self.assertFalse(any(row["github_called"] for row in spine_rows.values()))
+        self.assertFalse(any(row["contains_secret"] for row in spine_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in spine_rows.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in spine_rows.values()))
+        self.assertEqual(migration_call_ledger["ltg_strict_closeout_evidence_spine_visible_count"], 14)
+        self.assertEqual(migration_call_ledger["ltg_strict_closeout_evidence_spine_total_count"], 14)
+        self.assertEqual(migration_call_ledger["ltg_strict_closeout_evidence_spine_row_count"], 14)
+        self.assertEqual(migration_call_ledger["ltg_strict_closeout_evidence_spine_missing_ltg_ids"], [])
+        self.assertEqual(migration_call_ledger["ltg_strict_closeout_evidence_spine_strict_closeout"], "0/14")
+        self.assertTrue(
+            migration_call_ledger["ltg_strict_closeout_evidence_spine_remote_review_split_required"]
+        )
         self.assertIn("local packet", hardening_rows["storage_boundaries"]["not_production_evidence"])
         self.assertIn(
             "start Celery or ping Redis from cache render",

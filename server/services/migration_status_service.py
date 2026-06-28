@@ -196,6 +196,32 @@ LTG_STAGE_SCOPE_MANIFESTS = {
     "LTG-14": "motion_production_stage_scope_manifest",
 }
 
+LTG_STRICT_CLOSEOUT_EVIDENCE_SPINE_HANDOFF_KEYS: Mapping[str, tuple[str, ...]] = {
+    "LTG-01": (
+        "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary",
+        "ltg01_current_evidence_producer_cache_refresh_handoff_summary",
+    ),
+    "LTG-02": (
+        "ltg02_tushare_target_sample_evidence_handoff_summary",
+        "ltg02_tushare_full_interface_pipeline_handoff_summary",
+    ),
+    "LTG-03": (
+        "ltg03_factor_test_provider_validation_handoff_summary",
+        "ltg03_factor_test_production_validation_handoff_summary",
+    ),
+    "LTG-04": ("ltg04_factor_universe_worker_batch_handoff_summary",),
+    "LTG-05": ("ltg05_storage_physical_execution_handoff_summary",),
+    "LTG-06": ("ltg06_worker_runtime_qa_handoff_summary",),
+    "LTG-07": ("ltg07_deepseek_governed_executor_handoff_summary",),
+    "LTG-08": ("ltg08_next_session_production_replacement_handoff_summary",),
+    "LTG-09": ("ltg09_tauri_package_handoff_summary",),
+    "LTG-10": ("ltg10_streamlit_retirement_handoff_summary",),
+    "LTG-11": ("ltg11_release_gate_remote_review_handoff_summary",),
+    "LTG-12": ("ltg12_trade_isolation_release_guard_handoff_summary",),
+    "LTG-13": ("ltg13_candidate_radar_production_handoff_summary",),
+    "LTG-14": ("ltg14_motion_production_handoff_summary",),
+}
+
 LTG_NEXT_EVIDENCE_REQUIRED = {
     "LTG-01": ["dry-run scope ticket", "provider trade_cal task", "safe call ledger", "freshness replay", "promotion review"],
     "LTG-02": [
@@ -2619,6 +2645,130 @@ def _build_ltg_strict_closeout_work_order_rows(
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "evidence_boundary": "ltg_strict_closeout_work_order_prepares_one_ltg_selection_not_completion",
+    }
+    return summary, rows
+
+
+def _build_ltg_strict_closeout_evidence_spine(
+    *,
+    handoff_summaries_by_key: Mapping[str, Mapping[str, Any]],
+    long_term_goal_summary: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    closeout_state = str(long_term_goal_summary.get("strict_closeout") or "0/14")
+    closeout_done_count = int(long_term_goal_summary.get("strict_closeout_done_count") or 0)
+    closeout_total_count = int(long_term_goal_summary.get("strict_closeout_total_count") or 14)
+    closeout_remaining_count = int(
+        long_term_goal_summary.get("strict_closeout_remaining_count") or 14
+    )
+    rows: list[dict[str, Any]] = []
+    missing_ltg_ids: list[str] = []
+    for goal_id, handoff_key_tuple in LTG_STRICT_CLOSEOUT_EVIDENCE_SPINE_HANDOFF_KEYS.items():
+        handoff_keys = list(handoff_key_tuple)
+        handoffs = [
+            handoff_summaries_by_key.get(key)
+            for key in handoff_keys
+            if isinstance(handoff_summaries_by_key.get(key), Mapping)
+        ]
+        handoff_visible = len(handoffs) == len(handoff_keys)
+        if not handoff_visible:
+            missing_ltg_ids.append(goal_id)
+        schema_versions_by_key = {
+            key: str(handoff_summaries_by_key.get(key, {}).get("schema_version") or "")
+            for key in handoff_keys
+        }
+        statuses_by_key = {
+            key: str(handoff_summaries_by_key.get(key, {}).get("status") or "")
+            for key in handoff_keys
+        }
+        closeout_flags = [
+            handoff.get("can_close_goal") is True
+            or handoff.get("strict_closeout_ready") is True
+            or handoff.get("ready_to_mark_production_complete") is True
+            for handoff in handoffs
+        ]
+        production_complete_flags = [
+            handoff.get("production_complete") is True for handoff in handoffs
+        ]
+        rows.append(
+            {
+                "id": goal_id,
+                "handoff_keys": handoff_keys,
+                "handoff_visible": handoff_visible,
+                "handoff_count": len(handoffs),
+                "expected_handoff_count": len(handoff_keys),
+                "schema_versions_by_key": schema_versions_by_key,
+                "statuses_by_key": statuses_by_key,
+                "all_handoffs_block_closeout": handoff_visible and not any(closeout_flags),
+                "all_handoffs_block_production_complete": handoff_visible
+                and not any(production_complete_flags),
+                "strict_closeout": closeout_state,
+                "strict_closeout_claim_allowed": False,
+                "can_close_ltg_now": False,
+                "production_complete": False,
+                "remote_review_split_required": True,
+                "requires_remote_ci_review": True,
+                "requires_release_review_after_remote_green": True,
+                "spine_row_is_not_production_evidence": True,
+                "cache_only_readback": True,
+                "cache_get_creates_task": False,
+                "creates_task_from_get": False,
+                "creates_task_from_render": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "evidence_boundary": "ltg_strict_closeout_evidence_spine_links_handoffs_not_closeout",
+            }
+        )
+
+    spine_visible_count = sum(1 for row in rows if row.get("handoff_visible") is True)
+    handoff_summary_visible_count = sum(int(row.get("handoff_count") or 0) for row in rows)
+    handoff_summary_total_count = sum(
+        int(row.get("expected_handoff_count") or 0) for row in rows
+    )
+    summary = {
+        "schema_version": "ltg_strict_closeout_evidence_spine_summary.v1",
+        "status": "ltg_strict_closeout_evidence_spine_visible_closeout_blocked"
+        if not missing_ltg_ids
+        else "ltg_strict_closeout_evidence_spine_incomplete",
+        "spine_visible_count": spine_visible_count,
+        "spine_total_count": len(rows),
+        "spine_missing_ltg_ids": missing_ltg_ids,
+        "spine_row_count": len(rows),
+        "all_ltg_handoffs_visible": not missing_ltg_ids,
+        "handoff_summary_visible_count": handoff_summary_visible_count,
+        "handoff_summary_total_count": handoff_summary_total_count,
+        "all_handoff_summaries_visible": handoff_summary_visible_count == handoff_summary_total_count,
+        "strict_closeout": closeout_state,
+        "strict_closeout_done_count": closeout_done_count,
+        "strict_closeout_total_count": closeout_total_count,
+        "strict_closeout_remaining_count": closeout_remaining_count,
+        "strict_closeout_claim_allowed": False,
+        "all_rows_block_closeout_claim": all(
+            row.get("strict_closeout_claim_allowed") is False for row in rows
+        ),
+        "all_rows_block_production_complete": all(
+            row.get("production_complete") is False for row in rows
+        ),
+        "remote_review_split_required": True,
+        "requires_remote_ci_review": True,
+        "requires_release_review_after_remote_green": True,
+        "spine_rows_are_not_production_evidence": True,
+        "cache_only_readback": True,
+        "cache_get_creates_task": False,
+        "creates_task_from_get": False,
+        "creates_task_from_render": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "evidence_boundary": "ltg_strict_closeout_evidence_spine_is_handoff_inventory_not_ltg_completion",
     }
     return summary, rows
 
@@ -14351,6 +14501,57 @@ def build_migration_status() -> dict[str, Any]:
     ltg12_trade_isolation_release_guard_handoff_summary = (
         _latest_trade_isolation_release_guard_handoff_summary()
     )
+    ltg_strict_closeout_evidence_spine_handoffs = {
+        "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary": (
+            ltg01_trade_cal_provider_acceptance_evidence_handoff_summary
+        ),
+        "ltg01_current_evidence_producer_cache_refresh_handoff_summary": (
+            ltg01_current_evidence_producer_cache_refresh_handoff_summary
+        ),
+        "ltg02_tushare_target_sample_evidence_handoff_summary": (
+            ltg02_tushare_target_sample_evidence_handoff_summary
+        ),
+        "ltg02_tushare_full_interface_pipeline_handoff_summary": (
+            ltg02_tushare_full_interface_pipeline_handoff_summary
+        ),
+        "ltg03_factor_test_provider_validation_handoff_summary": (
+            ltg03_factor_test_provider_validation_handoff_summary
+        ),
+        "ltg03_factor_test_production_validation_handoff_summary": (
+            ltg03_factor_test_production_validation_handoff_summary
+        ),
+        "ltg04_factor_universe_worker_batch_handoff_summary": (
+            ltg04_factor_universe_worker_batch_handoff_summary
+        ),
+        "ltg05_storage_physical_execution_handoff_summary": (
+            ltg05_storage_physical_execution_handoff_summary
+        ),
+        "ltg06_worker_runtime_qa_handoff_summary": ltg06_worker_runtime_qa_handoff_summary,
+        "ltg07_deepseek_governed_executor_handoff_summary": (
+            ltg07_deepseek_governed_executor_handoff_summary
+        ),
+        "ltg08_next_session_production_replacement_handoff_summary": (
+            ltg08_next_session_production_replacement_handoff_summary
+        ),
+        "ltg09_tauri_package_handoff_summary": ltg09_tauri_package_handoff_summary,
+        "ltg10_streamlit_retirement_handoff_summary": ltg10_streamlit_retirement_handoff_summary,
+        "ltg11_release_gate_remote_review_handoff_summary": (
+            ltg11_release_gate_remote_review_handoff_summary
+        ),
+        "ltg12_trade_isolation_release_guard_handoff_summary": (
+            ltg12_trade_isolation_release_guard_handoff_summary
+        ),
+        "ltg13_candidate_radar_production_handoff_summary": (
+            ltg13_candidate_radar_production_handoff_summary
+        ),
+        "ltg14_motion_production_handoff_summary": ltg14_motion_production_handoff_summary,
+    }
+    ltg_strict_closeout_evidence_spine_summary, ltg_strict_closeout_evidence_spine_rows = (
+        _build_ltg_strict_closeout_evidence_spine(
+            handoff_summaries_by_key=ltg_strict_closeout_evidence_spine_handoffs,
+            long_term_goal_summary=long_term_goal_summary,
+        )
+    )
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
     tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(
@@ -14395,6 +14596,13 @@ def build_migration_status() -> dict[str, Any]:
         "ltg_strict_closeout_work_order_summary": ltg_strict_closeout_work_order_summary,
         "ltg_strict_closeout_work_order_rows": ltg_strict_closeout_work_order_rows,
         "ltg_strict_closeout_work_order_row_count": len(ltg_strict_closeout_work_order_rows),
+        "ltg_strict_closeout_evidence_spine_summary": (
+            ltg_strict_closeout_evidence_spine_summary
+        ),
+        "ltg_strict_closeout_evidence_spine_rows": ltg_strict_closeout_evidence_spine_rows,
+        "ltg_strict_closeout_evidence_spine_row_count": len(
+            ltg_strict_closeout_evidence_spine_rows
+        ),
         "usable_path_medium_goal_checkpoint_summary": usable_path_medium_goal_checkpoint_summary,
         "usable_path_medium_goal_checkpoint_rows": usable_path_medium_goal_checkpoint_rows,
         "usable_path_medium_goal_checkpoint_row_count": len(usable_path_medium_goal_checkpoint_rows),
@@ -14500,6 +14708,7 @@ def build_migration_status() -> dict[str, Any]:
                 + len(production_hardening_ltg_direct_evidence_rows)
                 + len(production_hardening_gate_rows)
                 + len(ltg_strict_closeout_work_order_rows)
+                + len(ltg_strict_closeout_evidence_spine_rows)
                 + len(usable_path_medium_goal_checkpoint_rows)
                 + len(usable_path_current_checkpoint_rows)
                 + len(usable_path_strict_closeout_handoff_rows)
@@ -14533,6 +14742,27 @@ def build_migration_status() -> dict[str, Any]:
                 "production_hardening_gate_row_count": len(production_hardening_gate_rows),
                 "ltg_strict_closeout_work_order_row_count": len(
                     ltg_strict_closeout_work_order_rows
+                ),
+                "ltg_strict_closeout_evidence_spine_visible_count": (
+                    ltg_strict_closeout_evidence_spine_summary.get("spine_visible_count")
+                ),
+                "ltg_strict_closeout_evidence_spine_total_count": (
+                    ltg_strict_closeout_evidence_spine_summary.get("spine_total_count")
+                ),
+                "ltg_strict_closeout_evidence_spine_row_count": len(
+                    ltg_strict_closeout_evidence_spine_rows
+                ),
+                "ltg_strict_closeout_evidence_spine_missing_ltg_ids": (
+                    ltg_strict_closeout_evidence_spine_summary.get("spine_missing_ltg_ids")
+                ),
+                "ltg_strict_closeout_evidence_spine_strict_closeout": (
+                    ltg_strict_closeout_evidence_spine_summary.get("strict_closeout")
+                ),
+                "ltg_strict_closeout_evidence_spine_remote_review_split_required": (
+                    ltg_strict_closeout_evidence_spine_summary.get(
+                        "remote_review_split_required"
+                    )
+                    is True
                 ),
                 "usable_path_medium_goal_checkpoint_row_count": len(
                     usable_path_medium_goal_checkpoint_rows
@@ -14683,6 +14913,7 @@ def build_migration_status() -> dict[str, Any]:
             "production_hardening_* rows 只读展示 Storage/Worker/Tauri/CI/DeepSeek/Streamlit 和 14 LTG 下一步 direct evidence；不是 strict closeout。",
             "production_hardening_gate_rows 把散落的 direct evidence 摘要收束成 Storage/Worker/Tauri/CI/DeepSeek/Streamlit/LTG gate；它们仍然只读、remote CI pending、不能关闭 LTG。",
             "ltg_strict_closeout_work_order_rows 可以选一个 LTG 进入下一轮 direct evidence 收集；它们不是 closeout claim，不能跳过 fresh local gate、remote CI review 或 safety scan。",
+            "ltg_strict_closeout_evidence_spine_rows 只把 14 个 LTG 的顶层 handoff 串成可查收脊柱；14/14 可见仍不等于 strict closeout。",
             "usable_path_medium_goal_checkpoint_summary 只表示三个中目标已完成并可进入下一轮 LTG 切片；它不是 14 LTG strict closeout。",
             "Tushare / DeepSeek 联动按四层审查：cache/render 安静、POST task 门控、task 内真实 provider/model execution、production promotion ledger；真实执行与生产提升仍需后续显式验收。",
             "legacy_audit_latest_observation 只读回放显式 observation dry-run；不会创建任务、升级 KEEP 或退场 Streamlit。",
