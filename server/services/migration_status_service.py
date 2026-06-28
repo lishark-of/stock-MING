@@ -4062,15 +4062,18 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         receipt = audit_service._read_local_push_gate_run_receipt()
         report_summary = audit_service._read_local_push_gate_report_summary()
         remote_receipt = audit_service._read_remote_ci_review_receipt()
+        allowlist_receipt = audit_service._read_secret_artifact_allowlist_review_receipt()
         worktree, _worktree_rows = audit_service._local_worktree_cleanliness_audit()
     except Exception:
         receipt = {}
         report_summary = {}
         remote_receipt = {}
+        allowlist_receipt = {}
         worktree = {}
     receipt_map = receipt if isinstance(receipt, dict) else {}
     report_map = report_summary if isinstance(report_summary, dict) else {}
     remote_receipt_map = remote_receipt if isinstance(remote_receipt, dict) else {}
+    allowlist_receipt_map = allowlist_receipt if isinstance(allowlist_receipt, dict) else {}
     worktree_map = worktree if isinstance(worktree, dict) else {}
     try:
         local_receipt_origin_ahead_count = int(receipt_map.get("origin_ahead_count") or 0)
@@ -4173,6 +4176,14 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     remote_receipt_stale_for_current_head = bool(
         remote_receipt_present and not remote_receipt_head_matches_current
     )
+    allowlist_receipt_head_matches_current = allowlist_receipt_map.get("head_matches_current") is True
+    periodic_allowlist_review_ready = bool(
+        allowlist_receipt_map.get("periodic_allowlist_review_ready") is True
+        and allowlist_receipt_head_matches_current
+    )
+    allowlist_receipt_missing_evidence = [
+        str(item) for item in allowlist_receipt_map.get("missing_evidence") or [] if str(item)
+    ]
     remote_green_for_current_head = bool(
         remote_actions_status_known and latest_remote_run_verified_green and remote_receipt_head_matches_current
     )
@@ -4230,15 +4241,12 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         )
     if remote_ci_artifact_digest_pending:
         missing_evidence_items.append("push-gate evidence artifact sha256 digest")
-    missing_evidence_items.extend(
-        [
-            "periodic allowlist review evidence",
-            "release review after matching remote CI green",
-        ]
-    )
+    if not periodic_allowlist_review_ready:
+        missing_evidence_items.append("periodic allowlist review evidence")
+    missing_evidence_items.append("release review after matching remote CI green")
     return {
         "schema_version": "migration_release_gate_direct_evidence_summary.v1",
-        "source_packet_key": "local_push_gate_run_receipt+remote_ci_review_receipt",
+        "source_packet_key": "local_push_gate_run_receipt+remote_ci_review_receipt+secret_artifact_allowlist_review_receipt",
         "source_status": str(receipt_map.get("status") or "missing"),
         "status": status,
         "local_complete": local_complete,
@@ -4377,6 +4385,18 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "remote_ci_review_receipt_blocks_current_head_remote_review": bool(
             remote_receipt_present and not remote_green_for_current_head
         ),
+        "periodic_allowlist_review_ready": periodic_allowlist_review_ready,
+        "secret_artifact_allowlist_review_receipt_status": str(
+            allowlist_receipt_map.get("status") or "missing"
+        ),
+        "secret_artifact_allowlist_review_receipt_head_matches_current": (
+            allowlist_receipt_head_matches_current
+        ),
+        "secret_artifact_allowlist_review_receipt_missing_evidence": allowlist_receipt_missing_evidence,
+        "secret_artifact_allowlist_review_receipt_missing_evidence_count": len(
+            allowlist_receipt_missing_evidence
+        ),
+        "secret_artifact_allowlist_review_receipt_is_not_release_review": True,
         "release_gate_complete": False,
         "did_not_push": True,
         "git_add_dot_used": False,
@@ -4621,6 +4641,9 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
     remote_receipt_missing_evidence = list(
         release_gate.get("remote_ci_review_receipt_missing_evidence") or []
     )
+    allowlist_receipt_missing_evidence = list(
+        release_gate.get("secret_artifact_allowlist_review_receipt_missing_evidence") or []
+    )
     local_receipt_head_matches_current = (
         release_gate.get("local_push_gate_receipt_head_matches_current") is True
     )
@@ -4730,6 +4753,22 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         "remote_ci_review_receipt_blocks_current_head_remote_review": (
             release_gate.get("remote_ci_review_receipt_blocks_current_head_remote_review") is True
         ),
+        "periodic_allowlist_review_ready": (
+            release_gate.get("periodic_allowlist_review_ready") is True
+        ),
+        "secret_artifact_allowlist_review_receipt_status": release_gate.get(
+            "secret_artifact_allowlist_review_receipt_status", ""
+        ),
+        "secret_artifact_allowlist_review_receipt_head_matches_current": (
+            release_gate.get("secret_artifact_allowlist_review_receipt_head_matches_current") is True
+        ),
+        "secret_artifact_allowlist_review_receipt_missing_evidence": (
+            allowlist_receipt_missing_evidence
+        ),
+        "secret_artifact_allowlist_review_receipt_missing_evidence_count": len(
+            allowlist_receipt_missing_evidence
+        ),
+        "secret_artifact_allowlist_review_receipt_is_not_release_review": True,
         "remote_ci_review_receipt_is_not_release_review": True,
         "release_review_pending": release_gate.get("release_review_pending") is True,
         "release_review_status": release_gate.get("release_review_status", ""),
