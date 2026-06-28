@@ -212,6 +212,7 @@ write_release_readiness_report() {
 - tushare_acceptance_contract: passed_local_contract_provider_execution_pending
 - bootstrap_runtime_contract: passed_local_contract_provider_execution_pending
 - tushare_deepseek_linkage_contract: passed_local_linkage_contract_execution_pending
+- ltg_strict_closeout_evidence_spine_contract: passed_local_contract_14_ltg_spine_visible_closeout_blocked
 - factor_test_lab_contract: passed_local_contract_provider_execution_pending
 - factor_universe_contract: passed_local_contract_read_plan_execution_pending
 - deepseek_governance_contract: passed_local_contract_provider_benchmark_pending
@@ -293,6 +294,7 @@ payload = {
         "tushare_acceptance_contract",
         "bootstrap_runtime_contract",
         "tushare_deepseek_linkage_contract",
+        "ltg_strict_closeout_evidence_spine_contract",
         "factor_test_lab_contract",
         "factor_universe_contract",
         "deepseek_governance_contract",
@@ -346,6 +348,7 @@ run_step "Data Health freshness contract" "$PYTHON_BIN" scripts/data_health_fres
 run_step "Tushare acceptance contract" "$PYTHON_BIN" scripts/tushare_acceptance_contract.py
 run_step "Bootstrap runtime contract" run_local_contract_step "Bootstrap runtime contract" scripts/bootstrap_runtime_contract.py "$BOOTSTRAP_RUNTIME_ALLOWED_BLOCKERS"
 run_step "Tushare DeepSeek linkage contract" "$PYTHON_BIN" scripts/tushare_deepseek_linkage_contract.py
+run_step "LTG strict closeout evidence spine contract" "$PYTHON_BIN" scripts/ltg_strict_closeout_evidence_spine_contract.py
 run_step "Factor Test Lab contract" run_local_contract_step "Factor Test Lab contract" scripts/factor_test_lab_contract.py "provider_small_pool_execution_recipe_is_local_pending,provider_small_pool_execution_request_is_local_scope_bound,factor_test_durable_evidence_recipe_is_local_production_pending"
 run_step "Factor universe contract" "$PYTHON_BIN" scripts/factor_universe_contract.py
 run_step "DeepSeek governance contract" "$PYTHON_BIN" scripts/deepseek_governance_contract.py

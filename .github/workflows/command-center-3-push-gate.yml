@@ -64,6 +64,7 @@ jobs:
           # npm run build
           # smoke_3_0.sh
           # scripts/bootstrap_runtime_contract.py
+          # scripts/ltg_strict_closeout_evidence_spine_contract.py
           # runtime_mode_policy_rows config boundary fields:
           # configured_switch_rule / effective_external_call_rule
           # git diff --check

@@ -57,6 +57,7 @@ LOCAL_PUSH_GATE_REQUIRED_CHECKS = {
     "tushare_acceptance_contract",
     "bootstrap_runtime_contract",
     "tushare_deepseek_linkage_contract",
+    "ltg_strict_closeout_evidence_spine_contract",
     "factor_test_lab_contract",
     "factor_universe_contract",
     "deepseek_governance_contract",
@@ -110,6 +111,9 @@ DATA_HEALTH_FRESHNESS_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "data_health_fr
 TUSHARE_ACCEPTANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tushare_acceptance_contract.py"
 BOOTSTRAP_RUNTIME_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "bootstrap_runtime_contract.py"
 TUSHARE_DEEPSEEK_LINKAGE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tushare_deepseek_linkage_contract.py"
+LTG_STRICT_CLOSEOUT_EVIDENCE_SPINE_CONTRACT_PATH = (
+    PROJECT_ROOT / "scripts" / "ltg_strict_closeout_evidence_spine_contract.py"
+)
 FACTOR_TEST_LAB_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "factor_test_lab_contract.py"
 FACTOR_UNIVERSE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "factor_universe_contract.py"
 DEEPSEEK_GOVERNANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "deepseek_governance_contract.py"
@@ -1115,6 +1119,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     tushare_acceptance_script = _read_local_text(TUSHARE_ACCEPTANCE_CONTRACT_PATH)
     bootstrap_runtime_script = _read_local_text(BOOTSTRAP_RUNTIME_CONTRACT_PATH)
     tushare_deepseek_linkage_script = _read_local_text(TUSHARE_DEEPSEEK_LINKAGE_CONTRACT_PATH)
+    ltg_strict_closeout_evidence_spine_script = _read_local_text(
+        LTG_STRICT_CLOSEOUT_EVIDENCE_SPINE_CONTRACT_PATH
+    )
     factor_test_lab_script = _read_local_text(FACTOR_TEST_LAB_CONTRACT_PATH)
     factor_universe_script = _read_local_text(FACTOR_UNIVERSE_CONTRACT_PATH)
     deepseek_governance_script = _read_local_text(DEEPSEEK_GOVERNANCE_CONTRACT_PATH)
@@ -1175,6 +1182,10 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(bootstrap_runtime_script),
         "tushare_deepseek_linkage_contract_exists": TUSHARE_DEEPSEEK_LINKAGE_CONTRACT_PATH.exists()
         and bool(tushare_deepseek_linkage_script),
+        "ltg_strict_closeout_evidence_spine_contract_exists": (
+            LTG_STRICT_CLOSEOUT_EVIDENCE_SPINE_CONTRACT_PATH.exists()
+            and bool(ltg_strict_closeout_evidence_spine_script)
+        ),
         "factor_test_lab_contract_exists": FACTOR_TEST_LAB_CONTRACT_PATH.exists()
         and bool(factor_test_lab_script),
         "factor_universe_contract_exists": FACTOR_UNIVERSE_CONTRACT_PATH.exists()
@@ -1207,6 +1218,10 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "Bootstrap runtime contract" in script,
         "tushare_deepseek_linkage_contract_step": "scripts/tushare_deepseek_linkage_contract.py" in script
         and "Tushare DeepSeek linkage contract" in script,
+        "ltg_strict_closeout_evidence_spine_contract_step": (
+            "scripts/ltg_strict_closeout_evidence_spine_contract.py" in script
+            and "LTG strict closeout evidence spine contract" in script
+        ),
         "factor_test_lab_contract_step": "scripts/factor_test_lab_contract.py" in script
         and "Factor Test Lab contract" in script,
         "factor_universe_contract_step": "scripts/factor_universe_contract.py" in script
@@ -1299,6 +1314,23 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             and "tushare_adapter" not in tushare_deepseek_linkage_script
             and "deepseek_adapter" not in tushare_deepseek_linkage_script
             and "api.github.com" not in tushare_deepseek_linkage_script
+        ),
+        "ltg_strict_closeout_evidence_spine_contract_is_local": (
+            "command_center_3_ltg_strict_closeout_evidence_spine_contract.v1"
+            in ltg_strict_closeout_evidence_spine_script
+            and "local_ltg_strict_closeout_evidence_spine_no_closeout_no_external"
+            in ltg_strict_closeout_evidence_spine_script
+            and "ltg_strict_closeout_evidence_spine_contract_passed"
+            in ltg_strict_closeout_evidence_spine_script
+            and "strict_closeout\""
+            in ltg_strict_closeout_evidence_spine_script
+            and "0/14" in ltg_strict_closeout_evidence_spine_script
+            and "remote_review_split_required" in ltg_strict_closeout_evidence_spine_script
+            and "requires_release_review_after_remote_green" in ltg_strict_closeout_evidence_spine_script
+            and "does_not_execute_trades" in ltg_strict_closeout_evidence_spine_script
+            and "tushare_adapter" not in ltg_strict_closeout_evidence_spine_script
+            and "deepseek_adapter" not in ltg_strict_closeout_evidence_spine_script
+            and "api.github.com" not in ltg_strict_closeout_evidence_spine_script
         ),
         "factor_test_lab_contract_is_local": "command_center_3_factor_test_lab_contract.v1" in factor_test_lab_script
         and "local_factor_test_lab_contract_no_provider_execution" in factor_test_lab_script
@@ -1511,6 +1543,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "tushare_deepseek_linkage_contract_exists",
             "tushare_deepseek_linkage_contract_step",
             "tushare_deepseek_linkage_contract_is_local",
+            "ltg_strict_closeout_evidence_spine_contract_exists",
+            "ltg_strict_closeout_evidence_spine_contract_step",
+            "ltg_strict_closeout_evidence_spine_contract_is_local",
             "factor_test_lab_contract_exists",
             "factor_test_lab_contract_step",
             "factor_test_lab_contract_is_local",
@@ -1677,6 +1712,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "tushare_deepseek_linkage_contract_is_local",
             checks["tushare_deepseek_linkage_contract_is_local"],
             evidence="contract ties live_light and search quant projection to safe Tushare/DeepSeek ledger boundaries without provider/model execution",
+        ),
+        _release_gate_row(
+            "ltg_strict_closeout_evidence_spine_contract_exists",
+            checks["ltg_strict_closeout_evidence_spine_contract_exists"],
+            evidence=_relative_path(LTG_STRICT_CLOSEOUT_EVIDENCE_SPINE_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "ltg_strict_closeout_evidence_spine_contract_step",
+            checks["ltg_strict_closeout_evidence_spine_contract_step"],
+            evidence="push gate runs scripts/ltg_strict_closeout_evidence_spine_contract.py after Tushare/DeepSeek linkage and before Factor Test Lab",
+        ),
+        _release_gate_row(
+            "ltg_strict_closeout_evidence_spine_contract_is_local",
+            checks["ltg_strict_closeout_evidence_spine_contract_is_local"],
+            evidence="contract verifies 14 LTG handoff spine visibility while strict closeout remains 0/14 and remote review stays separate",
         ),
         _release_gate_row(
             "factor_test_lab_contract_exists",

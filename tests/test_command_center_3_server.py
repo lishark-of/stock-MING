@@ -15665,6 +15665,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("scripts/tushare_acceptance_contract.py", script)
         self.assertIn("Tushare acceptance contract", script)
         self.assertIn("tushare_acceptance_contract: passed_local_contract_provider_execution_pending", script)
+        self.assertIn("scripts/ltg_strict_closeout_evidence_spine_contract.py", script)
+        self.assertIn("LTG strict closeout evidence spine contract", script)
+        self.assertIn(
+            "ltg_strict_closeout_evidence_spine_contract: passed_local_contract_14_ltg_spine_visible_closeout_blocked",
+            script,
+        )
+        self.assertIn('"ltg_strict_closeout_evidence_spine_contract"', script)
         self.assertIn("scripts/factor_test_lab_contract.py", script)
         self.assertIn("Factor Test Lab contract", script)
         self.assertIn("factor_test_lab_contract: passed_local_contract_provider_execution_pending", script)
@@ -15748,6 +15755,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertLess(script.index('run_step "Data Health freshness contract"'), script.index('run_step "Tushare acceptance contract"'))
         self.assertLess(script.index('run_step "Tushare acceptance contract"'), script.index('run_step "Motion viewport QA contract"'))
         self.assertLess(script.index('run_step "Tushare acceptance contract"'), script.index('run_step "Factor Test Lab contract"'))
+        self.assertLess(
+            script.index('run_step "Tushare DeepSeek linkage contract"'),
+            script.index('run_step "LTG strict closeout evidence spine contract"'),
+        )
+        self.assertLess(
+            script.index('run_step "LTG strict closeout evidence spine contract"'),
+            script.index('run_step "Factor Test Lab contract"'),
+        )
         self.assertLess(script.index('run_step "Factor Test Lab contract"'), script.index('run_step "Motion viewport QA contract"'))
         self.assertLess(script.index('run_step "Factor Test Lab contract"'), script.index('run_step "Factor universe contract"'))
         self.assertLess(script.index('run_step "Factor universe contract"'), script.index('run_step "DeepSeek governance contract"'))
@@ -19643,6 +19658,108 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("trade_isolation_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("script_is_local_no_broker_or_order_execution", criteria)
         self.assertIn("future_real_trading_requires_separate_project", criteria)
+
+    def test_ltg_strict_closeout_evidence_spine_contract_script_is_local_push_gate_guard(self):
+        path = Path("scripts/ltg_strict_closeout_evidence_spine_contract.py")
+        script = path.read_text(encoding="utf-8")
+        push_gate = Path("scripts/push_gate_3_0.sh").read_text(encoding="utf-8")
+
+        self.assertTrue(path.exists())
+        self.assertTrue(path.stat().st_mode & 0o111)
+        self.assertIn("command_center_3_ltg_strict_closeout_evidence_spine_contract.v1", script)
+        self.assertIn("local_ltg_strict_closeout_evidence_spine_no_closeout_no_external", script)
+        self.assertIn("ltg_strict_closeout_evidence_spine_contract_passed", script)
+        self.assertIn("ltg_strict_closeout_evidence_spine_14_ltg_visible", script)
+        self.assertIn("ltg_strict_closeout_evidence_spine_17_handoffs_visible", script)
+        self.assertIn("ltg_strict_closeout_evidence_spine_keeps_closeout_zero", script)
+        self.assertIn("ltg_strict_closeout_evidence_spine_blocks_closeout_claim", script)
+        self.assertIn("ltg_strict_closeout_evidence_spine_requires_remote_review_split", script)
+        self.assertIn("push_gate_runs_ltg_strict_closeout_evidence_spine_contract", script)
+        self.assertIn("scripts/ltg_strict_closeout_evidence_spine_contract.py", push_gate)
+        self.assertIn("LTG strict closeout evidence spine contract", push_gate)
+        self.assertLess(
+            push_gate.index("Tushare DeepSeek linkage contract"),
+            push_gate.index("LTG strict closeout evidence spine contract"),
+        )
+        self.assertLess(
+            push_gate.index("LTG strict closeout evidence spine contract"),
+            push_gate.index("Factor Test Lab contract"),
+        )
+        self.assertNotIn("requests", script)
+        self.assertNotIn("httpx", script)
+        self.assertNotIn("subprocess", script)
+        self.assertNotIn("api.github.com", script)
+        self.assertNotIn("tushare_adapter", script)
+        self.assertNotIn("deepseek_adapter", script)
+        self.assertNotIn("execute_trade(", script)
+        self.assertNotIn("place_order(", script)
+        self.assertNotIn("broker.submit(", script)
+
+        result = subprocess.run(
+            [sys.executable, str(path), "--json"],
+            cwd=Path.cwd(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(
+            payload["schema_version"],
+            "command_center_3_ltg_strict_closeout_evidence_spine_contract.v1",
+        )
+        self.assertEqual(
+            payload["scope"],
+            "local_ltg_strict_closeout_evidence_spine_no_closeout_no_external",
+        )
+        self.assertEqual(payload["status"], "ltg_strict_closeout_evidence_spine_contract_passed")
+        self.assertTrue(payload["contract_ready"])
+        self.assertTrue(payload["cache_only"])
+        self.assertEqual(payload["spine_visible_count"], 14)
+        self.assertEqual(payload["spine_total_count"], 14)
+        self.assertEqual(payload["spine_missing_ltg_ids"], [])
+        self.assertEqual(payload["handoff_summary_visible_count"], 17)
+        self.assertEqual(payload["handoff_summary_total_count"], 17)
+        self.assertEqual(payload["strict_closeout"], "0/14")
+        self.assertEqual(payload["strict_closeout_done_count"], 0)
+        self.assertEqual(payload["strict_closeout_total_count"], 14)
+        self.assertEqual(payload["strict_closeout_remaining_count"], 14)
+        self.assertFalse(payload["strict_closeout_claim_allowed"])
+        self.assertTrue(payload["all_rows_block_closeout_claim"])
+        self.assertTrue(payload["all_rows_block_production_complete"])
+        self.assertTrue(payload["remote_review_split_required"])
+        self.assertTrue(payload["requires_remote_ci_review"])
+        self.assertTrue(payload["requires_release_review_after_remote_green"])
+        self.assertTrue(payload["push_gate_step_ready"])
+        self.assertFalse(payload["external_calls_triggered"])
+        self.assertFalse(payload["tushare_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["github_called"])
+        self.assertTrue(payload["does_not_execute_trades"])
+        self.assertTrue(payload["does_not_modify_strategy_action"])
+        self.assertFalse(payload["contains_secret"])
+        self.assertEqual(payload["spine_row_count"], 14)
+        self.assertEqual(payload["blocking_criterion_count"], 0)
+        self.assertEqual(payload["blockers"], [])
+        self.assertEqual(payload["observed"]["strict_closeout"], "0/14")
+        self.assertEqual(payload["observed"]["call_ledger_strict_closeout"], "0/14")
+        self.assertEqual(
+            set(payload["observed"]["goal_ids"]),
+            {f"LTG-{index:02d}" for index in range(1, 15)},
+        )
+        criteria = {row["criterion"] for row in payload["rows"]}
+        self.assertIn("ltg_strict_closeout_evidence_spine_schema_visible", criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_14_ltg_visible", criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_17_handoffs_visible", criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_keeps_closeout_zero", criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_blocks_closeout_claim", criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_blocks_production_complete", criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_requires_remote_review_split", criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_cache_only_no_task_creation", criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_no_provider_model_github_or_trade", criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_call_ledger_counts_match", criteria)
+        self.assertIn("push_gate_runs_ltg_strict_closeout_evidence_spine_contract", criteria)
+        self.assertIn("script_is_local_no_provider_model_github_or_trade_execution", criteria)
 
     def test_secret_keyword_review_contract_is_structured_and_local(self):
         path = Path("scripts/secret_keyword_review_contract.py")
@@ -54009,6 +54126,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(release_gate["tushare_deepseek_linkage_contract_exists"])
         self.assertTrue(release_gate["tushare_deepseek_linkage_contract_step"])
         self.assertTrue(release_gate["tushare_deepseek_linkage_contract_is_local"])
+        self.assertTrue(release_gate["ltg_strict_closeout_evidence_spine_contract_exists"])
+        self.assertTrue(release_gate["ltg_strict_closeout_evidence_spine_contract_step"])
+        self.assertTrue(release_gate["ltg_strict_closeout_evidence_spine_contract_is_local"])
         self.assertTrue(release_gate["factor_test_lab_contract_exists"])
         self.assertTrue(release_gate["factor_test_lab_contract_step"])
         self.assertTrue(release_gate["factor_test_lab_contract_is_local"])
@@ -54102,6 +54222,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("tushare_deepseek_linkage_contract_exists", release_gate_criteria)
         self.assertIn("tushare_deepseek_linkage_contract_step", release_gate_criteria)
         self.assertIn("tushare_deepseek_linkage_contract_is_local", release_gate_criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_contract_exists", release_gate_criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_contract_step", release_gate_criteria)
+        self.assertIn("ltg_strict_closeout_evidence_spine_contract_is_local", release_gate_criteria)
         self.assertIn("factor_test_lab_contract_exists", release_gate_criteria)
         self.assertIn("factor_test_lab_contract_step", release_gate_criteria)
         self.assertIn("factor_test_lab_contract_is_local", release_gate_criteria)
