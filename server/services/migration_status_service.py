@@ -2559,6 +2559,21 @@ def _build_ltg_strict_closeout_work_order_rows(
                 "release_gate_origin_ahead_count_stale": (
                     release_gate_direct_evidence.get("local_push_gate_receipt_origin_ahead_count_stale") is True
                 ),
+                "release_gate_current_head_publish_status": release_gate_direct_evidence.get(
+                    "current_head_publish_status"
+                ),
+                "release_gate_current_head_push_required_before_remote_review": (
+                    release_gate_direct_evidence.get("current_head_push_required_before_remote_review")
+                    is True
+                ),
+                "release_gate_current_head_origin_ahead_count": int(
+                    release_gate_direct_evidence.get("current_head_origin_ahead_count") or 0
+                ),
+                "release_gate_remote_review_waiting_for_current_head_push": (
+                    release_gate_direct_evidence.get("remote_review_waiting_for_current_head_push")
+                    is True
+                ),
+                "release_gate_next_publish_step": release_gate_direct_evidence.get("next_publish_step", ""),
                 "release_gate_local_commits_not_pushed_for_remote_ci": (
                     release_gate_direct_evidence.get("local_commits_not_pushed_for_remote_ci") is True
                 ),
@@ -2646,6 +2661,19 @@ def _build_ltg_strict_closeout_work_order_rows(
         "release_gate_origin_ahead_count_stale": (
             release_gate_direct_evidence.get("local_push_gate_receipt_origin_ahead_count_stale") is True
         ),
+        "release_gate_current_head_publish_status": release_gate_direct_evidence.get(
+            "current_head_publish_status"
+        ),
+        "release_gate_current_head_push_required_before_remote_review": (
+            release_gate_direct_evidence.get("current_head_push_required_before_remote_review") is True
+        ),
+        "release_gate_current_head_origin_ahead_count": int(
+            release_gate_direct_evidence.get("current_head_origin_ahead_count") or 0
+        ),
+        "release_gate_remote_review_waiting_for_current_head_push": (
+            release_gate_direct_evidence.get("remote_review_waiting_for_current_head_push") is True
+        ),
+        "release_gate_next_publish_step": release_gate_direct_evidence.get("next_publish_step", ""),
         "release_gate_local_commits_not_pushed_for_remote_ci": (
             release_gate_direct_evidence.get("local_commits_not_pushed_for_remote_ci") is True
         ),
@@ -3869,6 +3897,16 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         remote_actions_status_known and latest_remote_run_verified_green and remote_receipt_head_matches_current
     )
     local_commits_not_pushed = local_receipt_current_origin_ahead_count > 0
+    current_head_publish_status = (
+        "current_head_unpushed_for_remote_ci"
+        if local_commits_not_pushed
+        else "current_head_has_no_unpushed_commits_for_remote_ci"
+    )
+    next_publish_step = (
+        "explicit_user_authorized_push_after_clean_local_gate"
+        if local_commits_not_pushed
+        else "inspect_matching_remote_actions_after_push"
+    )
     direct_stage_keys = ["fresh_local_gate_command_run"] if fresh_gate_run_done else []
     if remote_green_for_current_head:
         direct_stage_keys.append("matching_remote_actions_status")
@@ -3894,6 +3932,8 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     missing_evidence_items: list[str] = []
     if not fresh_gate_run_done:
         missing_evidence_items.append("fresh local gate run for current HEAD")
+    if local_commits_not_pushed:
+        missing_evidence_items.append("push current HEAD before matching remote Actions review")
     if not (remote_actions_status_known and remote_receipt_head_matches_current):
         missing_evidence_items.append("matching remote Actions status for current HEAD")
     if not remote_green_for_current_head:
@@ -3952,6 +3992,13 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "local_push_gate_receipt_origin_ahead_count_stale": (
             local_receipt_origin_ahead_count != local_receipt_current_origin_ahead_count
         ),
+        "current_head_publish_status": current_head_publish_status,
+        "current_head_push_required_before_remote_review": local_commits_not_pushed,
+        "current_head_origin_ahead_count": local_receipt_current_origin_ahead_count,
+        "remote_review_waiting_for_current_head_push": bool(
+            local_commits_not_pushed and not remote_green_for_current_head
+        ),
+        "next_publish_step": next_publish_step,
         "local_commits_not_pushed_for_remote_ci": local_commits_not_pushed,
         "local_push_gate_check_count": len(checks),
         "required_local_gate_checks_present": required_checks.issubset(set(checks)),
@@ -4051,6 +4098,18 @@ def _build_release_gate_remote_review_split_rows(
         },
         {
             "split_stage": "push_boundary_for_remote_ci",
+            "status": release_gate_summary.get("current_head_publish_status"),
+            "current_head_publish_status": release_gate_summary.get("current_head_publish_status"),
+            "current_head_push_required_before_remote_review": (
+                release_gate_summary.get("current_head_push_required_before_remote_review") is True
+            ),
+            "current_head_origin_ahead_count": int(
+                release_gate_summary.get("current_head_origin_ahead_count") or 0
+            ),
+            "remote_review_waiting_for_current_head_push": (
+                release_gate_summary.get("remote_review_waiting_for_current_head_push") is True
+            ),
+            "next_publish_step": release_gate_summary.get("next_publish_step"),
             "local_push_gate_receipt_origin_ahead_count": int(
                 release_gate_summary.get("local_push_gate_receipt_origin_ahead_count") or 0
             ),
@@ -4163,6 +4222,10 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         release_gate.get("local_push_gate_receipt_head_matches_current") is True
     )
     local_commits_not_pushed = release_gate.get("local_commits_not_pushed_for_remote_ci") is True
+    current_head_publish_status = str(
+        release_gate.get("current_head_publish_status")
+        or "current_head_has_no_unpushed_commits_for_remote_ci"
+    )
     local_recheck_required = not (
         local_complete
         and worktree_clean
@@ -4196,6 +4259,15 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         "local_push_gate_receipt_current_origin_ahead_count": int(
             release_gate.get("local_push_gate_receipt_current_origin_ahead_count") or 0
         ),
+        "current_head_publish_status": current_head_publish_status,
+        "current_head_push_required_before_remote_review": (
+            release_gate.get("current_head_push_required_before_remote_review") is True
+        ),
+        "current_head_origin_ahead_count": int(release_gate.get("current_head_origin_ahead_count") or 0),
+        "remote_review_waiting_for_current_head_push": (
+            release_gate.get("remote_review_waiting_for_current_head_push") is True
+        ),
+        "next_publish_step": release_gate.get("next_publish_step", ""),
         "local_commits_not_pushed_for_remote_ci": local_commits_not_pushed,
         "local_worktree_clean": worktree_clean,
         "local_worktree_dirty_file_count": int(
@@ -12980,6 +13052,18 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_push_gate_receipt_origin_ahead_count_stale": (
                     direct_evidence.get("local_push_gate_receipt_origin_ahead_count_stale") is True
                 ),
+                "current_head_publish_status": direct_evidence.get("current_head_publish_status")
+                or "current_head_has_no_unpushed_commits_for_remote_ci",
+                "current_head_push_required_before_remote_review": (
+                    direct_evidence.get("current_head_push_required_before_remote_review") is True
+                ),
+                "current_head_origin_ahead_count": int(
+                    direct_evidence.get("current_head_origin_ahead_count") or 0
+                ),
+                "remote_review_waiting_for_current_head_push": (
+                    direct_evidence.get("remote_review_waiting_for_current_head_push") is True
+                ),
+                "next_publish_step": direct_evidence.get("next_publish_step") or "",
                 "local_commits_not_pushed_for_remote_ci": (
                     direct_evidence.get("local_commits_not_pushed_for_remote_ci") is True
                 ),

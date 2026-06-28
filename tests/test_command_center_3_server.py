@@ -24145,6 +24145,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(release_split["local_push_gate_receipt_head_matches_current"])
         self.assertEqual(release_split["local_push_gate_receipt_current_origin_ahead_count"], 2)
         self.assertTrue(release_split["local_commits_not_pushed_for_remote_ci"])
+        self.assertEqual(release_split["current_head_publish_status"], "current_head_unpushed_for_remote_ci")
+        self.assertTrue(release_split["current_head_push_required_before_remote_review"])
+        self.assertEqual(release_split["current_head_origin_ahead_count"], 2)
+        self.assertTrue(release_split["remote_review_waiting_for_current_head_push"])
+        self.assertEqual(
+            release_split["next_publish_step"],
+            "explicit_user_authorized_push_after_clean_local_gate",
+        )
+        self.assertIn(
+            "push current HEAD before matching remote Actions review",
+            release_split["missing_evidence_items"],
+        )
         self.assertTrue(release_split["remote_review_blocked_by_unpushed_local_commits"])
         self.assertEqual(release_split["remote_review_status"], "remote_review_waiting_for_push")
         self.assertFalse(release_split["remote_actions_status_known"])
@@ -24168,6 +24180,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(
             release_split_rows["push_boundary_for_remote_ci"][
                 "remote_review_blocked_by_unpushed_local_commits"
+            ]
+        )
+        self.assertEqual(
+            release_split_rows["push_boundary_for_remote_ci"]["status"],
+            "current_head_unpushed_for_remote_ci",
+        )
+        self.assertTrue(
+            release_split_rows["push_boundary_for_remote_ci"][
+                "current_head_push_required_before_remote_review"
+            ]
+        )
+        self.assertEqual(
+            release_split_rows["push_boundary_for_remote_ci"]["current_head_origin_ahead_count"],
+            2,
+        )
+        self.assertTrue(
+            release_split_rows["push_boundary_for_remote_ci"][
+                "remote_review_waiting_for_current_head_push"
             ]
         )
         self.assertFalse(
@@ -24204,6 +24234,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(ltg11["local_push_gate_receipt_current_origin_ahead_count"], 2)
         self.assertFalse(ltg11["local_push_gate_receipt_origin_ahead_count_stale"])
         self.assertTrue(ltg11["local_commits_not_pushed_for_remote_ci"])
+        self.assertEqual(ltg11["current_head_publish_status"], "current_head_unpushed_for_remote_ci")
+        self.assertTrue(ltg11["current_head_push_required_before_remote_review"])
+        self.assertEqual(ltg11["current_head_origin_ahead_count"], 2)
+        self.assertTrue(ltg11["remote_review_waiting_for_current_head_push"])
         self.assertEqual(ltg11["remote_review_status"], "remote_review_waiting_for_push")
         self.assertEqual(ltg11["local_push_gate_check_count"], len(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS))
         self.assertTrue(ltg11["required_local_gate_checks_present"])
@@ -24255,6 +24289,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(work_order_summary["release_gate_receipt_reported_origin_ahead_count"], 2)
         self.assertFalse(work_order_summary["release_gate_origin_ahead_count_stale"])
         self.assertTrue(work_order_summary["release_gate_local_commits_not_pushed_for_remote_ci"])
+        self.assertEqual(
+            work_order_summary["release_gate_current_head_publish_status"],
+            "current_head_unpushed_for_remote_ci",
+        )
+        self.assertTrue(
+            work_order_summary["release_gate_current_head_push_required_before_remote_review"]
+        )
+        self.assertEqual(work_order_summary["release_gate_current_head_origin_ahead_count"], 2)
+        self.assertTrue(work_order_summary["release_gate_remote_review_waiting_for_current_head_push"])
+        self.assertEqual(
+            work_order_summary["release_gate_next_publish_step"],
+            "explicit_user_authorized_push_after_clean_local_gate",
+        )
         self.assertIn(
             "local_commits_not_pushed_for_remote_ci",
             work_order_summary["release_gate_current_blockers"],
@@ -24267,6 +24314,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(work_order_rows["LTG-11"]["release_gate_receipt_reported_origin_ahead_count"], 2)
         self.assertFalse(work_order_rows["LTG-11"]["release_gate_origin_ahead_count_stale"])
         self.assertTrue(work_order_rows["LTG-11"]["release_gate_local_commits_not_pushed_for_remote_ci"])
+        self.assertEqual(
+            work_order_rows["LTG-11"]["release_gate_current_head_publish_status"],
+            work_order_summary["release_gate_current_head_publish_status"],
+        )
         self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
         self.assertEqual(work_order_summary["strict_closeout"], "0/14")
 
