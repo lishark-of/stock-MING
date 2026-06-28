@@ -38268,9 +38268,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(p1_producer_handoff["cache_get_external_calls"])
         self.assertFalse(p1_producer_handoff["provider_execution_implemented"])
         self.assertFalse(p1_producer_handoff["production_freshness_gate_complete"])
+        top_level_target_sample_handoff = migration["data"][
+            "ltg02_tushare_target_sample_evidence_handoff_summary"
+        ]
         p2_target_sample_handoff = action_rows["p2_tushare_target_sample_acceptance"][
             "supporting_tushare_target_sample_evidence_handoff"
         ]
+        self.assertEqual(top_level_target_sample_handoff, p2_target_sample_handoff)
         self.assertEqual(
             p2_target_sample_handoff["schema_version"],
             "ltg02_tushare_target_sample_evidence_handoff_summary.v1",
@@ -38298,7 +38302,55 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(p2_target_sample_handoff["tushare_called"])
         self.assertTrue(p2_target_sample_handoff["does_not_execute_trades"])
         self.assertFalse(p2_target_sample_handoff["can_close_goal"])
+        top_level_full_interface_handoff = migration["data"][
+            "ltg02_tushare_full_interface_pipeline_handoff_summary"
+        ]
+        p2_full_interface_handoff = action_rows["p2_tushare_target_sample_acceptance"][
+            "supporting_tushare_full_interface_pipeline_handoff"
+        ]
+        self.assertEqual(top_level_full_interface_handoff, p2_full_interface_handoff)
+        self.assertEqual(
+            p2_full_interface_handoff["schema_version"],
+            "ltg02_tushare_full_interface_pipeline_handoff_summary.v1",
+        )
+        self.assertIn(
+            p2_full_interface_handoff["status"],
+            {
+                "full_interface_pipeline_target_sample_scope_needed",
+                "full_interface_pipeline_execution_recipe_ready_request_ticket_needed",
+                "full_interface_pipeline_execution_request_ready_provider_task_pending",
+                "full_interface_pipeline_target_sample_review_ready_promotion_pending",
+            },
+        )
+        self.assertEqual(
+            action_rows["p2_tushare_target_sample_acceptance"][
+                "supporting_tushare_full_interface_next_local_step"
+            ],
+            p2_full_interface_handoff["next_local_step"],
+        )
+        self.assertFalse(p2_full_interface_handoff["cache_get_creates_task"])
+        self.assertFalse(p2_full_interface_handoff["cache_get_calls_provider"])
+        self.assertFalse(p2_full_interface_handoff["cache_get_calls_tushare"])
+        self.assertFalse(p2_full_interface_handoff["creates_provider_task_from_get"])
+        self.assertFalse(p2_full_interface_handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(p2_full_interface_handoff["external_calls_triggered"])
+        self.assertFalse(p2_full_interface_handoff["tushare_called"])
+        self.assertFalse(p2_full_interface_handoff["deepseek_called"])
+        self.assertFalse(p2_full_interface_handoff["github_called"])
+        self.assertTrue(p2_full_interface_handoff["does_not_execute_trades"])
+        self.assertFalse(p2_full_interface_handoff["can_close_goal"])
+        self.assertFalse(p2_full_interface_handoff["production_complete"])
+        self.assertFalse(p2_full_interface_handoff["production_tushare_pipeline_complete"])
         self.assertFalse(action_rows["p2_tushare_target_sample_acceptance"]["external_calls_triggered"])
+        migration_call_ledger = migration["data"]["call_ledger"][0]
+        self.assertEqual(
+            migration_call_ledger["ltg02_tushare_target_sample_handoff_status"],
+            p2_target_sample_handoff["status"],
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg02_tushare_full_interface_pipeline_handoff_status"],
+            p2_full_interface_handoff["status"],
+        )
         self.assertTrue(action_rows["p3_candidate_radar_provider_worker_promotion"]["does_not_modify_strategy_action"])
         self.assertFalse(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_lookup_calls_provider"])
         self.assertFalse(runway_rows["LTG-01"]["can_close_goal"])
