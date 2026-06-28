@@ -38135,9 +38135,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn("LTG-12", action_rows["p10_trade_isolation_release_guard"]["ltg_ids"])
         self.assertEqual(action_rows["p10_trade_isolation_release_guard"]["local_receipt_step_count"], 1)
+        top_level_trade_handoff = migration["ltg12_trade_isolation_release_guard_handoff_summary"]
         p10_trade_handoff = action_rows["p10_trade_isolation_release_guard"][
             "supporting_trade_isolation_release_guard_handoff"
         ]
+        self.assertEqual(top_level_trade_handoff, p10_trade_handoff)
         self.assertEqual(
             p10_trade_handoff["schema_version"],
             "ltg12_trade_isolation_release_guard_handoff_summary.v1",
@@ -38175,6 +38177,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(p10_trade_handoff["tushare_called"])
         self.assertFalse(p10_trade_handoff["deepseek_called"])
         self.assertFalse(p10_trade_handoff["github_called"])
+        self.assertFalse(p10_trade_handoff["cache_get_calls_provider"])
+        self.assertFalse(p10_trade_handoff["cache_get_calls_model"])
+        self.assertFalse(p10_trade_handoff["cache_get_calls_github"])
         self.assertTrue(p10_trade_handoff["does_not_execute_trades"])
         self.assertTrue(p10_trade_handoff["does_not_modify_strategy_action"])
         self.assertTrue(p10_trade_handoff["does_not_modify_holdings"])

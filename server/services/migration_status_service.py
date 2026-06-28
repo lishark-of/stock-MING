@@ -14309,6 +14309,9 @@ def build_migration_status() -> dict[str, Any]:
     ltg11_release_gate_remote_review_handoff_summary = (
         _latest_release_gate_remote_review_handoff_summary()
     )
+    ltg12_trade_isolation_release_guard_handoff_summary = (
+        _latest_trade_isolation_release_guard_handoff_summary()
+    )
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
     tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(
@@ -14367,6 +14370,9 @@ def build_migration_status() -> dict[str, Any]:
         "release_gate_remote_review_split_row_count": len(release_gate_remote_review_split_rows),
         "ltg11_release_gate_remote_review_handoff_summary": (
             ltg11_release_gate_remote_review_handoff_summary
+        ),
+        "ltg12_trade_isolation_release_guard_handoff_summary": (
+            ltg12_trade_isolation_release_guard_handoff_summary
         ),
         "ltg_stage_scope_observed_rows": ltg_stage_scope_observed_rows,
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
@@ -14459,6 +14465,12 @@ def build_migration_status() -> dict[str, Any]:
                 ),
                 "ltg11_release_gate_remote_review_next_local_step": (
                     ltg11_release_gate_remote_review_handoff_summary.get("next_local_step")
+                ),
+                "ltg12_trade_isolation_release_guard_handoff_status": (
+                    ltg12_trade_isolation_release_guard_handoff_summary.get("status")
+                ),
+                "ltg12_trade_isolation_release_guard_next_local_step": (
+                    ltg12_trade_isolation_release_guard_handoff_summary.get("next_local_step")
                 ),
                 "tushare_deepseek_linkage_row_count": len(tushare_deepseek_linkage_rows),
                 "tushare_deepseek_mode_layer_row_count": len(tushare_deepseek_mode_layer_rows),
