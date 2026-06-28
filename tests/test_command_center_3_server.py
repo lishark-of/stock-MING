@@ -24134,6 +24134,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(stage_rows["fresh_local_gate_command_run"]["stage_complete"])
         self.assertFalse(stage_rows["matching_remote_actions_status"]["stage_complete"])
         self.assertFalse(stage_rows["explicit_push_approval_boundary"]["stage_complete"])
+        for stage_key in ("matching_remote_actions_status", "explicit_push_approval_boundary"):
+            self.assertEqual(
+                stage_rows[stage_key]["current_head_publish_status"],
+                "current_head_unpushed_for_remote_ci",
+            )
+            self.assertTrue(stage_rows[stage_key]["current_head_push_required_before_remote_review"])
+            self.assertEqual(stage_rows[stage_key]["current_head_origin_ahead_count"], 2)
+            self.assertTrue(stage_rows[stage_key]["remote_review_waiting_for_current_head_push"])
+            self.assertEqual(
+                stage_rows[stage_key]["next_publish_step"],
+                "explicit_user_authorized_push_after_clean_local_gate",
+            )
+            self.assertIn(
+                "push current HEAD before matching remote Actions review",
+                stage_rows[stage_key]["missing_evidence"],
+            )
         self.assertEqual(packet["counts"]["release_gate_stage_scope_pending_count"], 5)
         self.assertTrue(packet["counts"]["local_push_gate_run_observed"])
         self.assertTrue(packet["counts"]["local_push_gate_receipt_head_matches_current"])

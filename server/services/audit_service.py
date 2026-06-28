@@ -2585,9 +2585,41 @@ def _release_gate_stage_scope_rows(
     remote_review = _as_dict(remote_ci_review_receipt)
     remote_actions_status_known = remote_review.get("remote_actions_status_known") is True
     latest_remote_run_verified_green = remote_review.get("latest_remote_run_verified_green") is True
+    current_head_publish_status = str(
+        release_gate_push_readiness_receipt.get("current_head_publish_status")
+        or "current_head_has_no_unpushed_commits_for_remote_ci"
+    )
+    current_head_push_required = (
+        release_gate_push_readiness_receipt.get("current_head_push_required_before_remote_review")
+        is True
+    )
+    try:
+        current_head_origin_ahead_count = int(
+            release_gate_push_readiness_receipt.get("current_head_origin_ahead_count") or 0
+        )
+    except (TypeError, ValueError):
+        current_head_origin_ahead_count = 0
+    remote_review_waiting_for_current_head_push = (
+        release_gate_push_readiness_receipt.get("remote_review_waiting_for_current_head_push") is True
+    )
+    next_publish_step = str(release_gate_push_readiness_receipt.get("next_publish_step") or "")
     local_receipt_freshness_blockers = [
         str(item) for item in _as_list(local_receipt.get("freshness_blockers"))
     ]
+    missing_evidence = [
+        "fresh scripts/push_gate_3_0.sh output for current HEAD",
+    ]
+    if current_head_push_required:
+        missing_evidence.append("push current HEAD before matching remote Actions review")
+    missing_evidence.extend(
+        [
+            "matching remote Actions run for pushed commit",
+            "latest remote Actions green evidence",
+            "safe failure log excerpt when email reports a failure",
+            "periodic secret/artifact allowlist review",
+            "explicit user/operator push approval",
+        ]
+    )
     rows: list[dict[str, Any]] = []
     for stage_key in sorted(REQUIRED_RELEASE_GATE_STAGE_KEYS):
         stage_complete = (
@@ -2631,6 +2663,11 @@ def _release_gate_stage_scope_rows(
                 "remote_ci_review_receipt_status": remote_review.get("status", ""),
                 "remote_ci_review_receipt_run_id": remote_review.get("run_id", ""),
                 "remote_ci_review_receipt_head_matches_current": remote_review.get("head_matches_current") is True,
+                "current_head_publish_status": current_head_publish_status,
+                "current_head_push_required_before_remote_review": current_head_push_required,
+                "current_head_origin_ahead_count": current_head_origin_ahead_count,
+                "remote_review_waiting_for_current_head_push": remote_review_waiting_for_current_head_push,
+                "next_publish_step": next_publish_step,
                 "failure_email_has_matching_head_and_logs": False,
                 "can_dismiss_failure_email_without_matching_head_and_logs": False,
                 "periodic_allowlist_review_ready": False,
@@ -2649,14 +2686,7 @@ def _release_gate_stage_scope_rows(
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
                 "contains_secret": False,
-                "missing_evidence": [
-                    "fresh scripts/push_gate_3_0.sh output for current HEAD",
-                    "matching remote Actions run for pushed commit",
-                    "latest remote Actions green evidence",
-                    "safe failure log excerpt when email reports a failure",
-                    "periodic secret/artifact allowlist review",
-                    "explicit user/operator push approval",
-                ],
+                "missing_evidence": missing_evidence,
             }
         )
     return rows
