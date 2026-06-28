@@ -38610,6 +38610,82 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_call_ledger["ltg06_worker_runtime_qa_handoff_status"],
             p4_worker_handoff["status"],
         )
+        top_level_candidate_radar_handoff = migration["data"][
+            "ltg13_candidate_radar_production_handoff_summary"
+        ]
+        p3_candidate_radar_handoff = action_rows[
+            "p3_candidate_radar_provider_worker_promotion"
+        ]["supporting_candidate_radar_production_handoff"]
+        self.assertEqual(top_level_candidate_radar_handoff, p3_candidate_radar_handoff)
+        self.assertEqual(
+            p3_candidate_radar_handoff["schema_version"],
+            "ltg13_candidate_radar_production_handoff_summary.v1",
+        )
+        self.assertIn(
+            p3_candidate_radar_handoff["status"],
+            {
+                "candidate_radar_local_receipts_visible_worker_request_needed",
+                "candidate_radar_worker_request_ready_production_review_needed",
+                "candidate_radar_production_review_ready_promotion_dry_run_needed",
+                "candidate_radar_promotion_dry_run_ready_legacy_review_needed",
+                "candidate_radar_legacy_review_ready_promotion_review_needed",
+                "candidate_radar_promotion_review_ready_worker_provider_release_blocked",
+            },
+        )
+        self.assertEqual(
+            action_rows["p3_candidate_radar_provider_worker_promotion"][
+                "supporting_candidate_radar_production_next_local_step"
+            ],
+            p3_candidate_radar_handoff["next_local_step"],
+        )
+        self.assertTrue(p3_candidate_radar_handoff["requires_worker_full_pool_execution"])
+        self.assertTrue(p3_candidate_radar_handoff["requires_worker_deep_scan_execution"])
+        self.assertTrue(p3_candidate_radar_handoff["requires_provider_backed_parity_acceptance"])
+        self.assertTrue(p3_candidate_radar_handoff["requires_browser_visual_performance_promotion"])
+        self.assertTrue(p3_candidate_radar_handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(p3_candidate_radar_handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(p3_candidate_radar_handoff["worker_full_pool_execution_done"])
+        self.assertFalse(p3_candidate_radar_handoff["worker_deep_scan_execution_done"])
+        self.assertFalse(p3_candidate_radar_handoff["provider_backed_acceptance_done"])
+        self.assertFalse(p3_candidate_radar_handoff["worker_backed_execution_done"])
+        self.assertFalse(p3_candidate_radar_handoff["deepseek_model_ledger_complete"])
+        self.assertFalse(p3_candidate_radar_handoff["browser_visual_performance_promoted"])
+        self.assertFalse(p3_candidate_radar_handoff["legacy_retirement_ready"])
+        self.assertFalse(p3_candidate_radar_handoff["production_radar_replacement_complete"])
+        self.assertFalse(
+            p3_candidate_radar_handoff[
+                "ready_to_mark_production_radar_replacement_complete"
+            ]
+        )
+        self.assertFalse(p3_candidate_radar_handoff["cache_get_creates_task"])
+        self.assertFalse(p3_candidate_radar_handoff["cache_get_starts_worker"])
+        self.assertFalse(p3_candidate_radar_handoff["cache_get_calls_provider"])
+        self.assertFalse(p3_candidate_radar_handoff["cache_get_calls_model"])
+        self.assertFalse(p3_candidate_radar_handoff["cache_get_calls_github"])
+        self.assertFalse(p3_candidate_radar_handoff["creates_worker_task_from_get"])
+        self.assertFalse(p3_candidate_radar_handoff["worker_task_created_by_handoff"])
+        self.assertFalse(p3_candidate_radar_handoff["worker_execution_implemented_by_handoff"])
+        self.assertFalse(p3_candidate_radar_handoff["worker_started_by_handoff"])
+        self.assertFalse(p3_candidate_radar_handoff["provider_model_task_created_by_handoff"])
+        self.assertFalse(p3_candidate_radar_handoff["external_calls_triggered"])
+        self.assertFalse(p3_candidate_radar_handoff["tushare_called"])
+        self.assertFalse(p3_candidate_radar_handoff["deepseek_called"])
+        self.assertFalse(p3_candidate_radar_handoff["github_called"])
+        self.assertTrue(p3_candidate_radar_handoff["does_not_execute_trades"])
+        self.assertTrue(p3_candidate_radar_handoff["does_not_modify_strategy_action"])
+        self.assertTrue(p3_candidate_radar_handoff["does_not_modify_holdings"])
+        self.assertTrue(p3_candidate_radar_handoff["candidate_is_not_buy_instruction"])
+        self.assertFalse(p3_candidate_radar_handoff["contains_secret"])
+        self.assertFalse(p3_candidate_radar_handoff["can_close_goal"])
+        self.assertFalse(p3_candidate_radar_handoff["production_complete"])
+        self.assertEqual(
+            p3_candidate_radar_handoff["evidence_boundary"],
+            "ltg13_candidate_radar_handoff_reads_local_receipts_not_worker_provider_or_production_replacement",
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg13_candidate_radar_production_handoff_status"],
+            p3_candidate_radar_handoff["status"],
+        )
         self.assertTrue(action_rows["p3_candidate_radar_provider_worker_promotion"]["does_not_modify_strategy_action"])
         self.assertFalse(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_lookup_calls_provider"])
         self.assertFalse(runway_rows["LTG-01"]["can_close_goal"])
