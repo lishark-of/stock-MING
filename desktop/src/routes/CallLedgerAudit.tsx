@@ -322,6 +322,7 @@ export default function CallLedgerAudit() {
         <p>can_clear_failure_email_without_matching_head_and_logs: {String(releaseGatePushReceipt.can_clear_failure_email_without_matching_head_and_logs === true)}</p>
         <p>did_not_push: {String(releaseGatePushReceipt.did_not_push !== false)}；github_api_called: {String(releaseGatePushReceipt.github_api_called === true)}</p>
         <p>该收据不运行 push gate、不调用 GitHub、不推送代码；它把本地 gate、当前 HEAD publish、push 和远端 Actions 复核保持为独立步骤。</p>
+        <p>把本地 gate、push 和远端 Actions 复核保持为三个独立步骤；当前 HEAD publish 只说明推送边界，不代表远端 CI 已绿。</p>
         <DataLineageTable rows={[releaseGatePushReceipt]} />
         <DataLineageTable rows={releaseGatePushRows} />
       </PacketCard>

@@ -219,6 +219,7 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
                         "job_name": "push-gate",
                         "job_conclusion": "success",
                         "artifact_name": "command-center-3-push-gate-evidence-28277376120",
+                        "artifact_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                         "explicit_user_actions_review_authorized": True,
                         "remote_actions_status_known": True,
                         "latest_remote_run_verified_green": True,
