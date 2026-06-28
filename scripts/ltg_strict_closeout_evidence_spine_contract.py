@@ -44,6 +44,21 @@ def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+def _int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _split_rows_by_stage(rows: list[Any]) -> dict[str, dict[str, Any]]:
+    return {
+        str(row.get("split_stage") or ""): row
+        for row in rows
+        if isinstance(row, dict)
+    }
+
+
 def _read_push_gate_script() -> str:
     try:
         return PUSH_GATE_SCRIPT_PATH.read_text(encoding="utf-8")
@@ -63,6 +78,36 @@ def build_contract() -> dict[str, Any]:
     call_ledger = _list(packet.get("call_ledger"))
     first_call_ledger = _dict(call_ledger[0] if call_ledger else {})
     push_gate_script = _read_push_gate_script()
+    release_split_summary = _dict(packet.get("release_gate_remote_review_split_summary"))
+    release_handoff_summary = _dict(packet.get("ltg11_release_gate_remote_review_handoff_summary"))
+    work_order_summary = _dict(packet.get("ltg_strict_closeout_work_order_summary"))
+    release_split_rows = [
+        row for row in _list(packet.get("release_gate_remote_review_split_rows")) if isinstance(row, dict)
+    ]
+    split_rows_by_stage = _split_rows_by_stage(release_split_rows)
+    push_boundary_row = _dict(split_rows_by_stage.get("push_boundary_for_remote_ci"))
+    matching_remote_row = _dict(split_rows_by_stage.get("matching_remote_actions_review"))
+    release_review_row = _dict(split_rows_by_stage.get("release_review_and_strict_closeout_boundary"))
+
+    current_head_publish_status = str(release_split_summary.get("current_head_publish_status") or "")
+    current_head_ahead_count = _int(release_split_summary.get("current_head_origin_ahead_count"))
+    current_head_push_required = (
+        release_split_summary.get("current_head_push_required_before_remote_review") is True
+    )
+    remote_ci_green_for_current_head = release_split_summary.get("remote_ci_green_for_current_head") is True
+    expected_publish_status = (
+        "current_head_unpushed_for_remote_ci"
+        if current_head_ahead_count > 0
+        else "current_head_has_no_unpushed_commits_for_remote_ci"
+    )
+    expected_next_publish_step = (
+        "explicit_user_authorized_push_after_clean_local_gate"
+        if current_head_ahead_count > 0
+        else "inspect_matching_remote_actions_after_push"
+    )
+    expected_remote_review_waiting_for_push = bool(
+        current_head_push_required and not remote_ci_green_for_current_head
+    )
 
     all_rows_visible = bool(spine_rows) and all(row.get("handoff_visible") is True for row in spine_rows)
     all_rows_block_closeout = bool(spine_rows) and all(
@@ -102,6 +147,77 @@ def build_contract() -> dict[str, Any]:
     push_gate_step_ready = (
         "scripts/ltg_strict_closeout_evidence_spine_contract.py" in push_gate_script
         and "LTG strict closeout evidence spine contract" in push_gate_script
+    )
+    current_head_publish_boundary_visible = (
+        release_split_summary.get("schema_version") == "migration_release_gate_direct_evidence_summary.v1"
+        and current_head_publish_status == expected_publish_status
+        and current_head_push_required == (current_head_ahead_count > 0)
+        and release_split_summary.get("remote_review_waiting_for_current_head_push")
+        == expected_remote_review_waiting_for_push
+        and release_split_summary.get("next_publish_step") == expected_next_publish_step
+        and release_split_summary.get("did_not_push") is True
+        and release_split_summary.get("github_called") is False
+        and release_split_summary.get("external_calls_triggered") is False
+        and release_split_summary.get("does_not_execute_trades") is True
+        and release_split_summary.get("strict_closeout_ready") is False
+        and release_split_summary.get("release_gate_complete") is False
+    )
+    push_boundary_row_blocks_remote_review_when_ahead = (
+        push_boundary_row.get("split_stage") == "push_boundary_for_remote_ci"
+        and push_boundary_row.get("current_head_publish_status") == current_head_publish_status
+        and push_boundary_row.get("current_head_push_required_before_remote_review")
+        is current_head_push_required
+        and _int(push_boundary_row.get("current_head_origin_ahead_count")) == current_head_ahead_count
+        and push_boundary_row.get("remote_review_waiting_for_current_head_push")
+        == expected_remote_review_waiting_for_push
+        and push_boundary_row.get("next_publish_step") == expected_next_publish_step
+        and push_boundary_row.get("local_commits_not_pushed_for_remote_ci") is current_head_push_required
+        and push_boundary_row.get("remote_review_blocked_by_unpushed_local_commits")
+        is current_head_push_required
+        and push_boundary_row.get("push_requires_explicit_user_confirmation") is True
+        and push_boundary_row.get("did_not_push") is True
+        and push_boundary_row.get("not_remote_ci_status") is True
+    )
+    remote_review_split_rows_keep_release_boundary = (
+        matching_remote_row.get("split_stage") == "matching_remote_actions_review"
+        and matching_remote_row.get("github_api_called") is False
+        and matching_remote_row.get("external_calls_triggered") is False
+        and matching_remote_row.get("not_release_review") is True
+        and (
+            not current_head_push_required
+            or matching_remote_row.get("remote_ci_green_for_current_head") is False
+        )
+        and release_review_row.get("split_stage") == "release_review_and_strict_closeout_boundary"
+        and release_review_row.get("release_gate_complete") is False
+        and release_review_row.get("strict_closeout_ready") is False
+        and release_review_row.get("can_close_from_observed_row") is False
+        and release_review_row.get("does_not_execute_trades") is True
+        and release_review_row.get("does_not_modify_strategy_action") is True
+        and release_review_row.get("contains_secret") is False
+    )
+    handoff_and_work_order_publish_boundary_agree = (
+        release_handoff_summary.get("schema_version")
+        == "ltg11_release_gate_remote_review_handoff_summary.v1"
+        and release_handoff_summary.get("current_head_publish_status") == current_head_publish_status
+        and release_handoff_summary.get("current_head_push_required_before_remote_review")
+        is current_head_push_required
+        and _int(release_handoff_summary.get("current_head_origin_ahead_count")) == current_head_ahead_count
+        and release_handoff_summary.get("remote_review_waiting_for_current_head_push")
+        == expected_remote_review_waiting_for_push
+        and release_handoff_summary.get("next_publish_step") == expected_next_publish_step
+        and release_handoff_summary.get("strict_closeout_ready") is False
+        and release_handoff_summary.get("github_called") is False
+        and release_handoff_summary.get("external_calls_triggered") is False
+        and release_handoff_summary.get("does_not_execute_trades") is True
+        and work_order_summary.get("release_gate_current_head_publish_status") == current_head_publish_status
+        and work_order_summary.get("release_gate_current_head_push_required_before_remote_review")
+        is current_head_push_required
+        and _int(work_order_summary.get("release_gate_current_head_origin_ahead_count"))
+        == current_head_ahead_count
+        and work_order_summary.get("release_gate_remote_review_waiting_for_current_head_push")
+        == expected_remote_review_waiting_for_push
+        and work_order_summary.get("release_gate_next_publish_step") == expected_next_publish_step
+        and work_order_summary.get("strict_closeout_claim_allowed") is False
     )
 
     rows = [
@@ -152,6 +268,29 @@ def build_contract() -> dict[str, Any]:
             and summary.get("requires_release_review_after_remote_green") is True
             and all_rows_remote_review_split,
             "remote CI and release review stay separate from local handoff inventory",
+        ),
+        _row(
+            "ltg11_current_head_publish_boundary_visible",
+            current_head_publish_boundary_visible,
+            (
+                f"{current_head_publish_status}; ahead={current_head_ahead_count}; "
+                f"push_required={str(current_head_push_required).lower()}"
+            ),
+        ),
+        _row(
+            "ltg11_push_boundary_blocks_remote_review_when_head_ahead",
+            push_boundary_row_blocks_remote_review_when_ahead,
+            "push boundary row keeps unpushed current HEAD separate from matching remote Actions review",
+        ),
+        _row(
+            "ltg11_remote_review_release_boundary_rows_visible",
+            remote_review_split_rows_keep_release_boundary,
+            "matching remote Actions review is not release review or strict closeout evidence",
+        ),
+        _row(
+            "ltg11_handoff_and_work_order_publish_boundary_agree",
+            handoff_and_work_order_publish_boundary_agree,
+            "LTG-11 handoff and 14-LTG work order expose the same current-head publish boundary",
         ),
         _row(
             "ltg_strict_closeout_evidence_spine_cache_only_no_task_creation",
@@ -218,6 +357,11 @@ def build_contract() -> dict[str, Any]:
         "remote_review_split_required": True,
         "requires_remote_ci_review": True,
         "requires_release_review_after_remote_green": True,
+        "current_head_publish_status": current_head_publish_status,
+        "current_head_origin_ahead_count": current_head_ahead_count,
+        "current_head_push_required_before_remote_review": current_head_push_required,
+        "remote_review_waiting_for_current_head_push": expected_remote_review_waiting_for_push,
+        "next_publish_step": expected_next_publish_step,
         "push_gate_step_ready": push_gate_step_ready,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -235,6 +379,11 @@ def build_contract() -> dict[str, Any]:
             "goal_ids": sorted(rows_by_id),
             "handoff_summary_total_count": summary.get("handoff_summary_total_count"),
             "strict_closeout": summary.get("strict_closeout"),
+            "current_head_publish_status": current_head_publish_status,
+            "current_head_origin_ahead_count": current_head_ahead_count,
+            "current_head_push_required_before_remote_review": current_head_push_required,
+            "remote_review_waiting_for_current_head_push": expected_remote_review_waiting_for_push,
+            "next_publish_step": expected_next_publish_step,
             "call_ledger_strict_closeout": first_call_ledger.get(
                 "ltg_strict_closeout_evidence_spine_strict_closeout"
             ),
