@@ -52541,6 +52541,26 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(handoff["production_promotion_review_ready"])
         self.assertTrue(handoff["durable_recipe_ready"])
         self.assertFalse(handoff["durable_evidence_complete"])
+        durable_missing = set(durable_recipe["missing_durable_evidence"])
+        self.assertEqual(handoff["durable_evidence_blocker_count"], len(durable_missing))
+        self.assertEqual(handoff["missing_durable_evidence_count"], len(durable_missing))
+        self.assertEqual(set(handoff["missing_durable_evidence"]), durable_missing)
+        self.assertEqual(
+            handoff["requires_queue_round_trip_evidence"],
+            "queue_round_trip_evidence_required" in durable_missing,
+        )
+        self.assertEqual(
+            handoff["requires_local_fallback_rollback_evidence"],
+            "local_fallback_rollback_evidence_required" in durable_missing,
+        )
+        self.assertEqual(
+            handoff["requires_celery_process_evidence"],
+            "celery_process_evidence_required" in durable_missing,
+        )
+        self.assertEqual(
+            handoff["requires_redis_broker_reachability_evidence"],
+            "redis_broker_reachability_evidence_required" in durable_missing,
+        )
         self.assertTrue(handoff["requires_production_worker_closeout"])
         self.assertTrue(handoff["requires_remote_ci_review_after_local_complete"])
         self.assertTrue(handoff["requires_release_review_after_remote_green"])
@@ -52574,6 +52594,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertTrue(worker_action["supporting_worker_runtime_qa_execution_done"])
         self.assertTrue(worker_action["supporting_worker_runtime_qa_promotion_review_ready"])
+        self.assertEqual(
+            worker_action["supporting_worker_runtime_qa_durable_blocker_count"],
+            len(durable_missing),
+        )
+        self.assertEqual(
+            set(worker_action["supporting_worker_runtime_qa_missing_durable_evidence"]),
+            durable_missing,
+        )
+        self.assertEqual(
+            worker_action["supporting_worker_runtime_qa_requires_celery_process"],
+            "celery_process_evidence_required" in durable_missing,
+        )
+        self.assertEqual(
+            worker_action["supporting_worker_runtime_qa_requires_redis_broker"],
+            "redis_broker_reachability_evidence_required" in durable_missing,
+        )
         self.assertFalse(worker_action["supporting_worker_runtime_qa_creates_task_from_get"])
 
     def test_ltg_stage_scope_observes_worker_runtime_direct_evidence_without_completion(self):

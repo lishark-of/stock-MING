@@ -5767,6 +5767,9 @@ def _latest_worker_runtime_qa_handoff_summary() -> dict[str, Any]:
     execution = _dict_or_empty(packet_map.get("worker_runtime_qa_execution_receipt"))
     durable_recipe = _dict_or_empty(packet_map.get("worker_runtime_durable_evidence_recipe"))
     promotion = _dict_or_empty(packet_map.get("worker_production_promotion_review_receipt"))
+    missing_durable_evidence = [
+        str(item) for item in durable_recipe.get("missing_durable_evidence") or [] if str(item)
+    ]
 
     plan_ready = bool(
         plan.get("evidence_plan_ready") is True
@@ -5874,6 +5877,14 @@ def _latest_worker_runtime_qa_handoff_summary() -> dict[str, Any]:
         "direct_evidence_status": str(direct_evidence.get("status") or ""),
         "direct_evidence_layer": str(direct_evidence.get("direct_evidence_layer") or ""),
         "direct_evidence_stage_count": int(direct_evidence.get("direct_evidence_stage_count") or 0),
+        "durable_evidence_row_count": int(durable_recipe.get("row_count") or 0),
+        "durable_evidence_blocker_count": int(
+            durable_recipe.get("durable_evidence_blocker_count")
+            or durable_recipe.get("production_blocker_count")
+            or len(missing_durable_evidence)
+        ),
+        "missing_durable_evidence": missing_durable_evidence,
+        "missing_durable_evidence_count": len(missing_durable_evidence),
         "dependency_preflight_visible": dependency.get("preflight_visible") is True,
         "local_non_redis_runtime_ready": dependency.get("local_non_redis_runtime_evidence_ready") is True,
         "redis_manual_resolution_required": dependency.get("redis_manual_resolution_required") is True,
@@ -5910,6 +5921,31 @@ def _latest_worker_runtime_qa_handoff_summary() -> dict[str, Any]:
         "next_local_step": next_local_step,
         "missing_durable_evidence_after_promotion_review": list(
             direct_evidence.get("missing_durable_evidence_after_promotion_review") or []
+        ),
+        "requires_celery_process_evidence": "celery_process_evidence_required" in missing_durable_evidence,
+        "requires_redis_broker_reachability_evidence": (
+            "redis_broker_reachability_evidence_required" in missing_durable_evidence
+        ),
+        "requires_queue_round_trip_evidence": (
+            "queue_round_trip_evidence_required" in missing_durable_evidence
+        ),
+        "requires_cross_process_controls_evidence": (
+            "cross_process_controls_evidence_required" in missing_durable_evidence
+        ),
+        "requires_append_only_worker_log_evidence": (
+            "append_only_worker_log_evidence_required" in missing_durable_evidence
+        ),
+        "requires_scheduler_default_off_runtime_evidence": (
+            "scheduler_default_off_runtime_evidence_required" in missing_durable_evidence
+        ),
+        "requires_provider_model_no_autoschedule_runtime_evidence": (
+            "provider_model_no_autoschedule_runtime_evidence_required" in missing_durable_evidence
+        ),
+        "requires_local_fallback_rollback_evidence": (
+            "local_fallback_rollback_evidence_required" in missing_durable_evidence
+        ),
+        "requires_production_worker_promotion_review": (
+            "production_worker_promotion_review_required" in missing_durable_evidence
         ),
         "requires_production_worker_closeout": True,
         "requires_remote_ci_review_after_local_complete": True,
@@ -9890,6 +9926,21 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_worker_runtime_qa_promotion_review_ready": (
                     supporting_worker_runtime_qa_handoff.get("production_promotion_review_ready") is True
+                ),
+                "supporting_worker_runtime_qa_durable_blocker_count": int(
+                    supporting_worker_runtime_qa_handoff.get("durable_evidence_blocker_count") or 0
+                ),
+                "supporting_worker_runtime_qa_missing_durable_evidence": list(
+                    supporting_worker_runtime_qa_handoff.get("missing_durable_evidence") or []
+                ),
+                "supporting_worker_runtime_qa_requires_celery_process": (
+                    supporting_worker_runtime_qa_handoff.get("requires_celery_process_evidence") is True
+                ),
+                "supporting_worker_runtime_qa_requires_redis_broker": (
+                    supporting_worker_runtime_qa_handoff.get(
+                        "requires_redis_broker_reachability_evidence"
+                    )
+                    is True
                 ),
                 "supporting_worker_runtime_qa_creates_task_from_get": (
                     supporting_worker_runtime_qa_handoff.get("cache_get_creates_task") is True
