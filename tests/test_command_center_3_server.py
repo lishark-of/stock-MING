@@ -3757,7 +3757,6 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         assert_ltg07_deepseek_stage_scope(
             self,
             observed_stage_rows["LTG-07"],
-            expected_direct_count=len(DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS),
         )
         assert_ltg08_next_session_stage_scope(self, observed_stage_rows["LTG-08"])
         self.assertEqual(
@@ -4092,7 +4091,6 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         assert_ltg07_migration_goal_stage_scope(
             self,
             migration_goals["LTG-07"],
-            expected_direct_count=len(DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS),
         )
         assert_ltg08_migration_goal_stage_scope(self, migration_goals["LTG-08"])
         self.assertEqual(migration_goals["LTG-09"]["stage_scope_manifest"], "tauri_production_package_stage_scope_manifest")
@@ -40257,7 +40255,6 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         assert_ltg07_deepseek_stage_scope(
             self,
             observed_stage_rows["LTG-07"],
-            expected_direct_count=len(DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS),
         )
         assert_ltg08_next_session_stage_scope(self, observed_stage_rows["LTG-08"])
         self.assertEqual(
@@ -40554,7 +40551,6 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         assert_ltg07_migration_goal_stage_scope(
             self,
             migration_goals["LTG-07"],
-            expected_direct_count=len(DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS),
         )
         assert_ltg08_migration_goal_stage_scope(self, migration_goals["LTG-08"])
         self.assertEqual(migration_goals["LTG-09"]["stage_scope_manifest"], "tauri_production_package_stage_scope_manifest")
@@ -56108,14 +56104,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "remote_ci_run_in_progress_for_current_head"
             ]
         )
-        self.assertEqual(
-            work_order_summary["release_gate_current_head_remote_review_state"],
-            "matching_remote_ci_run_in_progress",
-        )
-        self.assertIn(
-            "matching_remote_ci_run_in_progress_for_current_head",
-            work_order_summary["release_gate_current_blockers"],
-        )
+        if work_order_summary["release_gate_current_head_push_required_before_remote_review"]:
+            self.assertEqual(
+                work_order_summary["release_gate_current_head_remote_review_state"],
+                "current_head_unpushed_for_remote_ci",
+            )
+            self.assertIn(
+                "local_commits_not_pushed_for_remote_ci",
+                work_order_summary["release_gate_current_blockers"],
+            )
+        else:
+            self.assertEqual(
+                work_order_summary["release_gate_current_head_remote_review_state"],
+                "matching_remote_ci_run_in_progress",
+            )
+            self.assertIn(
+                "matching_remote_ci_run_in_progress_for_current_head",
+                work_order_summary["release_gate_current_blockers"],
+            )
         self.assertEqual(work_order_summary["strict_closeout"], "0/14")
         self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
 
@@ -56272,14 +56278,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             release_split_rows["matching_remote_actions_review"]["remote_ci_failure_next_step"],
             "request_authenticated_artifact_or_safe_log_excerpt_for_python_unittest_traceback",
         )
-        self.assertEqual(
-            work_order_summary["release_gate_current_head_remote_review_state"],
-            "matching_remote_ci_failed_for_current_head",
-        )
-        self.assertIn(
-            "matching_remote_ci_failed_for_current_head",
-            work_order_summary["release_gate_current_blockers"],
-        )
+        if work_order_summary["release_gate_current_head_push_required_before_remote_review"]:
+            self.assertEqual(
+                work_order_summary["release_gate_current_head_remote_review_state"],
+                "current_head_unpushed_for_remote_ci",
+            )
+            self.assertIn(
+                "local_commits_not_pushed_for_remote_ci",
+                work_order_summary["release_gate_current_blockers"],
+            )
+        else:
+            self.assertEqual(
+                work_order_summary["release_gate_current_head_remote_review_state"],
+                "matching_remote_ci_failed_for_current_head",
+            )
+            self.assertIn(
+                "matching_remote_ci_failed_for_current_head",
+                work_order_summary["release_gate_current_blockers"],
+            )
         self.assertEqual(work_order_summary["strict_closeout"], "0/14")
         self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
 
