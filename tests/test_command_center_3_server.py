@@ -55089,6 +55089,123 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(work_order_summary["strict_closeout"], "0/14")
         self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
 
+    def test_remote_ci_review_receipt_recorder_keeps_public_job_green_digest_pending(self):
+        self._with_meta_store()
+        self._with_release_gate_receipt_path()
+        current_head = audit_service._current_git_head_summary()
+        receipt_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        run_id = 123456790
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "record_remote_ci_review_receipt.py"
+        artifact_name = f"command-center-3-push-gate-evidence-{run_id}"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--output",
+                str(receipt_path),
+                "--branch",
+                str(current_head["branch"]),
+                "--head",
+                str(current_head["head"]),
+                "--head-full",
+                str(current_head["head_full"]),
+                "--run-id",
+                str(run_id),
+                "--run-url",
+                f"https://github.com/lishark-of/stock-MING/actions/runs/{run_id}",
+                "--artifact-name",
+                artifact_name,
+                "--artifact-digest-unavailable-public-job-page",
+                "--reviewed-at-utc",
+                "2026-06-28T07:43:20Z",
+                "--review-authorized",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["status"], "remote_ci_review_green_artifact_digest_pending")
+        self.assertTrue(summary["remote_actions_status_known"])
+        self.assertFalse(summary["latest_remote_run_verified_green"])
+        self.assertTrue(summary["remote_ci_job_page_green_observed"])
+        self.assertTrue(summary["remote_ci_artifact_digest_pending"])
+        self.assertFalse(summary["github_api_called"])
+        self.assertFalse(summary["external_calls_triggered"])
+        self.assertTrue(summary["does_not_execute_trades"])
+
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["head_full"], current_head["head_full"])
+        self.assertEqual(payload["run_id"], run_id)
+        self.assertEqual(payload["artifact_name"], artifact_name)
+        self.assertEqual(payload["artifact_digest"], "")
+        self.assertFalse(payload["artifact_digest_verified"])
+        self.assertEqual(payload["artifact_digest_review_status"], "unavailable_from_public_job_page")
+        self.assertFalse(payload["latest_remote_run_verified_green"])
+        self.assertFalse(payload["release_gate_complete"])
+        self.assertFalse(payload["production_release_complete"])
+
+        packet = audit_service.read_call_ledger_audit_cache()
+        remote_receipt = packet["remote_ci_review_receipt"]
+        self.assertEqual(remote_receipt["status"], "remote_ci_review_green_artifact_digest_pending")
+        self.assertTrue(remote_receipt["head_matches_current"])
+        self.assertTrue(remote_receipt["remote_actions_status_known"])
+        self.assertFalse(remote_receipt["latest_remote_run_verified_green"])
+        self.assertFalse(remote_receipt["remote_ci_review_ready"])
+        self.assertTrue(remote_receipt["remote_ci_job_page_green_observed"])
+        self.assertTrue(remote_receipt["remote_ci_artifact_digest_pending"])
+        self.assertIn("push-gate evidence artifact sha256 digest", remote_receipt["missing_evidence"])
+        self.assertEqual(remote_receipt["release_claim_decision"], "blocked_remote_ci_unverified")
+        self.assertFalse(remote_receipt["github_api_called"])
+        self.assertFalse(remote_receipt["external_calls_triggered"])
+        self.assertTrue(remote_receipt["does_not_execute_trades"])
+
+        push_receipt = packet["release_gate_push_readiness_receipt"]
+        self.assertTrue(push_receipt["remote_actions_status_known"])
+        self.assertFalse(push_receipt["latest_remote_run_verified_green"])
+        self.assertNotIn("matching_remote_actions_run_status", push_receipt["missing_evidence_items"])
+        self.assertIn("latest_remote_run_green_evidence", push_receipt["missing_evidence_items"])
+        self.assertEqual(push_receipt["release_claim_decision"], "blocked_remote_ci_unverified")
+
+        migration = migration_status_service.build_migration_status()
+        release_split = migration["release_gate_remote_review_split_summary"]
+        release_handoff = migration["ltg11_release_gate_remote_review_handoff_summary"]
+        release_split_rows = {
+            row["split_stage"]: row for row in migration["release_gate_remote_review_split_rows"]
+        }
+        self.assertTrue(release_split["remote_actions_status_known"])
+        self.assertFalse(release_split["latest_remote_run_verified_green"])
+        self.assertTrue(release_split["remote_ci_job_page_green_observed"])
+        self.assertTrue(release_split["remote_ci_artifact_digest_pending"])
+        self.assertFalse(release_split["remote_ci_green_for_current_head"])
+        self.assertIn(
+            "push-gate evidence artifact sha256 digest",
+            release_split["missing_evidence_items"],
+        )
+        self.assertNotIn(
+            "matching remote Actions status for current HEAD",
+            release_split["missing_evidence_items"],
+        )
+        self.assertEqual(
+            release_handoff["status"],
+            "release_gate_local_gate_recheck_required_before_remote_review",
+        )
+        self.assertTrue(release_handoff["remote_actions_status_known"])
+        self.assertFalse(release_handoff["latest_remote_run_verified_green"])
+        self.assertTrue(release_handoff["remote_ci_job_page_green_observed"])
+        self.assertTrue(release_handoff["remote_ci_artifact_digest_pending"])
+        self.assertFalse(release_handoff["release_gate_complete"])
+        self.assertFalse(release_handoff["strict_closeout_ready"])
+        self.assertTrue(
+            release_split_rows["matching_remote_actions_review"][
+                "remote_ci_artifact_digest_pending"
+            ]
+        )
+
     def test_motion_browser_qa_review_task_is_button_gated_local_only(self):
         self._with_meta_store()
         motion_root = self._with_motion_qa_root()

@@ -3823,6 +3823,8 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     remote_actions_status_known = remote_receipt_map.get("remote_actions_status_known") is True
     latest_remote_run_verified_green = remote_receipt_map.get("latest_remote_run_verified_green") is True
     remote_receipt_head_matches_current = remote_receipt_map.get("head_matches_current") is True
+    remote_ci_artifact_digest_pending = remote_receipt_map.get("remote_ci_artifact_digest_pending") is True
+    remote_ci_job_page_green_observed = remote_receipt_map.get("remote_ci_job_page_green_observed") is True
     remote_green_for_current_head = bool(
         remote_actions_status_known and latest_remote_run_verified_green and remote_receipt_head_matches_current
     )
@@ -3852,13 +3854,16 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     missing_evidence_items: list[str] = []
     if not fresh_gate_run_done:
         missing_evidence_items.append("fresh local gate run for current HEAD")
+    if not (remote_actions_status_known and remote_receipt_head_matches_current):
+        missing_evidence_items.append("matching remote Actions status for current HEAD")
     if not remote_green_for_current_head:
         missing_evidence_items.extend(
             [
-                "matching remote Actions status for current HEAD",
                 "latest green remote run evidence",
             ]
         )
+    if remote_ci_artifact_digest_pending:
+        missing_evidence_items.append("push-gate evidence artifact sha256 digest")
     missing_evidence_items.extend(
         [
             "periodic allowlist review evidence",
@@ -3937,6 +3942,8 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         ),
         "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "remote_ci_job_page_green_observed": remote_ci_job_page_green_observed,
+        "remote_ci_artifact_digest_pending": remote_ci_artifact_digest_pending,
         "remote_ci_green_for_current_head": remote_green_for_current_head,
         "remote_ci_green_local_gate_recheck_required": (
             remote_green_for_current_head and not fresh_gate_run_done
@@ -4025,6 +4032,12 @@ def _build_release_gate_remote_review_split_rows(
             "latest_remote_run_verified_green": (
                 release_gate_summary.get("latest_remote_run_verified_green") is True
             ),
+            "remote_ci_job_page_green_observed": (
+                release_gate_summary.get("remote_ci_job_page_green_observed") is True
+            ),
+            "remote_ci_artifact_digest_pending": (
+                release_gate_summary.get("remote_ci_artifact_digest_pending") is True
+            ),
             "remote_ci_green_for_current_head": (
                 release_gate_summary.get("remote_ci_green_for_current_head") is True
             ),
@@ -4078,6 +4091,8 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
     worktree_clean = release_gate.get("local_worktree_clean") is True
     remote_actions_status_known = release_gate.get("remote_actions_status_known") is True
     latest_remote_run_verified_green = release_gate.get("latest_remote_run_verified_green") is True
+    remote_ci_job_page_green_observed = release_gate.get("remote_ci_job_page_green_observed") is True
+    remote_ci_artifact_digest_pending = release_gate.get("remote_ci_artifact_digest_pending") is True
     remote_ci_green_for_current_head = release_gate.get("remote_ci_green_for_current_head") is True
     remote_receipt_head_matches_current = (
         release_gate.get("remote_ci_review_receipt_head_matches_current") is True
@@ -4128,6 +4143,8 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         "requires_current_head_local_gate_recheck": local_recheck_required,
         "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "remote_ci_job_page_green_observed": remote_ci_job_page_green_observed,
+        "remote_ci_artifact_digest_pending": remote_ci_artifact_digest_pending,
         "remote_ci_green_for_current_head": remote_ci_green_for_current_head,
         "remote_ci_green_local_gate_recheck_required": (
             release_gate.get("remote_ci_green_local_gate_recheck_required") is True

@@ -61,8 +61,13 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("artifact name must be a Command Center 3 push-gate evidence artifact")
     if str(args.run_id) not in args.artifact_name:
         raise SystemExit("artifact name must contain the reviewed run id")
-    if not args.artifact_digest.startswith("sha256:") or len(args.artifact_digest) < len("sha256:") + 32:
-        raise SystemExit("artifact digest must be a sha256 digest")
+    if args.artifact_digest:
+        if not args.artifact_digest.startswith("sha256:") or len(args.artifact_digest) < len("sha256:") + 32:
+            raise SystemExit("artifact digest must be a sha256 digest")
+    elif not args.artifact_digest_unavailable_public_job_page:
+        raise SystemExit(
+            "--artifact-digest is required unless --artifact-digest-unavailable-public-job-page is set"
+        )
     if not args.head_full or len(args.head_full) < 12:
         raise SystemExit("--head-full must be the reviewed commit SHA")
 
@@ -70,9 +75,20 @@ def _validate_args(args: argparse.Namespace) -> None:
 def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
     head = args.head or args.head_full[:8]
     reviewed_at = args.reviewed_at_utc or _now_iso()
+    artifact_digest_verified = bool(args.artifact_digest)
+    status = (
+        "remote_ci_review_verified_green"
+        if artifact_digest_verified
+        else "remote_ci_review_green_artifact_digest_pending"
+    )
+    release_claim_decision = (
+        "remote_ci_green_release_review_pending"
+        if artifact_digest_verified
+        else "blocked_remote_ci_artifact_digest_unverified"
+    )
     return {
         "schema_version": SCHEMA_VERSION,
-        "status": "remote_ci_review_verified_green",
+        "status": status,
         "scope": "ignored_manual_remote_ci_review_receipt_no_cache_github_api",
         "reviewed_at_utc": reviewed_at,
         "receipt_writer": "scripts/record_remote_ci_review_receipt.py",
@@ -90,11 +106,19 @@ def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
         "job_conclusion": args.job_conclusion,
         "artifact_name": args.artifact_name,
         "artifact_digest": args.artifact_digest,
+        "artifact_digest_verified": artifact_digest_verified,
+        "artifact_digest_review_status": (
+            "sha256_digest_recorded"
+            if artifact_digest_verified
+            else "unavailable_from_public_job_page"
+        ),
         "failed_step_or_green_status": "green",
         "explicit_user_actions_review_authorized": True,
         "remote_actions_status_known": True,
-        "latest_remote_run_verified_green": True,
-        "release_claim_decision": "remote_ci_green_release_review_pending",
+        "latest_remote_run_verified_green": artifact_digest_verified,
+        "remote_ci_job_page_green_observed": True,
+        "remote_ci_artifact_digest_pending": not artifact_digest_verified,
+        "release_claim_decision": release_claim_decision,
         "remote_ci_review_receipt_is_not_release_review": True,
         "release_review_complete": False,
         "release_gate_complete": False,
@@ -127,7 +151,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-name", default="push-gate")
     parser.add_argument("--job-conclusion", default="success")
     parser.add_argument("--artifact-name", required=True)
-    parser.add_argument("--artifact-digest", required=True)
+    parser.add_argument("--artifact-digest", default="")
+    parser.add_argument("--artifact-digest-unavailable-public-job-page", action="store_true")
     parser.add_argument("--reviewed-at-utc", default="")
     parser.add_argument("--review-authorized", action="store_true")
     return parser.parse_args()
@@ -148,7 +173,9 @@ def main() -> int:
                 "head_full": payload["head_full"],
                 "run_id": payload["run_id"],
                 "remote_actions_status_known": True,
-                "latest_remote_run_verified_green": True,
+                "latest_remote_run_verified_green": payload["latest_remote_run_verified_green"],
+                "remote_ci_job_page_green_observed": payload["remote_ci_job_page_green_observed"],
+                "remote_ci_artifact_digest_pending": payload["remote_ci_artifact_digest_pending"],
                 "release_claim_decision": payload["release_claim_decision"],
                 "github_api_called": False,
                 "external_calls_triggered": False,

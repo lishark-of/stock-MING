@@ -925,12 +925,16 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
         )
     )
     schema_ok = raw_receipt.get("schema_version") == REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION
-    status_ok = raw_receipt.get("status") == "remote_ci_review_verified_green"
+    raw_status = str(raw_receipt.get("status") or "")
+    status_ok = raw_status == "remote_ci_review_verified_green"
+    artifact_digest_pending_status = raw_status == "remote_ci_review_green_artifact_digest_pending"
     run_status_ok = raw_receipt.get("actions_status") == "completed"
     conclusion_ok = raw_receipt.get("actions_conclusion") == "success"
     workflow_ok = str(raw_receipt.get("workflow_name") or "") == "Command Center 3 Push Gate"
     event_ok = str(raw_receipt.get("event") or "") == "push"
     artifact_ok = str(raw_receipt.get("artifact_name") or "").startswith("command-center-3-push-gate-evidence-")
+    artifact_digest = str(raw_receipt.get("artifact_digest") or "")
+    artifact_digest_ok = artifact_digest.startswith("sha256:") and len(artifact_digest) >= len("sha256:") + 32
     run_url = str(raw_receipt.get("run_url") or "")
     run_url_ok = run_url.startswith("https://github.com/lishark-of/stock-MING/actions/runs/")
     review_authorized = raw_receipt.get("explicit_user_actions_review_authorized") is True
@@ -949,7 +953,18 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     missing_evidence: list[str] = []
     if not schema_ok:
         missing_evidence.append("remote CI review receipt schema")
-    if not status_ok:
+    remote_status_known = bool(
+        schema_ok
+        and head_matches_current
+        and run_status_ok
+        and conclusion_ok
+        and workflow_ok
+        and event_ok
+        and run_url_ok
+        and review_authorized
+        and safety_ok
+    )
+    if not (status_ok or artifact_digest_pending_status):
         missing_evidence.append("remote CI review verified-green status")
     if not head_matches_current:
         missing_evidence.append("current HEAD matching remote CI review")
@@ -963,6 +978,8 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
         missing_evidence.append("push event for remote Actions run")
     if not artifact_ok:
         missing_evidence.append("push-gate evidence artifact name")
+    if not artifact_digest_ok:
+        missing_evidence.append("push-gate evidence artifact sha256 digest")
     if not run_url_ok:
         missing_evidence.append("safe GitHub Actions run URL")
     if not review_authorized:
@@ -970,10 +987,14 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     if not safety_ok:
         missing_evidence.append("cache read no-external/no-provider/no-trade boundary flags")
 
-    verified_green = not missing_evidence
+    verified_green = bool(
+        remote_status_known and status_ok and artifact_ok and artifact_digest_ok
+    )
     status = (
         "remote_ci_review_verified_green"
         if verified_green
+        else "remote_ci_review_green_artifact_digest_pending"
+        if remote_status_known and artifact_digest_pending_status and artifact_ok
         else "remote_ci_review_receipt_present_but_not_verified"
     )
     receipt.update(
@@ -987,9 +1008,19 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
             "current_head_full": current_head_full,
             "current_branch": current_head.get("branch"),
             "head_matches_current": head_matches_current,
-            "remote_actions_status_known": verified_green,
+            "remote_actions_status_known": remote_status_known,
             "latest_remote_run_verified_green": verified_green,
             "remote_ci_review_ready": verified_green,
+            "remote_ci_job_page_green_observed": remote_status_known,
+            "remote_ci_artifact_digest_pending": bool(
+                remote_status_known and artifact_digest_pending_status and not artifact_digest_ok
+            ),
+            "artifact_digest_verified": artifact_digest_ok,
+            "artifact_digest_review_status": (
+                "sha256_digest_recorded"
+                if artifact_digest_ok
+                else "unavailable_or_unverified"
+            ),
             "safe_failure_logs_reviewed": False,
             "release_review_complete": False,
             "release_gate_complete": False,
@@ -1018,8 +1049,11 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
                     "api": "local_remote_ci_review_receipt_readback",
                     "source": "ignored local remote CI review receipt",
                     "call_status": status,
-                    "remote_actions_status_known": verified_green,
+                    "remote_actions_status_known": remote_status_known,
                     "latest_remote_run_verified_green": verified_green,
+                    "remote_ci_artifact_digest_pending": bool(
+                        remote_status_known and artifact_digest_pending_status and not artifact_digest_ok
+                    ),
                     "local_fetched_at": _now_iso(),
                     "external": False,
                     "github_called": False,
