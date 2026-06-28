@@ -14318,6 +14318,12 @@ def build_migration_status() -> dict[str, Any]:
     ltg02_tushare_full_interface_pipeline_handoff_summary = (
         _latest_tushare_full_interface_pipeline_handoff_summary()
     )
+    ltg03_factor_test_provider_validation_handoff_summary = (
+        _latest_factor_test_lab_provider_validation_handoff_summary()
+    )
+    ltg03_factor_test_production_validation_handoff_summary = (
+        _latest_factor_test_lab_production_validation_handoff_summary()
+    )
     ltg11_release_gate_remote_review_handoff_summary = (
         _latest_release_gate_remote_review_handoff_summary()
     )
@@ -14391,6 +14397,12 @@ def build_migration_status() -> dict[str, Any]:
         ),
         "ltg02_tushare_full_interface_pipeline_handoff_summary": (
             ltg02_tushare_full_interface_pipeline_handoff_summary
+        ),
+        "ltg03_factor_test_provider_validation_handoff_summary": (
+            ltg03_factor_test_provider_validation_handoff_summary
+        ),
+        "ltg03_factor_test_production_validation_handoff_summary": (
+            ltg03_factor_test_production_validation_handoff_summary
         ),
         "ltg11_release_gate_remote_review_handoff_summary": (
             ltg11_release_gate_remote_review_handoff_summary
@@ -14507,6 +14519,18 @@ def build_migration_status() -> dict[str, Any]:
                 ),
                 "ltg02_tushare_full_interface_pipeline_next_local_step": (
                     ltg02_tushare_full_interface_pipeline_handoff_summary.get("next_local_step")
+                ),
+                "ltg03_factor_test_provider_validation_handoff_status": (
+                    ltg03_factor_test_provider_validation_handoff_summary.get("status")
+                ),
+                "ltg03_factor_test_provider_validation_next_local_step": (
+                    ltg03_factor_test_provider_validation_handoff_summary.get("next_local_step")
+                ),
+                "ltg03_factor_test_production_validation_handoff_status": (
+                    ltg03_factor_test_production_validation_handoff_summary.get("status")
+                ),
+                "ltg03_factor_test_production_validation_next_local_step": (
+                    ltg03_factor_test_production_validation_handoff_summary.get("next_local_step")
                 ),
                 "ltg11_release_gate_remote_review_handoff_status": (
                     ltg11_release_gate_remote_review_handoff_summary.get("status")

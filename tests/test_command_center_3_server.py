@@ -38351,6 +38351,94 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_call_ledger["ltg02_tushare_full_interface_pipeline_handoff_status"],
             p2_full_interface_handoff["status"],
         )
+        top_level_factor_provider_handoff = migration["data"][
+            "ltg03_factor_test_provider_validation_handoff_summary"
+        ]
+        p3_factor_provider_handoff = action_rows["p3_factor_small_pool_provider_validation"][
+            "supporting_factor_test_lab_provider_validation_handoff"
+        ]
+        self.assertEqual(top_level_factor_provider_handoff, p3_factor_provider_handoff)
+        self.assertEqual(
+            p3_factor_provider_handoff["schema_version"],
+            "ltg03_factor_test_provider_validation_handoff_summary.v1",
+        )
+        self.assertIn(
+            p3_factor_provider_handoff["status"],
+            {
+                "factor_test_provider_small_pool_scope_ticket_needed",
+                "factor_test_scope_ticket_ready_execution_request_needed",
+                "factor_test_execution_request_ready_provider_task_pending",
+            },
+        )
+        self.assertEqual(
+            action_rows["p3_factor_small_pool_provider_validation"][
+                "supporting_factor_test_lab_provider_validation_next_local_step"
+            ],
+            p3_factor_provider_handoff["next_local_step"],
+        )
+        self.assertFalse(p3_factor_provider_handoff["provider_task_created"])
+        self.assertFalse(p3_factor_provider_handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(p3_factor_provider_handoff["provider_call_ledger_evidence_done"])
+        self.assertFalse(p3_factor_provider_handoff["provider_backed_small_pool_validation_done"])
+        self.assertFalse(p3_factor_provider_handoff["production_factor_test_validation_complete"])
+        self.assertFalse(p3_factor_provider_handoff["cache_get_creates_task"])
+        self.assertFalse(p3_factor_provider_handoff["cache_get_calls_provider"])
+        self.assertFalse(p3_factor_provider_handoff["creates_provider_task_from_get"])
+        self.assertFalse(p3_factor_provider_handoff["external_calls_triggered"])
+        self.assertFalse(p3_factor_provider_handoff["tushare_called"])
+        self.assertFalse(p3_factor_provider_handoff["deepseek_called"])
+        self.assertFalse(p3_factor_provider_handoff["github_called"])
+        self.assertTrue(p3_factor_provider_handoff["does_not_execute_trades"])
+        self.assertFalse(p3_factor_provider_handoff["can_close_goal"])
+        top_level_factor_production_handoff = migration["data"][
+            "ltg03_factor_test_production_validation_handoff_summary"
+        ]
+        p3_factor_production_handoff = action_rows["p3_factor_small_pool_provider_validation"][
+            "supporting_factor_test_lab_production_validation_handoff"
+        ]
+        self.assertEqual(top_level_factor_production_handoff, p3_factor_production_handoff)
+        self.assertEqual(
+            p3_factor_production_handoff["schema_version"],
+            "ltg03_factor_test_production_validation_handoff_summary.v1",
+        )
+        self.assertIn(
+            p3_factor_production_handoff["status"],
+            {
+                "factor_test_production_handoff_scope_ticket_needed",
+                "factor_test_production_handoff_scope_ready_execution_request_pending",
+                "factor_test_production_handoff_execution_request_ready_provider_task_pending",
+            },
+        )
+        self.assertEqual(
+            action_rows["p3_factor_small_pool_provider_validation"][
+                "supporting_factor_test_lab_production_validation_next_local_step"
+            ],
+            p3_factor_production_handoff["next_local_step"],
+        )
+        self.assertFalse(p3_factor_production_handoff["provider_task_created"])
+        self.assertFalse(p3_factor_production_handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(p3_factor_production_handoff["provider_call_ledger_evidence_done"])
+        self.assertFalse(p3_factor_production_handoff["provider_backed_small_pool_validation_done"])
+        self.assertFalse(p3_factor_production_handoff["full_market_validation_done"])
+        self.assertFalse(p3_factor_production_handoff["production_factor_test_validation_complete"])
+        self.assertFalse(p3_factor_production_handoff["cache_get_creates_task"])
+        self.assertFalse(p3_factor_production_handoff["cache_get_calls_provider"])
+        self.assertFalse(p3_factor_production_handoff["creates_provider_task_from_get"])
+        self.assertFalse(p3_factor_production_handoff["external_calls_triggered"])
+        self.assertFalse(p3_factor_production_handoff["tushare_called"])
+        self.assertFalse(p3_factor_production_handoff["deepseek_called"])
+        self.assertFalse(p3_factor_production_handoff["github_called"])
+        self.assertTrue(p3_factor_production_handoff["does_not_execute_trades"])
+        self.assertFalse(p3_factor_production_handoff["can_close_goal"])
+        self.assertFalse(p3_factor_production_handoff["production_complete"])
+        self.assertEqual(
+            migration_call_ledger["ltg03_factor_test_provider_validation_handoff_status"],
+            p3_factor_provider_handoff["status"],
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg03_factor_test_production_validation_handoff_status"],
+            p3_factor_production_handoff["status"],
+        )
         self.assertTrue(action_rows["p3_candidate_radar_provider_worker_promotion"]["does_not_modify_strategy_action"])
         self.assertFalse(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_lookup_calls_provider"])
         self.assertFalse(runway_rows["LTG-01"]["can_close_goal"])
