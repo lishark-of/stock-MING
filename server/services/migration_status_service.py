@@ -4930,6 +4930,12 @@ def _build_ltg_next_action_local_step_rows(
                     receipt_map.get("ready_for_manual_provider_model_task_submission") is True
                     or receipt_map.get("ready_for_manual_model_task_submission") is True
                 ),
+                "receipt_ready_for_user_approved_real_acceptance": (
+                    receipt_map.get("ready_for_user_approved_real_acceptance") is True
+                ),
+                "receipt_preflight_ready_for_user_approved_real_task": (
+                    receipt_map.get("preflight_ready_for_user_approved_real_task") is True
+                ),
                 "receipt_ready_for_manual_physical_task_submission": (
                     receipt_map.get("ready_for_manual_physical_task_submission") is True
                 ),
@@ -8576,7 +8582,7 @@ def _build_ltg_next_action_submission_preview_rows(
             "safe_payload_summary": "operator_approved plus latest radar quant-projection dry-run scope hash",
             "expected_local_receipt": "search_quant_projection_execution_request_receipt",
             "required_prior_phase_key": "radar_quant_projection_dry_run_scope_ticket",
-            "required_prior_material": "receipt_scope_hash",
+            "required_prior_material": "receipt_real_acceptance_ready",
         },
         "POST /api/candidate-radar/provider-parity-dry-run": {
             "step_kind": "provider_parity_dry_run_scope_ticket",
@@ -8932,6 +8938,11 @@ def _build_ltg_next_action_submission_preview_rows(
         material_visible = bool(prior_step.get("latest_task_id"))
     elif required_material == "receipt_local_ready":
         material_visible = prior_step.get("local_ready") is True
+    elif required_material == "receipt_real_acceptance_ready":
+        material_visible = (
+            prior_step.get("receipt_ready_for_user_approved_real_acceptance") is True
+            or prior_step.get("receipt_preflight_ready_for_user_approved_real_task") is True
+        )
     else:
         material_visible = bool(
             prior_step.get(required_material)
@@ -9040,6 +9051,8 @@ def _build_ltg_next_action_submission_preview_rows(
         and manual_scope_hash_required
     ):
         disabled_reason = "latest_candidate_radar_worker_request_not_ready"
+    elif required_material == "receipt_real_acceptance_ready" and prior_visible and not material_visible:
+        disabled_reason = "latest_quant_projection_acceptance_dry_run_not_ready_for_execution_request"
     elif context_key == "storage_physical_execution_recipe_preview" and not prior_visible:
         disabled_reason = "latest_storage_physical_execution_recipe_missing"
     elif context_key == "storage_physical_execution_recipe_preview" and prior_visible and not material_visible:

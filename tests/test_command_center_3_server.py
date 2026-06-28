@@ -6233,6 +6233,113 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(p3["does_not_execute_trades"])
         self.assertTrue(p3["does_not_modify_strategy_action"])
 
+    def test_ltg_next_action_queue_blocks_candidate_radar_execution_request_when_dry_run_not_ready(self):
+        self._with_meta_store()
+        old_tushare_token = os.environ.get("TUSHARE_TOKEN")
+        old_deepseek_values = {
+            "DEEPSEEK_API_KEY": os.environ.get("DEEPSEEK_API_KEY"),
+            "DEEPSEEK_TOKEN_1": os.environ.get("DEEPSEEK_TOKEN_1"),
+            "DEEPSEEK_TOKEN_2": os.environ.get("DEEPSEEK_TOKEN_2"),
+        }
+        os.environ["TUSHARE_TOKEN"] = "REAL_TUSHARE_SECRET_VALUE"
+        for key in old_deepseek_values:
+            os.environ.pop(key, None)
+        self.addCleanup(lambda: os.environ.pop("TUSHARE_TOKEN", None) if old_tushare_token is None else os.environ.__setitem__("TUSHARE_TOKEN", old_tushare_token))
+
+        def restore_deepseek_env():
+            for key, value in old_deepseek_values.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.addCleanup(restore_deepseek_env)
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        dry_run = candidate_service.run_candidate_quant_projection_acceptance_dry_run_task(
+            {
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+                "selected_apis": ["trade_cal", "daily", "daily_basic", "moneyflow"],
+            },
+        )
+        self.assertEqual(dry_run["status"], "success")
+        cache = candidate_service.read_candidate_radar_cache()
+        dry_run_receipt = cache["search_quant_projection_acceptance_dry_run_receipt"]
+        self.assertEqual(
+            dry_run_receipt["status"],
+            "quant_projection_acceptance_dry_run_blocked_missing_credentials",
+        )
+        self.assertFalse(dry_run_receipt["ready_for_user_approved_real_acceptance"])
+        self.assertEqual(dry_run_receipt["credential_missing_provider_count"], 1)
+
+        execution_request = candidate_service.run_candidate_quant_projection_execution_request_task(
+            {
+                "scan_mode": "quant_projection_execution_request",
+                "operator_approved": True,
+                "acceptance_scope_hash": dry_run_receipt["acceptance_scope_hash"],
+            },
+        )
+        self.assertEqual(execution_request["status"], "success")
+
+        migration = migration_status_service.build_migration_status()
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        p3 = action_rows["p3_candidate_radar_provider_worker_promotion"]
+        steps = {row["phase_key"]: row for row in p3["local_step_rows"]}
+        preview = p3["next_local_step_preview_rows"][0]
+
+        self.assertEqual(p3["local_receipt_status"], "local_receipts_visible_but_blocked")
+        self.assertEqual(p3["ready_local_receipt_step_count"], 1)
+        self.assertEqual(p3["blocked_local_receipt_step_count"], 1)
+        self.assertEqual(
+            p3["next_local_step"],
+            "POST /api/candidate-radar/quant-projection-execution-request",
+        )
+        self.assertFalse(p3["next_local_step_ready_for_clean_receipt"])
+        self.assertEqual(
+            p3["next_local_step_disabled_reason"],
+            "latest_quant_projection_acceptance_dry_run_not_ready_for_execution_request",
+        )
+        self.assertTrue(steps["radar_quant_projection_dry_run_scope_ticket"]["receipt_visible"])
+        self.assertFalse(
+            steps["radar_quant_projection_dry_run_scope_ticket"][
+                "receipt_ready_for_user_approved_real_acceptance"
+            ]
+        )
+        self.assertTrue(steps["radar_quant_projection_execution_request_ticket"]["receipt_visible"])
+        self.assertFalse(steps["radar_quant_projection_execution_request_ticket"]["local_ready"])
+        self.assertEqual(
+            steps["radar_quant_projection_execution_request_ticket"]["receipt_status"],
+            "quant_projection_execution_request_blocked_dry_run_not_ready",
+        )
+        self.assertEqual(preview["step_kind"], "scope_bound_execution_request")
+        self.assertTrue(preview["local_button_available"])
+        self.assertFalse(preview["ready_for_clean_local_receipt"])
+        self.assertEqual(preview["required_prior_material"], "receipt_real_acceptance_ready")
+        self.assertTrue(preview["required_prior_receipt_visible"])
+        self.assertFalse(preview["required_prior_material_visible"])
+        self.assertFalse(preview["would_create_provider_task"])
+        self.assertFalse(preview["would_call_model"])
+        self.assertFalse(preview["external_calls_triggered"])
+        self.assertFalse(preview["tushare_called"])
+        self.assertFalse(preview["deepseek_called"])
+        self.assertFalse(preview["github_called"])
+        self.assertTrue(preview["does_not_execute_trades"])
+        self.assertFalse(p3["external_calls_triggered"])
+        self.assertFalse(p3["tushare_called"])
+        self.assertFalse(p3["deepseek_called"])
+        self.assertFalse(p3["github_called"])
+        self.assertTrue(p3["does_not_execute_trades"])
+        self.assertTrue(p3["does_not_modify_strategy_action"])
+
     def test_packet_service_reads_snapshot_alias_without_external_calls(self):
         self._with_snapshot_cache(
             {
