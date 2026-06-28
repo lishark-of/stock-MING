@@ -12,6 +12,20 @@ function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
 }
 
+function releaseGatePublishStatusLabel(value: unknown): string {
+  const status = String(value ?? "");
+  if (status === "current_head_unpushed_for_remote_ci") return "waiting for push";
+  if (status === "current_head_has_no_unpushed_commits_for_remote_ci") return "no unpushed commits";
+  return status || "missing";
+}
+
+function releaseGatePublishStepLabel(value: unknown): string {
+  const step = String(value ?? "");
+  if (step === "explicit_user_authorized_push_after_clean_local_gate") return "push after clean gate";
+  if (step === "inspect_matching_remote_actions_after_push") return "inspect matching Actions";
+  return step || "missing";
+}
+
 export default function CallLedgerAudit() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -39,6 +53,11 @@ export default function CallLedgerAudit() {
   const localWorktreeCleanlinessAudit = (cache.local_worktree_cleanliness_audit as Record<string, unknown> | undefined) ?? {};
   const localWorktreeStatusCodeRows = rows(cache.local_worktree_status_code_rows);
   const releaseGatePushReceipt = (cache.release_gate_push_readiness_receipt as Record<string, unknown> | undefined) ?? {};
+  const releaseGateCurrentHeadPublishStatus = String(releaseGatePushReceipt.current_head_publish_status ?? "");
+  const releaseGateCurrentHeadAheadCount = Number(releaseGatePushReceipt.current_head_origin_ahead_count ?? releaseGatePushReceipt.local_push_gate_run_receipt_current_origin_ahead_count ?? 0);
+  const releaseGateCurrentHeadPushRequired = releaseGatePushReceipt.current_head_push_required_before_remote_review === true;
+  const releaseGateRemoteReviewWaitingForPush = releaseGatePushReceipt.remote_review_waiting_for_current_head_push === true;
+  const releaseGateNextPublishStep = String(releaseGatePushReceipt.next_publish_step ?? "");
   const releaseGatePushRows = rows(cache.release_gate_push_readiness_rows);
   const remoteCiReviewSeedContract = (cache.remote_ci_review_seed_contract as Record<string, unknown> | undefined) ?? {};
   const remoteCiReviewSeedRows = rows(cache.remote_ci_review_seed_rows);
@@ -143,6 +162,11 @@ export default function CallLedgerAudit() {
           { label: "local gate run", value: counts.local_push_gate_run_observed === true ? "seen" : "pending", tone: counts.local_push_gate_run_observed === true ? "good" : "warn" },
           { label: "head match", value: counts.local_push_gate_receipt_head_matches_current === true ? "yes" : "no", tone: counts.local_push_gate_receipt_head_matches_current === true ? "good" : "warn" },
           { label: "push receipt", value: releaseGatePushReceipt.status as string | undefined, tone: releaseGatePushReceipt.local_receipt_ready === true ? "good" : "warn" },
+          { label: "current HEAD", value: releaseGatePublishStatusLabel(releaseGateCurrentHeadPublishStatus), tone: releaseGateCurrentHeadPushRequired ? "warn" : "good" },
+          { label: "push required", value: releaseGateCurrentHeadPushRequired, tone: releaseGateCurrentHeadPushRequired ? "warn" : "good" },
+          { label: "current ahead", value: releaseGateCurrentHeadAheadCount, tone: releaseGateCurrentHeadAheadCount ? "warn" : "good" },
+          { label: "waiting push", value: releaseGateRemoteReviewWaitingForPush, tone: releaseGateRemoteReviewWaitingForPush ? "warn" : "good" },
+          { label: "next publish", value: releaseGatePublishStepLabel(releaseGateNextPublishStep), tone: releaseGateCurrentHeadPushRequired ? "warn" : "good" },
           { label: "P0 remote CI", value: remoteCiReviewSeedContract.status as string | undefined, tone: remoteCiReviewSeedContract.release_claim_blocked === true ? "warn" : "good" },
           { label: "push pending", value: counts.push_readiness_pending_evidence_count as number | undefined, tone: Number(counts.push_readiness_pending_evidence_count ?? 0) > 0 ? "warn" : "good" },
           { label: "remote known", value: counts.push_readiness_remote_status_known === true ? "yes" : "no", tone: counts.push_readiness_remote_status_known === true ? "good" : "warn" },
@@ -289,12 +313,15 @@ export default function CallLedgerAudit() {
         <p>scope: {String(releaseGatePushReceipt.scope ?? "local_push_readiness_receipt_no_command_or_github_api")}</p>
         <p>ready_for_explicit_local_gate_then_push: {String(releaseGatePushReceipt.ready_for_explicit_local_gate_then_push === true)}</p>
         <p>allowed_next_step: {String(releaseGatePushReceipt.allowed_next_step ?? "run_scripts_push_gate_3_0_then_git_push_then_inspect_remote_actions_if_needed")}</p>
+        <p>current_head_publish_status: {String(releaseGatePushReceipt.current_head_publish_status ?? "missing")}；current_head_origin_ahead_count: {String(releaseGatePushReceipt.current_head_origin_ahead_count ?? 0)}</p>
+        <p>current_head_push_required_before_remote_review: {String(releaseGatePushReceipt.current_head_push_required_before_remote_review === true)}；remote_review_waiting_for_current_head_push: {String(releaseGatePushReceipt.remote_review_waiting_for_current_head_push === true)}</p>
+        <p>next_publish_step: {String(releaseGatePushReceipt.next_publish_step ?? "inspect_matching_remote_actions_after_push")}</p>
         <p>fresh_local_gate_run_observed: {String(releaseGatePushReceipt.fresh_local_gate_run_observed === true)}；remote_actions_status_known: {String(releaseGatePushReceipt.remote_actions_status_known === true)}</p>
         <p>latest_remote_run_verified_green: {String(releaseGatePushReceipt.latest_remote_run_verified_green === true)}</p>
         <p>local_gate_pass_is_not_ci_status: {String(releaseGatePushReceipt.local_gate_pass_is_not_ci_status === true)}；static_ci_mirror_is_not_ci_status: {String(releaseGatePushReceipt.static_ci_mirror_is_not_ci_status === true)}</p>
         <p>can_clear_failure_email_without_matching_head_and_logs: {String(releaseGatePushReceipt.can_clear_failure_email_without_matching_head_and_logs === true)}</p>
         <p>did_not_push: {String(releaseGatePushReceipt.did_not_push !== false)}；github_api_called: {String(releaseGatePushReceipt.github_api_called === true)}</p>
-        <p>该收据不运行 push gate、不调用 GitHub、不推送代码；它把本地 gate、push 和远端 Actions 复核保持为三个独立步骤。</p>
+        <p>该收据不运行 push gate、不调用 GitHub、不推送代码；它把本地 gate、当前 HEAD publish、push 和远端 Actions 复核保持为独立步骤。</p>
         <DataLineageTable rows={[releaseGatePushReceipt]} />
         <DataLineageTable rows={releaseGatePushRows} />
       </PacketCard>
