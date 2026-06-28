@@ -10193,16 +10193,6 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         )
         if failure_mode_done:
             direct_evidence_stage_keys.append("provider_failure_mode_evidence")
-        producer_coverage_done = (
-            tushare_direct_evidence.get("current_evidence_producer_coverage_done") is True
-        )
-        if producer_coverage_done:
-            direct_evidence_stage_keys.append("current_evidence_producer_coverage")
-        direct_evidence_count = len(direct_evidence_stage_keys)
-        observed_pending_count = max(pending_count - direct_evidence_count, 0)
-        local_evidence_count = sum(
-            1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
-        )
         try:
             from server.services import data_health_service
 
@@ -10211,6 +10201,31 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             durable_recipe = durable_recipe if isinstance(durable_recipe, dict) else {}
         except Exception:
             durable_recipe = {}
+        durable_recipe_rows = durable_recipe.get("rows")
+        durable_recipe_rows = durable_recipe_rows if isinstance(durable_recipe_rows, list) else []
+        producer_durable_row = next(
+            (
+                row
+                for row in durable_recipe_rows
+                if isinstance(row, dict)
+                and row.get("evidence_key") == "current_evidence_producer_coverage"
+            ),
+            {},
+        )
+        producer_local_coverage_done = (
+            producer_durable_row.get("producer_local_current_cache_coverage_done") is True
+        )
+        producer_coverage_done = bool(
+            tushare_direct_evidence.get("current_evidence_producer_coverage_done") is True
+            or producer_local_coverage_done
+        )
+        if producer_coverage_done:
+            direct_evidence_stage_keys.append("current_evidence_producer_coverage")
+        direct_evidence_count = len(direct_evidence_stage_keys)
+        observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        local_evidence_count = sum(
+            1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
+        )
         ltg01_local_complete = durable_recipe.get("local_complete") is True
         release_gate_evidence = _latest_release_gate_direct_evidence_summary()
         latest_remote_run_verified_green = (
@@ -10239,11 +10254,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             "safe trade_cal provider call ledger",
             "provider freshness replay evidence",
             "provider failure-mode evidence",
-            "current evidence producer coverage",
             "decision-surface isolation review",
             "matching remote CI review after local freshness evidence",
             "release review after matching remote CI green",
         ]
+        if not producer_coverage_done:
+            ltg01_local_missing_evidence_items.insert(4, "current evidence producer coverage")
         durable_missing_evidence_items = [
             str(item) for item in durable_recipe.get("missing_evidence_items") or [] if str(item)
         ]
@@ -10344,12 +10360,23 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 ),
                 "freshness_replay_status": tushare_direct_evidence.get("freshness_replay_status"),
                 "current_evidence_producer_coverage_complete": producer_coverage_done,
-                "current_evidence_producer_coverage_status": tushare_direct_evidence.get(
-                    "current_evidence_producer_coverage_status"
+                "current_evidence_producer_coverage_status": (
+                    producer_durable_row.get("current_status")
+                    if producer_local_coverage_done
+                    else tushare_direct_evidence.get("current_evidence_producer_coverage_status")
                 ),
                 "current_evidence_producer_coverage_blocker_count": int(
-                    tushare_direct_evidence.get("current_evidence_producer_coverage_blocker_count") or 0
+                    0
+                    if producer_coverage_done
+                    else tushare_direct_evidence.get("current_evidence_producer_coverage_blocker_count")
+                    or 0
                 ),
+                "current_evidence_producer_coverage_source": "freshness_durable_evidence_recipe"
+                if producer_local_coverage_done
+                else "tushare_direct_provider_evidence_summary"
+                if tushare_direct_evidence.get("current_evidence_producer_coverage_done") is True
+                else "",
+                "current_evidence_producer_coverage_is_not_provider_acceptance": True,
                 "freshness_production_blocker_count": int(
                     tushare_direct_evidence.get("freshness_production_blocker_count") or 0
                 ),

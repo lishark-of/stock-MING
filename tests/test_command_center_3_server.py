@@ -26873,6 +26873,37 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             replay_producer_row["missing_evidence"],
         )
 
+        migration = migration_status_service.build_migration_status()
+        ltg01 = {
+            row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]
+        }["LTG-01"]
+        self.assertIn("current_evidence_producer_coverage", ltg01["direct_evidence_stage_keys"])
+        self.assertTrue(ltg01["current_evidence_producer_coverage_complete"])
+        self.assertEqual(
+            ltg01["current_evidence_producer_coverage_status"],
+            "producer_cache_refresh_local_coverage_provider_pending",
+        )
+        self.assertEqual(
+            ltg01["current_evidence_producer_coverage_source"],
+            "freshness_durable_evidence_recipe",
+        )
+        self.assertTrue(ltg01["current_evidence_producer_coverage_is_not_provider_acceptance"])
+        self.assertNotIn("current evidence producer coverage", ltg01["missing_evidence_items"])
+        self.assertIn("provider-backed trade_cal acceptance evidence", ltg01["missing_evidence_items"])
+        self.assertFalse(ltg01["provider_backed_trade_cal_acceptance_done"])
+        self.assertFalse(ltg01["production_freshness_gate_complete"])
+        self.assertFalse(ltg01["strict_closeout_ready"])
+
+        migration_ltg01 = {row["id"]: row for row in migration["long_term_goal_rows"]}["LTG-01"]
+        self.assertIn(
+            "current_evidence_producer_coverage",
+            migration_ltg01["observed_stage_scope_direct_evidence_keys"],
+        )
+        self.assertNotIn(
+            "current evidence producer coverage",
+            migration_ltg01["observed_missing_evidence_items"],
+        )
+
     def test_producer_cache_refresh_fallback_fills_thin_snapshot_freshness_fields(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()
