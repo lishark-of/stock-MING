@@ -55182,6 +55182,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(release_split["remote_ci_job_page_green_observed"])
         self.assertTrue(release_split["remote_ci_artifact_digest_pending"])
         self.assertFalse(release_split["remote_ci_green_for_current_head"])
+        self.assertFalse(release_split["remote_ci_review_receipt_stale_for_current_head"])
+        self.assertEqual(
+            release_split["remote_ci_review_receipt_missing_evidence"],
+            ["push-gate evidence artifact sha256 digest"],
+        )
+        self.assertEqual(release_split["remote_ci_review_receipt_missing_evidence_count"], 1)
+        self.assertTrue(release_split["remote_ci_review_receipt_blocks_current_head_remote_review"])
         self.assertIn(
             "push-gate evidence artifact sha256 digest",
             release_split["missing_evidence_items"],
@@ -55198,6 +55205,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(release_handoff["latest_remote_run_verified_green"])
         self.assertTrue(release_handoff["remote_ci_job_page_green_observed"])
         self.assertTrue(release_handoff["remote_ci_artifact_digest_pending"])
+        self.assertFalse(release_handoff["remote_ci_review_receipt_stale_for_current_head"])
+        self.assertEqual(
+            release_handoff["remote_ci_review_receipt_missing_evidence"],
+            ["push-gate evidence artifact sha256 digest"],
+        )
+        self.assertEqual(release_handoff["remote_ci_review_receipt_missing_evidence_count"], 1)
+        self.assertTrue(release_handoff["remote_ci_review_receipt_blocks_current_head_remote_review"])
         self.assertFalse(release_handoff["release_gate_complete"])
         self.assertFalse(release_handoff["strict_closeout_ready"])
         self.assertTrue(
@@ -55205,6 +55219,132 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "remote_ci_artifact_digest_pending"
             ]
         )
+        self.assertFalse(
+            release_split_rows["matching_remote_actions_review"][
+                "remote_ci_review_receipt_stale_for_current_head"
+            ]
+        )
+        self.assertEqual(
+            release_split_rows["matching_remote_actions_review"][
+                "remote_ci_review_receipt_missing_evidence"
+            ],
+            ["push-gate evidence artifact sha256 digest"],
+        )
+
+    def test_remote_ci_review_stale_digest_pending_receipt_surfaces_current_head_blocker(self):
+        self._with_meta_store()
+        self._with_release_gate_receipt_path()
+        current_head = audit_service._current_git_head_summary()
+        receipt_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        stale_head_full = "0" * 40
+        if stale_head_full == current_head["head_full"]:
+            stale_head_full = "1" * 40
+        run_id = 123456791
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": audit_service.REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION,
+                    "status": "remote_ci_review_green_artifact_digest_pending",
+                    "scope": "ignored_manual_remote_ci_review_receipt_no_cache_github_api",
+                    "reviewed_at_utc": "2026-06-28T07:43:20Z",
+                    "receipt_writer": "scripts/record_remote_ci_review_receipt.py",
+                    "branch": current_head["branch"],
+                    "head": stale_head_full[:8],
+                    "head_full": stale_head_full,
+                    "workflow_name": "Command Center 3 Push Gate",
+                    "event": "push",
+                    "run_id": run_id,
+                    "run_url": f"https://github.com/lishark-of/stock-MING/actions/runs/{run_id}",
+                    "safe_failure_log_excerpt_or_green_run_url": f"https://github.com/lishark-of/stock-MING/actions/runs/{run_id}",
+                    "actions_status": "completed",
+                    "actions_conclusion": "success",
+                    "job_name": "push-gate",
+                    "job_conclusion": "success",
+                    "artifact_name": f"command-center-3-push-gate-evidence-{run_id}",
+                    "artifact_digest": "",
+                    "artifact_digest_verified": False,
+                    "artifact_digest_review_status": "unavailable_from_public_job_page",
+                    "failed_step_or_green_status": "green",
+                    "explicit_user_actions_review_authorized": True,
+                    "remote_actions_status_known": True,
+                    "latest_remote_run_verified_green": False,
+                    "remote_ci_job_page_green_observed": True,
+                    "remote_ci_artifact_digest_pending": True,
+                    "release_claim_decision": "blocked_remote_ci_artifact_digest_unverified",
+                    "remote_ci_review_receipt_is_not_release_review": True,
+                    "release_review_complete": False,
+                    "release_gate_complete": False,
+                    "production_release_complete": False,
+                    "cache_get_external_calls": False,
+                    "cache_get_calls_github_api": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        packet = audit_service.read_call_ledger_audit_cache()
+        remote_receipt = packet["remote_ci_review_receipt"]
+        self.assertEqual(remote_receipt["status"], "remote_ci_review_receipt_present_but_not_verified")
+        self.assertFalse(remote_receipt["head_matches_current"])
+        self.assertFalse(remote_receipt["remote_actions_status_known"])
+        self.assertFalse(remote_receipt["latest_remote_run_verified_green"])
+        self.assertIn("current HEAD matching remote CI review", remote_receipt["missing_evidence"])
+        self.assertIn("push-gate evidence artifact sha256 digest", remote_receipt["missing_evidence"])
+
+        migration = migration_status_service.build_migration_status()
+        release_split = migration["release_gate_remote_review_split_summary"]
+        release_handoff = migration["ltg11_release_gate_remote_review_handoff_summary"]
+        work_order_summary = migration["ltg_strict_closeout_work_order_summary"]
+        work_order_rows = {row["id"]: row for row in migration["ltg_strict_closeout_work_order_rows"]}
+        self.assertFalse(release_split["remote_actions_status_known"])
+        self.assertFalse(release_split["latest_remote_run_verified_green"])
+        self.assertFalse(release_split["remote_ci_job_page_green_observed"])
+        self.assertFalse(release_split["remote_ci_artifact_digest_pending"])
+        self.assertTrue(release_split["remote_ci_review_receipt_stale_for_current_head"])
+        self.assertEqual(
+            release_split["remote_ci_review_receipt_missing_evidence"],
+            [
+                "current HEAD matching remote CI review",
+                "push-gate evidence artifact sha256 digest",
+            ],
+        )
+        self.assertEqual(release_split["remote_ci_review_receipt_missing_evidence_count"], 2)
+        self.assertTrue(release_split["remote_ci_review_receipt_blocks_current_head_remote_review"])
+        self.assertTrue(release_handoff["remote_ci_review_receipt_stale_for_current_head"])
+        self.assertEqual(
+            release_handoff["remote_ci_review_receipt_missing_evidence"],
+            release_split["remote_ci_review_receipt_missing_evidence"],
+        )
+        self.assertTrue(
+            work_order_summary["release_gate_remote_ci_review_receipt_stale_for_current_head"]
+        )
+        self.assertEqual(
+            work_order_summary["release_gate_remote_ci_review_receipt_missing_evidence"],
+            release_split["remote_ci_review_receipt_missing_evidence"],
+        )
+        self.assertIn(
+            "remote_ci_review_receipt_stale_for_current_head",
+            work_order_summary["release_gate_current_blockers"],
+        )
+        self.assertIn(
+            "remote_ci_review_artifact_digest_pending",
+            work_order_summary["release_gate_current_blockers"],
+        )
+        self.assertEqual(
+            work_order_rows["LTG-11"]["release_gate_remote_ci_review_receipt_missing_evidence"],
+            release_split["remote_ci_review_receipt_missing_evidence"],
+        )
+        self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
 
     def test_motion_browser_qa_review_task_is_button_gated_local_only(self):
         self._with_meta_store()
