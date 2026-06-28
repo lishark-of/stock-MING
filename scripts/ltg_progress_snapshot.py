@@ -44,6 +44,13 @@ def _normalize_ltg_id(value: str) -> str:
     return text
 
 
+def _as_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _compact_handoff_rows(rows: list[Any]) -> list[dict[str, Any]]:
     compact: list[dict[str, Any]] = []
     for row in rows:
@@ -274,6 +281,9 @@ def build_snapshot() -> dict[str, Any]:
 
     summary = dict(status.get("long_term_goal_summary") or {})
     safety = dict(status.get("api_policy") or {})
+    release_split = dict(status.get("release_gate_remote_review_split_summary") or {})
+    release_handoff = dict(status.get("ltg11_release_gate_remote_review_handoff_summary") or {})
+    work_order_summary = dict(status.get("ltg_strict_closeout_work_order_summary") or {})
     return {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
         "source_packet_key": status.get("packet_key"),
@@ -323,6 +333,118 @@ def build_snapshot() -> dict[str, Any]:
             "github_called": spine_summary.get("github_called") is True,
             "does_not_execute_trades": spine_summary.get("does_not_execute_trades") is True,
             "contains_secret": spine_summary.get("contains_secret") is True,
+        },
+        "release_gate_remote_review": {
+            "schema_version": release_handoff.get("schema_version") or "",
+            "status": release_handoff.get("status") or release_split.get("status") or "",
+            "current_head_publish_status": release_split.get("current_head_publish_status")
+            or release_handoff.get("current_head_publish_status")
+            or work_order_summary.get("release_gate_current_head_publish_status")
+            or "",
+            "current_head_origin_ahead_count": _as_int(
+                release_split.get("current_head_origin_ahead_count")
+                if release_split.get("current_head_origin_ahead_count") is not None
+                else release_handoff.get("current_head_origin_ahead_count")
+                if release_handoff.get("current_head_origin_ahead_count") is not None
+                else work_order_summary.get("release_gate_current_head_origin_ahead_count")
+            ),
+            "current_head_push_required_before_remote_review": (
+                release_split.get("current_head_push_required_before_remote_review") is True
+                or release_handoff.get("current_head_push_required_before_remote_review") is True
+                or work_order_summary.get("release_gate_current_head_push_required_before_remote_review")
+                is True
+            ),
+            "remote_review_status": release_split.get("remote_review_status") or "",
+            "remote_review_state": work_order_summary.get("release_gate_current_head_remote_review_state")
+            or spine_summary.get("release_gate_current_head_remote_review_state")
+            or "",
+            "remote_actions_status_known": release_split.get("remote_actions_status_known") is True
+            or release_handoff.get("remote_actions_status_known") is True
+            or work_order_summary.get("release_gate_remote_actions_status_known") is True,
+            "latest_remote_run_verified_green": (
+                release_split.get("latest_remote_run_verified_green") is True
+                or release_handoff.get("latest_remote_run_verified_green") is True
+                or work_order_summary.get("release_gate_latest_remote_run_verified_green") is True
+            ),
+            "remote_ci_green_for_current_head": release_split.get("remote_ci_green_for_current_head")
+            is True
+            or release_handoff.get("remote_ci_green_for_current_head") is True,
+            "remote_ci_review_receipt_status": release_split.get("remote_ci_review_receipt_status")
+            or release_handoff.get("remote_ci_review_receipt_status")
+            or "",
+            "remote_ci_review_receipt_head_matches_current": (
+                release_split.get("remote_ci_review_receipt_head_matches_current") is True
+                or release_handoff.get("remote_ci_review_receipt_head_matches_current") is True
+            ),
+            "remote_ci_review_receipt_run_id": str(
+                release_split.get("remote_ci_review_receipt_run_id")
+                or release_handoff.get("remote_ci_review_receipt_run_id")
+                or ""
+            ),
+            "remote_ci_artifact_digest_pending": (
+                release_split.get("remote_ci_artifact_digest_pending") is True
+                or release_handoff.get("remote_ci_artifact_digest_pending") is True
+            ),
+            "requires_current_head_local_gate_recheck": (
+                release_handoff.get("requires_current_head_local_gate_recheck") is True
+                or release_split.get("remote_ci_green_local_gate_recheck_required") is True
+            ),
+            "fresh_local_gate_run_observed": (
+                release_split.get("fresh_local_gate_run_observed") is True
+                or release_handoff.get("fresh_local_gate_run_observed") is True
+                or work_order_summary.get("release_gate_fresh_local_gate_run_observed") is True
+            ),
+            "required_local_gate_checks_present": release_split.get(
+                "required_local_gate_checks_present"
+            )
+            is True,
+            "local_worktree_clean": release_split.get("local_worktree_clean") is True
+            or release_handoff.get("local_worktree_clean") is True
+            or work_order_summary.get("release_gate_worktree_clean") is True,
+            "local_worktree_dirty_file_count": _as_int(
+                release_split.get("local_worktree_dirty_file_count")
+                if release_split.get("local_worktree_dirty_file_count") is not None
+                else release_handoff.get("local_worktree_dirty_file_count")
+                if release_handoff.get("local_worktree_dirty_file_count") is not None
+                else work_order_summary.get("release_gate_worktree_dirty_file_count")
+            ),
+            "local_worktree_blocks_local_gate_receipt": (
+                release_split.get("local_worktree_blocks_local_gate_receipt") is True
+                or work_order_summary.get("release_gate_worktree_blocks_fresh_local_gate") is True
+            ),
+            "local_push_gate_report_reached_clean_worktree_check": (
+                release_split.get("local_push_gate_report_reached_clean_worktree_check") is True
+                or release_handoff.get("local_push_gate_report_reached_clean_worktree_check") is True
+                or work_order_summary.get("release_gate_local_push_gate_report_reached_clean_worktree_check")
+                is True
+            ),
+            "local_push_gate_report_is_not_pass_receipt": work_order_summary.get(
+                "release_gate_local_push_gate_report_is_not_pass_receipt"
+            )
+            is True,
+            "release_review_blocked_by_local_gate_recheck": (
+                release_split.get("release_review_blocked_by_local_gate_recheck") is True
+                or release_handoff.get("release_review_blocked_by_local_gate_recheck") is True
+            ),
+            "strict_closeout_ready": release_split.get("strict_closeout_ready") is True
+            or release_handoff.get("strict_closeout_ready") is True,
+            "strict_closeout_claim_allowed": work_order_summary.get(
+                "strict_closeout_claim_allowed"
+            )
+            is True,
+            "release_gate_current_blocker_count": int(
+                spine_summary.get("release_gate_current_blocker_count")
+                or len(_list(work_order_summary.get("release_gate_current_blockers")))
+            ),
+            "release_gate_current_blockers": _list(
+                work_order_summary.get("release_gate_current_blockers")
+            )
+            or _list(spine_summary.get("release_gate_current_blockers")),
+            "next_local_step": release_handoff.get("next_local_step") or "",
+            "next_publish_step": release_handoff.get("next_publish_step")
+            or release_split.get("next_publish_step")
+            or work_order_summary.get("release_gate_next_publish_step")
+            or "",
         },
         "goal_rows": goal_snapshot_rows,
         "queue_rows": queue_rows,
@@ -401,6 +523,20 @@ def _print_text(snapshot: dict[str, Any]) -> None:
         f" next_evidence={evidence_spine['all_rows_have_next_evidence_action']}"
         f" remote_state={evidence_spine['remote_review_state']}"
         f" blockers={evidence_spine['release_gate_current_blocker_count']}"
+    )
+    release_gate = snapshot["release_gate_remote_review"]
+    print(
+        "Release gate:"
+        f" publish_status={release_gate['current_head_publish_status']}"
+        f" origin_ahead={release_gate['current_head_origin_ahead_count']}"
+        f" push_required={release_gate['current_head_push_required_before_remote_review']}"
+        f" remote_status={release_gate['remote_review_status']}"
+        f" remote_green={release_gate['remote_ci_green_for_current_head']}"
+        f" local_recheck={release_gate['requires_current_head_local_gate_recheck']}"
+        f" dirty_files={release_gate['local_worktree_dirty_file_count']}"
+        f" blockers={release_gate['release_gate_current_blocker_count']}"
+        f" next_local={release_gate['next_local_step']}"
+        f" next_publish={release_gate['next_publish_step']}"
     )
     print()
     print("Goals:")
