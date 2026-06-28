@@ -81,6 +81,14 @@ def build_contract() -> dict[str, Any]:
     release_split_summary = _dict(packet.get("release_gate_remote_review_split_summary"))
     release_handoff_summary = _dict(packet.get("ltg11_release_gate_remote_review_handoff_summary"))
     work_order_summary = _dict(packet.get("ltg_strict_closeout_work_order_summary"))
+    work_order_rows = [
+        row
+        for row in _list(packet.get("ltg_strict_closeout_work_order_rows"))
+        if isinstance(row, dict)
+    ]
+    work_order_rows_by_id = {
+        str(row.get("id") or row.get("goal_id") or ""): row for row in work_order_rows
+    }
     release_split_rows = [
         row for row in _list(packet.get("release_gate_remote_review_split_rows")) if isinstance(row, dict)
     ]
@@ -145,6 +153,18 @@ def build_contract() -> dict[str, Any]:
         and _int(row.get("release_gate_current_blocker_count")) == len(release_gate_current_blockers)
         and row.get("release_gate_worktree_raw_paths_emitted") is False
         and row.get("release_gate_worktree_raw_status_lines_emitted") is False
+        for row in spine_rows
+    )
+    all_rows_work_order_trace_visible = bool(spine_rows) and all(
+        row.get("strict_closeout_work_order_visible") is True
+        and row.get("strict_closeout_work_order_goal_id_matches") is True
+        and row.get("strict_closeout_work_order_id")
+        == work_order_rows_by_id.get(str(row.get("id") or ""), {}).get("work_order_id")
+        and row.get("next_evidence_action")
+        == work_order_rows_by_id.get(str(row.get("id") or ""), {}).get("next_evidence_action")
+        and bool(row.get("next_evidence_action"))
+        and row.get("one_ltg_only") is True
+        and row.get("must_not_mix_with_other_ltg") is True
         for row in spine_rows
     )
     all_rows_cache_only = bool(spine_rows) and all(
@@ -282,6 +302,20 @@ def build_contract() -> dict[str, Any]:
             "handoff inventory is not production completion evidence",
         ),
         _row(
+            "ltg_strict_closeout_evidence_spine_work_order_trace_visible",
+            summary.get("strict_closeout_work_order_visible_count") == 14
+            and summary.get("strict_closeout_work_order_total_count") == 14
+            and summary.get("all_rows_have_strict_closeout_work_order") is True
+            and summary.get("all_rows_work_order_goal_ids_match") is True
+            and summary.get("all_rows_have_next_evidence_action") is True
+            and summary.get("all_rows_keep_one_ltg_scope") is True
+            and summary.get("recommended_first_candidate_ids")
+            == work_order_summary.get("recommended_first_candidate_ids")
+            and summary.get("support_candidate_ids") == work_order_summary.get("support_candidate_ids")
+            and all_rows_work_order_trace_visible,
+            "14/14 spine rows expose work-order next evidence without allowing closeout",
+        ),
+        _row(
             "ltg_strict_closeout_evidence_spine_requires_remote_review_split",
             summary.get("remote_review_split_required") is True
             and summary.get("requires_remote_ci_review") is True
@@ -385,6 +419,9 @@ def build_contract() -> dict[str, Any]:
         "spine_visible_count": int(summary.get("spine_visible_count") or 0),
         "spine_total_count": int(summary.get("spine_total_count") or 0),
         "spine_missing_ltg_ids": summary.get("spine_missing_ltg_ids") or [],
+        "strict_closeout_work_order_visible_count": int(
+            summary.get("strict_closeout_work_order_visible_count") or 0
+        ),
         "handoff_summary_visible_count": int(summary.get("handoff_summary_visible_count") or 0),
         "handoff_summary_total_count": int(summary.get("handoff_summary_total_count") or 0),
         "strict_closeout": summary.get("strict_closeout") or "0/14",
@@ -420,6 +457,9 @@ def build_contract() -> dict[str, Any]:
             "summary_status": summary.get("status"),
             "goal_ids": sorted(rows_by_id),
             "handoff_summary_total_count": summary.get("handoff_summary_total_count"),
+            "strict_closeout_work_order_visible_count": summary.get(
+                "strict_closeout_work_order_visible_count"
+            ),
             "strict_closeout": summary.get("strict_closeout"),
             "current_head_publish_status": current_head_publish_status,
             "current_head_remote_review_state": current_head_remote_review_state,

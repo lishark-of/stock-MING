@@ -2743,6 +2743,7 @@ def _build_ltg_strict_closeout_evidence_spine(
     handoff_summaries_by_key: Mapping[str, Mapping[str, Any]],
     long_term_goal_summary: Mapping[str, Any],
     ltg_strict_closeout_work_order_summary: Mapping[str, Any],
+    ltg_strict_closeout_work_order_rows: list[Mapping[str, Any]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     closeout_state = str(long_term_goal_summary.get("strict_closeout") or "0/14")
     closeout_done_count = int(long_term_goal_summary.get("strict_closeout_done_count") or 0)
@@ -2784,9 +2785,24 @@ def _build_ltg_strict_closeout_evidence_spine(
         ltg_strict_closeout_work_order_summary.get("release_gate_latest_remote_run_verified_green")
         is True
     )
+    work_orders_by_goal_id = {
+        str(row.get("goal_id") or row.get("id") or ""): row
+        for row in ltg_strict_closeout_work_order_rows
+        if isinstance(row, Mapping)
+    }
     rows: list[dict[str, Any]] = []
     missing_ltg_ids: list[str] = []
     for goal_id, handoff_key_tuple in LTG_STRICT_CLOSEOUT_EVIDENCE_SPINE_HANDOFF_KEYS.items():
+        work_order = work_orders_by_goal_id.get(goal_id, {})
+        work_order_visible = bool(work_order)
+        required_gate_ids = [
+            str(item) for item in work_order.get("required_gate_ids") or [] if str(item)
+        ]
+        production_evidence_required = [
+            str(item)
+            for item in work_order.get("production_evidence_required_before_closeout") or []
+            if str(item)
+        ]
         handoff_keys = list(handoff_key_tuple)
         handoffs = [
             handoff_summaries_by_key.get(key)
@@ -2829,6 +2845,34 @@ def _build_ltg_strict_closeout_evidence_spine(
                 "strict_closeout_claim_allowed": False,
                 "can_close_ltg_now": False,
                 "production_complete": False,
+                "strict_closeout_work_order_id": str(work_order.get("work_order_id") or ""),
+                "strict_closeout_work_order_visible": work_order_visible,
+                "strict_closeout_work_order_goal_id_matches": (
+                    str(work_order.get("goal_id") or work_order.get("id") or "") == goal_id
+                ),
+                "acceptance_queue_id": str(work_order.get("acceptance_queue_id") or ""),
+                "acceptance_queue_status": str(
+                    work_order.get("acceptance_queue_status") or "missing_queue_status"
+                ),
+                "primary_gate_id": str(work_order.get("primary_gate_id") or ""),
+                "required_gate_ids": required_gate_ids,
+                "required_gate_count": len(required_gate_ids),
+                "next_evidence_action": str(work_order.get("next_evidence_action") or ""),
+                "next_direct_evidence_count": int(
+                    work_order.get("next_direct_evidence_count") or 0
+                ),
+                "production_evidence_required_before_closeout_count": len(
+                    production_evidence_required
+                ),
+                "ready_to_select_for_next_closeout_slice": (
+                    work_order.get("ready_to_select_for_next_closeout_slice") is True
+                ),
+                "one_ltg_only": work_order.get("one_ltg_only") is True,
+                "must_not_mix_with_other_ltg": work_order.get("must_not_mix_with_other_ltg") is True,
+                "recommended_first_candidate": work_order.get("recommended_first_candidate") is True,
+                "support_candidate_for_next_slice": (
+                    work_order.get("support_candidate_for_next_slice") is True
+                ),
                 "remote_review_split_required": True,
                 "requires_remote_ci_review": True,
                 "requires_release_review_after_remote_green": True,
@@ -2868,6 +2912,9 @@ def _build_ltg_strict_closeout_evidence_spine(
     handoff_summary_total_count = sum(
         int(row.get("expected_handoff_count") or 0) for row in rows
     )
+    work_order_visible_count = sum(
+        1 for row in rows if row.get("strict_closeout_work_order_visible") is True
+    )
     summary = {
         "schema_version": "ltg_strict_closeout_evidence_spine_summary.v1",
         "status": "ltg_strict_closeout_evidence_spine_visible_closeout_blocked"
@@ -2892,6 +2939,25 @@ def _build_ltg_strict_closeout_evidence_spine(
         "all_rows_block_production_complete": all(
             row.get("production_complete") is False for row in rows
         ),
+        "strict_closeout_work_order_visible_count": work_order_visible_count,
+        "strict_closeout_work_order_total_count": len(rows),
+        "all_rows_have_strict_closeout_work_order": work_order_visible_count == len(rows),
+        "all_rows_work_order_goal_ids_match": all(
+            row.get("strict_closeout_work_order_goal_id_matches") is True for row in rows
+        ),
+        "all_rows_have_next_evidence_action": all(
+            bool(row.get("next_evidence_action")) for row in rows
+        ),
+        "all_rows_keep_one_ltg_scope": all(
+            row.get("one_ltg_only") is True and row.get("must_not_mix_with_other_ltg") is True
+            for row in rows
+        ),
+        "recommended_first_candidate_ids": [
+            row["id"] for row in rows if row.get("recommended_first_candidate") is True
+        ],
+        "support_candidate_ids": [
+            row["id"] for row in rows if row.get("support_candidate_for_next_slice") is True
+        ],
         "remote_review_split_required": True,
         "requires_remote_ci_review": True,
         "requires_release_review_after_remote_green": True,
@@ -14861,6 +14927,7 @@ def build_migration_status() -> dict[str, Any]:
             handoff_summaries_by_key=ltg_strict_closeout_evidence_spine_handoffs,
             long_term_goal_summary=long_term_goal_summary,
             ltg_strict_closeout_work_order_summary=ltg_strict_closeout_work_order_summary,
+            ltg_strict_closeout_work_order_rows=ltg_strict_closeout_work_order_rows,
         )
     )
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
@@ -15083,6 +15150,11 @@ def build_migration_status() -> dict[str, Any]:
                 "ltg_strict_closeout_evidence_spine_current_blocker_count": (
                     ltg_strict_closeout_evidence_spine_summary.get(
                         "release_gate_current_blocker_count"
+                    )
+                ),
+                "ltg_strict_closeout_evidence_spine_work_order_visible_count": (
+                    ltg_strict_closeout_evidence_spine_summary.get(
+                        "strict_closeout_work_order_visible_count"
                     )
                 ),
                 "usable_path_medium_goal_checkpoint_row_count": len(

@@ -38316,6 +38316,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(spine_summary["strict_closeout_claim_allowed"])
         self.assertTrue(spine_summary["all_rows_block_closeout_claim"])
         self.assertTrue(spine_summary["all_rows_block_production_complete"])
+        self.assertEqual(spine_summary["strict_closeout_work_order_visible_count"], 14)
+        self.assertEqual(spine_summary["strict_closeout_work_order_total_count"], 14)
+        self.assertTrue(spine_summary["all_rows_have_strict_closeout_work_order"])
+        self.assertTrue(spine_summary["all_rows_work_order_goal_ids_match"])
+        self.assertTrue(spine_summary["all_rows_have_next_evidence_action"])
+        self.assertTrue(spine_summary["all_rows_keep_one_ltg_scope"])
+        self.assertEqual(
+            spine_summary["recommended_first_candidate_ids"],
+            work_order_summary["recommended_first_candidate_ids"],
+        )
+        self.assertEqual(
+            spine_summary["support_candidate_ids"],
+            work_order_summary["support_candidate_ids"],
+        )
         self.assertTrue(spine_summary["remote_review_split_required"])
         self.assertTrue(spine_summary["requires_remote_ci_review"])
         self.assertTrue(spine_summary["requires_release_review_after_remote_green"])
@@ -38409,6 +38423,33 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(any(row["strict_closeout_claim_allowed"] for row in spine_rows.values()))
         self.assertFalse(any(row["can_close_ltg_now"] for row in spine_rows.values()))
         self.assertFalse(any(row["production_complete"] for row in spine_rows.values()))
+        self.assertTrue(all(row["strict_closeout_work_order_visible"] for row in spine_rows.values()))
+        self.assertTrue(
+            all(row["strict_closeout_work_order_goal_id_matches"] for row in spine_rows.values())
+        )
+        self.assertTrue(all(row["next_evidence_action"] for row in spine_rows.values()))
+        self.assertTrue(all(row["one_ltg_only"] for row in spine_rows.values()))
+        self.assertTrue(all(row["must_not_mix_with_other_ltg"] for row in spine_rows.values()))
+        self.assertEqual(
+            spine_rows["LTG-01"]["strict_closeout_work_order_id"],
+            work_order_rows["LTG-01"]["work_order_id"],
+        )
+        self.assertEqual(
+            spine_rows["LTG-01"]["next_evidence_action"],
+            work_order_rows["LTG-01"]["next_evidence_action"],
+        )
+        self.assertEqual(
+            spine_rows["LTG-11"]["primary_gate_id"],
+            work_order_rows["LTG-11"]["primary_gate_id"],
+        )
+        self.assertEqual(
+            spine_rows["LTG-12"]["acceptance_queue_id"],
+            work_order_rows["LTG-12"]["acceptance_queue_id"],
+        )
+        self.assertEqual(
+            spine_rows["LTG-12"]["production_evidence_required_before_closeout_count"],
+            len(work_order_rows["LTG-12"]["production_evidence_required_before_closeout"]),
+        )
         self.assertTrue(all(row["remote_review_split_required"] for row in spine_rows.values()))
         self.assertTrue(all(row["requires_remote_ci_review"] for row in spine_rows.values()))
         self.assertTrue(
@@ -38471,6 +38512,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(
             migration_call_ledger["ltg_strict_closeout_evidence_spine_current_blocker_count"],
             spine_summary["release_gate_current_blocker_count"],
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg_strict_closeout_evidence_spine_work_order_visible_count"],
+            spine_summary["strict_closeout_work_order_visible_count"],
         )
         self.assertIn("local packet", hardening_rows["storage_boundaries"]["not_production_evidence"])
         self.assertIn(
