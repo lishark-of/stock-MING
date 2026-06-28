@@ -283,7 +283,28 @@ def build_snapshot() -> dict[str, Any]:
     safety = dict(status.get("api_policy") or {})
     release_split = dict(status.get("release_gate_remote_review_split_summary") or {})
     release_handoff = dict(status.get("ltg11_release_gate_remote_review_handoff_summary") or {})
+    trade_handoff = dict(status.get("ltg12_trade_isolation_release_guard_handoff_summary") or {})
     work_order_summary = dict(status.get("ltg_strict_closeout_work_order_summary") or {})
+    no_broker_or_broker_call = (
+        trade_handoff.get("broker_adapter_connected") is not True
+        and trade_handoff.get("broker_called") is not True
+        and trade_handoff.get("cache_get_calls_broker") is not True
+    )
+    no_order_endpoint_or_submission = (
+        trade_handoff.get("order_endpoint_present") is not True
+        and trade_handoff.get("order_route_present") is not True
+        and trade_handoff.get("order_submitted") is not True
+        and trade_handoff.get("cache_get_calls_order_endpoint") is not True
+    )
+    no_trade_execution_api = (
+        trade_handoff.get("trade_execution_api_enabled") is not True
+        and trade_handoff.get("does_not_execute_trades") is True
+    )
+    no_action_mutation = (
+        trade_handoff.get("model_or_provider_can_modify_action") is not True
+        and trade_handoff.get("strategy_action_mutated_by_contract") is not True
+        and trade_handoff.get("does_not_modify_strategy_action") is True
+    )
     return {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
         "source_packet_key": status.get("packet_key"),
@@ -446,6 +467,66 @@ def build_snapshot() -> dict[str, Any]:
             or work_order_summary.get("release_gate_next_publish_step")
             or "",
         },
+        "trade_isolation_release_guard": {
+            "schema_version": trade_handoff.get("schema_version") or "",
+            "trade_isolation_release_receipt_status": trade_handoff.get(
+                "trade_isolation_release_receipt_status"
+            )
+            or "",
+            "trade_isolation_release_receipt_ready": (
+                trade_handoff.get("trade_isolation_release_receipt_ready") is True
+            ),
+            "current_slice_trade_isolation_recheck_ready": (
+                trade_handoff.get("current_slice_trade_isolation_recheck_ready") is True
+            ),
+            "current_slice_no_broker_no_order_no_action_proof_ready": (
+                trade_handoff.get("current_slice_no_broker_no_order_no_action_proof_ready")
+                is True
+            ),
+            "no_broker_or_broker_call": no_broker_or_broker_call,
+            "no_order_endpoint_or_submission": no_order_endpoint_or_submission,
+            "no_trade_execution_api": no_trade_execution_api,
+            "no_action_mutation": no_action_mutation,
+            "real_trading_connected": trade_handoff.get("real_trading_connected") is True,
+            "broker_adapter_connected": trade_handoff.get("broker_adapter_connected") is True,
+            "broker_called": trade_handoff.get("broker_called") is True,
+            "order_endpoint_present": trade_handoff.get("order_endpoint_present") is True,
+            "order_route_present": trade_handoff.get("order_route_present") is True,
+            "order_submitted": trade_handoff.get("order_submitted") is True,
+            "trade_execution_api_enabled": trade_handoff.get("trade_execution_api_enabled")
+            is True,
+            "frontend_trade_controls_present": (
+                trade_handoff.get("frontend_trade_controls_present") is True
+            ),
+            "model_or_provider_can_modify_action": (
+                trade_handoff.get("model_or_provider_can_modify_action") is True
+            ),
+            "strategy_action_mutated_by_contract": (
+                trade_handoff.get("strategy_action_mutated_by_contract") is True
+            ),
+            "release_receipt_is_trading_approval": (
+                trade_handoff.get("release_receipt_is_trading_approval") is True
+            ),
+            "ready_for_real_trading_integration": (
+                trade_handoff.get("ready_for_real_trading_integration") is True
+            ),
+            "future_real_trading_requires_separate_project": (
+                trade_handoff.get("future_real_trading_requires_separate_project") is True
+            ),
+            "per_slice_trade_isolation_recheck_required": (
+                trade_handoff.get("per_slice_trade_isolation_recheck_required") is True
+            ),
+            "cache_get_calls_model": trade_handoff.get("cache_get_calls_model") is True,
+            "cache_get_calls_broker": trade_handoff.get("cache_get_calls_broker") is True,
+            "cache_get_calls_order_endpoint": (
+                trade_handoff.get("cache_get_calls_order_endpoint") is True
+            ),
+            "does_not_execute_trades": trade_handoff.get("does_not_execute_trades") is True,
+            "does_not_modify_strategy_action": (
+                trade_handoff.get("does_not_modify_strategy_action") is True
+            ),
+            "next_local_step": trade_handoff.get("next_local_step") or "",
+        },
         "goal_rows": goal_snapshot_rows,
         "queue_rows": queue_rows,
         "safety": {
@@ -537,6 +618,19 @@ def _print_text(snapshot: dict[str, Any]) -> None:
         f" blockers={release_gate['release_gate_current_blocker_count']}"
         f" next_local={release_gate['next_local_step']}"
         f" next_publish={release_gate['next_publish_step']}"
+    )
+    trade_guard = snapshot["trade_isolation_release_guard"]
+    print(
+        "Trade isolation:"
+        f" receipt={trade_guard['trade_isolation_release_receipt_status']}"
+        f" recheck_ready={trade_guard['current_slice_trade_isolation_recheck_ready']}"
+        f" no_broker={trade_guard['no_broker_or_broker_call']}"
+        f" no_order_endpoint={trade_guard['no_order_endpoint_or_submission']}"
+        f" no_trade_api={trade_guard['no_trade_execution_api']}"
+        f" no_action_mutation={trade_guard['no_action_mutation']}"
+        f" separate_project={trade_guard['future_real_trading_requires_separate_project']}"
+        f" ready_for_real_trading={trade_guard['ready_for_real_trading_integration']}"
+        f" next={trade_guard['next_local_step']}"
     )
     print()
     print("Goals:")

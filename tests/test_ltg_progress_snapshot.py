@@ -157,6 +157,124 @@ class LtgProgressSnapshotTests(unittest.TestCase):
         self.assertIn("dirty_files=1", text)
         self.assertIn("next_local=rerun_local_push_gate_after_clean_worktree_for_current_head", text)
 
+    def test_trade_isolation_release_guard_is_visible_in_snapshot_text(self):
+        module = _load_snapshot_module()
+        fake_status = {
+            "packet_key": "fake_packet",
+            "mode": "test",
+            "loaded_at": "2026-06-28T12:35:19Z",
+            "long_term_goal_summary": {
+                "strict_closeout": "0/14",
+                "strict_closeout_done_count": 0,
+                "strict_closeout_total_count": 14,
+                "strict_closeout_remaining_count": 14,
+            },
+            "api_policy": {
+                "cache_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+            "long_term_goal_rows": [],
+            "ltg_acceptance_runway_rows": [],
+            "ltg_next_acceptance_action_rows": [],
+            "ltg_strict_closeout_evidence_spine_rows": [],
+            "ltg_strict_closeout_evidence_spine_summary": {
+                "schema_version": "ltg_strict_closeout_evidence_spine_summary.v1",
+                "spine_visible_count": 14,
+                "spine_total_count": 14,
+                "strict_closeout_work_order_visible_count": 14,
+                "strict_closeout_work_order_total_count": 14,
+                "all_rows_have_strict_closeout_work_order": True,
+                "all_rows_have_next_evidence_action": True,
+                "all_rows_keep_one_ltg_scope": True,
+                "release_gate_current_head_remote_review_state": "current_head_unpushed_for_remote_ci",
+                "release_gate_current_blocker_count": 5,
+                "release_gate_current_blockers": ["local_commits_not_pushed_for_remote_ci"],
+                "strict_closeout_claim_allowed": False,
+                "cache_only_readback": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+            "release_gate_remote_review_split_summary": {},
+            "ltg11_release_gate_remote_review_handoff_summary": {},
+            "ltg_strict_closeout_work_order_summary": {
+                "release_gate_current_head_remote_review_state": "current_head_unpushed_for_remote_ci",
+                "release_gate_current_blockers": ["local_commits_not_pushed_for_remote_ci"],
+                "strict_closeout_claim_allowed": False,
+            },
+            "ltg12_trade_isolation_release_guard_handoff_summary": {
+                "schema_version": "ltg12_trade_isolation_release_guard_handoff_summary.v1",
+                "trade_isolation_release_receipt_status": (
+                    "trade_isolation_release_receipt_ready_research_release_only"
+                ),
+                "trade_isolation_release_receipt_ready": True,
+                "current_slice_trade_isolation_recheck_ready": True,
+                "current_slice_no_broker_no_order_no_action_proof_ready": True,
+                "real_trading_connected": False,
+                "broker_adapter_connected": False,
+                "broker_called": False,
+                "order_endpoint_present": False,
+                "order_route_present": False,
+                "order_submitted": False,
+                "trade_execution_api_enabled": False,
+                "frontend_trade_controls_present": False,
+                "model_or_provider_can_modify_action": False,
+                "strategy_action_mutated_by_contract": False,
+                "release_receipt_is_trading_approval": False,
+                "ready_for_real_trading_integration": False,
+                "future_real_trading_requires_separate_project": True,
+                "per_slice_trade_isolation_recheck_required": True,
+                "cache_get_calls_model": False,
+                "cache_get_calls_broker": False,
+                "cache_get_calls_order_endpoint": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "next_local_step": "separate approved real-trading integration project only",
+            },
+        }
+
+        with patch.object(module.migration_status_service, "build_migration_status", return_value=fake_status):
+            snapshot = module.build_snapshot()
+
+        trade_guard = snapshot["trade_isolation_release_guard"]
+        self.assertEqual(
+            trade_guard["trade_isolation_release_receipt_status"],
+            "trade_isolation_release_receipt_ready_research_release_only",
+        )
+        self.assertTrue(trade_guard["trade_isolation_release_receipt_ready"])
+        self.assertTrue(trade_guard["current_slice_trade_isolation_recheck_ready"])
+        self.assertTrue(trade_guard["no_broker_or_broker_call"])
+        self.assertTrue(trade_guard["no_order_endpoint_or_submission"])
+        self.assertTrue(trade_guard["no_trade_execution_api"])
+        self.assertTrue(trade_guard["no_action_mutation"])
+        self.assertFalse(trade_guard["real_trading_connected"])
+        self.assertFalse(trade_guard["ready_for_real_trading_integration"])
+        self.assertTrue(trade_guard["future_real_trading_requires_separate_project"])
+        self.assertFalse(trade_guard["release_receipt_is_trading_approval"])
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            module._print_text(snapshot)
+        text = buffer.getvalue()
+
+        self.assertIn("Trade isolation:", text)
+        self.assertIn("receipt=trade_isolation_release_receipt_ready_research_release_only", text)
+        self.assertIn("recheck_ready=True", text)
+        self.assertIn("no_broker=True", text)
+        self.assertIn("no_order_endpoint=True", text)
+        self.assertIn("no_trade_api=True", text)
+        self.assertIn("no_action_mutation=True", text)
+        self.assertIn("separate_project=True", text)
+        self.assertIn("ready_for_real_trading=False", text)
+
 
 if __name__ == "__main__":
     unittest.main()
