@@ -3021,6 +3021,36 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(p1_provider_handoff["cache_get_calls_provider"])
         self.assertFalse(p1_provider_handoff["provider_execution_implemented_by_handoff"])
         self.assertFalse(p1_provider_handoff["production_freshness_gate_complete"])
+        self.assertGreater(p1_provider_handoff["durable_evidence_blocker_count"], 0)
+        self.assertIn(
+            "explicit_provider_trade_cal_task",
+            p1_provider_handoff["durable_blocking_evidence_keys"],
+        )
+        self.assertIn(
+            "provider-backed trade_cal acceptance evidence",
+            p1_provider_handoff["missing_durable_evidence_items"],
+        )
+        self.assertTrue(p1_provider_handoff["requires_explicit_provider_trade_cal_task"])
+        self.assertTrue(p1_provider_handoff["requires_safe_provider_call_ledger"])
+        self.assertTrue(p1_provider_handoff["requires_provider_freshness_replay"])
+        self.assertTrue(p1_provider_handoff["requires_provider_failure_mode_evidence"])
+        self.assertGreater(
+            action_rows["p1_trade_cal_provider_acceptance"][
+                "supporting_trade_cal_provider_acceptance_durable_blocker_count"
+            ],
+            0,
+        )
+        self.assertIn(
+            "explicit_provider_trade_cal_task",
+            action_rows["p1_trade_cal_provider_acceptance"][
+                "supporting_trade_cal_provider_acceptance_blocking_evidence_keys"
+            ],
+        )
+        self.assertTrue(
+            action_rows["p1_trade_cal_provider_acceptance"][
+                "supporting_trade_cal_provider_acceptance_requires_provider_task"
+            ]
+        )
         self.assertFalse(p1_provider_handoff["external_calls_triggered"])
         self.assertFalse(p1_provider_handoff["tushare_called"])
         self.assertTrue(p1_provider_handoff["does_not_execute_trades"])
@@ -49445,6 +49475,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(handoff["local_promotion_review_creates_provider_task"])
         self.assertFalse(handoff["local_promotion_review_calls_provider"])
         self.assertTrue(handoff["local_promotion_review_is_not_production_completion"])
+        self.assertGreater(handoff["durable_evidence_blocker_count"], 0)
+        self.assertIn("production_promotion_review", handoff["durable_blocking_evidence_keys"])
+        self.assertIn(
+            "release review that production_freshness_gate_complete may become true",
+            handoff["missing_durable_evidence_items"],
+        )
+        self.assertFalse(handoff["requires_explicit_provider_trade_cal_task"])
+        self.assertFalse(handoff["requires_safe_provider_call_ledger"])
+        self.assertFalse(handoff["requires_provider_freshness_replay"])
+        self.assertFalse(handoff["requires_provider_failure_mode_evidence"])
+        self.assertTrue(handoff["requires_user_release_review_before_closeout"])
         self.assertTrue(handoff["local_worktree_clean_required_before_gate_receipt"])
         self.assertFalse(handoff["local_worktree_raw_paths_emitted"])
         self.assertFalse(handoff["local_worktree_raw_status_lines_emitted"])
@@ -49462,6 +49503,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(handoff["does_not_execute_trades"])
         self.assertFalse(handoff["can_close_goal"])
         self.assertTrue(p1_row["supporting_trade_cal_provider_acceptance_local_promotion_review_ready"])
+        self.assertGreater(
+            p1_row["supporting_trade_cal_provider_acceptance_durable_blocker_count"],
+            0,
+        )
+        self.assertIn(
+            "production_promotion_review",
+            p1_row["supporting_trade_cal_provider_acceptance_blocking_evidence_keys"],
+        )
+        self.assertIn(
+            "release review that production_freshness_gate_complete may become true",
+            p1_row["supporting_trade_cal_provider_acceptance_missing_evidence_items"],
+        )
+        self.assertFalse(p1_row["supporting_trade_cal_provider_acceptance_requires_provider_task"])
         self.assertFalse(p1_row["supporting_trade_cal_provider_acceptance_creates_task_from_get"])
         self.assertFalse(p1_row["supporting_trade_cal_provider_acceptance_strict_closeout_ready"])
 

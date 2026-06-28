@@ -8869,6 +8869,18 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
     latest_promotion_review = _dict_or_empty(
         packet_map.get("latest_trade_cal_provider_acceptance_promotion_review")
     )
+    durable_blocking_evidence_keys = [
+        str(item) for item in durable_recipe.get("blocking_evidence_keys") or [] if str(item)
+    ]
+    missing_durable_evidence_items = [
+        str(item) for item in durable_recipe.get("missing_evidence_items") or [] if str(item)
+    ]
+    local_evidence_missing_items = [
+        str(item) for item in durable_recipe.get("local_evidence_missing_items") or [] if str(item)
+    ]
+    provider_acceptance_evidence_missing = (
+        "provider-backed trade_cal acceptance evidence" in missing_durable_evidence_items
+    )
     provider_evidence_visible = provider_evidence.get("provider_backed_acceptance_done") is True
     promotion_ready = promotion.get("status") == "trade_cal_provider_acceptance_promotion_ready"
     promotion_review_found = latest_promotion_review.get("latest_task_found") is True
@@ -8911,10 +8923,19 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         ),
         "durable_recipe_status": durable_recipe.get("status") or "missing",
         "durable_recipe_ready": durable_recipe.get("local_recipe_ready") is True,
+        "durable_evidence_row_count": int(durable_recipe.get("row_count") or 0),
+        "durable_evidence_blocker_count": int(
+            durable_recipe.get("durable_evidence_blocker_count") or 0
+        ),
+        "durable_blocking_evidence_keys": durable_blocking_evidence_keys,
+        "missing_durable_evidence_items": missing_durable_evidence_items,
+        "missing_durable_evidence_item_count": len(missing_durable_evidence_items),
         "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
         "durable_promotion_ready": durable_recipe.get("durable_promotion_ready") is True,
         "local_complete": durable_recipe.get("local_complete") is True,
         "local_completion_status": durable_recipe.get("local_completion_status") or "local_evidence_pending",
+        "local_evidence_missing_items": local_evidence_missing_items,
+        "local_evidence_missing_item_count": len(local_evidence_missing_items),
         "local_blocker_count": int(durable_recipe.get("local_blocker_count") or 0),
         "local_release_gate_complete": durable_recipe.get("local_release_gate_complete") is True,
         "local_release_gate_evidence_status": (
@@ -8965,6 +8986,29 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         "latest_promotion_review_ready_for_release": promotion_review_ready,
         "latest_promotion_review_status": latest_promotion_review.get("status") or "missing",
         "latest_promotion_review_task_id": latest_promotion_review.get("latest_task_id") or "",
+        "requires_explicit_provider_trade_cal_task": (
+            provider_acceptance_evidence_missing
+            or "explicit_provider_trade_cal_task" in durable_blocking_evidence_keys
+        ),
+        "requires_safe_provider_call_ledger": (
+            provider_acceptance_evidence_missing
+            or "safe_provider_call_ledger" in durable_blocking_evidence_keys
+        ),
+        "requires_provider_freshness_replay": (
+            provider_acceptance_evidence_missing
+            or "provider_freshness_replay" in durable_blocking_evidence_keys
+        ),
+        "requires_provider_failure_mode_evidence": (
+            provider_acceptance_evidence_missing
+            or "provider_failure_mode_evidence" in durable_blocking_evidence_keys
+        ),
+        "requires_current_evidence_producer_coverage": (
+            "current_evidence_producer_coverage" in durable_blocking_evidence_keys
+        ),
+        "requires_user_release_review_before_closeout": (
+            "release review that production_freshness_gate_complete may become true"
+            in missing_durable_evidence_items
+        ),
         "local_promotion_review_ready_for_release": (
             durable_recipe.get("local_promotion_review_ready_for_release") is True
         ),
@@ -9548,6 +9592,30 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "supporting_trade_cal_provider_acceptance_local_promotion_review_ready": (
                     supporting_trade_cal_provider_acceptance_evidence_handoff.get(
                         "local_promotion_review_ready_for_release"
+                    )
+                    is True
+                ),
+                "supporting_trade_cal_provider_acceptance_durable_blocker_count": int(
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get(
+                        "durable_evidence_blocker_count"
+                    )
+                    or 0
+                ),
+                "supporting_trade_cal_provider_acceptance_missing_evidence_items": list(
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get(
+                        "missing_durable_evidence_items"
+                    )
+                    or []
+                ),
+                "supporting_trade_cal_provider_acceptance_blocking_evidence_keys": list(
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get(
+                        "durable_blocking_evidence_keys"
+                    )
+                    or []
+                ),
+                "supporting_trade_cal_provider_acceptance_requires_provider_task": (
+                    supporting_trade_cal_provider_acceptance_evidence_handoff.get(
+                        "requires_explicit_provider_trade_cal_task"
                     )
                     is True
                 ),
