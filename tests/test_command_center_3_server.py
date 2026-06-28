@@ -38493,6 +38493,63 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_call_ledger["ltg04_factor_universe_worker_batch_handoff_status"],
             p3_factor_universe_handoff["status"],
         )
+        top_level_storage_handoff = migration["data"][
+            "ltg05_storage_physical_execution_handoff_summary"
+        ]
+        p4_storage_handoff = action_rows["p4_storage_physical_execution"][
+            "supporting_storage_physical_execution_handoff"
+        ]
+        self.assertEqual(top_level_storage_handoff, p4_storage_handoff)
+        self.assertEqual(
+            p4_storage_handoff["schema_version"],
+            "ltg05_storage_physical_execution_handoff_summary.v1",
+        )
+        self.assertIn(
+            p4_storage_handoff["status"],
+            {
+                "storage_physical_execution_recipe_needed",
+                "storage_physical_execution_recipe_ready_execution_request_needed",
+                "storage_physical_execution_request_ready_physical_task_pending",
+                "storage_physical_execution_phase_a_visible_production_closeout_pending",
+                "storage_physical_execution_handoff_claim_rejected_production_completion_requires_review",
+            },
+        )
+        self.assertEqual(
+            action_rows["p4_storage_physical_execution"][
+                "supporting_storage_physical_execution_next_local_step"
+            ],
+            p4_storage_handoff["next_local_step"],
+        )
+        self.assertTrue(p4_storage_handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(p4_storage_handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(p4_storage_handoff["physical_execution_complete"])
+        self.assertFalse(p4_storage_handoff["writes_parquet"])
+        self.assertFalse(p4_storage_handoff["writes_manifest"])
+        self.assertFalse(p4_storage_handoff["deletes_artifacts"])
+        self.assertFalse(p4_storage_handoff["refreshes_providers"])
+        self.assertFalse(p4_storage_handoff["reads_row_payloads"])
+        self.assertFalse(p4_storage_handoff["cache_get_creates_task"])
+        self.assertFalse(p4_storage_handoff["cache_get_writes_parquet"])
+        self.assertFalse(p4_storage_handoff["cache_get_writes_manifest"])
+        self.assertFalse(p4_storage_handoff["cache_get_deletes_artifacts"])
+        self.assertFalse(p4_storage_handoff["cache_get_calls_provider"])
+        self.assertFalse(p4_storage_handoff["external_calls_triggered"])
+        self.assertFalse(p4_storage_handoff["tushare_called"])
+        self.assertFalse(p4_storage_handoff["deepseek_called"])
+        self.assertFalse(p4_storage_handoff["github_called"])
+        self.assertTrue(p4_storage_handoff["does_not_execute_trades"])
+        self.assertTrue(p4_storage_handoff["does_not_modify_strategy_action"])
+        self.assertFalse(p4_storage_handoff["contains_secret"])
+        self.assertFalse(p4_storage_handoff["can_close_goal"])
+        self.assertFalse(p4_storage_handoff["production_storage_complete"])
+        self.assertEqual(
+            p4_storage_handoff["evidence_boundary"],
+            "ltg05_storage_handoff_reads_local_receipts_not_storage_production_closeout",
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg05_storage_physical_execution_handoff_status"],
+            p4_storage_handoff["status"],
+        )
         self.assertTrue(action_rows["p3_candidate_radar_provider_worker_promotion"]["does_not_modify_strategy_action"])
         self.assertFalse(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_lookup_calls_provider"])
         self.assertFalse(runway_rows["LTG-01"]["can_close_goal"])
