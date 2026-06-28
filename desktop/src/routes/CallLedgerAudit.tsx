@@ -268,6 +268,8 @@ export default function CallLedgerAudit() {
         <p>local_gate_ready: {String(releaseGateAudit.local_gate_ready ?? false)}</p>
         <p>release_gate_complete: {String(releaseGateAudit.release_gate_complete ?? false)}</p>
         <p>remote_ci_review_ready: {String(releaseGateAudit.remote_ci_review_ready ?? false)}；latest_remote_run_verified_green: {String(releaseGateAudit.latest_remote_run_verified_green ?? false)}</p>
+        <p>remote_ci_review_receipt_status: {String(releaseGateAudit.remote_ci_review_receipt_status ?? "missing")}；head_matches_current: {String(releaseGateAudit.remote_ci_review_receipt_head_matches_current === true)}</p>
+        <p>release_review_complete: {String(releaseGateAudit.release_review_complete === true)}</p>
         <p>ci_mirror_ready: {String(releaseGateAudit.ci_mirror_ready ?? false)}</p>
         <p>ci_mirror_principle_guard: {String(releaseGateAudit.ci_mirror_includes_migration_principle_docs_guard ?? false)}</p>
         <p>ci_mirror_evidence_artifact_upload: {String(releaseGateAudit.ci_mirror_includes_evidence_artifact_upload ?? false)}</p>
@@ -275,6 +277,7 @@ export default function CallLedgerAudit() {
         <p>keyword_review_raw_lines_suppressed: {String(releaseGateAudit.keyword_review_raw_lines_suppressed ?? false)}</p>
         <p>ci_mirror_not_proven: {String(Array.isArray(releaseGateAudit.blockers) && (releaseGateAudit.blockers as unknown[]).includes("ci_mirror_not_proven"))}</p>
         <p>remote_ci_review_required_for_release_gate_complete: {String(Array.isArray(releaseGateAudit.blockers) && (releaseGateAudit.blockers as unknown[]).includes("remote_ci_review_required_for_release_gate_complete"))}</p>
+        <p>release_review_after_remote_ci_green_required: {String(Array.isArray(releaseGateAudit.blockers) && (releaseGateAudit.blockers as unknown[]).includes("release_review_after_remote_ci_green_required"))}</p>
         <p>false_positive_allowlist_review_pending: {String(Array.isArray(releaseGateAudit.soft_blockers) && (releaseGateAudit.soft_blockers as unknown[]).includes("false_positive_allowlist_review_pending"))}</p>
         <p>PUSH_GATE_REPORT_PATH local report is optional evidence, not production completion proof.</p>
       </PacketCard>

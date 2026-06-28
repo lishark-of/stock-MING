@@ -1567,6 +1567,7 @@ def _release_gate_workflow_rows() -> list[dict[str, Any]]:
 
 def _release_gate_readiness_audit(
     secret_artifact_allowlist_review_receipt: Mapping[str, Any] | None = None,
+    remote_ci_review_receipt: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     script = _read_local_text(PUSH_GATE_SCRIPT_PATH)
     migration_principle_test = _read_local_text(MIGRATION_PRINCIPLE_TEST_PATH)
@@ -1981,6 +1982,20 @@ def _release_gate_readiness_audit(
         allowlist_review.get("periodic_allowlist_review_ready") is True
         and allowlist_review.get("head_matches_current") is True
     )
+    remote_review = _as_dict(remote_ci_review_receipt)
+    remote_ci_review_ready = (
+        remote_review.get("remote_ci_review_ready") is True
+        and remote_review.get("head_matches_current") is True
+    )
+    remote_actions_status_known = (
+        remote_review.get("remote_actions_status_known") is True
+        and remote_review.get("head_matches_current") is True
+    )
+    latest_remote_run_verified_green = (
+        remote_review.get("latest_remote_run_verified_green") is True
+        and remote_review.get("head_matches_current") is True
+    )
+    release_review_complete = False
     local_gate_ready = all(
         bool(checks[key])
         for key in (
@@ -2499,9 +2514,26 @@ def _release_gate_readiness_audit(
         ),
         _release_gate_row(
             "remote_ci_review_required_for_release_gate_complete",
-            False,
-            evidence="static local audit cannot verify matching remote Actions green status or reviewed failure logs",
-            status_override="blocked_remote_ci_unverified",
+            remote_ci_review_ready,
+            evidence=(
+                f"remote_ci_review_receipt_status={remote_review.get('status')}; "
+                f"head_matches_current={remote_review.get('head_matches_current')}; "
+                f"latest_remote_run_verified_green={latest_remote_run_verified_green}"
+            )
+            if remote_review
+            else "static local audit cannot verify matching remote Actions green status or reviewed failure logs",
+            status_override="blocked_remote_ci_unverified" if not remote_ci_review_ready else None,
+        ),
+        _release_gate_row(
+            "release_review_after_remote_ci_green_required",
+            release_review_complete,
+            evidence=(
+                "matching remote CI is green for current HEAD; release review remains a separate human gate"
+                if remote_ci_review_ready
+                else "release review waits for matching remote CI green evidence"
+            ),
+            production_blocker=remote_ci_review_ready,
+            status_override="pending_release_review" if remote_ci_review_ready else "waiting_remote_ci_green",
         ),
         _release_gate_row(
             "false_positive_allowlist_review_pending",
@@ -2513,15 +2545,19 @@ def _release_gate_readiness_audit(
     ]
     blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
     soft_blockers = [row["criterion"] for row in rows if row.get("status") == "pending" and not row.get("production_blocker")]
-    remote_ci_review_ready = False
     release_gate_complete = (
         local_gate_ready
         and ci_mirror_ready
         and false_positive_allowlist_review_ready
         and remote_ci_review_ready
+        and release_review_complete
     )
     if release_gate_complete:
         release_gate_status = "release_gate_ready"
+    elif local_gate_ready and ci_mirror_ready and remote_ci_review_ready and not false_positive_allowlist_review_ready:
+        release_gate_status = "local_gate_ready_remote_ci_reviewed_allowlist_and_release_review_pending"
+    elif local_gate_ready and ci_mirror_ready and remote_ci_review_ready:
+        release_gate_status = "local_gate_ready_remote_ci_reviewed_release_review_pending"
     elif local_gate_ready and ci_mirror_ready and not remote_ci_review_ready and not false_positive_allowlist_review_ready:
         release_gate_status = "local_gate_ready_remote_ci_and_allowlist_pending"
     elif local_gate_ready and ci_mirror_ready and not remote_ci_review_ready:
@@ -2545,10 +2581,15 @@ def _release_gate_readiness_audit(
         "ci_mirror_includes_evidence_artifact_upload": ci_mirror_includes_evidence_artifact_upload,
         "ci_mirror_includes_failure_summary_annotation": ci_mirror_includes_failure_summary_annotation,
         "remote_ci_review_ready": remote_ci_review_ready,
-        "remote_actions_status_known": False,
-        "latest_remote_run_verified_green": False,
+        "remote_actions_status_known": remote_actions_status_known,
+        "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "remote_ci_review_receipt_status": remote_review.get("status", ""),
+        "remote_ci_review_receipt_head_matches_current": remote_review.get("head_matches_current") is True,
+        "remote_ci_review_receipt_run_id": remote_review.get("run_id", ""),
+        "release_review_complete": release_review_complete,
         "static_audit_cannot_complete_release_gate": True,
         "release_gate_complete_requires_remote_ci_review": True,
+        "release_gate_complete_requires_release_review_after_remote_ci_green": True,
         "false_positive_allowlist_review_ready": false_positive_allowlist_review_ready,
         "secret_artifact_allowlist_review_receipt_status": allowlist_review.get("status", ""),
         "secret_artifact_allowlist_review_receipt_head_matches_current": (
@@ -5178,8 +5219,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
     model_strategy_rows = _model_strategy_rows()
     get_route_coverage = _get_route_coverage(endpoint_rows)
     secret_artifact_allowlist_review_receipt = _read_secret_artifact_allowlist_review_receipt()
+    remote_ci_review_receipt = _read_remote_ci_review_receipt()
     release_gate_readiness_audit, release_gate_readiness_rows, release_gate_workflow_rows = _release_gate_readiness_audit(
-        secret_artifact_allowlist_review_receipt
+        secret_artifact_allowlist_review_receipt,
+        remote_ci_review_receipt,
     )
     ci_notification_triage_contract, ci_notification_triage_rows = _ci_notification_triage_contract(
         release_gate_readiness_audit,
@@ -5187,7 +5230,6 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
     )
     local_push_gate_report_summary = _read_local_push_gate_report_summary()
     local_push_gate_run_receipt = _read_local_push_gate_run_receipt()
-    remote_ci_review_receipt = _read_remote_ci_review_receipt()
     release_gate_push_readiness_receipt, release_gate_push_readiness_rows = _release_gate_push_readiness_receipt(
         release_gate_readiness_audit,
         ci_notification_triage_contract,

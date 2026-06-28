@@ -259,6 +259,25 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
                 self.assertFalse(remote["release_gate_complete"])
 
                 packet = audit_service.read_call_ledger_audit_cache()
+                release_gate = packet["release_gate_readiness_audit"]
+                self.assertEqual(
+                    release_gate["status"],
+                    "local_gate_ready_remote_ci_reviewed_allowlist_and_release_review_pending",
+                )
+                self.assertTrue(release_gate["remote_ci_review_ready"])
+                self.assertTrue(release_gate["remote_actions_status_known"])
+                self.assertTrue(release_gate["latest_remote_run_verified_green"])
+                self.assertFalse(release_gate["release_review_complete"])
+                self.assertFalse(release_gate["release_gate_complete"])
+                self.assertNotIn("remote_ci_review_required_for_release_gate_complete", release_gate["blockers"])
+                self.assertIn("release_review_after_remote_ci_green_required", release_gate["blockers"])
+                release_gate_rows = {row["criterion"]: row for row in packet["release_gate_readiness_rows"]}
+                self.assertTrue(release_gate_rows["remote_ci_review_required_for_release_gate_complete"]["passed"])
+                self.assertEqual(
+                    release_gate_rows["release_review_after_remote_ci_green_required"]["status"],
+                    "pending_release_review",
+                )
+
                 receipt = packet["release_gate_push_readiness_receipt"]
                 self.assertEqual(
                     receipt["status"],

@@ -2078,13 +2078,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
     def _with_release_gate_receipt_path(self):
         original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
+        original_remote_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
         original_next_session_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         temp_dir = tempfile.TemporaryDirectory()
         receipt_path = Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
+        remote_receipt_path = Path(temp_dir.name) / "release_gate" / "remote_ci_review_receipt.json"
         audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
+        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH = remote_receipt_path
         next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH", original_path)
+        self.addCleanup(setattr, audit_service, "REMOTE_CI_REVIEW_RECEIPT_PATH", original_remote_path)
         self.addCleanup(
             setattr,
             next_session_service,
@@ -25930,13 +25934,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
     def _with_release_gate_receipt_path(self):
         original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
+        original_remote_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
         original_next_session_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         temp_dir = tempfile.TemporaryDirectory()
         receipt_path = Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
+        remote_receipt_path = Path(temp_dir.name) / "release_gate" / "remote_ci_review_receipt.json"
         audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
+        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH = remote_receipt_path
         next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH", original_path)
+        self.addCleanup(setattr, audit_service, "REMOTE_CI_REVIEW_RECEIPT_PATH", original_remote_path)
         self.addCleanup(
             setattr,
             next_session_service,
