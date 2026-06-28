@@ -19532,6 +19532,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("does_not_open_streamlit", script)
         self.assertIn("legacy_cache_is_read_only", script)
         self.assertIn("streamlit_marked_legacy_not_primary", script)
+        self.assertIn("legacy_deep_link_stays_fallback_navigation_only", script)
         self.assertIn("primary_exit_audit_keeps_fallback_required", script)
         self.assertIn("fallback_dependency_contract_keeps_retirement_pending", script)
         self.assertIn("retirement_readiness_receipt_allows_only_explicit_review", script)
@@ -19563,6 +19564,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["status"], "streamlit_legacy_contract_passed")
         self.assertTrue(payload["legacy_cache_ready"])
         self.assertTrue(payload["streamlit_marked_legacy"])
+        self.assertTrue(payload["legacy_deep_link_fallback_navigation_only"])
         self.assertTrue(payload["react_tauri_primary_entry"])
         self.assertTrue(payload["streamlit_fallback_retained"])
         self.assertTrue(payload["legacy_fallback_required"])
@@ -19603,6 +19605,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["fallback_contract_status"],
             "streamlit_fallback_dependencies_visible_retirement_pending",
         )
+        self.assertTrue(payload["observed"]["legacy_deep_link_fallback_navigation_only"])
         self.assertGreater(payload["observed"]["ordinary_workflow_still_needs_fallback_count"], 0)
         self.assertGreater(payload["observed"]["ordinary_fallback_dependency_count"], 0)
         self.assertGreater(payload["observed"]["full_streamlit_removal_blocker_count"], 0)

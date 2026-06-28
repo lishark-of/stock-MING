@@ -2644,6 +2644,18 @@ COMMAND_CENTER_BASE_ROUTE_MAP = {
     "可信度": "structured_data",
     "新鲜度": "structured_data",
 }
+LEGACY_WORKSPACE_DEEP_LINK_TABS = {
+    "today": "今日关注池",
+    "focus": "今日关注池",
+    "risk": "天眼风控",
+    "discipline": "交易纪律实验室",
+    "margin_etf": "融资 ETF",
+    "cloud": "云端外脑",
+    "data_health": "数据源体检",
+    "next_ticket": "下一票雷达",
+    "radar": "下一票雷达",
+    "下一票雷达": "下一票雷达",
+}
 LEGACY_COMPAT_GUARD_TEXT = """
 【旧版兼容护栏】
 1. 本输出是旧版兼容推演，不作为当前交易指令；主判断请以次日操作图谱为准。
@@ -2739,6 +2751,31 @@ def render_legacy_data_status(module_name, status="未刷新", updated_at="", da
     )
     if status == "未刷新":
         st.info("当前未运行，请点击按钮获取最新数据。")
+
+
+def apply_streamlit_legacy_deep_link(session_state):
+    try:
+        params = st.query_params
+    except Exception:
+        params = {}
+
+    def pick(name):
+        value = params.get(name, "")
+        if isinstance(value, list):
+            value = value[0] if value else ""
+        return str(value or "").strip()
+
+    workspace = pick("workspace").lower()
+    legacy_tab_raw = pick("legacy_tab") or pick("tab")
+    legacy_tab = LEGACY_WORKSPACE_DEEP_LINK_TABS.get(legacy_tab_raw) or LEGACY_WORKSPACE_DEEP_LINK_TABS.get(legacy_tab_raw.lower())
+    signature = f"{workspace}|{legacy_tab_raw}"
+    if session_state.get("_streamlit_legacy_deep_link_signature") == signature:
+        return
+    if workspace in {"legacy", "old", "advanced_tools", "radar", "next_ticket"} or legacy_tab:
+        session_state["workspace_mode_v2"] = "高级工具箱（旧版保留）"
+    if legacy_tab:
+        session_state["legacy_workspace_selected_tab"] = legacy_tab
+    session_state["_streamlit_legacy_deep_link_signature"] = signature
 
 # ==========================================
 # 2. 核心功能与缓存提速优化
@@ -15866,6 +15903,8 @@ manager_rules 说明：当前输入只包含 manager_name / rule_type / content�
         <div class="ming-subtitle hf-ios-fade-in hf-ios-stagger-3">从成本价出发，合并量化、资金、舆情和经理规则，给出更克制的交易指令。</div>
     </section>
     """, unsafe_allow_html=True)
+
+    apply_streamlit_legacy_deep_link(st.session_state)
 
     workspace_mode = st.radio(
         "主导航",

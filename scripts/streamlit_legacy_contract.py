@@ -196,6 +196,34 @@ def build_contract() -> dict[str, Any]:
     app_source = _read_script("app.py")
     this_script = _read_script("scripts/streamlit_legacy_contract.py")
     streamlit_retirement_stage_scope_rows = _streamlit_retirement_stage_scope_rows()
+    legacy_deep_link_present = "def apply_streamlit_legacy_deep_link" in app_source
+    legacy_deep_link_body = ""
+    if legacy_deep_link_present:
+        legacy_deep_link_body = app_source.split("def apply_streamlit_legacy_deep_link", 1)[1].split(
+            "# ==========================================",
+            1,
+        )[0]
+    legacy_deep_link_fallback_navigation_only = (
+        not legacy_deep_link_present
+        or (
+            "LEGACY_WORKSPACE_DEEP_LINK_TABS" in app_source
+            and '"next_ticket": "下一票雷达"' in app_source
+            and '"radar": "下一票雷达"' in app_source
+            and '"data_health": "数据源体检"' in app_source
+            and "st.query_params" in legacy_deep_link_body
+            and "workspace_mode_v2" in legacy_deep_link_body
+            and "高级工具箱（旧版保留）" in legacy_deep_link_body
+            and "legacy_workspace_selected_tab" in legacy_deep_link_body
+            and "_streamlit_legacy_deep_link_signature" in legacy_deep_link_body
+            and "st.rerun" not in legacy_deep_link_body
+            and "create_task" not in legacy_deep_link_body
+            and "run_task" not in legacy_deep_link_body
+            and "open(" not in legacy_deep_link_body
+            and "trade" not in legacy_deep_link_body.lower()
+            and "tushare" not in legacy_deep_link_body.lower()
+            and "deepseek" not in legacy_deep_link_body.lower()
+        )
+    )
 
     rows = [
         _row(
@@ -226,6 +254,11 @@ def build_contract() -> dict[str, Any]:
             and "legacy/admin/debug" in app_source
             and "普通主流程" in app_source,
             "Streamlit must stay clearly labeled legacy/admin/debug while React/Tauri + FastAPI remains the official primary entry.",
+        ),
+        _row(
+            "legacy_deep_link_stays_fallback_navigation_only",
+            legacy_deep_link_fallback_navigation_only,
+            "Optional Streamlit legacy deep links may select legacy/admin/debug fallback tabs only; they must not rerun, create tasks, call data/model paths, open URLs, trade, or make Streamlit primary.",
         ),
         _row(
             "primary_exit_audit_keeps_fallback_required",
@@ -508,6 +541,8 @@ def build_contract() -> dict[str, Any]:
         "contract_ready": not blockers,
         "legacy_cache_ready": packet.get("schema_version") == "legacy_bridge_cache.v1" and packet.get("cache_only") is True,
         "streamlit_marked_legacy": True,
+        "legacy_deep_link_present": legacy_deep_link_present,
+        "legacy_deep_link_fallback_navigation_only": legacy_deep_link_fallback_navigation_only,
         "react_tauri_primary_entry": True,
         "ordinary_workflow_exit_complete": False,
         "streamlit_fallback_removal_ready": False,
@@ -576,6 +611,8 @@ def build_contract() -> dict[str, Any]:
             "streamlit_retirement_durable_evidence_blocking_keys": durable_evidence_recipe.get(
                 "blocking_evidence_keys"
             ),
+            "legacy_deep_link_present": legacy_deep_link_present,
+            "legacy_deep_link_fallback_navigation_only": legacy_deep_link_fallback_navigation_only,
         },
         "streamlit_retirement_stage_scope_rows": streamlit_retirement_stage_scope_rows,
         "streamlit_retirement_durable_evidence_rows": durable_evidence_rows,

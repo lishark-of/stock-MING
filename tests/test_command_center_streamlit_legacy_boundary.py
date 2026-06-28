@@ -29,6 +29,34 @@ class CommandCenterStreamlitLegacyBoundaryTests(unittest.TestCase):
         self.assertIn("不会改写 strategy action", notice_body)
         self.assertNotIn("自动下单", notice_body)
 
+    def test_optional_legacy_deep_link_stays_fallback_navigation_only(self):
+        source = Path("app.py").read_text(encoding="utf-8")
+
+        if "def apply_streamlit_legacy_deep_link" not in source:
+            self.skipTest("legacy deep link helper is not present in this checkout")
+
+        self.assertIn("LEGACY_WORKSPACE_DEEP_LINK_TABS", source)
+        self.assertIn('"next_ticket": "下一票雷达"', source)
+        self.assertIn('"radar": "下一票雷达"', source)
+        self.assertIn('"data_health": "数据源体检"', source)
+
+        helper_body = source.split("def apply_streamlit_legacy_deep_link", 1)[1].split(
+            "# ==========================================",
+            1,
+        )[0]
+        self.assertIn("st.query_params", helper_body)
+        self.assertIn("workspace_mode_v2", helper_body)
+        self.assertIn("高级工具箱（旧版保留）", helper_body)
+        self.assertIn("legacy_workspace_selected_tab", helper_body)
+        self.assertIn("_streamlit_legacy_deep_link_signature", helper_body)
+        self.assertNotIn("st.rerun", helper_body)
+        self.assertNotIn("create_task", helper_body)
+        self.assertNotIn("run_task", helper_body)
+        self.assertNotIn("open(", helper_body)
+        self.assertNotIn("tushare", helper_body.lower())
+        self.assertNotIn("deepseek", helper_body.lower())
+        self.assertNotIn("trade", helper_body.lower())
+
 
 if __name__ == "__main__":
     unittest.main()
