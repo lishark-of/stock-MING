@@ -2366,6 +2366,10 @@ def _build_ltg_strict_closeout_work_order_rows(
                 "latest_remote_run_not_verified_green",
             ]
         )
+    if release_gate_direct_evidence.get("remote_ci_green_local_gate_recheck_required") is True:
+        release_gate_blockers.append("remote_ci_green_local_gate_recheck_required")
+    if release_gate_direct_evidence.get("release_review_blocked_by_dirty_worktree") is True:
+        release_gate_blockers.append("clean_worktree_required_before_release_review_after_remote_ci_green")
     if release_gate_direct_evidence.get("local_commits_not_pushed_for_remote_ci") is True:
         release_gate_blockers.append("local_commits_not_pushed_for_remote_ci")
     release_gate_blockers = list(dict.fromkeys(release_gate_blockers))
@@ -3668,21 +3672,29 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     )
     remote_actions_status_known = remote_receipt_map.get("remote_actions_status_known") is True
     latest_remote_run_verified_green = remote_receipt_map.get("latest_remote_run_verified_green") is True
+    remote_receipt_head_matches_current = remote_receipt_map.get("head_matches_current") is True
+    remote_green_for_current_head = bool(
+        remote_actions_status_known and latest_remote_run_verified_green and remote_receipt_head_matches_current
+    )
     local_commits_not_pushed = local_receipt_current_origin_ahead_count > 0
     direct_stage_keys = ["fresh_local_gate_command_run"] if fresh_gate_run_done else []
-    if fresh_gate_run_done and latest_remote_run_verified_green:
+    if remote_green_for_current_head:
         direct_stage_keys.append("matching_remote_actions_status")
     status = "release_gate_direct_evidence_missing"
     if direct_stage_keys:
         status = "release_gate_direct_evidence_visible_remote_ci_pending"
-    if fresh_gate_run_done and latest_remote_run_verified_green:
+    if remote_green_for_current_head and not fresh_gate_run_done:
+        status = "release_gate_remote_ci_green_local_gate_recheck_required"
+    if fresh_gate_run_done and remote_green_for_current_head:
         status = "release_gate_direct_evidence_visible_remote_ci_reviewed_release_review_pending"
     local_complete = fresh_gate_run_done
-    remote_review_pending = bool(local_complete and not latest_remote_run_verified_green)
-    release_review_pending = bool(local_complete and latest_remote_run_verified_green)
+    remote_review_pending = bool(local_complete and not remote_green_for_current_head)
+    release_review_pending = bool(local_complete and remote_green_for_current_head)
     release_review_status = (
         "release_review_pending"
         if release_review_pending
+        else "release_review_blocked_by_local_gate_recheck_after_remote_green"
+        if remote_green_for_current_head
         else "release_review_waiting_for_remote_green"
         if remote_review_pending
         else "release_review_waiting_for_local_and_remote_complete"
@@ -3690,7 +3702,7 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     missing_evidence_items: list[str] = []
     if not fresh_gate_run_done:
         missing_evidence_items.append("fresh local gate run for current HEAD")
-    if not latest_remote_run_verified_green:
+    if not remote_green_for_current_head:
         missing_evidence_items.extend(
             [
                 "matching remote Actions status for current HEAD",
@@ -3714,14 +3726,16 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "remote_review_required_after_local_complete": True,
         "remote_review_blocked_by_unpushed_local_commits": local_commits_not_pushed,
         "remote_review_status": (
-            "remote_review_waiting_for_local_complete"
+            "remote_review_green_release_review_pending"
+            if local_complete and remote_green_for_current_head
+            else "remote_review_green_local_gate_recheck_required"
+            if remote_green_for_current_head
+            else "remote_review_waiting_for_local_complete"
             if not local_complete
             else "remote_review_waiting_for_push"
             if local_commits_not_pushed
             else "remote_review_pending"
             if remote_review_pending
-            else "remote_review_green_release_review_pending"
-            if local_complete and latest_remote_run_verified_green
             else "remote_review_waiting_for_local_complete"
         ),
         "remote_review_pending_count": 1 if remote_review_pending else 0,
@@ -3773,9 +3787,19 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         ),
         "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "remote_ci_green_for_current_head": remote_green_for_current_head,
+        "remote_ci_green_local_gate_recheck_required": (
+            remote_green_for_current_head and not fresh_gate_run_done
+        ),
+        "release_review_blocked_by_local_gate_recheck": (
+            remote_green_for_current_head and not fresh_gate_run_done
+        ),
+        "release_review_blocked_by_dirty_worktree": (
+            remote_green_for_current_head and worktree_blocks_local_gate
+        ),
         "remote_ci_review_receipt_status": str(remote_receipt_map.get("status") or "missing"),
         "remote_ci_review_receipt_run_id": str(remote_receipt_map.get("run_id") or ""),
-        "remote_ci_review_receipt_head_matches_current": remote_receipt_map.get("head_matches_current") is True,
+        "remote_ci_review_receipt_head_matches_current": remote_receipt_head_matches_current,
         "release_gate_complete": False,
         "did_not_push": True,
         "git_add_dot_used": False,
@@ -3787,8 +3811,10 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
-        "direct_evidence_layer": "L3_local_release_gate_execution_evidence"
-        if direct_stage_keys
+        "direct_evidence_layer": "L4_manual_remote_ci_review_receipt"
+        if remote_green_for_current_head
+        else "L3_local_release_gate_execution_evidence"
+        if fresh_gate_run_done
         else "L1_static_contract",
         "evidence_boundary": (
             "fresh_local_push_gate_and_remote_ci_review_are_not_release_review_or_ltg_closeout"
@@ -3849,6 +3875,12 @@ def _build_release_gate_remote_review_split_rows(
             "latest_remote_run_verified_green": (
                 release_gate_summary.get("latest_remote_run_verified_green") is True
             ),
+            "remote_ci_green_for_current_head": (
+                release_gate_summary.get("remote_ci_green_for_current_head") is True
+            ),
+            "remote_ci_green_local_gate_recheck_required": (
+                release_gate_summary.get("remote_ci_green_local_gate_recheck_required") is True
+            ),
             "remote_ci_review_receipt_status": release_gate_summary.get("remote_ci_review_receipt_status"),
             "remote_ci_review_receipt_run_id": release_gate_summary.get("remote_ci_review_receipt_run_id"),
             "remote_ci_review_receipt_head_matches_current": (
@@ -3866,6 +3898,12 @@ def _build_release_gate_remote_review_split_rows(
             "release_gate_complete": False,
             "strict_closeout_ready": False,
             "can_close_from_observed_row": False,
+            "release_review_blocked_by_local_gate_recheck": (
+                release_gate_summary.get("release_review_blocked_by_local_gate_recheck") is True
+            ),
+            "release_review_blocked_by_dirty_worktree": (
+                release_gate_summary.get("release_review_blocked_by_dirty_worktree") is True
+            ),
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "contains_secret": False,
@@ -3890,6 +3928,7 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
     worktree_clean = release_gate.get("local_worktree_clean") is True
     remote_actions_status_known = release_gate.get("remote_actions_status_known") is True
     latest_remote_run_verified_green = release_gate.get("latest_remote_run_verified_green") is True
+    remote_ci_green_for_current_head = release_gate.get("remote_ci_green_for_current_head") is True
     remote_receipt_head_matches_current = (
         release_gate.get("remote_ci_review_receipt_head_matches_current") is True
     )
@@ -3939,6 +3978,16 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         "requires_current_head_local_gate_recheck": local_recheck_required,
         "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "remote_ci_green_for_current_head": remote_ci_green_for_current_head,
+        "remote_ci_green_local_gate_recheck_required": (
+            release_gate.get("remote_ci_green_local_gate_recheck_required") is True
+        ),
+        "release_review_blocked_by_local_gate_recheck": (
+            release_gate.get("release_review_blocked_by_local_gate_recheck") is True
+        ),
+        "release_review_blocked_by_dirty_worktree": (
+            release_gate.get("release_review_blocked_by_dirty_worktree") is True
+        ),
         "remote_ci_review_receipt_status": release_gate.get("remote_ci_review_receipt_status", ""),
         "remote_ci_review_receipt_run_id": release_gate.get("remote_ci_review_receipt_run_id", ""),
         "remote_ci_review_receipt_head_matches_current": remote_receipt_head_matches_current,
@@ -12538,6 +12587,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                         and str(direct_evidence.get("status") or "")
                         == "release_gate_direct_evidence_visible_remote_ci_reviewed_release_review_pending"
                     )
+                    else "observed_release_gate_remote_ci_green_local_gate_recheck_required"
+                    if (
+                        stage_rows
+                        and str(direct_evidence.get("status") or "")
+                        == "release_gate_remote_ci_green_local_gate_recheck_required"
+                    )
                     else "observed_release_gate_direct_evidence_remote_ci_pending"
                     if stage_rows and direct_evidence_count
                     else (
@@ -12671,6 +12726,20 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 is True,
                 "remote_actions_status_known": direct_evidence.get("remote_actions_status_known") is True,
                 "latest_remote_run_verified_green": direct_evidence.get("latest_remote_run_verified_green")
+                is True,
+                "remote_ci_green_for_current_head": direct_evidence.get("remote_ci_green_for_current_head")
+                is True,
+                "remote_ci_green_local_gate_recheck_required": direct_evidence.get(
+                    "remote_ci_green_local_gate_recheck_required"
+                )
+                is True,
+                "release_review_blocked_by_local_gate_recheck": direct_evidence.get(
+                    "release_review_blocked_by_local_gate_recheck"
+                )
+                is True,
+                "release_review_blocked_by_dirty_worktree": direct_evidence.get(
+                    "release_review_blocked_by_dirty_worktree"
+                )
                 is True,
                 "failure_email_has_matching_head_and_logs": False,
                 "can_dismiss_failure_email_without_matching_head_and_logs": False,
@@ -13252,6 +13321,10 @@ def _merge_ltg_stage_scope_observations(
                 "release_review_pending",
                 "release_review_status",
                 "release_review_pending_count",
+                "remote_ci_green_for_current_head",
+                "remote_ci_green_local_gate_recheck_required",
+                "release_review_blocked_by_local_gate_recheck",
+                "release_review_blocked_by_dirty_worktree",
                 "strict_closeout_ready",
                 "missing_evidence_items",
                 "per_slice_trade_isolation_recheck_required",
