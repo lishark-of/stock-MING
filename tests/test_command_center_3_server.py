@@ -38868,6 +38868,67 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_call_ledger["ltg10_streamlit_retirement_handoff_status"],
             p7_streamlit_handoff["status"],
         )
+        top_level_motion_handoff = migration["data"][
+            "ltg14_motion_production_handoff_summary"
+        ]
+        p8_motion_handoff = action_rows["p8_motion_production_promotion_review"][
+            "supporting_motion_production_handoff"
+        ]
+        self.assertEqual(top_level_motion_handoff, p8_motion_handoff)
+        self.assertEqual(
+            p8_motion_handoff["schema_version"],
+            "ltg14_motion_production_handoff_summary.v1",
+        )
+        self.assertIn(
+            p8_motion_handoff["status"],
+            {
+                "motion_activation_receipts_visible_browser_qa_pending",
+                "motion_activation_receipt_ready_browser_qa_review_needed",
+                "motion_browser_qa_review_ready_promotion_dry_run_needed",
+                "motion_promotion_dry_run_ready_visual_performance_review_needed",
+                "motion_visual_performance_promotion_review_ready_ci_release_blocked",
+            },
+        )
+        self.assertEqual(
+            action_rows["p8_motion_production_promotion_review"][
+                "supporting_motion_production_next_local_step"
+            ],
+            p8_motion_handoff["next_local_step"],
+        )
+        self.assertTrue(p8_motion_handoff["requires_durable_ci_release_evidence"])
+        self.assertTrue(p8_motion_handoff["requires_production_motion_review"])
+        self.assertTrue(p8_motion_handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(p8_motion_handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(p8_motion_handoff["durable_ci_evidence_complete"])
+        self.assertFalse(p8_motion_handoff["production_motion_complete"])
+        self.assertFalse(p8_motion_handoff["cache_get_creates_task"])
+        self.assertFalse(p8_motion_handoff["cache_get_opens_browser"])
+        self.assertFalse(p8_motion_handoff["cache_get_runs_motion_runner"])
+        self.assertFalse(p8_motion_handoff["cache_get_writes_artifacts"])
+        self.assertFalse(p8_motion_handoff["cache_get_calls_provider"])
+        self.assertFalse(p8_motion_handoff["cache_get_calls_model"])
+        self.assertFalse(p8_motion_handoff["cache_get_calls_github"])
+        self.assertFalse(p8_motion_handoff["creates_task_from_get"])
+        self.assertFalse(p8_motion_handoff["opens_browser_from_get"])
+        self.assertFalse(p8_motion_handoff["runs_motion_runner_from_get"])
+        self.assertFalse(p8_motion_handoff["writes_artifacts_from_get"])
+        self.assertFalse(p8_motion_handoff["external_calls_triggered"])
+        self.assertFalse(p8_motion_handoff["tushare_called"])
+        self.assertFalse(p8_motion_handoff["deepseek_called"])
+        self.assertFalse(p8_motion_handoff["github_called"])
+        self.assertTrue(p8_motion_handoff["does_not_execute_trades"])
+        self.assertTrue(p8_motion_handoff["does_not_modify_strategy_action"])
+        self.assertFalse(p8_motion_handoff["contains_secret"])
+        self.assertFalse(p8_motion_handoff["can_close_goal"])
+        self.assertFalse(p8_motion_handoff["production_complete"])
+        self.assertEqual(
+            p8_motion_handoff["evidence_boundary"],
+            "ltg14_motion_handoff_reads_local_motion_receipts_not_browser_ci_or_production_motion",
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg14_motion_production_handoff_status"],
+            p8_motion_handoff["status"],
+        )
         top_level_candidate_radar_handoff = migration["data"][
             "ltg13_candidate_radar_production_handoff_summary"
         ]
