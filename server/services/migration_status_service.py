@@ -2681,6 +2681,9 @@ def _build_ltg_strict_closeout_work_order_rows(
         ),
         "release_gate_worktree_raw_paths_emitted": False,
         "release_gate_worktree_raw_status_lines_emitted": False,
+        "release_gate_receipt_head_matches_current": (
+            release_gate_direct_evidence.get("local_push_gate_receipt_head_matches_current") is True
+        ),
         "release_gate_receipt_reported_origin_ahead_count": int(
             release_gate_direct_evidence.get("local_push_gate_receipt_origin_ahead_count") or 0
         ),
@@ -2757,6 +2760,30 @@ def _build_ltg_strict_closeout_evidence_spine(
         )
         is True
     )
+    release_gate_current_blockers = [
+        str(item)
+        for item in ltg_strict_closeout_work_order_summary.get("release_gate_current_blockers") or []
+        if str(item)
+    ]
+    release_gate_worktree_blocks_fresh_local_gate = (
+        ltg_strict_closeout_work_order_summary.get("release_gate_worktree_blocks_fresh_local_gate")
+        is True
+    )
+    release_gate_worktree_dirty_file_count = int(
+        ltg_strict_closeout_work_order_summary.get("release_gate_worktree_dirty_file_count") or 0
+    )
+    release_gate_fresh_local_gate_run_observed = (
+        ltg_strict_closeout_work_order_summary.get("release_gate_fresh_local_gate_run_observed")
+        is True
+    )
+    release_gate_receipt_head_matches_current = (
+        ltg_strict_closeout_work_order_summary.get("release_gate_receipt_head_matches_current")
+        is True
+    )
+    release_gate_latest_remote_run_verified_green = (
+        ltg_strict_closeout_work_order_summary.get("release_gate_latest_remote_run_verified_green")
+        is True
+    )
     rows: list[dict[str, Any]] = []
     missing_ltg_ids: list[str] = []
     for goal_id, handoff_key_tuple in LTG_STRICT_CLOSEOUT_EVIDENCE_SPINE_HANDOFF_KEYS.items():
@@ -2807,6 +2834,19 @@ def _build_ltg_strict_closeout_evidence_spine(
                 "requires_release_review_after_remote_green": True,
                 "release_gate_current_head_remote_review_state": current_head_remote_review_state,
                 "release_gate_current_head_remote_review_claim_allowed": False,
+                "release_gate_current_blockers": list(release_gate_current_blockers),
+                "release_gate_current_blocker_count": len(release_gate_current_blockers),
+                "release_gate_worktree_blocks_fresh_local_gate": (
+                    release_gate_worktree_blocks_fresh_local_gate
+                ),
+                "release_gate_worktree_dirty_file_count": release_gate_worktree_dirty_file_count,
+                "release_gate_worktree_raw_paths_emitted": False,
+                "release_gate_worktree_raw_status_lines_emitted": False,
+                "release_gate_fresh_local_gate_run_observed": release_gate_fresh_local_gate_run_observed,
+                "release_gate_receipt_head_matches_current": release_gate_receipt_head_matches_current,
+                "release_gate_latest_remote_run_verified_green": (
+                    release_gate_latest_remote_run_verified_green
+                ),
                 "spine_row_is_not_production_evidence": True,
                 "cache_only_readback": True,
                 "cache_get_creates_task": False,
@@ -2857,9 +2897,30 @@ def _build_ltg_strict_closeout_evidence_spine(
         "requires_release_review_after_remote_green": True,
         "release_gate_current_head_remote_review_state": current_head_remote_review_state,
         "release_gate_current_head_remote_review_claim_allowed": False,
+        "release_gate_current_blockers": list(release_gate_current_blockers),
+        "release_gate_current_blocker_count": len(release_gate_current_blockers),
+        "release_gate_worktree_blocks_fresh_local_gate": (
+            release_gate_worktree_blocks_fresh_local_gate
+        ),
+        "release_gate_worktree_dirty_file_count": release_gate_worktree_dirty_file_count,
+        "release_gate_worktree_raw_paths_emitted": False,
+        "release_gate_worktree_raw_status_lines_emitted": False,
+        "release_gate_fresh_local_gate_run_observed": release_gate_fresh_local_gate_run_observed,
+        "release_gate_receipt_head_matches_current": release_gate_receipt_head_matches_current,
+        "release_gate_latest_remote_run_verified_green": release_gate_latest_remote_run_verified_green,
         "all_rows_current_head_remote_review_state_match": all(
             row.get("release_gate_current_head_remote_review_state")
             == current_head_remote_review_state
+            for row in rows
+        ),
+        "all_rows_current_blockers_match": all(
+            row.get("release_gate_current_blockers") == release_gate_current_blockers
+            and row.get("release_gate_current_blocker_count") == len(release_gate_current_blockers)
+            for row in rows
+        ),
+        "all_rows_suppress_worktree_raw_paths": all(
+            row.get("release_gate_worktree_raw_paths_emitted") is False
+            and row.get("release_gate_worktree_raw_status_lines_emitted") is False
             for row in rows
         ),
         "work_order_remote_review_claim_allowed": current_head_remote_review_claim_allowed,
@@ -15017,6 +15078,11 @@ def build_migration_status() -> dict[str, Any]:
                 "ltg_strict_closeout_evidence_spine_current_head_remote_review_state": (
                     ltg_strict_closeout_evidence_spine_summary.get(
                         "release_gate_current_head_remote_review_state"
+                    )
+                ),
+                "ltg_strict_closeout_evidence_spine_current_blocker_count": (
+                    ltg_strict_closeout_evidence_spine_summary.get(
+                        "release_gate_current_blocker_count"
                     )
                 ),
                 "usable_path_medium_goal_checkpoint_row_count": len(

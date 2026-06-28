@@ -93,6 +93,11 @@ def build_contract() -> dict[str, Any]:
     current_head_remote_review_state = str(
         work_order_summary.get("release_gate_current_head_remote_review_state") or ""
     )
+    release_gate_current_blockers = [
+        str(item)
+        for item in _list(work_order_summary.get("release_gate_current_blockers"))
+        if str(item)
+    ]
     current_head_ahead_count = _int(release_split_summary.get("current_head_origin_ahead_count"))
     current_head_push_required = (
         release_split_summary.get("current_head_push_required_before_remote_review") is True
@@ -133,6 +138,13 @@ def build_contract() -> dict[str, Any]:
     all_rows_current_head_remote_review_state_match = bool(spine_rows) and all(
         row.get("release_gate_current_head_remote_review_state") == current_head_remote_review_state
         and row.get("release_gate_current_head_remote_review_claim_allowed") is False
+        for row in spine_rows
+    )
+    all_rows_current_blockers_match = bool(spine_rows) and all(
+        _list(row.get("release_gate_current_blockers")) == release_gate_current_blockers
+        and _int(row.get("release_gate_current_blocker_count")) == len(release_gate_current_blockers)
+        and row.get("release_gate_worktree_raw_paths_emitted") is False
+        and row.get("release_gate_worktree_raw_status_lines_emitted") is False
         for row in spine_rows
     )
     all_rows_cache_only = bool(spine_rows) and all(
@@ -309,6 +321,18 @@ def build_contract() -> dict[str, Any]:
             current_head_remote_review_state or "missing",
         ),
         _row(
+            "ltg_strict_closeout_evidence_spine_local_gate_blockers_visible_without_raw_worktree_paths",
+            _list(summary.get("release_gate_current_blockers")) == release_gate_current_blockers
+            and _int(summary.get("release_gate_current_blocker_count"))
+            == len(release_gate_current_blockers)
+            and summary.get("release_gate_worktree_raw_paths_emitted") is False
+            and summary.get("release_gate_worktree_raw_status_lines_emitted") is False
+            and summary.get("all_rows_current_blockers_match") is True
+            and summary.get("all_rows_suppress_worktree_raw_paths") is True
+            and all_rows_current_blockers_match,
+            f"blockers={len(release_gate_current_blockers)}",
+        ),
+        _row(
             "ltg_strict_closeout_evidence_spine_cache_only_no_task_creation",
             summary.get("cache_only_readback") is True
             and summary.get("cache_get_creates_task") is False
@@ -375,6 +399,7 @@ def build_contract() -> dict[str, Any]:
         "requires_release_review_after_remote_green": True,
         "current_head_publish_status": current_head_publish_status,
         "current_head_remote_review_state": current_head_remote_review_state,
+        "release_gate_current_blocker_count": len(release_gate_current_blockers),
         "current_head_origin_ahead_count": current_head_ahead_count,
         "current_head_push_required_before_remote_review": current_head_push_required,
         "remote_review_waiting_for_current_head_push": expected_remote_review_waiting_for_push,
@@ -398,6 +423,7 @@ def build_contract() -> dict[str, Any]:
             "strict_closeout": summary.get("strict_closeout"),
             "current_head_publish_status": current_head_publish_status,
             "current_head_remote_review_state": current_head_remote_review_state,
+            "release_gate_current_blocker_count": len(release_gate_current_blockers),
             "current_head_origin_ahead_count": current_head_ahead_count,
             "current_head_push_required_before_remote_review": current_head_push_required,
             "remote_review_waiting_for_current_head_push": expected_remote_review_waiting_for_push,

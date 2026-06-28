@@ -38326,6 +38326,38 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(spine_summary["release_gate_current_head_remote_review_claim_allowed"])
         self.assertFalse(spine_summary["work_order_remote_review_claim_allowed"])
         self.assertTrue(spine_summary["all_rows_current_head_remote_review_state_match"])
+        self.assertEqual(
+            spine_summary["release_gate_current_blockers"],
+            work_order_summary["release_gate_current_blockers"],
+        )
+        self.assertEqual(
+            spine_summary["release_gate_current_blocker_count"],
+            len(work_order_summary["release_gate_current_blockers"]),
+        )
+        self.assertEqual(
+            spine_summary["release_gate_worktree_blocks_fresh_local_gate"],
+            work_order_summary["release_gate_worktree_blocks_fresh_local_gate"],
+        )
+        self.assertEqual(
+            spine_summary["release_gate_worktree_dirty_file_count"],
+            work_order_summary["release_gate_worktree_dirty_file_count"],
+        )
+        self.assertFalse(spine_summary["release_gate_worktree_raw_paths_emitted"])
+        self.assertFalse(spine_summary["release_gate_worktree_raw_status_lines_emitted"])
+        self.assertEqual(
+            spine_summary["release_gate_fresh_local_gate_run_observed"],
+            work_order_summary["release_gate_fresh_local_gate_run_observed"],
+        )
+        self.assertEqual(
+            spine_summary["release_gate_receipt_head_matches_current"],
+            work_order_summary["release_gate_receipt_head_matches_current"],
+        )
+        self.assertEqual(
+            spine_summary["release_gate_latest_remote_run_verified_green"],
+            work_order_summary["release_gate_latest_remote_run_verified_green"],
+        )
+        self.assertTrue(spine_summary["all_rows_current_blockers_match"])
+        self.assertTrue(spine_summary["all_rows_suppress_worktree_raw_paths"])
         self.assertTrue(spine_summary["spine_rows_are_not_production_evidence"])
         self.assertFalse(spine_summary["cache_get_creates_task"])
         self.assertFalse(spine_summary["creates_task_from_get"])
@@ -38392,6 +38424,26 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(
             any(row["release_gate_current_head_remote_review_claim_allowed"] for row in spine_rows.values())
         )
+        self.assertTrue(
+            all(
+                row["release_gate_current_blockers"]
+                == spine_summary["release_gate_current_blockers"]
+                for row in spine_rows.values()
+            )
+        )
+        self.assertTrue(
+            all(
+                row["release_gate_current_blocker_count"]
+                == spine_summary["release_gate_current_blocker_count"]
+                for row in spine_rows.values()
+            )
+        )
+        self.assertFalse(
+            any(row["release_gate_worktree_raw_paths_emitted"] for row in spine_rows.values())
+        )
+        self.assertFalse(
+            any(row["release_gate_worktree_raw_status_lines_emitted"] for row in spine_rows.values())
+        )
         self.assertTrue(all(row["spine_row_is_not_production_evidence"] for row in spine_rows.values()))
         self.assertTrue(all(row["cache_only_readback"] for row in spine_rows.values()))
         self.assertFalse(any(row["cache_get_creates_task"] for row in spine_rows.values()))
@@ -38415,6 +38467,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(
             migration_call_ledger["ltg_strict_closeout_evidence_spine_current_head_remote_review_state"],
             spine_summary["release_gate_current_head_remote_review_state"],
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg_strict_closeout_evidence_spine_current_blocker_count"],
+            spine_summary["release_gate_current_blocker_count"],
         )
         self.assertIn("local packet", hardening_rows["storage_boundaries"]["not_production_evidence"])
         self.assertIn(
