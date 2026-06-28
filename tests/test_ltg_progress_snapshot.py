@@ -582,6 +582,185 @@ class LtgProgressSnapshotTests(unittest.TestCase):
         self.assertIn("tushare_called=False", text)
         self.assertIn("next=POST /api/tasks/tushare-provider-target-sample-execution-request", text)
 
+    def test_factor_test_lab_is_visible_without_provider_validation_claim(self):
+        module = _load_snapshot_module()
+        fake_status = {
+            "packet_key": "fake_packet",
+            "mode": "test",
+            "loaded_at": "2026-06-28T12:35:19Z",
+            "long_term_goal_summary": {
+                "strict_closeout": "0/14",
+                "strict_closeout_done_count": 0,
+                "strict_closeout_total_count": 14,
+                "strict_closeout_remaining_count": 14,
+            },
+            "api_policy": {
+                "cache_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+            "long_term_goal_rows": [],
+            "ltg_acceptance_runway_rows": [],
+            "ltg_next_acceptance_action_rows": [
+                {
+                    "queue_id": "p3_factor_small_pool_provider_validation",
+                    "next_local_step": "POST /api/factor-quant/provider-small-pool-dry-run",
+                    "supporting_factor_test_lab_provider_validation_handoff": {
+                        "schema_version": "ltg03_factor_test_provider_validation_handoff_summary.v1",
+                        "status": "factor_test_execution_request_ready_provider_task_pending",
+                        "direct_evidence_layer": "L3_local_factor_test_scope_evidence",
+                        "direct_evidence_status": "factor_test_lab_direct_evidence_visible_production_pending",
+                        "provider_small_pool_scope_ticket_verified": True,
+                        "provider_small_pool_scope_hash_short": "76fcb1b8673a2135",
+                        "provider_small_pool_dry_run_ready": True,
+                        "provider_small_pool_execution_recipe_ready": True,
+                        "provider_small_pool_execution_request_ready": True,
+                        "ready_for_explicit_provider_small_pool_task": False,
+                        "provider_task_created": False,
+                        "provider_backed_small_pool_validation_done": False,
+                        "provider_call_ledger_evidence_done": False,
+                        "sample_rows_collected": False,
+                        "multi_horizon_forward_returns_done": False,
+                        "rolling_window_validation_done": False,
+                        "cost_assumption_validation_done": False,
+                        "neutralization_stability_done": False,
+                        "pit_bias_controls_done": False,
+                        "full_market_validation_done": False,
+                        "durable_recipe_ready": True,
+                        "durable_promotion_ready": False,
+                        "production_factor_test_validation_complete": False,
+                        "requires_provider_call_ledger": True,
+                        "requires_full_market_boundary_review": True,
+                        "requires_release_review_after_remote_green": True,
+                        "cache_get_calls_provider": False,
+                        "creates_provider_task_from_get": False,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "does_not_execute_trades": True,
+                        "next_local_step": "future explicit provider-backed factor validation task",
+                    },
+                    "supporting_factor_test_lab_production_validation_handoff": {
+                        "schema_version": "ltg03_factor_test_production_validation_handoff_summary.v1",
+                        "status": "factor_test_production_handoff_execution_request_ready_provider_task_pending",
+                        "provider_small_pool_scope_ticket_verified": True,
+                        "provider_small_pool_dry_run_ready": True,
+                        "provider_small_pool_execution_recipe_ready": True,
+                        "provider_small_pool_execution_request_ready": True,
+                        "provider_task_created": False,
+                        "provider_backed_small_pool_validation_done": False,
+                        "provider_call_ledger_evidence_done": False,
+                        "sample_rows_collected": False,
+                        "multi_horizon_forward_returns_done": False,
+                        "rolling_window_validation_done": False,
+                        "cost_assumption_validation_done": False,
+                        "neutralization_stability_done": False,
+                        "pit_bias_controls_done": False,
+                        "full_market_validation_done": False,
+                        "production_validation_qa_ready": True,
+                        "durable_recipe_ready": True,
+                        "durable_promotion_ready": False,
+                        "production_factor_test_validation_complete": False,
+                        "requires_provider_call_ledger": True,
+                        "requires_full_market_boundary_review": True,
+                        "requires_release_review_after_remote_green": True,
+                        "cache_get_calls_provider": False,
+                        "creates_provider_task_from_get": False,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "does_not_execute_trades": True,
+                        "next_local_step": "future explicit provider-backed factor validation task",
+                    },
+                }
+            ],
+            "ltg_strict_closeout_evidence_spine_rows": [],
+            "ltg_strict_closeout_evidence_spine_summary": {
+                "schema_version": "ltg_strict_closeout_evidence_spine_summary.v1",
+                "spine_visible_count": 14,
+                "spine_total_count": 14,
+                "strict_closeout_work_order_visible_count": 14,
+                "strict_closeout_work_order_total_count": 14,
+                "all_rows_have_strict_closeout_work_order": True,
+                "all_rows_have_next_evidence_action": True,
+                "all_rows_keep_one_ltg_scope": True,
+                "release_gate_current_head_remote_review_state": "current_head_unpushed_for_remote_ci",
+                "release_gate_current_blocker_count": 5,
+                "release_gate_current_blockers": ["local_commits_not_pushed_for_remote_ci"],
+                "strict_closeout_claim_allowed": False,
+                "cache_only_readback": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+            "release_gate_remote_review_split_summary": {},
+            "ltg11_release_gate_remote_review_handoff_summary": {},
+            "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary": {},
+            "ltg02_tushare_target_sample_evidence_handoff_summary": {},
+            "ltg02_tushare_full_interface_pipeline_handoff_summary": {},
+            "ltg12_trade_isolation_release_guard_handoff_summary": {},
+            "ltg_strict_closeout_work_order_summary": {
+                "release_gate_current_head_remote_review_state": "current_head_unpushed_for_remote_ci",
+                "release_gate_current_blockers": ["local_commits_not_pushed_for_remote_ci"],
+                "strict_closeout_claim_allowed": False,
+            },
+        }
+
+        with patch.object(module.migration_status_service, "build_migration_status", return_value=fake_status):
+            snapshot = module.build_snapshot()
+
+        factor_test = snapshot["factor_test_lab"]
+        self.assertEqual(
+            factor_test["provider_status"],
+            "factor_test_execution_request_ready_provider_task_pending",
+        )
+        self.assertTrue(factor_test["provider_small_pool_scope_ticket_verified"])
+        self.assertEqual(factor_test["provider_small_pool_scope_hash_short"], "76fcb1b8673a2135")
+        self.assertTrue(factor_test["provider_small_pool_dry_run_ready"])
+        self.assertTrue(factor_test["provider_small_pool_execution_recipe_ready"])
+        self.assertTrue(factor_test["provider_small_pool_execution_request_ready"])
+        self.assertFalse(factor_test["ready_for_explicit_provider_small_pool_task"])
+        self.assertFalse(factor_test["provider_task_created"])
+        self.assertFalse(factor_test["provider_backed_small_pool_validation_done"])
+        self.assertFalse(factor_test["provider_call_ledger_evidence_done"])
+        self.assertFalse(factor_test["sample_rows_collected"])
+        self.assertFalse(factor_test["rolling_window_validation_done"])
+        self.assertFalse(factor_test["cost_assumption_validation_done"])
+        self.assertFalse(factor_test["full_market_validation_done"])
+        self.assertFalse(factor_test["production_factor_test_validation_complete"])
+        self.assertFalse(factor_test["cache_get_calls_provider"])
+        self.assertFalse(factor_test["creates_provider_task_from_get"])
+        self.assertFalse(factor_test["tushare_called"])
+        self.assertEqual(
+            factor_test["next_local_step"],
+            "POST /api/factor-quant/provider-small-pool-dry-run",
+        )
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            module._print_text(snapshot)
+        text = buffer.getvalue()
+
+        self.assertIn("Factor test lab:", text)
+        self.assertIn("provider_status=factor_test_execution_request_ready_provider_task_pending", text)
+        self.assertIn("scope_ticket=True", text)
+        self.assertIn("dry_run=True", text)
+        self.assertIn("execution_request=True", text)
+        self.assertIn("provider_task=False", text)
+        self.assertIn("provider_backed=False", text)
+        self.assertIn("sample_rows=False", text)
+        self.assertIn("rolling_validation=False", text)
+        self.assertIn("cost=False", text)
+        self.assertIn("full_market=False", text)
+        self.assertIn("production_complete=False", text)
+        self.assertIn("cache_provider=False", text)
+        self.assertIn("next=POST /api/factor-quant/provider-small-pool-dry-run", text)
+
 
 if __name__ == "__main__":
     unittest.main()

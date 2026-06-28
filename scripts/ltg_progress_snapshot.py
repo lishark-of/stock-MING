@@ -281,9 +281,19 @@ def build_snapshot() -> dict[str, Any]:
 
     summary = dict(status.get("long_term_goal_summary") or {})
     safety = dict(status.get("api_policy") or {})
+    raw_action_by_queue_id = {
+        str(row.get("queue_id") or ""): row for row in action_rows if isinstance(row, dict)
+    }
     trade_cal_handoff = dict(status.get("ltg01_trade_cal_provider_acceptance_evidence_handoff_summary") or {})
     tushare_target_handoff = dict(status.get("ltg02_tushare_target_sample_evidence_handoff_summary") or {})
     tushare_pipeline_handoff = dict(status.get("ltg02_tushare_full_interface_pipeline_handoff_summary") or {})
+    factor_test_action = dict(raw_action_by_queue_id.get("p3_factor_small_pool_provider_validation") or {})
+    factor_test_provider_handoff = dict(
+        factor_test_action.get("supporting_factor_test_lab_provider_validation_handoff") or {}
+    )
+    factor_test_production_handoff = dict(
+        factor_test_action.get("supporting_factor_test_lab_production_validation_handoff") or {}
+    )
     release_split = dict(status.get("release_gate_remote_review_split_summary") or {})
     release_handoff = dict(status.get("ltg11_release_gate_remote_review_handoff_summary") or {})
     trade_handoff = dict(status.get("ltg12_trade_isolation_release_guard_handoff_summary") or {})
@@ -708,6 +718,130 @@ def build_snapshot() -> dict[str, Any]:
             or tushare_pipeline_handoff.get("next_local_step")
             or "",
         },
+        "factor_test_lab": {
+            "provider_schema_version": factor_test_provider_handoff.get("schema_version") or "",
+            "production_schema_version": factor_test_production_handoff.get("schema_version") or "",
+            "provider_status": factor_test_provider_handoff.get("status") or "",
+            "production_status": factor_test_production_handoff.get("status") or "",
+            "direct_evidence_layer": factor_test_provider_handoff.get("direct_evidence_layer") or "",
+            "direct_evidence_status": factor_test_provider_handoff.get("direct_evidence_status") or "",
+            "provider_small_pool_scope_ticket_verified": (
+                factor_test_provider_handoff.get("provider_small_pool_scope_ticket_verified") is True
+                or factor_test_production_handoff.get("provider_small_pool_scope_ticket_verified") is True
+            ),
+            "provider_small_pool_scope_hash_short": factor_test_provider_handoff.get(
+                "provider_small_pool_scope_hash_short"
+            )
+            or factor_test_production_handoff.get("provider_small_pool_scope_hash_short")
+            or "",
+            "provider_small_pool_dry_run_ready": (
+                factor_test_provider_handoff.get("provider_small_pool_dry_run_ready") is True
+                or factor_test_production_handoff.get("provider_small_pool_dry_run_ready") is True
+            ),
+            "provider_small_pool_execution_recipe_ready": (
+                factor_test_provider_handoff.get("provider_small_pool_execution_recipe_ready") is True
+                or factor_test_production_handoff.get("provider_small_pool_execution_recipe_ready") is True
+            ),
+            "provider_small_pool_execution_request_ready": (
+                factor_test_provider_handoff.get("provider_small_pool_execution_request_ready") is True
+                or factor_test_production_handoff.get("provider_small_pool_execution_request_ready") is True
+            ),
+            "ready_for_explicit_provider_small_pool_task": (
+                factor_test_provider_handoff.get("ready_for_explicit_provider_small_pool_task") is True
+            ),
+            "provider_task_created": (
+                factor_test_provider_handoff.get("provider_task_created") is True
+                or factor_test_production_handoff.get("provider_task_created") is True
+            ),
+            "provider_backed_small_pool_validation_done": (
+                factor_test_provider_handoff.get("provider_backed_small_pool_validation_done") is True
+                or factor_test_production_handoff.get("provider_backed_small_pool_validation_done") is True
+            ),
+            "provider_call_ledger_evidence_done": (
+                factor_test_provider_handoff.get("provider_call_ledger_evidence_done") is True
+                or factor_test_production_handoff.get("provider_call_ledger_evidence_done") is True
+            ),
+            "sample_rows_collected": (
+                factor_test_provider_handoff.get("sample_rows_collected") is True
+                or factor_test_production_handoff.get("sample_rows_collected") is True
+            ),
+            "multi_horizon_forward_returns_done": (
+                factor_test_provider_handoff.get("multi_horizon_forward_returns_done") is True
+                or factor_test_production_handoff.get("multi_horizon_forward_returns_done") is True
+            ),
+            "rolling_window_validation_done": (
+                factor_test_provider_handoff.get("rolling_window_validation_done") is True
+                or factor_test_production_handoff.get("rolling_window_validation_done") is True
+            ),
+            "cost_assumption_validation_done": (
+                factor_test_provider_handoff.get("cost_assumption_validation_done") is True
+                or factor_test_production_handoff.get("cost_assumption_validation_done") is True
+            ),
+            "neutralization_stability_done": (
+                factor_test_provider_handoff.get("neutralization_stability_done") is True
+                or factor_test_production_handoff.get("neutralization_stability_done") is True
+            ),
+            "pit_bias_controls_done": (
+                factor_test_provider_handoff.get("pit_bias_controls_done") is True
+                or factor_test_production_handoff.get("pit_bias_controls_done") is True
+            ),
+            "full_market_validation_done": (
+                factor_test_provider_handoff.get("full_market_validation_done") is True
+                or factor_test_production_handoff.get("full_market_validation_done") is True
+            ),
+            "production_validation_qa_ready": (
+                factor_test_production_handoff.get("production_validation_qa_ready") is True
+            ),
+            "durable_recipe_ready": (
+                factor_test_provider_handoff.get("durable_recipe_ready") is True
+                or factor_test_production_handoff.get("durable_recipe_ready") is True
+            ),
+            "durable_promotion_ready": (
+                factor_test_provider_handoff.get("durable_promotion_ready") is True
+                or factor_test_production_handoff.get("durable_promotion_ready") is True
+            ),
+            "production_factor_test_validation_complete": (
+                factor_test_provider_handoff.get("production_factor_test_validation_complete") is True
+                or factor_test_production_handoff.get("production_factor_test_validation_complete") is True
+            ),
+            "requires_provider_call_ledger": (
+                factor_test_provider_handoff.get("requires_provider_call_ledger") is True
+                or factor_test_production_handoff.get("requires_provider_call_ledger") is True
+            ),
+            "requires_full_market_boundary_review": (
+                factor_test_provider_handoff.get("requires_full_market_boundary_review") is True
+                or factor_test_production_handoff.get("requires_full_market_boundary_review") is True
+            ),
+            "requires_release_review_after_remote_green": (
+                factor_test_provider_handoff.get("requires_release_review_after_remote_green") is True
+                or factor_test_production_handoff.get("requires_release_review_after_remote_green") is True
+            ),
+            "cache_get_calls_provider": (
+                factor_test_provider_handoff.get("cache_get_calls_provider") is True
+                or factor_test_production_handoff.get("cache_get_calls_provider") is True
+            ),
+            "creates_provider_task_from_get": (
+                factor_test_provider_handoff.get("creates_provider_task_from_get") is True
+                or factor_test_production_handoff.get("creates_provider_task_from_get") is True
+            ),
+            "external_calls_triggered": (
+                factor_test_provider_handoff.get("external_calls_triggered") is True
+                or factor_test_production_handoff.get("external_calls_triggered") is True
+            ),
+            "tushare_called": factor_test_provider_handoff.get("tushare_called") is True
+            or factor_test_production_handoff.get("tushare_called") is True,
+            "does_not_execute_trades": (
+                factor_test_provider_handoff.get("does_not_execute_trades") is True
+                or factor_test_production_handoff.get("does_not_execute_trades") is True
+            ),
+            "next_local_step": factor_test_action.get("next_local_step")
+            or factor_test_provider_handoff.get("next_local_step")
+            or factor_test_production_handoff.get("next_local_step")
+            or "",
+            "provider_next_local_step": factor_test_provider_handoff.get("next_local_step")
+            or factor_test_production_handoff.get("next_local_step")
+            or "",
+        },
         "trade_isolation_release_guard": {
             "schema_version": trade_handoff.get("schema_version") or "",
             "trade_isolation_release_receipt_status": trade_handoff.get(
@@ -892,6 +1026,23 @@ def _print_text(snapshot: dict[str, Any]) -> None:
         f" cache_provider={tushare_pipeline['cache_get_calls_provider']}"
         f" tushare_called={tushare_pipeline['tushare_called']}"
         f" next={tushare_pipeline['next_local_step']}"
+    )
+    factor_test = snapshot["factor_test_lab"]
+    print(
+        "Factor test lab:"
+        f" provider_status={factor_test['provider_status']}"
+        f" scope_ticket={factor_test['provider_small_pool_scope_ticket_verified']}"
+        f" dry_run={factor_test['provider_small_pool_dry_run_ready']}"
+        f" execution_request={factor_test['provider_small_pool_execution_request_ready']}"
+        f" provider_task={factor_test['provider_task_created']}"
+        f" provider_backed={factor_test['provider_backed_small_pool_validation_done']}"
+        f" sample_rows={factor_test['sample_rows_collected']}"
+        f" rolling_validation={factor_test['rolling_window_validation_done']}"
+        f" cost={factor_test['cost_assumption_validation_done']}"
+        f" full_market={factor_test['full_market_validation_done']}"
+        f" production_complete={factor_test['production_factor_test_validation_complete']}"
+        f" cache_provider={factor_test['cache_get_calls_provider']}"
+        f" next={factor_test['next_local_step']}"
     )
     trade_guard = snapshot["trade_isolation_release_guard"]
     print(
