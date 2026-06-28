@@ -8377,10 +8377,7 @@ def _latest_trade_isolation_release_guard_handoff_summary() -> dict[str, Any]:
     )
     current_slice_recheck_ready = bool(
         release_receipt_ready
-        and contract_map.get("contract_ready") is True
-        and contract_map.get("task_catalog_boundary_visible") is True
-        and contract_map.get("frontend_boundary_visible") is True
-        and int(contract_map.get("blocking_criterion_count") or 0) == 0
+        and contract_map.get("current_slice_trade_isolation_recheck_ready") is True
     )
     direct_stage_keys: list[str] = []
     if release_receipt_ready:
@@ -13423,10 +13420,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         )
         current_slice_recheck_ready = (
             release_receipt_ready
-            and isolation_contract.get("contract_ready") is True
-            and isolation_contract.get("task_catalog_boundary_visible") is True
-            and isolation_contract.get("frontend_boundary_visible") is True
-            and int(isolation_contract.get("blocking_criterion_count") or 0) == 0
+            and isolation_contract.get("current_slice_trade_isolation_recheck_ready") is True
         )
         direct_evidence_stage_keys = []
         if release_receipt_ready:

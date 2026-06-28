@@ -19708,6 +19708,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("trade_isolation_audit_keeps_real_trading_disabled", script)
         self.assertIn("task_catalog_has_no_trade_execution_routes", script)
         self.assertIn("trade_isolation_release_receipt_is_research_only", script)
+        self.assertIn("current_slice_no_broker_no_order_no_action_recheck", script)
         self.assertIn("task_lifecycle_records_no_trade_no_action", script)
         self.assertIn("frontend_trade_boundaries_visible", script)
         self.assertIn("push_gate_runs_trade_isolation_contract_after_streamlit", script)
@@ -19745,6 +19746,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertTrue(payload["task_catalog_boundary_visible"])
         self.assertTrue(payload["frontend_boundary_visible"])
+        self.assertTrue(payload["current_slice_trade_isolation_recheck_ready"])
         self.assertTrue(payload["push_gate_step_ready"])
         self.assertTrue(payload["cache_only"])
         self.assertFalse(payload["real_trading_connected"])
@@ -19811,6 +19813,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "continue_research_client_release_or_create_separate_real_trading_project_design",
         )
         self.assertEqual(payload["observed"]["release_receipt_blocker_count"], 0)
+        self.assertTrue(payload["observed"]["current_slice_trade_isolation_recheck_ready"])
         self.assertEqual(payload["observed"]["trade_isolation_stage_scope_count"], len(required_trade_stages))
         self.assertEqual(payload["observed"]["trade_isolation_stage_scope_keys"], sorted(required_trade_stages))
         self.assertEqual(
@@ -19822,6 +19825,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("trade_isolation_audit_keeps_real_trading_disabled", criteria)
         self.assertIn("task_catalog_has_no_trade_execution_routes", criteria)
         self.assertIn("trade_isolation_release_receipt_is_research_only", criteria)
+        self.assertIn("current_slice_no_broker_no_order_no_action_recheck", criteria)
         self.assertIn("task_lifecycle_records_no_trade_no_action", criteria)
         self.assertIn("frontend_trade_boundaries_visible", criteria)
         self.assertIn("push_gate_runs_trade_isolation_contract_after_streamlit", criteria)

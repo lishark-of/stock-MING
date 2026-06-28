@@ -283,6 +283,33 @@ def build_contract() -> dict[str, Any]:
             for row in trade_isolation_stage_scope_rows
         )
     )
+    current_slice_recheck_ready = (
+        packet.get("schema_version") == "risk_guardrails_cache.v1"
+        and packet.get("mode") == "cache_only"
+        and packet.get("cache_only") is True
+        and packet.get("read_only") is True
+        and trade_audit.get("status") == "trade_isolation_ready"
+        and task_routes_no_trade
+        and task_routes_no_action
+        and not order_endpoint_present
+        and not broker_adapter_connected
+        and frontend_boundary_visible
+        and release_receipt.get("status") == "trade_isolation_release_receipt_ready_research_release_only"
+        and release_receipt.get("ready_for_real_trading_integration") is False
+        and release_receipt.get("real_trading_connected") is False
+        and release_receipt.get("broker_adapter_connected") is False
+        and release_receipt.get("order_endpoint_present") is False
+        and release_receipt.get("trade_execution_api_enabled") is False
+        and _flag_false(packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+        and _flag_false(release_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+        and packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+        and packet.get("does_not_modify_holdings") is True
+        and release_receipt.get("does_not_execute_trades") is True
+        and release_receipt.get("does_not_modify_strategy_action") is True
+        and release_receipt.get("does_not_modify_holdings") is True
+        and release_receipt.get("contains_secret") is False
+    )
 
     rows = [
         _row(
@@ -365,6 +392,11 @@ def build_contract() -> dict[str, Any]:
             "Trade isolation release receipt may support research-client release only; it must not approve real trading, broker adapters, order endpoints, provider/model calls, action mutation, or trade execution.",
         ),
         _row(
+            "current_slice_no_broker_no_order_no_action_recheck",
+            current_slice_recheck_ready,
+            "Current slice still has no broker adapter, order endpoint, frontend trade controls, provider/model action mutation, external calls, holdings mutation, or trade execution.",
+        ),
+        _row(
             "task_lifecycle_records_no_trade_no_action",
             task_routes_button_gated and task_routes_call_ledger_required,
             "All known POST task/lifecycle routes remain button-gated and require call_ledger.",
@@ -421,6 +453,7 @@ def build_contract() -> dict[str, Any]:
         "trade_isolation_release_receipt_status": release_receipt.get("status"),
         "task_catalog_boundary_visible": bool(boundary_rows) and task_routes_no_trade and task_routes_no_action,
         "frontend_boundary_visible": frontend_boundary_visible,
+        "current_slice_trade_isolation_recheck_ready": current_slice_recheck_ready,
         "push_gate_step_ready": push_gate_step_ready,
         "cache_only": True,
         "real_trading_connected": False,
@@ -451,6 +484,7 @@ def build_contract() -> dict[str, Any]:
             "release_receipt_status": release_receipt.get("status"),
             "release_receipt_allowed_next_step": release_receipt.get("allowed_next_step"),
             "release_receipt_blocker_count": release_receipt.get("blocking_criterion_count"),
+            "current_slice_trade_isolation_recheck_ready": current_slice_recheck_ready,
             "trade_isolation_stage_scope_count": len(trade_isolation_stage_scope_rows),
             "trade_isolation_stage_scope_keys": sorted(trade_isolation_stage_scope_keys),
             "trade_isolation_stage_scope_pending_count": sum(
