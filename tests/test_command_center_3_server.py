@@ -2078,6 +2078,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         audit_service._read_git_status_short_lines = lambda: ("local_git_status_short_read", 0, [])
         self.addCleanup(setattr, audit_service, "_read_git_status_short_lines", original_reader)
 
+    def _with_dirty_worktree_status(self):
+        original_reader = audit_service._read_git_status_short_lines
+        audit_service._read_git_status_short_lines = lambda: ("local_git_status_short_read", 0, [" M app.py"])
+        self.addCleanup(setattr, audit_service, "_read_git_status_short_lines", original_reader)
+
     def _with_parquet_root(self):
         original_root = storage_service.PARQUET_ROOT
         temp_dir = tempfile.TemporaryDirectory()
@@ -24686,6 +24691,181 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(ltg11["external_calls_triggered"])
         self.assertTrue(ltg11["does_not_execute_trades"])
         self.assertFalse(ltg11["can_close_from_observed_row"])
+
+    def test_release_gate_report_attempt_replaces_stale_receipt_with_clean_worktree_blocker(self):
+        self._with_meta_store()
+        receipt_path = self._with_release_gate_receipt_path()
+        self._with_dirty_worktree_status()
+        current_head = audit_service._current_git_head_summary()
+        stale_head_full = "0" * 40 if current_head["head_full"] != "0" * 40 else "1" * 40
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "command_center_3_local_push_gate_run_receipt.v1",
+                    "status": "local_push_gate_passed_current_head",
+                    "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+                    "generated_at_utc": "2026-06-16T00:00:00Z",
+                    "branch": current_head["branch"],
+                    "head": stale_head_full[:7],
+                    "head_full": stale_head_full,
+                    "checks": ["python_unittest"],
+                    "did_not_push": True,
+                    "git_add_dot_used": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                    "local_gate_pass_is_not_ci_status": True,
+                    "remote_actions_status_known": False,
+                    "latest_remote_run_verified_green": False,
+                    "explicit_user_push_confirmation_before_push": False,
+                    "push_confirmation_state": "not_requested_no_push",
+                    "release_claim_decision": "blocked_remote_ci_unverified",
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        report_path = receipt_path.with_name("local_push_gate_report.md")
+        report_path.write_text(
+            "\n".join(
+                [
+                    "# Command Center 3 Push Gate Report",
+                    "",
+                    "- generated_at_utc: 2026-06-28T12:04:29Z",
+                    f"- branch: {current_head['branch']}",
+                    f"- head: {current_head['head']}",
+                    "- origin_ahead_count: 0",
+                    "- worktree_clean_check_runs_after_report: true",
+                    "",
+                    "## Passed Checks",
+                    *[
+                        f"- {check}: passed"
+                        for check in sorted(audit_service.LOCAL_PUSH_GATE_PRE_CLEAN_REPORT_CHECKS)
+                    ],
+                    "",
+                    "## Safety Boundaries",
+                    "",
+                    "- did_not_push: true",
+                    "- did_not_call_external_providers: true",
+                    "- did_not_execute_trades: true",
+                    "- did_not_use_system_python: true",
+                    "- no_git_add_dot: true",
+                    "- local_gate_pass_is_not_remote_ci: true",
+                    "- remote_actions_status_known: false",
+                    "- latest_remote_run_verified_green: false",
+                    "- explicit_user_push_confirmation_before_push: false",
+                    "- push_confirmation_state: not_requested_no_push",
+                    "- release_claim_decision: blocked_remote_ci_unverified",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH.write_text(
+            json.dumps(
+                {
+                    "schema_version": audit_service.REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION,
+                    "status": "remote_ci_review_verified_green",
+                    "scope": "ignored_manual_remote_ci_review_receipt_no_cache_github_api",
+                    "branch": current_head["branch"],
+                    "head": current_head["head"],
+                    "head_full": current_head["head_full"],
+                    "workflow_name": "Command Center 3 Push Gate",
+                    "event": "push",
+                    "run_id": 123456789,
+                    "run_url": "https://github.com/lishark-of/stock-MING/actions/runs/123456789",
+                    "actions_status": "completed",
+                    "actions_conclusion": "success",
+                    "job_name": "push-gate",
+                    "job_conclusion": "success",
+                    "artifact_name": "command-center-3-push-gate-evidence-123456789",
+                    "artifact_digest": "sha256:" + ("a" * 64),
+                    "artifact_digest_verified": True,
+                    "explicit_user_actions_review_authorized": True,
+                    "remote_actions_status_known": True,
+                    "latest_remote_run_verified_green": True,
+                    "remote_ci_job_page_green_observed": True,
+                    "remote_ci_artifact_digest_pending": False,
+                    "release_review_complete": False,
+                    "release_gate_complete": False,
+                    "production_release_complete": False,
+                    "cache_get_external_calls": False,
+                    "cache_get_calls_github_api": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        packet = audit_service.read_call_ledger_audit_cache()
+        migration = migration_status_service.build_migration_status()
+
+        report = packet["local_push_gate_report_summary"]
+        self.assertEqual(
+            report["status"],
+            "local_push_gate_attempt_reached_clean_worktree_check_current_head",
+        )
+        self.assertTrue(report["head_matches_current"])
+        self.assertTrue(report["pre_clean_required_checks_present"])
+        self.assertTrue(report["attempt_reached_clean_worktree_check"])
+        self.assertTrue(report["local_push_gate_report_is_not_pass_receipt"])
+        self.assertFalse(report["github_api_called"])
+        self.assertFalse(report["external_calls_triggered"])
+        self.assertTrue(report["does_not_execute_trades"])
+        self.assertTrue(packet["counts"]["local_push_gate_report_reached_clean_worktree_check"])
+        self.assertFalse(packet["counts"]["local_push_gate_run_observed"])
+
+        release_split = migration["release_gate_remote_review_split_summary"]
+        self.assertEqual(release_split["status"], "release_gate_remote_ci_green_local_gate_recheck_required")
+        self.assertTrue(release_split["local_push_gate_report_reached_clean_worktree_check"])
+        self.assertTrue(release_split["local_push_gate_report_is_not_pass_receipt"])
+        self.assertFalse(release_split["local_complete"])
+        self.assertTrue(release_split["remote_ci_green_for_current_head"])
+        self.assertIn(
+            "clean worktree before local gate pass receipt",
+            release_split["missing_evidence_items"],
+        )
+        self.assertNotIn("fresh local gate run for current HEAD", release_split["missing_evidence_items"])
+
+        release_split_rows = {
+            row["split_stage"]: row for row in migration["release_gate_remote_review_split_rows"]
+        }
+        local_row = release_split_rows["local_current_head_gate"]
+        self.assertTrue(local_row["local_push_gate_report_reached_clean_worktree_check"])
+        self.assertTrue(local_row["fresh_local_gate_blocked_by_clean_worktree_after_report"])
+
+        handoff = migration["ltg11_release_gate_remote_review_handoff_summary"]
+        self.assertTrue(handoff["local_push_gate_report_reached_clean_worktree_check"])
+        self.assertTrue(handoff["fresh_local_gate_blocked_by_clean_worktree_after_report"])
+        self.assertTrue(handoff["release_review_blocked_by_local_gate_recheck"])
+        self.assertFalse(handoff["release_gate_complete"])
+        self.assertFalse(handoff["can_close_goal"])
+
+        work_order_summary = migration["ltg_strict_closeout_work_order_summary"]
+        self.assertIn("worktree_dirty", work_order_summary["release_gate_current_blockers"])
+        self.assertIn(
+            "clean_worktree_required_before_local_push_gate_pass_receipt",
+            work_order_summary["release_gate_current_blockers"],
+        )
+        self.assertNotIn("head_mismatch", work_order_summary["release_gate_current_blockers"])
+        self.assertNotIn("required_checks_missing", work_order_summary["release_gate_current_blockers"])
+        self.assertEqual(work_order_summary["strict_closeout"], "0/14")
+        self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
 
     def test_release_gate_local_run_receipt_requires_push_confirmation_boundary_fields(self):
         self._with_meta_store()

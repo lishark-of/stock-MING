@@ -2566,6 +2566,18 @@ def _build_ltg_strict_closeout_work_order_rows(
                 "release_gate_fresh_local_gate_run_observed": (
                     release_gate_direct_evidence.get("fresh_local_gate_run_observed") is True
                 ),
+                "release_gate_local_push_gate_report_reached_clean_worktree_check": (
+                    release_gate_direct_evidence.get("local_push_gate_report_reached_clean_worktree_check")
+                    is True
+                ),
+                "release_gate_local_push_gate_report_is_not_pass_receipt": (
+                    release_gate_direct_evidence.get("local_push_gate_report_is_not_pass_receipt")
+                    is True
+                ),
+                "release_gate_fresh_local_gate_blocked_by_clean_worktree_after_report": (
+                    release_gate_direct_evidence.get("fresh_local_gate_blocked_by_clean_worktree_after_report")
+                    is True
+                ),
                 "release_gate_worktree_clean": release_gate_direct_evidence.get("local_worktree_clean") is True,
                 "release_gate_worktree_dirty_file_count": int(
                     release_gate_direct_evidence.get("local_worktree_dirty_file_count") or 0
@@ -2672,6 +2684,17 @@ def _build_ltg_strict_closeout_work_order_rows(
         "release_gate_fresh_local_gate_run_observed": (
             release_gate_direct_evidence.get("fresh_local_gate_run_observed") is True
         ),
+        "release_gate_local_push_gate_report_reached_clean_worktree_check": (
+            release_gate_direct_evidence.get("local_push_gate_report_reached_clean_worktree_check")
+            is True
+        ),
+        "release_gate_local_push_gate_report_is_not_pass_receipt": (
+            release_gate_direct_evidence.get("local_push_gate_report_is_not_pass_receipt") is True
+        ),
+        "release_gate_fresh_local_gate_blocked_by_clean_worktree_after_report": (
+            release_gate_direct_evidence.get("fresh_local_gate_blocked_by_clean_worktree_after_report")
+            is True
+        ),
         "release_gate_worktree_clean": release_gate_direct_evidence.get("local_worktree_clean") is True,
         "release_gate_worktree_dirty_file_count": int(
             release_gate_direct_evidence.get("local_worktree_dirty_file_count") or 0
@@ -2775,6 +2798,24 @@ def _build_ltg_strict_closeout_evidence_spine(
     )
     release_gate_fresh_local_gate_run_observed = (
         ltg_strict_closeout_work_order_summary.get("release_gate_fresh_local_gate_run_observed")
+        is True
+    )
+    release_gate_local_push_gate_report_reached_clean_worktree_check = (
+        ltg_strict_closeout_work_order_summary.get(
+            "release_gate_local_push_gate_report_reached_clean_worktree_check"
+        )
+        is True
+    )
+    release_gate_local_push_gate_report_is_not_pass_receipt = (
+        ltg_strict_closeout_work_order_summary.get(
+            "release_gate_local_push_gate_report_is_not_pass_receipt"
+        )
+        is True
+    )
+    release_gate_fresh_local_gate_blocked_by_clean_worktree_after_report = (
+        ltg_strict_closeout_work_order_summary.get(
+            "release_gate_fresh_local_gate_blocked_by_clean_worktree_after_report"
+        )
         is True
     )
     release_gate_receipt_head_matches_current = (
@@ -2887,6 +2928,15 @@ def _build_ltg_strict_closeout_evidence_spine(
                 "release_gate_worktree_raw_paths_emitted": False,
                 "release_gate_worktree_raw_status_lines_emitted": False,
                 "release_gate_fresh_local_gate_run_observed": release_gate_fresh_local_gate_run_observed,
+                "release_gate_local_push_gate_report_reached_clean_worktree_check": (
+                    release_gate_local_push_gate_report_reached_clean_worktree_check
+                ),
+                "release_gate_local_push_gate_report_is_not_pass_receipt": (
+                    release_gate_local_push_gate_report_is_not_pass_receipt
+                ),
+                "release_gate_fresh_local_gate_blocked_by_clean_worktree_after_report": (
+                    release_gate_fresh_local_gate_blocked_by_clean_worktree_after_report
+                ),
                 "release_gate_receipt_head_matches_current": release_gate_receipt_head_matches_current,
                 "release_gate_latest_remote_run_verified_green": (
                     release_gate_latest_remote_run_verified_green
@@ -3996,13 +4046,16 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         from server.services import audit_service
 
         receipt = audit_service._read_local_push_gate_run_receipt()
+        report_summary = audit_service._read_local_push_gate_report_summary()
         remote_receipt = audit_service._read_remote_ci_review_receipt()
         worktree, _worktree_rows = audit_service._local_worktree_cleanliness_audit()
     except Exception:
         receipt = {}
+        report_summary = {}
         remote_receipt = {}
         worktree = {}
     receipt_map = receipt if isinstance(receipt, dict) else {}
+    report_map = report_summary if isinstance(report_summary, dict) else {}
     remote_receipt_map = remote_receipt if isinstance(remote_receipt, dict) else {}
     worktree_map = worktree if isinstance(worktree, dict) else {}
     try:
@@ -4025,6 +4078,20 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     freshness_blockers = list(receipt_blockers)
     if worktree_blocks_local_gate and "worktree_dirty" not in freshness_blockers:
         freshness_blockers.append("worktree_dirty")
+    local_report_reached_clean_check = bool(
+        report_map.get("attempt_reached_clean_worktree_check") is True
+        and report_map.get("head_matches_current") is True
+        and report_map.get("pre_clean_required_checks_present") is True
+        and report_map.get("safety_boundary_flags_valid") is True
+    )
+    if local_report_reached_clean_check and receipt_map.get("fresh_local_gate_run_observed") is not True:
+        freshness_blockers = [
+            item
+            for item in freshness_blockers
+            if item not in {"head_mismatch", "required_checks_missing"}
+        ]
+        if worktree_blocks_local_gate and "clean_worktree_required_before_local_push_gate_pass_receipt" not in freshness_blockers:
+            freshness_blockers.append("clean_worktree_required_before_local_push_gate_pass_receipt")
     required_checks = {
         "python_unittest",
         "desktop_build",
@@ -4104,7 +4171,11 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     )
     missing_evidence_items: list[str] = []
     if not fresh_gate_run_done:
-        missing_evidence_items.append("fresh local gate run for current HEAD")
+        missing_evidence_items.append(
+            "clean worktree before local gate pass receipt"
+            if local_report_reached_clean_check
+            else "fresh local gate run for current HEAD"
+        )
     if local_commits_not_pushed:
         missing_evidence_items.append("push current HEAD before matching remote Actions review")
     if not (remote_actions_status_known and remote_receipt_head_matches_current):
@@ -4157,6 +4228,25 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "direct_evidence_stage_keys": direct_stage_keys,
         "direct_evidence_stage_count": len(direct_stage_keys),
         "fresh_local_gate_run_observed": fresh_gate_run_done,
+        "local_push_gate_report_status": str(report_map.get("status") or "missing"),
+        "local_push_gate_report_present": report_map.get("report_present") is True,
+        "local_push_gate_report_head_matches_current": report_map.get("head_matches_current") is True,
+        "local_push_gate_report_pre_clean_required_checks_present": (
+            report_map.get("pre_clean_required_checks_present") is True
+        ),
+        "local_push_gate_report_reached_clean_worktree_check": local_report_reached_clean_check,
+        "local_push_gate_report_is_not_pass_receipt": (
+            report_map.get("local_push_gate_report_is_not_pass_receipt") is True
+        ),
+        "local_push_gate_report_observed_pre_clean_check_count": int(
+            report_map.get("observed_pre_clean_check_count") or 0
+        ),
+        "local_push_gate_report_required_pre_clean_check_count": int(
+            report_map.get("required_pre_clean_check_count") or 0
+        ),
+        "local_push_gate_report_missing_pre_clean_checks": list(
+            report_map.get("missing_pre_clean_checks") or []
+        ),
         "local_push_gate_receipt_head_matches_current": receipt_map.get("head_matches_current") is True,
         "local_push_gate_receipt_head": str(receipt_map.get("head") or ""),
         "local_push_gate_receipt_current_head": str(receipt_map.get("current_head") or ""),
@@ -4192,6 +4282,9 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         in set(freshness_blockers),
         "fresh_local_gate_blocked_by_required_checks": "required_checks_missing"
         in set(freshness_blockers),
+        "fresh_local_gate_blocked_by_clean_worktree_after_report": (
+            "clean_worktree_required_before_local_push_gate_pass_receipt" in set(freshness_blockers)
+        ),
         "fresh_local_gate_blocked_by_boundary_flags": bool(
             set(freshness_blockers).intersection(
                 {
@@ -4256,6 +4349,21 @@ def _build_release_gate_remote_review_split_rows(
             "status": release_gate_summary.get("status"),
             "local_complete": release_gate_summary.get("local_complete") is True,
             "fresh_local_gate_run_observed": release_gate_summary.get("fresh_local_gate_run_observed") is True,
+            "local_push_gate_report_present": (
+                release_gate_summary.get("local_push_gate_report_present") is True
+            ),
+            "local_push_gate_report_head_matches_current": (
+                release_gate_summary.get("local_push_gate_report_head_matches_current") is True
+            ),
+            "local_push_gate_report_pre_clean_required_checks_present": (
+                release_gate_summary.get("local_push_gate_report_pre_clean_required_checks_present") is True
+            ),
+            "local_push_gate_report_reached_clean_worktree_check": (
+                release_gate_summary.get("local_push_gate_report_reached_clean_worktree_check") is True
+            ),
+            "local_push_gate_report_is_not_pass_receipt": (
+                release_gate_summary.get("local_push_gate_report_is_not_pass_receipt") is True
+            ),
             "local_push_gate_receipt_head_matches_current": (
                 release_gate_summary.get("local_push_gate_receipt_head_matches_current") is True
             ),
@@ -4265,6 +4373,9 @@ def _build_release_gate_remote_review_split_rows(
             ),
             "local_worktree_dirty_file_count": int(
                 release_gate_summary.get("local_worktree_dirty_file_count") or 0
+            ),
+            "fresh_local_gate_blocked_by_clean_worktree_after_report": (
+                release_gate_summary.get("fresh_local_gate_blocked_by_clean_worktree_after_report") is True
             ),
             "not_remote_ci_status": True,
             "evidence_boundary": "local_gate_and_worktree_state_do_not_prove_remote_actions_green",
@@ -4425,6 +4536,16 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         "direct_evidence_status": release_gate.get("status", ""),
         "local_complete": local_complete,
         "fresh_local_gate_run_observed": release_gate.get("fresh_local_gate_run_observed") is True,
+        "local_push_gate_report_present": release_gate.get("local_push_gate_report_present") is True,
+        "local_push_gate_report_head_matches_current": (
+            release_gate.get("local_push_gate_report_head_matches_current") is True
+        ),
+        "local_push_gate_report_reached_clean_worktree_check": (
+            release_gate.get("local_push_gate_report_reached_clean_worktree_check") is True
+        ),
+        "local_push_gate_report_is_not_pass_receipt": (
+            release_gate.get("local_push_gate_report_is_not_pass_receipt") is True
+        ),
         "local_push_gate_receipt_head_matches_current": local_receipt_head_matches_current,
         "local_push_gate_receipt_origin_ahead_count": int(
             release_gate.get("local_push_gate_receipt_origin_ahead_count") or 0
@@ -4448,6 +4569,9 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         ),
         "requires_clean_worktree_before_local_gate": not worktree_clean,
         "requires_current_head_local_gate_recheck": local_recheck_required,
+        "fresh_local_gate_blocked_by_clean_worktree_after_report": (
+            release_gate.get("fresh_local_gate_blocked_by_clean_worktree_after_report") is True
+        ),
         "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
         "remote_ci_job_page_green_observed": remote_ci_job_page_green_observed,

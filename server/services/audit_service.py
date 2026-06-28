@@ -44,6 +44,7 @@ RELEASE_GATE_SCHEMA_VERSION = "command_center_3_release_gate_readiness_audit.v1"
 CI_NOTIFICATION_TRIAGE_SCHEMA_VERSION = "command_center_3_ci_notification_triage.v1"
 PUSH_READINESS_RECEIPT_SCHEMA_VERSION = "command_center_3_push_readiness_receipt.v1"
 LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION = "command_center_3_local_push_gate_run_receipt.v1"
+LOCAL_PUSH_GATE_REPORT_SCHEMA_VERSION = "command_center_3_local_push_gate_report_summary.v1"
 REMOTE_CI_REVIEW_SEED_SCHEMA_VERSION = "command_center_3_remote_ci_review_seed.v1"
 REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION = "command_center_3_remote_ci_review_receipt.v1"
 LOCAL_WORKTREE_CLEANLINESS_SCHEMA_VERSION = "command_center_3_local_worktree_cleanliness_audit.v1"
@@ -79,6 +80,9 @@ LOCAL_PUSH_GATE_REQUIRED_CHECKS = {
     "local_push_gate_receipt_artifact_policy",
     "clean_worktree_check",
 }
+LOCAL_PUSH_GATE_PRE_CLEAN_REPORT_CHECKS = LOCAL_PUSH_GATE_REQUIRED_CHECKS.difference(
+    {"release_readiness_report", "clean_worktree_check"}
+)
 RELEASE_GATE_STAGE_SCOPE = "release_gate_stage_scope_manifest"
 REQUIRED_RELEASE_GATE_STAGE_KEYS = {
     "local_push_gate_static_contract",
@@ -663,6 +667,166 @@ def _local_worktree_cleanliness_audit(
             }
         ],
     }, rows
+
+
+def _local_push_gate_report_path() -> Path:
+    return LOCAL_PUSH_GATE_RUN_RECEIPT_PATH.with_name("local_push_gate_report.md")
+
+
+def _report_bool(value: str) -> bool | None:
+    lower = value.strip().lower()
+    if lower in {"true", "yes", "passed", "clean"}:
+        return True
+    if lower in {"false", "no", "failed", "blocked"}:
+        return False
+    return None
+
+
+def _read_local_push_gate_report_summary() -> dict[str, Any]:
+    current_head = _current_git_head_summary()
+    report_path = _local_push_gate_report_path()
+    missing = {
+        "schema_version": LOCAL_PUSH_GATE_REPORT_SCHEMA_VERSION,
+        "status": "local_push_gate_report_missing",
+        "scope": "ignored_local_push_gate_report_no_push_no_github_api",
+        "report_path": _relative_path(report_path),
+        "read_status": "report_missing",
+        "report_present": False,
+        "current_head": current_head.get("head"),
+        "current_head_full": current_head.get("head_full"),
+        "current_branch": current_head.get("branch"),
+        "head_matches_current": False,
+        "pre_clean_required_checks_present": False,
+        "attempt_reached_clean_worktree_check": False,
+        "local_push_gate_report_is_not_pass_receipt": True,
+        "fresh_local_gate_run_observed": False,
+        "release_gate_complete": False,
+        "github_api_called": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    if not report_path.exists():
+        return missing
+    text = _read_local_text(report_path)
+    if not text.strip():
+        unreadable = dict(missing)
+        unreadable.update(
+            {
+                "status": "local_push_gate_report_unreadable",
+                "read_status": "report_read_failed",
+                "report_present": True,
+            }
+        )
+        return unreadable
+
+    header: dict[str, str] = {}
+    safety: dict[str, str] = {}
+    passed_checks: list[str] = []
+    section = "header"
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("## "):
+            section = line[3:].strip()
+            continue
+        if not line.startswith("- "):
+            continue
+        item = line[2:].strip()
+        if ":" in item:
+            key, value = item.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+        else:
+            key, value = item.strip(), ""
+        if section == "Passed Checks":
+            passed_checks.append(key)
+        elif section == "Safety Boundaries":
+            safety[key] = value
+        elif section == "header":
+            header[key] = value
+
+    current_head_short = str(current_head.get("head") or "")
+    current_head_full = str(current_head.get("head_full") or "")
+    report_head = header.get("head", "")
+    head_matches_current = bool(
+        report_head
+        and (
+            (current_head_short and report_head == current_head_short)
+            or (current_head_full and current_head_full.startswith(report_head))
+        )
+    )
+    check_set = set(passed_checks)
+    missing_pre_clean_checks = sorted(LOCAL_PUSH_GATE_PRE_CLEAN_REPORT_CHECKS.difference(check_set))
+    pre_clean_checks_present = not missing_pre_clean_checks
+    safety_boundary_flags_valid = (
+        _report_bool(safety.get("did_not_push", "")) is True
+        and _report_bool(safety.get("did_not_call_external_providers", "")) is True
+        and _report_bool(safety.get("did_not_execute_trades", "")) is True
+        and _report_bool(safety.get("no_git_add_dot", "")) is True
+        and _report_bool(safety.get("local_gate_pass_is_not_remote_ci", "")) is True
+        and _report_bool(safety.get("remote_actions_status_known", "")) is False
+        and _report_bool(safety.get("latest_remote_run_verified_green", "")) is False
+    )
+    worktree_clean_check_runs_after_report = _report_bool(
+        header.get("worktree_clean_check_runs_after_report", "")
+    ) is True
+    reached_clean_check = bool(
+        head_matches_current
+        and pre_clean_checks_present
+        and safety_boundary_flags_valid
+        and worktree_clean_check_runs_after_report
+    )
+    status = (
+        "local_push_gate_attempt_reached_clean_worktree_check_current_head"
+        if reached_clean_check
+        else "local_push_gate_report_present_not_current_head"
+        if not head_matches_current
+        else "local_push_gate_report_present_pre_clean_checks_missing"
+        if not pre_clean_checks_present
+        else "local_push_gate_report_present_boundary_flags_invalid"
+    )
+    return {
+        "schema_version": LOCAL_PUSH_GATE_REPORT_SCHEMA_VERSION,
+        "status": status,
+        "scope": "ignored_local_push_gate_report_no_push_no_github_api",
+        "report_path": _relative_path(report_path),
+        "read_status": "report_present",
+        "report_present": True,
+        "generated_at_utc": header.get("generated_at_utc", ""),
+        "branch": header.get("branch", ""),
+        "head": report_head,
+        "current_head": current_head_short,
+        "current_head_full": current_head_full,
+        "current_branch": current_head.get("branch"),
+        "origin_ahead_count": header.get("origin_ahead_count", ""),
+        "head_matches_current": head_matches_current,
+        "worktree_clean_check_runs_after_report": worktree_clean_check_runs_after_report,
+        "pre_clean_required_checks_present": pre_clean_checks_present,
+        "required_pre_clean_check_count": len(LOCAL_PUSH_GATE_PRE_CLEAN_REPORT_CHECKS),
+        "observed_pre_clean_check_count": len(check_set.intersection(LOCAL_PUSH_GATE_PRE_CLEAN_REPORT_CHECKS)),
+        "missing_pre_clean_checks": missing_pre_clean_checks,
+        "passed_check_count": len(passed_checks),
+        "passed_checks": passed_checks,
+        "attempt_reached_clean_worktree_check": reached_clean_check,
+        "local_push_gate_report_is_not_pass_receipt": True,
+        "fresh_local_gate_run_observed": False,
+        "release_gate_complete": False,
+        "safety_boundary_flags_valid": safety_boundary_flags_valid,
+        "did_not_push": _report_bool(safety.get("did_not_push", "")) is True,
+        "git_add_dot_used": False,
+        "github_api_called": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
 
 
 def _read_local_push_gate_run_receipt() -> dict[str, Any]:
@@ -4743,6 +4907,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         release_gate_readiness_audit,
         release_gate_workflow_rows,
     )
+    local_push_gate_report_summary = _read_local_push_gate_report_summary()
     local_push_gate_run_receipt = _read_local_push_gate_run_receipt()
     remote_ci_review_receipt = _read_remote_ci_review_receipt()
     release_gate_push_readiness_receipt, release_gate_push_readiness_rows = _release_gate_push_readiness_receipt(
@@ -4865,6 +5030,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "release_gate_readiness_audit": release_gate_readiness_audit,
         "release_gate_readiness_rows": release_gate_readiness_rows,
         "release_gate_workflow_rows": release_gate_workflow_rows,
+        "local_push_gate_report_summary": local_push_gate_report_summary,
         "local_push_gate_run_receipt": local_push_gate_run_receipt,
         "release_gate_push_readiness_receipt": release_gate_push_readiness_receipt,
         "release_gate_push_readiness_rows": release_gate_push_readiness_rows,
@@ -4959,6 +5125,13 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "blocks_local_push_gate_receipt"
             )
             is True,
+            "local_push_gate_report_present": local_push_gate_report_summary.get("report_present") is True,
+            "local_push_gate_report_head_matches_current": (
+                local_push_gate_report_summary.get("head_matches_current") is True
+            ),
+            "local_push_gate_report_reached_clean_worktree_check": (
+                local_push_gate_report_summary.get("attempt_reached_clean_worktree_check") is True
+            ),
             "local_push_gate_run_observed": local_push_gate_run_receipt.get("fresh_local_gate_run_observed") is True,
             "local_push_gate_receipt_head_matches_current": local_push_gate_run_receipt.get("head_matches_current")
             is True,
@@ -5077,6 +5250,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "local_worktree_cleanliness_audit_calls_no_github_api": True,
             "local_worktree_cleanliness_audit_emits_no_file_paths": True,
             "local_worktree_cleanliness_audit_is_not_remote_ci_status": True,
+            "local_push_gate_report_summary_is_local": True,
+            "local_push_gate_report_summary_calls_no_github_api": True,
+            "local_push_gate_report_summary_is_not_pass_receipt": True,
             "push_readiness_receipt_is_local": True,
             "push_readiness_receipt_runs_no_commands": True,
             "push_readiness_receipt_calls_no_github_api": True,
@@ -5131,6 +5307,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "release_gate_local_ready": release_gate_readiness_audit.get("local_gate_ready"),
                 "release_gate_complete": release_gate_readiness_audit.get("release_gate_complete"),
                 "push_readiness_receipt_status": release_gate_push_readiness_receipt.get("status"),
+                "local_push_gate_report_status": local_push_gate_report_summary.get("status"),
+                "local_push_gate_report_reached_clean_worktree_check": local_push_gate_report_summary.get(
+                    "attempt_reached_clean_worktree_check"
+                ),
                 "local_push_gate_run_receipt_status": local_push_gate_run_receipt.get("status"),
                 "local_push_gate_run_observed": local_push_gate_run_receipt.get("fresh_local_gate_run_observed"),
                 "remote_ci_review_receipt_status": remote_ci_review_receipt.get("status"),
