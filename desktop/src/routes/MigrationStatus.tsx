@@ -50,6 +50,20 @@ function stringArray(value: unknown, fallback: Array<string>): Array<string> {
     : fallback;
 }
 
+function releaseGatePublishStatusLabel(value: unknown): string {
+  const status = String(value ?? "");
+  if (status === "current_head_unpushed_for_remote_ci") return "waiting for push";
+  if (status === "current_head_has_no_unpushed_commits_for_remote_ci") return "no unpushed commits";
+  return status || "missing";
+}
+
+function releaseGatePublishStepLabel(value: unknown): string {
+  const step = String(value ?? "");
+  if (step === "explicit_user_authorized_push_after_clean_local_gate") return "push after clean gate";
+  if (step === "inspect_matching_remote_actions_after_push") return "inspect matching Actions";
+  return step || "missing";
+}
+
 function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknown> {
   const route = String(row.next_local_step ?? "");
   if (route === "POST /api/data-health/trade-cal-provider-acceptance-dry-run") {
@@ -404,6 +418,11 @@ export default function MigrationStatus() {
   const p6DirectEvidenceReentryRows = (packet.p6_direct_evidence_reentry_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const releaseGateRemoteReviewSplitSummary = (packet.release_gate_remote_review_split_summary as Record<string, unknown> | undefined) ?? {};
   const releaseGateRemoteReviewSplitRows = (packet.release_gate_remote_review_split_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const releaseGateCurrentHeadPublishStatus = String(releaseGateRemoteReviewSplitSummary.current_head_publish_status ?? "");
+  const releaseGateCurrentHeadAheadCount = Number(releaseGateRemoteReviewSplitSummary.current_head_origin_ahead_count ?? releaseGateRemoteReviewSplitSummary.local_push_gate_receipt_current_origin_ahead_count ?? 0);
+  const releaseGateCurrentHeadPushRequired = releaseGateRemoteReviewSplitSummary.current_head_push_required_before_remote_review === true;
+  const releaseGateRemoteReviewWaitingForPush = releaseGateRemoteReviewSplitSummary.remote_review_waiting_for_current_head_push === true;
+  const releaseGateNextPublishStep = String(releaseGateRemoteReviewSplitSummary.next_publish_step ?? "");
   const productionHardeningSummary = (packet.production_hardening_summary as Record<string, unknown> | undefined) ?? {};
   const productionHardeningRows = (packet.production_hardening_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const productionHardeningLtgRows = (packet.production_hardening_ltg_direct_evidence_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -1281,9 +1300,29 @@ export default function MigrationStatus() {
               tone: releaseGateRemoteReviewSplitSummary.latest_remote_run_verified_green === true ? "warn" : "good"
             },
             {
+              label: "current HEAD",
+              value: releaseGatePublishStatusLabel(releaseGateCurrentHeadPublishStatus),
+              tone: releaseGateCurrentHeadPushRequired ? "warn" : "good"
+            },
+            {
+              label: "push required",
+              value: releaseGateCurrentHeadPushRequired,
+              tone: releaseGateCurrentHeadPushRequired ? "warn" : "good"
+            },
+            {
               label: "current ahead",
-              value: Number(releaseGateRemoteReviewSplitSummary.local_push_gate_receipt_current_origin_ahead_count ?? 0),
-              tone: Number(releaseGateRemoteReviewSplitSummary.local_push_gate_receipt_current_origin_ahead_count ?? 0) ? "warn" : "good"
+              value: releaseGateCurrentHeadAheadCount,
+              tone: releaseGateCurrentHeadAheadCount ? "warn" : "good"
+            },
+            {
+              label: "waiting push",
+              value: releaseGateRemoteReviewWaitingForPush,
+              tone: releaseGateRemoteReviewWaitingForPush ? "warn" : "good"
+            },
+            {
+              label: "next publish",
+              value: releaseGatePublishStepLabel(releaseGateNextPublishStep),
+              tone: releaseGateCurrentHeadPushRequired ? "warn" : "good"
             },
             {
               label: "remote receipt head",
