@@ -53976,6 +53976,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         migration = migration_status_service.build_migration_status()
         release_split = migration["release_gate_remote_review_split_summary"]
+        release_handoff = migration["ltg11_release_gate_remote_review_handoff_summary"]
         release_split_rows = {
             row["split_stage"]: row for row in migration["release_gate_remote_review_split_rows"]
         }
@@ -53995,6 +53996,31 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "matching remote Actions status for current HEAD",
             release_split["missing_evidence_items"],
         )
+        self.assertEqual(
+            release_handoff["schema_version"],
+            "ltg11_release_gate_remote_review_handoff_summary.v1",
+        )
+        self.assertEqual(
+            release_handoff["status"],
+            "release_gate_remote_review_green_local_gate_recheck_required",
+        )
+        self.assertEqual(
+            release_handoff["next_local_step"],
+            "rerun_local_push_gate_after_clean_worktree_for_current_head",
+        )
+        self.assertTrue(release_handoff["remote_actions_status_known"])
+        self.assertTrue(release_handoff["latest_remote_run_verified_green"])
+        self.assertTrue(release_handoff["remote_ci_green_for_current_head"])
+        self.assertTrue(release_handoff["remote_ci_review_receipt_head_matches_current"])
+        self.assertTrue(release_handoff["requires_current_head_local_gate_recheck"])
+        self.assertTrue(release_handoff["release_review_blocked_by_local_gate_recheck"])
+        self.assertFalse(release_handoff["release_gate_complete"])
+        self.assertFalse(release_handoff["strict_closeout_ready"])
+        self.assertFalse(release_handoff["can_close_goal"])
+        self.assertFalse(release_handoff["cache_get_calls_github_api"])
+        self.assertFalse(release_handoff["github_api_called"])
+        self.assertFalse(release_handoff["external_calls_triggered"])
+        self.assertTrue(release_handoff["does_not_execute_trades"])
         self.assertTrue(
             release_split_rows["matching_remote_actions_review"][
                 "remote_ci_green_local_gate_recheck_required"

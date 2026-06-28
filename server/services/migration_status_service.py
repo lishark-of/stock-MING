@@ -14306,6 +14306,9 @@ def build_migration_status() -> dict[str, Any]:
     release_gate_remote_review_split_rows = _build_release_gate_remote_review_split_rows(
         release_gate_remote_review_split_summary
     )
+    ltg11_release_gate_remote_review_handoff_summary = (
+        _latest_release_gate_remote_review_handoff_summary()
+    )
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
     tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(
@@ -14362,6 +14365,9 @@ def build_migration_status() -> dict[str, Any]:
         "release_gate_remote_review_split_summary": release_gate_remote_review_split_summary,
         "release_gate_remote_review_split_rows": release_gate_remote_review_split_rows,
         "release_gate_remote_review_split_row_count": len(release_gate_remote_review_split_rows),
+        "ltg11_release_gate_remote_review_handoff_summary": (
+            ltg11_release_gate_remote_review_handoff_summary
+        ),
         "ltg_stage_scope_observed_rows": ltg_stage_scope_observed_rows,
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
         "tushare_deepseek_linkage_rows": tushare_deepseek_linkage_rows,
@@ -14448,6 +14454,12 @@ def build_migration_status() -> dict[str, Any]:
                     usable_path_strict_closeout_handoff_rows
                 ),
                 "p6_direct_evidence_reentry_row_count": len(p6_direct_evidence_reentry_rows),
+                "ltg11_release_gate_remote_review_handoff_status": (
+                    ltg11_release_gate_remote_review_handoff_summary.get("status")
+                ),
+                "ltg11_release_gate_remote_review_next_local_step": (
+                    ltg11_release_gate_remote_review_handoff_summary.get("next_local_step")
+                ),
                 "tushare_deepseek_linkage_row_count": len(tushare_deepseek_linkage_rows),
                 "tushare_deepseek_mode_layer_row_count": len(tushare_deepseek_mode_layer_rows),
                 "latest_tushare_deepseek_linkage_review_found": bool(
