@@ -411,6 +411,22 @@ export default function MigrationStatus() {
   const productionHardeningGateRows = (packet.production_hardening_gate_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgStrictCloseoutWorkOrderSummary = (packet.ltg_strict_closeout_work_order_summary as Record<string, unknown> | undefined) ?? {};
   const ltgStrictCloseoutWorkOrderRows = (packet.ltg_strict_closeout_work_order_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const ltgStrictCloseoutEvidenceSpineSummary = (packet.ltg_strict_closeout_evidence_spine_summary as Record<string, unknown> | undefined) ?? {};
+  const ltgStrictCloseoutEvidenceSpineRows = (packet.ltg_strict_closeout_evidence_spine_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const ltgStrictCloseoutEvidenceSpineReadableRows = ltgStrictCloseoutEvidenceSpineRows.map((row) => ({
+    id: row.id,
+    handoff_status: row.handoff_visible === true ? "visible" : "missing",
+    handoff_count: `${Number(row.handoff_count ?? 0)}/${Number(row.expected_handoff_count ?? 0)}`,
+    handoff_keys: Array.isArray(row.handoff_keys) ? row.handoff_keys.join(", ") : "",
+    strict_closeout: row.strict_closeout,
+    closeout_claim_allowed: row.strict_closeout_claim_allowed,
+    remote_review_split_required: row.remote_review_split_required,
+    release_review_required: row.requires_release_review_after_remote_green,
+    production_complete: row.production_complete,
+    external_calls_triggered: row.external_calls_triggered,
+    does_not_execute_trades: row.does_not_execute_trades,
+    evidence_boundary: row.evidence_boundary
+  }));
   const ltgNextAcceptanceActionRows = (packet.ltg_next_acceptance_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgNextAcceptanceReceiptRows = ltgNextAcceptanceActionRows.map((row) => ({
     queue_id: row.queue_id,
@@ -1200,9 +1216,25 @@ export default function MigrationStatus() {
           ]}
         />
         <p className="risk-note">Work order 可以用来选择下一轮只做一个 LTG 的 direct evidence 收集；它不代表已经能关闭 LTG，也不允许把 local receipt、matrix、mock、sanitizer 或 dry-run 当 production evidence。</p>
+        <MetricGrid
+          items={[
+            { label: "spine status", value: String(ltgStrictCloseoutEvidenceSpineSummary.status ?? "missing"), tone: ltgStrictCloseoutEvidenceSpineRows.length ? "warn" : "neutral" },
+            { label: "LTG spine", value: `${Number(ltgStrictCloseoutEvidenceSpineSummary.spine_visible_count ?? 0)}/${Number(ltgStrictCloseoutEvidenceSpineSummary.spine_total_count ?? 14)}`, tone: ltgStrictCloseoutEvidenceSpineSummary.all_ltg_handoffs_visible === true ? "good" : "bad" },
+            { label: "handoff summaries", value: `${Number(ltgStrictCloseoutEvidenceSpineSummary.handoff_summary_visible_count ?? 0)}/${Number(ltgStrictCloseoutEvidenceSpineSummary.handoff_summary_total_count ?? 0)}`, tone: ltgStrictCloseoutEvidenceSpineSummary.all_handoff_summaries_visible === true ? "good" : "warn" },
+            { label: "missing LTG", value: Array.isArray(ltgStrictCloseoutEvidenceSpineSummary.spine_missing_ltg_ids) ? ltgStrictCloseoutEvidenceSpineSummary.spine_missing_ltg_ids.length : 0, tone: Array.isArray(ltgStrictCloseoutEvidenceSpineSummary.spine_missing_ltg_ids) && ltgStrictCloseoutEvidenceSpineSummary.spine_missing_ltg_ids.length ? "bad" : "good" },
+            { label: "strict closeout", value: String(ltgStrictCloseoutEvidenceSpineSummary.strict_closeout ?? "0/14"), tone: Number(ltgStrictCloseoutEvidenceSpineSummary.strict_closeout_done_count ?? 0) === 0 ? "warn" : "good" },
+            { label: "closeout claim", value: ltgStrictCloseoutEvidenceSpineSummary.strict_closeout_claim_allowed === true ? "allowed" : "blocked", tone: ltgStrictCloseoutEvidenceSpineSummary.strict_closeout_claim_allowed === true ? "bad" : "good" },
+            { label: "remote split", value: ltgStrictCloseoutEvidenceSpineSummary.remote_review_split_required === true ? "required" : "missing", tone: ltgStrictCloseoutEvidenceSpineSummary.remote_review_split_required === true ? "good" : "bad" },
+            { label: "release review", value: ltgStrictCloseoutEvidenceSpineSummary.requires_release_review_after_remote_green === true ? "required" : "missing", tone: ltgStrictCloseoutEvidenceSpineSummary.requires_release_review_after_remote_green === true ? "good" : "bad" },
+            { label: "external calls", value: ltgStrictCloseoutEvidenceSpineSummary.external_calls_triggered === true ? "存在" : "无", tone: ltgStrictCloseoutEvidenceSpineSummary.external_calls_triggered === true ? "bad" : "good" },
+            { label: "real trading", value: ltgStrictCloseoutEvidenceSpineSummary.does_not_execute_trades === true ? "禁止" : "可能", tone: ltgStrictCloseoutEvidenceSpineSummary.does_not_execute_trades === true ? "good" : "bad" }
+          ]}
+        />
+        <p className="risk-note">Strict closeout evidence spine 只把 14 个 LTG 的顶层 handoff 串成可查收清单；14/14 可见仍不是生产完成证据，必须继续经过 fresh local gate、匹配远端 CI、release review 和 safety scan。</p>
         <DataLineageTable rows={productionHardeningRows} />
         <DataLineageTable rows={productionHardeningGateRows} />
         <DataLineageTable rows={ltgStrictCloseoutWorkOrderRows} />
+        <DataLineageTable rows={ltgStrictCloseoutEvidenceSpineReadableRows} />
         <DataLineageTable rows={productionHardeningLtgRows} />
       </div>
       <h3>14 个长期目标完成度</h3>
