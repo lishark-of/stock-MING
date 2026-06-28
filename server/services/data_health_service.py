@@ -5954,8 +5954,10 @@ def _freshness_durable_evidence_recipe(
     local_evidence_missing_items = []
     if not local_recipe_ready:
         local_evidence_missing_items.append("local durable evidence recipe contract")
-    if not producer_durable_direct_evidence_done:
-        local_evidence_missing_items.append("current-evidence producer coverage direct evidence")
+    if not producer_local_current_cache_coverage_done:
+        local_evidence_missing_items.append("current-evidence producer coverage local cache-refresh direct evidence")
+    elif not producer_provider_backed_trade_cal_acceptance_evidence_done:
+        local_evidence_missing_items.append("provider-backed trade_cal acceptance evidence for producer coverage")
     if not decision_surface_direct_evidence_done:
         local_evidence_missing_items.append("decision-surface isolation direct evidence")
     local_evidence_missing_items.extend(
@@ -6198,6 +6200,10 @@ def _freshness_durable_evidence_recipe(
                 "local_promotion_review_creates_provider_task": False,
                 "local_promotion_review_calls_provider": False,
                 "local_promotion_review_is_not_production_completion": True,
+                "producer_local_current_cache_coverage_done": producer_local_current_cache_coverage_done,
+                "producer_provider_backed_trade_cal_acceptance_evidence_done": (
+                    producer_provider_backed_trade_cal_acceptance_evidence_done
+                ),
                 "producer_durable_direct_evidence_done": producer_durable_direct_evidence_done,
                 "local_release_gate_evidence_status": local_release_gate_status,
                 "local_worktree_clean": local_worktree_clean,

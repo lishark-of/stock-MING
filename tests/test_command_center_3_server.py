@@ -27471,6 +27471,26 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             producer_row["missing_evidence"],
         )
         self.assertIn("provider-backed trade_cal acceptance evidence", producer_row["missing_evidence"])
+        promotion_row = durable_rows["production_promotion_review"]
+        self.assertTrue(promotion_row["producer_local_current_cache_coverage_done"])
+        self.assertFalse(promotion_row["producer_provider_backed_trade_cal_acceptance_evidence_done"])
+        self.assertFalse(promotion_row["producer_durable_direct_evidence_done"])
+        self.assertNotIn(
+            "current-evidence producer coverage direct evidence",
+            promotion_row["local_evidence_missing_items"],
+        )
+        self.assertNotIn(
+            "current-evidence producer coverage local cache-refresh direct evidence",
+            promotion_row["local_evidence_missing_items"],
+        )
+        self.assertIn(
+            "provider-backed trade_cal acceptance evidence for producer coverage",
+            promotion_row["local_evidence_missing_items"],
+        )
+        self.assertIn(
+            "provider-backed acceptance promotion marker",
+            promotion_row["local_evidence_missing_items"],
+        )
         self.assertTrue(packet["policy"]["latest_producer_cache_refresh_lookup_is_local"])
         self.assertFalse(packet["policy"]["latest_producer_cache_refresh_lookup_creates_task"])
         self.assertFalse(packet["policy"]["latest_producer_cache_refresh_lookup_writes_snapshot_cache"])
