@@ -24096,6 +24096,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(push_receipt["local_push_gate_run_receipt_current_origin_ahead_count"], 2)
         self.assertFalse(push_receipt["local_push_gate_run_receipt_origin_ahead_count_stale"])
         self.assertTrue(push_receipt["local_commits_not_pushed_for_remote_ci"])
+        self.assertEqual(push_receipt["current_head_publish_status"], "current_head_unpushed_for_remote_ci")
+        self.assertTrue(push_receipt["current_head_push_required_before_remote_review"])
+        self.assertEqual(push_receipt["current_head_origin_ahead_count"], 2)
+        self.assertTrue(push_receipt["remote_review_waiting_for_current_head_push"])
+        self.assertEqual(
+            push_receipt["next_publish_step"],
+            "explicit_user_authorized_push_after_clean_local_gate",
+        )
         self.assertFalse(push_receipt["remote_actions_status_known"])
         self.assertFalse(push_receipt["latest_remote_run_verified_green"])
         self.assertEqual(push_receipt["remote_review_status"], "remote_review_waiting_for_push")
@@ -24110,6 +24118,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(push_receipt["blocking_criterion_count"], 0)
         self.assertNotIn("fresh_local_push_gate_command_output", push_receipt["missing_evidence_items"])
+        self.assertIn(
+            "push_current_head_before_matching_remote_actions_review",
+            push_receipt["missing_evidence_items"],
+        )
         self.assertIn("matching_remote_actions_run_status", push_receipt["missing_evidence_items"])
         self.assertTrue(push_receipt["did_not_push"])
         self.assertFalse(push_receipt["explicit_user_push_confirmation_before_push"])
@@ -24355,6 +24367,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(receipt["local_push_gate_run_receipt_current_origin_ahead_count"], 0)
         self.assertTrue(receipt["local_push_gate_run_receipt_origin_ahead_count_stale"])
         self.assertFalse(receipt["local_commits_not_pushed_for_remote_ci"])
+        self.assertEqual(receipt["current_head_publish_status"], "current_head_has_no_unpushed_commits_for_remote_ci")
+        self.assertFalse(receipt["current_head_push_required_before_remote_review"])
+        self.assertEqual(receipt["current_head_origin_ahead_count"], 0)
+        self.assertFalse(receipt["remote_review_waiting_for_current_head_push"])
+        self.assertEqual(receipt["next_publish_step"], "inspect_matching_remote_actions_after_push")
+        self.assertNotIn(
+            "push_current_head_before_matching_remote_actions_review",
+            receipt["missing_evidence_items"],
+        )
         self.assertEqual(receipt["remote_review_status"], "remote_review_pending")
         self.assertFalse(receipt["remote_review_blocked_by_unpushed_local_commits"])
         self.assertNotIn("local_commits_not_pushed_for_remote_ci", receipt["remote_review_blockers"])

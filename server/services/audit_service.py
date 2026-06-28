@@ -2306,6 +2306,16 @@ def _release_gate_push_readiness_receipt(
         release_gate_readiness_audit.get("false_positive_allowlist_review_ready") is True
     )
     local_commits_not_pushed_for_remote_ci = local_run_current_origin_ahead_count > 0
+    current_head_publish_status = (
+        "current_head_unpushed_for_remote_ci"
+        if local_commits_not_pushed_for_remote_ci
+        else "current_head_has_no_unpushed_commits_for_remote_ci"
+    )
+    next_publish_step = (
+        "explicit_user_authorized_push_after_clean_local_gate"
+        if local_commits_not_pushed_for_remote_ci
+        else "inspect_matching_remote_actions_after_push"
+    )
     remote_review_blockers = []
     if fresh_local_gate_run_observed and not remote_actions_status_known:
         remote_review_blockers.append("matching_remote_actions_status_missing")
@@ -2450,6 +2460,11 @@ def _release_gate_push_readiness_receipt(
         ],
         "missing_evidence_items": (
             ([] if fresh_local_gate_run_observed else ["fresh_local_push_gate_command_output"])
+            + (
+                ["push_current_head_before_matching_remote_actions_review"]
+                if local_commits_not_pushed_for_remote_ci
+                else []
+            )
             + ([] if remote_actions_status_known else ["matching_remote_actions_run_status"])
             + ([] if latest_remote_run_verified_green else ["latest_remote_run_green_evidence"])
             + [
@@ -2471,6 +2486,13 @@ def _release_gate_push_readiness_receipt(
         "local_push_gate_run_receipt_origin_ahead_count_stale": (
             local_run_reported_origin_ahead_count != local_run_current_origin_ahead_count
         ),
+        "current_head_publish_status": current_head_publish_status,
+        "current_head_push_required_before_remote_review": local_commits_not_pushed_for_remote_ci,
+        "current_head_origin_ahead_count": local_run_current_origin_ahead_count,
+        "remote_review_waiting_for_current_head_push": bool(
+            local_commits_not_pushed_for_remote_ci and not latest_remote_run_verified_green
+        ),
+        "next_publish_step": next_publish_step,
         "local_commits_not_pushed_for_remote_ci": local_commits_not_pushed_for_remote_ci,
         "local_push_gate_run_receipt_freshness_blockers": local_receipt_freshness_blockers,
         "local_push_gate_run_receipt_freshness_blocker_count": len(local_receipt_freshness_blockers),
@@ -2533,6 +2555,9 @@ def _release_gate_push_readiness_receipt(
                 "latest_remote_run_verified_green": latest_remote_run_verified_green,
                 "remote_review_status": remote_review_status,
                 "remote_review_blocker_count": len(remote_review_blockers),
+                "current_head_publish_status": current_head_publish_status,
+                "current_head_push_required_before_remote_review": local_commits_not_pushed_for_remote_ci,
+                "current_head_origin_ahead_count": local_run_current_origin_ahead_count,
                 "local_fetched_at": _now_iso(),
                 "external": False,
             }
