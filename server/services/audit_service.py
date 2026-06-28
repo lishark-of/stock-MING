@@ -47,6 +47,9 @@ LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION = "command_center_3_local_push_gate_r
 LOCAL_PUSH_GATE_REPORT_SCHEMA_VERSION = "command_center_3_local_push_gate_report_summary.v1"
 REMOTE_CI_REVIEW_SEED_SCHEMA_VERSION = "command_center_3_remote_ci_review_seed.v1"
 REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION = "command_center_3_remote_ci_review_receipt.v1"
+SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_SCHEMA_VERSION = (
+    "command_center_3_secret_artifact_allowlist_review_receipt.v1"
+)
 LOCAL_WORKTREE_CLEANLINESS_SCHEMA_VERSION = "command_center_3_local_worktree_cleanliness_audit.v1"
 MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
 LOCAL_PUSH_GATE_REQUIRED_CHECKS = {
@@ -108,6 +111,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "local_push_gate_run_receipt.json"
 REMOTE_CI_REVIEW_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "remote_ci_review_receipt.json"
+SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH = (
+    PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "secret_artifact_allowlist_review_receipt.json"
+)
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
 MIGRATION_PRINCIPLE_TEST_PATH = PROJECT_ROOT / "tests" / "test_command_center_migration_principles.py"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
@@ -1293,6 +1299,194 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     return receipt
 
 
+def _read_secret_artifact_allowlist_review_receipt() -> dict[str, Any]:
+    current_head = _current_git_head_summary()
+    missing_base = {
+        "schema_version": SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_SCHEMA_VERSION,
+        "scope": "ignored_manual_secret_artifact_allowlist_review_no_cache_github_api",
+        "receipt_path": _relative_path(SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH),
+        "current_head": current_head.get("head"),
+        "current_head_full": current_head.get("head_full"),
+        "current_branch": current_head.get("branch"),
+        "head_matches_current": False,
+        "periodic_allowlist_review_ready": False,
+        "false_positive_allowlist_review_ready": False,
+        "release_review_complete": False,
+        "release_gate_complete": False,
+        "production_release_complete": False,
+        "cache_get_external_calls": False,
+        "cache_get_calls_github_api": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "github_api_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    if not SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH.exists():
+        return {
+            **missing_base,
+            "status": "secret_artifact_allowlist_review_receipt_missing",
+            "read_status": "receipt_missing",
+            "missing_evidence": ["periodic secret/artifact allowlist review receipt"],
+            "missing_evidence_count": 1,
+            "call_ledger": [
+                {
+                    "api": "local_secret_artifact_allowlist_review_receipt_readback",
+                    "source": "ignored local secret/artifact allowlist review receipt",
+                    "call_status": "receipt_missing",
+                    "external": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "local_fetched_at": _now_iso(),
+                }
+            ],
+        }
+    try:
+        raw = json.loads(SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            **missing_base,
+            "status": "secret_artifact_allowlist_review_receipt_unreadable",
+            "read_status": "receipt_read_failed",
+            "missing_evidence": ["readable periodic secret/artifact allowlist review receipt"],
+            "missing_evidence_count": 1,
+            "call_ledger": [
+                {
+                    "api": "local_secret_artifact_allowlist_review_receipt_readback",
+                    "source": "ignored local secret/artifact allowlist review receipt",
+                    "call_status": "receipt_read_failed",
+                    "external": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "local_fetched_at": _now_iso(),
+                }
+            ],
+        }
+
+    raw_receipt = _as_dict(raw)
+    receipt = _as_dict(_safe_value(raw_receipt))
+    receipt_head_full = str(raw_receipt.get("head_full") or "")
+    receipt_head = str(raw_receipt.get("head") or "")
+    current_head_full = str(current_head.get("head_full") or "")
+    current_head_short = str(current_head.get("head") or "")
+    head_matches_current = bool(
+        current_head_full
+        and (
+            receipt_head_full == current_head_full
+            or (receipt_head and current_head_short and receipt_head == current_head_short)
+        )
+    )
+    schema_ok = raw_receipt.get("schema_version") == SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_SCHEMA_VERSION
+    review_authorized = raw_receipt.get("explicit_user_allowlist_review_authorized") is True
+    status_ok = str(raw_receipt.get("status") or "") == "secret_artifact_allowlist_review_ready"
+    high_risk_ok = str(raw_receipt.get("high_risk_secret_scan_status") or "") in {
+        "clean",
+        "passed_no_high_risk_values",
+    }
+    keyword_ok = str(raw_receipt.get("secret_keyword_review_status") or "") in {
+        "reviewed_no_high_risk_values",
+        "secret_keyword_review_contract_ready_manual_review_pending",
+    }
+    artifact_ok = str(raw_receipt.get("generated_artifact_scan_status") or "") in {
+        "clean",
+        "clean_or_allowed_assets_only",
+    }
+    safety_ok = (
+        raw_receipt.get("cache_get_external_calls") is False
+        and raw_receipt.get("cache_get_calls_github_api") is False
+        and raw_receipt.get("external_calls_triggered") is False
+        and raw_receipt.get("tushare_called") is False
+        and raw_receipt.get("deepseek_called") is False
+        and raw_receipt.get("github_called") is False
+        and raw_receipt.get("github_api_called") is False
+        and raw_receipt.get("does_not_execute_trades") is True
+        and raw_receipt.get("does_not_modify_strategy_action") is True
+        and raw_receipt.get("contains_secret") is False
+    )
+    missing_evidence: list[str] = []
+    if not schema_ok:
+        missing_evidence.append("secret/artifact allowlist review receipt schema")
+    if not status_ok:
+        missing_evidence.append("secret/artifact allowlist review ready status")
+    if not head_matches_current:
+        missing_evidence.append("current HEAD matching secret/artifact allowlist review")
+    if not review_authorized:
+        missing_evidence.append("explicit user authorization for allowlist review")
+    if not high_risk_ok:
+        missing_evidence.append("clean high-risk secret scan review")
+    if not keyword_ok:
+        missing_evidence.append("structured secret keyword review")
+    if not artifact_ok:
+        missing_evidence.append("clean generated artifact scan review")
+    if not safety_ok:
+        missing_evidence.append("cache read no-external/no-provider/no-trade boundary flags")
+    ready = bool(
+        schema_ok
+        and status_ok
+        and head_matches_current
+        and review_authorized
+        and high_risk_ok
+        and keyword_ok
+        and artifact_ok
+        and safety_ok
+    )
+    status = (
+        "secret_artifact_allowlist_review_ready"
+        if ready
+        else "secret_artifact_allowlist_review_receipt_present_but_not_verified"
+    )
+    receipt.update(
+        {
+            "schema_version": str(
+                receipt.get("schema_version") or SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_SCHEMA_VERSION
+            ),
+            "status": status,
+            "scope": "ignored_manual_secret_artifact_allowlist_review_no_cache_github_api",
+            "receipt_path": _relative_path(SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH),
+            "read_status": "receipt_present",
+            "current_head": current_head_short,
+            "current_head_full": current_head_full,
+            "current_branch": current_head.get("branch"),
+            "head_matches_current": head_matches_current,
+            "periodic_allowlist_review_ready": ready,
+            "false_positive_allowlist_review_ready": ready,
+            "release_review_complete": False,
+            "release_gate_complete": False,
+            "production_release_complete": False,
+            "missing_evidence": missing_evidence,
+            "missing_evidence_count": len(missing_evidence),
+            "cache_get_external_calls": False,
+            "cache_get_calls_github_api": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "github_api_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "call_ledger": [
+                {
+                    "api": "local_secret_artifact_allowlist_review_receipt_readback",
+                    "source": "ignored local secret/artifact allowlist review receipt",
+                    "call_status": status,
+                    "periodic_allowlist_review_ready": ready,
+                    "local_fetched_at": _now_iso(),
+                    "external": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                }
+            ],
+        }
+    )
+    return receipt
+
+
 def _script_contains_any(script: str, markers: tuple[str, ...]) -> bool:
     lower_script = script.lower()
     return any(marker.lower() in lower_script for marker in markers)
@@ -1371,7 +1565,9 @@ def _release_gate_workflow_rows() -> list[dict[str, Any]]:
     return rows
 
 
-def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+def _release_gate_readiness_audit(
+    secret_artifact_allowlist_review_receipt: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     script = _read_local_text(PUSH_GATE_SCRIPT_PATH)
     migration_principle_test = _read_local_text(MIGRATION_PRINCIPLE_TEST_PATH)
     smoke_script = _read_local_text(SMOKE_SCRIPT_PATH)
@@ -1778,7 +1974,13 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and ci_mirror_includes_evidence_artifact_upload
         and ci_mirror_includes_failure_summary_annotation
     )
-    false_positive_allowlist_review_ready = False
+    allowlist_review = _as_dict(
+        secret_artifact_allowlist_review_receipt or _read_secret_artifact_allowlist_review_receipt()
+    )
+    false_positive_allowlist_review_ready = (
+        allowlist_review.get("periodic_allowlist_review_ready") is True
+        and allowlist_review.get("head_matches_current") is True
+    )
     local_gate_ready = all(
         bool(checks[key])
         for key in (
@@ -2306,7 +2508,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             false_positive_allowlist_review_ready,
             evidence="secret/artifact review allowlists still require periodic human review",
             production_blocker=False,
-            status_override="pending",
+            status_override=None if false_positive_allowlist_review_ready else "pending",
         ),
     ]
     blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
@@ -2348,6 +2550,16 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "static_audit_cannot_complete_release_gate": True,
         "release_gate_complete_requires_remote_ci_review": True,
         "false_positive_allowlist_review_ready": false_positive_allowlist_review_ready,
+        "secret_artifact_allowlist_review_receipt_status": allowlist_review.get("status", ""),
+        "secret_artifact_allowlist_review_receipt_head_matches_current": (
+            allowlist_review.get("head_matches_current") is True
+        ),
+        "secret_artifact_allowlist_review_receipt_missing_evidence": list(
+            allowlist_review.get("missing_evidence") or []
+        ),
+        "secret_artifact_allowlist_review_receipt_missing_evidence_count": int(
+            allowlist_review.get("missing_evidence_count") or 0
+        ),
         "provider_calls_triggered": False,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -2693,11 +2905,8 @@ def _release_gate_push_readiness_receipt(
             )
             + ([] if remote_actions_status_known else ["matching_remote_actions_run_status"])
             + ([] if latest_remote_run_verified_green else ["latest_remote_run_green_evidence"])
-            + [
-                "periodic_secret_artifact_allowlist_review",
-                "explicit_user_push_confirmation_before_push",
-                "release_review_after_remote_ci_green",
-            ]
+            + ([] if false_positive_allowlist_review_ready else ["periodic_secret_artifact_allowlist_review"])
+            + ["explicit_user_push_confirmation_before_push", "release_review_after_remote_ci_green"]
         ),
         "local_gate_contract_ready": local_gate_ready,
         "ci_mirror_ready": ci_mirror_ready,
@@ -2829,6 +3038,7 @@ def _release_gate_stage_scope_rows(
         release_gate_push_readiness_receipt.get("remote_review_waiting_for_current_head_push") is True
     )
     next_publish_step = str(release_gate_push_readiness_receipt.get("next_publish_step") or "")
+    allowlist_review_ready = release_gate_push_readiness_receipt.get("periodic_allowlist_review_ready") is True
     local_receipt_freshness_blockers = [
         str(item) for item in _as_list(local_receipt.get("freshness_blockers"))
     ]
@@ -2842,10 +3052,11 @@ def _release_gate_stage_scope_rows(
             "matching remote Actions run for pushed commit",
             "latest remote Actions green evidence",
             "safe failure log excerpt when email reports a failure",
-            "periodic secret/artifact allowlist review",
             "explicit user/operator push approval",
         ]
     )
+    if not allowlist_review_ready:
+        missing_evidence.append("periodic secret/artifact allowlist review")
     rows: list[dict[str, Any]] = []
     for stage_key in sorted(REQUIRED_RELEASE_GATE_STAGE_KEYS):
         stage_complete = (
@@ -2856,6 +3067,8 @@ def _release_gate_stage_scope_rows(
             stage_complete = fresh_local_gate_run_observed
         if stage_key == "matching_remote_actions_status":
             stage_complete = latest_remote_run_verified_green
+        if stage_key == "secret_artifact_allowlist_review":
+            stage_complete = allowlist_review_ready
         rows.append(
             {
                 "stage_key": stage_key,
@@ -2896,7 +3109,7 @@ def _release_gate_stage_scope_rows(
                 "next_publish_step": next_publish_step,
                 "failure_email_has_matching_head_and_logs": False,
                 "can_dismiss_failure_email_without_matching_head_and_logs": False,
-                "periodic_allowlist_review_ready": False,
+                "periodic_allowlist_review_ready": allowlist_review_ready,
                 "explicit_user_push_confirmation_before_push": False,
                 "push_confirmation_state": "not_requested_no_push",
                 "release_report_written_by_cache": False,
@@ -4964,7 +5177,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
     task_persistence_source_rows = _as_list(task_status_index.get("persistence_source_rows"))
     model_strategy_rows = _model_strategy_rows()
     get_route_coverage = _get_route_coverage(endpoint_rows)
-    release_gate_readiness_audit, release_gate_readiness_rows, release_gate_workflow_rows = _release_gate_readiness_audit()
+    secret_artifact_allowlist_review_receipt = _read_secret_artifact_allowlist_review_receipt()
+    release_gate_readiness_audit, release_gate_readiness_rows, release_gate_workflow_rows = _release_gate_readiness_audit(
+        secret_artifact_allowlist_review_receipt
+    )
     ci_notification_triage_contract, ci_notification_triage_rows = _ci_notification_triage_contract(
         release_gate_readiness_audit,
         release_gate_workflow_rows,
@@ -5100,6 +5316,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "remote_ci_review_seed_contract": remote_ci_review_seed_contract,
         "remote_ci_review_seed_rows": remote_ci_review_seed_rows,
         "remote_ci_review_receipt": remote_ci_review_receipt,
+        "secret_artifact_allowlist_review_receipt": secret_artifact_allowlist_review_receipt,
         "local_worktree_cleanliness_audit": local_worktree_cleanliness_audit,
         "local_worktree_status_code_rows": local_worktree_status_code_rows,
         "ci_notification_triage_contract": ci_notification_triage_contract,
@@ -5179,6 +5396,15 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "latest_remote_run_verified_green"
             )
             is True,
+            "secret_artifact_allowlist_review_receipt_present": (
+                secret_artifact_allowlist_review_receipt.get("read_status") == "receipt_present"
+            ),
+            "secret_artifact_allowlist_review_ready": (
+                secret_artifact_allowlist_review_receipt.get("periodic_allowlist_review_ready") is True
+            ),
+            "secret_artifact_allowlist_review_head_matches_current": (
+                secret_artifact_allowlist_review_receipt.get("head_matches_current") is True
+            ),
             "local_worktree_clean": local_worktree_cleanliness_audit.get("worktree_clean") is True,
             "local_worktree_dirty_file_count": local_worktree_cleanliness_audit.get("dirty_file_count", 0),
             "local_worktree_tracked_change_count": local_worktree_cleanliness_audit.get("tracked_change_count", 0),
@@ -5308,6 +5534,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "remote_ci_review_receipt_is_local_ignored": True,
             "remote_ci_review_receipt_calls_no_github_api_from_cache": True,
             "remote_ci_review_receipt_is_not_release_review": True,
+            "secret_artifact_allowlist_review_receipt_is_local_ignored": True,
+            "secret_artifact_allowlist_review_receipt_calls_no_github_api_from_cache": True,
+            "secret_artifact_allowlist_review_receipt_is_not_release_review": True,
             "local_worktree_cleanliness_audit_is_local": True,
             "local_worktree_cleanliness_audit_calls_no_github_api": True,
             "local_worktree_cleanliness_audit_emits_no_file_paths": True,
@@ -5377,6 +5606,12 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "local_push_gate_run_observed": local_push_gate_run_receipt.get("fresh_local_gate_run_observed"),
                 "remote_ci_review_receipt_status": remote_ci_review_receipt.get("status"),
                 "remote_ci_review_receipt_ready": remote_ci_review_receipt.get("remote_ci_review_ready"),
+                "secret_artifact_allowlist_review_receipt_status": secret_artifact_allowlist_review_receipt.get(
+                    "status"
+                ),
+                "secret_artifact_allowlist_review_ready": secret_artifact_allowlist_review_receipt.get(
+                    "periodic_allowlist_review_ready"
+                ),
                 "push_readiness_allowed_next_step": release_gate_push_readiness_receipt.get("allowed_next_step"),
                 "push_readiness_remote_status_known": release_gate_push_readiness_receipt.get(
                     "remote_actions_status_known"

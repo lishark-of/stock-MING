@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -278,6 +280,103 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
                 self.assertTrue(local_release_gate["latest_remote_run_verified_green"])
                 self.assertFalse(local_release_gate["release_review_complete"])
                 self.assertFalse(local_release_gate["production_freshness_gate_complete"])
+
+    def test_secret_artifact_allowlist_review_receipt_clears_only_periodic_review(self):
+        current = audit_service._current_git_head_summary()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            receipt_path = Path(temp_dir) / "secret-artifact-allowlist-review-receipt.json"
+            script_path = (
+                Path(__file__).resolve().parents[1]
+                / "scripts"
+                / "record_secret_artifact_allowlist_review_receipt.py"
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script_path),
+                    "--output",
+                    str(receipt_path),
+                    "--branch",
+                    str(current["branch"]),
+                    "--head",
+                    str(current["head"]),
+                    "--head-full",
+                    str(current["head_full"]),
+                    "--reviewer",
+                    "unit_test",
+                    "--reviewed-at-utc",
+                    "2026-06-29T01:23:45Z",
+                    "--review-authorized",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            summary = json.loads(result.stdout)
+            self.assertEqual(summary["status"], "secret_artifact_allowlist_review_ready")
+            self.assertTrue(summary["periodic_allowlist_review_ready"])
+            self.assertFalse(summary["github_api_called"])
+            self.assertFalse(summary["external_calls_triggered"])
+            self.assertTrue(summary["does_not_execute_trades"])
+
+            script_source = script_path.read_text(encoding="utf-8")
+            self.assertNotIn("api.github.com", script_source)
+            self.assertNotIn("requests", script_source)
+            self.assertNotIn("httpx", script_source)
+            self.assertNotIn("curl", script_source)
+
+            with patch.object(
+                audit_service,
+                "SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH",
+                receipt_path,
+            ):
+                receipt = audit_service._read_secret_artifact_allowlist_review_receipt()
+                self.assertEqual(receipt["status"], "secret_artifact_allowlist_review_ready")
+                self.assertTrue(receipt["head_matches_current"])
+                self.assertTrue(receipt["periodic_allowlist_review_ready"])
+                self.assertFalse(receipt["release_review_complete"])
+                self.assertFalse(receipt["release_gate_complete"])
+                self.assertFalse(receipt["github_api_called"])
+                self.assertFalse(receipt["external_calls_triggered"])
+                self.assertTrue(receipt["does_not_execute_trades"])
+
+                packet = audit_service.read_call_ledger_audit_cache()
+                release_gate = packet["release_gate_readiness_audit"]
+                self.assertTrue(release_gate["false_positive_allowlist_review_ready"])
+                self.assertEqual(
+                    release_gate["secret_artifact_allowlist_review_receipt_status"],
+                    "secret_artifact_allowlist_review_ready",
+                )
+                self.assertNotIn("false_positive_allowlist_review_pending", release_gate["soft_blockers"])
+                self.assertFalse(release_gate["release_gate_complete"])
+
+                push_receipt = packet["release_gate_push_readiness_receipt"]
+                self.assertTrue(push_receipt["periodic_allowlist_review_ready"])
+                self.assertNotIn(
+                    "periodic_secret_artifact_allowlist_review",
+                    push_receipt["missing_evidence_items"],
+                )
+                self.assertIn(
+                    "explicit_user_push_confirmation_before_push",
+                    push_receipt["missing_evidence_items"],
+                )
+                self.assertIn("release_review_after_remote_ci_green", push_receipt["missing_evidence_items"])
+                self.assertFalse(push_receipt["github_api_called"])
+                self.assertFalse(push_receipt["external_calls_triggered"])
+                self.assertTrue(push_receipt["does_not_execute_trades"])
+
+                stage_rows = {row["stage_key"]: row for row in packet["release_gate_stage_scope_rows"]}
+                allowlist_row = stage_rows["secret_artifact_allowlist_review"]
+                self.assertTrue(allowlist_row["stage_complete"])
+                self.assertTrue(allowlist_row["periodic_allowlist_review_ready"])
+                self.assertFalse(allowlist_row["release_gate_complete"])
+                self.assertFalse(allowlist_row["github_api_called"])
+                self.assertFalse(allowlist_row["external_calls_triggered"])
+                self.assertTrue(allowlist_row["does_not_execute_trades"])
 
     def test_push_readiness_surfaces_local_receipt_freshness_blockers(self):
         original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
