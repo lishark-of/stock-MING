@@ -2466,6 +2466,7 @@ def _build_ltg_strict_closeout_work_order_rows(
             {
                 "work_order_id": f"strict_closeout_work_order_{goal_id.lower()}",
                 "id": goal_id,
+                "goal_id": goal_id,
                 "goal": goal.get("goal"),
                 "priority_order": index,
                 "recommended_first_candidate": goal_id in recommended_first_candidates,
@@ -2488,6 +2489,7 @@ def _build_ltg_strict_closeout_work_order_rows(
                 or "",
                 "blocker": direct_row.get("blocker") or goal.get("not_complete_because") or "",
                 "next_direct_evidence": next_direct_evidence,
+                "next_evidence_action": next_direct_evidence[0] if next_direct_evidence else acceptance_command,
                 "next_direct_evidence_count": len(next_direct_evidence),
                 "production_evidence_required_before_closeout": next_direct_evidence
                 + [

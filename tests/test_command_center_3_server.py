@@ -38002,6 +38002,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         work_order_rows = {
             row["id"]: row for row in migration["data"]["ltg_strict_closeout_work_order_rows"]
         }
+        work_order_rows_by_goal_id = {
+            row["goal_id"]: row for row in migration["data"]["ltg_strict_closeout_work_order_rows"]
+        }
         spine_summary = migration["data"]["ltg_strict_closeout_evidence_spine_summary"]
         spine_rows = {
             row["id"]: row for row in migration["data"]["ltg_strict_closeout_evidence_spine_rows"]
@@ -38136,6 +38139,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(work_order_summary["work_order_row_count"], 14)
         self.assertEqual(migration["data"]["ltg_strict_closeout_work_order_row_count"], 14)
         self.assertEqual(set(work_order_rows.keys()), {f"LTG-{index:02d}" for index in range(1, 15)})
+        self.assertEqual(set(work_order_rows_by_goal_id.keys()), set(work_order_rows.keys()))
         self.assertEqual(work_order_summary["strict_closeout"], "0/14")
         self.assertEqual(work_order_summary["strict_closeout_done_count"], 0)
         self.assertEqual(work_order_summary["strict_closeout_total_count"], 14)
@@ -38206,6 +38210,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(work_order_rows["LTG-09"]["primary_gate_id"], "tauri_desktop_package")
         self.assertEqual(work_order_rows["LTG-10"]["primary_gate_id"], "streamlit_legacy_admin_debug")
         self.assertEqual(work_order_rows["LTG-11"]["primary_gate_id"], "ci_smoke_security_release_gate")
+        self.assertEqual(work_order_rows_by_goal_id["LTG-12"]["work_order_id"], "strict_closeout_work_order_ltg-12")
+        self.assertIn("no-broker", work_order_rows_by_goal_id["LTG-12"]["next_evidence_action"])
+        self.assertFalse(work_order_rows_by_goal_id["LTG-12"]["strict_closeout_claim_allowed"])
+        self.assertTrue(work_order_rows_by_goal_id["LTG-12"]["does_not_execute_trades"])
         self.assertIn(
             "clean worktree before fresh local gate receipt",
             work_order_rows["LTG-11"]["production_evidence_required_before_closeout"],
