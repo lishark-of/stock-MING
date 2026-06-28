@@ -8375,7 +8375,18 @@ def _latest_trade_isolation_release_guard_handoff_summary() -> dict[str, Any]:
         and contract_map.get("does_not_modify_holdings") is True
         and contract_map.get("contains_secret") is False
     )
-    direct_stage_keys = ["research_release_trade_isolation_receipt"] if release_receipt_ready else []
+    current_slice_recheck_ready = bool(
+        release_receipt_ready
+        and contract_map.get("contract_ready") is True
+        and contract_map.get("task_catalog_boundary_visible") is True
+        and contract_map.get("frontend_boundary_visible") is True
+        and int(contract_map.get("blocking_criterion_count") or 0) == 0
+    )
+    direct_stage_keys: list[str] = []
+    if release_receipt_ready:
+        direct_stage_keys.append("research_release_trade_isolation_receipt")
+    if current_slice_recheck_ready:
+        direct_stage_keys.append("current_slice_no_broker_no_order_no_action_recheck")
     status = (
         "trade_isolation_release_guard_ready_separate_project_required"
         if release_receipt_ready
@@ -8411,7 +8422,8 @@ def _latest_trade_isolation_release_guard_handoff_summary() -> dict[str, Any]:
         "continued_no_broker_proof_required": True,
         "continued_no_order_proof_required": True,
         "continued_no_action_mutation_proof_required": True,
-        "current_slice_no_broker_no_order_no_action_proof_ready": release_receipt_ready,
+        "current_slice_no_broker_no_order_no_action_proof_ready": current_slice_recheck_ready,
+        "current_slice_trade_isolation_recheck_ready": current_slice_recheck_ready,
         "ready_for_real_trading_integration": False,
         "real_trading_connected": False,
         "broker_adapter_connected": False,
@@ -8447,7 +8459,7 @@ def _latest_trade_isolation_release_guard_handoff_summary() -> dict[str, Any]:
         "can_close_goal": False,
         "production_complete": False,
         "evidence_boundary": (
-            "ltg12_trade_isolation_handoff_replays_local_contract_not_real_trading_integration"
+            "ltg12_trade_isolation_handoff_replays_local_contract_and_current_slice_recheck_not_real_trading_integration"
         ),
     }
 
@@ -13409,10 +13421,19 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             and isolation_contract.get("does_not_modify_holdings") is True
             and isolation_contract.get("contains_secret") is False
         )
-        direct_evidence_count = 1 if release_receipt_ready else 0
-        direct_evidence_stage_keys = (
-            ["research_release_trade_isolation_receipt"] if release_receipt_ready else []
+        current_slice_recheck_ready = (
+            release_receipt_ready
+            and isolation_contract.get("contract_ready") is True
+            and isolation_contract.get("task_catalog_boundary_visible") is True
+            and isolation_contract.get("frontend_boundary_visible") is True
+            and int(isolation_contract.get("blocking_criterion_count") or 0) == 0
         )
+        direct_evidence_stage_keys = []
+        if release_receipt_ready:
+            direct_evidence_stage_keys.append("research_release_trade_isolation_receipt")
+        if current_slice_recheck_ready:
+            direct_evidence_stage_keys.append("current_slice_no_broker_no_order_no_action_recheck")
+        direct_evidence_count = len(direct_evidence_stage_keys)
         observed_pending_count = max(pending_count - direct_evidence_count, 0)
         release_gate_evidence = _latest_release_gate_direct_evidence_summary()
         latest_remote_run_verified_green = (
@@ -13493,7 +13514,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "continued_no_broker_proof_required": True,
                 "continued_no_order_proof_required": True,
                 "continued_no_action_mutation_proof_required": True,
-                "current_slice_no_broker_no_order_no_action_proof_ready": release_receipt_ready,
+                "current_slice_no_broker_no_order_no_action_proof_ready": current_slice_recheck_ready,
+                "current_slice_trade_isolation_recheck_ready": current_slice_recheck_ready,
                 "one_time_closeout_allowed": False,
                 "ready_for_real_trading_integration": False,
                 "real_trading_connected": False,
@@ -13519,7 +13541,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_holdings": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_l3_trade_isolation_release_receipt_not_real_trading_approval"
+                "evidence_boundary": "observed_l3_trade_isolation_release_receipt_and_current_slice_recheck_not_real_trading_approval"
                 if release_receipt_ready
                 else "observed_local_static_trade_isolation_not_real_trading_integration",
             }
@@ -13544,6 +13566,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "continued_no_order_proof_required": True,
                 "continued_no_action_mutation_proof_required": True,
                 "current_slice_no_broker_no_order_no_action_proof_ready": False,
+                "current_slice_trade_isolation_recheck_ready": False,
                 "one_time_closeout_allowed": False,
                 "ready_for_real_trading_integration": False,
                 "real_trading_connected": False,
@@ -13898,6 +13921,7 @@ def _merge_ltg_stage_scope_observations(
                 "continued_no_order_proof_required",
                 "continued_no_action_mutation_proof_required",
                 "current_slice_no_broker_no_order_no_action_proof_ready",
+                "current_slice_trade_isolation_recheck_ready",
                 "one_time_closeout_allowed",
             ):
                 if evidence_key in observed:

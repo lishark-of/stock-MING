@@ -1737,9 +1737,17 @@ def assert_ltg12_trade_isolation_stage_scope(
     test_case.assertEqual(row["row_count"], 8)
     test_case.assertEqual(row["pending_stage_count"], max(8 - direct_count, 0))
     test_case.assertEqual(row["local_evidence_stage_count"], 8)
+    expected_direct_keys = (
+        [
+            "research_release_trade_isolation_receipt",
+            "current_slice_no_broker_no_order_no_action_recheck",
+        ]
+        if direct_count
+        else []
+    )
     test_case.assertEqual(
         row["direct_evidence_stage_keys"],
-        ["research_release_trade_isolation_receipt"] if direct_count else [],
+        expected_direct_keys,
     )
     test_case.assertEqual(row["local_complete"], direct_count >= 8)
     if direct_count >= 8:
@@ -1791,6 +1799,8 @@ def assert_ltg12_trade_isolation_stage_scope(
         row["current_slice_no_broker_no_order_no_action_proof_ready"],
         bool(direct_count),
     )
+    if direct_count:
+        test_case.assertTrue(row["current_slice_trade_isolation_recheck_ready"])
     test_case.assertFalse(row["one_time_closeout_allowed"])
     test_case.assertFalse(row["ready_for_real_trading_integration"])
     test_case.assertFalse(row["real_trading_connected"])
@@ -1828,9 +1838,17 @@ def assert_ltg12_migration_goal_stage_scope(
         test_case.assertEqual(direct_count, expected_direct_count)
     test_case.assertIn(row["observed_stage_scope_manifest_status"], TRADE_ISOLATION_LTG12_OBSERVED_STATUSES)
     test_case.assertEqual(row["observed_stage_scope_pending_count"], max(8 - direct_count, 0))
+    expected_direct_keys = (
+        [
+            "research_release_trade_isolation_receipt",
+            "current_slice_no_broker_no_order_no_action_recheck",
+        ]
+        if direct_count
+        else []
+    )
     test_case.assertEqual(
         row["observed_stage_scope_direct_evidence_keys"],
-        ["research_release_trade_isolation_receipt"] if direct_count else [],
+        expected_direct_keys,
     )
     test_case.assertEqual(row["observed_local_complete"], direct_count >= 8)
     if direct_count >= 8:
@@ -1868,6 +1886,8 @@ def assert_ltg12_migration_goal_stage_scope(
         row["observed_current_slice_no_broker_no_order_no_action_proof_ready"],
         bool(direct_count),
     )
+    if direct_count:
+        test_case.assertTrue(row["observed_current_slice_trade_isolation_recheck_ready"])
     test_case.assertFalse(row["observed_one_time_closeout_allowed"])
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
@@ -3821,7 +3841,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         assert_ltg12_trade_isolation_stage_scope(
             self,
             observed_stage_rows["LTG-12"],
-            expected_direct_count=1,
+            expected_direct_count=2,
         )
         self.assertEqual(observed_stage_rows["LTG-12"]["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
         self.assertEqual(
@@ -3829,14 +3849,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "observed_trade_isolation_release_direct_evidence_research_only",
         )
         self.assertEqual(observed_stage_rows["LTG-12"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-12"]["pending_stage_count"], 7)
+        self.assertEqual(observed_stage_rows["LTG-12"]["pending_stage_count"], 6)
         self.assertEqual(observed_stage_rows["LTG-12"]["local_evidence_stage_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-12"]["direct_evidence_stage_count"], 1)
+        self.assertEqual(observed_stage_rows["LTG-12"]["direct_evidence_stage_count"], 2)
         self.assertEqual(
             observed_stage_rows["LTG-12"]["direct_evidence_stage_keys"],
-            ["research_release_trade_isolation_receipt"],
+            [
+                "research_release_trade_isolation_receipt",
+                "current_slice_no_broker_no_order_no_action_recheck",
+            ],
         )
-        self.assertEqual(observed_stage_rows["LTG-12"]["production_blocker_count"], 7)
+        self.assertEqual(observed_stage_rows["LTG-12"]["production_blocker_count"], 6)
         self.assertTrue(observed_stage_rows["LTG-12"]["trade_isolation_release_receipt_ready"])
         self.assertEqual(
             observed_stage_rows["LTG-12"]["trade_isolation_release_receipt_status"],
@@ -4110,17 +4133,20 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         assert_ltg12_migration_goal_stage_scope(
             self,
             migration_goals["LTG-12"],
-            expected_direct_count=1,
+            expected_direct_count=2,
         )
         self.assertEqual(
             migration_goals["LTG-12"]["observed_stage_scope_manifest_status"],
             "observed_trade_isolation_release_direct_evidence_research_only",
         )
-        self.assertEqual(migration_goals["LTG-12"]["observed_stage_scope_pending_count"], 7)
-        self.assertEqual(migration_goals["LTG-12"]["observed_stage_scope_direct_evidence_count"], 1)
+        self.assertEqual(migration_goals["LTG-12"]["observed_stage_scope_pending_count"], 6)
+        self.assertEqual(migration_goals["LTG-12"]["observed_stage_scope_direct_evidence_count"], 2)
         self.assertEqual(
             migration_goals["LTG-12"]["observed_stage_scope_direct_evidence_keys"],
-            ["research_release_trade_isolation_receipt"],
+            [
+                "research_release_trade_isolation_receipt",
+                "current_slice_no_broker_no_order_no_action_recheck",
+            ],
         )
         self.assertFalse(migration_goals["LTG-12"]["observed_stage_scope_can_close_goal"])
         self.assertIn(
@@ -38818,10 +38844,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "trade_isolation_release_guard_ready_separate_project_required",
         )
         self.assertTrue(p10_trade_handoff["trade_isolation_release_receipt_ready"])
-        self.assertEqual(p10_trade_handoff["direct_evidence_stage_count"], 1)
+        self.assertTrue(p10_trade_handoff["current_slice_trade_isolation_recheck_ready"])
+        self.assertEqual(p10_trade_handoff["direct_evidence_stage_count"], 2)
         self.assertEqual(
             p10_trade_handoff["direct_evidence_stage_keys"],
-            ["research_release_trade_isolation_receipt"],
+            [
+                "research_release_trade_isolation_receipt",
+                "current_slice_no_broker_no_order_no_action_recheck",
+            ],
         )
         self.assertTrue(p10_trade_handoff["future_real_trading_requires_separate_project"])
         self.assertFalse(p10_trade_handoff["ready_for_real_trading_integration"])
@@ -40124,7 +40154,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         assert_ltg12_trade_isolation_stage_scope(
             self,
             observed_stage_rows["LTG-12"],
-            expected_direct_count=1,
+            expected_direct_count=2,
         )
         self.assertEqual(observed_stage_rows["LTG-12"]["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
         self.assertEqual(
@@ -40132,14 +40162,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "observed_trade_isolation_release_direct_evidence_research_only",
         )
         self.assertEqual(observed_stage_rows["LTG-12"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-12"]["pending_stage_count"], 7)
+        self.assertEqual(observed_stage_rows["LTG-12"]["pending_stage_count"], 6)
         self.assertEqual(observed_stage_rows["LTG-12"]["local_evidence_stage_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-12"]["direct_evidence_stage_count"], 1)
+        self.assertEqual(observed_stage_rows["LTG-12"]["direct_evidence_stage_count"], 2)
         self.assertEqual(
             observed_stage_rows["LTG-12"]["direct_evidence_stage_keys"],
-            ["research_release_trade_isolation_receipt"],
+            [
+                "research_release_trade_isolation_receipt",
+                "current_slice_no_broker_no_order_no_action_recheck",
+            ],
         )
-        self.assertEqual(observed_stage_rows["LTG-12"]["production_blocker_count"], 7)
+        self.assertEqual(observed_stage_rows["LTG-12"]["production_blocker_count"], 6)
         self.assertTrue(observed_stage_rows["LTG-12"]["trade_isolation_release_receipt_ready"])
         self.assertEqual(
             observed_stage_rows["LTG-12"]["trade_isolation_release_receipt_status"],
@@ -40367,17 +40400,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         assert_ltg12_migration_goal_stage_scope(
             self,
             migration_goals["LTG-12"],
-            expected_direct_count=1,
+            expected_direct_count=2,
         )
         self.assertEqual(
             migration_goals["LTG-12"]["observed_stage_scope_manifest_status"],
             "observed_trade_isolation_release_direct_evidence_research_only",
         )
-        self.assertEqual(migration_goals["LTG-12"]["observed_stage_scope_pending_count"], 7)
-        self.assertEqual(migration_goals["LTG-12"]["observed_stage_scope_direct_evidence_count"], 1)
+        self.assertEqual(migration_goals["LTG-12"]["observed_stage_scope_pending_count"], 6)
+        self.assertEqual(migration_goals["LTG-12"]["observed_stage_scope_direct_evidence_count"], 2)
         self.assertEqual(
             migration_goals["LTG-12"]["observed_stage_scope_direct_evidence_keys"],
-            ["research_release_trade_isolation_receipt"],
+            [
+                "research_release_trade_isolation_receipt",
+                "current_slice_no_broker_no_order_no_action_recheck",
+            ],
         )
         self.assertFalse(migration_goals["LTG-12"]["observed_stage_scope_can_close_goal"])
         self.assertIn(
