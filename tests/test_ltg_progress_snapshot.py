@@ -417,6 +417,171 @@ class LtgProgressSnapshotTests(unittest.TestCase):
         self.assertIn("tushare_called=False", text)
         self.assertIn("next=POST /api/data-health/trade-cal-provider-acceptance-dry-run", text)
 
+    def test_tushare_pipeline_is_visible_without_provider_execution_claim(self):
+        module = _load_snapshot_module()
+        fake_status = {
+            "packet_key": "fake_packet",
+            "mode": "test",
+            "loaded_at": "2026-06-28T12:35:19Z",
+            "long_term_goal_summary": {
+                "strict_closeout": "0/14",
+                "strict_closeout_done_count": 0,
+                "strict_closeout_total_count": 14,
+                "strict_closeout_remaining_count": 14,
+            },
+            "api_policy": {
+                "cache_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+            "long_term_goal_rows": [],
+            "ltg_acceptance_runway_rows": [],
+            "ltg_next_acceptance_action_rows": [],
+            "ltg_strict_closeout_evidence_spine_rows": [],
+            "ltg_strict_closeout_evidence_spine_summary": {
+                "schema_version": "ltg_strict_closeout_evidence_spine_summary.v1",
+                "spine_visible_count": 14,
+                "spine_total_count": 14,
+                "strict_closeout_work_order_visible_count": 14,
+                "strict_closeout_work_order_total_count": 14,
+                "all_rows_have_strict_closeout_work_order": True,
+                "all_rows_have_next_evidence_action": True,
+                "all_rows_keep_one_ltg_scope": True,
+                "release_gate_current_head_remote_review_state": "current_head_unpushed_for_remote_ci",
+                "release_gate_current_blocker_count": 5,
+                "release_gate_current_blockers": ["local_commits_not_pushed_for_remote_ci"],
+                "strict_closeout_claim_allowed": False,
+                "cache_only_readback": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+            "release_gate_remote_review_split_summary": {},
+            "ltg11_release_gate_remote_review_handoff_summary": {},
+            "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary": {},
+            "ltg12_trade_isolation_release_guard_handoff_summary": {},
+            "ltg_strict_closeout_work_order_summary": {
+                "release_gate_current_head_remote_review_state": "current_head_unpushed_for_remote_ci",
+                "release_gate_current_blockers": ["local_commits_not_pushed_for_remote_ci"],
+                "strict_closeout_claim_allowed": False,
+            },
+            "ltg02_tushare_target_sample_evidence_handoff_summary": {
+                "schema_version": "ltg02_tushare_target_sample_evidence_handoff_summary.v1",
+                "status": "target_sample_execution_request_needed",
+                "provider_direct_evidence_layer": "L3_direct_provider_call_ledger",
+                "provider_call_ledger_count": 81,
+                "provider_call_ledger_visible": True,
+                "durable_recipe_ready": True,
+                "latest_execution_request_found": False,
+                "latest_execution_request_status": (
+                    "no_tushare_provider_target_sample_execution_request_task_found"
+                ),
+                "latest_execution_request_ready_for_manual_provider_task_submission": False,
+                "target_sample_acceptance_ready_for_review": False,
+                "target_sample_acceptance_is_full_interface_acceptance": False,
+                "provider_backed_target_sample_acceptance_done": False,
+                "full_interface_selection_done": False,
+                "full_interface_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "requested_target_count": 0,
+                "requested_targets": [],
+                "requires_full_interface_selection": True,
+                "requires_separate_user_approved_provider_task": True,
+                "requires_storage_or_no_storage_promotion_review": True,
+                "requires_release_review_after_remote_green": True,
+                "cache_get_calls_provider": False,
+                "creates_provider_task_from_get": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "does_not_execute_trades": True,
+                "next_local_step": "POST /api/tasks/tushare-provider-target-sample-execution-request",
+            },
+            "ltg02_tushare_full_interface_pipeline_handoff_summary": {
+                "schema_version": "ltg02_tushare_full_interface_pipeline_handoff_summary.v1",
+                "status": "full_interface_pipeline_execution_recipe_ready_request_ticket_needed",
+                "prior_provider_evidence_observed": True,
+                "prior_provider_evidence_is_not_new_call": True,
+                "provider_call_ledger_count": 81,
+                "provider_call_ledger_evidence_done": True,
+                "durable_recipe_ready": True,
+                "recipe_visible": True,
+                "recipe_ready_for_user_confirmation": True,
+                "execution_recipe_scope_hash_short": "1e5eb6e6d247d7a3",
+                "latest_execution_request_ready_for_manual_provider_task_submission": False,
+                "target_sample_acceptance_ready_for_review": False,
+                "target_sample_acceptance_is_full_interface_acceptance": False,
+                "full_interface_selection_done": False,
+                "full_interface_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "requested_target_count": 1,
+                "requested_targets": ["margin_financing"],
+                "requires_full_interface_selection": True,
+                "requires_separate_user_approved_provider_task": True,
+                "requires_storage_or_no_storage_promotion_review": True,
+                "requires_release_review_after_remote_green": True,
+                "cache_get_calls_provider": False,
+                "cache_get_calls_tushare": False,
+                "creates_provider_task_from_get": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "does_not_execute_trades": True,
+                "next_local_step": "POST /api/tasks/tushare-provider-target-sample-execution-request",
+            },
+        }
+
+        with patch.object(module.migration_status_service, "build_migration_status", return_value=fake_status):
+            snapshot = module.build_snapshot()
+
+        pipeline = snapshot["tushare_pipeline"]
+        self.assertEqual(pipeline["target_sample_status"], "target_sample_execution_request_needed")
+        self.assertEqual(
+            pipeline["full_interface_status"],
+            "full_interface_pipeline_execution_recipe_ready_request_ticket_needed",
+        )
+        self.assertEqual(pipeline["provider_call_ledger_count"], 81)
+        self.assertTrue(pipeline["prior_provider_evidence_observed"])
+        self.assertTrue(pipeline["prior_provider_evidence_is_not_new_call"])
+        self.assertTrue(pipeline["recipe_ready_for_user_confirmation"])
+        self.assertFalse(pipeline["latest_execution_request_found"])
+        self.assertFalse(pipeline["target_sample_acceptance_ready_for_review"])
+        self.assertFalse(pipeline["target_sample_acceptance_is_full_interface_acceptance"])
+        self.assertFalse(pipeline["full_interface_selection_done"])
+        self.assertFalse(pipeline["full_interface_acceptance_done"])
+        self.assertFalse(pipeline["production_tushare_pipeline_complete"])
+        self.assertFalse(pipeline["cache_get_calls_provider"])
+        self.assertFalse(pipeline["creates_provider_task_from_get"])
+        self.assertFalse(pipeline["tushare_called"])
+        self.assertEqual(
+            pipeline["next_local_step"],
+            "POST /api/tasks/tushare-provider-target-sample-execution-request",
+        )
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            module._print_text(snapshot)
+        text = buffer.getvalue()
+
+        self.assertIn("Tushare pipeline:", text)
+        self.assertIn("target_status=target_sample_execution_request_needed", text)
+        self.assertIn("recipe_ready=True", text)
+        self.assertIn("provider_ledger=81", text)
+        self.assertIn("prior_provider=True", text)
+        self.assertIn("target_request=False", text)
+        self.assertIn("target_review=False", text)
+        self.assertIn("full_selection=False", text)
+        self.assertIn("full_acceptance=False", text)
+        self.assertIn("production_complete=False", text)
+        self.assertIn("cache_provider=False", text)
+        self.assertIn("tushare_called=False", text)
+        self.assertIn("next=POST /api/tasks/tushare-provider-target-sample-execution-request", text)
+
 
 if __name__ == "__main__":
     unittest.main()

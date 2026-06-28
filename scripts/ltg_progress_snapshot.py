@@ -282,6 +282,8 @@ def build_snapshot() -> dict[str, Any]:
     summary = dict(status.get("long_term_goal_summary") or {})
     safety = dict(status.get("api_policy") or {})
     trade_cal_handoff = dict(status.get("ltg01_trade_cal_provider_acceptance_evidence_handoff_summary") or {})
+    tushare_target_handoff = dict(status.get("ltg02_tushare_target_sample_evidence_handoff_summary") or {})
+    tushare_pipeline_handoff = dict(status.get("ltg02_tushare_full_interface_pipeline_handoff_summary") or {})
     release_split = dict(status.get("release_gate_remote_review_split_summary") or {})
     release_handoff = dict(status.get("ltg11_release_gate_remote_review_handoff_summary") or {})
     trade_handoff = dict(status.get("ltg12_trade_isolation_release_guard_handoff_summary") or {})
@@ -570,6 +572,142 @@ def build_snapshot() -> dict[str, Any]:
                 trade_cal_handoff.get("local_evidence_missing_item_count")
             ),
         },
+        "tushare_pipeline": {
+            "target_sample_schema_version": tushare_target_handoff.get("schema_version") or "",
+            "full_interface_schema_version": tushare_pipeline_handoff.get("schema_version") or "",
+            "target_sample_status": tushare_target_handoff.get("status") or "",
+            "full_interface_status": tushare_pipeline_handoff.get("status") or "",
+            "provider_direct_evidence_layer": tushare_target_handoff.get(
+                "provider_direct_evidence_layer"
+            )
+            or "",
+            "provider_call_ledger_count": _as_int(
+                tushare_target_handoff.get("provider_call_ledger_count")
+                if tushare_target_handoff.get("provider_call_ledger_count") is not None
+                else tushare_pipeline_handoff.get("provider_call_ledger_count")
+            ),
+            "provider_call_ledger_visible": (
+                tushare_target_handoff.get("provider_call_ledger_visible") is True
+                or tushare_pipeline_handoff.get("provider_call_ledger_evidence_done") is True
+            ),
+            "prior_provider_evidence_observed": (
+                tushare_pipeline_handoff.get("prior_provider_evidence_observed") is True
+            ),
+            "prior_provider_evidence_is_not_new_call": (
+                tushare_pipeline_handoff.get("prior_provider_evidence_is_not_new_call")
+                is True
+            ),
+            "durable_recipe_ready": tushare_target_handoff.get("durable_recipe_ready") is True
+            or tushare_pipeline_handoff.get("durable_recipe_ready") is True,
+            "recipe_visible": tushare_pipeline_handoff.get("recipe_visible") is True,
+            "recipe_ready_for_user_confirmation": (
+                tushare_pipeline_handoff.get("recipe_ready_for_user_confirmation") is True
+            ),
+            "execution_recipe_scope_hash_short": tushare_pipeline_handoff.get(
+                "execution_recipe_scope_hash_short"
+            )
+            or "",
+            "latest_execution_request_found": (
+                tushare_target_handoff.get("latest_execution_request_found") is True
+            ),
+            "latest_execution_request_status": tushare_target_handoff.get(
+                "latest_execution_request_status"
+            )
+            or "",
+            "latest_execution_request_ready_for_manual_provider_task_submission": (
+                tushare_target_handoff.get(
+                    "latest_execution_request_ready_for_manual_provider_task_submission"
+                )
+                is True
+                or tushare_pipeline_handoff.get(
+                    "latest_execution_request_ready_for_manual_provider_task_submission"
+                )
+                is True
+            ),
+            "target_sample_acceptance_ready_for_review": (
+                tushare_target_handoff.get("target_sample_acceptance_ready_for_review")
+                is True
+                or tushare_pipeline_handoff.get("target_sample_acceptance_ready_for_review")
+                is True
+            ),
+            "target_sample_acceptance_is_full_interface_acceptance": (
+                tushare_target_handoff.get("target_sample_acceptance_is_full_interface_acceptance")
+                is True
+                or tushare_pipeline_handoff.get(
+                    "target_sample_acceptance_is_full_interface_acceptance"
+                )
+                is True
+            ),
+            "provider_backed_target_sample_acceptance_done": (
+                tushare_target_handoff.get("provider_backed_target_sample_acceptance_done")
+                is True
+            ),
+            "full_interface_selection_done": (
+                tushare_target_handoff.get("full_interface_selection_done") is True
+                or tushare_pipeline_handoff.get("full_interface_selection_done") is True
+            ),
+            "full_interface_acceptance_done": (
+                tushare_target_handoff.get("full_interface_acceptance_done") is True
+                or tushare_pipeline_handoff.get("full_interface_acceptance_done") is True
+            ),
+            "production_tushare_pipeline_complete": (
+                tushare_target_handoff.get("production_tushare_pipeline_complete") is True
+                or tushare_pipeline_handoff.get("production_tushare_pipeline_complete") is True
+            ),
+            "requested_target_count": _as_int(
+                tushare_pipeline_handoff.get("requested_target_count")
+                if tushare_pipeline_handoff.get("requested_target_count") is not None
+                else tushare_target_handoff.get("requested_target_count")
+            ),
+            "requested_targets": _list(tushare_pipeline_handoff.get("requested_targets"))
+            or _list(tushare_target_handoff.get("requested_targets")),
+            "requires_full_interface_selection": (
+                tushare_target_handoff.get("requires_full_interface_selection") is True
+                or tushare_pipeline_handoff.get("requires_full_interface_selection") is True
+            ),
+            "requires_separate_user_approved_provider_task": (
+                tushare_target_handoff.get("requires_separate_user_approved_provider_task")
+                is True
+                or tushare_pipeline_handoff.get("requires_separate_user_approved_provider_task")
+                is True
+            ),
+            "requires_storage_or_no_storage_promotion_review": (
+                tushare_target_handoff.get("requires_storage_or_no_storage_promotion_review")
+                is True
+                or tushare_pipeline_handoff.get(
+                    "requires_storage_or_no_storage_promotion_review"
+                )
+                is True
+            ),
+            "requires_release_review_after_remote_green": (
+                tushare_target_handoff.get("requires_release_review_after_remote_green")
+                is True
+                or tushare_pipeline_handoff.get("requires_release_review_after_remote_green")
+                is True
+            ),
+            "cache_get_calls_provider": (
+                tushare_target_handoff.get("cache_get_calls_provider") is True
+                or tushare_pipeline_handoff.get("cache_get_calls_provider") is True
+                or tushare_pipeline_handoff.get("cache_get_calls_tushare") is True
+            ),
+            "creates_provider_task_from_get": (
+                tushare_target_handoff.get("creates_provider_task_from_get") is True
+                or tushare_pipeline_handoff.get("creates_provider_task_from_get") is True
+            ),
+            "external_calls_triggered": (
+                tushare_target_handoff.get("external_calls_triggered") is True
+                or tushare_pipeline_handoff.get("external_calls_triggered") is True
+            ),
+            "tushare_called": tushare_target_handoff.get("tushare_called") is True
+            or tushare_pipeline_handoff.get("tushare_called") is True,
+            "does_not_execute_trades": (
+                tushare_target_handoff.get("does_not_execute_trades") is True
+                or tushare_pipeline_handoff.get("does_not_execute_trades") is True
+            ),
+            "next_local_step": tushare_target_handoff.get("next_local_step")
+            or tushare_pipeline_handoff.get("next_local_step")
+            or "",
+        },
         "trade_isolation_release_guard": {
             "schema_version": trade_handoff.get("schema_version") or "",
             "trade_isolation_release_receipt_status": trade_handoff.get(
@@ -738,6 +876,22 @@ def _print_text(snapshot: dict[str, Any]) -> None:
         f" cache_provider={trade_cal['cache_get_calls_provider']}"
         f" tushare_called={trade_cal['tushare_called']}"
         f" next={trade_cal['next_local_step']}"
+    )
+    tushare_pipeline = snapshot["tushare_pipeline"]
+    print(
+        "Tushare pipeline:"
+        f" target_status={tushare_pipeline['target_sample_status']}"
+        f" recipe_ready={tushare_pipeline['recipe_ready_for_user_confirmation']}"
+        f" provider_ledger={tushare_pipeline['provider_call_ledger_count']}"
+        f" prior_provider={tushare_pipeline['prior_provider_evidence_observed']}"
+        f" target_request={tushare_pipeline['latest_execution_request_found']}"
+        f" target_review={tushare_pipeline['target_sample_acceptance_ready_for_review']}"
+        f" full_selection={tushare_pipeline['full_interface_selection_done']}"
+        f" full_acceptance={tushare_pipeline['full_interface_acceptance_done']}"
+        f" production_complete={tushare_pipeline['production_tushare_pipeline_complete']}"
+        f" cache_provider={tushare_pipeline['cache_get_calls_provider']}"
+        f" tushare_called={tushare_pipeline['tushare_called']}"
+        f" next={tushare_pipeline['next_local_step']}"
     )
     trade_guard = snapshot["trade_isolation_release_guard"]
     print(
