@@ -2076,6 +2076,93 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, audit_service, "MOTION_QA_ARTIFACT_ROOT", original_root)
         return audit_service.MOTION_QA_ARTIFACT_ROOT
 
+    def test_ltg01_producer_cache_refresh_handoff_surfaces_sqlite_replay_direct_evidence(self):
+        packet_keys = sorted(
+            str(spec["packet_key"]) for spec in data_health_service.PRODUCER_CACHE_REFRESH_PACKET_SPECS
+        )
+        original_reader = data_health_service.read_data_health_timeline_cache
+
+        def fake_data_health_packet():
+            return {
+                "counts": {
+                    "latest_producer_cache_refresh_execution_request_row_count": 0,
+                    "latest_producer_cache_refresh_execution_request_blocking_row_count": 0,
+                    "producer_cache_refresh_direct_evidence_written_packet_count": len(packet_keys),
+                },
+                "current_evidence_producer_cache_refresh_readiness": {
+                    "status": "producer_cache_refresh_readiness_ready_manual_refresh_pending",
+                    "local_cache_refresh_ready": True,
+                    "current_cache_refresh_required_count": len(packet_keys),
+                    "producer_count": len(packet_keys),
+                    "current_cache_ready_count": 0,
+                    "blocked_producer_count": 0,
+                    "readiness_scope_hash_short": "abc123",
+                    "readiness_scope_hash": "abc123" * 10,
+                },
+                "latest_producer_cache_refresh_execution_request": {
+                    "status": "no_producer_cache_refresh_execution_request_task_found",
+                    "execution_request_status": "no_producer_cache_refresh_execution_request_task_found",
+                    "latest_task_found": False,
+                    "ready_for_manual_local_refresh_task_submission": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "does_not_execute_trades": True,
+                },
+                "latest_producer_cache_refresh": {
+                    "schema_version": "data_health_latest_producer_cache_refresh.v1",
+                    "status": "no_producer_cache_refresh_task_found",
+                    "refresh_status": "no_producer_cache_refresh_task_found",
+                    "latest_task_found": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "does_not_execute_trades": True,
+                },
+                "producer_cache_refresh_direct_evidence": {
+                    "schema_version": "data_health_producer_cache_refresh_direct_evidence.v1",
+                    "status": "producer_cache_refresh_direct_evidence_local_sqlite_written",
+                    "direct_evidence_done": True,
+                    "evidence_source": "sqlite_packet_replay",
+                    "local_sqlite_packet_write_count": len(packet_keys),
+                    "expected_packet_keys": packet_keys,
+                    "written_packet_keys": packet_keys,
+                    "missing_packet_keys": [],
+                    "provider_backed_long_window_acceptance_done": False,
+                    "production_freshness_gate_complete": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                },
+            }
+
+        data_health_service.read_data_health_timeline_cache = fake_data_health_packet
+        self.addCleanup(setattr, data_health_service, "read_data_health_timeline_cache", original_reader)
+
+        handoff = migration_status_service._latest_current_evidence_producer_cache_refresh_handoff_summary()
+
+        self.assertEqual(
+            handoff["status"],
+            "producer_cache_refresh_local_direct_evidence_visible_provider_acceptance_pending",
+        )
+        self.assertEqual(handoff["next_local_step"], "provider-backed trade_cal acceptance evidence")
+        self.assertFalse(handoff["latest_execution_request_found"])
+        self.assertFalse(handoff["latest_local_refresh_found"])
+        self.assertTrue(handoff["local_direct_evidence_done"])
+        self.assertEqual(handoff["local_direct_evidence_source"], "sqlite_packet_replay")
+        self.assertEqual(handoff["local_direct_evidence_written_packet_count"], len(packet_keys))
+        self.assertEqual(handoff["local_direct_evidence_written_packet_keys"], packet_keys)
+        self.assertTrue(handoff["local_direct_evidence_is_not_provider_acceptance"])
+        self.assertTrue(handoff["provider_backed_acceptance_required_before_closeout"])
+        self.assertFalse(handoff["requires_execution_request_before_refresh"])
+        self.assertFalse(handoff["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(handoff["production_freshness_gate_complete"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["tushare_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertFalse(handoff["can_close_goal"])
+
     def _with_release_gate_receipt_path(self):
         original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         original_remote_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH

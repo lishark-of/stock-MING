@@ -9619,25 +9619,40 @@ def _latest_current_evidence_producer_cache_refresh_handoff_summary() -> dict[st
     counts = _dict_or_empty(packet_map.get("counts"))
     readiness = _dict_or_empty(packet_map.get("current_evidence_producer_cache_refresh_readiness"))
     latest_request = _dict_or_empty(packet_map.get("latest_producer_cache_refresh_execution_request"))
+    latest_refresh = _dict_or_empty(packet_map.get("latest_producer_cache_refresh"))
+    direct_evidence = _dict_or_empty(packet_map.get("producer_cache_refresh_direct_evidence"))
     readiness_ready = readiness.get("local_cache_refresh_ready") is True
     current_refresh_required = int(readiness.get("current_cache_refresh_required_count") or 0)
     latest_request_found = latest_request.get("latest_task_found") is True
     ready_for_refresh_submission = (
         latest_request.get("ready_for_manual_local_refresh_task_submission") is True
     )
+    local_direct_evidence_done = direct_evidence.get("direct_evidence_done") is True
+    local_direct_evidence_packet_keys = sorted(
+        str(key) for key in direct_evidence.get("written_packet_keys") or [] if str(key)
+    )
+    local_direct_evidence_packet_count = int(
+        direct_evidence.get("local_sqlite_packet_write_count")
+        or counts.get("producer_cache_refresh_direct_evidence_written_packet_count")
+        or 0
+    )
     execution_request_route = str(
         latest_request.get("route") or "POST /api/data-health/producer-cache-refresh-execution-request"
     )
     target_refresh_route = "POST /api/data-health/producer-cache-refresh"
     next_route = (
-        target_refresh_route
+        "provider-backed trade_cal acceptance evidence"
+        if local_direct_evidence_done
+        else target_refresh_route
         if latest_request_found and ready_for_refresh_submission
         else execution_request_route
     )
     return {
         "schema_version": "ltg01_current_evidence_producer_cache_refresh_handoff_summary.v1",
         "status": (
-            "producer_cache_refresh_execution_request_ready_for_manual_refresh"
+            "producer_cache_refresh_local_direct_evidence_visible_provider_acceptance_pending"
+            if local_direct_evidence_done
+            else "producer_cache_refresh_execution_request_ready_for_manual_refresh"
             if latest_request_found and ready_for_refresh_submission
             else "producer_cache_refresh_execution_request_needed"
             if readiness_ready and current_refresh_required > 0
@@ -9668,9 +9683,22 @@ def _latest_current_evidence_producer_cache_refresh_handoff_summary() -> dict[st
         "latest_execution_request_blocking_row_count": int(
             counts.get("latest_producer_cache_refresh_execution_request_blocking_row_count") or 0
         ),
+        "latest_local_refresh_found": latest_refresh.get("latest_task_found") is True,
+        "latest_local_refresh_status": str(
+            latest_refresh.get("refresh_status") or latest_refresh.get("status") or "missing"
+        ),
+        "local_direct_evidence_done": local_direct_evidence_done,
+        "local_direct_evidence_status": str(direct_evidence.get("status") or "missing"),
+        "local_direct_evidence_source": str(direct_evidence.get("evidence_source") or ""),
+        "local_direct_evidence_written_packet_count": local_direct_evidence_packet_count,
+        "local_direct_evidence_written_packet_keys": local_direct_evidence_packet_keys,
+        "local_direct_evidence_is_not_provider_acceptance": True,
+        "provider_backed_acceptance_required_before_closeout": True,
         "ready_for_manual_local_refresh_task_submission": ready_for_refresh_submission,
         "requires_user_confirmation": True,
-        "requires_execution_request_before_refresh": not latest_request_found,
+        "requires_execution_request_before_refresh": (
+            not latest_request_found and not local_direct_evidence_done
+        ),
         "cache_get_creates_task": False,
         "cache_get_writes_snapshot_cache": False,
         "cache_get_external_calls": False,
