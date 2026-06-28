@@ -15805,6 +15805,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("strict_closeout", script)
         self.assertIn("ready_local_button_count", script)
         self.assertIn("durable_handoff_ready_count", script)
+        self.assertIn("evidence_spine", script)
+        self.assertIn("strict_closeout_spine_next_evidence_action", script)
+        self.assertIn("strict_closeout_spine_work_order_visible", script)
+        self.assertIn("all_rows_have_next_evidence_action", script)
         self.assertIn("future_handoff_preview_rows", script)
         self.assertIn("first_future_handoff_target_task_type", script)
         self.assertIn("supporting_worker_runtime_dependency_preflight_status", script)
@@ -15842,6 +15846,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["strict_closeout_remaining_count"], 14)
         self.assertEqual(len(snapshot["goal_rows"]), 14)
         self.assertEqual(len(snapshot["queue_rows"]), 14)
+        self.assertEqual(snapshot["evidence_spine"]["spine_visible_count"], 14)
+        self.assertEqual(snapshot["evidence_spine"]["spine_total_count"], 14)
+        self.assertEqual(
+            snapshot["evidence_spine"]["strict_closeout_work_order_visible_count"], 14
+        )
+        self.assertEqual(
+            snapshot["evidence_spine"]["strict_closeout_work_order_total_count"], 14
+        )
+        self.assertTrue(snapshot["evidence_spine"]["all_rows_have_strict_closeout_work_order"])
+        self.assertTrue(snapshot["evidence_spine"]["all_rows_have_next_evidence_action"])
+        self.assertTrue(snapshot["evidence_spine"]["all_rows_keep_one_ltg_scope"])
+        self.assertFalse(snapshot["evidence_spine"]["strict_closeout_claim_allowed"])
+        self.assertTrue(snapshot["evidence_spine"]["cache_only_readback"])
+        self.assertFalse(snapshot["evidence_spine"]["external_calls_triggered"])
+        self.assertFalse(snapshot["evidence_spine"]["tushare_called"])
+        self.assertFalse(snapshot["evidence_spine"]["deepseek_called"])
+        self.assertFalse(snapshot["evidence_spine"]["github_called"])
+        self.assertTrue(snapshot["evidence_spine"]["does_not_execute_trades"])
+        self.assertFalse(snapshot["evidence_spine"]["contains_secret"])
         self.assertTrue(snapshot["safety"]["cache_only"])
         self.assertFalse(snapshot["safety"]["external_calls_triggered"])
         self.assertFalse(snapshot["safety"]["tushare_called"])
@@ -15854,6 +15877,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         goals = {row["id"]: row for row in snapshot["goal_rows"]}
         self.assertGreaterEqual(goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 2)
         self.assertIn("cache_render_boundary", goals["LTG-13"]["observed_stage_scope_direct_evidence_keys"])
+        self.assertTrue(goals["LTG-01"]["strict_closeout_spine_work_order_visible"])
+        self.assertTrue(goals["LTG-01"]["strict_closeout_spine_one_ltg_only"])
+        self.assertFalse(goals["LTG-01"]["strict_closeout_spine_can_close_ltg_now"])
+        self.assertTrue(goals["LTG-01"]["strict_closeout_spine_next_evidence_action"])
+        self.assertEqual(
+            goals["LTG-12"]["strict_closeout_spine_acceptance_queue_id"],
+            "p10_trade_isolation_release_guard",
+        )
+        self.assertFalse(goals["LTG-12"]["strict_closeout_spine_can_close_ltg_now"])
         self.assertGreaterEqual(goals["LTG-06"]["observed_stage_scope_direct_evidence_count"], 0)
         self.assertIsInstance(goals["LTG-06"]["observed_stage_scope_direct_evidence_keys"], list)
         self.assertGreaterEqual(goals["LTG-08"]["observed_stage_scope_direct_evidence_count"], 0)
@@ -15945,6 +15977,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         focused = json.loads(focused_result.stdout)
         self.assertEqual(focused["focus_ltg_ids"], ["LTG-06", "LTG-13"])
         self.assertEqual({row["id"] for row in focused["goal_rows"]}, {"LTG-06", "LTG-13"})
+        self.assertEqual(focused["evidence_spine"]["spine_visible_count"], 14)
+        self.assertTrue(focused["evidence_spine"]["all_rows_have_next_evidence_action"])
+        self.assertTrue(
+            all(row["strict_closeout_spine_work_order_visible"] for row in focused["goal_rows"])
+        )
         self.assertEqual(focused["focus_goal_count"], 2)
         self.assertGreaterEqual(focused["focus_queue_count"], 2)
         self.assertTrue(

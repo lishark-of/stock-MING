@@ -149,8 +149,11 @@ def build_snapshot() -> dict[str, Any]:
     goal_rows = _list(status.get("long_term_goal_rows"))
     runway_rows = _list(status.get("ltg_acceptance_runway_rows"))
     action_rows = _list(status.get("ltg_next_acceptance_action_rows"))
+    spine_summary = dict(status.get("ltg_strict_closeout_evidence_spine_summary") or {})
+    spine_rows = _list(status.get("ltg_strict_closeout_evidence_spine_rows"))
     runway_by_id = _row_by_id(runway_rows)
     goal_by_id = _row_by_id(goal_rows)
+    spine_by_id = _row_by_id(spine_rows)
 
     queue_rows: list[dict[str, Any]] = []
     ready_button_count = 0
@@ -240,6 +243,30 @@ def build_snapshot() -> dict[str, Any]:
             "observed_stage_scope_pending_count": row.get("observed_stage_scope_pending_count"),
             "observed_stage_scope_can_close_goal": row.get("observed_stage_scope_can_close_goal") is True,
             "next_step": row.get("next_step"),
+            "strict_closeout_spine_work_order_visible": spine_by_id.get(
+                str(row.get("id") or ""), {}
+            ).get("strict_closeout_work_order_visible")
+            is True,
+            "strict_closeout_spine_next_evidence_action": spine_by_id.get(
+                str(row.get("id") or ""), {}
+            ).get("next_evidence_action")
+            or "",
+            "strict_closeout_spine_primary_gate_id": spine_by_id.get(
+                str(row.get("id") or ""), {}
+            ).get("primary_gate_id")
+            or "",
+            "strict_closeout_spine_acceptance_queue_id": spine_by_id.get(
+                str(row.get("id") or ""), {}
+            ).get("acceptance_queue_id")
+            or "",
+            "strict_closeout_spine_one_ltg_only": spine_by_id.get(
+                str(row.get("id") or ""), {}
+            ).get("one_ltg_only")
+            is True,
+            "strict_closeout_spine_can_close_ltg_now": spine_by_id.get(
+                str(row.get("id") or ""), {}
+            ).get("can_close_ltg_now")
+            is True,
         }
         for row in goal_rows
         if isinstance(row, dict)
@@ -258,6 +285,45 @@ def build_snapshot() -> dict[str, Any]:
         "strict_closeout_remaining_count": summary.get("strict_closeout_remaining_count"),
         "ready_local_button_count": ready_button_count,
         "durable_handoff_ready_count": durable_handoff_ready_count,
+        "evidence_spine": {
+            "schema_version": spine_summary.get("schema_version") or "",
+            "spine_visible_count": int(spine_summary.get("spine_visible_count") or 0),
+            "spine_total_count": int(spine_summary.get("spine_total_count") or 0),
+            "strict_closeout_work_order_visible_count": int(
+                spine_summary.get("strict_closeout_work_order_visible_count") or 0
+            ),
+            "strict_closeout_work_order_total_count": int(
+                spine_summary.get("strict_closeout_work_order_total_count") or 0
+            ),
+            "all_rows_have_strict_closeout_work_order": (
+                spine_summary.get("all_rows_have_strict_closeout_work_order") is True
+            ),
+            "all_rows_have_next_evidence_action": (
+                spine_summary.get("all_rows_have_next_evidence_action") is True
+            ),
+            "all_rows_keep_one_ltg_scope": spine_summary.get("all_rows_keep_one_ltg_scope")
+            is True,
+            "remote_review_state": spine_summary.get(
+                "release_gate_current_head_remote_review_state"
+            )
+            or "",
+            "release_gate_current_blocker_count": int(
+                spine_summary.get("release_gate_current_blocker_count") or 0
+            ),
+            "release_gate_current_blockers": _list(
+                spine_summary.get("release_gate_current_blockers")
+            ),
+            "strict_closeout_claim_allowed": (
+                spine_summary.get("strict_closeout_claim_allowed") is True
+            ),
+            "cache_only_readback": spine_summary.get("cache_only_readback") is True,
+            "external_calls_triggered": spine_summary.get("external_calls_triggered") is True,
+            "tushare_called": spine_summary.get("tushare_called") is True,
+            "deepseek_called": spine_summary.get("deepseek_called") is True,
+            "github_called": spine_summary.get("github_called") is True,
+            "does_not_execute_trades": spine_summary.get("does_not_execute_trades") is True,
+            "contains_secret": spine_summary.get("contains_secret") is True,
+        },
         "goal_rows": goal_snapshot_rows,
         "queue_rows": queue_rows,
         "safety": {
@@ -325,6 +391,16 @@ def _print_text(snapshot: dict[str, Any]) -> None:
         f" github={safety['github_called']}"
         f" trades={not safety['does_not_execute_trades']}"
         f" secrets={safety['contains_secret']}"
+    )
+    evidence_spine = snapshot["evidence_spine"]
+    print(
+        "Spine:"
+        f" rows={evidence_spine['spine_visible_count']}/{evidence_spine['spine_total_count']}"
+        f" work_orders={evidence_spine['strict_closeout_work_order_visible_count']}/"
+        f"{evidence_spine['strict_closeout_work_order_total_count']}"
+        f" next_evidence={evidence_spine['all_rows_have_next_evidence_action']}"
+        f" remote_state={evidence_spine['remote_review_state']}"
+        f" blockers={evidence_spine['release_gate_current_blocker_count']}"
     )
     print()
     print("Goals:")
