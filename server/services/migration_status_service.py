@@ -14338,6 +14338,9 @@ def build_migration_status() -> dict[str, Any]:
         _latest_next_session_production_replacement_handoff_summary()
     )
     ltg09_tauri_package_handoff_summary = _latest_tauri_package_handoff_summary()
+    ltg10_streamlit_retirement_handoff_summary = (
+        _latest_streamlit_retirement_handoff_summary()
+    )
     ltg13_candidate_radar_production_handoff_summary = (
         _latest_candidate_radar_production_handoff_summary()
     )
@@ -14437,6 +14440,9 @@ def build_migration_status() -> dict[str, Any]:
             ltg08_next_session_production_replacement_handoff_summary
         ),
         "ltg09_tauri_package_handoff_summary": ltg09_tauri_package_handoff_summary,
+        "ltg10_streamlit_retirement_handoff_summary": (
+            ltg10_streamlit_retirement_handoff_summary
+        ),
         "ltg13_candidate_radar_production_handoff_summary": (
             ltg13_candidate_radar_production_handoff_summary
         ),
@@ -14605,6 +14611,12 @@ def build_migration_status() -> dict[str, Any]:
                 ),
                 "ltg09_tauri_package_next_local_step": (
                     ltg09_tauri_package_handoff_summary.get("next_local_step")
+                ),
+                "ltg10_streamlit_retirement_handoff_status": (
+                    ltg10_streamlit_retirement_handoff_summary.get("status")
+                ),
+                "ltg10_streamlit_retirement_next_local_step": (
+                    ltg10_streamlit_retirement_handoff_summary.get("next_local_step")
                 ),
                 "ltg13_candidate_radar_production_handoff_status": (
                     ltg13_candidate_radar_production_handoff_summary.get("status")

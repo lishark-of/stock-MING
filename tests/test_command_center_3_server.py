@@ -38798,6 +38798,76 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_call_ledger["ltg09_tauri_package_handoff_status"],
             p6_tauri_handoff["status"],
         )
+        top_level_streamlit_handoff = migration["data"][
+            "ltg10_streamlit_retirement_handoff_summary"
+        ]
+        p7_streamlit_handoff = action_rows["p7_streamlit_retirement_review"][
+            "supporting_streamlit_retirement_handoff"
+        ]
+        self.assertEqual(top_level_streamlit_handoff, p7_streamlit_handoff)
+        self.assertEqual(
+            p7_streamlit_handoff["schema_version"],
+            "ltg10_streamlit_retirement_handoff_summary.v1",
+        )
+        self.assertIn(
+            p7_streamlit_handoff["status"],
+            {
+                "streamlit_retirement_readiness_receipts_visible_replacement_evidence_pending",
+                "streamlit_ordinary_capability_review_ready_fallback_review_needed",
+                "streamlit_local_fallback_retirement_review_ready_retirement_blocked",
+            },
+        )
+        self.assertEqual(
+            action_rows["p7_streamlit_retirement_review"][
+                "supporting_streamlit_retirement_next_local_step"
+            ],
+            p7_streamlit_handoff["next_local_step"],
+        )
+        self.assertTrue(p7_streamlit_handoff["streamlit_fallback_retained"])
+        self.assertTrue(p7_streamlit_handoff["legacy_fallback_required"])
+        self.assertTrue(p7_streamlit_handoff["feature_parity_required_before_removal"])
+        self.assertTrue(p7_streamlit_handoff["no_feature_cut_allowed"])
+        self.assertTrue(p7_streamlit_handoff["requires_provider_backed_parity_acceptance"])
+        self.assertTrue(p7_streamlit_handoff["requires_browser_performance_qa"])
+        self.assertTrue(p7_streamlit_handoff["requires_admin_debug_retention_decision"])
+        self.assertTrue(p7_streamlit_handoff["requires_app_py_removal_or_retention_decision"])
+        self.assertTrue(p7_streamlit_handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(p7_streamlit_handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(p7_streamlit_handoff["ordinary_workflow_exit_complete"])
+        self.assertFalse(p7_streamlit_handoff["streamlit_fallback_removal_ready"])
+        self.assertFalse(p7_streamlit_handoff["full_streamlit_removal_ready"])
+        self.assertFalse(p7_streamlit_handoff["app_py_removal_or_retention_decision_done"])
+        self.assertFalse(p7_streamlit_handoff["cache_get_creates_task"])
+        self.assertFalse(p7_streamlit_handoff["cache_get_opens_streamlit"])
+        self.assertFalse(p7_streamlit_handoff["cache_get_runs_legacy_tools"])
+        self.assertFalse(p7_streamlit_handoff["cache_get_removes_fallback"])
+        self.assertFalse(p7_streamlit_handoff["cache_get_deletes_app_py"])
+        self.assertFalse(p7_streamlit_handoff["cache_get_calls_provider"])
+        self.assertFalse(p7_streamlit_handoff["cache_get_calls_model"])
+        self.assertFalse(p7_streamlit_handoff["cache_get_calls_github"])
+        self.assertFalse(p7_streamlit_handoff["creates_task_from_get"])
+        self.assertFalse(p7_streamlit_handoff["opens_streamlit_from_get"])
+        self.assertFalse(p7_streamlit_handoff["runs_legacy_tools_from_get"])
+        self.assertFalse(p7_streamlit_handoff["removes_fallback_from_get"])
+        self.assertFalse(p7_streamlit_handoff["deletes_app_py_from_get"])
+        self.assertFalse(p7_streamlit_handoff["external_calls_triggered"])
+        self.assertFalse(p7_streamlit_handoff["tushare_called"])
+        self.assertFalse(p7_streamlit_handoff["deepseek_called"])
+        self.assertFalse(p7_streamlit_handoff["github_called"])
+        self.assertTrue(p7_streamlit_handoff["does_not_execute_trades"])
+        self.assertTrue(p7_streamlit_handoff["does_not_modify_strategy_action"])
+        self.assertTrue(p7_streamlit_handoff["does_not_modify_holdings"])
+        self.assertFalse(p7_streamlit_handoff["contains_secret"])
+        self.assertFalse(p7_streamlit_handoff["can_close_goal"])
+        self.assertFalse(p7_streamlit_handoff["production_complete"])
+        self.assertEqual(
+            p7_streamlit_handoff["evidence_boundary"],
+            "ltg10_streamlit_handoff_reads_local_retirement_receipts_not_fallback_removal_or_complete_exit",
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg10_streamlit_retirement_handoff_status"],
+            p7_streamlit_handoff["status"],
+        )
         top_level_candidate_radar_handoff = migration["data"][
             "ltg13_candidate_radar_production_handoff_summary"
         ]
