@@ -3175,6 +3175,140 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
     }
 
 
+def _latest_factor_test_lab_production_validation_handoff_summary() -> dict[str, Any]:
+    try:
+        from server.services import factor_service
+
+        packet = factor_service.read_factor_quant_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    factor_tests = _dict_or_empty(packet_map.get("factor_tests"))
+    production_qa = _dict_or_empty(factor_tests.get("production_validation_qa_contract"))
+    provider_blocker = _dict_or_empty(factor_tests.get("provider_validation_blocker_audit"))
+    durable_recipe = _dict_or_empty(factor_tests.get("durable_evidence_recipe"))
+    durable_rows = [
+        row for row in factor_tests.get("durable_evidence_rows") or [] if isinstance(row, dict)
+    ]
+    provider_handoff = _latest_factor_test_lab_provider_validation_handoff_summary()
+    execution_request_ready = (
+        provider_handoff.get("provider_small_pool_execution_request_ready") is True
+    )
+    scope_or_recipe_ready = (
+        provider_handoff.get("provider_small_pool_dry_run_ready") is True
+        or provider_handoff.get("provider_small_pool_execution_recipe_ready") is True
+        or provider_handoff.get("provider_small_pool_scope_ticket_verified") is True
+    )
+    production_qa_ready = (
+        production_qa.get("status") == "production_validation_qa_contract_ready_provider_execution_pending"
+    )
+    durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
+    durable_blocker_count = int(
+        durable_recipe.get("durable_evidence_blocker_count")
+        or durable_recipe.get("production_blocker_count")
+        or 0
+    )
+    missing_evidence_items = [
+        "explicit provider-backed small-pool task execution",
+        "safe provider call ledger rows for target pool",
+        "provider sample rows collected under bound scope",
+        "multi-horizon forward returns",
+        "rolling IC/Rank IC/ICIR evidence",
+        "cost and turnover validation",
+        "neutralization stability validation",
+        "point-in-time bias controls",
+        "manual Factor Test production promotion review",
+        "full-market validation boundary review",
+        "matching remote CI review after local gate",
+        "release review after matching remote CI green",
+    ]
+    if execution_request_ready:
+        status = "factor_test_production_handoff_execution_request_ready_provider_task_pending"
+        next_step = "future explicit provider-backed factor validation task"
+    elif scope_or_recipe_ready:
+        status = "factor_test_production_handoff_scope_ready_execution_request_pending"
+        next_step = "POST /api/factor-quant/provider-small-pool-execution-request"
+    else:
+        status = "factor_test_production_handoff_scope_ticket_needed"
+        next_step = "POST /api/factor-quant/provider-small-pool-dry-run"
+    return {
+        "schema_version": "ltg03_factor_test_production_validation_handoff_summary.v1",
+        "status": status,
+        "source_packet_key": "command_center_factor_quant_hub_packet",
+        "stage_scope_manifest": "factor_test_production_stage_scope_manifest",
+        "provider_validation_handoff_status": provider_handoff.get("status") or "missing",
+        "production_validation_qa_status": production_qa.get("status") or "missing",
+        "production_validation_qa_ready": production_qa_ready,
+        "provider_validation_blocker_status": provider_blocker.get("status") or "missing",
+        "provider_validation_blocker_count": int(
+            provider_blocker.get("production_blocker_count") or 0
+        ),
+        "local_light_metric_baseline_verified": (
+            provider_handoff.get("local_light_metric_baseline_verified") is True
+        ),
+        "provider_small_pool_scope_ticket_verified": (
+            provider_handoff.get("provider_small_pool_scope_ticket_verified") is True
+        ),
+        "provider_small_pool_dry_run_ready": (
+            provider_handoff.get("provider_small_pool_dry_run_ready") is True
+        ),
+        "provider_small_pool_execution_recipe_ready": (
+            provider_handoff.get("provider_small_pool_execution_recipe_ready") is True
+        ),
+        "provider_small_pool_execution_request_ready": execution_request_ready,
+        "provider_small_pool_scope_hash_short": provider_handoff.get(
+            "provider_small_pool_scope_hash_short", ""
+        ),
+        "target_provider_task_route": provider_handoff.get("target_provider_task_route", ""),
+        "target_provider_task_type": provider_handoff.get("target_provider_task_type", ""),
+        "target_acceptance_mode": provider_handoff.get("target_acceptance_mode", ""),
+        "symbol_count": int(provider_handoff.get("symbol_count") or 0),
+        "metric_count": int(provider_handoff.get("metric_count") or 0),
+        "durable_recipe_status": durable_recipe.get("status") or "missing",
+        "durable_recipe_ready": durable_recipe_ready,
+        "durable_evidence_row_count": len(durable_rows),
+        "durable_evidence_blocker_count": durable_blocker_count,
+        "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
+        "durable_promotion_ready": durable_recipe.get("durable_promotion_ready") is True,
+        "provider_task_created": False,
+        "provider_execution_implemented_by_handoff": False,
+        "provider_call_ledger_evidence_done": False,
+        "sample_rows_collected": False,
+        "multi_horizon_forward_returns_done": False,
+        "rolling_window_validation_done": False,
+        "cost_assumption_validation_done": False,
+        "neutralization_stability_done": False,
+        "pit_bias_controls_done": False,
+        "provider_backed_small_pool_validation_done": False,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "missing_evidence_items": missing_evidence_items,
+        "missing_evidence_count": len(missing_evidence_items),
+        "requires_separate_user_approved_provider_task": True,
+        "requires_provider_call_ledger": True,
+        "requires_durable_evidence_review": True,
+        "requires_full_market_boundary_review": True,
+        "requires_remote_ci_review_after_local_complete": True,
+        "requires_release_review_after_remote_green": True,
+        "cache_get_creates_task": False,
+        "cache_get_calls_provider": False,
+        "creates_provider_task_from_get": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "can_close_goal": False,
+        "production_complete": False,
+        "next_local_step": next_step,
+        "evidence_boundary": (
+            "factor_test_production_handoff_is_local_durable_recipe_readback_not_provider_execution_or_ltg_closeout"
+        ),
+    }
+
+
 def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import factor_service
@@ -9237,6 +9371,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         supporting_tushare_target_sample_evidence_handoff: dict[str, Any] = {}
         supporting_tushare_full_interface_pipeline_handoff: dict[str, Any] = {}
         supporting_factor_test_lab_provider_validation_handoff: dict[str, Any] = {}
+        supporting_factor_test_lab_production_validation_handoff: dict[str, Any] = {}
         supporting_candidate_radar_production_handoff: dict[str, Any] = {}
         supporting_factor_universe_worker_batch_handoff: dict[str, Any] = {}
         supporting_storage_physical_execution_handoff: dict[str, Any] = {}
@@ -9272,6 +9407,9 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         if action["queue_id"] == "p3_factor_small_pool_provider_validation":
             supporting_factor_test_lab_provider_validation_handoff = (
                 _latest_factor_test_lab_provider_validation_handoff_summary()
+            )
+            supporting_factor_test_lab_production_validation_handoff = (
+                _latest_factor_test_lab_production_validation_handoff_summary()
             )
         if action["queue_id"] == "p3_candidate_radar_provider_worker_promotion":
             safe_context["candidate_radar_production_replacement_review_preview"] = (
@@ -9559,6 +9697,38 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 ),
                 "supporting_factor_test_lab_provider_validation_creates_task_from_get": (
                     supporting_factor_test_lab_provider_validation_handoff.get("cache_get_creates_task")
+                    is True
+                ),
+                "supporting_factor_test_lab_production_validation_handoff": (
+                    supporting_factor_test_lab_production_validation_handoff
+                ),
+                "supporting_factor_test_lab_production_validation_next_local_step": (
+                    supporting_factor_test_lab_production_validation_handoff.get("next_local_step", "")
+                ),
+                "supporting_factor_test_lab_production_validation_qa_ready": (
+                    supporting_factor_test_lab_production_validation_handoff.get(
+                        "production_validation_qa_ready"
+                    )
+                    is True
+                ),
+                "supporting_factor_test_lab_production_validation_durable_ready": (
+                    supporting_factor_test_lab_production_validation_handoff.get("durable_recipe_ready")
+                    is True
+                ),
+                "supporting_factor_test_lab_production_validation_durable_blocker_count": int(
+                    supporting_factor_test_lab_production_validation_handoff.get(
+                        "durable_evidence_blocker_count"
+                    )
+                    or 0
+                ),
+                "supporting_factor_test_lab_production_validation_requires_provider_task": (
+                    supporting_factor_test_lab_production_validation_handoff.get(
+                        "requires_separate_user_approved_provider_task"
+                    )
+                    is True
+                ),
+                "supporting_factor_test_lab_production_validation_creates_task_from_get": (
+                    supporting_factor_test_lab_production_validation_handoff.get("cache_get_creates_task")
                     is True
                 ),
                 "supporting_candidate_radar_production_handoff": (

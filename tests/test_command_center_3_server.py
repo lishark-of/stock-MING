@@ -3031,6 +3031,34 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
+        p3_production_handoff = action_rows["p3_factor_small_pool_provider_validation"][
+            "supporting_factor_test_lab_production_validation_handoff"
+        ]
+        self.assertEqual(
+            p3_production_handoff["schema_version"],
+            "ltg03_factor_test_production_validation_handoff_summary.v1",
+        )
+        self.assertIn(
+            p3_production_handoff["status"],
+            {
+                "factor_test_production_handoff_scope_ticket_needed",
+                "factor_test_production_handoff_scope_ready_execution_request_pending",
+                "factor_test_production_handoff_execution_request_ready_provider_task_pending",
+            },
+        )
+        self.assertIn(
+            action_rows["p3_factor_small_pool_provider_validation"][
+                "supporting_factor_test_lab_production_validation_durable_ready"
+            ],
+            {True, False},
+        )
+        self.assertFalse(
+            action_rows["p3_factor_small_pool_provider_validation"][
+                "supporting_factor_test_lab_production_validation_creates_task_from_get"
+            ]
+        )
+        self.assertFalse(p3_production_handoff["production_factor_test_validation_complete"])
+        self.assertFalse(p3_production_handoff["can_close_goal"])
         self.assertEqual(action_rows["p3_factor_universe_worker_batch_research"]["local_receipt_step_count"], 5)
         self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 10)
         self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 7)
@@ -55050,6 +55078,59 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(handoff["github_called"])
         self.assertTrue(handoff["does_not_execute_trades"])
         self.assertFalse(handoff["can_close_goal"])
+        production_handoff = p3_factor[
+            "supporting_factor_test_lab_production_validation_handoff"
+        ]
+        self.assertEqual(
+            production_handoff["schema_version"],
+            "ltg03_factor_test_production_validation_handoff_summary.v1",
+        )
+        self.assertEqual(
+            production_handoff["status"],
+            "factor_test_production_handoff_execution_request_ready_provider_task_pending",
+        )
+        self.assertEqual(
+            p3_factor["supporting_factor_test_lab_production_validation_next_local_step"],
+            "future explicit provider-backed factor validation task",
+        )
+        self.assertTrue(p3_factor["supporting_factor_test_lab_production_validation_qa_ready"])
+        self.assertTrue(p3_factor["supporting_factor_test_lab_production_validation_durable_ready"])
+        self.assertGreater(
+            p3_factor["supporting_factor_test_lab_production_validation_durable_blocker_count"],
+            0,
+        )
+        self.assertTrue(
+            p3_factor["supporting_factor_test_lab_production_validation_requires_provider_task"]
+        )
+        self.assertFalse(
+            p3_factor["supporting_factor_test_lab_production_validation_creates_task_from_get"]
+        )
+        self.assertTrue(production_handoff["provider_small_pool_execution_request_ready"])
+        self.assertTrue(production_handoff["production_validation_qa_ready"])
+        self.assertTrue(production_handoff["durable_recipe_ready"])
+        self.assertGreater(production_handoff["durable_evidence_blocker_count"], 0)
+        self.assertFalse(production_handoff["provider_task_created"])
+        self.assertFalse(production_handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(production_handoff["provider_call_ledger_evidence_done"])
+        self.assertFalse(production_handoff["provider_backed_small_pool_validation_done"])
+        self.assertFalse(production_handoff["full_market_validation_done"])
+        self.assertFalse(production_handoff["production_factor_test_validation_complete"])
+        self.assertIn("safe provider call ledger rows for target pool", production_handoff["missing_evidence_items"])
+        self.assertTrue(production_handoff["requires_provider_call_ledger"])
+        self.assertTrue(production_handoff["requires_durable_evidence_review"])
+        self.assertTrue(production_handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(production_handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(production_handoff["cache_get_creates_task"])
+        self.assertFalse(production_handoff["cache_get_calls_provider"])
+        self.assertFalse(production_handoff["external_calls_triggered"])
+        self.assertFalse(production_handoff["tushare_called"])
+        self.assertFalse(production_handoff["deepseek_called"])
+        self.assertFalse(production_handoff["github_called"])
+        self.assertTrue(production_handoff["does_not_execute_trades"])
+        self.assertTrue(production_handoff["does_not_modify_strategy_action"])
+        self.assertFalse(production_handoff["contains_secret"])
+        self.assertFalse(production_handoff["can_close_goal"])
+        self.assertFalse(production_handoff["production_complete"])
 
     def test_factor_test_provider_small_pool_execution_request_rejects_scope_mismatch(self):
         self._with_meta_store()
