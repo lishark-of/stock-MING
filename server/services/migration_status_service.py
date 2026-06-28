@@ -2407,6 +2407,10 @@ def _build_ltg_strict_closeout_work_order_rows(
         release_gate_blockers.append("remote_ci_review_receipt_stale_for_current_head")
     if "push-gate evidence artifact sha256 digest" in remote_receipt_missing_evidence:
         release_gate_blockers.append("remote_ci_review_artifact_digest_pending")
+    if release_gate_direct_evidence.get("remote_ci_run_in_progress_for_current_head") is True:
+        release_gate_blockers.append("matching_remote_ci_run_in_progress_for_current_head")
+    if release_gate_direct_evidence.get("remote_ci_failure_reviewed_for_current_head") is True:
+        release_gate_blockers.append("matching_remote_ci_failed_for_current_head")
     release_gate_blockers = list(dict.fromkeys(release_gate_blockers))
     current_head_push_required = (
         release_gate_direct_evidence.get("current_head_push_required_before_remote_review")
@@ -2422,6 +2426,12 @@ def _build_ltg_strict_closeout_work_order_rows(
     latest_remote_run_verified_green = (
         release_gate_direct_evidence.get("latest_remote_run_verified_green") is True
     )
+    remote_ci_run_in_progress_for_current_head = (
+        release_gate_direct_evidence.get("remote_ci_run_in_progress_for_current_head") is True
+    )
+    remote_ci_failure_reviewed_for_current_head = (
+        release_gate_direct_evidence.get("remote_ci_failure_reviewed_for_current_head") is True
+    )
     if current_head_push_required:
         current_head_remote_review_state = "current_head_unpushed_for_remote_ci"
     elif remote_receipt_stale_for_current_head:
@@ -2430,6 +2440,10 @@ def _build_ltg_strict_closeout_work_order_rows(
         current_head_remote_review_state = "remote_ci_green_local_gate_recheck_required"
     elif latest_remote_run_verified_green:
         current_head_remote_review_state = "matching_remote_ci_green_release_review_pending"
+    elif remote_ci_failure_reviewed_for_current_head:
+        current_head_remote_review_state = "matching_remote_ci_failed_for_current_head"
+    elif remote_ci_run_in_progress_for_current_head:
+        current_head_remote_review_state = "matching_remote_ci_run_in_progress"
     elif remote_actions_status_known:
         current_head_remote_review_state = "matching_remote_ci_known_not_green"
     else:
@@ -4126,6 +4140,32 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     remote_receipt_head_matches_current = remote_receipt_map.get("head_matches_current") is True
     remote_ci_artifact_digest_pending = remote_receipt_map.get("remote_ci_artifact_digest_pending") is True
     remote_ci_job_page_green_observed = remote_receipt_map.get("remote_ci_job_page_green_observed") is True
+    remote_ci_run_observed_for_current_head = (
+        remote_receipt_map.get("remote_ci_run_observed_for_current_head") is True
+    )
+    remote_ci_run_in_progress_for_current_head = (
+        remote_receipt_map.get("remote_ci_run_in_progress_for_current_head") is True
+    )
+    remote_ci_failure_reviewed_for_current_head = (
+        remote_receipt_map.get("remote_ci_failure_reviewed_for_current_head") is True
+    )
+    remote_ci_failure_safe_excerpt = str(
+        remote_receipt_map.get("safe_failure_log_excerpt_or_green_run_url") or ""
+    )
+    remote_ci_failure_artifact_name = str(remote_receipt_map.get("artifact_name") or "")
+    remote_ci_failure_artifact_digest = str(remote_receipt_map.get("artifact_digest") or "")
+    remote_ci_failure_artifact_digest_verified = (
+        remote_receipt_map.get("artifact_digest_verified") is True
+    )
+    remote_ci_failure_artifact_download_status = str(
+        remote_receipt_map.get("remote_ci_failure_artifact_download_status") or ""
+    )
+    remote_ci_failure_artifact_download_blocked = (
+        remote_receipt_map.get("remote_ci_failure_artifact_download_blocked") is True
+    )
+    remote_ci_failure_artifact_review_required = bool(
+        remote_ci_failure_reviewed_for_current_head and remote_ci_failure_artifact_name
+    )
     remote_receipt_missing_evidence = [
         str(item) for item in remote_receipt_map.get("missing_evidence") or [] if str(item)
     ]
@@ -4153,6 +4193,8 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     status = "release_gate_direct_evidence_missing"
     if direct_stage_keys:
         status = "release_gate_direct_evidence_visible_remote_ci_pending"
+    if remote_ci_failure_reviewed_for_current_head:
+        status = "release_gate_remote_ci_failed_current_head"
     if remote_green_for_current_head and not fresh_gate_run_done:
         status = "release_gate_remote_ci_green_local_gate_recheck_required"
     if fresh_gate_run_done and remote_green_for_current_head:
@@ -4209,6 +4251,8 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
             if local_complete and remote_green_for_current_head
             else "remote_review_green_local_gate_recheck_required"
             if remote_green_for_current_head
+            else "remote_review_failed_current_head"
+            if remote_ci_failure_reviewed_for_current_head
             else "remote_review_waiting_for_local_complete"
             if not local_complete
             else "remote_review_waiting_for_push"
@@ -4297,6 +4341,23 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
         "remote_ci_job_page_green_observed": remote_ci_job_page_green_observed,
         "remote_ci_artifact_digest_pending": remote_ci_artifact_digest_pending,
+        "remote_ci_run_observed_for_current_head": remote_ci_run_observed_for_current_head,
+        "remote_ci_run_in_progress_for_current_head": remote_ci_run_in_progress_for_current_head,
+        "remote_ci_failure_reviewed_for_current_head": remote_ci_failure_reviewed_for_current_head,
+        "remote_ci_failure_safe_excerpt": remote_ci_failure_safe_excerpt,
+        "remote_ci_failure_artifact_name": remote_ci_failure_artifact_name,
+        "remote_ci_failure_artifact_digest": remote_ci_failure_artifact_digest,
+        "remote_ci_failure_artifact_digest_verified": remote_ci_failure_artifact_digest_verified,
+        "remote_ci_failure_artifact_download_status": remote_ci_failure_artifact_download_status,
+        "remote_ci_failure_artifact_download_blocked": remote_ci_failure_artifact_download_blocked,
+        "remote_ci_failure_artifact_review_required": remote_ci_failure_artifact_review_required,
+        "remote_ci_failure_next_step": (
+            "request_authenticated_artifact_or_safe_log_excerpt_for_python_unittest_traceback"
+            if remote_ci_failure_artifact_download_blocked
+            else "download_or_review_push_gate_evidence_artifact_for_python_unittest_traceback"
+            if remote_ci_failure_artifact_review_required
+            else ""
+        ),
         "remote_ci_green_for_current_head": remote_green_for_current_head,
         "remote_ci_green_local_gate_recheck_required": (
             remote_green_for_current_head and not fresh_gate_run_done
@@ -4427,6 +4488,39 @@ def _build_release_gate_remote_review_split_rows(
             "remote_ci_artifact_digest_pending": (
                 release_gate_summary.get("remote_ci_artifact_digest_pending") is True
             ),
+            "remote_ci_run_observed_for_current_head": (
+                release_gate_summary.get("remote_ci_run_observed_for_current_head") is True
+            ),
+            "remote_ci_run_in_progress_for_current_head": (
+                release_gate_summary.get("remote_ci_run_in_progress_for_current_head") is True
+            ),
+            "remote_ci_failure_reviewed_for_current_head": (
+                release_gate_summary.get("remote_ci_failure_reviewed_for_current_head") is True
+            ),
+            "remote_ci_failure_safe_excerpt": release_gate_summary.get(
+                "remote_ci_failure_safe_excerpt", ""
+            ),
+            "remote_ci_failure_artifact_name": release_gate_summary.get(
+                "remote_ci_failure_artifact_name", ""
+            ),
+            "remote_ci_failure_artifact_digest": release_gate_summary.get(
+                "remote_ci_failure_artifact_digest", ""
+            ),
+            "remote_ci_failure_artifact_digest_verified": (
+                release_gate_summary.get("remote_ci_failure_artifact_digest_verified") is True
+            ),
+            "remote_ci_failure_artifact_download_status": release_gate_summary.get(
+                "remote_ci_failure_artifact_download_status", ""
+            ),
+            "remote_ci_failure_artifact_download_blocked": (
+                release_gate_summary.get("remote_ci_failure_artifact_download_blocked") is True
+            ),
+            "remote_ci_failure_artifact_review_required": (
+                release_gate_summary.get("remote_ci_failure_artifact_review_required") is True
+            ),
+            "remote_ci_failure_next_step": release_gate_summary.get(
+                "remote_ci_failure_next_step", ""
+            ),
             "remote_ci_green_for_current_head": (
                 release_gate_summary.get("remote_ci_green_for_current_head") is True
             ),
@@ -4495,6 +4589,31 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
     latest_remote_run_verified_green = release_gate.get("latest_remote_run_verified_green") is True
     remote_ci_job_page_green_observed = release_gate.get("remote_ci_job_page_green_observed") is True
     remote_ci_artifact_digest_pending = release_gate.get("remote_ci_artifact_digest_pending") is True
+    remote_ci_run_observed_for_current_head = (
+        release_gate.get("remote_ci_run_observed_for_current_head") is True
+    )
+    remote_ci_run_in_progress_for_current_head = (
+        release_gate.get("remote_ci_run_in_progress_for_current_head") is True
+    )
+    remote_ci_failure_reviewed_for_current_head = (
+        release_gate.get("remote_ci_failure_reviewed_for_current_head") is True
+    )
+    remote_ci_failure_safe_excerpt = str(release_gate.get("remote_ci_failure_safe_excerpt") or "")
+    remote_ci_failure_artifact_name = str(release_gate.get("remote_ci_failure_artifact_name") or "")
+    remote_ci_failure_artifact_digest = str(release_gate.get("remote_ci_failure_artifact_digest") or "")
+    remote_ci_failure_artifact_digest_verified = (
+        release_gate.get("remote_ci_failure_artifact_digest_verified") is True
+    )
+    remote_ci_failure_artifact_download_status = str(
+        release_gate.get("remote_ci_failure_artifact_download_status") or ""
+    )
+    remote_ci_failure_artifact_download_blocked = (
+        release_gate.get("remote_ci_failure_artifact_download_blocked") is True
+    )
+    remote_ci_failure_artifact_review_required = (
+        release_gate.get("remote_ci_failure_artifact_review_required") is True
+    )
+    remote_ci_failure_next_step = str(release_gate.get("remote_ci_failure_next_step") or "")
     remote_ci_green_for_current_head = release_gate.get("remote_ci_green_for_current_head") is True
     remote_receipt_head_matches_current = (
         release_gate.get("remote_ci_review_receipt_head_matches_current") is True
@@ -4522,6 +4641,9 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
     elif latest_remote_run_verified_green and remote_receipt_head_matches_current:
         status = "release_gate_remote_review_green_local_gate_recheck_required"
         next_step = "rerun_local_push_gate_after_clean_worktree_for_current_head"
+    elif remote_ci_failure_reviewed_for_current_head and remote_receipt_head_matches_current:
+        status = "release_gate_remote_review_failed_current_head"
+        next_step = "review_remote_failure_then_rerun_local_gate_before_next_push"
     elif local_complete:
         status = "release_gate_local_gate_ready_remote_review_pending"
         next_step = "manual_remote_ci_review_after_user_authorized_push"
@@ -4576,6 +4698,17 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
         "remote_ci_job_page_green_observed": remote_ci_job_page_green_observed,
         "remote_ci_artifact_digest_pending": remote_ci_artifact_digest_pending,
+        "remote_ci_run_observed_for_current_head": remote_ci_run_observed_for_current_head,
+        "remote_ci_run_in_progress_for_current_head": remote_ci_run_in_progress_for_current_head,
+        "remote_ci_failure_reviewed_for_current_head": remote_ci_failure_reviewed_for_current_head,
+        "remote_ci_failure_safe_excerpt": remote_ci_failure_safe_excerpt,
+        "remote_ci_failure_artifact_name": remote_ci_failure_artifact_name,
+        "remote_ci_failure_artifact_digest": remote_ci_failure_artifact_digest,
+        "remote_ci_failure_artifact_digest_verified": remote_ci_failure_artifact_digest_verified,
+        "remote_ci_failure_artifact_download_status": remote_ci_failure_artifact_download_status,
+        "remote_ci_failure_artifact_download_blocked": remote_ci_failure_artifact_download_blocked,
+        "remote_ci_failure_artifact_review_required": remote_ci_failure_artifact_review_required,
+        "remote_ci_failure_next_step": remote_ci_failure_next_step,
         "remote_ci_green_for_current_head": remote_ci_green_for_current_head,
         "remote_ci_green_local_gate_recheck_required": (
             release_gate.get("remote_ci_green_local_gate_recheck_required") is True

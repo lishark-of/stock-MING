@@ -56005,6 +56005,284 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
 
+    def test_remote_ci_review_receipt_recorder_tracks_current_run_in_progress_without_green_claim(self):
+        self._with_meta_store()
+        self._with_release_gate_receipt_path()
+        current_head = audit_service._current_git_head_summary()
+        receipt_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        run_id = 123456792
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "record_remote_ci_review_receipt.py"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--output",
+                str(receipt_path),
+                "--branch",
+                str(current_head["branch"]),
+                "--head",
+                str(current_head["head"]),
+                "--head-full",
+                str(current_head["head_full"]),
+                "--run-id",
+                str(run_id),
+                "--run-url",
+                f"https://github.com/lishark-of/stock-MING/actions/runs/{run_id}",
+                "--actions-status",
+                "in_progress",
+                "--actions-conclusion",
+                "pending",
+                "--reviewed-at-utc",
+                "2026-06-28T14:17:27Z",
+                "--review-authorized",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["status"], "remote_ci_review_run_in_progress")
+        self.assertFalse(summary["remote_actions_status_known"])
+        self.assertFalse(summary["latest_remote_run_verified_green"])
+        self.assertFalse(summary["remote_ci_job_page_green_observed"])
+        self.assertTrue(summary["remote_ci_run_observed_for_current_head"])
+        self.assertTrue(summary["remote_ci_run_in_progress_for_current_head"])
+        self.assertFalse(summary["github_api_called"])
+        self.assertFalse(summary["external_calls_triggered"])
+        self.assertTrue(summary["does_not_execute_trades"])
+
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["head_full"], current_head["head_full"])
+        self.assertEqual(payload["run_id"], run_id)
+        self.assertEqual(payload["actions_status"], "in_progress")
+        self.assertEqual(payload["actions_conclusion"], "pending")
+        self.assertEqual(payload["artifact_name"], "")
+        self.assertEqual(payload["artifact_digest_review_status"], "not_available_until_run_completed")
+        self.assertEqual(payload["release_claim_decision"], "blocked_remote_ci_incomplete")
+        self.assertFalse(payload["remote_actions_status_known"])
+        self.assertFalse(payload["latest_remote_run_verified_green"])
+
+        packet = audit_service.read_call_ledger_audit_cache()
+        remote_receipt = packet["remote_ci_review_receipt"]
+        self.assertEqual(remote_receipt["status"], "remote_ci_review_run_in_progress")
+        self.assertTrue(remote_receipt["head_matches_current"])
+        self.assertTrue(remote_receipt["remote_ci_run_observed_for_current_head"])
+        self.assertTrue(remote_receipt["remote_ci_run_in_progress_for_current_head"])
+        self.assertFalse(remote_receipt["remote_actions_status_known"])
+        self.assertFalse(remote_receipt["latest_remote_run_verified_green"])
+        self.assertFalse(remote_receipt["remote_ci_review_ready"])
+        self.assertFalse(remote_receipt["remote_ci_job_page_green_observed"])
+        self.assertIn("completed remote Actions run status", remote_receipt["missing_evidence"])
+        self.assertIn("successful remote Actions conclusion", remote_receipt["missing_evidence"])
+        self.assertNotIn("current HEAD matching remote CI review", remote_receipt["missing_evidence"])
+        self.assertEqual(remote_receipt["release_claim_decision"], "blocked_remote_ci_unverified")
+
+        migration = migration_status_service.build_migration_status()
+        release_split = migration["release_gate_remote_review_split_summary"]
+        release_handoff = migration["ltg11_release_gate_remote_review_handoff_summary"]
+        release_split_rows = {
+            row["split_stage"]: row for row in migration["release_gate_remote_review_split_rows"]
+        }
+        work_order_summary = migration["ltg_strict_closeout_work_order_summary"]
+        self.assertTrue(release_split["remote_ci_run_observed_for_current_head"])
+        self.assertTrue(release_split["remote_ci_run_in_progress_for_current_head"])
+        self.assertFalse(release_split["remote_actions_status_known"])
+        self.assertFalse(release_split["latest_remote_run_verified_green"])
+        self.assertFalse(release_split["remote_ci_review_receipt_stale_for_current_head"])
+        self.assertTrue(release_split["remote_ci_review_receipt_blocks_current_head_remote_review"])
+        self.assertTrue(release_handoff["remote_ci_run_observed_for_current_head"])
+        self.assertTrue(release_handoff["remote_ci_run_in_progress_for_current_head"])
+        self.assertFalse(release_handoff["release_gate_complete"])
+        self.assertFalse(release_handoff["strict_closeout_ready"])
+        self.assertTrue(
+            release_split_rows["matching_remote_actions_review"][
+                "remote_ci_run_observed_for_current_head"
+            ]
+        )
+        self.assertTrue(
+            release_split_rows["matching_remote_actions_review"][
+                "remote_ci_run_in_progress_for_current_head"
+            ]
+        )
+        self.assertEqual(
+            work_order_summary["release_gate_current_head_remote_review_state"],
+            "matching_remote_ci_run_in_progress",
+        )
+        self.assertIn(
+            "matching_remote_ci_run_in_progress_for_current_head",
+            work_order_summary["release_gate_current_blockers"],
+        )
+        self.assertEqual(work_order_summary["strict_closeout"], "0/14")
+        self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
+
+    def test_remote_ci_review_receipt_recorder_tracks_current_failed_run_without_green_claim(self):
+        self._with_meta_store()
+        self._with_release_gate_receipt_path()
+        current_head = audit_service._current_git_head_summary()
+        receipt_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        run_id = 123456793
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "record_remote_ci_review_receipt.py"
+        artifact_name = f"command-center-3-push-gate-evidence-{run_id}"
+        artifact_digest = "sha256:" + ("b" * 64)
+        safe_excerpt = "last_safe_gate_marker=Python unittest; process completed with exit code 1"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--output",
+                str(receipt_path),
+                "--branch",
+                str(current_head["branch"]),
+                "--head",
+                str(current_head["head"]),
+                "--head-full",
+                str(current_head["head_full"]),
+                "--run-id",
+                str(run_id),
+                "--run-url",
+                f"https://github.com/lishark-of/stock-MING/actions/runs/{run_id}",
+                "--actions-status",
+                "completed",
+                "--actions-conclusion",
+                "failure",
+                "--job-conclusion",
+                "failure",
+                "--artifact-name",
+                artifact_name,
+                "--artifact-digest",
+                artifact_digest,
+                "--artifact-download-status",
+                "public_download_404",
+                "--safe-failure-log-excerpt",
+                safe_excerpt,
+                "--reviewed-at-utc",
+                "2026-06-28T14:37:00Z",
+                "--review-authorized",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["status"], "remote_ci_review_failed_run_reviewed")
+        self.assertTrue(summary["remote_actions_status_known"])
+        self.assertFalse(summary["latest_remote_run_verified_green"])
+        self.assertFalse(summary["remote_ci_job_page_green_observed"])
+        self.assertFalse(summary["remote_ci_run_in_progress_for_current_head"])
+        self.assertTrue(summary["remote_ci_failure_reviewed_for_current_head"])
+        self.assertEqual(summary["remote_ci_failure_artifact_download_status"], "public_download_404")
+        self.assertTrue(summary["remote_ci_failure_artifact_download_blocked"])
+        self.assertEqual(summary["release_claim_decision"], "blocked_remote_ci_failed")
+
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["head_full"], current_head["head_full"])
+        self.assertEqual(payload["run_id"], run_id)
+        self.assertEqual(payload["actions_status"], "completed")
+        self.assertEqual(payload["actions_conclusion"], "failure")
+        self.assertEqual(payload["job_conclusion"], "failure")
+        self.assertEqual(payload["artifact_name"], artifact_name)
+        self.assertEqual(payload["artifact_digest"], artifact_digest)
+        self.assertEqual(payload["failed_step_or_green_status"], safe_excerpt)
+        self.assertEqual(payload["safe_failure_log_excerpt_or_green_run_url"], safe_excerpt)
+        self.assertFalse(payload["latest_remote_run_verified_green"])
+        self.assertTrue(payload["remote_ci_failure_reviewed_for_current_head"])
+        self.assertEqual(payload["remote_ci_failure_artifact_download_status"], "public_download_404")
+        self.assertTrue(payload["remote_ci_failure_artifact_download_blocked"])
+        self.assertFalse(payload["release_gate_complete"])
+        self.assertFalse(payload["production_release_complete"])
+
+        packet = audit_service.read_call_ledger_audit_cache()
+        remote_receipt = packet["remote_ci_review_receipt"]
+        self.assertEqual(remote_receipt["status"], "remote_ci_review_failed_run_reviewed")
+        self.assertTrue(remote_receipt["head_matches_current"])
+        self.assertTrue(remote_receipt["remote_actions_status_known"])
+        self.assertFalse(remote_receipt["latest_remote_run_verified_green"])
+        self.assertFalse(remote_receipt["remote_ci_review_ready"])
+        self.assertTrue(remote_receipt["remote_ci_failure_reviewed_for_current_head"])
+        self.assertFalse(remote_receipt["remote_ci_job_page_green_observed"])
+        self.assertTrue(remote_receipt["safe_failure_logs_reviewed"])
+        self.assertEqual(remote_receipt["missing_evidence"], [])
+        self.assertEqual(remote_receipt["release_claim_decision"], "blocked_remote_ci_failed")
+        self.assertEqual(remote_receipt["remote_ci_failure_artifact_download_status"], "public_download_404")
+        self.assertTrue(remote_receipt["remote_ci_failure_artifact_download_blocked"])
+        self.assertFalse(remote_receipt["github_api_called"])
+        self.assertFalse(remote_receipt["external_calls_triggered"])
+        self.assertTrue(remote_receipt["does_not_execute_trades"])
+
+        migration = migration_status_service.build_migration_status()
+        release_split = migration["release_gate_remote_review_split_summary"]
+        release_handoff = migration["ltg11_release_gate_remote_review_handoff_summary"]
+        release_split_rows = {
+            row["split_stage"]: row for row in migration["release_gate_remote_review_split_rows"]
+        }
+        work_order_summary = migration["ltg_strict_closeout_work_order_summary"]
+        self.assertEqual(release_split["status"], "release_gate_remote_ci_failed_current_head")
+        self.assertEqual(release_split["remote_review_status"], "remote_review_failed_current_head")
+        self.assertTrue(release_split["remote_actions_status_known"])
+        self.assertFalse(release_split["latest_remote_run_verified_green"])
+        self.assertTrue(release_split["remote_ci_failure_reviewed_for_current_head"])
+        self.assertEqual(release_split["remote_ci_failure_safe_excerpt"], safe_excerpt)
+        self.assertEqual(release_split["remote_ci_failure_artifact_name"], artifact_name)
+        self.assertEqual(release_split["remote_ci_failure_artifact_digest"], artifact_digest)
+        self.assertTrue(release_split["remote_ci_failure_artifact_digest_verified"])
+        self.assertEqual(release_split["remote_ci_failure_artifact_download_status"], "public_download_404")
+        self.assertTrue(release_split["remote_ci_failure_artifact_download_blocked"])
+        self.assertTrue(release_split["remote_ci_failure_artifact_review_required"])
+        self.assertEqual(
+            release_split["remote_ci_failure_next_step"],
+            "request_authenticated_artifact_or_safe_log_excerpt_for_python_unittest_traceback",
+        )
+        self.assertFalse(release_split["remote_ci_review_receipt_stale_for_current_head"])
+        self.assertTrue(release_split["remote_ci_review_receipt_blocks_current_head_remote_review"])
+        self.assertEqual(release_handoff["status"], "release_gate_remote_review_failed_current_head")
+        self.assertTrue(release_handoff["remote_ci_failure_reviewed_for_current_head"])
+        self.assertEqual(release_handoff["remote_ci_failure_safe_excerpt"], safe_excerpt)
+        self.assertEqual(release_handoff["remote_ci_failure_artifact_name"], artifact_name)
+        self.assertEqual(release_handoff["remote_ci_failure_artifact_digest"], artifact_digest)
+        self.assertTrue(release_handoff["remote_ci_failure_artifact_digest_verified"])
+        self.assertEqual(
+            release_handoff["remote_ci_failure_artifact_download_status"], "public_download_404"
+        )
+        self.assertTrue(release_handoff["remote_ci_failure_artifact_download_blocked"])
+        self.assertTrue(release_handoff["remote_ci_failure_artifact_review_required"])
+        self.assertEqual(
+            release_handoff["remote_ci_failure_next_step"],
+            "request_authenticated_artifact_or_safe_log_excerpt_for_python_unittest_traceback",
+        )
+        self.assertFalse(release_handoff["release_gate_complete"])
+        self.assertFalse(release_handoff["strict_closeout_ready"])
+        self.assertTrue(
+            release_split_rows["matching_remote_actions_review"][
+                "remote_ci_failure_reviewed_for_current_head"
+            ]
+        )
+        self.assertEqual(
+            release_split_rows["matching_remote_actions_review"]["remote_ci_failure_artifact_digest"],
+            artifact_digest,
+        )
+        self.assertEqual(
+            release_split_rows["matching_remote_actions_review"]["remote_ci_failure_next_step"],
+            "request_authenticated_artifact_or_safe_log_excerpt_for_python_unittest_traceback",
+        )
+        self.assertEqual(
+            work_order_summary["release_gate_current_head_remote_review_state"],
+            "matching_remote_ci_failed_for_current_head",
+        )
+        self.assertIn(
+            "matching_remote_ci_failed_for_current_head",
+            work_order_summary["release_gate_current_blockers"],
+        )
+        self.assertEqual(work_order_summary["strict_closeout"], "0/14")
+        self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
+
     def test_motion_browser_qa_review_task_is_button_gated_local_only(self):
         self._with_meta_store()
         motion_root = self._with_motion_qa_root()

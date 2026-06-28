@@ -21,6 +21,15 @@ SCHEMA_VERSION = "command_center_3_remote_ci_review_receipt.v1"
 EXPECTED_WORKFLOW_NAME = "Command Center 3 Push Gate"
 EXPECTED_REPO_RUN_PREFIX = "https://github.com/lishark-of/stock-MING/actions/runs/"
 EXPECTED_ARTIFACT_PREFIX = "command-center-3-push-gate-evidence-"
+INCOMPLETE_ACTIONS_STATUSES = {"queued", "in_progress", "waiting", "requested", "pending"}
+FAILED_ACTIONS_CONCLUSIONS = {"failure", "cancelled", "timed_out", "action_required", "startup_failure"}
+ARTIFACT_DOWNLOAD_STATUSES = {
+    "",
+    "not_attempted_by_receipt_writer",
+    "public_download_404",
+    "requires_authenticated_artifact_access",
+    "downloaded_to_local_temp_for_manual_review",
+}
 
 
 def _now_iso() -> str:
@@ -49,25 +58,37 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit(f"--workflow-name must be {EXPECTED_WORKFLOW_NAME!r}")
     if args.event != "push":
         raise SystemExit("--event must be 'push'")
-    if args.actions_status != "completed":
-        raise SystemExit("--actions-status must be 'completed'")
-    if args.actions_conclusion != "success":
-        raise SystemExit("--actions-conclusion must be 'success'")
+    status_is_completed = args.actions_status == "completed"
+    status_is_incomplete = args.actions_status in INCOMPLETE_ACTIONS_STATUSES
+    conclusion_is_failed = args.actions_conclusion in FAILED_ACTIONS_CONCLUSIONS
+    if not (status_is_completed or status_is_incomplete):
+        raise SystemExit("--actions-status must be 'completed' or an incomplete Actions status")
+    if status_is_completed and args.actions_conclusion != "success" and not conclusion_is_failed:
+        raise SystemExit("--actions-conclusion must be 'success' or a reviewed failure conclusion")
+    if status_is_incomplete and args.actions_conclusion not in {"", "none", "null", "pending"}:
+        raise SystemExit("--actions-conclusion must be empty or pending for an incomplete Actions run")
     if not args.run_url.startswith(EXPECTED_REPO_RUN_PREFIX):
         raise SystemExit("run URL must be the stock-MING GitHub Actions run URL")
     if str(args.run_id) not in args.run_url:
         raise SystemExit("run URL must contain the reviewed run id")
-    if not args.artifact_name.startswith(EXPECTED_ARTIFACT_PREFIX):
-        raise SystemExit("artifact name must be a Command Center 3 push-gate evidence artifact")
-    if str(args.run_id) not in args.artifact_name:
-        raise SystemExit("artifact name must contain the reviewed run id")
+    if status_is_completed:
+        if not args.artifact_name.startswith(EXPECTED_ARTIFACT_PREFIX):
+            raise SystemExit("artifact name must be a Command Center 3 push-gate evidence artifact")
+        if str(args.run_id) not in args.artifact_name:
+            raise SystemExit("artifact name must contain the reviewed run id")
+    elif args.artifact_name:
+        raise SystemExit("--artifact-name is only allowed after a completed Actions run")
     if args.artifact_digest:
         if not args.artifact_digest.startswith("sha256:") or len(args.artifact_digest) < len("sha256:") + 32:
             raise SystemExit("artifact digest must be a sha256 digest")
-    elif not args.artifact_digest_unavailable_public_job_page:
+    elif status_is_completed and not args.artifact_digest_unavailable_public_job_page:
         raise SystemExit(
             "--artifact-digest is required unless --artifact-digest-unavailable-public-job-page is set"
         )
+    if conclusion_is_failed and not args.safe_failure_log_excerpt:
+        raise SystemExit("--safe-failure-log-excerpt is required for a reviewed failure run")
+    if args.artifact_download_status not in ARTIFACT_DOWNLOAD_STATUSES:
+        raise SystemExit("--artifact-download-status is not an allowed receipt status")
     if not args.head_full or len(args.head_full) < 12:
         raise SystemExit("--head-full must be the reviewed commit SHA")
 
@@ -76,16 +97,43 @@ def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
     head = args.head or args.head_full[:8]
     reviewed_at = args.reviewed_at_utc or _now_iso()
     artifact_digest_verified = bool(args.artifact_digest)
-    status = (
-        "remote_ci_review_verified_green"
-        if artifact_digest_verified
-        else "remote_ci_review_green_artifact_digest_pending"
+    actions_incomplete = args.actions_status in INCOMPLETE_ACTIONS_STATUSES
+    actions_failed = args.actions_conclusion in FAILED_ACTIONS_CONCLUSIONS
+    artifact_download_status = args.artifact_download_status or (
+        "not_attempted_by_receipt_writer" if actions_failed else ""
     )
-    release_claim_decision = (
-        "remote_ci_green_release_review_pending"
-        if artifact_digest_verified
-        else "blocked_remote_ci_artifact_digest_unverified"
-    )
+    artifact_download_blocked = artifact_download_status in {
+        "public_download_404",
+        "requires_authenticated_artifact_access",
+    }
+    if actions_incomplete:
+        status = "remote_ci_review_run_in_progress"
+        release_claim_decision = "blocked_remote_ci_incomplete"
+        artifact_digest_review_status = "not_available_until_run_completed"
+    elif actions_failed:
+        status = "remote_ci_review_failed_run_reviewed"
+        release_claim_decision = "blocked_remote_ci_failed"
+        artifact_digest_review_status = (
+            "sha256_digest_recorded"
+            if artifact_digest_verified
+            else "unavailable_from_public_job_page"
+        )
+    else:
+        status = (
+            "remote_ci_review_verified_green"
+            if artifact_digest_verified
+            else "remote_ci_review_green_artifact_digest_pending"
+        )
+        release_claim_decision = (
+            "remote_ci_green_release_review_pending"
+            if artifact_digest_verified
+            else "blocked_remote_ci_artifact_digest_unverified"
+        )
+        artifact_digest_review_status = (
+            "sha256_digest_recorded"
+            if artifact_digest_verified
+            else "unavailable_from_public_job_page"
+        )
     return {
         "schema_version": SCHEMA_VERSION,
         "status": status,
@@ -99,7 +147,7 @@ def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
         "event": args.event,
         "run_id": args.run_id,
         "run_url": args.run_url,
-        "safe_failure_log_excerpt_or_green_run_url": args.run_url,
+        "safe_failure_log_excerpt_or_green_run_url": args.safe_failure_log_excerpt or args.run_url,
         "actions_status": args.actions_status,
         "actions_conclusion": args.actions_conclusion,
         "job_name": args.job_name,
@@ -107,17 +155,28 @@ def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
         "artifact_name": args.artifact_name,
         "artifact_digest": args.artifact_digest,
         "artifact_digest_verified": artifact_digest_verified,
-        "artifact_digest_review_status": (
-            "sha256_digest_recorded"
-            if artifact_digest_verified
-            else "unavailable_from_public_job_page"
+        "artifact_digest_review_status": artifact_digest_review_status,
+        "failed_step_or_green_status": (
+            "remote_actions_run_in_progress"
+            if actions_incomplete
+            else args.safe_failure_log_excerpt
+            if actions_failed
+            else "green"
         ),
-        "failed_step_or_green_status": "green",
         "explicit_user_actions_review_authorized": True,
-        "remote_actions_status_known": True,
-        "latest_remote_run_verified_green": artifact_digest_verified,
-        "remote_ci_job_page_green_observed": True,
-        "remote_ci_artifact_digest_pending": not artifact_digest_verified,
+        "remote_actions_status_known": not actions_incomplete,
+        "latest_remote_run_verified_green": bool(
+            artifact_digest_verified and not actions_incomplete and not actions_failed
+        ),
+        "remote_ci_job_page_green_observed": bool(not actions_incomplete and not actions_failed),
+        "remote_ci_artifact_digest_pending": bool(
+            not actions_incomplete and not actions_failed and not artifact_digest_verified
+        ),
+        "remote_ci_run_observed_for_current_head": actions_incomplete,
+        "remote_ci_run_in_progress_for_current_head": actions_incomplete,
+        "remote_ci_failure_reviewed_for_current_head": actions_failed,
+        "remote_ci_failure_artifact_download_status": artifact_download_status,
+        "remote_ci_failure_artifact_download_blocked": artifact_download_blocked,
         "release_claim_decision": release_claim_decision,
         "remote_ci_review_receipt_is_not_release_review": True,
         "release_review_complete": False,
@@ -150,9 +209,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--actions-conclusion", default="success")
     parser.add_argument("--job-name", default="push-gate")
     parser.add_argument("--job-conclusion", default="success")
-    parser.add_argument("--artifact-name", required=True)
+    parser.add_argument("--artifact-name", default="")
     parser.add_argument("--artifact-digest", default="")
     parser.add_argument("--artifact-digest-unavailable-public-job-page", action="store_true")
+    parser.add_argument("--artifact-download-status", default="")
+    parser.add_argument("--safe-failure-log-excerpt", default="")
     parser.add_argument("--reviewed-at-utc", default="")
     parser.add_argument("--review-authorized", action="store_true")
     return parser.parse_args()
@@ -172,10 +233,23 @@ def main() -> int:
                 "receipt_path": str(output),
                 "head_full": payload["head_full"],
                 "run_id": payload["run_id"],
-                "remote_actions_status_known": True,
+                "remote_actions_status_known": payload["remote_actions_status_known"],
                 "latest_remote_run_verified_green": payload["latest_remote_run_verified_green"],
                 "remote_ci_job_page_green_observed": payload["remote_ci_job_page_green_observed"],
                 "remote_ci_artifact_digest_pending": payload["remote_ci_artifact_digest_pending"],
+                "remote_ci_run_observed_for_current_head": payload["remote_ci_run_observed_for_current_head"],
+                "remote_ci_run_in_progress_for_current_head": payload[
+                    "remote_ci_run_in_progress_for_current_head"
+                ],
+                "remote_ci_failure_reviewed_for_current_head": payload[
+                    "remote_ci_failure_reviewed_for_current_head"
+                ],
+                "remote_ci_failure_artifact_download_status": payload[
+                    "remote_ci_failure_artifact_download_status"
+                ],
+                "remote_ci_failure_artifact_download_blocked": payload[
+                    "remote_ci_failure_artifact_download_blocked"
+                ],
                 "release_claim_decision": payload["release_claim_decision"],
                 "github_api_called": False,
                 "external_calls_triggered": False,

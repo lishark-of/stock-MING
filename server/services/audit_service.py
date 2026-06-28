@@ -1018,6 +1018,11 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
         "head_matches_current": False,
         "remote_actions_status_known": False,
         "latest_remote_run_verified_green": False,
+        "remote_ci_run_observed_for_current_head": False,
+        "remote_ci_run_in_progress_for_current_head": False,
+        "remote_ci_failure_reviewed_for_current_head": False,
+        "remote_ci_failure_artifact_download_status": "",
+        "remote_ci_failure_artifact_download_blocked": False,
         "remote_ci_review_ready": False,
         "safe_failure_logs_reviewed": False,
         "release_review_complete": False,
@@ -1092,8 +1097,24 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     raw_status = str(raw_receipt.get("status") or "")
     status_ok = raw_status == "remote_ci_review_verified_green"
     artifact_digest_pending_status = raw_status == "remote_ci_review_green_artifact_digest_pending"
+    run_in_progress_status = raw_status == "remote_ci_review_run_in_progress"
+    failure_reviewed_status = raw_status == "remote_ci_review_failed_run_reviewed"
     run_status_ok = raw_receipt.get("actions_status") == "completed"
+    run_status_incomplete = str(raw_receipt.get("actions_status") or "") in {
+        "queued",
+        "in_progress",
+        "waiting",
+        "requested",
+        "pending",
+    }
     conclusion_ok = raw_receipt.get("actions_conclusion") == "success"
+    conclusion_failed = str(raw_receipt.get("actions_conclusion") or "") in {
+        "failure",
+        "cancelled",
+        "timed_out",
+        "action_required",
+        "startup_failure",
+    }
     workflow_ok = str(raw_receipt.get("workflow_name") or "") == "Command Center 3 Push Gate"
     event_ok = str(raw_receipt.get("event") or "") == "push"
     artifact_ok = str(raw_receipt.get("artifact_name") or "").startswith("command-center-3-push-gate-evidence-")
@@ -1102,6 +1123,11 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     run_url = str(raw_receipt.get("run_url") or "")
     run_url_ok = run_url.startswith("https://github.com/lishark-of/stock-MING/actions/runs/")
     review_authorized = raw_receipt.get("explicit_user_actions_review_authorized") is True
+    artifact_download_status = str(raw_receipt.get("remote_ci_failure_artifact_download_status") or "")
+    artifact_download_blocked = artifact_download_status in {
+        "public_download_404",
+        "requires_authenticated_artifact_access",
+    }
     safety_ok = (
         raw_receipt.get("cache_get_external_calls") is False
         and raw_receipt.get("cache_get_calls_github_api") is False
@@ -1121,28 +1147,48 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
         schema_ok
         and head_matches_current
         and run_status_ok
-        and conclusion_ok
+        and (conclusion_ok or conclusion_failed)
         and workflow_ok
         and event_ok
         and run_url_ok
         and review_authorized
         and safety_ok
     )
-    if not (status_ok or artifact_digest_pending_status):
+    remote_run_observed_for_current_head = bool(
+        schema_ok
+        and head_matches_current
+        and workflow_ok
+        and event_ok
+        and run_url_ok
+        and review_authorized
+        and safety_ok
+    )
+    remote_run_in_progress_for_current_head = bool(
+        remote_run_observed_for_current_head
+        and run_in_progress_status
+        and run_status_incomplete
+    )
+    remote_ci_failure_reviewed_for_current_head = bool(
+        remote_run_observed_for_current_head
+        and failure_reviewed_status
+        and run_status_ok
+        and conclusion_failed
+    )
+    if not (status_ok or artifact_digest_pending_status or run_in_progress_status or failure_reviewed_status):
         missing_evidence.append("remote CI review verified-green status")
     if not head_matches_current:
         missing_evidence.append("current HEAD matching remote CI review")
     if not run_status_ok:
         missing_evidence.append("completed remote Actions run status")
-    if not conclusion_ok:
+    if not (conclusion_ok or conclusion_failed):
         missing_evidence.append("successful remote Actions conclusion")
     if not workflow_ok:
         missing_evidence.append("Command Center 3 Push Gate workflow name")
     if not event_ok:
         missing_evidence.append("push event for remote Actions run")
-    if not artifact_ok:
+    if not run_in_progress_status and not artifact_ok:
         missing_evidence.append("push-gate evidence artifact name")
-    if not artifact_digest_ok:
+    if not run_in_progress_status and not artifact_digest_ok:
         missing_evidence.append("push-gate evidence artifact sha256 digest")
     if not run_url_ok:
         missing_evidence.append("safe GitHub Actions run URL")
@@ -1159,6 +1205,10 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
         if verified_green
         else "remote_ci_review_green_artifact_digest_pending"
         if remote_status_known and artifact_digest_pending_status and artifact_ok
+        else "remote_ci_review_failed_run_reviewed"
+        if remote_ci_failure_reviewed_for_current_head
+        else "remote_ci_review_run_in_progress"
+        if remote_run_in_progress_for_current_head
         else "remote_ci_review_receipt_present_but_not_verified"
     )
     receipt.update(
@@ -1174,8 +1224,13 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
             "head_matches_current": head_matches_current,
             "remote_actions_status_known": remote_status_known,
             "latest_remote_run_verified_green": verified_green,
+            "remote_ci_run_observed_for_current_head": remote_run_observed_for_current_head,
+            "remote_ci_run_in_progress_for_current_head": remote_run_in_progress_for_current_head,
+            "remote_ci_failure_reviewed_for_current_head": remote_ci_failure_reviewed_for_current_head,
+            "remote_ci_failure_artifact_download_status": artifact_download_status,
+            "remote_ci_failure_artifact_download_blocked": artifact_download_blocked,
             "remote_ci_review_ready": verified_green,
-            "remote_ci_job_page_green_observed": remote_status_known,
+            "remote_ci_job_page_green_observed": bool(remote_status_known and conclusion_ok),
             "remote_ci_artifact_digest_pending": bool(
                 remote_status_known and artifact_digest_pending_status and not artifact_digest_ok
             ),
@@ -1185,13 +1240,15 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
                 if artifact_digest_ok
                 else "unavailable_or_unverified"
             ),
-            "safe_failure_logs_reviewed": False,
+            "safe_failure_logs_reviewed": remote_ci_failure_reviewed_for_current_head,
             "release_review_complete": False,
             "release_gate_complete": False,
             "production_release_complete": False,
             "release_claim_decision": (
                 "remote_ci_green_release_review_pending"
                 if verified_green
+                else "blocked_remote_ci_failed"
+                if remote_ci_failure_reviewed_for_current_head
                 else "blocked_remote_ci_unverified"
             ),
             "missing_evidence": missing_evidence,
@@ -1215,6 +1272,11 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
                     "call_status": status,
                     "remote_actions_status_known": remote_status_known,
                     "latest_remote_run_verified_green": verified_green,
+                    "remote_ci_run_observed_for_current_head": remote_run_observed_for_current_head,
+                    "remote_ci_run_in_progress_for_current_head": remote_run_in_progress_for_current_head,
+                    "remote_ci_failure_reviewed_for_current_head": remote_ci_failure_reviewed_for_current_head,
+                    "remote_ci_failure_artifact_download_status": artifact_download_status,
+                    "remote_ci_failure_artifact_download_blocked": artifact_download_blocked,
                     "remote_ci_artifact_digest_pending": bool(
                         remote_status_known and artifact_digest_pending_status and not artifact_digest_ok
                     ),
