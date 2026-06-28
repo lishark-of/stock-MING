@@ -281,6 +281,7 @@ def build_snapshot() -> dict[str, Any]:
 
     summary = dict(status.get("long_term_goal_summary") or {})
     safety = dict(status.get("api_policy") or {})
+    trade_cal_handoff = dict(status.get("ltg01_trade_cal_provider_acceptance_evidence_handoff_summary") or {})
     release_split = dict(status.get("release_gate_remote_review_split_summary") or {})
     release_handoff = dict(status.get("ltg11_release_gate_remote_review_handoff_summary") or {})
     trade_handoff = dict(status.get("ltg12_trade_isolation_release_guard_handoff_summary") or {})
@@ -467,6 +468,108 @@ def build_snapshot() -> dict[str, Any]:
             or work_order_summary.get("release_gate_next_publish_step")
             or "",
         },
+        "trade_cal_provider_acceptance": {
+            "schema_version": trade_cal_handoff.get("schema_version") or "",
+            "status": trade_cal_handoff.get("status") or "",
+            "provider_direct_evidence_layer": trade_cal_handoff.get(
+                "provider_direct_evidence_layer"
+            )
+            or "",
+            "provider_direct_evidence_source": trade_cal_handoff.get(
+                "provider_direct_evidence_source"
+            )
+            or "",
+            "provider_direct_evidence_status": trade_cal_handoff.get(
+                "provider_direct_evidence_status"
+            )
+            or "",
+            "trade_cal_provider_call_ledger_observed_count": _as_int(
+                trade_cal_handoff.get("trade_cal_provider_call_ledger_observed_count")
+            ),
+            "trade_cal_provider_observed_row_count": _as_int(
+                trade_cal_handoff.get("trade_cal_provider_observed_row_count")
+            ),
+            "failure_mode_provider_evidence_done": (
+                trade_cal_handoff.get("failure_mode_provider_evidence_done") is True
+            ),
+            "freshness_replay_provider_evidence_done": (
+                trade_cal_handoff.get("freshness_replay_provider_evidence_done") is True
+            ),
+            "freshness_replay_scenario_count": _as_int(
+                trade_cal_handoff.get("freshness_replay_scenario_count")
+            ),
+            "provider_backed_acceptance_done_by_blocker_audit": (
+                trade_cal_handoff.get("provider_backed_acceptance_done_by_blocker_audit")
+                is True
+            ),
+            "provider_backed_acceptance_done_by_durable_recipe": (
+                trade_cal_handoff.get("provider_backed_acceptance_done_by_durable_recipe")
+                is True
+            ),
+            "provider_evidence_visible": trade_cal_handoff.get("provider_evidence_visible")
+            is True,
+            "durable_recipe_ready": trade_cal_handoff.get("durable_recipe_ready") is True,
+            "durable_promotion_ready": trade_cal_handoff.get("durable_promotion_ready") is True,
+            "latest_dry_run_found": trade_cal_handoff.get("latest_dry_run_found") is True,
+            "latest_dry_run_status": trade_cal_handoff.get("latest_dry_run_status") or "",
+            "latest_execution_request_found": (
+                trade_cal_handoff.get("latest_execution_request_found") is True
+            ),
+            "latest_execution_request_status": trade_cal_handoff.get(
+                "latest_execution_request_status"
+            )
+            or "",
+            "latest_execution_request_ready_for_manual_provider_task_submission": (
+                trade_cal_handoff.get(
+                    "latest_execution_request_ready_for_manual_provider_task_submission"
+                )
+                is True
+            ),
+            "latest_promotion_review_found": (
+                trade_cal_handoff.get("latest_promotion_review_found") is True
+            ),
+            "latest_promotion_review_status": trade_cal_handoff.get(
+                "latest_promotion_review_status"
+            )
+            or "",
+            "latest_promotion_review_ready_for_release": (
+                trade_cal_handoff.get("latest_promotion_review_ready_for_release") is True
+            ),
+            "requires_explicit_provider_trade_cal_task": (
+                trade_cal_handoff.get("requires_explicit_provider_trade_cal_task") is True
+            ),
+            "requires_provider_freshness_replay": (
+                trade_cal_handoff.get("requires_provider_freshness_replay") is True
+            ),
+            "requires_promotion_review_task": (
+                trade_cal_handoff.get("requires_promotion_review_task") is True
+            ),
+            "requires_release_review_after_remote_green": (
+                trade_cal_handoff.get("requires_release_review_after_remote_green") is True
+            ),
+            "production_freshness_gate_complete": (
+                trade_cal_handoff.get("production_freshness_gate_complete") is True
+            ),
+            "strict_closeout_ready": trade_cal_handoff.get("strict_closeout_ready") is True,
+            "cache_get_calls_provider": trade_cal_handoff.get("cache_get_calls_provider")
+            is True,
+            "creates_provider_task_from_get": (
+                trade_cal_handoff.get("creates_provider_task_from_get") is True
+            ),
+            "external_calls_triggered": trade_cal_handoff.get("external_calls_triggered")
+            is True,
+            "tushare_called": trade_cal_handoff.get("tushare_called") is True,
+            "does_not_execute_trades": trade_cal_handoff.get("does_not_execute_trades")
+            is True,
+            "next_local_step": trade_cal_handoff.get("next_local_step") or "",
+            "allowed_next_step": trade_cal_handoff.get("allowed_next_step") or "",
+            "missing_durable_evidence_item_count": _as_int(
+                trade_cal_handoff.get("missing_durable_evidence_item_count")
+            ),
+            "local_evidence_missing_item_count": _as_int(
+                trade_cal_handoff.get("local_evidence_missing_item_count")
+            ),
+        },
         "trade_isolation_release_guard": {
             "schema_version": trade_handoff.get("schema_version") or "",
             "trade_isolation_release_receipt_status": trade_handoff.get(
@@ -618,6 +721,23 @@ def _print_text(snapshot: dict[str, Any]) -> None:
         f" blockers={release_gate['release_gate_current_blocker_count']}"
         f" next_local={release_gate['next_local_step']}"
         f" next_publish={release_gate['next_publish_step']}"
+    )
+    trade_cal = snapshot["trade_cal_provider_acceptance"]
+    print(
+        "Trade cal acceptance:"
+        f" status={trade_cal['status']}"
+        f" direct_provider={trade_cal['provider_direct_evidence_status']}"
+        f" ledger={trade_cal['trade_cal_provider_call_ledger_observed_count']}"
+        f" rows={trade_cal['trade_cal_provider_observed_row_count']}"
+        f" failure_mode={trade_cal['failure_mode_provider_evidence_done']}"
+        f" replay={trade_cal['freshness_replay_provider_evidence_done']}"
+        f" provider_backed={trade_cal['provider_backed_acceptance_done_by_durable_recipe']}"
+        f" dry_run={trade_cal['latest_dry_run_found']}"
+        f" execution_request={trade_cal['latest_execution_request_found']}"
+        f" promotion={trade_cal['latest_promotion_review_ready_for_release']}"
+        f" cache_provider={trade_cal['cache_get_calls_provider']}"
+        f" tushare_called={trade_cal['tushare_called']}"
+        f" next={trade_cal['next_local_step']}"
     )
     trade_guard = snapshot["trade_isolation_release_guard"]
     print(

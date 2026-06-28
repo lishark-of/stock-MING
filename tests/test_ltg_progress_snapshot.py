@@ -275,6 +275,148 @@ class LtgProgressSnapshotTests(unittest.TestCase):
         self.assertIn("separate_project=True", text)
         self.assertIn("ready_for_real_trading=False", text)
 
+    def test_trade_cal_provider_acceptance_is_visible_without_completion_claim(self):
+        module = _load_snapshot_module()
+        fake_status = {
+            "packet_key": "fake_packet",
+            "mode": "test",
+            "loaded_at": "2026-06-28T12:35:19Z",
+            "long_term_goal_summary": {
+                "strict_closeout": "0/14",
+                "strict_closeout_done_count": 0,
+                "strict_closeout_total_count": 14,
+                "strict_closeout_remaining_count": 14,
+            },
+            "api_policy": {
+                "cache_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+            "long_term_goal_rows": [],
+            "ltg_acceptance_runway_rows": [],
+            "ltg_next_acceptance_action_rows": [],
+            "ltg_strict_closeout_evidence_spine_rows": [],
+            "ltg_strict_closeout_evidence_spine_summary": {
+                "schema_version": "ltg_strict_closeout_evidence_spine_summary.v1",
+                "spine_visible_count": 14,
+                "spine_total_count": 14,
+                "strict_closeout_work_order_visible_count": 14,
+                "strict_closeout_work_order_total_count": 14,
+                "all_rows_have_strict_closeout_work_order": True,
+                "all_rows_have_next_evidence_action": True,
+                "all_rows_keep_one_ltg_scope": True,
+                "release_gate_current_head_remote_review_state": "current_head_unpushed_for_remote_ci",
+                "release_gate_current_blocker_count": 5,
+                "release_gate_current_blockers": ["local_commits_not_pushed_for_remote_ci"],
+                "strict_closeout_claim_allowed": False,
+                "cache_only_readback": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+            "release_gate_remote_review_split_summary": {},
+            "ltg11_release_gate_remote_review_handoff_summary": {},
+            "ltg12_trade_isolation_release_guard_handoff_summary": {},
+            "ltg_strict_closeout_work_order_summary": {
+                "release_gate_current_head_remote_review_state": "current_head_unpushed_for_remote_ci",
+                "release_gate_current_blockers": ["local_commits_not_pushed_for_remote_ci"],
+                "strict_closeout_claim_allowed": False,
+            },
+            "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary": {
+                "schema_version": "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary.v1",
+                "status": "provider_acceptance_task_receipt_chain_needed",
+                "provider_direct_evidence_layer": "L3_direct_provider_call_ledger",
+                "provider_direct_evidence_source": "command_center_tushare_refresh_packet",
+                "provider_direct_evidence_status": "success",
+                "trade_cal_provider_call_ledger_observed_count": 18,
+                "trade_cal_provider_observed_row_count": 1462,
+                "failure_mode_provider_evidence_done": True,
+                "freshness_replay_provider_evidence_done": False,
+                "freshness_replay_scenario_count": 8,
+                "provider_backed_acceptance_done_by_blocker_audit": False,
+                "provider_backed_acceptance_done_by_durable_recipe": False,
+                "provider_evidence_visible": False,
+                "durable_recipe_ready": True,
+                "durable_promotion_ready": False,
+                "latest_dry_run_found": False,
+                "latest_dry_run_status": "no_trade_cal_provider_acceptance_dry_run_task_found",
+                "latest_execution_request_found": False,
+                "latest_execution_request_status": (
+                    "no_trade_cal_provider_acceptance_execution_request_task_found"
+                ),
+                "latest_execution_request_ready_for_manual_provider_task_submission": False,
+                "latest_promotion_review_found": False,
+                "latest_promotion_review_status": (
+                    "no_trade_cal_provider_acceptance_promotion_review_task_found"
+                ),
+                "latest_promotion_review_ready_for_release": False,
+                "requires_explicit_provider_trade_cal_task": True,
+                "requires_provider_freshness_replay": True,
+                "requires_promotion_review_task": True,
+                "requires_release_review_after_remote_green": True,
+                "production_freshness_gate_complete": False,
+                "strict_closeout_ready": False,
+                "cache_get_calls_provider": False,
+                "creates_provider_task_from_get": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "does_not_execute_trades": True,
+                "next_local_step": "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+                "allowed_next_step": (
+                    "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence"
+                ),
+                "missing_durable_evidence_item_count": 11,
+                "local_evidence_missing_item_count": 6,
+            },
+        }
+
+        with patch.object(module.migration_status_service, "build_migration_status", return_value=fake_status):
+            snapshot = module.build_snapshot()
+
+        trade_cal = snapshot["trade_cal_provider_acceptance"]
+        self.assertEqual(trade_cal["status"], "provider_acceptance_task_receipt_chain_needed")
+        self.assertEqual(trade_cal["provider_direct_evidence_status"], "success")
+        self.assertEqual(trade_cal["trade_cal_provider_call_ledger_observed_count"], 18)
+        self.assertEqual(trade_cal["trade_cal_provider_observed_row_count"], 1462)
+        self.assertTrue(trade_cal["failure_mode_provider_evidence_done"])
+        self.assertFalse(trade_cal["freshness_replay_provider_evidence_done"])
+        self.assertFalse(trade_cal["provider_backed_acceptance_done_by_durable_recipe"])
+        self.assertFalse(trade_cal["latest_dry_run_found"])
+        self.assertFalse(trade_cal["latest_execution_request_found"])
+        self.assertFalse(trade_cal["latest_promotion_review_ready_for_release"])
+        self.assertFalse(trade_cal["cache_get_calls_provider"])
+        self.assertFalse(trade_cal["tushare_called"])
+        self.assertEqual(
+            trade_cal["next_local_step"],
+            "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+        )
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            module._print_text(snapshot)
+        text = buffer.getvalue()
+
+        self.assertIn("Trade cal acceptance:", text)
+        self.assertIn("status=provider_acceptance_task_receipt_chain_needed", text)
+        self.assertIn("direct_provider=success", text)
+        self.assertIn("ledger=18", text)
+        self.assertIn("rows=1462", text)
+        self.assertIn("failure_mode=True", text)
+        self.assertIn("replay=False", text)
+        self.assertIn("provider_backed=False", text)
+        self.assertIn("execution_request=False", text)
+        self.assertIn("promotion=False", text)
+        self.assertIn("cache_provider=False", text)
+        self.assertIn("tushare_called=False", text)
+        self.assertIn("next=POST /api/data-health/trade-cal-provider-acceptance-dry-run", text)
+
 
 if __name__ == "__main__":
     unittest.main()
