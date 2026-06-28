@@ -26202,6 +26202,55 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("TS_OK", json.dumps(cache_response, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache_response, ensure_ascii=False))
 
+        migration = migration_status_service.build_migration_status()
+        p1_row = {
+            row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]
+        }["p1_trade_cal_provider_acceptance"]
+        handoff = p1_row["supporting_trade_cal_provider_acceptance_evidence_handoff"]
+        self.assertEqual(
+            handoff["schema_version"],
+            "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary.v1",
+        )
+        self.assertTrue(handoff["latest_dry_run_found"])
+        self.assertEqual(handoff["latest_dry_run_task_id"], dry_run_response["data"]["task"]["task_id"])
+        self.assertEqual(handoff["latest_dry_run_status"], dry_run_receipt["status"])
+        self.assertEqual(
+            handoff["latest_dry_run_scope_hash_short"],
+            dry_run_receipt["acceptance_scope_hash_short"],
+        )
+        self.assertTrue(handoff["latest_execution_request_found"])
+        self.assertEqual(handoff["latest_execution_request_task_id"], execution_task["task_id"])
+        self.assertEqual(handoff["latest_execution_request_status"], execution_receipt["status"])
+        self.assertTrue(handoff["latest_execution_request_scope_hash_matches"])
+        self.assertFalse(handoff["latest_execution_request_creates_provider_task"])
+        self.assertFalse(handoff["production_freshness_gate_complete"])
+        self.assertFalse(handoff["provider_evidence_visible"])
+        self.assertFalse(handoff["strict_closeout_ready"])
+        self.assertFalse(handoff["can_close_goal"])
+        self.assertFalse(handoff["cache_get_creates_task"])
+        self.assertFalse(handoff["cache_get_calls_provider"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["tushare_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        if execution_receipt["ready_for_manual_provider_task_submission"]:
+            self.assertEqual(
+                handoff["status"],
+                "provider_acceptance_execution_request_ready_provider_task_pending",
+            )
+            self.assertTrue(
+                handoff["latest_execution_request_ready_for_manual_provider_task_submission"]
+            )
+            self.assertEqual(handoff["next_local_step"], "POST /api/tasks/refresh-tushare-facts")
+        else:
+            self.assertEqual(handoff["status"], "provider_acceptance_execution_request_visible_but_blocked")
+            self.assertFalse(
+                handoff["latest_execution_request_ready_for_manual_provider_task_submission"]
+            )
+            self.assertEqual(
+                handoff["next_local_step"],
+                "POST /api/data-health/trade-cal-provider-acceptance-execution-request",
+            )
+
     def test_trade_cal_provider_acceptance_promotion_review_records_blockers_without_provider_call(self):
         self._with_meta_store()
         self._with_parquet_root()
@@ -38459,6 +38508,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             p1_provider_handoff["status"],
             {
                 "provider_acceptance_task_receipt_chain_needed",
+                "provider_acceptance_dry_run_scope_ticket_visible_execution_request_needed",
+                "provider_acceptance_execution_request_visible_but_blocked",
+                "provider_acceptance_execution_request_ready_provider_task_pending",
                 "prior_provider_acceptance_evidence_visible_promotion_review_needed",
                 "provider_acceptance_promotion_review_ready_for_release_review",
             },

@@ -9118,6 +9118,11 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
     )
     provider_evidence_visible = provider_evidence.get("provider_backed_acceptance_done") is True
     promotion_ready = promotion.get("status") == "trade_cal_provider_acceptance_promotion_ready"
+    dry_run_found = latest_dry_run.get("latest_task_found") is True
+    execution_request_found = latest_execution_request.get("latest_task_found") is True
+    execution_request_ready = (
+        latest_execution_request.get("ready_for_manual_provider_task_submission") is True
+    )
     promotion_review_found = latest_promotion_review.get("latest_task_found") is True
     promotion_review_ready = (
         latest_promotion_review.get("ready_for_production_freshness_release_review") is True
@@ -9127,17 +9132,28 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         if promotion_review_found and promotion_review_ready
         else "POST /api/data-health/trade-cal-provider-acceptance-promotion-review"
         if provider_evidence_visible and promotion_ready
+        else "POST /api/tasks/refresh-tushare-facts"
+        if execution_request_found and execution_request_ready
+        else "POST /api/data-health/trade-cal-provider-acceptance-execution-request"
+        if dry_run_found
         else "POST /api/data-health/trade-cal-provider-acceptance-dry-run"
+    )
+    status = (
+        "provider_acceptance_promotion_review_ready_for_release_review"
+        if promotion_review_found and promotion_review_ready
+        else "prior_provider_acceptance_evidence_visible_promotion_review_needed"
+        if provider_evidence_visible and promotion_ready
+        else "provider_acceptance_execution_request_ready_provider_task_pending"
+        if execution_request_found and execution_request_ready
+        else "provider_acceptance_execution_request_visible_but_blocked"
+        if execution_request_found
+        else "provider_acceptance_dry_run_scope_ticket_visible_execution_request_needed"
+        if dry_run_found
+        else "provider_acceptance_task_receipt_chain_needed"
     )
     return {
         "schema_version": "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary.v1",
-        "status": (
-            "provider_acceptance_promotion_review_ready_for_release_review"
-            if promotion_review_found and promotion_review_ready
-            else "prior_provider_acceptance_evidence_visible_promotion_review_needed"
-            if provider_evidence_visible and promotion_ready
-            else "provider_acceptance_task_receipt_chain_needed"
-        ),
+        "status": status,
         "source_packet_key": "command_center_3_data_health_timeline_cache",
         "provider_direct_evidence_source": provider_evidence.get("source_packet_key"),
         "provider_direct_evidence_status": provider_evidence.get("source_status"),
@@ -9215,8 +9231,24 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         "failure_mode_provider_evidence_done": (
             provider_evidence.get("failure_mode_provider_evidence_done") is True
         ),
-        "latest_dry_run_found": latest_dry_run.get("latest_task_found") is True,
-        "latest_execution_request_found": latest_execution_request.get("latest_task_found") is True,
+        "latest_dry_run_found": dry_run_found,
+        "latest_dry_run_status": latest_dry_run.get("dry_run_status") or "missing",
+        "latest_dry_run_task_id": latest_dry_run.get("latest_task_id") or "",
+        "latest_dry_run_scope_hash_short": latest_dry_run.get("acceptance_scope_hash_short") or "",
+        "latest_execution_request_found": execution_request_found,
+        "latest_execution_request_status": (
+            latest_execution_request.get("execution_request_status") or "missing"
+        ),
+        "latest_execution_request_task_id": latest_execution_request.get("latest_task_id") or "",
+        "latest_execution_request_scope_hash_matches": (
+            latest_execution_request.get("scope_hash_matches_latest_dry_run") is True
+        ),
+        "latest_execution_request_ready_for_manual_provider_task_submission": (
+            execution_request_ready
+        ),
+        "latest_execution_request_creates_provider_task": (
+            latest_execution_request.get("creates_provider_task") is True
+        ),
         "latest_promotion_review_found": promotion_review_found,
         "latest_promotion_review_ready_for_release": promotion_review_ready,
         "latest_promotion_review_status": latest_promotion_review.get("status") or "missing",
