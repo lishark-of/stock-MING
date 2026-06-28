@@ -2739,12 +2739,23 @@ def _build_ltg_strict_closeout_evidence_spine(
     *,
     handoff_summaries_by_key: Mapping[str, Mapping[str, Any]],
     long_term_goal_summary: Mapping[str, Any],
+    ltg_strict_closeout_work_order_summary: Mapping[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     closeout_state = str(long_term_goal_summary.get("strict_closeout") or "0/14")
     closeout_done_count = int(long_term_goal_summary.get("strict_closeout_done_count") or 0)
     closeout_total_count = int(long_term_goal_summary.get("strict_closeout_total_count") or 14)
     closeout_remaining_count = int(
         long_term_goal_summary.get("strict_closeout_remaining_count") or 14
+    )
+    current_head_remote_review_state = str(
+        ltg_strict_closeout_work_order_summary.get("release_gate_current_head_remote_review_state")
+        or "matching_remote_ci_review_pending"
+    )
+    current_head_remote_review_claim_allowed = (
+        ltg_strict_closeout_work_order_summary.get(
+            "release_gate_current_head_remote_review_claim_allowed"
+        )
+        is True
     )
     rows: list[dict[str, Any]] = []
     missing_ltg_ids: list[str] = []
@@ -2794,6 +2805,8 @@ def _build_ltg_strict_closeout_evidence_spine(
                 "remote_review_split_required": True,
                 "requires_remote_ci_review": True,
                 "requires_release_review_after_remote_green": True,
+                "release_gate_current_head_remote_review_state": current_head_remote_review_state,
+                "release_gate_current_head_remote_review_claim_allowed": False,
                 "spine_row_is_not_production_evidence": True,
                 "cache_only_readback": True,
                 "cache_get_creates_task": False,
@@ -2842,6 +2855,14 @@ def _build_ltg_strict_closeout_evidence_spine(
         "remote_review_split_required": True,
         "requires_remote_ci_review": True,
         "requires_release_review_after_remote_green": True,
+        "release_gate_current_head_remote_review_state": current_head_remote_review_state,
+        "release_gate_current_head_remote_review_claim_allowed": False,
+        "all_rows_current_head_remote_review_state_match": all(
+            row.get("release_gate_current_head_remote_review_state")
+            == current_head_remote_review_state
+            for row in rows
+        ),
+        "work_order_remote_review_claim_allowed": current_head_remote_review_claim_allowed,
         "spine_rows_are_not_production_evidence": True,
         "cache_only_readback": True,
         "cache_get_creates_task": False,
@@ -14778,6 +14799,7 @@ def build_migration_status() -> dict[str, Any]:
         _build_ltg_strict_closeout_evidence_spine(
             handoff_summaries_by_key=ltg_strict_closeout_evidence_spine_handoffs,
             long_term_goal_summary=long_term_goal_summary,
+            ltg_strict_closeout_work_order_summary=ltg_strict_closeout_work_order_summary,
         )
     )
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
@@ -14991,6 +15013,11 @@ def build_migration_status() -> dict[str, Any]:
                         "remote_review_split_required"
                     )
                     is True
+                ),
+                "ltg_strict_closeout_evidence_spine_current_head_remote_review_state": (
+                    ltg_strict_closeout_evidence_spine_summary.get(
+                        "release_gate_current_head_remote_review_state"
+                    )
                 ),
                 "usable_path_medium_goal_checkpoint_row_count": len(
                     usable_path_medium_goal_checkpoint_rows

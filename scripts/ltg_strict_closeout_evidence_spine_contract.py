@@ -90,6 +90,9 @@ def build_contract() -> dict[str, Any]:
     release_review_row = _dict(split_rows_by_stage.get("release_review_and_strict_closeout_boundary"))
 
     current_head_publish_status = str(release_split_summary.get("current_head_publish_status") or "")
+    current_head_remote_review_state = str(
+        work_order_summary.get("release_gate_current_head_remote_review_state") or ""
+    )
     current_head_ahead_count = _int(release_split_summary.get("current_head_origin_ahead_count"))
     current_head_push_required = (
         release_split_summary.get("current_head_push_required_before_remote_review") is True
@@ -125,6 +128,11 @@ def build_contract() -> dict[str, Any]:
         row.get("remote_review_split_required") is True
         and row.get("requires_remote_ci_review") is True
         and row.get("requires_release_review_after_remote_green") is True
+        for row in spine_rows
+    )
+    all_rows_current_head_remote_review_state_match = bool(spine_rows) and all(
+        row.get("release_gate_current_head_remote_review_state") == current_head_remote_review_state
+        and row.get("release_gate_current_head_remote_review_claim_allowed") is False
         for row in spine_rows
     )
     all_rows_cache_only = bool(spine_rows) and all(
@@ -293,6 +301,14 @@ def build_contract() -> dict[str, Any]:
             "LTG-11 handoff and 14-LTG work order expose the same current-head publish boundary",
         ),
         _row(
+            "ltg_strict_closeout_evidence_spine_current_head_remote_review_state_visible",
+            summary.get("release_gate_current_head_remote_review_state") == current_head_remote_review_state
+            and summary.get("release_gate_current_head_remote_review_claim_allowed") is False
+            and summary.get("all_rows_current_head_remote_review_state_match") is True
+            and all_rows_current_head_remote_review_state_match,
+            current_head_remote_review_state or "missing",
+        ),
+        _row(
             "ltg_strict_closeout_evidence_spine_cache_only_no_task_creation",
             summary.get("cache_only_readback") is True
             and summary.get("cache_get_creates_task") is False
@@ -358,6 +374,7 @@ def build_contract() -> dict[str, Any]:
         "requires_remote_ci_review": True,
         "requires_release_review_after_remote_green": True,
         "current_head_publish_status": current_head_publish_status,
+        "current_head_remote_review_state": current_head_remote_review_state,
         "current_head_origin_ahead_count": current_head_ahead_count,
         "current_head_push_required_before_remote_review": current_head_push_required,
         "remote_review_waiting_for_current_head_push": expected_remote_review_waiting_for_push,
@@ -380,6 +397,7 @@ def build_contract() -> dict[str, Any]:
             "handoff_summary_total_count": summary.get("handoff_summary_total_count"),
             "strict_closeout": summary.get("strict_closeout"),
             "current_head_publish_status": current_head_publish_status,
+            "current_head_remote_review_state": current_head_remote_review_state,
             "current_head_origin_ahead_count": current_head_ahead_count,
             "current_head_push_required_before_remote_review": current_head_push_required,
             "remote_review_waiting_for_current_head_push": expected_remote_review_waiting_for_push,

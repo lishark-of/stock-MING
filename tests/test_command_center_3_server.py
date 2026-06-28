@@ -38319,6 +38319,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(spine_summary["remote_review_split_required"])
         self.assertTrue(spine_summary["requires_remote_ci_review"])
         self.assertTrue(spine_summary["requires_release_review_after_remote_green"])
+        self.assertEqual(
+            spine_summary["release_gate_current_head_remote_review_state"],
+            work_order_summary["release_gate_current_head_remote_review_state"],
+        )
+        self.assertFalse(spine_summary["release_gate_current_head_remote_review_claim_allowed"])
+        self.assertFalse(spine_summary["work_order_remote_review_claim_allowed"])
+        self.assertTrue(spine_summary["all_rows_current_head_remote_review_state_match"])
         self.assertTrue(spine_summary["spine_rows_are_not_production_evidence"])
         self.assertFalse(spine_summary["cache_get_creates_task"])
         self.assertFalse(spine_summary["creates_task_from_get"])
@@ -38375,6 +38382,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(
             all(row["requires_release_review_after_remote_green"] for row in spine_rows.values())
         )
+        self.assertTrue(
+            all(
+                row["release_gate_current_head_remote_review_state"]
+                == spine_summary["release_gate_current_head_remote_review_state"]
+                for row in spine_rows.values()
+            )
+        )
+        self.assertFalse(
+            any(row["release_gate_current_head_remote_review_claim_allowed"] for row in spine_rows.values())
+        )
         self.assertTrue(all(row["spine_row_is_not_production_evidence"] for row in spine_rows.values()))
         self.assertTrue(all(row["cache_only_readback"] for row in spine_rows.values()))
         self.assertFalse(any(row["cache_get_creates_task"] for row in spine_rows.values()))
@@ -38394,6 +38411,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration_call_ledger["ltg_strict_closeout_evidence_spine_strict_closeout"], "0/14")
         self.assertTrue(
             migration_call_ledger["ltg_strict_closeout_evidence_spine_remote_review_split_required"]
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg_strict_closeout_evidence_spine_current_head_remote_review_state"],
+            spine_summary["release_gate_current_head_remote_review_state"],
         )
         self.assertIn("local packet", hardening_rows["storage_boundaries"]["not_production_evidence"])
         self.assertIn(
