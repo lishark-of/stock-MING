@@ -14331,6 +14331,9 @@ def build_migration_status() -> dict[str, Any]:
         _latest_storage_physical_execution_handoff_summary()
     )
     ltg06_worker_runtime_qa_handoff_summary = _latest_worker_runtime_qa_handoff_summary()
+    ltg08_next_session_production_replacement_handoff_summary = (
+        _latest_next_session_production_replacement_handoff_summary()
+    )
     ltg13_candidate_radar_production_handoff_summary = (
         _latest_candidate_radar_production_handoff_summary()
     )
@@ -14422,6 +14425,9 @@ def build_migration_status() -> dict[str, Any]:
         ),
         "ltg06_worker_runtime_qa_handoff_summary": (
             ltg06_worker_runtime_qa_handoff_summary
+        ),
+        "ltg08_next_session_production_replacement_handoff_summary": (
+            ltg08_next_session_production_replacement_handoff_summary
         ),
         "ltg13_candidate_radar_production_handoff_summary": (
             ltg13_candidate_radar_production_handoff_summary
@@ -14571,6 +14577,14 @@ def build_migration_status() -> dict[str, Any]:
                 ),
                 "ltg06_worker_runtime_qa_next_local_step": (
                     ltg06_worker_runtime_qa_handoff_summary.get("next_local_step")
+                ),
+                "ltg08_next_session_production_replacement_handoff_status": (
+                    ltg08_next_session_production_replacement_handoff_summary.get("status")
+                ),
+                "ltg08_next_session_production_replacement_next_local_step": (
+                    ltg08_next_session_production_replacement_handoff_summary.get(
+                        "next_local_step"
+                    )
                 ),
                 "ltg13_candidate_radar_production_handoff_status": (
                     ltg13_candidate_radar_production_handoff_summary.get("status")

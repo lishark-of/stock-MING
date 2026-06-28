@@ -38610,6 +38610,67 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_call_ledger["ltg06_worker_runtime_qa_handoff_status"],
             p4_worker_handoff["status"],
         )
+        top_level_next_session_handoff = migration["data"][
+            "ltg08_next_session_production_replacement_handoff_summary"
+        ]
+        p5_next_session_handoff = action_rows["p5_next_session_map_browser_qa"][
+            "supporting_next_session_production_replacement_handoff"
+        ]
+        self.assertEqual(top_level_next_session_handoff, p5_next_session_handoff)
+        self.assertEqual(
+            p5_next_session_handoff["schema_version"],
+            "ltg08_next_session_production_replacement_handoff_summary.v1",
+        )
+        self.assertIn(
+            p5_next_session_handoff["status"],
+            {
+                "next_session_browser_qa_review_needed",
+                "next_session_browser_qa_review_ready_signal_capability_review_needed",
+                "next_session_same_packet_review_ready_promotion_review_needed",
+                "next_session_local_promotion_review_ready_release_evidence_pending",
+            },
+        )
+        self.assertEqual(
+            action_rows["p5_next_session_map_browser_qa"][
+                "supporting_next_session_production_replacement_next_step"
+            ],
+            p5_next_session_handoff["next_local_step"],
+        )
+        self.assertTrue(
+            p5_next_session_handoff["requires_retained_signal_capability_release_evidence"]
+        )
+        self.assertTrue(p5_next_session_handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(p5_next_session_handoff["requires_production_replacement_release_review"])
+        self.assertFalse(p5_next_session_handoff["streamlit_parity_complete"])
+        self.assertFalse(p5_next_session_handoff["legacy_fallback_removed"])
+        self.assertFalse(p5_next_session_handoff["production_replacement_complete"])
+        self.assertFalse(
+            p5_next_session_handoff["ready_to_mark_production_replacement_complete"]
+        )
+        self.assertFalse(p5_next_session_handoff["cache_get_creates_task"])
+        self.assertFalse(p5_next_session_handoff["cache_get_opens_browser"])
+        self.assertFalse(p5_next_session_handoff["cache_get_calls_provider"])
+        self.assertFalse(p5_next_session_handoff["cache_get_calls_model"])
+        self.assertFalse(p5_next_session_handoff["cache_get_calls_github"])
+        self.assertFalse(p5_next_session_handoff["creates_task_from_get"])
+        self.assertFalse(p5_next_session_handoff["opens_browser_from_get"])
+        self.assertFalse(p5_next_session_handoff["external_calls_triggered"])
+        self.assertFalse(p5_next_session_handoff["tushare_called"])
+        self.assertFalse(p5_next_session_handoff["deepseek_called"])
+        self.assertFalse(p5_next_session_handoff["github_called"])
+        self.assertTrue(p5_next_session_handoff["does_not_execute_trades"])
+        self.assertTrue(p5_next_session_handoff["does_not_modify_strategy_action"])
+        self.assertFalse(p5_next_session_handoff["contains_secret"])
+        self.assertFalse(p5_next_session_handoff["can_close_goal"])
+        self.assertFalse(p5_next_session_handoff["production_complete"])
+        self.assertEqual(
+            p5_next_session_handoff["evidence_boundary"],
+            "ltg08_next_session_handoff_reads_local_reviews_not_browser_ci_or_production_replacement",
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg08_next_session_production_replacement_handoff_status"],
+            p5_next_session_handoff["status"],
+        )
         top_level_candidate_radar_handoff = migration["data"][
             "ltg13_candidate_radar_production_handoff_summary"
         ]
