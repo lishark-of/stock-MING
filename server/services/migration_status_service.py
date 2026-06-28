@@ -14331,6 +14331,9 @@ def build_migration_status() -> dict[str, Any]:
         _latest_storage_physical_execution_handoff_summary()
     )
     ltg06_worker_runtime_qa_handoff_summary = _latest_worker_runtime_qa_handoff_summary()
+    ltg07_deepseek_governed_executor_handoff_summary = (
+        _latest_deepseek_governed_executor_handoff_summary()
+    )
     ltg08_next_session_production_replacement_handoff_summary = (
         _latest_next_session_production_replacement_handoff_summary()
     )
@@ -14425,6 +14428,9 @@ def build_migration_status() -> dict[str, Any]:
         ),
         "ltg06_worker_runtime_qa_handoff_summary": (
             ltg06_worker_runtime_qa_handoff_summary
+        ),
+        "ltg07_deepseek_governed_executor_handoff_summary": (
+            ltg07_deepseek_governed_executor_handoff_summary
         ),
         "ltg08_next_session_production_replacement_handoff_summary": (
             ltg08_next_session_production_replacement_handoff_summary
@@ -14577,6 +14583,12 @@ def build_migration_status() -> dict[str, Any]:
                 ),
                 "ltg06_worker_runtime_qa_next_local_step": (
                     ltg06_worker_runtime_qa_handoff_summary.get("next_local_step")
+                ),
+                "ltg07_deepseek_governed_executor_handoff_status": (
+                    ltg07_deepseek_governed_executor_handoff_summary.get("status")
+                ),
+                "ltg07_deepseek_governed_executor_next_local_step": (
+                    ltg07_deepseek_governed_executor_handoff_summary.get("next_local_step")
                 ),
                 "ltg08_next_session_production_replacement_handoff_status": (
                     ltg08_next_session_production_replacement_handoff_summary.get("status")

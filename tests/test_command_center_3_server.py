@@ -38610,6 +38610,74 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_call_ledger["ltg06_worker_runtime_qa_handoff_status"],
             p4_worker_handoff["status"],
         )
+        top_level_deepseek_handoff = migration["data"][
+            "ltg07_deepseek_governed_executor_handoff_summary"
+        ]
+        p5_deepseek_handoff = action_rows["p5_deepseek_provider_benchmark_scope"][
+            "supporting_deepseek_governed_executor_handoff"
+        ]
+        self.assertEqual(top_level_deepseek_handoff, p5_deepseek_handoff)
+        self.assertEqual(
+            p5_deepseek_handoff["schema_version"],
+            "ltg07_deepseek_governed_executor_handoff_summary.v1",
+        )
+        self.assertIn(
+            p5_deepseek_handoff["status"],
+            {
+                "deepseek_local_governance_visible_scope_ticket_pending",
+                "deepseek_governance_recipe_ready_scope_ticket_needed",
+                "deepseek_scope_ticket_ready_execution_request_needed",
+                "deepseek_execution_request_ready_model_benchmark_blocked",
+            },
+        )
+        self.assertEqual(
+            action_rows["p5_deepseek_provider_benchmark_scope"][
+                "supporting_deepseek_governed_executor_next_local_step"
+            ],
+            p5_deepseek_handoff["next_local_step"],
+        )
+        self.assertEqual(p5_deepseek_handoff["direct_model_evidence_stage_count"], 0)
+        self.assertTrue(p5_deepseek_handoff["requires_separate_user_approved_model_task"])
+        self.assertTrue(p5_deepseek_handoff["requires_provider_benchmark_execution"])
+        self.assertTrue(p5_deepseek_handoff["requires_model_ledger_evidence"])
+        self.assertTrue(p5_deepseek_handoff["requires_provider_response_format_execution"])
+        self.assertTrue(p5_deepseek_handoff["requires_bounded_retry_repair_execution"])
+        self.assertTrue(p5_deepseek_handoff["requires_token_cost_redaction_review"])
+        self.assertTrue(p5_deepseek_handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(p5_deepseek_handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(p5_deepseek_handoff["provider_benchmark_done"])
+        self.assertFalse(p5_deepseek_handoff["model_ledger_evidence_done"])
+        self.assertFalse(p5_deepseek_handoff["provider_response_format_enforced"])
+        self.assertFalse(p5_deepseek_handoff["bounded_retry_repair_executed"])
+        self.assertFalse(p5_deepseek_handoff["token_budget_cost_evidence_complete"])
+        self.assertFalse(p5_deepseek_handoff["auto_after_task_production_ready"])
+        self.assertFalse(p5_deepseek_handoff["production_deepseek_explanation_complete"])
+        self.assertFalse(p5_deepseek_handoff["cache_get_creates_task"])
+        self.assertFalse(p5_deepseek_handoff["cache_get_calls_model"])
+        self.assertFalse(p5_deepseek_handoff["cache_get_calls_provider"])
+        self.assertFalse(p5_deepseek_handoff["cache_get_calls_github"])
+        self.assertFalse(p5_deepseek_handoff["creates_model_task_from_get"])
+        self.assertFalse(p5_deepseek_handoff["model_execution_implemented_by_handoff"])
+        self.assertFalse(p5_deepseek_handoff["model_task_created_by_handoff"])
+        self.assertFalse(p5_deepseek_handoff["external_calls_triggered"])
+        self.assertFalse(p5_deepseek_handoff["tushare_called"])
+        self.assertFalse(p5_deepseek_handoff["deepseek_called"])
+        self.assertFalse(p5_deepseek_handoff["github_called"])
+        self.assertTrue(p5_deepseek_handoff["does_not_execute_trades"])
+        self.assertTrue(p5_deepseek_handoff["does_not_modify_strategy_action"])
+        self.assertTrue(p5_deepseek_handoff["does_not_override_numeric_values"])
+        self.assertTrue(p5_deepseek_handoff["does_not_output_strategy_action"])
+        self.assertFalse(p5_deepseek_handoff["contains_secret"])
+        self.assertFalse(p5_deepseek_handoff["can_close_goal"])
+        self.assertFalse(p5_deepseek_handoff["production_complete"])
+        self.assertEqual(
+            p5_deepseek_handoff["evidence_boundary"],
+            "ltg07_deepseek_handoff_reads_local_governance_receipts_not_model_execution_or_provider_benchmark",
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg07_deepseek_governed_executor_handoff_status"],
+            p5_deepseek_handoff["status"],
+        )
         top_level_next_session_handoff = migration["data"][
             "ltg08_next_session_production_replacement_handoff_summary"
         ]
