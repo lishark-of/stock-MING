@@ -38212,9 +38212,43 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertFalse(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_lookup_creates_task"])
         self.assertFalse(action_rows["p1_trade_cal_provider_acceptance"]["creates_task_from_get"])
+        top_level_provider_handoff = migration["data"][
+            "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary"
+        ]
+        p1_provider_handoff = action_rows["p1_trade_cal_provider_acceptance"][
+            "supporting_trade_cal_provider_acceptance_evidence_handoff"
+        ]
+        self.assertEqual(top_level_provider_handoff, p1_provider_handoff)
+        self.assertEqual(
+            p1_provider_handoff["schema_version"],
+            "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary.v1",
+        )
+        self.assertIn(
+            p1_provider_handoff["status"],
+            {
+                "provider_acceptance_task_receipt_chain_needed",
+                "prior_provider_acceptance_evidence_visible_promotion_review_needed",
+                "provider_acceptance_promotion_review_ready_for_release_review",
+            },
+        )
+        self.assertFalse(p1_provider_handoff["cache_get_creates_task"])
+        self.assertFalse(p1_provider_handoff["cache_get_calls_provider"])
+        self.assertFalse(p1_provider_handoff["creates_provider_task_from_get"])
+        self.assertFalse(p1_provider_handoff["provider_execution_implemented_by_handoff"])
+        self.assertFalse(p1_provider_handoff["production_freshness_gate_complete"])
+        self.assertFalse(p1_provider_handoff["external_calls_triggered"])
+        self.assertFalse(p1_provider_handoff["tushare_called"])
+        self.assertFalse(p1_provider_handoff["deepseek_called"])
+        self.assertFalse(p1_provider_handoff["github_called"])
+        self.assertTrue(p1_provider_handoff["does_not_execute_trades"])
+        self.assertFalse(p1_provider_handoff["can_close_goal"])
+        top_level_producer_handoff = migration["data"][
+            "ltg01_current_evidence_producer_cache_refresh_handoff_summary"
+        ]
         p1_producer_handoff = action_rows["p1_trade_cal_provider_acceptance"][
             "supporting_current_evidence_producer_cache_refresh_handoff"
         ]
+        self.assertEqual(top_level_producer_handoff, p1_producer_handoff)
         self.assertEqual(
             p1_producer_handoff["execution_request_route"],
             "POST /api/data-health/producer-cache-refresh-execution-request",

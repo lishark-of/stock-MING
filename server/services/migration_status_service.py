@@ -14306,6 +14306,12 @@ def build_migration_status() -> dict[str, Any]:
     release_gate_remote_review_split_rows = _build_release_gate_remote_review_split_rows(
         release_gate_remote_review_split_summary
     )
+    ltg01_trade_cal_provider_acceptance_evidence_handoff_summary = (
+        _latest_trade_cal_provider_acceptance_evidence_handoff_summary()
+    )
+    ltg01_current_evidence_producer_cache_refresh_handoff_summary = (
+        _latest_current_evidence_producer_cache_refresh_handoff_summary()
+    )
     ltg11_release_gate_remote_review_handoff_summary = (
         _latest_release_gate_remote_review_handoff_summary()
     )
@@ -14368,6 +14374,12 @@ def build_migration_status() -> dict[str, Any]:
         "release_gate_remote_review_split_summary": release_gate_remote_review_split_summary,
         "release_gate_remote_review_split_rows": release_gate_remote_review_split_rows,
         "release_gate_remote_review_split_row_count": len(release_gate_remote_review_split_rows),
+        "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary": (
+            ltg01_trade_cal_provider_acceptance_evidence_handoff_summary
+        ),
+        "ltg01_current_evidence_producer_cache_refresh_handoff_summary": (
+            ltg01_current_evidence_producer_cache_refresh_handoff_summary
+        ),
         "ltg11_release_gate_remote_review_handoff_summary": (
             ltg11_release_gate_remote_review_handoff_summary
         ),
@@ -14460,6 +14472,18 @@ def build_migration_status() -> dict[str, Any]:
                     usable_path_strict_closeout_handoff_rows
                 ),
                 "p6_direct_evidence_reentry_row_count": len(p6_direct_evidence_reentry_rows),
+                "ltg01_trade_cal_provider_acceptance_handoff_status": (
+                    ltg01_trade_cal_provider_acceptance_evidence_handoff_summary.get("status")
+                ),
+                "ltg01_trade_cal_provider_acceptance_next_local_step": (
+                    ltg01_trade_cal_provider_acceptance_evidence_handoff_summary.get("next_local_step")
+                ),
+                "ltg01_current_evidence_producer_cache_refresh_handoff_status": (
+                    ltg01_current_evidence_producer_cache_refresh_handoff_summary.get("status")
+                ),
+                "ltg01_current_evidence_producer_cache_refresh_next_local_step": (
+                    ltg01_current_evidence_producer_cache_refresh_handoff_summary.get("next_local_step")
+                ),
                 "ltg11_release_gate_remote_review_handoff_status": (
                     ltg11_release_gate_remote_review_handoff_summary.get("status")
                 ),
