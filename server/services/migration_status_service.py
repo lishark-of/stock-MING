@@ -2408,6 +2408,32 @@ def _build_ltg_strict_closeout_work_order_rows(
     if "push-gate evidence artifact sha256 digest" in remote_receipt_missing_evidence:
         release_gate_blockers.append("remote_ci_review_artifact_digest_pending")
     release_gate_blockers = list(dict.fromkeys(release_gate_blockers))
+    current_head_push_required = (
+        release_gate_direct_evidence.get("current_head_push_required_before_remote_review")
+        is True
+    )
+    remote_receipt_stale_for_current_head = (
+        release_gate_direct_evidence.get("remote_ci_review_receipt_stale_for_current_head") is True
+    )
+    remote_ci_green_local_gate_recheck_required = (
+        release_gate_direct_evidence.get("remote_ci_green_local_gate_recheck_required") is True
+    )
+    remote_actions_status_known = release_gate_direct_evidence.get("remote_actions_status_known") is True
+    latest_remote_run_verified_green = (
+        release_gate_direct_evidence.get("latest_remote_run_verified_green") is True
+    )
+    if current_head_push_required:
+        current_head_remote_review_state = "current_head_unpushed_for_remote_ci"
+    elif remote_receipt_stale_for_current_head:
+        current_head_remote_review_state = "remote_ci_review_receipt_stale_for_current_head"
+    elif remote_ci_green_local_gate_recheck_required:
+        current_head_remote_review_state = "remote_ci_green_local_gate_recheck_required"
+    elif latest_remote_run_verified_green:
+        current_head_remote_review_state = "matching_remote_ci_green_release_review_pending"
+    elif remote_actions_status_known:
+        current_head_remote_review_state = "matching_remote_ci_known_not_green"
+    else:
+        current_head_remote_review_state = "matching_remote_ci_review_pending"
     direct_by_id = {
         str(row.get("id") or ""): row for row in production_hardening_ltg_direct_evidence_rows
     }
@@ -2565,8 +2591,7 @@ def _build_ltg_strict_closeout_work_order_rows(
                     "current_head_publish_status"
                 ),
                 "release_gate_current_head_push_required_before_remote_review": (
-                    release_gate_direct_evidence.get("current_head_push_required_before_remote_review")
-                    is True
+                    current_head_push_required
                 ),
                 "release_gate_current_head_origin_ahead_count": int(
                     release_gate_direct_evidence.get("current_head_origin_ahead_count") or 0
@@ -2581,14 +2606,16 @@ def _build_ltg_strict_closeout_work_order_rows(
                 ),
                 "release_gate_current_blockers": release_gate_blockers,
                 "release_gate_remote_actions_status_known": (
-                    release_gate_direct_evidence.get("remote_actions_status_known") is True
+                    remote_actions_status_known
                 ),
                 "release_gate_latest_remote_run_verified_green": (
-                    release_gate_direct_evidence.get("latest_remote_run_verified_green") is True
+                    latest_remote_run_verified_green
                 ),
                 "release_gate_remote_ci_review_receipt_stale_for_current_head": (
-                    release_gate_direct_evidence.get("remote_ci_review_receipt_stale_for_current_head") is True
+                    remote_receipt_stale_for_current_head
                 ),
+                "release_gate_current_head_remote_review_state": current_head_remote_review_state,
+                "release_gate_current_head_remote_review_claim_allowed": False,
                 "release_gate_remote_ci_review_receipt_missing_evidence": remote_receipt_missing_evidence,
                 "release_gate_remote_ci_review_receipt_missing_evidence_count": len(
                     remote_receipt_missing_evidence
@@ -2667,7 +2694,7 @@ def _build_ltg_strict_closeout_work_order_rows(
             "current_head_publish_status"
         ),
         "release_gate_current_head_push_required_before_remote_review": (
-            release_gate_direct_evidence.get("current_head_push_required_before_remote_review") is True
+            current_head_push_required
         ),
         "release_gate_current_head_origin_ahead_count": int(
             release_gate_direct_evidence.get("current_head_origin_ahead_count") or 0
@@ -2680,17 +2707,13 @@ def _build_ltg_strict_closeout_work_order_rows(
             release_gate_direct_evidence.get("local_commits_not_pushed_for_remote_ci") is True
         ),
         "release_gate_current_blockers": release_gate_blockers,
-        "release_gate_remote_actions_status_known": release_gate_direct_evidence.get(
-            "remote_actions_status_known"
-        )
-        is True,
-        "release_gate_latest_remote_run_verified_green": release_gate_direct_evidence.get(
-            "latest_remote_run_verified_green"
-        )
-        is True,
+        "release_gate_remote_actions_status_known": remote_actions_status_known,
+        "release_gate_latest_remote_run_verified_green": latest_remote_run_verified_green,
         "release_gate_remote_ci_review_receipt_stale_for_current_head": (
-            release_gate_direct_evidence.get("remote_ci_review_receipt_stale_for_current_head") is True
+            remote_receipt_stale_for_current_head
         ),
+        "release_gate_current_head_remote_review_state": current_head_remote_review_state,
+        "release_gate_current_head_remote_review_claim_allowed": False,
         "release_gate_remote_ci_review_receipt_missing_evidence": remote_receipt_missing_evidence,
         "release_gate_remote_ci_review_receipt_missing_evidence_count": len(
             remote_receipt_missing_evidence

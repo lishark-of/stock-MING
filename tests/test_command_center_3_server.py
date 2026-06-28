@@ -38173,6 +38173,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "local_commits_not_pushed_for_remote_ci",
                 work_order_summary["release_gate_current_blockers"],
             )
+            self.assertEqual(
+                work_order_summary["release_gate_current_head_remote_review_state"],
+                "current_head_unpushed_for_remote_ci",
+            )
+        self.assertIn(
+            work_order_summary["release_gate_current_head_remote_review_state"],
+            {
+                "current_head_unpushed_for_remote_ci",
+                "remote_ci_review_receipt_stale_for_current_head",
+                "remote_ci_green_local_gate_recheck_required",
+                "matching_remote_ci_green_release_review_pending",
+                "matching_remote_ci_known_not_green",
+                "matching_remote_ci_review_pending",
+            },
+        )
+        self.assertFalse(work_order_summary["release_gate_current_head_remote_review_claim_allowed"])
         if (
             work_order_summary["release_gate_fresh_local_gate_run_observed"]
             and not work_order_summary["release_gate_latest_remote_run_verified_green"]
@@ -38263,6 +38279,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(any(row["external_calls_triggered"] for row in work_order_rows.values()))
         self.assertFalse(any(row["creates_task_from_get"] for row in work_order_rows.values()))
         self.assertFalse(any(row["creates_task_from_render"] for row in work_order_rows.values()))
+        self.assertTrue(
+            all(
+                row["release_gate_current_head_remote_review_state"]
+                == work_order_summary["release_gate_current_head_remote_review_state"]
+                for row in work_order_rows.values()
+            )
+        )
+        self.assertFalse(
+            any(row["release_gate_current_head_remote_review_claim_allowed"] for row in work_order_rows.values())
+        )
         self.assertTrue(all(row["does_not_execute_trades"] for row in work_order_rows.values()))
         self.assertTrue(all(row["does_not_modify_strategy_action"] for row in work_order_rows.values()))
         self.assertEqual(
@@ -55424,6 +55450,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(
             work_order_summary["release_gate_remote_ci_review_receipt_stale_for_current_head"]
         )
+        if work_order_summary["release_gate_current_head_push_required_before_remote_review"]:
+            self.assertEqual(
+                work_order_summary["release_gate_current_head_remote_review_state"],
+                "current_head_unpushed_for_remote_ci",
+            )
+        else:
+            self.assertEqual(
+                work_order_summary["release_gate_current_head_remote_review_state"],
+                "remote_ci_review_receipt_stale_for_current_head",
+            )
+        self.assertFalse(work_order_summary["release_gate_current_head_remote_review_claim_allowed"])
         self.assertEqual(
             work_order_summary["release_gate_remote_ci_review_receipt_missing_evidence"],
             release_split["remote_ci_review_receipt_missing_evidence"],
@@ -55439,6 +55476,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(
             work_order_rows["LTG-11"]["release_gate_remote_ci_review_receipt_missing_evidence"],
             release_split["remote_ci_review_receipt_missing_evidence"],
+        )
+        self.assertEqual(
+            work_order_rows["LTG-11"]["release_gate_current_head_remote_review_state"],
+            work_order_summary["release_gate_current_head_remote_review_state"],
         )
         self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
 
