@@ -38439,6 +38439,60 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_call_ledger["ltg03_factor_test_production_validation_handoff_status"],
             p3_factor_production_handoff["status"],
         )
+        top_level_factor_universe_handoff = migration["data"][
+            "ltg04_factor_universe_worker_batch_handoff_summary"
+        ]
+        p3_factor_universe_handoff = action_rows["p3_factor_universe_worker_batch_research"][
+            "supporting_factor_universe_worker_batch_handoff"
+        ]
+        self.assertEqual(top_level_factor_universe_handoff, p3_factor_universe_handoff)
+        self.assertEqual(
+            p3_factor_universe_handoff["schema_version"],
+            "ltg04_factor_universe_worker_batch_handoff_summary.v1",
+        )
+        self.assertIn(
+            p3_factor_universe_handoff["status"],
+            {
+                "factor_universe_worker_batch_scope_ticket_needed",
+                "factor_universe_scope_ticket_ready_execution_request_needed",
+                "factor_universe_execution_request_ready_local_research_receipt_needed",
+                "factor_universe_local_research_receipt_ready_worker_runtime_evidence_pending",
+            },
+        )
+        self.assertEqual(
+            action_rows["p3_factor_universe_worker_batch_research"][
+                "supporting_factor_universe_worker_batch_next_local_step"
+            ],
+            p3_factor_universe_handoff["next_local_step"],
+        )
+        self.assertTrue(p3_factor_universe_handoff["requires_separate_user_approved_worker_task"])
+        self.assertFalse(p3_factor_universe_handoff["worker_task_created"])
+        self.assertFalse(p3_factor_universe_handoff["worker_task_executed"])
+        self.assertFalse(p3_factor_universe_handoff["worker_execution_implemented"])
+        self.assertFalse(p3_factor_universe_handoff["worker_process_started"])
+        self.assertFalse(p3_factor_universe_handoff["worker_started"])
+        self.assertFalse(p3_factor_universe_handoff["celery_worker_started"])
+        self.assertFalse(p3_factor_universe_handoff["redis_pinged"])
+        self.assertFalse(p3_factor_universe_handoff["large_universe_pipeline_done"])
+        self.assertFalse(p3_factor_universe_handoff["full_pool_validation_done"])
+        self.assertFalse(p3_factor_universe_handoff["production_factor_universe_complete"])
+        self.assertFalse(p3_factor_universe_handoff["partial_pool_is_full_market_proof"])
+        self.assertFalse(p3_factor_universe_handoff["page_render_starts_full_pool"])
+        self.assertFalse(p3_factor_universe_handoff["frontend_computes_rank_zscore"])
+        self.assertFalse(p3_factor_universe_handoff["cache_get_creates_task"])
+        self.assertFalse(p3_factor_universe_handoff["cache_get_calls_provider"])
+        self.assertFalse(p3_factor_universe_handoff["cache_get_starts_worker"])
+        self.assertFalse(p3_factor_universe_handoff["external_calls_triggered"])
+        self.assertFalse(p3_factor_universe_handoff["tushare_called"])
+        self.assertFalse(p3_factor_universe_handoff["deepseek_called"])
+        self.assertFalse(p3_factor_universe_handoff["github_called"])
+        self.assertTrue(p3_factor_universe_handoff["does_not_execute_trades"])
+        self.assertFalse(p3_factor_universe_handoff["can_close_goal"])
+        self.assertFalse(p3_factor_universe_handoff["production_complete"])
+        self.assertEqual(
+            migration_call_ledger["ltg04_factor_universe_worker_batch_handoff_status"],
+            p3_factor_universe_handoff["status"],
+        )
         self.assertTrue(action_rows["p3_candidate_radar_provider_worker_promotion"]["does_not_modify_strategy_action"])
         self.assertFalse(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_lookup_calls_provider"])
         self.assertFalse(runway_rows["LTG-01"]["can_close_goal"])

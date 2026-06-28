@@ -14324,6 +14324,9 @@ def build_migration_status() -> dict[str, Any]:
     ltg03_factor_test_production_validation_handoff_summary = (
         _latest_factor_test_lab_production_validation_handoff_summary()
     )
+    ltg04_factor_universe_worker_batch_handoff_summary = (
+        _latest_factor_universe_worker_batch_handoff_summary()
+    )
     ltg11_release_gate_remote_review_handoff_summary = (
         _latest_release_gate_remote_review_handoff_summary()
     )
@@ -14403,6 +14406,9 @@ def build_migration_status() -> dict[str, Any]:
         ),
         "ltg03_factor_test_production_validation_handoff_summary": (
             ltg03_factor_test_production_validation_handoff_summary
+        ),
+        "ltg04_factor_universe_worker_batch_handoff_summary": (
+            ltg04_factor_universe_worker_batch_handoff_summary
         ),
         "ltg11_release_gate_remote_review_handoff_summary": (
             ltg11_release_gate_remote_review_handoff_summary
@@ -14531,6 +14537,12 @@ def build_migration_status() -> dict[str, Any]:
                 ),
                 "ltg03_factor_test_production_validation_next_local_step": (
                     ltg03_factor_test_production_validation_handoff_summary.get("next_local_step")
+                ),
+                "ltg04_factor_universe_worker_batch_handoff_status": (
+                    ltg04_factor_universe_worker_batch_handoff_summary.get("status")
+                ),
+                "ltg04_factor_universe_worker_batch_next_local_step": (
+                    ltg04_factor_universe_worker_batch_handoff_summary.get("next_local_step")
                 ),
                 "ltg11_release_gate_remote_review_handoff_status": (
                     ltg11_release_gate_remote_review_handoff_summary.get("status")
