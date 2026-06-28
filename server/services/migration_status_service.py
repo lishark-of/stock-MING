@@ -14337,6 +14337,7 @@ def build_migration_status() -> dict[str, Any]:
     ltg08_next_session_production_replacement_handoff_summary = (
         _latest_next_session_production_replacement_handoff_summary()
     )
+    ltg09_tauri_package_handoff_summary = _latest_tauri_package_handoff_summary()
     ltg13_candidate_radar_production_handoff_summary = (
         _latest_candidate_radar_production_handoff_summary()
     )
@@ -14435,6 +14436,7 @@ def build_migration_status() -> dict[str, Any]:
         "ltg08_next_session_production_replacement_handoff_summary": (
             ltg08_next_session_production_replacement_handoff_summary
         ),
+        "ltg09_tauri_package_handoff_summary": ltg09_tauri_package_handoff_summary,
         "ltg13_candidate_radar_production_handoff_summary": (
             ltg13_candidate_radar_production_handoff_summary
         ),
@@ -14597,6 +14599,12 @@ def build_migration_status() -> dict[str, Any]:
                     ltg08_next_session_production_replacement_handoff_summary.get(
                         "next_local_step"
                     )
+                ),
+                "ltg09_tauri_package_handoff_status": (
+                    ltg09_tauri_package_handoff_summary.get("status")
+                ),
+                "ltg09_tauri_package_next_local_step": (
+                    ltg09_tauri_package_handoff_summary.get("next_local_step")
                 ),
                 "ltg13_candidate_radar_production_handoff_status": (
                     ltg13_candidate_radar_production_handoff_summary.get("status")

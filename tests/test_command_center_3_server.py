@@ -38739,6 +38739,65 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_call_ledger["ltg08_next_session_production_replacement_handoff_status"],
             p5_next_session_handoff["status"],
         )
+        top_level_tauri_handoff = migration["data"]["ltg09_tauri_package_handoff_summary"]
+        p6_tauri_handoff = action_rows["p6_tauri_package_readiness_review"][
+            "supporting_tauri_package_handoff"
+        ]
+        self.assertEqual(top_level_tauri_handoff, p6_tauri_handoff)
+        self.assertEqual(
+            p6_tauri_handoff["schema_version"],
+            "ltg09_tauri_package_handoff_summary.v1",
+        )
+        self.assertIn(
+            p6_tauri_handoff["status"],
+            {
+                "tauri_package_readiness_receipts_visible_runtime_evidence_pending",
+                "tauri_package_direct_evidence_partial_packaged_runtime_review_needed",
+                "tauri_package_direct_evidence_ready_promotion_review_needed",
+                "tauri_package_local_promotion_review_ready_signing_or_distribution_blocked",
+            },
+        )
+        self.assertEqual(
+            action_rows["p6_tauri_package_readiness_review"][
+                "supporting_tauri_package_next_local_step"
+            ],
+            p6_tauri_handoff["next_local_step"],
+        )
+        self.assertTrue(p6_tauri_handoff["requires_signing_notarization_or_distribution_waiver"])
+        self.assertTrue(p6_tauri_handoff["requires_remote_ci_review_after_local_complete"])
+        self.assertTrue(p6_tauri_handoff["requires_release_review_after_remote_green"])
+        self.assertFalse(p6_tauri_handoff["packaged_runtime_qa_done"])
+        self.assertFalse(p6_tauri_handoff["production_package_complete"])
+        self.assertFalse(p6_tauri_handoff["cache_get_creates_task"])
+        self.assertFalse(p6_tauri_handoff["cache_get_runs_tauri_build"])
+        self.assertFalse(p6_tauri_handoff["cache_get_runs_npm_or_cargo"])
+        self.assertFalse(p6_tauri_handoff["cache_get_opens_packaged_app"])
+        self.assertFalse(p6_tauri_handoff["cache_get_starts_backend"])
+        self.assertFalse(p6_tauri_handoff["cache_get_reads_config_values"])
+        self.assertFalse(p6_tauri_handoff["cache_get_writes_logs"])
+        self.assertFalse(p6_tauri_handoff["cache_get_calls_provider"])
+        self.assertFalse(p6_tauri_handoff["cache_get_calls_model"])
+        self.assertFalse(p6_tauri_handoff["cache_get_calls_github"])
+        self.assertFalse(p6_tauri_handoff["creates_task_from_get"])
+        self.assertFalse(p6_tauri_handoff["runs_tauri_build_from_get"])
+        self.assertFalse(p6_tauri_handoff["opens_packaged_app_from_get"])
+        self.assertFalse(p6_tauri_handoff["external_calls_triggered"])
+        self.assertFalse(p6_tauri_handoff["tushare_called"])
+        self.assertFalse(p6_tauri_handoff["deepseek_called"])
+        self.assertFalse(p6_tauri_handoff["github_called"])
+        self.assertTrue(p6_tauri_handoff["does_not_execute_trades"])
+        self.assertTrue(p6_tauri_handoff["does_not_modify_strategy_action"])
+        self.assertFalse(p6_tauri_handoff["contains_secret"])
+        self.assertFalse(p6_tauri_handoff["can_close_goal"])
+        self.assertFalse(p6_tauri_handoff["production_complete"])
+        self.assertEqual(
+            p6_tauri_handoff["evidence_boundary"],
+            "ltg09_tauri_handoff_reads_local_package_receipts_not_packaged_runtime_or_production_closeout",
+        )
+        self.assertEqual(
+            migration_call_ledger["ltg09_tauri_package_handoff_status"],
+            p6_tauri_handoff["status"],
+        )
         top_level_candidate_radar_handoff = migration["data"][
             "ltg13_candidate_radar_production_handoff_summary"
         ]
