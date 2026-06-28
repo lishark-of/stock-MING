@@ -38135,7 +38135,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn("LTG-12", action_rows["p10_trade_isolation_release_guard"]["ltg_ids"])
         self.assertEqual(action_rows["p10_trade_isolation_release_guard"]["local_receipt_step_count"], 1)
-        top_level_trade_handoff = migration["ltg12_trade_isolation_release_guard_handoff_summary"]
+        self.assertIn(
+            "ltg12_trade_isolation_release_guard_handoff_summary",
+            migration["data"],
+        )
+        top_level_trade_handoff = migration["data"][
+            "ltg12_trade_isolation_release_guard_handoff_summary"
+        ]
         p10_trade_handoff = action_rows["p10_trade_isolation_release_guard"][
             "supporting_trade_isolation_release_guard_handoff"
         ]
