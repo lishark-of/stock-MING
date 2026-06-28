@@ -12062,7 +12062,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             for row in stage_rows
             if isinstance(row, dict) and row.get("current_status") == "local_governance_or_dry_run_only"
         )
+        deepseek_handoff = _latest_deepseek_governed_executor_handoff_summary()
         direct_evidence_stage_keys: list[str] = []
+        if deepseek_handoff.get("deepseek_provider_benchmark_scope_ticket_ready") is True:
+            direct_evidence_stage_keys.append("provider_benchmark_scope_ticket")
+        if deepseek_handoff.get("deepseek_provider_benchmark_execution_request_ready") is True:
+            direct_evidence_stage_keys.append("provider_benchmark_execution_request")
         direct_evidence_count = len(direct_evidence_stage_keys)
         release_gate_evidence = _latest_release_gate_direct_evidence_summary()
         latest_remote_run_verified_green = (
@@ -12094,6 +12099,13 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_evidence_stage_count": local_evidence_count,
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": direct_evidence_stage_keys,
+                "deepseek_provider_benchmark_scope_ticket_ready": (
+                    "provider_benchmark_scope_ticket" in direct_evidence_stage_keys
+                ),
+                "deepseek_provider_benchmark_execution_request_ready": (
+                    "provider_benchmark_execution_request" in direct_evidence_stage_keys
+                ),
+                "deepseek_local_governance_direct_evidence_is_not_model_evidence": True,
                 "local_complete": ltg07_local_complete,
                 "local_completion_status": ltg07_local_completion_status,
                 "local_blocker_count": 0 if ltg07_local_complete else pending_count,

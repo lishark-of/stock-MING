@@ -42,6 +42,10 @@ FACTOR_UNIVERSE_LTG04_OBSERVED_STATUSES = {
 DEEPSEEK_LTG07_OBSERVED_STATUSES = {
     "observed_in_deepseek_governance_static_contract",
 }
+DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS = [
+    "provider_benchmark_scope_ticket",
+    "provider_benchmark_execution_request",
+]
 NEXT_SESSION_LTG08_OBSERVED_STATUSES = {
     "observed_in_next_session_map_static_contract",
     "observed_next_session_direct_evidence_production_pending",
@@ -753,9 +757,12 @@ def assert_ltg07_deepseek_stage_scope(
     test_case.assertEqual(row["stage_scope_manifest"], "deepseek_production_stage_scope_manifest")
     test_case.assertIn(row["status"], DEEPSEEK_LTG07_OBSERVED_STATUSES)
     test_case.assertEqual(row["row_count"], 8)
-    test_case.assertEqual(row["pending_stage_count"], max(8 - direct_count, 0))
+    test_case.assertEqual(row["pending_stage_count"], 8)
     test_case.assertEqual(row["local_evidence_stage_count"], 8)
-    test_case.assertEqual(row["direct_evidence_stage_keys"], [])
+    test_case.assertEqual(
+        row["direct_evidence_stage_keys"],
+        DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS[:direct_count],
+    )
     test_case.assertEqual(row["local_complete"], direct_count >= 8)
     if direct_count >= 8:
         test_case.assertEqual(row["local_completion_status"], "local_deepseek_direct_evidence_complete")
@@ -791,6 +798,15 @@ def assert_ltg07_deepseek_stage_scope(
     )
     test_case.assertIn("release review after matching remote CI green", row["missing_evidence_items"])
     test_case.assertFalse(row["provider_benchmark_done"])
+    test_case.assertEqual(
+        row["deepseek_provider_benchmark_scope_ticket_ready"],
+        direct_count >= 1,
+    )
+    test_case.assertEqual(
+        row["deepseek_provider_benchmark_execution_request_ready"],
+        direct_count >= 2,
+    )
+    test_case.assertTrue(row["deepseek_local_governance_direct_evidence_is_not_model_evidence"])
     test_case.assertFalse(row["response_format_enforced"])
     test_case.assertFalse(row["bounded_retry_repair_executed"])
     test_case.assertFalse(row["token_budget_cost_evidence_complete"])
@@ -819,7 +835,11 @@ def assert_ltg07_migration_goal_stage_scope(
     if expected_direct_count is not None:
         test_case.assertEqual(direct_count, expected_direct_count)
     test_case.assertIn(row["observed_stage_scope_manifest_status"], DEEPSEEK_LTG07_OBSERVED_STATUSES)
-    test_case.assertEqual(row["observed_stage_scope_pending_count"], max(8 - direct_count, 0))
+    test_case.assertEqual(row["observed_stage_scope_pending_count"], 8)
+    test_case.assertEqual(
+        row["observed_stage_scope_direct_evidence_keys"],
+        DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS[:direct_count],
+    )
     test_case.assertEqual(row["observed_local_complete"], direct_count >= 8)
     if direct_count >= 8:
         test_case.assertEqual(row["observed_local_completion_status"], "local_deepseek_direct_evidence_complete")
@@ -3734,7 +3754,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             observed_stage_rows["LTG-06"],
             expected_direct_count=ltg06_direct_count,
         )
-        assert_ltg07_deepseek_stage_scope(self, observed_stage_rows["LTG-07"], expected_direct_count=0)
+        assert_ltg07_deepseek_stage_scope(
+            self,
+            observed_stage_rows["LTG-07"],
+            expected_direct_count=len(DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS),
+        )
         assert_ltg08_next_session_stage_scope(self, observed_stage_rows["LTG-08"])
         self.assertEqual(
             observed_stage_rows["LTG-09"]["stage_scope_manifest"],
@@ -4065,7 +4089,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production stage-scope manifest", migration_goals["LTG-07"]["current_state"])
         self.assertIn("larger provider benchmark", migration_goals["LTG-07"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-07"]["production_complete"])
-        assert_ltg07_migration_goal_stage_scope(self, migration_goals["LTG-07"], expected_direct_count=0)
+        assert_ltg07_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-07"],
+            expected_direct_count=len(DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS),
+        )
         assert_ltg08_migration_goal_stage_scope(self, migration_goals["LTG-08"])
         self.assertEqual(migration_goals["LTG-09"]["stage_scope_manifest"], "tauri_production_package_stage_scope_manifest")
         self.assertIn("production package stage-scope manifest", migration_goals["LTG-09"]["current_state"])
@@ -40226,7 +40254,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             observed_stage_rows["LTG-06"],
             expected_direct_count=ltg06_direct_count,
         )
-        assert_ltg07_deepseek_stage_scope(self, observed_stage_rows["LTG-07"], expected_direct_count=0)
+        assert_ltg07_deepseek_stage_scope(
+            self,
+            observed_stage_rows["LTG-07"],
+            expected_direct_count=len(DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS),
+        )
         assert_ltg08_next_session_stage_scope(self, observed_stage_rows["LTG-08"])
         self.assertEqual(
             observed_stage_rows["LTG-09"]["stage_scope_manifest"],
@@ -40519,7 +40551,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("production stage-scope manifest", migration_goals["LTG-07"]["current_state"])
         self.assertIn("larger provider benchmark", migration_goals["LTG-07"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-07"]["production_complete"])
-        assert_ltg07_migration_goal_stage_scope(self, migration_goals["LTG-07"], expected_direct_count=0)
+        assert_ltg07_migration_goal_stage_scope(
+            self,
+            migration_goals["LTG-07"],
+            expected_direct_count=len(DEEPSEEK_LTG07_LOCAL_DIRECT_EVIDENCE_KEYS),
+        )
         assert_ltg08_migration_goal_stage_scope(self, migration_goals["LTG-08"])
         self.assertEqual(migration_goals["LTG-09"]["stage_scope_manifest"], "tauri_production_package_stage_scope_manifest")
         self.assertIn("production package stage-scope manifest", migration_goals["LTG-09"]["current_state"])
