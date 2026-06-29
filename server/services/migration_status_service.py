@@ -9271,6 +9271,23 @@ def _build_ltg_next_action_submission_preview_rows(
                 required_prior_material_visible=fresh_local_gate_seen and not worktree_blocks_release_review,
                 requires_remote_ci_review=True,
             )
+        if next_local_step == "select_one_ltg_work_order_after_release_review":
+            push_step = _local_step_row_by_phase(
+                local_step_rows, "release_gate_push_readiness_receipt"
+            )
+            return _disabled_handoff_preview(
+                step_kind="release_gate_review_complete_strict_closeout_boundary",
+                disabled_reason="strict_closeout_blocked_by_remaining_ltg_direct_evidence",
+                safe_payload_summary=(
+                    "release review is complete for the current head; strict closeout still requires "
+                    "separate LTG direct evidence and no cache/render task is created"
+                ),
+                required_prior_phase_key="release_gate_push_readiness_receipt",
+                required_prior_material="release_review_complete_and_strict_closeout_blocked",
+                required_prior_receipt_visible=push_step.get("receipt_visible") is True,
+                required_prior_material_visible=True,
+                requires_remote_ci_review=False,
+            )
         if next_local_step == "separate approved real-trading integration project only":
             trade_step = _local_step_row_by_phase(
                 local_step_rows, "trade_isolation_release_receipt"
@@ -10457,6 +10474,16 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             supporting_release_gate_remote_review_handoff = (
                 _latest_release_gate_remote_review_handoff_summary()
             )
+            if (
+                supporting_release_gate_remote_review_handoff.get("release_gate_complete") is True
+                and supporting_release_gate_remote_review_handoff.get("release_review_complete") is True
+                and supporting_release_gate_remote_review_handoff.get("strict_closeout_ready") is not True
+            ):
+                local_status = "local_receipts_visible_release_review_complete_strict_closeout_blocked"
+                next_local_step = str(
+                    supporting_release_gate_remote_review_handoff.get("next_local_step")
+                    or "select_one_ltg_work_order_after_release_review"
+                )
         if action["queue_id"] == "p1_trade_cal_provider_acceptance":
             supporting_trade_cal_provider_acceptance_evidence_handoff = (
                 _latest_trade_cal_provider_acceptance_evidence_handoff_summary()

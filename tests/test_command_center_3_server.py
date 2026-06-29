@@ -3338,7 +3338,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(action_rows["p0_release_gate_push_readiness"]["local_receipt_step_count"], 3)
         self.assertEqual(action_rows["p0_release_gate_push_readiness"]["first_allowed_route"], "GET /api/audit/cache")
         p0_preview = action_rows["p0_release_gate_push_readiness"]["next_local_step_preview_rows"][0]
-        self.assertEqual(p0_preview["step_kind"], "manual_release_gate_and_remote_ci_review")
+        self.assertIn(
+            p0_preview["step_kind"],
+            {
+                "manual_release_gate_and_remote_ci_review",
+                "release_gate_review_complete_strict_closeout_boundary",
+            },
+        )
         self.assertFalse(p0_preview["ready_for_clean_local_receipt"])
         self.assertIn(
             p0_preview["disabled_reason"],
@@ -3346,11 +3352,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "fresh_local_push_gate_required_before_remote_ci_review",
                 "remote_ci_review_required_after_fresh_local_gate",
                 "release_review_pending_after_remote_ci_green",
+                "strict_closeout_blocked_by_remaining_ltg_direct_evidence",
                 "clean_worktree_required_before_remote_ci_review_after_fresh_local_gate",
                 "clean_worktree_required_before_release_review_after_remote_ci_green",
             },
         )
-        self.assertTrue(p0_preview["requires_remote_ci_review"])
+        self.assertEqual(
+            p0_preview["requires_remote_ci_review"],
+            p0_preview["step_kind"] == "manual_release_gate_and_remote_ci_review",
+        )
         self.assertFalse(p0_preview["external_calls_triggered"])
         self.assertTrue(p0_preview["does_not_execute_trades"])
         p0_release_handoff = action_rows["p0_release_gate_push_readiness"][
@@ -3367,6 +3377,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "release_gate_local_gate_ready_remote_review_pending",
                 "release_gate_remote_review_green_local_gate_recheck_required",
                 "release_gate_remote_review_green_release_review_pending",
+                "release_gate_release_review_complete_strict_closeout_blocked",
             },
         )
         self.assertIn(
@@ -3375,12 +3386,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "rerun_local_push_gate_after_clean_worktree_for_current_head",
                 "manual_remote_ci_review_after_user_authorized_push",
                 "release_review_after_matching_remote_ci_green",
+                "select_one_ltg_work_order_after_release_review",
             },
         )
         self.assertEqual(p0_release_handoff["split_stage_count"], 4)
         self.assertTrue(p0_release_handoff["requires_remote_ci_review_after_fresh_local_gate"])
         self.assertTrue(p0_release_handoff["requires_release_review_after_remote_green"])
-        self.assertFalse(p0_release_handoff["release_gate_complete"])
+        self.assertEqual(
+            p0_release_handoff["release_gate_complete"],
+            p0_release_handoff["status"] == "release_gate_release_review_complete_strict_closeout_blocked",
+        )
         self.assertFalse(p0_release_handoff["strict_closeout_ready"])
         self.assertFalse(p0_release_handoff["can_close_goal"])
         self.assertFalse(p0_release_handoff["cache_get_creates_task"])
@@ -25412,6 +25427,29 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(handoff["strict_closeout_ready"])
         self.assertFalse(handoff["can_close_goal"])
 
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        p0_action = action_rows["p0_release_gate_push_readiness"]
+        self.assertEqual(
+            p0_action["local_receipt_status"],
+            "local_receipts_visible_release_review_complete_strict_closeout_blocked",
+        )
+        self.assertEqual(
+            p0_action["next_local_step"],
+            "select_one_ltg_work_order_after_release_review",
+        )
+        p0_preview = p0_action["next_local_step_preview_rows"][0]
+        self.assertEqual(
+            p0_preview["step_kind"],
+            "release_gate_review_complete_strict_closeout_boundary",
+        )
+        self.assertEqual(
+            p0_preview["disabled_reason"],
+            "strict_closeout_blocked_by_remaining_ltg_direct_evidence",
+        )
+        self.assertFalse(p0_preview["requires_remote_ci_review"])
+        self.assertFalse(p0_preview["external_calls_triggered"])
+        self.assertTrue(p0_preview["does_not_execute_trades"])
+
         work_order_summary = migration["ltg_strict_closeout_work_order_summary"]
         self.assertEqual(
             work_order_summary["release_gate_current_head_remote_review_state"],
@@ -39613,10 +39651,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "release_gate_local_gate_ready_remote_review_pending",
                 "release_gate_remote_review_green_local_gate_recheck_required",
                 "release_gate_remote_review_green_release_review_pending",
+                "release_gate_release_review_complete_strict_closeout_blocked",
             },
         )
         self.assertEqual(p0_release_handoff["split_stage_count"], 4)
-        self.assertFalse(p0_release_handoff["release_gate_complete"])
+        self.assertEqual(
+            p0_release_handoff["release_gate_complete"],
+            p0_release_handoff["status"] == "release_gate_release_review_complete_strict_closeout_blocked",
+        )
         self.assertFalse(p0_release_handoff["strict_closeout_ready"])
         self.assertFalse(p0_release_handoff["can_close_goal"])
         self.assertFalse(p0_release_handoff["cache_get_creates_task"])
