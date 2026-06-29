@@ -469,15 +469,43 @@ Configured source or release switches remain operator intent in this roadmap. `C
 
 ## Remaining Goals Snapshot
 
-Current snapshot date: 2026-06-27.
+Current snapshot date: 2026-06-30.
 
 Strict completion status: none of the 14 long-term goals should be closed as fully complete yet. The user-usable medium goals have been removed from the active LTG target plan because they are already checkpointed as local usability work. LTG-11 and LTG-12 are the closest to stable operating policy, but they still remain ongoing release boundaries rather than one-time completed features.
 
-Progress summary as of 2026-06-27: the Command Center 3.0 migration foundation is roughly 70-75% established, while production acceptance across the 14 LTGs is roughly 25-35% complete. The strict closeout count remains `0 / 14` because every LTG still has at least one provider-backed, packaged-runtime, browser-performance, worker/storage, or retirement acceptance item pending.
+Progress summary as of 2026-06-30: the Command Center 3.0 migration foundation is roughly 70-75% established, while production acceptance across the 14 LTGs is roughly 25-35% complete. The strict closeout count remains `0 / 14` because every LTG still has at least one provider-backed, packaged-runtime, browser-performance, worker/storage, or retirement acceptance item pending.
 
-Active target mode is now `Strict LTG Closeout Evidence Spine with Remote Review Split` / `14 LTG 严格收口证据脊柱 + 远端查收分离模式`. The active target plan deletes already checkpointed local usability items from the work list and continues only the unclosed LTGs. A local slice can end as `local_complete`, but missing matching GitHub Actions or release review must be tracked as `remote_review_pending` instead of repeatedly marking the local goal blocked. Only local direct evidence, matching remote CI green, and release review together can move an LTG toward `strict_closeout_ready`.
+Active target mode is now `Remaining LTG Local-First Closeout Queue with Remote Review Split` / `剩余 LTG 本地优先收口队列 + 远端查收分离模式`. The active target plan deletes already checkpointed local usability items from the work list and continues only the unclosed LTGs. A local slice can end as `local_complete`, but missing matching GitHub Actions or release review must be tracked as `remote_review_pending` instead of repeatedly marking the local goal blocked. Only local direct evidence, matching remote CI green, and release review together can move an LTG toward `strict_closeout_ready`.
 
-Current local checkpoint note: the latest known local line was `main...origin/main [ahead 1]` at commit `998e8cb1`, so the immediate support target remains LTG-11 remote review split before claiming any remote evidence. This note is a planning snapshot, not a push authorization and not remote CI evidence.
+Current local checkpoint note: the 2026-06-30 snapshot was `main...origin/main` at commit `af53b92b`, with a non-clean worktree, `strict_closeout=0/14`, `ready_local_buttons=0`, `durable_handoffs=8`, and remote review reported as green but requiring a fresh local gate recheck after the worktree is clean. LTG-01 `trade_cal` local dry-run / execution-request / promotion-review, LTG-02 target-sample execution-request / review, LTG-03 Factor small-pool dry-run / execution-request, and the completed LTG-13 local radar receipt chain have already reached local receipt boundaries; they should not be repeated as the next active local targets. This note is a planning snapshot, not a push authorization and not remote CI evidence.
+
+Removed from the active work list because they are already checkpointed locally:
+
+1. 使用者可用化中目标 MG-01 / MG-02 / MG-03: local FastAPI 接线、普通首页降噪、搜票确认、Tushare-first 本地回放、P2/P3 cache / ledger / packet 可见。
+2. LTG-01 local receipt chain: `trade_cal` provider-acceptance dry-run、scope-bound execution-request、promotion-review receipt。
+3. LTG-02 local receipt chain: Tushare target-sample recipe、scope-bound execution-request、latest target request / Data Health visibility。
+4. LTG-03 local receipt chain: Factor small-pool provider dry-run、execution-request、future provider validation handoff。
+5. LTG-13 local searched-symbol quant-projection chain: acceptance dry-run、scope-bound execution-request、provider-parity dry-run receipt。
+6. LTG-13 local provider / worker fallback chain: provider-parity execution-request、full-pool local scan、deep-scan local review、worker execution-request、full-pool worker fallback、deep-scan worker fallback。
+
+Remaining active queue after deleting completed local slices:
+
+1. LTG-11 Release gate support: current HEAD has no unpushed commits for remote CI, but the worktree is not clean and the current-head local gate must be rerun before any release claim.
+2. LTG-13 Candidate Radar / provider-worker promotion: provider-parity and worker-fallback local receipts are history; current blocker is `latest_candidate_radar_production_replacement_review_not_ready`, so the next local review is `POST /api/candidate-radar/production-replacement-review` before any `production-promotion-dry-run`.
+3. LTG-04 Factor universe: real worker runtime, storage read, rank/zscore, neutralization, full-pool validation, and promotion evidence remain pending.
+4. LTG-05 Storage: physical schema/migration/partition/compaction/TTL/promotion evidence remains pending.
+5. LTG-06 Worker: real Celery/Redis or runtime QA and durable task-log evidence remains pending.
+6. LTG-08 Next Session map: retained signal/capability coverage and durable browser/performance/CI replacement evidence remain pending.
+7. LTG-14 Motion: durable visual QA, performance trace, CI/release evidence, and final visual promotion remain pending.
+8. LTG-07 DeepSeek: governed executor, real benchmark, response_format, retry/repair, cost/redaction, and model-ledger execution remain pending.
+9. LTG-09 Tauri package: `.app`/DMG packaged runtime QA, signing/notarization, and release packaging remain pending.
+10. LTG-10 Streamlit retirement: React/Tauri ordinary replacement, Legacy Bug / UX Audit, fallback safety, and retirement review remain pending.
+11. LTG-01 release/provider acceptance: local `trade_cal` receipts are done; remaining work is release review after matching remote CI/local gate and any separately authorized provider-backed refresh.
+12. LTG-02 provider acceptance: local target-sample request is done; full-interface provider-backed samples and promotion need separate authorization.
+13. LTG-03 provider validation: local scope/request is done; provider-backed rolling/cost/neutralization/bias validation needs a future explicit task.
+14. LTG-12 trade isolation: remains a continuous no-broker/no-order/no-action release invariant, not a one-time feature closeout.
+
+Goal mode after this rebase: `Remaining LTG Local-First Closeout Queue with Remote Review Split` / `剩余 LTG 本地优先收口队列 + 远端查收分离模式`. Each cycle should advance at most one main LTG plus LTG-11-style support evidence, remove completed local slices from the next target list, and keep provider/model/worker/storage/browser/package/trading work behind explicit authorization. When `ready_local_buttons=0`, the next cycle should first resolve the named blocker instead of rerunning already-completed receipt chains.
 
 | bucket | count | goals | current meaning |
 |---|---:|---|---|

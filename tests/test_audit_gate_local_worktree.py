@@ -352,6 +352,10 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
                 audit_service,
                 "SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH",
                 receipt_path,
+            ), patch.object(
+                audit_service,
+                "RELEASE_GATE_REVIEW_RECEIPT_PATH",
+                Path(temp_dir) / "missing-release-gate-review-receipt.json",
             ):
                 receipt = audit_service._read_secret_artifact_allowlist_review_receipt()
                 self.assertEqual(receipt["status"], "secret_artifact_allowlist_review_ready")
