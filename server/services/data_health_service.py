@@ -4308,12 +4308,20 @@ def _trade_cal_provider_acceptance_promotion_audit(
         max_replay_scenarios,
         int(replay_map.get("freshness_replay_scenario_count") or 0),
     )
-    freshness_replay_done = (
-        any(_row_truthy(row, "freshness_replay_passed", "freshness_gate_replay_passed") for row in evidence_rows)
+    historical_replay_flag_ready = bool(
+        replay_map.get("local_trade_cal_current_calendar_ready") is True
+        and any(
+            _row_truthy(row, "freshness_replay_passed", "freshness_gate_replay_passed")
+            for row in evidence_rows
+        )
         and max_replay_scenarios >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS
-    ) or (
-        replay_map.get("freshness_replay_provider_evidence_done") is True
-        and replay_scenario_count >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS
+    )
+    freshness_replay_done = bool(
+        (
+            replay_map.get("freshness_replay_provider_evidence_done") is True
+            and replay_scenario_count >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS
+        )
+        or historical_replay_flag_ready
     )
     failure_modes_done = any(_row_truthy(row, "failure_modes_validated", "failure_mode_qa_passed") for row in evidence_rows) and max_failure_mode_count >= 4
     local_artifact_ready = bool(trade_cal_physical.get("local_trade_cal_physical_validation_done")) and not trade_cal_physical.get("blockers")

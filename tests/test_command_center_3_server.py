@@ -52216,6 +52216,81 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(all(row["source_trade_cal_provider_window_days"] == 901 for row in rows))
         self.assertTrue(all(row["local_current_trade_cal_window_days"] == 19 for row in rows))
 
+    def test_trade_cal_promotion_audit_uses_current_replay_contract_over_historical_ledger_flag(self):
+        today = _dt.date.today()
+        snapshot = {
+            "data_health_ledger": {
+                "rows": [
+                    {
+                        "api": "trade_cal",
+                        "call_status": "success",
+                        "external": True,
+                        "provider_called": True,
+                        "row_count": 841,
+                        "window_days": 841,
+                        "open_day_count": 600,
+                        "data_date": today.strftime("%Y-%m-%d"),
+                        "window_end": today.strftime("%Y-%m-%d"),
+                        "local_fetched_at": "2026-06-13T10:00:00",
+                        "acceptance_mode": "provider_backed_trade_cal_long_window",
+                        "provider_backed_long_window_acceptance_done": True,
+                        "freshness_replay_passed": True,
+                        "freshness_replay_scenario_count": 8,
+                        "failure_modes_validated": True,
+                        "failure_mode_validated_count": 6,
+                        "error_message_safe": "",
+                    }
+                ]
+            }
+        }
+        trade_cal_physical = {
+            "status": "local_trade_cal_validation_passed",
+            "local_trade_cal_physical_validation_done": True,
+            "blockers": [],
+            "window_days": 841,
+            "open_day_count": 600,
+            "today_row_found": True,
+            "latest_completed_trading_day": today.strftime("%Y-%m-%d"),
+        }
+        current_evidence_contract = {
+            "schema_version": "data_health_current_evidence_freshness_qa.v1",
+            "status": "current_evidence_ready",
+            "current_evidence_requires_expected_trade_date": True,
+            "blocks_composite_score": True,
+            "blocks_support_factors": True,
+            "blocks_evidence_preview": True,
+            "blocks_next_session_bridge_preview": True,
+            "does_not_modify_strategy_action": True,
+        }
+        blocked_replay = {
+            "schema_version": "data_health_trade_cal_provider_freshness_replay_evidence.v1",
+            "status": "provider_trade_cal_freshness_replay_blocked",
+            "freshness_replay_provider_evidence_done": False,
+            "freshness_replay_scenario_count": 8,
+            "passed_scenario_count": 0,
+            "blocked_scenario_count": 8,
+        }
+
+        promotion, rows = data_health_service._trade_cal_provider_acceptance_promotion_audit(
+            snapshot,
+            trade_cal_physical,
+            {"minimum_acceptance_window_days": 730},
+            current_evidence_contract,
+            provider_freshness_replay=blocked_replay,
+        )
+        rows_by_criterion = {row["criterion"]: row for row in rows}
+
+        self.assertFalse(promotion["promotion_ready"])
+        self.assertFalse(promotion["freshness_replay_provider_evidence_done"])
+        self.assertIn("freshness_gate_replay_evidence", promotion["blockers"])
+        self.assertEqual(rows_by_criterion["freshness_gate_replay_evidence"]["status"], "blocked")
+        self.assertEqual(promotion["freshness_replay_scenario_count"], 8)
+        self.assertFalse(promotion["production_freshness_gate_complete"])
+        self.assertFalse(promotion["external_calls_triggered"])
+        self.assertFalse(promotion["tushare_called"])
+        self.assertFalse(promotion["deepseek_called"])
+        self.assertTrue(promotion["does_not_execute_trades"])
+
     def test_recovery_center_cache_endpoint_returns_manual_recovery_plan(self):
         self._with_snapshot_cache(
             {
