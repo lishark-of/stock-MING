@@ -477,7 +477,7 @@ Progress summary as of 2026-06-30: the Command Center 3.0 migration foundation i
 
 Active target mode is now `Remaining LTG Local-First Closeout Queue with Remote Review Split` / `剩余 LTG 本地优先收口队列 + 远端查收分离模式`. The active target plan deletes already checkpointed local usability items from the work list and continues only the unclosed LTGs. A local slice can end as `local_complete`, but missing matching GitHub Actions or release review must be tracked as `remote_review_pending` instead of repeatedly marking the local goal blocked. Only local direct evidence, matching remote CI green, and release review together can move an LTG toward `strict_closeout_ready`.
 
-Current local checkpoint note: the 2026-06-30 snapshot was `main...origin/main` at commit `af53b92b`, with a non-clean worktree, `strict_closeout=0/14`, `ready_local_buttons=0`, `durable_handoffs=8`, and remote review reported as green but requiring a fresh local gate recheck after the worktree is clean. LTG-01 `trade_cal` local dry-run / execution-request / promotion-review, LTG-02 target-sample execution-request / review, LTG-03 Factor small-pool dry-run / execution-request, and the completed LTG-13 local radar receipt chain have already reached local receipt boundaries; they should not be repeated as the next active local targets. This note is a planning snapshot, not a push authorization and not remote CI evidence.
+Current local checkpoint note: the 2026-06-30 snapshot after the LTG-03 local cleanup shows `strict_closeout=0/14`, `ready_local_buttons=0`, `durable_handoffs=8`, and release-gate state `current_head_unpushed_for_remote_ci`. LTG-01 `trade_cal` local dry-run / execution-request / promotion-review, LTG-02 target-sample execution-request / review, and LTG-03 Factor small-pool local dry-run / execution-request have reached local receipt boundaries and should not be repeated as next active local targets. The completed LTG-13 local searched-symbol / provider-parity / worker-fallback receipt chains remain historical checkpoints. This note is a planning snapshot, not a push authorization and not remote CI evidence.
 
 Removed from the active work list because they are already checkpointed locally:
 
@@ -490,7 +490,7 @@ Removed from the active work list because they are already checkpointed locally:
 
 Remaining active queue after deleting completed local slices:
 
-1. LTG-11 Release gate support: current HEAD has no unpushed commits for remote CI, but the worktree is not clean and the current-head local gate must be rerun before any release claim.
+1. LTG-11 Release gate support: local receipts are ready, but current branch is still ahead of origin and remote CI review waits for an explicitly authorized push after a fresh local gate.
 2. LTG-13 Candidate Radar / provider-worker promotion: provider-parity and worker-fallback local receipts are history; current blocker is `latest_candidate_radar_production_replacement_review_not_ready`, so the next local review is `POST /api/candidate-radar/production-replacement-review` before any `production-promotion-dry-run`.
 3. LTG-04 Factor universe: real worker runtime, storage read, rank/zscore, neutralization, full-pool validation, and promotion evidence remain pending.
 4. LTG-05 Storage: physical schema/migration/partition/compaction/TTL/promotion evidence remains pending.
@@ -505,7 +505,7 @@ Remaining active queue after deleting completed local slices:
 13. LTG-03 provider validation: local scope/request is done; provider-backed rolling/cost/neutralization/bias validation needs a future explicit task.
 14. LTG-12 trade isolation: remains a continuous no-broker/no-order/no-action release invariant, not a one-time feature closeout.
 
-Goal mode after this rebase: `Remaining LTG Local-First Closeout Queue with Remote Review Split` / `剩余 LTG 本地优先收口队列 + 远端查收分离模式`. Each cycle should advance at most one main LTG plus LTG-11-style support evidence, remove completed local slices from the next target list, and keep provider/model/worker/storage/browser/package/trading work behind explicit authorization. When `ready_local_buttons=0`, the next cycle should first resolve the named blocker instead of rerunning already-completed receipt chains.
+Goal mode after this rebase: `Remaining LTG Local-First Closeout Queue with Remote Review Split` / `剩余 LTG 本地优先收口队列 + 远端查收分离模式`. Each cycle should advance at most one main LTG plus LTG-11-style support evidence, remove completed local slices from the next target list, and keep provider/model/worker/storage/browser/package/trading work behind explicit authorization. When `ready_local_buttons>0`, clear the single ready local button first; when `ready_local_buttons=0`, the next cycle should resolve the named blocker instead of rerunning already-completed receipt chains.
 
 | bucket | count | goals | current meaning |
 |---|---:|---|---|
