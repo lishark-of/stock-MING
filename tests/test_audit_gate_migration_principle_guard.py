@@ -8,11 +8,17 @@ from server.services import audit_service
 
 class AuditGateMigrationPrincipleGuardTests(unittest.TestCase):
     def test_release_gate_audit_tracks_migration_principle_guard(self) -> None:
-        audit, rows, workflow_rows = audit_service._release_gate_readiness_audit()
+        audit, rows, workflow_rows = audit_service._release_gate_readiness_audit(
+            secret_artifact_allowlist_review_receipt={
+                "status": "secret_artifact_allowlist_review_receipt_missing",
+                "periodic_allowlist_review_ready": False,
+                "head_matches_current": False,
+            }
+        )
 
         self.assertEqual(audit["schema_version"], "command_center_3_release_gate_readiness_audit.v1")
         self.assertEqual(audit["scope"], "local_static_push_gate_contract_not_ci_status")
-        self.assertEqual(audit["status"], "local_gate_ready_remote_ci_review_pending")
+        self.assertEqual(audit["status"], "local_gate_ready_remote_ci_and_allowlist_pending")
         self.assertTrue(audit["migration_principle_docs_guard_exists"])
         self.assertTrue(audit["migration_principle_docs_guard_step"])
         self.assertTrue(audit["migration_principle_docs_guard_order"])
