@@ -4308,8 +4308,25 @@ def _trade_cal_provider_acceptance_promotion_audit(
         max_replay_scenarios,
         int(replay_map.get("freshness_replay_scenario_count") or 0),
     )
+    historical_provider_direct_replay_ready = any(
+        _row_truthy(row, "freshness_replay_passed", "freshness_gate_replay_passed")
+        and _row_truthy(
+            row,
+            "provider_backed_long_window_acceptance_done",
+            "provider_backed_trade_cal_acceptance_done",
+            "trade_cal_provider_acceptance_done",
+        )
+        and _row_truthy(row, "trade_cal_schema_fields_present")
+        and _row_truthy(row, "minimum_window_days_passed")
+        and _row_truthy(row, "latest_completed_trade_date_resolved")
+        and int(row.get("provider_acceptance_blocker_count") or 0) == 0
+        for row in evidence_rows
+    )
     historical_replay_flag_ready = bool(
-        replay_map.get("local_trade_cal_current_calendar_ready") is True
+        (
+            replay_map.get("local_trade_cal_current_calendar_ready") is True
+            or historical_provider_direct_replay_ready
+        )
         and any(
             _row_truthy(row, "freshness_replay_passed", "freshness_gate_replay_passed")
             for row in evidence_rows
