@@ -13877,12 +13877,19 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         latest_remote_run_verified_green = (
             release_gate_evidence.get("latest_remote_run_verified_green") is True
         )
-        ltg12_local_complete = bool(row_count and direct_evidence_count >= row_count)
+        ltg12_local_required_direct_evidence_count = 2
+        ltg12_local_blocker_count = max(
+            ltg12_local_required_direct_evidence_count - direct_evidence_count,
+            0,
+        )
+        ltg12_local_complete = bool(current_slice_recheck_ready and ltg12_local_blocker_count == 0)
         ltg12_remote_review_pending = bool(ltg12_local_complete and not latest_remote_run_verified_green)
         ltg12_release_review_pending = bool(ltg12_local_complete and latest_remote_run_verified_green)
         ltg12_local_completion_status = (
-            "local_trade_isolation_direct_evidence_complete"
+            "local_trade_isolation_current_slice_release_invariant_ready"
             if ltg12_local_complete
+            else "local_trade_isolation_release_receipt_ready_recheck_pending"
+            if release_receipt_ready
             else "local_trade_isolation_direct_evidence_partial"
             if direct_evidence_count
             else "local_static_contract_only"
@@ -13911,7 +13918,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "direct_evidence_stage_keys": direct_evidence_stage_keys,
                 "local_complete": ltg12_local_complete,
                 "local_completion_status": ltg12_local_completion_status,
-                "local_blocker_count": 0 if ltg12_local_complete else observed_pending_count,
+                "local_required_direct_evidence_count": ltg12_local_required_direct_evidence_count,
+                "local_blocker_count": 0 if ltg12_local_complete else ltg12_local_blocker_count,
                 "remote_review_required_after_local_complete": True,
                 "remote_review_pending": ltg12_remote_review_pending,
                 "remote_review_status": (
@@ -13949,9 +13957,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     "trade_isolation_release_receipt_status"
                 ),
                 "per_slice_trade_isolation_recheck_required": True,
+                "permanent_release_invariant": True,
                 "continued_no_broker_proof_required": True,
                 "continued_no_order_proof_required": True,
                 "continued_no_action_mutation_proof_required": True,
+                "current_slice_local_complete": ltg12_local_complete,
                 "current_slice_no_broker_no_order_no_action_proof_ready": current_slice_recheck_ready,
                 "current_slice_trade_isolation_recheck_ready": current_slice_recheck_ready,
                 "one_time_closeout_allowed": False,
@@ -13996,13 +14006,38 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "row_count": 0,
                 "pending_stage_count": 0,
                 "local_evidence_stage_count": 0,
+                "local_complete": False,
+                "local_completion_status": "local_observation_failed",
+                "local_required_direct_evidence_count": 2,
+                "local_blocker_count": 2,
+                "remote_review_required_after_local_complete": True,
+                "remote_review_pending": False,
+                "remote_review_status": "remote_review_waiting_for_local_complete",
+                "remote_review_pending_count": 0,
+                "release_review_required_after_remote_green": True,
+                "release_review_pending": False,
+                "release_review_status": "release_review_waiting_for_local_and_remote_complete",
+                "release_review_pending_count": 0,
+                "strict_closeout_ready": False,
+                "missing_evidence_items": [
+                    "separate real-trading project approval",
+                    "broker adapter design review",
+                    "order endpoint security review",
+                    "paper or simulated trade sandbox evidence",
+                    "kill switch and audit trail evidence",
+                    "operator approval workflow evidence",
+                    "matching remote CI review after local trade-isolation evidence",
+                    "release review after matching remote CI green",
+                ],
                 "production_blocker_count": 0,
                 "trade_isolation_release_receipt_ready": False,
                 "trade_isolation_release_receipt_status": "",
                 "per_slice_trade_isolation_recheck_required": True,
+                "permanent_release_invariant": True,
                 "continued_no_broker_proof_required": True,
                 "continued_no_order_proof_required": True,
                 "continued_no_action_mutation_proof_required": True,
+                "current_slice_local_complete": False,
                 "current_slice_no_broker_no_order_no_action_proof_ready": False,
                 "current_slice_trade_isolation_recheck_ready": False,
                 "one_time_closeout_allowed": False,
@@ -14339,6 +14374,7 @@ def _merge_ltg_stage_scope_observations(
             for evidence_key in (
                 "local_complete",
                 "local_completion_status",
+                "local_required_direct_evidence_count",
                 "local_blocker_count",
                 "remote_review_required_after_local_complete",
                 "remote_review_pending",
@@ -14355,9 +14391,11 @@ def _merge_ltg_stage_scope_observations(
                 "strict_closeout_ready",
                 "missing_evidence_items",
                 "per_slice_trade_isolation_recheck_required",
+                "permanent_release_invariant",
                 "continued_no_broker_proof_required",
                 "continued_no_order_proof_required",
                 "continued_no_action_mutation_proof_required",
+                "current_slice_local_complete",
                 "current_slice_no_broker_no_order_no_action_proof_ready",
                 "current_slice_trade_isolation_recheck_ready",
                 "one_time_closeout_allowed",

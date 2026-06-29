@@ -1769,24 +1769,41 @@ def assert_ltg12_trade_isolation_stage_scope(
         row["direct_evidence_stage_keys"],
         expected_direct_keys,
     )
-    test_case.assertEqual(row["local_complete"], direct_count >= 8)
-    if direct_count >= 8:
-        test_case.assertEqual(row["local_completion_status"], "local_trade_isolation_direct_evidence_complete")
+    local_complete = direct_count >= 2
+    test_case.assertEqual(row["local_required_direct_evidence_count"], 2)
+    test_case.assertEqual(row["local_complete"], local_complete)
+    test_case.assertEqual(row["current_slice_local_complete"], local_complete)
+    test_case.assertTrue(row["permanent_release_invariant"])
+    if local_complete:
+        test_case.assertEqual(
+            row["local_completion_status"],
+            "local_trade_isolation_current_slice_release_invariant_ready",
+        )
         test_case.assertEqual(row["local_blocker_count"], 0)
         test_case.assertIn(
             row["remote_review_status"],
             {"remote_review_pending", "remote_review_green_release_review_pending"},
         )
+        test_case.assertIn(
+            row["release_review_status"],
+            {"release_review_waiting_for_remote_green", "release_review_pending"},
+        )
     elif direct_count:
-        test_case.assertEqual(row["local_completion_status"], "local_trade_isolation_direct_evidence_partial")
-        test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+        test_case.assertIn(
+            row["local_completion_status"],
+            {
+                "local_trade_isolation_release_receipt_ready_recheck_pending",
+                "local_trade_isolation_direct_evidence_partial",
+            },
+        )
+        test_case.assertEqual(row["local_blocker_count"], 2 - direct_count)
         test_case.assertFalse(row["remote_review_pending"])
         test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
         test_case.assertFalse(row["release_review_pending"])
         test_case.assertEqual(row["release_review_status"], "release_review_waiting_for_local_and_remote_complete")
     else:
         test_case.assertEqual(row["local_completion_status"], "local_static_contract_only")
-        test_case.assertEqual(row["local_blocker_count"], row["pending_stage_count"])
+        test_case.assertEqual(row["local_blocker_count"], 2)
         test_case.assertFalse(row["remote_review_pending"])
         test_case.assertEqual(row["remote_review_status"], "remote_review_waiting_for_local_complete")
         test_case.assertFalse(row["release_review_pending"])
@@ -1870,17 +1887,34 @@ def assert_ltg12_migration_goal_stage_scope(
         row["observed_stage_scope_direct_evidence_keys"],
         expected_direct_keys,
     )
-    test_case.assertEqual(row["observed_local_complete"], direct_count >= 8)
-    if direct_count >= 8:
-        test_case.assertEqual(row["observed_local_completion_status"], "local_trade_isolation_direct_evidence_complete")
+    local_complete = direct_count >= 2
+    test_case.assertEqual(row["observed_local_required_direct_evidence_count"], 2)
+    test_case.assertEqual(row["observed_local_complete"], local_complete)
+    test_case.assertEqual(row["observed_current_slice_local_complete"], local_complete)
+    test_case.assertTrue(row["observed_permanent_release_invariant"])
+    if local_complete:
+        test_case.assertEqual(
+            row["observed_local_completion_status"],
+            "local_trade_isolation_current_slice_release_invariant_ready",
+        )
         test_case.assertEqual(row["observed_local_blocker_count"], 0)
         test_case.assertIn(
             row["observed_remote_review_status"],
             {"remote_review_pending", "remote_review_green_release_review_pending"},
         )
+        test_case.assertIn(
+            row["observed_release_review_status"],
+            {"release_review_waiting_for_remote_green", "release_review_pending"},
+        )
     elif direct_count:
-        test_case.assertEqual(row["observed_local_completion_status"], "local_trade_isolation_direct_evidence_partial")
-        test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+        test_case.assertIn(
+            row["observed_local_completion_status"],
+            {
+                "local_trade_isolation_release_receipt_ready_recheck_pending",
+                "local_trade_isolation_direct_evidence_partial",
+            },
+        )
+        test_case.assertEqual(row["observed_local_blocker_count"], 2 - direct_count)
         test_case.assertFalse(row["observed_remote_review_pending"])
         test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
         test_case.assertFalse(row["observed_release_review_pending"])
@@ -1890,7 +1924,7 @@ def assert_ltg12_migration_goal_stage_scope(
         )
     else:
         test_case.assertEqual(row["observed_local_completion_status"], "local_static_contract_only")
-        test_case.assertEqual(row["observed_local_blocker_count"], row["observed_stage_scope_pending_count"])
+        test_case.assertEqual(row["observed_local_blocker_count"], 2)
         test_case.assertFalse(row["observed_remote_review_pending"])
         test_case.assertEqual(row["observed_remote_review_status"], "remote_review_waiting_for_local_complete")
     test_case.assertTrue(row["observed_remote_review_required_after_local_complete"])
