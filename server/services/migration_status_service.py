@@ -2409,6 +2409,8 @@ def _build_ltg_strict_closeout_work_order_rows(
         release_gate_blockers.append("remote_ci_review_artifact_digest_pending")
     if release_gate_direct_evidence.get("remote_ci_run_in_progress_for_current_head") is True:
         release_gate_blockers.append("matching_remote_ci_run_in_progress_for_current_head")
+    if release_gate_direct_evidence.get("remote_ci_no_matching_run_found_for_current_head") is True:
+        release_gate_blockers.append("matching_remote_ci_run_not_found_for_current_head")
     if release_gate_direct_evidence.get("remote_ci_failure_reviewed_for_current_head") is True:
         release_gate_blockers.append("matching_remote_ci_failed_for_current_head")
     release_gate_blockers = list(dict.fromkeys(release_gate_blockers))
@@ -2430,6 +2432,9 @@ def _build_ltg_strict_closeout_work_order_rows(
     remote_ci_run_in_progress_for_current_head = (
         release_gate_direct_evidence.get("remote_ci_run_in_progress_for_current_head") is True
     )
+    remote_ci_no_matching_run_found_for_current_head = (
+        release_gate_direct_evidence.get("remote_ci_no_matching_run_found_for_current_head") is True
+    )
     remote_ci_failure_reviewed_for_current_head = (
         release_gate_direct_evidence.get("remote_ci_failure_reviewed_for_current_head") is True
     )
@@ -2445,6 +2450,8 @@ def _build_ltg_strict_closeout_work_order_rows(
         current_head_remote_review_state = "matching_remote_ci_green_release_review_pending"
     elif remote_ci_failure_reviewed_for_current_head:
         current_head_remote_review_state = "matching_remote_ci_failed_for_current_head"
+    elif remote_ci_no_matching_run_found_for_current_head:
+        current_head_remote_review_state = "matching_remote_ci_run_not_found"
     elif remote_ci_run_in_progress_for_current_head:
         current_head_remote_review_state = "matching_remote_ci_run_in_progress"
     elif remote_actions_status_known:
@@ -2640,6 +2647,9 @@ def _build_ltg_strict_closeout_work_order_rows(
                 "release_gate_latest_remote_run_verified_green": (
                     latest_remote_run_verified_green
                 ),
+                "release_gate_remote_ci_no_matching_run_found_for_current_head": (
+                    remote_ci_no_matching_run_found_for_current_head
+                ),
                 "release_gate_remote_ci_review_receipt_stale_for_current_head": (
                     remote_receipt_stale_for_current_head
                 ),
@@ -2752,6 +2762,9 @@ def _build_ltg_strict_closeout_work_order_rows(
         "release_gate_current_blockers": release_gate_blockers,
         "release_gate_remote_actions_status_known": remote_actions_status_known,
         "release_gate_latest_remote_run_verified_green": latest_remote_run_verified_green,
+        "release_gate_remote_ci_no_matching_run_found_for_current_head": (
+            remote_ci_no_matching_run_found_for_current_head
+        ),
         "release_gate_remote_ci_review_receipt_stale_for_current_head": (
             remote_receipt_stale_for_current_head
         ),
@@ -4158,6 +4171,11 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     remote_ci_run_in_progress_for_current_head = (
         remote_receipt_map.get("remote_ci_run_in_progress_for_current_head") is True
     )
+    remote_ci_no_matching_run_found_for_current_head = (
+        remote_receipt_map.get("remote_ci_no_matching_run_found_for_current_head") is True
+    )
+    remote_ci_run_lookup_attempted = remote_receipt_map.get("remote_ci_run_lookup_attempted") is True
+    remote_ci_lookup_source = str(remote_receipt_map.get("remote_ci_lookup_source") or "")
     remote_ci_failure_reviewed_for_current_head = (
         remote_receipt_map.get("remote_ci_failure_reviewed_for_current_head") is True
     )
@@ -4225,6 +4243,8 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     status = "release_gate_direct_evidence_missing"
     if direct_stage_keys:
         status = "release_gate_direct_evidence_visible_remote_ci_pending"
+    if remote_ci_no_matching_run_found_for_current_head:
+        status = "release_gate_remote_ci_no_matching_run_current_head"
     if remote_ci_failure_reviewed_for_current_head:
         status = "release_gate_remote_ci_failed_current_head"
     if remote_green_for_current_head and not fresh_gate_run_done:
@@ -4298,6 +4318,8 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
             if remote_green_for_current_head
             else "remote_review_failed_current_head"
             if remote_ci_failure_reviewed_for_current_head
+            else "remote_review_no_matching_run_current_head"
+            if local_complete and remote_ci_no_matching_run_found_for_current_head
             else "remote_review_waiting_for_local_complete"
             if not local_complete
             else "remote_review_waiting_for_push"
@@ -4389,6 +4411,9 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "remote_ci_artifact_digest_pending": remote_ci_artifact_digest_pending,
         "remote_ci_run_observed_for_current_head": remote_ci_run_observed_for_current_head,
         "remote_ci_run_in_progress_for_current_head": remote_ci_run_in_progress_for_current_head,
+        "remote_ci_no_matching_run_found_for_current_head": remote_ci_no_matching_run_found_for_current_head,
+        "remote_ci_run_lookup_attempted": remote_ci_run_lookup_attempted,
+        "remote_ci_lookup_source": remote_ci_lookup_source,
         "remote_ci_failure_reviewed_for_current_head": remote_ci_failure_reviewed_for_current_head,
         "remote_ci_failure_safe_excerpt": remote_ci_failure_safe_excerpt,
         "remote_ci_failure_artifact_name": remote_ci_failure_artifact_name,
@@ -4561,6 +4586,13 @@ def _build_release_gate_remote_review_split_rows(
             "remote_ci_run_in_progress_for_current_head": (
                 release_gate_summary.get("remote_ci_run_in_progress_for_current_head") is True
             ),
+            "remote_ci_no_matching_run_found_for_current_head": (
+                release_gate_summary.get("remote_ci_no_matching_run_found_for_current_head") is True
+            ),
+            "remote_ci_run_lookup_attempted": (
+                release_gate_summary.get("remote_ci_run_lookup_attempted") is True
+            ),
+            "remote_ci_lookup_source": release_gate_summary.get("remote_ci_lookup_source", ""),
             "remote_ci_failure_reviewed_for_current_head": (
                 release_gate_summary.get("remote_ci_failure_reviewed_for_current_head") is True
             ),
@@ -4676,6 +4708,11 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
     remote_ci_run_in_progress_for_current_head = (
         release_gate.get("remote_ci_run_in_progress_for_current_head") is True
     )
+    remote_ci_no_matching_run_found_for_current_head = (
+        release_gate.get("remote_ci_no_matching_run_found_for_current_head") is True
+    )
+    remote_ci_run_lookup_attempted = release_gate.get("remote_ci_run_lookup_attempted") is True
+    remote_ci_lookup_source = str(release_gate.get("remote_ci_lookup_source") or "")
     remote_ci_failure_reviewed_for_current_head = (
         release_gate.get("remote_ci_failure_reviewed_for_current_head") is True
     )
@@ -4733,6 +4770,9 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
     elif remote_ci_failure_reviewed_for_current_head and remote_receipt_head_matches_current:
         status = "release_gate_remote_review_failed_current_head"
         next_step = "review_remote_failure_then_rerun_local_gate_before_next_push"
+    elif remote_ci_no_matching_run_found_for_current_head and remote_receipt_head_matches_current:
+        status = "release_gate_remote_review_no_matching_run_current_head"
+        next_step = "verify_actions_trigger_or_permissions_then_rerun_remote_review"
     elif local_complete:
         status = "release_gate_local_gate_ready_remote_review_pending"
         next_step = "manual_remote_ci_review_after_user_authorized_push"
@@ -4792,6 +4832,9 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         "remote_ci_artifact_digest_pending": remote_ci_artifact_digest_pending,
         "remote_ci_run_observed_for_current_head": remote_ci_run_observed_for_current_head,
         "remote_ci_run_in_progress_for_current_head": remote_ci_run_in_progress_for_current_head,
+        "remote_ci_no_matching_run_found_for_current_head": remote_ci_no_matching_run_found_for_current_head,
+        "remote_ci_run_lookup_attempted": remote_ci_run_lookup_attempted,
+        "remote_ci_lookup_source": remote_ci_lookup_source,
         "remote_ci_failure_reviewed_for_current_head": remote_ci_failure_reviewed_for_current_head,
         "remote_ci_failure_safe_excerpt": remote_ci_failure_safe_excerpt,
         "remote_ci_failure_artifact_name": remote_ci_failure_artifact_name,

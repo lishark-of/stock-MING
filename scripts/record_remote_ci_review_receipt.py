@@ -58,6 +58,16 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit(f"--workflow-name must be {EXPECTED_WORKFLOW_NAME!r}")
     if args.event != "push":
         raise SystemExit("--event must be 'push'")
+    if args.no_matching_run_found:
+        if not args.head_full or len(args.head_full) < 12:
+            raise SystemExit("--head-full must be the reviewed commit SHA")
+        if args.artifact_name or args.artifact_digest or args.safe_failure_log_excerpt:
+            raise SystemExit("no matching run receipts cannot include artifact or failure-log evidence")
+        return
+    if not args.run_id:
+        raise SystemExit("--run-id is required unless --no-matching-run-found is set")
+    if not args.run_url:
+        raise SystemExit("--run-url is required unless --no-matching-run-found is set")
     status_is_completed = args.actions_status == "completed"
     status_is_incomplete = args.actions_status in INCOMPLETE_ACTIONS_STATUSES
     conclusion_is_failed = args.actions_conclusion in FAILED_ACTIONS_CONCLUSIONS
@@ -96,43 +106,64 @@ def _validate_args(args: argparse.Namespace) -> None:
 def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
     head = args.head or args.head_full[:8]
     reviewed_at = args.reviewed_at_utc or _now_iso()
-    artifact_digest_verified = bool(args.artifact_digest)
-    actions_incomplete = args.actions_status in INCOMPLETE_ACTIONS_STATUSES
-    actions_failed = args.actions_conclusion in FAILED_ACTIONS_CONCLUSIONS
-    artifact_download_status = args.artifact_download_status or (
-        "not_attempted_by_receipt_writer" if actions_failed else ""
-    )
-    artifact_download_blocked = artifact_download_status in {
-        "public_download_404",
-        "requires_authenticated_artifact_access",
-    }
-    if actions_incomplete:
-        status = "remote_ci_review_run_in_progress"
-        release_claim_decision = "blocked_remote_ci_incomplete"
-        artifact_digest_review_status = "not_available_until_run_completed"
-    elif actions_failed:
-        status = "remote_ci_review_failed_run_reviewed"
-        release_claim_decision = "blocked_remote_ci_failed"
-        artifact_digest_review_status = (
-            "sha256_digest_recorded"
-            if artifact_digest_verified
-            else "unavailable_from_public_job_page"
-        )
+    no_matching_run_found = bool(args.no_matching_run_found)
+    if no_matching_run_found:
+        status = "remote_ci_review_no_matching_run_found"
+        release_claim_decision = "blocked_remote_ci_no_matching_run"
+        artifact_digest_review_status = "not_available_no_matching_run"
+        failed_step_or_green_status = "no_matching_remote_actions_run_found"
+        safe_evidence = "no matching Command Center 3 Push Gate run found for current HEAD"
+        artifact_download_status = "not_attempted_by_receipt_writer"
+        artifact_download_blocked = False
+        actions_incomplete = False
+        actions_failed = False
+        artifact_digest_verified = False
     else:
-        status = (
-            "remote_ci_review_verified_green"
-            if artifact_digest_verified
-            else "remote_ci_review_green_artifact_digest_pending"
+        artifact_digest_verified = bool(args.artifact_digest)
+        actions_incomplete = args.actions_status in INCOMPLETE_ACTIONS_STATUSES
+        actions_failed = args.actions_conclusion in FAILED_ACTIONS_CONCLUSIONS
+        artifact_download_status = args.artifact_download_status or (
+            "not_attempted_by_receipt_writer" if actions_failed else ""
         )
-        release_claim_decision = (
-            "remote_ci_green_release_review_pending"
-            if artifact_digest_verified
-            else "blocked_remote_ci_artifact_digest_unverified"
-        )
-        artifact_digest_review_status = (
-            "sha256_digest_recorded"
-            if artifact_digest_verified
-            else "unavailable_from_public_job_page"
+        artifact_download_blocked = artifact_download_status in {
+            "public_download_404",
+            "requires_authenticated_artifact_access",
+        }
+        safe_evidence = args.safe_failure_log_excerpt or args.run_url
+        if actions_incomplete:
+            status = "remote_ci_review_run_in_progress"
+            release_claim_decision = "blocked_remote_ci_incomplete"
+            artifact_digest_review_status = "not_available_until_run_completed"
+        elif actions_failed:
+            status = "remote_ci_review_failed_run_reviewed"
+            release_claim_decision = "blocked_remote_ci_failed"
+            artifact_digest_review_status = (
+                "sha256_digest_recorded"
+                if artifact_digest_verified
+                else "unavailable_from_public_job_page"
+            )
+        else:
+            status = (
+                "remote_ci_review_verified_green"
+                if artifact_digest_verified
+                else "remote_ci_review_green_artifact_digest_pending"
+            )
+            release_claim_decision = (
+                "remote_ci_green_release_review_pending"
+                if artifact_digest_verified
+                else "blocked_remote_ci_artifact_digest_unverified"
+            )
+            artifact_digest_review_status = (
+                "sha256_digest_recorded"
+                if artifact_digest_verified
+                else "unavailable_from_public_job_page"
+            )
+        failed_step_or_green_status = (
+            "remote_actions_run_in_progress"
+            if actions_incomplete
+            else args.safe_failure_log_excerpt
+            if actions_failed
+            else "green"
         )
     return {
         "schema_version": SCHEMA_VERSION,
@@ -145,35 +176,37 @@ def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
         "head_full": args.head_full,
         "workflow_name": args.workflow_name,
         "event": args.event,
-        "run_id": args.run_id,
-        "run_url": args.run_url,
-        "safe_failure_log_excerpt_or_green_run_url": args.safe_failure_log_excerpt or args.run_url,
-        "actions_status": args.actions_status,
-        "actions_conclusion": args.actions_conclusion,
+        "run_id": args.run_id if not no_matching_run_found else 0,
+        "run_url": args.run_url if not no_matching_run_found else "",
+        "safe_failure_log_excerpt_or_green_run_url": safe_evidence,
+        "actions_status": args.actions_status if not no_matching_run_found else "missing",
+        "actions_conclusion": args.actions_conclusion if not no_matching_run_found else "none",
         "job_name": args.job_name,
-        "job_conclusion": args.job_conclusion,
+        "job_conclusion": args.job_conclusion if not no_matching_run_found else "none",
         "artifact_name": args.artifact_name,
         "artifact_digest": args.artifact_digest,
         "artifact_digest_verified": artifact_digest_verified,
         "artifact_digest_review_status": artifact_digest_review_status,
-        "failed_step_or_green_status": (
-            "remote_actions_run_in_progress"
-            if actions_incomplete
-            else args.safe_failure_log_excerpt
-            if actions_failed
-            else "green"
-        ),
+        "failed_step_or_green_status": failed_step_or_green_status,
         "explicit_user_actions_review_authorized": True,
-        "remote_actions_status_known": not actions_incomplete,
+        "remote_actions_status_known": bool(not no_matching_run_found and not actions_incomplete),
         "latest_remote_run_verified_green": bool(
             artifact_digest_verified and not actions_incomplete and not actions_failed
         ),
-        "remote_ci_job_page_green_observed": bool(not actions_incomplete and not actions_failed),
+        "remote_ci_job_page_green_observed": bool(
+            not no_matching_run_found and not actions_incomplete and not actions_failed
+        ),
         "remote_ci_artifact_digest_pending": bool(
-            not actions_incomplete and not actions_failed and not artifact_digest_verified
+            not no_matching_run_found
+            and not actions_incomplete
+            and not actions_failed
+            and not artifact_digest_verified
         ),
         "remote_ci_run_observed_for_current_head": actions_incomplete,
         "remote_ci_run_in_progress_for_current_head": actions_incomplete,
+        "remote_ci_no_matching_run_found_for_current_head": no_matching_run_found,
+        "remote_ci_run_lookup_attempted": no_matching_run_found,
+        "remote_ci_lookup_source": args.lookup_source if no_matching_run_found else "",
         "remote_ci_failure_reviewed_for_current_head": actions_failed,
         "remote_ci_failure_artifact_download_status": artifact_download_status,
         "remote_ci_failure_artifact_download_blocked": artifact_download_blocked,
@@ -201,8 +234,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--branch", default="main")
     parser.add_argument("--head", default="")
     parser.add_argument("--head-full", required=True)
-    parser.add_argument("--run-id", required=True, type=int)
-    parser.add_argument("--run-url", required=True)
+    parser.add_argument("--run-id", type=int, default=0)
+    parser.add_argument("--run-url", default="")
     parser.add_argument("--workflow-name", default=EXPECTED_WORKFLOW_NAME)
     parser.add_argument("--event", default="push")
     parser.add_argument("--actions-status", default="completed")
@@ -214,6 +247,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--artifact-digest-unavailable-public-job-page", action="store_true")
     parser.add_argument("--artifact-download-status", default="")
     parser.add_argument("--safe-failure-log-excerpt", default="")
+    parser.add_argument("--no-matching-run-found", action="store_true")
+    parser.add_argument("--lookup-source", default="manual_actions_page_or_commit_status_review")
     parser.add_argument("--reviewed-at-utc", default="")
     parser.add_argument("--review-authorized", action="store_true")
     return parser.parse_args()
@@ -241,6 +276,10 @@ def main() -> int:
                 "remote_ci_run_in_progress_for_current_head": payload[
                     "remote_ci_run_in_progress_for_current_head"
                 ],
+                "remote_ci_no_matching_run_found_for_current_head": payload[
+                    "remote_ci_no_matching_run_found_for_current_head"
+                ],
+                "remote_ci_run_lookup_attempted": payload["remote_ci_run_lookup_attempted"],
                 "remote_ci_failure_reviewed_for_current_head": payload[
                     "remote_ci_failure_reviewed_for_current_head"
                 ],

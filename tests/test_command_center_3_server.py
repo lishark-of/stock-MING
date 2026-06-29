@@ -26420,6 +26420,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.client = TestClient(app)
 
+    def _with_clean_worktree_status(self):
+        original_reader = audit_service._read_git_status_short_lines
+        audit_service._read_git_status_short_lines = lambda: ("local_git_status_short_read", 0, [])
+        self.addCleanup(setattr, audit_service, "_read_git_status_short_lines", original_reader)
+
     def _with_snapshot_cache(self, payload):
         original_path = packet_service.SNAPSHOT_CACHE_PATH
         temp_dir = tempfile.TemporaryDirectory()
@@ -56868,6 +56873,186 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             )
             self.assertIn(
                 "matching_remote_ci_run_in_progress_for_current_head",
+                work_order_summary["release_gate_current_blockers"],
+            )
+        self.assertEqual(work_order_summary["strict_closeout"], "0/14")
+        self.assertFalse(work_order_summary["strict_closeout_claim_allowed"])
+
+    def test_remote_ci_review_receipt_recorder_tracks_no_matching_run_without_green_claim(self):
+        self._with_meta_store()
+        self._with_release_gate_receipt_path()
+        self._with_clean_worktree_status()
+        current_head = audit_service._current_git_head_summary()
+        local_receipt_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
+        receipt_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "record_remote_ci_review_receipt.py"
+        local_receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        local_receipt_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "command_center_3_local_push_gate_run_receipt.v1",
+                    "status": "local_push_gate_passed_current_head",
+                    "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+                    "branch": current_head["branch"],
+                    "head": current_head["head"],
+                    "head_full": current_head["head_full"],
+                    "origin_ahead_count": 0,
+                    "checks": sorted(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS),
+                    "did_not_push": True,
+                    "git_add_dot_used": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                    "local_gate_pass_is_not_ci_status": True,
+                    "remote_actions_status_known": False,
+                    "latest_remote_run_verified_green": False,
+                    "explicit_user_push_confirmation_before_push": False,
+                    "push_confirmation_state": "not_requested_no_push",
+                    "release_claim_decision": "blocked_remote_ci_unverified",
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--output",
+                str(receipt_path),
+                "--branch",
+                str(current_head["branch"]),
+                "--head",
+                str(current_head["head"]),
+                "--head-full",
+                str(current_head["head_full"]),
+                "--no-matching-run-found",
+                "--lookup-source",
+                "commit_status_empty_and_commit_workflow_runs_empty",
+                "--reviewed-at-utc",
+                "2026-06-29T15:17:27Z",
+                "--review-authorized",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["status"], "remote_ci_review_no_matching_run_found")
+        self.assertFalse(summary["remote_actions_status_known"])
+        self.assertFalse(summary["latest_remote_run_verified_green"])
+        self.assertFalse(summary["remote_ci_job_page_green_observed"])
+        self.assertFalse(summary["remote_ci_run_observed_for_current_head"])
+        self.assertFalse(summary["remote_ci_run_in_progress_for_current_head"])
+        self.assertTrue(summary["remote_ci_no_matching_run_found_for_current_head"])
+        self.assertTrue(summary["remote_ci_run_lookup_attempted"])
+        self.assertFalse(summary["remote_ci_failure_reviewed_for_current_head"])
+        self.assertEqual(summary["release_claim_decision"], "blocked_remote_ci_no_matching_run")
+        self.assertFalse(summary["github_api_called"])
+        self.assertFalse(summary["external_calls_triggered"])
+        self.assertTrue(summary["does_not_execute_trades"])
+
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["head_full"], current_head["head_full"])
+        self.assertEqual(payload["run_id"], 0)
+        self.assertEqual(payload["run_url"], "")
+        self.assertEqual(payload["actions_status"], "missing")
+        self.assertEqual(payload["actions_conclusion"], "none")
+        self.assertEqual(payload["job_conclusion"], "none")
+        self.assertEqual(payload["artifact_name"], "")
+        self.assertEqual(payload["artifact_digest"], "")
+        self.assertEqual(payload["artifact_digest_review_status"], "not_available_no_matching_run")
+        self.assertEqual(payload["failed_step_or_green_status"], "no_matching_remote_actions_run_found")
+        self.assertTrue(payload["remote_ci_no_matching_run_found_for_current_head"])
+        self.assertTrue(payload["remote_ci_run_lookup_attempted"])
+        self.assertEqual(payload["remote_ci_lookup_source"], "commit_status_empty_and_commit_workflow_runs_empty")
+        self.assertEqual(payload["release_claim_decision"], "blocked_remote_ci_no_matching_run")
+        self.assertFalse(payload["remote_actions_status_known"])
+        self.assertFalse(payload["latest_remote_run_verified_green"])
+
+        packet = audit_service.read_call_ledger_audit_cache()
+        remote_receipt = packet["remote_ci_review_receipt"]
+        self.assertEqual(remote_receipt["status"], "remote_ci_review_no_matching_run_found")
+        self.assertTrue(remote_receipt["head_matches_current"])
+        self.assertFalse(remote_receipt["remote_actions_status_known"])
+        self.assertFalse(remote_receipt["latest_remote_run_verified_green"])
+        self.assertFalse(remote_receipt["remote_ci_review_ready"])
+        self.assertTrue(remote_receipt["remote_ci_no_matching_run_found_for_current_head"])
+        self.assertTrue(remote_receipt["remote_ci_run_lookup_attempted"])
+        self.assertEqual(remote_receipt["remote_ci_lookup_source"], "commit_status_empty_and_commit_workflow_runs_empty")
+        self.assertIn(
+            "matching remote Actions run observed for current HEAD",
+            remote_receipt["missing_evidence"],
+        )
+        self.assertEqual(remote_receipt["release_claim_decision"], "blocked_remote_ci_no_matching_run")
+        self.assertFalse(remote_receipt["github_api_called"])
+        self.assertFalse(remote_receipt["external_calls_triggered"])
+        self.assertTrue(remote_receipt["does_not_execute_trades"])
+
+        push_receipt = packet["release_gate_push_readiness_receipt"]
+        if push_receipt["local_commits_not_pushed_for_remote_ci"]:
+            self.assertEqual(push_receipt["remote_review_status"], "remote_review_waiting_for_push")
+        else:
+            self.assertEqual(push_receipt["remote_review_status"], "remote_review_no_matching_run_current_head")
+        self.assertTrue(push_receipt["remote_ci_no_matching_run_found_for_current_head"])
+        self.assertTrue(push_receipt["remote_ci_run_lookup_attempted"])
+        self.assertIn(
+            "matching_remote_actions_run_not_found_for_current_head",
+            push_receipt["remote_review_blockers"],
+        )
+
+        stage_rows = {row["stage_key"]: row for row in packet["release_gate_stage_scope_rows"]}
+        self.assertTrue(stage_rows["matching_remote_actions_status"]["remote_ci_no_matching_run_found_for_current_head"])
+        self.assertFalse(stage_rows["matching_remote_actions_status"]["stage_complete"])
+
+        migration = migration_status_service.build_migration_status()
+        release_split = migration["release_gate_remote_review_split_summary"]
+        release_handoff = migration["ltg11_release_gate_remote_review_handoff_summary"]
+        release_split_rows = {
+            row["split_stage"]: row for row in migration["release_gate_remote_review_split_rows"]
+        }
+        work_order_summary = migration["ltg_strict_closeout_work_order_summary"]
+        self.assertEqual(release_split["status"], "release_gate_remote_ci_no_matching_run_current_head")
+        self.assertEqual(release_split["remote_review_status"], "remote_review_no_matching_run_current_head")
+        self.assertTrue(release_split["remote_ci_no_matching_run_found_for_current_head"])
+        self.assertTrue(release_split["remote_ci_run_lookup_attempted"])
+        self.assertFalse(release_split["remote_actions_status_known"])
+        self.assertFalse(release_split["latest_remote_run_verified_green"])
+        self.assertTrue(release_split["remote_ci_review_receipt_blocks_current_head_remote_review"])
+        self.assertEqual(release_handoff["status"], "release_gate_remote_review_no_matching_run_current_head")
+        self.assertTrue(release_handoff["remote_ci_no_matching_run_found_for_current_head"])
+        self.assertEqual(
+            release_handoff["next_local_step"],
+            "verify_actions_trigger_or_permissions_then_rerun_remote_review",
+        )
+        self.assertTrue(
+            release_split_rows["matching_remote_actions_review"][
+                "remote_ci_no_matching_run_found_for_current_head"
+            ]
+        )
+        self.assertFalse(release_handoff["release_gate_complete"])
+        self.assertFalse(release_handoff["strict_closeout_ready"])
+        if work_order_summary["release_gate_current_head_push_required_before_remote_review"]:
+            self.assertEqual(
+                work_order_summary["release_gate_current_head_remote_review_state"],
+                "current_head_unpushed_for_remote_ci",
+            )
+        else:
+            self.assertEqual(
+                work_order_summary["release_gate_current_head_remote_review_state"],
+                "matching_remote_ci_run_not_found",
+            )
+            self.assertIn(
+                "matching_remote_ci_run_not_found_for_current_head",
                 work_order_summary["release_gate_current_blockers"],
             )
         self.assertEqual(work_order_summary["strict_closeout"], "0/14")
