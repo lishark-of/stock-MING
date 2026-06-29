@@ -111,6 +111,8 @@ def build_contract() -> dict[str, Any]:
         release_split_summary.get("current_head_push_required_before_remote_review") is True
     )
     remote_ci_green_for_current_head = release_split_summary.get("remote_ci_green_for_current_head") is True
+    release_review_complete = release_split_summary.get("release_review_complete") is True
+    release_gate_complete = release_split_summary.get("release_gate_complete") is True
     expected_publish_status = (
         "current_head_unpushed_for_remote_ci"
         if current_head_ahead_count > 0
@@ -200,7 +202,7 @@ def build_contract() -> dict[str, Any]:
         and release_split_summary.get("external_calls_triggered") is False
         and release_split_summary.get("does_not_execute_trades") is True
         and release_split_summary.get("strict_closeout_ready") is False
-        and release_split_summary.get("release_gate_complete") is False
+        and (not release_gate_complete or release_review_complete)
     )
     push_boundary_row_blocks_remote_review_when_ahead = (
         push_boundary_row.get("split_stage") == "push_boundary_for_remote_ci"
@@ -228,7 +230,9 @@ def build_contract() -> dict[str, Any]:
             or matching_remote_row.get("remote_ci_green_for_current_head") is False
         )
         and release_review_row.get("split_stage") == "release_review_and_strict_closeout_boundary"
-        and release_review_row.get("release_gate_complete") is False
+        and release_review_row.get("release_review_complete") is release_review_complete
+        and release_review_row.get("release_gate_complete") is release_gate_complete
+        and (not release_gate_complete or release_review_complete)
         and release_review_row.get("strict_closeout_ready") is False
         and release_review_row.get("can_close_from_observed_row") is False
         and release_review_row.get("does_not_execute_trades") is True

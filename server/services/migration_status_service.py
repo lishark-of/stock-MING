@@ -2422,6 +2422,7 @@ def _build_ltg_strict_closeout_work_order_rows(
     remote_ci_green_local_gate_recheck_required = (
         release_gate_direct_evidence.get("remote_ci_green_local_gate_recheck_required") is True
     )
+    release_gate_complete = release_gate_direct_evidence.get("release_gate_complete") is True
     remote_actions_status_known = release_gate_direct_evidence.get("remote_actions_status_known") is True
     latest_remote_run_verified_green = (
         release_gate_direct_evidence.get("latest_remote_run_verified_green") is True
@@ -2438,6 +2439,8 @@ def _build_ltg_strict_closeout_work_order_rows(
         current_head_remote_review_state = "remote_ci_review_receipt_stale_for_current_head"
     elif remote_ci_green_local_gate_recheck_required:
         current_head_remote_review_state = "remote_ci_green_local_gate_recheck_required"
+    elif release_gate_complete:
+        current_head_remote_review_state = "matching_remote_ci_green_release_review_complete"
     elif latest_remote_run_verified_green:
         current_head_remote_review_state = "matching_remote_ci_green_release_review_pending"
     elif remote_ci_failure_reviewed_for_current_head:
@@ -4063,17 +4066,23 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         report_summary = audit_service._read_local_push_gate_report_summary()
         remote_receipt = audit_service._read_remote_ci_review_receipt()
         allowlist_receipt = audit_service._read_secret_artifact_allowlist_review_receipt()
+        release_review_receipt = audit_service._read_release_gate_review_receipt(
+            remote_receipt,
+            allowlist_receipt,
+        )
         worktree, _worktree_rows = audit_service._local_worktree_cleanliness_audit()
     except Exception:
         receipt = {}
         report_summary = {}
         remote_receipt = {}
         allowlist_receipt = {}
+        release_review_receipt = {}
         worktree = {}
     receipt_map = receipt if isinstance(receipt, dict) else {}
     report_map = report_summary if isinstance(report_summary, dict) else {}
     remote_receipt_map = remote_receipt if isinstance(remote_receipt, dict) else {}
     allowlist_receipt_map = allowlist_receipt if isinstance(allowlist_receipt, dict) else {}
+    release_review_receipt_map = release_review_receipt if isinstance(release_review_receipt, dict) else {}
     worktree_map = worktree if isinstance(worktree, dict) else {}
     try:
         local_receipt_origin_ahead_count = int(receipt_map.get("origin_ahead_count") or 0)
@@ -4187,6 +4196,18 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     remote_green_for_current_head = bool(
         remote_actions_status_known and latest_remote_run_verified_green and remote_receipt_head_matches_current
     )
+    release_review_receipt_head_matches_current = (
+        release_review_receipt_map.get("head_matches_current") is True
+    )
+    release_review_complete = bool(
+        release_review_receipt_map.get("release_review_complete") is True
+        and release_review_receipt_head_matches_current
+        and remote_green_for_current_head
+        and periodic_allowlist_review_ready
+    )
+    release_review_receipt_missing_evidence = [
+        str(item) for item in release_review_receipt_map.get("missing_evidence") or [] if str(item)
+    ]
     local_commits_not_pushed = local_receipt_current_origin_ahead_count > 0
     current_head_publish_status = (
         "current_head_unpushed_for_remote_ci"
@@ -4208,13 +4229,17 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         status = "release_gate_remote_ci_failed_current_head"
     if remote_green_for_current_head and not fresh_gate_run_done:
         status = "release_gate_remote_ci_green_local_gate_recheck_required"
-    if fresh_gate_run_done and remote_green_for_current_head:
+    if fresh_gate_run_done and remote_green_for_current_head and release_review_complete:
+        status = "release_gate_direct_evidence_visible_release_review_complete_strict_closeout_blocked"
+    elif fresh_gate_run_done and remote_green_for_current_head:
         status = "release_gate_direct_evidence_visible_remote_ci_reviewed_release_review_pending"
     local_complete = fresh_gate_run_done
     remote_review_pending = bool(local_complete and not remote_green_for_current_head)
-    release_review_pending = bool(local_complete and remote_green_for_current_head)
+    release_review_pending = bool(local_complete and remote_green_for_current_head and not release_review_complete)
     release_review_status = (
-        "release_review_pending"
+        "release_review_complete_strict_closeout_blocked"
+        if release_review_complete
+        else "release_review_pending"
         if release_review_pending
         else "release_review_blocked_by_local_gate_recheck_after_remote_green"
         if remote_green_for_current_head
@@ -4243,10 +4268,20 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         missing_evidence_items.append("push-gate evidence artifact sha256 digest")
     if not periodic_allowlist_review_ready:
         missing_evidence_items.append("periodic allowlist review evidence")
-    missing_evidence_items.append("release review after matching remote CI green")
+    if not release_review_complete:
+        missing_evidence_items.append("release review after matching remote CI green")
+    release_gate_complete = bool(
+        fresh_gate_run_done
+        and remote_green_for_current_head
+        and periodic_allowlist_review_ready
+        and release_review_complete
+    )
     return {
         "schema_version": "migration_release_gate_direct_evidence_summary.v1",
-        "source_packet_key": "local_push_gate_run_receipt+remote_ci_review_receipt+secret_artifact_allowlist_review_receipt",
+        "source_packet_key": (
+            "local_push_gate_run_receipt+remote_ci_review_receipt+"
+            "secret_artifact_allowlist_review_receipt+release_gate_review_receipt"
+        ),
         "source_status": str(receipt_map.get("status") or "missing"),
         "status": status,
         "local_complete": local_complete,
@@ -4255,7 +4290,9 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         "remote_review_required_after_local_complete": True,
         "remote_review_blocked_by_unpushed_local_commits": local_commits_not_pushed,
         "remote_review_status": (
-            "remote_review_green_release_review_pending"
+            "remote_review_green_release_review_complete"
+            if local_complete and remote_green_for_current_head and release_review_complete
+            else "remote_review_green_release_review_pending"
             if local_complete and remote_green_for_current_head
             else "remote_review_green_local_gate_recheck_required"
             if remote_green_for_current_head
@@ -4271,6 +4308,7 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
         ),
         "remote_review_pending_count": 1 if remote_review_pending else 0,
         "release_review_pending": release_review_pending,
+        "release_review_complete": release_review_complete,
         "release_review_required_after_remote_green": True,
         "release_review_status": release_review_status,
         "release_review_pending_count": 1 if release_review_pending else 0,
@@ -4397,7 +4435,16 @@ def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
             allowlist_receipt_missing_evidence
         ),
         "secret_artifact_allowlist_review_receipt_is_not_release_review": True,
-        "release_gate_complete": False,
+        "release_gate_review_receipt_status": str(release_review_receipt_map.get("status") or "missing"),
+        "release_gate_review_receipt_head_matches_current": (
+            release_review_receipt_head_matches_current
+        ),
+        "release_gate_review_receipt_missing_evidence": release_review_receipt_missing_evidence,
+        "release_gate_review_receipt_missing_evidence_count": len(
+            release_review_receipt_missing_evidence
+        ),
+        "release_gate_review_receipt_is_not_strict_closeout": True,
+        "release_gate_complete": release_gate_complete,
         "did_not_push": True,
         "git_add_dot_used": False,
         "github_api_called": False,
@@ -4574,7 +4621,21 @@ def _build_release_gate_remote_review_split_rows(
             "split_stage": "release_review_and_strict_closeout_boundary",
             "release_review_status": release_gate_summary.get("release_review_status"),
             "release_review_pending": release_gate_summary.get("release_review_pending") is True,
-            "release_gate_complete": False,
+            "release_review_complete": release_gate_summary.get("release_review_complete") is True,
+            "release_gate_review_receipt_status": release_gate_summary.get(
+                "release_gate_review_receipt_status", ""
+            ),
+            "release_gate_review_receipt_head_matches_current": (
+                release_gate_summary.get("release_gate_review_receipt_head_matches_current") is True
+            ),
+            "release_gate_review_receipt_missing_evidence": list(
+                release_gate_summary.get("release_gate_review_receipt_missing_evidence") or []
+            ),
+            "release_gate_review_receipt_missing_evidence_count": int(
+                release_gate_summary.get("release_gate_review_receipt_missing_evidence_count") or 0
+            ),
+            "release_gate_review_receipt_is_not_strict_closeout": True,
+            "release_gate_complete": release_gate_summary.get("release_gate_complete") is True,
             "strict_closeout_ready": False,
             "can_close_from_observed_row": False,
             "release_review_blocked_by_local_gate_recheck": (
@@ -4635,6 +4696,8 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
     )
     remote_ci_failure_next_step = str(release_gate.get("remote_ci_failure_next_step") or "")
     remote_ci_green_for_current_head = release_gate.get("remote_ci_green_for_current_head") is True
+    release_review_complete = release_gate.get("release_review_complete") is True
+    release_gate_complete = release_gate.get("release_gate_complete") is True
     remote_receipt_head_matches_current = (
         release_gate.get("remote_ci_review_receipt_head_matches_current") is True
     )
@@ -4658,7 +4721,10 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         and local_receipt_head_matches_current
         and not local_commits_not_pushed
     )
-    if local_complete and latest_remote_run_verified_green and remote_receipt_head_matches_current:
+    if release_gate_complete:
+        status = "release_gate_release_review_complete_strict_closeout_blocked"
+        next_step = "select_one_ltg_work_order_after_release_review"
+    elif local_complete and latest_remote_run_verified_green and remote_receipt_head_matches_current:
         status = "release_gate_remote_review_green_release_review_pending"
         next_step = "release_review_after_matching_remote_ci_green"
     elif latest_remote_run_verified_green and remote_receipt_head_matches_current:
@@ -4675,7 +4741,10 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         next_step = "rerun_local_push_gate_after_clean_worktree_for_current_head"
     return {
         "schema_version": "ltg11_release_gate_remote_review_handoff_summary.v1",
-        "source_packet_key": "local_push_gate_run_receipt+remote_ci_review_receipt",
+        "source_packet_key": (
+            "local_push_gate_run_receipt+remote_ci_review_receipt+"
+            "secret_artifact_allowlist_review_receipt+release_gate_review_receipt"
+        ),
         "source_summary_schema_version": release_gate.get("schema_version", ""),
         "status": status,
         "direct_evidence_status": release_gate.get("status", ""),
@@ -4771,10 +4840,22 @@ def _latest_release_gate_remote_review_handoff_summary() -> dict[str, Any]:
         "secret_artifact_allowlist_review_receipt_is_not_release_review": True,
         "remote_ci_review_receipt_is_not_release_review": True,
         "release_review_pending": release_gate.get("release_review_pending") is True,
+        "release_review_complete": release_review_complete,
         "release_review_status": release_gate.get("release_review_status", ""),
+        "release_gate_review_receipt_status": release_gate.get("release_gate_review_receipt_status", ""),
+        "release_gate_review_receipt_head_matches_current": (
+            release_gate.get("release_gate_review_receipt_head_matches_current") is True
+        ),
+        "release_gate_review_receipt_missing_evidence": list(
+            release_gate.get("release_gate_review_receipt_missing_evidence") or []
+        ),
+        "release_gate_review_receipt_missing_evidence_count": int(
+            release_gate.get("release_gate_review_receipt_missing_evidence_count") or 0
+        ),
+        "release_gate_review_receipt_is_not_strict_closeout": True,
         "requires_remote_ci_review_after_fresh_local_gate": True,
         "requires_release_review_after_remote_green": True,
-        "release_gate_complete": False,
+        "release_gate_complete": release_gate_complete,
         "strict_closeout_ready": False,
         "can_close_goal": False,
         "production_complete": False,
