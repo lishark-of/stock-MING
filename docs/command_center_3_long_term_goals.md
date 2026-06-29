@@ -147,6 +147,41 @@ Streamlit remains fallback / legacy / admin / debug until the React/Tauri workfl
 - ECharts next-session map maturity: chart contract exists; interaction parity with legacy Streamlit is incomplete.
 - Streamlit legacy closeout: legacy status exists; ordinary workflow is not fully migrated.
 
+## Active Remaining Goal Plan
+
+This section is the current working plan after the user-usable vertical slice. It deliberately removes items that are already completed as local scaffolds or ordinary-entry usability repairs. Do not reopen those as standalone goals unless a new regression is observed.
+
+Removed from the active target list:
+
+- Command Center 3.0 architecture skeleton, FastAPI cache/task MVP, React/Vite/Tauri shell, ECharts initial map, Factor Quant Hub shell, Tushare light path, and DeepSeek governance scaffold.
+- Ordinary homepage simplification where the first view shows local connection, current symbol, recent result, and next action before audit detail.
+- Runtime-mode docs/config vocabulary for `cache_only`, `manual`, `live_light`, and reserved `live_full`.
+- Local-only receipt, matrix, dry-run, stage-scope, sanitizer, and preflight rows when their only value is to restate a boundary already visible in the app.
+- Local push-gate evidence for the last checked head when it has already passed locally; the remaining release blocker is matching remote CI/release review, not another broad local scaffold pass.
+
+Remaining goals are still not `14 LTG` complete. The current snapshot keeps `strict_closeout=0/14`; each item below needs direct evidence, provider-backed evidence, worker/runtime evidence, browser evidence, or release evidence before it can close.
+
+| no. | remaining target | related LTG | next small action | completion boundary |
+|---|---|---|---|---|
+| 1 | Current-head release review | LTG-11 | After explicit user authorization, push/review matching remote CI or inspect reviewed failure logs for the exact head. | Local gate, workflow files, and failure emails are not remote CI evidence. |
+| 2 | A-share trading-calendar freshness production acceptance | LTG-01, supports LTG-02 | Restore the `trade_cal` dry-run / execution-request / promotion-review chain, then run the separate approved provider task only when explicitly authorized. | Needs real `trade_cal` provider call ledger, long-window replay, failure-mode evidence, redaction, and promotion marker. |
+| 3 | Tushare full-interface provider pipeline | LTG-02 | Use the target-sample execution-request as the next scoped handoff, then validate interface groups one by one. | Matrix/readiness rows are not full-interface acceptance; each provider group needs safe call ledger and promotion review. |
+| 4 | Factor Test Lab research validation | LTG-03 | Rebuild the provider small-pool receipt chain, then request the scoped provider validation task. | Light metrics and local receipts are not rolling IC/ICIR, cost, neutralization, PIT/bias, or full-market validation. |
+| 5 | Factor universe and stock-pool worker research | LTG-04 | Promote from local read-plan / worker-batch tickets to explicit worker runtime evidence. | Needs worker-backed batch, rank/zscore/neutralization, factor combination, and provider-backed/full-pool validation. |
+| 6 | Candidate Radar production replacement | LTG-13 | Continue from user-usable radar entry to full-pool/deep-scan worker and provider-backed signal acceptance. | Local radar cache, browser artifact, or promotion dry-run alone cannot retire the legacy fallback. |
+| 7 | Stock Quant Projection and Next Session result depth | LTG-08, LTG-13 | Make confirmed-symbol results show real cache lineage, Factor/Next-session refresh state, missing evidence, and safe chart output. | Must not be based only on search receipt or local projection text; browser visual/performance evidence remains separate. |
+| 8 | Storage physical productionization | LTG-05 | Move from schema/manifest readiness to explicit physical storage execution review. | Needs schema migration, dataset version manifest validation, partition migration, compaction, TTL refresh, and cleanup review. |
+| 9 | Worker runtime production orchestration | LTG-06 | Run the bounded worker runtime QA plan when explicitly in scope. | Needs Celery/Redis process evidence, broker health, retry/cancel/lock/dedupe across processes, durable logs, and scheduler default-off proof. |
+| 10 | DeepSeek governed executor | LTG-07 | Finish the model-call executor separately after Tushare/Factor/Next cache are reliable. | DeepSeek must remain explanation-only and requires model ledger, response-format enforcement, sanitizer acceptance, redaction, and no numeric/action overwrite. |
+| 11 | Tauri desktop production package | LTG-09 | Move beyond preflight into repeatable packaged runtime QA. | Needs `tauri dev`, repeatable build, packaged launch, config/log runtime path QA, offline UX, signing/notarization decision, and promotion review. |
+| 12 | Streamlit ordinary-flow retirement | LTG-10 | Retire only the flows whose React/Tauri replacements are easier, clearer, and directly evidenced. | Route inventory, local receipts, and no-feature-loss matrices cannot retire Streamlit fallback. |
+| 13 | Motion and visual clarity promotion | LTG-14 | Promote local motion/browser evidence only after visual/performance review and durable CI/release evidence. | Local ignored QA artifacts and static contracts are not production motion evidence. |
+| 14 | Real-trading isolation guard | LTG-12 | Keep research-client release isolated; any real trading integration must remain a separate approved project. | No broker, no order endpoint, no trade API, no action mutation; real trading is not part of this migration closeout. |
+
+Goal mode for the next Codex cycles: `remaining_ltg_user_usable_direct_evidence_closeout`.
+
+Execution rule: each cycle advances at most one main target plus one support target, touches at most five files, starts with `scripts/ltg_progress_snapshot.py`, and ends with a checkpoint. Cache reads, React render, FastAPI startup, search typing, and GET cache/status remain silent. Tushare, DeepSeek, GitHub, worker runtime, and real-trading paths require explicit task scope and explicit user authorization when they are external or side-effecting.
+
 ## Local Implemented But Not Pushed
 
 The local branch may contain roadmap or LTG implementation commits that are not yet pushed. Treat `git log origin/main..HEAD` as the authoritative list before any push gate.
@@ -2105,27 +2140,25 @@ Add Command Center 3 motion clarity system
 
 | priority | focus | note |
 |---|---|---|
-| P0 | Current unpushed commit push gate | Use `git log origin/main..HEAD` as the authoritative unpushed list; run `scripts/push_gate_3_0.sh` locally and review results; do not inspect Actions or push unless the user explicitly requests/approves that external step. |
-| P1 | A 股交易日历 freshness 生产验收 | This blocks trustworthy current evidence. |
-| P2 | Tushare 全接口真实流水线 | Validate provider data groups one by one through button-gated tasks. |
-| P2a | 运行模式分层与 `live_light` bootstrap | Keep `cache_only` safe while designing opt-in light startup tasks for local daily research. |
-| P3 | Factor Test Lab 真实小股票池研究 | Promote from light research metrics to research-grade validation. |
-| P3a | 下一票雷达快扫生产化 | Restore radar scan capability in 3.0 without UI stalls or signal loss. |
-| P4 | Storage / Worker 生产化 | Make heavy work reliable and auditable. |
-| P5 | DeepSeek pro 稳定性提升 | Improve JSON stability while keeping manual/default-off governance. |
-| P6 | Tauri production package | Turn dev/preflight shell into user-openable desktop package. |
-| P7 | Streamlit 完全退场 | Move ordinary workflows to Command Center 3 after replacement is ready. |
-| P8 | 动效与可视化清晰度优化 | Add polished motion after core data, worker, and desktop paths are stable. |
+| P0 | Current-head remote CI / release review | Local push gate evidence is not remote CI evidence. Use `git log origin/main..HEAD` as the authoritative unpushed list; do not inspect Actions or push unless the user explicitly requests/approves that external step. |
+| P1 | A 股交易日历 freshness 生产验收 | First restore the local `trade_cal` receipt chain, then run a separate approved provider task only with explicit authorization. |
+| P2 | Tushare 全接口真实流水线 | Validate provider data groups one by one through button-gated tasks and call ledger, not matrix-only rows. |
+| P3 | Factor Test Lab 真实小股票池研究 | Promote from light research metrics and local tickets to provider-backed small-pool validation. |
+| P4 | Factor universe / Candidate Radar worker evidence | Move from read plans, cache, and local promotion dry-runs to explicit worker/provider evidence. |
+| P5 | Storage / Worker productionization | Run physical storage and runtime QA as explicit side-effecting cycles, not from GET/status/render. |
+| P6 | DeepSeek governed executor | Keep separate from Tushare/Factor/Next-session basics; require model ledger, sanitizer acceptance, redaction, and no-action overwrite proof. |
+| P7 | Tauri production package and Streamlit retirement | Package the client and retire legacy ordinary flows only after replacement evidence is easier, clearer, and reliable. |
+| P8 | Next-session browser QA and motion promotion | Add durable visual/performance evidence after core data, worker, desktop, and release blockers are under control. |
 
 ### P0 Local Gate Checkpoint
 
-- Local `scripts/push_gate_3_0.sh` has been rerun after the migration-principle update and now reaches the clean-worktree guard: Python unittest, Desktop build, smoke, data-health, Tushare acceptance, bootstrap runtime, Tushare/DeepSeek linkage, Factor, storage, worker, Tauri, Streamlit legacy, trade-isolation, motion, whitespace, secret, artifact, and release-readiness checks all complete locally before that final guard.
-- The previous local Desktop build blocker was a workstation artifact issue in ignored build folders; the gate now builds Desktop through a temporary `DESKTOP_BUILD_OUT_DIR` with Vite `--configLoader runner`, so it does not depend on writing into ignored `desktop/dist` or `desktop/node_modules/.vite-temp`.
-- The previous local Tushare/DeepSeek linkage blocker was a contract setup mismatch: the contract now pins `COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE=light_provider_model` for its synthetic local acceptance path while still reporting real Tushare calls, DeepSeek calls, browser non-blocking evidence, and production promotion as pending.
-- The current local blocker is still clean worktree, because this working tree contains intentional uncommitted migration/config/script/test/doc edits. This is a release hygiene blocker, not evidence that provider/model/trading safety failed.
-- The first release-hygiene cleanup slice must stay within the five-file cycle cap: `.github/workflows/command-center-3-push-gate.yml`, `scripts/push_gate_3_0.sh`, `server/services/audit_service.py`, `tests/test_push_gate_migration_principle_guard.py`, plus only the release-gate hunks in `tests/test_command_center_3_server.py`. `tests/test_audit_gate_migration_principle_guard.py` remains the next release-hygiene guard slice unless the user explicitly approves a separate cycle. Do not stage the whole `tests/test_command_center_3_server.py` mixed diff.
-- The allowed `tests/test_command_center_3_server.py` hunk families for that first slice are limited to the LTG-11 local release-gate helper/check-count update, push-gate script/report/artifact-policy assertions, local worktree/receipt boundary tests, FastAPI release-gate readiness rows, and the motion durable current-head local release-gate fixture. Exclude unrelated runtime-mode, provider-model, bootstrap, live_light, search_quant, candidate-radar, ordinary-entry wording, and task-catalog hunks from that first slice.
-- Remote CI remains unverified. Local gate evidence must not be treated as GitHub Actions green, production release approval, or permission to push without explicit user confirmation.
+- Local `scripts/push_gate_3_0.sh` has passed for the last checked head in this branch and wrote an ignored local receipt. That is local release hygiene evidence only.
+- The branch can still be ahead of `origin/main`; use `git log origin/main..HEAD` before any push or release review to identify the exact commit list.
+- The remaining P0 blocker is matching remote CI / release review for the exact current head after explicit user authorization. Do not treat local gate pass, workflow-file presence, failure emails, local receipts, or old remote runs as current remote CI evidence.
+- If a new docs/code commit is added after the last local gate, the local gate is stale for that new head until rerun. Do not claim release readiness from an older receipt.
+- Remote CI remains unverified unless a round explicitly reviews matching Actions evidence. Local validation must not be treated as GitHub Actions green, production release approval, or permission to push without explicit user confirmation.
+- Historical release-hygiene split guard remains in force for any future P0 cleanup bundle: The first release-hygiene cleanup slice must stay within the five-file cycle cap: `.github/workflows/command-center-3-push-gate.yml`, `scripts/push_gate_3_0.sh`, `server/services/audit_service.py`, `tests/test_push_gate_migration_principle_guard.py`, plus only the release-gate hunks in `tests/test_command_center_3_server.py`. `tests/test_audit_gate_migration_principle_guard.py` remains the next release-hygiene guard slice unless the user explicitly approves a separate cycle. Do not stage the whole `tests/test_command_center_3_server.py` mixed diff.
+- The allowed `tests/test_command_center_3_server.py` hunk families for that future release-hygiene slice are limited to the LTG-11 local release-gate helper/check-count update, push-gate script/report/artifact-policy assertions, local worktree/receipt boundary tests, FastAPI release-gate readiness rows, and the motion durable current-head local release-gate fixture. Exclude unrelated runtime-mode, provider-model, bootstrap, live_light, search_quant, candidate-radar, ordinary-entry wording, and task-catalog hunks from that slice.
 
 ## Risk Boundaries
 
