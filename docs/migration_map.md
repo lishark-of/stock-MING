@@ -41,7 +41,7 @@
 
 当前执行模式改为 `Remaining LTG Unfinished-Only Closeout Queue with Remote Review Split` / `剩余 LTG 未完成项收口队列 + 远端查收分离模式`。已完成的使用者可用化中目标、首页降噪、本地 FastAPI 接线、候选雷达粗筛/细筛、生产硬化工单准备、runtime-mode 文档口径、本地 receipt 链和 remote-review split 本地提交不再进入 active plan。它们只作为历史 checkpoint 和后续回归边界保留。
 
-当前 active plan 只罗列未完成项：`strict_closeout=0/14`，当前快照为 `ready_local_buttons=0`、`durable_handoffs=8`、`remote_state=current_head_unpushed_for_remote_ci`、`origin_ahead=8`。LTG-01 `trade_cal`、LTG-02 target sample、LTG-03 Factor small-pool 本地 recheck 和 LTG-13 Candidate Radar 的本地票据链不再重复推进；它们只作为历史 checkpoint、回归边界和未来授权前置证据。LTG-01/02 即使已有 provider ledger 可见，也仍缺 production promotion、full acceptance、matching release review。真实 provider/model/worker/browser/package/release/trading 工作仍需单独授权。
+当前 active plan 只罗列未完成项：`strict_closeout=0/14`，当前快照为 `ready_local_buttons=0`、`durable_handoffs=8`、`remote_state=current_head_unpushed_for_remote_ci`、`origin_ahead=9`。LTG-01 `trade_cal`、LTG-02 target sample、LTG-03 Factor small-pool 本地 recheck 和 LTG-13 Candidate Radar 的本地票据链不再重复推进；它们只作为历史 checkpoint、回归边界和未来授权前置证据。LTG-01/02 即使已有 provider ledger 可见，也仍缺 production promotion、full acceptance、matching release review。真实 provider/model/worker/browser/package/release/trading 工作仍需单独授权。
 
 | order | active remaining target | current blocker | next action |
 |---:|---|---|---|
