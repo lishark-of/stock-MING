@@ -13,6 +13,7 @@ const DisciplineLoop = lazy(() => import("./routes/DisciplineLoop"));
 const FactorQuantHub = lazy(() => import("./routes/FactorQuantHub"));
 const HealthStatus = lazy(() => import("./routes/HealthStatus"));
 const LegacyTools = lazy(() => import("./routes/LegacyTools"));
+const MarginEtf = lazy(() => import("./routes/MarginEtf"));
 const MarketContext = lazy(() => import("./routes/MarketContext"));
 const MigrationStatus = lazy(() => import("./routes/MigrationStatus"));
 const ModelStrategy = lazy(() => import("./routes/ModelStrategy"));
@@ -47,6 +48,7 @@ const ROUTE_KEYS: RouteKey[] = [
   "next",
   "position",
   "candidates",
+  "marginEtf",
   "risk",
   "factor",
   "chokepoint",
@@ -78,6 +80,7 @@ const ROUTE_COMPONENTS = {
   next: NextSessionMap,
   position: PositionContext,
   candidates: CandidateRadar,
+  marginEtf: MarginEtf,
   risk: RiskGuardrails,
   factor: FactorQuantHub,
   chokepoint: ChokepointScan,

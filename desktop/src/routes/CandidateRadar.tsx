@@ -2930,6 +2930,28 @@ export default function CandidateRadar() {
         emptyDetail="雷达页只读取本地候选缓存；不会在页面打开或 React 渲染中自动扫描全市场。"
       />
 
+      <PacketCard title="下一票雷达操作台" subtitle="先看能不能用、看哪组候选、该点哪里" status={candidateRadarStatusLabel}>
+        <MetricGrid
+          items={[
+            { label: "本地联通", value: candidateRadarP0Blocked ? "未接上" : "已接上", tone: candidateRadarP0Blocked ? "bad" : "good" },
+            { label: "当前标的", value: quantProjectionDisplaySymbol || "等待输入" },
+            { label: "候选分组", value: ordinaryCandidateGroupLabel, tone: ordinaryCandidateTopCount ? "good" : "warn" },
+            { label: "来源", value: coarseFineSourceLabel, tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn" },
+            { label: "最近结果", value: quantProjectionP3OrdinaryReadableSentence, tone: quantProjectionP3OrdinaryReadableSentence.includes("等待") ? "warn" : "good" },
+            { label: "缺口", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") ? "warn" : "good" },
+            { label: "下一步", value: ordinaryPrimaryActionLabel },
+            { label: "边界", value: "候选不是买入指令；不交易", tone: "good" }
+          ]}
+        />
+        <div className="actions" aria-label="candidate radar compact operator actions">
+          <a href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"} aria-label="open candidate radar compact primary action">{ordinaryPrimaryActionLabel}</a>
+          <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from compact radar panel">候选池</a>
+          <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from compact radar panel">量化推演</a>
+          <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from compact radar panel">次日图谱</a>
+        </div>
+        <p className="risk-note">{ordinaryCandidateGroupBoundary} 页面打开、输入、GET cache 和 React render 都不会自动外联。</p>
+      </PacketCard>
+
       <PacketCard title="普通用户雷达摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={candidateRadarStatusLabel}>
         <div aria-label="candidate radar ordinary user first summary">
           <h3>一屏确认</h3>

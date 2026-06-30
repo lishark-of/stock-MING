@@ -17,6 +17,7 @@ export type RouteKey =
   | "next"
   | "position"
   | "candidates"
+  | "marginEtf"
   | "risk"
   | "factor"
   | "chokepoint"
@@ -44,7 +45,8 @@ const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; rout
     routes: [
       { key: "home", label: "今日作战台" },
       { key: "factor", label: "股票量化推演" },
-      { key: "candidates", label: "下一票雷达" }
+      { key: "candidates", label: "下一票雷达" },
+      { key: "marginEtf", label: "ETF / 融资" }
     ]
   },
   {
@@ -212,7 +214,7 @@ export default function Layout({
             )
           ))}
         </nav>
-        <p className="sidebar-note">三入口先行：今日作战台、股票量化推演、下一票雷达。研究-only，不下单；旧 Streamlit 仅作 legacy/admin/debug fallback。</p>
+        <p className="sidebar-note">三入口先行：今日作战台、股票量化推演、下一票雷达；ETF / 融资作为补充普通入口。研究-only，不下单；旧 Streamlit 仅作 legacy/admin/debug fallback。</p>
       </aside>
       <main className="content">{children}</main>
     </div>
