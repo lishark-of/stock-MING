@@ -158,6 +158,7 @@ Removed from the active target list:
 - Runtime-mode docs/config vocabulary for `cache_only`, `manual`, `live_light`, and reserved `live_full`.
 - Completed user-usable vertical-slice goals: local FastAPI hookup, ordinary homepage noise reduction, confirmed-symbol local replay, Candidate Radar coarse/fine local receipts, and production-hardening work-order preparation.
 - Completed local receipt chains for LTG-01 `trade_cal`, LTG-02 target-sample request/review, LTG-03 Factor small-pool dry-run/execution-request, and LTG-13 searched-symbol / provider-parity / worker-fallback local tickets. These stay as historical evidence and regression guards, not as new active goals.
+- Completed LTG-13 Candidate Radar local review steps through production-replacement review, production-promotion dry-run, legacy-retirement review, and production-promotion review. The remaining LTG-13 work is no longer another local review button; it is explicit worker/provider/browser/release evidence.
 - Local-only receipt, matrix, dry-run, stage-scope, sanitizer, and preflight rows when their only value is to restate a boundary already visible in the app.
 - Local push-gate evidence for the last checked head when it has already passed locally; the remaining release blocker is matching remote CI/release review, not another broad local scaffold pass.
 
@@ -165,8 +166,8 @@ Remaining goals are still not `14 LTG` complete. The current snapshot keeps `str
 
 | no. | remaining target | related LTG | next small action | completion boundary |
 |---|---|---|---|---|
-| 1 | Current-head release review | LTG-11 | After explicit user authorization, push/review matching remote CI or inspect reviewed failure logs for the exact head. | Local gate, workflow files, and failure emails are not remote CI evidence. |
-| 2 | Candidate Radar production replacement | LTG-13 | Complete the production-replacement review blocker, then move to full-pool/deep-scan worker and provider-backed signal acceptance. | Local radar cache, browser artifact, searched-symbol receipt, or worker-fallback ticket alone cannot retire the legacy fallback. |
+| 1 | Current-head release review | LTG-11 | First finish a clean local checkpoint for the current head; after explicit user authorization, push/review matching remote CI or inspect reviewed failure logs for that exact head. | Local gate, workflow files, and failure emails are not remote CI evidence. |
+| 2 | Candidate Radar production replacement | LTG-13 | Move from completed local promotion review to full-pool/deep-scan worker, provider-backed signal/capability acceptance, browser/performance, release evidence, and legacy fallback retirement proof. | Production-replacement review, promotion dry-run, legacy-retirement review, production-promotion review, local radar cache, browser artifact, searched-symbol receipt, or worker-fallback ticket alone cannot retire the legacy fallback. |
 | 3 | Factor universe and stock-pool worker research | LTG-04 | Move from local worker-batch tickets to explicit worker runtime, storage-read, rank/zscore, neutralization, and full-pool validation evidence. | Local read plans and execution-request tickets are not worker-backed production research. |
 | 4 | Storage physical productionization | LTG-05 | Run explicit physical storage evidence in slices: schema migration, dataset version manifest, partition migration, compaction, TTL refresh, and cleanup review. | Schema/manifest readiness and local cache visibility are not production storage acceptance. |
 | 5 | Worker runtime production orchestration | LTG-06 | Run bounded runtime QA for real Celery/Redis process evidence, broker health, retry/cancel/lock/dedupe, durable logs, and scheduler default-off proof. | Local fallback task lifecycle is not production worker orchestration. |
@@ -180,7 +181,7 @@ Remaining goals are still not `14 LTG` complete. The current snapshot keeps `str
 | 13 | Factor Test Lab research validation | LTG-03 | Do not repeat provider small-pool dry-run/execution-request; wait for explicit provider-backed factor validation task. | Light metrics and local receipts are not rolling IC/ICIR, cost, neutralization, PIT/bias, or full-market validation. |
 | 14 | Real-trading isolation guard | LTG-12 | Keep research-client release isolated; any real trading integration must remain a separate approved project. | No broker, no order endpoint, no trade API, no action mutation; real trading is not part of this migration closeout. |
 
-Goal mode for the next Codex cycles: `remaining_ltg_local_first_closeout_queue_with_remote_review_split`.
+Goal mode for the next Codex cycles: `remaining_ltg_ready_button_first_closeout_queue_with_remote_review_split`.
 
 Execution rule: each cycle advances at most one main target plus one support target, touches at most five files, starts with `scripts/ltg_progress_snapshot.py`, and ends with a checkpoint. Cache reads, React render, FastAPI startup, search typing, and GET cache/status remain silent. Tushare, DeepSeek, GitHub, worker runtime, and real-trading paths require explicit task scope and explicit user authorization when they are external or side-effecting.
 
@@ -512,9 +513,9 @@ Strict completion status: none of the 14 long-term goals should be closed as ful
 
 Progress summary as of 2026-06-30: the Command Center 3.0 migration foundation is roughly 70-75% established, while production acceptance across the 14 LTGs is roughly 25-35% complete. The strict closeout count remains `0 / 14` because every LTG still has at least one provider-backed, packaged-runtime, browser-performance, worker/storage, or retirement acceptance item pending.
 
-Active target mode is now `Remaining LTG Local-First Closeout Queue with Remote Review Split` / `剩余 LTG 本地优先收口队列 + 远端查收分离模式`. The active target plan deletes already checkpointed local usability items from the work list and continues only the unclosed LTGs. A local slice can end as `local_complete`, but missing matching GitHub Actions or release review must be tracked as `remote_review_pending` instead of repeatedly marking the local goal blocked. Only local direct evidence, matching remote CI green, and release review together can move an LTG toward `strict_closeout_ready`.
+Active target mode remains `Remaining LTG Ready-Button-First Closeout Queue with Remote Review Split` / `剩余 LTG 就绪按钮优先收口队列 + 远端查收分离模式`. The active target plan deletes already checkpointed local usability items from the work list and continues only the unclosed LTGs. A local slice can end as `local_complete`, but missing matching GitHub Actions or release review must be tracked as `remote_review_pending` instead of repeatedly marking the local goal blocked. Only local direct evidence, matching remote CI green, and release review together can move an LTG toward `strict_closeout_ready`.
 
-Current local checkpoint note: the 2026-06-30 snapshot after the LTG-03 local cleanup shows `strict_closeout=0/14`, `ready_local_buttons=0`, `durable_handoffs=8`, and release-gate state `current_head_unpushed_for_remote_ci`. LTG-01 `trade_cal` local dry-run / execution-request / promotion-review, LTG-02 target-sample execution-request / review, and LTG-03 Factor small-pool local dry-run / execution-request have reached local receipt boundaries and should not be repeated as next active local targets. The completed LTG-13 local searched-symbol / provider-parity / worker-fallback receipt chains remain historical checkpoints. This note is a planning snapshot, not a push authorization and not remote CI evidence.
+Current local checkpoint note: the 2026-06-30 snapshot after the LTG-13 production-promotion review shows `strict_closeout=0/14`, `ready_local_buttons=0`, `durable_handoffs=8`, and release-gate state `current_head_unpushed_for_remote_ci`. LTG-01 `trade_cal` local dry-run / execution-request / promotion-review, LTG-02 target-sample execution-request / review, and LTG-03 Factor small-pool local dry-run / execution-request have reached local receipt boundaries and should not be repeated as next active local targets. The completed LTG-13 local searched-symbol / provider-parity / worker-fallback receipt chains, plus Candidate Radar production-replacement review, production-promotion dry-run, legacy-retirement review, and production-promotion review receipts, remain historical checkpoints. This note is a planning snapshot, not a push authorization and not remote CI evidence.
 
 Removed from the active work list because they are already checkpointed locally:
 
@@ -524,11 +525,12 @@ Removed from the active work list because they are already checkpointed locally:
 4. LTG-03 local receipt chain: Factor small-pool provider dry-run、execution-request、future provider validation handoff。
 5. LTG-13 local searched-symbol quant-projection chain: acceptance dry-run、scope-bound execution-request、provider-parity dry-run receipt。
 6. LTG-13 local provider / worker fallback chain: provider-parity execution-request、full-pool local scan、deep-scan local review、worker execution-request、full-pool worker fallback、deep-scan worker fallback。
+7. LTG-13 Candidate Radar local review chain through production-replacement review、production-promotion dry-run、legacy-retirement review、production-promotion review。
 
 Remaining active queue after deleting completed local slices:
 
-1. LTG-11 Release gate support: local receipts are ready, but current branch is still ahead of origin and remote CI review waits for an explicitly authorized push after a fresh local gate.
-2. LTG-13 Candidate Radar / provider-worker promotion: provider-parity and worker-fallback local receipts are history; current blocker is `latest_candidate_radar_production_replacement_review_not_ready`, so the next local review is `POST /api/candidate-radar/production-replacement-review` before any `production-promotion-dry-run`.
+1. LTG-11 Release gate support: local receipts are ready, but the branch still needs a clean local checkpoint before any future authorized push/remote CI review.
+2. LTG-13 Candidate Radar / provider-worker promotion: completed local replacement-review, promotion dry-run, legacy-retirement, and production-promotion review receipts are history; production replacement still needs full-pool/deep-scan worker, provider-backed signal/capability acceptance, browser/performance evidence, release evidence, and legacy fallback retirement proof.
 3. LTG-04 Factor universe: real worker runtime, storage read, rank/zscore, neutralization, full-pool validation, and promotion evidence remain pending.
 4. LTG-05 Storage: physical schema/migration/partition/compaction/TTL/promotion evidence remains pending.
 5. LTG-06 Worker: real Celery/Redis or runtime QA and durable task-log evidence remains pending.
@@ -542,7 +544,7 @@ Remaining active queue after deleting completed local slices:
 13. LTG-03 provider validation: local scope/request is done; provider-backed rolling/cost/neutralization/bias validation needs a future explicit task.
 14. LTG-12 trade isolation: remains a continuous no-broker/no-order/no-action release invariant, not a one-time feature closeout.
 
-Goal mode after this rebase: `Remaining LTG Local-First Closeout Queue with Remote Review Split` / `剩余 LTG 本地优先收口队列 + 远端查收分离模式`. Each cycle should advance at most one main LTG plus LTG-11-style support evidence, remove completed local slices from the next target list, and keep provider/model/worker/storage/browser/package/trading work behind explicit authorization. When `ready_local_buttons>0`, clear the single ready local button first; when `ready_local_buttons=0`, the next cycle should resolve the named blocker instead of rerunning already-completed receipt chains.
+Goal mode after this rebase: `Remaining LTG Ready-Button-First Closeout Queue with Remote Review Split` / `剩余 LTG 就绪按钮优先收口队列 + 远端查收分离模式`. Each cycle should advance at most one main LTG plus LTG-11-style support evidence, remove completed local slices from the next target list, and keep provider/model/worker/storage/browser/package/trading work behind explicit authorization. When `ready_local_buttons>0`, clear the single ready local button first; when `ready_local_buttons=0`, the next cycle should resolve the named blocker instead of rerunning already-completed receipt chains.
 
 | bucket | count | goals | current meaning |
 |---|---:|---|---|
