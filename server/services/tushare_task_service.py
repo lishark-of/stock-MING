@@ -272,6 +272,16 @@ PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_SEED_ROUTE = "POST /api/tasks/tushare-pr
 PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_PACKET_KEY = "command_center_tushare_provider_target_sample_execution_recipe_packet"
 PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE = "run_tushare_provider_target_sample_execution_request"
 PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_ROUTE = "POST /api/tasks/tushare-provider-target-sample-execution-request"
+PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_SCHEMA_VERSION = "tushare_provider_target_sample_failure_window_review.v1"
+PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_TASK_TYPE = (
+    "run_tushare_provider_target_sample_failure_window_review"
+)
+PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE = (
+    "POST /api/tasks/tushare-provider-target-sample-failure-window-review"
+)
+PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY = (
+    "command_center_tushare_provider_target_sample_failure_window_review_packet"
+)
 TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE = "run_trade_cal_provider_acceptance_execution_request"
 TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_READY_STATUS = (
     "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending"
@@ -2849,6 +2859,306 @@ def run_tushare_provider_target_sample_execution_request(payload: Any = None) ->
         current_step="tushare_provider_target_sample_execution_request_ready"
         if receipt["local_execution_request_ready"]
         else "tushare_provider_target_sample_execution_request_blocked",
+        call_ledger=receipt["call_ledger"],
+    ) or task
+
+
+def _latest_target_sample_provider_refresh_task() -> dict[str, Any]:
+    for task in list_task_statuses():
+        if task.get("task_type") != "refresh_tushare_facts":
+            continue
+        payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), Mapping) else {}
+        ledger = [row for row in task.get("call_ledger") or [] if isinstance(row, Mapping)]
+        has_provider_ledger = any(
+            row.get("tushare_called") is True
+            or row.get("external_calls_triggered") is True
+            or row.get("external") is True
+            for row in ledger
+        )
+        if (
+            payload_safe.get("acceptance_mode") == PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE
+            or payload_safe.get("target_sample_acceptance_groups")
+        ) and has_provider_ledger:
+            return dict(task)
+    return {}
+
+
+def _target_sample_failure_window_review_receipt(
+    payload: Any = None,
+    *,
+    provider_task: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    payload_safe = _safe_payload(payload)
+    provider_task_map = dict(provider_task or _latest_target_sample_provider_refresh_task())
+    provider_payload = (
+        provider_task_map.get("payload_safe")
+        if isinstance(provider_task_map.get("payload_safe"), Mapping)
+        else {}
+    )
+    provider_payload = dict(provider_payload)
+    ledger = [dict(row) for row in provider_task_map.get("call_ledger") or [] if isinstance(row, Mapping)]
+    provider_rows = [
+        row
+        for row in ledger
+        if row.get("tushare_called") is True
+        or row.get("external_calls_triggered") is True
+        or row.get("external") is True
+    ]
+    requested_targets = [
+        str(item)
+        for item in (
+            provider_payload.get("target_sample_acceptance_groups")
+            or payload_safe.get("target_sample_acceptance_groups")
+            or []
+        )
+        if str(item or "")
+    ]
+    selected_apis = [
+        str(item)
+        for item in (provider_payload.get("apis") or payload_safe.get("apis") or [])
+        if str(item or "")
+    ]
+    if not selected_apis:
+        selected_apis = [str(row.get("api") or "") for row in provider_rows if str(row.get("api") or "")]
+    provided_context_fields = sorted(
+        key
+        for key, value in provider_payload.items()
+        if key in {"ts_code", "trade_date", "start_date", "end_date", "ann_date", "period", "float_date", "limit_type"}
+        and value not in (None, "")
+    )
+    ledger_by_api = {str(row.get("api") or ""): row for row in provider_rows}
+    rows: list[dict[str, Any]] = []
+    for target_key, label, target_apis in VALIDATION_TARGET_GROUPS:
+        requested = target_key in requested_targets
+        selected_target_apis = [api for api in target_apis if api in selected_apis]
+        if not requested and not selected_target_apis:
+            continue
+        target_ledger_rows = [ledger_by_api[api] for api in selected_target_apis if api in ledger_by_api]
+        non_empty_success_apis = [
+            str(row.get("api") or "")
+            for row in target_ledger_rows
+            if row.get("call_status") == "success" and int(row.get("row_count") or 0) > 0
+        ]
+        validated_empty_apis = [
+            str(row.get("api") or "") for row in target_ledger_rows if row.get("call_status") == "empty"
+        ]
+        failed_or_blocked_apis = [
+            str(row.get("api") or "")
+            for row in target_ledger_rows
+            if row.get("call_status") == "failed"
+            or str(row.get("call_status") or "").startswith("blocked_")
+        ]
+        failure_modes = sorted(
+            {
+                str(row.get("failure_mode") or "")
+                for row in target_ledger_rows
+                if str(row.get("failure_mode") or "") and str(row.get("failure_mode") or "") != "none"
+            }
+        )
+        requirement = PROVIDER_TARGET_SAMPLE_REQUIREMENTS.get(target_key, {})
+        missing_context_groups = [
+            " or ".join(group)
+            for group in requirement.get("context_groups", ())
+            if not any(field in provided_context_fields for field in group)
+        ]
+        blockers: list[str] = []
+        if requested and not selected_target_apis:
+            blockers.append("target_api_selection_missing")
+        if selected_target_apis and len(target_ledger_rows) < len(selected_target_apis):
+            blockers.append("call_ledger_evidence_missing")
+        if not (non_empty_success_apis or validated_empty_apis):
+            blockers.append("sample_evidence_missing")
+        if requested and missing_context_groups:
+            blockers.append("sample_window_context_missing")
+        if requested and not failure_modes:
+            blockers.append("failure_mode_evidence_missing")
+        status = "target_sample_failure_window_review_ready" if not blockers else "target_sample_failure_window_review_blocked"
+        rows.append(
+            {
+                "target": target_key,
+                "label": label,
+                "requested_for_review": requested,
+                "selected_apis": selected_target_apis,
+                "ledger_api_count": len(target_ledger_rows),
+                "row_count": sum(int(row.get("row_count") or 0) for row in target_ledger_rows),
+                "non_empty_success_apis": non_empty_success_apis,
+                "validated_empty_apis": validated_empty_apis,
+                "failed_or_blocked_apis": failed_or_blocked_apis,
+                "failure_modes_observed": failure_modes,
+                "failure_mode_evidence_visible": bool(failure_modes),
+                "provided_context_fields": provided_context_fields,
+                "missing_context_groups": missing_context_groups,
+                "review_status": status,
+                "review_blockers": blockers,
+                "review_blocker_count": len(blockers),
+                "provider_backed_target_sample_acceptance_done": False,
+                "full_interface_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "cache_get_external_calls": False,
+                "review_external_calls_triggered": False,
+                "tushare_called_by_review": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+
+    requested_rows = [row for row in rows if row.get("requested_for_review")]
+    blocked_rows = [row for row in requested_rows if row.get("review_blockers")]
+    empty_rows = [row for row in provider_rows if row.get("call_status") == "empty"]
+    failed_rows = [row for row in provider_rows if row.get("call_status") == "failed"]
+    success_rows = [row for row in provider_rows if row.get("call_status") == "success"]
+    status = (
+        "target_sample_failure_window_review_missing_provider_task"
+        if not provider_task_map
+        else "target_sample_failure_window_review_ready_for_target_acceptance_rerun"
+        if requested_rows and not blocked_rows
+        else "target_sample_failure_window_review_visible_blockers_recorded"
+    )
+    blocker_count = sum(int(row.get("review_blocker_count") or 0) for row in requested_rows)
+    next_step = (
+        "rerun_target_sample_acceptance_with_reviewed_failure_modes"
+        if status == "target_sample_failure_window_review_ready_for_target_acceptance_rerun"
+        else "add_target_sample_window_context_or_collect_failure_mode_evidence"
+        if provider_task_map
+        else "POST /api/tasks/refresh-tushare-facts"
+    )
+    receipt = {
+        "schema_version": PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_tushare_provider_target_sample_failure_window_review_no_provider_call",
+        "route": PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE,
+        "task_type": PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_TASK_TYPE,
+        "provider_task_found": bool(provider_task_map),
+        "provider_task_id": str(provider_task_map.get("task_id") or ""),
+        "provider_call_ledger_count": len(provider_rows),
+        "provider_row_count": sum(int(row.get("row_count") or 0) for row in provider_rows),
+        "provider_success_count": len(success_rows),
+        "provider_empty_count": len(empty_rows),
+        "provider_failed_count": len(failed_rows),
+        "requested_targets": requested_targets,
+        "requested_target_count": len(requested_targets),
+        "reviewed_target_count": len(requested_rows),
+        "ready_target_count": len([row for row in requested_rows if not row.get("review_blockers")]),
+        "blocked_target_count": len(blocked_rows),
+        "blocking_criterion_count": blocker_count,
+        "selected_apis": selected_apis,
+        "provided_context_fields": provided_context_fields,
+        "failure_mode_review_visible": bool(empty_rows or failed_rows),
+        "failure_mode_review_done": False,
+        "sample_window_review_visible": bool(requested_rows),
+        "sample_window_review_done": bool(requested_rows and not any(row.get("missing_context_groups") for row in requested_rows)),
+        "target_sample_acceptance_ready_for_review": status
+        == "target_sample_failure_window_review_ready_for_target_acceptance_rerun",
+        "ready_for_target_sample_acceptance_rerun": status
+        == "target_sample_failure_window_review_ready_for_target_acceptance_rerun",
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "allowed_next_step": next_step,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_tushare_provider_target_sample_failure_window_review",
+                "source": "task_service.list_task_statuses latest refresh_tushare_facts provider target-sample ledger",
+                "request_params_safe": {
+                    "provider_task_id": str(provider_task_map.get("task_id") or ""),
+                    "requested_targets": requested_targets,
+                    "selected_apis": selected_apis,
+                },
+                "row_count": len(rows),
+                "data_date": None,
+                "local_fetched_at": _now_iso(),
+                "call_status": status,
+                "error_message_safe": "",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This local review reads an existing provider target-sample task ledger and records failure-mode/window blockers. It does not call Tushare, DeepSeek, GitHub, create provider tasks, promote full-interface acceptance, trade, or mutate strategy action.",
+    }
+    return receipt, rows
+
+
+def run_tushare_provider_target_sample_failure_window_review(payload: Any = None) -> dict[str, Any]:
+    receipt, rows = _target_sample_failure_window_review_receipt(payload)
+    payload_safe = {
+        "provider_target_sample_failure_window_review_receipt": receipt,
+        "provider_target_sample_failure_window_review_rows": rows,
+    }
+    task = create_task_record(
+        PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_TASK_TYPE,
+        output_packet_key=PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY,
+        payload=payload_safe,
+        current_step="tushare_provider_target_sample_failure_window_review_queued_local_only",
+        warnings=[
+            "该任务只读取已有 Tushare target-sample provider task ledger，不调用 Tushare。",
+            "该任务只记录 failure-mode/window review blocker，不证明 LTG-02 生产完成。",
+            "该任务不调用 DeepSeek/GitHub，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="building_tushare_provider_target_sample_failure_window_review",
+        call_ledger=receipt["call_ledger"],
+    )
+    packet = {
+        "packet_key": PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY,
+        "schema_version": "command_center_tushare_provider_target_sample_failure_window_review_packet.v1",
+        "status": receipt["status"],
+        "task_type": PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_TASK_TYPE,
+        "receipt": receipt,
+        "rows": rows,
+        "provider_call_ledger_count": receipt["provider_call_ledger_count"],
+        "provider_row_count": receipt["provider_row_count"],
+        "blocking_criterion_count": receipt["blocking_criterion_count"],
+        "ready_for_target_sample_acceptance_rerun": receipt["ready_for_target_sample_acceptance_rerun"],
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": receipt["call_ledger"],
+    }
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+            PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY,
+            packet,
+        )
+    except Exception:
+        pass
+    return update_task_status(
+        task["task_id"],
+        status="success" if receipt["provider_task_found"] else "failed",
+        progress=1.0,
+        current_step="tushare_provider_target_sample_failure_window_review_visible"
+        if receipt["provider_task_found"]
+        else "tushare_provider_target_sample_failure_window_review_missing_provider_task",
+        error_message_safe="" if receipt["provider_task_found"] else "missing_target_sample_provider_task",
         call_ledger=receipt["call_ledger"],
     ) or task
 

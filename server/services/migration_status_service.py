@@ -12,6 +12,15 @@ TUSHARE_DEEPSEEK_LINKAGE_REVIEW_ROUTE = "POST /api/migration/tushare-deepseek-li
 TUSHARE_DEEPSEEK_LINKAGE_REVIEW_PACKET_KEY = "command_center_3_migration_status"
 LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE = "run_legacy_audit_observation_dry_run"
 LEGACY_AUDIT_OBSERVATION_DRY_RUN_ROUTE = "POST /api/legacy/audit-observation-dry-run"
+TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_TASK_TYPE = (
+    "run_tushare_provider_target_sample_failure_window_review"
+)
+TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE = (
+    "POST /api/tasks/tushare-provider-target-sample-failure-window-review"
+)
+TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY = (
+    "provider_target_sample_failure_window_review_receipt"
+)
 
 
 MIGRATION_PROGRESS_BASELINE = [
@@ -792,6 +801,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_tushare_provider_target_sample_execution_request",
             "receipt_key": "provider_target_sample_execution_request_receipt",
             "route": "POST /api/tasks/tushare-provider-target-sample-execution-request",
+        },
+        {
+            "phase_key": "target_sample_failure_window_review",
+            "task_type": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_TASK_TYPE,
+            "receipt_key": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY,
+            "route": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE,
         },
     ],
     "p3_factor_small_pool_provider_validation": [
@@ -3214,6 +3229,137 @@ def _dict_or_empty(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _append_unique_text(items: list[str], value: Any) -> None:
+    text = str(value or "").strip()
+    if text and text not in items:
+        items.append(text)
+
+
+def _tushare_refresh_task_provider_ledger_summary() -> dict[str, Any]:
+    provider_rows: list[dict[str, Any]] = []
+    trade_cal_rows: list[dict[str, Any]] = []
+    target_rows: list[dict[str, Any]] = []
+    selected_apis: list[str] = []
+    latest_selected_apis: list[str] = []
+    latest_target_sample_task_id = ""
+    latest_target_sample_selected_apis: list[str] = []
+    latest_target_sample_requested_targets: list[str] = []
+    latest_target_sample_call_count = 0
+    latest_target_sample_row_count = 0
+    latest_target_sample_status_counts: dict[str, int] = {}
+
+    target_sample_apis = {
+        "margin_detail",
+        "top_list",
+        "top_inst",
+        "stk_limit",
+        "limit_list_d",
+        "limit_cpt_list",
+        "cyq_perf",
+        "cyq_chips",
+        "forecast",
+        "fina_indicator",
+        "anns_d",
+        "stk_holdertrade",
+        "share_float",
+        "pledge_stat",
+        "pledge_detail",
+        "stk_surv",
+    }
+
+    for task in task_service.list_task_statuses():
+        if task.get("task_type") != "refresh_tushare_facts":
+            continue
+        payload = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+        task_selected = [str(item) for item in payload.get("apis") or [] if str(item or "")]
+        ledger = [row for row in task.get("call_ledger") or [] if isinstance(row, dict)]
+        task_provider_rows = [
+            row
+            for row in ledger
+            if row.get("tushare_called") is True
+            or row.get("external_calls_triggered") is True
+            or row.get("external") is True
+        ]
+        if not task_provider_rows:
+            continue
+        if not latest_selected_apis:
+            latest_selected_apis = list(task_selected) or [
+                str(row.get("api") or "") for row in task_provider_rows if str(row.get("api") or "")
+            ]
+        for api in task_selected:
+            _append_unique_text(selected_apis, api)
+        for row in task_provider_rows:
+            api = str(row.get("api") or "")
+            _append_unique_text(selected_apis, api)
+            provider_rows.append(row)
+            if api == "trade_cal":
+                trade_cal_rows.append(row)
+
+        target_task_rows = [row for row in task_provider_rows if str(row.get("api") or "") in target_sample_apis]
+        acceptance_mode = str(payload.get("acceptance_mode") or "")
+        has_target_sample_payload = acceptance_mode == "provider_target_sample_acceptance" or bool(
+            payload.get("target_sample_acceptance_groups")
+        )
+        if target_task_rows and has_target_sample_payload:
+            target_rows.extend(target_task_rows)
+            if not latest_target_sample_task_id:
+                latest_target_sample_task_id = str(task.get("task_id") or "")
+                latest_target_sample_selected_apis = list(task_selected) or [
+                    str(row.get("api") or "") for row in target_task_rows if str(row.get("api") or "")
+                ]
+                latest_target_sample_requested_targets = [
+                    str(item) for item in payload.get("target_sample_acceptance_groups") or [] if str(item or "")
+                ]
+                latest_target_sample_call_count = len(target_task_rows)
+                latest_target_sample_row_count = sum(int(row.get("row_count") or 0) for row in target_task_rows)
+                for row in target_task_rows:
+                    status = str(row.get("call_status") or "unknown")
+                    latest_target_sample_status_counts[status] = latest_target_sample_status_counts.get(status, 0) + 1
+
+    trade_cal_statuses: list[str] = []
+    for row in trade_cal_rows:
+        _append_unique_text(trade_cal_statuses, row.get("call_status") or "unknown")
+
+    return {
+        "schema_version": "migration_tushare_refresh_task_provider_ledger_summary.v1",
+        "lookup_source": "task_service.list_task_statuses_read_only",
+        "provider_task_count": len(provider_rows),
+        "call_ledger_count": len(provider_rows),
+        "selected_apis": selected_apis,
+        "latest_selected_apis": latest_selected_apis,
+        "latest_selected_api_count": len(latest_selected_apis),
+        "trade_cal_call_ledger_count": len(trade_cal_rows),
+        "trade_cal_provider_call_ledger_observed_count": len(trade_cal_rows),
+        "trade_cal_provider_observed_row_count": max(
+            [int(row.get("row_count") or 0) for row in trade_cal_rows] or [0]
+        ),
+        "trade_cal_provider_call_statuses": trade_cal_statuses,
+        "trade_cal_safe_call_ledger_fields_present": all(
+            all(key in row for key in ("api", "request_params_safe", "row_count", "data_date", "call_status"))
+            for row in trade_cal_rows
+        )
+        if trade_cal_rows
+        else False,
+        "target_sample_provider_task_visible": bool(latest_target_sample_task_id),
+        "target_sample_provider_task_id": latest_target_sample_task_id,
+        "target_sample_call_ledger_count": len(target_rows),
+        "latest_target_sample_call_ledger_count": latest_target_sample_call_count,
+        "latest_target_sample_row_count": latest_target_sample_row_count,
+        "latest_target_sample_call_status_counts": latest_target_sample_status_counts,
+        "latest_target_sample_selected_apis": latest_target_sample_selected_apis,
+        "latest_target_sample_selected_api_count": len(latest_target_sample_selected_apis),
+        "latest_target_sample_requested_targets": latest_target_sample_requested_targets,
+        "cache_get_calls_provider": False,
+        "external_calls_triggered_by_lookup": False,
+        "tushare_called_by_lookup": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import data_health_service
@@ -3235,10 +3381,21 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
         {},
     )
     freshness_blockers = _dict_or_empty(packet.get("freshness_production_blocker_audit"))
+    task_provider_summary = _tushare_refresh_task_provider_ledger_summary()
     selected_apis = [str(item) for item in summary.get("selected_apis") or []]
+    if not selected_apis:
+        selected_apis = [str(item) for item in task_provider_summary.get("latest_selected_apis") or []]
     trade_cal_provider_call_count = int(summary.get("trade_cal_provider_call_ledger_observed_count") or 0)
+    trade_cal_provider_call_count = max(
+        trade_cal_provider_call_count,
+        int(task_provider_summary.get("trade_cal_provider_call_ledger_observed_count") or 0),
+    )
     call_ledger_count = int(summary.get("call_ledger_count") or 0)
-    trade_cal_safe_fields = promotion.get("safe_call_ledger_fields_present") is True
+    call_ledger_count = max(call_ledger_count, int(task_provider_summary.get("call_ledger_count") or 0))
+    trade_cal_safe_fields = (
+        promotion.get("safe_call_ledger_fields_present") is True
+        or task_provider_summary.get("trade_cal_safe_call_ledger_fields_present") is True
+    )
     freshness_replay_done = replay.get("freshness_replay_provider_evidence_done") is True
     failure_mode_done = promotion.get("failure_mode_provider_evidence_done") is True
     provider_acceptance_done = bool(
@@ -3258,16 +3415,25 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
         "schema_version": "migration_tushare_direct_provider_evidence_summary.v1",
         "source_packet_key": summary.get("source_packet_key") or "command_center_tushare_refresh_packet",
         "source_status": summary.get("status") or "missing",
-        "available": summary.get("available") is True,
+        "available": summary.get("available") is True or call_ledger_count > 0,
         "selected_apis": selected_apis,
         "selected_api_count": len(selected_apis),
         "call_ledger_count": call_ledger_count,
-        "trade_cal_call_ledger_count": int(summary.get("trade_cal_call_ledger_count") or 0),
+        "task_provider_call_ledger_count": int(task_provider_summary.get("call_ledger_count") or 0),
+        "task_provider_lookup_source": task_provider_summary.get("lookup_source") or "",
+        "trade_cal_call_ledger_count": max(
+            int(summary.get("trade_cal_call_ledger_count") or 0),
+            int(task_provider_summary.get("trade_cal_call_ledger_count") or 0),
+        ),
         "trade_cal_provider_call_ledger_observed_count": trade_cal_provider_call_count,
-        "trade_cal_provider_observed_row_count": int(summary.get("trade_cal_provider_observed_row_count") or 0),
+        "trade_cal_provider_observed_row_count": max(
+            int(summary.get("trade_cal_provider_observed_row_count") or 0),
+            int(task_provider_summary.get("trade_cal_provider_observed_row_count") or 0),
+        ),
         "trade_cal_provider_call_statuses": [
             str(item) for item in summary.get("trade_cal_provider_call_statuses") or []
-        ],
+        ]
+        or [str(item) for item in task_provider_summary.get("trade_cal_provider_call_statuses") or []],
         "trade_cal_provider_call_ledger_evidence_done": bool(trade_cal_provider_call_count and trade_cal_safe_fields),
         "freshness_replay_provider_evidence_done": freshness_replay_done,
         "freshness_replay_scenario_count": int(replay.get("freshness_replay_scenario_count") or 0),
@@ -3288,7 +3454,8 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
         "freshness_production_blocker_count": int(freshness_blockers.get("production_blocker_count") or 0),
         "freshness_production_status": freshness_blockers.get("status") or "missing",
         "provider_call_ledger_evidence_done": bool(call_ledger_count),
-        "full_interface_selection_done": len(selected_apis) >= 17,
+        "full_interface_selection_done": len(selected_apis) >= 17
+        or int(task_provider_summary.get("latest_selected_api_count") or 0) >= 17,
         "provider_backed_long_window_acceptance_done": summary.get("provider_backed_long_window_acceptance_done")
         is True,
         "provider_backed_acceptance_done": provider_acceptance_done,
@@ -5188,6 +5355,8 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
     if any(receipt.get(key) is True for key in ready_keys):
         return True
     ready_statuses = {
+        "target_sample_failure_window_review_visible_blockers_recorded",
+        "target_sample_failure_window_review_ready_for_target_acceptance_rerun",
         "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked",
         "trade_cal_provider_acceptance_promotion_review_recorded_blockers_visible",
         "synthetic_healthcheck_passed_local_task_store_only",
@@ -8964,6 +9133,13 @@ def _build_ltg_next_action_submission_preview_rows(
             "manual_scope_hash_required": True,
             "context_key": "tushare_target_sample_execution_recipe_preview",
         },
+        TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE: {
+            "step_kind": "local_target_sample_failure_window_review",
+            "safe_payload_summary": "review existing target-sample provider task ledger; no provider/model call",
+            "expected_local_receipt": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY,
+            "required_prior_phase_key": "target_sample_execution_request_ticket",
+            "required_prior_material": "latest_task_id",
+        },
         "POST /api/factor-quant/provider-small-pool-dry-run": {
             "step_kind": "dry_run_scope_ticket",
             "safe_payload_summary": "approved_by_user, explicit small symbol pool, research metrics, forward-return horizons",
@@ -9330,6 +9506,22 @@ def _build_ltg_next_action_submission_preview_rows(
                 required_prior_receipt_visible=push_step.get("receipt_visible") is True,
                 required_prior_material_visible=True,
                 requires_remote_ci_review=False,
+            )
+        if next_local_step == "add_target_sample_window_context_or_collect_failure_mode_evidence":
+            review_step = _local_step_row_by_phase(
+                local_step_rows, "target_sample_failure_window_review"
+            )
+            return _disabled_handoff_preview(
+                step_kind="target_sample_failure_window_review_followup",
+                disabled_reason="target_sample_review_recorded_blockers_require_new_scope_or_provider_rerun",
+                safe_payload_summary=(
+                    "local review receipt is visible; next work is to add safe sample-window context "
+                    "or collect failure-mode evidence before any new provider task"
+                ),
+                required_prior_phase_key="target_sample_failure_window_review",
+                required_prior_material="receipt_visible_with_blockers_recorded",
+                required_prior_receipt_visible=review_step.get("receipt_visible") is True,
+                required_prior_material_visible=review_step.get("local_ready") is True,
             )
         if next_local_step == "separate approved real-trading integration project only":
             trade_step = _local_step_row_by_phase(
@@ -10163,6 +10355,15 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
     request_parameter_qa = _dict_or_empty(refresh_map.get("request_parameter_qa_contract"))
     provider_promotion = _dict_or_empty(refresh_map.get("provider_acceptance_promotion_audit"))
     provider_direct_evidence = _latest_tushare_direct_provider_evidence_summary()
+    task_provider_summary = _tushare_refresh_task_provider_ledger_summary()
+    target_sample_provider_task_visible = (
+        task_provider_summary.get("target_sample_provider_task_visible") is True
+    )
+    failure_window_review = _latest_tushare_target_sample_failure_window_review_summary()
+    failure_window_review_found = failure_window_review.get("latest_task_found") is True
+    failure_window_review_ready_for_rerun = (
+        failure_window_review.get("ready_for_target_sample_acceptance_rerun") is True
+    )
 
     latest_request_found = latest_request.get("latest_task_found") is True
     execution_request_ready = (
@@ -10178,6 +10379,7 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
     provider_call_ledger_visible = bool(
         int(provider_direct_evidence.get("call_ledger_count") or 0) > 0
         or int(refresh_map.get("call_count") or 0) > 0
+        or int(task_provider_summary.get("target_sample_call_ledger_count") or 0) > 0
     )
     durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
     provider_promotion_ready = provider_promotion.get("promotion_ready") is True
@@ -10193,6 +10395,12 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         "full_interface_storage_promotion_review_after_provider_sample"
         if target_sample_review_ready and durable_recipe_ready
         else "POST /api/tasks/refresh-tushare-facts"
+        if failure_window_review_found and failure_window_review_ready_for_rerun
+        else failure_window_review.get("allowed_next_step")
+        if failure_window_review_found
+        else TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE
+        if target_sample_provider_task_visible
+        else "POST /api/tasks/refresh-tushare-facts"
         if execution_request_ready
         else "POST /api/tasks/tushare-provider-target-sample-execution-request"
     )
@@ -10201,6 +10409,10 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         for item in (latest_request.get("selected_apis") or refresh_map.get("selected_apis") or [])
         if str(item or "")
     ]
+    if not selected_apis:
+        selected_apis = [
+            str(item) for item in task_provider_summary.get("latest_target_sample_selected_apis") or []
+        ]
     requested_targets = [
         str(item)
         for item in (
@@ -10208,11 +10420,23 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         )
         if str(item or "")
     ]
+    if not requested_targets:
+        requested_targets = [
+            str(item)
+            for item in task_provider_summary.get("latest_target_sample_requested_targets") or []
+            if str(item or "")
+        ]
     return {
         "schema_version": "ltg02_tushare_target_sample_evidence_handoff_summary.v1",
         "status": (
             "target_sample_provider_evidence_visible_promotion_review_needed"
             if target_sample_review_ready
+            else "target_sample_failure_window_review_ready_provider_rerun_required"
+            if failure_window_review_found and failure_window_review_ready_for_rerun
+            else "target_sample_failure_window_review_visible_followup_needed"
+            if failure_window_review_found
+            else "target_sample_provider_evidence_visible_review_task_ready"
+            if target_sample_provider_task_visible
             else "target_sample_execution_request_ready_provider_task_pending"
             if execution_request_ready
             else "target_sample_execution_request_visible_but_blocked"
@@ -10254,7 +10478,35 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         ),
         "target_sample_acceptance_is_full_interface_acceptance": False,
         "provider_call_ledger_visible": provider_call_ledger_visible,
-        "provider_call_ledger_count": int(provider_direct_evidence.get("call_ledger_count") or 0),
+        "provider_call_ledger_count": max(
+            int(provider_direct_evidence.get("call_ledger_count") or 0),
+            int(refresh_map.get("call_count") or 0),
+            int(task_provider_summary.get("target_sample_call_ledger_count") or 0),
+        ),
+        "target_sample_provider_task_visible": target_sample_provider_task_visible,
+        "target_sample_provider_task_id": task_provider_summary.get("target_sample_provider_task_id") or "",
+        "target_sample_provider_task_call_ledger_count": int(
+            task_provider_summary.get("latest_target_sample_call_ledger_count") or 0
+        ),
+        "target_sample_provider_task_row_count": int(
+            task_provider_summary.get("latest_target_sample_row_count") or 0
+        ),
+        "target_sample_provider_task_call_status_counts": dict(
+            task_provider_summary.get("latest_target_sample_call_status_counts") or {}
+        ),
+        "target_sample_failure_window_review_found": failure_window_review_found,
+        "target_sample_failure_window_review_status": failure_window_review.get("receipt_status")
+        or "missing",
+        "target_sample_failure_window_review_task_id": failure_window_review.get("latest_task_id")
+        or "",
+        "target_sample_failure_window_review_blocker_count": int(
+            failure_window_review.get("blocking_criterion_count") or 0
+        ),
+        "target_sample_failure_window_review_ready_for_rerun": failure_window_review_ready_for_rerun,
+        "target_sample_failure_window_review_row_count": int(failure_window_review.get("row_count") or 0),
+        "target_sample_failure_window_review_provider_task_id": (
+            failure_window_review.get("provider_task_id") or ""
+        ),
         "provider_direct_evidence_layer": provider_direct_evidence.get("direct_evidence_layer"),
         "full_interface_selection_done": full_interface_selection_done,
         "failure_mode_evidence_done": failure_mode_evidence_done,
@@ -10268,7 +10520,9 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         "full_interface_acceptance_done": False,
         "production_tushare_pipeline_complete": False,
         "next_local_step": next_step,
-        "requires_separate_user_approved_provider_task": not target_sample_review_ready,
+        "requires_separate_user_approved_provider_task": not (
+            target_sample_review_ready or target_sample_provider_task_visible or failure_window_review_found
+        ),
         "requires_full_interface_selection": not full_interface_selection_done,
         "requires_storage_or_no_storage_promotion_review": True,
         "requires_remote_ci_review_after_local_complete": True,
@@ -10289,6 +10543,97 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         "evidence_boundary": (
             "tushare_target_sample_handoff_is_local_scope_and_evidence_review_not_provider_execution_or_ltg_closeout"
         ),
+    }
+
+
+def _latest_tushare_target_sample_failure_window_review_summary() -> dict[str, Any]:
+    try:
+        tasks = task_service.list_task_statuses()
+    except Exception:
+        tasks = []
+    for task in tasks:
+        if task.get("task_type") != TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_TASK_TYPE:
+            continue
+        payload_safe = _dict_or_empty(task.get("payload_safe"))
+        receipt = _dict_or_empty(payload_safe.get(TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY))
+        if not receipt:
+            continue
+        rows = payload_safe.get("provider_target_sample_failure_window_review_rows")
+        row_list = rows if isinstance(rows, list) else receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
+        storage_source = str(task.get("storage_source") or "")
+        return {
+            "schema_version": "ltg02_tushare_target_sample_failure_window_review_summary.v1",
+            "latest_task_found": True,
+            "latest_task_id": str(task.get("task_id") or ""),
+            "latest_task_status": str(task.get("status") or ""),
+            "latest_task_current_step": str(task.get("current_step") or ""),
+            "latest_task_storage_source": storage_source,
+            "receipt_durable_in_sqlite": storage_source in {"memory_and_sqlite", "sqlite_meta"},
+            "receipt_status": str(receipt.get("status") or ""),
+            "provider_task_found": receipt.get("provider_task_found") is True,
+            "provider_task_id": str(receipt.get("provider_task_id") or ""),
+            "provider_call_ledger_count": int(receipt.get("provider_call_ledger_count") or 0),
+            "provider_row_count": int(receipt.get("provider_row_count") or 0),
+            "provider_success_count": int(receipt.get("provider_success_count") or 0),
+            "provider_empty_count": int(receipt.get("provider_empty_count") or 0),
+            "provider_failed_count": int(receipt.get("provider_failed_count") or 0),
+            "reviewed_target_count": int(receipt.get("reviewed_target_count") or 0),
+            "ready_target_count": int(receipt.get("ready_target_count") or 0),
+            "blocked_target_count": int(receipt.get("blocked_target_count") or 0),
+            "blocking_criterion_count": int(receipt.get("blocking_criterion_count") or 0),
+            "ready_for_target_sample_acceptance_rerun": (
+                receipt.get("ready_for_target_sample_acceptance_rerun") is True
+            ),
+            "target_sample_acceptance_ready_for_review": (
+                receipt.get("target_sample_acceptance_ready_for_review") is True
+            ),
+            "allowed_next_step": str(receipt.get("allowed_next_step") or ""),
+            "row_count": len(row_list),
+            "rows_visible": bool(row_list),
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "production_tushare_pipeline_complete": False,
+            "evidence_boundary": "local_review_task_reads_existing_provider_ledger_without_new_provider_call",
+        }
+    return {
+        "schema_version": "ltg02_tushare_target_sample_failure_window_review_summary.v1",
+        "latest_task_found": False,
+        "latest_task_id": "",
+        "latest_task_status": "",
+        "latest_task_current_step": "",
+        "latest_task_storage_source": "",
+        "receipt_durable_in_sqlite": False,
+        "receipt_status": "missing",
+        "provider_task_found": False,
+        "provider_task_id": "",
+        "provider_call_ledger_count": 0,
+        "provider_row_count": 0,
+        "provider_success_count": 0,
+        "provider_empty_count": 0,
+        "provider_failed_count": 0,
+        "reviewed_target_count": 0,
+        "ready_target_count": 0,
+        "blocked_target_count": 0,
+        "blocking_criterion_count": 0,
+        "ready_for_target_sample_acceptance_rerun": False,
+        "target_sample_acceptance_ready_for_review": False,
+        "allowed_next_step": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE,
+        "row_count": 0,
+        "rows_visible": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "production_tushare_pipeline_complete": False,
+        "evidence_boundary": "local_review_task_missing_no_external_lookup",
     }
 
 
@@ -10345,6 +10690,19 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
     durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
     durable_blocker_count = int(durable_recipe.get("durable_evidence_blocker_count") or 0)
     provider_call_ledger_count = int(provider_direct_evidence.get("call_ledger_count") or 0)
+    target_sample_provider_task_visible = (
+        target_sample_handoff.get("target_sample_provider_task_visible") is True
+    )
+    failure_window_review_found = (
+        target_sample_handoff.get("target_sample_failure_window_review_found") is True
+    )
+    failure_window_review_ready_for_rerun = (
+        target_sample_handoff.get("target_sample_failure_window_review_ready_for_rerun") is True
+    )
+    target_sample_provider_task_call_count = int(
+        target_sample_handoff.get("target_sample_provider_task_call_ledger_count") or 0
+    )
+    provider_call_ledger_count = max(provider_call_ledger_count, target_sample_provider_task_call_count)
     failure_mode_done = (
         failure_mode_qa.get("status") == "failure_mode_qa_ready_provider_acceptance_pending"
         and int(failure_mode_qa.get("unsafe_row_count") or 0) == 0
@@ -10378,6 +10736,18 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
     if target_sample_review_ready and durable_recipe_ready:
         status = "full_interface_pipeline_target_sample_review_ready_promotion_pending"
         next_step = "full_interface_storage_promotion_review_after_provider_sample"
+    elif failure_window_review_found and failure_window_review_ready_for_rerun:
+        status = "full_interface_pipeline_target_sample_failure_window_review_ready_provider_rerun_required"
+        next_step = target_sample_handoff.get("next_local_step") or "POST /api/tasks/refresh-tushare-facts"
+    elif failure_window_review_found:
+        status = "full_interface_pipeline_target_sample_failure_window_review_visible_followup_needed"
+        next_step = (
+            target_sample_handoff.get("next_local_step")
+            or "add_target_sample_window_context_or_collect_failure_mode_evidence"
+        )
+    elif target_sample_provider_task_visible:
+        status = "full_interface_pipeline_target_sample_provider_evidence_visible_review_task_ready"
+        next_step = target_sample_handoff.get("next_local_step") or TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE
     elif execution_request_ready:
         status = "full_interface_pipeline_execution_request_ready_provider_task_pending"
         next_step = "POST /api/tasks/refresh-tushare-facts"
@@ -10412,6 +10782,19 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
         "full_interface_acceptance_done": False,
         "provider_call_ledger_evidence_done": provider_call_ledger_count > 0,
         "provider_call_ledger_count": provider_call_ledger_count,
+        "target_sample_provider_task_visible": target_sample_provider_task_visible,
+        "target_sample_provider_task_call_ledger_count": target_sample_provider_task_call_count,
+        "target_sample_provider_task_row_count": int(
+            target_sample_handoff.get("target_sample_provider_task_row_count") or 0
+        ),
+        "target_sample_failure_window_review_found": failure_window_review_found,
+        "target_sample_failure_window_review_status": (
+            target_sample_handoff.get("target_sample_failure_window_review_status") or "missing"
+        ),
+        "target_sample_failure_window_review_blocker_count": int(
+            target_sample_handoff.get("target_sample_failure_window_review_blocker_count") or 0
+        ),
+        "target_sample_failure_window_review_ready_for_rerun": failure_window_review_ready_for_rerun,
         "prior_provider_evidence_observed": provider_call_ledger_count > 0,
         "prior_provider_evidence_is_not_new_call": True,
         "failure_mode_evidence_done": failure_mode_done,
@@ -10425,7 +10808,9 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
         "missing_evidence_items": missing_evidence_items,
         "missing_evidence_count": len(missing_evidence_items),
         "production_tushare_pipeline_complete": False,
-        "requires_separate_user_approved_provider_task": not target_sample_review_ready,
+        "requires_separate_user_approved_provider_task": not (
+            target_sample_review_ready or target_sample_provider_task_visible or failure_window_review_found
+        ),
         "requires_full_interface_selection": not full_interface_selection_done,
         "requires_storage_or_no_storage_promotion_review": True,
         "requires_remote_ci_review_after_local_complete": True,
@@ -10544,6 +10929,56 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             supporting_tushare_full_interface_pipeline_handoff = (
                 _latest_tushare_full_interface_pipeline_handoff_summary()
             )
+            if (
+                supporting_tushare_target_sample_evidence_handoff.get(
+                    "target_sample_failure_window_review_found"
+                )
+                is True
+            ):
+                if (
+                    supporting_tushare_target_sample_evidence_handoff.get(
+                        "target_sample_failure_window_review_ready_for_rerun"
+                    )
+                    is True
+                ):
+                    local_status = "local_target_sample_failure_window_review_ready_provider_rerun_needed"
+                    next_local_step = str(
+                        supporting_tushare_target_sample_evidence_handoff.get("next_local_step")
+                        or "POST /api/tasks/refresh-tushare-facts"
+                    )
+                else:
+                    local_status = "local_target_sample_failure_window_review_visible_followup_needed"
+                    next_local_step = str(
+                        supporting_tushare_target_sample_evidence_handoff.get("next_local_step")
+                        or "add_target_sample_window_context_or_collect_failure_mode_evidence"
+                    )
+            elif (
+                supporting_tushare_target_sample_evidence_handoff.get(
+                    "target_sample_provider_task_visible"
+                )
+                is True
+                and supporting_tushare_target_sample_evidence_handoff.get(
+                    "target_sample_acceptance_ready_for_review"
+                )
+                is not True
+            ):
+                local_status = "local_provider_evidence_visible_review_task_ready"
+                next_local_step = str(
+                    supporting_tushare_target_sample_evidence_handoff.get("next_local_step")
+                    or TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE
+                )
+            elif (
+                supporting_tushare_target_sample_evidence_handoff.get(
+                    "target_sample_acceptance_ready_for_review"
+                )
+                is True
+            ):
+                local_status = "local_provider_evidence_visible_promotion_review_needed"
+                next_local_step = str(
+                    supporting_tushare_full_interface_pipeline_handoff.get("next_local_step")
+                    or supporting_tushare_target_sample_evidence_handoff.get("next_local_step")
+                    or "full_interface_storage_promotion_review_after_provider_sample"
+                )
         if action["queue_id"] == "p3_factor_small_pool_provider_validation":
             supporting_factor_test_lab_provider_validation_handoff = (
                 _latest_factor_test_lab_provider_validation_handoff_summary()

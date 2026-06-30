@@ -42,6 +42,12 @@ def tushare_provider_target_sample_execution_request(payload: dict[str, Any] | N
     return task_envelope(task)
 
 
+@router.post("/tushare-provider-target-sample-failure-window-review")
+def tushare_provider_target_sample_failure_window_review(payload: dict[str, Any] | None = None) -> dict:
+    task = tushare_task_service.run_tushare_provider_target_sample_failure_window_review(payload)
+    return task_envelope(task)
+
+
 @router.get("/{task_id}")
 def get_task(task_id: str) -> dict:
     task = task_service.read_task_status(task_id)
