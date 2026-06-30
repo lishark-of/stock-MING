@@ -2749,11 +2749,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(rebase_summary["static_and_observed_ledger_consistent"])
         self.assertEqual(
             rebase_summary["next_goal_candidate"],
-            "resolve_current_head_remote_review_then_ltg01_trade_cal_provider_acceptance_slice",
+            "rerun_local_push_gate_after_clean_worktree_for_current_head",
         )
         self.assertEqual(
             rebase_summary["recommended_first_ltg_after_rebase"],
-            "LTG-01, with LTG-11 as the remote-review support target",
+            "LTG-11 clean local checkpoint / release-boundary review",
         )
         self.assertEqual(rebase_summary["support_ltg_for_next_slice"], ["LTG-11"])
         self.assertEqual(
@@ -2862,14 +2862,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(medium_goal_summary["not_14_ltg_closeout"])
         self.assertEqual(
             medium_goal_summary["active_remaining_goal_mode"],
-            "strict_ltg_closeout_evidence_spine_with_remote_review_split",
+            "remaining_ltg_ready_button_first_closeout_queue_with_remote_review_split",
         )
         self.assertTrue(medium_goal_summary["completed_medium_goals_removed_from_active_plan"])
         self.assertEqual(
             medium_goal_summary["next_recommended_action"],
-            "resolve_current_head_remote_review_then_ltg01_trade_cal_provider_acceptance_slice",
+            "rerun_local_push_gate_after_clean_worktree_for_current_head",
         )
-        self.assertEqual(medium_goal_summary["recommended_first_ltg_after_medium_goals"], ["LTG-01"])
+        self.assertEqual(medium_goal_summary["recommended_first_ltg_after_medium_goals"], ["LTG-11"])
         self.assertEqual(medium_goal_summary["support_ltg_for_next_slice"], ["LTG-11"])
         self.assertTrue(medium_goal_summary["remote_review_split_required_before_remote_claim"])
         self.assertTrue(medium_goal_summary["local_complete_can_stand_without_remote_claim"])
