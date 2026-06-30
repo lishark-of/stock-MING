@@ -41,14 +41,14 @@
 
 当前执行模式改为 `Remaining LTG Unfinished-Only Closeout Queue with Remote Review Split` / `剩余 LTG 未完成项收口队列 + 远端查收分离模式`。已完成的使用者可用化中目标、首页降噪、本地 FastAPI 接线、候选雷达粗筛/细筛、生产硬化工单准备、runtime-mode 文档口径、本地 receipt 链和 remote-review split 本地提交不再进入 active plan。它们只作为历史 checkpoint 和后续回归边界保留。
 
-当前 active plan 只罗列未完成项：`strict_closeout=0/14`，当前快照为 `ready_local_buttons=0`、`durable_handoffs=8`、`remote_state=current_head_unpushed_for_remote_ci`、`origin_ahead=6`。LTG-01 `trade_cal`、LTG-02 target sample、LTG-03 Factor small-pool 和 LTG-13 Candidate Radar 的本地票据链都不再重复推进；LTG-01/02 即使已有 provider ledger 可见，也仍缺 production promotion、full acceptance、matching release review。真实 provider/model/worker/browser/package/release/trading 工作仍需单独授权。
+当前 active plan 只罗列未完成项：`strict_closeout=0/14`，当前快照为 `ready_local_buttons=1`、`durable_handoffs=7`、`remote_state=current_head_unpushed_for_remote_ci`、`origin_ahead=7`。LTG-01 `trade_cal`、LTG-02 target sample 和 LTG-13 Candidate Radar 的本地票据链不再重复推进；LTG-03 Factor small-pool 仍有一个快照识别到的 ready local dry-run recheck，可作为下一轮唯一安全本地动作。LTG-01/02 即使已有 provider ledger 可见，也仍缺 production promotion、full acceptance、matching release review。真实 provider/model/worker/browser/package/release/trading 工作仍需单独授权。
 
 | order | active remaining target | current blocker | next action |
 |---:|---|---|---|
-| 1 | LTG-11 测试 / CI / smoke / 安全扫描标准化 | 当前 head 仍未 push 到 matching remote CI；本地 gate / receipt / workflow 文件和失败邮件都不是远端 Actions 证据。 | 获得明确授权后再 push 并查 matching remote CI；未授权时只保持 clean checkpoint。 |
-| 2 | LTG-01 A 股交易日历级 freshness 生产化 | local receipt 链和 provider ledger 可见，但 production replay、failure-mode proof、redaction、promotion 和 release review 仍 pending。 | 对已有安全 provider evidence 做 promotion/release review；若需重跑，只能走单独授权 POST provider task。 |
-| 3 | LTG-02 Tushare 全接口生产流水线 | target-sample / prior provider ledger 可见，但 full selection、full-interface acceptance、storage/cache promotion 和 production completion 仍 pending。 | 逐组验证 provider-backed samples、safe call ledger、permission/no-data/failure-mode evidence。 |
-| 4 | LTG-03 Factor Test Lab 完整生产化 | local dry-run / execution-request 已完成；provider task、sample rows、rolling/cost/neutralization/bias/full-market validation 仍 pending。 | 等 future explicit provider-backed factor validation task；不进 strategy action。 |
+| 1 | LTG-03 Factor Test Lab 本地 recheck + 完整生产化 | 当前唯一 ready local button 是 `POST /api/factor-quant/provider-small-pool-dry-run`；provider task、sample rows、rolling/cost/neutralization/bias/full-market validation 仍 pending。 | 如果本轮走本地动作，先清这个 dry-run recheck；随后停在 provider-backed validation 授权边界，不进 strategy action。 |
+| 2 | LTG-11 测试 / CI / smoke / 安全扫描标准化 | 当前 head 仍未 push 到 matching remote CI；本地 gate / receipt / workflow 文件和失败邮件都不是远端 Actions 证据。 | 获得明确授权后再 push 并查 matching remote CI；未授权时只保持 clean checkpoint。 |
+| 3 | LTG-01 A 股交易日历级 freshness 生产化 | local receipt 链和 provider ledger 可见，但 production replay、failure-mode proof、redaction、promotion 和 release review 仍 pending。 | 对已有安全 provider evidence 做 promotion/release review；若需重跑，只能走单独授权 POST provider task。 |
+| 4 | LTG-02 Tushare 全接口生产流水线 | target-sample / prior provider ledger 可见，但 full selection、full-interface acceptance、storage/cache promotion 和 production completion 仍 pending。 | 逐组验证 provider-backed samples、safe call ledger、permission/no-data/failure-mode evidence。 |
 | 5 | LTG-13 下一票雷达 / provider-worker promotion | searched-symbol、provider-parity、worker fallback、replacement/promotion/legacy review receipts 已是历史；候选仍不是买入指令。 | 后续只进入 full-pool/deep-scan worker、provider-backed signal/capability acceptance、browser/performance、release evidence 和 legacy fallback retirement proof。 |
 | 6 | LTG-04 Factor 全市场 / 股票池研究 | 本地 worker-batch read-plan / dry-run / execution-request / research receipt 已可见；真实 worker runtime、storage read、rank/zscore、neutralization、full-pool validation pending。 | 做显式 worker/storage/metric 证据；不从 GET/cache/render 启动 worker。 |
 | 7 | LTG-05 Storage / DuckDB / Parquet 生产化 | physical schema validation、migration、partition、compaction、TTL、cleanup 和 durable promotion pending。 | 分阶段执行 physical storage evidence，只走显式任务，数据 artifacts 不进 git。 |
@@ -60,9 +60,9 @@
 | 13 | LTG-14 动效与可视化清晰度优化 | local motion runner/review receipts 已有；durable browser visual QA、performance trace、CI/release evidence pending。 | 核心数据/worker/desktop/radar 稳定后再做 final visual promotion。 |
 | 14 | LTG-12 真实交易链路继续隔离 | 永久 release invariant，不能作为一次性完成项关闭；当前 evidence 只证明 research-client no-broker/no-order/no-action。 | 每个 LTG slice 都继续 recheck no broker / no order / no action mutation；真实交易另立项目。 |
 
-推荐下一轮小目标：主目标 `LTG-11 authorized remote CI / release review`，支撑目标 `LTG-01/LTG-02 provider-evidence promotion boundary summary`。本轮不做完整 `live_light`、不做 DeepSeek executor、不做 Tauri package、不真实交易、不把 local receipt / matrix / mock / sanitizer 当 production evidence。
+推荐下一轮小目标：主目标 `LTG-03 factor small-pool ready local recheck`，支撑目标 `LTG-11 release blocker stays remote-review split`。如果用户明确选择远端授权周期，则主目标可切换为 `LTG-11 authorized remote CI / release review`。本轮不做完整 `live_light`、不做 DeepSeek executor、不做 Tauri package、不真实交易、不把 local receipt / matrix / mock / sanitizer 当 production evidence。
 
-目标模式：`Remaining LTG Unfinished-Only Closeout Queue with Remote Review Split` / `剩余 LTG 未完成项收口队列 + 远端查收分离模式`。每轮最多推进一个主 LTG 和一个支撑目标；已完成的本地小票据从下一步列表删除，未完成的生产证据继续编号罗列；当 `ready_local_buttons>0` 时，优先清掉唯一 ready local button；当 `ready_local_buttons=0` 时，优先处理当前 blocker，而不是反复跑同一条本地 receipt。
+目标模式：`Remaining LTG Unfinished-Only Closeout Queue with Remote Review Split` / `剩余 LTG 未完成项收口队列 + 远端查收分离模式`。每轮最多推进一个主 LTG 和一个支撑目标；已完成的本地小票据从下一步列表删除，未完成的生产证据继续编号罗列；当 `ready_local_buttons>0` 时，优先清掉唯一 ready local button，除非用户明确选择远端或 provider 授权周期；当 `ready_local_buttons=0` 时，优先处理当前 blocker，而不是反复跑同一条本地 receipt。
 
 ## Legacy Bug / UX Audit Seed
 
