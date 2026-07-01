@@ -803,6 +803,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "receipt_key": "trade_cal_provider_acceptance_release_review_receipt",
             "route": "POST /api/data-health/trade-cal-provider-acceptance-release-review",
         },
+        {
+            "phase_key": "trade_cal_production_promotion_review_receipt",
+            "task_type": "run_trade_cal_provider_acceptance_production_promotion_review",
+            "receipt_key": "trade_cal_provider_acceptance_production_promotion_review_receipt",
+            "route": "POST /api/data-health/trade-cal-provider-acceptance-production-promotion-review",
+        },
     ],
     "p2_tushare_target_sample_acceptance": [
         {
@@ -9140,6 +9146,13 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "trade_cal_promotion_review_receipt",
             "required_prior_material": "receipt_local_ready",
         },
+        "POST /api/data-health/trade-cal-provider-acceptance-production-promotion-review": {
+            "step_kind": "local_production_promotion_review",
+            "safe_payload_summary": "approved_by_user plus latest release review, local gate, and matching remote CI evidence",
+            "expected_local_receipt": "trade_cal_provider_acceptance_production_promotion_review_receipt",
+            "required_prior_phase_key": "trade_cal_release_review_receipt",
+            "required_prior_material": "",
+        },
         "POST /api/tasks/tushare-provider-target-sample-execution-request": {
             "step_kind": "manual_scope_bound_execution_request",
             "safe_payload_summary": "operator_approved, selected target sample APIs, ts_code, and execution_recipe_scope_hash",
@@ -10134,6 +10147,9 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
     latest_release_review = _dict_or_empty(
         packet_map.get("latest_trade_cal_provider_acceptance_release_review")
     )
+    latest_production_promotion_review = _dict_or_empty(
+        packet_map.get("latest_trade_cal_provider_acceptance_production_promotion_review")
+    )
     durable_blocking_evidence_keys = [
         str(item) for item in durable_recipe.get("blocking_evidence_keys") or [] if str(item)
     ]
@@ -10160,8 +10176,18 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
     release_review_found = latest_release_review.get("latest_task_found") is True
     release_review_recorded = latest_release_review.get("release_review_recorded") is True
     release_review_complete = latest_release_review.get("release_review_complete") is True
+    production_promotion_review_found = latest_production_promotion_review.get("latest_task_found") is True
+    production_promotion_review_complete = (
+        latest_production_promotion_review.get("production_freshness_gate_complete") is True
+    )
+    production_freshness_gate_complete = (
+        durable_recipe.get("production_freshness_gate_complete") is True
+        or production_promotion_review_complete
+    )
     next_step = (
-        "separate_user_authorized_production_freshness_promotion_review"
+        "ltg01_strict_closeout_ready_continue_ltg02"
+        if production_freshness_gate_complete
+        else "POST /api/data-health/trade-cal-provider-acceptance-production-promotion-review"
         if release_review_complete
         else str(
             _dict_or_empty(latest_release_review.get("receipt")).get("allowed_next_step")
@@ -10179,7 +10205,9 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         else "POST /api/data-health/trade-cal-provider-acceptance-dry-run"
     )
     status = (
-        "provider_acceptance_release_review_ready_for_production_freshness_promotion"
+        "provider_acceptance_production_freshness_gate_complete"
+        if production_freshness_gate_complete
+        else "provider_acceptance_release_review_ready_for_production_freshness_promotion"
         if release_review_complete
         else "provider_acceptance_release_review_recorded_blockers_visible"
         if release_review_found and release_review_recorded
@@ -10259,7 +10287,7 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         "release_review_complete": durable_recipe.get("release_review_complete") is True,
         "strict_closeout_ready": durable_recipe.get("strict_closeout_ready") is True,
         "allowed_next_step": durable_recipe.get("allowed_next_step") or next_step,
-        "production_freshness_gate_complete": False,
+        "production_freshness_gate_complete": production_freshness_gate_complete,
         "trade_cal_provider_call_ledger_observed_count": int(
             provider_evidence.get("trade_cal_provider_call_ledger_observed_count") or 0
         ),
@@ -10310,6 +10338,19 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         "latest_release_review_blocking_phases": list(
             latest_release_review.get("blocking_phases") or []
         ),
+        "latest_production_promotion_review_found": production_promotion_review_found,
+        "latest_production_promotion_review_complete": production_promotion_review_complete,
+        "latest_production_promotion_review_status": (
+            latest_production_promotion_review.get("production_promotion_review_status")
+            or latest_production_promotion_review.get("status")
+            or "missing"
+        ),
+        "latest_production_promotion_review_task_id": (
+            latest_production_promotion_review.get("latest_task_id") or ""
+        ),
+        "latest_production_promotion_review_blocking_row_count": int(
+            latest_production_promotion_review.get("blocking_row_count") or 0
+        ),
         "requires_explicit_provider_trade_cal_task": (
             provider_acceptance_evidence_missing
             or "explicit_provider_trade_cal_task" in durable_blocking_evidence_keys
@@ -10349,6 +10390,7 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
             durable_recipe.get("local_promotion_review_is_not_production_completion") is True
         ),
         "production_promotion_review_done": durable_recipe.get("production_promotion_review_done") is True,
+        "requires_production_promotion_review_before_closeout": not production_freshness_gate_complete,
         "latest_dry_run_row_count": int(
             counts.get("latest_trade_cal_provider_acceptance_dry_run_row_count") or 0
         ),
@@ -10360,6 +10402,9 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         ),
         "latest_release_review_row_count": int(
             counts.get("latest_trade_cal_provider_acceptance_release_review_row_count") or 0
+        ),
+        "latest_production_promotion_review_row_count": int(
+            counts.get("latest_trade_cal_provider_acceptance_production_promotion_review_row_count") or 0
         ),
         "next_local_step": next_step,
         "requires_promotion_review_task": not promotion_review_found,
@@ -10375,8 +10420,8 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
-        "can_close_goal": False,
-        "production_complete": False,
+        "can_close_goal": production_freshness_gate_complete,
+        "production_complete": production_freshness_gate_complete,
         "evidence_boundary": (
             "prior_provider_acceptance_evidence_handoff_is_not_task_receipt_chain_or_ltg_closeout"
         ),
@@ -11018,6 +11063,18 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             supporting_current_evidence_producer_cache_refresh_handoff = (
                 _latest_current_evidence_producer_cache_refresh_handoff_summary()
             )
+            handoff_next_step = str(
+                supporting_trade_cal_provider_acceptance_evidence_handoff.get("next_local_step")
+                or ""
+            )
+            if handoff_next_step:
+                next_local_step = handoff_next_step
+                local_status = (
+                    "local_trade_cal_handoff_strict_closeout_ready"
+                    if supporting_trade_cal_provider_acceptance_evidence_handoff.get("strict_closeout_ready")
+                    is True
+                    else "local_trade_cal_handoff_next_step_visible"
+                )
         if action["queue_id"] == "p2_tushare_target_sample_acceptance":
             safe_context["tushare_target_sample_execution_recipe_preview"] = (
                 _latest_tushare_target_sample_execution_recipe_preview()
