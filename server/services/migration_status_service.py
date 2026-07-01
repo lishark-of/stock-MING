@@ -9552,6 +9552,23 @@ def _build_ltg_next_action_submission_preview_rows(
                 required_prior_receipt_visible=review_step.get("receipt_visible") is True,
                 required_prior_material_visible=review_step.get("local_ready") is True,
             )
+        if next_local_step == "resolve_provider_permission_or_collect_alternative_hard_risk_evidence":
+            review_step = _local_step_row_by_phase(
+                local_step_rows, "target_sample_failure_window_review"
+            )
+            return _disabled_handoff_preview(
+                step_kind="target_sample_permission_blocker_followup",
+                disabled_reason="provider_permission_or_alternative_hard_risk_evidence_required",
+                safe_payload_summary=(
+                    "target-sample provider ledger contains permission_denied evidence; next work is "
+                    "provider permission upgrade or an approved alternative hard-risk evidence scope, "
+                    "not another cache/render provider call"
+                ),
+                required_prior_phase_key="target_sample_failure_window_review",
+                required_prior_material="permission_denied_failure_mode_recorded",
+                required_prior_receipt_visible=review_step.get("receipt_visible") is True,
+                required_prior_material_visible=review_step.get("local_ready") is True,
+            )
         if next_local_step == "separate approved real-trading integration project only":
             trade_step = _local_step_row_by_phase(
                 local_step_rows, "trade_isolation_release_receipt"
@@ -10472,6 +10489,36 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         target_contract.get("target_sample_acceptance_ready_for_review") is True
         and int(target_contract.get("ready_target_count") or 0) > 0
     )
+    target_sample_permission_blocker_rows: list[dict[str, Any]] = []
+    for row in target_contract.get("rows") or []:
+        row_map = _dict_or_empty(row)
+        failure_modes = [
+            str(item)
+            for item in row_map.get("failure_modes_observed") or []
+            if str(item or "")
+        ]
+        if "permission_denied" not in failure_modes:
+            continue
+        target_sample_permission_blocker_rows.append(
+            {
+                "target": str(row_map.get("target") or ""),
+                "failed_or_blocked_apis": [
+                    str(item)
+                    for item in row_map.get("failed_or_blocked_apis") or []
+                    if str(item or "")
+                ],
+                "failure_modes_observed": failure_modes,
+                "target_sample_acceptance_blockers": [
+                    str(item)
+                    for item in row_map.get("target_sample_acceptance_blockers") or []
+                    if str(item or "")
+                ],
+                "target_sample_acceptance_status": str(
+                    row_map.get("target_sample_acceptance_status") or ""
+                ),
+            }
+        )
+    target_sample_permission_blocker_recorded = bool(target_sample_permission_blocker_rows)
     provider_call_ledger_visible = bool(
         int(provider_direct_evidence.get("call_ledger_count") or 0) > 0
         or int(refresh_map.get("call_count") or 0) > 0
@@ -10490,6 +10537,8 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
     next_step = (
         "full_interface_storage_promotion_review_after_provider_sample"
         if target_sample_review_ready and durable_recipe_ready
+        else "resolve_provider_permission_or_collect_alternative_hard_risk_evidence"
+        if target_sample_permission_blocker_recorded
         else "POST /api/tasks/refresh-tushare-facts"
         if failure_window_review_found and failure_window_review_ready_for_rerun
         else failure_window_review.get("allowed_next_step")
@@ -10527,6 +10576,8 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         "status": (
             "target_sample_provider_evidence_visible_promotion_review_needed"
             if target_sample_review_ready
+            else "target_sample_permission_blocker_recorded_provider_access_required"
+            if target_sample_permission_blocker_recorded
             else "target_sample_failure_window_review_ready_provider_rerun_required"
             if failure_window_review_found and failure_window_review_ready_for_rerun
             else "target_sample_failure_window_review_visible_followup_needed"
@@ -10572,6 +10623,9 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         "target_sample_acceptance_requested_count": int(
             target_contract.get("requested_target_count") or 0
         ),
+        "target_sample_permission_blocker_recorded": target_sample_permission_blocker_recorded,
+        "target_sample_permission_blocker_count": len(target_sample_permission_blocker_rows),
+        "target_sample_permission_blocker_rows": target_sample_permission_blocker_rows,
         "target_sample_acceptance_is_full_interface_acceptance": False,
         "provider_call_ledger_visible": provider_call_ledger_visible,
         "provider_call_ledger_count": max(
@@ -10920,6 +10974,9 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
     failure_window_review_ready_for_rerun = (
         target_sample_handoff.get("target_sample_failure_window_review_ready_for_rerun") is True
     )
+    target_sample_permission_blocker_recorded = (
+        target_sample_handoff.get("target_sample_permission_blocker_recorded") is True
+    )
     target_sample_provider_task_call_count = int(
         target_sample_handoff.get("target_sample_provider_task_call_ledger_count") or 0
     )
@@ -10957,6 +11014,9 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
     if target_sample_review_ready and durable_recipe_ready:
         status = "full_interface_pipeline_target_sample_review_ready_promotion_pending"
         next_step = "full_interface_storage_promotion_review_after_provider_sample"
+    elif target_sample_permission_blocker_recorded:
+        status = "full_interface_pipeline_target_sample_permission_blocker_recorded_provider_access_required"
+        next_step = "resolve_provider_permission_or_collect_alternative_hard_risk_evidence"
     elif failure_window_review_found and failure_window_review_ready_for_rerun:
         status = "full_interface_pipeline_target_sample_failure_window_review_ready_provider_rerun_required"
         next_step = target_sample_handoff.get("next_local_step") or "POST /api/tasks/refresh-tushare-facts"
@@ -11027,6 +11087,13 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
         ),
         "target_sample_failure_window_review_blocker_rows": list(
             target_sample_handoff.get("target_sample_failure_window_review_blocker_rows") or []
+        ),
+        "target_sample_permission_blocker_recorded": target_sample_permission_blocker_recorded,
+        "target_sample_permission_blocker_count": int(
+            target_sample_handoff.get("target_sample_permission_blocker_count") or 0
+        ),
+        "target_sample_permission_blocker_rows": list(
+            target_sample_handoff.get("target_sample_permission_blocker_rows") or []
         ),
         "prior_provider_evidence_observed": provider_call_ledger_count > 0,
         "prior_provider_evidence_is_not_new_call": True,
@@ -11186,6 +11253,19 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 is True
             ):
                 if (
+                    supporting_tushare_target_sample_evidence_handoff.get(
+                        "target_sample_permission_blocker_recorded"
+                    )
+                    is True
+                ):
+                    local_status = (
+                        "local_target_sample_permission_blocker_recorded_provider_access_required"
+                    )
+                    next_local_step = str(
+                        supporting_tushare_target_sample_evidence_handoff.get("next_local_step")
+                        or "resolve_provider_permission_or_collect_alternative_hard_risk_evidence"
+                    )
+                elif (
                     supporting_tushare_target_sample_evidence_handoff.get(
                         "target_sample_failure_window_review_ready_for_rerun"
                     )

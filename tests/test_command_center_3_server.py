@@ -15531,6 +15531,177 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(handoff["tushare_called"])
         self.assertTrue(handoff["does_not_execute_trades"])
 
+    def test_tushare_target_sample_permission_blocker_stops_provider_rerun_prompt(self):
+        db_path = self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_tushare_refresh_packet",
+            {
+                "packet_key": "command_center_tushare_refresh_packet",
+                "status": "success",
+                "task_type": "refresh_tushare_facts",
+                "task_id": "local-provider-permission",
+                "payload_safe": {
+                    "acceptance_mode": "provider_target_sample_acceptance",
+                    "target_sample_acceptance_groups": ["hard_risk"],
+                    "apis": ["anns_d"],
+                    "ts_code": "002008.SZ",
+                    "start_date": "20260601",
+                    "end_date": "20260610",
+                },
+                "selected_apis": ["anns_d"],
+                "call_count": 1,
+                "call_ledger": [
+                    {
+                        "api": "anns_d",
+                        "source": "tushare",
+                        "row_count": 0,
+                        "request_params_safe": {
+                            "ts_code": "002008.SZ",
+                            "start_date": "20260601",
+                            "end_date": "20260610",
+                        },
+                        "call_status": "failed",
+                        "failure_mode": "permission_denied",
+                        "failure_mode_status": "validated_failed_safe",
+                        "error_message_safe": "permission_denied_for_anns_d_doc_id_108",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                ],
+                "provider_target_sample_acceptance_contract": {
+                    "schema_version": "tushare_provider_target_sample_acceptance.v1",
+                    "status": "target_sample_acceptance_blocked",
+                    "target_sample_acceptance_ready_for_review": False,
+                    "requested_targets": ["hard_risk"],
+                    "requested_target_count": 1,
+                    "ready_target_count": 0,
+                    "blocked_target_count": 1,
+                    "rows": [
+                        {
+                            "target": "hard_risk",
+                            "target_sample_acceptance_status": "target_sample_acceptance_blocked",
+                            "target_sample_acceptance_ready_for_review": False,
+                            "failed_or_blocked_apis": ["anns_d"],
+                            "failure_modes_observed": ["permission_denied"],
+                            "target_sample_acceptance_blockers": [
+                                "failed_or_blocked_api_evidence_present",
+                                "target_validation_not_complete",
+                            ],
+                        }
+                    ],
+                    "provider_backed_target_sample_acceptance_done": False,
+                    "full_interface_acceptance_done": False,
+                    "production_tushare_pipeline_complete": False,
+                },
+                "tushare_durable_evidence_recipe": {
+                    "status": "tushare_durable_evidence_recipe_local_pending",
+                    "local_recipe_ready": True,
+                    "durable_evidence_complete": False,
+                },
+                "failure_mode_qa_contract": {
+                    "status": "failure_mode_qa_ready_provider_acceptance_pending",
+                    "unsafe_row_count": 0,
+                },
+                "request_parameter_qa_contract": {
+                    "status": "request_parameter_qa_ready_provider_acceptance_pending",
+                },
+                "provider_acceptance_promotion_audit": {
+                    "status": "provider_acceptance_promotion_pending",
+                    "promotion_ready": False,
+                },
+                "external_calls_triggered": True,
+                "tushare_called": True,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            },
+        )
+
+        review_task = tushare_task_service.run_tushare_provider_target_sample_failure_window_review(
+            {
+                "target_sample_acceptance_groups": ["hard_risk"],
+                "apis": ["anns_d"],
+                "ts_code": "002008.SZ",
+                "start_date": "20260601",
+                "end_date": "20260610",
+                "token": "SHOULD_DROP",
+            }
+        )
+        self.assertEqual(review_task["status"], "success")
+        self.assertFalse(review_task["external_calls_triggered"])
+        self.assertFalse(review_task["tushare_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(review_task, ensure_ascii=False))
+
+        migration = migration_status_service.build_migration_status()
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        p2 = action_rows["p2_tushare_target_sample_acceptance"]
+        handoff = p2["supporting_tushare_target_sample_evidence_handoff"]
+        pipeline_handoff = p2["supporting_tushare_full_interface_pipeline_handoff"]
+        preview = p2["next_local_step_preview_rows"][0]
+
+        self.assertEqual(
+            handoff["status"],
+            "target_sample_permission_blocker_recorded_provider_access_required",
+        )
+        self.assertTrue(handoff["target_sample_permission_blocker_recorded"])
+        self.assertEqual(handoff["target_sample_permission_blocker_count"], 1)
+        self.assertEqual(
+            handoff["target_sample_permission_blocker_rows"],
+            [
+                {
+                    "target": "hard_risk",
+                    "failed_or_blocked_apis": ["anns_d"],
+                    "failure_modes_observed": ["permission_denied"],
+                    "target_sample_acceptance_blockers": [
+                        "failed_or_blocked_api_evidence_present",
+                        "target_validation_not_complete",
+                    ],
+                    "target_sample_acceptance_status": "target_sample_acceptance_blocked",
+                }
+            ],
+        )
+        self.assertEqual(
+            handoff["next_local_step"],
+            "resolve_provider_permission_or_collect_alternative_hard_risk_evidence",
+        )
+        self.assertEqual(
+            pipeline_handoff["status"],
+            "full_interface_pipeline_target_sample_permission_blocker_recorded_provider_access_required",
+        )
+        self.assertEqual(
+            pipeline_handoff["next_local_step"],
+            "resolve_provider_permission_or_collect_alternative_hard_risk_evidence",
+        )
+        self.assertEqual(
+            p2["local_receipt_status"],
+            "local_target_sample_permission_blocker_recorded_provider_access_required",
+        )
+        self.assertEqual(
+            p2["next_local_step"],
+            "resolve_provider_permission_or_collect_alternative_hard_risk_evidence",
+        )
+        self.assertEqual(preview["step_kind"], "target_sample_permission_blocker_followup")
+        self.assertEqual(
+            preview["disabled_reason"],
+            "provider_permission_or_alternative_hard_risk_evidence_required",
+        )
+        self.assertFalse(preview["local_button_available"])
+        self.assertFalse(preview["external_calls_triggered"])
+        self.assertFalse(preview["tushare_called"])
+        self.assertFalse(preview["deepseek_called"])
+        self.assertFalse(preview["github_called"])
+        self.assertTrue(preview["does_not_execute_trades"])
+        self.assertFalse(p2["external_calls_triggered"])
+
     def test_tushare_provider_target_sample_execution_recipe_seed_prebinds_local_request(self):
         db_path = self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -40335,6 +40506,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "target_sample_execution_request_visible_but_blocked",
                 "target_sample_execution_request_ready_provider_task_pending",
                 "target_sample_provider_evidence_visible_promotion_review_needed",
+                "target_sample_failure_window_review_visible_followup_needed",
+                "target_sample_failure_window_review_ready_provider_rerun_required",
+                "target_sample_permission_blocker_recorded_provider_access_required",
             },
         )
         self.assertEqual(
@@ -40369,6 +40543,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "full_interface_pipeline_execution_recipe_ready_request_ticket_needed",
                 "full_interface_pipeline_execution_request_ready_provider_task_pending",
                 "full_interface_pipeline_target_sample_review_ready_promotion_pending",
+                "full_interface_pipeline_target_sample_failure_window_review_visible_followup_needed",
+                "full_interface_pipeline_target_sample_failure_window_review_ready_provider_rerun_required",
+                "full_interface_pipeline_target_sample_permission_blocker_recorded_provider_access_required",
             },
         )
         self.assertEqual(
