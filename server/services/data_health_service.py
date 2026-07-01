@@ -40,6 +40,15 @@ TRADE_CAL_PROVIDER_ACCEPTANCE_PROMOTION_REVIEW_TASK_TYPE = (
 TRADE_CAL_PROVIDER_ACCEPTANCE_PROMOTION_REVIEW_ROUTE = (
     "POST /api/data-health/trade-cal-provider-acceptance-promotion-review"
 )
+TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_SCHEMA_VERSION = (
+    "data_health_trade_cal_provider_acceptance_release_review.v1"
+)
+TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_TASK_TYPE = (
+    "run_trade_cal_provider_acceptance_release_review"
+)
+TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_ROUTE = (
+    "POST /api/data-health/trade-cal-provider-acceptance-release-review"
+)
 PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_SCHEMA_VERSION = (
     "data_health_current_evidence_producer_cache_refresh_execution_request.v1"
 )
@@ -4872,6 +4881,321 @@ def _latest_trade_cal_provider_acceptance_promotion_review_from_tasks() -> tuple
     return latest_receipt, row_list
 
 
+def _trade_cal_release_review_payload_safe(
+    payload: Any,
+    *,
+    latest_promotion_review: Mapping[str, Any],
+    durable_recipe: Mapping[str, Any],
+    local_release_gate: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw = payload if isinstance(payload, Mapping) else {}
+    user_confirmed = _safe_bool(
+        raw.get("approved_by_user", raw.get("user_confirmation", raw.get("confirm_release_review"))),
+        False,
+    )
+    return {
+        "schema_version": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_SCHEMA_VERSION,
+        "route": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_ROUTE,
+        "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_TASK_TYPE,
+        "request_mode": "manual_trade_cal_provider_acceptance_release_review",
+        "user_confirmed": user_confirmed,
+        "confirmation_mode": "explicit_payload_true" if user_confirmed else "missing_or_false",
+        "requested_by": _safe_text(raw.get("requested_by") or "local_user", limit=80),
+        "source": _safe_text(raw.get("source") or "data_health", limit=80),
+        "latest_promotion_review_task_id": latest_promotion_review.get("latest_task_id"),
+        "latest_promotion_review_status": latest_promotion_review.get("promotion_review_status")
+        or latest_promotion_review.get("status")
+        or "",
+        "latest_promotion_review_ready_for_release": (
+            latest_promotion_review.get("ready_for_production_freshness_release_review") is True
+            or latest_promotion_review.get("promotion_review_ready_for_release") is True
+        ),
+        "durable_recipe_status": durable_recipe.get("status") or "missing",
+        "durable_local_complete": durable_recipe.get("local_complete") is True,
+        "durable_local_evidence_missing_items": list(durable_recipe.get("local_evidence_missing_items") or []),
+        "local_release_gate_complete": durable_recipe.get("local_release_gate_complete") is True,
+        "latest_remote_run_verified_green": (
+            durable_recipe.get("latest_remote_run_verified_green") is True
+            or local_release_gate.get("latest_remote_run_verified_green") is True
+        ),
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _trade_cal_release_review_row(
+    phase: str,
+    status: str,
+    *,
+    passed: bool,
+    blocks_production: bool,
+    evidence: str,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": status,
+        "passed": bool(passed),
+        "blocks_production": bool(blocks_production),
+        "evidence": evidence,
+        "local_release_review_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _build_trade_cal_provider_acceptance_release_review(
+    payload_safe: Mapping[str, Any],
+    *,
+    latest_promotion_review: Mapping[str, Any],
+    durable_recipe: Mapping[str, Any],
+    local_release_gate: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    user_confirmed = payload_safe.get("user_confirmed") is True
+    promotion_found = latest_promotion_review.get("latest_task_found") is True
+    promotion_ready = (
+        latest_promotion_review.get("ready_for_production_freshness_release_review") is True
+        or latest_promotion_review.get("promotion_review_ready_for_release") is True
+    )
+    local_gate_complete = durable_recipe.get("local_release_gate_complete") is True
+    remote_green = (
+        durable_recipe.get("latest_remote_run_verified_green") is True
+        or local_release_gate.get("latest_remote_run_verified_green") is True
+    )
+    local_complete = durable_recipe.get("local_complete") is True
+    local_missing = [str(item) for item in durable_recipe.get("local_evidence_missing_items") or [] if str(item)]
+    durable_missing = [str(item) for item in durable_recipe.get("missing_evidence_items") or [] if str(item)]
+    blocking_keys = [str(item) for item in durable_recipe.get("blocking_evidence_keys") or [] if str(item)]
+    rows = [
+        _trade_cal_release_review_row(
+            "explicit_user_confirmation_recorded",
+            "passed_user_confirmed" if user_confirmed else "blocked_user_confirmation_required",
+            passed=user_confirmed,
+            blocks_production=not user_confirmed,
+            evidence=f"confirmation_mode={payload_safe.get('confirmation_mode')}",
+        ),
+        _trade_cal_release_review_row(
+            "promotion_review_ready",
+            "passed_promotion_review_ready" if promotion_found and promotion_ready else "blocked_promotion_review_pending",
+            passed=promotion_found and promotion_ready,
+            blocks_production=not (promotion_found and promotion_ready),
+            evidence=(
+                f"latest_task_id={latest_promotion_review.get('latest_task_id') or 'missing'}; "
+                f"status={latest_promotion_review.get('promotion_review_status') or latest_promotion_review.get('status') or 'missing'}"
+            ),
+        ),
+        _trade_cal_release_review_row(
+            "fresh_local_gate_current_head",
+            "passed_local_gate_current_head" if local_gate_complete else "blocked_local_gate_recheck_required",
+            passed=local_gate_complete,
+            blocks_production=not local_gate_complete,
+            evidence=f"local_release_gate_status={local_release_gate.get('status') or durable_recipe.get('local_release_gate_evidence_status') or 'missing'}",
+        ),
+        _trade_cal_release_review_row(
+            "matching_remote_ci_green",
+            "passed_remote_ci_green" if remote_green else "blocked_remote_ci_green_required",
+            passed=remote_green,
+            blocks_production=not remote_green,
+            evidence=f"remote_review_status={durable_recipe.get('remote_review_status') or 'missing'}",
+        ),
+        _trade_cal_release_review_row(
+            "local_durable_evidence_complete",
+            "passed_local_durable_evidence_complete" if local_complete else "blocked_local_durable_evidence_pending",
+            passed=local_complete,
+            blocks_production=not local_complete,
+            evidence="; ".join(local_missing or durable_missing or ["no local evidence blockers reported"]),
+        ),
+        _trade_cal_release_review_row(
+            "cache_render_trade_boundary",
+            "passed_no_side_effects",
+            passed=True,
+            blocks_production=False,
+            evidence="Release review records local evidence only; it calls no provider, model, GitHub, worker, or trade path.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_production"]]
+    if not user_confirmed:
+        status = "trade_cal_provider_acceptance_release_review_blocked_user_confirmation_required"
+        allowed_next_step = "rerun_release_review_with_explicit_user_confirmation"
+    elif not promotion_found or not promotion_ready:
+        status = "trade_cal_provider_acceptance_release_review_blocked_promotion_review_pending"
+        allowed_next_step = TRADE_CAL_PROVIDER_ACCEPTANCE_PROMOTION_REVIEW_ROUTE
+    elif not local_gate_complete or not remote_green:
+        status = "trade_cal_provider_acceptance_release_review_blocked_release_gate_or_remote_ci"
+        allowed_next_step = "refresh_local_push_gate_or_remote_ci_review_before_release_review"
+    elif not local_complete:
+        status = "trade_cal_provider_acceptance_release_review_recorded_blockers_visible"
+        allowed_next_step = "close_local_durable_evidence_blockers_then_rerun_release_review"
+    else:
+        status = "trade_cal_provider_acceptance_release_review_ready_for_production_freshness_promotion"
+        allowed_next_step = "separate_user_authorized_production_freshness_promotion_review"
+    release_review_complete = bool(user_confirmed and promotion_found and promotion_ready and local_gate_complete and remote_green and local_complete)
+    receipt = {
+        "schema_version": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_trade_cal_provider_acceptance_release_review_no_provider_execution",
+        "route": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_ROUTE,
+        "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_TASK_TYPE,
+        "ltg": "LTG-01/LTG-11",
+        "user_confirmed": user_confirmed,
+        "release_review_recorded": bool(user_confirmed and promotion_found and promotion_ready),
+        "release_review_complete": release_review_complete,
+        "ready_for_production_freshness_promotion": release_review_complete,
+        "latest_promotion_review_task_id": latest_promotion_review.get("latest_task_id"),
+        "latest_promotion_review_status": latest_promotion_review.get("promotion_review_status")
+        or latest_promotion_review.get("status")
+        or "",
+        "latest_promotion_review_found": promotion_found,
+        "latest_promotion_review_ready_for_release": promotion_ready,
+        "durable_recipe_status": durable_recipe.get("status") or "missing",
+        "durable_local_complete": local_complete,
+        "durable_local_evidence_missing_items": local_missing,
+        "durable_missing_evidence_items": durable_missing,
+        "durable_blocking_evidence_keys": blocking_keys,
+        "local_release_gate_complete": local_gate_complete,
+        "latest_remote_run_verified_green": remote_green,
+        "remote_review_status": durable_recipe.get("remote_review_status") or "missing",
+        "row_count": len(rows),
+        "blocking_row_count": len(blocking_rows),
+        "blocking_phases": [row["phase"] for row in blocking_rows],
+        "production_freshness_gate_complete": False,
+        "strict_closeout_ready": False,
+        "can_close_goal": False,
+        "ready_to_execute_from_cache": False,
+        "creates_provider_task": False,
+        "provider_execution_implemented": False,
+        "provider_task_executed_by_review": False,
+        "provider_backed_long_window_acceptance_done": False,
+        "allowed_next_step": allowed_next_step,
+        "not_allowed_next_steps": [
+            "GET cache provider refresh",
+            "React render provider refresh",
+            "create provider task from release review",
+            "treat release review as production freshness completion when blockers remain",
+            "write token/key material to frontend/log/packet/cache",
+            "execute real trades or mutate strategy action",
+        ],
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    return receipt, rows
+
+
+def _latest_trade_cal_provider_acceptance_release_review_from_tasks() -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+]:
+    latest_task = next(
+        (
+            task
+            for task in task_service.list_task_statuses()
+            if str(task.get("task_type") or "") == TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_TASK_TYPE
+        ),
+        None,
+    )
+    if not latest_task:
+        return (
+            {
+                "schema_version": "data_health_latest_trade_cal_provider_acceptance_release_review.v1",
+                "status": "no_trade_cal_provider_acceptance_release_review_task_found",
+                "scope": "local_task_status_lookup_no_provider_execution",
+                "latest_task_found": False,
+                "route": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_ROUTE,
+                "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_TASK_TYPE,
+                "latest_task_id": None,
+                "receipt_visible": False,
+                "release_review_recorded": False,
+                "release_review_complete": False,
+                "ready_for_production_freshness_promotion": False,
+                "row_count": 0,
+                "blocking_row_count": 0,
+                "production_freshness_gate_complete": False,
+                "cache_get_creates_task": False,
+                "cache_get_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            [],
+        )
+    payload_safe = latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), dict) else {}
+    receipt = payload_safe.get("trade_cal_provider_acceptance_release_review_receipt")
+    rows = payload_safe.get("trade_cal_provider_acceptance_release_review_rows")
+    receipt_safe = _safe_value(receipt) if isinstance(receipt, dict) else {}
+    row_safe = _safe_value(rows) if isinstance(rows, list) else []
+    receipt_map = receipt_safe if isinstance(receipt_safe, dict) else {}
+    row_list = row_safe if isinstance(row_safe, list) else []
+    return (
+        {
+            "schema_version": "data_health_latest_trade_cal_provider_acceptance_release_review.v1",
+            "status": "latest_trade_cal_provider_acceptance_release_review_visible",
+            "scope": "local_task_status_lookup_no_provider_execution",
+            "latest_task_found": True,
+            "receipt_visible": bool(receipt_map),
+            "route": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_ROUTE,
+            "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_TASK_TYPE,
+            "latest_task_id": latest_task.get("task_id"),
+            "latest_task_status": latest_task.get("status"),
+            "latest_task_current_step": latest_task.get("current_step"),
+            "release_review_status": receipt_map.get("status") or "missing_receipt",
+            "release_review_recorded": receipt_map.get("release_review_recorded") is True,
+            "release_review_complete": receipt_map.get("release_review_complete") is True,
+            "ready_for_production_freshness_promotion": (
+                receipt_map.get("ready_for_production_freshness_promotion") is True
+            ),
+            "latest_promotion_review_task_id": receipt_map.get("latest_promotion_review_task_id"),
+            "latest_promotion_review_ready_for_release": (
+                receipt_map.get("latest_promotion_review_ready_for_release") is True
+            ),
+            "durable_local_complete": receipt_map.get("durable_local_complete") is True,
+            "durable_local_evidence_missing_items": list(
+                receipt_map.get("durable_local_evidence_missing_items") or []
+            ),
+            "local_release_gate_complete": receipt_map.get("local_release_gate_complete") is True,
+            "latest_remote_run_verified_green": receipt_map.get("latest_remote_run_verified_green") is True,
+            "blocking_row_count": int(receipt_map.get("blocking_row_count") or 0),
+            "blocking_phases": list(receipt_map.get("blocking_phases") or []),
+            "row_count": len(row_list),
+            "production_freshness_gate_complete": False,
+            "cache_get_creates_task": False,
+            "cache_get_external_calls": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "receipt": receipt_map,
+        },
+        row_list,
+    )
+
+
 def _freshness_production_blocker_row(
     phase: str,
     status: str,
@@ -5800,6 +6124,7 @@ def _freshness_durable_evidence_recipe(
     latest_producer_cache_refresh_rows: list[dict[str, Any]],
     provider_promotion: Mapping[str, Any],
     latest_promotion_review: Mapping[str, Any],
+    latest_release_review: Mapping[str, Any],
     local_release_gate_evidence: Mapping[str, Any],
 ) -> dict[str, Any]:
     matrix_visible = freshness_acceptance_summary.get("scope") == "local_contract_not_real_trade_cal_validation"
@@ -5910,6 +6235,26 @@ def _freshness_durable_evidence_recipe(
     local_promotion_review_blocking_row_count = int(
         latest_promotion_review.get("blocking_row_count") or 0
     )
+    local_release_review_visible = bool(
+        latest_release_review.get("latest_task_found") is True
+        and latest_release_review.get("receipt_visible") is True
+    )
+    local_release_review_recorded = bool(
+        local_release_review_visible and latest_release_review.get("release_review_recorded") is True
+    )
+    local_release_review_complete = bool(
+        local_release_review_visible and latest_release_review.get("release_review_complete") is True
+    )
+    local_release_review_status = _safe_text(
+        latest_release_review.get("release_review_status")
+        or latest_release_review.get("status")
+        or "",
+        limit=180,
+    )
+    local_release_review_task_id = latest_release_review.get("latest_task_id")
+    local_release_review_blocking_row_count = int(
+        latest_release_review.get("blocking_row_count") or 0
+    )
     production_promotion_missing_evidence: list[str] = []
     if not provider_promotion_ready:
         production_promotion_missing_evidence.append("provider-backed acceptance promotion marker")
@@ -5927,9 +6272,10 @@ def _freshness_durable_evidence_recipe(
         production_promotion_missing_evidence.append("required local push-gate checks in receipt")
     if not remote_ci_reviewed_green:
         production_promotion_missing_evidence.append("matching remote CI review after local gate")
-    production_promotion_missing_evidence.append(
-        "release review that production_freshness_gate_complete may become true"
-    )
+    if not local_release_review_complete:
+        production_promotion_missing_evidence.append(
+            "release review that production_freshness_gate_complete may become true"
+        )
     if not provider_promotion_ready:
         production_promotion_status = "provider_promotion_review_pending"
     elif not local_promotion_review_visible:
@@ -5942,6 +6288,10 @@ def _freshness_durable_evidence_recipe(
         production_promotion_status = "local_release_gate_current_head_receipt_pending"
     elif not remote_ci_reviewed_green:
         production_promotion_status = "local_complete_remote_review_pending"
+    elif local_release_review_recorded and not local_release_review_complete:
+        production_promotion_status = "local_release_review_recorded_blockers_visible"
+    elif local_release_review_complete:
+        production_promotion_status = "local_release_review_complete_production_promotion_pending"
     else:
         production_promotion_status = "local_complete_release_review_pending"
     producer_coverage_status = (
@@ -6004,14 +6354,16 @@ def _freshness_durable_evidence_recipe(
         and local_release_gate_complete
     )
     remote_review_pending = bool(local_complete and not remote_ci_reviewed_green)
-    release_review_pending = bool(local_complete and remote_ci_reviewed_green)
+    release_review_pending = bool(local_complete and remote_ci_reviewed_green and not local_release_review_complete)
     strict_closeout_ready = False
     local_completion_status = "local_complete" if local_complete else "local_evidence_pending"
     remote_review_status = (
         "remote_review_pending"
         if remote_review_pending
         else "remote_review_green_release_review_pending"
-        if local_complete and remote_ci_reviewed_green
+        if local_complete and remote_ci_reviewed_green and not local_release_review_complete
+        else "remote_review_green_release_review_complete"
+        if local_complete and remote_ci_reviewed_green and local_release_review_complete
         else "remote_review_waiting_for_local_complete"
     )
     local_evidence_missing_items = []
@@ -6252,6 +6604,12 @@ def _freshness_durable_evidence_recipe(
                 "remote_review_pending": remote_review_pending,
                 "remote_review_status": remote_review_status,
                 "release_review_pending": release_review_pending,
+                "local_release_review_visible": local_release_review_visible,
+                "local_release_review_recorded": local_release_review_recorded,
+                "local_release_review_complete": local_release_review_complete,
+                "local_release_review_status": local_release_review_status,
+                "local_release_review_task_id": local_release_review_task_id,
+                "local_release_review_blocking_row_count": local_release_review_blocking_row_count,
                 "strict_closeout_ready": strict_closeout_ready,
                 "provider_promotion_ready": provider_promotion_ready,
                 "provider_backed_acceptance_promotion_marker_done": provider_promotion_ready,
@@ -6317,6 +6675,12 @@ def _freshness_durable_evidence_recipe(
         "remote_review_pending_count": remote_review_pending_count,
         "release_review_pending": release_review_pending,
         "release_review_pending_count": release_review_pending_count,
+        "local_release_review_visible": local_release_review_visible,
+        "local_release_review_recorded": local_release_review_recorded,
+        "local_release_review_complete": local_release_review_complete,
+        "local_release_review_status": local_release_review_status,
+        "local_release_review_task_id": local_release_review_task_id,
+        "local_release_review_blocking_row_count": local_release_review_blocking_row_count,
         "strict_closeout_ready": strict_closeout_ready,
         "durable_evidence_complete": False,
         "durable_promotion_ready": False,
@@ -6364,6 +6728,7 @@ def _freshness_durable_evidence_recipe(
         "local_promotion_review_calls_provider": False,
         "local_promotion_review_is_not_production_completion": True,
         "production_promotion_review_done": local_promotion_review_ready_for_release,
+        "production_release_review_done": local_release_review_complete,
         "feature_boundary": "stale_expired_historical_unknown_remain_research_only_until_direct_provider_evidence",
         "allowed_next_step": (
             "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence"
@@ -6379,6 +6744,10 @@ def _freshness_durable_evidence_recipe(
             )
             else "review_remote_ci_then_user_release_decision_before_production_freshness_promotion"
             if not remote_ci_reviewed_green
+            else "close_local_durable_evidence_blockers_then_rerun_release_review"
+            if local_release_review_recorded and not local_release_review_complete
+            else "separate_user_authorized_production_freshness_promotion_review"
+            if local_release_review_complete
             else "user_release_review_before_setting_production_freshness_gate_complete"
         ),
         "not_allowed_next_steps": [
@@ -6592,6 +6961,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         latest_trade_cal_provider_acceptance_promotion_review_rows,
     ) = _latest_trade_cal_provider_acceptance_promotion_review_from_tasks()
     (
+        latest_trade_cal_provider_acceptance_release_review,
+        latest_trade_cal_provider_acceptance_release_review_rows,
+    ) = _latest_trade_cal_provider_acceptance_release_review_from_tasks()
+    (
         latest_producer_cache_refresh_execution_request,
         latest_producer_cache_refresh_execution_request_rows,
     ) = _latest_producer_cache_refresh_execution_request_from_tasks()
@@ -6621,6 +6994,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         latest_producer_cache_refresh_rows=latest_producer_cache_refresh_rows,
         provider_promotion=trade_cal_provider_acceptance_promotion_audit,
         latest_promotion_review=latest_trade_cal_provider_acceptance_promotion_review,
+        latest_release_review=latest_trade_cal_provider_acceptance_release_review,
         local_release_gate_evidence=freshness_local_release_gate_evidence,
     )
     freshness_durable_evidence_rows = _as_list(freshness_durable_evidence_recipe.get("rows"))
@@ -6701,6 +7075,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_next_execution_recipe",
             "latest_trade_cal_provider_acceptance_execution_request",
             "latest_trade_cal_provider_acceptance_promotion_review",
+            "latest_trade_cal_provider_acceptance_release_review",
             "latest_producer_cache_refresh_execution_request",
             "latest_producer_cache_refresh",
             "producer_cache_refresh_direct_evidence",
@@ -6769,6 +7144,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         ),
         "latest_trade_cal_provider_acceptance_promotion_review_rows": (
             latest_trade_cal_provider_acceptance_promotion_review_rows
+        ),
+        "latest_trade_cal_provider_acceptance_release_review": (
+            latest_trade_cal_provider_acceptance_release_review
+        ),
+        "latest_trade_cal_provider_acceptance_release_review_rows": (
+            latest_trade_cal_provider_acceptance_release_review_rows
         ),
         "latest_producer_cache_refresh_execution_request": (
             latest_producer_cache_refresh_execution_request
@@ -6896,6 +7277,15 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             ),
             "latest_trade_cal_provider_acceptance_promotion_review_row_count": len(
                 latest_trade_cal_provider_acceptance_promotion_review_rows
+            ),
+            "latest_trade_cal_provider_acceptance_release_review_found": (
+                1 if latest_trade_cal_provider_acceptance_release_review.get("latest_task_found") is True else 0
+            ),
+            "latest_trade_cal_provider_acceptance_release_review_row_count": len(
+                latest_trade_cal_provider_acceptance_release_review_rows
+            ),
+            "latest_trade_cal_provider_acceptance_release_review_blocking_row_count": int(
+                latest_trade_cal_provider_acceptance_release_review.get("blocking_row_count") or 0
             ),
             "latest_trade_cal_provider_acceptance_promotion_review_blocking_row_count": int(
                 latest_trade_cal_provider_acceptance_promotion_review.get("blocking_row_count") or 0
@@ -7772,6 +8162,112 @@ def run_trade_cal_provider_acceptance_promotion_review(payload: Any = None) -> d
         output_packet_key=PACKET_KEY,
         call_ledger=ledger,
         warning="trade_cal_provider_acceptance_promotion_review_completed_no_external_call",
+    ) or task
+
+
+def run_trade_cal_provider_acceptance_release_review(payload: Any = None) -> dict[str, Any]:
+    cache = read_data_health_timeline_cache()
+    latest_promotion_review = _as_dict(cache.get("latest_trade_cal_provider_acceptance_promotion_review"))
+    durable_recipe = _as_dict(cache.get("freshness_durable_evidence_recipe"))
+    local_release_gate = _as_dict(cache.get("freshness_local_release_gate_evidence"))
+    payload_safe = _trade_cal_release_review_payload_safe(
+        payload,
+        latest_promotion_review=latest_promotion_review,
+        durable_recipe=durable_recipe,
+        local_release_gate=local_release_gate,
+    )
+    receipt, rows = _build_trade_cal_provider_acceptance_release_review(
+        payload_safe,
+        latest_promotion_review=latest_promotion_review,
+        durable_recipe=durable_recipe,
+        local_release_gate=local_release_gate,
+    )
+    payload_safe.update(
+        {
+            "trade_cal_provider_acceptance_release_review_receipt": receipt,
+            "trade_cal_provider_acceptance_release_review_rows": rows,
+            "release_review_only": True,
+            "creates_provider_task": False,
+            "provider_execution_implemented": False,
+            "provider_task_executed_by_review": False,
+            "production_freshness_gate_complete": False,
+            "strict_closeout_ready": False,
+        }
+    )
+    task = task_service.create_task_record(
+        TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload_safe,
+        current_step="trade_cal_provider_acceptance_release_review_local_only",
+        warnings=[
+            "trade_cal provider release review 只保存本地审查收据，不调用 Tushare。",
+            "release review 不创建 provider task，不查 GitHub，不把 blocker 状态提升为生产完成。",
+            "release review 不写 Parquet、不执行真实交易、不修改 strategy action。",
+        ],
+    )
+    now = _now_iso()
+    ledger = [
+        {
+            "api": "local_trade_cal_provider_acceptance_release_review",
+            "endpoint": TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_ROUTE,
+            "request_params_safe": {
+                "release_review_status": receipt["status"],
+                "release_review_recorded": receipt["release_review_recorded"],
+                "release_review_complete": receipt["release_review_complete"],
+                "latest_promotion_review_task_id": receipt["latest_promotion_review_task_id"],
+                "local_release_gate_complete": receipt["local_release_gate_complete"],
+                "latest_remote_run_verified_green": receipt["latest_remote_run_verified_green"],
+                "durable_local_complete": receipt["durable_local_complete"],
+                "blocking_row_count": receipt["blocking_row_count"],
+                "creates_provider_task": False,
+                "provider_execution_implemented": False,
+                "production_freshness_gate_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": now[:10],
+            "local_fetched_at": now,
+            "call_status": str(
+                receipt.get("status") or "trade_cal_provider_acceptance_release_review_recorded_no_provider_call"
+            ),
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+    status_to_step = {
+        "trade_cal_provider_acceptance_release_review_blocked_user_confirmation_required": (
+            "trade_cal_release_review_blocked_user_confirmation_required_no_provider_call"
+        ),
+        "trade_cal_provider_acceptance_release_review_blocked_promotion_review_pending": (
+            "trade_cal_release_review_blocked_promotion_review_pending_no_provider_call"
+        ),
+        "trade_cal_provider_acceptance_release_review_blocked_release_gate_or_remote_ci": (
+            "trade_cal_release_review_blocked_release_gate_or_remote_ci_no_provider_call"
+        ),
+        "trade_cal_provider_acceptance_release_review_recorded_blockers_visible": (
+            "trade_cal_release_review_recorded_blockers_visible_no_provider_call"
+        ),
+        "trade_cal_provider_acceptance_release_review_ready_for_production_freshness_promotion": (
+            "trade_cal_release_review_ready_for_production_freshness_promotion_no_provider_call"
+        ),
+    }
+    current_step = status_to_step.get(
+        str(receipt.get("status") or ""),
+        "trade_cal_release_review_recorded_no_provider_call",
+    )
+    return task_service.update_task_status(
+        str(task.get("task_id") or ""),
+        status="success",
+        progress=1.0,
+        current_step=current_step,
+        output_packet_key=PACKET_KEY,
+        call_ledger=ledger,
+        warning="trade_cal_provider_acceptance_release_review_completed_no_external_call",
     ) or task
 
 

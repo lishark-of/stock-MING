@@ -797,6 +797,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "receipt_key": "trade_cal_provider_acceptance_promotion_review_receipt",
             "route": "POST /api/data-health/trade-cal-provider-acceptance-promotion-review",
         },
+        {
+            "phase_key": "trade_cal_release_review_receipt",
+            "task_type": "run_trade_cal_provider_acceptance_release_review",
+            "receipt_key": "trade_cal_provider_acceptance_release_review_receipt",
+            "route": "POST /api/data-health/trade-cal-provider-acceptance-release-review",
+        },
     ],
     "p2_tushare_target_sample_acceptance": [
         {
@@ -9127,6 +9133,13 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "trade_cal_execution_request_ticket",
             "required_prior_material": "latest_task_id",
         },
+        "POST /api/data-health/trade-cal-provider-acceptance-release-review": {
+            "step_kind": "local_release_review",
+            "safe_payload_summary": "approved_by_user plus latest promotion review; local receipt only",
+            "expected_local_receipt": "trade_cal_provider_acceptance_release_review_receipt",
+            "required_prior_phase_key": "trade_cal_promotion_review_receipt",
+            "required_prior_material": "receipt_local_ready",
+        },
         "POST /api/tasks/tushare-provider-target-sample-execution-request": {
             "step_kind": "manual_scope_bound_execution_request",
             "safe_payload_summary": "operator_approved, selected target sample APIs, ts_code, and execution_recipe_scope_hash",
@@ -10118,6 +10131,9 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
     latest_promotion_review = _dict_or_empty(
         packet_map.get("latest_trade_cal_provider_acceptance_promotion_review")
     )
+    latest_release_review = _dict_or_empty(
+        packet_map.get("latest_trade_cal_provider_acceptance_release_review")
+    )
     durable_blocking_evidence_keys = [
         str(item) for item in durable_recipe.get("blocking_evidence_keys") or [] if str(item)
     ]
@@ -10141,8 +10157,18 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
     promotion_review_ready = (
         latest_promotion_review.get("ready_for_production_freshness_release_review") is True
     )
+    release_review_found = latest_release_review.get("latest_task_found") is True
+    release_review_recorded = latest_release_review.get("release_review_recorded") is True
+    release_review_complete = latest_release_review.get("release_review_complete") is True
     next_step = (
-        "release_review_after_matching_remote_ci_green"
+        "separate_user_authorized_production_freshness_promotion_review"
+        if release_review_complete
+        else str(
+            _dict_or_empty(latest_release_review.get("receipt")).get("allowed_next_step")
+            or "close_local_durable_evidence_blockers_then_rerun_release_review"
+        )
+        if release_review_found and release_review_recorded
+        else "POST /api/data-health/trade-cal-provider-acceptance-release-review"
         if promotion_review_found and promotion_review_ready
         else "POST /api/data-health/trade-cal-provider-acceptance-promotion-review"
         if provider_evidence_visible and promotion_ready
@@ -10153,7 +10179,11 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         else "POST /api/data-health/trade-cal-provider-acceptance-dry-run"
     )
     status = (
-        "provider_acceptance_promotion_review_ready_for_release_review"
+        "provider_acceptance_release_review_ready_for_production_freshness_promotion"
+        if release_review_complete
+        else "provider_acceptance_release_review_recorded_blockers_visible"
+        if release_review_found and release_review_recorded
+        else "provider_acceptance_promotion_review_ready_for_release_review"
         if promotion_review_found and promotion_review_ready
         else "prior_provider_acceptance_evidence_visible_promotion_review_needed"
         if provider_evidence_visible and promotion_ready
@@ -10267,6 +10297,19 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         "latest_promotion_review_ready_for_release": promotion_review_ready,
         "latest_promotion_review_status": latest_promotion_review.get("status") or "missing",
         "latest_promotion_review_task_id": latest_promotion_review.get("latest_task_id") or "",
+        "latest_release_review_found": release_review_found,
+        "latest_release_review_recorded": release_review_recorded,
+        "latest_release_review_complete": release_review_complete,
+        "latest_release_review_status": latest_release_review.get("release_review_status")
+        or latest_release_review.get("status")
+        or "missing",
+        "latest_release_review_task_id": latest_release_review.get("latest_task_id") or "",
+        "latest_release_review_blocking_row_count": int(
+            latest_release_review.get("blocking_row_count") or 0
+        ),
+        "latest_release_review_blocking_phases": list(
+            latest_release_review.get("blocking_phases") or []
+        ),
         "requires_explicit_provider_trade_cal_task": (
             provider_acceptance_evidence_missing
             or "explicit_provider_trade_cal_task" in durable_blocking_evidence_keys
@@ -10287,6 +10330,8 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
             "current_evidence_producer_coverage" in durable_blocking_evidence_keys
         ),
         "requires_user_release_review_before_closeout": (
+            not release_review_complete
+            and
             "release review that production_freshness_gate_complete may become true"
             in missing_durable_evidence_items
         ),
@@ -10313,9 +10358,12 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         "latest_promotion_review_row_count": int(
             counts.get("latest_trade_cal_provider_acceptance_promotion_review_row_count") or 0
         ),
+        "latest_release_review_row_count": int(
+            counts.get("latest_trade_cal_provider_acceptance_release_review_row_count") or 0
+        ),
         "next_local_step": next_step,
         "requires_promotion_review_task": not promotion_review_found,
-        "requires_release_review_after_remote_green": True,
+        "requires_release_review_after_remote_green": not release_review_complete,
         "cache_get_creates_task": False,
         "cache_get_calls_provider": False,
         "creates_provider_task_from_get": False,

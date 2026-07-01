@@ -3201,7 +3201,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             action_rows["p1_trade_cal_provider_acceptance"]["next_local_step"],
             "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
         )
-        self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 3)
+        self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 4)
         p1_producer_handoff = action_rows["p1_trade_cal_provider_acceptance"][
             "supporting_current_evidence_producer_cache_refresh_handoff"
         ]
@@ -20894,7 +20894,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 86)
+        self.assertEqual(catalog["task_count"], 87)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -20913,7 +20913,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 86)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 87)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -20947,8 +20947,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 88)
-        self.assertEqual(route_coverage["task_creation_route_count"], 86)
+        self.assertEqual(route_coverage["known_post_route_count"], 89)
+        self.assertEqual(route_coverage["task_creation_route_count"], 87)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -20957,11 +20957,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 86)
+        self.assertEqual(implementation_status["task_count"], 87)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 81)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 82)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 82)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 83)
         self.assertEqual(implementation_status["external_capable_task_count"], 9)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -20977,6 +20977,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_tushare_provider_target_sample_failure_window_review",
                 "run_trade_cal_provider_acceptance_execution_request",
                 "run_trade_cal_provider_acceptance_promotion_review",
+                "run_trade_cal_provider_acceptance_release_review",
                 "run_current_evidence_producer_cache_refresh_execution_request",
                 "run_current_evidence_producer_cache_refresh",
                 "refresh_factor_data",
@@ -21064,6 +21065,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_tushare_provider_target_sample_failure_window_review",
                 "run_trade_cal_provider_acceptance_execution_request",
                 "run_trade_cal_provider_acceptance_promotion_review",
+                "run_trade_cal_provider_acceptance_release_review",
                 "run_current_evidence_producer_cache_refresh_execution_request",
                 "run_current_evidence_producer_cache_refresh",
                 "refresh_factor_data",
@@ -21161,6 +21163,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/data-health/trade-cal-provider-acceptance-promotion-review",
+            route_coverage["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/data-health/trade-cal-provider-acceptance-release-review",
             route_coverage["known_post_routes"],
         )
         self.assertIn(
@@ -21284,6 +21290,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(by_type["run_trade_cal_provider_acceptance_promotion_review"]["does_not_execute_trades"])
         self.assertTrue(
             by_type["run_trade_cal_provider_acceptance_promotion_review"]["does_not_modify_strategy_action"]
+        )
+        self.assertEqual(
+            by_type["run_trade_cal_provider_acceptance_release_review"]["route"],
+            "POST /api/data-health/trade-cal-provider-acceptance-release-review",
+        )
+        self.assertEqual(
+            by_type["run_trade_cal_provider_acceptance_release_review"]["current_backend"],
+            "local_trade_cal_acceptance_release_review_pipeline",
+        )
+        self.assertEqual(
+            by_type["run_trade_cal_provider_acceptance_release_review"]["external_call_policy"],
+            "local_trade_cal_acceptance_release_review_no_external_call",
+        )
+        self.assertEqual(by_type["run_trade_cal_provider_acceptance_release_review"]["possible_external_sources"], [])
+        self.assertTrue(by_type["run_trade_cal_provider_acceptance_release_review"]["local_release_review_only"])
+        self.assertTrue(by_type["run_trade_cal_provider_acceptance_release_review"]["requires_matching_remote_ci_green"])
+        self.assertFalse(by_type["run_trade_cal_provider_acceptance_release_review"]["creates_provider_task"])
+        self.assertFalse(by_type["run_trade_cal_provider_acceptance_release_review"]["provider_execution_implemented"])
+        self.assertFalse(by_type["run_trade_cal_provider_acceptance_release_review"]["production_freshness_gate_complete"])
+        self.assertFalse(by_type["run_trade_cal_provider_acceptance_release_review"]["cache_get_external_calls"])
+        self.assertFalse(
+            by_type["run_trade_cal_provider_acceptance_release_review"][
+                "react_render_direct_provider_calls"
+            ]
+        )
+        self.assertTrue(by_type["run_trade_cal_provider_acceptance_release_review"]["call_ledger_required"])
+        self.assertTrue(by_type["run_trade_cal_provider_acceptance_release_review"]["does_not_execute_trades"])
+        self.assertTrue(
+            by_type["run_trade_cal_provider_acceptance_release_review"]["does_not_modify_strategy_action"]
         )
         self.assertEqual(
             by_type["run_tushare_deepseek_linkage_review"]["route"],
@@ -23383,16 +23418,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 81)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 82)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 82)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 83)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 81)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 82)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 82)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 83)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -24267,9 +24302,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 81)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 82)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 82)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 83)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -24493,9 +24528,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 81)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 82)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 82)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 83)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 9)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -24528,9 +24563,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 81)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 82)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 82)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 83)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -39933,7 +39968,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("P0", runway_rows["LTG-11"]["priority"])
         self.assertIn("P10", runway_rows["LTG-12"]["priority"])
         self.assertIn("LTG-01", action_rows["p1_trade_cal_provider_acceptance"]["ltg_ids"])
-        self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 3)
+        self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 4)
         self.assertIn("LTG-04", action_rows["p3_factor_universe_worker_batch_research"]["ltg_ids"])
         self.assertEqual(action_rows["p3_factor_universe_worker_batch_research"]["local_receipt_step_count"], 5)
         self.assertEqual(
@@ -41789,7 +41824,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 86)
+        self.assertEqual(task_catalog["data"]["task_count"], 87)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -52148,16 +52183,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         p1_row = {
             row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]
         }["p1_trade_cal_provider_acceptance"]
-        self.assertEqual(p1_row["next_local_step"], "POST /api/tasks/refresh-tushare-facts")
-        self.assertFalse(p1_row["next_local_step_ready_for_clean_receipt"])
-        p1_preview = p1_row["next_local_step_preview_rows"][0]
-        self.assertEqual(p1_preview["step_kind"], "future_provider_handoff_requires_explicit_approval")
         self.assertEqual(
-            p1_preview["disabled_reason"],
-            "requires_separate_user_approved_provider_task",
+            p1_row["next_local_step"],
+            "POST /api/data-health/trade-cal-provider-acceptance-release-review",
         )
-        self.assertTrue(p1_preview["requires_separate_user_approved_provider_task"])
-        self.assertFalse(p1_preview["would_create_provider_task"])
+        self.assertTrue(p1_row["next_local_step_ready_for_clean_receipt"])
+        p1_preview = p1_row["next_local_step_preview_rows"][0]
+        self.assertEqual(p1_preview["step_kind"], "local_release_review")
+        self.assertEqual(p1_preview["disabled_reason"], "")
+        self.assertFalse(p1_preview.get("requires_separate_user_approved_provider_task", False))
+        self.assertFalse(p1_preview.get("would_create_provider_task", False))
         self.assertFalse(p1_preview["external_calls_triggered"])
         self.assertFalse(p1_preview["tushare_called"])
         self.assertTrue(p1_preview["does_not_execute_trades"])
@@ -52353,6 +52388,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "latest_task_id": "local-test-promotion-review",
                 "blocking_row_count": 0,
             },
+            latest_release_review={"latest_task_found": False},
             local_release_gate_evidence={
                 "status": "freshness_local_release_gate_observed_remote_ci_reviewed_release_review_pending",
                 "fresh_local_gate_run_observed": True,
@@ -52410,6 +52446,77 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(recipe["github_called"])
         self.assertTrue(recipe["does_not_execute_trades"])
         self.assertTrue(recipe["does_not_modify_strategy_action"])
+
+    def test_trade_cal_release_review_records_local_blockers_without_external_calls(self):
+        latest_promotion_review = {
+            "latest_task_found": True,
+            "receipt_visible": True,
+            "latest_task_id": "local-promotion-review",
+            "promotion_review_status": "trade_cal_provider_acceptance_promotion_review_ready_for_release_review",
+            "promotion_review_ready_for_release": True,
+            "ready_for_production_freshness_release_review": True,
+        }
+        durable_recipe = {
+            "status": "freshness_durable_evidence_recipe_ready_provider_pending",
+            "local_complete": False,
+            "local_release_gate_complete": True,
+            "latest_remote_run_verified_green": True,
+            "remote_review_status": "remote_review_waiting_for_local_complete",
+            "local_evidence_missing_items": [
+                "current-evidence producer coverage local cache-refresh direct evidence",
+            ],
+            "missing_evidence_items": [
+                "current cache producer expected_trade_date/data_date/freshness_state coverage",
+                "release review that production_freshness_gate_complete may become true",
+            ],
+            "blocking_evidence_keys": ["current_evidence_producer_coverage", "production_promotion_review"],
+        }
+        local_release_gate = {
+            "status": "freshness_local_release_gate_observed_remote_ci_reviewed_release_review_pending",
+            "latest_remote_run_verified_green": True,
+        }
+        payload_safe = data_health_service._trade_cal_release_review_payload_safe(
+            {"approved_by_user": True, "token": "SHOULD_DROP"},
+            latest_promotion_review=latest_promotion_review,
+            durable_recipe=durable_recipe,
+            local_release_gate=local_release_gate,
+        )
+        receipt, rows = data_health_service._build_trade_cal_provider_acceptance_release_review(
+            payload_safe,
+            latest_promotion_review=latest_promotion_review,
+            durable_recipe=durable_recipe,
+            local_release_gate=local_release_gate,
+        )
+        rows_by_phase = {row["phase"]: row for row in rows}
+
+        self.assertEqual(
+            receipt["schema_version"],
+            "data_health_trade_cal_provider_acceptance_release_review.v1",
+        )
+        self.assertEqual(
+            receipt["status"],
+            "trade_cal_provider_acceptance_release_review_recorded_blockers_visible",
+        )
+        self.assertTrue(receipt["release_review_recorded"])
+        self.assertFalse(receipt["release_review_complete"])
+        self.assertFalse(receipt["ready_for_production_freshness_promotion"])
+        self.assertFalse(receipt["production_freshness_gate_complete"])
+        self.assertEqual(
+            receipt["allowed_next_step"],
+            "close_local_durable_evidence_blockers_then_rerun_release_review",
+        )
+        self.assertIn("local_durable_evidence_complete", receipt["blocking_phases"])
+        self.assertEqual(
+            rows_by_phase["local_durable_evidence_complete"]["status"],
+            "blocked_local_durable_evidence_pending",
+        )
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(receipt, ensure_ascii=False))
 
     def test_data_health_reads_persisted_tushare_trade_cal_acceptance_packet_without_snapshot_ledger(self):
         if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
