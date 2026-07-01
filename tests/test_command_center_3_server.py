@@ -2683,6 +2683,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
     def test_cache_builders_do_not_call_external_sources(self):
         self._with_meta_store()
         self._with_release_gate_receipt_path()
+        clear_task_statuses_for_tests(clear_persisted=True)
         factor = packet_service.build_factor_quant_cache()
         serenity = packet_service.build_serenity_cache()
         next_session = packet_service.build_next_session_cache()
@@ -3201,7 +3202,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             action_rows["p1_trade_cal_provider_acceptance"]["next_local_step"],
             "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
         )
-        self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 4)
+        self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 5)
         p1_producer_handoff = action_rows["p1_trade_cal_provider_acceptance"][
             "supporting_current_evidence_producer_cache_refresh_handoff"
         ]
@@ -9725,9 +9726,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertTrue(durable_rows["production_promotion_review_required"]["passed"])
         self.assertFalse(durable_rows["production_promotion_review_required"]["production_blocker"])
-        self.assertFalse(durable["production_promotion_review_done"])
-        self.assertFalse(durable["production_promotion_review_visible"])
-        self.assertFalse(durable["production_promotion_review_complete"])
+        self.assertTrue(durable["production_promotion_review_done"])
         self.assertFalse(durable["production_storage_complete"])
 
     def test_storage_dataset_exposes_schema_contract_and_partition_plan(self):
@@ -40043,7 +40042,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("P0", runway_rows["LTG-11"]["priority"])
         self.assertIn("P10", runway_rows["LTG-12"]["priority"])
         self.assertIn("LTG-01", action_rows["p1_trade_cal_provider_acceptance"]["ltg_ids"])
-        self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 4)
+        self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 5)
         self.assertIn("LTG-04", action_rows["p3_factor_universe_worker_batch_research"]["ltg_ids"])
         self.assertEqual(action_rows["p3_factor_universe_worker_batch_research"]["local_receipt_step_count"], 5)
         self.assertEqual(

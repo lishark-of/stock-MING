@@ -11067,7 +11067,12 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 supporting_trade_cal_provider_acceptance_evidence_handoff.get("next_local_step")
                 or ""
             )
-            if handoff_next_step:
+            if (
+                handoff_next_step
+                == "POST /api/data-health/trade-cal-provider-acceptance-production-promotion-review"
+                or supporting_trade_cal_provider_acceptance_evidence_handoff.get("strict_closeout_ready")
+                is True
+            ):
                 next_local_step = handoff_next_step
                 local_status = (
                     "local_trade_cal_handoff_strict_closeout_ready"
