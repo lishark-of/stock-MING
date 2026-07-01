@@ -21,6 +21,9 @@ TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE = (
 TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY = (
     "provider_target_sample_failure_window_review_receipt"
 )
+TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY = (
+    "command_center_tushare_provider_target_sample_failure_window_review_packet"
+)
 
 
 MIGRATION_PROGRESS_BASELINE = [
@@ -10599,6 +10602,54 @@ def _latest_tushare_target_sample_failure_window_review_summary() -> dict[str, A
             "contains_secret": False,
             "production_tushare_pipeline_complete": False,
             "evidence_boundary": "local_review_task_reads_existing_provider_ledger_without_new_provider_call",
+        }
+    try:
+        packet = packet_service.read_packet(TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY)
+    except Exception:
+        packet = {}
+    packet_map = _dict_or_empty(packet)
+    receipt = _dict_or_empty(packet_map.get("receipt"))
+    if receipt:
+        rows = packet_map.get("rows")
+        row_list = rows if isinstance(rows, list) else receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
+        return {
+            "schema_version": "ltg02_tushare_target_sample_failure_window_review_summary.v1",
+            "latest_task_found": True,
+            "latest_task_id": f"packet:{TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY}",
+            "latest_task_status": "success",
+            "latest_task_current_step": "tushare_provider_target_sample_failure_window_review_packet_readback",
+            "latest_task_storage_source": "sqlite_meta_packet",
+            "receipt_durable_in_sqlite": True,
+            "receipt_status": str(receipt.get("status") or ""),
+            "provider_task_found": receipt.get("provider_task_found") is True,
+            "provider_task_id": str(receipt.get("provider_task_id") or ""),
+            "provider_call_ledger_count": int(receipt.get("provider_call_ledger_count") or 0),
+            "provider_row_count": int(receipt.get("provider_row_count") or 0),
+            "provider_success_count": int(receipt.get("provider_success_count") or 0),
+            "provider_empty_count": int(receipt.get("provider_empty_count") or 0),
+            "provider_failed_count": int(receipt.get("provider_failed_count") or 0),
+            "reviewed_target_count": int(receipt.get("reviewed_target_count") or 0),
+            "ready_target_count": int(receipt.get("ready_target_count") or 0),
+            "blocked_target_count": int(receipt.get("blocked_target_count") or 0),
+            "blocking_criterion_count": int(receipt.get("blocking_criterion_count") or 0),
+            "ready_for_target_sample_acceptance_rerun": (
+                receipt.get("ready_for_target_sample_acceptance_rerun") is True
+            ),
+            "target_sample_acceptance_ready_for_review": (
+                receipt.get("target_sample_acceptance_ready_for_review") is True
+            ),
+            "allowed_next_step": str(receipt.get("allowed_next_step") or ""),
+            "row_count": len(row_list),
+            "rows_visible": bool(row_list),
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "production_tushare_pipeline_complete": False,
+            "evidence_boundary": "local_review_packet_readback_no_new_provider_call",
         }
     return {
         "schema_version": "ltg02_tushare_target_sample_failure_window_review_summary.v1",

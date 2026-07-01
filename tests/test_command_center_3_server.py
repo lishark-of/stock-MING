@@ -15186,6 +15186,135 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(latest_policy["tushare_provider_target_sample_execution_request_requires_bound_scope_hash"])
         self.assertNotIn("SHOULD_DROP", json.dumps(data_health_cache, ensure_ascii=False))
 
+    def test_tushare_provider_target_sample_execution_request_readback_uses_persisted_packet(self):
+        db_path = self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        receipt = {
+            "schema_version": "tushare_provider_target_sample_execution_request.v1",
+            "status": "target_sample_execution_request_ready_manual_provider_task_pending",
+            "route": "POST /api/tasks/tushare-provider-target-sample-execution-request",
+            "task_type": "run_tushare_provider_target_sample_execution_request",
+            "target_post_task_route": "POST /api/tasks/refresh-tushare-facts",
+            "target_task_type": "refresh_tushare_facts",
+            "target_acceptance_mode": "provider_target_sample_acceptance",
+            "latest_execution_recipe_status": "target_sample_execution_recipe_ready_user_confirmation_required",
+            "latest_execution_recipe_ready_for_user_confirmation": True,
+            "latest_execution_recipe_scope_hash_short": "scope-ready",
+            "requested_execution_recipe_scope_hash_short": "scope-ready",
+            "execution_recipe_scope_hash_matches_latest": True,
+            "operator_confirmation_recorded": True,
+            "requested_targets": ["margin_financing"],
+            "selected_apis": ["margin_detail"],
+            "blocking_criterion_count": 0,
+            "local_execution_request_ready": True,
+            "ready_for_manual_provider_task_submission": True,
+            "creates_provider_task": False,
+            "provider_task_created": False,
+            "provider_task_executed_by_request": False,
+            "provider_execution_implemented": False,
+            "provider_call_ledger_evidence_done": False,
+            "provider_backed_target_sample_acceptance_done": False,
+            "full_interface_acceptance_done": False,
+            "production_tushare_pipeline_complete": False,
+            "cache_get_external_calls": False,
+            "react_render_external_calls": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "call_ledger": [
+                {
+                    "api": "local_tushare_provider_target_sample_execution_request",
+                    "row_count": 1,
+                    "call_status": "local_execution_request_provider_task_pending",
+                    "external": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                }
+            ],
+        }
+        rows = [
+            {
+                "criterion": "provider_task_still_pending",
+                "status": "passed",
+                "blocking": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ]
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_tushare_provider_target_sample_execution_request_packet",
+            {
+                "packet_key": "command_center_tushare_provider_target_sample_execution_request_packet",
+                "schema_version": "command_center_tushare_provider_target_sample_execution_request_packet.v1",
+                "status": receipt["status"],
+                "task_type": "run_tushare_provider_target_sample_execution_request",
+                "receipt": receipt,
+                "rows": rows,
+                "local_execution_request_ready": True,
+                "ready_for_manual_provider_task_submission": True,
+                "provider_execution_implemented": False,
+                "provider_task_executed_by_request": False,
+                "provider_backed_target_sample_acceptance_done": False,
+                "full_interface_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "call_ledger": receipt["call_ledger"],
+            },
+        )
+
+        data_health_cache = data_health_service.read_data_health_timeline_cache()
+        latest = data_health_cache["latest_tushare_provider_target_sample_execution_request"]
+        latest_rows = data_health_cache["latest_tushare_provider_target_sample_execution_request_rows"]
+        latest_counts = data_health_cache["counts"]
+
+        self.assertEqual(latest["status"], "latest_tushare_provider_target_sample_execution_request_visible")
+        self.assertEqual(latest["scope"], "local_sqlite_packet_lookup_no_provider_execution")
+        self.assertTrue(latest["latest_task_found"])
+        self.assertEqual(
+            latest["latest_task_id"],
+            "packet:command_center_tushare_provider_target_sample_execution_request_packet",
+        )
+        self.assertTrue(latest["receipt_visible"])
+        self.assertEqual(latest["execution_request_status"], receipt["status"])
+        self.assertTrue(latest["local_execution_request_ready"])
+        self.assertTrue(latest["ready_for_manual_provider_task_submission"])
+        self.assertTrue(latest["execution_recipe_scope_hash_matches_latest"])
+        self.assertFalse(latest["creates_provider_task"])
+        self.assertFalse(latest["provider_task_executed_by_request"])
+        self.assertFalse(latest["provider_execution_implemented"])
+        self.assertFalse(latest["provider_backed_target_sample_acceptance_done"])
+        self.assertFalse(latest["full_interface_acceptance_done"])
+        self.assertFalse(latest["production_tushare_pipeline_complete"])
+        self.assertFalse(latest["cache_get_creates_task"])
+        self.assertFalse(latest["external_calls_triggered"])
+        self.assertFalse(latest["tushare_called"])
+        self.assertFalse(latest["deepseek_called"])
+        self.assertFalse(latest["github_called"])
+        self.assertTrue(latest["does_not_execute_trades"])
+        self.assertTrue(latest["does_not_modify_strategy_action"])
+        self.assertEqual(latest_counts["latest_tushare_provider_target_sample_execution_request_found"], 1)
+        self.assertEqual(latest_counts["latest_tushare_provider_target_sample_execution_request_row_count"], 1)
+        self.assertEqual(len(latest_rows), 1)
+
     def test_tushare_provider_target_sample_failure_review_reads_persisted_refresh_packet(self):
         db_path = self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -15268,6 +15397,86 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(task["tushare_called"])
         self.assertTrue(task["does_not_execute_trades"])
         self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+    def test_tushare_target_sample_handoff_reads_failure_review_packet(self):
+        db_path = self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        receipt = {
+            "schema_version": "tushare_provider_target_sample_failure_window_review.v1",
+            "status": "target_sample_failure_window_review_visible_blockers_recorded",
+            "provider_task_found": True,
+            "provider_task_id": "packet:command_center_tushare_refresh_packet",
+            "provider_call_ledger_count": 10,
+            "provider_row_count": 292,
+            "provider_success_count": 7,
+            "provider_empty_count": 3,
+            "provider_failed_count": 0,
+            "reviewed_target_count": 7,
+            "ready_target_count": 2,
+            "blocked_target_count": 5,
+            "blocking_criterion_count": 7,
+            "ready_for_target_sample_acceptance_rerun": False,
+            "target_sample_acceptance_ready_for_review": False,
+            "allowed_next_step": "add_target_sample_window_context_or_collect_failure_mode_evidence",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_tushare_provider_target_sample_failure_window_review_packet",
+            {
+                "packet_key": "command_center_tushare_provider_target_sample_failure_window_review_packet",
+                "schema_version": "command_center_tushare_provider_target_sample_failure_window_review_packet.v1",
+                "status": receipt["status"],
+                "task_type": "run_tushare_provider_target_sample_failure_window_review",
+                "receipt": receipt,
+                "rows": [
+                    {
+                        "target": "margin_financing",
+                        "review_status": "target_sample_failure_window_review_blocked",
+                        "review_blockers": ["failure_mode_evidence_missing"],
+                    }
+                ],
+                "provider_call_ledger_count": 10,
+                "provider_row_count": 292,
+                "blocking_criterion_count": 7,
+                "ready_for_target_sample_acceptance_rerun": False,
+                "provider_backed_target_sample_acceptance_done": False,
+                "full_interface_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            },
+        )
+
+        migration = migration_status_service.build_migration_status()
+        handoff = migration["ltg02_tushare_target_sample_evidence_handoff_summary"]
+
+        self.assertEqual(handoff["status"], "target_sample_failure_window_review_visible_followup_needed")
+        self.assertTrue(handoff["target_sample_failure_window_review_found"])
+        self.assertEqual(
+            handoff["target_sample_failure_window_review_task_id"],
+            "packet:command_center_tushare_provider_target_sample_failure_window_review_packet",
+        )
+        self.assertEqual(handoff["target_sample_failure_window_review_blocker_count"], 7)
+        self.assertEqual(handoff["target_sample_failure_window_review_provider_task_id"], receipt["provider_task_id"])
+        self.assertEqual(handoff["next_local_step"], receipt["allowed_next_step"])
+        self.assertFalse(handoff["provider_backed_target_sample_acceptance_done"])
+        self.assertFalse(handoff["production_tushare_pipeline_complete"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["tushare_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
 
     def test_tushare_provider_target_sample_execution_recipe_seed_prebinds_local_request(self):
         db_path = self._with_meta_store()

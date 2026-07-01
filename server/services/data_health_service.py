@@ -3819,6 +3819,44 @@ def _latest_tushare_provider_target_sample_execution_request_from_tasks() -> tup
         None,
     )
     if not latest_task:
+        try:
+            packet = SQLiteMetaStore(packet_service.SQLITE_META_PATH).read_packet(
+                "command_center_tushare_provider_target_sample_execution_request_packet"
+            )
+        except Exception:
+            packet = None
+        if isinstance(packet, Mapping) and packet.get("task_type") == (
+            tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE
+        ):
+            receipt = packet.get("receipt")
+            rows = packet.get("rows")
+            receipt_safe = _safe_value(receipt) if isinstance(receipt, Mapping) else {}
+            row_safe = _safe_value(rows) if isinstance(rows, list) else []
+            receipt_map = receipt_safe if isinstance(receipt_safe, dict) else {}
+            row_list = row_safe if isinstance(row_safe, list) else []
+            latest_task = {
+                "task_id": str(
+                    packet.get("task_id")
+                    or "packet:command_center_tushare_provider_target_sample_execution_request_packet"
+                ),
+                "task_type": packet.get("task_type"),
+                "status": "success" if receipt_map else packet.get("status"),
+                "current_step": "tushare_provider_target_sample_execution_request_packet_readback",
+                "created_at": packet.get("created_at"),
+                "updated_at": packet.get("updated_at"),
+                "finished_at": packet.get("finished_at"),
+                "storage_source": "sqlite_meta_packet",
+                "call_ledger": packet.get("call_ledger") or receipt_map.get("call_ledger") or [],
+                "task_log": [],
+                "readback_scope": "local_sqlite_packet_lookup_no_provider_execution",
+                "payload_safe": {
+                    "provider_target_sample_execution_request_receipt": receipt_map,
+                    "provider_target_sample_execution_request_rows": row_list,
+                },
+            }
+        else:
+            latest_task = None
+    if not latest_task:
         return (
             {
                 "schema_version": "data_health_latest_tushare_provider_target_sample_execution_request.v1",
@@ -3889,7 +3927,7 @@ def _latest_tushare_provider_target_sample_execution_request_from_tasks() -> tup
     latest_receipt = {
         "schema_version": "data_health_latest_tushare_provider_target_sample_execution_request.v1",
         "status": "latest_tushare_provider_target_sample_execution_request_visible",
-        "scope": "local_task_status_lookup_no_provider_execution",
+        "scope": latest_task.get("readback_scope") or "local_task_status_lookup_no_provider_execution",
         "latest_task_found": True,
         "receipt_visible": bool(receipt_map),
         "route": tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_ROUTE,
