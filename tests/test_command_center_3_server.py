@@ -14801,8 +14801,6 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "end_date": "20260610",
                 "acceptance_mode": "provider_target_sample_acceptance",
                 "target_sample_acceptance_groups": ["margin_financing"],
-                "failure_modes_validated": True,
-                "failure_mode_validated_count": 6,
                 "api_key": "SHOULD_DROP",
             },
             adapter=TargetSampleFakeAdapter(),
@@ -14854,6 +14852,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(rows["margin_financing"]["requested_for_acceptance"])
         self.assertEqual(rows["margin_financing"]["selected_apis"], ["margin_detail"])
         self.assertEqual(rows["margin_financing"]["non_empty_success_apis"], ["margin_detail"])
+        self.assertFalse(rows["margin_financing"]["target_failure_mode_evidence_required"])
+        self.assertTrue(rows["margin_financing"]["failure_modes_validated"])
+        self.assertFalse(rows["margin_financing"]["global_failure_modes_validated"])
         self.assertEqual(rows["margin_financing"]["target_sample_acceptance_blocker_count"], 0)
         self.assertEqual(rows["trade_calendar"]["target_sample_acceptance_status"], "target_sample_acceptance_not_requested")
         self.assertFalse(rows["trade_calendar"]["provider_backed_acceptance_done"])
@@ -15329,7 +15330,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "schema_version": "command_center_tushare_refresh_task.v1",
                 "task_type": "refresh_tushare_facts",
                 "status": "success",
-                "selected_apis": ["top_list"],
+                "selected_apis": ["top_list", "margin_detail"],
                 "call_ledger": [
                     {
                         "api": "top_list",
@@ -15351,6 +15352,27 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                         "github_called": False,
                         "does_not_execute_trades": True,
                         "does_not_modify_strategy_action": True,
+                    },
+                    {
+                        "api": "margin_detail",
+                        "source": "tushare",
+                        "row_count": 1,
+                        "request_params_safe": {
+                            "ts_code": "002008.SZ",
+                            "trade_date": "20260610",
+                        },
+                        "data_date": "20260610",
+                        "local_fetched_at": "2026-06-10T10:01:00",
+                        "call_status": "success",
+                        "failure_mode": "none",
+                        "error_message_safe": "",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
                     }
                 ],
             },
@@ -15358,8 +15380,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         task = tushare_task_service.run_tushare_provider_target_sample_failure_window_review(
             {
-                "target_sample_acceptance_groups": ["dragon_tiger"],
-                "apis": ["top_list"],
+                "target_sample_acceptance_groups": ["dragon_tiger", "margin_financing"],
+                "apis": ["top_list", "margin_detail"],
                 "ts_code": "002008.SZ",
                 "trade_date": "20260610",
                 "token": "SHOULD_DROP",
@@ -15377,10 +15399,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "target_sample_failure_window_review_ready_for_target_acceptance_rerun",
         )
         self.assertEqual(receipt["provider_task_id"], "packet:command_center_tushare_refresh_packet")
-        self.assertEqual(receipt["provider_call_ledger_count"], 1)
+        self.assertEqual(receipt["provider_call_ledger_count"], 2)
+        self.assertEqual(receipt["provider_success_count"], 1)
         self.assertEqual(receipt["provider_empty_count"], 1)
-        self.assertEqual(receipt["requested_targets"], ["dragon_tiger"])
-        self.assertEqual(receipt["selected_apis"], ["top_list"])
+        self.assertEqual(receipt["requested_targets"], ["dragon_tiger", "margin_financing"])
+        self.assertEqual(receipt["selected_apis"], ["top_list", "margin_detail"])
         self.assertTrue(receipt["ready_for_target_sample_acceptance_rerun"])
         self.assertFalse(receipt["provider_backed_target_sample_acceptance_done"])
         self.assertFalse(receipt["full_interface_acceptance_done"])
@@ -15394,6 +15417,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(rows["dragon_tiger"]["review_status"], "target_sample_failure_window_review_ready")
         self.assertEqual(rows["dragon_tiger"]["validated_empty_apis"], ["top_list"])
         self.assertEqual(rows["dragon_tiger"]["failure_modes_observed"], ["empty_result_or_no_record"])
+        self.assertTrue(rows["dragon_tiger"]["failure_mode_evidence_required"])
+        self.assertEqual(rows["margin_financing"]["review_status"], "target_sample_failure_window_review_ready")
+        self.assertEqual(rows["margin_financing"]["non_empty_success_apis"], ["margin_detail"])
+        self.assertFalse(rows["margin_financing"]["failure_mode_evidence_required"])
+        self.assertEqual(rows["margin_financing"]["failure_modes_observed"], [])
         self.assertFalse(task["external_calls_triggered"])
         self.assertFalse(task["tushare_called"])
         self.assertTrue(task["does_not_execute_trades"])
@@ -15610,6 +15638,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "apis": ["margin_detail"],
                 "ts_code": "002008.SZ",
                 "trade_date": "20260610",
+                "failure_modes_validated": True,
+                "failure_mode_validated_count": 6,
+                "target_sample_failure_window_review_task_id": "local-review-task",
                 "token": "SHOULD_DROP",
             },
         ).json()
@@ -15623,6 +15654,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(request_receipt["execution_recipe_scope_hash_matches_latest"])
         self.assertEqual(request_receipt["selected_apis"], ["margin_detail"])
         self.assertEqual(request_receipt["requested_targets"], ["margin_financing"])
+        self.assertTrue(request_receipt["target_payload_safe"]["failure_modes_validated"])
+        self.assertEqual(request_receipt["target_payload_safe"]["failure_mode_validated_count"], 6)
+        self.assertEqual(
+            request_receipt["target_payload_safe"]["target_sample_failure_window_review_task_id"],
+            "local-review-task",
+        )
         self.assertFalse(request_receipt["creates_provider_task"])
         self.assertFalse(request_receipt["provider_execution_implemented"])
         self.assertFalse(request_receipt["external_calls_triggered"])

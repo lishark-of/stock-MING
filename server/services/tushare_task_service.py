@@ -1368,7 +1368,7 @@ def _provider_evidence_gap_audit(
             failure_mode_evidence_done
             or (
                 target_sample_acceptance_ready
-                and target_sample_acceptance_contract.get("failure_modes_validated") is True
+                and target_sample_acceptance_row.get("failure_modes_validated") is True
             )
         )
         rows.append(
@@ -2610,6 +2610,15 @@ def _provider_target_sample_execution_request_receipt(
     for key in ("ts_code", "trade_date", "start_date", "end_date", "ann_date", "period", "float_date", "limit_type"):
         if payload_safe.get(key) not in (None, ""):
             target_payload_safe[key] = payload_safe.get(key)
+    for key in (
+        "failure_modes_validated",
+        "failure_mode_validated_count",
+        "target_sample_failure_modes_validated",
+        "target_sample_failure_mode_validated_count",
+        "target_sample_failure_window_review_task_id",
+    ):
+        if payload_safe.get(key) not in (None, ""):
+            target_payload_safe[key] = payload_safe.get(key)
 
     checks = [
         (
@@ -3040,7 +3049,8 @@ def _target_sample_failure_window_review_receipt(
             blockers.append("sample_evidence_missing")
         if requested and missing_context_groups:
             blockers.append("sample_window_context_missing")
-        if requested and not failure_modes:
+        failure_mode_evidence_required = bool(validated_empty_apis or failed_or_blocked_apis)
+        if requested and failure_mode_evidence_required and not failure_modes:
             blockers.append("failure_mode_evidence_missing")
         status = "target_sample_failure_window_review_ready" if not blockers else "target_sample_failure_window_review_blocked"
         rows.append(
@@ -3055,6 +3065,7 @@ def _target_sample_failure_window_review_receipt(
                 "validated_empty_apis": validated_empty_apis,
                 "failed_or_blocked_apis": failed_or_blocked_apis,
                 "failure_modes_observed": failure_modes,
+                "failure_mode_evidence_required": failure_mode_evidence_required,
                 "failure_mode_evidence_visible": bool(failure_modes),
                 "provided_context_fields": provided_context_fields,
                 "missing_context_groups": missing_context_groups,
@@ -3921,13 +3932,31 @@ def _provider_target_sample_acceptance_contract(
             if validation_by_api.get(api, {}).get("call_status") == "failed"
             or str(validation_by_api.get(api, {}).get("call_status") or "").startswith("blocked_")
         ]
+        failure_modes_observed: list[str] = []
+        for api in selected_target_apis:
+            failure_mode = str(
+                ledger_by_api.get(api, {}).get("failure_mode")
+                or validation_by_api.get(api, {}).get("failure_mode")
+                or ""
+            )
+            if failure_mode and failure_mode != "none" and failure_mode not in failure_modes_observed:
+                failure_modes_observed.append(failure_mode)
+        failure_modes_observed = sorted(failure_modes_observed)
+        target_failure_mode_evidence_required = bool(validated_empty_apis or failed_or_blocked_apis)
+        target_failure_modes_validated = bool(
+            failure_modes_validated
+            or not target_failure_mode_evidence_required
+            or failure_modes_observed
+        )
         unsafe_ledger_apis = [
             api
             for api in selected_target_apis
             if _has_sensitive_key(ledger_by_api.get(api, {}).get("request_params_safe"))
             or _has_unsafe_error_text(ledger_by_api.get(api, {}).get("error_message_safe"))
         ]
-        sample_evidence_sufficient = bool(non_empty_success_apis or (validated_empty_apis and failure_modes_validated))
+        sample_evidence_sufficient = bool(
+            non_empty_success_apis or (validated_empty_apis and target_failure_modes_validated)
+        )
         blockers: list[str] = []
         if requested:
             if not explicit_acceptance_mode:
@@ -3944,7 +3973,7 @@ def _provider_target_sample_acceptance_contract(
                 blockers.append("failed_or_blocked_api_evidence_present")
             if not sample_evidence_sufficient:
                 blockers.append("non_empty_or_valid_empty_sample_evidence_missing")
-            if not failure_modes_validated:
+            if target_failure_mode_evidence_required and not target_failure_modes_validated:
                 blockers.append("failure_mode_evidence_missing")
             if unsafe_ledger_apis:
                 blockers.append("unsafe_ledger_evidence")
@@ -3969,6 +3998,9 @@ def _provider_target_sample_acceptance_contract(
                 "non_empty_success_apis": non_empty_success_apis,
                 "validated_empty_apis": validated_empty_apis,
                 "failed_or_blocked_apis": failed_or_blocked_apis,
+                "failure_modes_observed": failure_modes_observed,
+                "target_failure_mode_evidence_required": target_failure_mode_evidence_required,
+                "target_failure_mode_evidence_visible": bool(failure_modes_observed),
                 "unsafe_ledger_apis": unsafe_ledger_apis,
                 "validation_readiness": str(validation_target_row.get("readiness") or "unknown"),
                 "provider_sample_plan_status": str(plan_row.get("provider_sample_plan_status") or "unknown"),
@@ -3977,7 +4009,8 @@ def _provider_target_sample_acceptance_contract(
                 "target_sample_acceptance_blockers": blockers,
                 "target_sample_acceptance_blocker_count": len(blockers),
                 "sample_evidence_sufficient": sample_evidence_sufficient,
-                "failure_modes_validated": failure_modes_validated,
+                "failure_modes_validated": target_failure_modes_validated,
+                "global_failure_modes_validated": failure_modes_validated,
                 "failure_mode_validated_count": failure_mode_count,
                 "provider_backed_target_sample_acceptance_done": False,
                 "provider_backed_acceptance_done": False,
