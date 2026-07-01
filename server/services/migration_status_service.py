@@ -10603,6 +10603,18 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         "target_sample_failure_window_review_provider_task_id": (
             failure_window_review.get("provider_task_id") or ""
         ),
+        "target_sample_failure_window_review_ready_targets": list(
+            failure_window_review.get("ready_targets") or []
+        ),
+        "target_sample_failure_window_review_blocked_targets": list(
+            failure_window_review.get("blocked_targets") or []
+        ),
+        "target_sample_failure_window_review_blocker_keys": list(
+            failure_window_review.get("blocker_keys") or []
+        ),
+        "target_sample_failure_window_review_blocker_rows": list(
+            failure_window_review.get("blocker_rows") or []
+        ),
         "provider_direct_evidence_layer": provider_direct_evidence.get("direct_evidence_layer"),
         "full_interface_selection_done": full_interface_selection_done,
         "failure_mode_evidence_done": failure_mode_evidence_done,
@@ -10643,6 +10655,57 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
 
 
 def _latest_tushare_target_sample_failure_window_review_summary() -> dict[str, Any]:
+    def _row_summary(rows: Any) -> dict[str, Any]:
+        row_list = rows if isinstance(rows, list) else []
+        ready_targets: list[str] = []
+        blocked_targets: list[str] = []
+        blocker_keys: list[str] = []
+        blocker_rows: list[dict[str, Any]] = []
+        for row in row_list:
+            if not isinstance(row, Mapping):
+                continue
+            target = str(row.get("target") or "")
+            if not target:
+                continue
+            blockers = [
+                str(item)
+                for item in row.get("review_blockers") or []
+                if str(item or "")
+            ]
+            review_status = str(row.get("review_status") or "")
+            is_blocked = bool(blockers) or review_status.endswith("_blocked")
+            if is_blocked:
+                if target not in blocked_targets:
+                    blocked_targets.append(target)
+                for blocker in blockers:
+                    if blocker not in blocker_keys:
+                        blocker_keys.append(blocker)
+                blocker_rows.append(
+                    {
+                        "target": target,
+                        "review_blockers": blockers,
+                        "failure_modes_observed": [
+                            str(item)
+                            for item in row.get("failure_modes_observed") or []
+                            if str(item or "")
+                        ],
+                        "missing_context_groups": [
+                            str(item)
+                            for item in row.get("missing_context_groups") or []
+                            if str(item or "")
+                        ],
+                    }
+                )
+            elif review_status == "target_sample_failure_window_review_ready":
+                if target not in ready_targets:
+                    ready_targets.append(target)
+        return {
+            "ready_targets": ready_targets,
+            "blocked_targets": blocked_targets,
+            "blocker_keys": blocker_keys,
+            "blocker_rows": blocker_rows,
+        }
+
     try:
         tasks = task_service.list_task_statuses()
     except Exception:
@@ -10657,6 +10720,7 @@ def _latest_tushare_target_sample_failure_window_review_summary() -> dict[str, A
         rows = payload_safe.get("provider_target_sample_failure_window_review_rows")
         row_list = rows if isinstance(rows, list) else receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
         storage_source = str(task.get("storage_source") or "")
+        row_summary = _row_summary(row_list)
         return {
             "schema_version": "ltg02_tushare_target_sample_failure_window_review_summary.v1",
             "latest_task_found": True,
@@ -10686,6 +10750,10 @@ def _latest_tushare_target_sample_failure_window_review_summary() -> dict[str, A
             "allowed_next_step": str(receipt.get("allowed_next_step") or ""),
             "row_count": len(row_list),
             "rows_visible": bool(row_list),
+            "ready_targets": row_summary["ready_targets"],
+            "blocked_targets": row_summary["blocked_targets"],
+            "blocker_keys": row_summary["blocker_keys"],
+            "blocker_rows": row_summary["blocker_rows"],
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -10705,6 +10773,7 @@ def _latest_tushare_target_sample_failure_window_review_summary() -> dict[str, A
     if receipt:
         rows = packet_map.get("rows")
         row_list = rows if isinstance(rows, list) else receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
+        row_summary = _row_summary(row_list)
         return {
             "schema_version": "ltg02_tushare_target_sample_failure_window_review_summary.v1",
             "latest_task_found": True,
@@ -10734,6 +10803,10 @@ def _latest_tushare_target_sample_failure_window_review_summary() -> dict[str, A
             "allowed_next_step": str(receipt.get("allowed_next_step") or ""),
             "row_count": len(row_list),
             "rows_visible": bool(row_list),
+            "ready_targets": row_summary["ready_targets"],
+            "blocked_targets": row_summary["blocked_targets"],
+            "blocker_keys": row_summary["blocker_keys"],
+            "blocker_rows": row_summary["blocker_rows"],
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -10769,6 +10842,10 @@ def _latest_tushare_target_sample_failure_window_review_summary() -> dict[str, A
         "allowed_next_step": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE,
         "row_count": 0,
         "rows_visible": False,
+        "ready_targets": [],
+        "blocked_targets": [],
+        "blocker_keys": [],
+        "blocker_rows": [],
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -10939,6 +11016,18 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
             target_sample_handoff.get("target_sample_failure_window_review_blocker_count") or 0
         ),
         "target_sample_failure_window_review_ready_for_rerun": failure_window_review_ready_for_rerun,
+        "target_sample_failure_window_review_ready_targets": list(
+            target_sample_handoff.get("target_sample_failure_window_review_ready_targets") or []
+        ),
+        "target_sample_failure_window_review_blocked_targets": list(
+            target_sample_handoff.get("target_sample_failure_window_review_blocked_targets") or []
+        ),
+        "target_sample_failure_window_review_blocker_keys": list(
+            target_sample_handoff.get("target_sample_failure_window_review_blocker_keys") or []
+        ),
+        "target_sample_failure_window_review_blocker_rows": list(
+            target_sample_handoff.get("target_sample_failure_window_review_blocker_rows") or []
+        ),
         "prior_provider_evidence_observed": provider_call_ledger_count > 0,
         "prior_provider_evidence_is_not_new_call": True,
         "failure_mode_evidence_done": failure_mode_done,

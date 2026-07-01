@@ -15439,9 +15439,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "receipt": receipt,
                 "rows": [
                     {
+                        "target": "dragon_tiger",
+                        "review_status": "target_sample_failure_window_review_ready",
+                        "review_blockers": [],
+                    },
+                    {
                         "target": "margin_financing",
                         "review_status": "target_sample_failure_window_review_blocked",
                         "review_blockers": ["failure_mode_evidence_missing"],
+                        "failure_modes_observed": [],
+                        "missing_context_groups": [],
                     }
                 ],
                 "provider_call_ledger_count": 10,
@@ -15472,6 +15479,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(handoff["target_sample_failure_window_review_blocker_count"], 7)
         self.assertEqual(handoff["target_sample_failure_window_review_provider_task_id"], receipt["provider_task_id"])
+        self.assertEqual(handoff["target_sample_failure_window_review_ready_targets"], ["dragon_tiger"])
+        self.assertEqual(handoff["target_sample_failure_window_review_blocked_targets"], ["margin_financing"])
+        self.assertEqual(
+            handoff["target_sample_failure_window_review_blocker_keys"],
+            ["failure_mode_evidence_missing"],
+        )
+        self.assertEqual(
+            handoff["target_sample_failure_window_review_blocker_rows"],
+            [
+                {
+                    "target": "margin_financing",
+                    "review_blockers": ["failure_mode_evidence_missing"],
+                    "failure_modes_observed": [],
+                    "missing_context_groups": [],
+                }
+            ],
+        )
         self.assertEqual(handoff["next_local_step"], receipt["allowed_next_step"])
         self.assertFalse(handoff["provider_backed_target_sample_acceptance_done"])
         self.assertFalse(handoff["production_tushare_pipeline_complete"])
