@@ -24,6 +24,18 @@ TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY = (
 TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY = (
     "command_center_tushare_provider_target_sample_failure_window_review_packet"
 )
+TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_TASK_TYPE = (
+    "run_tushare_provider_target_sample_permission_followup_ticket"
+)
+TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_ROUTE = (
+    "POST /api/tasks/tushare-provider-target-sample-permission-followup-ticket"
+)
+TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_RECEIPT_KEY = (
+    "provider_target_sample_permission_followup_receipt"
+)
+TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY = (
+    "command_center_tushare_provider_target_sample_permission_followup_packet"
+)
 
 
 MIGRATION_PROGRESS_BASELINE = [
@@ -822,6 +834,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_TASK_TYPE,
             "receipt_key": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY,
             "route": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE,
+        },
+        {
+            "phase_key": "target_sample_permission_followup_ticket",
+            "task_type": TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_TASK_TYPE,
+            "receipt_key": TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_RECEIPT_KEY,
+            "route": TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_ROUTE,
         },
     ],
     "p3_factor_small_pool_provider_validation": [
@@ -5130,6 +5148,33 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
             packet = {}
         source = "candidate_radar_cache_packet"
         source_packet_key = "command_center_3_candidate_radar_cache"
+    elif queue_id == "p2_tushare_target_sample_acceptance":
+        packet_key_by_receipt = {
+            TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY: (
+                TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY
+            ),
+            TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_RECEIPT_KEY: (
+                TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY
+            ),
+        }
+        packet_key = packet_key_by_receipt.get(receipt_key)
+        if packet_key:
+            try:
+                packet_map = packet_service.read_packet(packet_key)
+                receipt = (
+                    packet_map.get("receipt")
+                    if isinstance(packet_map.get("receipt"), dict)
+                    else {}
+                )
+                packet = {receipt_key: receipt, "task_id": packet_map.get("task_id") or ""}
+            except Exception:
+                packet = {}
+            source = "tushare_target_sample_sqlite_packet"
+            source_packet_key = packet_key
+        else:
+            packet = {}
+            source = "tushare_target_sample_sqlite_packet"
+            source_packet_key = ""
     elif queue_id == "p4_storage_physical_execution":
         try:
             from server.services import storage_service
@@ -5357,6 +5402,9 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_promotion_review_ready",
         "local_worker_fallback_ready",
         "local_runtime_qa_execution_done",
+        "local_permission_followup_ticket_ready",
+        "ready_for_manual_permission_resolution",
+        "ready_for_manual_alternative_hard_risk_evidence_scope",
         "local_gate_ready",
         "ci_mirror_ready",
         "push_readiness_receipt_ready",
@@ -5372,6 +5420,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
     ready_statuses = {
         "target_sample_failure_window_review_visible_blockers_recorded",
         "target_sample_failure_window_review_ready_for_target_acceptance_rerun",
+        "target_sample_permission_followup_ticket_ready_manual_resolution_pending",
         "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked",
         "trade_cal_provider_acceptance_promotion_review_recorded_blockers_visible",
         "synthetic_healthcheck_passed_local_task_store_only",
@@ -9169,6 +9218,16 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "target_sample_execution_request_ticket",
             "required_prior_material": "latest_task_id",
         },
+        TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_ROUTE: {
+            "step_kind": "local_target_sample_permission_followup_ticket",
+            "safe_payload_summary": (
+                "operator_approved plus permission_denied target-sample blocker; "
+                "local ticket only, no provider/model call"
+            ),
+            "expected_local_receipt": TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_RECEIPT_KEY,
+            "required_prior_phase_key": "target_sample_failure_window_review",
+            "required_prior_material": "receipt_local_ready",
+        },
         "POST /api/factor-quant/provider-small-pool-dry-run": {
             "step_kind": "dry_run_scope_ticket",
             "safe_payload_summary": "approved_by_user, explicit small symbol pool, research metrics, forward-return horizons",
@@ -9568,6 +9627,22 @@ def _build_ltg_next_action_submission_preview_rows(
                 required_prior_material="permission_denied_failure_mode_recorded",
                 required_prior_receipt_visible=review_step.get("receipt_visible") is True,
                 required_prior_material_visible=review_step.get("local_ready") is True,
+            )
+        if next_local_step == "manual_provider_permission_upgrade_or_alternative_hard_risk_evidence_scope":
+            permission_step = _local_step_row_by_phase(
+                local_step_rows, "target_sample_permission_followup_ticket"
+            )
+            return _disabled_handoff_preview(
+                step_kind="target_sample_permission_or_alternative_scope_manual_resolution",
+                disabled_reason="separate_permission_upgrade_or_alternative_hard_risk_evidence_authorization_required",
+                safe_payload_summary=(
+                    "local permission follow-up ticket is ready; next work needs separate provider "
+                    "permission upgrade or alternative hard-risk evidence authorization"
+                ),
+                required_prior_phase_key="target_sample_permission_followup_ticket",
+                required_prior_material="ready_for_manual_permission_resolution",
+                required_prior_receipt_visible=permission_step.get("receipt_visible") is True,
+                required_prior_material_visible=permission_step.get("local_ready") is True,
             )
         if next_local_step == "separate approved real-trading integration project only":
             trade_step = _local_step_row_by_phase(
@@ -11258,13 +11333,24 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                     )
                     is True
                 ):
-                    local_status = (
-                        "local_target_sample_permission_blocker_recorded_provider_access_required"
+                    permission_step = _local_step_row_by_phase(
+                        local_step_rows, "target_sample_permission_followup_ticket"
                     )
-                    next_local_step = str(
-                        supporting_tushare_target_sample_evidence_handoff.get("next_local_step")
-                        or "resolve_provider_permission_or_collect_alternative_hard_risk_evidence"
-                    )
+                    if (
+                        permission_step.get("receipt_visible") is True
+                        and permission_step.get("local_ready") is True
+                    ):
+                        local_status = (
+                            "local_target_sample_permission_followup_ticket_ready_manual_resolution_pending"
+                        )
+                        next_local_step = (
+                            "manual_provider_permission_upgrade_or_alternative_hard_risk_evidence_scope"
+                        )
+                    else:
+                        local_status = (
+                            "local_target_sample_permission_blocker_recorded_permission_followup_ticket_needed"
+                        )
+                        next_local_step = TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_ROUTE
                 elif (
                     supporting_tushare_target_sample_evidence_handoff.get(
                         "target_sample_failure_window_review_ready_for_rerun"

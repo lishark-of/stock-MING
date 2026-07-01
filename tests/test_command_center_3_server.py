@@ -3307,7 +3307,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             p1_provider_handoff["evidence_boundary"],
             "prior_provider_acceptance_evidence_handoff_is_not_task_receipt_chain_or_ltg_closeout",
         )
-        self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 2)
+        self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 3)
         self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
         p3_production_handoff = action_rows["p3_factor_small_pool_provider_validation"][
             "supporting_factor_test_lab_production_validation_handoff"
@@ -15534,6 +15534,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
     def test_tushare_target_sample_permission_blocker_stops_provider_rerun_prompt(self):
         db_path = self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
+        self.addCleanup(clear_task_statuses_for_tests, clear_persisted=True)
 
         SQLiteMetaStore(db_path).write_packet(
             "command_center_tushare_refresh_packet",
@@ -15683,24 +15684,90 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             p2["local_receipt_status"],
-            "local_target_sample_permission_blocker_recorded_provider_access_required",
+            "local_target_sample_permission_blocker_recorded_permission_followup_ticket_needed",
         )
         self.assertEqual(
             p2["next_local_step"],
-            "resolve_provider_permission_or_collect_alternative_hard_risk_evidence",
+            "POST /api/tasks/tushare-provider-target-sample-permission-followup-ticket",
         )
-        self.assertEqual(preview["step_kind"], "target_sample_permission_blocker_followup")
-        self.assertEqual(
-            preview["disabled_reason"],
-            "provider_permission_or_alternative_hard_risk_evidence_required",
-        )
-        self.assertFalse(preview["local_button_available"])
+        self.assertEqual(preview["step_kind"], "local_target_sample_permission_followup_ticket")
+        self.assertEqual(preview["disabled_reason"], "")
+        self.assertTrue(preview["local_button_available"])
+        self.assertTrue(preview["ready_for_clean_local_receipt"])
         self.assertFalse(preview["external_calls_triggered"])
         self.assertFalse(preview["tushare_called"])
         self.assertFalse(preview["deepseek_called"])
         self.assertFalse(preview["github_called"])
         self.assertTrue(preview["does_not_execute_trades"])
         self.assertFalse(p2["external_calls_triggered"])
+
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        response = TestClient(app).post(
+            "/api/tasks/tushare-provider-target-sample-permission-followup-ticket",
+            json={
+                "operator_approved": True,
+                "followup_mode": "alternative_hard_risk_evidence_scope",
+                "token": "SHOULD_DROP",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        permission_task = response.json()["data"]["task"]
+        self.assertEqual(permission_task["status"], "success")
+        self.assertFalse(permission_task["external_calls_triggered"])
+        self.assertFalse(permission_task["tushare_called"])
+        self.assertFalse(permission_task["deepseek_called"])
+        self.assertFalse(permission_task["github_called"])
+        self.assertTrue(permission_task["does_not_execute_trades"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(permission_task, ensure_ascii=False))
+        permission_receipt = permission_task["payload_safe"][
+            "provider_target_sample_permission_followup_receipt"
+        ]
+        self.assertEqual(
+            permission_receipt["status"],
+            "target_sample_permission_followup_ticket_ready_manual_resolution_pending",
+        )
+        self.assertEqual(permission_receipt["permission_blocker_count"], 1)
+        self.assertEqual(permission_receipt["requested_targets"], ["hard_risk"])
+        self.assertEqual(permission_receipt["selected_apis"], ["anns_d"])
+        self.assertTrue(permission_receipt["local_permission_followup_ticket_ready"])
+        self.assertTrue(permission_receipt["ready_for_manual_permission_resolution"])
+        self.assertFalse(permission_receipt["creates_provider_task"])
+        self.assertFalse(permission_receipt["provider_execution_implemented"])
+        self.assertFalse(permission_receipt["external_calls_triggered"])
+        self.assertFalse(permission_receipt["tushare_called"])
+        self.assertFalse(permission_receipt["deepseek_called"])
+        self.assertFalse(permission_receipt["github_called"])
+
+        migration_after_ticket = migration_status_service.build_migration_status()
+        p2_after_ticket = {
+            row["queue_id"]: row
+            for row in migration_after_ticket["ltg_next_acceptance_action_rows"]
+        }["p2_tushare_target_sample_acceptance"]
+        preview_after_ticket = p2_after_ticket["next_local_step_preview_rows"][0]
+        self.assertEqual(
+            p2_after_ticket["local_receipt_status"],
+            "local_target_sample_permission_followup_ticket_ready_manual_resolution_pending",
+        )
+        self.assertEqual(
+            p2_after_ticket["next_local_step"],
+            "manual_provider_permission_upgrade_or_alternative_hard_risk_evidence_scope",
+        )
+        self.assertEqual(
+            preview_after_ticket["step_kind"],
+            "target_sample_permission_or_alternative_scope_manual_resolution",
+        )
+        self.assertEqual(
+            preview_after_ticket["disabled_reason"],
+            "separate_permission_upgrade_or_alternative_hard_risk_evidence_authorization_required",
+        )
+        self.assertFalse(preview_after_ticket["local_button_available"])
+        self.assertFalse(preview_after_ticket["external_calls_triggered"])
+        self.assertFalse(preview_after_ticket["tushare_called"])
+        self.assertFalse(preview_after_ticket["deepseek_called"])
+        self.assertFalse(preview_after_ticket["github_called"])
+        self.assertTrue(preview_after_ticket["does_not_execute_trades"])
 
     def test_tushare_provider_target_sample_execution_recipe_seed_prebinds_local_request(self):
         db_path = self._with_meta_store()
@@ -21127,7 +21194,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 88)
+        self.assertEqual(catalog["task_count"], 89)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -21146,7 +21213,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 88)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 89)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -21180,8 +21247,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 90)
-        self.assertEqual(route_coverage["task_creation_route_count"], 88)
+        self.assertEqual(route_coverage["known_post_route_count"], 91)
+        self.assertEqual(route_coverage["task_creation_route_count"], 89)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -21190,11 +21257,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 88)
+        self.assertEqual(implementation_status["task_count"], 89)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 83)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 84)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 84)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 85)
         self.assertEqual(implementation_status["external_capable_task_count"], 9)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -21208,6 +21275,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_tushare_provider_target_sample_execution_recipe_seed",
                 "run_tushare_provider_target_sample_execution_request",
                 "run_tushare_provider_target_sample_failure_window_review",
+                "run_tushare_provider_target_sample_permission_followup_ticket",
                 "run_trade_cal_provider_acceptance_execution_request",
                 "run_trade_cal_provider_acceptance_promotion_review",
                 "run_trade_cal_provider_acceptance_release_review",
@@ -21297,6 +21365,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_tushare_provider_target_sample_execution_recipe_seed",
                 "run_tushare_provider_target_sample_execution_request",
                 "run_tushare_provider_target_sample_failure_window_review",
+                "run_tushare_provider_target_sample_permission_followup_ticket",
                 "run_trade_cal_provider_acceptance_execution_request",
                 "run_trade_cal_provider_acceptance_promotion_review",
                 "run_trade_cal_provider_acceptance_release_review",
@@ -23724,16 +23793,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 83)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 84)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 84)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 85)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 83)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 84)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 84)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 85)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -24608,9 +24677,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 83)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 84)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 84)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 85)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -24834,9 +24903,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 83)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 84)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 84)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 85)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 9)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -24869,9 +24938,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 83)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 84)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 84)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 85)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -42136,7 +42205,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 88)
+        self.assertEqual(task_catalog["data"]["task_count"], 89)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],

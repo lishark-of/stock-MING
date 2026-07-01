@@ -282,6 +282,18 @@ PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE = (
 PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY = (
     "command_center_tushare_provider_target_sample_failure_window_review_packet"
 )
+PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_SCHEMA_VERSION = (
+    "tushare_provider_target_sample_permission_followup_ticket.v1"
+)
+PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_TASK_TYPE = (
+    "run_tushare_provider_target_sample_permission_followup_ticket"
+)
+PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_ROUTE = (
+    "POST /api/tasks/tushare-provider-target-sample-permission-followup-ticket"
+)
+PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY = (
+    "command_center_tushare_provider_target_sample_permission_followup_packet"
+)
 TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE = "run_trade_cal_provider_acceptance_execution_request"
 TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_READY_STATUS = (
     "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending"
@@ -3240,6 +3252,340 @@ def run_tushare_provider_target_sample_failure_window_review(payload: Any = None
         if receipt["provider_task_found"]
         else "tushare_provider_target_sample_failure_window_review_missing_provider_task",
         error_message_safe="" if receipt["provider_task_found"] else "missing_target_sample_provider_task",
+        call_ledger=receipt["call_ledger"],
+    ) or task
+
+
+def _latest_target_sample_permission_followup_material() -> dict[str, Any]:
+    try:
+        refresh_packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet("command_center_tushare_refresh_packet")
+    except Exception:
+        refresh_packet = {}
+    refresh_map = dict(refresh_packet) if isinstance(refresh_packet, Mapping) else {}
+    target_contract = (
+        refresh_map.get("provider_target_sample_acceptance_contract")
+        if isinstance(refresh_map.get("provider_target_sample_acceptance_contract"), Mapping)
+        else {}
+    )
+    permission_rows: list[dict[str, Any]] = []
+    for row in target_contract.get("rows") or []:
+        if not isinstance(row, Mapping):
+            continue
+        failure_modes = [
+            str(item)
+            for item in row.get("failure_modes_observed") or []
+            if str(item or "")
+        ]
+        if "permission_denied" not in failure_modes:
+            continue
+        permission_rows.append(
+            {
+                "target": str(row.get("target") or ""),
+                "failed_or_blocked_apis": [
+                    str(item)
+                    for item in row.get("failed_or_blocked_apis") or []
+                    if str(item or "")
+                ],
+                "failure_modes_observed": failure_modes,
+                "target_sample_acceptance_blockers": [
+                    str(item)
+                    for item in row.get("target_sample_acceptance_blockers") or []
+                    if str(item or "")
+                ],
+                "target_sample_acceptance_status": str(
+                    row.get("target_sample_acceptance_status") or ""
+                ),
+            }
+        )
+    try:
+        review_packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(
+            PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY
+        )
+    except Exception:
+        review_packet = {}
+    review_map = dict(review_packet) if isinstance(review_packet, Mapping) else {}
+    review_receipt = (
+        review_map.get("receipt") if isinstance(review_map.get("receipt"), Mapping) else {}
+    )
+    return {
+        "refresh_packet": refresh_map,
+        "target_contract": dict(target_contract),
+        "permission_rows": permission_rows,
+        "failure_window_review_packet": review_map,
+        "failure_window_review_receipt": dict(review_receipt),
+    }
+
+
+def _provider_target_sample_permission_followup_receipt(
+    payload: Any = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    payload_safe = _safe_payload(payload)
+    material = _latest_target_sample_permission_followup_material()
+    permission_rows = list(material.get("permission_rows") or [])
+    review_receipt = dict(material.get("failure_window_review_receipt") or {})
+    followup_mode = str(
+        payload_safe.get("followup_mode")
+        or payload_safe.get("resolution_mode")
+        or "provider_permission_upgrade_or_alternative_hard_risk_evidence"
+    )
+    allowed_modes = {
+        "provider_permission_upgrade",
+        "alternative_hard_risk_evidence_scope",
+        "provider_permission_upgrade_or_alternative_hard_risk_evidence",
+    }
+    requested_targets = [
+        str(item)
+        for item in (payload_safe.get("target_sample_acceptance_groups") or payload_safe.get("targets") or [])
+        if str(item or "")
+    ]
+    if not requested_targets:
+        requested_targets = sorted({row["target"] for row in permission_rows if row.get("target")})
+    selected_apis = [
+        str(item)
+        for item in (payload_safe.get("apis") or [])
+        if str(item or "")
+    ]
+    if not selected_apis:
+        selected_apis = sorted(
+            {
+                str(api)
+                for row in permission_rows
+                for api in row.get("failed_or_blocked_apis", [])
+                if str(api or "")
+            }
+        )
+    operator_confirmed = bool(
+        payload_safe.get("operator_approved") is True
+        or payload_safe.get("user_confirmed") is True
+        or payload_safe.get("manual_confirmation") is True
+    )
+    permission_rows_visible = bool(permission_rows)
+    review_visible = bool(review_receipt)
+    mode_allowed = followup_mode in allowed_modes
+    rows = [
+        {
+            "criterion": "permission_denied_blocker_visible",
+            "status": "passed" if permission_rows_visible else "blocked",
+            "passed": permission_rows_visible,
+            "evidence": "provider target-sample acceptance rows contain permission_denied",
+            "blocking": not permission_rows_visible,
+        },
+        {
+            "criterion": "failure_window_review_receipt_visible",
+            "status": "passed" if review_visible else "blocked",
+            "passed": review_visible,
+            "evidence": "local failure-window review receipt is visible before permission follow-up",
+            "blocking": not review_visible,
+        },
+        {
+            "criterion": "followup_mode_allowed",
+            "status": "passed" if mode_allowed else "blocked",
+            "passed": mode_allowed,
+            "evidence": "followup mode is permission upgrade or alternative hard-risk evidence",
+            "blocking": not mode_allowed,
+        },
+        {
+            "criterion": "operator_confirmation_recorded",
+            "status": "passed" if operator_confirmed else "blocked",
+            "passed": operator_confirmed,
+            "evidence": "operator_approved/user_confirmed/manual_confirmation must be true",
+            "blocking": not operator_confirmed,
+        },
+        {
+            "criterion": "no_provider_model_trade_boundary",
+            "status": "passed",
+            "passed": True,
+            "evidence": "ticket is local-only and cannot call providers, models, GitHub, or trading paths",
+            "blocking": False,
+        },
+    ]
+    for row in rows:
+        row.update(
+            {
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    blocker_count = sum(1 for row in rows if row["blocking"])
+    scope_payload = {
+        "schema_version": PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_SCHEMA_VERSION,
+        "permission_rows": permission_rows,
+        "requested_targets": requested_targets,
+        "selected_apis": selected_apis,
+        "followup_mode": followup_mode,
+        "failure_window_review_task_id": review_receipt.get("task_id")
+        or review_receipt.get("provider_task_id")
+        or "",
+        "provider_task_id": review_receipt.get("provider_task_id") or "",
+    }
+    scope_hash_input = json.dumps(scope_payload, ensure_ascii=False, sort_keys=True)
+    scope_hash = hashlib.sha256(scope_hash_input.encode("utf-8")).hexdigest()
+    if not permission_rows_visible:
+        status = "target_sample_permission_followup_blocked_missing_permission_denied_evidence"
+    elif not review_visible:
+        status = "target_sample_permission_followup_blocked_missing_failure_window_review"
+    elif not mode_allowed:
+        status = "target_sample_permission_followup_blocked_unknown_followup_mode"
+    elif not operator_confirmed:
+        status = "target_sample_permission_followup_blocked_operator_confirmation_missing"
+    else:
+        status = "target_sample_permission_followup_ticket_ready_manual_resolution_pending"
+    ready = status == "target_sample_permission_followup_ticket_ready_manual_resolution_pending"
+    receipt = {
+        "schema_version": PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_tushare_provider_target_sample_permission_followup_no_provider_call",
+        "route": PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_ROUTE,
+        "task_type": PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_TASK_TYPE,
+        "permission_followup_scope_hash_algorithm": "sha256",
+        "permission_followup_scope_hash": scope_hash,
+        "permission_followup_scope_hash_short": scope_hash[:16],
+        "followup_mode": followup_mode,
+        "requested_targets": requested_targets,
+        "selected_apis": selected_apis,
+        "permission_blocker_rows": permission_rows,
+        "permission_blocker_count": len(permission_rows),
+        "failure_window_review_visible": review_visible,
+        "failure_window_review_status": review_receipt.get("status") or "",
+        "failure_window_review_task_id": review_receipt.get("task_id")
+        or review_receipt.get("provider_task_id")
+        or "",
+        "blocking_criterion_count": blocker_count,
+        "row_count": len(rows),
+        "local_permission_followup_ticket_ready": ready,
+        "ready_for_manual_permission_resolution": ready,
+        "ready_for_manual_alternative_hard_risk_evidence_scope": ready,
+        "creates_provider_task": False,
+        "provider_task_created": False,
+        "provider_execution_implemented": False,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "allowed_next_step": "manual_provider_permission_upgrade_or_alternative_hard_risk_evidence_scope",
+        "not_allowed_next_steps": [
+            "call Tushare from this permission follow-up ticket",
+            "call DeepSeek from this permission follow-up ticket",
+            "call GitHub from this permission follow-up ticket",
+            "create provider task from this ticket",
+            "treat permission blocker as provider-backed acceptance",
+            "strategy action mutation",
+            "real trade execution",
+        ],
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_tushare_provider_target_sample_permission_followup_ticket",
+                "source": "existing target-sample permission blocker and local failure-window review",
+                "row_count": len(rows),
+                "request_params_safe": {
+                    "requested_targets": requested_targets,
+                    "selected_apis": selected_apis,
+                    "followup_mode": followup_mode,
+                    "permission_followup_scope_hash_short": scope_hash[:16],
+                },
+                "data_date": None,
+                "local_fetched_at": _now_iso(),
+                "call_status": status,
+                "error_message_safe": "",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This local permission follow-up ticket binds the observed target-sample permission_denied blocker to a manual permission-upgrade or alternative hard-risk evidence scope. It does not call Tushare, create provider tasks, promote acceptance, trade, or mutate strategy action.",
+    }
+    return receipt, rows
+
+
+def run_tushare_provider_target_sample_permission_followup_ticket(
+    payload: Any = None,
+) -> dict[str, Any]:
+    receipt, rows = _provider_target_sample_permission_followup_receipt(payload)
+    payload_safe = {
+        "provider_target_sample_permission_followup_receipt": receipt,
+        "provider_target_sample_permission_followup_rows": rows,
+    }
+    task = create_task_record(
+        PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_TASK_TYPE,
+        output_packet_key=PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY,
+        payload=payload_safe,
+        current_step="tushare_provider_target_sample_permission_followup_queued_local_only",
+        warnings=[
+            "该任务只生成本地 Tushare target-sample permission follow-up ticket，不调用 Tushare。",
+            "该任务只绑定权限/替代 hard-risk evidence 后续 scope，不证明 LTG-02 生产完成。",
+            "该任务不调用 DeepSeek/GitHub，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="building_tushare_provider_target_sample_permission_followup",
+        call_ledger=receipt["call_ledger"],
+    )
+    packet = {
+        "packet_key": PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY,
+        "schema_version": "command_center_tushare_provider_target_sample_permission_followup_packet.v1",
+        "status": receipt["status"],
+        "task_type": PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_TASK_TYPE,
+        "receipt": receipt,
+        "rows": rows,
+        "permission_followup_scope_hash_short": receipt["permission_followup_scope_hash_short"],
+        "local_permission_followup_ticket_ready": receipt["local_permission_followup_ticket_ready"],
+        "provider_execution_implemented": False,
+        "provider_task_created": False,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": receipt["call_ledger"],
+    }
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+            PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY,
+            packet,
+        )
+    except Exception:
+        pass
+    return update_task_status(
+        task["task_id"],
+        status="success" if receipt["local_permission_followup_ticket_ready"] else "failed",
+        progress=1.0,
+        current_step="tushare_provider_target_sample_permission_followup_ticket_ready"
+        if receipt["local_permission_followup_ticket_ready"]
+        else "tushare_provider_target_sample_permission_followup_ticket_blocked",
+        error_message_safe="" if receipt["local_permission_followup_ticket_ready"] else receipt["status"],
         call_ledger=receipt["call_ledger"],
     ) or task
 
