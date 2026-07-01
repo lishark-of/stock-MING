@@ -15186,6 +15186,89 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(latest_policy["tushare_provider_target_sample_execution_request_requires_bound_scope_hash"])
         self.assertNotIn("SHOULD_DROP", json.dumps(data_health_cache, ensure_ascii=False))
 
+    def test_tushare_provider_target_sample_failure_review_reads_persisted_refresh_packet(self):
+        db_path = self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_tushare_refresh_packet",
+            {
+                "packet_key": "command_center_tushare_refresh_packet",
+                "schema_version": "command_center_tushare_refresh_task.v1",
+                "task_type": "refresh_tushare_facts",
+                "status": "success",
+                "selected_apis": ["top_list"],
+                "call_ledger": [
+                    {
+                        "api": "top_list",
+                        "source": "tushare",
+                        "row_count": 0,
+                        "request_params_safe": {
+                            "ts_code": "002008.SZ",
+                            "trade_date": "20260610",
+                        },
+                        "data_date": "20260610",
+                        "local_fetched_at": "2026-06-10T10:00:00",
+                        "call_status": "empty",
+                        "failure_mode": "empty_result_or_no_record",
+                        "error_message_safe": "",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                ],
+            },
+        )
+
+        task = tushare_task_service.run_tushare_provider_target_sample_failure_window_review(
+            {
+                "target_sample_acceptance_groups": ["dragon_tiger"],
+                "apis": ["top_list"],
+                "ts_code": "002008.SZ",
+                "trade_date": "20260610",
+                "token": "SHOULD_DROP",
+            }
+        )
+
+        receipt = task["payload_safe"]["provider_target_sample_failure_window_review_receipt"]
+        rows = {
+            row["target"]: row
+            for row in task["payload_safe"]["provider_target_sample_failure_window_review_rows"]
+        }
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(
+            receipt["status"],
+            "target_sample_failure_window_review_ready_for_target_acceptance_rerun",
+        )
+        self.assertEqual(receipt["provider_task_id"], "packet:command_center_tushare_refresh_packet")
+        self.assertEqual(receipt["provider_call_ledger_count"], 1)
+        self.assertEqual(receipt["provider_empty_count"], 1)
+        self.assertEqual(receipt["requested_targets"], ["dragon_tiger"])
+        self.assertEqual(receipt["selected_apis"], ["top_list"])
+        self.assertTrue(receipt["ready_for_target_sample_acceptance_rerun"])
+        self.assertFalse(receipt["provider_backed_target_sample_acceptance_done"])
+        self.assertFalse(receipt["full_interface_acceptance_done"])
+        self.assertFalse(receipt["production_tushare_pipeline_complete"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertEqual(rows["dragon_tiger"]["review_status"], "target_sample_failure_window_review_ready")
+        self.assertEqual(rows["dragon_tiger"]["validated_empty_apis"], ["top_list"])
+        self.assertEqual(rows["dragon_tiger"]["failure_modes_observed"], ["empty_result_or_no_record"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
     def test_tushare_provider_target_sample_execution_recipe_seed_prebinds_local_request(self):
         db_path = self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)

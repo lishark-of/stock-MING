@@ -2863,11 +2863,81 @@ def run_tushare_provider_target_sample_execution_request(payload: Any = None) ->
     ) or task
 
 
-def _latest_target_sample_provider_refresh_task() -> dict[str, Any]:
+def _latest_target_sample_provider_refresh_packet_task(payload_safe: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet("command_center_tushare_refresh_packet")
+    except Exception:
+        return {}
+    if not isinstance(packet, Mapping) or packet.get("task_type") != "refresh_tushare_facts":
+        return {}
+    ledger = [row for row in packet.get("call_ledger") or [] if isinstance(row, Mapping)]
+    provider_rows = [
+        row
+        for row in ledger
+        if row.get("tushare_called") is True
+        or row.get("external_calls_triggered") is True
+        or row.get("external") is True
+    ]
+    if not provider_rows:
+        return {}
+    packet_payload = packet.get("payload_safe") if isinstance(packet.get("payload_safe"), Mapping) else {}
+    requested_targets = [
+        str(item)
+        for item in (
+            packet_payload.get("target_sample_acceptance_groups")
+            or payload_safe.get("target_sample_acceptance_groups")
+            or []
+        )
+        if str(item or "")
+    ]
+    if (
+        packet_payload.get("acceptance_mode") != PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE
+        and packet.get("acceptance_mode") != PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE
+        and not requested_targets
+    ):
+        return {}
+    selected_apis = [
+        str(item)
+        for item in (
+            packet_payload.get("apis")
+            or packet.get("selected_apis")
+            or packet.get("apis")
+            or [row.get("api") for row in provider_rows]
+        )
+        if str(item or "")
+    ]
+    merged_payload: dict[str, Any] = {
+        "acceptance_mode": PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE,
+        "target_sample_acceptance_groups": requested_targets,
+        "apis": selected_apis,
+    }
+    for key in ("ts_code", "trade_date", "start_date", "end_date", "ann_date", "period", "float_date", "limit_type"):
+        value = packet_payload.get(key) or payload_safe.get(key) or packet.get(key)
+        if value not in (None, ""):
+            merged_payload[key] = value
+    return {
+        "task_id": str(packet.get("task_id") or "packet:command_center_tushare_refresh_packet"),
+        "task_type": "refresh_tushare_facts",
+        "status": packet.get("status") or "success",
+        "current_step": "tushare_refresh_packet_replay_for_failure_window_review",
+        "payload_safe": merged_payload,
+        "call_ledger": [dict(row) for row in ledger],
+        "external_calls_triggered": True,
+        "tushare_called": True,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "provider_task_source": "sqlite_refresh_packet_fallback",
+    }
+
+
+def _latest_target_sample_provider_refresh_task(payload_safe: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    request_payload_safe = payload_safe or {}
     for task in list_task_statuses():
         if task.get("task_type") != "refresh_tushare_facts":
             continue
-        payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), Mapping) else {}
+        task_payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), Mapping) else {}
         ledger = [row for row in task.get("call_ledger") or [] if isinstance(row, Mapping)]
         has_provider_ledger = any(
             row.get("tushare_called") is True
@@ -2876,11 +2946,11 @@ def _latest_target_sample_provider_refresh_task() -> dict[str, Any]:
             for row in ledger
         )
         if (
-            payload_safe.get("acceptance_mode") == PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE
-            or payload_safe.get("target_sample_acceptance_groups")
+            task_payload_safe.get("acceptance_mode") == PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE
+            or task_payload_safe.get("target_sample_acceptance_groups")
         ) and has_provider_ledger:
             return dict(task)
-    return {}
+    return _latest_target_sample_provider_refresh_packet_task(request_payload_safe)
 
 
 def _target_sample_failure_window_review_receipt(
@@ -2889,7 +2959,7 @@ def _target_sample_failure_window_review_receipt(
     provider_task: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     payload_safe = _safe_payload(payload)
-    provider_task_map = dict(provider_task or _latest_target_sample_provider_refresh_task())
+    provider_task_map = dict(provider_task or _latest_target_sample_provider_refresh_task(payload_safe))
     provider_payload = (
         provider_task_map.get("payload_safe")
         if isinstance(provider_task_map.get("payload_safe"), Mapping)
