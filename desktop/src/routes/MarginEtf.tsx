@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { getPacket } from "../api/client";
+import { getPacket, postTask, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import PageStateBanner from "../components/PageStateBanner";
 import StatusBadge from "../components/StatusBadge";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
+import TaskStatusPanel from "../components/TaskStatusPanel";
 
 function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
@@ -50,6 +52,10 @@ export default function MarginEtf() {
   const [marginPacket, setMarginPacket] = useState<Record<string, unknown>>({});
   const [callLedger, setCallLedger] = useState<Array<Record<string, unknown>>>([]);
   const [warnings, setWarnings] = useState<Array<string>>([]);
+  const [taskId, setTaskId] = useState("");
+  const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [taskSubmitting, setTaskSubmitting] = useState(false);
+  const [taskError, setTaskError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -76,6 +82,27 @@ export default function MarginEtf() {
     refresh();
   }, []);
 
+  const launchLocalRefreshTask = () => {
+    const createTask = postTask;
+    setTaskSubmitting(true);
+    setTaskError("");
+    void createTask("/api/market/margin-etf-local-refresh", {
+      source: "margin_etf_page_button",
+      mode: "local_packet_replay",
+      requested_packet_keys: ["command_center_etf_packet", "command_center_margin_packet"],
+    })
+      .then((res) => {
+        setTaskReceipt(res);
+        if (res.ok) {
+          setTaskId(res.data.task_id);
+        } else {
+          setTaskError(res.error ?? "margin_etf_local_refresh_task_failed");
+        }
+      })
+      .catch((err) => setTaskError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setTaskSubmitting(false));
+  };
+
   const source = text(etfPacket.source, "融资 ETF 本地配置快照");
   const status = text(etfPacket.status, loading ? "loading" : "waiting");
   const dataStatus = text(etfPacket.data_status ?? etfPacket.cache_state, "missing");
@@ -100,6 +127,14 @@ export default function MarginEtf() {
   const nextStep = noEtfRows
     ? "先读取或手动刷新本地 ETF/融资快照"
     : "先看推荐/观察/回避分组，再复核流动性、重叠和融资现金线";
+  const taskDisabledReason = loading
+    ? "等待本地 packet 读取完成后再创建任务"
+    : error
+      ? "本地 packet 读取异常；先恢复 FastAPI/cache 连接"
+      : "";
+  const taskDegradedReason = noEtfRows
+    ? "当前没有 ETF 候选；任务只生成 degraded 本地回放收据，不会自动外联补数据。"
+    : "";
   const boundary =
     "页面打开只读本地 packet；不会自动全量发现 ETF，不调用 Tushare/DeepSeek/GitHub，不下单，不把 ETF 候选写成买入或加融资指令。";
   const summaryItems: MetricItem[] = [
@@ -156,10 +191,22 @@ export default function MarginEtf() {
             title="只重新读取本地 packet；不创建 task、不调用 provider/model"
             aria-label="refresh margin etf local packets"
           >刷新本地回放</button>
+          <button
+            type="button"
+            onClick={launchLocalRefreshTask}
+            disabled={Boolean(taskDisabledReason) || taskSubmitting}
+            title={taskDisabledReason || "创建本地 ETF/融资 packet 回放任务；不调用 provider/model"}
+            aria-label="create margin etf local refresh task"
+          >{taskSubmitting ? "创建中" : "刷新/重建本地包"}</button>
           <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf">今日作战台</a>
           <a href="#candidates" title="切换到下一票雷达；候选不是买入指令" aria-label="open candidate radar from margin etf">下一票雷达</a>
           <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf">风险护栏</a>
         </div>
+        {taskDisabledReason && <p className="risk-note">任务暂不可用：{taskDisabledReason}</p>}
+        {taskDegradedReason && <p className="risk-note">{taskDegradedReason}</p>}
+        {taskError && <p className="risk-note">{taskError}</p>}
+        <TaskLaunchReceipt receipt={taskReceipt} />
+        <TaskStatusPanel taskId={taskId} onSuccess={refresh} />
         <p className="risk-note">{boundary}</p>
       </PacketCard>
 
