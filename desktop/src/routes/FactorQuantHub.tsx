@@ -346,6 +346,7 @@ export default function FactorQuantHub() {
   const deepseekRetryRepairDryRun = packet.deepseek_retry_repair_dry_run_contract ?? {};
   const deepseekProductionActivationReceipt = packet.deepseek_production_activation_receipt ?? {};
   const deepseekProviderBenchmarkScopeTicket = packet.deepseek_provider_benchmark_scope_ticket_receipt ?? {};
+  const deepseekProviderBenchmarkExecutionRequest = packet.deepseek_provider_benchmark_execution_request_receipt ?? {};
   const deepseekDurableEvidenceRecipe = packet.deepseek_durable_evidence_recipe ?? {};
   const scoreChart = packet.score_chart_payload ?? {};
   const scoreChartContract = scoreChart.chart_contract ?? {};
@@ -359,6 +360,8 @@ export default function FactorQuantHub() {
   const deepseekProductionActivationReceiptRows = objectRows(deepseekProductionActivationReceipt as Record<string, unknown>, "deepseek_activation_receipt");
   const deepseekProviderBenchmarkScopeRows = toRows(packet.deepseek_provider_benchmark_scope_ticket_rows);
   const deepseekProviderBenchmarkScopeReceiptRows = objectRows(deepseekProviderBenchmarkScopeTicket as Record<string, unknown>, "deepseek_benchmark_scope_ticket");
+  const deepseekProviderBenchmarkExecutionRequestRows = toRows(packet.deepseek_provider_benchmark_execution_request_rows);
+  const deepseekProviderBenchmarkExecutionRequestReceiptRows = objectRows(deepseekProviderBenchmarkExecutionRequest as Record<string, unknown>, "deepseek_benchmark_execution_request");
   const deepseekDurableEvidenceRows = toRows(packet.deepseek_durable_evidence_rows);
   const universeResearchRows = objectRows(universeResearch as Record<string, unknown>, "universe_contract");
   const universeModeRows = toRows(packet.universe_research_mode_rows);
@@ -1712,6 +1715,7 @@ export default function FactorQuantHub() {
           <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-execution-request", { approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "") })}>小池执行请求</button>
           <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-acceptance", { approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolExecutionRequest.acceptance_scope_hash ?? "") })}>真实小池验收门槛</button>
           <button onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-scope-ticket", { approved_by_user: true, sample_count: 40, response_format: "json_schema", max_retry_per_sample: 2 })}>DeepSeek benchmark 预检</button>
+          <button onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-execution-request", { approved_by_user: true, benchmark_scope_hash: String(deepseekProviderBenchmarkScopeTicket.benchmark_scope_hash ?? "") })}>DeepSeek benchmark 执行请求</button>
         </div>
       </details>
       <p className="risk-note">多因子量化不是交易建议；不真实交易、不下单，不改价格、持仓、操作区或交易策略。</p>
@@ -1986,6 +1990,18 @@ export default function FactorQuantHub() {
       <h3>DeepSeek provider benchmark scope rows</h3>
       <DataLineageTable rows={deepseekProviderBenchmarkScopeRows} />
       <DataLineageTable rows={deepseekProviderBenchmarkScopeReceiptRows} />
+      <PacketCard title="DeepSeek provider benchmark execution request" subtitle="显式 POST 执行请求票据；不调用模型、不创建 model task、不证明 provider benchmark">
+        <p>status: {String(deepseekProviderBenchmarkExecutionRequest.status ?? "missing")}</p>
+        <p>local_execution_request_ready / ready_for_manual_model_task_submission: {String(deepseekProviderBenchmarkExecutionRequest.local_execution_request_ready ?? false)} / {String(deepseekProviderBenchmarkExecutionRequest.ready_for_manual_model_task_submission ?? false)}</p>
+        <p>benchmark_scope_hash_short: {String(deepseekProviderBenchmarkExecutionRequest.benchmark_scope_hash_short ?? "")}</p>
+        <p>requested_scope_hash_matches_latest: {String(deepseekProviderBenchmarkExecutionRequest.requested_scope_hash_matches_latest ?? false)}</p>
+        <p>model_task_created / model_execution_implemented / provider_benchmark_done: {String(deepseekProviderBenchmarkExecutionRequest.model_task_created ?? false)} / {String(deepseekProviderBenchmarkExecutionRequest.model_execution_implemented ?? false)} / {String(deepseekProviderBenchmarkExecutionRequest.provider_benchmark_done ?? false)}</p>
+        <p>deepseek_called / external_calls_triggered: {String(deepseekProviderBenchmarkExecutionRequest.deepseek_called ?? false)} / {String(deepseekProviderBenchmarkExecutionRequest.external_calls_triggered ?? false)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(deepseekProviderBenchmarkExecutionRequest.not_allowed_next_steps) ? deepseekProviderBenchmarkExecutionRequest.not_allowed_next_steps.join(" / ") : "treat execution request as provider benchmark / call DeepSeek from execution request / production completion from execution request"}</p>
+      </PacketCard>
+      <h3>DeepSeek provider benchmark execution request rows</h3>
+      <DataLineageTable rows={deepseekProviderBenchmarkExecutionRequestRows} />
+      <DataLineageTable rows={deepseekProviderBenchmarkExecutionRequestReceiptRows} />
       <PacketCard title="DeepSeek durable evidence recipe" subtitle="LTG-07 durable evidence 缺口清单；只读、不调用模型、不把 recipe 当 benchmark">
         <p>schema_version: {String(deepseekDurableEvidenceRecipe.schema_version ?? "factor_deepseek_durable_evidence_recipe.v1")}</p>
         <p>status: {String(deepseekDurableEvidenceRecipe.status ?? "missing")}</p>

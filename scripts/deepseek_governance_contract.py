@@ -340,6 +340,7 @@ def build_contract() -> dict[str, Any]:
     )
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/deepseek_governance_contract.py")
+    factor_page = _read_script("desktop/src/routes/FactorQuantHub.tsx")
     deepseek_production_stage_scope_rows = _deepseek_production_stage_scope_rows()
 
     rows = [
@@ -698,6 +699,19 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("does_not_output_strategy_action") is True for row in deepseek_production_stage_scope_rows)
             and all(row.get("contains_secret") is False for row in deepseek_production_stage_scope_rows),
             "DeepSeek production scope rows must enumerate every pending evidence stage and keep provider benchmark, model execution, automatic production readiness, trades, actions, and secrets disabled.",
+        ),
+        _row(
+            "frontend_displays_provider_benchmark_execution_request",
+            "launchTask(\"/api/factor-quant/deepseek-provider-benchmark-scope-ticket\"" in factor_page
+            and "launchTask(\"/api/factor-quant/deepseek-provider-benchmark-execution-request\"" in factor_page
+            and "deepseekProviderBenchmarkExecutionRequest" in factor_page
+            and "deepseek_provider_benchmark_execution_request_receipt" in factor_page
+            and "deepseek_provider_benchmark_execution_request_rows" in factor_page
+            and "DeepSeek provider benchmark execution request" in factor_page
+            and "不调用模型、不创建 model task、不证明 provider benchmark" in factor_page
+            and "model_task_created / model_execution_implemented / provider_benchmark_done" in factor_page
+            and "deepseek_called / external_calls_triggered" in factor_page,
+            "Factor Quant Hub must expose the LTG-07 scope-bound execution-request button and readback without making it a model call or provider benchmark.",
         ),
         _row(
             "push_gate_runs_deepseek_contract_after_factor_lab",
