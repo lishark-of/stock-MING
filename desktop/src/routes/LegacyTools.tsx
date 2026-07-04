@@ -147,6 +147,83 @@ export default function LegacyTools() {
       边界: "local receipt、matrix、route inventory 或本页罗盘都不是 Streamlit retirement completion。"
     }
   ];
+  const streamlitStrictCloseoutGateRows = [
+    {
+      gate_key: "ordinary_replacement_visible_fallback_retained",
+      current_status: "ordinary workflow still needs fallback",
+      strict_closeout_state: "strict closeout remains blocked",
+      can_close_ltg10_now: false,
+      evidence_required: "ordinary capability replacement evidence, browser/performance QA, provider-backed acceptance, admin/debug decision, fallback retirement review, and app.py decision before strict closeout",
+      ordinary_workflow_exit_complete: false,
+      streamlit_fallback_removal_ready: false,
+      full_streamlit_removal_ready: false,
+      streamlit_fallback_retained: true,
+      direct_replacement_evidence_complete: false,
+      browser_performance_qa_done: false,
+      provider_backed_acceptance_done: false,
+      admin_debug_decision_done: false,
+      fallback_removed_by_gate: false,
+      app_py_deleted_by_gate: false,
+      streamlit_opened_by_gate: false,
+      legacy_tools_run_by_gate: false,
+      tasks_created_by_gate: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      does_not_modify_holdings: true,
+      contains_secret: false
+    },
+    {
+      gate_key: "retirement_authorization_required",
+      current_status: "future explicit ordinary capability replacement evidence review and Streamlit fallback retirement review",
+      strict_closeout_state: "strict closeout remains blocked",
+      can_close_ltg10_now: false,
+      evidence_required: "replacement parity, browser/performance QA, provider-backed acceptance, admin/debug retention decision, fallback retirement review, app.py removal or retention decision",
+      ordinary_workflow_exit_complete: false,
+      streamlit_fallback_removal_ready: false,
+      full_streamlit_removal_ready: false,
+      streamlit_fallback_retained: true,
+      fallback_removed_by_gate: false,
+      app_py_deleted_by_gate: false,
+      streamlit_opened_by_gate: false,
+      legacy_tools_run_by_gate: false,
+      tasks_created_by_gate: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      does_not_modify_holdings: true,
+      contains_secret: false
+    },
+    {
+      gate_key: "LTG-12 交易隔离支撑",
+      current_status: "legacy fallback and React/Tauri replacements remain research-only, not broker connection or order endpoint",
+      strict_closeout_state: "trade isolation remains enforced",
+      can_close_ltg10_now: false,
+      ordinary_workflow_exit_complete: false,
+      streamlit_fallback_removal_ready: false,
+      full_streamlit_removal_ready: false,
+      streamlit_fallback_retained: true,
+      fallback_removed_by_gate: false,
+      app_py_deleted_by_gate: false,
+      streamlit_opened_by_gate: false,
+      legacy_tools_run_by_gate: false,
+      tasks_created_by_gate: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      does_not_modify_holdings: true,
+      contains_secret: false
+    }
+  ];
 
   return (
     <>
@@ -211,6 +288,14 @@ export default function LegacyTools() {
         <p>普通主流程请使用 Command Center 3；3.0 正式主路径会逐步迁移到 React + FastAPI + Tauri。</p>
         <p>Streamlit 不是正式主入口；Legacy 页面不会创建任务，不调用 Tushare、DeepSeek 或 GitHub，也不会打开 Streamlit 或运行旧工具。</p>
         <p>GET /api/legacy/cache 只读展示旧工作台桥接和迁移清单，不会绕过 strategy_execution_packet。</p>
+      </PacketCard>
+
+      <PacketCard title="LTG-10 Streamlit strict closeout gate" subtitle="纵切先让 3.0 普通替代入口可读；Streamlit fallback 仍保留到 direct replacement evidence 完成" status="strict_closeout_blocked">
+        <p className="ordinary-status-note">ordinary_workflow_exit_complete: false；streamlit_fallback_retained: true；can_close_ltg10_now: false；strict closeout remains blocked。</p>
+        <p className="risk-note">next_authorized_streamlit_step: future explicit ordinary capability replacement evidence review and Streamlit fallback retirement review。</p>
+        <p className="risk-note">LTG-12 boundary: legacy fallback and React/Tauri replacements remain research-only, not broker connection or order endpoint。</p>
+        <p className="risk-note">GET legacy cache / React render / local links do not open Streamlit, run legacy tools, create tasks, remove fallback, delete app.py, call providers/models/GitHub, or trade.</p>
+        <DataLineageTable rows={streamlitStrictCloseoutGateRows} />
       </PacketCard>
 
       <PacketCard title="旧工作台桥接 cache" subtitle="old_workspace_packet_bridge / legacy_packet_migration_checklist" status={String(cache.status ?? "cache")}>

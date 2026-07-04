@@ -231,6 +231,8 @@ def build_contract() -> dict[str, Any]:
         if ordinary_compass_start != -1 and ordinary_compass_end != -1
         else ""
     )
+    strict_closeout_gate_start = route_source.find('title="LTG-10 Streamlit strict closeout gate"')
+    bridge_cache_card_start = route_source.find('title="旧工作台桥接 cache"', strict_closeout_gate_start)
 
     rows = [
         _row(
@@ -479,6 +481,36 @@ def build_contract() -> dict[str, Any]:
             "Durable evidence recipe must enumerate direct parity/provider/browser/admin/fallback/app.py/promotion evidence while keeping Streamlit fallback retained and all execution/external/trading side effects disabled.",
         ),
         _row(
+            "streamlit_strict_closeout_gate_is_user_visible_and_blocked",
+            "streamlitStrictCloseoutGateRows" in route_source
+            and "LTG-10 Streamlit strict closeout gate" in route_source
+            and "strict_closeout_blocked" in route_source
+            and "strict closeout remains blocked" in route_source
+            and "can_close_ltg10_now: false" in route_source
+            and "ordinary_workflow_exit_complete: false" in route_source
+            and "streamlit_fallback_retained: true" in route_source
+            and "ordinary capability replacement evidence, browser/performance QA, provider-backed acceptance, admin/debug decision, fallback retirement review, and app.py decision before strict closeout"
+            in route_source
+            and "retirement_authorization_required" in route_source
+            and "future explicit ordinary capability replacement evidence review and Streamlit fallback retirement review"
+            in route_source
+            and "LTG-12 交易隔离支撑" in route_source
+            and "legacy fallback and React/Tauri replacements remain research-only, not broker connection or order endpoint"
+            in route_source
+            and "GET legacy cache / React render / local links do not open Streamlit" in route_source
+            and "run legacy tools" in route_source
+            and "remove fallback" in route_source
+            and "delete app.py" in route_source
+            and "call providers/models/GitHub" in route_source
+            and "does_not_execute_trades: true" in route_source
+            and "does_not_modify_strategy_action: true" in route_source
+            and "does_not_modify_holdings: true" in route_source
+            and "contains_secret: false" in route_source
+            and strict_closeout_gate_start != -1
+            and ordinary_compass_start < strict_closeout_gate_start < bridge_cache_card_start,
+            "React page must show a user-visible LTG-10 strict closeout blocker after the ordinary replacement compass and before bridge/audit details, without opening Streamlit, removing fallback, deleting app.py, or claiming retirement completion.",
+        ),
+        _row(
             "react_legacy_page_displays_boundaries",
             "Legacy / Admin / Debug" in route_source
             and "Streamlit 2.0 保留为 legacy" in route_source
@@ -642,6 +674,7 @@ def build_contract() -> dict[str, Any]:
             ),
             "legacy_deep_link_present": legacy_deep_link_present,
             "legacy_deep_link_fallback_navigation_only": legacy_deep_link_fallback_navigation_only,
+            "streamlit_strict_closeout_gate_visible": strict_closeout_gate_start != -1,
         },
         "streamlit_retirement_stage_scope_rows": streamlit_retirement_stage_scope_rows,
         "streamlit_retirement_durable_evidence_rows": durable_evidence_rows,
