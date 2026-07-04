@@ -255,6 +255,46 @@ FACTOR_TEST_DURABLE_EVIDENCE_LABELS = {
     "promotion_review_required": "Promotion review required",
     "no_trade_action_secret_boundary": "No trade, action, or secret boundary",
 }
+FACTOR_TEST_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION = "factor_test_production_stage_scope_manifest.v1"
+FACTOR_TEST_PRODUCTION_STAGE_KEYS = (
+    "local_light_metric_baseline",
+    "provider_small_pool_scope_ticket",
+    "provider_backed_small_pool_sample",
+    "multi_horizon_forward_returns",
+    "rolling_ic_icir_validation",
+    "cost_turnover_validation",
+    "neutralization_stability_validation",
+    "pit_bias_controls",
+    "full_market_boundary_review",
+    "promotion_review_and_freeze",
+)
+FACTOR_TEST_PRODUCTION_STAGE_LABELS = {
+    "local_light_metric_baseline": "Local light metric baseline stays research-only",
+    "provider_small_pool_scope_ticket": "Provider small-pool scope ticket is ready before real execution",
+    "provider_backed_small_pool_sample": "Provider-backed small-pool sample evidence is required",
+    "multi_horizon_forward_returns": "Multi-horizon forward returns require direct validation",
+    "rolling_ic_icir_validation": "Rolling IC / ICIR windows require direct validation",
+    "cost_turnover_validation": "Cost and turnover assumptions require production validation",
+    "neutralization_stability_validation": "Industry and market-cap neutralization stability is required",
+    "pit_bias_controls": "PIT, lookahead, and survivorship controls require provider evidence",
+    "full_market_boundary_review": "Small-pool proof must not become full-market proof",
+    "promotion_review_and_freeze": "Explicit promotion review is required before production completion",
+}
+FACTOR_TEST_LOCAL_STAGE_EVIDENCE_KEYS = {
+    "local_light_metric_baseline",
+    "provider_small_pool_scope_ticket",
+}
+FACTOR_TEST_PRODUCTION_STAGE_MISSING_EVIDENCE = (
+    "explicit provider-backed small-pool task evidence",
+    "safe provider call ledger rows",
+    "non-empty target sample rows",
+    "multi-horizon forward-return labels",
+    "rolling-window IC and ICIR evidence",
+    "cost and turnover assumption review",
+    "neutralization stability evidence",
+    "PIT, lookahead, and survivorship evidence",
+    "explicit promotion review before production completion",
+)
 
 
 def _now_iso() -> str:
@@ -429,6 +469,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, provider_small_pool_recipe_ledger = _attach_factor_test_provider_small_pool_execution_recipe(packet, now)
     packet, provider_small_pool_request_ledger = _attach_factor_test_provider_small_pool_execution_request(packet, now)
     packet, factor_test_durable_recipe_ledger = _attach_factor_test_durable_evidence_recipe(packet, now)
+    packet, factor_test_production_stage_ledger = _attach_factor_test_production_stage_scope_manifest(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
     packet["cache_call_ledger"] = cache_ledger
@@ -455,6 +496,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + provider_small_pool_recipe_ledger
         + provider_small_pool_request_ledger
         + factor_test_durable_recipe_ledger
+        + factor_test_production_stage_ledger
         + candidate_handoff_ledger
         + list(existing_ledger)
     )
@@ -478,6 +520,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     provider_small_pool_recipe_warning = "Factor Test provider small-pool execution recipe 只固定未来真实小股票池验收顺序；不会调用 Tushare、计算生产 IC 或标记生产完成。"
     provider_small_pool_request_warning = "Factor Test provider small-pool execution request ticket 只绑定 dry-run scope hash 和后续手工 provider task 请求；不会调用 Tushare、创建 provider task 或标记生产完成。"
     factor_test_durable_recipe_warning = "Factor Test durable evidence recipe 只固定 LTG-03 生产验收直接证据清单；不会调用 Tushare/DeepSeek/GitHub、计算生产 IC 或标记生产完成。"
+    factor_test_production_stage_warning = "Factor Test production stage manifest 只展示 LTG-03 生产阶段 direct evidence / pending 缺口；不会创建 provider task、调用 Tushare 或标记生产完成。"
     candidate_handoff_warning = "Factor Quant CandidateRadar handoff 只读本地搜票确认结果和 Tushare-first 回放摘要；不会创建 task、调用 Tushare/DeepSeek、修改 operation_zones 或标记生产完成。"
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
     owned_warnings = {
@@ -501,6 +544,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_small_pool_recipe_warning,
         provider_small_pool_request_warning,
         factor_test_durable_recipe_warning,
+        factor_test_production_stage_warning,
         candidate_handoff_warning,
     }
     packet["warnings"] = [
@@ -524,6 +568,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_small_pool_recipe_warning,
         provider_small_pool_request_warning,
         factor_test_durable_recipe_warning,
+        factor_test_production_stage_warning,
         candidate_handoff_warning,
     ] + [
         item
@@ -5572,6 +5617,207 @@ def _attach_factor_test_provider_small_pool_execution_request(
         acceptance["provider_backed_small_pool_validation_done"] = False
         acceptance["production_factor_test_validation_complete"] = False
         factor_tests["acceptance_contract"] = acceptance
+    packet["factor_tests"] = factor_tests
+    return packet, ledger
+
+
+def _factor_test_production_stage_scope_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for stage_key in FACTOR_TEST_PRODUCTION_STAGE_KEYS:
+        local_stage_evidence_present = stage_key in FACTOR_TEST_LOCAL_STAGE_EVIDENCE_KEYS
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": FACTOR_TEST_PRODUCTION_STAGE_LABELS.get(stage_key, stage_key),
+                "scope": "factor_test_production_stage_scope_manifest",
+                "current_status": (
+                    "local_light_or_scope_ticket_ready_provider_validation_pending"
+                    if local_stage_evidence_present
+                    else "provider_direct_evidence_pending"
+                ),
+                "target_status": "provider_backed_research_grade_direct_evidence_required",
+                "local_stage_evidence_present": local_stage_evidence_present,
+                "provider_direct_evidence_present": False,
+                "required_before_production_factor_test_validation": True,
+                "provider_backed_small_pool_validation_done": False,
+                "full_market_validation_done": False,
+                "production_factor_test_validation_complete": False,
+                "real_provider_sample_still_required": True,
+                "provider_promotion_still_required": True,
+                "provider_execution_implemented": False,
+                "provider_call_ledger_evidence_done": False,
+                "sample_rows_collected": False,
+                "multi_horizon_forward_returns_done": False,
+                "rolling_window_validation_done": False,
+                "cost_assumption_validation_done": False,
+                "neutralization_stability_done": False,
+                "pit_bias_controls_done": False,
+                "full_market_promotion_done": False,
+                "metrics_remain_research_only": True,
+                "enters_strategy_action": False,
+                "enters_core_action": False,
+                "enters_evidence_effects": False,
+                "enters_next_session_projection": False,
+                "frontend_computes_action": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "missing_evidence": list(FACTOR_TEST_PRODUCTION_STAGE_MISSING_EVIDENCE),
+            }
+        )
+    return rows
+
+
+def _factor_test_production_stage_scope_manifest(
+    factor_tests: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    rows = _factor_test_production_stage_scope_rows()
+    stage_keys = [str(row.get("stage_key") or "") for row in rows]
+    local_stage_keys = [
+        str(row.get("stage_key") or "")
+        for row in rows
+        if row.get("local_stage_evidence_present") is True
+    ]
+    pending_stage_keys = [
+        str(row.get("stage_key") or "")
+        for row in rows
+        if row.get("production_factor_test_validation_complete") is not True
+    ]
+    dry_run = _dict(factor_tests.get("provider_small_pool_acceptance_dry_run_receipt"))
+    execution_request = _dict(factor_tests.get("provider_small_pool_execution_request_receipt"))
+    manifest = {
+        "schema_version": FACTOR_TEST_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION,
+        "status": "factor_test_production_stage_scope_manifest_ready_production_pending",
+        "scope": "local_factor_test_production_stage_scope_manifest_no_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-03",
+        "stage_count": len(rows),
+        "stage_keys": stage_keys,
+        "local_surface_stage_count": len(local_stage_keys),
+        "local_surface_stage_keys": local_stage_keys,
+        "provider_direct_evidence_stage_count": 0,
+        "provider_direct_evidence_stage_keys": [],
+        "pending_stage_count": len(pending_stage_keys),
+        "pending_stage_keys": pending_stage_keys,
+        "production_blocker_count": len(pending_stage_keys),
+        "scope_ticket_status": dry_run.get("status") or "missing",
+        "scope_ticket_hash_short": dry_run.get("acceptance_scope_hash_short"),
+        "execution_request_status": execution_request.get("status") or "missing",
+        "local_manifest_ready": True,
+        "provider_task_created": False,
+        "provider_execution_implemented": False,
+        "provider_call_ledger_evidence_done": False,
+        "sample_rows_collected": False,
+        "multi_horizon_forward_returns_done": False,
+        "rolling_window_validation_done": False,
+        "cost_assumption_validation_done": False,
+        "neutralization_stability_done": False,
+        "pit_bias_controls_done": False,
+        "provider_backed_small_pool_validation_done": False,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "metrics_remain_research_only": True,
+        "enters_strategy_action": False,
+        "enters_core_action": False,
+        "enters_evidence_effects": False,
+        "enters_next_session_projection": False,
+        "frontend_computes_action": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "required_evidence": list(FACTOR_TEST_PRODUCTION_STAGE_MISSING_EVIDENCE),
+        "not_allowed_next_steps": [
+            "treat production stage manifest as provider execution",
+            "treat production stage manifest as production Factor Test completion",
+            "create provider task from GET cache",
+            "call Tushare from React render",
+            "compute production IC/Rank IC/ICIR in React",
+            "mutate strategy action",
+            "real trade execution",
+            "leak token/key",
+        ],
+        "rows": rows,
+        "note": "This local LTG-03 manifest surfaces which Factor Test production stages remain blocked. It does not call providers/models, create tasks, compute production metrics, execute trades, mutate strategy action, expose secrets, or prove production completion.",
+    }
+    ledger = [
+        {
+            "api": "local_factor_test_production_stage_scope_manifest",
+            "request_params_safe": {
+                "scope": manifest["scope"],
+                "stage_count": len(rows),
+                "pending_stage_count": len(pending_stage_keys),
+                "provider_direct_evidence_stage_count": 0,
+                "production_factor_test_validation_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": dry_run.get("end_date"),
+            "local_fetched_at": now,
+            "call_status": "local_manifest_ready_production_pending",
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+    manifest["call_ledger"] = ledger
+    return manifest, rows, ledger
+
+
+def _attach_factor_test_production_stage_scope_manifest(
+    packet: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    factor_tests = packet.get("factor_tests") if isinstance(packet.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    manifest, rows, ledger = _factor_test_production_stage_scope_manifest(factor_tests, now)
+    factor_tests["production_stage_scope_manifest"] = manifest
+    factor_tests["production_stage_scope_rows"] = rows
+    existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+    factor_tests["call_ledger"] = list(existing_test_ledger) + ledger
+    acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+    if acceptance:
+        acceptance = dict(acceptance)
+        acceptance["production_stage_scope_manifest_ready"] = True
+        acceptance["production_stage_scope_manifest_status"] = manifest["status"]
+        acceptance["production_stage_scope_manifest_is_not_provider_execution"] = True
+        acceptance["production_stage_scope_manifest_is_not_production_completion"] = True
+        acceptance["production_stage_scope_pending_count"] = manifest["pending_stage_count"]
+        acceptance["provider_execution_implemented"] = False
+        acceptance["provider_backed_small_pool_validation_done"] = False
+        acceptance["full_market_validation_done"] = False
+        acceptance["production_factor_test_validation_complete"] = False
+        factor_tests["acceptance_contract"] = acceptance
+    counts = _dict(packet.get("counts"))
+    counts.update(
+        {
+            "factor_test_production_stage_scope_count": manifest["stage_count"],
+            "factor_test_production_stage_scope_pending_count": manifest["pending_stage_count"],
+            "factor_test_production_stage_scope_local_surface_count": manifest["local_surface_stage_count"],
+            "factor_test_production_stage_scope_provider_direct_evidence_count": 0,
+        }
+    )
+    packet["counts"] = counts
+    policy = _dict(packet.get("policy"))
+    policy.update(
+        {
+            "factor_test_production_stage_scope_manifest_is_local": True,
+            "factor_test_production_stage_scope_manifest_is_not_execution": True,
+            "factor_test_production_stage_scope_manifest_is_not_production_completion": True,
+            "factor_test_production_stage_scope_requires_provider_backed_evidence": True,
+        }
+    )
+    packet["policy"] = policy
     packet["factor_tests"] = factor_tests
     return packet, ledger
 

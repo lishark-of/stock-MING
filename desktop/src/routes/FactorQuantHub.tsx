@@ -326,6 +326,7 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolExecutionRecipe = factorTests.provider_small_pool_execution_recipe ?? {};
   const factorTestProviderSmallPoolExecutionRequest = factorTests.provider_small_pool_execution_request_receipt ?? {};
   const factorTestDurableEvidenceRecipe = factorTests.durable_evidence_recipe ?? {};
+  const factorTestProductionStageScopeManifest = factorTests.production_stage_scope_manifest ?? {};
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
   const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
   const tushareProviderTargetSamplePlan = packet.provider_target_sample_plan_contract ?? {};
@@ -412,6 +413,8 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolExecutionRequestCriterionRows = toRows(factorTests.provider_small_pool_execution_request_rows);
   const factorTestDurableEvidenceRecipeRows = objectRows(factorTestDurableEvidenceRecipe as Record<string, unknown>, "factor_test_durable_evidence_recipe");
   const factorTestDurableEvidenceRows = toRows(factorTests.durable_evidence_rows);
+  const factorTestProductionStageScopeManifestRows = objectRows(factorTestProductionStageScopeManifest as Record<string, unknown>, "factor_test_production_stage_scope_manifest");
+  const factorTestProductionStageScopeRows = toRows(factorTests.production_stage_scope_rows);
   const tushareFailureModeQaRows = objectRows(tushareFailureModeQa as Record<string, unknown>, "failure_mode_contract");
   const tushareFailureModeCriterionRows = toRows(packet.failure_mode_qa_rows);
   const tushareRequestParameterQaRows = objectRows(tushareRequestParameterQa as Record<string, unknown>, "request_parameter_contract");
@@ -1324,6 +1327,46 @@ export default function FactorQuantHub() {
       : "缺 provider task、sample rows、rolling IC/ICIR、成本、neutralization、PIT bias 和 promotion review";
   const ordinaryFactorTestProviderBoundary =
     "本卡只读 Factor cache；不触发 dry-run、execution request 或 provider task；真实 Tushare 小池必须另行授权 POST task";
+  const ordinaryFactorTestProductionStageCount = Number(factorTestProductionStageScopeManifest.stage_count ?? factorTestProductionStageScopeRows.length ?? 0);
+  const ordinaryFactorTestProductionStagePendingCount = Number(factorTestProductionStageScopeManifest.pending_stage_count ?? factorTestProductionStageScopeRows.length ?? 0);
+  const ordinaryFactorTestProductionStageLocalCount = Number(factorTestProductionStageScopeManifest.local_surface_stage_count ?? 0);
+  const ordinaryFactorTestProductionStageDirectCount = Number(factorTestProductionStageScopeManifest.provider_direct_evidence_stage_count ?? 0);
+  const ordinaryFactorTestProductionStageStatus =
+    ordinaryFactorTestProductionStagePendingCount > 0
+      ? `${ordinaryFactorTestProductionStagePendingCount}/${ordinaryFactorTestProductionStageCount || ordinaryFactorTestProductionStagePendingCount} 项仍待 provider-backed 直接证据`
+      : "生产阶段清单无 pending 项";
+  const ordinaryFactorTestProductionStageItems: MetricItem[] = [
+    {
+      label: "生产阶段",
+      value: ordinaryFactorTestProductionStageStatus,
+      tone: ordinaryFactorTestProductionStagePendingCount > 0 ? "warn" : "good"
+    },
+    {
+      label: "本地可见",
+      value: `${ordinaryFactorTestProductionStageLocalCount} 项 local surface：local light / scope ticket 只证明边界可见`,
+      tone: ordinaryFactorTestProductionStageLocalCount > 0 ? "good" : "warn"
+    },
+    {
+      label: "直接证据",
+      value: `${ordinaryFactorTestProductionStageDirectCount} 项 provider direct evidence；生产完成前必须补真实 provider task、ledger 和样本行`,
+      tone: ordinaryFactorTestProductionStageDirectCount > 0 ? "good" : "warn"
+    },
+    {
+      label: "scope 状态",
+      value: String(factorTestProductionStageScopeManifest.scope_ticket_status ?? factorTestProviderSmallPoolDryRun.status ?? "missing"),
+      tone: factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true ? "good" : "warn"
+    },
+    {
+      label: "执行请求",
+      value: String(factorTestProductionStageScopeManifest.execution_request_status ?? factorTestProviderSmallPoolExecutionRequest.status ?? "missing"),
+      tone: factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "factor_test_production_stage_scope_manifest 只展示 direct evidence / pending 缺口；不创建 provider task、不调用 Tushare、不标记 production complete",
+      tone: "good"
+    }
+  ];
   const ordinaryFactorTestProviderSmallPoolItems: MetricItem[] = [
     {
       label: "LTG-03",
@@ -1472,6 +1515,16 @@ export default function FactorQuantHub() {
           <p className="ordinary-status-note">普通页直接显示真实小股票池研究是否已有 provider-backed 直接证据；当前只读本地 cache 和历史 ticket，不从页面渲染或查看结果创建 provider 任务。</p>
           <MetricGrid items={ordinaryFactorTestProviderSmallPoolItems} />
           <p className="risk-note">{ordinaryFactorTestProviderBoundary}；local light observations、scope ticket 或 execution request 都不能当 production Factor Test validation complete。</p>
+        </div>
+        <div aria-label="stock quant ordinary factor test production stage scope">
+          <h3>LTG-03 生产阶段清单</h3>
+          <p className="ordinary-status-note">普通页直接显示 factor_test_production_stage_scope_manifest：本地可见阶段、provider 直接证据和仍待补的生产阶段分开看；清单只读 cache，不创建 provider 任务。</p>
+          <MetricGrid items={ordinaryFactorTestProductionStageItems} />
+          <details className="developer-audit-details" aria-label="stock quant ordinary factor test production stage rows">
+            <summary>LTG-03 生产阶段明细</summary>
+            <p className="risk-note">这些行只展示 local surface 与 provider direct evidence 的缺口；不调用 Tushare/DeepSeek/GitHub、不计算生产 IC/Rank IC/ICIR、不进入 strategy action。</p>
+            <DataLineageTable rows={factorTestProductionStageScopeRows} />
+          </details>
         </div>
         <details className="developer-audit-details" aria-label="stock quant ordinary summary extra details">
           <summary>更多量化摘要字段</summary>
@@ -2034,6 +2087,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">factor_test_durable_evidence_recipe 只固定 LTG-03 真实小股票池生产验收直接证据清单；不调用 Tushare/DeepSeek/GitHub、不计算生产 IC/Rank IC/ICIR、不进入 strategy action，也不代表 provider-backed 或 production Factor Test 完成。</p>
       <DataLineageTable rows={factorTestDurableEvidenceRows} />
       <DataLineageTable rows={factorTestDurableEvidenceRecipeRows} />
+      <h3>Factor Test production stage scope manifest</h3>
+      <p className="risk-note">factor_test_production_stage_scope_manifest 只把 LTG-03 生产阶段的 local surface、provider direct evidence 和 pending blockers 展示到 cache/UI；不创建 provider task、不调用 Tushare/DeepSeek/GitHub、不计算生产指标、不代表 production Factor Test complete。</p>
+      <DataLineageTable rows={factorTestProductionStageScopeRows} />
+      <DataLineageTable rows={factorTestProductionStageScopeManifestRows} />
       <h3>Factor Test 指标 schema</h3>
       <DataLineageTable rows={factorTestMetricRows} />
       <h3>Factor Test 阶段计划</h3>

@@ -59288,6 +59288,113 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "local_factor_test_durable_evidence_recipe",
             {item.get("api") for item in factor["call_ledger"]},
         )
+        production_stage_manifest = factor["data"]["factor_tests"]["production_stage_scope_manifest"]
+        self.assertEqual(
+            production_stage_manifest["schema_version"],
+            "factor_test_production_stage_scope_manifest.v1",
+        )
+        self.assertEqual(
+            production_stage_manifest["scope"],
+            "local_factor_test_production_stage_scope_manifest_no_provider_execution",
+        )
+        self.assertEqual(
+            production_stage_manifest["status"],
+            "factor_test_production_stage_scope_manifest_ready_production_pending",
+        )
+        expected_stage_keys = {
+            "local_light_metric_baseline",
+            "provider_small_pool_scope_ticket",
+            "provider_backed_small_pool_sample",
+            "multi_horizon_forward_returns",
+            "rolling_ic_icir_validation",
+            "cost_turnover_validation",
+            "neutralization_stability_validation",
+            "pit_bias_controls",
+            "full_market_boundary_review",
+            "promotion_review_and_freeze",
+        }
+        self.assertEqual(set(production_stage_manifest["stage_keys"]), expected_stage_keys)
+        self.assertEqual(production_stage_manifest["stage_count"], len(expected_stage_keys))
+        self.assertEqual(production_stage_manifest["local_surface_stage_count"], 2)
+        self.assertEqual(production_stage_manifest["provider_direct_evidence_stage_count"], 0)
+        self.assertEqual(production_stage_manifest["pending_stage_count"], len(expected_stage_keys))
+        self.assertEqual(production_stage_manifest["production_blocker_count"], len(expected_stage_keys))
+        self.assertFalse(production_stage_manifest["provider_task_created"])
+        self.assertFalse(production_stage_manifest["provider_execution_implemented"])
+        self.assertFalse(production_stage_manifest["provider_call_ledger_evidence_done"])
+        self.assertFalse(production_stage_manifest["sample_rows_collected"])
+        self.assertFalse(production_stage_manifest["multi_horizon_forward_returns_done"])
+        self.assertFalse(production_stage_manifest["rolling_window_validation_done"])
+        self.assertFalse(production_stage_manifest["cost_assumption_validation_done"])
+        self.assertFalse(production_stage_manifest["neutralization_stability_done"])
+        self.assertFalse(production_stage_manifest["pit_bias_controls_done"])
+        self.assertFalse(production_stage_manifest["provider_backed_small_pool_validation_done"])
+        self.assertFalse(production_stage_manifest["full_market_validation_done"])
+        self.assertFalse(production_stage_manifest["production_factor_test_validation_complete"])
+        self.assertFalse(production_stage_manifest["external_calls_triggered"])
+        self.assertFalse(production_stage_manifest["tushare_called"])
+        self.assertFalse(production_stage_manifest["deepseek_called"])
+        self.assertFalse(production_stage_manifest["github_called"])
+        self.assertTrue(production_stage_manifest["does_not_execute_trades"])
+        self.assertTrue(production_stage_manifest["does_not_modify_strategy_action"])
+        self.assertFalse(production_stage_manifest["contains_secret"])
+        production_stage_rows = {
+            row["stage_key"]: row
+            for row in factor["data"]["factor_tests"]["production_stage_scope_rows"]
+        }
+        self.assertEqual(set(production_stage_rows), expected_stage_keys)
+        self.assertTrue(production_stage_rows["local_light_metric_baseline"]["local_stage_evidence_present"])
+        self.assertTrue(production_stage_rows["provider_small_pool_scope_ticket"]["local_stage_evidence_present"])
+        self.assertFalse(production_stage_rows["provider_backed_small_pool_sample"]["provider_direct_evidence_present"])
+        for row in production_stage_rows.values():
+            self.assertEqual(row["scope"], "factor_test_production_stage_scope_manifest")
+            self.assertEqual(row["target_status"], "provider_backed_research_grade_direct_evidence_required")
+            self.assertTrue(row["required_before_production_factor_test_validation"])
+            self.assertFalse(row["provider_direct_evidence_present"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["provider_call_ledger_evidence_done"])
+            self.assertFalse(row["sample_rows_collected"])
+            self.assertFalse(row["multi_horizon_forward_returns_done"])
+            self.assertFalse(row["rolling_window_validation_done"])
+            self.assertFalse(row["cost_assumption_validation_done"])
+            self.assertFalse(row["neutralization_stability_done"])
+            self.assertFalse(row["pit_bias_controls_done"])
+            self.assertFalse(row["provider_backed_small_pool_validation_done"])
+            self.assertFalse(row["production_factor_test_validation_complete"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+            self.assertGreaterEqual(len(row["missing_evidence"]), 9)
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"]["production_stage_scope_manifest_ready"]
+        )
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"][
+                "production_stage_scope_manifest_is_not_provider_execution"
+            ]
+        )
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"][
+                "production_stage_scope_manifest_is_not_production_completion"
+            ]
+        )
+        self.assertEqual(
+            factor["data"]["counts"]["factor_test_production_stage_scope_provider_direct_evidence_count"],
+            0,
+        )
+        self.assertTrue(factor["data"]["policy"]["factor_test_production_stage_scope_manifest_is_local"])
+        self.assertTrue(factor["data"]["policy"]["factor_test_production_stage_scope_manifest_is_not_execution"])
+        self.assertTrue(
+            factor["data"]["policy"]["factor_test_production_stage_scope_manifest_is_not_production_completion"]
+        )
+        self.assertIn(
+            "local_factor_test_production_stage_scope_manifest",
+            {item.get("api") for item in factor["call_ledger"]},
+        )
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(factor, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(factor, ensure_ascii=False))
 
