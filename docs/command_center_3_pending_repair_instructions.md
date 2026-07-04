@@ -42,6 +42,7 @@ Current interpretation:
 8. Call Ledger Audit now reads ignored User Route QA reports through `user_route_qa_evidence_contract`, showing ordinary route visual QA, typing/task silence, Candidate Radar route pass state, local report counts, and no-provider/no-trade boundaries without opening a browser or committing screenshots.
 9. Candidate Radar ordinary first screen now explains retirement-readiness as "退旧雷达前还缺什么" instead of leading with production/stage blocker wording; detailed gap rows stay collapsed and the slice remains local read-only evidence, not LTG-13 strict closeout.
 10. Stock Quant Projection / Factor Quant Hub now shows LTG-03 true small-pool validation as an authorization-waiting state on the ordinary first screen: local scope and execution-request tickets are historical/read-only, and real provider task/sample/rolling/cost/neutralization evidence still requires explicit user authorization.
+11. ETF / Margin now has a button-gated local task contract: `POST /api/market/margin-etf-local-refresh` writes a safe `command_center_margin_etf_refresh_receipt`, the page shows disabled/degraded reasons before the click, and `TaskStatusPanel` shows the local task status after the click. This remains a local packet replay, not provider refresh, Streamlit retirement, or LTG strict closeout.
 
 ## Next Repair Goals
 
@@ -54,6 +55,7 @@ Current interpretation:
 2. ETF / Margin Task Contract
    - Goal: add a manual POST task for refreshing or rebuilding the ETF / Margin local packet.
    - Boundary: no automatic page-open refresh; no model call; no trade; no token/key in payload, log, packet, or frontend.
+   - Current local slice: `#marginEtf` already exposes the button, disabled/degraded reason, safe receipt, and `TaskStatusPanel` for `/api/market/margin-etf-local-refresh`. Do not repeat this as the next target unless QA finds a regression.
    - Exit check: the page shows disabled/degraded reason when the task is unavailable and shows task status when clicked.
 
 3. ETF / Margin Evidence Quality
