@@ -359,12 +359,74 @@ export default function WorkerRuntime() {
     { kind: "guarded_local", count: taskImplementation.guarded_local_task_count, task_types: Array.isArray(taskImplementation.guarded_local_task_types) ? (taskImplementation.guarded_local_task_types as unknown[]).join(" / ") : "" },
     { kind: "external_capable", count: taskImplementation.external_capable_task_count, task_types: Array.isArray(taskImplementation.external_capable_task_types) ? (taskImplementation.external_capable_task_types as unknown[]).join(" / ") : "" }
   ];
+  const workerRuntimeStateLabel = runtime.local_fallback_enabled === false
+    ? "local fallback 不可用，先看任务目录和 cache 状态"
+    : visibleRuntimeQaExecution.local_runtime_qa_execution_done === true
+      ? "本地 fallback runtime QA 已有可读 evidence；Celery/Redis 仍未作为生产完成"
+      : visibleRuntimeQaDryRun.local_dry_run_ready === true
+        ? "runtime QA dry-run 已可读；真实 runtime QA execution 需显式按钮"
+        : visibleRuntimeQaExecutionRequest.local_execution_request_ready === true
+          ? "runtime QA execution request 已绑定 scope；dry-run 待显式按钮"
+          : "local fallback 可读，Celery/Redis 生产 QA 仍待显式任务";
+  const workerRuntimeNextStep = visibleRuntimeQaExecution.local_runtime_qa_execution_done === true
+    ? "查看 durable evidence recipe 和 promotion blocker；不要把 local fallback 当 Celery/Redis 生产完成"
+    : visibleRuntimeQaDryRun.local_dry_run_ready === true
+      ? "下方显式运行 runtime QA execution；它只做本地 fallback round-trip，不启动 Celery/Redis"
+      : visibleRuntimeQaExecutionRequest.local_execution_request_ready === true
+        ? "下方显式运行 runtime QA dry-run；仍不启动 worker、不 ping Redis"
+        : "先看 synthetic healthcheck、activation review 和 evidence plan 的缺口";
+  const workerOrdinaryFirstScreenSentence =
+    `Worker 运行时：${workerRuntimeStateLabel}；下一步：${workerRuntimeNextStep}；边界：GET cache 不启动 Celery/Redis，不派发 provider/model task。`;
+  const workerOrdinaryFirstScreenItems = [
+    {
+      label: "运行方式",
+      value: workerRuntimeStateLabel,
+      tone: runtime.local_fallback_enabled === false ? "bad" as const : "good" as const
+    },
+    {
+      label: "本地任务",
+      value: `tasks=${String(counts.task_count ?? 0)} / local=${String(counts.implemented_local_task_count ?? taskImplementation.implemented_local_task_count ?? 0)} / logs=${String(counts.worker_task_log_count ?? taskStatus.task_log_count ?? 0)}`,
+      tone: "good" as const
+    },
+    {
+      label: "Runtime QA",
+      value: workerRuntimeNextStep,
+      tone: visibleRuntimeQaExecution.local_runtime_qa_execution_done === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "Celery/Redis",
+      value: `Celery=${String(runtime.celery_available ?? false)} / Redis package=${String(runtime.redis_package_available ?? false)} / Redis ping=${String(cache.redis_pinged ?? false)}`,
+      tone: cache.redis_pinged === true || runtime.scheduler_started === true ? "bad" as const : "warn" as const
+    },
+    {
+      label: "Storage 支撑",
+      value: "Storage 页面只读展示 DuckDB/Parquet/SQLite；Worker GET 不写 storage、不启动迁移",
+      tone: "good" as const
+    },
+    {
+      label: "安全边界",
+      value: "GET worker 只读；不启动 Celery/Redis/APScheduler、不派发任务、不调用 provider/model、不交易",
+      tone: "good" as const
+    }
+  ];
 
   return (
     <>
       <div className="page-head">
         <h1>Worker 运行时</h1>
         <StatusBadge label={String(cache.status ?? "cache_missing")} tone={cache.status === "ready" ? "good" : "neutral"} />
+      </div>
+
+      <div aria-label="worker ordinary first screen status">
+        <h3>运行时一眼状态</h3>
+        <p className="ordinary-status-note" aria-label="worker ordinary first screen sentence" aria-live="polite">{workerOrdinaryFirstScreenSentence}</p>
+        <MetricGrid items={workerOrdinaryFirstScreenItems} />
+        <div className="actions" aria-label="worker ordinary first screen safe actions">
+          <button onClick={refreshCache} aria-label="refresh local worker cache only">刷新本地 worker cache</button>
+          <a href="#storage" aria-label="open storage support from worker">看 Storage 支撑</a>
+          <a href="#tasks" aria-label="open task catalog from worker runtime">看任务目录</a>
+        </div>
+        <p className="risk-note">首屏只汇总 local fallback、task/log 状态、runtime QA 下一步和 Storage 支撑边界；刷新只读取本地 GET cache，链接只切换本地页面，不启动 Celery/Redis/APScheduler、不创建 task、不调用 Tushare/DeepSeek/GitHub、不下单。</p>
       </div>
 
       <MetricGrid

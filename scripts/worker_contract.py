@@ -404,6 +404,7 @@ def build_contract() -> dict[str, Any]:
     task_persistence = _dict(packet.get("task_persistence"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/worker_contract.py")
+    worker_page = _read_script("desktop/src/routes/WorkerRuntime.tsx")
     production_evidence_scope = [
         str(item)
         for item in _list(_dict(production_evidence_plan.get("scope_ticket_payload")).get("evidence_scope"))
@@ -1433,6 +1434,19 @@ def build_contract() -> dict[str, Any]:
             and push_gate_script.find('run_step "Storage contract"') < push_gate_script.find('run_step "Worker contract"')
             and push_gate_script.find('run_step "Worker contract"') < push_gate_script.find('run_step "Motion viewport QA contract"'),
             "Push gate must run LTG-06 worker contract after Storage and before motion/static QA.",
+        ),
+        _row(
+            "worker_ordinary_first_screen_is_readable_and_cache_only",
+            'aria-label="worker ordinary first screen status"' in worker_page
+            and "workerOrdinaryFirstScreenSentence" in worker_page
+            and "workerOrdinaryFirstScreenItems" in worker_page
+            and 'aria-label="worker ordinary first screen safe actions"' in worker_page
+            and 'aria-label="refresh local worker cache only"' in worker_page
+            and 'href="#storage"' in worker_page
+            and "运行时一眼状态" in worker_page
+            and "GET worker 只读；不启动 Celery/Redis/APScheduler、不派发任务、不调用 provider/model、不交易" in worker_page
+            and "刷新只读取本地 GET cache，链接只切换本地页面，不启动 Celery/Redis/APScheduler、不创建 task、不调用 Tushare/DeepSeek/GitHub、不下单" in worker_page,
+            "Worker ordinary first screen must show local fallback/runtime QA next-step status before audit tables while staying cache-only and non-dispatching.",
         ),
         _row(
             "script_is_local_no_process_or_provider_execution",

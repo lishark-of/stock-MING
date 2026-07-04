@@ -441,12 +441,72 @@ export default function StorageOverview() {
   const backtestResultsSchemaSeedEvidence =
     (overview.backtest_results_schema_seed_evidence as Record<string, unknown> | undefined) ??
     ((storageCatalog.backtest_results_schema_seed_evidence as Record<string, unknown> | undefined) ?? {});
+  const storagePhysicalStatus = storagePhysicalExecutionPhaseA.local_phase_a_execution_ready === true
+    ? "Phase A 本地 evidence 已可读；仍未完成生产存储"
+    : storagePhysicalExecutionRequest.local_execution_request_ready === true
+      ? "physical execution request 已绑定 scope；Phase A 本地 evidence 待显式按钮"
+      : storagePhysicalExecutionRecipe.local_recipe_ready === true
+        ? "physical execution recipe 已可读；先生成 execution request"
+        : "等待本地 storage physical recipe";
+  const storagePhysicalNextStep = storagePhysicalExecutionRequest.local_execution_request_ready === true
+    ? "下方显式生成 Phase A local evidence；仍不写 Parquet、不写 manifest、不删除 artifacts"
+    : storagePhysicalExecutionRecipe.physical_execution_scope_hash
+      ? "下方生成 physical execution request；它只绑定 scope，不执行物理迁移"
+      : "先看 schema、manifest、partition、compaction、TTL 与 cleanup 缺口";
+  const storageDatasetReadinessLabel =
+    `catalog=${String(overview.dataset_count ?? datasetCatalog?.length ?? 0)} / parquet ready=${String(datasetImplementation.parquet_ready_dataset_count ?? 0)} / missing=${String(datasetImplementation.parquet_missing_dataset_count ?? 0)}`;
+  const storageOrdinaryFirstScreenSentence =
+    `本地数据底座：${storageDatasetReadinessLabel}；物理执行：${storagePhysicalStatus}；下一步：${storagePhysicalNextStep}。`;
+  const storageOrdinaryFirstScreenItems = [
+    {
+      label: "本地数据底座",
+      value: storageDatasetReadinessLabel,
+      tone: Number(datasetImplementation.parquet_ready_dataset_count ?? 0) > 0 ? "good" as const : "warn" as const
+    },
+    {
+      label: "SQLite meta",
+      value: String(overview.metadata_status ?? sqliteMeta.status ?? "missing"),
+      tone: String(overview.metadata_status ?? sqliteMeta.status ?? "").includes("ready") ? "good" as const : "warn" as const
+    },
+    {
+      label: "物理执行状态",
+      value: storagePhysicalStatus,
+      tone: storagePhysicalExecutionPhaseA.local_phase_a_execution_ready === true || storagePhysicalExecutionRequest.local_execution_request_ready === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "下一步",
+      value: storagePhysicalNextStep,
+      tone: "warn" as const
+    },
+    {
+      label: "Worker 支撑",
+      value: "Worker 页面只读展示 local fallback / runtime QA；Storage GET 不启动 worker",
+      tone: "good" as const
+    },
+    {
+      label: "安全边界",
+      value: "GET storage 只读；不写 Parquet/manifest、不删除 artifacts、不调用 provider/model、不交易",
+      tone: "good" as const
+    }
+  ];
 
   return (
     <>
       <div className="page-head">
         <h1>存储层</h1>
         <StatusBadge label={String(overview.store ?? "parquet_duckdb")} tone="neutral" />
+      </div>
+
+      <div aria-label="storage ordinary first screen status">
+        <h3>本地数据底座一眼状态</h3>
+        <p className="ordinary-status-note" aria-label="storage ordinary first screen sentence" aria-live="polite">{storageOrdinaryFirstScreenSentence}</p>
+        <MetricGrid items={storageOrdinaryFirstScreenItems} />
+        <div className="actions" aria-label="storage ordinary first screen safe actions">
+          <button onClick={refreshStorage} aria-label="refresh local storage cache only">刷新本地 storage cache</button>
+          <a href="#worker" aria-label="open worker runtime support from storage">看 Worker 支撑</a>
+          <a href="#migration" aria-label="open LTG migration ledger from storage">看 LTG 总账</a>
+        </div>
+        <p className="risk-note">首屏只汇总本地 dataset、SQLite meta、物理执行 ticket 状态和 Worker 支撑边界；刷新只读取本地 GET cache，链接只切换本地页面，不创建 task、不写文件、不调用 Tushare/DeepSeek/GitHub、不下单。</p>
       </div>
 
       <MetricGrid

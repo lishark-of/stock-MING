@@ -290,6 +290,7 @@ def build_contract() -> dict[str, Any]:
     task_rows = _storage_task_rows()
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/storage_contract.py")
+    storage_page = _read_script("desktop/src/routes/StorageOverview.tsx")
     physical_migration_stage_scope_rows = _physical_migration_stage_scope_rows()
 
     canonical_datasets = set(storage_service.CANONICAL_PARQUET_DATASETS)
@@ -1355,6 +1356,19 @@ def build_contract() -> dict[str, Any]:
             and push_gate_script.find('run_step "Candidate Radar contract"') < push_gate_script.find('run_step "Storage contract"')
             and push_gate_script.find('run_step "Storage contract"') < push_gate_script.find('run_step "Motion viewport QA contract"'),
             "Push gate must run LTG-05 storage contract after Candidate Radar and before motion/static QA.",
+        ),
+        _row(
+            "storage_ordinary_first_screen_is_readable_and_cache_only",
+            'aria-label="storage ordinary first screen status"' in storage_page
+            and "storageOrdinaryFirstScreenSentence" in storage_page
+            and "storageOrdinaryFirstScreenItems" in storage_page
+            and 'aria-label="storage ordinary first screen safe actions"' in storage_page
+            and 'aria-label="refresh local storage cache only"' in storage_page
+            and 'href="#worker"' in storage_page
+            and "本地数据底座一眼状态" in storage_page
+            and "GET storage 只读；不写 Parquet/manifest、不删除 artifacts、不调用 provider/model、不交易" in storage_page
+            and "刷新只读取本地 GET cache，链接只切换本地页面，不创建 task、不写文件、不调用 Tushare/DeepSeek/GitHub、不下单" in storage_page,
+            "Storage ordinary first screen must show local dataset/readiness/next-step status before audit tables while staying cache-only and non-executing.",
         ),
         _row(
             "script_is_local_no_provider_execution",
