@@ -235,7 +235,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("P1 直接确认入口", self.page)
         self.assertIn("这个入口只做本地锚点跳转", self.page)
         self.assertIn('<details className="developer-audit-details" aria-label="candidate radar denoised p1 p3 details">', self.page)
-        self.assertIn("<summary>P1/P2/P3 回放明细</summary>", self.page)
+        self.assertIn("<summary>Research Assist / Audit Details：P1/P2/P3 回放明细</summary>", self.page)
         self.assertIn("普通首屏保留确认按钮、TaskStatusPanel、刷新本地回放和候选池", self.page)
         self.assertIn("避免打开 #candidates 时像 acceptance report", self.page)
         self.assertIn('aria-label="candidate radar p2 three surface quick status"', self.page)

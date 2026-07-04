@@ -10,6 +10,9 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
     def test_search_panel_replays_cached_tushare_state_without_model_claim(self):
+        operator_start = self.page.index('title="下一票雷达操作台"')
+        operator_end = self.page.index('title="普通用户雷达摘要"', operator_start)
+        operator_panel = self.page[operator_start:operator_end]
         summary_start = self.page.index('title="普通用户雷达摘要"')
         summary_end = self.page.index('title="下一票候选池"', summary_start)
         summary_panel = self.page[summary_start:summary_end]
@@ -91,6 +94,13 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("ordinaryLiveLightEvidenceFactoryItems", self.page)
         self.assertIn("ordinaryPreviousCacheDeltaLabel", self.page)
         self.assertIn("ordinaryActiveDegradedLabel", self.page)
+        self.assertLess(operator_start, summary_start)
+        self.assertIn('label: "退旧雷达"', operator_panel)
+        self.assertIn("ordinaryRetirementReadinessStateLabel", operator_panel)
+        self.assertIn('label: "页面 QA"', operator_panel)
+        self.assertIn("ordinaryBrowserQaStatusLabel", operator_panel)
+        self.assertIn("退旧雷达前还缺什么：{ordinaryRetirementReadinessMainGaps}", operator_panel)
+        self.assertIn("候选不是买入指令；不交易", operator_panel)
         self.assertIn('aria-label="candidate radar ordinary live light evidence factory"', summary_panel)
         self.assertIn("轻量实时证据速读", summary_panel)
         self.assertIn("previous-cache diff", summary_panel)
@@ -103,6 +113,7 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar ordinary visible progress watch"', summary_panel)
         self.assertIn("边用边看进度", summary_panel)
         self.assertIn("MetricGrid items={quantProjectionTaskIndexProgressItems}", summary_panel)
+        self.assertIn("<summary>Research Assist / Audit Details：P1/P2/P3 回放明细</summary>", summary_panel)
         self.assertIn("coarseFineScreening", self.page)
         self.assertIn("coarse_fine_screening_contract", self.page)
         self.assertIn("coarse_screening_rows", self.page)

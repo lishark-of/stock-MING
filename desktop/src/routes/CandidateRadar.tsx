@@ -3210,6 +3210,8 @@ export default function CandidateRadar() {
             { label: "来源", value: coarseFineSourceLabel, tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn" },
             { label: "最近结果", value: quantProjectionP3OrdinaryReadableSentence, tone: quantProjectionP3OrdinaryReadableSentence.includes("等待") ? "warn" : "good" },
             { label: "缺口", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") ? "warn" : "good" },
+            { label: "退旧雷达", value: ordinaryRetirementReadinessStateLabel, tone: productionStageScopeManifest.production_radar_replacement_complete === true ? "good" : "warn" },
+            { label: "页面 QA", value: ordinaryBrowserQaStatusLabel, tone: browserQaReview.local_browser_qa_review_ready === true || browserQaEvidence.candidate_browser_qa_evidence_ready === true ? "good" : "warn" },
             { label: "下一步", value: ordinaryPrimaryActionLabel },
             { label: "边界", value: "候选不是买入指令；不交易", tone: "good" }
           ]}
@@ -3220,6 +3222,7 @@ export default function CandidateRadar() {
           <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from compact radar panel">量化推演</a>
           <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from compact radar panel">次日图谱</a>
         </div>
+        <p className="risk-note">退旧雷达前还缺什么：{ordinaryRetirementReadinessMainGaps}；页面 QA：{ordinaryBrowserQaStatusLabel}。</p>
         <p className="risk-note">{ordinaryCandidateGroupBoundary} 页面打开、输入、GET cache 和 React render 都不会自动外联。</p>
       </PacketCard>
 
@@ -3520,7 +3523,7 @@ export default function CandidateRadar() {
           </details>
         </div>
         <details className="developer-audit-details" aria-label="candidate radar denoised p1 p3 details">
-          <summary>P1/P2/P3 回放明细</summary>
+          <summary>Research Assist / Audit Details：P1/P2/P3 回放明细</summary>
           <p className="risk-note">普通首屏保留确认按钮、TaskStatusPanel、刷新本地回放和候选池；重复 P1/P2/P3 表默认收起，避免打开 #candidates 时像 acceptance report。</p>
         <div aria-label="candidate radar p1 direct confirmation handoff">
           <h3>P1 直接确认入口</h3>
