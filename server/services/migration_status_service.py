@@ -36,6 +36,18 @@ TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_RECEIPT_KEY = (
 TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY = (
     "command_center_tushare_provider_target_sample_permission_followup_packet"
 )
+TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_TASK_TYPE = (
+    "run_tushare_alternative_hard_risk_evidence_scope_ticket"
+)
+TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_ROUTE = (
+    "POST /api/tasks/tushare-alternative-hard-risk_evidence-scope-ticket"
+)
+TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_RECEIPT_KEY = (
+    "alternative_hard_risk_evidence_scope_receipt"
+)
+TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_PACKET_KEY = (
+    "command_center_tushare_alternative_hard_risk_evidence_scope_packet"
+)
 
 
 MIGRATION_PROGRESS_BASELINE = [
@@ -840,6 +852,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_TASK_TYPE,
             "receipt_key": TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_RECEIPT_KEY,
             "route": TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_ROUTE,
+        },
+        {
+            "phase_key": "target_sample_alternative_hard_risk_scope_ticket",
+            "task_type": TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_TASK_TYPE,
+            "receipt_key": TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_RECEIPT_KEY,
+            "route": TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_ROUTE,
         },
     ],
     "p3_factor_small_pool_provider_validation": [
@@ -5156,6 +5174,9 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
             TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_RECEIPT_KEY: (
                 TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY
             ),
+            TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_RECEIPT_KEY: (
+                TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_PACKET_KEY
+            ),
         }
         packet_key = packet_key_by_receipt.get(receipt_key)
         if packet_key:
@@ -5405,6 +5426,8 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_permission_followup_ticket_ready",
         "ready_for_manual_permission_resolution",
         "ready_for_manual_alternative_hard_risk_evidence_scope",
+        "local_alternative_hard_risk_scope_ticket_ready",
+        "ready_for_manual_hard_risk_evidence_collection",
         "local_gate_ready",
         "ci_mirror_ready",
         "push_readiness_receipt_ready",
@@ -5421,6 +5444,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "target_sample_failure_window_review_visible_blockers_recorded",
         "target_sample_failure_window_review_ready_for_target_acceptance_rerun",
         "target_sample_permission_followup_ticket_ready_manual_resolution_pending",
+        "alternative_hard_risk_evidence_scope_ticket_ready_manual_collection_pending",
         "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked",
         "trade_cal_provider_acceptance_promotion_review_recorded_blockers_visible",
         "synthetic_healthcheck_passed_local_task_store_only",
@@ -5492,6 +5516,8 @@ def _build_ltg_next_action_local_step_rows(
             or receipt_map.get("benchmark_scope_hash")
             or receipt_map.get("worker_batch_scope_hash")
             or receipt_map.get("worker_execution_scope_hash")
+            or receipt_map.get("permission_followup_scope_hash")
+            or receipt_map.get("alternative_hard_risk_scope_hash")
             or receipt_map.get("scope_hash")
             or ""
         )
@@ -5505,6 +5531,8 @@ def _build_ltg_next_action_local_step_rows(
             or receipt_map.get("benchmark_scope_hash_short")
             or receipt_map.get("worker_batch_scope_hash_short")
             or receipt_map.get("worker_execution_scope_hash_short")
+            or receipt_map.get("permission_followup_scope_hash_short")
+            or receipt_map.get("alternative_hard_risk_scope_hash_short")
             or receipt_map.get("scope_hash_short")
             or (receipt_scope_hash[:16] if receipt_scope_hash else "")
         )
@@ -9228,6 +9256,17 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "target_sample_failure_window_review",
             "required_prior_material": "receipt_local_ready",
         },
+        TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_ROUTE: {
+            "step_kind": "local_alternative_hard_risk_evidence_scope_ticket",
+            "safe_payload_summary": (
+                "operator_approved plus latest permission follow-up scope hash; "
+                "local hard-risk evidence scope only, no provider/model call"
+            ),
+            "expected_local_receipt": TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_RECEIPT_KEY,
+            "required_prior_phase_key": "target_sample_permission_followup_ticket",
+            "required_prior_material": "receipt_scope_hash",
+            "manual_scope_hash_required": True,
+        },
         "POST /api/factor-quant/provider-small-pool-dry-run": {
             "step_kind": "dry_run_scope_ticket",
             "safe_payload_summary": "approved_by_user, explicit small symbol pool, research metrics, forward-return horizons",
@@ -9643,6 +9682,22 @@ def _build_ltg_next_action_submission_preview_rows(
                 required_prior_material="ready_for_manual_permission_resolution",
                 required_prior_receipt_visible=permission_step.get("receipt_visible") is True,
                 required_prior_material_visible=permission_step.get("local_ready") is True,
+            )
+        if next_local_step == "collect_manual_hard_risk_evidence_or_wait_provider_permission_upgrade":
+            alternative_step = _local_step_row_by_phase(
+                local_step_rows, "target_sample_alternative_hard_risk_scope_ticket"
+            )
+            return _disabled_handoff_preview(
+                step_kind="manual_hard_risk_evidence_collection_scope_ready",
+                disabled_reason="manual_hard_risk_evidence_collection_or_provider_permission_upgrade_required",
+                safe_payload_summary=(
+                    "alternative hard-risk scope ticket is ready; next work is manual evidence collection "
+                    "or a separate permission-upgraded provider run, not cache/render provider work"
+                ),
+                required_prior_phase_key="target_sample_alternative_hard_risk_scope_ticket",
+                required_prior_material="ready_for_manual_hard_risk_evidence_collection",
+                required_prior_receipt_visible=alternative_step.get("receipt_visible") is True,
+                required_prior_material_visible=alternative_step.get("local_ready") is True,
             )
         if next_local_step == "separate approved real-trading integration project only":
             trade_step = _local_step_row_by_phase(
@@ -11340,12 +11395,24 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                         permission_step.get("receipt_visible") is True
                         and permission_step.get("local_ready") is True
                     ):
-                        local_status = (
-                            "local_target_sample_permission_followup_ticket_ready_manual_resolution_pending"
+                        alternative_step = _local_step_row_by_phase(
+                            local_step_rows, "target_sample_alternative_hard_risk_scope_ticket"
                         )
-                        next_local_step = (
-                            "manual_provider_permission_upgrade_or_alternative_hard_risk_evidence_scope"
-                        )
+                        if (
+                            alternative_step.get("receipt_visible") is True
+                            and alternative_step.get("local_ready") is True
+                        ):
+                            local_status = (
+                                "local_target_sample_alternative_hard_risk_scope_ready_manual_collection_pending"
+                            )
+                            next_local_step = (
+                                "collect_manual_hard_risk_evidence_or_wait_provider_permission_upgrade"
+                            )
+                        else:
+                            local_status = (
+                                "local_target_sample_permission_followup_ticket_ready_alternative_scope_needed"
+                            )
+                            next_local_step = TUSHARE_ALTERNATIVE_HARD_RISK_SCOPE_ROUTE
                     else:
                         local_status = (
                             "local_target_sample_permission_blocker_recorded_permission_followup_ticket_needed"

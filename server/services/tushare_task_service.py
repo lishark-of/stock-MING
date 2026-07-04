@@ -294,6 +294,18 @@ PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_ROUTE = (
 PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY = (
     "command_center_tushare_provider_target_sample_permission_followup_packet"
 )
+ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_SCHEMA_VERSION = (
+    "tushare_alternative_hard_risk_evidence_scope_ticket.v1"
+)
+ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_TASK_TYPE = (
+    "run_tushare_alternative_hard_risk_evidence_scope_ticket"
+)
+ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_ROUTE = (
+    "POST /api/tasks/tushare-alternative-hard-risk_evidence-scope-ticket"
+)
+ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_PACKET_KEY = (
+    "command_center_tushare_alternative_hard_risk_evidence_scope_packet"
+)
 TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE = "run_trade_cal_provider_acceptance_execution_request"
 TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_READY_STATUS = (
     "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending"
@@ -3586,6 +3598,295 @@ def run_tushare_provider_target_sample_permission_followup_ticket(
         if receipt["local_permission_followup_ticket_ready"]
         else "tushare_provider_target_sample_permission_followup_ticket_blocked",
         error_message_safe="" if receipt["local_permission_followup_ticket_ready"] else receipt["status"],
+        call_ledger=receipt["call_ledger"],
+    ) or task
+
+
+def _latest_alternative_hard_risk_scope_material() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(
+            PROVIDER_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY
+        )
+    except Exception:
+        packet = {}
+    packet_map = dict(packet) if isinstance(packet, Mapping) else {}
+    receipt = packet_map.get("receipt") if isinstance(packet_map.get("receipt"), Mapping) else {}
+    return {
+        "permission_followup_packet": packet_map,
+        "permission_followup_receipt": dict(receipt),
+    }
+
+
+def _alternative_hard_risk_evidence_scope_receipt(
+    payload: Any = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    payload_safe = _safe_payload(payload)
+    material = _latest_alternative_hard_risk_scope_material()
+    permission_receipt = dict(material.get("permission_followup_receipt") or {})
+    prior_ready = permission_receipt.get("local_permission_followup_ticket_ready") is True
+    prior_scope_hash = str(permission_receipt.get("permission_followup_scope_hash") or "")
+    prior_scope_hash_short = str(permission_receipt.get("permission_followup_scope_hash_short") or "")
+    supplied_scope_hash = str(
+        payload_safe.get("permission_followup_scope_hash")
+        or payload_safe.get("permission_followup_scope_hash_short")
+        or ""
+    )
+    scope_hash_matches = bool(
+        supplied_scope_hash
+        and supplied_scope_hash in {prior_scope_hash, prior_scope_hash_short}
+    )
+    requested_targets = [
+        str(item)
+        for item in (payload_safe.get("target_sample_acceptance_groups") or payload_safe.get("targets") or [])
+        if str(item or "")
+    ]
+    if not requested_targets:
+        requested_targets = [
+            str(item)
+            for item in permission_receipt.get("requested_targets", [])
+            if str(item or "")
+        ]
+    selected_apis = [
+        str(item)
+        for item in (payload_safe.get("apis") or [])
+        if str(item or "")
+    ]
+    if not selected_apis:
+        selected_apis = [
+            str(item)
+            for item in permission_receipt.get("selected_apis", [])
+            if str(item or "")
+        ]
+    evidence_sources = [
+        str(item)
+        for item in (payload_safe.get("evidence_sources") or [])
+        if str(item or "")
+    ]
+    if not evidence_sources:
+        evidence_sources = [
+            "official_announcement_review",
+            "disclosure_gap_summary",
+            "last_successful_local_cache_snapshot",
+            "manual_research_note_receipt",
+        ]
+    operator_confirmed = bool(
+        payload_safe.get("operator_approved") is True
+        or payload_safe.get("user_confirmed") is True
+        or payload_safe.get("manual_confirmation") is True
+    )
+    hard_risk_scope = requested_targets == ["hard_risk"] and selected_apis == ["anns_d"]
+    rows = [
+        {
+            "criterion": "permission_followup_ticket_visible",
+            "status": "passed" if prior_ready else "blocked",
+            "passed": prior_ready,
+            "evidence": "latest local permission follow-up ticket is ready",
+            "blocking": not prior_ready,
+        },
+        {
+            "criterion": "permission_followup_scope_hash_bound",
+            "status": "passed" if scope_hash_matches else "blocked",
+            "passed": scope_hash_matches,
+            "evidence": "payload binds the latest permission follow-up scope hash",
+            "blocking": not scope_hash_matches,
+        },
+        {
+            "criterion": "hard_risk_anns_d_scope_pinned",
+            "status": "passed" if hard_risk_scope else "blocked",
+            "passed": hard_risk_scope,
+            "evidence": "alternative scope is limited to hard_risk / anns_d",
+            "blocking": not hard_risk_scope,
+        },
+        {
+            "criterion": "operator_confirmation_recorded",
+            "status": "passed" if operator_confirmed else "blocked",
+            "passed": operator_confirmed,
+            "evidence": "operator_approved/user_confirmed/manual_confirmation must be true",
+            "blocking": not operator_confirmed,
+        },
+        {
+            "criterion": "no_provider_model_trade_boundary",
+            "status": "passed",
+            "passed": True,
+            "evidence": "scope ticket is local-only and cannot call providers, models, GitHub, or trading paths",
+            "blocking": False,
+        },
+    ]
+    for row in rows:
+        row.update(
+            {
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    blocker_count = sum(1 for row in rows if row["blocking"])
+    scope_payload = {
+        "schema_version": ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_SCHEMA_VERSION,
+        "source_permission_followup_scope_hash": prior_scope_hash,
+        "requested_targets": requested_targets,
+        "selected_apis": selected_apis,
+        "evidence_sources": evidence_sources,
+    }
+    scope_hash_input = json.dumps(scope_payload, ensure_ascii=False, sort_keys=True)
+    scope_hash = hashlib.sha256(scope_hash_input.encode("utf-8")).hexdigest()
+    status = (
+        "alternative_hard_risk_evidence_scope_ticket_ready_manual_collection_pending"
+        if blocker_count == 0
+        else "alternative_hard_risk_evidence_scope_ticket_blocked"
+    )
+    ready = blocker_count == 0
+    receipt = {
+        "schema_version": ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_tushare_alternative_hard_risk_evidence_scope_no_provider_call",
+        "route": ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_ROUTE,
+        "task_type": ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_TASK_TYPE,
+        "alternative_hard_risk_scope_hash_algorithm": "sha256",
+        "alternative_hard_risk_scope_hash": scope_hash,
+        "alternative_hard_risk_scope_hash_short": scope_hash[:16],
+        "source_permission_followup_scope_hash": prior_scope_hash,
+        "source_permission_followup_scope_hash_short": prior_scope_hash_short,
+        "requested_targets": requested_targets,
+        "selected_apis": selected_apis,
+        "evidence_sources": evidence_sources,
+        "blocking_criterion_count": blocker_count,
+        "row_count": len(rows),
+        "local_alternative_hard_risk_scope_ticket_ready": ready,
+        "ready_for_manual_hard_risk_evidence_collection": ready,
+        "creates_provider_task": False,
+        "provider_task_created": False,
+        "provider_execution_implemented": False,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "allowed_next_step": "collect_manual_hard_risk_evidence_or_wait_provider_permission_upgrade",
+        "not_allowed_next_steps": [
+            "call Tushare from this alternative scope ticket",
+            "call DeepSeek from this alternative scope ticket",
+            "call GitHub from this alternative scope ticket",
+            "create provider task from this ticket",
+            "treat alternative hard-risk scope as provider-backed acceptance",
+            "strategy action mutation",
+            "real trade execution",
+        ],
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_tushare_alternative_hard_risk_evidence_scope_ticket",
+                "source": "existing permission follow-up ticket and hard-risk permission blocker",
+                "row_count": len(rows),
+                "request_params_safe": {
+                    "requested_targets": requested_targets,
+                    "selected_apis": selected_apis,
+                    "evidence_sources": evidence_sources,
+                    "alternative_hard_risk_scope_hash_short": scope_hash[:16],
+                    "source_permission_followup_scope_hash_short": prior_scope_hash_short,
+                },
+                "data_date": None,
+                "local_fetched_at": _now_iso(),
+                "call_status": status,
+                "error_message_safe": "",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This local scope ticket converts the hard_risk/anns_d permission blocker into a manual alternative evidence collection scope. It does not call Tushare, create provider tasks, promote acceptance, trade, or mutate strategy action.",
+    }
+    return receipt, rows
+
+
+def run_tushare_alternative_hard_risk_evidence_scope_ticket(
+    payload: Any = None,
+) -> dict[str, Any]:
+    receipt, rows = _alternative_hard_risk_evidence_scope_receipt(payload)
+    payload_safe = {
+        "alternative_hard_risk_evidence_scope_receipt": receipt,
+        "alternative_hard_risk_evidence_scope_rows": rows,
+    }
+    task = create_task_record(
+        ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_TASK_TYPE,
+        output_packet_key=ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_PACKET_KEY,
+        payload=payload_safe,
+        current_step="tushare_alternative_hard_risk_evidence_scope_queued_local_only",
+        warnings=[
+            "该任务只生成本地 hard-risk 替代证据 scope ticket，不调用 Tushare。",
+            "该任务只绑定手工证据采集范围，不证明 LTG-02 生产完成。",
+            "该任务不调用 DeepSeek/GitHub，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="building_tushare_alternative_hard_risk_evidence_scope",
+        call_ledger=receipt["call_ledger"],
+    )
+    packet = {
+        "packet_key": ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_PACKET_KEY,
+        "schema_version": "command_center_tushare_alternative_hard_risk_evidence_scope_packet.v1",
+        "status": receipt["status"],
+        "task_type": ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_TASK_TYPE,
+        "receipt": receipt,
+        "rows": rows,
+        "alternative_hard_risk_scope_hash_short": receipt["alternative_hard_risk_scope_hash_short"],
+        "local_alternative_hard_risk_scope_ticket_ready": receipt[
+            "local_alternative_hard_risk_scope_ticket_ready"
+        ],
+        "provider_execution_implemented": False,
+        "provider_task_created": False,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": receipt["call_ledger"],
+    }
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+            ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_PACKET_KEY,
+            packet,
+        )
+    except Exception:
+        pass
+    return update_task_status(
+        task["task_id"],
+        status="success" if receipt["local_alternative_hard_risk_scope_ticket_ready"] else "failed",
+        progress=1.0,
+        current_step="tushare_alternative_hard_risk_evidence_scope_ticket_ready"
+        if receipt["local_alternative_hard_risk_scope_ticket_ready"]
+        else "tushare_alternative_hard_risk_evidence_scope_ticket_blocked",
+        error_message_safe="" if receipt["local_alternative_hard_risk_scope_ticket_ready"] else receipt["status"],
         call_ledger=receipt["call_ledger"],
     ) or task
 

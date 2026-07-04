@@ -173,6 +173,7 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             local_path = Path(temp_dir) / "local-push-gate-receipt.json"
             remote_path = Path(temp_dir) / "remote-ci-review-receipt.json"
+            allowlist_path = Path(temp_dir) / "missing-secret-artifact-allowlist-review-receipt.json"
             local_path.write_text(
                 json.dumps(
                     {
@@ -246,6 +247,10 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
                 audit_service,
                 "REMOTE_CI_REVIEW_RECEIPT_PATH",
                 remote_path,
+            ), patch.object(
+                audit_service,
+                "SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH",
+                allowlist_path,
             ), patch.object(audit_service, "_local_worktree_cleanliness_audit", return_value=(clean_worktree, [])):
                 remote = audit_service._read_remote_ci_review_receipt()
                 self.assertEqual(remote["status"], "remote_ci_review_verified_green")
