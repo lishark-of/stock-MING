@@ -1306,6 +1306,61 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
+  const ordinaryFactorTestProviderSmallPoolState =
+    factorTestProductionValidation.provider_backed_small_pool_validation_done === true
+      ? "provider-backed 小池验证已完成"
+      : "真实 provider 小池验证未完成";
+  const ordinaryFactorTestProviderScopeState =
+    factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true
+      ? `scope ticket ready：${String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash_short ?? factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "已生成")}`
+      : "等待按钮门控小池预检 scope ticket";
+  const ordinaryFactorTestProviderRequestState =
+    factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true
+      ? "执行请求已绑定 scope；等待单独授权 provider task"
+      : "等待执行请求或单独 provider 授权";
+  const ordinaryFactorTestProviderEvidenceGap =
+    factorTestProductionValidation.provider_backed_small_pool_validation_done === true
+      ? "provider-backed 小池直接证据已回放"
+      : "缺 provider task、sample rows、rolling IC/ICIR、成本、neutralization、PIT bias 和 promotion review";
+  const ordinaryFactorTestProviderBoundary =
+    "本卡只读 Factor cache；不触发 dry-run、execution request 或 provider task；真实 Tushare 小池必须另行授权 POST task";
+  const ordinaryFactorTestProviderSmallPoolItems: MetricItem[] = [
+    {
+      label: "LTG-03",
+      value: "Factor Test Lab 真实小股票池研究",
+      tone: "warn"
+    },
+    {
+      label: "本地样本",
+      value: factorTestSmallPool.local_light_observation_acceptance_done === true ? "local light observations 可回放" : "等待本地 light observations",
+      tone: factorTestSmallPool.local_light_observation_acceptance_done === true ? "good" : "warn"
+    },
+    {
+      label: "真实小池",
+      value: ordinaryFactorTestProviderSmallPoolState,
+      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "scope ticket",
+      value: ordinaryFactorTestProviderScopeState,
+      tone: factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true ? "good" : "warn"
+    },
+    {
+      label: "执行请求",
+      value: ordinaryFactorTestProviderRequestState,
+      tone: factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: ordinaryFactorTestProviderEvidenceGap,
+      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: ordinaryFactorTestProviderBoundary,
+      tone: "good"
+    }
+  ];
   const ordinaryQuantPrimarySummaryItems: MetricItem[] = [
     { label: "下一步", value: ordinaryQuantNextClick },
     { label: "数据链", value: ordinaryQuantTushareFirstDataChainLabel },
@@ -1411,6 +1466,12 @@ export default function FactorQuantHub() {
             <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入仍静默" aria-label="open candidate confirm from stock quant p2 p3 handoff">确认或换一只票</a>
           </div>
           <p className="risk-note">这条行动条只把下一票雷达确认、P2 三面和 P3 可读结果在量化页串成同一条本地回放；缺口只提示待回放，不补调数据源或模型。</p>
+        </div>
+        <div aria-label="stock quant ordinary factor test provider small pool status">
+          <h3>LTG-03 小池验证状态</h3>
+          <p className="ordinary-status-note">普通页直接显示真实小股票池研究是否已有 provider-backed 直接证据；当前只读本地 cache 和历史 ticket，不从页面渲染或查看结果创建 provider 任务。</p>
+          <MetricGrid items={ordinaryFactorTestProviderSmallPoolItems} />
+          <p className="risk-note">{ordinaryFactorTestProviderBoundary}；local light observations、scope ticket 或 execution request 都不能当 production Factor Test validation complete。</p>
         </div>
         <details className="developer-audit-details" aria-label="stock quant ordinary summary extra details">
           <summary>更多量化摘要字段</summary>
