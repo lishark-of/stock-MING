@@ -205,6 +205,15 @@ export default function DataHealthTimeline() {
   const tushareTargetSampleExecutionRequestRows = rows(cache.latest_tushare_provider_target_sample_execution_request_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
+  const tradeCalPhysicalBlockers = Array.isArray(tradeCalPhysical.blockers)
+    ? tradeCalPhysical.blockers.map((item: unknown) => String(item)).filter(Boolean)
+    : [];
+  const tradeCalLocalWindowLabel = tradeCalPhysical.window_start || tradeCalPhysical.window_end
+    ? `${String(tradeCalPhysical.window_start ?? "--")} - ${String(tradeCalPhysical.window_end ?? "--")}`
+    : "本地窗口缺失";
+  const tradeCalProviderBlockedSentence = tradeCalPhysical.local_trade_cal_physical_validation_done === true
+    ? "LTG-01 本地 trade_cal artifact 已通过本地物理验收，仍需真实 provider call ledger、release review 和 production promotion 后才能关闭。"
+    : `LTG-01 当前 degraded：本地 trade_cal 只有 ${String(tradeCalPhysical.local_trade_cal_row_count ?? 0)} 行，覆盖 ${tradeCalLocalWindowLabel}，未满足 ${String(tradeCalPhysical.min_window_days ?? 730)} 天窗口或 ${String(tradeCalPhysical.today ?? "2026-07-04")} 当前日期覆盖；blocker=${tradeCalPhysicalBlockers.join(" / ") || "local_trade_cal_validation_pending"}。下一步只能是用户明确授权的 provider task 或补齐本地长窗口 artifact，页面不会自动调用 Tushare。`;
 
   return (
     <>
@@ -278,6 +287,7 @@ export default function DataHealthTimeline() {
           { label: "cache warnings", value: cacheWarnings.length }
         ]}
       />
+      <p className="ordinary-status-note" aria-label="trade cal degraded provider blocker sentence" aria-live="polite">{tradeCalProviderBlockedSentence}</p>
 
       <div className="grid">
         <PacketCard title="数据健康来源" subtitle="GET /api/data-health/cache 只读读取 data_health_timeline / provider_data_capability_cockpit" status={String(cache.status ?? "missing")}>

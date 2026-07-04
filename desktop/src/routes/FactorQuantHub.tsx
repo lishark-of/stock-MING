@@ -1325,6 +1325,14 @@ export default function FactorQuantHub() {
     factorTestProductionValidation.provider_backed_small_pool_validation_done === true
       ? "真实小池样本和指标已回放"
       : "还缺真实 provider task、样本行、rolling IC/ICIR、成本、中性化、PIT/bias 和 promotion review";
+  const factorTestProviderSmallPoolCredential = (factorTestProviderSmallPoolDryRun.credential_presence_summary as Record<string, unknown> | undefined) ?? {};
+  const factorTestProviderSmallPoolBlockers = Array.isArray(factorTestProviderSmallPoolDryRun.blocking_criteria)
+    ? factorTestProviderSmallPoolDryRun.blocking_criteria.map((item: unknown) => String(item)).filter(Boolean)
+    : [];
+  const ordinaryFactorTestProviderCurrentBlockerSentence =
+    factorTestProductionValidation.provider_backed_small_pool_validation_done === true
+      ? "真实小池 provider-backed 直接证据已可见；仍需按生产阶段清单完成 promotion/release 边界。"
+      : `LTG-03 当前 degraded：dry-run=${String(factorTestProviderSmallPoolDryRun.status ?? "missing")}，credential=${String(factorTestProviderSmallPoolCredential.status ?? "unknown")}，blocker=${factorTestProviderSmallPoolBlockers.join(" / ") || "provider_task_and_sample_rows_pending"}；本地 execution request 不能替代真实 provider task，下一步只能是用户授权后的 provider-backed 小池验收。`;
   const ordinaryFactorTestProviderBoundary =
     "本卡只读 Factor cache；不触发 dry-run、execution request 或 provider task；真实小池验收只能在用户明确授权后走 POST task";
   const ordinaryFactorTestProductionStageCount = Number(factorTestProductionStageScopeManifest.stage_count ?? factorTestProductionStageScopeRows.length ?? 0);
@@ -1513,6 +1521,7 @@ export default function FactorQuantHub() {
         <div aria-label="stock quant ordinary factor test provider small pool status">
           <h3>LTG-03 真实小池验收</h3>
           <p className="ordinary-status-note">普通页先说明真实小池验收是否已经运行、下一步是否需要授权、哪些证据仍缺；当前只读本地 cache 和历史 ticket，不从页面渲染或查看结果创建 provider 任务。</p>
+          <p className="ordinary-status-note" aria-label="stock quant factor small pool degraded sentence" aria-live="polite">{ordinaryFactorTestProviderCurrentBlockerSentence}</p>
           <MetricGrid items={ordinaryFactorTestProviderSmallPoolItems} />
           <p className="risk-note">{ordinaryFactorTestProviderBoundary}；本地 light observations、本地 scope 或执行请求都不能当作生产级 Factor Test 验收完成。</p>
         </div>
