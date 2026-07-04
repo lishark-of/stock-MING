@@ -102,6 +102,51 @@ export default function LegacyTools() {
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const empty = !loading && !error && !Object.keys(cache).length;
+  const ordinaryReplacementCompassItems = [
+    { label: "现在去哪", value: "3.0 首页 / 下一票雷达 / 量化推演 / 次日图谱 / ETF", tone: "good" as const },
+    { label: "旧入口定位", value: "legacy/admin/debug fallback", tone: "warn" as const },
+    { label: "还缺什么", value: "replacement parity、browser/performance、retirement review", tone: "warn" as const },
+    { label: "能否退场", value: primaryExitAudit.ordinary_workflow_exit_complete === true ? "可进入退场复核" : "不能退掉 Streamlit fallback", tone: primaryExitAudit.ordinary_workflow_exit_complete === true ? "warn" as const : "good" as const },
+    { label: "用户动作", value: "普通投研先回 React/Tauri；旧工具只用于排查" },
+    { label: "安全边界", value: "不打开 Streamlit、不创建 task、不外联、不交易", tone: "good" as const }
+  ];
+  const ordinaryReplacementCompassRows = [
+    {
+      替代路线: "1. 今日判断",
+      现在入口: "#home",
+      用户下一步: "先看 Daily Command Center 的当前状态、最近结果和下一步。",
+      旧路径状态: "旧 Streamlit 首页按钮 / rerun flow 冻结为 fallback",
+      边界: "本页只做本地入口指引；不打开 Streamlit、不创建 task、不调用 provider/model。"
+    },
+    {
+      替代路线: "2. 搜票和候选",
+      现在入口: "#candidates",
+      用户下一步: "输入股票、确认候选、再看候选复核顺序和量化推演入口。",
+      旧路径状态: "旧雷达推荐式文案和未证明性能路径继续保留为 fallback",
+      边界: "候选不是买入指令；不能因为本地替代入口存在就退掉 fallback。"
+    },
+    {
+      替代路线: "3. 量化推演和次日图谱",
+      现在入口: "#factor / #next",
+      用户下一步: "先读 Factor 支持/压制，再按次日图谱路径、参考线、operation_zones 复核。",
+      旧路径状态: "旧单票作战室和旧 Streamlit 图谱 UI 不作为验收目标",
+      边界: "不改 strategy action、不下单、不把 operation_zones 当交易动作。"
+    },
+    {
+      替代路线: "4. ETF / 融资替代",
+      现在入口: "#marginEtf",
+      用户下一步: "只看本地 ETF / Margin packet 的来源、流动性、重叠和杠杆边界。",
+      旧路径状态: "旧杠杆/ETF 工作流等待 direct UX evidence 和 replacement parity",
+      边界: "ETF 行不是买入、加仓或加融资指令。"
+    },
+    {
+      替代路线: "5. 退场复核",
+      现在入口: "#legacy",
+      用户下一步: "只在补齐 parity、browser/performance、provider-backed、admin/debug retention 和 explicit retirement review 后复核退场。",
+      旧路径状态: "Streamlit fallback retained",
+      边界: "local receipt、matrix、route inventory 或本页罗盘都不是 Streamlit retirement completion。"
+    }
+  ];
 
   return (
     <>
@@ -113,6 +158,24 @@ export default function LegacyTools() {
           emptyTitle="暂无 Legacy 桥接缓存"
           emptyDetail="Legacy 页面只读展示旧工作台边界，不启动 Streamlit 或运行旧工具。"
         />
+        <div aria-label="legacy ordinary replacement compass">
+          <h3>普通替代路线</h3>
+          <p className="ordinary-status-note">普通投研先走 Command Center 3.0：首页、下一票雷达、量化推演、次日图谱和 ETF / 融资；Streamlit 只保留为 legacy/admin/debug fallback。</p>
+          <MetricGrid items={ordinaryReplacementCompassItems} />
+          <div className="actions" aria-label="legacy ordinary replacement compass actions">
+            <a href="#home" title="回到 3.0 今日作战台；只读本地状态" aria-label="open daily command from legacy compass">今日作战台</a>
+            <a href="#candidates" title="打开下一票雷达；候选不是买入指令" aria-label="open candidate radar from legacy compass">下一票雷达</a>
+            <a href="#factor" title="打开股票量化推演；只读 Factor cache" aria-label="open stock quant from legacy compass">量化推演</a>
+            <a href="#next" title="打开次日图谱；operation_zones 只是条件区间" aria-label="open next session from legacy compass">次日图谱</a>
+            <a href="#marginEtf" title="打开 ETF / 融资替代；不是加仓或加融资指令" aria-label="open margin etf from legacy compass">ETF / 融资</a>
+          </div>
+          <details className="developer-audit-details" aria-label="legacy ordinary replacement compass rows">
+            <summary>替代路线明细</summary>
+            <p className="risk-note">明细只解释普通用户该回到哪个 3.0 入口；不打开 Streamlit，不运行旧工具，不证明 LTG-10 退场完成。</p>
+            <DataLineageTable rows={ordinaryReplacementCompassRows} />
+          </details>
+          <p className="risk-note">普通替代路线只是本地入口索引：GET cache 和 React render 不创建 task、不调用 Tushare/DeepSeek/GitHub、不真实交易、不删除 app.py，也不能把 Streamlit fallback 标记为可移除。</p>
+        </div>
         <MetricGrid
           items={[
             { label: "正式入口", value: "Command Center 3" },

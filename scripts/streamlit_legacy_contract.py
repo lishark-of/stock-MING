@@ -224,6 +224,13 @@ def build_contract() -> dict[str, Any]:
             and "deepseek" not in legacy_deep_link_body.lower()
         )
     )
+    ordinary_compass_start = route_source.find('aria-label="legacy ordinary replacement compass"')
+    ordinary_compass_end = route_source.find("<MetricGrid\n          items={[", ordinary_compass_start)
+    ordinary_compass_slice = (
+        route_source[ordinary_compass_start:ordinary_compass_end]
+        if ordinary_compass_start != -1 and ordinary_compass_end != -1
+        else ""
+    )
 
     rows = [
         _row(
@@ -475,6 +482,28 @@ def build_contract() -> dict[str, Any]:
             "react_legacy_page_displays_boundaries",
             "Legacy / Admin / Debug" in route_source
             and "Streamlit 2.0 保留为 legacy" in route_source
+            and "ordinaryReplacementCompassItems" in route_source
+            and "ordinaryReplacementCompassRows" in route_source
+            and 'aria-label="legacy ordinary replacement compass"' in route_source
+            and 'aria-label="legacy ordinary replacement compass actions"' in route_source
+            and 'aria-label="legacy ordinary replacement compass rows"' in route_source
+            and "普通替代路线" in route_source
+            and "普通投研先走 Command Center 3.0" in route_source
+            and "Streamlit 只保留为 legacy/admin/debug fallback" in route_source
+            and "不能退掉 Streamlit fallback" in route_source
+            and "不证明 LTG-10 退场完成" in route_source
+            and "不能把 Streamlit fallback 标记为可移除" in route_source
+            and route_source.find("Legacy 页面只读展示旧工作台边界")
+            < ordinary_compass_start
+            < route_source.find('label: "正式入口"')
+            and 'href="#home"' in ordinary_compass_slice
+            and 'href="#candidates"' in ordinary_compass_slice
+            and 'href="#factor"' in ordinary_compass_slice
+            and 'href="#next"' in ordinary_compass_slice
+            and 'href="#marginEtf"' in ordinary_compass_slice
+            and "onClick=" not in ordinary_compass_slice
+            and ("post" + "Task(") not in ordinary_compass_slice
+            and "getLegacyBridgeCache" not in ordinary_compass_slice
             and "ordinary_workflow_exit_complete" in route_source
             and "streamlit_fallback_removal_ready" in route_source
             and "streamlitRetirementReadinessReceipt" in route_source
