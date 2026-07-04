@@ -763,6 +763,75 @@ export default function CandidateRadar() {
     { label: "别误判", value: "本地收据、dry-run 和浏览器手册都不是最终完成证据", tone: "warn" },
     { label: "研究边界", value: "候选不是买入指令；不交易、不改交易策略", tone: "good" }
   ];
+  const ordinaryBrowserQaStatusLabel =
+    browserQaReview.local_browser_qa_review_ready === true
+      ? "本地 browser QA 审查已 ready"
+      : browserQaEvidence.candidate_browser_qa_evidence_ready === true
+        ? "本地 browser QA artifact 已通过；待本地审查"
+        : browserQaEvidence.local_browser_qa_evidence_found === true
+          ? `本地 browser QA artifact 可读；待复核 ${String(browserQaEvidence.review_required_count ?? 0)} 项`
+          : "等待本地 browser QA artifact";
+  const ordinaryBrowserQaCoverageLabel =
+    browserQaEvidence.motion_viewport_coverage_complete === true
+      ? "default/reduced motion 视口覆盖完整"
+      : `default ${String(browserQaEvidence.default_motion_viewport_count ?? 0)} / reduced ${String(browserQaEvidence.reduced_motion_viewport_count ?? 0)}；覆盖待补`;
+  const ordinaryBrowserQaBlockerLabel =
+    Number(browserQaReview.blocking_review_count ?? browserQaEvidence.review_required_count ?? 0)
+      ? `本地复核仍有 ${String(browserQaReview.blocking_review_count ?? browserQaEvidence.review_required_count)} 项阻断`
+      : "本地复核未标记阻断；仍缺 CI/provider/worker 证据";
+  const ordinaryBrowserQaItems: MetricItem[] = [
+    {
+      label: "本地页面 QA",
+      value: ordinaryBrowserQaStatusLabel,
+      tone: browserQaReview.local_browser_qa_review_ready === true || browserQaEvidence.candidate_browser_qa_evidence_ready === true ? "good" : "warn"
+    },
+    {
+      label: "覆盖",
+      value: ordinaryBrowserQaCoverageLabel,
+      tone: browserQaEvidence.motion_viewport_coverage_complete === true ? "good" : "warn"
+    },
+    {
+      label: "复核",
+      value: ordinaryBrowserQaBlockerLabel,
+      tone: Number(browserQaReview.blocking_review_count ?? browserQaEvidence.review_required_count ?? 0) ? "warn" : "good"
+    },
+    {
+      label: "边界",
+      value: "普通页只读 candidate_browser_qa_evidence_summary；不打开浏览器、不创建 task、不调用 provider/model",
+      tone: "good"
+    },
+    {
+      label: "不能证明",
+      value: "不是 durable CI、不是 provider-backed 验收、不是旧雷达退场",
+      tone: "warn"
+    }
+  ];
+  const ordinaryBrowserQaReadbackRows = [
+    {
+      证据层: "local artifact",
+      当前状态: displayText(browserQaEvidence.status, "candidate_browser_qa_evidence_missing"),
+      速读: ordinaryBrowserQaStatusLabel,
+      边界: "只读本地 ignored runner 报告摘要；普通页不运行 browser QA"
+    },
+    {
+      证据层: "motion viewport coverage",
+      当前状态: browserQaEvidence.motion_viewport_coverage_complete === true ? "coverage_complete" : "coverage_pending",
+      速读: ordinaryBrowserQaCoverageLabel,
+      边界: "本地视口证据不是 CI 或 packaged-runtime evidence"
+    },
+    {
+      证据层: "local review",
+      当前状态: displayText(browserQaReview.status, "candidate_browser_qa_review_pending"),
+      速读: ordinaryBrowserQaBlockerLabel,
+      边界: "审查按钮留在 developer audit；普通速读不创建 POST task"
+    },
+    {
+      证据层: "production replacement",
+      当前状态: browserQaEvidence.production_radar_replacement_complete === true ? "unexpected_complete" : "not_complete",
+      速读: "仍需 full-pool/deep-scan、provider call ledger、durable CI 和 legacy retirement",
+      边界: "不能用本地浏览器 artifact 关闭 LTG-13"
+    }
+  ];
   const ordinaryRetirementReadinessGapRows = productionStageScopeRows
     .filter((row) => row.production_blocker === true || row.direct_evidence_complete !== true)
     .slice(0, 6)
@@ -3071,6 +3140,16 @@ export default function CandidateRadar() {
               </details>
             ) : null}
             <p className="risk-note">本区不创建 task、不启动 worker、不调用 Tushare/DeepSeek/GitHub、不交易；本地收据、dry-run 和浏览器手册都不能当最终完成证据。</p>
+          </div>
+          <div aria-label="candidate radar ordinary browser qa quick read">
+            <h3>本地页面 QA 速读</h3>
+            <p className="risk-note">普通页直接回放本地 `#candidates` browser QA 状态：是否有 artifact、视口覆盖是否完整、是否还有本地复核阻断；这仍不是 CI、provider 或 worker 验收。</p>
+            <MetricGrid items={ordinaryBrowserQaItems} />
+            <details className="developer-audit-details" aria-label="candidate radar ordinary browser qa readback rows">
+              <summary>查看本地页面 QA 分层</summary>
+              <p className="risk-note">这里不打开浏览器、不写 artifact、不创建 POST task；审查按钮仍保留在开发审计区。</p>
+              <DataLineageTable rows={ordinaryBrowserQaReadbackRows} />
+            </details>
           </div>
         </div>
         <div aria-label="candidate radar coarse fine screening ordinary summary">

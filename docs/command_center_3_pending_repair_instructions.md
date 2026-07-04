@@ -44,13 +44,14 @@ Current interpretation:
 10. Stock Quant Projection / Factor Quant Hub now shows LTG-03 true small-pool validation as an authorization-waiting state on the ordinary first screen: local scope and execution-request tickets are historical/read-only, and real provider task/sample/rolling/cost/neutralization evidence still requires explicit user authorization.
 11. ETF / Margin now has a button-gated local task contract: `POST /api/market/margin-etf-local-refresh` writes a safe `command_center_margin_etf_refresh_receipt`, the page shows disabled/degraded reasons before the click, and `TaskStatusPanel` shows the local task status after the click. This remains a local packet replay, not provider refresh, Streamlit retirement, or LTG strict closeout.
 12. User Route QA now requires actual typing coverage before accepting typing silence: if a route has visible editable inputs, the runner fills one with a test symbol and only passes when `/api/tasks` stays unchanged.
+13. Candidate Radar ordinary summary now shows a local page-QA quick read from `candidate_browser_qa_evidence_summary` / review status before developer audit details, while keeping the review POST button in the collapsed audit section and preserving the no-CI/no-provider/no-worker boundary.
 
 ## Next Repair Goals
 
 1. Candidate Radar De-noise
    - Goal: keep the new operator panel as the first ordinary surface and move repeated P1/P2/P3 tables under collapsed research details.
    - Preserve confirm button, TaskStatusPanel, local replay refresh, and candidate pool visibility.
-   - Current local slice: production/stage blocker language has been translated into ordinary retirement-readiness wording; opening `#candidates` should show what the user can do, what remains before old-radar retirement, and the no-trade boundary before any audit row tables.
+   - Current local slice: production/stage blocker language has been translated into ordinary retirement-readiness wording; opening `#candidates` should show what the user can do, what remains before old-radar retirement, local page-QA artifact/review state, and the no-trade boundary before any audit row tables.
    - Exit check: opening `#candidates` does not look like an acceptance report, and any worker/provider/browser/legacy gap rows remain collapsed by default.
 
 2. ETF / Margin Task Contract

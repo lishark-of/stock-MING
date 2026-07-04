@@ -109,20 +109,36 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("<summary>查看退场缺口明细</summary>", production_blocker_slice)
         self.assertIn("缺口行表默认收起，避免普通首屏变成 acceptance report", production_blocker_slice)
         self.assertIn("DataLineageTable rows={ordinaryRetirementReadinessGapRows}", production_blocker_slice)
+        self.assertIn('aria-label="candidate radar ordinary browser qa quick read"', production_blocker_slice)
+        self.assertIn("本地页面 QA 速读", production_blocker_slice)
+        self.assertIn("ordinaryBrowserQaItems", production_blocker_slice)
+        self.assertIn("ordinaryBrowserQaReadbackRows", production_blocker_slice)
+        self.assertIn('aria-label="candidate radar ordinary browser qa readback rows"', production_blocker_slice)
+        self.assertIn("<summary>查看本地页面 QA 分层</summary>", production_blocker_slice)
+        self.assertIn("这里不打开浏览器、不写 artifact、不创建 POST task", production_blocker_slice)
+        self.assertIn("DataLineageTable rows={ordinaryBrowserQaReadbackRows}", production_blocker_slice)
         for production_label in (
             'label: "退旧雷达"',
             'label: "缺口进度"',
             'label: "还缺"',
             'label: "别误判"',
             'label: "研究边界"',
+            'label: "本地页面 QA"',
+            'label: "覆盖"',
+            'label: "复核"',
+            'label: "不能证明"',
         ):
             self.assertIn(production_label, self.page)
         self.assertIn("本地收据、dry-run 和浏览器手册都不是最终完成证据", self.page)
         self.assertIn("只读本地阶段清单；不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易", self.page)
         self.assertIn("本地收据、dry-run 和浏览器手册都不能当最终完成证据", production_blocker_slice)
+        self.assertIn("普通页只读 candidate_browser_qa_evidence_summary；不打开浏览器、不创建 task、不调用 provider/model", self.page)
+        self.assertIn("不是 durable CI、不是 provider-backed 验收、不是旧雷达退场", self.page)
         self.assertNotIn("onClick=", production_blocker_slice)
         self.assertNotIn("launchProductionReplacementReview", production_blocker_slice)
         self.assertNotIn("postCandidateRadarProductionReplacementReview", production_blocker_slice)
+        self.assertNotIn("launchBrowserQaReview", production_blocker_slice)
+        self.assertNotIn("postCandidateRadarBrowserQaReview", production_blocker_slice)
         self.assertIn('aria-label="candidate radar ordinary usable now strip"', summary_primary_slice)
         self.assertIn("现在可用状态", summary_primary_slice)
         self.assertIn("quantProjectionUsableNowItems", summary_primary_slice)
