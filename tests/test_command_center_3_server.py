@@ -29078,6 +29078,80 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(cache_after["freshness_provider_acceptance_activation_receipt"]["ready_for_explicit_provider_task"])
         self.assertNotIn("SHOULD_DROP", json.dumps(refresh_response, ensure_ascii=False))
 
+    def test_producer_cache_refresh_degraded_generator_fallback_writes_local_sqlite_only(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache({})
+
+        cache_before = self.client.get("/api/data-health/cache").json()["data"]
+        readiness = cache_before["current_evidence_producer_cache_refresh_readiness"]
+        self.assertEqual(readiness["status"], "producer_cache_refresh_readiness_ready_manual_refresh_pending")
+
+        request_response = self.client.post(
+            "/api/data-health/producer-cache-refresh-execution-request",
+            json={
+                "approved_by_user": True,
+                "readiness_scope_hash_short": readiness["readiness_scope_hash_short"],
+                "producer_keys": readiness["producer_keys"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+        self.assertTrue(request_response["ok"])
+
+        refresh_response = self.client.post(
+            "/api/data-health/producer-cache-refresh",
+            json={
+                "approved_by_user": True,
+                "readiness_scope_hash_short": readiness["readiness_scope_hash_short"],
+                "producer_keys": readiness["producer_keys"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(refresh_response["ok"])
+        task = refresh_response["data"]["task"]
+        self.assertEqual(task["current_step"], "producer_cache_refresh_completed_local_sqlite_only_no_provider")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        receipt = task["payload_safe"]["producer_cache_refresh_receipt"]
+        rows = {row["phase"]: row for row in task["payload_safe"]["producer_cache_refresh_rows"]}
+        self.assertEqual(receipt["status"], "producer_cache_refresh_completed_local_sqlite_only")
+        self.assertFalse(receipt["source_snapshot_available"])
+        self.assertTrue(receipt["source_snapshot_degraded_fallback_used"])
+        self.assertTrue(receipt["source_snapshot_required_for_provider_acceptance"])
+        self.assertFalse(receipt["local_generator_fallback_is_provider_acceptance"])
+        self.assertTrue(receipt["local_generated_packets_ready"])
+        self.assertTrue(receipt["local_cache_refresh_executed"])
+        self.assertFalse(receipt["writes_snapshot_cache"])
+        self.assertTrue(receipt["writes_local_sqlite_packets"])
+        self.assertEqual(receipt["local_sqlite_packet_write_count"], 3)
+        self.assertTrue(receipt["does_not_refresh_provider"])
+        self.assertFalse(receipt["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(receipt["production_freshness_gate_complete"])
+        self.assertEqual(rows["source_snapshot_available"]["status"], "degraded_local_generator_fallback")
+        self.assertFalse(rows["source_snapshot_available"]["blocks_local_write"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(refresh_response, ensure_ascii=False))
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        store = SQLiteMetaStore(db_path)
+        for packet_key in receipt["written_packet_keys"]:
+            packet = store.read_packet(packet_key)
+            self.assertEqual(packet["schema_version"], "current_evidence_producer_cache_packet.v1")
+            self.assertTrue(packet["expected_trade_date"])
+            self.assertTrue(packet["data_date"])
+            self.assertFalse(packet["freshness_context_is_provider_acceptance"])
+            self.assertFalse(packet["freshness_context_calls_provider"])
+            self.assertFalse(packet["external_calls_triggered"])
+            self.assertFalse(packet["tushare_called"])
+            self.assertFalse(packet["deepseek_called"])
+            self.assertFalse(packet["github_called"])
+            self.assertTrue(packet["does_not_execute_trades"])
+            self.assertTrue(packet["does_not_modify_strategy_action"])
+
     def test_producer_cache_refresh_requires_execution_request_before_write(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()

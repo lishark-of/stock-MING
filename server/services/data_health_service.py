@@ -3393,6 +3393,8 @@ def _build_producer_cache_refresh_receipt(
     required_count = int(readiness.get("current_cache_refresh_required_count") or 0)
     source_available = bool(source_snapshot)
     generation_ready = generation_contract.get("status") == "producer_cache_refresh_local_packets_ready"
+    source_snapshot_degraded_fallback_used = bool(not source_available and generation_ready)
+    source_snapshot_allows_local_write = bool(source_available or source_snapshot_degraded_fallback_used)
     safe_payload_ready = bool(
         payload_safe.get("contains_secret") is False
         and payload_safe.get("credential_values_read") is False
@@ -3441,10 +3443,20 @@ def _build_producer_cache_refresh_receipt(
         ),
         _producer_cache_refresh_row(
             "source_snapshot_available",
-            "passed_source_snapshot_available" if source_available else "blocked_source_snapshot_missing",
-            passed=source_available,
-            blocks_local_write=not source_available,
-            evidence=f"source_snapshot_available={source_available}",
+            (
+                "passed_source_snapshot_available"
+                if source_available
+                else "degraded_local_generator_fallback"
+                if source_snapshot_degraded_fallback_used
+                else "blocked_source_snapshot_missing"
+            ),
+            passed=source_snapshot_allows_local_write,
+            blocks_local_write=not source_snapshot_allows_local_write,
+            evidence=(
+                f"source_snapshot_available={source_available}; "
+                f"local_generated_packets_ready={generation_ready}; "
+                f"degraded_fallback={source_snapshot_degraded_fallback_used}"
+            ),
         ),
         _producer_cache_refresh_row(
             "local_generated_packets_ready",
@@ -3496,7 +3508,7 @@ def _build_producer_cache_refresh_receipt(
     elif not (readiness_ready and required_count > 0):
         status = "producer_cache_refresh_blocked_no_refresh_required"
         allowed_next_step = "collect_provider_trade_cal_acceptance_evidence"
-    elif not source_available:
+    elif not source_snapshot_allows_local_write:
         status = "producer_cache_refresh_blocked_source_snapshot_missing"
         allowed_next_step = "create_or_load_local_home_snapshot_before_refresh"
     elif not generation_ready:
@@ -3526,6 +3538,9 @@ def _build_producer_cache_refresh_receipt(
         "scope_hash_matches_readiness_and_request": scope_hash_matches,
         "current_cache_refresh_required_count": required_count,
         "source_snapshot_available": source_available,
+        "source_snapshot_degraded_fallback_used": source_snapshot_degraded_fallback_used,
+        "source_snapshot_required_for_provider_acceptance": True,
+        "local_generator_fallback_is_provider_acceptance": False,
         "local_generated_packets_ready": generation_ready,
         "local_generated_packet_count": len(packets),
         "ready_to_write_local_packets": ready_to_write,
