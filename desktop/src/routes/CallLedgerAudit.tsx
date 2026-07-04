@@ -74,6 +74,8 @@ export default function CallLedgerAudit() {
   const motionBrowserQaMatrixRows = rows(cache.motion_browser_qa_matrix_rows);
   const motionBrowserQaEvidence = (cache.motion_browser_qa_evidence_contract as Record<string, unknown> | undefined) ?? {};
   const motionBrowserQaEvidenceRows = rows(cache.motion_browser_qa_evidence_rows);
+  const userRouteQaEvidence = (cache.user_route_qa_evidence_contract as Record<string, unknown> | undefined) ?? {};
+  const userRouteQaEvidenceRows = rows(cache.user_route_qa_evidence_rows);
   const motionBrowserQaReview = (cache.motion_browser_qa_review_contract as Record<string, unknown> | undefined) ?? {};
   const motionBrowserQaReviewRows = rows(cache.motion_browser_qa_review_rows);
   const motionProductionActivation = (cache.motion_production_activation_receipt as Record<string, unknown> | undefined) ?? {};
@@ -186,6 +188,9 @@ export default function CallLedgerAudit() {
           { label: "motion QA matrix", value: counts.motion_browser_qa_matrix_count as number | undefined },
           { label: "motion budgets", value: counts.motion_browser_qa_performance_budget_count as number | undefined },
           { label: "motion evidence", value: motionBrowserQaEvidence.status as string | undefined, tone: motionBrowserQaEvidence.visual_qa_complete === true ? "good" : "warn" },
+          { label: "ordinary QA", value: userRouteQaEvidence.status as string | undefined, tone: userRouteQaEvidence.ordinary_route_visual_qa_complete === true ? "good" : "warn" },
+          { label: "ordinary QA rows", value: counts.user_route_qa_evidence_row_count as number | undefined },
+          { label: "Candidate route QA", value: counts.user_route_qa_candidate_route_passed === true ? "passed" : "pending", tone: counts.user_route_qa_candidate_route_passed === true ? "good" : "warn" },
           { label: "motion QA review", value: motionBrowserQaReview.status as string | undefined, tone: motionBrowserQaReview.local_browser_qa_review_ready === true ? "good" : "warn" },
           { label: "review blockers", value: counts.motion_browser_qa_review_blocking_count as number | undefined, tone: Number(counts.motion_browser_qa_review_blocking_count ?? 0) > 0 ? "warn" : "good" },
           { label: "browser reports", value: counts.motion_browser_qa_evidence_report_count as number | undefined },
@@ -404,6 +409,18 @@ export default function CallLedgerAudit() {
         <DataLineageTable rows={[motionBrowserQaRunbook]} />
         <DataLineageTable rows={motionBrowserQaRunbookRows} />
         <DataLineageTable rows={motionBrowserQaMatrixRows} />
+      </PacketCard>
+
+      <PacketCard title="Ordinary route QA evidence" subtitle="user_route_qa_evidence_contract：读取本地 ignored 普通路线 QA 报告摘要，不提交截图/报告" status={String(userRouteQaEvidence.status ?? "missing")}>
+        <p>scope: {String(userRouteQaEvidence.scope ?? "local_ordinary_route_browser_qa_reports_summary_not_tracked_artifact")}</p>
+        <p>report_count: {String(userRouteQaEvidence.report_count ?? 0)}；passing_report_count: {String(userRouteQaEvidence.passing_report_count ?? 0)}</p>
+        <p>ordinary_route_visual_qa_complete: {String(userRouteQaEvidence.ordinary_route_visual_qa_complete === true)}；typing_silence_verified: {String(userRouteQaEvidence.typing_silence_verified === true)}</p>
+        <p>candidate_route_visual_qa_passed: {String(userRouteQaEvidence.candidate_route_visual_qa_passed === true)}；task_silence_failed_count: {String(userRouteQaEvidence.task_silence_failed_count ?? 0)}</p>
+        <p>latest_passing_report_path: {String(userRouteQaEvidence.latest_passing_report_path ?? "pending")}</p>
+        <p>production_replacement_complete: {String(userRouteQaEvidence.production_replacement_complete === true)}；streamlit_fallback_retirement_ready: {String(userRouteQaEvidence.streamlit_fallback_retirement_ready === true)}</p>
+        <p>该证据来自显式本地普通路线浏览器 QA；报告和截图必须保持 ignored，不等于 CI 状态、Streamlit 退场或生产替代完成。</p>
+        <DataLineageTable rows={[userRouteQaEvidence]} />
+        <DataLineageTable rows={userRouteQaEvidenceRows} />
       </PacketCard>
 
       <PacketCard title="Motion browser QA evidence" subtitle="motion_browser_qa_evidence_contract：读取本地 ignored 报告摘要，不提交截图/报告" status={String(motionBrowserQaEvidence.status ?? "missing")}>

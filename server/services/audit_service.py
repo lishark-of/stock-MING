@@ -141,6 +141,7 @@ MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_q
 MOTION_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runbook.py"
 MOTION_BROWSER_QA_RUNNER_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 MOTION_QA_ARTIFACT_ROOT = PROJECT_ROOT / ".stock_ming_3" / "motion_qa"
+USER_ROUTE_QA_ARTIFACT_ROOT = PROJECT_ROOT / ".stock_ming_3" / "user_route_qa"
 SECRET_KEYWORD_REVIEW_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "secret_keyword_review_contract.py"
 GITHUB_WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
 DESKTOP_SRC_DIR = PROJECT_ROOT / "desktop" / "src"
@@ -4469,6 +4470,192 @@ def _motion_browser_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[st
     return contract, rows
 
 
+def _read_user_route_qa_report(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    safe_payload = _safe_value(payload)
+    if not isinstance(safe_payload, dict):
+        return {}
+    return safe_payload
+
+
+def _relative_artifact_path(path: Path) -> str:
+    return str(path.relative_to(PROJECT_ROOT)) if path.is_relative_to(PROJECT_ROOT) else str(path)
+
+
+def _user_route_qa_evidence_row(report: Mapping[str, Any], row: Mapping[str, Any], report_path: Path) -> dict[str, Any]:
+    route = str(row.get("route") or "")
+    status = str(row.get("status") or "unknown")
+    task_created = row.get("task_created_by_render_or_typing") is True
+    visual_complete = row.get("visual_qa_complete") is True
+    typing_silent = row.get("typing_silence_verified") is True and not task_created
+    return {
+        "run_id": report.get("run_id") or report_path.parent.name,
+        "generated_at": report.get("generated_at"),
+        "route": route,
+        "label": row.get("label"),
+        "viewport": row.get("viewport"),
+        "status": status,
+        "passed": status == "passed" and visual_complete and typing_silent,
+        "route_heading": _safe_text(row.get("route_heading"), limit=180),
+        "visual_qa_complete": visual_complete,
+        "typing_silence_verified": typing_silent,
+        "task_created_by_render_or_typing": task_created,
+        "task_count_before": int(row.get("task_count_before") or 0),
+        "task_count_after": int(row.get("task_count_after") or 0),
+        "clipped_count": int(row.get("clipped_count") or 0),
+        "disabled_buttons_without_reason_count": int(row.get("disabled_buttons_without_reason_count") or 0),
+        "audit_noise_count": int(row.get("audit_noise_count") or 0),
+        "visible_input_count": int(row.get("visible_input_count") or 0),
+        "route_observed_ms": int(row.get("route_observed_ms") or 0),
+        "artifact_report_path": _relative_artifact_path(report_path),
+        "screenshot_artifact_omitted": True,
+        "artifact_root_should_stay_ignored": True,
+        "production_replacement_complete": False,
+        "streamlit_fallback_retirement_ready": False,
+        "external_calls_triggered": report.get("external_calls_triggered") is True,
+        "tushare_called": report.get("tushare_called") is True,
+        "deepseek_called": report.get("deepseek_called") is True,
+        "github_called": report.get("github_called") is True,
+        "does_not_execute_trades": report.get("does_not_execute_trades") is not False,
+        "does_not_modify_strategy_action": report.get("does_not_modify_strategy_action") is not False,
+    }
+
+
+def _user_route_qa_report_passed(report: Mapping[str, Any]) -> bool:
+    rows = [row for row in _as_list(report.get("rows")) if isinstance(row, dict)]
+    routes = {str(row.get("route") or "") for row in rows}
+    viewports = {str(row.get("viewport") or "") for row in rows}
+    return bool(
+        report.get("schema_version") == "command_center_3_user_route_qa_result.v1"
+        and report.get("status") == "user_route_qa_passed"
+        and report.get("visual_qa_complete") is True
+        and report.get("typing_silence_verified") is True
+        and int(report.get("qa_matrix_count") or 0) >= 10
+        and int(report.get("passed_count") or 0) >= 10
+        and int(report.get("review_required_count") or 0) == 0
+        and int(report.get("console_error_count") or 0) == 0
+        and {"#home", "#candidates", "#marginEtf", "#factor", "#next"}.issubset(routes)
+        and {"desktop", "mobile"}.issubset(viewports)
+        and all(row.get("task_created_by_render_or_typing") is not True for row in rows)
+        and report.get("external_calls_triggered") is not True
+        and report.get("tushare_called") is not True
+        and report.get("deepseek_called") is not True
+        and report.get("github_called") is not True
+        and report.get("does_not_execute_trades") is not False
+        and report.get("does_not_modify_strategy_action") is not False
+    )
+
+
+def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    report_paths = (
+        sorted(USER_ROUTE_QA_ARTIFACT_ROOT.glob("*/user_route_qa_report.json"))
+        if USER_ROUTE_QA_ARTIFACT_ROOT.exists()
+        else []
+    )
+    report_records: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
+    for path in report_paths:
+        report = _read_user_route_qa_report(path)
+        if not report:
+            continue
+        report_rows = [row for row in _as_list(report.get("rows")) if isinstance(row, dict)]
+        evidence_rows = [_user_route_qa_evidence_row(report, row, path) for row in report_rows]
+        passed_evidence_rows = [row for row in evidence_rows if row.get("passed") is True]
+        report_records.append(
+            {
+                "run_id": report.get("run_id") or path.parent.name,
+                "generated_at": report.get("generated_at"),
+                "report_path": _relative_artifact_path(path),
+                "passed": _user_route_qa_report_passed(report),
+                "route_count": int(report.get("route_count") or 0),
+                "viewport_count": int(report.get("viewport_count") or 0),
+                "qa_matrix_count": int(report.get("qa_matrix_count") or 0),
+                "covered_routes": sorted(
+                    {str(row.get("route") or "") for row in passed_evidence_rows if row.get("route")}
+                ),
+                "covered_viewports": sorted(
+                    {str(row.get("viewport") or "") for row in passed_evidence_rows if row.get("viewport")}
+                ),
+                "passed_row_count": len(passed_evidence_rows),
+                "candidate_route_row_count": sum(1 for row in passed_evidence_rows if row.get("route") == "#candidates"),
+            }
+        )
+        rows.extend(evidence_rows)
+    report_records.sort(
+        key=lambda row: (
+            str(row.get("generated_at") or ""),
+            str(row.get("run_id") or ""),
+            str(row.get("report_path") or ""),
+        )
+    )
+    rows.sort(
+        key=lambda row: (
+            str(row.get("generated_at") or ""),
+            str(row.get("run_id") or ""),
+            str(row.get("route") or ""),
+            str(row.get("viewport") or ""),
+        )
+    )
+    rows = rows[-80:]
+    passing_reports = [row for row in report_records if row["passed"]]
+    latest_report = report_records[-1] if report_records else {}
+    latest_passing = passing_reports[-1] if passing_reports else {}
+    covered_routes = [str(route) for route in latest_passing.get("covered_routes", [])] if latest_passing else []
+    covered_viewports = [str(viewport) for viewport in latest_passing.get("covered_viewports", [])] if latest_passing else []
+    candidate_route_row_count = int(latest_passing.get("candidate_route_row_count") or 0) if latest_passing else 0
+    evidence_ready = bool(
+        latest_passing
+        and len(covered_routes) >= 5
+        and len(covered_viewports) >= 2
+        and int(latest_passing.get("passed_row_count") or 0) >= 10
+    )
+    candidate_ready = bool(evidence_ready and candidate_route_row_count >= 2)
+    contract = {
+        "schema_version": "command_center_3_user_route_qa_evidence.v1",
+        "status": "user_route_qa_evidence_available_review_pending" if evidence_ready else "user_route_qa_evidence_pending",
+        "scope": "local_ordinary_route_browser_qa_reports_summary_not_tracked_artifact",
+        "artifact_root": ".stock_ming_3/user_route_qa",
+        "report_count": len(report_records),
+        "passing_report_count": len(passing_reports),
+        "latest_run_id": latest_report.get("run_id"),
+        "latest_report_path": latest_report.get("report_path"),
+        "latest_passing_run_id": latest_passing.get("run_id"),
+        "latest_passing_report_path": latest_passing.get("report_path"),
+        "required_route_count": 5,
+        "required_viewport_count": 2,
+        "required_matrix_count": 10,
+        "covered_routes": covered_routes,
+        "covered_viewports": covered_viewports,
+        "row_count": len(rows),
+        "ordinary_route_visual_qa_complete": evidence_ready,
+        "typing_silence_verified": evidence_ready,
+        "task_silence_failed_count": sum(1 for row in rows if row.get("task_created_by_render_or_typing") is True),
+        "candidate_route": "#candidates",
+        "candidate_route_row_count": candidate_route_row_count,
+        "candidate_route_visual_qa_passed": candidate_ready,
+        "production_replacement_complete": False,
+        "streamlit_fallback_retirement_ready": False,
+        "cache_only": True,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "reads_ignored_local_reports_only": True,
+        "screenshots_are_not_tracked": True,
+        "report_artifacts_are_not_tracked": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "This summarizes explicit local ordinary-route browser QA reports. It does not commit screenshots/reports, call providers/models, or complete Streamlit retirement.",
+    }
+    return contract, rows
+
+
 def _motion_browser_qa_review_row(
     criterion: str,
     passed: bool,
@@ -5575,6 +5762,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         _motion_browser_qa_runbook_contract()
     )
     motion_browser_qa_evidence_contract, motion_browser_qa_evidence_rows = _motion_browser_qa_evidence_contract()
+    user_route_qa_evidence_contract, user_route_qa_evidence_rows = _user_route_qa_evidence_contract()
     persisted_packet = _read_persisted_audit_packet()
     persisted_review = _as_dict(persisted_packet.get("motion_browser_qa_review_contract"))
     review_was_explicit = persisted_review.get("explicit_review_task_done") is True
@@ -5691,6 +5879,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "motion_browser_qa_matrix_rows": motion_browser_qa_matrix_rows,
         "motion_browser_qa_evidence_contract": motion_browser_qa_evidence_contract,
         "motion_browser_qa_evidence_rows": motion_browser_qa_evidence_rows,
+        "user_route_qa_evidence_contract": user_route_qa_evidence_contract,
+        "user_route_qa_evidence_rows": user_route_qa_evidence_rows,
         "motion_browser_qa_review_contract": motion_browser_qa_review_contract,
         "motion_browser_qa_review_rows": motion_browser_qa_review_rows,
         "motion_keynote_roadmap_audit": motion_keynote_roadmap_audit,
@@ -5829,6 +6019,28 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_browser_qa_reduced_motion_passed": motion_browser_qa_evidence_contract.get("reduced_motion_passed") is True,
             "motion_browser_qa_evidence_visual_complete": motion_browser_qa_evidence_contract.get("visual_qa_complete") is True,
             "motion_browser_qa_evidence_performance_verified": motion_browser_qa_evidence_contract.get("browser_performance_verified") is True,
+            "user_route_qa_evidence_report_count": user_route_qa_evidence_contract.get("report_count", 0),
+            "user_route_qa_evidence_passing_report_count": user_route_qa_evidence_contract.get(
+                "passing_report_count",
+                0,
+            ),
+            "user_route_qa_evidence_row_count": user_route_qa_evidence_contract.get("row_count", 0),
+            "user_route_qa_visual_complete": user_route_qa_evidence_contract.get(
+                "ordinary_route_visual_qa_complete"
+            )
+            is True,
+            "user_route_qa_typing_silence_verified": user_route_qa_evidence_contract.get(
+                "typing_silence_verified"
+            )
+            is True,
+            "user_route_qa_candidate_route_passed": user_route_qa_evidence_contract.get(
+                "candidate_route_visual_qa_passed"
+            )
+            is True,
+            "user_route_qa_task_silence_failed_count": user_route_qa_evidence_contract.get(
+                "task_silence_failed_count",
+                0,
+            ),
             "motion_browser_qa_review_ready": motion_browser_qa_review_contract.get("local_browser_qa_review_ready") is True,
             "motion_browser_qa_review_blocking_count": motion_browser_qa_review_contract.get("blocking_review_count", 0),
             "motion_keynote_roadmap_ready": motion_keynote_roadmap_audit.get("roadmap_ready") is True,
@@ -5935,6 +6147,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_browser_qa_runbook_is_not_browser_execution": True,
             "motion_browser_qa_evidence_is_local_ignored_artifact_summary": True,
             "motion_browser_qa_evidence_is_not_production_completion": True,
+            "user_route_qa_evidence_is_local_ignored_artifact_summary": True,
+            "user_route_qa_evidence_does_not_open_browser": True,
+            "user_route_qa_evidence_is_not_streamlit_retirement": True,
+            "user_route_qa_evidence_is_not_production_replacement": True,
             "motion_browser_qa_review_is_button_gated": True,
             "motion_browser_qa_review_does_not_open_browser": True,
             "motion_browser_qa_review_is_not_production_completion": True,
@@ -6009,6 +6225,16 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "motion_browser_qa_evidence_status": motion_browser_qa_evidence_contract.get("status"),
                 "motion_browser_qa_evidence_visual_complete": motion_browser_qa_evidence_contract.get("visual_qa_complete"),
                 "motion_browser_qa_evidence_performance_verified": motion_browser_qa_evidence_contract.get("browser_performance_verified"),
+                "user_route_qa_evidence_status": user_route_qa_evidence_contract.get("status"),
+                "user_route_qa_evidence_visual_complete": user_route_qa_evidence_contract.get(
+                    "ordinary_route_visual_qa_complete"
+                ),
+                "user_route_qa_evidence_typing_silence_verified": user_route_qa_evidence_contract.get(
+                    "typing_silence_verified"
+                ),
+                "user_route_qa_candidate_route_passed": user_route_qa_evidence_contract.get(
+                    "candidate_route_visual_qa_passed"
+                ),
                 "motion_browser_qa_review_status": motion_browser_qa_review_contract.get("status"),
                 "motion_browser_qa_review_ready": motion_browser_qa_review_contract.get("local_browser_qa_review_ready"),
                 "motion_keynote_roadmap_status": motion_keynote_roadmap_audit.get("status"),
@@ -6063,6 +6289,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_clarity_audit 只读解析本地 React/CSS 源码；static_ready 不是浏览器视觉验收或生产动效完成证明。",
             "motion_production_qa_contract 是本地生产验收清单；不运行浏览器视觉 QA 或性能 trace。",
             "motion_keynote_roadmap_audit 只是高级动效路线图审计；不运行浏览器、不推广本地 artifact、不完成 production motion。",
+            "user_route_qa_evidence_contract 只读 ignored 普通路线 QA 报告摘要；不打开浏览器、不提交截图、不完成 Streamlit 退场或生产替代。",
             "motion_production_activation_receipt 只串联 LTG-14 下一步验收路径；不运行浏览器、不创建 CI 证据、不完成 production motion。",
             "motion_browser_qa_review_contract 只记录显式本地 artifact 审查；不运行浏览器、不创建 CI 证据、不完成生产动效。",
             "motion_promotion_dry_run_receipt 只做 LTG-14 本地推广预检；不打开浏览器、不调用 GitHub、不推广 artifact、不完成 production motion。",

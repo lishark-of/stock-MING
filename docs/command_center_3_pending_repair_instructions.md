@@ -39,6 +39,7 @@ Current interpretation:
 5. Home ordinary surface is verified as a first-card workflow: local connected, current symbol, recent result, next action, and status note stay above the collapsed Research Assist / Audit Details area.
 6. ETF / Margin candidate rows now surface source, row status, reason, liquidity, overlap, cash/leverage guardrail, and no-buy/no-margin boundary before audit details.
 7. User Route QA now has an explicit local runner/runbook for `#home`, `#candidates`, `#marginEtf`, `#factor`, and `#next`; reports and screenshots stay under ignored `.stock_ming_3/user_route_qa`.
+8. Call Ledger Audit now reads ignored User Route QA reports through `user_route_qa_evidence_contract`, showing ordinary route visual QA, typing/task silence, Candidate Radar route pass state, local report counts, and no-provider/no-trade boundaries without opening a browser or committing screenshots.
 
 ## Next Repair Goals
 
@@ -61,6 +62,7 @@ Current interpretation:
 4. User Route QA
    - Goal: browser-check `#home`, `#candidates`, `#marginEtf`, `#factor`, and `#next` on desktop and mobile widths.
    - Current local slice: `scripts/user_route_qa_runner.mjs` can run the ordinary route matrix against already-running local FastAPI/Vite, type into visible inputs without submit, and compare `/api/tasks` counts before/after render/typing.
+   - Current readback: `GET /api/audit/cache` surfaces `user_route_qa_evidence_contract` and rows from ignored local reports, including the `#candidates` pass state and task-silence count.
    - Check text overflow, repeated audit noise, disabled button reasons, and local-only refresh behavior.
    - Exit check: screenshots or notes prove first viewport clarity and no task is created by render or typing.
 
