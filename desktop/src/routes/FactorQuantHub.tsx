@@ -1311,29 +1311,29 @@ export default function FactorQuantHub() {
   ];
   const ordinaryFactorTestProviderSmallPoolState =
     factorTestProductionValidation.provider_backed_small_pool_validation_done === true
-      ? "provider-backed 小池验证已完成"
-      : "真实 provider 小池验证未完成";
+      ? "真实小池验收已有直接证据"
+      : "真实小池验收未运行；等待授权";
   const ordinaryFactorTestProviderScopeState =
     factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true
-      ? `scope ticket ready：${String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash_short ?? factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "已生成")}`
-      : "等待按钮门控小池预检 scope ticket";
+      ? `本地 scope 已就绪：${String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash_short ?? factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "已生成")}`
+      : "等待小池预检 scope";
   const ordinaryFactorTestProviderRequestState =
     factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true
-      ? "执行请求已绑定 scope；等待单独授权 provider task"
-      : "等待执行请求或单独 provider 授权";
+      ? "本地执行请求已绑定 scope；下一步只能是用户授权后的 provider task"
+      : "等待本地执行请求；真实任务仍需授权";
   const ordinaryFactorTestProviderEvidenceGap =
     factorTestProductionValidation.provider_backed_small_pool_validation_done === true
-      ? "provider-backed 小池直接证据已回放"
-      : "缺 provider task、sample rows、rolling IC/ICIR、成本、neutralization、PIT bias 和 promotion review";
+      ? "真实小池样本和指标已回放"
+      : "还缺真实 provider task、样本行、rolling IC/ICIR、成本、中性化、PIT/bias 和 promotion review";
   const ordinaryFactorTestProviderBoundary =
-    "本卡只读 Factor cache；不触发 dry-run、execution request 或 provider task；真实 Tushare 小池必须另行授权 POST task";
+    "本卡只读 Factor cache；不触发 dry-run、execution request 或 provider task；真实小池验收只能在用户明确授权后走 POST task";
   const ordinaryFactorTestProductionStageCount = Number(factorTestProductionStageScopeManifest.stage_count ?? factorTestProductionStageScopeRows.length ?? 0);
   const ordinaryFactorTestProductionStagePendingCount = Number(factorTestProductionStageScopeManifest.pending_stage_count ?? factorTestProductionStageScopeRows.length ?? 0);
   const ordinaryFactorTestProductionStageLocalCount = Number(factorTestProductionStageScopeManifest.local_surface_stage_count ?? 0);
   const ordinaryFactorTestProductionStageDirectCount = Number(factorTestProductionStageScopeManifest.provider_direct_evidence_stage_count ?? 0);
   const ordinaryFactorTestProductionStageStatus =
     ordinaryFactorTestProductionStagePendingCount > 0
-      ? `${ordinaryFactorTestProductionStagePendingCount}/${ordinaryFactorTestProductionStageCount || ordinaryFactorTestProductionStagePendingCount} 项仍待 provider-backed 直接证据`
+      ? `${ordinaryFactorTestProductionStagePendingCount}/${ordinaryFactorTestProductionStageCount || ordinaryFactorTestProductionStagePendingCount} 项仍待真实 provider 直接证据`
       : "生产阶段清单无 pending 项";
   const ordinaryFactorTestProductionStageItems: MetricItem[] = [
     {
@@ -1348,7 +1348,7 @@ export default function FactorQuantHub() {
     },
     {
       label: "直接证据",
-      value: `${ordinaryFactorTestProductionStageDirectCount} 项 provider direct evidence；生产完成前必须补真实 provider task、ledger 和样本行`,
+      value: `${ordinaryFactorTestProductionStageDirectCount} 项真实 provider evidence；生产完成前必须补真实 provider task、ledger 和样本行`,
       tone: ordinaryFactorTestProductionStageDirectCount > 0 ? "good" : "warn"
     },
     {
@@ -1379,22 +1379,22 @@ export default function FactorQuantHub() {
       tone: factorTestSmallPool.local_light_observation_acceptance_done === true ? "good" : "warn"
     },
     {
-      label: "真实小池",
+      label: "真实验收",
       value: ordinaryFactorTestProviderSmallPoolState,
       tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
     },
     {
-      label: "scope ticket",
+      label: "本地 scope",
       value: ordinaryFactorTestProviderScopeState,
       tone: factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true ? "good" : "warn"
     },
     {
-      label: "执行请求",
+      label: "授权前置",
       value: ordinaryFactorTestProviderRequestState,
       tone: factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true ? "good" : "warn"
     },
     {
-      label: "缺口",
+      label: "还缺",
       value: ordinaryFactorTestProviderEvidenceGap,
       tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
     },
@@ -1511,10 +1511,10 @@ export default function FactorQuantHub() {
           <p className="risk-note">这条行动条只把下一票雷达确认、P2 三面和 P3 可读结果在量化页串成同一条本地回放；缺口只提示待回放，不补调数据源或模型。</p>
         </div>
         <div aria-label="stock quant ordinary factor test provider small pool status">
-          <h3>LTG-03 小池验证状态</h3>
-          <p className="ordinary-status-note">普通页直接显示真实小股票池研究是否已有 provider-backed 直接证据；当前只读本地 cache 和历史 ticket，不从页面渲染或查看结果创建 provider 任务。</p>
+          <h3>LTG-03 真实小池验收</h3>
+          <p className="ordinary-status-note">普通页先说明真实小池验收是否已经运行、下一步是否需要授权、哪些证据仍缺；当前只读本地 cache 和历史 ticket，不从页面渲染或查看结果创建 provider 任务。</p>
           <MetricGrid items={ordinaryFactorTestProviderSmallPoolItems} />
-          <p className="risk-note">{ordinaryFactorTestProviderBoundary}；local light observations、scope ticket 或 execution request 都不能当 production Factor Test validation complete。</p>
+          <p className="risk-note">{ordinaryFactorTestProviderBoundary}；本地 light observations、本地 scope 或执行请求都不能当作生产级 Factor Test 验收完成。</p>
         </div>
         <div aria-label="stock quant ordinary factor test production stage scope">
           <h3>LTG-03 生产阶段清单</h3>

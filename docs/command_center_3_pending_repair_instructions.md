@@ -41,6 +41,7 @@ Current interpretation:
 7. User Route QA now has an explicit local runner/runbook for `#home`, `#candidates`, `#marginEtf`, `#factor`, and `#next`; reports and screenshots stay under ignored `.stock_ming_3/user_route_qa`.
 8. Call Ledger Audit now reads ignored User Route QA reports through `user_route_qa_evidence_contract`, showing ordinary route visual QA, typing/task silence, Candidate Radar route pass state, local report counts, and no-provider/no-trade boundaries without opening a browser or committing screenshots.
 9. Candidate Radar ordinary first screen now explains retirement-readiness as "退旧雷达前还缺什么" instead of leading with production/stage blocker wording; detailed gap rows stay collapsed and the slice remains local read-only evidence, not LTG-13 strict closeout.
+10. Stock Quant Projection / Factor Quant Hub now shows LTG-03 true small-pool validation as an authorization-waiting state on the ordinary first screen: local scope and execution-request tickets are historical/read-only, and real provider task/sample/rolling/cost/neutralization evidence still requires explicit user authorization.
 
 ## Next Repair Goals
 
@@ -68,12 +69,18 @@ Current interpretation:
    - Check text overflow, repeated audit noise, disabled button reasons, and local-only refresh behavior.
    - Exit check: screenshots or notes prove first viewport clarity and no task is created by render or typing.
 
-5. DeepSeek Governed Executor
+5. Factor Test Lab Small-Pool Authorization Clarity
+   - Goal: keep the ordinary Factor Quant Hub page clear that LTG-03 true small-pool validation has not run unless provider task/sample evidence exists.
+   - Current local slice: ordinary first screen now shows whether true small-pool validation has run, whether authorization is still needed, and which provider task/sample/rolling/cost/neutralization evidence remains missing.
+   - Boundary: do not rerun local dry-run or execution-request as the next LTG-03 action; real provider validation requires explicit user authorization and call-ledger/sample evidence.
+   - Exit check: opening `#factor` makes the next authorized provider task obvious without making local tickets look like production validation.
+
+6. DeepSeek Governed Executor
    - Goal: implement separately after Tushare-first and local graph views are usable.
    - Boundary: DeepSeek may explain only allowed fields; it must not overwrite price, holdings, factors, operation zones, strategy action, or radar candidates.
    - Exit check: model ledger, sanitizer, output acceptance, field whitelist, and no-secret evidence are visible before any real call.
 
-6. Remote CI / Release Review
+7. Remote CI / Release Review
    - Goal: inspect matching GitHub Actions for the current pushed commit only after explicit user authorization.
    - Boundary: no push or GitHub API without explicit authorization.
    - Exit check: CI failure emails are mapped to exact failing jobs and fixed in the smallest possible patch.
