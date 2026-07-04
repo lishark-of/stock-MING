@@ -2273,6 +2273,28 @@ def build_contract() -> dict[str, Any]:
             "Search quant projection must be a button-gated local receipt with provider/model/factor/chart evidence pending, not a trade signal or external acceptance.",
         ),
         _row(
+            "candidate_radar_operator_panel_exposes_first_screen_symbol_confirm",
+            candidate_frontend.find("下一票雷达操作台") >= 0
+            and candidate_frontend.find("下一票雷达操作台") < candidate_frontend.find("普通用户雷达摘要")
+            and candidate_frontend.find('aria-label="candidate radar compact operator actions"') >= 0
+            and candidate_frontend.find('aria-label="candidate radar compact operator actions"')
+            < candidate_frontend.find("普通用户雷达摘要")
+            and candidate_frontend.find('aria-label="candidate radar optional local actions details"')
+            > candidate_frontend.find('aria-label="candidate radar compact operator actions"')
+            and 'aria-label="candidate radar operator symbol input"' in candidate_frontend
+            and "candidate-radar-operator-symbol-help" in candidate_frontend
+            and "candidate-radar-operator-confirm-help" in candidate_frontend
+            and "placeholder=\"002008.SZ 或 002008\"" in candidate_frontend
+            and "disabled={quantProjectionSubmitDisabled}" in candidate_frontend
+            and "onClick={launchQuantProjection}" in candidate_frontend
+            and "确认并生成" in candidate_frontend
+            and "refresh candidate radar compact operator readback" in candidate_frontend
+            and "输入股票代码只做本地校验" in candidate_frontend
+            and "页面打开、输入、GET cache 和 React render 都不会自动外联" in candidate_frontend
+            and "候选不是买入指令" in candidate_frontend,
+            "Candidate Radar first screen must expose a real symbol input, confirm button, local readback refresh, and no-buy/no-render-provider boundary before optional scan/audit details.",
+        ),
+        _row(
             "search_quant_projection_activation_receipt_blocks_provider_model_promotion",
             search_quant_projection_activation.get("schema_version")
             == "candidate_radar_search_quant_projection_activation_receipt.v1"

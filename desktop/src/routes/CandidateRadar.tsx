@@ -1054,6 +1054,8 @@ export default function CandidateRadar() {
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会启动数据链";
   const quantProjectionInputBoundaryLabel = "输入股票代码只做本地校验；不会创建任务，也不会调用 Tushare 或 DeepSeek；页面打开可从本地 cache 预填最近标的。";
+  const candidateRadarOperatorInputHelpId = "candidate-radar-operator-symbol-help";
+  const candidateRadarOperatorSubmitHelpId = "candidate-radar-operator-confirm-help";
   const quantProjectionSummaryInputHelpId = "candidate-radar-summary-symbol-help";
   const quantProjectionSummarySubmitHelpId = "candidate-radar-summary-confirm-help";
   const quantProjectionFactorInputHelpId = "candidate-radar-factor-symbol-help";
@@ -3217,11 +3219,38 @@ export default function CandidateRadar() {
           ]}
         />
         <div className="actions" aria-label="candidate radar compact operator actions">
-          <a href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"} aria-label="open candidate radar compact primary action">{ordinaryPrimaryActionLabel}</a>
+          <input
+            value={searchSymbol}
+            onChange={(event) => {
+              setSearchSymbol(event.target.value);
+              setSearchSymbolTouched(true);
+              setQuantProjectionSubmitError("");
+            }}
+            placeholder="002008.SZ 或 002008"
+            aria-label="candidate radar operator symbol input"
+            aria-describedby={candidateRadarOperatorInputHelpId}
+            title={quantProjectionInputBoundaryLabel}
+          />
+          <button
+            disabled={quantProjectionSubmitDisabled}
+            onClick={launchQuantProjection}
+            title={quantProjectionSubmitButtonLabel}
+            aria-label={quantProjectionSubmitAriaLabel}
+            aria-describedby={candidateRadarOperatorSubmitHelpId}
+          >{quantProjectionSubmitting ? "提交中..." : "确认并生成"}</button>
+          <button
+            onClick={refreshQuantProjectionReadback}
+            disabled={loading}
+            title="只回读 CandidateRadar cache、bootstrap status 和本地 task index；不创建 task、不调用 provider/model"
+            aria-label="refresh candidate radar compact operator readback"
+          >刷新本地回放</button>
+          <a href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"} aria-label="open candidate radar compact primary action">更多搜票状态</a>
           <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from compact radar panel">候选池</a>
           <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from compact radar panel">量化推演</a>
           <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from compact radar panel">次日图谱</a>
         </div>
+        <p id={candidateRadarOperatorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
+        <p id={candidateRadarOperatorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
         <p className="risk-note">退旧雷达前还缺什么：{ordinaryRetirementReadinessMainGaps}；页面 QA：{ordinaryBrowserQaStatusLabel}。</p>
         <p className="risk-note">{ordinaryCandidateGroupBoundary} 页面打开、输入、GET cache 和 React render 都不会自动外联。</p>
       </PacketCard>

@@ -18753,6 +18753,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("candidate_radar_deep_scan_local_review_receipt.v1", script)
         self.assertIn("candidate_browser_qa_evidence_reader_is_local_artifact_only", script)
         self.assertIn("candidate_browser_qa_review_is_button_gated_not_production", script)
+        self.assertIn("candidate_radar_operator_panel_exposes_first_screen_symbol_confirm", script)
         self.assertIn("candidate_radar_production_stage_scope_manifest_is_complete_and_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
