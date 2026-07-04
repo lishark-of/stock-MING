@@ -26,6 +26,16 @@ FORBIDDEN_OUTPUT_TARGETS = (
     "strategy_action",
     "trade_order",
 )
+DEEPSEEK_PRODUCTION_STAGE_LABELS = {
+    "larger_provider_benchmark": "larger provider-backed JSON stability benchmark",
+    "provider_response_format_enforcement": "provider response_format enforcement",
+    "bounded_retry_repair_execution": "bounded retry/repair provider execution",
+    "token_budget_cost_evidence": "token budget and cost evidence",
+    "auto_after_task_mode_gate": "auto_after_task explicit mode gate",
+    "model_ledger_hash_dedupe": "model ledger, input/output hash, and dedupe",
+    "sanitizer_parse_failed_discard": "sanitizer and parse-failed discard evidence",
+    "production_promotion_review": "production promotion review",
+}
 
 
 def _now_iso() -> str:
@@ -98,6 +108,41 @@ def _latest_provider_benchmark_execution_request_receipt() -> dict[str, Any]:
     packet = _latest_factor_quant_hub_packet()
     receipt = packet.get("deepseek_provider_benchmark_execution_request_receipt")
     return dict(receipt) if isinstance(receipt, dict) else {}
+
+
+def _deepseek_production_stage_scope_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for stage_key, stage_label in sorted(DEEPSEEK_PRODUCTION_STAGE_LABELS.items()):
+        rows.append({
+            "stage_key": stage_key,
+            "stage_label": stage_label,
+            "scope": "deepseek_production_stage_scope_manifest",
+            "current_status": "local_governance_or_dry_run_only",
+            "target_status": "provider_benchmark_or_runtime_evidence_required",
+            "required_before_production": True,
+            "provider_benchmark_done": False,
+            "response_format_enforced": False,
+            "bounded_retry_repair_executed": False,
+            "token_budget_cost_evidence_complete": False,
+            "auto_after_task_production_ready": False,
+            "model_execution_implemented": False,
+            "production_deepseek_explanation_complete": False,
+            "cache_only_readback": True,
+            "creates_task": False,
+            "calls_model": False,
+            "deepseek_called_by_contract": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_override_numeric_values": True,
+            "does_not_output_strategy_action": True,
+            "contains_secret": False,
+            "is_production_evidence": False,
+        })
+    return rows
 
 
 def read_deepseek_model_strategy_cache() -> dict[str, Any]:
@@ -194,6 +239,118 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         if row["blocks_real_execution"] is True
     ]
     real_call_allowed_now = not real_call_blockers
+    production_stage_scope_rows = _deepseek_production_stage_scope_rows()
+    production_stage_pending_count = sum(
+        1
+        for row in production_stage_scope_rows
+        if row["production_deepseek_explanation_complete"] is False
+    )
+    production_stage_scope_manifest = {
+        "schema_version": "deepseek_production_stage_scope_manifest.v1",
+        "status": "deepseek_production_stage_scope_visible_model_execution_pending",
+        "scope": "local_model_strategy_cache_deepseek_stage_scope_no_model_call",
+        "stage_count": len(production_stage_scope_rows),
+        "pending_stage_count": production_stage_pending_count,
+        "production_deepseek_explanation_complete": False,
+        "real_call_allowed_now": real_call_allowed_now,
+        "provider_benchmark_done": False,
+        "response_format_enforced": False,
+        "bounded_retry_repair_executed": False,
+        "token_budget_cost_evidence_complete": False,
+        "auto_after_task_production_ready": False,
+        "model_execution_implemented": False,
+        "cache_only_readback": True,
+        "creates_task": False,
+        "calls_model": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+        "contains_secret": False,
+        "is_production_evidence": False,
+    }
+    strict_closeout_gate_rows = [
+        {
+            "gate_key": "provider_benchmark_and_model_ledger_missing",
+            "current_status": "real DeepSeek call blocked until governed executor evidence complete",
+            "strict_closeout_state": "strict closeout remains blocked",
+            "can_close_ltg07_now": False,
+            "evidence_required": "provider benchmark / model ledger / response_format / retry-repair / cost-redaction / promotion",
+            "deepseek_production_stage_scope_count": len(production_stage_scope_rows),
+            "pending_stage_count": production_stage_pending_count,
+            "real_call_allowed_now": real_call_allowed_now,
+            "production_deepseek_explanation_complete": False,
+            "provider_benchmark_done": False,
+            "model_ledger_evidence_done": False,
+            "response_format_enforced": False,
+            "bounded_retry_repair_executed": False,
+            "token_budget_cost_evidence_complete": False,
+            "auto_after_task_production_ready": False,
+            "cache_only_readback": True,
+            "creates_task": False,
+            "calls_model": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_override_numeric_values": True,
+            "does_not_output_strategy_action": True,
+            "contains_secret": False,
+            "is_production_evidence": False,
+        },
+        {
+            "gate_key": "safe_output_only_nonblocking_paths",
+            "current_status": "DeepSeek may explain allowed fields only and does not block Tushare-first, Factor light, or Next Session",
+            "strict_closeout_state": "strict closeout remains blocked",
+            "can_close_ltg07_now": False,
+            "allowed_output_fields": list(SAFE_EXPLANATION_FIELDS),
+            "forbidden_output_targets": list(FORBIDDEN_OUTPUT_TARGETS),
+            "deepseek_is_data_source": False,
+            "deepseek_blocks_tushare_factor_next": False,
+            "cache_only_readback": True,
+            "creates_task": False,
+            "calls_model": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_override_numeric_values": True,
+            "does_not_output_strategy_action": True,
+            "contains_secret": False,
+            "is_production_evidence": False,
+        },
+        {
+            "gate_key": "LTG-12 交易隔离支撑",
+            "current_status": "research-only explanation boundary; no broker connection, no order endpoint, no strategy action mutation",
+            "strict_closeout_state": "trade isolation remains enforced",
+            "can_close_ltg07_now": False,
+            "real_trading_connected": False,
+            "broker_adapter_connected": False,
+            "order_endpoint_present": False,
+            "strategy_action_mutated": False,
+            "cache_only_readback": True,
+            "creates_task": False,
+            "calls_model": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_override_numeric_values": True,
+            "does_not_output_strategy_action": True,
+            "contains_secret": False,
+            "is_production_evidence": False,
+        },
+    ]
     governed_executor = {
         "schema_version": "deepseek_governed_executor_status.v1",
         "status": "governed_executor_execution_request_ready_model_ledger_pending"
@@ -252,6 +409,14 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "real_call_gate_summary": "real_deepseek_call_blocked_until_governed_executor_evidence_complete"
         if not real_call_allowed_now
         else "real_deepseek_call_allowed_by_governed_executor",
+        "production_stage_scope_manifest": production_stage_scope_manifest,
+        "production_stage_scope_rows": production_stage_scope_rows,
+        "production_stage_scope_row_count": len(production_stage_scope_rows),
+        "production_stage_pending_count": production_stage_pending_count,
+        "strict_closeout_gate_rows": strict_closeout_gate_rows,
+        "strict_closeout_gate_row_count": len(strict_closeout_gate_rows),
+        "strict_closeout_state": "strict closeout remains blocked",
+        "can_close_ltg07_now": False,
         "real_call_requires": [
             "explicit_post_task",
             "model_execution_task_implemented",
@@ -384,6 +549,9 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "governed_executor": governed_executor,
         "ordinary_one_screen_summary": ordinary_one_screen_summary,
         "ordinary_checkpoint_rows": ordinary_checkpoint_rows,
+        "deepseek_production_stage_scope_manifest": production_stage_scope_manifest,
+        "deepseek_production_stage_scope_rows": production_stage_scope_rows,
+        "deepseek_strict_closeout_gate_rows": strict_closeout_gate_rows,
         "model_rows": rows,
         "purpose_groups": {
             "explain_grade": explain_purposes,
@@ -394,6 +562,9 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
             "configured_count": configured_count,
             "safe_default_count": len(rows) - configured_count,
             "ordinary_checkpoint_row_count": len(ordinary_checkpoint_rows),
+            "deepseek_production_stage_scope_row_count": len(production_stage_scope_rows),
+            "deepseek_production_stage_pending_count": production_stage_pending_count,
+            "deepseek_strict_closeout_gate_row_count": len(strict_closeout_gate_rows),
         },
         "policy": {
             "cache_api_external_calls": False,

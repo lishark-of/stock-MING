@@ -2320,6 +2320,64 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertEqual(governed["ordinary_blocking_state"], "pending_model_ledger_not_blocking_tushare_or_basic_maps")
         self.assertTrue(packet["policy"]["governed_executor_required_for_real_deepseek"])
         self.assertTrue(packet["policy"]["deepseek_does_not_block_tushare_or_basic_maps"])
+        stage_manifest = packet["deepseek_production_stage_scope_manifest"]
+        stage_rows = packet["deepseek_production_stage_scope_rows"]
+        gate_rows = packet["deepseek_strict_closeout_gate_rows"]
+        expected_stage_keys = {
+            "larger_provider_benchmark",
+            "provider_response_format_enforcement",
+            "bounded_retry_repair_execution",
+            "token_budget_cost_evidence",
+            "auto_after_task_mode_gate",
+            "model_ledger_hash_dedupe",
+            "sanitizer_parse_failed_discard",
+            "production_promotion_review",
+        }
+        self.assertEqual(stage_manifest["schema_version"], "deepseek_production_stage_scope_manifest.v1")
+        self.assertEqual(stage_manifest["stage_count"], 8)
+        self.assertEqual(stage_manifest["pending_stage_count"], 8)
+        self.assertFalse(stage_manifest["production_deepseek_explanation_complete"])
+        self.assertTrue(stage_manifest["cache_only_readback"])
+        self.assertFalse(stage_manifest["creates_task"])
+        self.assertFalse(stage_manifest["calls_model"])
+        self.assertFalse(stage_manifest["deepseek_called"])
+        self.assertTrue(stage_manifest["does_not_execute_trades"])
+        self.assertTrue(stage_manifest["does_not_modify_strategy_action"])
+        self.assertEqual({row["stage_key"] for row in stage_rows}, expected_stage_keys)
+        self.assertEqual(len(stage_rows), 8)
+        for row in stage_rows:
+            self.assertEqual(row["scope"], "deepseek_production_stage_scope_manifest")
+            self.assertFalse(row["production_deepseek_explanation_complete"])
+            self.assertTrue(row["cache_only_readback"])
+            self.assertFalse(row["creates_task"])
+            self.assertFalse(row["calls_model"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_override_numeric_values"])
+            self.assertTrue(row["does_not_output_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+            self.assertFalse(row["is_production_evidence"])
+        self.assertEqual(
+            {row["gate_key"] for row in gate_rows},
+            {
+                "provider_benchmark_and_model_ledger_missing",
+                "safe_output_only_nonblocking_paths",
+                "LTG-12 交易隔离支撑",
+            },
+        )
+        for row in gate_rows:
+            self.assertFalse(row["can_close_ltg07_now"])
+            self.assertTrue(row["cache_only_readback"])
+            self.assertFalse(row["creates_task"])
+            self.assertFalse(row["calls_model"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+            self.assertFalse(row["is_production_evidence"])
+        self.assertEqual(governed["production_stage_scope_rows"], stage_rows)
+        self.assertEqual(governed["strict_closeout_gate_rows"], gate_rows)
 
     def test_projection_merges_default_to_configured_model(self):
         os.environ["DEEPSEEK_EXPLAIN_MODEL"] = "custom-projection-model"

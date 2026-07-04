@@ -80,6 +80,16 @@ export default function ModelStrategy() {
     governedExecutor.provider_benchmark_scope_hash_safe_to_bind === true &&
     governedExecutorScopeHash.length === 64;
   const governedExecutorRealCallGateRows = rows(governedExecutor.real_call_gate_rows);
+  const deepseekProductionStageScopeRows = rows(cache.deepseek_production_stage_scope_rows).length
+    ? rows(cache.deepseek_production_stage_scope_rows)
+    : rows(governedExecutor.production_stage_scope_rows);
+  const deepseekStrictCloseoutGateRows = rows(cache.deepseek_strict_closeout_gate_rows).length
+    ? rows(cache.deepseek_strict_closeout_gate_rows)
+    : rows(governedExecutor.strict_closeout_gate_rows);
+  const deepseekProductionStageScopeManifest =
+    (cache.deepseek_production_stage_scope_manifest as Record<string, unknown> | undefined) ??
+    (governedExecutor.production_stage_scope_manifest as Record<string, unknown> | undefined) ??
+    {};
   const governedExecutorRealCallAllowed = governedExecutor.real_call_allowed_now === true;
   const governedExecutorRealCallBlockers = Array.isArray(governedExecutor.real_call_blockers)
     ? governedExecutor.real_call_blockers.map((item) => String(item)).filter(Boolean)
@@ -518,6 +528,33 @@ export default function ModelStrategy() {
             <summary>P5 执行路由详情</summary>
             <p>本地 prompt / sanitizer 入口：{String(governedExecutor.prompt_sanitizer_route ?? governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；未来真实模型入口：{String(governedExecutor.future_model_execution_route ?? "future POST governed DeepSeek executor")}（当前未实现真实模型调用）；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}；execution-request：{String(governedExecutor.execution_request_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-execution-request")}。</p>
           </details>
+        </PacketCard>
+
+        <PacketCard title="LTG-07 DeepSeek strict closeout gate" subtitle="8 个生产阶段仍 pending；真实模型调用未放行" status="strict_closeout_blocked">
+          <p className="ordinary-status-note">production_deepseek_explanation_complete: false；real_call_allowed_now: {String(governedExecutorRealCallAllowed)}；can_close_ltg07_now: false；strict closeout remains blocked。</p>
+          <p className="risk-note">evidence_required: provider benchmark / model ledger / response_format / retry-repair / cost-redaction / promotion。</p>
+          <p className="risk-note">next_authorized_deepseek_step: future explicit DeepSeek provider benchmark task with model ledger, response_format, retry-repair, cost/redaction review, and production promotion。</p>
+          <p className="risk-note">LTG-12 boundary: research-only explanation boundary; no broker connection, no order endpoint, no strategy action mutation。</p>
+          <p className="risk-note">GET model strategy cache / React render / local links do not create model tasks, call DeepSeek, read token/key, overwrite numeric values, modify operation_zones, or execute trades.</p>
+          <MetricGrid
+            items={[
+              { label: "stage scope", value: deepseekProductionStageScopeManifest.status as string | undefined, tone: "warn" },
+              { label: "pending stages", value: deepseekProductionStageScopeManifest.pending_stage_count as number | undefined, tone: "warn" },
+              { label: "real call", value: governedExecutorRealCallAllowed ? "已放行" : "未放行", tone: governedExecutorRealCallAllowed ? "good" : "warn" },
+              { label: "closeout", value: "blocked", tone: "warn" },
+              { label: "交易隔离", value: "no broker / no order / no action mutation", tone: "good" }
+            ]}
+          />
+          <div aria-label="deepseek governed executor strict closeout gate">
+            <h3>LTG-07 strict closeout gate</h3>
+            <p className="risk-note">这张表来自 GET /api/model-strategy/cache 的 deepseek_strict_closeout_gate_rows；它不是 provider benchmark、model ledger、response_format proof 或 production evidence。</p>
+            <DataLineageTable rows={deepseekStrictCloseoutGateRows} />
+          </div>
+          <div aria-label="deepseek governed executor production stage scope">
+            <h3>LTG-07 production stage scope</h3>
+            <p className="risk-note">8 个阶段只列明生产证据缺口：provider benchmark、response_format、retry-repair、token/cost、auto_after_task、model ledger、parse-failed discard 和 promotion；本页不调用 DeepSeek。</p>
+            <DataLineageTable rows={deepseekProductionStageScopeRows} />
+          </div>
         </PacketCard>
 
         <PacketCard title="模型策略边界" subtitle="GET /api/model-strategy/cache 只读；不触发模型调用" status="cache_only">

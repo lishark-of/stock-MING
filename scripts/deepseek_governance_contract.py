@@ -21,7 +21,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import command_center_factor_research as factor_research  # noqa: E402
-from server.services import factor_service, task_service  # noqa: E402
+from server.services import factor_service, model_strategy_service, task_service  # noqa: E402
 
 
 REQUIRED_ALLOWED_KEYS = {
@@ -298,6 +298,14 @@ def build_contract() -> dict[str, Any]:
     ]
     durable_evidence_keys = {str(row.get("evidence_key") or "") for row in durable_recipe_rows}
     catalog = task_service.build_task_catalog()
+    model_strategy_cache = model_strategy_service.read_deepseek_model_strategy_cache()
+    model_strategy_stage_manifest = _dict(model_strategy_cache.get("deepseek_production_stage_scope_manifest"))
+    model_strategy_stage_rows = [
+        row for row in _list(model_strategy_cache.get("deepseek_production_stage_scope_rows")) if isinstance(row, dict)
+    ]
+    model_strategy_gate_rows = [
+        row for row in _list(model_strategy_cache.get("deepseek_strict_closeout_gate_rows")) if isinstance(row, dict)
+    ]
     task = _deepseek_task(catalog)
     scope_ticket_task = _deepseek_scope_ticket_task(catalog)
     task_strategy = _dict(task.get("deepseek_model_strategy"))
@@ -341,6 +349,7 @@ def build_contract() -> dict[str, Any]:
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/deepseek_governance_contract.py")
     factor_page = _read_script("desktop/src/routes/FactorQuantHub.tsx")
+    model_strategy_page = _read_script("desktop/src/routes/ModelStrategy.tsx")
     deepseek_production_stage_scope_rows = _deepseek_production_stage_scope_rows()
 
     rows = [
@@ -699,6 +708,66 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("does_not_output_strategy_action") is True for row in deepseek_production_stage_scope_rows)
             and all(row.get("contains_secret") is False for row in deepseek_production_stage_scope_rows),
             "DeepSeek production scope rows must enumerate every pending evidence stage and keep provider benchmark, model execution, automatic production readiness, trades, actions, and secrets disabled.",
+        ),
+        _row(
+            "model_strategy_cache_and_page_show_ltg07_strict_closeout_gate",
+            model_strategy_stage_manifest.get("schema_version") == "deepseek_production_stage_scope_manifest.v1"
+            and model_strategy_stage_manifest.get("status")
+            == "deepseek_production_stage_scope_visible_model_execution_pending"
+            and model_strategy_stage_manifest.get("stage_count") == len(REQUIRED_DEEPSEEK_PRODUCTION_STAGES)
+            and model_strategy_stage_manifest.get("pending_stage_count") == len(REQUIRED_DEEPSEEK_PRODUCTION_STAGES)
+            and model_strategy_stage_manifest.get("production_deepseek_explanation_complete") is False
+            and model_strategy_stage_manifest.get("cache_only_readback") is True
+            and model_strategy_stage_manifest.get("creates_task") is False
+            and model_strategy_stage_manifest.get("calls_model") is False
+            and _flag_false(model_strategy_stage_manifest, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called", "contains_secret")
+            and model_strategy_stage_manifest.get("does_not_execute_trades") is True
+            and model_strategy_stage_manifest.get("does_not_modify_strategy_action") is True
+            and model_strategy_stage_manifest.get("does_not_override_numeric_values") is True
+            and model_strategy_stage_manifest.get("does_not_output_strategy_action") is True
+            and {row.get("stage_key") for row in model_strategy_stage_rows}
+            == REQUIRED_DEEPSEEK_PRODUCTION_STAGES
+            and len(model_strategy_stage_rows) == len(REQUIRED_DEEPSEEK_PRODUCTION_STAGES)
+            and all(row.get("cache_only_readback") is True for row in model_strategy_stage_rows)
+            and all(row.get("creates_task") is False for row in model_strategy_stage_rows)
+            and all(row.get("calls_model") is False for row in model_strategy_stage_rows)
+            and all(row.get("production_deepseek_explanation_complete") is False for row in model_strategy_stage_rows)
+            and all(row.get("external_calls_triggered") is False for row in model_strategy_stage_rows)
+            and all(row.get("deepseek_called") is False for row in model_strategy_stage_rows)
+            and all(row.get("does_not_execute_trades") is True for row in model_strategy_stage_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in model_strategy_stage_rows)
+            and all(row.get("does_not_override_numeric_values") is True for row in model_strategy_stage_rows)
+            and all(row.get("does_not_output_strategy_action") is True for row in model_strategy_stage_rows)
+            and all(row.get("contains_secret") is False for row in model_strategy_stage_rows)
+            and {row.get("gate_key") for row in model_strategy_gate_rows}
+            == {
+                "provider_benchmark_and_model_ledger_missing",
+                "safe_output_only_nonblocking_paths",
+                "LTG-12 交易隔离支撑",
+            }
+            and len(model_strategy_gate_rows) == 3
+            and all(row.get("can_close_ltg07_now") is False for row in model_strategy_gate_rows)
+            and all(row.get("cache_only_readback") is True for row in model_strategy_gate_rows)
+            and all(row.get("creates_task") is False for row in model_strategy_gate_rows)
+            and all(row.get("calls_model") is False for row in model_strategy_gate_rows)
+            and all(row.get("external_calls_triggered") is False for row in model_strategy_gate_rows)
+            and all(row.get("deepseek_called") is False for row in model_strategy_gate_rows)
+            and all(row.get("does_not_execute_trades") is True for row in model_strategy_gate_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in model_strategy_gate_rows)
+            and all(row.get("contains_secret") is False for row in model_strategy_gate_rows)
+            and "LTG-07 DeepSeek strict closeout gate" in model_strategy_page
+            and "deepseekProductionStageScopeRows" in model_strategy_page
+            and "deepseekStrictCloseoutGateRows" in model_strategy_page
+            and "strict closeout remains blocked" in model_strategy_page
+            and "provider benchmark / model ledger / response_format / retry-repair / cost-redaction / promotion" in model_strategy_page
+            and "LTG-12 boundary: research-only explanation boundary; no broker connection, no order endpoint, no strategy action mutation" in model_strategy_page
+            and "GET model strategy cache / React render / local links do not create model tasks, call DeepSeek, read token/key, overwrite numeric values, modify operation_zones, or execute trades" in model_strategy_page
+            and "DataLineageTable rows={deepseekStrictCloseoutGateRows}" in model_strategy_page
+            and "DataLineageTable rows={deepseekProductionStageScopeRows}" in model_strategy_page
+            and model_strategy_page.find("普通用户 DeepSeek 状态")
+            < model_strategy_page.find("LTG-07 DeepSeek strict closeout gate")
+            < model_strategy_page.find("模型策略边界"),
+            "Model Strategy cache and page must expose LTG-07 strict closeout blockers and all eight production-stage gaps without model calls, task creation, secrets, trades, numeric overwrite, or action mutation.",
         ),
         _row(
             "frontend_displays_provider_benchmark_execution_request",
