@@ -692,6 +692,89 @@ export default function CandidateRadar() {
     Number(counts.candidate_browser_qa_review_blocking_count ?? 0) ? "页面验收证据待补" : "",
     productionPromotionReview.production_promotion_complete === true ? "" : "生产替代证据待补"
   ].filter(Boolean).join(" / ") || "本地快扫缓存已有；完整生产证据仍待补";
+  const ordinaryProductionStageLabel = (stageKey: unknown) => {
+    const labels: Record<string, string> = {
+      cache_render_boundary: "cache/render 静默",
+      quick_scan_task_pipeline: "按钮门控快扫",
+      local_full_pool_execution_receipt: "本地全池收据",
+      local_deep_scan_review_receipt: "本地深研审查",
+      worker_runtime_round_trip_link: "worker runtime link",
+      worker_transport_round_trip_smoke: "worker transport smoke",
+      local_worker_full_pool_fallback_receipt: "本地 worker 全池 fallback",
+      local_worker_deep_scan_fallback_receipt: "本地 worker 深研 fallback",
+      worker_full_pool_execution: "worker full-pool",
+      worker_deep_scan_execution: "worker deep-scan",
+      provider_parity_acceptance: "provider coverage",
+      search_quant_provider_model_acceptance: "搜票 provider ledger",
+      browser_visual_performance_promotion: "浏览器视觉/性能",
+      legacy_retirement_review: "legacy retirement",
+      production_promotion_review: "production promotion"
+    };
+    return labels[String(stageKey ?? "")] ?? displayText(stageKey, "production stage");
+  };
+  const ordinaryProductionStageDirectCount = Number(
+    productionStageScopeManifest.direct_evidence_stage_count ??
+      counts.candidate_radar_production_stage_scope_direct_evidence_count ??
+      0
+  );
+  const ordinaryProductionStagePendingCount = Number(
+    productionStageScopeManifest.pending_stage_count ??
+      counts.candidate_radar_production_stage_scope_pending_count ??
+      0
+  );
+  const ordinaryProductionStageTotalCount = Number(
+    productionStageScopeManifest.stage_key_count ??
+      productionStageScopeManifest.row_count ??
+      ordinaryProductionStageDirectCount + ordinaryProductionStagePendingCount
+  );
+  const ordinaryProductionStagePendingKeys = Array.isArray(productionStageScopeManifest.pending_stage_keys)
+    ? (productionStageScopeManifest.pending_stage_keys as unknown[]).map((item) => String(item))
+    : [];
+  const ordinaryProductionStagePendingLabels = ordinaryProductionStagePendingKeys.map(ordinaryProductionStageLabel);
+  const ordinaryProductionStageCriticalBlockers = [
+    productionStageScopeManifest.worker_backed_execution_done === true ? "" : "worker-backed full-pool/deep-scan",
+    productionStageScopeManifest.provider_backed_acceptance_done === true ? "" : "provider-backed coverage",
+    productionStageScopeManifest.browser_visual_delta_qa_done === true && productionStageScopeManifest.browser_performance_trace_done === true
+      ? ""
+      : "browser visual/performance",
+    productionStageScopeManifest.legacy_retirement_ready === true ? "" : "legacy retirement"
+  ].filter(Boolean).join(" / ") || "未标记关键阻断";
+  const ordinaryProductionStageNextStep = ordinaryProductionStagePendingLabels.length
+    ? `先补 ${ordinaryProductionStagePendingLabels.slice(0, 3).join(" / ")}${ordinaryProductionStagePendingLabels.length > 3 ? " ..." : ""}`
+    : productionStageScopeManifest.production_radar_replacement_complete === true
+      ? "进入 strict closeout 复核"
+      : "等待 production stage manifest 回放";
+  const ordinaryProductionReplacementLabel = productionStageScopeManifest.production_radar_replacement_complete === true
+    ? "生产替代已标记完成，仍需 strict closeout 复核"
+    : `生产替代未完成：direct ${ordinaryProductionStageDirectCount}/${ordinaryProductionStageTotalCount || "--"}；pending ${ordinaryProductionStagePendingCount}`;
+  const ordinaryProductionStageItems: MetricItem[] = [
+    {
+      label: "生产替代",
+      value: ordinaryProductionReplacementLabel,
+      tone: productionStageScopeManifest.production_radar_replacement_complete === true ? "good" : "warn"
+    },
+    {
+      label: "阶段证据",
+      value: `direct ${ordinaryProductionStageDirectCount}/${ordinaryProductionStageTotalCount || "--"}；pending ${ordinaryProductionStagePendingCount}`,
+      tone: ordinaryProductionStagePendingCount ? "warn" : "good"
+    },
+    { label: "关键阻断", value: ordinaryProductionStageCriticalBlockers, tone: ordinaryProductionStageCriticalBlockers === "未标记关键阻断" ? "good" : "warn" },
+    { label: "下一步", value: ordinaryProductionStageNextStep },
+    { label: "禁做", value: "不能把 local receipt / stage manifest / dry-run 当 production complete", tone: "warn" },
+    { label: "研究边界", value: "候选不是买入指令；不交易、不改 strategy action", tone: "good" }
+  ];
+  const ordinaryProductionStageBlockerRows = productionStageScopeRows
+    .filter((row) => row.production_blocker === true || row.direct_evidence_complete !== true)
+    .slice(0, 6)
+    .map((row) => ({
+      阻断项: ordinaryProductionStageLabel(row.stage_key),
+      当前状态: displayText(row.current_status),
+      缺少证据: Array.isArray(row.missing_evidence)
+        ? (row.missing_evidence as unknown[]).map((item) => String(item)).join(" / ")
+        : displayText(row.missing_evidence, "等待生产补证"),
+      用户下一步: "按 worker / provider / browser / legacy 分层补证；不要把本地 receipt 当 production complete",
+      边界: "只读 production stage manifest；不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易"
+    }));
   const ordinaryBlockedState = Number(counts.degraded_mode_active_count ?? 0)
     ? "有降级状态，见下方明细"
     : Number(counts.replacement_gap_triage_blocking_count ?? 0)
@@ -2975,6 +3058,13 @@ export default function CandidateRadar() {
                 { label: "边界", value: "候选不是买入指令；不交易、不改交易策略", tone: "good" }
               ]}
             />
+          </div>
+          <div aria-label="candidate radar ordinary production blocker quick read">
+            <h3>生产替代阻断速读</h3>
+            <p className="risk-note">普通用户可以先看这条判断：下一票雷达候选池可读，但 production replacement 仍要 worker、provider、browser 和 legacy retirement 分层补证；这张速读只读本地 manifest。</p>
+            <MetricGrid items={ordinaryProductionStageItems} />
+            {ordinaryProductionStageBlockerRows.length ? <DataLineageTable rows={ordinaryProductionStageBlockerRows} /> : null}
+            <p className="risk-note">本区不创建 task、不启动 worker、不调用 Tushare/DeepSeek/GitHub、不交易；local receipt、stage manifest、dry-run 和浏览器 runbook 都不能当 production complete。</p>
           </div>
         </div>
         <div aria-label="candidate radar coarse fine screening ordinary summary">
