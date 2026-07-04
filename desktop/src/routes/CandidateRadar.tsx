@@ -2474,6 +2474,53 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarOrdinaryVerticalSliceRows = [
+    {
+      步骤: "1. 搜票输入",
+      当前状态: quantProjectionInputValidation,
+      用户下一步: quantProjectionCanSubmit
+        ? `点击确认 ${quantProjectionSymbolValidation.normalized} 并生成本地投研结果`
+        : quantProjectionP0Ready
+          ? "输入 6 位 A 股代码，等按钮启用后再确认"
+          : "先恢复本地 FastAPI 联通",
+      结果入口: "#candidate-radar-search-quant-projection",
+      边界: "输入不会创建 task；只有确认按钮创建本地 POST task；不调用 Tushare/DeepSeek"
+    },
+    {
+      步骤: "2. 确认任务",
+      当前状态: quantProjectionConfirmChainState,
+      用户下一步: quantProjectionDisplayTaskId
+        ? "看任务状态，成功后刷新本地回放"
+        : quantProjectionCanSubmit
+          ? "点击一次确认按钮，等待本地任务接收"
+          : "先让输入和本地联通闸门通过",
+      结果入口: quantProjectionDisplayTaskId || "等待确认按钮",
+      边界: "确认按钮是唯一 P1 入口；GET cache、React render 和搜索输入不创建第二个 task"
+    },
+    {
+      步骤: "3. 最近结果",
+      当前状态: quantProjectionInterpretationReady || quantProjectionSmallDataReady
+        ? quantProjectionOrdinaryResultSummary
+        : quantProjectionReplayDestinationState,
+      用户下一步: quantProjectionReplayDestinationNextStep,
+      结果入口: "股票量化推演 / 次日图谱 / 候选池",
+      边界: "结果只读回放 cache / call_ledger / packet；不补调 provider/model、不改 strategy action"
+    },
+    {
+      步骤: "4. 候选池",
+      当前状态: ordinaryCandidateGroupLabel,
+      用户下一步: ordinaryCandidateReviewOrder,
+      结果入口: "#candidate-pool",
+      边界: "Top/Watch/Excluded 都不是买入、卖出或加仓指令；只供研究复核"
+    },
+    {
+      步骤: "5. 证据缺口",
+      当前状态: ordinaryRetirementReadinessMainGaps,
+      用户下一步: "继续本地 P1 搜票纵切；full-pool/deep-scan/provider/model 另行按钮任务",
+      结果入口: "高级诊断默认收起",
+      边界: "不把 scaffold、dry-run、execution-request、matrix、mock、sanitizer 或本地 receipt 当 production complete"
+    }
+  ];
   const ordinaryActiveDegradedRows = degradedModeRows.filter((row) =>
     row.active === true ||
     String(row.status ?? row.state ?? row.mode_state ?? "").includes("active")
@@ -3181,6 +3228,11 @@ export default function CandidateRadar() {
           <h3>一屏确认</h3>
           <p className="risk-note">默认先看现在做什么、输入状态、确认按钮、最近结果、下一步入口和边界；P0/P1/P2 checkpoint、task、ledger 和补证细节继续收起。</p>
           <MetricGrid items={candidateRadarUserFirstItems} />
+          <div aria-label="candidate radar ordinary vertical slice readback">
+            <h3>纵切速读</h3>
+            <p className="ordinary-status-note">搜票输入 -&gt; 确认任务 -&gt; 最近结果 -&gt; 候选池 -&gt; 证据缺口按同一条本地链路展示；这张表只读页面状态，不创建 task、不调用 provider/model。</p>
+            <DataLineageTable rows={candidateRadarOrdinaryVerticalSliceRows} />
+          </div>
           <div aria-label="candidate radar ordinary live light evidence factory">
             <h3>轻量实时证据速读</h3>
             <p className="ordinary-status-note">把本地候选缓存、previous-cache diff、active degraded、退旧雷达缺口和页面 QA 合成一条普通用户速读；这里只读 cache，不创建 task、不调用 provider/model。</p>

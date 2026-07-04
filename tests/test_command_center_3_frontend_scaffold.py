@@ -194,6 +194,20 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn("postBootstrapProviderModelExecutionRequest", page)
         self.assertNotIn("/api/bootstrap/provider-model-execution-request", page)
 
+    def test_candidate_radar_ordinary_vertical_slice_stays_user_visible(self):
+        page = (ROOT / "src" / "routes" / "CandidateRadar.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("candidateRadarOrdinaryVerticalSliceRows", page)
+        self.assertIn('aria-label="candidate radar ordinary vertical slice readback"', page)
+        self.assertIn("纵切速读", page)
+        self.assertIn("搜票输入 -&gt; 确认任务 -&gt; 最近结果 -&gt; 候选池 -&gt; 证据缺口", page)
+        self.assertIn("输入不会创建 task；只有确认按钮创建本地 POST task", page)
+        self.assertIn("确认按钮是唯一 P1 入口", page)
+        self.assertIn("结果只读回放 cache / call_ledger / packet", page)
+        self.assertIn("Top/Watch/Excluded 都不是买入、卖出或加仓指令", page)
+        self.assertIn("full-pool/deep-scan/provider/model 另行按钮任务", page)
+        self.assertIn("不把 scaffold、dry-run、execution-request、matrix、mock、sanitizer 或本地 receipt 当 production complete", page)
+
     def test_motion_clarity_system_is_accessible_and_visual_only(self):
         styles = (ROOT / "src" / "styles.css").read_text(encoding="utf-8")
         app = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
