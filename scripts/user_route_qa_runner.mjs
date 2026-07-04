@@ -17,6 +17,7 @@ const SCHEMA_VERSION = "command_center_3_user_route_qa_result.v1";
 const DEFAULT_BASE_URL = "http://127.0.0.1:5173";
 const DEFAULT_API_BASE = "http://127.0.0.1:8710";
 const DEFAULT_ARTIFACT_ROOT = ".stock_ming_3/user_route_qa";
+const CHROMIUM_EXECUTABLE_PATH = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "";
 
 const QA_ROUTES = [
   { route: "#home", label: "Daily Command Center", focus: "first-card readiness, current symbol, next action, source state" },
@@ -245,7 +246,10 @@ async function runQa(args) {
   const runId = timestampId();
   const outputDir = resolve(args.artifactRoot, runId);
   await mkdir(outputDir, { recursive: true });
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    ...(CHROMIUM_EXECUTABLE_PATH ? { executablePath: CHROMIUM_EXECUTABLE_PATH } : {})
+  });
   const rows = [];
   const errors = [];
   try {
@@ -380,6 +384,6 @@ try {
 } catch (error) {
   const message = error && error.message ? error.message : String(error);
   console.error(`user_route_qa_runner: failed: ${message}`);
-  console.error("Start local FastAPI/Vite first and set NODE_PATH to a Playwright install if needed.");
+  console.error("Start local FastAPI/Vite first, set NODE_PATH to a Playwright install if needed, and set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH to an installed Chrome/Chromium binary when Playwright browsers are not downloaded.");
   process.exit(1);
 }

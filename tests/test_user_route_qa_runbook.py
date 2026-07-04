@@ -83,6 +83,8 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertIn("typing_required", runner_source)
         self.assertIn("typing_covered", runner_source)
         self.assertIn("task_created_by_render_or_typing", runner_source)
+        self.assertIn("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", runner_source)
+        self.assertIn("executablePath: CHROMIUM_EXECUTABLE_PATH", runner_source)
         self.assertIn('waitUntil: "domcontentloaded"', runner_source)
         self.assertIn('waitForSelector("h1, h2, h3", { state: "attached"', runner_source)
         self.assertIn("route_heading", runner_source)

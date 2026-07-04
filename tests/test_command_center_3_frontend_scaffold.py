@@ -78,6 +78,12 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("node_modules/echarts", source)
         self.assertIn("node_modules/zrender", source)
 
+    def test_desktop_index_avoids_favicon_404_noise_for_route_qa(self):
+        source = (ROOT / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn('<link rel="icon" href="data:," />', source)
+        self.assertIn("<title>stock-MING Command Center 3.0</title>", source)
+
     def test_p3_result_deep_links_have_local_targets(self):
         app = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
         home = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
