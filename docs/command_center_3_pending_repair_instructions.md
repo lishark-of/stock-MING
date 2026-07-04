@@ -1,6 +1,6 @@
 # Command Center 3.0 Pending Repair Instructions
 
-Updated: 2026-06-30
+Updated: 2026-07-04
 
 This file is the short handoff list after the user-usable vertical slice. Do not treat these items as 14 LTG closeout. Each item should be run as one small Codex goal, with at most one main target and one support target.
 
@@ -40,13 +40,15 @@ Current interpretation:
 6. ETF / Margin candidate rows now surface source, row status, reason, liquidity, overlap, cash/leverage guardrail, and no-buy/no-margin boundary before audit details.
 7. User Route QA now has an explicit local runner/runbook for `#home`, `#candidates`, `#marginEtf`, `#factor`, and `#next`; reports and screenshots stay under ignored `.stock_ming_3/user_route_qa`.
 8. Call Ledger Audit now reads ignored User Route QA reports through `user_route_qa_evidence_contract`, showing ordinary route visual QA, typing/task silence, Candidate Radar route pass state, local report counts, and no-provider/no-trade boundaries without opening a browser or committing screenshots.
+9. Candidate Radar ordinary first screen now explains retirement-readiness as "退旧雷达前还缺什么" instead of leading with production/stage blocker wording; detailed gap rows stay collapsed and the slice remains local read-only evidence, not LTG-13 strict closeout.
 
 ## Next Repair Goals
 
 1. Candidate Radar De-noise
    - Goal: keep the new operator panel as the first ordinary surface and move repeated P1/P2/P3 tables under collapsed research details.
    - Preserve confirm button, TaskStatusPanel, local replay refresh, and candidate pool visibility.
-   - Exit check: opening `#candidates` does not look like an acceptance report.
+   - Current local slice: production/stage blocker language has been translated into ordinary retirement-readiness wording; opening `#candidates` should show what the user can do, what remains before old-radar retirement, and the no-trade boundary before any audit row tables.
+   - Exit check: opening `#candidates` does not look like an acceptance report, and any worker/provider/browser/legacy gap rows remain collapsed by default.
 
 2. ETF / Margin Task Contract
    - Goal: add a manual POST task for refreshing or rebuilding the ETF / Margin local packet.

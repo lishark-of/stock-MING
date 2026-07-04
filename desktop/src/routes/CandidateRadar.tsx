@@ -682,98 +682,98 @@ export default function CandidateRadar() {
     : "degraded：未标记降级";
   const ordinaryMissingEvidence = [
     Number(counts.candidate_radar_production_stage_scope_pending_count ?? 0)
-      ? `待确认的生产阶段证据：${String(counts.candidate_radar_production_stage_scope_pending_count)}项`
+      ? `退旧雷达前还缺：${String(counts.candidate_radar_production_stage_scope_pending_count)}项`
       : "",
     Number(counts.candidate_radar_durable_evidence_blocker_count ?? 0)
-      ? `长期证据仍有阻断：${String(counts.candidate_radar_durable_evidence_blocker_count)}项`
+      ? `耐久证据仍有阻断：${String(counts.candidate_radar_durable_evidence_blocker_count)}项`
       : "",
-    Number(counts.candidate_radar_promotion_provider_blocker_count ?? 0) ? "真实数据对齐证据待补" : "",
-    Number(counts.candidate_radar_promotion_worker_blocker_count ?? 0) ? "全池/深研扫描证据待补" : "",
+    Number(counts.candidate_radar_promotion_provider_blocker_count ?? 0) ? "真实数据覆盖待补" : "",
+    Number(counts.candidate_radar_promotion_worker_blocker_count ?? 0) ? "全池/深研执行待补" : "",
     Number(counts.candidate_browser_qa_review_blocking_count ?? 0) ? "页面验收证据待补" : "",
-    productionPromotionReview.production_promotion_complete === true ? "" : "生产替代证据待补"
-  ].filter(Boolean).join(" / ") || "本地快扫缓存已有；完整生产证据仍待补";
-  const ordinaryProductionStageLabel = (stageKey: unknown) => {
+    productionPromotionReview.production_promotion_complete === true ? "" : "最终替代复核待补"
+  ].filter(Boolean).join(" / ") || "本地快扫缓存已有；退旧雷达前证据仍待补";
+  const ordinaryRetirementReadinessLabel = (stageKey: unknown) => {
     const labels: Record<string, string> = {
       cache_render_boundary: "cache/render 静默",
       quick_scan_task_pipeline: "按钮门控快扫",
       local_full_pool_execution_receipt: "本地全池收据",
       local_deep_scan_review_receipt: "本地深研审查",
-      worker_runtime_round_trip_link: "worker runtime link",
-      worker_transport_round_trip_smoke: "worker transport smoke",
-      local_worker_full_pool_fallback_receipt: "本地 worker 全池 fallback",
-      local_worker_deep_scan_fallback_receipt: "本地 worker 深研 fallback",
-      worker_full_pool_execution: "worker full-pool",
-      worker_deep_scan_execution: "worker deep-scan",
-      provider_parity_acceptance: "provider coverage",
-      search_quant_provider_model_acceptance: "搜票 provider ledger",
+      worker_runtime_round_trip_link: "本地 worker 链路",
+      worker_transport_round_trip_smoke: "本地 worker 传输",
+      local_worker_full_pool_fallback_receipt: "本地全池 fallback",
+      local_worker_deep_scan_fallback_receipt: "本地深研 fallback",
+      worker_full_pool_execution: "全池执行证据",
+      worker_deep_scan_execution: "深研执行证据",
+      provider_parity_acceptance: "真实数据覆盖",
+      search_quant_provider_model_acceptance: "搜票数据账本",
       browser_visual_performance_promotion: "浏览器视觉/性能",
-      legacy_retirement_review: "legacy retirement",
-      production_promotion_review: "production promotion"
+      legacy_retirement_review: "旧雷达退场审查",
+      production_promotion_review: "最终替代复核"
     };
-    return labels[String(stageKey ?? "")] ?? displayText(stageKey, "production stage");
+    return labels[String(stageKey ?? "")] ?? displayText(stageKey, "待补证据");
   };
-  const ordinaryProductionStageDirectCount = Number(
+  const ordinaryRetirementReadinessDoneCount = Number(
     productionStageScopeManifest.direct_evidence_stage_count ??
       counts.candidate_radar_production_stage_scope_direct_evidence_count ??
       0
   );
-  const ordinaryProductionStagePendingCount = Number(
+  const ordinaryRetirementReadinessMissingCount = Number(
     productionStageScopeManifest.pending_stage_count ??
       counts.candidate_radar_production_stage_scope_pending_count ??
       0
   );
-  const ordinaryProductionStageTotalCount = Number(
+  const ordinaryRetirementReadinessTotalCount = Number(
     productionStageScopeManifest.stage_key_count ??
       productionStageScopeManifest.row_count ??
-      ordinaryProductionStageDirectCount + ordinaryProductionStagePendingCount
+      ordinaryRetirementReadinessDoneCount + ordinaryRetirementReadinessMissingCount
   );
-  const ordinaryProductionStagePendingKeys = Array.isArray(productionStageScopeManifest.pending_stage_keys)
+  const ordinaryRetirementReadinessMissingKeys = Array.isArray(productionStageScopeManifest.pending_stage_keys)
     ? (productionStageScopeManifest.pending_stage_keys as unknown[]).map((item) => String(item))
     : [];
-  const ordinaryProductionStagePendingLabels = ordinaryProductionStagePendingKeys.map(ordinaryProductionStageLabel);
-  const ordinaryProductionStageCriticalBlockers = [
-    productionStageScopeManifest.worker_backed_execution_done === true ? "" : "worker-backed full-pool/deep-scan",
-    productionStageScopeManifest.provider_backed_acceptance_done === true ? "" : "provider-backed coverage",
+  const ordinaryRetirementReadinessMissingLabels = ordinaryRetirementReadinessMissingKeys.map(ordinaryRetirementReadinessLabel);
+  const ordinaryRetirementReadinessMainGaps = [
+    productionStageScopeManifest.worker_backed_execution_done === true ? "" : "全池/深研执行证据",
+    productionStageScopeManifest.provider_backed_acceptance_done === true ? "" : "真实数据覆盖",
     productionStageScopeManifest.browser_visual_delta_qa_done === true && productionStageScopeManifest.browser_performance_trace_done === true
       ? ""
-      : "browser visual/performance",
-    productionStageScopeManifest.legacy_retirement_ready === true ? "" : "legacy retirement"
+      : "浏览器视觉和性能",
+    productionStageScopeManifest.legacy_retirement_ready === true ? "" : "旧雷达退场审查"
   ].filter(Boolean).join(" / ") || "未标记关键阻断";
-  const ordinaryProductionStageNextStep = ordinaryProductionStagePendingLabels.length
-    ? `先补 ${ordinaryProductionStagePendingLabels.slice(0, 3).join(" / ")}${ordinaryProductionStagePendingLabels.length > 3 ? " ..." : ""}`
+  const ordinaryRetirementReadinessNextStep = ordinaryRetirementReadinessMissingLabels.length
+    ? `先补 ${ordinaryRetirementReadinessMissingLabels.slice(0, 3).join(" / ")}${ordinaryRetirementReadinessMissingLabels.length > 3 ? " ..." : ""}`
     : productionStageScopeManifest.production_radar_replacement_complete === true
-      ? "进入 strict closeout 复核"
-      : "等待 production stage manifest 回放";
-  const ordinaryProductionReplacementLabel = productionStageScopeManifest.production_radar_replacement_complete === true
-    ? "生产替代已标记完成，仍需 strict closeout 复核"
-    : `生产替代未完成：direct ${ordinaryProductionStageDirectCount}/${ordinaryProductionStageTotalCount || "--"}；pending ${ordinaryProductionStagePendingCount}`;
-  const ordinaryProductionStageItems: MetricItem[] = [
+      ? "进入最终 LTG 复核"
+      : "等待本地阶段清单回放";
+  const ordinaryRetirementReadinessStateLabel = productionStageScopeManifest.production_radar_replacement_complete === true
+    ? "退旧雷达已标记可复核，仍需最终 LTG 复核"
+    : `退旧雷达未就绪：已确认 ${ordinaryRetirementReadinessDoneCount}/${ordinaryRetirementReadinessTotalCount || "--"}；还缺 ${ordinaryRetirementReadinessMissingCount}`;
+  const ordinaryRetirementReadinessItems: MetricItem[] = [
     {
-      label: "生产替代",
-      value: ordinaryProductionReplacementLabel,
+      label: "退旧雷达",
+      value: ordinaryRetirementReadinessStateLabel,
       tone: productionStageScopeManifest.production_radar_replacement_complete === true ? "good" : "warn"
     },
     {
-      label: "阶段证据",
-      value: `direct ${ordinaryProductionStageDirectCount}/${ordinaryProductionStageTotalCount || "--"}；pending ${ordinaryProductionStagePendingCount}`,
-      tone: ordinaryProductionStagePendingCount ? "warn" : "good"
+      label: "缺口进度",
+      value: `已确认 ${ordinaryRetirementReadinessDoneCount}/${ordinaryRetirementReadinessTotalCount || "--"}；待补 ${ordinaryRetirementReadinessMissingCount}`,
+      tone: ordinaryRetirementReadinessMissingCount ? "warn" : "good"
     },
-    { label: "关键阻断", value: ordinaryProductionStageCriticalBlockers, tone: ordinaryProductionStageCriticalBlockers === "未标记关键阻断" ? "good" : "warn" },
-    { label: "下一步", value: ordinaryProductionStageNextStep },
-    { label: "禁做", value: "不能把 local receipt / stage manifest / dry-run 当 production complete", tone: "warn" },
-    { label: "研究边界", value: "候选不是买入指令；不交易、不改 strategy action", tone: "good" }
+    { label: "还缺", value: ordinaryRetirementReadinessMainGaps, tone: ordinaryRetirementReadinessMainGaps === "未标记关键阻断" ? "good" : "warn" },
+    { label: "下一步", value: ordinaryRetirementReadinessNextStep },
+    { label: "别误判", value: "本地收据、dry-run 和浏览器手册都不是最终完成证据", tone: "warn" },
+    { label: "研究边界", value: "候选不是买入指令；不交易、不改交易策略", tone: "good" }
   ];
-  const ordinaryProductionStageBlockerRows = productionStageScopeRows
+  const ordinaryRetirementReadinessGapRows = productionStageScopeRows
     .filter((row) => row.production_blocker === true || row.direct_evidence_complete !== true)
     .slice(0, 6)
     .map((row) => ({
-      阻断项: ordinaryProductionStageLabel(row.stage_key),
+      缺口项: ordinaryRetirementReadinessLabel(row.stage_key),
       当前状态: displayText(row.current_status),
       缺少证据: Array.isArray(row.missing_evidence)
         ? (row.missing_evidence as unknown[]).map((item) => String(item)).join(" / ")
-        : displayText(row.missing_evidence, "等待生产补证"),
-      用户下一步: "按 worker / provider / browser / legacy 分层补证；不要把本地 receipt 当 production complete",
-      边界: "只读 production stage manifest；不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易"
+        : displayText(row.missing_evidence, "等待直接证据"),
+      用户下一步: "按全池/深研、真实数据、浏览器验收、旧雷达退场分层补证；不要把本地收据当最终完成",
+      边界: "只读本地阶段清单；不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易"
     }));
   const ordinaryBlockedState = Number(counts.degraded_mode_active_count ?? 0)
     ? "有降级状态，见下方明细"
@@ -814,7 +814,7 @@ export default function CandidateRadar() {
     { label: "缺口", value: coarseFineGapLabel, tone: Number(coarseFineScreening.gap_visible_count ?? 0) ? "warn" : "good" },
     { label: "模型解释", value: String(coarseFineScreening.deepseek_status ?? "governed_pending") },
     { label: "边界", value: "候选不是买入指令；不交易、不改交易策略", tone: "good" },
-    { label: "LTG-13", value: "direct evidence slice；不是 production closeout", tone: "warn" }
+    { label: "LTG-13", value: "候选分组可读；不是最终替代完成", tone: "warn" }
   ];
   const ordinaryCoarseFineGroupRows = topWatchExcludedGroupRows.slice(0, 12).map((row, index) => ({
     序号: displayText(row.display_rank, String(index + 1)),
@@ -3059,18 +3059,18 @@ export default function CandidateRadar() {
               ]}
             />
           </div>
-          <div aria-label="candidate radar ordinary production blocker quick read">
-            <h3>生产替代阻断速读</h3>
-            <p className="risk-note">普通用户可以先看这条判断：下一票雷达候选池可读，但 production replacement 仍要 worker、provider、browser 和 legacy retirement 分层补证；这张速读只读本地 manifest。</p>
-            <MetricGrid items={ordinaryProductionStageItems} />
-            {ordinaryProductionStageBlockerRows.length ? (
-              <details className="developer-audit-details" aria-label="candidate radar ordinary production blocker row details">
-                <summary>查看生产阻断明细</summary>
-                <p className="risk-note">生产阶段行表默认收起，避免普通首屏变成 acceptance report；展开后也只读本地 stage manifest，不创建 task。</p>
-                <DataLineageTable rows={ordinaryProductionStageBlockerRows} />
+          <div aria-label="candidate radar ordinary retirement readiness quick read">
+            <h3>退旧雷达前还缺什么</h3>
+            <p className="risk-note">下一票雷达候选池可读；退掉旧雷达前还要补全池/深研、真实数据覆盖、浏览器验收和旧雷达退场审查。本速读只读本地阶段清单。</p>
+            <MetricGrid items={ordinaryRetirementReadinessItems} />
+            {ordinaryRetirementReadinessGapRows.length ? (
+              <details className="developer-audit-details" aria-label="candidate radar ordinary retirement readiness row details">
+                <summary>查看退场缺口明细</summary>
+                <p className="risk-note">缺口行表默认收起，避免普通首屏变成 acceptance report；展开后也只读本地阶段清单，不创建 task。</p>
+                <DataLineageTable rows={ordinaryRetirementReadinessGapRows} />
               </details>
             ) : null}
-            <p className="risk-note">本区不创建 task、不启动 worker、不调用 Tushare/DeepSeek/GitHub、不交易；local receipt、stage manifest、dry-run 和浏览器 runbook 都不能当 production complete。</p>
+            <p className="risk-note">本区不创建 task、不启动 worker、不调用 Tushare/DeepSeek/GitHub、不交易；本地收据、dry-run 和浏览器手册都不能当最终完成证据。</p>
           </div>
         </div>
         <div aria-label="candidate radar coarse fine screening ordinary summary">
@@ -3085,7 +3085,7 @@ export default function CandidateRadar() {
               {ordinaryCoarseFineStageRows.length ? <DataLineageTable rows={ordinaryCoarseFineStageRows} /> : null}
             </details>
           ) : null}
-          <p className="risk-note">这条切片只推进 LTG-13 direct evidence slice；不是 production closeout：cache-only / local fallback / Tushare-backed sample 会分开显示；不声称生产替代完成。</p>
+          <p className="risk-note">这条切片只说明当前候选分组可读；不是最终替代完成：cache-only / local fallback / Tushare-backed sample 会分开显示；不声称旧雷达可以退场。</p>
         </div>
         <div aria-label="candidate radar ordinary p3 one minute result">
           <h3>最近搜票 P3 一分钟结果</h3>

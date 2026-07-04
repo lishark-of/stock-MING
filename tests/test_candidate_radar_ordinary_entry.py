@@ -92,34 +92,34 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("Top / Watch / Excluded 仍在候选池首位", summary_primary_slice)
         self.assertIn("TaskStatusPanel 和刷新本地回放保留；GET cache 只读", summary_primary_slice)
         self.assertIn("重复 P1/P2/P3 表、ledger 和补证路线在详情中", summary_primary_slice)
-        self.assertIn('aria-label="candidate radar ordinary production blocker quick read"', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar ordinary retirement readiness quick read"', summary_primary_slice)
         production_blocker_start = summary_primary_slice.index(
-            'aria-label="candidate radar ordinary production blocker quick read"'
+            'aria-label="candidate radar ordinary retirement readiness quick read"'
         )
         production_blocker_end = summary_primary_slice.index(
             'aria-label="candidate radar coarse fine screening ordinary summary"',
             production_blocker_start,
         )
         production_blocker_slice = summary_primary_slice[production_blocker_start:production_blocker_end]
-        self.assertIn("生产替代阻断速读", production_blocker_slice)
-        self.assertIn("production replacement 仍要 worker、provider、browser 和 legacy retirement 分层补证", production_blocker_slice)
-        self.assertIn("ordinaryProductionStageItems", production_blocker_slice)
-        self.assertIn("ordinaryProductionStageBlockerRows", production_blocker_slice)
-        self.assertIn('aria-label="candidate radar ordinary production blocker row details"', production_blocker_slice)
-        self.assertIn("<summary>查看生产阻断明细</summary>", production_blocker_slice)
-        self.assertIn("生产阶段行表默认收起，避免普通首屏变成 acceptance report", production_blocker_slice)
-        self.assertIn("DataLineageTable rows={ordinaryProductionStageBlockerRows}", production_blocker_slice)
+        self.assertIn("退旧雷达前还缺什么", production_blocker_slice)
+        self.assertIn("退掉旧雷达前还要补全池/深研、真实数据覆盖、浏览器验收和旧雷达退场审查", production_blocker_slice)
+        self.assertIn("ordinaryRetirementReadinessItems", production_blocker_slice)
+        self.assertIn("ordinaryRetirementReadinessGapRows", production_blocker_slice)
+        self.assertIn('aria-label="candidate radar ordinary retirement readiness row details"', production_blocker_slice)
+        self.assertIn("<summary>查看退场缺口明细</summary>", production_blocker_slice)
+        self.assertIn("缺口行表默认收起，避免普通首屏变成 acceptance report", production_blocker_slice)
+        self.assertIn("DataLineageTable rows={ordinaryRetirementReadinessGapRows}", production_blocker_slice)
         for production_label in (
-            'label: "生产替代"',
-            'label: "阶段证据"',
-            'label: "关键阻断"',
-            'label: "禁做"',
+            'label: "退旧雷达"',
+            'label: "缺口进度"',
+            'label: "还缺"',
+            'label: "别误判"',
             'label: "研究边界"',
         ):
             self.assertIn(production_label, self.page)
-        self.assertIn("不能把 local receipt / stage manifest / dry-run 当 production complete", self.page)
-        self.assertIn("只读 production stage manifest；不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易", self.page)
-        self.assertIn("local receipt、stage manifest、dry-run 和浏览器 runbook 都不能当 production complete", production_blocker_slice)
+        self.assertIn("本地收据、dry-run 和浏览器手册都不是最终完成证据", self.page)
+        self.assertIn("只读本地阶段清单；不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易", self.page)
+        self.assertIn("本地收据、dry-run 和浏览器手册都不能当最终完成证据", production_blocker_slice)
         self.assertNotIn("onClick=", production_blocker_slice)
         self.assertNotIn("launchProductionReplacementReview", production_blocker_slice)
         self.assertNotIn("postCandidateRadarProductionReplacementReview", production_blocker_slice)
