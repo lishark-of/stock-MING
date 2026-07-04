@@ -268,6 +268,28 @@ FACTOR_TEST_PRODUCTION_STAGE_KEYS = (
     "full_market_boundary_review",
     "promotion_review_and_freeze",
 )
+
+FACTOR_TEST_LOCAL_TASK_STATE_KEYS = (
+    "provider_small_pool_acceptance_dry_run_receipt",
+    "provider_small_pool_acceptance_dry_run_rows",
+    "provider_small_pool_execution_request_receipt",
+    "provider_small_pool_execution_request_rows",
+    "provider_small_pool_acceptance_receipt",
+    "provider_small_pool_acceptance_rows",
+)
+
+FACTOR_TOP_LEVEL_LOCAL_TASK_STATE_KEYS = (
+    "universe_worker_batch_dry_run_receipt",
+    "universe_worker_batch_dry_run_rows",
+    "universe_worker_batch_execution_request_receipt",
+    "universe_worker_batch_execution_request_rows",
+    "universe_worker_batch_research_receipt",
+    "universe_worker_batch_research_rows",
+    "deepseek_provider_benchmark_scope_ticket_receipt",
+    "deepseek_provider_benchmark_scope_ticket_rows",
+    "deepseek_provider_benchmark_execution_request_receipt",
+    "deepseek_provider_benchmark_execution_request_rows",
+)
 FACTOR_TEST_PRODUCTION_STAGE_LABELS = {
     "local_light_metric_baseline": "Local light metric baseline stays research-only",
     "provider_small_pool_scope_ticket": "Provider small-pool scope ticket is ready before real execution",
@@ -9535,6 +9557,32 @@ def _build_light_hub_from_snapshot(payload: Any = None) -> tuple[dict[str, Any],
     return hub, call_ledger
 
 
+def _read_persisted_factor_quant_hub_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet("command_center_factor_quant_hub_packet")
+    except Exception:
+        return {}
+    return packet if isinstance(packet, dict) else {}
+
+
+def _preserve_factor_local_task_state(hub: dict[str, Any], previous_hub: dict[str, Any]) -> dict[str, Any]:
+    if not previous_hub:
+        return hub
+    merged = dict(hub)
+    previous_factor_tests = _dict(previous_hub.get("factor_tests"))
+    if previous_factor_tests:
+        factor_tests = _dict(merged.get("factor_tests"))
+        for key in FACTOR_TEST_LOCAL_TASK_STATE_KEYS:
+            if key in previous_factor_tests and key not in factor_tests:
+                factor_tests[key] = previous_factor_tests[key]
+        if factor_tests:
+            merged["factor_tests"] = factor_tests
+    for key in FACTOR_TOP_LEVEL_LOCAL_TASK_STATE_KEYS:
+        if key in previous_hub and key not in merged:
+            merged[key] = previous_hub[key]
+    return merged
+
+
 def run_factor_light_task(payload: Any = None) -> dict[str, Any]:
     task = create_task_record(
         "run_factor_light",
@@ -9550,7 +9598,9 @@ def run_factor_light_task(payload: Any = None) -> dict[str, Any]:
         return task
     update_task_status(task["task_id"], status="running", progress=0.25, current_step="reading_local_snapshot_cache")
     try:
+        previous_hub = _read_persisted_factor_quant_hub_packet()
         hub, call_ledger = _build_light_hub_from_snapshot(payload)
+        hub = _preserve_factor_local_task_state(hub, previous_hub)
         update_task_status(task["task_id"], status="running", progress=0.55, current_step="writing_factor_values_parquet", call_ledger=call_ledger)
         storage_result = storage_service.persist_factor_values_from_hub(hub)
         storage_ledger = _factor_values_storage_call_ledger(storage_result, _now_iso())

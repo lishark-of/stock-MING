@@ -59177,6 +59177,127 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["full_market_validation_done"])
         self.assertEqual(factor["data"]["factor_tests"]["storage_query_consumption_rows"][0]["dataset"], "factor_values")
 
+    def test_run_light_preserves_factor_test_local_scope_and_execution_request_tickets(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "timestamp": "2026-06-10T09:30:00",
+                "moneyflow_packet": {"status": "ready", "ticker": "002008.SZ", "main_net_yi": 1.2},
+                "strategy_packet": {"status": "ready", "action": "wait"},
+                "decision_packet": {"status": "ready"},
+                "quant_packet": {"status": "ready"},
+            }
+        )
+        store = SQLiteMetaStore(factor_service.SQLITE_META_PATH)
+        store.write_packet(
+            "command_center_factor_quant_hub_packet",
+            {
+                "packet_key": "command_center_factor_quant_hub_packet",
+                "status": "ready",
+                "mode": "light",
+                "factor_tests": {
+                    "provider_small_pool_acceptance_dry_run_receipt": {
+                        "schema_version": "factor_test_provider_small_pool_acceptance_dry_run.v1",
+                        "status": "provider_small_pool_dry_run_ready_real_execution_blocked",
+                        "local_dry_run_ready": True,
+                        "acceptance_scope_hash": "scope-hash-preserved",
+                        "acceptance_scope_hash_short": "scope-hash-prese",
+                        "symbols": ["002008.SZ", "000001.SZ", "600519.SH", "300750.SZ", "601318.SH"],
+                        "symbol_count": 5,
+                        "metrics": list(factor_service.FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS),
+                        "rows": [{"criterion": "scope_ticket_visible"}],
+                        "call_ledger": [
+                            {
+                                "api": "local_factor_test_provider_small_pool_acceptance_dry_run",
+                                "call_status": "local_dry_run_ready",
+                                "request_params_safe": {"acceptance_scope_hash_short": "scope-hash-prese"},
+                                "row_count": 1,
+                                "data_date": "20260610",
+                                "local_fetched_at": "2026-06-10T09:30:00",
+                                "error_message_safe": "",
+                                "external": False,
+                                "external_calls_triggered": False,
+                                "tushare_called": False,
+                                "deepseek_called": False,
+                                "github_called": False,
+                                "does_not_execute_trades": True,
+                                "does_not_modify_strategy_action": True,
+                            }
+                        ],
+                    },
+                    "provider_small_pool_acceptance_dry_run_rows": [{"criterion": "scope_ticket_visible"}],
+                    "provider_small_pool_execution_request_receipt": {
+                        "schema_version": "factor_test_provider_small_pool_execution_request.v1",
+                        "status": "factor_test_provider_small_pool_execution_request_ready_manual_provider_task_pending",
+                        "local_execution_request_ready": True,
+                        "ready_for_manual_provider_task_submission": True,
+                        "acceptance_scope_hash": "scope-hash-preserved",
+                        "acceptance_scope_hash_short": "scope-hash-prese",
+                        "rows": [{"criterion": "scope_hash_bound_to_latest_dry_run"}],
+                        "call_ledger": [
+                            {
+                                "api": "local_factor_test_provider_small_pool_execution_request",
+                                "call_status": "factor_test_provider_small_pool_execution_request_ready_manual_provider_task_pending",
+                                "request_params_safe": {"scope_hash_short": "scope-hash-prese"},
+                                "row_count": 1,
+                                "data_date": "20260610",
+                                "local_fetched_at": "2026-06-10T09:31:00",
+                                "error_message_safe": "",
+                                "external": False,
+                                "external_calls_triggered": False,
+                                "tushare_called": False,
+                                "deepseek_called": False,
+                                "github_called": False,
+                                "does_not_execute_trades": True,
+                                "does_not_modify_strategy_action": True,
+                            }
+                        ],
+                    },
+                    "provider_small_pool_execution_request_rows": [
+                        {"criterion": "scope_hash_bound_to_latest_dry_run"}
+                    ],
+                },
+            },
+        )
+
+        created = self.client.post("/api/factor-quant/run-light", json={"ts_code": "002008.SZ"}).json()
+
+        self.assertTrue(created["ok"])
+        self.assertEqual(created["data"]["task"]["status"], "success")
+        self.assertFalse(created["data"]["task"]["external_calls_triggered"])
+        self.assertFalse(created["data"]["task"]["tushare_called"])
+        self.assertFalse(created["data"]["task"]["deepseek_called"])
+        persisted = store.read_packet("command_center_factor_quant_hub_packet")
+        factor_tests = persisted["factor_tests"]
+        self.assertEqual(
+            factor_tests["provider_small_pool_acceptance_dry_run_receipt"]["status"],
+            "provider_small_pool_dry_run_ready_real_execution_blocked",
+        )
+        self.assertEqual(
+            factor_tests["provider_small_pool_execution_request_receipt"]["status"],
+            "factor_test_provider_small_pool_execution_request_ready_manual_provider_task_pending",
+        )
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+
+        self.assertTrue(factor["ok"])
+        refreshed_tests = factor["data"]["factor_tests"]
+        self.assertTrue(refreshed_tests["provider_small_pool_execution_request_receipt"]["local_execution_request_ready"])
+        self.assertEqual(
+            refreshed_tests["provider_small_pool_execution_request_receipt"]["acceptance_scope_hash"],
+            "scope-hash-preserved",
+        )
+        ledger = {row["api"]: row for row in factor["call_ledger"]}
+        self.assertEqual(
+            ledger["local_factor_test_provider_small_pool_execution_request"]["call_status"],
+            "factor_test_provider_small_pool_execution_request_ready_manual_provider_task_pending",
+        )
+        self.assertFalse(factor["data"]["external_calls_triggered"])
+        self.assertFalse(factor["data"]["tushare_called"])
+        self.assertFalse(factor["data"]["deepseek_called"])
+
     def test_factor_test_provider_small_pool_dry_run_is_scope_ticket_only(self):
         self._with_meta_store()
         self._with_parquet_root()
