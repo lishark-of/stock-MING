@@ -2474,6 +2474,78 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const ordinaryActiveDegradedRows = degradedModeRows.filter((row) =>
+    row.active === true ||
+    String(row.status ?? row.state ?? row.mode_state ?? "").includes("active")
+  );
+  const ordinaryActiveDegradedCount = Number(
+    counts.degraded_mode_active_count ?? ordinaryActiveDegradedRows.length
+  );
+  const ordinaryActiveDegradedNames = ordinaryActiveDegradedRows
+    .slice(0, 3)
+    .map((row) => displayText(row.mode ?? row.mode_key ?? row.degraded_mode ?? row.status, "degraded"))
+    .join(" / ");
+  const ordinaryActiveDegradedLabel = ordinaryActiveDegradedCount
+    ? `${ordinaryActiveDegradedCount}项 active degraded：${ordinaryActiveDegradedNames || "查看降级明细"}`
+    : "未标记 active degraded";
+  const ordinaryPreviousCacheStatusChangedCount = Number(
+    resultDeltaClarity.status_changed_count ??
+      resultDeltaClarity.candidate_status_changed_count ??
+      counts.result_delta_status_changed_count ??
+      previousCacheDiffRows.length
+  );
+  const ordinaryPreviousCacheDeltaLabel = resultDeltaClarity.previous_cache_diff_done === true
+    ? `上一版候选 ${String(resultDeltaClarity.previous_candidate_count ?? "--")}；状态变化 ${ordinaryPreviousCacheStatusChangedCount}`
+    : previousCacheDiffRows.length
+      ? `已有 ${previousCacheDiffRows.length} 条 previous-cache diff；待浏览器视觉验收`
+      : "等待上一版 cache diff";
+  const ordinaryLiveLightFactoryNextStep = productionStageScopeManifest.production_radar_replacement_complete === true
+    ? "进入最终 LTG-13/strict closeout 复核"
+    : "继续用 P1 搜票确认；全池/深研和真实数据覆盖需未来显式 worker/provider task";
+  const ordinaryLiveLightEvidenceFactoryItems: MetricItem[] = [
+    {
+      label: "缓存证据",
+      value: candidateRadarCacheReady
+        ? `${ordinaryCandidateGroupLabel}；最近 ${ordinaryLastCache}`
+        : ordinaryCacheSourceLabel,
+      tone: candidateRadarCacheReady ? "good" : "warn"
+    },
+    {
+      label: "变化回看",
+      value: ordinaryPreviousCacheDeltaLabel,
+      tone: resultDeltaClarity.previous_cache_diff_done === true || previousCacheDiffRows.length ? "good" : "warn"
+    },
+    {
+      label: "降级状态",
+      value: ordinaryActiveDegradedLabel,
+      tone: ordinaryActiveDegradedCount ? "warn" : "good"
+    },
+    {
+      label: "替代进度",
+      value: `direct evidence ${ordinaryRetirementReadinessDoneCount}/${ordinaryRetirementReadinessTotalCount || "--"}；pending ${ordinaryRetirementReadinessMissingCount}`,
+      tone: ordinaryRetirementReadinessMissingCount ? "warn" : "good"
+    },
+    {
+      label: "还缺证据",
+      value: ordinaryRetirementReadinessMainGaps,
+      tone: ordinaryRetirementReadinessMainGaps === "未标记关键阻断" ? "good" : "warn"
+    },
+    {
+      label: "页面 QA",
+      value: ordinaryBrowserQaStatusLabel,
+      tone: browserQaReview.local_browser_qa_review_ready === true || browserQaEvidence.candidate_browser_qa_evidence_ready === true ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: ordinaryLiveLightFactoryNextStep,
+      tone: productionStageScopeManifest.production_radar_replacement_complete === true ? "good" : "warn"
+    },
+    {
+      label: "非买入边界",
+      value: "候选只用于研究复核；不是买入、卖出或加仓指令",
+      tone: "good"
+    }
+  ];
   const quantProjectionPostConfirmReplayContractReady =
     quantProjectionPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
   const quantProjectionPostConfirmReplaySequence = Array.isArray(quantProjectionPostConfirmReplayContract.readback_sequence)
@@ -3109,6 +3181,12 @@ export default function CandidateRadar() {
           <h3>一屏确认</h3>
           <p className="risk-note">默认先看现在做什么、输入状态、确认按钮、最近结果、下一步入口和边界；P0/P1/P2 checkpoint、task、ledger 和补证细节继续收起。</p>
           <MetricGrid items={candidateRadarUserFirstItems} />
+          <div aria-label="candidate radar ordinary live light evidence factory">
+            <h3>轻量实时证据速读</h3>
+            <p className="ordinary-status-note">把本地候选缓存、previous-cache diff、active degraded、退旧雷达缺口和页面 QA 合成一条普通用户速读；这里只读 cache，不创建 task、不调用 provider/model。</p>
+            <MetricGrid items={ordinaryLiveLightEvidenceFactoryItems} />
+            <p className="risk-note" title="全池/深研和真实数据覆盖需未来显式 worker/provider task">下一步：{ordinaryLiveLightFactoryNextStep}；候选只用于研究复核；不是买入、卖出或加仓指令。</p>
+          </div>
           <div className="actions" aria-label="candidate radar user first actions">
             <a href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"} aria-label="open candidate radar user first primary action">{ordinaryPrimaryActionLabel}</a>
             <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar user first summary">股票量化推演</a>

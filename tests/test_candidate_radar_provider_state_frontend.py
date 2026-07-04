@@ -88,6 +88,18 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("普通入口保留“确认并生成”作为 P1 主按钮", search_panel)
         self.assertIn("点击后在本卡显示任务接收和状态", search_panel)
         self.assertIn("title={quantProjectionSubmitButtonLabel}", search_panel)
+        self.assertIn("ordinaryLiveLightEvidenceFactoryItems", self.page)
+        self.assertIn("ordinaryPreviousCacheDeltaLabel", self.page)
+        self.assertIn("ordinaryActiveDegradedLabel", self.page)
+        self.assertIn('aria-label="candidate radar ordinary live light evidence factory"', summary_panel)
+        self.assertIn("轻量实时证据速读", summary_panel)
+        self.assertIn("previous-cache diff", summary_panel)
+        self.assertIn("全池/深研和真实数据覆盖需未来显式 worker/provider task", summary_panel)
+        self.assertIn("候选只用于研究复核；不是买入、卖出或加仓指令", summary_panel)
+        self.assertLess(
+            summary_panel.index('aria-label="candidate radar ordinary live light evidence factory"'),
+            summary_panel.index('aria-label="candidate radar coarse fine screening ordinary summary"'),
+        )
         self.assertIn('aria-label="candidate radar ordinary visible progress watch"', summary_panel)
         self.assertIn("边用边看进度", summary_panel)
         self.assertIn("MetricGrid items={quantProjectionTaskIndexProgressItems}", summary_panel)
