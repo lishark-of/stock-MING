@@ -991,6 +991,56 @@ export default function NextSessionMap() {
       detail: `${nextSessionMissingEvidence}；${nextSessionResearchOnlyLabel}`
     }
   ];
+  const nextSessionOrdinaryReviewCompassItems: MetricItem[] = [
+    {
+      label: "先看哪里",
+      value: chartSummary.has_drawable_data === true ? "图表路径和参考线" : "最近搜票结论和缓存状态",
+      tone: chartSummary.has_drawable_data === true ? "good" : "warn"
+    },
+    {
+      label: "再看什么",
+      value: Number(chartSummary.operation_zone_count ?? 0) > 0
+        ? `operation_zones ${String(chartSummary.operation_zone_count ?? 0)} 个`
+        : "操作区等待缓存",
+      tone: Number(chartSummary.operation_zone_count ?? 0) > 0 ? "good" : "warn"
+    },
+    { label: "怎么判断", value: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "按路径、参考线、操作区复核" : "先读缺口，再回流补证", tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn" },
+    { label: "回流入口", value: candidateRadarConfirmedSymbol ? "换标的回雷达；看因子回量化推演" : "先回下一票雷达确认标的" },
+    { label: "只读来源", value: nextSessionReplayOrigin },
+    { label: "安全边界", value: "条件区间不是买卖或下单指令", tone: "good" }
+  ];
+  const nextSessionOrdinaryReviewCompassRows = [
+    {
+      复核顺序: "1. 图表路径",
+      看什么: chartSummary.has_drawable_data === true ? nextSessionLastResultLabel : "暂无完整图谱时先读最近搜票可读结论和缓存状态",
+      用户下一步: chartSummary.has_drawable_data === true ? "看情景路径和参考线，再进入操作区复核。" : "需要完整图谱时先确认标的，再用手动生成按钮。",
+      入口: "#next-session-chart",
+      边界: "只读本地 chart cache；不会从页面打开或链接切换创建任务。"
+    },
+    {
+      复核顺序: "2. 参考线和操作区",
+      看什么: Number(chartSummary.operation_zone_count ?? 0) > 0
+        ? `operation_zones ${String(chartSummary.operation_zone_count ?? 0)} 个；只表示条件区间和复核提示`
+        : "等待 operation_zones cache；不能把空操作区解释成无风险",
+      用户下一步: "把操作区当条件区间，回到证据来源和缺口确认。",
+      入口: "#next-session-chart",
+      边界: nextSessionOperationZoneBoundary
+    },
+    {
+      复核顺序: "3. 缺口和回流",
+      看什么: nextSessionMissingEvidence,
+      用户下一步: candidateRadarConfirmedSymbol ? "需要换标的回下一票雷达；需要支持/压制回股票量化推演。" : "先回下一票雷达确认输入区，确认标的后再读图。",
+      入口: "#candidates / #factor",
+      边界: "缺口只提示后续补证；GET cache、React render 和普通链接不补调 provider/model。"
+    },
+    {
+      复核顺序: "4. 仅供研究",
+      看什么: nextSessionResearchOnlyLabel,
+      用户下一步: "人工复核条件和证据，不把图谱当买入、卖出、下单或加仓指令。",
+      入口: "本页普通摘要",
+      边界: "不真实交易、不下单、不改 strategy action 或 operation_zones。"
+    }
+  ];
 
   return (
     <>
@@ -1012,6 +1062,22 @@ export default function NextSessionMap() {
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session first screen">换标的</a>
         </div>
         <p className="risk-note">首屏只汇总当前股票、最近结果、下一步、证据缺口和 operation_zones 边界；查看缓存只读本地 GET cache，链接只切换本地锚点，不创建 task、不调用 Tushare/DeepSeek、不下单。</p>
+      </div>
+      <div aria-label="next session ordinary review compass">
+        <h3>次日图谱复核顺序</h3>
+        <p className="ordinary-status-note">先看图表路径和参考线，再看 operation_zones 条件区间，最后看缺口和回流入口；这只是研究复核顺序，不是买卖、下单或加仓指令。</p>
+        <MetricGrid items={nextSessionOrdinaryReviewCompassItems} />
+        <div className="actions" aria-label="next session ordinary review compass actions">
+          <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart from next session review compass">看图表</a>
+          <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from next session review compass">看支持/压制</a>
+          <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from next session review compass">换标的</a>
+        </div>
+        <details className="developer-audit-details" aria-label="next session ordinary review compass rows">
+          <summary>复核顺序明细</summary>
+          <p className="risk-note">明细只解释本地缓存的读图顺序；不会打开浏览器 QA，不创建 provider/model/worker task，也不证明 LTG-08 production replacement。</p>
+          <DataLineageTable rows={nextSessionOrdinaryReviewCompassRows} />
+        </details>
+        <p className="risk-note">读图罗盘只切换本地锚点和页面入口；GET cache、React render、普通链接都不调用 Tushare/DeepSeek/GitHub，不真实交易，也不改 operation_zones 或 strategy action。</p>
       </div>
       <MetricGrid
         items={[

@@ -392,6 +392,13 @@ def build_contract() -> dict[str, Any]:
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/next_session_map_contract.py")
     static_production_stage_scope_rows = _next_session_production_stage_scope_rows()
+    review_compass_start = next_page.find('aria-label="next session ordinary review compass"')
+    review_compass_end = next_page.find("<MetricGrid\n        items={[", review_compass_start)
+    review_compass_slice = (
+        next_page[review_compass_start:review_compass_end]
+        if review_compass_start != -1 and review_compass_end != -1
+        else ""
+    )
 
     rows = [
         _row(
@@ -963,6 +970,24 @@ def build_contract() -> dict[str, Any]:
             and "nextSessionFirstScreenItems" in next_page
             and 'aria-label="next session first screen readable decision"' in next_page
             and 'aria-label="next session first screen safe actions"' in next_page
+            and "nextSessionOrdinaryReviewCompassItems" in next_page
+            and "nextSessionOrdinaryReviewCompassRows" in next_page
+            and 'aria-label="next session ordinary review compass"' in next_page
+            and 'aria-label="next session ordinary review compass actions"' in next_page
+            and 'aria-label="next session ordinary review compass rows"' in next_page
+            and "次日图谱复核顺序" in next_page
+            and "先看图表路径和参考线，再看 operation_zones 条件区间" in next_page
+            and "条件区间不是买卖或下单指令" in next_page
+            and "不证明 LTG-08 production replacement" in next_page
+            and next_page.find('aria-label="next session first screen readable decision"')
+            < review_compass_start
+            < next_page.find('aria-label="next session ordinary usable now strip"')
+            and 'href="#next-session-chart"' in review_compass_slice
+            and 'href="#factor"' in review_compass_slice
+            and 'href={CANDIDATE_CONFIRM_HREF}' in review_compass_slice
+            and "onClick=" not in review_compass_slice
+            and ("post" + "Task(") not in review_compass_slice
+            and ("launch" + "Task") not in review_compass_slice
             and 'aria-label="refresh next session cache from first screen"' in next_page
             and "首屏只汇总当前股票、最近结果、下一步、证据缺口和 operation_zones 边界" in next_page
             and "nextSessionOrdinaryProgressCheckpointItems" in next_page

@@ -555,6 +555,48 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launch" + "Task", decision)
         self.assertNotIn("post" + "Task(", decision)
 
+    def test_next_session_review_compass_is_first_screen_read_only(self):
+        summary_start = self.page.index('title="普通用户次日图谱摘要"')
+        decision_start = self.page.index('aria-label="next session first screen readable decision"', summary_start)
+        compass_start = self.page.index('aria-label="next session ordinary review compass"', summary_start)
+        usable_now_start = self.page.index('aria-label="next session ordinary usable now strip"', summary_start)
+        metric_start = self.page.index('<MetricGrid\n        items={[', compass_start)
+        compass = self.page[compass_start:metric_start]
+        audit_start = self.page.index('<details id="next-session-audit"')
+        source_before_audit = self.page[:audit_start]
+
+        self.assertLess(decision_start, compass_start)
+        self.assertLess(compass_start, usable_now_start)
+        self.assertIn("nextSessionOrdinaryReviewCompassItems", source_before_audit)
+        self.assertIn("nextSessionOrdinaryReviewCompassRows", source_before_audit)
+        self.assertIn("次日图谱复核顺序", compass)
+        self.assertIn("先看图表路径和参考线，再看 operation_zones 条件区间", compass)
+        self.assertIn("不是买卖、下单或加仓指令", compass)
+        self.assertIn("MetricGrid items={nextSessionOrdinaryReviewCompassItems}", compass)
+        self.assertIn('aria-label="next session ordinary review compass actions"', compass)
+        self.assertIn('href="#next-session-chart"', compass)
+        self.assertIn('href="#factor"', compass)
+        self.assertIn('href={CANDIDATE_CONFIRM_HREF}', compass)
+        self.assertIn('aria-label="next session ordinary review compass rows"', compass)
+        self.assertIn("复核顺序明细", compass)
+        self.assertIn("DataLineageTable rows={nextSessionOrdinaryReviewCompassRows}", compass)
+        self.assertIn("不证明 LTG-08 production replacement", compass)
+        self.assertIn("读图罗盘只切换本地锚点和页面入口", compass)
+        self.assertIn("不真实交易，也不改 operation_zones 或 strategy action", compass)
+        self.assertIn('label: "先看哪里"', source_before_audit)
+        self.assertIn('label: "再看什么"', source_before_audit)
+        self.assertIn('label: "怎么判断"', source_before_audit)
+        self.assertIn('label: "回流入口"', source_before_audit)
+        self.assertIn('label: "只读来源"', source_before_audit)
+        self.assertIn('label: "安全边界"', source_before_audit)
+        self.assertIn('复核顺序: "1. 图表路径"', source_before_audit)
+        self.assertIn('复核顺序: "2. 参考线和操作区"', source_before_audit)
+        self.assertIn('复核顺序: "3. 缺口和回流"', source_before_audit)
+        self.assertIn('复核顺序: "4. 仅供研究"', source_before_audit)
+        self.assertNotIn("onClick=", compass)
+        self.assertNotIn("launch" + "Task", compass)
+        self.assertNotIn("post" + "Task(", compass)
+
 
 if __name__ == "__main__":
     unittest.main()
