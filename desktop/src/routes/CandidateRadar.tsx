@@ -3952,7 +3952,12 @@ export default function CandidateRadar() {
             <DataLineageTable rows={searchQuantProjectionAcceptanceDryRunRows} />
             <DataLineageTable rows={searchQuantProjectionCredentialRows} />
             <div className="actions">
-              <button onClick={launchQuantProjectionExecutionRequest} disabled={!searchQuantProjectionAcceptanceDryRun.acceptance_scope_hash}>
+              <button
+                onClick={launchQuantProjectionExecutionRequest}
+                disabled={!searchQuantProjectionAcceptanceDryRun.acceptance_scope_hash}
+                title={searchQuantProjectionAcceptanceDryRun.acceptance_scope_hash ? "绑定 dry-run scope hash；不创建 provider/model task" : "先运行联动 dry-run 生成 acceptance scope hash"}
+                aria-label="create provider model execution request after dry run scope hash"
+              >
                 生成 provider/model execution request
               </button>
             </div>
@@ -3965,7 +3970,12 @@ export default function CandidateRadar() {
             <p>tushare_called / deepseek_called / github_called: {String(searchQuantProjectionExecutionRequest.tushare_called === true)} / {String(searchQuantProjectionExecutionRequest.deepseek_called === true)} / {String(searchQuantProjectionExecutionRequest.github_called === true)}</p>
             <p>这个 execution request 只绑定 dry-run scope hash 和用户确认；它不创建真实 provider/model task，不调用 Tushare/DeepSeek，不刷新图谱，不生成交易指令。</p>
             <div className="actions">
-              <button onClick={launchQuantProjectionProviderModelAcceptance} disabled={!searchQuantProjectionExecutionRequest.acceptance_scope_hash}>
+              <button
+                onClick={launchQuantProjectionProviderModelAcceptance}
+                disabled={!searchQuantProjectionExecutionRequest.acceptance_scope_hash}
+                title={searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "按钮门控 Tushare-first 补证；仍不交易、不改 strategy action" : "先生成 provider/model execution request scope hash"}
+                aria-label="confirm Tushare first evidence after execution request scope hash"
+              >
                 确认 Tushare-first 补证
               </button>
             </div>
@@ -4326,7 +4336,12 @@ export default function CandidateRadar() {
 
         <PacketCard title="雷达 worker 执行申请" subtitle="POST /api/candidate-radar/worker-execution-request；绑定 worker recipe hash，不启动 worker、不执行全池/深扫" status={String(workerExecutionRequest.status ?? "missing")}>
           <div className="actions">
-            <button onClick={launchWorkerExecutionRequest} disabled={!workerExecutionRecipe.worker_execution_scope_hash}>
+            <button
+              onClick={launchWorkerExecutionRequest}
+              disabled={!workerExecutionRecipe.worker_execution_scope_hash}
+              title={workerExecutionRecipe.worker_execution_scope_hash ? "绑定 worker recipe hash；不启动 worker" : "先等待 worker execution recipe scope hash"}
+              aria-label="create worker execution request after worker recipe scope hash"
+            >
               生成 worker execution request
             </button>
           </div>
@@ -4348,7 +4363,12 @@ export default function CandidateRadar() {
         <summary>worker fallback / runtime 审计</summary>
         <PacketCard title="Full-pool worker fallback" subtitle="POST /api/candidate-radar/full-pool-worker-scan；显式按钮触发的本地 worker-shaped fallback，不启动 Redis/Celery" status={String(fullPoolWorkerFallback.status ?? "missing")}>
           <div className="actions">
-            <button onClick={launchFullPoolWorkerFallback} disabled={!workerExecutionRequest.worker_execution_scope_hash}>
+            <button
+              onClick={launchFullPoolWorkerFallback}
+              disabled={!workerExecutionRequest.worker_execution_scope_hash}
+              title={workerExecutionRequest.worker_execution_scope_hash ? "运行本地 full-pool worker-shaped fallback；不启动 Redis/Celery" : "先生成 worker execution request scope hash"}
+              aria-label="run full pool worker fallback after worker execution request scope hash"
+            >
               运行 full-pool worker fallback
             </button>
           </div>
@@ -4364,7 +4384,12 @@ export default function CandidateRadar() {
 
         <PacketCard title="Deep-scan worker fallback" subtitle="POST /api/candidate-radar/deep-scan-worker；消费本地 deep-scan review，不启动 Redis/Celery/DeepSeek" status={String(deepScanWorkerFallback.status ?? "missing")}>
           <div className="actions">
-            <button onClick={launchDeepScanWorkerFallback} disabled={!workerExecutionRequest.worker_execution_scope_hash}>
+            <button
+              onClick={launchDeepScanWorkerFallback}
+              disabled={!workerExecutionRequest.worker_execution_scope_hash}
+              title={workerExecutionRequest.worker_execution_scope_hash ? "运行本地 deep-scan worker-shaped fallback；不调用 DeepSeek" : "先生成 worker execution request scope hash"}
+              aria-label="run deep scan worker fallback after worker execution request scope hash"
+            >
               运行 deep-scan worker fallback
             </button>
           </div>
@@ -4412,7 +4437,12 @@ export default function CandidateRadar() {
 
         <PacketCard title="雷达 production promotion dry-run" subtitle="POST /api/candidate-radar/production-promotion-dry-run；绑定 replacement review scope，不运行 worker/provider/model/browser" status={String(productionPromotionDryRun.status ?? "missing")}>
         <div className="actions">
-          <button onClick={launchProductionPromotionDryRun} disabled={!productionReplacementReview.review_scope_hash}>
+          <button
+            onClick={launchProductionPromotionDryRun}
+            disabled={!productionReplacementReview.review_scope_hash}
+            title={productionReplacementReview.review_scope_hash ? "绑定 replacement review scope；不运行 worker/provider/model/browser" : "先生成 production replacement review scope hash"}
+            aria-label="create production promotion dry run after replacement review scope hash"
+          >
             生成 production promotion dry-run
           </button>
         </div>
@@ -4430,7 +4460,12 @@ export default function CandidateRadar() {
 
         <PacketCard title="雷达 legacy retirement review" subtitle="POST /api/candidate-radar/legacy-retirement-review；审查旧雷达退场边界，不退掉 legacy、不运行外部任务" status={String(legacyRetirementReview.status ?? "missing")}>
         <div className="actions">
-          <button onClick={launchLegacyRetirementReview} disabled={!productionPromotionDryRun.promotion_scope_hash}>
+          <button
+            onClick={launchLegacyRetirementReview}
+            disabled={!productionPromotionDryRun.promotion_scope_hash}
+            title={productionPromotionDryRun.promotion_scope_hash ? "审查 legacy retirement 边界；不退掉 fallback" : "先生成 production promotion dry-run scope hash"}
+            aria-label="create legacy retirement review after promotion dry run scope hash"
+          >
             生成 legacy retirement review
           </button>
         </div>
@@ -4448,7 +4483,12 @@ export default function CandidateRadar() {
 
         <PacketCard title="雷达 production promotion review" subtitle="POST /api/candidate-radar/production-promotion-review；审查 promotion 边界，不运行 worker/provider/model/browser" status={String(productionPromotionReview.status ?? "missing")}>
         <div className="actions">
-          <button onClick={launchProductionPromotionReview} disabled={!productionPromotionDryRun.promotion_scope_hash || !legacyRetirementReview.local_review_ready}>
+          <button
+            onClick={launchProductionPromotionReview}
+            disabled={!productionPromotionDryRun.promotion_scope_hash || !legacyRetirementReview.local_review_ready}
+            title={productionPromotionDryRun.promotion_scope_hash && legacyRetirementReview.local_review_ready ? "审查 production promotion 边界；不标记 production complete" : "先完成 promotion dry-run scope 和 legacy retirement local review"}
+            aria-label="create production promotion review after promotion dry run and legacy retirement review are ready"
+          >
             生成 production promotion review
           </button>
         </div>

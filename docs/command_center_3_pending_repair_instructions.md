@@ -38,6 +38,7 @@ Current interpretation:
 4. Both surfaces keep page-open, render, input, and GET cache read-only. Refresh buttons only re-read local packets.
 5. Home ordinary surface is verified as a first-card workflow: local connected, current symbol, recent result, next action, and status note stay above the collapsed Research Assist / Audit Details area.
 6. ETF / Margin candidate rows now surface source, row status, reason, liquidity, overlap, cash/leverage guardrail, and no-buy/no-margin boundary before audit details.
+7. User Route QA now has an explicit local runner/runbook for `#home`, `#candidates`, `#marginEtf`, `#factor`, and `#next`; reports and screenshots stay under ignored `.stock_ming_3/user_route_qa`.
 
 ## Next Repair Goals
 
@@ -59,6 +60,7 @@ Current interpretation:
 
 4. User Route QA
    - Goal: browser-check `#home`, `#candidates`, `#marginEtf`, `#factor`, and `#next` on desktop and mobile widths.
+   - Current local slice: `scripts/user_route_qa_runner.mjs` can run the ordinary route matrix against already-running local FastAPI/Vite, type into visible inputs without submit, and compare `/api/tasks` counts before/after render/typing.
    - Check text overflow, repeated audit noise, disabled button reasons, and local-only refresh behavior.
    - Exit check: screenshots or notes prove first viewport clarity and no task is created by render or typing.
 
