@@ -820,6 +820,7 @@ def build_contract() -> dict[str, Any]:
             and "launchTask(\"/api/factor-quant/universe-research-plan\"" in factor_page
             and "launchTask(\"/api/factor-quant/universe-worker-batch-dry-run\"" in factor_page
             and "launchTask(\"/api/factor-quant/universe-worker-batch-execution-request\"" in factor_page
+            and "launchTask(\"/api/factor-quant/universe-worker-batch-research\"" in factor_page
             and "universe_execution_readiness_audit" in factor_page
             and "universe_execution_readiness_receipt" in factor_page
             and "universe_execution_activation_receipt" in factor_page
