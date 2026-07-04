@@ -569,6 +569,71 @@ export default function NextSessionMap() {
       tone: "good"
     }
   ];
+  const nextSessionStrictCloseoutGateRows = [
+    {
+      gate_key: "local_echarts_packet_visible",
+      current_status: nextSessionReadableStatusLabel,
+      strict_closeout_state: "strict closeout remains blocked",
+      can_close_ltg08_now: false,
+      evidence_required: "retained signal/capability and durable browser evidence before strict closeout",
+      browser_visual_qa_done: false,
+      browser_performance_trace_done: false,
+      durable_ci_evidence_complete: false,
+      production_replacement_complete: false,
+      opens_browser: false,
+      writes_artifacts: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      does_not_modify_operation_zones: true,
+      operation_zones_are_conditions: true
+    },
+    {
+      gate_key: "browser_evidence_authorization_required",
+      current_status: "future explicit next-session retained signal/capability coverage and production replacement task",
+      strict_closeout_state: "strict closeout remains blocked",
+      can_close_ltg08_now: false,
+      evidence_required: "durable browser visual QA, performance trace, retained coverage, CI/release evidence, and production promotion review",
+      browser_visual_qa_done: false,
+      browser_performance_trace_done: false,
+      durable_ci_evidence_complete: false,
+      production_replacement_complete: false,
+      opens_browser: false,
+      writes_artifacts: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      does_not_modify_operation_zones: true,
+      operation_zones_are_conditions: true
+    },
+    {
+      gate_key: "LTG-12 交易隔离支撑",
+      current_status: "operation zones are conditions, not broker orders or strategy action mutation",
+      strict_closeout_state: "strict closeout remains blocked",
+      can_close_ltg08_now: false,
+      evidence_required: "research-only boundary remains visible while LTG-08 waits for direct production replacement evidence",
+      browser_visual_qa_done: false,
+      browser_performance_trace_done: false,
+      durable_ci_evidence_complete: false,
+      production_replacement_complete: false,
+      opens_browser: false,
+      writes_artifacts: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      does_not_modify_operation_zones: true,
+      operation_zones_are_conditions: true
+    }
+  ];
   const nextSessionUsableNowItems: MetricItem[] = [
     {
       label: "图谱状态",
@@ -1239,6 +1304,14 @@ export default function NextSessionMap() {
         <summary>高级诊断入口</summary>
         <p className="risk-note">工程审计明细继续默认收起；QA、promotion、cache ledger 和原始 packet 下沉到 <a href="#next-session-audit">开发审计</a>。</p>
       </details>
+    </PacketCard>
+
+    <PacketCard title="LTG-08 next-session strict closeout gate" subtitle="纵切先让本地 ECharts 证据可读；production replacement 仍等待 retained signal/capability 与 durable browser evidence" status="strict_closeout_blocked">
+      <p className="ordinary-status-note">production_replacement_complete: false；can_close_ltg08_now: false；strict closeout remains blocked。</p>
+      <p className="risk-note">next_authorized_next_session_step: future explicit next-session retained signal/capability coverage and production replacement task。</p>
+      <p className="risk-note">LTG-12 boundary: operation zones are conditions, not broker orders or strategy action mutation。</p>
+      <p className="risk-note">GET cache / React render / local links do not create tasks, open browsers, write artifacts, call providers/models/GitHub, or trade.</p>
+      <DataLineageTable rows={nextSessionStrictCloseoutGateRows} />
     </PacketCard>
 
     <PacketCard title="次日操作图谱" subtitle="缓存查看不触发外部刷新" status={String(packet.status ?? "cache")}>

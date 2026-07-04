@@ -399,6 +399,8 @@ def build_contract() -> dict[str, Any]:
         if review_compass_start != -1 and review_compass_end != -1
         else ""
     )
+    strict_closeout_gate_start = next_page.find('title="LTG-08 next-session strict closeout gate"')
+    next_session_chart_card_start = next_page.find('title="次日操作图谱"', strict_closeout_gate_start)
 
     rows = [
         _row(
@@ -956,6 +958,32 @@ def build_contract() -> dict[str, Any]:
             "Next-session production stage scope must be visible from cache/UI and reduce only local direct-evidence blockers while keeping legacy signal/capability parity, durable CI/release evidence, and production replacement pending.",
         ),
         _row(
+            "next_session_strict_closeout_gate_is_user_visible_and_blocked",
+            "nextSessionStrictCloseoutGateRows" in next_page
+            and "LTG-08 next-session strict closeout gate" in next_page
+            and "strict_closeout_blocked" in next_page
+            and "strict closeout remains blocked" in next_page
+            and "can_close_ltg08_now: false" in next_page
+            and "retained signal/capability and durable browser evidence before strict closeout" in next_page
+            and "browser_evidence_authorization_required" in next_page
+            and "future explicit next-session retained signal/capability coverage and production replacement task"
+            in next_page
+            and "LTG-12 交易隔离支撑" in next_page
+            and "operation zones are conditions, not broker orders or strategy action mutation" in next_page
+            and "GET cache / React render / local links do not create tasks" in next_page
+            and "open browsers" in next_page
+            and "write artifacts" in next_page
+            and "call providers/models/GitHub" in next_page
+            and "does_not_execute_trades: true" in next_page
+            and "does_not_modify_strategy_action: true" in next_page
+            and "does_not_modify_operation_zones: true" in next_page
+            and strict_closeout_gate_start != -1
+            and next_page.find('aria-label="next session first screen readable decision"')
+            < strict_closeout_gate_start
+            < next_session_chart_card_start,
+            "React page must show a user-visible LTG-08 strict closeout blocker after the ordinary first-screen summary and before the chart/audit details, without claiming production replacement.",
+        ),
+        _row(
             "react_echarts_frontend_uses_api_client_and_read_only_display",
             "getNextSessionCache" in next_page
             and (
@@ -969,6 +997,9 @@ def build_contract() -> dict[str, Any]:
             and "nextSessionFirstScreenReadableSentence" in next_page
             and "nextSessionFirstScreenItems" in next_page
             and 'aria-label="next session first screen readable decision"' in next_page
+            and "nextSessionStrictCloseoutGateRows" in next_page
+            and "LTG-08 next-session strict closeout gate" in next_page
+            and strict_closeout_gate_start != -1
             and 'aria-label="next session first screen safe actions"' in next_page
             and "nextSessionOrdinaryReviewCompassItems" in next_page
             and "nextSessionOrdinaryReviewCompassRows" in next_page
