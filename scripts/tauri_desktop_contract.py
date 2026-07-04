@@ -242,6 +242,8 @@ def build_contract() -> dict[str, Any]:
     api_client_source = _read_script("desktop/src/api/client.ts")
     tauri_main_source = _read_script("desktop/src-tauri/src/main.rs")
     this_script = _read_script("scripts/tauri_desktop_contract.py")
+    strict_closeout_gate_start = route_source.find('title="LTG-09 Tauri strict closeout gate"')
+    audit_details_start = route_source.find("<summary>开发 / 审计详情</summary>")
     production_package_stage_scope_rows = _tauri_production_package_stage_scope_rows(
         release_binary_detected,
         app_bundle_detected,
@@ -302,6 +304,36 @@ def build_contract() -> dict[str, Any]:
             and "DEEPSEEK_API_KEY" not in route_source
             and "GITHUB_TOKEN" not in route_source,
             "Desktop open readiness compass must make local-open versus production-package gaps visible without task creation, build/runtime execution, provider/model calls, GitHub calls, secrets, or trades.",
+        ),
+        _row(
+            "tauri_strict_closeout_gate_is_user_visible_and_blocked",
+            "tauriStrictCloseoutGateRows" in route_source
+            and "LTG-09 Tauri strict closeout gate" in route_source
+            and "strict_closeout_blocked" in route_source
+            and "strict closeout remains blocked" in route_source
+            and "can_close_ltg09_now: false" in route_source
+            and "packaged runtime QA, .app/DMG evidence, config/log runtime validation, and signing/notarization before strict closeout"
+            in route_source
+            and "packaged_runtime_authorization_required" in route_source
+            and "future explicit Tauri build, packaged app launch QA, backend startup QA, offline UX QA, config/log QA, signing/notarization review, and production promotion task"
+            in route_source
+            and "LTG-12 交易隔离支撑" in route_source
+            and "desktop package path is research client only, not broker connection or order endpoint"
+            in route_source
+            and "GET desktop preflight / React render / local links do not run npm, cargo, Tauri"
+            in route_source
+            and "open packaged apps" in route_source
+            and "read config values" in route_source
+            and "write logs" in route_source
+            and "call providers/models/GitHub" in route_source
+            and "does_not_execute_trades: true" in route_source
+            and "does_not_modify_strategy_action: true" in route_source
+            and "contains_secret: false" in route_source
+            and strict_closeout_gate_start != -1
+            and route_source.find('aria-label="desktop open readiness compass"')
+            < strict_closeout_gate_start
+            < audit_details_start,
+            "React page must show a user-visible LTG-09 strict closeout blocker after the local-open route and before developer/package audit details, without running build/runtime commands or claiming production package completion.",
         ),
         _row(
             "production_runtime_contract_is_policy_only",

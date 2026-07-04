@@ -603,6 +603,83 @@ export default function DesktopShellPreflight() {
       边界: "签名/公证未完成前不做 production package promotion。"
     }
   ];
+  const tauriStrictCloseoutGateRows = [
+    {
+      gate_key: "local_launcher_and_preflight_visible",
+      current_status: p0ConnectionReady ? "local open path visible" : "local open path needs recovery",
+      strict_closeout_state: "strict closeout remains blocked",
+      can_close_ltg09_now: false,
+      evidence_required: "packaged runtime QA, .app/DMG evidence, config/log runtime validation, and signing/notarization before strict closeout",
+      production_package_complete: false,
+      packaged_runtime_qa_done: false,
+      tauri_build_repeatability_done: false,
+      app_bundle_detected: tauriBuildArtifact.packaged_app_bundle_detected === true,
+      dmg_distribution_detected: tauriBuildArtifact.distribution_dmg_detected === true,
+      tauri_build_executed_by_gate: false,
+      npm_or_cargo_executed_by_gate: false,
+      packaged_app_opened_by_gate: false,
+      fastapi_started_by_gate: false,
+      config_values_read_by_gate: false,
+      log_files_written_by_gate: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      contains_secret: false
+    },
+    {
+      gate_key: "packaged_runtime_authorization_required",
+      current_status: "future explicit Tauri build, packaged app launch QA, backend startup QA, offline UX QA, config/log QA, signing/notarization review, and production promotion task",
+      strict_closeout_state: "strict closeout remains blocked",
+      can_close_ltg09_now: false,
+      evidence_required: "durable packaged runtime evidence before production package promotion",
+      production_package_complete: false,
+      packaged_runtime_qa_done: false,
+      tauri_build_repeatability_done: false,
+      app_bundle_detected: tauriBuildArtifact.packaged_app_bundle_detected === true,
+      dmg_distribution_detected: tauriBuildArtifact.distribution_dmg_detected === true,
+      tauri_build_executed_by_gate: false,
+      npm_or_cargo_executed_by_gate: false,
+      packaged_app_opened_by_gate: false,
+      fastapi_started_by_gate: false,
+      config_values_read_by_gate: false,
+      log_files_written_by_gate: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      contains_secret: false
+    },
+    {
+      gate_key: "LTG-12 交易隔离支撑",
+      current_status: "desktop package path is research client only, not broker connection or order endpoint",
+      strict_closeout_state: "strict closeout remains blocked",
+      can_close_ltg09_now: false,
+      evidence_required: "desktop packaging must preserve no-broker/no-order/no-action-mutation isolation",
+      production_package_complete: false,
+      packaged_runtime_qa_done: false,
+      tauri_build_repeatability_done: false,
+      app_bundle_detected: tauriBuildArtifact.packaged_app_bundle_detected === true,
+      dmg_distribution_detected: tauriBuildArtifact.distribution_dmg_detected === true,
+      tauri_build_executed_by_gate: false,
+      npm_or_cargo_executed_by_gate: false,
+      packaged_app_opened_by_gate: false,
+      fastapi_started_by_gate: false,
+      config_values_read_by_gate: false,
+      log_files_written_by_gate: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      contains_secret: false
+    }
+  ];
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -737,6 +814,14 @@ export default function DesktopShellPreflight() {
           <p className="risk-note">LTG-09 还需要显式 Tauri build 与 packaged runtime QA；preflight、launcher、local receipt、release binary detection 都不能当 production package complete。</p>
           <DataLineageTable rows={desktopPackageGapRows} />
         </div>
+      </PacketCard>
+
+      <PacketCard title="LTG-09 Tauri strict closeout gate" subtitle="纵切先让本地桌面入口可打开；production package 仍等待 packaged runtime QA 和签名/公证证据" status="strict_closeout_blocked">
+        <p className="ordinary-status-note">production_package_complete: false；can_close_ltg09_now: false；strict closeout remains blocked。</p>
+        <p className="risk-note">next_authorized_tauri_step: future explicit Tauri build, packaged app launch QA, backend startup QA, offline UX QA, config/log QA, signing/notarization review, and production promotion task。</p>
+        <p className="risk-note">LTG-12 boundary: desktop package path is research client only, not broker connection or order endpoint。</p>
+        <p className="risk-note">GET desktop preflight / React render / local links do not run npm, cargo, Tauri, open packaged apps, start FastAPI, read config values, write logs, call providers/models/GitHub, or trade.</p>
+        <DataLineageTable rows={tauriStrictCloseoutGateRows} />
       </PacketCard>
 
       <p className="risk-note">工程联通明细、Tauri/package QA、lineage 和 raw payload 已下沉到下方开发 / 审计详情；普通用户先按上面的下一步和联通状态处理。</p>
