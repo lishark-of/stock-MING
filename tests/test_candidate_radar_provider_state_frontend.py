@@ -105,6 +105,9 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("cache-only / local fallback / Tushare-backed sample", summary_panel)
         self.assertIn("direct evidence slice；不是 production closeout", summary_panel)
         self.assertIn("GET cache、搜索输入和页面渲染不补调外部数据或模型", summary_panel)
+        self.assertIn('aria-label="candidate radar coarse fine screening row details"', summary_panel)
+        self.assertIn("<summary>查看分组明细</summary>", summary_panel)
+        self.assertIn("Top / Watch / Excluded 的明细行默认收起", summary_panel)
         self.assertIn("rows={ordinaryCoarseFineGroupRows}", summary_panel)
         self.assertIn("rows={ordinaryCoarseFineStageRows}", summary_panel)
         self.assertLess(

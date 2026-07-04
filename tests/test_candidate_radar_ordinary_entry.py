@@ -105,6 +105,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("production replacement 仍要 worker、provider、browser 和 legacy retirement 分层补证", production_blocker_slice)
         self.assertIn("ordinaryProductionStageItems", production_blocker_slice)
         self.assertIn("ordinaryProductionStageBlockerRows", production_blocker_slice)
+        self.assertIn('aria-label="candidate radar ordinary production blocker row details"', production_blocker_slice)
+        self.assertIn("<summary>查看生产阻断明细</summary>", production_blocker_slice)
+        self.assertIn("生产阶段行表默认收起，避免普通首屏变成 acceptance report", production_blocker_slice)
         self.assertIn("DataLineageTable rows={ordinaryProductionStageBlockerRows}", production_blocker_slice)
         for production_label in (
             'label: "生产替代"',

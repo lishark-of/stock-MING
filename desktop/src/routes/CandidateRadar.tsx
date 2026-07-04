@@ -3063,7 +3063,13 @@ export default function CandidateRadar() {
             <h3>生产替代阻断速读</h3>
             <p className="risk-note">普通用户可以先看这条判断：下一票雷达候选池可读，但 production replacement 仍要 worker、provider、browser 和 legacy retirement 分层补证；这张速读只读本地 manifest。</p>
             <MetricGrid items={ordinaryProductionStageItems} />
-            {ordinaryProductionStageBlockerRows.length ? <DataLineageTable rows={ordinaryProductionStageBlockerRows} /> : null}
+            {ordinaryProductionStageBlockerRows.length ? (
+              <details className="developer-audit-details" aria-label="candidate radar ordinary production blocker row details">
+                <summary>查看生产阻断明细</summary>
+                <p className="risk-note">生产阶段行表默认收起，避免普通首屏变成 acceptance report；展开后也只读本地 stage manifest，不创建 task。</p>
+                <DataLineageTable rows={ordinaryProductionStageBlockerRows} />
+              </details>
+            ) : null}
             <p className="risk-note">本区不创建 task、不启动 worker、不调用 Tushare/DeepSeek/GitHub、不交易；local receipt、stage manifest、dry-run 和浏览器 runbook 都不能当 production complete。</p>
           </div>
         </div>
@@ -3071,8 +3077,14 @@ export default function CandidateRadar() {
           <h3>粗筛/细筛候选分组</h3>
           <p className="ordinary-status-note">先按现有候选顺序看 Top / Watch / Excluded，再看来源、缺口和仅供研究边界；GET cache、搜索输入和页面渲染不补调外部数据或模型。</p>
           <MetricGrid items={ordinaryCoarseFineItems} />
-          {ordinaryCoarseFineGroupRows.length ? <DataLineageTable rows={ordinaryCoarseFineGroupRows} /> : null}
-          {ordinaryCoarseFineStageRows.length ? <DataLineageTable rows={ordinaryCoarseFineStageRows} /> : null}
+          {(ordinaryCoarseFineGroupRows.length || ordinaryCoarseFineStageRows.length) ? (
+            <details className="developer-audit-details" aria-label="candidate radar coarse fine screening row details">
+              <summary>查看分组明细</summary>
+              <p className="risk-note">Top / Watch / Excluded 的明细行默认收起；普通首屏先保留分组数字、来源、缺口和 no-buy 边界。</p>
+              {ordinaryCoarseFineGroupRows.length ? <DataLineageTable rows={ordinaryCoarseFineGroupRows} /> : null}
+              {ordinaryCoarseFineStageRows.length ? <DataLineageTable rows={ordinaryCoarseFineStageRows} /> : null}
+            </details>
+          ) : null}
           <p className="risk-note">这条切片只推进 LTG-13 direct evidence slice；不是 production closeout：cache-only / local fallback / Tushare-backed sample 会分开显示；不声称生产替代完成。</p>
         </div>
         <div aria-label="candidate radar ordinary p3 one minute result">
