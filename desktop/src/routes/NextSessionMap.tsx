@@ -536,6 +536,39 @@ export default function NextSessionMap() {
       tone: "good"
     }
   ];
+  const nextSessionFirstScreenReadableSentence = `${candidateRadarConfirmedSymbolLabel}；${nextSessionReadableLastResultLabel}；下一步：${nextSessionReadableChartReviewOrder}；缺口：${nextSessionMissingEvidence}。`;
+  const nextSessionFirstScreenItems: MetricItem[] = [
+    {
+      label: "当前股票",
+      value: candidateRadarConfirmedSymbolLabel,
+      tone: candidateRadarConfirmedSymbol ? "good" : "warn"
+    },
+    {
+      label: "最近结果",
+      value: nextSessionReadableLastResultLabel,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: nextSessionReadableChartReviewOrder,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "证据缺口",
+      value: nextSessionMissingEvidence,
+      tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn"
+    },
+    {
+      label: "只读来源",
+      value: `${nextSessionCacheSourceLabel} / CandidateRadar cache / GET tasks`,
+      tone: "good"
+    },
+    {
+      label: "操作边界",
+      value: nextSessionOperationZoneBoundary,
+      tone: "good"
+    }
+  ];
   const nextSessionUsableNowItems: MetricItem[] = [
     {
       label: "图谱状态",
@@ -969,6 +1002,17 @@ export default function NextSessionMap() {
         emptyTitle="暂无已缓存次日操作图谱"
         emptyDetail={cacheMissingMessage || "请在允许按钮任务的情况下点击生成任务；查看缓存不会触发 Tushare。"}
       />
+      <div aria-label="next session first screen readable decision">
+        <h3>一眼结论</h3>
+        <p className="ordinary-status-note" aria-label="next session first screen readable sentence" aria-live="polite">{nextSessionFirstScreenReadableSentence}</p>
+        <MetricGrid items={nextSessionFirstScreenItems} />
+        <div className="actions" aria-label="next session first screen safe actions">
+          <a href={nextSessionOrdinaryProgressCheckpointAnchor} aria-label="open next session first screen primary next step">{nextSessionOrdinaryProgressCheckpointLabel}</a>
+          <button onClick={refreshCache} title={nextSessionCacheButtonLabel} aria-label="refresh next session cache from first screen">查看缓存</button>
+          <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session first screen">换标的</a>
+        </div>
+        <p className="risk-note">首屏只汇总当前股票、最近结果、下一步、证据缺口和 operation_zones 边界；查看缓存只读本地 GET cache，链接只切换本地锚点，不创建 task、不调用 Tushare/DeepSeek、不下单。</p>
+      </div>
       <MetricGrid
         items={[
           { label: "主下一步", value: nextSessionReadableNextClick },

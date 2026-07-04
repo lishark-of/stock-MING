@@ -959,6 +959,12 @@ def build_contract() -> dict[str, Any]:
             and 'postTask("/api/next-session/streamlit-parity-review"' in next_page
             and 'postTask("/api/next-session/production-promotion-review"' in next_page
             and "nextSessionGeneratePayload" in next_page
+            and "nextSessionFirstScreenReadableSentence" in next_page
+            and "nextSessionFirstScreenItems" in next_page
+            and 'aria-label="next session first screen readable decision"' in next_page
+            and 'aria-label="next session first screen safe actions"' in next_page
+            and 'aria-label="refresh next session cache from first screen"' in next_page
+            and "首屏只汇总当前股票、最近结果、下一步、证据缺口和 operation_zones 边界" in next_page
             and "nextSessionOrdinaryProgressCheckpointItems" in next_page
             and "nextSessionOrdinaryProgressCheckpointAnchor" in next_page
             and 'aria-label="next session ordinary progress checkpoint"' in next_page

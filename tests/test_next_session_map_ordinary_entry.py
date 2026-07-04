@@ -521,6 +521,40 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launch" + "Task", watch)
         self.assertNotIn("post" + "Task(", watch)
 
+    def test_next_session_first_screen_decision_is_readable_and_safe(self):
+        summary_start = self.page.index('title="普通用户次日图谱摘要"')
+        audit_start = self.page.index('<details id="next-session-audit"')
+        usable_now_start = self.page.index('aria-label="next session ordinary usable now strip"', summary_start)
+        decision_start = self.page.index('aria-label="next session first screen readable decision"', summary_start)
+        decision_end = self.page.index('<MetricGrid\n        items={[', decision_start)
+        decision = self.page[decision_start:decision_end]
+        source_before_audit = self.page[:audit_start]
+
+        self.assertLess(summary_start, decision_start)
+        self.assertLess(decision_start, usable_now_start)
+        self.assertIn("nextSessionFirstScreenReadableSentence", source_before_audit)
+        self.assertIn("nextSessionFirstScreenItems", source_before_audit)
+        self.assertIn("当前股票", source_before_audit)
+        self.assertIn("最近结果", source_before_audit)
+        self.assertIn("下一步", source_before_audit)
+        self.assertIn("证据缺口", source_before_audit)
+        self.assertIn("只读来源", source_before_audit)
+        self.assertIn("操作边界", source_before_audit)
+        self.assertIn('aria-label="next session first screen readable sentence"', decision)
+        self.assertIn("{nextSessionFirstScreenReadableSentence}", decision)
+        self.assertIn("MetricGrid items={nextSessionFirstScreenItems}", decision)
+        self.assertIn('aria-label="next session first screen safe actions"', decision)
+        self.assertIn('href={nextSessionOrdinaryProgressCheckpointAnchor}', decision)
+        self.assertIn('aria-label="open next session first screen primary next step"', decision)
+        self.assertIn("onClick={refreshCache}", decision)
+        self.assertIn('aria-label="refresh next session cache from first screen"', decision)
+        self.assertIn('href={CANDIDATE_CONFIRM_HREF}', decision)
+        self.assertIn("首屏只汇总当前股票、最近结果、下一步、证据缺口和 operation_zones 边界", decision)
+        self.assertIn("查看缓存只读本地 GET cache", decision)
+        self.assertIn("链接只切换本地锚点，不创建 task、不调用 Tushare/DeepSeek、不下单", decision)
+        self.assertNotIn("launch" + "Task", decision)
+        self.assertNotIn("post" + "Task(", decision)
+
 
 if __name__ == "__main__":
     unittest.main()
