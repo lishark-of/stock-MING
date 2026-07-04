@@ -77,6 +77,21 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "边界"', self.page)
         self.assertIn('aria-label="candidate radar user first actions"', summary_primary_slice)
         self.assertIn('href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"}', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar denoised first screen guide"', summary_primary_slice)
+        self.assertIn("普通首屏去噪", summary_primary_slice)
+        self.assertIn("这不是 acceptance report，也不是 provider 审计入口", summary_primary_slice)
+        for denoised_label in (
+            'label: "先看"',
+            'label: "候选池"',
+            'label: "确认按钮"',
+            'label: "进度"',
+            'label: "下沉"',
+            'label: "边界"',
+        ):
+            self.assertIn(denoised_label, summary_primary_slice)
+        self.assertIn("Top / Watch / Excluded 仍在候选池首位", summary_primary_slice)
+        self.assertIn("TaskStatusPanel 和刷新本地回放保留；GET cache 只读", summary_primary_slice)
+        self.assertIn("重复 P1/P2/P3 表、ledger 和补证路线在详情中", summary_primary_slice)
         self.assertIn('aria-label="candidate radar ordinary usable now strip"', summary_primary_slice)
         self.assertIn("现在可用状态", summary_primary_slice)
         self.assertIn("quantProjectionUsableNowItems", summary_primary_slice)
@@ -172,6 +187,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar p1 direct confirmation handoff"', self.page)
         self.assertIn("P1 直接确认入口", self.page)
         self.assertIn("这个入口只做本地锚点跳转", self.page)
+        self.assertIn('<details className="developer-audit-details" aria-label="candidate radar denoised p1 p3 details">', self.page)
+        self.assertIn("<summary>P1/P2/P3 回放明细</summary>", self.page)
+        self.assertIn("普通首屏保留确认按钮、TaskStatusPanel、刷新本地回放和候选池", self.page)
+        self.assertIn("避免打开 #candidates 时像 acceptance report", self.page)
         self.assertIn('aria-label="candidate radar p2 three surface quick status"', self.page)
         self.assertIn("P2 三面速读", self.page)
         self.assertIn("cache、call_ledger、packet 是否进入本地回放", self.page)
@@ -207,7 +226,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         direct_handoff_index = self.page.index('aria-label="candidate radar p1 direct confirmation handoff"')
         p2_quick_status_index = self.page.index('aria-label="candidate radar p2 three surface quick status"')
         p3_first_screen_index = self.page.index('aria-label="candidate radar p3 first screen result quick read"')
+        denoised_detail_index = self.page.index('aria-label="candidate radar denoised p1 p3 details"')
+        denoised_detail_slice = self.page[denoised_detail_index:p0_diagnostics_index]
         p3_first_screen_slice = self.page[p3_first_screen_index:p0_diagnostics_index]
+        self.assertIn('aria-label="candidate radar p1 direct confirmation handoff"', denoised_detail_slice)
+        self.assertIn('aria-label="candidate radar p2 three surface quick status"', denoised_detail_slice)
+        self.assertIn('aria-label="candidate radar p3 first screen result quick read"', denoised_detail_slice)
         self.assertIn('aria-label="candidate radar p3 one minute decision brief"', p3_first_screen_slice)
         self.assertIn("P3 一分钟决策速读", p3_first_screen_slice)
         self.assertIn("ordinary_result_decision_brief_rows", p3_first_screen_slice)
@@ -222,6 +246,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launchQuantProjection", p3_first_screen_slice)
         self.assertLess(p0_gate_index, p0_handoff_index)
         self.assertLess(direct_handoff_index, p0_gate_index)
+        self.assertLess(denoised_detail_index, direct_handoff_index)
         self.assertLess(direct_handoff_index, p2_quick_status_index)
         self.assertLess(p2_quick_status_index, p3_first_screen_index)
         self.assertLess(p3_first_screen_index, p0_diagnostics_index)

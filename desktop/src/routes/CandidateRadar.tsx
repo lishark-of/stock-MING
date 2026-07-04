@@ -2962,6 +2962,20 @@ export default function CandidateRadar() {
             <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar user first summary">股票量化推演</a>
             <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar user first summary">次日图谱</a>
           </div>
+          <div aria-label="candidate radar denoised first screen guide">
+            <h3>普通首屏去噪</h3>
+            <p className="risk-note">先看操作台、一屏确认、搜票确认和候选池；这不是 acceptance report，也不是 provider 审计入口。</p>
+            <MetricGrid
+              items={[
+                { label: "先看", value: "下一票雷达操作台、一屏确认、搜票确认和候选池" },
+                { label: "候选池", value: "Top / Watch / Excluded 仍在候选池首位" },
+                { label: "确认按钮", value: "只在 P1 搜票确认区创建按钮门控 POST task" },
+                { label: "进度", value: "TaskStatusPanel 和刷新本地回放保留；GET cache 只读" },
+                { label: "下沉", value: "重复 P1/P2/P3 表、ledger 和补证路线在详情中" },
+                { label: "边界", value: "候选不是买入指令；不交易、不改交易策略", tone: "good" }
+              ]}
+            />
+          </div>
         </div>
         <div aria-label="candidate radar coarse fine screening ordinary summary">
           <h3>粗筛/细筛候选分组</h3>
@@ -3194,6 +3208,9 @@ export default function CandidateRadar() {
             </div>
           </details>
         </div>
+        <details className="developer-audit-details" aria-label="candidate radar denoised p1 p3 details">
+          <summary>P1/P2/P3 回放明细</summary>
+          <p className="risk-note">普通首屏保留确认按钮、TaskStatusPanel、刷新本地回放和候选池；重复 P1/P2/P3 表默认收起，避免打开 #candidates 时像 acceptance report。</p>
         <div aria-label="candidate radar p1 direct confirmation handoff">
           <h3>P1 直接确认入口</h3>
           <p className="risk-note">先确认本地 FastAPI 已接上，然后跳到搜票确认区输入代码；这个入口只做本地锚点跳转，输入仍然静默，只有确认按钮会创建 Tushare-first POST task。</p>
@@ -3252,6 +3269,7 @@ export default function CandidateRadar() {
           <p className="risk-note">首屏直接回放服务端 ordinary_result_quick_read_rows：现在能读什么、结果从哪里来、还缺什么都只来自本地 cache / ledger / packet。</p>
           <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
         </div>
+        </details>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p0 local connection diagnostics">
           <summary>查看本地联通</summary>
           <p className="risk-note">首页已经提供本地 FastAPI 接线速读；普通主线默认收起 P0 联通表，需要排查按钮不可用或启动异常时再展开。</p>
