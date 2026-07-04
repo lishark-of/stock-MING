@@ -409,6 +409,56 @@ export default function WorkerRuntime() {
       tone: "good" as const
     }
   ];
+  const workerStrictCloseoutGateRows = [
+    {
+      gate: "local_fallback_runtime_visible",
+      user_visible_state: workerRuntimeStateLabel,
+      current_verdict: "local fallback、task status、safe task logs 和 runtime QA scope 可读",
+      can_close_ltg06_now: false,
+      strict_closeout_state: "strict closeout remains blocked",
+      evidence_required: "durable Celery/Redis runtime evidence before strict closeout",
+      worker_started: false,
+      redis_pinged: false,
+      scheduler_started: false,
+      task_dispatched: false,
+      provider_model_task_dispatched: false,
+      external_calls_triggered: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true
+    },
+    {
+      gate: "runtime_qa_authorization_required",
+      user_visible_state: workerRuntimeNextStep,
+      current_verdict: "runtime QA needs explicit scope-bound POST evidence; GET/render cannot run it",
+      can_close_ltg06_now: false,
+      strict_closeout_state: "runtime QA production evidence required",
+      evidence_required: "future POST /api/worker/runtime-qa-execution with explicit authorization",
+      worker_started: false,
+      redis_pinged: false,
+      scheduler_started: false,
+      task_dispatched: false,
+      provider_model_task_dispatched: false,
+      external_calls_triggered: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true
+    },
+    {
+      gate: "ltg12_trade_isolation_support",
+      user_visible_state: "LTG-12 交易隔离支撑",
+      current_verdict: "worker rows are evidence, not task dispatch, broker orders, or strategy action mutation",
+      can_close_ltg06_now: false,
+      strict_closeout_state: "research client only",
+      evidence_required: "no broker/order/action mutation boundary remains visible",
+      worker_started: false,
+      redis_pinged: false,
+      scheduler_started: false,
+      task_dispatched: false,
+      provider_model_task_dispatched: false,
+      external_calls_triggered: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true
+    }
+  ];
 
   return (
     <>
@@ -428,6 +478,15 @@ export default function WorkerRuntime() {
         </div>
         <p className="risk-note">首屏只汇总 local fallback、task/log 状态、runtime QA 下一步和 Storage 支撑边界；刷新只读取本地 GET cache，链接只切换本地页面，不启动 Celery/Redis/APScheduler、不创建 task、不调用 Tushare/DeepSeek/GitHub、不下单。</p>
       </div>
+
+      <PacketCard title="LTG-06 worker strict closeout gate" subtitle="纵切先让本地 worker 证据可读；production closeout 仍等待 Celery/Redis runtime evidence" status="strict_closeout_blocked">
+        <p>production_worker_complete: {String(productionBlockerAudit.production_worker_complete ?? false)}</p>
+        <p>can_close_ltg06_now: false</p>
+        <p>next_authorized_worker_step: future POST /api/worker/runtime-qa-execution with explicit authorization</p>
+        <p>LTG-12 boundary: worker rows are evidence, not broker orders or strategy action mutation.</p>
+        <p>GET cache / React render / local links do not create tasks, start Celery, ping Redis, start scheduler, dispatch work, call providers/models/GitHub, or trade.</p>
+        <DataLineageTable rows={workerStrictCloseoutGateRows} />
+      </PacketCard>
 
       <MetricGrid
         items={[

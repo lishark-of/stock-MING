@@ -1449,6 +1449,27 @@ def build_contract() -> dict[str, Any]:
             "Worker ordinary first screen must show local fallback/runtime QA next-step status before audit tables while staying cache-only and non-dispatching.",
         ),
         _row(
+            "worker_strict_closeout_gate_is_user_visible_and_blocked",
+            "workerStrictCloseoutGateRows" in worker_page
+            and "LTG-06 worker strict closeout gate" in worker_page
+            and "strict_closeout_blocked" in worker_page
+            and "strict closeout remains blocked" in worker_page
+            and "durable Celery/Redis runtime evidence before strict closeout" in worker_page
+            and "runtime_qa_authorization_required" in worker_page
+            and "future POST /api/worker/runtime-qa-execution with explicit authorization" in worker_page
+            and "LTG-12 交易隔离支撑" in worker_page
+            and "worker rows are evidence, not task dispatch, broker orders, or strategy action mutation" in worker_page
+            and "GET cache / React render / local links do not create tasks" in worker_page
+            and "start Celery" in worker_page
+            and "ping Redis" in worker_page
+            and "start scheduler" in worker_page
+            and "dispatch work" in worker_page
+            and "call providers/models/GitHub" in worker_page
+            and worker_page.find("LTG-06 worker strict closeout gate")
+            < worker_page.find("生产 worker 人工预检"),
+            "Worker page must surface the LTG-06 strict closeout gate before detailed audit tables, keeping runtime QA authorization, no-process-start, no-provider, no-trade, and LTG-12 boundaries visible.",
+        ),
+        _row(
             "script_is_local_no_process_or_provider_execution",
             "command_center_3_worker_contract.v1" in this_script
             and "local_worker_contract_no_process_start" in this_script
