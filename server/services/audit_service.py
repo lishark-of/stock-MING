@@ -4490,7 +4490,8 @@ def _user_route_qa_evidence_row(report: Mapping[str, Any], row: Mapping[str, Any
     status = str(row.get("status") or "unknown")
     task_created = row.get("task_created_by_render_or_typing") is True
     visual_complete = row.get("visual_qa_complete") is True
-    typing_silent = row.get("typing_silence_verified") is True and not task_created
+    typing_covered = row.get("typing_covered") is not False
+    typing_silent = row.get("typing_silence_verified") is True and typing_covered and not task_created
     return {
         "run_id": report.get("run_id") or report_path.parent.name,
         "generated_at": report.get("generated_at"),
@@ -4509,6 +4510,10 @@ def _user_route_qa_evidence_row(report: Mapping[str, Any], row: Mapping[str, Any
         "disabled_buttons_without_reason_count": int(row.get("disabled_buttons_without_reason_count") or 0),
         "audit_noise_count": int(row.get("audit_noise_count") or 0),
         "visible_input_count": int(row.get("visible_input_count") or 0),
+        "editable_visible_input_count": int(row.get("editable_visible_input_count") or 0),
+        "typing_required": row.get("typing_required") is True,
+        "typing_covered": typing_covered,
+        "typing_reason": _safe_text(row.get("typing_reason"), limit=120),
         "route_observed_ms": int(row.get("route_observed_ms") or 0),
         "artifact_report_path": _relative_artifact_path(report_path),
         "screenshot_artifact_omitted": True,
@@ -4540,6 +4545,7 @@ def _user_route_qa_report_passed(report: Mapping[str, Any]) -> bool:
         and {"#home", "#candidates", "#marginEtf", "#factor", "#next"}.issubset(routes)
         and {"desktop", "mobile"}.issubset(viewports)
         and all(row.get("task_created_by_render_or_typing") is not True for row in rows)
+        and all(row.get("typing_covered") is not False for row in rows)
         and report.get("external_calls_triggered") is not True
         and report.get("tushare_called") is not True
         and report.get("deepseek_called") is not True

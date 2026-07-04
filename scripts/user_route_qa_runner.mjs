@@ -107,6 +107,7 @@ function makePlan(args) {
       "primary buttons and status labels do not clip",
       "audit details do not dominate the first viewport",
       "typing into visible inputs does not create a task",
+      "visible editable inputs must be typed before typing silence is accepted",
       "screenshots and JSON report stay under ignored .stock_ming_3"
     ],
     base_url: args.baseUrl,
@@ -155,6 +156,13 @@ async function inspectPage(page) {
       const tolerance = 4;
       return element.scrollWidth > Math.ceil(element.clientWidth) + tolerance || element.scrollHeight > Math.ceil(element.clientHeight) + tolerance;
     };
+    const isEditableTextInput = (element) => {
+      if (!(element instanceof HTMLInputElement) && !(element instanceof HTMLTextAreaElement)) return false;
+      if (element.disabled || element.readOnly) return false;
+      if (element instanceof HTMLTextAreaElement) return true;
+      const type = (element.getAttribute("type") || "text").toLowerCase();
+      return !["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(type);
+    };
     const rowFor = (element) => {
       const rect = element.getBoundingClientRect();
       return {
@@ -184,6 +192,7 @@ async function inspectPage(page) {
       }))
       .filter((button) => !button.title && !button.aria_label)
       .slice(0, 12);
+    const visibleInputs = Array.from(document.querySelectorAll("input, textarea")).filter(isVisible);
     return {
       title: document.title,
       route_heading: document.querySelector("h1, h2, h3")?.textContent?.trim() || "",
@@ -194,19 +203,37 @@ async function inspectPage(page) {
       audit_noise_text: auditNoiseText.slice(0, 8),
       disabled_buttons_without_reason_count: disabledButtonsWithoutReason.length,
       disabled_buttons_without_reason: disabledButtonsWithoutReason,
-      visible_input_count: Array.from(document.querySelectorAll("input, textarea"))
-        .filter(isVisible)
-        .length
+      visible_input_count: visibleInputs.length,
+      editable_visible_input_count: visibleInputs.filter(isEditableTextInput).length
     };
   });
 }
 
 async function typeWithoutSubmit(page) {
-  const locator = page.locator("input:visible, textarea:visible").first();
-  if ((await locator.count()) < 1) return { typed: false, selector: "" };
-  await locator.fill("000001.SZ");
+  const target = await page.evaluate(() => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || 1) > 0.01;
+    };
+    const isEditableTextInput = (element) => {
+      if (!(element instanceof HTMLInputElement) && !(element instanceof HTMLTextAreaElement)) return false;
+      if (element.disabled || element.readOnly) return false;
+      if (element instanceof HTMLTextAreaElement) return true;
+      const type = (element.getAttribute("type") || "text").toLowerCase();
+      return !["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(type);
+    };
+    document.querySelectorAll("[data-user-route-qa-input]").forEach((element) => element.removeAttribute("data-user-route-qa-input"));
+    const input = Array.from(document.querySelectorAll("input, textarea")).find((element) => isVisible(element) && isEditableTextInput(element));
+    if (!input) return { found: false, selector: "", reason: "no_editable_visible_input" };
+    input.setAttribute("data-user-route-qa-input", "true");
+    const label = input.getAttribute("aria-label") || input.getAttribute("placeholder") || input.getAttribute("name") || input.id || input.tagName.toLowerCase();
+    return { found: true, selector: label, reason: "editable_visible_input_found" };
+  });
+  if (!target.found) return { typed: false, selector: "", reason: target.reason };
+  await page.locator("[data-user-route-qa-input='true']").first().fill("000001.SZ");
   await page.waitForTimeout(150);
-  return { typed: true, selector: "first visible input/textarea" };
+  return { typed: true, selector: target.selector || "first editable visible input/textarea", reason: "typed_editable_visible_input" };
 }
 
 async function runQa(args) {
@@ -246,11 +273,14 @@ async function runQa(args) {
         }
         const elapsedMs = Date.now() - startedAt;
         const noTaskCreated = afterTaskCount === beforeTaskCount;
+        const typingRequired = inspected.editable_visible_input_count > 0;
+        const typingCovered = !typingRequired || typing.typed === true;
         const passed =
           Boolean(inspected.route_heading) &&
           inspected.clipped_count === 0 &&
           inspected.disabled_buttons_without_reason_count === 0 &&
-          noTaskCreated;
+          noTaskCreated &&
+          typingCovered;
         rows.push({
           route: route.route,
           label: route.label,
@@ -269,8 +299,12 @@ async function runQa(args) {
           disabled_buttons_without_reason_count: inspected.disabled_buttons_without_reason_count,
           disabled_buttons_without_reason: inspected.disabled_buttons_without_reason,
           visible_input_count: inspected.visible_input_count,
+          editable_visible_input_count: inspected.editable_visible_input_count,
+          typing_required: typingRequired,
+          typing_covered: typingCovered,
           typed_without_submit: typing.typed,
           typing_selector: typing.selector,
+          typing_reason: typing.reason,
           task_count_before: beforeTaskCount,
           task_count_after: afterTaskCount,
           task_created_by_render_or_typing: !noTaskCreated,
@@ -303,7 +337,7 @@ async function runQa(args) {
     review_required_count: reviewRows.length,
     console_error_count: errors.length,
     visual_qa_complete: reviewRows.length === 0 && errors.length === 0,
-    typing_silence_verified: rows.every((row) => row.task_created_by_render_or_typing === false),
+    typing_silence_verified: rows.every((row) => row.task_created_by_render_or_typing === false && row.typing_covered === true),
     production_replacement_complete: false,
     streamlit_fallback_retirement_ready: false,
     rows,

@@ -67,6 +67,9 @@ def build_runbook() -> dict[str, Any]:
         and "#factor" in runner
         and "#next" in runner
         and "typed_without_submit" in runner
+        and "editable_visible_input_count" in runner
+        and "typing_required" in runner
+        and "typing_covered" in runner
         and "task_created_by_render_or_typing" in runner
         and ARTIFACT_ROOT in runner
         and "starts_no_servers: true" in runner
@@ -113,7 +116,7 @@ def build_runbook() -> dict[str, Any]:
         _row(
             "render_and_typing_silence_check",
             "execution_pending",
-            "runner compares /api/tasks count before and after route render plus safe typing without submit",
+            "runner compares /api/tasks count before and after route render plus actual safe typing on visible editable inputs without submit",
         ),
         _row(
             "visual_clarity_check",

@@ -77,7 +77,11 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertFalse(plan["github_called"])
         self.assertTrue(plan["does_not_execute_trades"])
         self.assertIn("typing into visible inputs does not create a task", plan["checks"])
+        self.assertIn("visible editable inputs must be typed before typing silence is accepted", plan["checks"])
         self.assertIn("typed_without_submit", runner_source)
+        self.assertIn("editable_visible_input_count", runner_source)
+        self.assertIn("typing_required", runner_source)
+        self.assertIn("typing_covered", runner_source)
         self.assertIn("task_created_by_render_or_typing", runner_source)
         self.assertIn('waitUntil: "domcontentloaded"', runner_source)
         self.assertIn('waitForSelector("h1, h2, h3", { state: "attached"', runner_source)
@@ -105,6 +109,10 @@ class UserRouteQaRunbookTests(unittest.TestCase):
                 "disabled_buttons_without_reason_count": 0,
                 "audit_noise_count": 0,
                 "visible_input_count": 1,
+                "editable_visible_input_count": 1,
+                "typing_required": True,
+                "typing_covered": True,
+                "typing_reason": "typed_editable_visible_input",
                 "route_observed_ms": 320,
             }
             for route in routes
@@ -168,6 +176,8 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertTrue(evidence["does_not_modify_strategy_action"])
         self.assertEqual(len(rows), 10)
         self.assertTrue(all(row["screenshot_artifact_omitted"] for row in rows))
+        self.assertTrue(all(row["typing_covered"] for row in rows))
+        self.assertEqual(sum(1 for row in rows if row["typing_required"]), 10)
         self.assertEqual(sum(1 for row in rows if row["route"] == "#candidates"), 2)
 
         packet_evidence = packet["user_route_qa_evidence_contract"]

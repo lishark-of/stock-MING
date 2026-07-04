@@ -43,6 +43,7 @@ Current interpretation:
 9. Candidate Radar ordinary first screen now explains retirement-readiness as "退旧雷达前还缺什么" instead of leading with production/stage blocker wording; detailed gap rows stay collapsed and the slice remains local read-only evidence, not LTG-13 strict closeout.
 10. Stock Quant Projection / Factor Quant Hub now shows LTG-03 true small-pool validation as an authorization-waiting state on the ordinary first screen: local scope and execution-request tickets are historical/read-only, and real provider task/sample/rolling/cost/neutralization evidence still requires explicit user authorization.
 11. ETF / Margin now has a button-gated local task contract: `POST /api/market/margin-etf-local-refresh` writes a safe `command_center_margin_etf_refresh_receipt`, the page shows disabled/degraded reasons before the click, and `TaskStatusPanel` shows the local task status after the click. This remains a local packet replay, not provider refresh, Streamlit retirement, or LTG strict closeout.
+12. User Route QA now requires actual typing coverage before accepting typing silence: if a route has visible editable inputs, the runner fills one with a test symbol and only passes when `/api/tasks` stays unchanged.
 
 ## Next Repair Goals
 
@@ -66,7 +67,7 @@ Current interpretation:
 
 4. User Route QA
    - Goal: browser-check `#home`, `#candidates`, `#marginEtf`, `#factor`, and `#next` on desktop and mobile widths.
-   - Current local slice: `scripts/user_route_qa_runner.mjs` can run the ordinary route matrix against already-running local FastAPI/Vite, type into visible inputs without submit, and compare `/api/tasks` counts before/after render/typing.
+   - Current local slice: `scripts/user_route_qa_runner.mjs` can run the ordinary route matrix against already-running local FastAPI/Vite, type into visible editable inputs without submit, require typing coverage when inputs are present, and compare `/api/tasks` counts before/after render/typing.
    - Current readback: `GET /api/audit/cache` surfaces `user_route_qa_evidence_contract` and rows from ignored local reports, including the `#candidates` pass state and task-silence count.
    - Check text overflow, repeated audit noise, disabled button reasons, and local-only refresh behavior.
    - Exit check: screenshots or notes prove first viewport clarity and no task is created by render or typing.
