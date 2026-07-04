@@ -28130,6 +28130,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 handoff["latest_execution_request_ready_for_manual_provider_task_submission"]
             )
             self.assertEqual(handoff["next_local_step"], "POST /api/tasks/refresh-tushare-facts")
+            self.assertEqual(
+                p1_row["local_receipt_status"],
+                "local_trade_cal_execution_request_ready_provider_task_pending",
+            )
+            self.assertEqual(p1_row["next_local_step"], "POST /api/tasks/refresh-tushare-facts")
+            self.assertFalse(p1_row["next_local_step_ready_for_clean_receipt"])
+            self.assertEqual(
+                p1_row["next_local_step_disabled_reason"],
+                "route_is_not_an_allowlisted_local_receipt_step",
+            )
+            self.assertTrue(p1_row["future_handoff_ready_from_local_receipt"])
         else:
             self.assertEqual(handoff["status"], "provider_acceptance_execution_request_visible_but_blocked")
             self.assertFalse(

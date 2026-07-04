@@ -11370,6 +11370,12 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 or ""
             )
             if (
+                supporting_trade_cal_provider_acceptance_evidence_handoff.get("status")
+                == "provider_acceptance_execution_request_ready_provider_task_pending"
+            ):
+                next_local_step = handoff_next_step or str(action["future_provider_route"])
+                local_status = "local_trade_cal_execution_request_ready_provider_task_pending"
+            elif (
                 handoff_next_step
                 == "POST /api/data-health/trade-cal-provider-acceptance-production-promotion-review"
                 or supporting_trade_cal_provider_acceptance_evidence_handoff.get("strict_closeout_ready")
