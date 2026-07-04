@@ -21250,7 +21250,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 91)
+        self.assertEqual(catalog["task_count"], 92)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -21269,7 +21269,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 91)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 92)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -21303,8 +21303,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 93)
-        self.assertEqual(route_coverage["task_creation_route_count"], 91)
+        self.assertEqual(route_coverage["known_post_route_count"], 94)
+        self.assertEqual(route_coverage["task_creation_route_count"], 92)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -21313,11 +21313,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 91)
+        self.assertEqual(implementation_status["task_count"], 92)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 86)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 87)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 87)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 88)
         self.assertEqual(implementation_status["external_capable_task_count"], 9)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -21351,6 +21351,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_factor_universe_worker_batch_research",
                 "run_factor_test_provider_small_pool_acceptance_dry_run",
                 "run_factor_test_provider_small_pool_execution_request",
+                "run_factor_test_provider_small_pool_acceptance",
                 "refresh_margin_etf_local_packets",
                 "build_next_session_projection",
                 "run_next_session_browser_qa_review",
@@ -21443,6 +21444,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_factor_universe_worker_batch_research",
                 "run_factor_test_provider_small_pool_acceptance_dry_run",
                 "run_factor_test_provider_small_pool_execution_request",
+                "run_factor_test_provider_small_pool_acceptance",
                 "refresh_margin_etf_local_packets",
                 "build_next_session_projection",
                 "run_next_session_browser_qa_review",
@@ -21569,6 +21571,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/universe-worker-batch-execution-request", route_coverage["known_post_routes"])
         self.assertIn("POST /api/factor-quant/provider-small-pool-dry-run", route_coverage["known_post_routes"])
         self.assertIn("POST /api/factor-quant/provider-small-pool-execution-request", route_coverage["known_post_routes"])
+        self.assertIn("POST /api/factor-quant/provider-small-pool-acceptance", route_coverage["known_post_routes"])
         self.assertIn("POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket", route_coverage["known_post_routes"])
         self.assertIn("POST /api/desktop/tauri-package-artifact-review", route_coverage["known_post_routes"])
         self.assertIn(
@@ -22474,6 +22477,40 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["run_factor_test_provider_small_pool_execution_request"]["cache_get_external_calls"])
         self.assertFalse(by_type["run_factor_test_provider_small_pool_execution_request"]["react_render_direct_provider_calls"])
         self.assertTrue(by_type["run_factor_test_provider_small_pool_execution_request"]["call_ledger_required"])
+        self.assertEqual(
+            by_type["run_factor_test_provider_small_pool_acceptance"]["route"],
+            "POST /api/factor-quant/provider-small-pool-acceptance",
+        )
+        self.assertEqual(
+            by_type["run_factor_test_provider_small_pool_acceptance"]["current_backend"],
+            "local_factor_test_provider_small_pool_acceptance_gate_pipeline_no_provider_execution",
+        )
+        self.assertEqual(
+            by_type["run_factor_test_provider_small_pool_acceptance"]["external_call_policy"],
+            "local_acceptance_gate_requires_separate_live_provider_authorization_no_provider_call",
+        )
+        self.assertEqual(by_type["run_factor_test_provider_small_pool_acceptance"]["possible_external_sources"], [])
+        self.assertEqual(by_type["run_factor_test_provider_small_pool_acceptance"]["future_external_sources"], ["tushare"])
+        self.assertTrue(by_type["run_factor_test_provider_small_pool_acceptance"]["local_acceptance_gate_only"])
+        self.assertEqual(
+            by_type["run_factor_test_provider_small_pool_acceptance"]["requires_prior_task_type"],
+            "run_factor_test_provider_small_pool_execution_request",
+        )
+        self.assertTrue(by_type["run_factor_test_provider_small_pool_acceptance"]["requires_bound_scope_hash"])
+        self.assertTrue(by_type["run_factor_test_provider_small_pool_acceptance"]["requires_user_approval_flag"])
+        self.assertTrue(by_type["run_factor_test_provider_small_pool_acceptance"]["requires_separate_live_provider_authorization"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["creates_provider_task"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["server_secret_values_read"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["env_key_names_exposed"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["credential_values_exposed"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["provider_execution_implemented"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["provider_task_executed_by_request"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["provider_call_ledger_evidence_done"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["provider_backed_small_pool_validation_done"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["production_factor_test_validation_complete"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["cache_get_external_calls"])
+        self.assertFalse(by_type["run_factor_test_provider_small_pool_acceptance"]["react_render_direct_provider_calls"])
+        self.assertTrue(by_type["run_factor_test_provider_small_pool_acceptance"]["call_ledger_required"])
         self.assertEqual(by_type["build_next_session_projection"]["current_backend"], "local_cache_pipeline")
         self.assertEqual(by_type["build_next_session_projection"]["possible_external_sources"], [])
         self.assertEqual(by_type["run_candidate_radar_quick_scan"]["route"], "POST /api/candidate-radar/scan-quick")
@@ -23780,6 +23817,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/universe-worker-batch-research", discovered_routes)
         self.assertIn("POST /api/factor-quant/provider-small-pool-dry-run", discovered_routes)
         self.assertIn("POST /api/factor-quant/provider-small-pool-execution-request", discovered_routes)
+        self.assertIn("POST /api/factor-quant/provider-small-pool-acceptance", discovered_routes)
         self.assertIn("POST /api/factor-quant/deepseek-explain", discovered_routes)
         self.assertIn("POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket", discovered_routes)
         self.assertIn("POST /api/market/margin-etf-local-refresh", discovered_routes)
@@ -23855,16 +23893,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 86)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 87)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 87)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 88)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 86)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 87)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 87)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 88)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -24739,9 +24777,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 86)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 87)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 87)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 88)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -24965,9 +25003,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 86)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 87)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 87)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 88)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 9)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -25000,9 +25038,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 86)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 87)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 87)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 88)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -42352,7 +42390,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 91)
+        self.assertEqual(task_catalog["data"]["task_count"], 92)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -42404,6 +42442,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/provider-small-pool-dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn(
             "POST /api/factor-quant/provider-small-pool-execution-request",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/factor-quant/provider-small-pool-acceptance",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
         )
         self.assertIn(
@@ -59775,6 +59817,116 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(task["deepseek_called"])
         self.assertFalse(task["github_called"])
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+    def test_factor_test_provider_small_pool_acceptance_gate_requires_separate_live_authorization(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        dry_run_response = self.client.post(
+            "/api/factor-quant/provider-small-pool-dry-run",
+            json={
+                "approved_by_user": True,
+                "symbols": ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"],
+                "start_date": "20260401",
+                "end_date": "20260614",
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run_receipt = dry_run_response["data"]["task"]["payload_safe"][
+            "provider_small_pool_acceptance_dry_run_receipt"
+        ]
+
+        execution_response = self.client.post(
+            "/api/factor-quant/provider-small-pool-execution-request",
+            json={
+                "approved_by_user": True,
+                "acceptance_scope_hash": dry_run_receipt["acceptance_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(execution_response["ok"])
+        execution_receipt = execution_response["data"]["task"]["payload_safe"][
+            "provider_small_pool_execution_request_receipt"
+        ]
+
+        response = self.client.post(
+            "/api/factor-quant/provider-small-pool-acceptance",
+            json={
+                "approved_by_user": True,
+                "acceptance_scope_hash": execution_receipt["acceptance_scope_hash"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(response, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(response, ensure_ascii=False))
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_factor_test_provider_small_pool_acceptance")
+        self.assertEqual(
+            task["current_step"],
+            "factor_test_provider_small_pool_acceptance_blocked_live_provider_authorization_required",
+        )
+        receipt = task["payload_safe"]["provider_small_pool_acceptance_receipt"]
+        rows = {row["criterion"]: row for row in task["payload_safe"]["provider_small_pool_acceptance_rows"]}
+        self.assertEqual(receipt["schema_version"], "factor_test_provider_small_pool_acceptance.v1")
+        self.assertEqual(
+            receipt["scope"],
+            "local_factor_test_provider_small_pool_acceptance_gate_no_provider_execution",
+        )
+        self.assertTrue(receipt["local_acceptance_gate_task_record_created"])
+        self.assertFalse(receipt["ready_for_live_provider_execution"])
+        self.assertTrue(receipt["execution_request_ready"])
+        self.assertTrue(receipt["requested_scope_hash_matches_execution_request"])
+        self.assertEqual(receipt["acceptance_scope_hash_short"], execution_receipt["acceptance_scope_hash_short"])
+        self.assertTrue(receipt["requires_separate_user_authorized_provider_execution"])
+        self.assertFalse(receipt["live_provider_authorized"])
+        self.assertFalse(receipt["provider_task_created"])
+        self.assertFalse(receipt["provider_execution_implemented"])
+        self.assertFalse(receipt["provider_call_ledger_evidence_done"])
+        self.assertFalse(receipt["sample_rows_collected"])
+        self.assertFalse(receipt["provider_backed_small_pool_validation_done"])
+        self.assertFalse(receipt["production_factor_test_validation_complete"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertFalse(receipt["contains_secret"])
+        self.assertFalse(receipt["env_key_name_exposed"])
+        self.assertFalse(receipt["credential_value_exposed"])
+        self.assertTrue(rows["execution_request_ticket_visible"]["passed"])
+        self.assertTrue(rows["scope_hash_bound_to_execution_request"]["passed"])
+        self.assertTrue(rows["explicit_user_confirmation"]["passed"])
+        self.assertFalse(rows["live_provider_authorization_required"]["passed"])
+        self.assertFalse(rows["provider_execution_implementation_boundary"]["passed"])
+        self.assertTrue(rows["no_provider_model_github_trade_side_effects"]["passed"])
+        self.assertTrue(rows["secret_redaction_boundary"]["passed"])
+        self.assertEqual(task["call_ledger"][0]["api"], "local_factor_test_provider_small_pool_acceptance_gate")
+        self.assertEqual(
+            task["call_ledger"][0]["call_status"],
+            "factor_test_provider_small_pool_acceptance_blocked_live_provider_authorization_required",
+        )
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        cached = factor["data"]["factor_tests"]["provider_small_pool_acceptance_receipt"]
+        self.assertEqual(cached["status"], receipt["status"])
+        self.assertEqual(cached["task_id"], task["task_id"])
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"]["provider_small_pool_acceptance_gate_recorded"]
+        )
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"]["provider_small_pool_acceptance_is_not_provider_execution"]
+        )
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_execution_implemented"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_backed_small_pool_validation_done"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["production_factor_test_validation_complete"])
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(factor, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(factor, ensure_ascii=False))
 
     def test_ltg_stage_scope_observes_factor_test_scope_direct_evidence_without_provider_completion(self):
         db_path = self._with_meta_store()

@@ -5621,6 +5621,275 @@ def _attach_factor_test_provider_small_pool_execution_request(
     return packet, ledger
 
 
+def _factor_test_provider_small_pool_acceptance_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_for_provider_backed_acceptance": bool(required),
+        "blocks_provider_backed_acceptance": bool(required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "local_acceptance_gate_task_record_created": True,
+        "provider_task_created": False,
+        "provider_execution_implemented": False,
+        "provider_call_ledger_evidence_done": False,
+        "sample_rows_collected": False,
+        "provider_backed_small_pool_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+
+
+def _factor_test_provider_small_pool_acceptance_payload(
+    payload: Any,
+    factor_tests: dict[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    payload_dict = payload if isinstance(payload, dict) else {}
+    execution_request = _dict(factor_tests.get("provider_small_pool_execution_request_receipt"))
+    dry_run = _dict(factor_tests.get("provider_small_pool_acceptance_dry_run_receipt"))
+    requested_scope_hash = str(
+        payload_dict.get("acceptance_scope_hash")
+        or payload_dict.get("scope_hash")
+        or payload_dict.get("provider_small_pool_scope_hash")
+        or ""
+    ).strip()
+    live_provider_authorized = bool(
+        payload_dict.get("authorize_live_provider_call") is True
+        and payload_dict.get("provider_run_approved_by_user") is True
+    )
+    return {
+        "approved_by_user": bool(payload_dict.get("approved_by_user") is True),
+        "requested_scope_hash": requested_scope_hash,
+        "execution_request_status": str(execution_request.get("status") or ""),
+        "execution_request_ready": bool(execution_request.get("local_execution_request_ready")),
+        "execution_request_scope_hash": str(execution_request.get("acceptance_scope_hash") or ""),
+        "execution_request_scope_hash_short": str(execution_request.get("acceptance_scope_hash_short") or ""),
+        "dry_run_scope_hash_short": str(dry_run.get("acceptance_scope_hash_short") or ""),
+        "symbols": [str(item) for item in execution_request.get("symbols", []) if item][:FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT],
+        "symbol_count": int(execution_request.get("symbol_count") or 0),
+        "start_date": execution_request.get("start_date"),
+        "end_date": execution_request.get("end_date"),
+        "window_days": int(execution_request.get("window_days") or 0),
+        "metrics": [str(item) for item in execution_request.get("metrics", []) if item],
+        "forward_return_horizons": [str(item) for item in execution_request.get("forward_return_horizons", []) if item],
+        "required_datasets": list(FACTOR_TEST_PROVIDER_SMALL_POOL_ALLOWED_DATASETS),
+        "target_acceptance_mode": "provider_backed_factor_test_small_pool_validation",
+        "live_provider_authorized": live_provider_authorized,
+        "provider_execution_implemented": False,
+        "created_at": now,
+        "server_secret_values_read": False,
+        "env_key_names_exposed": False,
+        "credential_values_exposed": False,
+    }
+
+
+def _factor_test_provider_small_pool_acceptance_receipt(
+    payload_safe: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    execution_scope_hash = str(payload_safe.get("execution_request_scope_hash") or "")
+    requested_scope_hash = str(payload_safe.get("requested_scope_hash") or "")
+    requested_hash_matches_execution_request = bool(
+        execution_scope_hash and requested_scope_hash and requested_scope_hash == execution_scope_hash
+    )
+    execution_request_ready = bool(
+        payload_safe.get("execution_request_ready") is True
+        and payload_safe.get("execution_request_status")
+        == "factor_test_provider_small_pool_execution_request_ready_manual_provider_task_pending"
+    )
+    user_confirmed = payload_safe.get("approved_by_user") is True
+    live_provider_authorized = payload_safe.get("live_provider_authorized") is True
+    provider_execution_implemented = payload_safe.get("provider_execution_implemented") is True
+    rows = [
+        _factor_test_provider_small_pool_acceptance_row(
+            "execution_request_ticket_visible",
+            "passed_execution_request_ready" if execution_request_ready else "blocked_missing_execution_request_ticket",
+            execution_request_ready,
+            f"execution_request_status={payload_safe.get('execution_request_status')}; scope_hash_short={payload_safe.get('execution_request_scope_hash_short')}",
+            "Generate a scope-bound execution request before opening the provider-backed acceptance gate.",
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "scope_hash_bound_to_execution_request",
+            "passed_scope_hash_match" if requested_hash_matches_execution_request else "blocked_scope_hash_missing_or_mismatch",
+            requested_hash_matches_execution_request,
+            f"requested_scope_hash_short={requested_scope_hash[:16]}; execution_request_scope_hash_short={payload_safe.get('execution_request_scope_hash_short')}",
+            "Submit provider-backed acceptance only against the latest execution request scope hash.",
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "explicit_user_confirmation",
+            "passed_user_confirmed" if user_confirmed else "blocked_user_confirmation_required",
+            user_confirmed,
+            f"approved_by_user={user_confirmed}",
+            "Keep the provider-backed acceptance gate button-triggered and user-confirmed.",
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "live_provider_authorization_required",
+            "passed_live_provider_authorized" if live_provider_authorized else "blocked_live_provider_authorization_required",
+            live_provider_authorized,
+            "live provider authorization requires authorize_live_provider_call=true and provider_run_approved_by_user=true",
+            "Request a separate live-provider run authorization before any Tushare call is allowed.",
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "provider_execution_implementation_boundary",
+            "passed_provider_execution_implemented" if provider_execution_implemented else "blocked_provider_execution_not_implemented",
+            provider_execution_implemented,
+            "This local gate does not implement provider-backed sample collection or production metric computation.",
+            "Implement the provider-backed validation executor only in a separately authorized Tushare-first LTG-03 pass.",
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "no_provider_model_github_trade_side_effects",
+            "passed_no_external_or_trade_side_effects",
+            True,
+            "Acceptance gate writes only a local receipt and safe call ledger; it does not call Tushare, DeepSeek, GitHub, or trades.",
+            "Preserve research-only boundaries until direct provider evidence is collected.",
+            required=False,
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "secret_redaction_boundary",
+            "passed_no_secret_exposure",
+            True,
+            "Receipt stores only safe scope, symbol, date, metric, and status fields.",
+            "Keep token/key material out of frontend, logs, packets, cache, and task payloads.",
+            required=False,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row["blocks_provider_backed_acceptance"]]
+    if not execution_request_ready:
+        status = "factor_test_provider_small_pool_acceptance_blocked_missing_execution_request"
+        allowed_next_step = "run_factor_test_provider_small_pool_execution_request"
+    elif not requested_hash_matches_execution_request:
+        status = "factor_test_provider_small_pool_acceptance_blocked_scope_hash_mismatch"
+        allowed_next_step = "resubmit_acceptance_with_latest_execution_request_scope_hash"
+    elif not user_confirmed:
+        status = "factor_test_provider_small_pool_acceptance_blocked_user_confirmation_required"
+        allowed_next_step = "confirm_provider_small_pool_acceptance_gate"
+    elif not live_provider_authorized:
+        status = "factor_test_provider_small_pool_acceptance_blocked_live_provider_authorization_required"
+        allowed_next_step = "request_separate_user_authorized_tushare_provider_run"
+    else:
+        status = "factor_test_provider_small_pool_acceptance_blocked_provider_execution_not_implemented"
+        allowed_next_step = "implement_provider_backed_factor_test_small_pool_executor"
+    receipt = {
+        "schema_version": "factor_test_provider_small_pool_acceptance.v1",
+        "status": status,
+        "scope": "local_factor_test_provider_small_pool_acceptance_gate_no_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-03/LTG-02/LTG-11/LTG-12",
+        "local_acceptance_gate_task_record_created": True,
+        "ready_for_live_provider_execution": False,
+        "allowed_next_step": allowed_next_step,
+        "execution_request_status": payload_safe.get("execution_request_status"),
+        "execution_request_ready": execution_request_ready,
+        "requested_scope_hash_matches_execution_request": requested_hash_matches_execution_request,
+        "acceptance_scope_hash": execution_scope_hash if requested_hash_matches_execution_request else "",
+        "acceptance_scope_hash_short": str(payload_safe.get("execution_request_scope_hash_short") or ""),
+        "requested_scope_hash_short": requested_scope_hash[:16],
+        "target_acceptance_mode": payload_safe.get("target_acceptance_mode"),
+        "symbols": payload_safe.get("symbols") or [],
+        "symbol_count": payload_safe.get("symbol_count") or 0,
+        "start_date": payload_safe.get("start_date"),
+        "end_date": payload_safe.get("end_date"),
+        "window_days": payload_safe.get("window_days") or 0,
+        "metrics": payload_safe.get("metrics") or [],
+        "forward_return_horizons": payload_safe.get("forward_return_horizons") or [],
+        "required_datasets": payload_safe.get("required_datasets") or [],
+        "requires_separate_user_authorized_provider_execution": True,
+        "live_provider_authorized": live_provider_authorized,
+        "provider_task_created": False,
+        "provider_execution_implemented": False,
+        "provider_call_ledger_evidence_done": False,
+        "sample_rows_collected": False,
+        "multi_horizon_forward_returns_done": False,
+        "rolling_window_validation_done": False,
+        "cost_assumption_validation_done": False,
+        "neutralization_stability_done": False,
+        "pit_bias_controls_done": False,
+        "provider_backed_small_pool_validation_done": False,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+        "blocking_criterion_count": len(blockers),
+        "blocking_criteria": blockers,
+        "missing_evidence": [
+            "separate live provider run authorization",
+            "provider-backed Factor Test small-pool executor",
+            "provider task_id bound to scope hash",
+            "safe provider call ledger rows for target pool",
+            "non-empty provider-backed sample rows",
+            "multi-horizon forward-return labels",
+            "rolling IC/Rank IC/ICIR evidence",
+            "cost and neutralization validation evidence",
+            "PIT/lookahead/survivorship controls evidence",
+            "manual Factor Test production promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "treat_acceptance_gate_as_provider_validation",
+            "call Tushare without separate live provider authorization",
+            "call DeepSeek from acceptance gate",
+            "call GitHub from acceptance gate",
+            "compute production IC from acceptance gate",
+            "mutate strategy action",
+            "real trade execution",
+            "leak token/key",
+        ],
+        "row_count": len(rows),
+        "rows": rows,
+    }
+    ledger = [
+        {
+            "api": "local_factor_test_provider_small_pool_acceptance_gate",
+            "request_params_safe": {
+                "status": status,
+                "scope": receipt["scope"],
+                "symbol_count": receipt["symbol_count"],
+                "scope_hash_short": receipt["acceptance_scope_hash_short"],
+                "live_provider_authorized": live_provider_authorized,
+                "provider_execution_implemented": False,
+                "provider_backed_small_pool_validation_done": False,
+                "production_factor_test_validation_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": payload_safe.get("end_date"),
+            "local_fetched_at": now,
+            "call_status": status,
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+    receipt["call_ledger"] = ledger
+    return receipt, rows
+
+
 def _factor_test_production_stage_scope_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for stage_key in FACTOR_TEST_PRODUCTION_STAGE_KEYS:
@@ -6386,6 +6655,79 @@ def run_factor_test_provider_small_pool_execution_request_task(payload: Any = No
         status="success",
         progress=1.0,
         current_step=str(receipt.get("status") or "factor_test_provider_small_pool_execution_request_recorded"),
+        call_ledger=list(receipt.get("call_ledger") or []),
+    ) or task
+    updated["payload_safe"] = payload_safe
+    return updated
+
+
+def run_factor_test_provider_small_pool_acceptance_task(payload: Any = None) -> dict[str, Any]:
+    now = _now_iso()
+    base_hub = dict(read_factor_quant_cache())
+    factor_tests = base_hub.get("factor_tests") if isinstance(base_hub.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    payload_safe = _factor_test_provider_small_pool_acceptance_payload(payload, factor_tests, now)
+    receipt, rows = _factor_test_provider_small_pool_acceptance_receipt(payload_safe, now)
+    payload_safe["provider_small_pool_acceptance_receipt"] = receipt
+    payload_safe["provider_small_pool_acceptance_rows"] = rows
+    task = create_task_record(
+        "run_factor_test_provider_small_pool_acceptance",
+        output_packet_key="command_center_factor_quant_hub_packet",
+        payload=payload_safe,
+        current_step="factor_test_provider_small_pool_acceptance_gate_queued",
+        warnings=[
+            "Factor Test provider 小股票池 acceptance gate 只写本地授权闸门回执，不调用 Tushare、DeepSeek 或 GitHub。",
+            "acceptance gate 不采集 provider 样本、不计算生产 IC/Rank IC/ICIR、不修改 strategy action、不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="building_factor_test_provider_small_pool_acceptance_gate_receipt",
+    )
+    receipt["task_id"] = task["task_id"]
+    try:
+        hub = dict(read_factor_quant_cache())
+        factor_tests = hub.get("factor_tests") if isinstance(hub.get("factor_tests"), dict) else {}
+        factor_tests = dict(factor_tests)
+        factor_tests["provider_small_pool_acceptance_receipt"] = receipt
+        factor_tests["provider_small_pool_acceptance_rows"] = rows
+        acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+        if acceptance:
+            acceptance = dict(acceptance)
+            acceptance["provider_small_pool_acceptance_status"] = receipt.get("status")
+            acceptance["provider_small_pool_acceptance_gate_recorded"] = True
+            acceptance["provider_small_pool_acceptance_is_not_provider_execution"] = True
+            acceptance["provider_task_created"] = False
+            acceptance["provider_execution_implemented"] = False
+            acceptance["provider_call_ledger_evidence_done"] = False
+            acceptance["provider_backed_small_pool_validation_done"] = False
+            acceptance["production_factor_test_validation_complete"] = False
+            factor_tests["acceptance_contract"] = acceptance
+        existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+        factor_tests["call_ledger"] = list(receipt.get("call_ledger") or []) + list(existing_test_ledger)
+        hub["factor_tests"] = factor_tests
+        hub["call_ledger"] = list(receipt.get("call_ledger") or []) + list(hub.get("call_ledger") if isinstance(hub.get("call_ledger"), list) else [])
+        warning = "Factor Test provider 小股票池 acceptance gate 已记录：本地授权闸门，不调用 provider，不代表生产验收完成。"
+        existing_warnings = hub.get("warnings") if isinstance(hub.get("warnings"), list) else []
+        hub["warnings"] = [warning] + [item for item in existing_warnings if item != warning]
+        hub["external_calls_triggered"] = False
+        hub["tushare_called"] = False
+        hub["deepseek_called"] = False
+        hub["github_called"] = False
+        hub["does_not_execute_trades"] = True
+        hub["does_not_modify_strategy_action"] = True
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+    except Exception as exc:
+        payload_safe["cache_write_error_safe"] = str(exc).splitlines()[0][:240]
+    updated = update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=str(receipt.get("status") or "factor_test_provider_small_pool_acceptance_gate_recorded"),
         call_ledger=list(receipt.get("call_ledger") or []),
     ) or task
     updated["payload_safe"] = payload_safe
@@ -9780,6 +10122,8 @@ def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
         return run_factor_test_provider_small_pool_acceptance_dry_run_task(payload)
     if task_type == "run_factor_test_provider_small_pool_execution_request":
         return run_factor_test_provider_small_pool_execution_request_task(payload)
+    if task_type == "run_factor_test_provider_small_pool_acceptance":
+        return run_factor_test_provider_small_pool_acceptance_task(payload)
     if task_type == "run_deepseek_factor_explanation":
         return run_factor_deepseek_explanation_task(payload)
     if task_type == "run_deepseek_provider_benchmark_scope_ticket":
