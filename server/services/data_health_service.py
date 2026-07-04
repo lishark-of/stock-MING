@@ -1131,6 +1131,82 @@ def _local_current_evidence_producer_packets_for_data_health() -> dict[str, dict
     return packets
 
 
+def _global_freshness_from_local_producer_packets(
+    packets: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    contexts: list[tuple[str, dict[str, Any], str, str, str]] = []
+    for spec in PRODUCER_CACHE_REFRESH_PACKET_SPECS:
+        packet_key = spec["packet_key"]
+        packet = packets.get(packet_key)
+        if not isinstance(packet, Mapping):
+            continue
+        candidates = [_as_dict(packet.get("data_freshness")), dict(packet)]
+        for candidate in candidates:
+            mapping = _canonical_data_freshness_context(
+                candidate,
+                allow_expected_date_fallback=False,
+                allow_timestamp_as_data_date=False,
+            )
+            expected_trade_date = _date_text_from_mapping(
+                mapping,
+                "expected_trade_date",
+                "expected_data_date",
+                "expected_date",
+            )
+            data_date = _date_text_from_mapping(
+                mapping,
+                "data_date",
+                "latest_data_date",
+                "latest_trade_date",
+                "trade_date",
+                "as_of_date",
+            )
+            state = _producer_freshness_status(mapping)
+            if expected_trade_date and data_date and state:
+                contexts.append((packet_key, mapping, expected_trade_date, data_date, state))
+                break
+
+    expected_packet_count = len(PRODUCER_CACHE_REFRESH_PACKET_SPECS)
+    if len(contexts) != expected_packet_count:
+        return {}
+
+    expected_dates = {item[2] for item in contexts}
+    data_dates = {item[3] for item in contexts}
+    states = {item[4] for item in contexts}
+    if len(expected_dates) != 1 or len(data_dates) != 1:
+        return {}
+
+    freshness_state = "fresh" if states == {"fresh"} else sorted(states)[0]
+    expected_trade_date = next(iter(expected_dates))
+    data_date = next(iter(data_dates))
+    source_packet_keys = [item[0] for item in contexts]
+    return {
+        "schema_version": "data_health_global_freshness_from_local_producer_packets.v1",
+        "state": freshness_state,
+        "status": freshness_state,
+        "freshness_state": freshness_state,
+        "expected_trade_date": expected_trade_date,
+        "expected_data_date": expected_trade_date,
+        "data_date": data_date,
+        "latest_data_date": data_date,
+        "date_matches_expected_trade_date": expected_trade_date == data_date,
+        "source": "local_sqlite_producer_cache_packets",
+        "source_packet_keys": source_packet_keys,
+        "source_packet_count": len(source_packet_keys),
+        "cache_only": True,
+        "read_only_snapshot_audit": True,
+        "does_not_refresh_provider": True,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def _mapping_at_path(root: Mapping[str, Any], path: tuple[str, ...]) -> dict[str, Any]:
     value: Any = root
     for key in path:
@@ -7276,6 +7352,11 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     if local_producer_packets:
         snapshot_map = dict(snapshot_map)
         snapshot_map.update(local_producer_packets)
+        existing_freshness = _as_dict(snapshot_map.get("data_freshness"))
+        if not _has_complete_producer_freshness_context(existing_freshness):
+            local_global_freshness = _global_freshness_from_local_producer_packets(local_producer_packets)
+            if local_global_freshness:
+                snapshot_map["data_freshness"] = local_global_freshness
 
     timeline_value = _first_value(snapshot_map, "data_health_timeline", "command_center_data_health_timeline")
     recovery_actions_value = _first_value(

@@ -28859,6 +28859,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         cache_response = self.client.get("/api/data-health/cache").json()
         packet = cache_response["data"]
+        self.assertEqual(
+            packet["data_freshness"]["schema_version"],
+            "data_health_global_freshness_from_local_producer_packets.v1",
+        )
+        self.assertEqual(packet["data_freshness"]["expected_trade_date"], "2026-06-15")
+        self.assertEqual(packet["data_freshness"]["data_date"], "2026-06-15")
+        self.assertEqual(packet["data_freshness"]["freshness_state"], "fresh")
+        self.assertFalse(packet["data_freshness"]["external_calls_triggered"])
+        self.assertFalse(packet["data_freshness"]["tushare_called"])
+        self.assertFalse(packet["data_freshness"]["deepseek_called"])
+        self.assertFalse(packet["data_freshness"]["github_called"])
+        producer_coverage = packet["current_evidence_producer_coverage_audit"]
+        self.assertEqual(
+            producer_coverage["status"],
+            "producer_freshness_coverage_ready_no_observed_blockers",
+        )
+        self.assertEqual(producer_coverage["blocked_producer_count"], 0)
+        self.assertEqual(packet["counts"]["current_evidence_producer_coverage_blocker_count"], 0)
         latest = packet["latest_producer_cache_refresh"]
         self.assertEqual(latest["schema_version"], "data_health_latest_producer_cache_refresh.v1")
         self.assertEqual(latest["status"], "latest_producer_cache_refresh_visible")
@@ -28912,7 +28930,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         producer_row = durable_rows["current_evidence_producer_coverage"]
         self.assertEqual(
             producer_row["current_status"],
-            "producer_cache_refresh_local_coverage_provider_pending",
+            "local_clear",
         )
         self.assertTrue(producer_row["producer_cache_refresh_direct_evidence_done"])
         self.assertTrue(producer_row["producer_cache_refresh_current_packet_context_done"])
@@ -28972,6 +28990,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         clear_task_statuses_for_tests(clear_persisted=True)
         replay_cache = self.client.get("/api/data-health/cache").json()["data"]
+        self.assertEqual(
+            replay_cache["data_freshness"]["schema_version"],
+            "data_health_global_freshness_from_local_producer_packets.v1",
+        )
+        self.assertEqual(
+            replay_cache["current_evidence_producer_coverage_audit"]["blocked_producer_count"],
+            0,
+        )
         replay_latest = replay_cache["latest_producer_cache_refresh"]
         replay_direct_evidence = replay_cache["producer_cache_refresh_direct_evidence"]
         replay_producer_row = {
@@ -29005,7 +29031,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg01["current_evidence_producer_coverage_complete"])
         self.assertEqual(
             ltg01["current_evidence_producer_coverage_status"],
-            "producer_cache_refresh_local_coverage_provider_pending",
+            "local_clear",
         )
         self.assertEqual(
             ltg01["current_evidence_producer_coverage_source"],
