@@ -1371,6 +1371,26 @@ def build_contract() -> dict[str, Any]:
             "Storage ordinary first screen must show local dataset/readiness/next-step status before audit tables while staying cache-only and non-executing.",
         ),
         _row(
+            "storage_strict_closeout_gate_is_user_visible_and_blocked",
+            "storageStrictCloseoutGateRows" in storage_page
+            and "LTG-05 storage strict closeout gate" in storage_page
+            and "strict_closeout_blocked" in storage_page
+            and "strict closeout remains blocked" in storage_page
+            and "durable physical artifact validation before strict closeout" in storage_page
+            and "physical_execution_authorization_required" in storage_page
+            and "future POST /api/storage/physical-execution with explicit authorization" in storage_page
+            and "LTG-12 交易隔离支撑" in storage_page
+            and "storage rows are evidence, not broker orders or strategy action mutation" in storage_page
+            and "GET cache / React render / local links do not create tasks" in storage_page
+            and "write Parquet" in storage_page
+            and "write manifest" in storage_page
+            and "delete artifacts" in storage_page
+            and "call providers/models/GitHub" in storage_page
+            and storage_page.find("LTG-05 storage strict closeout gate")
+            < storage_page.find("Storage production blocker audit"),
+            "Storage page must surface the LTG-05 strict closeout gate before detailed audit tables, keeping physical execution authorization, no-write, no-provider, no-trade, and LTG-12 boundaries visible.",
+        ),
+        _row(
             "script_is_local_no_provider_execution",
             "command_center_3_storage_contract.v1" in this_script
             and "local_storage_contract_no_physical_migration" in this_script

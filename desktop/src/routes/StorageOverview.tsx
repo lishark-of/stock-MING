@@ -489,6 +489,50 @@ export default function StorageOverview() {
       tone: "good" as const
     }
   ];
+  const storageStrictCloseoutGateRows = [
+    {
+      gate: "local_readable_storage",
+      user_visible_state: storageDatasetReadinessLabel,
+      current_verdict: "本地 catalog、DuckDB 查询、SQLite meta 和安全 call_ledger 可读",
+      can_close_ltg05_now: false,
+      strict_closeout_state: "strict closeout remains blocked",
+      evidence_required: "durable physical artifact validation before strict closeout",
+      external_calls_triggered: false,
+      writes_parquet: false,
+      writes_manifest: false,
+      deletes_artifacts: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true
+    },
+    {
+      gate: "physical_execution_authorization_required",
+      user_visible_state: storagePhysicalStatus,
+      current_verdict: storagePhysicalNextStep,
+      can_close_ltg05_now: false,
+      strict_closeout_state: "physical execution evidence required",
+      evidence_required: "future POST /api/storage/physical-execution with explicit authorization",
+      external_calls_triggered: false,
+      writes_parquet: false,
+      writes_manifest: false,
+      deletes_artifacts: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true
+    },
+    {
+      gate: "ltg12_trade_isolation_support",
+      user_visible_state: "LTG-12 交易隔离支撑",
+      current_verdict: "storage rows are evidence, not orders or strategy actions",
+      can_close_ltg05_now: false,
+      strict_closeout_state: "research client only",
+      evidence_required: "no broker/order/action mutation boundary remains visible",
+      external_calls_triggered: false,
+      writes_parquet: false,
+      writes_manifest: false,
+      deletes_artifacts: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true
+    }
+  ];
 
   return (
     <>
@@ -508,6 +552,15 @@ export default function StorageOverview() {
         </div>
         <p className="risk-note">首屏只汇总本地 dataset、SQLite meta、物理执行 ticket 状态和 Worker 支撑边界；刷新只读取本地 GET cache，链接只切换本地页面，不创建 task、不写文件、不调用 Tushare/DeepSeek/GitHub、不下单。</p>
       </div>
+
+      <PacketCard title="LTG-05 storage strict closeout gate" subtitle="纵切先让本地存储证据可读；production closeout 仍等待物理执行证据" status="strict_closeout_blocked">
+        <p>production_storage_complete: {String(storageProductionBlockerAudit.production_storage_complete ?? false)}</p>
+        <p>can_close_ltg05_now: false</p>
+        <p>next_authorized_storage_step: future POST /api/storage/physical-execution with explicit authorization</p>
+        <p>LTG-12 boundary: storage rows are evidence, not broker orders or strategy action mutation.</p>
+        <p>GET cache / React render / local links do not create tasks, write Parquet, write manifest, delete artifacts, call providers/models/GitHub, or trade.</p>
+        <DataLineageTable rows={storageStrictCloseoutGateRows} />
+      </PacketCard>
 
       <MetricGrid
         items={[
