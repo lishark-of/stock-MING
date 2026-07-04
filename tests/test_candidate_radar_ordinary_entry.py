@@ -92,6 +92,49 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("Top / Watch / Excluded 仍在候选池首位", summary_primary_slice)
         self.assertIn("TaskStatusPanel 和刷新本地回放保留；GET cache 只读", summary_primary_slice)
         self.assertIn("重复 P1/P2/P3 表、ledger 和补证路线在详情中", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar ordinary candidate review compass"', summary_primary_slice)
+        self.assertIn("候选复核顺序", summary_primary_slice)
+        self.assertIn("打开下一票雷达后先按 Top / Watch / Excluded 复核，再决定是否对单票点确认", summary_primary_slice)
+        self.assertIn("ordinaryCandidateReviewCompassItems", self.page)
+        self.assertIn("ordinaryCandidateReviewCompassRows", self.page)
+        self.assertIn('label: "先看哪组"', self.page)
+        self.assertIn('label: "怎么复核"', self.page)
+        self.assertIn('label: "看哪三列"', self.page)
+        self.assertIn('label: "安全边界"', self.page)
+        self.assertIn('aria-label="candidate radar ordinary candidate review compass actions"', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar ordinary candidate review compass rows"', summary_primary_slice)
+        self.assertIn("<summary>查看复核顺序明细</summary>", summary_primary_slice)
+        self.assertIn("复核顺序明细默认收起", summary_primary_slice)
+        self.assertIn("候选复核顺序只帮助用户看懂现有缓存", summary_primary_slice)
+        self.assertIn("不交易、不下单、不改交易策略，也不声称 LTG-13 已完成", summary_primary_slice)
+        compass_start = summary_primary_slice.index('aria-label="candidate radar ordinary candidate review compass"')
+        compass_end = summary_primary_slice.index(
+            'aria-label="candidate radar ordinary retirement readiness quick read"',
+            compass_start,
+        )
+        compass_slice = summary_primary_slice[compass_start:compass_end]
+        self.assertIn('href="#candidate-pool"', compass_slice)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', compass_slice)
+        self.assertIn('href="#factor"', compass_slice)
+        self.assertIn("DataLineageTable rows={ordinaryCandidateReviewCompassRows}", compass_slice)
+        self.assertIn("Top 只表示优先复核，不是买入指令", self.page)
+        self.assertIn("Watch 不是加仓或追买提示", self.page)
+        self.assertIn("Excluded 不会改交易策略，也不会删除旧证据", self.page)
+        self.assertNotIn("onClick=", compass_slice)
+        self.assertNotIn("launchQuickScan", compass_slice)
+        self.assertNotIn("postCandidateRadar", compass_slice)
+        self.assertLess(
+            summary_primary_slice.index('aria-label="candidate radar denoised first screen guide"'),
+            compass_start,
+        )
+        self.assertLess(
+            compass_start,
+            summary_primary_slice.index('aria-label="candidate radar ordinary retirement readiness quick read"'),
+        )
+        self.assertLess(
+            compass_start,
+            self.page.index('title="下一票候选池"'),
+        )
         self.assertIn('aria-label="candidate radar ordinary retirement readiness quick read"', summary_primary_slice)
         production_blocker_start = summary_primary_slice.index(
             'aria-label="candidate radar ordinary retirement readiness quick read"'

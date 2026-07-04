@@ -760,6 +760,18 @@ def build_contract() -> dict[str, Any]:
     browser_qa_runbook = _read_script(CANDIDATE_BROWSER_QA_RUNBOOK_PATH)
     motion_runner = _read_script("scripts/motion_browser_qa_runner.mjs")
     candidate_frontend = _read_script("desktop/src/routes/CandidateRadar.tsx")
+    candidate_compass_start = candidate_frontend.find(
+        'aria-label="candidate radar ordinary candidate review compass"'
+    )
+    candidate_compass_end = candidate_frontend.find(
+        'aria-label="candidate radar ordinary retirement readiness quick read"',
+        candidate_compass_start,
+    )
+    candidate_compass_slice = (
+        candidate_frontend[candidate_compass_start:candidate_compass_end]
+        if candidate_compass_start >= 0 and candidate_compass_end > candidate_compass_start
+        else ""
+    )
     production_stage_scope_manifest = _dict(
         production_review_packet.get("candidate_radar_production_stage_scope_manifest")
     )
@@ -2293,6 +2305,35 @@ def build_contract() -> dict[str, Any]:
             and "页面打开、输入、GET cache 和 React render 都不会自动外联" in candidate_frontend
             and "候选不是买入指令" in candidate_frontend,
             "Candidate Radar first screen must expose a real symbol input, confirm button, local readback refresh, and no-buy/no-render-provider boundary before optional scan/audit details.",
+        ),
+        _row(
+            "candidate_radar_review_compass_is_user_visible_and_read_only",
+            candidate_compass_start >= 0
+            and candidate_frontend.find('aria-label="candidate radar denoised first screen guide"')
+            < candidate_compass_start
+            and candidate_compass_start
+            < candidate_frontend.find('aria-label="candidate radar ordinary retirement readiness quick read"')
+            < candidate_frontend.find('title="下一票候选池"')
+            and "候选复核顺序" in candidate_compass_slice
+            and "打开下一票雷达后先按 Top / Watch / Excluded 复核，再决定是否对单票点确认" in candidate_compass_slice
+            and "ordinaryCandidateReviewCompassItems" in candidate_frontend
+            and "ordinaryCandidateReviewCompassRows" in candidate_frontend
+            and 'label: "先看哪组"' in candidate_frontend
+            and 'label: "怎么复核"' in candidate_frontend
+            and 'label: "看哪三列"' in candidate_frontend
+            and 'aria-label="candidate radar ordinary candidate review compass actions"' in candidate_compass_slice
+            and 'href="#candidate-pool"' in candidate_compass_slice
+            and 'href="#candidate-radar-search-quant-projection"' in candidate_compass_slice
+            and 'href="#factor"' in candidate_compass_slice
+            and "DataLineageTable rows={ordinaryCandidateReviewCompassRows}" in candidate_compass_slice
+            and "Top 只表示优先复核，不是买入指令" in candidate_frontend
+            and "Watch 不是加仓或追买提示" in candidate_frontend
+            and "候选复核顺序只帮助用户看懂现有缓存" in candidate_compass_slice
+            and "不交易、不下单、不改交易策略，也不声称 LTG-13 已完成" in candidate_compass_slice
+            and "onClick=" not in candidate_compass_slice
+            and "launchQuickScan" not in candidate_compass_slice
+            and "postCandidateRadar" not in candidate_compass_slice,
+            "Candidate Radar ordinary review compass must keep Top/Watch/Excluded review order visible before audit details while remaining a read-only no-buy/no-task UI slice.",
         ),
         _row(
             "search_quant_projection_activation_receipt_blocks_provider_model_promotion",

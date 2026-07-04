@@ -2595,6 +2595,64 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const ordinaryCandidateReviewCompassItems: MetricItem[] = [
+    {
+      label: "先看哪组",
+      value: ordinaryCandidateGroupLabel,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "怎么复核",
+      value: "先看 Top，再看 Watch，最后看 Excluded 和缺口；不要从工程审计表开始",
+      tone: "good"
+    },
+    {
+      label: "看哪三列",
+      value: "分组 / 来源 / 缺口",
+      tone: "good"
+    },
+    {
+      label: "来源状态",
+      value: coarseFineSourceLabel,
+      tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: quantProjectionDisplaySymbol ? "复核最近结果，必要时换一只票确认" : "需要单票解释时输入代码并确认",
+      tone: quantProjectionDisplaySymbol || quantProjectionP0Ready ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "候选只进入研究复核，不是买入、卖出或加仓指令",
+      tone: "good"
+    }
+  ];
+  const ordinaryCandidateReviewCompassRows = [
+    {
+      复核顺序: "1. Top",
+      用户看法: "优先看候选理由和来源是否清楚",
+      入口: "#candidate-pool",
+      边界: "Top 只表示优先复核，不是买入指令"
+    },
+    {
+      复核顺序: "2. Watch",
+      用户看法: "观察触发条件、缺口和是否等待更多证据",
+      入口: "#candidate-pool",
+      边界: "Watch 不是加仓或追买提示"
+    },
+    {
+      复核顺序: "3. Excluded",
+      用户看法: "先看排除原因，避免把缺数据误读成低风险",
+      入口: "#candidate-pool",
+      边界: "Excluded 不会改交易策略，也不会删除旧证据"
+    },
+    {
+      复核顺序: "4. 单票解释",
+      用户看法: "需要解释时输入股票代码并点击确认",
+      入口: "#candidate-radar-search-quant-projection",
+      边界: "输入保持静默；只有确认按钮创建本地任务"
+    }
+  ];
   const quantProjectionPostConfirmReplayContractReady =
     quantProjectionPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
   const quantProjectionPostConfirmReplaySequence = Array.isArray(quantProjectionPostConfirmReplayContract.readback_sequence)
@@ -3289,6 +3347,22 @@ export default function CandidateRadar() {
                 { label: "边界", value: "候选不是买入指令；不交易、不改交易策略", tone: "good" }
               ]}
             />
+          </div>
+          <div aria-label="candidate radar ordinary candidate review compass">
+            <h3>候选复核顺序</h3>
+            <p className="ordinary-status-note">打开下一票雷达后先按 Top / Watch / Excluded 复核，再决定是否对单票点确认；这张顺序条只读本地候选缓存，不创建 task、不调用 provider/model。</p>
+            <MetricGrid items={ordinaryCandidateReviewCompassItems} />
+            <div className="actions" aria-label="candidate radar ordinary candidate review compass actions">
+              <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from candidate review compass">看候选池</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入仍保持静默，确认按钮才创建本地任务" aria-label="open searched symbol confirm from candidate review compass">解释单票</a>
+              <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate review compass">量化推演</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar ordinary candidate review compass rows">
+              <summary>查看复核顺序明细</summary>
+              <p className="risk-note">复核顺序明细默认收起；展开后仍只读本地候选缓存，不启动快扫、不创建 provider/model/worker 任务。</p>
+              <DataLineageTable rows={ordinaryCandidateReviewCompassRows} />
+            </details>
+            <p className="risk-note">候选复核顺序只帮助用户看懂现有缓存：不交易、不下单、不改交易策略，也不声称 LTG-13 已完成。</p>
           </div>
           <div aria-label="candidate radar ordinary retirement readiness quick read">
             <h3>退旧雷达前还缺什么</h3>
