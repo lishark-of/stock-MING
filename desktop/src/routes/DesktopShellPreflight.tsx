@@ -486,6 +486,123 @@ export default function DesktopShellPreflight() {
           边界: "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker。"
         }
       ];
+  const desktopOpenReadinessMetrics = [
+    {
+      label: "今天入口",
+      value: desktopLauncherContract.launcher_executable === true ? "本地启动器" : "先检查启动器",
+      tone: desktopLauncherContract.launcher_executable === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "本页联通",
+      value: p0ConnectionReady ? "ready" : "check",
+      tone: p0ConnectionReady ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "生产包",
+      value: productionPackageReadinessReceipt.production_package_complete === true ? "complete" : "未完成",
+      tone: productionPackageReadinessReceipt.production_package_complete === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: ".app / DMG",
+      value: `${tauriBuildArtifact.packaged_app_bundle_detected === true ? "app yes" : "app missing"} / ${tauriBuildArtifact.distribution_dmg_detected === true ? "dmg yes" : "dmg missing"}`,
+      tone:
+        tauriBuildArtifact.packaged_app_bundle_detected === true &&
+        tauriBuildArtifact.distribution_dmg_detected === true
+          ? ("good" as const)
+          : ("warn" as const)
+    },
+    {
+      label: "交易边界",
+      value: "只投研",
+      tone: "good" as const
+    }
+  ];
+  const desktopOpenReadinessRows = [
+    {
+      层级: "现在可用",
+      当前状态: p0ConnectionReady ? "ready：本地 FastAPI / React/Vite 联通后进入今日作战台" : "check：先恢复四段联通",
+      用户动作: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
+      看到什么: p0ConnectionReady ? "今日作战台、股票确认卡、任务进度、本地结果回放。" : "桌面壳预检、失败段诊断和日志/端口指引。",
+      入口: p0ConnectionReady ? HOME_CONFIRM_HREF : "#desktop",
+      边界: "今天能打开的是本地启动器与 dev/preflight 路径；不是 production packaged app，也不是 release ready。"
+    },
+    {
+      层级: "确认投研入口",
+      当前状态: p0ConnectionReady ? "ready：可去首页确认股票代码" : "blocked：P0 未 ready 前不进入 P1",
+      用户动作: p0ConnectionReady ? "回首页输入股票代码；点击确认按钮后才创建 Tushare-first task。" : "先按 FastAPI / bootstrap / preflight / React 四段恢复。",
+      看到什么: "任务编号、TaskStatusPanel、cache / ledger / packet 回放。",
+      入口: p0ConnectionReady ? HOME_CONFIRM_HREF : "#desktop",
+      边界: "页面切换、搜索输入和本卡回读都不外联；确认按钮之前不创建 task。"
+    },
+    {
+      层级: "Tauri 本地合同",
+      当前状态: productionPackageReadinessReceipt.local_receipt_ready === true ? "ready：readiness receipt 可见" : "check：等待 readiness receipt",
+      用户动作: "只读查看生产打包缺口；不要把 release binary 检测当 packaged runtime QA。",
+      看到什么: "production runtime contract、release manifest、readiness receipt、durable evidence recipe。",
+      入口: "#desktop/desktop-package-readiness",
+      边界: "GET /api/desktop/preflight-cache 不运行 npm、cargo、Tauri，不打开 packaged app，不启动 FastAPI。"
+    },
+    {
+      层级: "生产包仍缺",
+      当前状态: productionPackageReadinessReceipt.production_package_complete === true ? "review：生产完成标记需要复核" : "blocked：显式 build / packaged runtime QA 未完成",
+      用户动作: "下一轮明确授权后再做 Tauri build、packaged app 打开、离线 UX、配置/日志、签名/公证验收。",
+      看到什么: ".app / DMG、backend startup runtime、packaged offline UX、config/log runtime path、signing/notarization 缺口。",
+      入口: "#desktop/desktop-package-readiness",
+      边界: "preflight、launcher、local receipt、release binary detection 都不能关闭 LTG-09。"
+    },
+    {
+      层级: "交易隔离",
+      当前状态: "ready：Command Center 3.0 仍是 research client",
+      用户动作: "只看本地投研证据，不接 broker，不创建 order endpoint，不批准真实交易。",
+      看到什么: "无买卖按钮、无 order API、无 strategy action mutation。",
+      入口: "#risk",
+      边界: "LTG-12 支撑边界：本页和 Tauri 打包路径都不执行真实交易。"
+    }
+  ];
+  const desktopPackageGapRows = [
+    {
+      缺口: "可打开不等于生产包",
+      当前状态: desktopLauncherContract.status === "local_one_click_launcher_ready" ? "本地启动器 ready" : "本地启动器待检查",
+      必须补证: "显式 Tauri dev/build log、packaged app launch QA、生产 promotion review。",
+      不能替代: "launcher / preflight / local receipt / release binary detection。",
+      边界: "不把本地打开路径误称为 production package complete。"
+    },
+    {
+      缺口: ".app / DMG artifact QA",
+      当前状态: `${tauriBuildArtifact.packaged_app_bundle_detected === true ? ".app detected" : ".app missing"}；${tauriBuildArtifact.distribution_dmg_detected === true ? "DMG detected" : "DMG missing"}`,
+      必须补证: ".app bundle 和 DMG artifact QA，或明确接受的等价发行物证据。",
+      不能替代: "release binary exists / binary executable。",
+      边界: "artifact detection 不是 packaged app launch QA。"
+    },
+    {
+      缺口: "后端启动策略 runtime QA",
+      当前状态: runtime.tauri_app_open_fastapi_autostart_enabled === true ? "声明 app-open local FastAPI autostart" : "manual / pending",
+      必须补证: "packaged runtime 中后端启动策略可重复验证。",
+      不能替代: "source contract 或 preflight cache。",
+      边界: "本页不启动 FastAPI，不证明 sidecar / manual backend 策略生产通过。"
+    },
+    {
+      缺口: "packaged backend-offline UX",
+      当前状态: backendOfflineUxContract.frontend_contract_ready === true ? "source contract ready" : "source review pending",
+      必须补证: "真实 packaged runtime 离线打开时的可读提示和恢复路径。",
+      不能替代: "BackendOfflineNotice 源码存在。",
+      边界: "源码合同不是 packaged runtime offline validation。"
+    },
+    {
+      缺口: "配置/日志运行时路径",
+      当前状态: productionRuntimeContract.config_paths_declared === true && productionRuntimeContract.log_paths_declared === true ? "path policy declared" : "path policy pending",
+      必须补证: "packaged runtime 下路径行为验收，且不暴露配置值、token/key 或日志敏感内容。",
+      不能替代: "config/log policy 文案。",
+      边界: "本页不读取 config values，不写 log files。"
+    },
+    {
+      缺口: "macOS 签名/公证",
+      当前状态: productionBlockerAudit.macos_signing_notarization_ready === true ? "ready" : "pending",
+      必须补证: "signing / notarization review 和发布决策。",
+      不能替代: "本地 build 或 release manifest。",
+      边界: "签名/公证未完成前不做 production package promotion。"
+    }
+  ];
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -600,6 +717,26 @@ export default function DesktopShellPreflight() {
           <DataLineageTable rows={p0ToP1OrdinaryHandoffRows} />
         </div>
         <p>普通用户只看四段联通状态；完整工程行表在下方开发 / 审计详情。</p>
+      </PacketCard>
+
+      <PacketCard title="桌面端打开路线" subtitle="今天能打开的是本地启动器，不是生产打包完成" status={p0ConnectionReady ? "local_open_ready_package_pending" : "local_open_check_package_pending"}>
+        <div aria-label="desktop open readiness compass">
+          <h3>桌面端现在怎么开</h3>
+          <p className="risk-note">这张卡只说明普通用户今天如何打开 3.0，以及 LTG-09 生产包还缺哪些直接证据；它不运行 build、不打开 packaged app、不创建 task。</p>
+          <MetricGrid items={desktopOpenReadinessMetrics} />
+          <DataLineageTable rows={desktopOpenReadinessRows} />
+          <div className="actions" aria-label="desktop open readiness actions">
+            <a href={p0ConnectionReady ? HOME_CONFIRM_HREF : "#desktop"} title="只切换本地页面；联通未 ready 时留在预检页" aria-label="open current desktop readiness primary route">{p0ConnectionReady ? "去首页确认股票代码" : "留在桌面预检恢复联通"}</a>
+            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from desktop open readiness">任务进度</a>
+            <a href="#desktop/desktop-package-readiness" title="跳到本页打包缺口清单；不运行 Tauri build" aria-label="open desktop package readiness gap">打包缺口</a>
+          </div>
+          <p className="risk-note">桌面端打开路线只读回放本地 health / preflight / receipt；搜索输入、页面跳转和打包缺口说明都不调用 Tushare、DeepSeek、GitHub，也不执行真实交易。</p>
+        </div>
+        <div id="desktop-package-readiness" aria-label="desktop package gap compass">
+          <h3>生产打包缺口</h3>
+          <p className="risk-note">LTG-09 还需要显式 Tauri build 与 packaged runtime QA；preflight、launcher、local receipt、release binary detection 都不能当 production package complete。</p>
+          <DataLineageTable rows={desktopPackageGapRows} />
+        </div>
       </PacketCard>
 
       <p className="risk-note">工程联通明细、Tauri/package QA、lineage 和 raw payload 已下沉到下方开发 / 审计详情；普通用户先按上面的下一步和联通状态处理。</p>

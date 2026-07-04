@@ -279,6 +279,31 @@ def build_contract() -> dict[str, Any]:
             "GET desktop preflight must remain read-only and must not run npm, cargo, Tauri, providers, models, GitHub, or trades.",
         ),
         _row(
+            "desktop_open_readiness_compass_is_user_visible_and_read_only",
+            "desktopOpenReadinessMetrics" in route_source
+            and "desktopOpenReadinessRows" in route_source
+            and "desktopPackageGapRows" in route_source
+            and 'aria-label="desktop open readiness compass"' in route_source
+            and 'aria-label="desktop package gap compass"' in route_source
+            and 'aria-label="desktop open readiness actions"' in route_source
+            and "桌面端打开路线" in route_source
+            and "今天能打开的是本地启动器，不是生产打包完成" in route_source
+            and "桌面端现在怎么开" in route_source
+            and "生产打包缺口" in route_source
+            and "#desktop/desktop-package-readiness" in route_source
+            and "它不运行 build、不打开 packaged app、不创建 task" in route_source
+            and "release binary detection 都不能当 production package complete" in route_source
+            and "GET /api/desktop/preflight-cache 不运行 npm、cargo、Tauri" in route_source
+            and "LTG-12 支撑边界" in route_source
+            and "不接 broker，不创建 order endpoint，不批准真实交易" in route_source
+            and "productionPackageReadinessReceipt.production_package_complete" in route_source
+            and "postTask" not in route_source
+            and "TUSHARE_TOKEN" not in route_source
+            and "DEEPSEEK_API_KEY" not in route_source
+            and "GITHUB_TOKEN" not in route_source,
+            "Desktop open readiness compass must make local-open versus production-package gaps visible without task creation, build/runtime execution, provider/model calls, GitHub calls, secrets, or trades.",
+        ),
+        _row(
             "production_runtime_contract_is_policy_only",
             runtime_contract.get("schema_version") == "tauri_production_runtime_contract.v1"
             and runtime_contract.get("status") == "runtime_contract_ready_packaged_validation_pending"
@@ -668,6 +693,8 @@ def build_contract() -> dict[str, Any]:
         "production_package_complete": False,
         "tauri_build_executed": False,
         "packaged_runtime_qa_done": False,
+        "desktop_open_readiness_compass_visible": "desktopOpenReadinessRows" in route_source,
+        "desktop_package_gap_compass_visible": "desktopPackageGapRows" in route_source,
         "signing_notarization_done": False,
         "production_package_readiness_receipt_ready": readiness_receipt.get("local_receipt_ready") is True,
         "production_package_readiness_receipt_status": readiness_receipt.get("status"),
