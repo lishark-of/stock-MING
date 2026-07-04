@@ -24,16 +24,27 @@ function percent(value: unknown) {
   return text(value);
 }
 
+function chainValue(row: Record<string, unknown>, key: string, fallback: unknown = "待验证") {
+  const match = rows(row.evidence_chain).find((item) => text(item.key, "") === key || text(item.label, "") === key);
+  return text(match?.value ?? fallback, "待验证");
+}
+
+function etfLabel(row: Record<string, unknown>) {
+  const name = text(row.name || row.etf_name || row.fund_name || row.code || row.etf_code);
+  const code = text(row.code || row.etf_code || row.ts_code, "");
+  return code ? `${name} (${code})` : name;
+}
+
 function etfRows(value: unknown, fallbackSource: string) {
-  return rows(value).slice(0, 8).map((row, index) => ({
-    序号: text(row.rank, String(index + 1)),
-    ETF: text(row.name || row.etf_name || row.fund_name || row.code || row.etf_code),
-    代码: text(row.code || row.etf_code || row.ts_code, ""),
-    分组: text(row.bucket || row.theme || row.category),
+  return rows(value).slice(0, 8).map((row) => ({
+    ETF: etfLabel(row),
     状态: text(row.status_label || row.state || row.action_state, "观察"),
-    理由: text(row.reason || row.evidence_chain_summary || row.risk_note, "等本地快照补充"),
     来源: text(row.source, fallbackSource),
-    边界: "不是买入或加融资指令"
+    理由: text(row.reason || row.trigger_condition || row.evidence_chain_summary || row.risk_note, "等本地快照补充"),
+    流动性: chainValue(row, "liquidity", row.liquidity_text),
+    重叠: chainValue(row, "overlap", row.holding_overlap || row.overlap_risk),
+    "现金/杠杆": chainValue(row, "margin_cash", row.margin_guardrail || row.cash_buffer),
+    边界: text(row.action_guardrail, "不是买入或加融资指令")
   }));
 }
 
@@ -212,7 +223,7 @@ export default function MarginEtf() {
 
       <PacketCard title="ETF 候选分组" subtitle="推荐、观察、回避和排除分开看" status={noEtfRows ? "waiting" : "ready"}>
         <DataLineageTable rows={allVisibleEtfRows} />
-        <p className="risk-note">推荐只表示优先复核；观察等待触发条件；回避/排除不能拿来追高。所有 ETF 行都不是买入、加仓或加融资指令。</p>
+        <p className="risk-note">每行先看来源、状态、理由、流动性、同类重叠、融资现金线（现金/杠杆）和边界。推荐只表示优先复核；观察等待触发条件；回避/排除不能拿来追高。所有 ETF 行都不是买入、加仓或加融资指令。</p>
       </PacketCard>
 
       <PacketCard title="融资现金线" subtitle="先决定能不能新增风险，再看 ETF 强弱" status={allowNewMargin ? "warn" : "safe"}>

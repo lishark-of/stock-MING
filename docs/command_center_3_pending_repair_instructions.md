@@ -37,6 +37,7 @@ Current interpretation:
 3. ETF / Margin is visible from the ordinary sidebar entrance.
 4. Both surfaces keep page-open, render, input, and GET cache read-only. Refresh buttons only re-read local packets.
 5. Home ordinary surface is verified as a first-card workflow: local connected, current symbol, recent result, next action, and status note stay above the collapsed Research Assist / Audit Details area.
+6. ETF / Margin candidate rows now surface source, row status, reason, liquidity, overlap, cash/leverage guardrail, and no-buy/no-margin boundary before audit details.
 
 ## Next Repair Goals
 
@@ -52,6 +53,7 @@ Current interpretation:
 
 3. ETF / Margin Evidence Quality
    - Goal: improve ETF candidate rows with source, liquidity, overlap, cash buffer, and leverage guardrail.
+   - Current local slice: visible rows now expose those fields before audit details; this is still an ordinary usability slice, not Streamlit fallback retirement or LTG strict closeout.
    - Boundary: ETF candidate is not a buy instruction; margin ratio is not permission to add leverage.
    - Exit check: each visible ETF row explains why it is recommended, watched, avoided, or excluded.
 
