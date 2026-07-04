@@ -59546,6 +59546,41 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertTrue(p3_factor["supporting_factor_test_lab_provider_validation_execution_request_ready"])
         self.assertFalse(p3_factor["supporting_factor_test_lab_provider_validation_creates_task_from_get"])
+        self.assertEqual(
+            p3_factor["local_receipt_status"],
+            "local_receipts_visible_provider_or_worker_evidence_pending",
+        )
+        self.assertEqual(
+            p3_factor["next_local_step"],
+            "future explicit provider-backed factor validation task",
+        )
+        self.assertFalse(p3_factor["next_local_step_ready_for_clean_receipt"])
+        self.assertEqual(
+            p3_factor["next_local_step_disabled_reason"],
+            "route_is_not_an_allowlisted_local_receipt_step",
+        )
+        self.assertIn(
+            "factor_small_pool_execution_request_ticket",
+            p3_factor["observed_local_receipt_steps"],
+        )
+        self.assertIn(
+            "factor_small_pool_execution_request_ticket",
+            p3_factor["ready_local_receipt_steps"],
+        )
+        self.assertTrue(p3_factor["future_handoff_ready_from_local_receipt"])
+        self.assertEqual(p3_factor["future_handoff_preview_row_count"], 1)
+        handoff_preview = p3_factor["future_handoff_preview_rows"][0]
+        self.assertEqual(handoff_preview["status"], "future_provider_handoff_preview_ready")
+        self.assertEqual(
+            handoff_preview["future_route"],
+            "future POST /api/factor-quant/provider-small-pool-acceptance",
+        )
+        self.assertEqual(
+            handoff_preview["future_task_type"],
+            "run_factor_test_provider_small_pool_acceptance",
+        )
+        self.assertTrue(handoff_preview["requires_separate_user_approved_provider_task"])
+        self.assertFalse(handoff_preview["external_calls_triggered"])
         self.assertFalse(handoff["provider_task_created"])
         self.assertFalse(handoff["provider_execution_implemented_by_handoff"])
         self.assertFalse(handoff["provider_call_ledger_evidence_done"])

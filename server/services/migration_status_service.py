@@ -5148,7 +5148,23 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
     source = ""
     source_packet_key = ""
     storage_source = "sqlite_meta_packet"
-    if queue_id == "p3_factor_universe_worker_batch_research":
+    if queue_id == "p3_factor_small_pool_provider_validation":
+        try:
+            from server.services import factor_service
+
+            packet = factor_service.read_factor_quant_cache()
+        except Exception:
+            packet = {}
+        packet_map = packet if isinstance(packet, dict) else {}
+        factor_tests = (
+            packet_map.get("factor_tests")
+            if isinstance(packet_map.get("factor_tests"), dict)
+            else {}
+        )
+        packet = factor_tests
+        source = "factor_quant_cache_packet"
+        source_packet_key = "command_center_factor_quant_hub_packet"
+    elif queue_id == "p3_factor_universe_worker_batch_research":
         try:
             from server.services import factor_service
 
