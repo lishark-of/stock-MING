@@ -434,6 +434,7 @@ def build_contract() -> dict[str, Any]:
     cache_durable_evidence_recipe = _dict(cache_factor_tests.get("durable_evidence_recipe"))
     cache_call_ledger = _list(cache_packet.get("call_ledger"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
+    route_source = _read_script("desktop/src/routes/FactorQuantHub.tsx")
     this_script = _read_script("scripts/factor_test_lab_contract.py")
 
     rows = [
@@ -927,6 +928,25 @@ def build_contract() -> dict[str, Any]:
             "GET factor cache must expose local dataset sample sufficiency as a boundary audit with its own local call ledger.",
         ),
         _row(
+            "frontend_provider_next_gate_is_read_only_and_user_visible",
+            "ordinaryFactorTestProviderNextGateItems" in route_source
+            and "ordinaryFactorTestProviderNextGateRows" in route_source
+            and 'id="factor-provider-small-pool-gate"' in route_source
+            and 'aria-label="stock quant ordinary factor provider next gate"' in route_source
+            and 'aria-label="stock quant ordinary factor provider next gate actions"' in route_source
+            and "LTG-03 下一步安全闸门" in route_source
+            and "真实 provider 小池样本必须另行授权" in route_source
+            and "本地 scope、execution request 和 acceptance gate 都只是 future provider-backed 小池任务的前置证据" in route_source
+            and "不触发小池预检、不创建 execution request、不提交 provider task、不调用 Tushare/DeepSeek/GitHub、不真实交易" in route_source
+            and "不接 broker、不创建 order、不改 strategy action" in route_source
+            and "acceptance gate 是本地门槛记录" in route_source
+            and "durable recipe 只列缺口" in route_source
+            and route_source.find("LTG-03 真实小池验收")
+            < route_source.find("LTG-03 下一步安全闸门")
+            < route_source.find("LTG-03 生产阶段清单"),
+            "Frontend must show an ordinary-user LTG-03 provider gate before production-stage details, while keeping it read-only, separate-authorized, no-provider, no-model, no-trade, and non-production-complete.",
+        ),
+        _row(
             "push_gate_runs_contract_after_tushare",
             "scripts/factor_test_lab_contract.py" in push_gate_script
             and "Factor Test Lab contract" in push_gate_script
@@ -982,6 +1002,7 @@ def build_contract() -> dict[str, Any]:
         "provider_small_pool_execution_recipe_ready": bool(provider_small_pool_execution_recipe.get("local_recipe_ready")),
         "factor_test_durable_evidence_recipe_ready": bool(durable_evidence_recipe.get("local_recipe_ready")),
         "factor_test_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
+        "frontend_provider_next_gate_visible": "ordinaryFactorTestProviderNextGateRows" in route_source,
         "row_count": len(rows),
         "factor_test_production_stage_scope_count": len(production_stage_scope_rows),
         "blocking_criterion_count": len(blockers),

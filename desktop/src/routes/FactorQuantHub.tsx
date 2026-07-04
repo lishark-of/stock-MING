@@ -1418,6 +1418,76 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
+  const ordinaryFactorTestProviderAcceptanceGateState =
+    factorTestProviderSmallPoolAcceptance.status
+      ? String(factorTestProviderSmallPoolAcceptance.status)
+      : "acceptance gate 未记录；真实 provider task 仍需单独授权";
+  const ordinaryFactorTestProviderNextGateItems: MetricItem[] = [
+    {
+      label: "当前可做",
+      value: factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true
+        ? "只读复核 scope-bound execution request"
+        : "先看本地 scope / execution request 是否齐备",
+      tone: factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true ? "good" : "warn"
+    },
+    {
+      label: "验收门槛",
+      value: ordinaryFactorTestProviderAcceptanceGateState,
+      tone: factorTestProviderSmallPoolAcceptance.provider_execution_implemented === true ? "bad" : "warn"
+    },
+    {
+      label: "真实 provider",
+      value: "必须另行授权 provider-backed 小池任务；本页不自动提交",
+      tone: "warn"
+    },
+    {
+      label: "生产结论",
+      value: factorTestProductionValidation.production_factor_test_validation_complete === true ? "complete" : "仍未完成",
+      tone: factorTestProductionValidation.production_factor_test_validation_complete === true ? "good" : "warn"
+    },
+    {
+      label: "交易隔离",
+      value: "Factor 分数只做研究复核；不接 broker、不创建 order、不改 strategy action",
+      tone: "good"
+    }
+  ];
+  const ordinaryFactorTestProviderNextGateRows = [
+    {
+      闸门: "1. 本地 scope ticket",
+      当前状态: factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true ? "ready：scope hash 可复核" : "check：scope ticket 不完整",
+      用户下一步: "只读复核 dry-run scope、symbols、window、metrics 和 credential presence boolean。",
+      证据: String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash_short ?? factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "missing_scope_hash"),
+      边界: "本地 dry-run 只生成范围票据；不调用 Tushare、不采集样本、不计算生产 IC。"
+    },
+    {
+      闸门: "2. 本地 execution request",
+      当前状态: factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true ? "ready：已绑定 latest scope" : "check：等待本地 execution request",
+      用户下一步: "只读确认 request 是否绑定 latest scope；不要把它当 provider task。",
+      证据: String(factorTestProviderSmallPoolExecutionRequest.status ?? "missing_execution_request"),
+      边界: "execution request 不创建 provider task、不调用 provider/model/GitHub、不证明 provider-backed validation。"
+    },
+    {
+      闸门: "3. acceptance gate",
+      当前状态: ordinaryFactorTestProviderAcceptanceGateState,
+      用户下一步: "只有在另行明确授权 provider-backed 小池任务后，才进入未来真实 provider 验收。",
+      证据: String(factorTestProviderSmallPoolAcceptance.scope ?? "local_factor_test_provider_small_pool_acceptance_gate_no_provider_execution"),
+      边界: "acceptance gate 是本地门槛记录；默认不授权 live provider、不采集样本、不生产 promotion。"
+    },
+    {
+      闸门: "4. 真实证据包",
+      当前状态: ordinaryFactorTestProviderEvidenceGap,
+      用户下一步: "需要真实 task id、safe provider call_ledger、样本行、多周期/rolling/cost/neutralization/bias 和 promotion review。",
+      证据: String(factorTestDurableEvidenceRecipe.status ?? "factor_test_durable_evidence_recipe_ready_production_pending"),
+      边界: "durable recipe 只列缺口；不能把 local light、storage rows、QA rows 或 ticket 当生产验收。"
+    },
+    {
+      闸门: "5. LTG-12 支撑边界",
+      当前状态: "research client only",
+      用户下一步: "只按研究证据复核支持/压制；不从 Factor 分数生成交易动作。",
+      证据: "no broker / no order endpoint / no strategy action mutation",
+      边界: "不真实交易、不下单、不接 broker、不创建 order endpoint。"
+    }
+  ];
   const ordinaryQuantPrimarySummaryItems: MetricItem[] = [
     { label: "下一步", value: ordinaryQuantNextClick },
     { label: "数据链", value: ordinaryQuantTushareFirstDataChainLabel },
@@ -1530,6 +1600,18 @@ export default function FactorQuantHub() {
           <p className="ordinary-status-note" aria-label="stock quant factor small pool degraded sentence" aria-live="polite">{ordinaryFactorTestProviderCurrentBlockerSentence}</p>
           <MetricGrid items={ordinaryFactorTestProviderSmallPoolItems} />
           <p className="risk-note">{ordinaryFactorTestProviderBoundary}；本地 light observations、本地 scope 或执行请求都不能当作生产级 Factor Test 验收完成。</p>
+        </div>
+        <div id="factor-provider-small-pool-gate" aria-label="stock quant ordinary factor provider next gate">
+          <h3>LTG-03 下一步安全闸门</h3>
+          <p className="ordinary-status-note">先按这张闸门表确认：本地 scope、execution request 和 acceptance gate 都只是 future provider-backed 小池任务的前置证据；真实 provider 小池样本必须另行授权。</p>
+          <MetricGrid items={ordinaryFactorTestProviderNextGateItems} />
+          <DataLineageTable rows={ordinaryFactorTestProviderNextGateRows} />
+          <div className="actions" aria-label="stock quant ordinary factor provider next gate actions">
+            <a href="#tasks" title="切换到任务目录；只读查看本地 task / receipt 状态" aria-label="open task catalog from factor provider gate">任务目录</a>
+            <a href="#audit" title="切换到调用审计；只读查看 call ledger 和外联边界" aria-label="open audit from factor provider gate">调用审计</a>
+            <a href="#factor-score" title="回到支持/压制摘要；只读 Factor cache" aria-label="return factor score from provider gate">支持/压制</a>
+          </div>
+          <p className="risk-note">这张闸门只读 Factor cache 和本地 ticket；不触发小池预检、不创建 execution request、不提交 provider task、不调用 Tushare/DeepSeek/GitHub、不真实交易。</p>
         </div>
         <div aria-label="stock quant ordinary factor test production stage scope">
           <h3>LTG-03 生产阶段清单</h3>
