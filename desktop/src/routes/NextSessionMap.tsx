@@ -474,6 +474,55 @@ export default function NextSessionMap() {
   const nextSessionLatestCandidateReadableSentence = candidateRadarReadableResultReady
     ? `${candidateRadarConfirmedSymbolLabel}；P3 结论：${candidateRadarReadableResult}；${chartSummary.has_drawable_data === true ? "完整图谱已可读" : "完整图谱等待手动生成"}；下一步：${nextSessionReadableChartReviewOrder}。`
     : `等待下一票雷达确认标的；下一步：${nextSessionReadableChartReviewOrder}。`;
+  const nextSessionLiveLightModeLabel = chartSummary.has_drawable_data === true
+    ? "cache-live: 本地次日图谱可读"
+    : candidateRadarReadableResultReady
+      ? "handoff-light: 上游搜票结论可读，完整图谱待按钮生成"
+      : packet.status === "cache_missing"
+        ? "degraded-light: 暂无本地 cache，只显示等待和回流入口"
+        : "cache-check: 等待可绘制图谱，先看本地 cache 状态";
+  const nextSessionLiveLightNextStep = chartSummary.has_drawable_data === true
+    ? "看图表路径、参考线和 operation_zones"
+    : candidateRadarReadableResultReady
+      ? "确认上游结论和 P2 三面后，再手动生成完整图谱"
+      : "回下一票雷达输入股票代码并点击确认";
+  const nextSessionLiveLightEvidenceItems: MetricItem[] = [
+    {
+      label: "运行模式",
+      value: nextSessionLiveLightModeLabel,
+      tone: chartSummary.has_drawable_data === true ? "good" : candidateRadarReadableResultReady ? "warn" : "neutral"
+    },
+    {
+      label: "数据层",
+      value: nextSessionTushareSourceLabel,
+      tone: chartSummary.uses_real_daily_close === true || packetCandidateRadarProviderSuccessCount > 0 ? "good" : "warn"
+    },
+    {
+      label: "证据层",
+      value: `${nextSessionCacheSourceLabel} / ${nextSessionReplayOrigin}`,
+      tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn"
+    },
+    {
+      label: "模型层",
+      value: `DeepSeek 不在首屏执行；${nextSessionP5GovernanceLabel}`,
+      tone: "good"
+    },
+    {
+      label: "缺口层",
+      value: nextSessionMissingEvidence,
+      tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn"
+    },
+    {
+      label: "动作层",
+      value: "仅供研究；不下单、不改 operation_zones 或 strategy action",
+      tone: "good"
+    },
+    {
+      label: "轻量下一步",
+      value: nextSessionLiveLightNextStep,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    }
+  ];
   const nextSessionGeneratePayload = {
     schema_version: "next_session_confirmed_symbol_generate_payload.v1",
     source: "next_session_map_manual_generate_button",
@@ -1127,6 +1176,11 @@ export default function NextSessionMap() {
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session first screen">换标的</a>
         </div>
         <p className="risk-note">首屏只汇总当前股票、最近结果、下一步、证据缺口和 operation_zones 边界；查看缓存只读本地 GET cache，链接只切换本地锚点，不创建 task、不调用 Tushare/DeepSeek、不下单。</p>
+      </div>
+      <div aria-label="next session live light evidence layers">
+        <h3>运行模式分层</h3>
+        <MetricGrid items={nextSessionLiveLightEvidenceItems} />
+        <p className="risk-note">轻量实时证据只读本地 cache、CandidateRadar 回放和任务索引；不会因为页面打开、React render 或本地链接调用 Tushare/DeepSeek/GitHub，也不证明 LTG-08 production replacement complete。</p>
       </div>
       <div aria-label="next session ordinary review compass">
         <h3>次日图谱复核顺序</h3>
