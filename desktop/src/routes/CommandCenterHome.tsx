@@ -70,6 +70,15 @@ function dailyCommandReadableEntry(value: unknown) {
   return known[text] ?? text;
 }
 
+function homeRows(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
+}
+
+function homeText(value: unknown, fallback = "--") {
+  if (value === undefined || value === null || value === "") return fallback;
+  return String(value);
+}
+
 export default function CommandCenterHome() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
   const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -332,6 +341,10 @@ export default function CommandCenterHome() {
   const workerRuntimeState = workerRuntime.runtime as Record<string, unknown> | undefined;
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
+  const candidateCoarseFineScreening = (candidates.coarse_fine_screening_contract as Record<string, unknown> | undefined) ?? {};
+  const candidateTopWatchExcludedRows = homeRows(candidates.top_watch_excluded_group_rows);
+  const candidateHomeRows = homeRows(candidates.candidate_rows);
+  const candidateScanExecutionSummary = (candidates.scan_execution_summary as Record<string, unknown> | undefined) ?? {};
   const candidatePolicy = (candidates.policy as Record<string, unknown> | undefined) ?? {};
   const candidateQuantReceipt = (candidates.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const candidateQuantSmallDataWriteback = (candidates.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
@@ -2772,6 +2785,129 @@ export default function CommandCenterHome() {
       tone: "good"
     }
   ];
+  const candidateHomeGroupCount = (group: string) =>
+    candidateTopWatchExcludedRows.filter((row) => String(row.group ?? "").toLowerCase() === group).length;
+  const ordinaryHomeCandidateTopCount =
+    Number(candidateCoarseFineScreening.top_count ?? 0) ||
+    candidateHomeGroupCount("top") ||
+    candidateHomeRows.length ||
+    Number(candidateCounts?.candidate_count ?? 0);
+  const ordinaryHomeCandidateWatchCount =
+    Number(candidateCoarseFineScreening.watch_count ?? 0) ||
+    candidateHomeGroupCount("watch");
+  const ordinaryHomeCandidateExcludedCount =
+    Number(candidateCoarseFineScreening.excluded_count ?? 0) ||
+    candidateHomeGroupCount("excluded");
+  const ordinaryHomeCandidateGroupLabel =
+    `Top ${String(ordinaryHomeCandidateTopCount)} / Watch ${String(ordinaryHomeCandidateWatchCount)} / Excluded ${String(ordinaryHomeCandidateExcludedCount)}`;
+  const ordinaryHomeCandidateReadable =
+    ordinaryHomeCandidateTopCount + ordinaryHomeCandidateWatchCount + ordinaryHomeCandidateExcludedCount > 0;
+  const ordinaryHomeCandidateGapCount =
+    Number(candidateCoarseFineScreening.gap_visible_count ?? 0) ||
+    candidateTopWatchExcludedRows.filter((row) =>
+      row.manual_review_required === true ||
+      Number(row.data_gap_count ?? 0) > 0 ||
+      Boolean(String(row.gap_summary ?? "").trim())
+    ).length ||
+    Number(candidateCounts?.missing_provider_data_group_count ?? 0);
+  const ordinaryHomeCandidateSourceMode = String(
+    candidateCoarseFineScreening.source_mode ??
+      candidateScanExecutionSummary.cache_source ??
+      (ordinaryHomeCandidateReadable ? "cache_only" : "empty_cache")
+  );
+  const ordinaryHomeCandidateSourceLabel =
+    ordinaryHomeCandidateSourceMode === "tushare_backed_sample"
+      ? "真实数据样本已回放；仍需看补证缺口"
+      : ordinaryHomeCandidateSourceMode === "local_fallback"
+        ? "本地 fallback：来自候选缓存或按钮门控记录"
+        : ordinaryHomeCandidateSourceMode === "cache_only"
+          ? "cache-only：只读本地候选缓存"
+          : ordinaryHomeCandidateReadable
+            ? `本地来源：${ordinaryHomeCandidateSourceMode}`
+            : "empty cache：暂无候选";
+  const ordinaryHomeCandidateGapLabel = ordinaryHomeCandidateGapCount
+    ? `可见缺口 ${String(ordinaryHomeCandidateGapCount)} 项；先复核来源、理由和缺口`
+    : "未标记候选池缺口";
+  const ordinaryHomeCandidateCacheReadable = dailyCommandHealthOk || Boolean(candidates.status);
+  const ordinaryHomeCandidateStatus = !ordinaryHomeCandidateCacheReadable
+    ? "p0_check"
+    : ordinaryHomeCandidateReadable
+      ? ordinaryHomeCandidateGapCount || Number(candidateCounts?.degraded_mode_active_count ?? 0)
+        ? "readable_degraded"
+        : "readable"
+      : "empty_cache";
+  const ordinaryHomeCandidateReadableSentence =
+    ordinaryHomeCandidateStatus === "readable"
+      ? `下一票候选池可读：${ordinaryHomeCandidateGroupLabel}；先按分组复核，不当买入指令。`
+      : ordinaryHomeCandidateStatus === "readable_degraded"
+        ? `下一票候选池可读但有缺口：${ordinaryHomeCandidateGapLabel}；先复核来源和理由。`
+        : ordinaryHomeCandidateStatus === "empty_cache"
+          ? "下一票候选池暂无候选；先确认股票或打开候选池查看缺口。"
+          : "下一票雷达缓存未完全接上；先恢复本地 FastAPI / cache。";
+  const ordinaryHomeCandidateNext = ordinaryHomeCandidateStatus === "p0_check"
+    ? "打开一键启动预检，恢复本地联通"
+    : ordinaryHomeCandidateReadable
+      ? "打开候选池，看 Top / Watch / Excluded，再决定是否对单票确认"
+      : "先确认股票代码，或打开候选池查看空缓存原因";
+  const ordinaryHomeCandidatePrimaryHref = ordinaryHomeCandidateStatus === "p0_check"
+    ? "#desktop"
+    : ordinaryHomeCandidateReadable
+      ? "#candidates/candidate-pool"
+      : dailyCommandCandidateConfirmHref;
+  const ordinaryHomeCandidatePrimaryLabel = ordinaryHomeCandidateStatus === "p0_check"
+    ? "恢复本地连接"
+    : ordinaryHomeCandidateReadable
+      ? "看候选池"
+      : "先确认股票";
+  const ordinaryHomeCandidatePreviewRows = (candidateTopWatchExcludedRows.length ? candidateTopWatchExcludedRows : candidateHomeRows)
+    .slice(0, 5)
+    .map((row, index) => ({
+      序号: homeText(row.display_rank ?? row.rank, String(index + 1)),
+      分组: homeText(row.group, "Top"),
+      标的: homeText(row.ticker),
+      名称: homeText(row.name),
+      理由: homeText(row.reason ?? row.evidence_chain_summary, "等待候选理由"),
+      来源: homeText(row.data_source ?? row.source ?? row.source_mode, ordinaryHomeCandidateSourceLabel),
+      缺口: homeText(row.gap_summary, ordinaryHomeCandidateGapLabel),
+      边界: "只供研究复核，不生成买入、卖出、加仓或融资指令"
+    }));
+  const ordinaryHomeCandidateRadarItems: MetricItem[] = [
+    {
+      label: "候选结论",
+      value: ordinaryHomeCandidateReadableSentence,
+      tone: ordinaryHomeCandidateStatus === "readable" ? "good" : ordinaryHomeCandidateStatus === "p0_check" ? "neutral" : "warn"
+    },
+    {
+      label: "Top/Watch/Excluded",
+      value: ordinaryHomeCandidateGroupLabel,
+      tone: ordinaryHomeCandidateReadable ? "good" : "warn"
+    },
+    {
+      label: "来源",
+      value: ordinaryHomeCandidateSourceLabel,
+      tone: ordinaryHomeCandidateReadable ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: ordinaryHomeCandidateGapLabel,
+      tone: ordinaryHomeCandidateGapCount ? "warn" : "good"
+    },
+    {
+      label: "现在做什么",
+      value: ordinaryHomeCandidateNext,
+      tone: ordinaryHomeCandidateCacheReadable ? "good" : "warn"
+    },
+    {
+      label: "ETF/融资提醒",
+      value: "涉及 ETF、仓位或融资预算时，转去 ETF / 融资页看风险线",
+      tone: "good"
+    },
+    {
+      label: "非买入边界",
+      value: "候选只表示复核顺序；不是买入、卖出、加仓或融资指令",
+      tone: "good"
+    }
+  ];
   const dailyCommandP4OrdinaryFirstItems: MetricItem[] = [
     { label: "默认视图", value: "P0 联通、P1 确认、P2 三面、P3 结果先显示", tone: "good" },
     { label: "工程审计", value: "默认折叠在 P4-P6 补证 / 审计路径和开发详情", tone: "good" },
@@ -3254,6 +3390,23 @@ export default function CommandCenterHome() {
             <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from ordinary home route map">ETF/融资风险</a>
             <a href="#next/next-session-chart" title="切换到次日图谱；只读本地图谱" aria-label="open next session from ordinary home route map">次日图谱</a>
           </div>
+        </div>
+        <div aria-label="ordinary home candidate radar visible slice">
+          <h3>下一票雷达速读</h3>
+          <p className="ordinary-status-note" aria-label="ordinary home candidate radar readable sentence" aria-live="polite">{ordinaryHomeCandidateReadableSentence}</p>
+          <MetricGrid items={ordinaryHomeCandidateRadarItems} />
+          <div className="actions" aria-label="ordinary home candidate radar visible actions">
+            <a href={ordinaryHomeCandidatePrimaryHref} title="按当前候选状态切换到最该看的本地入口；不会创建新任务" aria-label="open primary candidate radar action from ordinary home">{ordinaryHomeCandidatePrimaryLabel}</a>
+            <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate confirm from ordinary home radar slice">确认股票</a>
+            <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from ordinary home radar slice">ETF/融资风险</a>
+            <a href="#next/next-session-chart" title="切换到次日图谱；只读本地图谱" aria-label="open next session from ordinary home radar slice">次日图谱</a>
+          </div>
+          <details className="developer-audit-details" aria-label="ordinary home candidate radar preview rows">
+            <summary>查看候选预览</summary>
+            <p className="risk-note">候选预览只读 CandidateRadar cache 的 Top / Watch / Excluded 或候选行；默认收起，避免首页变成雷达明细表。</p>
+            <DataLineageTable rows={ordinaryHomeCandidatePreviewRows} />
+          </details>
+          <p className="risk-note">这张速读只读下一票雷达本地缓存；页面打开和搜索输入不创建任务、不调用外部数据或模型服务、不交易、不改写策略。</p>
         </div>
         <div aria-label="ordinary home first screen post confirm status">
           <h3>确认后状态</h3>
