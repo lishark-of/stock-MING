@@ -3478,6 +3478,8 @@ export default function CommandCenterHome() {
           <MetricGrid items={ordinaryHomeAppVisibleNowItems} />
           <div className="actions" aria-label="ordinary home app visible now local actions">
             <a href={dailyCommandHomeConfirmHref} title="跳到首页确认股票代码；输入保持静默" aria-label="open home confirm from visible now summary">确认股票</a>
+            <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate radar from home visible now summary">下一票雷达</a>
+            <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from home visible now summary">ETF/融资风险</a>
             <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from home visible now summary">股票量化推演</a>
             <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next session from home visible now summary">次日图谱</a>
           </div>
