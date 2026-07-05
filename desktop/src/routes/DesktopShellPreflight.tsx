@@ -470,6 +470,36 @@ export default function DesktopShellPreflight() {
       tone: Number(frontendBackendAutoLinkContract.candidate_count ?? apiBaseInfo.api_base_candidate_count ?? 0) > 0 ? ("good" as const) : ("warn" as const)
     }
   ];
+  const desktopAppVisibleNowSentence =
+    p0ConnectionReady
+      ? "打开 app 后先看到本地四段联通已可用；下一步回首页确认股票代码，需要详情再进下一票雷达，任务进度和系统健康都可从本页直达。"
+      : "打开 app 后先看到一键启动预检和四段联通诊断；未 ready 时留在本页按失败段恢复，ready 后再回首页确认股票代码。";
+  const desktopAppVisibleNowItems = [
+    {
+      label: "现在状态",
+      value: p0ConnectionReady ? "本地 app 可继续投研" : "先恢复本地联通",
+      tone: p0ConnectionReady ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "第一步",
+      value: p0ConnectionReady ? "首页确认股票代码" : "看 FastAPI / bootstrap / preflight / React 四段",
+      tone: p0ConnectionReady ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "结果在哪",
+      value: "任务进度、下一票雷达、股票量化推演、次日图谱"
+    },
+    {
+      label: "打包状态",
+      value: "本地可打开；生产包仍待 QA",
+      tone: "warn" as const
+    },
+    {
+      label: "安全边界",
+      value: "链接只切页，不启动服务、不创建 task、不外联、不交易",
+      tone: "good" as const
+    }
+  ];
   const p0OrdinaryPrimaryActionHref = p0ConnectionReady ? HOME_CONFIRM_HREF : "#desktop";
   const p0OrdinaryPrimaryActionLabel = p0ConnectionReady ? "去首页确认股票代码" : "留在一键启动预检排障";
   const p0OrdinaryPrimaryActionBoundary = p0ConnectionReady
@@ -845,6 +875,18 @@ export default function DesktopShellPreflight() {
         <div aria-label="p0 ordinary one click readiness">
           <h3>一键启动就绪</h3>
           <MetricGrid items={p0StartupReadyMetrics} />
+        </div>
+        <div aria-label="desktop app visible now summary">
+          <h3>打开 app 能看到什么</h3>
+          <p className="ordinary-status-note" aria-label="desktop app visible now sentence">{desktopAppVisibleNowSentence}</p>
+          <MetricGrid items={desktopAppVisibleNowItems} />
+          <div className="actions" aria-label="desktop app visible now local actions">
+            <a href={p0ConnectionReady ? HOME_CONFIRM_HREF : "#desktop"} title="只切换本地页面；未联通时留在预检页" aria-label="open primary route from desktop app visible now">{p0ConnectionReady ? "首页确认股票" : "留在预检恢复"}</a>
+            <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；输入保持静默" aria-label="open candidate confirm from desktop app visible now">下一票雷达</a>
+            <a href="#tasks" title="切换到任务目录；只读查看本地任务进度" aria-label="open tasks from desktop app visible now">任务进度</a>
+            <a href="#health" title="切换到系统健康；只读查看本地状态" aria-label="open health from desktop app visible now">系统健康</a>
+          </div>
+          <p className="risk-note">这些入口只在 React/Tauri 内切换页面或锚点；GET preflight 和 React render 不启动 FastAPI/Vite、不运行 npm/cargo/Tauri、不创建 task、不读取配置值、不写日志、不调用外部数据或模型、不执行真实交易。</p>
         </div>
         <div aria-label="p0 current runtime readback">
           <h3>当前页面实时回读</h3>
