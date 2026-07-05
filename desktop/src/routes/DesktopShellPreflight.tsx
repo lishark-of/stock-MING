@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { getDesktopPreflightCache, getHealth } from "../api/client";
+import { getDesktopPreflightCache, getHealth, postTask, type TaskCreationEnvelope } from "../api/client";
 import BackendOfflineNotice from "../components/BackendOfflineNotice";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
+import TaskStatusPanel from "../components/TaskStatusPanel";
 
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
 const HOME_CONFIRM_HREF = "#home";
@@ -20,17 +22,31 @@ export default function DesktopShellPreflight() {
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
   const [error, setError] = useState("");
+  const [taskId, setTaskId] = useState("");
+  const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
 
-  useEffect(() => {
+  const refreshHealth = () =>
     void getHealth().then((res) => {
       setHealth(res.data);
     });
+  const refreshCache = () =>
     void getDesktopPreflightCache().then((res) => {
       setCache(res.data);
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
       setError(res.error ?? "");
     });
+
+  const launchDesktopPackageReview = (path: string, payload: Record<string, unknown>) =>
+    void postTask(path, payload).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+      refreshCache();
+    });
+
+  useEffect(() => {
+    refreshHealth();
+    refreshCache();
   }, []);
 
   const runtime = (cache.runtime as Record<string, unknown> | undefined) ?? {};
@@ -50,6 +66,13 @@ export default function DesktopShellPreflight() {
   const tauriReleaseManifestContract = (cache.tauri_release_manifest_contract as Record<string, unknown> | undefined) ?? {};
   const productionPackageReadinessReceipt = (cache.production_package_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const tauriPackageDurableEvidenceRecipe = (cache.tauri_package_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
+  const tauriPackageArtifactReview = (cache.tauri_package_artifact_review_contract as Record<string, unknown> | undefined) ?? {};
+  const tauriPackagedRuntimeLaunchReview = (cache.tauri_packaged_runtime_launch_review_contract as Record<string, unknown> | undefined) ?? {};
+  const tauriBackendOfflinePackagedUxReview = (cache.tauri_backend_offline_packaged_ux_review_contract as Record<string, unknown> | undefined) ?? {};
+  const tauriBackendStartupRuntimeReview = (cache.tauri_backend_startup_runtime_review_contract as Record<string, unknown> | undefined) ?? {};
+  const tauriConfigLogRuntimeReview = (cache.tauri_config_log_runtime_review_contract as Record<string, unknown> | undefined) ?? {};
+  const tauriSigningNotarizationReview = (cache.tauri_signing_notarization_review_contract as Record<string, unknown> | undefined) ?? {};
+  const tauriProductionPackagePromotionReview = (cache.tauri_production_package_promotion_review_contract as Record<string, unknown> | undefined) ?? {};
   const oneClickConnectionRows = rows(cache.one_click_connection_rows);
   const frontendBackendAutoLinkRows = rows(cache.frontend_backend_auto_link_rows);
   const p0LocalConnectionRows = rows(cache.p0_local_connection_rows);
@@ -603,6 +626,123 @@ export default function DesktopShellPreflight() {
       边界: "签名/公证未完成前不做 production package promotion。"
     }
   ];
+  const desktopPackageEvidenceFactoryItems = [
+    {
+      label: "release artifact",
+      value: String(tauriPackageArtifactReview.status ?? "pending local review"),
+      tone: tauriPackageArtifactReview.local_release_binary_artifact_review_ready === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "packaged launch",
+      value: String(tauriPackagedRuntimeLaunchReview.status ?? "pending explicit smoke"),
+      tone: tauriPackagedRuntimeLaunchReview.packaged_app_launch_qa_done === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "offline UX",
+      value: String(tauriBackendOfflinePackagedUxReview.status ?? "pending packaged UX"),
+      tone: tauriBackendOfflinePackagedUxReview.backend_offline_packaged_ux_verified === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "backend runtime",
+      value: String(tauriBackendStartupRuntimeReview.status ?? "pending runtime QA"),
+      tone: tauriBackendStartupRuntimeReview.backend_startup_runtime_validated === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "config/log",
+      value: String(tauriConfigLogRuntimeReview.status ?? "pending path review"),
+      tone: tauriConfigLogRuntimeReview.config_log_runtime_paths_validated === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "signing",
+      value: String(tauriSigningNotarizationReview.status ?? "pending signing review"),
+      tone: tauriSigningNotarizationReview.signing_notarization_done === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "promotion",
+      value: String(tauriProductionPackagePromotionReview.status ?? "blocked review pending"),
+      tone: tauriProductionPackagePromotionReview.durable_promotion_ready === true ? ("good" as const) : ("warn" as const)
+    }
+  ];
+  const reviewTauriPackageArtifact = () =>
+    launchDesktopPackageReview("/api/desktop/tauri-package-artifact-review", {
+      review_scope: "desktop_first_screen_release_binary_artifact_review",
+      explicit_tauri_build_completed: false,
+      build_command: "",
+      production_package_complete: false
+    });
+  const reviewTauriPackagedLaunch = () =>
+    launchDesktopPackageReview("/api/desktop/tauri-packaged-runtime-launch-review", {
+      review_scope: "desktop_first_screen_packaged_launch_pending_review",
+      explicit_packaged_app_launch_completed: false,
+      app_process_observed_after_launch: false,
+      launch_command: "",
+      observed_process_name: "",
+      production_package_complete: false
+    });
+  const reviewTauriOfflineUx = () =>
+    launchDesktopPackageReview("/api/desktop/tauri-backend-offline-packaged-ux-review", {
+      review_scope: "desktop_first_screen_backend_offline_packaged_ux_pending_review",
+      explicit_packaged_app_launch_completed: false,
+      backend_was_offline_during_review: false,
+      offline_notice_observed: false,
+      fastapi_guidance_visible: false,
+      local_only_boundary_visible: true,
+      no_provider_model_github_trade_visible: true,
+      screenshot_sha256: "",
+      observed_route: "desktop_first_screen_pending_packaged_offline_ux_review",
+      production_package_complete: false
+    });
+  const reviewTauriBackendStartup = () =>
+    launchDesktopPackageReview("/api/desktop/tauri-backend-startup-runtime-review", {
+      review_scope: "desktop_first_screen_backend_startup_runtime_pending_review",
+      explicit_packaged_app_launch_completed: false,
+      manual_fastapi_started_before_review: false,
+      fastapi_health_observed_ok: false,
+      packaged_app_fastapi_online_observed: false,
+      api_base_observed: "",
+      health_status_observed: "",
+      screenshot_sha256: "",
+      production_package_complete: false
+    });
+  const reviewTauriConfigLog = () =>
+    launchDesktopPackageReview("/api/desktop/tauri-config-log-runtime-review", {
+      review_scope: "desktop_first_screen_config_log_path_policy_review",
+      explicit_packaged_app_launch_completed: false,
+      path_policy_panel_visible: true,
+      config_file_policy_visible: true,
+      log_file_policy_visible: true,
+      config_file_policy_observed: String(productionRuntimeContract.config_file_policy ?? "~/.stock_ming_3/desktop.local.json"),
+      log_file_policy_observed: String(productionRuntimeContract.log_file_policy ?? "~/.stock_ming_3/logs/command_center_3.log"),
+      no_config_values_exposed: true,
+      no_log_file_written_by_review: true,
+      frontend_token_exposure_absent: true,
+      screenshot_sha256: "",
+      production_package_complete: false
+    });
+  const reviewTauriSigning = () =>
+    launchDesktopPackageReview("/api/desktop/tauri-signing-notarization-review", {
+      review_scope: "desktop_first_screen_signing_notarization_blocker_review",
+      explicit_codesign_inspection_completed: false,
+      explicit_spctl_assessment_completed: false,
+      app_bundle_path_observed: "",
+      codesign_signature_type: "not_reviewed",
+      codesign_flags_observed: "",
+      codesign_team_identifier_status: "not_reviewed",
+      codesign_cdhash_observed: "",
+      spctl_assessment_status: "not_reviewed",
+      spctl_message_safe: "not reviewed from first-screen local blocker review",
+      distribution_dmg_detected: tauriBuildArtifact.distribution_dmg_detected === true,
+      temporary_dmg_detected: false,
+      temporary_dmg_ignored_for_distribution: false,
+      apple_developer_identity_used: false,
+      notarization_ticket_detected: false,
+      production_package_complete: false
+    });
+  const reviewTauriPromotionBlocker = () =>
+    launchDesktopPackageReview("/api/desktop/tauri-production-package-promotion-review", {
+      review_scope: "desktop_first_screen_production_package_promotion_blocker_review",
+      production_package_complete: false
+    });
   const tauriStrictCloseoutGateRows = [
     {
       gate_key: "local_launcher_and_preflight_visible",
@@ -813,6 +953,24 @@ export default function DesktopShellPreflight() {
           <h3>生产打包缺口</h3>
           <p className="risk-note">LTG-09 还需要显式 Tauri build 与 packaged runtime QA；preflight、launcher、local receipt、release binary detection 都不能当 production package complete。</p>
           <DataLineageTable rows={desktopPackageGapRows} />
+        </div>
+        <div aria-label="desktop package evidence factory task strip">
+          <h3>LTG-09 本地打包证据按钮</h3>
+          <p className="risk-note">这些按钮只创建本地 review task，用来审查已经存在或明确缺失的 Tauri 打包证据；它们不运行 npm/cargo/Tauri、不打开 packaged app、不启动 FastAPI、不读取配置值、不写日志、不调用 provider/model/GitHub、不交易，production_package_complete=false。</p>
+          <MetricGrid items={desktopPackageEvidenceFactoryItems} />
+          <div className="actions" aria-label="desktop package evidence factory actions">
+            <button type="button" onClick={reviewTauriPackageArtifact}>审查 release artifact</button>
+            <button type="button" onClick={reviewTauriPackagedLaunch}>审查 packaged launch</button>
+            <button type="button" onClick={reviewTauriOfflineUx}>审查 offline UX</button>
+            <button type="button" onClick={reviewTauriBackendStartup}>审查 backend runtime</button>
+            <button type="button" onClick={reviewTauriConfigLog}>审查 config/log</button>
+            <button type="button" onClick={reviewTauriSigning}>审查 signing</button>
+            <button type="button" onClick={reviewTauriPromotionBlocker}>审查 promotion blocker</button>
+            <a href="#tasks" title="只切换到任务目录查看本地 task 状态" aria-label="open task catalog from desktop package evidence factory">任务进度</a>
+          </div>
+          <TaskLaunchReceipt receipt={taskReceipt} />
+          <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+          <p className="risk-note">LTG-09 首屏按钮是显式 POST local review task：release artifact 可以记录本地 binary artifact，其他 packaged runtime / config / signing / promotion 项缺证时保持 degraded 或 blocked，不会把 local review 当 strict closeout。</p>
         </div>
       </PacketCard>
 

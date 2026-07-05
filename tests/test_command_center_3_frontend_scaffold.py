@@ -4164,16 +4164,33 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("desktopOpenReadinessMetrics", page)
         self.assertIn("desktopOpenReadinessRows", page)
         self.assertIn("desktopPackageGapRows", page)
+        self.assertIn("desktopPackageEvidenceFactoryItems", page)
         self.assertIn("桌面端打开路线", page)
         self.assertIn("今天能打开的是本地启动器，不是生产打包完成", page)
         self.assertIn('aria-label="desktop open readiness compass"', page)
         self.assertIn('aria-label="desktop open readiness actions"', page)
         self.assertIn('aria-label="desktop package gap compass"', page)
+        self.assertIn('aria-label="desktop package evidence factory task strip"', page)
+        self.assertIn('aria-label="desktop package evidence factory actions"', page)
         self.assertIn("桌面端现在怎么开", page)
         self.assertIn("生产打包缺口", page)
+        self.assertIn("LTG-09 本地打包证据按钮", page)
         self.assertIn('id="desktop-package-readiness"', page)
         self.assertIn("#desktop/desktop-package-readiness", page)
         self.assertIn("它不运行 build、不打开 packaged app、不创建 task", page)
+        self.assertIn("这些按钮只创建本地 review task", page)
+        self.assertIn("不运行 npm/cargo/Tauri、不打开 packaged app、不启动 FastAPI", page)
+        self.assertIn("production_package_complete=false", page)
+        self.assertIn("/api/desktop/tauri-package-artifact-review", page)
+        self.assertIn("/api/desktop/tauri-packaged-runtime-launch-review", page)
+        self.assertIn("/api/desktop/tauri-backend-offline-packaged-ux-review", page)
+        self.assertIn("/api/desktop/tauri-backend-startup-runtime-review", page)
+        self.assertIn("/api/desktop/tauri-config-log-runtime-review", page)
+        self.assertIn("/api/desktop/tauri-signing-notarization-review", page)
+        self.assertIn("/api/desktop/tauri-production-package-promotion-review", page)
+        self.assertIn("<TaskLaunchReceipt receipt={taskReceipt} />", page)
+        self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", page)
+        self.assertIn("LTG-09 首屏按钮是显式 POST local review task", page)
         self.assertIn("今天能打开的是本地启动器与 dev/preflight 路径；不是 production packaged app，也不是 release ready", page)
         self.assertIn("GET /api/desktop/preflight-cache 不运行 npm、cargo、Tauri", page)
         self.assertIn("preflight、launcher、local receipt、release binary detection 都不能关闭 LTG-09", page)
@@ -4213,6 +4230,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertLess(page.index("桌面端打开路线"), audit_details_start)
         self.assertLess(page.index("桌面端打开路线"), page.index("工程联通明细、Tauri/package QA、lineage 和 raw payload 已下沉"))
         self.assertLess(page.index("生产打包缺口"), audit_details_start)
+        self.assertLess(page.index("生产打包缺口"), page.index("LTG-09 本地打包证据按钮"))
+        self.assertLess(page.index("LTG-09 本地打包证据按钮"), page.index("LTG-09 Tauri strict closeout gate"))
         self.assertLess(page.index("桌面端打开路线"), page.index("LTG-09 Tauri strict closeout gate"))
         self.assertLess(page.index("LTG-09 Tauri strict closeout gate"), audit_details_start)
         self.assertLess(audit_details_start, page.index("DeepSeek governed executor required before real call"))
@@ -4357,7 +4376,14 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不读取 token/key", page)
         self.assertIn("不执行真实交易", page)
         self.assertIn("不修改 strategy action", page)
-        self.assertNotIn("postTask", page)
+        desktop_open_readiness_slice = page[
+            page.index('aria-label="desktop open readiness compass"') : page.index(
+                'aria-label="desktop package evidence factory task strip"'
+            )
+        ]
+        self.assertNotIn("postTask", desktop_open_readiness_slice)
+        self.assertNotIn("onClick=", desktop_open_readiness_slice)
+        self.assertIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)
         self.assertNotIn("DEEPSEEK_API_KEY", page)
         self.assertNotIn("TUSHARE_TOKEN", page)
@@ -4631,6 +4657,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             [
                 "CandidateRadar.tsx",
                 "ChokepointScan.tsx",
+                "DesktopShellPreflight.tsx",
                 "FactorQuantHub.tsx",
                 "NextSessionMap.tsx",
                 "SerenityMethodRadar.tsx",

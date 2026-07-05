@@ -244,6 +244,26 @@ def build_contract() -> dict[str, Any]:
     this_script = _read_script("scripts/tauri_desktop_contract.py")
     strict_closeout_gate_start = route_source.find('title="LTG-09 Tauri strict closeout gate"')
     audit_details_start = route_source.find("<summary>开发 / 审计详情</summary>")
+    desktop_open_readiness_start = route_source.find('aria-label="desktop open readiness compass"')
+    desktop_package_gap_start = route_source.find('aria-label="desktop package gap compass"')
+    desktop_package_evidence_factory_start = route_source.find(
+        'aria-label="desktop package evidence factory task strip"'
+    )
+    desktop_open_readiness_end = (
+        desktop_package_evidence_factory_start
+        if desktop_package_evidence_factory_start != -1
+        else strict_closeout_gate_start
+    )
+    desktop_open_readiness_slice = (
+        route_source[desktop_open_readiness_start:desktop_open_readiness_end]
+        if desktop_open_readiness_start != -1 and desktop_open_readiness_end != -1
+        else ""
+    )
+    desktop_package_evidence_factory_slice = (
+        route_source[desktop_package_evidence_factory_start:strict_closeout_gate_start]
+        if desktop_package_evidence_factory_start != -1 and strict_closeout_gate_start != -1
+        else ""
+    )
     production_package_stage_scope_rows = _tauri_production_package_stage_scope_rows(
         release_binary_detected,
         app_bundle_detected,
@@ -299,11 +319,53 @@ def build_contract() -> dict[str, Any]:
             and "LTG-12 支撑边界" in route_source
             and "不接 broker，不创建 order endpoint，不批准真实交易" in route_source
             and "productionPackageReadinessReceipt.production_package_complete" in route_source
-            and "postTask" not in route_source
+            and "postTask" not in desktop_open_readiness_slice
+            and "onClick=" not in desktop_open_readiness_slice
             and "TUSHARE_TOKEN" not in route_source
             and "DEEPSEEK_API_KEY" not in route_source
             and "GITHUB_TOKEN" not in route_source,
             "Desktop open readiness compass must make local-open versus production-package gaps visible without task creation, build/runtime execution, provider/model calls, GitHub calls, secrets, or trades.",
+        ),
+        _row(
+            "desktop_package_evidence_factory_is_button_gated_local_review",
+            "postTask" in route_source
+            and "TaskLaunchReceipt" in route_source
+            and "TaskStatusPanel" in route_source
+            and "taskReceipt" in route_source
+            and "taskId" in route_source
+            and "desktopPackageEvidenceFactoryItems" in route_source
+            and desktop_package_evidence_factory_start != -1
+            and desktop_package_gap_start != -1
+            and strict_closeout_gate_start != -1
+            and desktop_package_gap_start < desktop_package_evidence_factory_start < strict_closeout_gate_start
+            and 'aria-label="desktop package evidence factory actions"' in desktop_package_evidence_factory_slice
+            and "LTG-09 本地打包证据按钮" in desktop_package_evidence_factory_slice
+            and "这些按钮只创建本地 review task" in desktop_package_evidence_factory_slice
+            and "不运行 npm/cargo/Tauri、不打开 packaged app、不启动 FastAPI" in desktop_package_evidence_factory_slice
+            and "production_package_complete=false" in desktop_package_evidence_factory_slice
+            and "reviewTauriPackageArtifact" in desktop_package_evidence_factory_slice
+            and "reviewTauriPackagedLaunch" in desktop_package_evidence_factory_slice
+            and "reviewTauriOfflineUx" in desktop_package_evidence_factory_slice
+            and "reviewTauriBackendStartup" in desktop_package_evidence_factory_slice
+            and "reviewTauriConfigLog" in desktop_package_evidence_factory_slice
+            and "reviewTauriSigning" in desktop_package_evidence_factory_slice
+            and "reviewTauriPromotionBlocker" in desktop_package_evidence_factory_slice
+            and "/api/desktop/tauri-package-artifact-review" in route_source
+            and "/api/desktop/tauri-packaged-runtime-launch-review" in route_source
+            and "/api/desktop/tauri-backend-offline-packaged-ux-review" in route_source
+            and "/api/desktop/tauri-backend-startup-runtime-review" in route_source
+            and "/api/desktop/tauri-config-log-runtime-review" in route_source
+            and "/api/desktop/tauri-signing-notarization-review" in route_source
+            and "/api/desktop/tauri-production-package-promotion-review" in route_source
+            and "<TaskLaunchReceipt receipt={taskReceipt} />" in desktop_package_evidence_factory_slice
+            and "<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />"
+            in desktop_package_evidence_factory_slice
+            and "LTG-09 首屏按钮是显式 POST local review task" in desktop_package_evidence_factory_slice
+            and "不会把 local review 当 strict closeout" in desktop_package_evidence_factory_slice
+            and "TUSHARE_TOKEN" not in route_source
+            and "DEEPSEEK_API_KEY" not in route_source
+            and "GITHUB_TOKEN" not in route_source,
+            "Desktop package evidence factory must expose button-gated local review tasks with receipt/status readback while keeping build/runtime/provider/model/GitHub/trading and production completion disabled.",
         ),
         _row(
             "tauri_strict_closeout_gate_is_user_visible_and_blocked",
