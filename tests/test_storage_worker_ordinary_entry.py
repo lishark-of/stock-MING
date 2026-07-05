@@ -144,6 +144,47 @@ class StorageWorkerOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('id="worker-runtime-qa-details"', page)
         self.assertNotIn("runWorker", first_screen)
 
+    def test_worker_app_visible_now_summary_is_read_only_before_task_buttons(self):
+        page = self.worker_page
+        head_start = page.index("<h1>Worker 运行时</h1>")
+        visible_start = page.index('aria-label="worker app visible now summary"')
+        first_screen_start = page.index('aria-label="worker ordinary first screen status"')
+        runtime_task_start = page.index('aria-label="worker ordinary runtime qa task strip"')
+        gate_start = page.index('title="LTG-06 worker strict closeout gate"')
+        visible_slice = page[visible_start:first_screen_start]
+
+        self.assertLess(head_start, visible_start)
+        self.assertLess(visible_start, first_screen_start)
+        self.assertLess(visible_start, runtime_task_start)
+        self.assertLess(visible_start, gate_start)
+        self.assertIn("workerAppVisibleNowSentence", page[:gate_start])
+        self.assertIn("workerAppVisibleNowItems", page[:gate_start])
+        self.assertIn("打开 app 能看到什么", visible_slice)
+        self.assertIn('aria-label="worker app visible now sentence"', visible_slice)
+        self.assertIn("{workerAppVisibleNowSentence}", visible_slice)
+        self.assertIn("MetricGrid items={workerAppVisibleNowItems}", visible_slice)
+        self.assertIn('aria-label="worker app visible now local actions"', visible_slice)
+        self.assertIn('href="#storage"', visible_slice)
+        self.assertIn('href="#worker-runtime-qa-details"', visible_slice)
+        self.assertIn('href="#tasks"', visible_slice)
+        self.assertIn('label: "运行状态"', page)
+        self.assertIn('label: "任务/log"', page)
+        self.assertIn('label: "Runtime QA"', page)
+        self.assertIn('label: "Celery/Redis"', page)
+        self.assertIn('label: "下一步入口"', page)
+        self.assertIn('label: "安全边界"', page)
+        self.assertIn("打开 app 能看到 Worker 当前状态", page)
+        self.assertIn("只读速读和本地锚点；不创建 task、不启动 Celery/Redis", page)
+        self.assertIn("普通链接只切换本地页面或锚点", visible_slice)
+        self.assertIn("不创建 task、不启动 Celery/Redis/APScheduler、不 ping Redis", visible_slice)
+        self.assertIn("不派发 provider/model task、不调用 Tushare/DeepSeek/GitHub、不交易", visible_slice)
+        self.assertIn("不改 strategy action", visible_slice)
+        self.assertNotIn("onClick=", visible_slice)
+        self.assertNotIn("TaskLaunchReceipt", visible_slice)
+        self.assertNotIn("TaskStatusPanel", visible_slice)
+        self.assertNotIn("launchRuntimeQa", visible_slice)
+        self.assertNotIn("runWorker", visible_slice)
+
 
 if __name__ == "__main__":
     unittest.main()

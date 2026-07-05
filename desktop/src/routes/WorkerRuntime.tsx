@@ -485,6 +485,48 @@ export default function WorkerRuntime() {
       tone: "good" as const
     }
   ];
+  const workerAppVisibleNowSentence =
+    `打开 app 能看到 Worker 当前状态：${workerRuntimeStateLabel}；任务/log：tasks=${String(counts.task_count ?? 0)} / logs=${String(counts.worker_task_log_count ?? taskStatus.task_log_count ?? 0)}；下一步：${workerRuntimeNextStep}。`;
+  const workerAppVisibleNowItems = [
+    {
+      label: "运行状态",
+      value: workerRuntimeStateLabel,
+      tone: runtime.local_fallback_enabled === false ? "bad" as const : "good" as const
+    },
+    {
+      label: "任务/log",
+      value: `tasks=${String(counts.task_count ?? 0)} / local=${String(counts.implemented_local_task_count ?? taskImplementation.implemented_local_task_count ?? 0)} / logs=${String(counts.worker_task_log_count ?? taskStatus.task_log_count ?? 0)}`,
+      tone: "good" as const
+    },
+    {
+      label: "Runtime QA",
+      value: workerRuntimeNextStep,
+      tone: visibleRuntimeQaExecution.local_runtime_qa_execution_done === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "Celery/Redis",
+      value: `Celery=${String(runtime.celery_available ?? false)} / Redis ping=${String(cache.redis_pinged ?? false)}`,
+      tone: cache.redis_pinged === true || runtime.scheduler_started === true ? "bad" as const : "warn" as const
+    },
+    {
+      label: "下一步入口",
+      value: visibleRuntimeQaExecution.local_runtime_qa_execution_done === true
+        ? "复核 durable evidence 和 strict closeout gate"
+        : runtimeQaExecutionCanLaunch
+          ? "下方运行 local QA execution"
+          : runtimeQaDryRunCanLaunch
+            ? "下方生成 runtime QA dry-run"
+            : runtimeQaExecutionRequestCanLaunch
+              ? "下方生成 runtime QA request"
+              : "先看 evidence plan / recipe scope 缺口",
+      tone: "warn" as const
+    },
+    {
+      label: "安全边界",
+      value: "只读速读和本地锚点；不创建 task、不启动 Celery/Redis、不派发任务、不外联、不交易",
+      tone: "good" as const
+    }
+  ];
   const workerStrictCloseoutGateRows = [
     {
       gate: "local_fallback_runtime_visible",
@@ -541,6 +583,18 @@ export default function WorkerRuntime() {
       <div className="page-head">
         <h1>Worker 运行时</h1>
         <StatusBadge label={String(cache.status ?? "cache_missing")} tone={cache.status === "ready" ? "good" : "neutral"} />
+      </div>
+
+      <div aria-label="worker app visible now summary">
+        <h3>打开 app 能看到什么</h3>
+        <p className="ordinary-status-note" aria-label="worker app visible now sentence" aria-live="polite">{workerAppVisibleNowSentence}</p>
+        <MetricGrid items={workerAppVisibleNowItems} />
+        <div className="actions" aria-label="worker app visible now local actions">
+          <a href="#storage" title="切换到 Storage；只读查看 DuckDB/Parquet/SQLite 支撑" aria-label="open storage from worker visible now">Storage 支撑</a>
+          <a href="#worker-runtime-qa-details" title="跳到本页 runtime QA 详情；只读锚点跳转" aria-label="open runtime qa details from worker visible now">Runtime QA 详情</a>
+          <a href="#tasks" title="切换到任务目录；只读查看本地 task 状态" aria-label="open task catalog from worker visible now">任务目录</a>
+        </div>
+        <p className="risk-note">这个条带只回答普通用户打开 Worker 页能看到什么：local fallback 状态、任务/log、Runtime QA 阶段、Celery/Redis 缺口和下一步入口；普通链接只切换本地页面或锚点，不创建 task、不启动 Celery/Redis/APScheduler、不 ping Redis、不派发 provider/model task、不调用 Tushare/DeepSeek/GitHub、不交易、不改 strategy action。</p>
       </div>
 
       <div aria-label="worker ordinary first screen status">
