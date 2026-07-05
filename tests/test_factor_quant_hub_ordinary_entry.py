@@ -70,6 +70,37 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         summary_start = source.index("普通用户量化推演摘要")
         summary_end = source.index("高级验收任务", summary_start)
         summary_slice = source[summary_start:summary_end]
+        self.assertIn("ordinaryQuantVisibleNowItems", source)
+        self.assertIn('aria-label="stock quant visible now app result"', summary_slice)
+        self.assertIn("打开 app 能看到什么", summary_slice)
+        self.assertIn("这张速读只合成 Factor 页当前本地状态", summary_slice)
+        self.assertIn('label: "现在能看到"', source)
+        self.assertIn('label: "现在能操作"', source)
+        self.assertIn('label: "真实数据状态"', source)
+        self.assertIn('label: "授权后产物"', source)
+        self.assertIn('label: "下一步入口"', source)
+        self.assertIn('label: "不会发生"', source)
+        self.assertIn("scope hash、payload、call_ledger、样本行和 failure-mode evidence", source)
+        self.assertIn("页面打开、查看结果和本地跳转不会创建 provider task、不会调用 Tushare/DeepSeek/GitHub、不会交易", source)
+        visible_now_start = summary_slice.index('aria-label="stock quant visible now app result"')
+        visible_now_end = summary_slice.index('aria-label="stock quant compact vertical slice status"', visible_now_start)
+        visible_now_slice = summary_slice[visible_now_start:visible_now_end]
+        self.assertIn('aria-label="stock quant visible now app result actions"', visible_now_slice)
+        self.assertIn('href="#factor-score"', visible_now_slice)
+        self.assertIn('href={NEXT_SESSION_CHART_HREF}', visible_now_slice)
+        self.assertIn('href={CANDIDATE_CONFIRM_HREF}', visible_now_slice)
+        self.assertIn('href="#factor-provider-small-pool-gate"', visible_now_slice)
+        self.assertNotIn("onClick=", visible_now_slice)
+        self.assertNotIn("launch" + "Task", visible_now_slice)
+        self.assertNotIn("post" + "Task(", visible_now_slice)
+        self.assertLess(
+            summary_slice.index("一屏速读"),
+            visible_now_start,
+        )
+        self.assertLess(
+            visible_now_start,
+            summary_slice.index('aria-label="stock quant compact vertical slice status"'),
+        )
         self.assertIn("ordinaryQuantCompactVerticalSliceItems", source)
         self.assertIn('aria-label="stock quant compact vertical slice status"', summary_slice)
         plain_start = summary_slice.index('aria-label="stock quant ordinary plain conclusion"')

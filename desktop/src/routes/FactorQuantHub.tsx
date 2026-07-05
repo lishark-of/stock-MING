@@ -1492,6 +1492,38 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
+  const ordinaryQuantVisibleNowItems: MetricItem[] = [
+    {
+      label: "现在能看到",
+      value: `${candidateRadarConfirmedSymbol || "等待确认标的"}；${ordinaryQuantPlainResultSentence}`,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "现在能操作",
+      value: ordinaryQuantPrimaryActionLabel,
+      tone: ordinaryQuantPrimaryActionHref === CANDIDATE_CONFIRM_HREF ? "warn" : "good"
+    },
+    {
+      label: "真实数据状态",
+      value: `${ordinaryFactorTestProviderSmallPoolState}；${ordinaryFactorTestProviderRequestState}`,
+      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "授权后产物",
+      value: "scope hash、payload、call_ledger、样本行和 failure-mode evidence",
+      tone: "warn"
+    },
+    {
+      label: "下一步入口",
+      value: "支持/压制 / 次日图谱 / 下一票雷达确认 / LTG-03 安全闸门",
+      tone: "good"
+    },
+    {
+      label: "不会发生",
+      value: "页面打开、查看结果和本地跳转不会创建 provider task、不会调用 Tushare/DeepSeek/GitHub、不会交易",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantModeLayeredLiveLightItems: MetricItem[] = [
     {
       label: "缓存渲染层",
@@ -1773,6 +1805,17 @@ export default function FactorQuantHub() {
           <h3>一屏速读</h3>
           <p className="risk-note">默认先看当前标的、结论、下一步、数据链、图谱/解释和边界；任务记录、数据凭证、合同和回放细节继续收起在下方。</p>
           <MetricGrid items={ordinaryQuantUserFirstItems} />
+          <div aria-label="stock quant visible now app result">
+            <h3>打开 app 能看到什么</h3>
+            <p className="ordinary-status-note">这张速读只合成 Factor 页当前本地状态：可读结论、下一步入口、LTG-03 真实数据授权状态和授权后应产出的证据；它不创建 task、不调用 provider/model。</p>
+            <MetricGrid items={ordinaryQuantVisibleNowItems} />
+            <div className="actions" aria-label="stock quant visible now app result actions">
+              <a href="#factor-score" title="跳到支持/压制摘要；只读 Factor cache" aria-label="open support suppress from stock quant visible now">支持/压制</a>
+              <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱；只读本地次日图谱数据" aria-label="open next chart from stock quant visible now">次日图谱</a>
+              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认按钮才创建任务" aria-label="open candidate confirm from stock quant visible now">确认或换一只票</a>
+              <a href="#factor-provider-small-pool-gate" title="跳到 LTG-03 安全闸门；只读本地 scope 和 execution request" aria-label="open ltg03 provider gate from stock quant visible now">LTG-03 安全闸门</a>
+            </div>
+          </div>
           <div aria-label="stock quant compact vertical slice status">
             <h3>当前纵切状态</h3>
             <p className="ordinary-status-note">确认链、P2/P3、支持/压制、小池验收和缺口先给结论；需要真实 provider 小池时只显示授权边界，不自动创建任务。</p>
