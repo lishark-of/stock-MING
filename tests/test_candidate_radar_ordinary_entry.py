@@ -21,6 +21,27 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('title="下一票候选池"', self.page)
         self.assertIn('title="搜票量化推演"', self.page)
         self.assertIn("生成 3.0 量化推演", self.page)
+        operator_start = self.page.index('title="下一票雷达操作台"')
+        operator_end = self.page.index('title="普通用户雷达摘要"', operator_start)
+        operator_slice = self.page[operator_start:operator_end]
+        self.assertIn("candidateRadarCompactVerticalSliceItems", self.page)
+        self.assertIn('aria-label="candidate radar compact vertical slice status"', operator_slice)
+        self.assertIn("当前纵切状态", operator_slice)
+        self.assertIn("输入、确认、最近结果、候选池和缺口先给结论", operator_slice)
+        for compact_label in (
+            'label: "输入到确认"',
+            'label: "结果回放"',
+            'label: "候选池"',
+            'label: "降级/缺口"',
+            'label: "边界"',
+        ):
+            self.assertIn(compact_label, self.page)
+        self.assertIn("无 active degraded；缺口：", self.page)
+        self.assertIn("只做本地投研证据回放；不是买入/卖出/加仓指令", self.page)
+        self.assertLess(
+            operator_slice.index('aria-label="candidate radar compact vertical slice status"'),
+            operator_slice.index('aria-label="candidate radar compact operator actions"'),
+        )
 
         for required_label in (
             'label: "下一步"',

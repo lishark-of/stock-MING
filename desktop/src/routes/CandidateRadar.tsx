@@ -2595,6 +2595,46 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarCompactVerticalSliceItems: MetricItem[] = [
+    {
+      label: "输入到确认",
+      value: quantProjectionCanSubmit
+        ? `可确认 ${quantProjectionSymbolValidation.normalized}，点击后创建本地投研任务`
+        : quantProjectionP0Ready
+          ? "等待有效 A 股代码；输入本身保持静默"
+          : "先恢复本地 FastAPI 联通",
+      tone: quantProjectionCanSubmit || quantProjectionP0Ready ? "good" : "warn"
+    },
+    {
+      label: "结果回放",
+      value: quantProjectionInterpretationReady || quantProjectionSmallDataReady
+        ? quantProjectionOrdinaryResultSummary
+        : quantProjectionReplayDestinationState,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "候选池",
+      value: `${ordinaryCandidateGroupLabel}；${coarseFineSourceLabel}`,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "降级/缺口",
+      value: ordinaryActiveDegradedCount
+        ? `${ordinaryActiveDegradedLabel}；缺口：${ordinaryMissingEvidence}`
+        : `无 active degraded；缺口：${ordinaryMissingEvidence}`,
+      tone: ordinaryActiveDegradedCount || ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") ? "warn" : "good"
+    },
+    {
+      label: "下一步",
+      value: ordinaryLiveLightFactoryNextStep,
+      tone: productionStageScopeManifest.production_radar_replacement_complete === true ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只做本地投研证据回放；不是买入/卖出/加仓指令",
+      tone: "good"
+    }
+  ];
   const ordinaryCandidateReviewCompassItems: MetricItem[] = [
     {
       label: "先看哪组",
@@ -3276,6 +3316,11 @@ export default function CandidateRadar() {
             { label: "边界", value: "候选不是买入指令；不交易", tone: "good" }
           ]}
         />
+        <div aria-label="candidate radar compact vertical slice status">
+          <h3>当前纵切状态</h3>
+          <p className="ordinary-status-note">输入、确认、最近结果、候选池和缺口先给结论；降级或待补会直接显示，不进入买卖动作。</p>
+          <MetricGrid items={candidateRadarCompactVerticalSliceItems} />
+        </div>
         <div className="actions" aria-label="candidate radar compact operator actions">
           <input
             value={searchSymbol}
