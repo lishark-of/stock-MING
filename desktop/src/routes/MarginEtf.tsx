@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getPacket, postTask, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getPacket, postTask, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -22,6 +22,18 @@ function percent(value: unknown) {
   const numeric = Number(value);
   if (Number.isFinite(numeric)) return `${numeric % 1 === 0 ? numeric.toFixed(0) : numeric.toFixed(1)}%`;
   return text(value);
+}
+
+const runtimeModeLabels: Record<string, string> = {
+  cache_only: "cache_only（只读缓存，不外联）",
+  manual: "manual（仅按钮任务）",
+  live_light: "live_light（轻量 task 口径，页面渲染仍不外联）",
+  live_full: "live_full（预留关闭）"
+};
+
+function runtimeModeLabel(value: unknown) {
+  const mode = text(value, "cache_only");
+  return runtimeModeLabels[mode] ?? `未知运行模式：${mode}`;
 }
 
 function chainValue(row: Record<string, unknown>, key: string, fallback: unknown = "待验证") {
@@ -63,6 +75,7 @@ export default function MarginEtf() {
   const [marginPacket, setMarginPacket] = useState<Record<string, unknown>>({});
   const [callLedger, setCallLedger] = useState<Array<Record<string, unknown>>>([]);
   const [warnings, setWarnings] = useState<Array<string>>([]);
+  const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [taskSubmitting, setTaskSubmitting] = useState(false);
@@ -91,6 +104,9 @@ export default function MarginEtf() {
 
   useEffect(() => {
     refresh();
+    void getBootstrapStatus().then((res) => {
+      if (res.ok !== false) setBootstrapStatus(res.data ?? {});
+    });
   }, []);
 
   const launchLocalRefreshTask = () => {
@@ -135,6 +151,8 @@ export default function MarginEtf() {
   const recommendedCashRatio = etfPacket.recommended_cash_ratio;
   const allowNewMargin = etfPacket.allow_new_margin === true;
   const marginDecision = allowNewMargin ? "现金优先，小额也要等触发条件" : "不新增融资";
+  const runtimeMode = text(bootstrapStatus.mode, "cache_only");
+  const bootstrapPacketReady = bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet";
   const nextStep = noEtfRows
     ? "先读取或手动刷新本地 ETF/融资快照"
     : "先看推荐/观察/回避分组，再复核流动性、重叠和融资现金线";
@@ -157,6 +175,33 @@ export default function MarginEtf() {
     { label: "今天动作", value: marginDecision, tone: allowNewMargin ? "warn" : "good" },
     { label: "下一步", value: nextStep },
     { label: "边界", value: "只读研究，不交易", tone: "good" }
+  ];
+  const modeLayerItems: MetricItem[] = [
+    {
+      label: "缓存渲染层",
+      value: `GET packet + bootstrap status 只读；runtime packet ${bootstrapPacketReady ? "可读" : "等待回放"}；页面打开、React render 和本地链接不创建 task`,
+      tone: bootstrapPacketReady ? "good" : "warn"
+    },
+    {
+      label: "按钮任务层",
+      value: `${runtimeModeLabel(runtimeMode)}；刷新/重建本地包只创建 local_packet_replay POST task，不调用 provider/model`,
+      tone: runtimeMode === "cache_only" ? "good" : "warn"
+    },
+    {
+      label: "数据证据层",
+      value: `${dataStatus} / ${marginStatus}；缺 ETF 或融资数据只显示 degraded，不当作无风险，也不自动补调 Tushare`,
+      tone: dataStatus === "ready" || dataStatus === "cached" ? "good" : "warn"
+    },
+    {
+      label: "旧入口退场层",
+      value: "本页是 ETF/leverage 普通替代纵切；不打开 Streamlit，不移除 fallback，不把本地 packet 回放当 LTG-10 strict closeout",
+      tone: "warn"
+    },
+    {
+      label: "交易隔离层",
+      value: "ETF 候选和融资比例只供研究复核；不接 broker、不创建 order endpoint、不下单、不改 strategy action",
+      tone: "good"
+    }
   ];
   const riskRows = [
     ...textRows(etfPacket.risk_notes, "risk_notes"),
@@ -193,6 +238,11 @@ export default function MarginEtf() {
 
       <PacketCard title="ETF / 融资操作台" subtitle="普通用户先看这里" status={status}>
         <MetricGrid items={summaryItems} />
+        <div aria-label="margin etf mode layered live light boundary">
+          <h3>运行模式分层</h3>
+          <p className="ordinary-status-note">把本地 packet、按钮任务、数据证据、旧入口退场和交易隔离分开看；live_light 也只能是可审计 task，不是页面渲染外联。</p>
+          <MetricGrid items={modeLayerItems} />
+        </div>
         <p className="ordinary-status-note">{text(etfPacket.evidence_summary, text(etfPacket.summary, "暂无 ETF/融资快照；先保留观察，不新增融资。"))}</p>
         <div className="actions" aria-label="margin etf primary actions">
           <button
