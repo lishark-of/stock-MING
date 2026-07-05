@@ -2957,6 +2957,42 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarVisibleNowItems: MetricItem[] = [
+    {
+      label: "现在能看到",
+      value: `${ordinaryCandidateGroupLabel}；${candidatePoolPlainConclusionText}`,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "现在能操作",
+      value: quantProjectionCanSubmit
+        ? `确认 ${quantProjectionSymbolValidation.normalized} 并生成本地投研回放`
+        : quantProjectionP0Ready
+          ? "输入 6 位 A 股代码，等确认按钮启用"
+          : "先恢复本地 FastAPI / cache 联通",
+      tone: quantProjectionCanSubmit || quantProjectionP0Ready ? "good" : "warn"
+    },
+    {
+      label: "现在能跳转",
+      value: "候选池 / 搜票确认 / 量化推演 / 次日图谱 / ETF 融资风险",
+      tone: "good"
+    },
+    {
+      label: "来源层",
+      value: `${coarseFineSourceLabel}；${candidateRadarRuntimeModeLabel}`,
+      tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn"
+    },
+    {
+      label: "还缺什么",
+      value: candidatePoolPlainConclusionMissing,
+      tone: candidatePoolPlainConclusionStatus === "ready" ? "good" : "warn"
+    },
+    {
+      label: "不会发生",
+      value: "页面打开、搜索输入和本地跳转不会创建 task、不会调用 provider/model、不会交易",
+      tone: "good"
+    }
+  ];
   const ordinaryCandidateReviewCompassItems: MetricItem[] = [
     {
       label: "先看哪组",
@@ -3685,6 +3721,16 @@ export default function CandidateRadar() {
           <h3>一屏确认</h3>
           <p className="risk-note">默认先看现在做什么、输入状态、确认按钮、最近结果、下一步入口和边界；P0/P1/P2 checkpoint、task、ledger 和补证细节继续收起。</p>
           <MetricGrid items={candidateRadarUserFirstItems} />
+          <div aria-label="candidate radar visible now app result">
+            <h3>打开 app 能看到什么</h3>
+            <p className="ordinary-status-note">这张速读只合成当前本地页面状态：候选池、确认按钮、来源层、缺口和可跳转入口；它不创建 task、不调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+            <MetricGrid items={candidateRadarVisibleNowItems} />
+            <div className="actions" aria-label="candidate radar visible now app result actions">
+              <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from visible now app result">候选池</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from visible now app result">确认输入</a>
+              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from visible now app result">ETF/融资风险</a>
+            </div>
+          </div>
           <div aria-label="candidate radar ordinary vertical slice readback">
             <h3>纵切速读</h3>
             <p className="ordinary-status-note">搜票输入 -&gt; 确认任务 -&gt; 最近结果 -&gt; 候选池 -&gt; 证据缺口按同一条本地链路展示；这张表只读页面状态，不创建 task、不调用 provider/model。</p>

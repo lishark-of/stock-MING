@@ -96,6 +96,36 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "最近结果"', self.page)
         self.assertIn('label: "下一步入口"', self.page)
         self.assertIn('label: "边界"', self.page)
+        self.assertIn("candidateRadarVisibleNowItems", self.page)
+        self.assertIn('aria-label="candidate radar visible now app result"', summary_primary_slice)
+        self.assertIn("打开 app 能看到什么", summary_primary_slice)
+        self.assertIn("这张速读只合成当前本地页面状态", summary_primary_slice)
+        self.assertIn('label: "现在能看到"', self.page)
+        self.assertIn('label: "现在能操作"', self.page)
+        self.assertIn('label: "现在能跳转"', self.page)
+        self.assertIn('label: "来源层"', self.page)
+        self.assertIn('label: "还缺什么"', self.page)
+        self.assertIn('label: "不会发生"', self.page)
+        self.assertIn("候选池 / 搜票确认 / 量化推演 / 次日图谱 / ETF 融资风险", self.page)
+        self.assertIn("页面打开、搜索输入和本地跳转不会创建 task、不会调用 provider/model、不会交易", self.page)
+        visible_now_start = summary_primary_slice.index('aria-label="candidate radar visible now app result"')
+        visible_now_end = summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"', visible_now_start)
+        visible_now_slice = summary_primary_slice[visible_now_start:visible_now_end]
+        self.assertIn('aria-label="candidate radar visible now app result actions"', visible_now_slice)
+        self.assertIn('href="#candidate-pool"', visible_now_slice)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', visible_now_slice)
+        self.assertIn('href="#marginEtf"', visible_now_slice)
+        self.assertNotIn("onClick=", visible_now_slice)
+        self.assertNotIn("postCandidateRadar", visible_now_slice)
+        self.assertNotIn("launchQuantProjection", visible_now_slice)
+        self.assertLess(
+            summary_primary_slice.index('aria-label="candidate radar ordinary user first summary"'),
+            visible_now_start,
+        )
+        self.assertLess(
+            visible_now_start,
+            summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"'),
+        )
         self.assertIn('aria-label="candidate radar user first actions"', summary_primary_slice)
         self.assertIn('href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"}', summary_primary_slice)
         self.assertIn('aria-label="candidate radar denoised first screen guide"', summary_primary_slice)
