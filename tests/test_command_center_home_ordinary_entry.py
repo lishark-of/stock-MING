@@ -770,8 +770,11 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         candidate_radar_start = card.index('aria-label="ordinary home candidate radar visible slice"', route_map_start)
         route_map_end = candidate_radar_start
         route_map = card[route_map_start:route_map_end]
-        candidate_radar_end = card.index('aria-label="ordinary home first screen post confirm status"', candidate_radar_start)
+        margin_etf_start = card.index('aria-label="ordinary home margin etf risk bridge"', candidate_radar_start)
+        candidate_radar_end = margin_etf_start
         candidate_radar = card[candidate_radar_start:candidate_radar_end]
+        margin_etf_end = card.index('aria-label="ordinary home first screen post confirm status"', margin_etf_start)
+        margin_etf = card[margin_etf_start:margin_etf_end]
         route_start = card.index('aria-label="ordinary home first screen result route"')
         route = card[route_start:]
 
@@ -780,7 +783,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(tushare_data_card_start, route_map_start)
         self.assertLess(card.index('aria-label="ordinary home confirm status"'), route_map_start)
         self.assertLess(route_map_start, candidate_radar_start)
-        self.assertLess(candidate_radar_start, card.index('aria-label="ordinary home first screen post confirm status"'))
+        self.assertLess(candidate_radar_start, margin_etf_start)
+        self.assertLess(margin_etf_start, card.index('aria-label="ordinary home first screen post confirm status"'))
         self.assertLess(route_map_start, route_start)
         self.assertIn("ordinaryHomeRecentResultItems", source)
         self.assertIn("ordinaryHomeRecentResultSummary", source)
@@ -867,6 +871,33 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postTask", candidate_radar)
         self.assertNotIn("postCandidateRadar", candidate_radar)
         self.assertNotIn("launchHomeQuantProjection", candidate_radar)
+        self.assertIn("ordinaryHomeMarginEtfRiskStatus", source)
+        self.assertIn("ordinaryHomeMarginEtfRiskItems", source)
+        self.assertIn('aria-label="ordinary home margin etf risk bridge"', card)
+        self.assertIn("ETF/融资风险速读", margin_etf)
+        self.assertIn('aria-label="ordinary home margin etf risk sentence"', margin_etf)
+        self.assertIn("{ordinaryHomeMarginEtfRiskStatus}", margin_etf)
+        self.assertIn("MetricGrid items={ordinaryHomeMarginEtfRiskItems}", margin_etf)
+        for label in (
+            'label: "ETF/融资"',
+            'label: "融资现金线"',
+            'label: "ETF 候选"',
+            'label: "缺数据"',
+            'label: "现在点哪里"',
+        ):
+            self.assertIn(label, source)
+        self.assertIn("融资比例不是加杠杆许可", source)
+        self.assertIn("ETF 候选只供研究替代/分散风险，不是买入、加仓或加融资指令", source)
+        self.assertIn('aria-label="ordinary home margin etf risk actions"', margin_etf)
+        self.assertIn('href="#marginEtf"', margin_etf)
+        self.assertIn('href="#candidates/candidate-pool"', margin_etf)
+        self.assertIn('href="#risk"', margin_etf)
+        self.assertIn("不刷新外部数据、不创建任务、不交易、不加融资、不改策略", margin_etf)
+        self.assertNotIn("onClick=", margin_etf)
+        self.assertNotIn("fetch(", margin_etf)
+        self.assertNotIn("postTask", margin_etf)
+        self.assertNotIn("postCandidateRadar", margin_etf)
+        self.assertNotIn("launchHomeQuantProjection", margin_etf)
         self.assertIn("ordinaryHomeResultRouteSummary", source)
         self.assertIn("ordinaryHomeResultRouteItems", source)
         self.assertIn("确认后结果会从这里去看：股票量化推演、次日图谱、下一票雷达详情。", source)

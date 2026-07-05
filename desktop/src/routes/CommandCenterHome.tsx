@@ -3036,6 +3036,36 @@ export default function CommandCenterHome() {
       tone: "good"
     }
   ];
+  const ordinaryHomeMarginEtfRiskStatus = ordinaryHomeCandidateReadable
+    ? `从下一票候选过来时，先看 ETF/融资页的现金线和候选风险；${ordinaryHomeCandidateGroupLabel} 只做研究顺序。`
+    : "ETF/融资风险等待候选或确认结果；缺数据时按保守处理，不新增融资。";
+  const ordinaryHomeMarginEtfRiskItems: MetricItem[] = [
+    {
+      label: "ETF/融资",
+      value: ordinaryHomeMarginEtfRiskStatus,
+      tone: ordinaryHomeCandidateReadable ? "good" : "warn"
+    },
+    {
+      label: "融资现金线",
+      value: "先看融资现金线和缺口；融资比例不是加杠杆许可",
+      tone: "good"
+    },
+    {
+      label: "ETF 候选",
+      value: "ETF 候选只供研究替代/分散风险，不是买入、加仓或加融资指令",
+      tone: "good"
+    },
+    {
+      label: "缺数据",
+      value: "显示等待或 degraded；按保守处理，不把空结果当无风险",
+      tone: "warn"
+    },
+    {
+      label: "现在点哪里",
+      value: "打开 ETF/融资风险页；必要时回候选池复核下一票",
+      tone: "good"
+    }
+  ];
   const dailyCommandP4OrdinaryFirstItems: MetricItem[] = [
     { label: "默认视图", value: "P0 联通、P1 确认、P2 三面、P3 结果先显示", tone: "good" },
     { label: "工程审计", value: "默认折叠在 P4-P6 补证 / 审计路径和开发详情", tone: "good" },
@@ -3559,6 +3589,17 @@ export default function CommandCenterHome() {
             <DataLineageTable rows={ordinaryHomeCandidatePreviewRows} />
           </details>
           <p className="risk-note">这张速读只读下一票雷达本地缓存；页面打开和搜索输入不创建任务、不调用外部数据或模型服务、不交易、不改写策略。</p>
+        </div>
+        <div aria-label="ordinary home margin etf risk bridge">
+          <h3>ETF/融资风险速读</h3>
+          <p className="ordinary-status-note" aria-label="ordinary home margin etf risk sentence" aria-live="polite">{ordinaryHomeMarginEtfRiskStatus}</p>
+          <MetricGrid items={ordinaryHomeMarginEtfRiskItems} />
+          <div className="actions" aria-label="ordinary home margin etf risk actions">
+            <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf risk card from ordinary home">看 ETF/融资风险</a>
+            <a href="#candidates/candidate-pool" title="切换到下一票候选池；只读本地候选缓存" aria-label="open candidate pool from ordinary home margin etf bridge">回候选池</a>
+            <a href="#risk" title="切换到风险护栏；只读本地风险摘要" aria-label="open risk guardrails from ordinary home margin etf bridge">风险护栏</a>
+          </div>
+          <p className="risk-note">这张风险卡只切换本地页面；不刷新外部数据、不创建任务、不交易、不加融资、不改策略。</p>
         </div>
         <div aria-label="ordinary home first screen post confirm status">
           <h3>确认后状态</h3>
