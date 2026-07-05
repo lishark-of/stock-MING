@@ -926,6 +926,103 @@ export default function CandidateRadar() {
   const ordinaryScoringReasonLabel = Number(candidatePriorityExplanation.explained_candidate_count ?? 0)
     ? `按缓存顺序解释 ${String(candidatePriorityExplanation.explained_candidate_count)} 个候选；不重排、不生成交易动作`
     : "按本地缓存顺序展示；评分理由不足会作为缺口显示";
+  const candidatePoolFirstScreenItems: MetricItem[] = [
+    {
+      label: "Top / Watch / Excluded",
+      value: ordinaryCandidateGroupLabel,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "来源",
+      value: coarseFineSourceLabel,
+      tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: coarseFineGapLabel,
+      tone: Number(coarseFineScreening.gap_visible_count ?? 0) ? "warn" : "good"
+    },
+    {
+      label: "评分理由",
+      value: ordinaryScoringReasonLabel,
+      tone: Number(candidatePriorityExplanation.explained_candidate_count ?? 0) ? "good" : "warn"
+    },
+    {
+      label: "复核顺序",
+      value: "先 Top，再 Watch，最后 Excluded；需要单票解释再点确认输入",
+      tone: "good"
+    },
+    {
+      label: "ETF/融资风险",
+      value: "涉及 ETF、仓位或融资预算时，转去 ETF / 融资页看风险线；这里不生成加仓或加融资指令",
+      tone: "good"
+    },
+    {
+      label: "非买入边界",
+      value: ordinaryCandidateGroupBoundary,
+      tone: "good"
+    }
+  ];
+  const candidatePoolPlainConclusionStatus = candidateRadarP0Blocked || !candidateRadarCacheGetReadable
+    ? "p0_check"
+    : ordinaryCandidateTopCount
+      ? Number(coarseFineScreening.gap_visible_count ?? 0) || ordinaryBlockedState !== "当前缓存未标记阻断或降级"
+        ? "readable_degraded"
+        : "ready"
+      : "empty_cache";
+  const candidatePoolPlainConclusionText = candidatePoolPlainConclusionStatus === "ready"
+    ? `候选池可读：${ordinaryCandidateGroupLabel}，先按 Top / Watch / Excluded 复核。`
+    : candidatePoolPlainConclusionStatus === "readable_degraded"
+      ? `候选池可读但有缺口：${coarseFineGapLabel}；${ordinaryBlockedState}。`
+      : candidatePoolPlainConclusionStatus === "empty_cache"
+        ? "候选池暂无候选；先看缓存来源和缺口，再回确认输入区。"
+        : "候选雷达本地缓存未接上；先恢复本地 FastAPI / cache。";
+  const candidatePoolPlainConclusionMissing = candidatePoolPlainConclusionStatus === "ready"
+    ? "未标记候选池首屏缺口"
+    : candidatePoolPlainConclusionStatus === "readable_degraded"
+      ? `${coarseFineGapLabel}；${ordinaryBlockedState}`
+      : candidatePoolPlainConclusionStatus === "empty_cache"
+        ? "缺 Top / Watch / Excluded 候选"
+        : "缺本地候选 cache";
+  const candidatePoolPlainConclusionNext = candidatePoolPlainConclusionStatus === "ready"
+    ? "先看 Top，再看 Watch，最后看 Excluded；需要单票解释再确认输入"
+    : candidatePoolPlainConclusionStatus === "readable_degraded"
+      ? "先复核来源和缺口；不要把候选当买入指令"
+      : candidatePoolPlainConclusionStatus === "empty_cache"
+        ? "回确认输入区或等待本地候选缓存"
+        : "打开本地预检或刷新只读 cache";
+  const candidatePoolPlainConclusionTone: MetricItem["tone"] = candidatePoolPlainConclusionStatus === "ready"
+    ? "good"
+    : candidatePoolPlainConclusionStatus === "p0_check"
+      ? "neutral"
+      : "warn";
+  const candidatePoolPlainConclusionItems: MetricItem[] = [
+    {
+      label: "一句话结论",
+      value: candidatePoolPlainConclusionText,
+      tone: candidatePoolPlainConclusionTone
+    },
+    {
+      label: "候选状态",
+      value: candidatePoolPlainConclusionStatus,
+      tone: candidatePoolPlainConclusionTone
+    },
+    {
+      label: "缺口",
+      value: candidatePoolPlainConclusionMissing,
+      tone: candidatePoolPlainConclusionStatus === "ready" ? "good" : "warn"
+    },
+    {
+      label: "现在做什么",
+      value: candidatePoolPlainConclusionNext,
+      tone: candidateRadarCacheGetReadable ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只读本地候选缓存；不创建 task、不调用 provider/model、不交易，候选不是买入指令",
+      tone: "good"
+    }
+  ];
   const ordinaryTaskBoundary =
     "雷达摘要只读展示候选缓存；manual/live_light 补证必须走 POST task / worker，不在 React 渲染中直连 Tushare 或 DeepSeek";
   const candidateRadarP0AutoLinkRows = [
@@ -4092,6 +4189,22 @@ export default function CandidateRadar() {
       <div className="grid radar-result-cluster" data-radar-state={radarMotionState}>
         <div id="candidate-pool">
           <PacketCard title="下一票候选池" subtitle="只读展示本地候选缓存；页面打开不会自动全市场扫描" status={candidateRadarStatusLabel}>
+            <div aria-label="candidate pool first screen top watch excluded source gap">
+              <h3>候选池一屏速读</h3>
+              <p className="ordinary-status-note">先看 Top / Watch / Excluded、来源、缺口和评分理由；这张速读只读本地候选缓存，不创建 task、不调用 Tushare/DeepSeek/GitHub。</p>
+              <div aria-label="candidate pool plain result conclusion">
+                <h3>普通结论</h3>
+                <p className="ordinary-status-note" aria-label="candidate pool plain result conclusion text" aria-live="polite">{candidatePoolPlainConclusionText}</p>
+                <MetricGrid items={candidatePoolPlainConclusionItems} />
+              </div>
+              <MetricGrid items={candidatePoolFirstScreenItems} />
+              <div className="actions" aria-label="candidate pool first screen actions">
+                <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from candidate pool first screen">解释单票</a>
+                <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from candidate pool first screen">量化推演</a>
+                <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照，不生成加融资指令" aria-label="open margin etf risk budget from candidate pool first screen">ETF/融资风险</a>
+                <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate pool first screen">次日图谱</a>
+              </div>
+            </div>
             <p>{String(cache.summary ?? "候选雷达本地缓存只读展示。")}</p>
             <p>{String(cache.manual_required_text ?? "页面打开不会自动全市场扫描。")}</p>
             <p>候选分组：{ordinaryCandidateGroupLabel}；{ordinaryScanScopeLabel}；{ordinaryCandidateSourceLabel}。</p>

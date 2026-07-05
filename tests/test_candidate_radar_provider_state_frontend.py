@@ -16,6 +16,9 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         summary_start = self.page.index('title="普通用户雷达摘要"')
         summary_end = self.page.index('title="下一票候选池"', summary_start)
         summary_panel = self.page[summary_start:summary_end]
+        candidate_pool_start = self.page.index('title="下一票候选池"', summary_start)
+        candidate_pool_end = self.page.index('title="搜票量化推演"', candidate_pool_start)
+        candidate_pool_panel = self.page[candidate_pool_start:candidate_pool_end]
         search_panel_start = self.page.index('title="搜票量化推演"')
         search_panel_end = self.page.index('title="快速雷达扫描"', search_panel_start)
         search_panel = self.page[search_panel_start:search_panel_end]
@@ -169,6 +172,51 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
             summary_panel.index('aria-label="candidate radar coarse fine screening ordinary summary"'),
             summary_panel.index('aria-label="candidate radar ordinary task progress details"'),
         )
+        self.assertIn("candidatePoolFirstScreenItems", self.page)
+        self.assertIn("candidatePoolPlainConclusionItems", self.page)
+        self.assertIn("candidatePoolPlainConclusionStatus", self.page)
+        self.assertIn("candidatePoolPlainConclusionText", self.page)
+        self.assertIn("candidatePoolPlainConclusionMissing", self.page)
+        self.assertIn("candidatePoolPlainConclusionNext", self.page)
+        self.assertIn('aria-label="candidate pool first screen top watch excluded source gap"', candidate_pool_panel)
+        self.assertIn("候选池一屏速读", candidate_pool_panel)
+        self.assertIn("先看 Top / Watch / Excluded、来源、缺口和评分理由", candidate_pool_panel)
+        self.assertIn('aria-label="candidate pool plain result conclusion"', candidate_pool_panel)
+        self.assertIn("普通结论", candidate_pool_panel)
+        self.assertIn('aria-label="candidate pool plain result conclusion text"', candidate_pool_panel)
+        self.assertIn("MetricGrid items={candidatePoolPlainConclusionItems}", candidate_pool_panel)
+        self.assertIn('label: "一句话结论"', self.page)
+        self.assertIn('label: "候选状态"', self.page)
+        self.assertIn('label: "缺口"', self.page)
+        self.assertIn('label: "现在做什么"', self.page)
+        self.assertIn("候选池可读但有缺口", self.page)
+        self.assertIn("只读本地候选缓存；不创建 task、不调用 provider/model、不交易，候选不是买入指令", self.page)
+        for candidate_pool_label in (
+            'label: "Top / Watch / Excluded"',
+            'label: "来源"',
+            'label: "缺口"',
+            'label: "评分理由"',
+            'label: "复核顺序"',
+            'label: "ETF/融资风险"',
+            'label: "非买入边界"',
+        ):
+            self.assertIn(candidate_pool_label, self.page)
+        self.assertIn("先 Top，再 Watch，最后 Excluded；需要单票解释再点确认输入", self.page)
+        self.assertIn("转去 ETF / 融资页看风险线", self.page)
+        candidate_pool_first_screen_start = candidate_pool_panel.index('aria-label="candidate pool first screen top watch excluded source gap"')
+        candidate_pool_first_screen_end = candidate_pool_panel.index("<StateClarityRail", candidate_pool_first_screen_start)
+        candidate_pool_first_screen_slice = candidate_pool_panel[candidate_pool_first_screen_start:candidate_pool_first_screen_end]
+        self.assertIn('aria-label="candidate pool first screen actions"', candidate_pool_first_screen_slice)
+        self.assertIn('aria-label="open confirm input from candidate pool first screen"', candidate_pool_first_screen_slice)
+        self.assertIn('aria-label="open factor from candidate pool first screen"', candidate_pool_first_screen_slice)
+        self.assertIn('aria-label="open margin etf risk budget from candidate pool first screen"', candidate_pool_first_screen_slice)
+        self.assertIn('aria-label="open next session from candidate pool first screen"', candidate_pool_first_screen_slice)
+        self.assertIn('href="#marginEtf"', candidate_pool_first_screen_slice)
+        self.assertNotIn("onClick=", candidate_pool_first_screen_slice)
+        self.assertNotIn("launch" + "Task", candidate_pool_first_screen_slice)
+        self.assertNotIn("post" + "Task(", candidate_pool_first_screen_slice)
+        self.assertNotIn("postCandidateRadar", candidate_pool_first_screen_slice)
+        self.assertNotIn("fetch(", candidate_pool_first_screen_slice)
         self.assertIn('aria-label="refresh candidate radar visible progress readback"', summary_panel)
         self.assertIn("进度回放只确认 task id、任务步骤、P2/P3 和结果入口", summary_panel)
         self.assertIn('aria-label="candidate radar optional local actions details"', summary_panel)
