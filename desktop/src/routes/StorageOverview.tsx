@@ -489,6 +489,48 @@ export default function StorageOverview() {
       tone: "good" as const
     }
   ];
+  const storagePhysicalExecutionRequestCanLaunch = Boolean(storagePhysicalExecutionRecipe.physical_execution_scope_hash);
+  const storagePhysicalExecutionPhaseACanLaunch = storagePhysicalExecutionRequest.local_execution_request_ready === true;
+  const storagePhysicalEvidenceActionItems = [
+    {
+      label: "request ticket",
+      value: String(storagePhysicalExecutionRequest.status ?? overview.storage_physical_execution_request_status ?? "waiting_request"),
+      tone: storagePhysicalExecutionRequest.local_execution_request_ready === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "Phase A evidence",
+      value: String(storagePhysicalExecutionPhaseA.status ?? overview.storage_physical_execution_phase_a_status ?? "waiting_phase_a"),
+      tone: storagePhysicalExecutionPhaseA.local_phase_a_execution_ready === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "scope hash",
+      value: String(
+        storagePhysicalExecutionRequest.physical_execution_scope_hash_short ??
+          storagePhysicalExecutionRecipe.physical_execution_scope_hash_short ??
+          ""
+      ) || "等待 recipe",
+      tone: storagePhysicalExecutionRequestCanLaunch ? "good" as const : "warn" as const
+    },
+    {
+      label: "现在可点",
+      value: storagePhysicalExecutionPhaseACanLaunch
+        ? "生成 Phase A local evidence"
+        : storagePhysicalExecutionRequestCanLaunch
+          ? "生成 request ticket"
+          : "等待 physical execution recipe",
+      tone: storagePhysicalExecutionRequestCanLaunch ? "good" as const : "warn" as const
+    },
+    {
+      label: "按钮边界",
+      value: "只创建本地 task receipt/status；不写 Parquet、不写 manifest、不删除 artifacts",
+      tone: "good" as const
+    },
+    {
+      label: "LTG-05",
+      value: "本地证据纵切；production storage 仍未完成",
+      tone: "warn" as const
+    }
+  ];
   const storageStrictCloseoutGateRows = [
     {
       gate: "local_readable_storage",
@@ -549,6 +591,33 @@ export default function StorageOverview() {
           <button onClick={refreshStorage} aria-label="refresh local storage cache only">刷新本地 storage cache</button>
           <a href="#worker" aria-label="open worker runtime support from storage">看 Worker 支撑</a>
           <a href="#migration" aria-label="open LTG migration ledger from storage">看 LTG 总账</a>
+        </div>
+        <div aria-label="storage ordinary physical evidence task strip">
+          <h3>物理证据按钮</h3>
+          <p className="ordinary-status-note" aria-label="storage ordinary physical evidence sentence" aria-live="polite">
+            用户现在可以从首屏生成 physical execution request，再在 request ready 后生成 Phase A local evidence；两个按钮都只写本地 task/packet 状态，不执行真实物理迁移。
+          </p>
+          <MetricGrid items={storagePhysicalEvidenceActionItems} />
+          <div className="actions" aria-label="storage ordinary physical evidence actions">
+            <button
+              disabled={!storagePhysicalExecutionRequestCanLaunch}
+              onClick={launchPhysicalExecutionRequest}
+              title="生成本地 physical execution request ticket；只绑定 scope hash，不写 Parquet、不删文件、不刷新 provider"
+              aria-label="create storage physical execution request from first screen"
+            >生成 request ticket</button>
+            <button
+              disabled={!storagePhysicalExecutionPhaseACanLaunch}
+              onClick={launchPhysicalExecutionPhaseA}
+              title="生成 Phase A local evidence；只整合本地 SQLite evidence，不写 Parquet、不写 manifest、不删除 artifacts"
+              aria-label="create storage physical execution phase a evidence from first screen"
+            >生成 Phase A evidence</button>
+            <a href="#storage-physical-execution-details" aria-label="open storage physical execution details from first screen">查看物理执行详情</a>
+          </div>
+          <TaskLaunchReceipt receipt={physicalExecutionRequestReceipt} />
+          <TaskStatusPanel taskId={physicalExecutionRequestTaskId} onSuccess={refreshStorage} />
+          <TaskLaunchReceipt receipt={physicalExecutionPhaseAReceipt} />
+          <TaskStatusPanel taskId={physicalExecutionPhaseATaskId} onSuccess={refreshStorage} />
+          <p className="risk-note">首屏按钮是显式 POST local task：不调用 Tushare/DeepSeek/GitHub，不启动 worker，不下单，不改 strategy action；Phase A 仍不是 production storage complete。</p>
         </div>
         <p className="risk-note">首屏只汇总本地 dataset、SQLite meta、物理执行 ticket 状态和 Worker 支撑边界；刷新只读取本地 GET cache，链接只切换本地页面，不创建 task、不写文件、不调用 Tushare/DeepSeek/GitHub、不下单。</p>
       </div>
@@ -755,6 +824,7 @@ export default function StorageOverview() {
         <DataLineageTable rows={storagePhysicalExecutionRows} />
       </PacketCard>
 
+      <div id="storage-physical-execution-details" aria-hidden="true" />
       <PacketCard title="Storage physical execution request" subtitle="按钮门控生成本地 execution request ticket；只绑定 recipe scope hash，不写 Parquet、不删文件、不刷新 provider" status={String(storagePhysicalExecutionRequest.status ?? "missing")}>
         <p>schema_version: {String(storagePhysicalExecutionRequest.schema_version ?? "command_center_3_storage_physical_execution_request.v1")}</p>
         <p>scope: {String(storagePhysicalExecutionRequest.scope ?? "local_storage_physical_execution_request_no_write_no_delete_no_provider")}</p>

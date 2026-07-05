@@ -1,6 +1,6 @@
 # Command Center 3.0 Pending Repair Instructions
 
-Updated: 2026-07-04
+Updated: 2026-07-05
 
 This file is the short handoff list after the user-usable vertical slice. Do not treat these items as 14 LTG closeout. Each item should be run as one small Codex goal, with at most one main target and one support target.
 
@@ -45,6 +45,7 @@ Current interpretation:
 11. ETF / Margin now has a button-gated local task contract: `POST /api/market/margin-etf-local-refresh` writes a safe `command_center_margin_etf_refresh_receipt`, the page shows disabled/degraded reasons before the click, and `TaskStatusPanel` shows the local task status after the click. This remains a local packet replay, not provider refresh, Streamlit retirement, or LTG strict closeout.
 12. User Route QA now requires actual typing coverage before accepting typing silence: if a route has visible editable inputs, the runner fills one with a test symbol and only passes when `/api/tasks` stays unchanged.
 13. Candidate Radar ordinary summary now shows a local page-QA quick read from `candidate_browser_qa_evidence_summary` / review status before developer audit details, while keeping the review POST button in the collapsed audit section and preserving the no-CI/no-provider/no-worker boundary.
+14. Storage now exposes the LTG-05 physical evidence local task chain on the ordinary first screen: `physical execution request` and `Phase A local evidence` buttons show receipt/status via `TaskLaunchReceipt` and `TaskStatusPanel`, while still writing no Parquet, no manifest, deleting no artifacts, calling no providers/models/GitHub, and keeping `production_storage_complete=false`.
 
 ## Next Repair Goals
 
