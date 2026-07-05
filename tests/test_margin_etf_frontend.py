@@ -151,6 +151,57 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertNotIn("fetch(", visible_slice)
         self.assertNotIn("TaskStatusPanel", visible_slice)
 
+    def test_margin_etf_candidate_bridge_is_first_screen_read_only(self):
+        card_start = self.page.index('title="ETF / 融资操作台"')
+        visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        bridge_start = self.page.index('aria-label="margin etf candidate radar risk budget bridge"', card_start)
+        risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
+        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        audit_start = self.page.index('aria-label="margin etf audit details"')
+        bridge = self.page[bridge_start:risk_card_start]
+
+        self.assertLess(visible_start, bridge_start)
+        self.assertLess(bridge_start, risk_card_start)
+        self.assertLess(bridge_start, actions_start)
+        self.assertLess(bridge_start, audit_start)
+        self.assertIn("marginEtfCandidateBridgeSentence", self.page)
+        self.assertIn("marginEtfCandidateBridgeItems", self.page)
+        self.assertIn("marginEtfCandidateBridgeRows", self.page)
+        self.assertIn("从下一票雷达跳过来后，先看融资现金线和缺口", self.page)
+        self.assertIn("从下一票雷达跳过来后，先把 ${allVisibleEtfRows.length} 行 ETF 候选当风险预算参考", self.page)
+        self.assertIn("从候选页过来怎么看", bridge)
+        self.assertIn('aria-label="margin etf candidate bridge sentence"', bridge)
+        self.assertIn("MetricGrid items={marginEtfCandidateBridgeItems}", bridge)
+        for label in (
+            'label: "候选承接"',
+            'label: "先看风险"',
+            'label: "融资口径"',
+            'label: "缺口处理"',
+            'label: "回到候选"',
+            'label: "安全边界"',
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn('aria-label="margin etf candidate bridge local actions"', bridge)
+        self.assertIn('aria-label="return candidate radar from margin etf bridge"', bridge)
+        self.assertIn('aria-label="open risk guardrails from margin etf bridge"', bridge)
+        self.assertIn('aria-label="open home from margin etf bridge"', bridge)
+        self.assertIn('href="#candidates"', bridge)
+        self.assertIn('href="#risk"', bridge)
+        self.assertIn('href="#home"', bridge)
+        self.assertIn('aria-label="margin etf candidate bridge rows"', bridge)
+        self.assertIn("<summary>查看承接顺序</summary>", bridge)
+        self.assertIn("DataLineageTable rows={marginEtfCandidateBridgeRows}", bridge)
+        self.assertIn('步骤: "1. 从候选页过来"', self.page)
+        self.assertIn('步骤: "2. 看 ETF 替代风险"', self.page)
+        self.assertIn('步骤: "3. 看融资现金线"', self.page)
+        self.assertIn('步骤: "4. 回流"', self.page)
+        self.assertIn("融资比例不是加杠杆许可", self.page)
+        self.assertIn("普通链接只切换本地页面，不刷新外部数据、不创建任务、不交易、不改策略", bridge)
+        self.assertNotIn("onClick=", bridge)
+        self.assertNotIn("postTask(", bridge)
+        self.assertNotIn("fetch(", bridge)
+        self.assertNotIn("TaskStatusPanel", bridge)
+
     def test_margin_etf_local_refresh_result_quick_read_after_button(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)

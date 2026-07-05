@@ -325,6 +325,67 @@ export default function MarginEtf() {
       tone: "good"
     }
   ];
+  const marginEtfCandidateBridgeSentence = noEtfRows
+    ? "从下一票雷达跳过来后，先看融资现金线和缺口：当前没有 ETF 候选，不新增融资，也不把缺数据当低风险。"
+    : `从下一票雷达跳过来后，先把 ${allVisibleEtfRows.length} 行 ETF 候选当风险预算参考，再看现金线、重叠和流动性；${marginDecision}。`;
+  const marginEtfCandidateBridgeItems: MetricItem[] = [
+    {
+      label: "候选承接",
+      value: noEtfRows ? "暂无 ETF 候选；回下一票雷达换标的或等待本地快照" : `${allVisibleEtfRows.length} 行 ETF 候选可作风险预算参考`,
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "先看风险",
+      value: "融资现金线、同类重叠、流动性和缺口",
+      tone: "good"
+    },
+    {
+      label: "融资口径",
+      value: marginDecision,
+      tone: allowNewMargin ? "warn" : "good"
+    },
+    {
+      label: "缺口处理",
+      value: ordinaryMissingEvidence,
+      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+    },
+    {
+      label: "回到候选",
+      value: "需要换标的或解释单票时回下一票雷达",
+      tone: "good"
+    },
+    {
+      label: "安全边界",
+      value: "本卡只做风险预算承接；不是买入、加仓、加融资或下单指令",
+      tone: "good"
+    }
+  ];
+  const marginEtfCandidateBridgeRows = [
+    {
+      步骤: "1. 从候选页过来",
+      用户看法: "先把候选当研究对象，不当操作建议",
+      入口: "#candidates",
+      边界: "候选不是买入指令"
+    },
+    {
+      步骤: "2. 看 ETF 替代风险",
+      用户看法: noEtfRows ? "没有 ETF 候选时先保持观察" : "先看推荐、观察、回避和排除分组",
+      入口: "#marginEtf",
+      边界: "ETF 候选只做风险预算参考"
+    },
+    {
+      步骤: "3. 看融资现金线",
+      用户看法: `当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 现金缓冲 ${percent(recommendedCashRatio)}`,
+      入口: "#risk",
+      边界: "融资比例不是加杠杆许可"
+    },
+    {
+      步骤: "4. 回流",
+      用户看法: "换票回下一票雷达；看全局风险回风险护栏",
+      入口: "#candidates / #risk",
+      边界: "链接只切换本地页面，不创建任务、不交易、不改策略"
+    }
+  ];
   const marginEtfRiskCardRows = [
     {
       复核项: "1. ETF 候选",
@@ -507,6 +568,22 @@ export default function MarginEtf() {
             <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf visible now">今日作战台</a>
           </div>
           <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、降级原因和下一步入口；普通链接只切换本地页面，不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不加融资、不改 strategy action。</p>
+        </div>
+        <div aria-label="margin etf candidate radar risk budget bridge">
+          <h3>从候选页过来怎么看</h3>
+          <p className="ordinary-status-note" aria-label="margin etf candidate bridge sentence" aria-live="polite">{marginEtfCandidateBridgeSentence}</p>
+          <MetricGrid items={marginEtfCandidateBridgeItems} />
+          <div className="actions" aria-label="margin etf candidate bridge local actions">
+            <a href="#candidates" title="切换到下一票雷达；候选不是买入指令" aria-label="return candidate radar from margin etf bridge">回下一票雷达</a>
+            <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf bridge">看风险护栏</a>
+            <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf bridge">今日作战台</a>
+          </div>
+          <details className="developer-audit-details" aria-label="margin etf candidate bridge rows">
+            <summary>查看承接顺序</summary>
+            <p className="risk-note">承接顺序只说明候选页、ETF/融资和风险护栏怎么读；不读取外部数据，不创建任务，不生成交易动作。</p>
+            <DataLineageTable rows={marginEtfCandidateBridgeRows} />
+          </details>
+          <p className="risk-note">这张承接卡只读本地 ETF/融资快照；普通链接只切换本地页面，不刷新外部数据、不创建任务、不交易、不改策略。</p>
         </div>
         <div aria-label="margin etf ordinary risk card">
           <h3>ETF / 融资风险卡</h3>
