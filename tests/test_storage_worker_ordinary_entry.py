@@ -56,6 +56,46 @@ class StorageWorkerOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('id="storage-physical-execution-details"', page)
         self.assertNotIn("postStorage", first_screen)
 
+    def test_storage_app_visible_now_summary_is_read_only_before_task_buttons(self):
+        page = self.storage_page
+        head_start = page.index("<h1>存储层</h1>")
+        visible_start = page.index('aria-label="storage app visible now summary"')
+        first_screen_start = page.index('aria-label="storage ordinary first screen status"')
+        physical_task_start = page.index('aria-label="storage ordinary physical evidence task strip"')
+        blocker_start = page.index('title="Storage production blocker audit"')
+        visible_slice = page[visible_start:first_screen_start]
+
+        self.assertLess(head_start, visible_start)
+        self.assertLess(visible_start, first_screen_start)
+        self.assertLess(visible_start, physical_task_start)
+        self.assertLess(visible_start, blocker_start)
+        self.assertIn("storageAppVisibleNowSentence", page[:blocker_start])
+        self.assertIn("storageAppVisibleNowItems", page[:blocker_start])
+        self.assertIn("打开 app 能看到什么", visible_slice)
+        self.assertIn('aria-label="storage app visible now sentence"', visible_slice)
+        self.assertIn("{storageAppVisibleNowSentence}", visible_slice)
+        self.assertIn("MetricGrid items={storageAppVisibleNowItems}", visible_slice)
+        self.assertIn('aria-label="storage app visible now local actions"', visible_slice)
+        self.assertIn('href="#worker"', visible_slice)
+        self.assertIn('href="#storage-physical-execution-details"', visible_slice)
+        self.assertIn('href="#migration"', visible_slice)
+        self.assertIn('label: "数据底座"', page)
+        self.assertIn('label: "元数据"', page)
+        self.assertIn('label: "物理证据"', page)
+        self.assertIn('label: "下一步入口"', page)
+        self.assertIn('label: "支撑页"', page)
+        self.assertIn('label: "安全边界"', page)
+        self.assertIn("打开 app 能看到本地数据底座", page)
+        self.assertIn("Worker runtime / LTG 总账 / 物理执行详情", page)
+        self.assertIn("只读速读和本地锚点；不写 Parquet、不创建 task、不外联、不交易", page)
+        self.assertIn("普通链接只切换本地页面或锚点", visible_slice)
+        self.assertIn("不创建 task、不写 Parquet/manifest、不删除 artifacts", visible_slice)
+        self.assertIn("不调用 Tushare/DeepSeek/GitHub、不交易、不改 strategy action", visible_slice)
+        self.assertNotIn("onClick=", visible_slice)
+        self.assertNotIn("TaskLaunchReceipt", visible_slice)
+        self.assertNotIn("TaskStatusPanel", visible_slice)
+        self.assertNotIn("launchPhysicalExecution", visible_slice)
+
     def test_worker_first_screen_is_readable_before_audit_tables(self):
         page = self.worker_page
         head_start = page.index("<h1>Worker 运行时</h1>")

@@ -489,6 +489,44 @@ export default function StorageOverview() {
       tone: "good" as const
     }
   ];
+  const storageAppVisibleNowSentence =
+    `打开 app 能看到本地数据底座 ${storageDatasetReadinessLabel}；物理执行状态是：${storagePhysicalStatus}；下一步：${storagePhysicalNextStep}。`;
+  const storageAppVisibleNowItems = [
+    {
+      label: "数据底座",
+      value: storageDatasetReadinessLabel,
+      tone: Number(datasetImplementation.parquet_ready_dataset_count ?? 0) > 0 ? "good" as const : "warn" as const
+    },
+    {
+      label: "元数据",
+      value: String(overview.metadata_status ?? sqliteMeta.status ?? "missing"),
+      tone: String(overview.metadata_status ?? sqliteMeta.status ?? "").includes("ready") ? "good" as const : "warn" as const
+    },
+    {
+      label: "物理证据",
+      value: storagePhysicalStatus,
+      tone: storagePhysicalExecutionPhaseA.local_phase_a_execution_ready === true || storagePhysicalExecutionRequest.local_execution_request_ready === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "下一步入口",
+      value: storagePhysicalExecutionPhaseA.local_phase_a_execution_ready === true
+        ? "复核 durable evidence 和生产缺口"
+        : storagePhysicalExecutionRequest.local_execution_request_ready === true
+          ? "下方生成 Phase A local evidence"
+          : "下方生成 request ticket 或先看缺口",
+      tone: "warn" as const
+    },
+    {
+      label: "支撑页",
+      value: "Worker runtime / LTG 总账 / 物理执行详情",
+      tone: "good" as const
+    },
+    {
+      label: "安全边界",
+      value: "只读速读和本地锚点；不写 Parquet、不创建 task、不外联、不交易",
+      tone: "good" as const
+    }
+  ];
   const storagePhysicalExecutionRequestCanLaunch = Boolean(storagePhysicalExecutionRecipe.physical_execution_scope_hash);
   const storagePhysicalExecutionPhaseACanLaunch = storagePhysicalExecutionRequest.local_execution_request_ready === true;
   const storagePhysicalEvidenceActionItems = [
@@ -581,6 +619,18 @@ export default function StorageOverview() {
       <div className="page-head">
         <h1>存储层</h1>
         <StatusBadge label={String(overview.store ?? "parquet_duckdb")} tone="neutral" />
+      </div>
+
+      <div aria-label="storage app visible now summary">
+        <h3>打开 app 能看到什么</h3>
+        <p className="ordinary-status-note" aria-label="storage app visible now sentence" aria-live="polite">{storageAppVisibleNowSentence}</p>
+        <MetricGrid items={storageAppVisibleNowItems} />
+        <div className="actions" aria-label="storage app visible now local actions">
+          <a href="#worker" title="切换到 Worker runtime；只读查看 local fallback 和 runtime QA 状态" aria-label="open worker from storage visible now">Worker 支撑</a>
+          <a href="#storage-physical-execution-details" title="跳到本页物理执行详情；只读锚点跳转" aria-label="open physical execution details from storage visible now">物理执行详情</a>
+          <a href="#migration" title="切换到 LTG 总账；只读查看 14 LTG 状态" aria-label="open migration ledger from storage visible now">LTG 总账</a>
+        </div>
+        <p className="risk-note">这个条带只回答普通用户打开存储页能看到什么：本地数据底座、SQLite 元数据、物理证据状态、下一步入口和生产缺口；普通链接只切换本地页面或锚点，不创建 task、不写 Parquet/manifest、不删除 artifacts、不调用 Tushare/DeepSeek/GitHub、不交易、不改 strategy action。</p>
       </div>
 
       <div aria-label="storage ordinary first screen status">
