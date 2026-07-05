@@ -4575,10 +4575,19 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
                 "run_id": report.get("run_id") or path.parent.name,
                 "generated_at": report.get("generated_at"),
                 "report_path": _relative_artifact_path(path),
+                "status": report.get("status") or "unknown",
                 "passed": _user_route_qa_report_passed(report),
                 "route_count": int(report.get("route_count") or 0),
                 "viewport_count": int(report.get("viewport_count") or 0),
                 "qa_matrix_count": int(report.get("qa_matrix_count") or 0),
+                "passed_count": int(report.get("passed_count") or 0),
+                "review_required_count": int(report.get("review_required_count") or 0),
+                "console_error_count": int(report.get("console_error_count") or 0),
+                "visual_qa_complete": report.get("visual_qa_complete") is True,
+                "typing_silence_verified": report.get("typing_silence_verified") is True,
+                "task_silence_failed_count": sum(
+                    1 for row in evidence_rows if row.get("task_created_by_render_or_typing") is True
+                ),
                 "covered_routes": sorted(
                     {str(row.get("route") or "") for row in passed_evidence_rows if row.get("route")}
                 ),
@@ -4609,6 +4618,8 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
     passing_reports = [row for row in report_records if row["passed"]]
     latest_report = report_records[-1] if report_records else {}
     latest_passing = passing_reports[-1] if passing_reports else {}
+    latest_report_candidate_route_row_count = int(latest_report.get("candidate_route_row_count") or 0)
+    latest_report_passed = latest_report.get("passed") is True
     covered_routes = [str(route) for route in latest_passing.get("covered_routes", [])] if latest_passing else []
     covered_viewports = [str(viewport) for viewport in latest_passing.get("covered_viewports", [])] if latest_passing else []
     candidate_route_row_count = int(latest_passing.get("candidate_route_row_count") or 0) if latest_passing else 0
@@ -4628,6 +4639,21 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
         "passing_report_count": len(passing_reports),
         "latest_run_id": latest_report.get("run_id"),
         "latest_report_path": latest_report.get("report_path"),
+        "latest_report_status": latest_report.get("status") or "missing",
+        "latest_report_passed": latest_report_passed,
+        "latest_report_route_count": int(latest_report.get("route_count") or 0),
+        "latest_report_viewport_count": int(latest_report.get("viewport_count") or 0),
+        "latest_report_qa_matrix_count": int(latest_report.get("qa_matrix_count") or 0),
+        "latest_report_passed_count": int(latest_report.get("passed_count") or 0),
+        "latest_report_review_required_count": int(latest_report.get("review_required_count") or 0),
+        "latest_report_console_error_count": int(latest_report.get("console_error_count") or 0),
+        "latest_report_visual_qa_complete": latest_report.get("visual_qa_complete") is True,
+        "latest_report_typing_silence_verified": latest_report.get("typing_silence_verified") is True,
+        "latest_report_task_silence_failed_count": int(latest_report.get("task_silence_failed_count") or 0),
+        "latest_report_candidate_route_row_count": latest_report_candidate_route_row_count,
+        "latest_report_candidate_route_passed": latest_report_passed
+        and latest_report_candidate_route_row_count >= 2,
+        "latest_report_is_current_evidence": bool(latest_report),
         "latest_passing_run_id": latest_passing.get("run_id"),
         "latest_passing_report_path": latest_passing.get("report_path"),
         "required_route_count": 5,
@@ -6031,6 +6057,24 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 0,
             ),
             "user_route_qa_evidence_row_count": user_route_qa_evidence_contract.get("row_count", 0),
+            "user_route_qa_latest_report_passed": user_route_qa_evidence_contract.get("latest_report_passed")
+            is True,
+            "user_route_qa_latest_report_qa_matrix_count": user_route_qa_evidence_contract.get(
+                "latest_report_qa_matrix_count",
+                0,
+            ),
+            "user_route_qa_latest_report_review_required_count": user_route_qa_evidence_contract.get(
+                "latest_report_review_required_count",
+                0,
+            ),
+            "user_route_qa_latest_report_console_error_count": user_route_qa_evidence_contract.get(
+                "latest_report_console_error_count",
+                0,
+            ),
+            "user_route_qa_latest_report_candidate_route_passed": user_route_qa_evidence_contract.get(
+                "latest_report_candidate_route_passed"
+            )
+            is True,
             "user_route_qa_visual_complete": user_route_qa_evidence_contract.get(
                 "ordinary_route_visual_qa_complete"
             )

@@ -204,8 +204,9 @@ export default function CallLedgerAudit() {
           { label: "motion budgets", value: counts.motion_browser_qa_performance_budget_count as number | undefined },
           { label: "motion evidence", value: motionBrowserQaEvidence.status as string | undefined, tone: motionBrowserQaEvidence.visual_qa_complete === true ? "good" : "warn" },
           { label: "ordinary QA", value: userRouteQaEvidence.status as string | undefined, tone: userRouteQaEvidence.ordinary_route_visual_qa_complete === true ? "good" : "warn" },
+          { label: "latest ordinary QA", value: userRouteQaEvidence.latest_report_passed === true ? "passed" : String(userRouteQaEvidence.latest_report_status ?? "pending"), tone: userRouteQaEvidence.latest_report_passed === true ? "good" : "warn" },
           { label: "ordinary QA rows", value: counts.user_route_qa_evidence_row_count as number | undefined },
-          { label: "Candidate route QA", value: counts.user_route_qa_candidate_route_passed === true ? "passed" : "pending", tone: counts.user_route_qa_candidate_route_passed === true ? "good" : "warn" },
+          { label: "Candidate route QA", value: counts.user_route_qa_latest_report_candidate_route_passed === true ? "latest passed" : counts.user_route_qa_candidate_route_passed === true ? "historical passed" : "pending", tone: counts.user_route_qa_latest_report_candidate_route_passed === true ? "good" : "warn" },
           { label: "motion QA review", value: motionBrowserQaReview.status as string | undefined, tone: motionBrowserQaReview.local_browser_qa_review_ready === true ? "good" : "warn" },
           { label: "review blockers", value: counts.motion_browser_qa_review_blocking_count as number | undefined, tone: Number(counts.motion_browser_qa_review_blocking_count ?? 0) > 0 ? "warn" : "good" },
           { label: "browser reports", value: counts.motion_browser_qa_evidence_report_count as number | undefined },
@@ -432,6 +433,9 @@ export default function CallLedgerAudit() {
       <PacketCard title="Ordinary route QA evidence" subtitle="user_route_qa_evidence_contract：读取本地 ignored 普通路线 QA 报告摘要，不提交截图/报告" status={String(userRouteQaEvidence.status ?? "missing")}>
         <p>scope: {String(userRouteQaEvidence.scope ?? "local_ordinary_route_browser_qa_reports_summary_not_tracked_artifact")}</p>
         <p>report_count: {String(userRouteQaEvidence.report_count ?? 0)}；passing_report_count: {String(userRouteQaEvidence.passing_report_count ?? 0)}</p>
+        <p>latest_report_status: {String(userRouteQaEvidence.latest_report_status ?? "missing")}；latest_report_passed: {String(userRouteQaEvidence.latest_report_passed === true)}；matrix: {String(userRouteQaEvidence.latest_report_passed_count ?? 0)}/{String(userRouteQaEvidence.latest_report_qa_matrix_count ?? 0)}</p>
+        <p>latest review_required: {String(userRouteQaEvidence.latest_report_review_required_count ?? 0)}；console_errors: {String(userRouteQaEvidence.latest_report_console_error_count ?? 0)}；latest_candidate_route_passed: {String(userRouteQaEvidence.latest_report_candidate_route_passed === true)}</p>
+        <p>latest_report_path: {String(userRouteQaEvidence.latest_report_path ?? "pending")}</p>
         <p>ordinary_route_visual_qa_complete: {String(userRouteQaEvidence.ordinary_route_visual_qa_complete === true)}；typing_silence_verified: {String(userRouteQaEvidence.typing_silence_verified === true)}</p>
         <p>candidate_route_visual_qa_passed: {String(userRouteQaEvidence.candidate_route_visual_qa_passed === true)}；task_silence_failed_count: {String(userRouteQaEvidence.task_silence_failed_count ?? 0)}</p>
         <p>latest_passing_report_path: {String(userRouteQaEvidence.latest_passing_report_path ?? "pending")}</p>
