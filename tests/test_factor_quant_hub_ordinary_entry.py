@@ -77,6 +77,28 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", compact_slice)
         self.assertNotIn("launch" + "Task", compact_slice)
         self.assertNotIn("post" + "Task(", compact_slice)
+        self.assertIn("ordinaryFactorTestProviderQuickReadItems", source)
+        self.assertIn('aria-label="stock quant provider validation ordinary quick read"', summary_slice)
+        self.assertIn("真实验证速读", summary_slice)
+        self.assertIn('aria-label="stock quant provider validation quick read sentence"', summary_slice)
+        for provider_quick_label in (
+            'label: "真实验证"',
+            'label: "授权状态"',
+            'label: "缺口"',
+            'label: "下一步"',
+            'label: "边界"',
+        ):
+            self.assertIn(provider_quick_label, source)
+        self.assertIn("真实小池验证必须另行授权", source)
+        self.assertIn("打开页面、查看速读和切换锚点都只读本地 cache", source)
+        provider_quick_start = summary_slice.index('aria-label="stock quant provider validation ordinary quick read"')
+        provider_quick_end = summary_slice.index('aria-label="stock quant mode layered live light evidence boundary"', provider_quick_start)
+        provider_quick_slice = summary_slice[provider_quick_start:provider_quick_end]
+        self.assertLess(compact_start, provider_quick_start)
+        self.assertLess(provider_quick_start, summary_slice.index('aria-label="stock quant projection primary next action"'))
+        self.assertNotIn("onClick=", provider_quick_slice)
+        self.assertNotIn("launch" + "Task", provider_quick_slice)
+        self.assertNotIn("post" + "Task(", provider_quick_slice)
         self.assertIn("ordinaryQuantModeLayeredLiveLightItems", source)
         self.assertIn('aria-label="stock quant mode layered live light evidence boundary"', summary_slice)
         self.assertIn("运行模式分层", summary_slice)

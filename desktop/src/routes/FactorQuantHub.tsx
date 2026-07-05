@@ -1341,6 +1341,33 @@ export default function FactorQuantHub() {
       : `LTG-03 当前 degraded：dry-run=${String(factorTestProviderSmallPoolDryRun.status ?? "missing")}，credential=${String(factorTestProviderSmallPoolCredential.status ?? "unknown")}，blocker=${factorTestProviderSmallPoolBlockers.join(" / ") || "provider_task_and_sample_rows_pending"}；本地 execution request 不能替代真实 provider task，下一步只能是用户授权后的 provider-backed 小池验收。`;
   const ordinaryFactorTestProviderBoundary =
     "本卡只读 Factor cache；不触发 dry-run、execution request 或 provider task；真实小池验收只能在用户明确授权后走 POST task";
+  const ordinaryFactorTestProviderQuickReadItems: MetricItem[] = [
+    {
+      label: "真实验证",
+      value: ordinaryFactorTestProviderSmallPoolState,
+      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "授权状态",
+      value: ordinaryFactorTestProviderRequestState,
+      tone: factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: ordinaryFactorTestProviderEvidenceGap,
+      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: "先看本地 scope / execution request；真实小池验证必须另行授权",
+      tone: "warn"
+    },
+    {
+      label: "边界",
+      value: "打开页面、查看速读和切换锚点都只读本地 cache；不调用 Tushare/DeepSeek/GitHub、不创建 provider task、不交易",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantModeLayeredLiveLightItems: MetricItem[] = [
     {
       label: "缓存渲染层",
@@ -1617,6 +1644,11 @@ export default function FactorQuantHub() {
             <h3>当前纵切状态</h3>
             <p className="ordinary-status-note">确认链、P2/P3、支持/压制、小池验收和缺口先给结论；需要真实 provider 小池时只显示授权边界，不自动创建任务。</p>
             <MetricGrid items={ordinaryQuantCompactVerticalSliceItems} />
+          </div>
+          <div aria-label="stock quant provider validation ordinary quick read">
+            <h3>真实验证速读</h3>
+            <p className="ordinary-status-note" aria-label="stock quant provider validation quick read sentence" aria-live="polite">{ordinaryFactorTestProviderCurrentBlockerSentence}</p>
+            <MetricGrid items={ordinaryFactorTestProviderQuickReadItems} />
           </div>
           <div aria-label="stock quant mode layered live light evidence boundary">
             <h3>运行模式分层</h3>
