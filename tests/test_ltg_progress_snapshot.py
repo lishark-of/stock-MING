@@ -331,7 +331,7 @@ class LtgProgressSnapshotTests(unittest.TestCase):
             },
             "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary": {
                 "schema_version": "ltg01_trade_cal_provider_acceptance_evidence_handoff_summary.v1",
-                "status": "provider_acceptance_task_receipt_chain_needed",
+                "status": "prior_provider_call_ledger_visible_replay_or_promotion_needed",
                 "provider_direct_evidence_layer": "L3_direct_provider_call_ledger",
                 "provider_direct_evidence_source": "command_center_tushare_refresh_packet",
                 "provider_direct_evidence_status": "success",
@@ -343,6 +343,8 @@ class LtgProgressSnapshotTests(unittest.TestCase):
                 "provider_backed_acceptance_done_by_blocker_audit": False,
                 "provider_backed_acceptance_done_by_durable_recipe": False,
                 "provider_evidence_visible": False,
+                "prior_provider_call_ledger_visible": True,
+                "prior_provider_call_ledger_visible_not_acceptance": True,
                 "durable_recipe_ready": True,
                 "durable_promotion_ready": False,
                 "latest_dry_run_found": False,
@@ -368,7 +370,9 @@ class LtgProgressSnapshotTests(unittest.TestCase):
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "does_not_execute_trades": True,
-                "next_local_step": "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+                "next_local_step": (
+                    "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence"
+                ),
                 "allowed_next_step": (
                     "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence"
                 ),
@@ -381,7 +385,7 @@ class LtgProgressSnapshotTests(unittest.TestCase):
             snapshot = module.build_snapshot()
 
         trade_cal = snapshot["trade_cal_provider_acceptance"]
-        self.assertEqual(trade_cal["status"], "provider_acceptance_task_receipt_chain_needed")
+        self.assertEqual(trade_cal["status"], "prior_provider_call_ledger_visible_replay_or_promotion_needed")
         self.assertEqual(trade_cal["provider_direct_evidence_status"], "success")
         self.assertEqual(trade_cal["trade_cal_provider_call_ledger_observed_count"], 18)
         self.assertEqual(trade_cal["trade_cal_provider_observed_row_count"], 1462)
@@ -395,7 +399,7 @@ class LtgProgressSnapshotTests(unittest.TestCase):
         self.assertFalse(trade_cal["tushare_called"])
         self.assertEqual(
             trade_cal["next_local_step"],
-            "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+            "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence",
         )
 
         buffer = io.StringIO()
@@ -404,7 +408,7 @@ class LtgProgressSnapshotTests(unittest.TestCase):
         text = buffer.getvalue()
 
         self.assertIn("Trade cal acceptance:", text)
-        self.assertIn("status=provider_acceptance_task_receipt_chain_needed", text)
+        self.assertIn("status=prior_provider_call_ledger_visible_replay_or_promotion_needed", text)
         self.assertIn("direct_provider=success", text)
         self.assertIn("ledger=18", text)
         self.assertIn("rows=1462", text)
@@ -415,7 +419,10 @@ class LtgProgressSnapshotTests(unittest.TestCase):
         self.assertIn("promotion=False", text)
         self.assertIn("cache_provider=False", text)
         self.assertIn("tushare_called=False", text)
-        self.assertIn("next=POST /api/data-health/trade-cal-provider-acceptance-dry-run", text)
+        self.assertIn(
+            "next=collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence",
+            text,
+        )
 
     def test_tushare_pipeline_is_visible_without_provider_execution_claim(self):
         module = _load_snapshot_module()

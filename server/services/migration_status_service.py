@@ -9715,6 +9715,23 @@ def _build_ltg_next_action_submission_preview_rows(
                 required_prior_receipt_visible=alternative_step.get("receipt_visible") is True,
                 required_prior_material_visible=alternative_step.get("local_ready") is True,
             )
+        if (
+            next_local_step
+            == "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence"
+        ):
+            return _disabled_handoff_preview(
+                step_kind="trade_cal_prior_provider_evidence_review_required",
+                disabled_reason="prior_provider_ledger_requires_replay_failure_mode_and_promotion_evidence",
+                safe_payload_summary=(
+                    "prior trade_cal provider call-ledger is visible, but production acceptance still "
+                    "requires replay, failure-mode evidence, promotion review, remote CI, and release review"
+                ),
+                required_prior_phase_key="prior_trade_cal_provider_call_ledger",
+                required_prior_material="safe_call_ledger_replay_failure_mode_promotion_evidence",
+                required_prior_receipt_visible=True,
+                required_prior_material_visible=False,
+                requires_separate_user_approved_provider_task=True,
+            )
         if next_local_step == "separate approved real-trading integration project only":
             trade_step = _local_step_row_by_phase(
                 local_step_rows, "trade_isolation_release_receipt"
@@ -10342,6 +10359,10 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
     provider_acceptance_evidence_missing = (
         "provider-backed trade_cal acceptance evidence" in missing_durable_evidence_items
     )
+    prior_provider_call_ledger_visible = (
+        int(provider_evidence.get("trade_cal_provider_call_ledger_observed_count") or 0) > 0
+        or str(provider_evidence.get("source_status") or "") == "success"
+    )
     provider_evidence_visible = provider_evidence.get("provider_backed_acceptance_done") is True
     promotion_ready = promotion.get("status") == "trade_cal_provider_acceptance_promotion_ready"
     dry_run_found = latest_dry_run.get("latest_task_found") is True
@@ -10364,6 +10385,10 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         durable_recipe.get("production_freshness_gate_complete") is True
         or production_promotion_review_complete
     )
+    prior_provider_review_step = (
+        durable_recipe.get("allowed_next_step")
+        or "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence"
+    )
     next_step = (
         "ltg01_strict_closeout_ready_continue_ltg02"
         if production_freshness_gate_complete
@@ -10378,6 +10403,8 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         if promotion_review_found and promotion_review_ready
         else "POST /api/data-health/trade-cal-provider-acceptance-promotion-review"
         if provider_evidence_visible and promotion_ready
+        else prior_provider_review_step
+        if prior_provider_call_ledger_visible
         else "POST /api/tasks/refresh-tushare-facts"
         if execution_request_found and execution_request_ready
         else "POST /api/data-health/trade-cal-provider-acceptance-execution-request"
@@ -10395,6 +10422,8 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         if promotion_review_found and promotion_review_ready
         else "prior_provider_acceptance_evidence_visible_promotion_review_needed"
         if provider_evidence_visible and promotion_ready
+        else "prior_provider_call_ledger_visible_replay_or_promotion_needed"
+        if prior_provider_call_ledger_visible
         else "provider_acceptance_execution_request_ready_provider_task_pending"
         if execution_request_found and execution_request_ready
         else "provider_acceptance_execution_request_visible_but_blocked"
@@ -10411,6 +10440,10 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
         "provider_direct_evidence_status": provider_evidence.get("source_status"),
         "provider_direct_evidence_layer": provider_evidence.get("direct_evidence_layer"),
         "provider_evidence_visible": provider_evidence_visible,
+        "prior_provider_call_ledger_visible": prior_provider_call_ledger_visible,
+        "prior_provider_call_ledger_visible_not_acceptance": (
+            prior_provider_call_ledger_visible and not provider_evidence_visible
+        ),
         "provider_backed_acceptance_done_by_blocker_audit": (
             production_blocker.get("provider_backed_trade_cal_acceptance_done") is True
         ),
@@ -11405,6 +11438,14 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                     is True
                     else "local_trade_cal_handoff_next_step_visible"
                 )
+            elif (
+                supporting_trade_cal_provider_acceptance_evidence_handoff.get(
+                    "prior_provider_call_ledger_visible_not_acceptance"
+                )
+                is True
+            ):
+                next_local_step = handoff_next_step
+                local_status = "local_trade_cal_prior_provider_ledger_visible_review_needed"
         if action["queue_id"] == "p2_tushare_target_sample_acceptance":
             safe_context["tushare_target_sample_execution_recipe_preview"] = (
                 _latest_tushare_target_sample_execution_recipe_preview()

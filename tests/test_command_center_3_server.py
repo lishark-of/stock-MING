@@ -3198,9 +3198,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             action_rows["p1_trade_cal_provider_acceptance"]["first_allowed_route"],
             "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
         )
-        self.assertEqual(
+        self.assertIn(
             action_rows["p1_trade_cal_provider_acceptance"]["next_local_step"],
-            "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+            {
+                "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+                "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence",
+            },
         )
         self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 5)
         p1_producer_handoff = action_rows["p1_trade_cal_provider_acceptance"][
@@ -3251,6 +3254,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             {
                 "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
                 "POST /api/data-health/trade-cal-provider-acceptance-promotion-review",
+                "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence",
                 "release_review_after_matching_remote_ci_green",
             },
         )
@@ -3537,11 +3541,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(
             all(isinstance(row["future_handoff_ready_from_local_receipt"], bool) for row in migration["ltg_next_acceptance_action_rows"])
         )
-        self.assertTrue(action_rows["p1_trade_cal_provider_acceptance"]["next_local_step_ready_for_clean_receipt"])
+        p1_next_step = action_rows["p1_trade_cal_provider_acceptance"]["next_local_step"]
         p1_preview = action_rows["p1_trade_cal_provider_acceptance"]["next_local_step_preview_rows"][0]
-        self.assertEqual(p1_preview["step_kind"], "dry_run_scope_ticket")
-        self.assertTrue(p1_preview["ready_for_clean_local_receipt"])
-        self.assertEqual(p1_preview["disabled_reason"], "")
+        if p1_next_step == "POST /api/data-health/trade-cal-provider-acceptance-dry-run":
+            self.assertTrue(
+                action_rows["p1_trade_cal_provider_acceptance"]["next_local_step_ready_for_clean_receipt"]
+            )
+            self.assertEqual(p1_preview["step_kind"], "dry_run_scope_ticket")
+            self.assertTrue(p1_preview["ready_for_clean_local_receipt"])
+            self.assertEqual(p1_preview["disabled_reason"], "")
+        else:
+            self.assertFalse(
+                action_rows["p1_trade_cal_provider_acceptance"]["next_local_step_ready_for_clean_receipt"]
+            )
+            self.assertEqual(p1_preview["step_kind"], "trade_cal_prior_provider_evidence_review_required")
+            self.assertFalse(p1_preview["ready_for_clean_local_receipt"])
+            self.assertEqual(
+                p1_preview["disabled_reason"],
+                "prior_provider_ledger_requires_replay_failure_mode_and_promotion_evidence",
+            )
         p2_preview = action_rows["p2_tushare_target_sample_acceptance"]["next_local_step_preview_rows"][0]
         self.assertFalse(action_rows["p2_tushare_target_sample_acceptance"]["next_local_step_ready_for_clean_receipt"])
         self.assertEqual(
@@ -40734,6 +40752,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "provider_acceptance_dry_run_scope_ticket_visible_execution_request_needed",
                 "provider_acceptance_execution_request_visible_but_blocked",
                 "provider_acceptance_execution_request_ready_provider_task_pending",
+                "prior_provider_call_ledger_visible_replay_or_promotion_needed",
                 "prior_provider_acceptance_evidence_visible_promotion_review_needed",
                 "provider_acceptance_promotion_review_ready_for_release_review",
             },
