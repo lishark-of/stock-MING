@@ -2595,6 +2595,42 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const ordinaryModeLayeredLiveLightItems: MetricItem[] = [
+    {
+      label: "cache/render 层",
+      value: `${candidateRadarRuntimeModeLabel}；GET cache 和 React render 只读，不创建 task`,
+      tone: candidateRadarCacheGetReadable ? "good" : "warn"
+    },
+    {
+      label: "button/task 层",
+      value: quantProjectionCanSubmit
+        ? `确认按钮可创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task`
+        : quantProjectionP0Ready
+          ? "等待有效代码；输入本身保持静默"
+          : "先恢复 P0，本页不自动补证",
+      tone: quantProjectionCanSubmit || quantProjectionP0Ready ? "good" : "warn"
+    },
+    {
+      label: "provider/model 层",
+      value: `${ordinaryTushareSourceLabel}；${ordinaryDeepSeekSourceLabel}`,
+      tone: bootstrapLiveLight.tushare_on_open === true || bootstrapLiveLight.deepseek_on_open === true ? "warn" : "good"
+    },
+    {
+      label: "worker/browser 层",
+      value: `全池/深研/browser QA 需显式任务；当前页面 QA：${ordinaryBrowserQaStatusLabel}`,
+      tone: browserQaReview.local_browser_qa_review_ready === true || browserQaEvidence.candidate_browser_qa_evidence_ready === true ? "good" : "warn"
+    },
+    {
+      label: "production 层",
+      value: `LTG-13 未关闭；${ordinaryRetirementReadinessMainGaps}`,
+      tone: productionStageScopeManifest.production_radar_replacement_complete === true ? "good" : "warn"
+    },
+    {
+      label: "交易隔离",
+      value: "候选只供研究复核；不下单、不改持仓、不改 strategy action",
+      tone: "good"
+    }
+  ];
   const candidateRadarCompactVerticalSliceItems: MetricItem[] = [
     {
       label: "输入到确认",
@@ -3372,7 +3408,12 @@ export default function CandidateRadar() {
             <h3>轻量实时证据速读</h3>
             <p className="ordinary-status-note">把本地候选缓存、previous-cache diff、active degraded、退旧雷达缺口和页面 QA 合成一条普通用户速读；这里只读 cache，不创建 task、不调用 provider/model。</p>
             <MetricGrid items={ordinaryLiveLightEvidenceFactoryItems} />
+            <div aria-label="candidate radar mode layered live light boundaries">
+              <h3>运行模式分层</h3>
+              <MetricGrid items={ordinaryModeLayeredLiveLightItems} />
+            </div>
             <p className="risk-note" title="全池/深研和真实数据覆盖需未来显式 worker/provider task">下一步：{ordinaryLiveLightFactoryNextStep}；候选只用于研究复核；不是买入、卖出或加仓指令。</p>
+            <p className="risk-note">分层速读只解释 cache/render、button/task、provider/model、worker/browser 和 production 边界；不会因为页面打开、输入、React render 或本地链接调用 Tushare/DeepSeek/GitHub，也不证明 LTG-13 production replacement complete。</p>
           </div>
           <div className="actions" aria-label="candidate radar user first actions">
             <a href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"} aria-label="open candidate radar user first primary action">{ordinaryPrimaryActionLabel}</a>

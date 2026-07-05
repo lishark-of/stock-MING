@@ -637,6 +637,41 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postCandidateRadarQuantProjection", watch)
         self.assertNotIn("launchQuantProjection", watch)
 
+    def test_candidate_radar_mode_layered_live_light_boundaries_are_first_screen_read_only(self):
+        summary_start = self.page.index('title="普通用户雷达摘要"')
+        summary_end = self.page.index('title="下一票候选池"', summary_start)
+        summary = self.page[summary_start:summary_end]
+        factory_start = summary.index('aria-label="candidate radar ordinary live light evidence factory"')
+        mode_layer_start = summary.index('aria-label="candidate radar mode layered live light boundaries"', factory_start)
+        denoise_start = summary.index('aria-label="candidate radar denoised first screen guide"', mode_layer_start)
+        audit_start = self.page.index('id="audit" className="developer-audit-details"')
+        mode_layer = summary[mode_layer_start:denoise_start]
+        source_before_audit = self.page[:audit_start]
+
+        self.assertLess(factory_start, mode_layer_start)
+        self.assertLess(mode_layer_start, denoise_start)
+        self.assertIn("ordinaryModeLayeredLiveLightItems", source_before_audit)
+        self.assertIn("运行模式分层", mode_layer)
+        self.assertIn("MetricGrid items={ordinaryModeLayeredLiveLightItems}", mode_layer)
+        self.assertIn('label: "cache/render 层"', source_before_audit)
+        self.assertIn('label: "button/task 层"', source_before_audit)
+        self.assertIn('label: "provider/model 层"', source_before_audit)
+        self.assertIn('label: "worker/browser 层"', source_before_audit)
+        self.assertIn('label: "production 层"', source_before_audit)
+        self.assertIn('label: "交易隔离"', source_before_audit)
+        self.assertIn("GET cache 和 React render 只读，不创建 task", source_before_audit)
+        self.assertIn("等待有效代码；输入本身保持静默", source_before_audit)
+        self.assertIn("全池/深研/browser QA 需显式任务", source_before_audit)
+        self.assertIn("LTG-13 未关闭", source_before_audit)
+        self.assertIn("不下单、不改持仓、不改 strategy action", source_before_audit)
+        self.assertIn("分层速读只解释 cache/render、button/task、provider/model、worker/browser 和 production 边界", summary)
+        self.assertIn("不会因为页面打开、输入、React render 或本地链接调用 Tushare/DeepSeek/GitHub", summary)
+        self.assertIn("不证明 LTG-13 production replacement complete", summary)
+        self.assertNotIn("production_radar_replacement_complete: true", mode_layer)
+        self.assertNotIn("onClick=", mode_layer)
+        self.assertNotIn("postCandidateRadar", mode_layer)
+        self.assertNotIn("launchQuantProjection", mode_layer)
+
     def test_candidate_radar_p1_direct_handoff_is_local_navigation_only(self):
         direct_start = self.page.index('aria-label="candidate radar p1 direct confirmation handoff"')
         direct_end = self.page.index('aria-label="candidate radar p2 three surface quick status"', direct_start)
