@@ -114,6 +114,37 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("边用边看进度", summary_panel)
         self.assertIn("MetricGrid items={quantProjectionTaskIndexProgressItems}", summary_panel)
         self.assertIn("<summary>Research Assist / Audit Details：P1/P2/P3 回放明细</summary>", summary_panel)
+        self.assertIn("candidateRadarOpenNowPathItems", self.page)
+        self.assertIn('aria-label="candidate radar open app shortest path"', summary_panel)
+        self.assertIn("打开先看这 4 步", summary_panel)
+        self.assertIn("候选池、确认输入、最近结果和非买入边界放在同一屏", summary_panel)
+        for shortest_path_label in (
+            'label: "候选池"',
+            'label: "确认输入"',
+            'label: "最近结果"',
+            'label: "下一步"',
+            'label: "非买入边界"',
+        ):
+            self.assertIn(shortest_path_label, self.page)
+        self.assertIn("候选和推演只做研究复核；不是买入、卖出或加仓指令", self.page)
+        shortest_path_start = summary_panel.index('aria-label="candidate radar open app shortest path"')
+        shortest_path_end = summary_panel.index('aria-label="candidate radar ordinary live light evidence factory"', shortest_path_start)
+        shortest_path_slice = summary_panel[shortest_path_start:shortest_path_end]
+        self.assertLess(
+            summary_panel.index('aria-label="candidate radar ordinary vertical slice readback"'),
+            shortest_path_start,
+        )
+        self.assertLess(
+            shortest_path_start,
+            summary_panel.index('aria-label="candidate radar ordinary live light evidence factory"'),
+        )
+        self.assertIn('aria-label="candidate radar open app shortest path actions"', shortest_path_slice)
+        self.assertIn('aria-label="open candidate pool from open app shortest path"', shortest_path_slice)
+        self.assertIn('aria-label="open confirm input from open app shortest path"', shortest_path_slice)
+        self.assertIn('aria-label="open recent factor result from open app shortest path"', shortest_path_slice)
+        self.assertNotIn("onClick=", shortest_path_slice)
+        self.assertNotIn("launch" + "Task", shortest_path_slice)
+        self.assertNotIn("post" + "Task(", shortest_path_slice)
         self.assertIn("coarseFineScreening", self.page)
         self.assertIn("coarse_fine_screening_contract", self.page)
         self.assertIn("coarse_screening_rows", self.page)

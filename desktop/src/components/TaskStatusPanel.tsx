@@ -155,6 +155,9 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
   const statusHistory = task.status_history ?? [];
   const cancellable = task.status === "pending" || task.status === "running";
   const taskStatusLabel = labelForStatus(task.status);
+  const cancelButtonTitle = cancellable
+    ? "仅本地取消 pending/running 任务；不会调用 Tushare、DeepSeek 或 GitHub"
+    : `当前任务状态为${taskStatusLabel}，不能取消；取消只适用于 pending/running 本地任务`;
   const successRefreshMessage =
     task.status === "success" && onSuccess
       ? "任务成功后已通知页面刷新本地回放；这不会创建新 task、不调用 Tushare、DeepSeek 或 GitHub、不执行真实交易。"
@@ -376,6 +379,8 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <TaskBoundarySummary task={task} />
       <button
         disabled={!cancellable}
+        title={cancelButtonTitle}
+        aria-label={cancelButtonTitle}
         onClick={() =>
           void cancelTask(task.task_id, "manual_cancel_from_task_status_panel").then((res) => {
             setCancelMessage(res.ok ? "本地取消请求已写入任务状态，不调用 Tushare、DeepSeek 或 GitHub。" : String(res.error ?? "cancel_failed"));

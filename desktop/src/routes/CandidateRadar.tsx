@@ -2750,6 +2750,41 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarOpenNowPathItems: MetricItem[] = [
+    {
+      label: "候选池",
+      value: `${ordinaryCandidateGroupLabel}；先看 Top / Watch / Excluded`,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "确认输入",
+      value: quantProjectionCanSubmit
+        ? `可确认 ${quantProjectionSymbolValidation.normalized}；点击后才创建本地投研任务`
+        : quantProjectionP0Ready
+          ? "输入有效 A 股代码；输入本身保持静默"
+          : "先恢复本地 FastAPI 联通",
+      tone: quantProjectionCanSubmit || quantProjectionP0Ready ? "good" : "warn"
+    },
+    {
+      label: "最近结果",
+      value: quantProjectionInterpretationReady || quantProjectionSmallDataReady
+        ? quantProjectionOrdinaryResultSummary
+        : quantProjectionP3OrdinaryReadableSentence,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: quantProjectionDisplaySymbol
+        ? "复核最近结果，必要时换一只票确认"
+        : "先从候选池选一只，或直接输入代码确认",
+      tone: quantProjectionDisplaySymbol || ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "非买入边界",
+      value: "候选和推演只做研究复核；不是买入、卖出或加仓指令",
+      tone: "good"
+    }
+  ];
   const ordinaryCandidateReviewCompassItems: MetricItem[] = [
     {
       label: "先看哪组",
@@ -3482,6 +3517,16 @@ export default function CandidateRadar() {
             <h3>纵切速读</h3>
             <p className="ordinary-status-note">搜票输入 -&gt; 确认任务 -&gt; 最近结果 -&gt; 候选池 -&gt; 证据缺口按同一条本地链路展示；这张表只读页面状态，不创建 task、不调用 provider/model。</p>
             <DataLineageTable rows={candidateRadarOrdinaryVerticalSliceRows} />
+          </div>
+          <div aria-label="candidate radar open app shortest path">
+            <h3>打开先看这 4 步</h3>
+            <p className="ordinary-status-note">候选池、确认输入、最近结果和非买入边界放在同一屏；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek/GitHub。</p>
+            <MetricGrid items={candidateRadarOpenNowPathItems} />
+            <div className="actions" aria-label="candidate radar open app shortest path actions">
+              <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from open app shortest path">看候选池</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from open app shortest path">确认输入</a>
+              <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open recent factor result from open app shortest path">最近结果</a>
+            </div>
           </div>
           <div aria-label="candidate radar ordinary live light evidence factory">
             <h3>轻量实时证据速读</h3>

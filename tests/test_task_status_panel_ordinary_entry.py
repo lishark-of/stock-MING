@@ -24,6 +24,11 @@ class TaskStatusPanelOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="task status runtime metadata details"', source)
         self.assertIn("运行元数据、P1/P2/P3 明细、call ledger、model ledger 和状态历史默认收起", source)
         self.assertIn("TaskStatusPanel 只轮询本地 FastAPI 任务状态；不会补调 provider/model。", source)
+        self.assertIn("cancelButtonTitle", source)
+        self.assertIn("仅本地取消 pending/running 任务；不会调用 Tushare、DeepSeek 或 GitHub", source)
+        self.assertIn("当前任务状态为${taskStatusLabel}，不能取消；取消只适用于 pending/running 本地任务", source)
+        self.assertIn("title={cancelButtonTitle}", source)
+        self.assertIn("aria-label={cancelButtonTitle}", source)
 
         ordinary_summary = source[
             source.index('aria-label="task status ordinary summary"') : source.index('aria-label="task status p3 result replay links"')
