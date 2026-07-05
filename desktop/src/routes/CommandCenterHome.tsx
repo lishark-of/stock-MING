@@ -374,6 +374,10 @@ export default function CommandCenterHome() {
     (candidates.ordinary_tushare_first_chain_rows as Array<Record<string, unknown>> | undefined) ??
     (candidateQuantSmallDataWriteback.ordinary_tushare_first_chain_rows as Array<Record<string, unknown>> | undefined) ??
     [];
+  const candidateQuantProviderApiRows =
+    (candidates.ordinary_provider_api_rows as Array<Record<string, unknown>> | undefined) ??
+    (candidateQuantSmallDataWriteback.ordinary_provider_api_rows as Array<Record<string, unknown>> | undefined) ??
+    [];
   const candidateQuantWritebackSurfaceRows =
     (candidates.search_quant_projection_small_data_writeback_rows as Array<Record<string, unknown>> | undefined) ??
     (candidateQuantSmallDataWriteback.ordinary_writeback_surface_summary_rows as Array<Record<string, unknown>> | undefined) ??
@@ -722,6 +726,39 @@ export default function CommandCenterHome() {
   const dailyCommandConfirmedSymbolLabel = dailyCommandConfirmedSymbol
     ? `当前确认标的：${dailyCommandConfirmedSymbol}`
     : "等待下一票雷达确认标的";
+  const dailyCommandTushareDataCardSummary = dailyCommandTushareFirstLedgerReady
+    ? `${dailyCommandConfirmedSymbol || "当前标的"} 确认后 Tushare 数据卡可读：${dailyCommandTushareFirstSuccessCount}/${dailyCommandTushareFirstApiCount} 个接口已进入本地回放。`
+    : "确认后 Tushare 数据卡等待回写：先在首页或下一票雷达输入股票代码并点击确认。";
+  const dailyCommandTushareDataCardNext = dailyCommandTushareFirstLedgerReady
+    ? "继续看股票量化推演、P2 三面和次日图谱。"
+    : "先确认股票；确认前输入保持静默，不创建 task。";
+  const dailyCommandTushareDataCardItems: MetricItem[] = [
+    {
+      label: "Tushare 数据卡",
+      value: dailyCommandTushareDataCardSummary,
+      tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "接口回放",
+      value: dailyCommandTushareFirstLedgerReady ? dailyCommandTushareFirstLedgerLabel : "等待本地 call_ledger",
+      tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "接口明细",
+      value: candidateQuantProviderApiRows.length ? `${candidateQuantProviderApiRows.length} 行可在下一票雷达 / 量化页回放` : "等待 ordinary_provider_api_rows",
+      tone: candidateQuantProviderApiRows.length ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: dailyCommandTushareDataCardNext,
+      tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "首页数据卡只读 CandidateRadar cache / call_ledger / packet；不创建第二个 task、不补调 Tushare/DeepSeek、不交易",
+      tone: "good"
+    }
+  ];
   const dailyCommandConfirmedSourceTaskLabel = String(
     candidateQuantResultCheckpoint.source_task_id ??
       candidateQuantInterpretation.source_task_id ??
@@ -3677,6 +3714,12 @@ export default function CommandCenterHome() {
             { label: "边界", value: dailyCommandTushareFirstBoundary, tone: "good" }
           ]}
         />
+        <div aria-label="daily command p1 tushare data card">
+          <h3>确认后 Tushare 数据卡</h3>
+          <p className="ordinary-status-note" aria-label="daily command p1 tushare data card summary" aria-live="polite">{dailyCommandTushareDataCardSummary}</p>
+          <MetricGrid items={dailyCommandTushareDataCardItems} />
+          <p className="risk-note">首页只把确认后已有的 Tushare-first 本地回放整理成数据卡；接口明细继续在下一票雷达和股票量化推演页展开，不从首页补调数据源、模型或交易。</p>
+        </div>
         <div aria-label="daily command p1 shortest path checkpoint">
           <h3>P1 最短路径 checkpoint</h3>
           <MetricGrid
@@ -3717,7 +3760,7 @@ export default function CommandCenterHome() {
           <a href="#factor" title="切换到股票量化推演；只读回放 Tushare-first 后的本地结果" aria-label="open factor after p1 tushare first front row">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读回放 Tushare-first 后的本地图谱" aria-label="open next session after p1 tushare first front row">次日图谱</a>
         </div>
-        <p className="risk-note">P1 速读只回放已写入的 POST task / call_ledger / packet 证据；P1 速读只回放已写入的确认回执和本地结果；不会从首页回放卡创建第二个 task、补调 Tushare/DeepSeek、读取 token/key、执行交易或修改 strategy action；不会从首页回放卡重复启动确认链、补调 Tushare/DeepSeek、读取敏感凭据、执行交易或修改交易策略。</p>
+        <p className="risk-note">P1 速读只回放已写入的 POST task / call_ledger / packet 证据；P1 速读只回放已写入的确认回执和本地结果，用来组成首页数据卡；不会从首页回放卡创建第二个 task、补调 Tushare/DeepSeek、读取 token/key、执行交易或修改 strategy action；不会从首页回放卡重复启动确认链、补调 Tushare/DeepSeek、读取敏感凭据、执行交易或修改交易策略。</p>
       </PacketCard>
       <PacketCard title="当前可用投研链路" subtitle="当前标的、P1 确认、P2 三面、P3 结论和下一步" status={dailyCommandResearchWorkflowStatus}>
         <p className="ordinary-status-note" aria-label="daily command current research workflow readable result" aria-live="polite">{dailyCommandResearchWorkflowReadableSentence}</p>

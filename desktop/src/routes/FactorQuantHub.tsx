@@ -102,6 +102,7 @@ export default function FactorQuantHub() {
   const candidateRadarOneScreenRows = toRows(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
   const candidateRadarConfirmOutcomeRows = toRows(candidateRadarSmallDataWriteback.ordinary_confirm_outcome_rows);
   const candidateRadarWritebackSurfaceRows = toRows(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
+  const candidateRadarProviderApiRows = toRows(candidateRadarSmallDataWriteback.ordinary_provider_api_rows);
   const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarPostConfirmOneGlanceRows = toRows(
     candidateRadarCache.search_quant_projection_post_confirm_one_glance_items ??
@@ -740,6 +741,89 @@ export default function FactorQuantHub() {
   const ordinaryQuantP3Boundary = ordinaryQuantCandidateRadarP3Ready
     ? `P3 边界：${candidateRadarReadableBoundary}`
     : "P3 边界：普通摘要只读 Factor cache、Next Session preview 和 DeepSeek status；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
+  const ordinaryQuantTushareDataCardLedgerReady =
+    ordinaryQuantTushareFirstProviderSuccessCount > 0 ||
+    factorPacketCandidateHandoff.provider_call_ledger_replayed_from_source_task === true ||
+    factorPacketCandidateHandoff.source_task_tushare_provider_ledger_ready === true ||
+    candidateRadarSmallDataWriteback.provider_call_ledger_replayed_from_source_task === true ||
+    candidateRadarSmallDataWriteback.provider_call_ledger_written === true ||
+    candidateRadarSmallDataWriteback.source_task_tushare_provider_ledger_ready === true;
+  const ordinaryQuantTushareDataCardSummary = ordinaryQuantTushareDataCardLedgerReady
+    ? `${candidateRadarConfirmedSymbol || "当前标的"} Tushare 数据卡：${ordinaryQuantTushareFirstProviderLedgerRatio} 个接口已从 CandidateRadar 本地账本回放。`
+    : candidateRadarLatestTaskId
+      ? "Tushare 数据卡等待任务回写：先看任务进度，成功后刷新本地 cache。"
+      : "Tushare 数据卡等待确认：先回下一票雷达输入股票代码并点击确认。";
+  const ordinaryQuantTushareDataCardGap = ordinaryQuantTushareDataCardLedgerReady
+    ? ordinaryQuantP2ReadySurfaceCount === 3
+      ? "Tushare 账本和 P2 三面都已进入本地回放。"
+      : `已有 Tushare 账本；P2 三面还缺 ${ordinaryQuantP2MissingSurfaceLabel}。`
+    : "缺 Tushare call_ledger；等待确认任务、本地阻断或后续授权回写。";
+  const ordinaryQuantTushareDataCardNext = ordinaryQuantTushareDataCardLedgerReady
+    ? ordinaryQuantP2ReadySurfaceCount === 3
+      ? "看支持/压制和完整次日图谱。"
+      : "继续看任务进度或刷新本地 cache，等 P2 三面齐备。"
+    : "回下一票雷达确认输入区，确认后再回量化页读数据卡。";
+  const ordinaryQuantTushareDataCardItems: MetricItem[] = [
+    {
+      label: "Tushare 数据卡",
+      value: ordinaryQuantTushareDataCardSummary,
+      tone: ordinaryQuantTushareDataCardLedgerReady ? "good" : candidateRadarLatestTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "接口回放",
+      value: ordinaryQuantTushareDataCardLedgerReady ? ordinaryQuantTushareFirstProviderLedgerRatio : "等待本地账本",
+      tone: ordinaryQuantTushareDataCardLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "P2 三面",
+      value: `${ordinaryQuantP2ReadySurfaceCount}/3；${ordinaryQuantP2MissingSurfaceLabel}`,
+      tone: ordinaryQuantP2ReadySurfaceCount === 3 ? "good" : "warn"
+    },
+    {
+      label: "P3 结论",
+      value: ordinaryQuantP3ReadableConclusion,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "模型解释",
+      value: candidateRadarOrdinaryDeepSeekState,
+      tone: candidateRadarUsesModelOutput ? "warn" : "good"
+    },
+    {
+      label: "缺口",
+      value: ordinaryQuantTushareDataCardGap,
+      tone: ordinaryQuantTushareDataCardLedgerReady && ordinaryQuantP2ReadySurfaceCount === 3 ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: ordinaryQuantTushareDataCardNext,
+      tone: ordinaryQuantTushareDataCardLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只读 CandidateRadar cache / call_ledger / packet；不会从 Factor 页调用 Tushare/DeepSeek、创建第二个 task 或交易",
+      tone: "good"
+    }
+  ];
+  const ordinaryQuantTushareDataCardRows = candidateRadarProviderApiRows.length
+    ? candidateRadarProviderApiRows.slice(0, 6).map((row) => ({
+        接口: String(row.api ?? row.interface ?? row.name ?? row.provider_api ?? row["接口"] ?? "Tushare light"),
+        当前状态: String(row.ordinary_label ?? row.status ?? row.call_status ?? row["当前状态"] ?? "等待回放"),
+        证据: String(row.evidence ?? row.call_ledger_key ?? row.scope_hash_short ?? "CandidateRadar provider api row"),
+        用户下一步: String(row.next_action ?? row["用户下一步"] ?? ordinaryQuantTushareDataCardNext),
+        边界: String(row.boundary ?? row["边界"] ?? "接口回放只读本地账本；不会补调数据源、模型或交易")
+      }))
+    : [
+        {
+          接口: "trade_cal / daily / daily_basic / moneyflow",
+          当前状态: ordinaryQuantTushareDataCardLedgerReady
+            ? `已看到 Tushare 账本 ${ordinaryQuantTushareFirstProviderLedgerRatio}`
+            : "等待 Tushare 账本或本地阻断回放",
+          证据: String(candidateRadarSmallDataWriteback.provider_call_source ?? "pending_no_provider_call"),
+          用户下一步: ordinaryQuantTushareDataCardNext,
+          边界: "接口明细只读 CandidateRadar cache；不会补调数据源、模型或交易"
+        }
+      ];
   const ordinaryQuantP3ExplainableSourceLine = ordinaryQuantCandidateRadarP3Ready
     ? `来源已接上：最近确认结果已回放；${ordinaryQuantTushareFirstDataChainLabel}；P2 三面 ${ordinaryQuantP2ReadySurfaceCount}/3`
     : empty
@@ -1693,6 +1777,17 @@ export default function FactorQuantHub() {
             <h3>当前纵切状态</h3>
             <p className="ordinary-status-note">确认链、P2/P3、支持/压制、小池验收和缺口先给结论；需要真实 provider 小池时只显示授权边界，不自动创建任务。</p>
             <MetricGrid items={ordinaryQuantCompactVerticalSliceItems} />
+          </div>
+          <div aria-label="stock quant ordinary tushare data card">
+            <h3>确认后 Tushare 数据卡</h3>
+            <p className="ordinary-status-note" aria-label="stock quant ordinary tushare data card summary" aria-live="polite">{ordinaryQuantTushareDataCardSummary}</p>
+            <MetricGrid items={ordinaryQuantTushareDataCardItems} />
+            <details className="developer-audit-details" aria-label="stock quant ordinary tushare data card rows">
+              <summary>查看接口回放</summary>
+              <p className="risk-note">这张明细只读 CandidateRadar 的 Tushare light 接口回放；没有账本时显示等待或阻断，不从 Factor 页补调数据。</p>
+              <DataLineageTable rows={ordinaryQuantTushareDataCardRows} />
+            </details>
+            <p className="risk-note">数据卡只整理确认后已有的本地 cache / call_ledger / packet；不会调用 Tushare、DeepSeek、GitHub，不交易、不改交易策略。</p>
           </div>
           <div aria-label="stock quant provider validation ordinary quick read">
             <h3>真实验证速读</h3>
