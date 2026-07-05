@@ -9731,6 +9731,23 @@ def _build_ltg_next_action_submission_preview_rows(
                 required_prior_material_visible=trade_step.get("local_ready") is True,
                 requires_separate_real_trading_project=True,
             )
+        if next_local_step == "attach durable CI/release evidence and final motion production review before closeout":
+            motion_review_step = _local_step_row_by_phase(
+                local_step_rows, "motion_visual_performance_promotion_review_receipt"
+            )
+            return _disabled_handoff_preview(
+                step_kind="motion_durable_ci_release_evidence_required",
+                disabled_reason="durable_ci_release_evidence_and_final_motion_review_required",
+                safe_payload_summary=(
+                    "local motion visual/performance review chain is ready; next work is separate "
+                    "durable CI/release evidence and final production motion review, not another local button"
+                ),
+                required_prior_phase_key="motion_visual_performance_promotion_review_receipt",
+                required_prior_material="receipt_local_ready",
+                required_prior_receipt_visible=motion_review_step.get("receipt_visible") is True,
+                required_prior_material_visible=motion_review_step.get("local_ready") is True,
+                requires_remote_ci_review=True,
+            )
         return [
             {
                 "next_local_step": next_local_step,
@@ -11538,6 +11555,12 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             supporting_streamlit_retirement_handoff = _latest_streamlit_retirement_handoff_summary()
         if action["queue_id"] == "p8_motion_production_promotion_review":
             supporting_motion_production_handoff = _latest_motion_production_handoff_summary()
+            motion_handoff_next_step = str(
+                supporting_motion_production_handoff.get("next_local_step") or ""
+            )
+            if motion_handoff_next_step:
+                next_local_step = motion_handoff_next_step
+                local_status = str(supporting_motion_production_handoff.get("status") or local_status)
         if action["queue_id"] == "p10_trade_isolation_release_guard":
             supporting_trade_isolation_release_guard_handoff = (
                 _latest_trade_isolation_release_guard_handoff_summary()

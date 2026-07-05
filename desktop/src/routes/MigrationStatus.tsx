@@ -337,6 +337,14 @@ function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknow
       source: "migration_status_ltg_next_action"
     };
   }
+  if (route === "POST /api/audit/motion-visual-performance-promotion-review") {
+    return {
+      requested_from: "migration_status_ltg_next_action",
+      user_approved: true,
+      review_scope: "motion_visual_performance_local_promotion_review",
+      source: "migration_status_ltg_next_action"
+    };
+  }
   return { requested_by: "migration_status_ltg_queue", source: "migration_status_ltg_next_action" };
 }
 
@@ -928,6 +936,59 @@ export default function MigrationStatus() {
   const tradeIsolationReleaseGuardQueueRow = ltgNextAcceptanceActionRows.find(
     (row) => row.queue_id === "p10_trade_isolation_release_guard"
   ) ?? {};
+  const motionProductionQueueRow = ltgNextAcceptanceActionRows.find(
+    (row) => row.queue_id === "p8_motion_production_promotion_review"
+  ) ?? {};
+  const motionProductionHandoff =
+    (motionProductionQueueRow.supporting_motion_production_handoff as Record<string, unknown> | undefined) ?? {};
+  const motionProductionReviewGateRows = [
+    {
+      evidence_slice: "local_motion_review_chain",
+      queue_id: motionProductionQueueRow.queue_id,
+      status: motionProductionHandoff.status,
+      next_local_step: motionProductionQueueRow.next_local_step,
+      next_local_step_ready: motionProductionQueueRow.next_local_step_ready_for_clean_receipt,
+      review_chain_ready_for_release_evidence:
+        motionProductionQueueRow.supporting_motion_production_review_chain_ready_for_release_evidence === true,
+      visual_performance_review_ready:
+        motionProductionHandoff.motion_visual_performance_promotion_review_ready === true,
+      durable_evidence_recipe_ready: motionProductionHandoff.motion_durable_evidence_recipe_ready === true,
+      evidence_boundary: motionProductionHandoff.evidence_boundary
+    },
+    {
+      evidence_slice: "visual_performance_local_promotion",
+      browser_visual_qa_promoted: motionProductionHandoff.browser_visual_qa_promoted,
+      browser_performance_promoted: motionProductionHandoff.browser_performance_promoted,
+      reduced_motion_durable_evidence_promoted:
+        motionProductionHandoff.reduced_motion_durable_evidence_promoted,
+      direct_evidence_stage_count: motionProductionHandoff.direct_evidence_stage_count,
+      direct_evidence_stage_keys: Array.isArray(motionProductionHandoff.direct_evidence_stage_keys)
+        ? motionProductionHandoff.direct_evidence_stage_keys.join(", ")
+        : "",
+      production_motion_complete: motionProductionHandoff.production_motion_complete
+    },
+    {
+      evidence_slice: "durable_ci_release_blocker",
+      durable_ci_evidence_complete: motionProductionHandoff.durable_ci_evidence_complete,
+      requires_durable_ci_release_evidence:
+        motionProductionHandoff.requires_durable_ci_release_evidence,
+      requires_production_motion_review: motionProductionHandoff.requires_production_motion_review,
+      requires_remote_ci_review_after_local_complete:
+        motionProductionHandoff.requires_remote_ci_review_after_local_complete,
+      requires_release_review_after_remote_green:
+        motionProductionHandoff.requires_release_review_after_remote_green,
+      can_close_goal: motionProductionHandoff.can_close_goal
+    },
+    {
+      evidence_slice: "ltg12_trade_isolation_support",
+      external_calls_triggered: motionProductionHandoff.external_calls_triggered,
+      tushare_called: motionProductionHandoff.tushare_called,
+      deepseek_called: motionProductionHandoff.deepseek_called,
+      github_called: motionProductionHandoff.github_called,
+      does_not_execute_trades: motionProductionHandoff.does_not_execute_trades,
+      does_not_modify_strategy_action: motionProductionHandoff.does_not_modify_strategy_action
+    }
+  ];
   const tradeIsolationReleaseGuardRows = [
     {
       evidence_slice: "research_release_trade_isolation_receipt",
@@ -1564,7 +1625,7 @@ export default function MigrationStatus() {
       />
       <DataLineageTable rows={[candidateRadarGoalRow]} />
       <h3>LTG-14 动效生产证据</h3>
-      <p className="risk-note">这里单独展示动效生产阶段证据：只读取本地静态合同，显示视觉 QA、性能 trace、CI/release evidence 和 production motion 仍是否 pending；不会打开浏览器或推广截图。</p>
+      <p className="risk-note">这里单独展示动效生产阶段证据：只读取本地静态合同和按钮门控本地回执，显示视觉 QA、性能 trace、CI/release evidence 和 production motion 仍是否 pending；不会打开浏览器、调用 GitHub 或推广截图。</p>
       <MetricGrid
         items={[
           {
@@ -1601,9 +1662,26 @@ export default function MigrationStatus() {
             label: "production motion",
             value: motionGoalObservedRow.production_motion_complete === true,
             tone: motionGoalObservedRow.production_motion_complete === true ? "good" : "warn"
+          },
+          {
+            label: "review gate",
+            value: String(motionProductionHandoff.motion_visual_performance_promotion_review_status ?? "missing"),
+            tone: motionProductionHandoff.motion_visual_performance_promotion_review_ready === true ? "good" : "warn"
+          },
+          {
+            label: "next motion step",
+            value: String(motionProductionQueueRow.next_local_step ?? "pending"),
+            tone: motionProductionQueueRow.next_local_step_ready_for_clean_receipt === true ? "good" : "warn"
+          },
+          {
+            label: "release evidence",
+            value: motionProductionHandoff.requires_durable_ci_release_evidence === true ? "pending" : "ready",
+            tone: motionProductionHandoff.requires_durable_ci_release_evidence === true ? "warn" : "good"
           }
         ]}
       />
+      <p className="risk-note">Motion visual/performance promotion review 只把已审查的本地 visual/performance/reduced-motion evidence 接到 durable-local 链上；CI/release evidence、最终生产动效 review 和 LTG-12 交易隔离仍继续阻断 strict closeout。</p>
+      <DataLineageTable rows={motionProductionReviewGateRows} />
       <DataLineageTable rows={[motionGoalObservedRow]} />
       <h3>LTG-12 真实交易隔离 release guard</h3>
       <p className="risk-note">release receipt 可作为研究客户端发布证据，但不是真实交易批准；这里单独下沉 p10_trade_isolation_release_guard，确认它不是 broker/order/trade-execution 集成，也不能绕过远端查收和 release review。</p>

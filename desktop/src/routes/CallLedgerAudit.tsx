@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAuditCache, postMotionBrowserQaReview, postMotionProductionPromotionDryRun } from "../api/client";
+import { getAuditCache, postMotionBrowserQaReview, postMotionProductionPromotionDryRun, postMotionVisualPerformancePromotionReview } from "../api/client";
 import type { TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
@@ -32,6 +32,7 @@ export default function CallLedgerAudit() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [reviewReceipt, setReviewReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [promotionReceipt, setPromotionReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [visualPerformanceReceipt, setVisualPerformanceReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   useEffect(() => {
     void getAuditCache().then((res) => {
@@ -82,6 +83,8 @@ export default function CallLedgerAudit() {
   const motionProductionActivationRows = rows(cache.motion_production_activation_rows);
   const motionPromotionDryRun = (cache.motion_promotion_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const motionPromotionDryRunRows = rows(cache.motion_promotion_dry_run_rows);
+  const motionVisualPerformancePromotionReview = (cache.motion_visual_performance_promotion_review_receipt as Record<string, unknown> | undefined) ?? {};
+  const motionVisualPerformancePromotionRows = rows(cache.motion_visual_performance_promotion_review_rows);
   const motionDurableEvidenceRecipe = (cache.motion_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const motionDurableEvidenceRows = rows(cache.motion_durable_evidence_rows);
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
@@ -116,6 +119,18 @@ export default function CallLedgerAudit() {
       promotion_scope: "motion_visual_performance_local_promotion_dry_run"
     });
     setPromotionReceipt(response);
+    const refreshed = await getAuditCache();
+    setCacheEnvelopeLedger(refreshed.call_ledger ?? []);
+    setCacheEnvelopeWarnings(refreshed.warnings ?? []);
+    setCache(refreshed.data);
+  }
+
+  async function launchMotionVisualPerformancePromotionReview() {
+    const response = await postMotionVisualPerformancePromotionReview({
+      user_approved: true,
+      review_scope: "motion_visual_performance_local_promotion_review"
+    });
+    setVisualPerformanceReceipt(response);
     const refreshed = await getAuditCache();
     setCacheEnvelopeLedger(refreshed.call_ledger ?? []);
     setCacheEnvelopeWarnings(refreshed.warnings ?? []);
@@ -201,6 +216,9 @@ export default function CallLedgerAudit() {
           { label: "motion promotion", value: motionPromotionDryRun.status as string | undefined, tone: motionPromotionDryRun.ready_for_local_promotion_review === true ? "good" : "warn" },
           { label: "promotion blockers", value: counts.motion_promotion_dry_run_production_blocker_count as number | undefined, tone: Number(counts.motion_promotion_dry_run_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "promotion ready", value: counts.motion_promotion_dry_run_ready === true ? "yes" : "pending", tone: counts.motion_promotion_dry_run_ready === true ? "good" : "warn" },
+          { label: "visual/perf review", value: motionVisualPerformancePromotionReview.status as string | undefined, tone: motionVisualPerformancePromotionReview.local_visual_performance_promotion_review_ready === true ? "good" : "warn" },
+          { label: "visual promoted", value: motionVisualPerformancePromotionReview.browser_visual_qa_promoted === true ? "yes" : "pending", tone: motionVisualPerformancePromotionReview.browser_visual_qa_promoted === true ? "good" : "warn" },
+          { label: "perf promoted", value: motionVisualPerformancePromotionReview.browser_performance_promoted === true ? "yes" : "pending", tone: motionVisualPerformancePromotionReview.browser_performance_promoted === true ? "good" : "warn" },
           { label: "motion durable", value: motionDurableEvidenceRecipe.status as string | undefined, tone: motionDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "durable blockers", value: counts.motion_durable_evidence_production_blocker_count as number | undefined, tone: Number(counts.motion_durable_evidence_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "audit envelope ledger", value: callLedger.length },
@@ -478,6 +496,20 @@ export default function CallLedgerAudit() {
         {promotionReceipt ? <TaskLaunchReceipt receipt={promotionReceipt} /> : null}
         <DataLineageTable rows={[motionPromotionDryRun]} />
         <DataLineageTable rows={motionPromotionDryRunRows} />
+      </PacketCard>
+
+      <PacketCard title="Motion visual/performance promotion review" subtitle="motion_visual_performance_promotion_review_receipt：按钮门控推广已审查的本地 visual/performance/reduced-motion evidence，不读取 GitHub" status={String(motionVisualPerformancePromotionReview.status ?? "missing")}>
+        <p>scope: {String(motionVisualPerformancePromotionReview.scope ?? "button_gated_local_motion_visual_performance_promotion_review_no_browser_no_ci_no_github")}</p>
+        <p>explicit_visual_performance_promotion_review_task_done: {String(motionVisualPerformancePromotionReview.explicit_visual_performance_promotion_review_task_done === true)}</p>
+        <p>local_visual_performance_promotion_review_ready: {String(motionVisualPerformancePromotionReview.local_visual_performance_promotion_review_ready === true)}</p>
+        <p>browser_visual_qa_promoted: {String(motionVisualPerformancePromotionReview.browser_visual_qa_promoted === true)}；browser_performance_promoted: {String(motionVisualPerformancePromotionReview.browser_performance_promoted === true)}；reduced_motion_durable_evidence_promoted: {String(motionVisualPerformancePromotionReview.reduced_motion_durable_evidence_promoted === true)}</p>
+        <p>durable_ci_evidence_complete: {String(motionVisualPerformancePromotionReview.durable_ci_evidence_complete === true)}；production_motion_complete: {String(motionVisualPerformancePromotionReview.production_motion_complete === true)}</p>
+        <p>production_blocker_count: {String(motionVisualPerformancePromotionReview.production_blocker_count ?? 0)}；allowed_next_step: {String(motionVisualPerformancePromotionReview.allowed_next_step ?? "attach_durable_ci_or_release_evidence_then_final_motion_production_review")}</p>
+        <p>该 review 只把本地已审查 artifact 摘要接入 durable-local 证据链；不能把它当成 CI 状态、release evidence 或 production motion complete。</p>
+        <button type="button" onClick={launchMotionVisualPerformancePromotionReview}>审查 motion visual/performance 本地推广</button>
+        {visualPerformanceReceipt ? <TaskLaunchReceipt receipt={visualPerformanceReceipt} /> : null}
+        <DataLineageTable rows={[motionVisualPerformancePromotionReview]} />
+        <DataLineageTable rows={motionVisualPerformancePromotionRows} />
       </PacketCard>
 
       <PacketCard title="Motion durable evidence recipe" subtitle="motion_durable_evidence_recipe：LTG-14 本地证据到 durable promotion 的缺口清单，不打开浏览器、不读取 GitHub" status={String(motionDurableEvidenceRecipe.status ?? "missing")}>

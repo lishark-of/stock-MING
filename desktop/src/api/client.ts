@@ -335,6 +335,13 @@ export function postMotionProductionPromotionDryRun(payload: Record<string, unkn
   });
 }
 
+export function postMotionVisualPerformancePromotionReview(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/audit/motion-visual-performance-promotion-review", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getLegacyBridgeCache() {
   return request<Record<string, unknown>>("/api/legacy/cache");
 }
@@ -658,6 +665,7 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/next-session/production-promotion-review",
   "/api/audit/motion-browser-qa-review",
   "/api/audit/motion-production-promotion-dry-run",
+  "/api/audit/motion-visual-performance-promotion-review",
 ]);
 
 export function postLtgNextAcceptanceLocalStep(route: string, payload: Record<string, unknown> = {}) {
