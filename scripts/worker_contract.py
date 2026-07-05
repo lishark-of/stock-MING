@@ -1440,13 +1440,32 @@ def build_contract() -> dict[str, Any]:
             'aria-label="worker ordinary first screen status"' in worker_page
             and "workerOrdinaryFirstScreenSentence" in worker_page
             and "workerOrdinaryFirstScreenItems" in worker_page
+            and "workerRuntimeQaActionItems" in worker_page
             and 'aria-label="worker ordinary first screen safe actions"' in worker_page
             and 'aria-label="refresh local worker cache only"' in worker_page
             and 'href="#storage"' in worker_page
+            and 'aria-label="worker ordinary runtime qa task strip"' in worker_page
+            and 'aria-label="worker ordinary runtime qa actions"' in worker_page
+            and "Runtime QA 本地按钮" in worker_page
+            and "onClick={launchRuntimeQaExecutionRequest}" in worker_page
+            and "onClick={launchRuntimeQaDryRun}" in worker_page
+            and "onClick={launchRuntimeQaExecution}" in worker_page
+            and "disabled={!runtimeQaExecutionRequestCanLaunch || runtimeQaExecutionRequestRunning}" in worker_page
+            and "disabled={!runtimeQaDryRunCanLaunch || runtimeQaDryRunRunning}" in worker_page
+            and "disabled={!runtimeQaExecutionCanLaunch || runtimeQaExecutionRunning}" in worker_page
+            and "TaskLaunchReceipt receipt={runtimeQaExecutionRequestReceipt}" in worker_page
+            and "TaskStatusPanel taskId={runtimeQaExecutionRequestTaskId}" in worker_page
+            and "TaskLaunchReceipt receipt={runtimeQaDryRunReceipt}" in worker_page
+            and "TaskStatusPanel taskId={runtimeQaDryRunTaskId}" in worker_page
+            and "TaskLaunchReceipt receipt={runtimeQaExecutionReceipt}" in worker_page
+            and "TaskStatusPanel taskId={runtimeQaExecutionTaskId}" in worker_page
+            and 'href="#worker-runtime-qa-details"' in worker_page
             and "运行时一眼状态" in worker_page
             and "GET worker 只读；不启动 Celery/Redis/APScheduler、不派发任务、不调用 provider/model、不交易" in worker_page
-            and "刷新只读取本地 GET cache，链接只切换本地页面，不启动 Celery/Redis/APScheduler、不创建 task、不调用 Tushare/DeepSeek/GitHub、不下单" in worker_page,
-            "Worker ordinary first screen must show local fallback/runtime QA next-step status before audit tables while staying cache-only and non-dispatching.",
+            and "Runtime QA 首屏按钮是显式 POST local task" in worker_page
+            and "local execution 仍不是 production worker complete" in worker_page
+            and "除显式 Runtime QA 按钮外，首屏不会创建 task" in worker_page,
+            "Worker ordinary first screen must show local fallback/runtime QA next-step status and explicit local runtime QA actions before audit tables while keeping GET refresh/link navigation read-only and non-dispatching.",
         ),
         _row(
             "worker_strict_closeout_gate_is_user_visible_and_blocked",

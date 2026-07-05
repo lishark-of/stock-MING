@@ -46,6 +46,7 @@ Current interpretation:
 12. User Route QA now requires actual typing coverage before accepting typing silence: if a route has visible editable inputs, the runner fills one with a test symbol and only passes when `/api/tasks` stays unchanged.
 13. Candidate Radar ordinary summary now shows a local page-QA quick read from `candidate_browser_qa_evidence_summary` / review status before developer audit details, while keeping the review POST button in the collapsed audit section and preserving the no-CI/no-provider/no-worker boundary.
 14. Storage now exposes the LTG-05 physical evidence local task chain on the ordinary first screen: `physical execution request` and `Phase A local evidence` buttons show receipt/status via `TaskLaunchReceipt` and `TaskStatusPanel`, while still writing no Parquet, no manifest, deleting no artifacts, calling no providers/models/GitHub, and keeping `production_storage_complete=false`.
+15. Worker now exposes the LTG-06 runtime QA local task chain on the ordinary first screen: `runtime QA request`, `runtime QA dry-run`, and `local QA execution` buttons show receipt/status via `TaskLaunchReceipt` and `TaskStatusPanel`, while still starting no Celery/Redis/APScheduler process, pinging no Redis, dispatching no provider/model task, calling no providers/models/GitHub, and keeping `production_worker_complete=false`.
 
 ## Next Repair Goals
 

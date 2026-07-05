@@ -6,13 +6,16 @@ import {
   runWorkerRuntimeQaDryRun,
   runWorkerRuntimeQaExecution,
   runWorkerRuntimeQaExecutionRequest,
-  runWorkerSyntheticHealthcheck
+  runWorkerSyntheticHealthcheck,
+  type TaskCreationEnvelope
 } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
+import TaskStatusPanel from "../components/TaskStatusPanel";
 
 function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
@@ -32,12 +35,18 @@ export default function WorkerRuntime() {
   const [productionEvidencePlanRunning, setProductionEvidencePlanRunning] = useState(false);
   const [productionEvidencePlanError, setProductionEvidencePlanError] = useState("");
   const [runtimeQaExecutionRequestResult, setRuntimeQaExecutionRequestResult] = useState<Record<string, unknown>>({});
+  const [runtimeQaExecutionRequestReceipt, setRuntimeQaExecutionRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [runtimeQaExecutionRequestTaskId, setRuntimeQaExecutionRequestTaskId] = useState("");
   const [runtimeQaExecutionRequestRunning, setRuntimeQaExecutionRequestRunning] = useState(false);
   const [runtimeQaExecutionRequestError, setRuntimeQaExecutionRequestError] = useState("");
   const [runtimeQaDryRunResult, setRuntimeQaDryRunResult] = useState<Record<string, unknown>>({});
+  const [runtimeQaDryRunReceipt, setRuntimeQaDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [runtimeQaDryRunTaskId, setRuntimeQaDryRunTaskId] = useState("");
   const [runtimeQaDryRunRunning, setRuntimeQaDryRunRunning] = useState(false);
   const [runtimeQaDryRunError, setRuntimeQaDryRunError] = useState("");
   const [runtimeQaExecutionResult, setRuntimeQaExecutionResult] = useState<Record<string, unknown>>({});
+  const [runtimeQaExecutionReceipt, setRuntimeQaExecutionReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [runtimeQaExecutionTaskId, setRuntimeQaExecutionTaskId] = useState("");
   const [runtimeQaExecutionRunning, setRuntimeQaExecutionRunning] = useState(false);
   const [runtimeQaExecutionError, setRuntimeQaExecutionError] = useState("");
 
@@ -191,6 +200,9 @@ export default function WorkerRuntime() {
       runtime_qa_scope_hash: String(workerRuntimeQaExecutionRecipe.runtime_qa_scope_hash ?? "")
     })
       .then((res) => {
+        const receipt = res as unknown as TaskCreationEnvelope;
+        setRuntimeQaExecutionRequestReceipt(receipt);
+        if (receipt.ok) setRuntimeQaExecutionRequestTaskId(receipt.data.task_id);
         setRuntimeQaExecutionRequestResult(res.data);
         return refreshCache();
       })
@@ -208,6 +220,9 @@ export default function WorkerRuntime() {
       runtime_qa_scope_hash: String(visibleRuntimeQaExecutionRequest.runtime_qa_scope_hash ?? "")
     })
       .then((res) => {
+        const receipt = res as unknown as TaskCreationEnvelope;
+        setRuntimeQaDryRunReceipt(receipt);
+        if (receipt.ok) setRuntimeQaDryRunTaskId(receipt.data.task_id);
         setRuntimeQaDryRunResult(res.data);
         return refreshCache();
       })
@@ -225,6 +240,9 @@ export default function WorkerRuntime() {
       runtime_qa_scope_hash: String(visibleRuntimeQaDryRun.runtime_qa_scope_hash ?? "")
     })
       .then((res) => {
+        const receipt = res as unknown as TaskCreationEnvelope;
+        setRuntimeQaExecutionReceipt(receipt);
+        if (receipt.ok) setRuntimeQaExecutionTaskId(receipt.data.task_id);
         setRuntimeQaExecutionResult(res.data);
         return refreshCache();
       })
@@ -377,6 +395,64 @@ export default function WorkerRuntime() {
         : "先看 synthetic healthcheck、activation review 和 evidence plan 的缺口";
   const workerOrdinaryFirstScreenSentence =
     `Worker 运行时：${workerRuntimeStateLabel}；下一步：${workerRuntimeNextStep}；边界：GET cache 不启动 Celery/Redis，不派发 provider/model task。`;
+  const runtimeQaExecutionRequestCanLaunch = Boolean(
+    visibleProductionEvidencePlan.scope_ticket_sha256 &&
+    workerRuntimeQaExecutionRecipe.runtime_qa_scope_hash
+  );
+  const runtimeQaDryRunCanLaunch = Boolean(
+    visibleRuntimeQaExecutionRequest.request_task_id &&
+    visibleRuntimeQaExecutionRequest.production_evidence_plan_scope_hash &&
+    visibleRuntimeQaExecutionRequest.runtime_qa_scope_hash
+  );
+  const runtimeQaExecutionCanLaunch = Boolean(
+    visibleRuntimeQaDryRun.dry_run_task_id &&
+    visibleRuntimeQaDryRun.production_evidence_plan_scope_hash &&
+    visibleRuntimeQaDryRun.runtime_qa_scope_hash
+  );
+  const workerRuntimeQaActionItems = [
+    {
+      label: "request ticket",
+      value: String(visibleRuntimeQaExecutionRequest.status ?? "worker_runtime_qa_execution_request_missing"),
+      tone: visibleRuntimeQaExecutionRequest.local_execution_request_ready === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "dry-run",
+      value: String(visibleRuntimeQaDryRun.status ?? "worker_runtime_qa_dry_run_missing"),
+      tone: visibleRuntimeQaDryRun.local_dry_run_ready === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "local execution",
+      value: String(visibleRuntimeQaExecution.status ?? "worker_runtime_qa_execution_missing"),
+      tone: visibleRuntimeQaExecution.local_runtime_qa_execution_done === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "现在可点",
+      value: runtimeQaExecutionCanLaunch
+        ? "运行 runtime QA local execution"
+        : runtimeQaDryRunCanLaunch
+          ? "生成 runtime QA dry-run"
+          : runtimeQaExecutionRequestCanLaunch
+            ? "生成 runtime QA request"
+            : "先生成 evidence plan / recipe scope",
+      tone: runtimeQaExecutionRequestCanLaunch ? "good" as const : "warn" as const
+    },
+    {
+      label: "scope hash",
+      value: String(
+        visibleRuntimeQaExecution.runtime_qa_scope_hash_short ??
+          visibleRuntimeQaDryRun.runtime_qa_scope_hash_short ??
+          visibleRuntimeQaExecutionRequest.runtime_qa_scope_hash_short ??
+          workerRuntimeQaExecutionRecipe.runtime_qa_scope_hash_short ??
+          ""
+      ) || "等待 runtime recipe",
+      tone: workerRuntimeQaExecutionRecipe.runtime_qa_scope_hash ? "good" as const : "warn" as const
+    },
+    {
+      label: "生产边界",
+      value: "只做本地 fallback/task/status/log 证据；不启动 Celery/Redis，不派发 provider/model task",
+      tone: "good" as const
+    }
+  ];
   const workerOrdinaryFirstScreenItems = [
     {
       label: "运行方式",
@@ -476,7 +552,42 @@ export default function WorkerRuntime() {
           <a href="#storage" aria-label="open storage support from worker">看 Storage 支撑</a>
           <a href="#tasks" aria-label="open task catalog from worker runtime">看任务目录</a>
         </div>
-        <p className="risk-note">首屏只汇总 local fallback、task/log 状态、runtime QA 下一步和 Storage 支撑边界；刷新只读取本地 GET cache，链接只切换本地页面，不启动 Celery/Redis/APScheduler、不创建 task、不调用 Tushare/DeepSeek/GitHub、不下单。</p>
+        <div aria-label="worker ordinary runtime qa task strip">
+          <h3>Runtime QA 本地按钮</h3>
+          <p className="ordinary-status-note" aria-label="worker ordinary runtime qa task sentence" aria-live="polite">
+            用户现在可以从首屏按顺序生成 runtime QA request、dry-run 和 local execution；这些按钮只创建本地 task receipt/status，不启动真实 Celery/Redis worker。
+          </p>
+          <MetricGrid items={workerRuntimeQaActionItems} />
+          <div className="actions" aria-label="worker ordinary runtime qa actions">
+            <button
+              disabled={!runtimeQaExecutionRequestCanLaunch || runtimeQaExecutionRequestRunning}
+              onClick={launchRuntimeQaExecutionRequest}
+              title="生成本地 runtime QA execution request ticket；只绑定 evidence plan 与 runtime recipe scope，不启动进程"
+              aria-label="create worker runtime qa execution request from first screen"
+            >生成 runtime QA request</button>
+            <button
+              disabled={!runtimeQaDryRunCanLaunch || runtimeQaDryRunRunning}
+              onClick={launchRuntimeQaDryRun}
+              title="生成本地 runtime QA dry-run；只审查 request ticket 和 scope，不创建真实 worker task"
+              aria-label="create worker runtime qa dry run from first screen"
+            >生成 runtime QA dry-run</button>
+            <button
+              disabled={!runtimeQaExecutionCanLaunch || runtimeQaExecutionRunning}
+              onClick={launchRuntimeQaExecution}
+              title="运行本地 fallback runtime QA execution；不启动 Celery/Redis，不派发 provider/model task"
+              aria-label="run worker runtime qa local execution from first screen"
+            >运行 local QA execution</button>
+            <a href="#worker-runtime-qa-details" aria-label="open worker runtime qa details from first screen">查看 runtime QA 详情</a>
+          </div>
+          <TaskLaunchReceipt receipt={runtimeQaExecutionRequestReceipt} />
+          <TaskStatusPanel taskId={runtimeQaExecutionRequestTaskId} onSuccess={refreshCache} />
+          <TaskLaunchReceipt receipt={runtimeQaDryRunReceipt} />
+          <TaskStatusPanel taskId={runtimeQaDryRunTaskId} onSuccess={refreshCache} />
+          <TaskLaunchReceipt receipt={runtimeQaExecutionReceipt} />
+          <TaskStatusPanel taskId={runtimeQaExecutionTaskId} onSuccess={refreshCache} />
+          <p className="risk-note">Runtime QA 首屏按钮是显式 POST local task：不启动 Celery/Redis/APScheduler，不 ping Redis，不派发 provider/model task，不调用 Tushare/DeepSeek/GitHub，不下单，不改 strategy action；local execution 仍不是 production worker complete。</p>
+        </div>
+        <p className="risk-note">刷新只读取本地 GET cache，链接只切换本地页面；除显式 Runtime QA 按钮外，首屏不会创建 task、不启动 Celery/Redis/APScheduler、不调用 Tushare/DeepSeek/GitHub、不下单。</p>
       </div>
 
       <PacketCard title="LTG-06 worker strict closeout gate" subtitle="纵切先让本地 worker 证据可读；production closeout 仍等待 Celery/Redis runtime evidence" status="strict_closeout_blocked">
@@ -735,6 +846,7 @@ export default function WorkerRuntime() {
         <DataLineageTable rows={rows(productionReadiness.worker_production_evidence_plan_rows ?? cache.worker_production_evidence_plan_rows ?? visibleProductionEvidencePlan.rows)} />
       </PacketCard>
 
+      <div id="worker-runtime-qa-details" aria-hidden="true" />
       <PacketCard title="Worker runtime QA execution request" subtitle="POST /api/worker/runtime-qa-execution-request：绑定 evidence plan 与 runtime recipe scope；不启动进程" status={String(visibleRuntimeQaExecutionRequest.status ?? "worker_runtime_qa_execution_request_missing")}>
         <div className="actions">
           <button
