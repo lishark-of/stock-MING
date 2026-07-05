@@ -602,14 +602,18 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         summary_start = self.page.index('title="普通用户次日图谱摘要"')
         decision_start = self.page.index('aria-label="next session first screen readable decision"', summary_start)
         compass_start = self.page.index('aria-label="next session ordinary review compass"', summary_start)
+        evidence_factory_start = self.page.index('aria-label="next session ordinary evidence factory task strip"', summary_start)
         usable_now_start = self.page.index('aria-label="next session ordinary usable now strip"', summary_start)
-        metric_start = self.page.index('<MetricGrid\n        items={[', compass_start)
+        metric_start = evidence_factory_start
         compass = self.page[compass_start:metric_start]
+        evidence_factory_end = self.page.index('label: "主下一步"', evidence_factory_start)
+        evidence_factory = self.page[evidence_factory_start:evidence_factory_end]
         audit_start = self.page.index('<details id="next-session-audit"')
         source_before_audit = self.page[:audit_start]
 
         self.assertLess(decision_start, compass_start)
-        self.assertLess(compass_start, usable_now_start)
+        self.assertLess(compass_start, evidence_factory_start)
+        self.assertLess(evidence_factory_start, usable_now_start)
         self.assertIn("nextSessionOrdinaryReviewCompassItems", source_before_audit)
         self.assertIn("nextSessionOrdinaryReviewCompassRows", source_before_audit)
         self.assertIn("次日图谱复核顺序", compass)
@@ -639,6 +643,15 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", compass)
         self.assertNotIn("launch" + "Task", compass)
         self.assertNotIn("post" + "Task(", compass)
+        self.assertIn("nextSessionEvidenceFactoryItems", source_before_audit)
+        self.assertIn("LTG-08 本地证据按钮", evidence_factory)
+        self.assertIn("same-packet retained signal/capability coverage", evidence_factory)
+        self.assertIn('aria-label="next session ordinary evidence factory actions"', evidence_factory)
+        self.assertIn("onClick={reviewBrowserQa}", evidence_factory)
+        self.assertIn("onClick={reviewStreamlitParity}", evidence_factory)
+        self.assertIn("onClick={reviewProductionPromotion}", evidence_factory)
+        self.assertIn("<TaskStatusPanel taskId={browserQaTaskId} onSuccess={refreshCache} />", evidence_factory)
+        self.assertIn("local review 仍不是 production replacement complete", evidence_factory)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,9 @@ export default function NextSessionMap() {
   const [browserQaReceipt, setBrowserQaReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [streamlitParityReceipt, setStreamlitParityReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [productionPromotionReceipt, setProductionPromotionReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [browserQaTaskId, setBrowserQaTaskId] = useState("");
+  const [streamlitParityTaskId, setStreamlitParityTaskId] = useState("");
+  const [productionPromotionTaskId, setProductionPromotionTaskId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -76,17 +79,29 @@ export default function NextSessionMap() {
   const reviewBrowserQa = () =>
     void postTask("/api/next-session/browser-qa-review", { review_scope: "next_session_browser_qa_local_artifact" }).then((res) => {
       setBrowserQaReceipt(res);
-      if (res.ok) setTaskId(res.data.task_id);
+      if (res.ok) {
+        setBrowserQaTaskId(res.data.task_id);
+        setTaskId(res.data.task_id);
+        refreshTaskIndex();
+      }
     });
   const reviewStreamlitParity = () =>
     void postTask("/api/next-session/streamlit-parity-review", { review_scope: "next_session_same_packet_no_loss" }).then((res) => {
       setStreamlitParityReceipt(res);
-      if (res.ok) setTaskId(res.data.task_id);
+      if (res.ok) {
+        setStreamlitParityTaskId(res.data.task_id);
+        setTaskId(res.data.task_id);
+        refreshTaskIndex();
+      }
     });
   const reviewProductionPromotion = () =>
     void postTask("/api/next-session/production-promotion-review", { review_scope: "next_session_local_promotion_blocker_review" }).then((res) => {
       setProductionPromotionReceipt(res);
-      if (res.ok) setTaskId(res.data.task_id);
+      if (res.ok) {
+        setProductionPromotionTaskId(res.data.task_id);
+        setTaskId(res.data.task_id);
+        refreshTaskIndex();
+      }
     });
   const refreshCandidateRadarCache = () =>
     void getCandidateRadarCache().then((res) => {
@@ -1155,6 +1170,34 @@ export default function NextSessionMap() {
       边界: "不真实交易、不下单、不改 strategy action 或 operation_zones。"
     }
   ];
+  const nextSessionEvidenceFactoryItems: MetricItem[] = [
+    {
+      label: "Browser QA review",
+      value: String(browserQaReview.status ?? "browser_qa_review_pending"),
+      tone: browserQaReview.local_browser_qa_review_ready === true ? "good" : "warn"
+    },
+    {
+      label: "Coverage review",
+      value: String(streamlitParityReview.status ?? "retained_coverage_review_pending"),
+      tone: streamlitParityReview.local_streamlit_parity_review_ready === true || streamlitParityReview.same_packet_no_loss_review_ready === true ? "good" : "warn"
+    },
+    {
+      label: "Promotion review",
+      value: String(productionPromotionReview.status ?? "production_promotion_review_pending"),
+      tone: productionPromotionReview.local_production_promotion_review_ready === true ? "good" : "warn"
+    },
+    {
+      label: "Stage scope",
+      value: `${String(productionStageScope.direct_evidence_stage_count ?? 0)} direct / ${String(productionStageScope.pending_stage_count ?? 0)} pending`,
+      tone: Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "warn" : "good"
+    },
+    {
+      label: "生产边界",
+      value: "只审查本地 artifact、同包 coverage 和 promotion blocker；不打开浏览器、不写 artifact、不完成 production replacement",
+      tone: "good"
+    },
+    { label: "交易边界", value: nextSessionResearchOnlyLabel, tone: "good" }
+  ];
 
   return (
     <>
@@ -1197,6 +1240,26 @@ export default function NextSessionMap() {
           <DataLineageTable rows={nextSessionOrdinaryReviewCompassRows} />
         </details>
         <p className="risk-note">读图罗盘只切换本地锚点和页面入口；GET cache、React render、普通链接都不调用 Tushare/DeepSeek/GitHub，不真实交易，也不改 operation_zones 或 strategy action。</p>
+      </div>
+      <div aria-label="next session ordinary evidence factory task strip">
+        <h3>LTG-08 本地证据按钮</h3>
+        <p className="ordinary-status-note" aria-label="next session ordinary evidence factory sentence">
+          用户现在可以从首屏读取本地 browser QA artifact、same-packet retained signal/capability coverage 和 promotion blocker 的审查状态；这些按钮只创建本地 review task，不打开浏览器、不写 artifact、不调用 provider/model/GitHub。
+        </p>
+        <MetricGrid items={nextSessionEvidenceFactoryItems} />
+        <div className="actions" aria-label="next session ordinary evidence factory actions">
+          <button onClick={reviewBrowserQa} title="只读取 ignored 本地 QA artifact 摘要，不打开浏览器或写截图" aria-label="review next session local browser qa evidence from first screen">审查 QA artifact</button>
+          <button onClick={reviewStreamlitParity} title="只审查同包 retained signal/capability coverage，不复制旧 Streamlit UI" aria-label="review next session same packet retained coverage from first screen">审查 same-packet coverage</button>
+          <button onClick={reviewProductionPromotion} title="只审查本地 production promotion blocker，不推广生产替代" aria-label="review next session promotion blockers from first screen">审查 promotion blocker</button>
+          <a href="#next-session-audit" aria-label="open next session audit evidence details from first screen">查看审计详情</a>
+        </div>
+        <TaskLaunchReceipt receipt={browserQaReceipt} />
+        <TaskStatusPanel taskId={browserQaTaskId} onSuccess={refreshCache} />
+        <TaskLaunchReceipt receipt={streamlitParityReceipt} />
+        <TaskStatusPanel taskId={streamlitParityTaskId} onSuccess={refreshCache} />
+        <TaskLaunchReceipt receipt={productionPromotionReceipt} />
+        <TaskStatusPanel taskId={productionPromotionTaskId} onSuccess={refreshCache} />
+        <p className="risk-note">LTG-08 首屏按钮是显式 POST local review task：不打开浏览器、不写 screenshots/report artifact、不调用 Tushare/DeepSeek/GitHub，不真实交易，不改 operation_zones 或 strategy action；local review 仍不是 production replacement complete。</p>
       </div>
       <MetricGrid
         items={[

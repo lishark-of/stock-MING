@@ -393,10 +393,21 @@ def build_contract() -> dict[str, Any]:
     this_script = _read_script("scripts/next_session_map_contract.py")
     static_production_stage_scope_rows = _next_session_production_stage_scope_rows()
     review_compass_start = next_page.find('aria-label="next session ordinary review compass"')
-    review_compass_end = next_page.find("<MetricGrid\n        items={[", review_compass_start)
+    evidence_factory_start = next_page.find('aria-label="next session ordinary evidence factory task strip"')
+    review_compass_end = (
+        evidence_factory_start
+        if evidence_factory_start != -1
+        else next_page.find("<MetricGrid\n        items={[", review_compass_start)
+    )
     review_compass_slice = (
         next_page[review_compass_start:review_compass_end]
         if review_compass_start != -1 and review_compass_end != -1
+        else ""
+    )
+    evidence_factory_end = next_page.find("<MetricGrid\n        items={[", evidence_factory_start)
+    evidence_factory_slice = (
+        next_page[evidence_factory_start:evidence_factory_end]
+        if evidence_factory_start != -1 and evidence_factory_end != -1
         else ""
     )
     strict_closeout_gate_start = next_page.find('title="LTG-08 next-session strict closeout gate"')
@@ -1013,6 +1024,27 @@ def build_contract() -> dict[str, Any]:
             and next_page.find('aria-label="next session first screen readable decision"')
             < review_compass_start
             < next_page.find('aria-label="next session ordinary usable now strip"')
+            and "nextSessionEvidenceFactoryItems" in next_page
+            and evidence_factory_start != -1
+            and review_compass_start
+            < evidence_factory_start
+            < strict_closeout_gate_start
+            and 'aria-label="next session ordinary evidence factory actions"' in evidence_factory_slice
+            and 'aria-label="next session ordinary evidence factory sentence"' in evidence_factory_slice
+            and "LTG-08 本地证据按钮" in evidence_factory_slice
+            and "same-packet retained signal/capability coverage" in evidence_factory_slice
+            and "这些按钮只创建本地 review task" in evidence_factory_slice
+            and "onClick={reviewBrowserQa}" in evidence_factory_slice
+            and "onClick={reviewStreamlitParity}" in evidence_factory_slice
+            and "onClick={reviewProductionPromotion}" in evidence_factory_slice
+            and "<TaskLaunchReceipt receipt={browserQaReceipt} />" in evidence_factory_slice
+            and "<TaskStatusPanel taskId={browserQaTaskId} onSuccess={refreshCache} />" in evidence_factory_slice
+            and "<TaskLaunchReceipt receipt={streamlitParityReceipt} />" in evidence_factory_slice
+            and "<TaskStatusPanel taskId={streamlitParityTaskId} onSuccess={refreshCache} />" in evidence_factory_slice
+            and "<TaskLaunchReceipt receipt={productionPromotionReceipt} />" in evidence_factory_slice
+            and "<TaskStatusPanel taskId={productionPromotionTaskId} onSuccess={refreshCache} />" in evidence_factory_slice
+            and "LTG-08 首屏按钮是显式 POST local review task" in evidence_factory_slice
+            and "local review 仍不是 production replacement complete" in evidence_factory_slice
             and 'href="#next-session-chart"' in review_compass_slice
             and 'href="#factor"' in review_compass_slice
             and 'href={CANDIDATE_CONFIRM_HREF}' in review_compass_slice
