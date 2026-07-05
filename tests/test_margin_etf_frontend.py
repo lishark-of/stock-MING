@@ -46,16 +46,44 @@ class MarginEtfFrontendTests(unittest.TestCase):
 
     def test_margin_etf_first_screen_shows_ordinary_quick_read_before_actions(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
+        plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
         quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
         mode_start = self.page.index('aria-label="margin etf mode layered live light boundary"', card_start)
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
+        plain_slice = self.page[plain_start:quick_read_start]
         quick_read_slice = self.page[quick_read_start:mode_start]
 
+        self.assertLess(card_start, plain_start)
+        self.assertLess(plain_start, quick_read_start)
         self.assertLess(card_start, quick_read_start)
         self.assertLess(quick_read_start, mode_start)
         self.assertLess(quick_read_start, actions_start)
         self.assertLess(quick_read_start, audit_start)
+        self.assertIn("ordinaryPlainConclusion", self.page)
+        self.assertIn("ordinaryPlainGap", self.page)
+        self.assertIn("ordinaryPlainNow", self.page)
+        self.assertIn("ordinaryPlainSafety", self.page)
+        self.assertIn("ordinaryPlainItems", self.page)
+        self.assertIn("普通结论", plain_slice)
+        self.assertIn('aria-label="margin etf ordinary plain conclusion sentence"', plain_slice)
+        self.assertIn("MetricGrid items={ordinaryPlainItems}", plain_slice)
+        self.assertIn("还没有可读 ETF 候选；先看融资现金线，保持观察，不新增融资。", self.page)
+        self.assertIn("当前有 ${allVisibleEtfRows.length} 行 ETF 候选", self.page)
+        self.assertIn("ETF 候选只供研究，不是买入、加仓、加融资或下单指令。", self.page)
+        for plain_label in (
+            'label: "一句话"',
+            'label: "缺口"',
+            'label: "现在做什么"',
+            'label: "安全说明"',
+        ):
+            self.assertIn(plain_label, self.page)
+        self.assertIn("页面打开、查看结果和切换入口都不会自动创建任务、调用外部服务或改写交易策略", plain_slice)
+        self.assertNotIn("onClick=", plain_slice)
+        self.assertNotIn("postTask(", plain_slice)
+        self.assertNotIn("fetch(", plain_slice)
+        self.assertNotIn("packet", plain_slice)
+        self.assertNotIn("task", plain_slice)
         self.assertIn("ordinaryQuickReadSummary", self.page)
         self.assertIn("ordinaryMissingEvidence", self.page)
         self.assertIn("ordinaryQuickReadItems", self.page)

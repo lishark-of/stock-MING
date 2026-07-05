@@ -174,6 +174,40 @@ export default function MarginEtf() {
     : marginStatus === "ready"
       ? "继续人工复核重叠、流动性和现金线；候选仍不是买入指令。"
       : "融资状态仍待本地包回放；不要把缺失数据当作可加杠杆。";
+  const ordinaryPlainConclusion = noEtfRows
+    ? "还没有可读 ETF 候选；先看融资现金线，保持观察，不新增融资。"
+    : `当前有 ${allVisibleEtfRows.length} 行 ETF 候选；${marginDecision}，先看流动性、重叠和现金线。`;
+  const ordinaryPlainGap = noEtfRows
+    ? "缺少 ETF 候选行；本地刷新只会回放已有快照，不会自动补外部数据。"
+    : marginStatus === "ready"
+      ? "仍要人工复核重叠、流动性和现金线；候选不是买入或加融资指令。"
+      : "融资状态还没回放完整；不要把缺失当作可加杠杆。";
+  const ordinaryPlainNow = noEtfRows
+    ? "先看融资现金线；需要更新时点刷新本地回放或重建本地包。"
+    : "先看 ETF 候选分组，再看融资现金线和风险提示；换票回下一票雷达。";
+  const ordinaryPlainSafety = "ETF 候选只供研究，不是买入、加仓、加融资或下单指令。";
+  const ordinaryPlainItems: MetricItem[] = [
+    {
+      label: "一句话",
+      value: ordinaryPlainConclusion,
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "缺口",
+      value: ordinaryPlainGap,
+      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+    },
+    {
+      label: "现在做什么",
+      value: ordinaryPlainNow,
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "安全说明",
+      value: ordinaryPlainSafety,
+      tone: "good"
+    }
+  ];
   const ordinaryQuickReadItems: MetricItem[] = [
     {
       label: "现在能看",
@@ -341,6 +375,12 @@ export default function MarginEtf() {
       />
 
       <PacketCard title="ETF / 融资操作台" subtitle="普通用户先看这里" status={status}>
+        <div aria-label="margin etf ordinary plain conclusion">
+          <h3>普通结论</h3>
+          <p className="ordinary-status-note" aria-label="margin etf ordinary plain conclusion sentence" aria-live="polite">{ordinaryPlainConclusion}</p>
+          <MetricGrid items={ordinaryPlainItems} />
+          <p className="risk-note">普通结论只读本地 ETF/融资快照；页面打开、查看结果和切换入口都不会自动创建任务、调用外部服务或改写交易策略。</p>
+        </div>
         <MetricGrid items={summaryItems} />
         <div aria-label="margin etf ordinary first screen quick read">
           <h3>现在能看什么</h3>

@@ -1315,6 +1315,46 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
+  const ordinaryQuantPlainResultSentence = ordinaryQuantCandidateRadarP3Ready
+    ? `${candidateRadarConfirmedSymbol || "当前标的"} 当前结论：${candidateRadarReadableResult}`
+    : empty
+      ? "还没有可读的本地量化结果；先去下一票雷达确认一只股票。"
+      : `${candidateRadarConfirmedSymbol || "当前标的"} 已有本地量化结果；先看支持 ${String(score.support_factors?.length ?? 0)} / 压制 ${String(score.suppress_factors?.length ?? 0)}，再看次日图谱。`;
+  const ordinaryQuantPlainGap = empty
+    ? "缺少确认后的本地结果；输入股票代码本身保持静默，确认按钮后再回放结果。"
+    : ordinaryQuantP2ReadySurfaceCount < 3
+      ? `结果链还缺 ${ordinaryQuantP2MissingSurfaceLabel}；先看任务进度或回下一票雷达确认。`
+      : ordinaryQuantMissingEvidence.includes("待")
+        ? "真实数据质量、小池研究或模型解释证据还没补齐；当前结果先按本地回放阅读。"
+        : "暂无页面阻断；当前结果仍只作为研究线索。";
+  const ordinaryQuantPlainNow = empty
+    ? "去下一票雷达确认股票代码"
+    : ordinaryQuantCandidateRadarP3Ready
+      ? "先看支持/压制和完整次日图谱；需要补新结果或换标的，再回下一票雷达确认。"
+      : "先看支持/压制，再打开完整次日图谱；需要换标的再回下一票雷达确认。";
+  const ordinaryQuantPlainSafety = "这只是研究辅助，不是买入、卖出、加仓或减仓指令。";
+  const ordinaryQuantPlainConclusionItems: MetricItem[] = [
+    {
+      label: "一句话",
+      value: ordinaryQuantPlainResultSentence,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: ordinaryQuantPlainGap,
+      tone: ordinaryQuantP2ReadySurfaceCount === 3 && !empty ? "good" : "warn"
+    },
+    {
+      label: "现在做什么",
+      value: ordinaryQuantPlainNow,
+      tone: empty ? "warn" : "good"
+    },
+    {
+      label: "安全说明",
+      value: ordinaryQuantPlainSafety,
+      tone: "good"
+    }
+  ];
   const ordinaryFactorTestProviderSmallPoolState =
     factorTestProductionValidation.provider_backed_small_pool_validation_done === true
       ? "真实小池验收已有直接证据"
@@ -1637,8 +1677,17 @@ export default function FactorQuantHub() {
       />
       <PacketCard title="普通用户量化推演摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={ordinaryQuantStatusLabel}>
         <div aria-label="stock quant ordinary user first summary">
+          <div aria-label="stock quant ordinary plain conclusion">
+            <h3>普通结论</h3>
+            <p className="ordinary-status-note" aria-label="stock quant ordinary plain conclusion sentence" aria-live="polite">{ordinaryQuantPlainResultSentence}</p>
+            <MetricGrid items={ordinaryQuantPlainConclusionItems} />
+            <div className="actions" aria-label="stock quant ordinary plain conclusion actions">
+              <a href={ordinaryQuantPrimaryActionHref} title="只切换本地页面或锚点；不会自动调用外部数据或模型服务" aria-label="open stock quant plain conclusion next action">{ordinaryQuantPrimaryActionLabel}</a>
+            </div>
+            <p className="risk-note">普通结论只读本地结果、数据凭证和次日图谱预览；页面打开、查看结果和切换入口都不会自动创建任务或调用外部服务。</p>
+          </div>
           <h3>一屏速读</h3>
-          <p className="risk-note">默认先看当前标的、结论、下一步、数据链、图谱/解释和边界；task、ledger、合同和回放细节继续收起在下方。</p>
+          <p className="risk-note">默认先看当前标的、结论、下一步、数据链、图谱/解释和边界；任务记录、数据凭证、合同和回放细节继续收起在下方。</p>
           <MetricGrid items={ordinaryQuantUserFirstItems} />
           <div aria-label="stock quant compact vertical slice status">
             <h3>当前纵切状态</h3>
