@@ -1488,6 +1488,40 @@ export default function FactorQuantHub() {
       边界: "不真实交易、不下单、不接 broker、不创建 order endpoint。"
     }
   ];
+  const ordinaryQuantCompactVerticalSliceItems: MetricItem[] = [
+    {
+      label: "确认链",
+      value: candidateRadarLatestTaskId
+        ? `已接上 ${candidateRadarConfirmedSymbol || "当前标的"}；task=${candidateRadarLatestTaskId}`
+        : "等待下一票雷达确认；本页不接收股票输入",
+      tone: candidateRadarLatestTaskId ? "good" : "warn"
+    },
+    {
+      label: "P2/P3",
+      value: ordinaryQuantP2P3ConnectionSentence,
+      tone: ordinaryQuantP2P3ConnectionReady ? "good" : "warn"
+    },
+    {
+      label: "支持/压制",
+      value: ordinaryQuantResultComposition,
+      tone: empty ? "warn" : "good"
+    },
+    {
+      label: "小池验收",
+      value: `${ordinaryFactorTestProviderSmallPoolState}；${ordinaryFactorTestProviderEvidenceGap}`,
+      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "降级/缺口",
+      value: `${ordinaryQuantDegradedSourceLabel}；${ordinaryQuantMissingEvidence}`,
+      tone: ordinaryQuantDegradedSourceLabel.includes("未标记") && !ordinaryQuantMissingEvidence.includes("待") ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "因子结果只做研究复核；不创建 provider task、不交易、不改策略",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantPrimarySummaryItems: MetricItem[] = [
     { label: "下一步", value: ordinaryQuantNextClick },
     { label: "数据链", value: ordinaryQuantTushareFirstDataChainLabel },
@@ -1545,6 +1579,11 @@ export default function FactorQuantHub() {
           <h3>一屏速读</h3>
           <p className="risk-note">默认先看当前标的、结论、下一步、数据链、图谱/解释和边界；task、ledger、合同和回放细节继续收起在下方。</p>
           <MetricGrid items={ordinaryQuantUserFirstItems} />
+          <div aria-label="stock quant compact vertical slice status">
+            <h3>当前纵切状态</h3>
+            <p className="ordinary-status-note">确认链、P2/P3、支持/压制、小池验收和缺口先给结论；需要真实 provider 小池时只显示授权边界，不自动创建任务。</p>
+            <MetricGrid items={ordinaryQuantCompactVerticalSliceItems} />
+          </div>
           <div className="actions" aria-label="stock quant projection primary next action">
             <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
           </div>

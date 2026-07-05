@@ -56,6 +56,27 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         summary_start = source.index("普通用户量化推演摘要")
         summary_end = source.index("高级验收任务", summary_start)
         summary_slice = source[summary_start:summary_end]
+        self.assertIn("ordinaryQuantCompactVerticalSliceItems", source)
+        self.assertIn('aria-label="stock quant compact vertical slice status"', summary_slice)
+        self.assertIn("当前纵切状态", summary_slice)
+        self.assertIn("确认链、P2/P3、支持/压制、小池验收和缺口先给结论", summary_slice)
+        for compact_label in (
+            'label: "确认链"',
+            'label: "P2/P3"',
+            'label: "支持/压制"',
+            'label: "小池验收"',
+            'label: "降级/缺口"',
+            'label: "边界"',
+        ):
+            self.assertIn(compact_label, source)
+        self.assertIn("因子结果只做研究复核；不创建 provider task、不交易、不改策略", source)
+        compact_start = summary_slice.index('aria-label="stock quant compact vertical slice status"')
+        compact_end = summary_slice.index('aria-label="stock quant projection primary next action"', compact_start)
+        compact_slice = summary_slice[compact_start:compact_end]
+        self.assertLess(compact_start, summary_slice.index('aria-label="stock quant projection primary next action"'))
+        self.assertNotIn("onClick=", compact_slice)
+        self.assertNotIn("launch" + "Task", compact_slice)
+        self.assertNotIn("post" + "Task(", compact_slice)
         for engineering_label in (
             'label: "cache"',
             'label: "Tushare"',
