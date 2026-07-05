@@ -121,6 +121,14 @@ export default function LegacyTools() {
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const empty = !loading && !error && !Object.keys(cache).length;
+  const legacyAppVisibleNowSentence =
+    "打开 Command Center 3.0 后，这页先告诉你普通投研该去哪些 3.0 入口：首页确认股票、下一票雷达、量化推演、次日图谱、ETF / 融资；旧 Streamlit 只保留为 legacy/admin/debug fallback。";
+  const legacyAppVisibleNowItems = [
+    { label: "第一眼", value: "去 3.0 普通入口，不回 Streamlit", tone: "good" as const },
+    { label: "能点什么", value: "首页、下一票、量化、次日图谱、ETF / 融资" },
+    { label: "退场状态", value: "Streamlit fallback retained", tone: "warn" as const },
+    { label: "安全边界", value: "本地链接只切页，不创建 task、不外联、不交易", tone: "good" as const }
+  ];
   const ordinaryReplacementCompassItems = [
     { label: "现在去哪", value: "3.0 首页 / 下一票雷达 / 量化推演 / 次日图谱 / ETF", tone: "good" as const },
     { label: "旧入口定位", value: "legacy/admin/debug fallback", tone: "warn" as const },
@@ -295,6 +303,19 @@ export default function LegacyTools() {
           emptyTitle="暂无 Legacy 桥接缓存"
           emptyDetail="Legacy 页面只读展示旧工作台边界，不启动 Streamlit 或运行旧工具。"
         />
+        <div aria-label="legacy app visible now summary">
+          <h3>打开 app 能看到什么</h3>
+          <p className="ordinary-status-note" aria-label="legacy app visible now sentence">{legacyAppVisibleNowSentence}</p>
+          <MetricGrid items={legacyAppVisibleNowItems} />
+          <div className="actions" aria-label="legacy app visible now local actions">
+            <a href="#home" title="回到 3.0 今日作战台确认股票；只读本地状态" aria-label="open home from legacy app visible now">首页确认股票</a>
+            <a href="#candidates" title="打开下一票雷达；候选不是买入指令" aria-label="open candidate radar from legacy app visible now">下一票雷达</a>
+            <a href="#factor" title="打开股票量化推演；只读 Factor cache" aria-label="open quant projection from legacy app visible now">量化推演</a>
+            <a href="#next" title="打开次日图谱；operation_zones 只是条件区间" aria-label="open next session from legacy app visible now">次日图谱</a>
+            <a href="#marginEtf" title="打开 ETF / 融资替代；不是加仓或加融资指令" aria-label="open margin etf from legacy app visible now">ETF / 融资</a>
+          </div>
+          <p className="risk-note">这些链接只在 React/Tauri 内切换页面；GET legacy cache 和 React render 不打开 Streamlit、不创建 task、不移除 fallback、不删除 app.py、不调用 provider/model/GitHub、不执行真实交易。</p>
+        </div>
         <div aria-label="legacy ordinary replacement compass">
           <h3>普通替代路线</h3>
           <p className="ordinary-status-note">普通投研先走 Command Center 3.0：首页、下一票雷达、量化推演、次日图谱和 ETF / 融资；Streamlit 只保留为 legacy/admin/debug fallback。</p>
