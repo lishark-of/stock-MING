@@ -214,6 +214,7 @@ export default function NextSessionMap() {
   const packetCandidateRadarProviderLedgerLabel = packetCandidateRadarProviderSuccessCount > 0
     ? `${String(packetCandidateRadarProviderSuccessCount)}/${String(packetCandidateRadarProviderCallCount || packetCandidateRadarProviderSuccessCount)} 个接口`
     : "本地 ledger 可读";
+  const candidateRadarProviderApiRows = rowsFromArray(candidateRadarSmallDataWriteback.ordinary_provider_api_rows);
   const nextSessionTushareSourceLabel = chartSummary.uses_real_daily_close === true
     ? "真实 daily close 已在本地缓存"
     : packetCandidateRadarP3HandoffReady || packetCandidateRadarP2HandoffReady || packetCandidateRadarProviderSuccessCount > 0
@@ -538,6 +539,80 @@ export default function NextSessionMap() {
       tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
     }
   ];
+  const nextSessionTushareDataCardReady =
+    packetCandidateRadarProviderSuccessCount > 0 ||
+    candidateRadarWritebackSurfaceReady ||
+    packetCandidateRadarP2HandoffReady ||
+    packetCandidateRadarP3HandoffReady;
+  const nextSessionTushareDataCardSummary = nextSessionTushareDataCardReady
+    ? `${candidateRadarConfirmedSymbol || "当前标的"} 确认后 Tushare 数据卡可读：${packetCandidateRadarProviderLedgerLabel}；${candidateRadarWritebackSurfaceReady ? "P2 三面已回放" : "P2 三面待完整回放"}。`
+    : "确认后 Tushare 数据卡等待回写：先回下一票雷达输入股票代码并点击确认按钮。";
+  const nextSessionTushareDataCardGap = nextSessionTushareDataCardReady
+    ? chartSummary.has_drawable_data === true
+      ? "Tushare-first 账本和完整次日图谱都已进入本地回放。"
+      : "Tushare-first 账本可读；完整次日图谱还需手动生成或等待本地 cache。"
+    : "缺 Tushare call_ledger；等待确认任务、本地阻断或后续授权回写。";
+  const nextSessionTushareDataCardNext = nextSessionTushareDataCardReady
+    ? chartSummary.has_drawable_data === true
+      ? "先看图表路径、参考线和 operation_zones。"
+      : "先看上游 Tushare-first 结论，再手动生成完整次日图谱。"
+    : "回下一票雷达确认输入区，输入股票代码并点击确认按钮。";
+  const nextSessionTushareDataCardItems: MetricItem[] = [
+    {
+      label: "Tushare 数据卡",
+      value: nextSessionTushareDataCardSummary,
+      tone: nextSessionTushareDataCardReady ? "good" : "warn"
+    },
+    {
+      label: "接口回放",
+      value: nextSessionTushareDataCardReady ? packetCandidateRadarProviderLedgerLabel : "等待本地 call_ledger",
+      tone: nextSessionTushareDataCardReady ? "good" : "warn"
+    },
+    {
+      label: "P2 三面",
+      value: candidateRadarWritebackSurfaceStatus,
+      tone: candidateRadarWritebackSurfaceReady ? "good" : "warn"
+    },
+    {
+      label: "P3 图谱",
+      value: nextSessionReadableStatusLabel,
+      tone: chartSummary.has_drawable_data === true ? "good" : candidateRadarReadableResultReady ? "warn" : "neutral"
+    },
+    {
+      label: "缺口",
+      value: nextSessionTushareDataCardGap,
+      tone: nextSessionTushareDataCardReady && chartSummary.has_drawable_data === true ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: nextSessionTushareDataCardNext,
+      tone: nextSessionTushareDataCardReady ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只读 CandidateRadar cache / call_ledger / packet 和 next-session cache；不补调 Tushare/DeepSeek、不交易",
+      tone: "good"
+    }
+  ];
+  const nextSessionTushareDataCardRows = candidateRadarProviderApiRows.length
+    ? candidateRadarProviderApiRows.map((row) => ({
+        接口: String(row.api ?? row.interface ?? row.name ?? row.provider_api ?? row["接口"] ?? "Tushare light"),
+        当前状态: String(row.status ?? row.state ?? row.current_status ?? row["当前状态"] ?? "本地回放"),
+        证据: String(row.evidence ?? row.source ?? row.ledger ?? row["证据"] ?? "CandidateRadar ordinary_provider_api_rows"),
+        用户下一步: String(row.next_action ?? row.next_step ?? row["用户下一步"] ?? nextSessionTushareDataCardNext),
+        边界: String(row.boundary ?? row["边界"] ?? "只读本地账本；不从次日图谱页补调 provider/model。")
+      }))
+    : [
+        {
+          接口: "trade_cal / daily / daily_basic / moneyflow",
+          当前状态: nextSessionTushareDataCardReady
+            ? `已看到 Tushare-first 回放 ${packetCandidateRadarProviderLedgerLabel}`
+            : "等待 Tushare call_ledger 或本地阻断回放",
+          证据: nextSessionTushareSourceLabel,
+          用户下一步: nextSessionTushareDataCardNext,
+          边界: "次日图谱只读本地 cache / call_ledger / packet；不创建第二个 task、不补调 Tushare/DeepSeek。"
+        }
+      ];
   const nextSessionGeneratePayload = {
     schema_version: "next_session_confirmed_symbol_generate_payload.v1",
     source: "next_session_map_manual_generate_button",
@@ -1270,6 +1345,17 @@ export default function NextSessionMap() {
         <h3>运行模式分层</h3>
         <MetricGrid items={nextSessionLiveLightEvidenceItems} />
         <p className="risk-note">轻量实时证据只读本地 cache、CandidateRadar 回放和任务索引；不会因为页面打开、React render 或本地链接调用 Tushare/DeepSeek/GitHub，也不证明 LTG-08 production replacement complete。</p>
+      </div>
+      <div aria-label="next session ordinary tushare data card">
+        <h3>确认后 Tushare 数据卡</h3>
+        <p className="ordinary-status-note" aria-label="next session ordinary tushare data card summary" aria-live="polite">{nextSessionTushareDataCardSummary}</p>
+        <MetricGrid items={nextSessionTushareDataCardItems} />
+        <details className="developer-audit-details" aria-label="next session ordinary tushare data card rows">
+          <summary>接口回放明细</summary>
+          <p className="risk-note">这张明细优先读取 CandidateRadar 的 ordinary_provider_api_rows；旧缓存缺字段时显示轻量接口 fallback，不从次日图谱页补调数据。</p>
+          <DataLineageTable rows={nextSessionTushareDataCardRows} />
+        </details>
+        <p className="risk-note">确认后数据卡只整理已有 CandidateRadar 缓存、调用账本、结果包和本地 next-session cache；不会创建第二个 task、调用 Tushare、DeepSeek、GitHub，不交易、不改 operation_zones 或 strategy action。</p>
       </div>
       <div aria-label="next session ordinary review compass">
         <h3>次日图谱复核顺序</h3>
