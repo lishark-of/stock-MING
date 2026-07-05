@@ -706,6 +706,80 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postBootstrapLiveStartup", card)
         self.assertNotIn("launchLiveBootstrap", card)
 
+    def test_ordinary_home_first_card_shows_result_routes_without_task_trigger(self):
+        source = self.source
+        card_start = source.index('title="今日可用"')
+        card_end = source.index('aria-label="daily command research assist audit details"', card_start)
+        card = source[card_start:card_end]
+        route_start = card.index('aria-label="ordinary home first screen result route"')
+        route = card[route_start:]
+
+        self.assertIn("ordinaryHomeResultRouteSummary", source)
+        self.assertIn("ordinaryHomeResultRouteItems", source)
+        self.assertIn("确认后结果会从这里去看：股票量化推演、次日图谱、下一票雷达详情。", source)
+        self.assertIn("结果写入中：先看任务进度或只读刷新本地回放；缺口会继续显示，不把空结果当无风险。", source)
+        self.assertIn("结果已可读：先看股票量化推演，再看次日图谱；需要换标的再回下一票雷达详情。", source)
+        self.assertIn('aria-label="ordinary home first screen result route"', card)
+        self.assertIn("确认后去哪看", route)
+        self.assertIn('aria-label="ordinary home result route summary"', route)
+        self.assertIn("MetricGrid items={ordinaryHomeResultRouteItems}", route)
+        self.assertIn('label: "确认后去哪看"', source)
+        self.assertIn('label: "结果入口"', source)
+        self.assertIn('label: "降级读法"', source)
+        self.assertIn("暂无结果不等于无风险；先确认股票", source)
+        self.assertIn("本地写入中；缺数据会显示 pending / 缺少证据", source)
+        self.assertIn("已有可读结论；继续看来源和缺口", source)
+        self.assertIn('aria-label="ordinary home first screen result route actions"', route)
+        self.assertIn('href="#factor/factor-score"', route)
+        self.assertIn('href="#next/next-session-chart"', route)
+        self.assertIn("href={dailyCommandCandidateConfirmHref}", route)
+        self.assertIn("open factor from ordinary home result route", route)
+        self.assertIn("open next session from ordinary home result route", route)
+        self.assertIn("open candidate radar from ordinary home result route", route)
+        self.assertIn("这些结果入口只切换本地模块；不会新建任务、不会调用外部数据或模型服务", route)
+        self.assertIn("不会读取密钥、不会交易或改写策略", route)
+        self.assertLess(card.index('aria-label="ordinary home confirm status"'), route_start)
+        self.assertNotIn("onClick=", route)
+        self.assertNotIn("fetch(", route)
+        self.assertNotIn("postTask", route)
+        self.assertNotIn("postCandidateRadar", route)
+        self.assertNotIn("postBootstrapLiveStartup", route)
+        self.assertNotIn("launchHomeQuantProjection", route)
+
+    def test_ordinary_home_first_card_shows_post_confirm_status_without_second_task(self):
+        source = self.source
+        card_start = source.index('title="今日可用"')
+        card_end = source.index('aria-label="daily command research assist audit details"', card_start)
+        card = source[card_start:card_end]
+        status_start = card.index('aria-label="ordinary home first screen post confirm status"')
+        route_start = card.index('aria-label="ordinary home first screen result route"')
+        status = card[status_start:route_start]
+
+        self.assertIn("ordinaryHomePostConfirmItems", source)
+        self.assertIn("homeQuantPostConfirmReadableSentence", source)
+        self.assertIn("点击确认后显示本地回执编号", source)
+        self.assertIn("确认后回读 CandidateRadar / Factor / Next / Tasks", source)
+        self.assertIn("这张状态只读本地任务和缓存；不重复确认、不调用模型、不交易", source)
+        self.assertIn('aria-label="ordinary home first screen post confirm status"', card)
+        self.assertIn("确认后状态", status)
+        self.assertIn('aria-label="ordinary home post confirm status summary"', status)
+        self.assertIn("MetricGrid items={ordinaryHomePostConfirmItems}", status)
+        self.assertIn('label: "确认回执"', source)
+        self.assertIn('label: "任务进度"', source)
+        self.assertIn('label: "本地回放"', source)
+        self.assertIn('label: "下一步"', source)
+        self.assertIn("它只读本地任务和缓存", status)
+        self.assertIn("不会重复点击确认、不调用外部数据或模型", status)
+        self.assertIn("不读取密钥、不交易或改写策略", status)
+        self.assertLess(card.index('aria-label="ordinary home confirm status"'), status_start)
+        self.assertLess(status_start, route_start)
+        self.assertNotIn("onClick=", status)
+        self.assertNotIn("fetch(", status)
+        self.assertNotIn("postTask", status)
+        self.assertNotIn("postCandidateRadar", status)
+        self.assertNotIn("postBootstrapLiveStartup", status)
+        self.assertNotIn("launchHomeQuantProjection", status)
+
     def test_home_p0_gate_uses_runtime_packets_before_receipt_detail(self):
         source = self.source
         gate_start = source.index("const dailyCommandP0RuntimePacketsReady =")

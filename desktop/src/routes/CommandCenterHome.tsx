@@ -1900,6 +1900,13 @@ export default function CommandCenterHome() {
     : dailyCommandP0LocalReadinessReady
       ? "准备就绪：输入股票代码后点击确认。"
       : "待恢复：先把本地连接接上。";
+  const ordinaryHomeResultRouteSummary = dailyCommandP3OneGlanceReadable
+    ? "结果已可读：先看股票量化推演，再看次日图谱；需要换标的再回下一票雷达详情。"
+    : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
+      ? "结果写入中：先看任务进度或只读刷新本地回放；缺口会继续显示，不把空结果当无风险。"
+      : dailyCommandP0LocalReadinessReady
+        ? "确认后结果会从这里去看：股票量化推演、次日图谱、下一票雷达详情。"
+        : "本地连接恢复后，先确认股票代码，再看结果入口。";
   const ordinaryHomeStatusItems: MetricItem[] = [
     {
       label: "本地已接上",
@@ -1915,6 +1922,32 @@ export default function CommandCenterHome() {
       label: "最近结果",
       value: ordinaryHomeRecentResult,
       tone: dailyCommandP3OneGlanceReadable ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
+    }
+  ];
+  const ordinaryHomeResultRouteItems: MetricItem[] = [
+    {
+      label: "确认后去哪看",
+      value: ordinaryHomeResultRouteSummary,
+      tone: dailyCommandP3OneGlanceReadable ? "good" : dailyCommandP0LocalReadinessReady ? "warn" : "neutral"
+    },
+    {
+      label: "结果入口",
+      value: "股票量化推演 / 次日图谱 / 下一票雷达详情",
+      tone: "good"
+    },
+    {
+      label: "降级读法",
+      value: dailyCommandP3OneGlanceReadable
+        ? "已有可读结论；继续看来源和缺口"
+        : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
+          ? "本地写入中；缺数据会显示 pending / 缺少证据"
+          : "暂无结果不等于无风险；先确认股票",
+      tone: dailyCommandP3OneGlanceReadable ? "good" : "warn"
+    },
+    {
+      label: "安全说明",
+      value: "结果路标只切换本地页面；不新建任务、不调用外部服务或模型、不交易",
+      tone: "good"
     }
   ];
   const homeQuantReadbackRefreshLabel = homeQuantReadbackRefreshing
@@ -2058,6 +2091,35 @@ export default function CommandCenterHome() {
   const homeQuantPostConfirmReadableSentence = homeQuantVisibleTaskId
     ? `${homeQuantPostConfirmStageLabel}；已拿到确认回执 ${homeQuantVisibleTaskId}（${homeQuantVisibleTaskSource}）；${dailyCommandP2ThreeSurfaceReady ? "P2 三面已可读" : "P2 三面等待本地回放"}；${dailyCommandP3OneGlanceReadable ? `P3 结论：${dailyCommandExplainableResultLabel}` : "P3 结论等待本地结果回放"}；下一步：${homeQuantPostConfirmStageNext}。`
     : `${homeQuantPostConfirmStageLabel}；确认后会在这里显示确认回执、P2 三面、P3 结论和下一步入口。`;
+  const ordinaryHomePostConfirmItems: MetricItem[] = [
+    {
+      label: "确认回执",
+      value: homeQuantVisibleTaskId || "点击确认后显示本地回执编号",
+      tone: homeQuantVisibleTaskId ? "good" : "warn"
+    },
+    {
+      label: "任务进度",
+      value: homeQuantVisibleTaskId ? dailyCommandLatestConfirmReadableStatus : "等待确认按钮",
+      tone: homeQuantVisibleTaskId ? "good" : "warn"
+    },
+    {
+      label: "本地回放",
+      value: dailyCommandP2ThreeSurfaceReady || dailyCommandP3OneGlanceReadable
+        ? homeQuantP1P2P3CheckpointLabel
+        : "确认后回读 CandidateRadar / Factor / Next / Tasks",
+      tone: dailyCommandP2ThreeSurfaceReady || dailyCommandP3OneGlanceReadable ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: homeQuantPostConfirmStageNext,
+      tone: homeQuantVisibleTaskId || dailyCommandP3OneGlanceReadable ? "good" : "warn"
+    },
+    {
+      label: "安全说明",
+      value: "这张状态只读本地任务和缓存；不重复确认、不调用模型、不交易",
+      tone: "good"
+    }
+  ];
   const homeQuantResultRouteReady = dailyCommandP3OneGlanceReadable || dailyCommandP2ThreeSurfaceReady;
   const homeQuantResultRouteSentence = homeQuantResultRouteReady
     ? `${dailyCommandConfirmedSymbolLabel} 结果路标：先读 P3 结论，再看股票量化推演支持/压制，最后打开次日图谱；换标的仍回确认输入区。`
@@ -2953,6 +3015,23 @@ export default function CommandCenterHome() {
         </div>
         {homeQuantSubmitError ? <p className="ordinary-status-note" aria-live="polite">确认失败：请检查本地连接后重试。</p> : null}
         <p className="ordinary-status-note" aria-label="ordinary home confirm status" aria-live="polite">{ordinaryHomeConfirmStatusLine}</p>
+        <div aria-label="ordinary home first screen post confirm status">
+          <h3>确认后状态</h3>
+          <p className="ordinary-status-note" aria-label="ordinary home post confirm status summary" aria-live="polite">{homeQuantPostConfirmReadableSentence}</p>
+          <MetricGrid items={ordinaryHomePostConfirmItems} />
+          <p className="risk-note">这里先显示确认回执、任务进度、本地回放和下一步；它只读本地任务和缓存，不会重复点击确认、不调用外部数据或模型、不读取密钥、不交易或改写策略。</p>
+        </div>
+        <div aria-label="ordinary home first screen result route">
+          <h3>确认后去哪看</h3>
+          <p className="ordinary-status-note" aria-label="ordinary home result route summary" aria-live="polite">{ordinaryHomeResultRouteSummary}</p>
+          <MetricGrid items={ordinaryHomeResultRouteItems} />
+          <div className="actions" aria-label="ordinary home first screen result route actions">
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from ordinary home result route">股票量化推演</a>
+            <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next session from ordinary home result route">次日图谱</a>
+            <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="open candidate radar from ordinary home result route">下一票雷达详情</a>
+          </div>
+          <p className="risk-note">这些结果入口只切换本地模块；不会新建任务、不会调用外部数据或模型服务、不会读取密钥、不会交易或改写策略。</p>
+        </div>
       </PacketCard>
       <details className="developer-audit-details" aria-label="daily command research assist audit details">
         <summary>研究辅助 / 审计详情</summary>
