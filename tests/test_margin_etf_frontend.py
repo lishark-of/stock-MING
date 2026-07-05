@@ -44,6 +44,79 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertNotIn("/api/bootstrap/live-startup", self.page)
         self.assertNotIn("postBootstrapLiveStartup", self.page)
 
+    def test_margin_etf_first_screen_shows_ordinary_quick_read_before_actions(self):
+        card_start = self.page.index('title="ETF / 融资操作台"')
+        quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
+        mode_start = self.page.index('aria-label="margin etf mode layered live light boundary"', card_start)
+        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        audit_start = self.page.index('aria-label="margin etf audit details"')
+        quick_read_slice = self.page[quick_read_start:mode_start]
+
+        self.assertLess(card_start, quick_read_start)
+        self.assertLess(quick_read_start, mode_start)
+        self.assertLess(quick_read_start, actions_start)
+        self.assertLess(quick_read_start, audit_start)
+        self.assertIn("ordinaryQuickReadSummary", self.page)
+        self.assertIn("ordinaryMissingEvidence", self.page)
+        self.assertIn("ordinaryQuickReadItems", self.page)
+        self.assertIn("现在能看什么", quick_read_slice)
+        self.assertIn('aria-label="margin etf ordinary quick read summary"', quick_read_slice)
+        self.assertIn("MetricGrid items={ordinaryQuickReadItems}", quick_read_slice)
+        self.assertIn("当前没有可读 ETF 候选：先看本地快照状态和融资现金线", self.page)
+        self.assertIn("当前可读 ${allVisibleEtfRows.length} 行 ETF 候选", self.page)
+        for label in (
+            'label: "现在能看"',
+            'label: "数据来源"',
+            'label: "融资动作"',
+            'label: "先看哪儿"',
+            'label: "缺什么"',
+            'label: "不要做"',
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn("不要把 ETF 候选当买入、加仓或加融资指令", self.page)
+        self.assertIn("不会新建任务、不会调用外部数据或模型服务、不会交易或改写策略", quick_read_slice)
+        self.assertNotIn("onClick=", quick_read_slice)
+        self.assertNotIn("postTask(", quick_read_slice)
+        self.assertNotIn("fetch(", quick_read_slice)
+
+    def test_margin_etf_local_refresh_result_quick_read_after_button(self):
+        card_start = self.page.index('title="ETF / 融资操作台"')
+        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        result_start = self.page.index('aria-label="margin etf local refresh result quick read"', actions_start)
+        receipt_start = self.page.index("<TaskLaunchReceipt receipt={taskReceipt} />", result_start)
+        audit_start = self.page.index('aria-label="margin etf audit details"')
+        result_slice = self.page[result_start:receipt_start]
+
+        self.assertLess(actions_start, result_start)
+        self.assertLess(result_start, receipt_start)
+        self.assertLess(result_start, audit_start)
+        self.assertIn("localRefreshReadableSummary", self.page)
+        self.assertIn("localRefreshResultItems", self.page)
+        self.assertIn("localRefreshPayload.degraded_reason", self.page)
+        self.assertIn("localRefreshPayload.scope_hash_short", self.page)
+        self.assertIn("localRefreshPayload.etf_row_count", self.page)
+        self.assertIn("(taskReceipt || taskSubmitting || taskError || taskId)", self.page)
+        self.assertIn("刷新后结果", result_slice)
+        self.assertIn('aria-label="margin etf local refresh result summary"', result_slice)
+        self.assertIn("MetricGrid items={localRefreshResultItems}", result_slice)
+        for label in (
+            'label: "本地回执"',
+            'label: "本地结果"',
+            'label: "降级原因"',
+            'label: "ETF 行数"',
+            'label: "范围校验"',
+            'label: "安全说明"',
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn("本地刷新已返回降级结果", self.page)
+        self.assertIn("点击刷新/重建本地包后，这里会显示回执、降级原因、行数和安全说明。", self.page)
+        self.assertIn("只读按钮返回的本地回执和本地审计记录", result_slice)
+        self.assertIn("缺 ETF 或融资包时只显示降级原因", result_slice)
+        self.assertIn("不会补外部数据、调用模型、交易或改写策略", result_slice)
+        self.assertNotIn("onClick=", result_slice)
+        self.assertNotIn("postTask(", result_slice)
+        self.assertNotIn("fetch(", result_slice)
+
     def test_margin_etf_mode_layers_are_visible_before_actions_and_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)

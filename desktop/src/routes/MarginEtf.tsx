@@ -166,6 +166,110 @@ export default function MarginEtf() {
     : "";
   const boundary =
     "页面打开只读本地 packet；不会自动全量发现 ETF，不调用 Tushare/DeepSeek/GitHub，不下单，不把 ETF 候选写成买入或加融资指令。";
+  const ordinaryQuickReadSummary = noEtfRows
+    ? "当前没有可读 ETF 候选：先看本地快照状态和融资现金线，必要时只刷新本地回放。"
+    : `当前可读 ${allVisibleEtfRows.length} 行 ETF 候选：先看来源、理由、流动性、重叠和现金/杠杆，再决定是否继续研究。`;
+  const ordinaryMissingEvidence = noEtfRows
+    ? "缺 ETF 候选行；本地刷新只生成降级回执，不自动补外部数据。"
+    : marginStatus === "ready"
+      ? "继续人工复核重叠、流动性和现金线；候选仍不是买入指令。"
+      : "融资状态仍待本地包回放；不要把缺失数据当作可加杠杆。";
+  const ordinaryQuickReadItems: MetricItem[] = [
+    {
+      label: "现在能看",
+      value: noEtfRows
+        ? "暂无 ETF 候选；先看本地快照和融资现金线"
+        : `ETF 候选 ${allVisibleEtfRows.length} 行：推荐 ${recommendedEtfs.length} / 观察 ${watchEtfs.length} / 回避 ${avoidEtfs.length} / 排除 ${excludedEtfs.length}`,
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "数据来源",
+      value: source,
+      tone: dataStatus === "ready" || dataStatus === "cached" ? "good" : "warn"
+    },
+    {
+      label: "融资动作",
+      value: marginDecision,
+      tone: allowNewMargin ? "warn" : "good"
+    },
+    {
+      label: "先看哪儿",
+      value: noEtfRows ? "融资现金线 / 风险提示 / 本地回放按钮" : "ETF 候选分组 / 融资现金线 / 风险提示",
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "缺什么",
+      value: ordinaryMissingEvidence,
+      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+    },
+    {
+      label: "不要做",
+      value: "不要把 ETF 候选当买入、加仓或加融资指令",
+      tone: "good"
+    }
+  ];
+  const localRefreshTask = taskReceipt?.data?.task;
+  const localRefreshPayload = localRefreshTask?.payload_safe ?? {};
+  const localRefreshLedger = taskReceipt?.call_ledger?.length ? taskReceipt.call_ledger : localRefreshTask?.call_ledger ?? [];
+  const localRefreshFirstLedger = localRefreshLedger[0] ?? {};
+  const localRefreshDegradedReason = text(
+    localRefreshPayload.degraded_reason || localRefreshFirstLedger.failure_mode,
+    ""
+  );
+  const localRefreshRowCount = text(
+    localRefreshPayload.etf_row_count ?? localRefreshFirstLedger.row_count ?? allVisibleEtfRows.length,
+    "0"
+  );
+  const localRefreshScopeShort = text(
+    localRefreshPayload.scope_hash_short ?? localRefreshFirstLedger.scope_hash_short,
+    taskReceipt ? "已生成" : "点击后生成"
+  );
+  const localRefreshStatus = taskReceipt
+    ? taskReceipt.ok
+      ? text(localRefreshTask?.current_step ?? localRefreshFirstLedger.call_status, "本地回放已返回")
+      : text(taskReceipt.error, "创建失败")
+    : taskSubmitting
+      ? "正在创建本地回放"
+      : "等待点击刷新/重建本地包";
+  const localRefreshReadableSummary = taskReceipt
+    ? localRefreshDegradedReason
+      ? `本地刷新已返回降级结果：${localRefreshDegradedReason}；不会自动补外部数据。`
+      : `本地刷新已返回：${localRefreshRowCount} 行 ETF 候选参与回放；继续看候选分组和融资现金线。`
+    : taskError
+      ? `本地刷新失败：${taskError}`
+      : "点击刷新/重建本地包后，这里会显示回执、降级原因、行数和安全说明。";
+  const localRefreshResultItems: MetricItem[] = [
+    {
+      label: "本地回执",
+      value: taskReceipt ? text(taskReceipt.data?.task_id, "创建失败") : taskSubmitting ? "正在创建" : "点击后显示",
+      tone: taskReceipt?.ok ? "good" : taskError ? "warn" : "neutral"
+    },
+    {
+      label: "本地结果",
+      value: localRefreshStatus,
+      tone: taskReceipt?.ok ? "good" : taskError ? "warn" : "neutral"
+    },
+    {
+      label: "降级原因",
+      value: localRefreshDegradedReason || (taskReceipt ? "未降级" : "点击后显示"),
+      tone: localRefreshDegradedReason ? "warn" : taskReceipt ? "good" : "neutral"
+    },
+    {
+      label: "ETF 行数",
+      value: localRefreshRowCount,
+      tone: Number(localRefreshRowCount) > 0 ? "good" : "warn"
+    },
+    {
+      label: "范围校验",
+      value: localRefreshScopeShort,
+      tone: taskReceipt ? "good" : "neutral"
+    },
+    {
+      label: "安全说明",
+      value: "只读本地快照；不补外部数据、不调用模型、不交易",
+      tone: "good"
+    }
+  ];
   const summaryItems: MetricItem[] = [
     { label: "本地快照", value: dataStatus, tone: dataStatus === "ready" || dataStatus === "cached" ? "good" : "warn" },
     { label: "ETF 数量", value: recommendedEtfs.length ? `推荐 ${recommendedEtfs.length}` : "等待快照", tone: recommendedEtfs.length ? "good" : "warn" },
@@ -238,6 +342,12 @@ export default function MarginEtf() {
 
       <PacketCard title="ETF / 融资操作台" subtitle="普通用户先看这里" status={status}>
         <MetricGrid items={summaryItems} />
+        <div aria-label="margin etf ordinary first screen quick read">
+          <h3>现在能看什么</h3>
+          <p className="ordinary-status-note" aria-label="margin etf ordinary quick read summary" aria-live="polite">{ordinaryQuickReadSummary}</p>
+          <MetricGrid items={ordinaryQuickReadItems} />
+          <p className="risk-note">这张速读只读本地 ETF/融资快照和本地融资状态；不会新建任务、不会调用外部数据或模型服务、不会交易或改写策略。</p>
+        </div>
         <div aria-label="margin etf mode layered live light boundary">
           <h3>运行模式分层</h3>
           <p className="ordinary-status-note">把本地 packet、按钮任务、数据证据、旧入口退场和交易隔离分开看；live_light 也只能是可审计 task，不是页面渲染外联。</p>
@@ -266,6 +376,14 @@ export default function MarginEtf() {
         {taskDisabledReason && <p className="risk-note">任务暂不可用：{taskDisabledReason}</p>}
         {taskDegradedReason && <p className="risk-note">{taskDegradedReason}</p>}
         {taskError && <p className="risk-note">{taskError}</p>}
+        {(taskReceipt || taskSubmitting || taskError || taskId) ? (
+          <div aria-label="margin etf local refresh result quick read">
+            <h3>刷新后结果</h3>
+            <p className="ordinary-status-note" aria-label="margin etf local refresh result summary" aria-live="polite">{localRefreshReadableSummary}</p>
+            <MetricGrid items={localRefreshResultItems} />
+            <p className="risk-note">这张结果摘要只读按钮返回的本地回执和本地审计记录；缺 ETF 或融资包时只显示降级原因，不会补外部数据、调用模型、交易或改写策略。</p>
+          </div>
+        ) : null}
         <TaskLaunchReceipt receipt={taskReceipt} />
         <TaskStatusPanel taskId={taskId} onSuccess={refresh} />
         <p className="risk-note">{boundary}</p>
