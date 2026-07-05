@@ -763,6 +763,19 @@ def build_contract() -> dict[str, Any]:
     candidate_compass_start = candidate_frontend.find(
         'aria-label="candidate radar ordinary candidate review compass"'
     )
+    candidate_next_direct_evidence_start = candidate_frontend.find(
+        'aria-label="candidate radar ltg13 next direct evidence quick read"'
+    )
+    candidate_next_direct_evidence_end = candidate_frontend.find(
+        'aria-label="candidate radar user first actions"',
+        candidate_next_direct_evidence_start,
+    )
+    candidate_next_direct_evidence_slice = (
+        candidate_frontend[candidate_next_direct_evidence_start:candidate_next_direct_evidence_end]
+        if candidate_next_direct_evidence_start >= 0
+        and candidate_next_direct_evidence_end > candidate_next_direct_evidence_start
+        else ""
+    )
     candidate_compass_end = candidate_frontend.find(
         'aria-label="candidate radar ordinary retirement readiness quick read"',
         candidate_compass_start,
@@ -2305,6 +2318,34 @@ def build_contract() -> dict[str, Any]:
             and "页面打开、输入、GET cache 和 React render 都不会自动外联" in candidate_frontend
             and "候选不是买入指令" in candidate_frontend,
             "Candidate Radar first screen must expose a real symbol input, confirm button, local readback refresh, and no-buy/no-render-provider boundary before optional scan/audit details.",
+        ),
+        _row(
+            "candidate_radar_ltg13_next_direct_evidence_is_visible_authorization_gated",
+            candidate_next_direct_evidence_start >= 0
+            and candidate_next_direct_evidence_start
+            > candidate_frontend.find('aria-label="candidate radar ordinary live light evidence factory"')
+            and candidate_next_direct_evidence_start < candidate_compass_start
+            and 'aria-label="candidate radar ltg13 next direct evidence actions"'
+            in candidate_next_direct_evidence_slice
+            and 'aria-label="candidate radar ltg13 next direct evidence rows"'
+            in candidate_next_direct_evidence_slice
+            and "candidateRadarLtg13NextDirectEvidenceItems" in candidate_frontend
+            and "candidateRadarLtg13NextDirectEvidenceRows" in candidate_frontend
+            and "LTG-13 下一条直接证据" in candidate_next_direct_evidence_slice
+            and "搜票真实数据账本和最终推广复核这两类缺口" in candidate_next_direct_evidence_slice
+            and "不自动运行 Tushare、DeepSeek、GitHub 或 worker" in candidate_next_direct_evidence_slice
+            and "真实数据补证需授权" in candidate_next_direct_evidence_slice
+            and "需要用户明确授权真实数据账本补证后" in candidate_next_direct_evidence_slice
+            and 'href="#candidate-radar-ltg13-data-ledger-audit"' in candidate_next_direct_evidence_slice
+            and 'id="candidate-radar-ltg13-data-ledger-audit"' in candidate_frontend
+            and "不把本地 receipt、dry-run、execution request、matrix、browser artifact 或 local review 当 production replacement complete"
+            in candidate_next_direct_evidence_slice
+            and "launchQuantProjectionProviderModelAcceptance" not in candidate_next_direct_evidence_slice
+            and "postCandidateRadarQuantProjectionProviderModelAcceptance" not in candidate_next_direct_evidence_slice
+            and "quant-projection-provider-model-acceptance" not in candidate_next_direct_evidence_slice
+            and "provider-model" not in candidate_next_direct_evidence_slice
+            and "onClick=" not in candidate_next_direct_evidence_slice,
+            "Candidate Radar ordinary first screen must show the remaining LTG-13 direct evidence chain as authorization-gated readback without exposing provider execution buttons or routes.",
         ),
         _row(
             "candidate_radar_review_compass_is_user_visible_and_read_only",

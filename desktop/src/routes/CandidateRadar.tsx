@@ -1746,6 +1746,85 @@ export default function CandidateRadar() {
     : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
       ? "可创建按钮门控补证请求；页面显示仍不自动外联"
       : "等待确认按钮启动本地投研数据链；模型解释后续单独补";
+  const candidateRadarLtg13DataLedgerState = quantProjectionProviderLedgerReady
+    ? `真实数据账本已回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}`
+    : searchQuantProjectionExecutionRequest.local_execution_request_ready === true
+      ? "授权准备票据已绑定；等待用户明确运行真实数据账本补证"
+      : searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true
+        ? "补证 scope 已准备；下一步先生成 execution request"
+        : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
+          ? "单票已可进入补证准备；先生成 dry-run / execution request"
+          : "先确认一只股票，生成本地结果后再准备真实数据账本补证";
+  const candidateRadarLtg13DataLedgerNext = quantProjectionProviderLedgerReady
+    ? "回看股票量化推演和次日图谱；最终推广复核仍需 release/legacy 证据"
+    : searchQuantProjectionExecutionRequest.local_execution_request_ready === true
+      ? "需要用户明确授权后，才能从折叠审计区运行 Tushare-first 真实数据账本补证"
+      : searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true
+        ? "先生成 execution request，继续不调用 Tushare/DeepSeek"
+        : quantProjectionCanSubmit
+          ? "先点击确认并生成 3.0 量化推演"
+          : "先输入有效股票代码并恢复本地联通";
+  const candidateRadarLtg13PromotionState =
+    productionPromotionReview.local_review_ready === true
+      ? "最终推广本地 review 已可见，但 production 仍 blocked"
+      : "最终推广复核等待真实数据账本、durable CI/release 和旧雷达退场证据";
+  const candidateRadarLtg13NextDirectEvidenceItems: MetricItem[] = [
+    {
+      label: "剩余直接证据",
+      value: ordinaryRetirementReadinessMissingLabels.length
+        ? ordinaryRetirementReadinessMissingLabels.join(" / ")
+        : "等待阶段清单回放",
+      tone: ordinaryRetirementReadinessMissingCount ? "warn" : "good"
+    },
+    {
+      label: "真实数据账本",
+      value: candidateRadarLtg13DataLedgerState,
+      tone: quantProjectionProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "现在能点",
+      value: candidateRadarLtg13DataLedgerNext,
+      tone: quantProjectionProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "最终推广",
+      value: candidateRadarLtg13PromotionState,
+      tone: productionPromotionReview.ready_to_mark_production_radar_replacement_complete === true ? "good" : "warn"
+    },
+    {
+      label: "授权边界",
+      value: "首屏只读提示；未明确授权不运行 Tushare、DeepSeek、GitHub 或 worker",
+      tone: "good"
+    },
+    {
+      label: "交易隔离",
+      value: "候选不是买入指令；不下单、不改 strategy action",
+      tone: "good"
+    }
+  ];
+  const candidateRadarLtg13NextDirectEvidenceRows = [
+    {
+      证据项: "搜票真实数据账本",
+      当前状态: candidateRadarLtg13DataLedgerState,
+      用户下一步: candidateRadarLtg13DataLedgerNext,
+      缺口: quantProjectionProviderLedgerReady ? "已回放；继续最终推广证据" : "需要显式授权的 Tushare-first task call_ledger",
+      边界: "首屏只读展示；不从 React render、输入或 GET cache 调用 Tushare/DeepSeek/GitHub"
+    },
+    {
+      证据项: "最终推广复核",
+      当前状态: candidateRadarLtg13PromotionState,
+      用户下一步: "补齐真实数据账本、durable CI/release、legacy retirement 后再复核",
+      缺口: "production promotion 不能从 local receipt 或本地浏览器 artifact 关闭",
+      边界: "不把 local review、dry-run、execution request、matrix 或本地 receipt 当 production complete"
+    },
+    {
+      证据项: "交易隔离",
+      当前状态: "当前切片保持 research-only",
+      用户下一步: "继续把候选当研究线索，不生成买入/卖出/加仓动作",
+      缺口: "真实交易仍是单独项目",
+      边界: "不连接 broker、不创建 order endpoint、不修改 holdings 或 strategy action"
+    }
+  ];
   const quantProjectionTushareFirstState = quantProjectionProviderLedgerReady
     ? "数据链已回放；下一步看量化推演和次日图谱预览"
     : searchQuantProjectionReceipt.status
@@ -3415,6 +3494,22 @@ export default function CandidateRadar() {
             <p className="risk-note" title="全池/深研和真实数据覆盖需未来显式 worker/provider task">下一步：{ordinaryLiveLightFactoryNextStep}；候选只用于研究复核；不是买入、卖出或加仓指令。</p>
             <p className="risk-note">分层速读只解释 cache/render、button/task、provider/model、worker/browser 和 production 边界；不会因为页面打开、输入、React render 或本地链接调用 Tushare/DeepSeek/GitHub，也不证明 LTG-13 production replacement complete。</p>
           </div>
+          <div aria-label="candidate radar ltg13 next direct evidence quick read">
+            <h3>LTG-13 下一条直接证据</h3>
+            <p className="ordinary-status-note">当前 LTG-13 只剩搜票真实数据账本和最终推广复核这两类缺口；首屏只显示授权前状态，不自动运行 Tushare、DeepSeek、GitHub 或 worker。</p>
+            <MetricGrid items={candidateRadarLtg13NextDirectEvidenceItems} />
+            <div className="actions" aria-label="candidate radar ltg13 next direct evidence actions">
+              <a href="#candidate-radar-search-quant-projection" title="跳到搜票确认区；输入仍保持静默，确认按钮才创建本地任务" aria-label="open searched symbol confirm from ltg13 next evidence">确认一只股票</a>
+              <a href="#candidate-radar-ltg13-data-ledger-audit" title="跳到折叠审计区查看授权条件；不会自动展开或执行" aria-label="open ltg13 data ledger audit from ordinary summary">查看授权条件</a>
+              <button type="button" disabled title="需要用户明确授权真实数据账本补证后，才能运行后台补证任务" aria-label="ltg13 data ledger requires explicit authorization">真实数据补证需授权</button>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar ltg13 next direct evidence rows">
+              <summary>查看两项缺口</summary>
+              <p className="risk-note">缺口明细默认收起；展开后仍只读本地阶段清单，不创建 task、不调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <DataLineageTable rows={candidateRadarLtg13NextDirectEvidenceRows} />
+            </details>
+            <p className="risk-note">这条速读只把下一条 direct evidence chain 讲清楚：不把本地 receipt、dry-run、execution request、matrix、browser artifact 或 local review 当 production replacement complete。</p>
+          </div>
           <div className="actions" aria-label="candidate radar user first actions">
             <a href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"} aria-label="open candidate radar user first primary action">{ordinaryPrimaryActionLabel}</a>
             <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar user first summary">股票量化推演</a>
@@ -4331,7 +4426,7 @@ export default function CandidateRadar() {
           </PacketCard>
         </details>
 
-        <details className="developer-audit-details">
+        <details id="candidate-radar-ltg13-data-ledger-audit" className="developer-audit-details">
           <summary>Tushare/DeepSeek 联动验收</summary>
           <PacketCard title="Tushare/DeepSeek 联动审查" subtitle="search_quant_projection_activation_receipt / rows；只组织下一步验收，不代表真实外联完成" status={String(searchQuantProjectionActivation.status ?? "missing")}>
             <div className="actions">

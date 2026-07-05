@@ -50,13 +50,14 @@ Current interpretation:
 16. Next Session now exposes the LTG-08 local evidence review chain on the ordinary first screen: browser QA artifact review, same-packet retained coverage review, and promotion blocker review buttons show receipt/status via `TaskLaunchReceipt` and `TaskStatusPanel`, while still opening no browser, writing no screenshots/report artifact, calling no providers/models/GitHub, executing no trades, and keeping `production_replacement_complete=false`.
 17. Desktop / Tauri now exposes the LTG-09 local package evidence review chain on the ordinary first screen: release artifact, packaged launch, offline UX, backend runtime, config/log, signing/notarization, and promotion blocker buttons show receipt/status via `TaskLaunchReceipt` and `TaskStatusPanel`, while still running no npm/cargo/Tauri build, opening no packaged app, starting no FastAPI, reading no config values, writing no logs, calling no providers/models/GitHub, executing no trades, and keeping `production_package_complete=false`.
 18. Legacy / Streamlit now exposes the LTG-10 local retirement evidence review chain on the ordinary first screen: ordinary workflow parity review and fallback retirement blocker review buttons show receipt/status via `TaskLaunchReceipt` and `TaskStatusPanel`, while still opening no Streamlit, running no legacy tools, removing no fallback, deleting no `app.py`, calling no providers/models/GitHub, executing no trades, and keeping `streamlit_retirement_complete=false`.
+19. Candidate Radar ordinary first screen now exposes the LTG-13 next direct-evidence quick read: searched-symbol real-data ledger and final promotion review are shown as the two remaining gaps, with an explicit authorization-required disabled state and a jump to the folded audit area, while still not running Tushare, DeepSeek, GitHub, worker, browser, or trading work from render.
 
 ## Next Repair Goals
 
 1. Candidate Radar De-noise
    - Goal: keep the new operator panel as the first ordinary surface and move repeated P1/P2/P3 tables under collapsed research details.
    - Preserve confirm button, TaskStatusPanel, local replay refresh, and candidate pool visibility.
-   - Current local slice: production/stage blocker language has been translated into ordinary retirement-readiness wording; opening `#candidates` should show what the user can do, what remains before old-radar retirement, local page-QA artifact/review state, and the no-trade boundary before any audit row tables.
+   - Current local slice: production/stage blocker language has been translated into ordinary retirement-readiness wording; opening `#candidates` should show what the user can do, what remains before old-radar retirement, local page-QA artifact/review state, the LTG-13 next direct-evidence pair, and the no-trade boundary before any audit row tables.
    - Exit check: opening `#candidates` does not look like an acceptance report, and any worker/provider/browser/legacy gap rows remain collapsed by default.
 
 2. ETF / Margin Task Contract
