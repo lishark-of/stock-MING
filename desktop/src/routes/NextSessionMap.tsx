@@ -633,6 +633,46 @@ export default function NextSessionMap() {
       tone: "good"
     }
   ];
+  const nextSessionPlainConclusion = chartSummary.has_drawable_data === true
+    ? `完整次日图谱可读：${String(chartSummary.scenario_series_count ?? 0)} 条路径、${String(chartSummary.reference_line_count ?? 0)} 条参考线、${String(chartSummary.operation_zone_count ?? 0)} 个操作区。`
+    : candidateRadarReadableResultReady
+      ? `${candidateRadarConfirmedSymbol || "当前标的"} 的上游结论已可读；完整次日图谱还要手动生成。`
+      : "还没有可读次日图谱；先回下一票雷达确认股票。";
+  const nextSessionPlainGap = chartSummary.has_drawable_data === true
+    ? nextSessionMissingEvidence === "当前摘要未标记缺口"
+      ? "暂无页面阻断；仍只作为研究复核。"
+      : "生产替代证据还没补齐；当前图谱先按本地路径、参考线和操作区阅读。"
+    : candidateRadarReadableResultReady
+      ? "完整图谱还没生成；先确认上游结论，再手动生成。"
+      : "缺少确认标的或本地图谱数据；不要把空图谱解释成无风险。";
+  const nextSessionPlainNow = chartSummary.has_drawable_data === true
+    ? "先看图表路径和参考线，再看操作区。"
+    : candidateRadarReadableResultReady
+      ? "生成完整图谱，或回股票量化推演看支持/压制。"
+      : "回下一票雷达确认股票代码。";
+  const nextSessionPlainSafety = "图谱只做条件路径复核，不是买入、卖出、加仓或下单指令。";
+  const nextSessionPlainConclusionItems: MetricItem[] = [
+    {
+      label: "一句话",
+      value: nextSessionPlainConclusion,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: nextSessionPlainGap,
+      tone: chartSummary.has_drawable_data === true && nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn"
+    },
+    {
+      label: "现在做什么",
+      value: nextSessionPlainNow,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "安全说明",
+      value: nextSessionPlainSafety,
+      tone: "good"
+    }
+  ];
   const nextSessionStrictCloseoutGateRows = [
     {
       gate_key: "local_echarts_packet_visible",
@@ -1209,6 +1249,12 @@ export default function NextSessionMap() {
         emptyTitle="暂无已缓存次日操作图谱"
         emptyDetail={cacheMissingMessage || "请在允许按钮任务的情况下点击生成任务；查看缓存不会触发 Tushare。"}
       />
+      <div aria-label="next session ordinary plain conclusion">
+        <h3>普通结论</h3>
+        <p className="ordinary-status-note" aria-label="next session ordinary plain conclusion sentence" aria-live="polite">{nextSessionPlainConclusion}</p>
+        <MetricGrid items={nextSessionPlainConclusionItems} />
+        <p className="risk-note">普通结论只读本地次日图谱和上游确认结果；页面打开、查看结果和切换入口都不会自动创建任务、调用外部服务或改写操作区。</p>
+      </div>
       <div aria-label="next session first screen readable decision">
         <h3>一眼结论</h3>
         <p className="ordinary-status-note" aria-label="next session first screen readable sentence" aria-live="polite">{nextSessionFirstScreenReadableSentence}</p>

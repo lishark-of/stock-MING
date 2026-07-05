@@ -16,6 +16,38 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         source_before_audit = self.page[:audit_start]
 
         self.assertLess(summary_start, audit_start)
+        plain_start = ordinary_slice.index('aria-label="next session ordinary plain conclusion"')
+        decision_start = ordinary_slice.index('aria-label="next session first screen readable decision"')
+        plain_slice = ordinary_slice[plain_start:decision_start]
+        self.assertLess(plain_start, decision_start)
+        self.assertIn("nextSessionPlainConclusion", source_before_audit)
+        self.assertIn("nextSessionPlainGap", source_before_audit)
+        self.assertIn("nextSessionPlainNow", source_before_audit)
+        self.assertIn("nextSessionPlainSafety", source_before_audit)
+        self.assertIn("nextSessionPlainConclusionItems", source_before_audit)
+        self.assertIn("普通结论", plain_slice)
+        self.assertIn('aria-label="next session ordinary plain conclusion sentence"', plain_slice)
+        self.assertIn("MetricGrid items={nextSessionPlainConclusionItems}", plain_slice)
+        self.assertIn("还没有可读次日图谱；先回下一票雷达确认股票。", source_before_audit)
+        self.assertIn("完整次日图谱还要手动生成。", source_before_audit)
+        self.assertIn("生产替代证据还没补齐；当前图谱先按本地路径、参考线和操作区阅读。", source_before_audit)
+        self.assertIn("先看图表路径和参考线，再看操作区。", source_before_audit)
+        self.assertIn("图谱只做条件路径复核，不是买入、卖出、加仓或下单指令。", source_before_audit)
+        for plain_label in (
+            'label: "一句话"',
+            'label: "缺口"',
+            'label: "现在做什么"',
+            'label: "安全说明"',
+        ):
+            self.assertIn(plain_label, source_before_audit)
+        self.assertIn("页面打开、查看结果和切换入口都不会自动创建任务、调用外部服务或改写操作区", plain_slice)
+        self.assertNotIn("onClick=", plain_slice)
+        self.assertNotIn("launch" + "Task", plain_slice)
+        self.assertNotIn("post" + "Task(", plain_slice)
+        self.assertNotIn("cache / ledger", plain_slice)
+        self.assertNotIn("task", plain_slice)
+        self.assertNotIn("retained signal", plain_slice)
+        self.assertNotIn("capability coverage", plain_slice)
         self.assertIn("ordinaryResultReplayStatus", source_before_audit)
         self.assertIn("ordinaryResultReplayRows", source_before_audit)
         self.assertIn("packetOrdinaryResultReplayRows", source_before_audit)
