@@ -145,6 +145,58 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertNotIn("postTask(", result_slice)
         self.assertNotIn("fetch(", result_slice)
 
+    def test_margin_etf_risk_card_is_first_screen_read_only(self):
+        card_start = self.page.index('title="ETF / 融资操作台"')
+        quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
+        risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
+        mode_start = self.page.index('aria-label="margin etf mode layered live light boundary"', card_start)
+        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        audit_start = self.page.index('aria-label="margin etf audit details"')
+        risk_card = self.page[risk_card_start:mode_start]
+
+        self.assertLess(quick_read_start, risk_card_start)
+        self.assertLess(risk_card_start, mode_start)
+        self.assertLess(risk_card_start, actions_start)
+        self.assertLess(risk_card_start, audit_start)
+        self.assertIn("marginEtfRiskCardStatus", self.page)
+        self.assertIn("marginEtfRiskCardItems", self.page)
+        self.assertIn("marginEtfRiskCardRows", self.page)
+        self.assertIn("等待 ETF 候选：先看融资现金线，不新增融资。", self.page)
+        self.assertIn("有 ETF 候选，但融资只允许现金优先、小额待条件。", self.page)
+        self.assertIn("有 ETF 候选，但当前结论仍是不新增融资。", self.page)
+        self.assertIn("ETF / 融资风险卡", risk_card)
+        self.assertIn('aria-label="margin etf ordinary risk card summary"', risk_card)
+        self.assertIn("{marginEtfRiskCardStatus}", risk_card)
+        self.assertIn("MetricGrid items={marginEtfRiskCardItems}", risk_card)
+        for label in (
+            'label: "ETF 候选"',
+            'label: "融资现金线"',
+            'label: "风险口径"',
+            'label: "缺口"',
+            'label: "下一步"',
+            'label: "禁令"',
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn('aria-label="margin etf ordinary risk card rows"', risk_card)
+        self.assertIn("<summary>风险复核顺序</summary>", risk_card)
+        self.assertIn("DataLineageTable rows={marginEtfRiskCardRows}", risk_card)
+        self.assertIn('复核项: "1. ETF 候选"', self.page)
+        self.assertIn('复核项: "2. 融资现金线"', self.page)
+        self.assertIn('复核项: "3. 缺口"', self.page)
+        self.assertIn('复核项: "4. 回流"', self.page)
+        self.assertIn("候选只表示研究优先级，不是买入、加仓或加融资指令。", self.page)
+        self.assertIn("融资比例不是加杠杆许可；缺数据时按保守处理。", self.page)
+        self.assertIn("缺口只提示补证，不自动调用外部数据或模型。", self.page)
+        self.assertIn("本地链接只切换页面，不创建任务、不交易、不改策略。", self.page)
+        self.assertIn("风险卡只读本地 ETF/融资快照", risk_card)
+        self.assertIn("ETF 候选不是买入指令", risk_card)
+        self.assertIn("融资比例不是加杠杆许可", risk_card)
+        self.assertIn("缺数据时按保守处理", risk_card)
+        self.assertNotIn("onClick=", risk_card)
+        self.assertNotIn("postTask(", risk_card)
+        self.assertNotIn("fetch(", risk_card)
+        self.assertNotIn("TaskStatusPanel", risk_card)
+
     def test_margin_etf_mode_layers_are_visible_before_actions_and_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
