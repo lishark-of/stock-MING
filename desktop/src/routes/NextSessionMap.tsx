@@ -708,6 +708,52 @@ export default function NextSessionMap() {
       tone: "good"
     }
   ];
+  const nextSessionAppVisibleNowSentence = chartSummary.has_drawable_data === true
+    ? `打开 app 能看到 ${candidateRadarConfirmedSymbolLabel} 的完整次日图谱：路径、参考线、operation_zones 和证据缺口都在首屏可读。`
+    : candidateRadarReadableResultReady
+      ? `打开 app 能看到 ${candidateRadarConfirmedSymbolLabel} 的上游搜票结论、Tushare-first 数据卡和生成完整图谱入口。`
+      : "打开 app 能看到降级等待态：先回下一票雷达输入股票并点击确认，本页只保留本地回流入口。";
+  const nextSessionAppVisibleNowItems: MetricItem[] = [
+    {
+      label: "打开可见",
+      value: nextSessionAppVisibleNowSentence,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "当前股票",
+      value: candidateRadarConfirmedSymbolLabel,
+      tone: candidateRadarConfirmedSymbol ? "good" : "warn"
+    },
+    {
+      label: "先读哪里",
+      value: chartSummary.has_drawable_data === true
+        ? "完整图谱区域：路径、参考线、operation_zones"
+        : candidateRadarReadableResultReady
+          ? "上游结论、Tushare 数据卡、生成完整图谱入口"
+          : "下一票雷达确认输入区",
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "来源层",
+      value: `${nextSessionCacheSourceLabel} / CandidateRadar cache / 本地任务索引`,
+      tone: "good"
+    },
+    {
+      label: "明确降级",
+      value: nextSessionDegradedSourceLabel,
+      tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn"
+    },
+    {
+      label: "下一步按钮",
+      value: nextSessionOrdinaryProgressCheckpointLabel,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "页面打开和本地链接只读；不自动创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不改 operation_zones",
+      tone: "good"
+    }
+  ];
   const nextSessionPlainConclusion = chartSummary.has_drawable_data === true
     ? `完整次日图谱可读：${String(chartSummary.scenario_series_count ?? 0)} 条路径、${String(chartSummary.reference_line_count ?? 0)} 条参考线、${String(chartSummary.operation_zone_count ?? 0)} 个操作区。`
     : candidateRadarReadableResultReady
@@ -1340,6 +1386,17 @@ export default function NextSessionMap() {
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session first screen">换标的</a>
         </div>
         <p className="risk-note">首屏只汇总当前股票、最近结果、下一步、证据缺口和 operation_zones 边界；查看缓存只读本地 GET cache，链接只切换本地锚点，不创建 task、不调用 Tushare/DeepSeek、不下单。</p>
+      </div>
+      <div aria-label="next session app visible now summary">
+        <h3>打开 app 能看到什么</h3>
+        <p className="ordinary-status-note" aria-label="next session app visible now sentence" aria-live="polite">{nextSessionAppVisibleNowSentence}</p>
+        <MetricGrid items={nextSessionAppVisibleNowItems} />
+        <div className="actions" aria-label="next session app visible now local actions">
+          <a href={nextSessionOrdinaryProgressCheckpointAnchor} title="跳到当前最短可读位置；只切换本地锚点" aria-label="open current visible next session area">{nextSessionOrdinaryProgressCheckpointLabel}</a>
+          <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from visible now summary">换标的</a>
+          <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from visible now summary">看支持/压制</a>
+        </div>
+        <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：股票、图谱状态、来源层、降级原因和下一步入口；普通链接只切换本地页面或锚点，不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不改 operation_zones 或 strategy action。</p>
       </div>
       <div aria-label="next session live light evidence layers">
         <h3>运行模式分层</h3>
