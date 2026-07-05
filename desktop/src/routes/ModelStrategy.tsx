@@ -368,6 +368,42 @@ export default function ModelStrategy() {
       tone: cache.contains_secret === true ? ("bad" as const) : ("good" as const)
     }
   ];
+  const governedExecutorVisibleNowSentence = cache.deepseek_called === true
+    ? "打开 app 能看到模型策略页已有 DeepSeek 调用记录：先看 model_ledger、真实调用闸门和凭据边界；基础投研仍按本地数据链复核。"
+    : "打开 app 能看到 DeepSeek 当前未调用，Tushare-first、股票量化推演和次日图谱可以先走；模型补证继续等 P5 governed executor。";
+  const governedExecutorVisibleNowItems = [
+    {
+      label: "模型状态",
+      value: cache.deepseek_called === true ? "已有调用记录，先查 ledger" : "未调用 DeepSeek",
+      tone: cache.deepseek_called === true ? ("warn" as const) : ("good" as const)
+    },
+    {
+      label: "可先用",
+      value: governedExecutor.ordinary_safe_to_ignore_for_basic_maps === true || governedExecutor.does_not_block_tushare_first_or_basic_maps === true
+        ? "下一票雷达 / 股票量化推演 / 次日图谱"
+        : "先按本地 cache 回放，不等模型"
+    },
+    {
+      label: "真实调用",
+      value: governedExecutorRealCallAllowed ? "闸门已放行" : `未放行：${governedExecutorRealCallBlockers.length || governedExecutor.real_call_blocker_count || 0} 项待补`,
+      tone: governedExecutorRealCallAllowed ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "下一步",
+      value: "继续基础投研；P5 另行补 model_ledger / sanitizer / output acceptance",
+      tone: "good" as const
+    },
+    {
+      label: "凭据",
+      value: cache.contains_secret === true ? "异常：需要审计" : "不展示 token/key",
+      tone: cache.contains_secret === true ? ("bad" as const) : ("good" as const)
+    },
+    {
+      label: "边界",
+      value: "本条只读 GET cache 和本地链接；不创建 task、不调用模型、不交易",
+      tone: "good" as const
+    }
+  ];
   const governedExecutorTechnicalCounterItems = [
     { label: "mode", value: cache.mode as string | undefined },
     { label: "purposes", value: counts.purpose_count as number | undefined },
@@ -403,6 +439,17 @@ export default function ModelStrategy() {
       <p className="risk-note" aria-label="deepseek ordinary top summary boundary">
         这张首屏摘要只读 /api/model-strategy/cache；不创建 task、不调用 DeepSeek、不读取 token/key，也不阻塞 Tushare-first、P2 小数据回放或 P3 基础图谱。
       </p>
+      <div aria-label="deepseek app visible now summary">
+        <h3>打开 app 能看到什么</h3>
+        <p className="ordinary-status-note" aria-label="deepseek app visible now sentence" aria-live="polite">{governedExecutorVisibleNowSentence}</p>
+        <MetricGrid items={governedExecutorVisibleNowItems} />
+        <div className="actions" aria-label="deepseek app visible now local actions">
+          <a href="#candidates" title="回到下一票雷达；确认按钮才创建 Tushare-first task" aria-label="continue candidate radar from deepseek visible now">下一票雷达</a>
+          <a href="#factor" title="打开股票量化推演；只读 Factor cache 和本地结果" aria-label="open factor from deepseek visible now">股票量化推演</a>
+          <a href="#next" title="打开次日图谱；只读本地次日图谱结果" aria-label="open next session from deepseek visible now">次日图谱</a>
+        </div>
+        <p className="risk-note">这个条带只回答普通用户打开模型策略页能看到什么：模型是否已调用、基础路径是否可先走、真实调用还缺什么和凭据边界；普通链接只切换本地页面，不创建 task、不调用 DeepSeek/Tushare/GitHub、不交易、不改 operation_zones 或 strategy action。</p>
+      </div>
       <details className="developer-audit-details" aria-label="deepseek model strategy top technical counters">
         <summary>模型策略计数 / cache 明细</summary>
         <MetricGrid items={governedExecutorTechnicalCounterItems} />
