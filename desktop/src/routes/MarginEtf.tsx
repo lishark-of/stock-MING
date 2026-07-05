@@ -242,6 +242,48 @@ export default function MarginEtf() {
       tone: "good"
     }
   ];
+  const marginEtfAppVisibleNowSentence = noEtfRows
+    ? "打开 app 能看到 ETF/融资的降级等待态：先看本地快照、融资现金线和刷新本地回放入口，不新增融资。"
+    : `打开 app 能看到 ${allVisibleEtfRows.length} 行 ETF 候选、融资现金线和风险提示；${marginDecision}。`;
+  const marginEtfAppVisibleNowItems: MetricItem[] = [
+    {
+      label: "打开可见",
+      value: marginEtfAppVisibleNowSentence,
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "ETF 候选",
+      value: noEtfRows
+        ? "暂无候选；显示 degraded/等待态"
+        : `推荐 ${recommendedEtfs.length} / 观察 ${watchEtfs.length} / 回避 ${avoidEtfs.length} / 排除 ${excludedEtfs.length}`,
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "融资现金线",
+      value: `当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 现金缓冲 ${percent(recommendedCashRatio)}`,
+      tone: recommendedCashRatio ? "good" : "warn"
+    },
+    {
+      label: "来源层",
+      value: `${source} / command_center_margin_packet / bootstrap status`,
+      tone: dataStatus === "ready" || dataStatus === "cached" ? "good" : "warn"
+    },
+    {
+      label: "明确降级",
+      value: noEtfRows ? ordinaryMissingEvidence : "候选已进入本地回放；仍需人工复核流动性、重叠和现金线",
+      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+    },
+    {
+      label: "下一步入口",
+      value: noEtfRows ? "刷新本地回放或回下一票雷达换标的" : "先看候选分组，再看风险护栏和下一票雷达",
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "安全边界",
+      value: "页面打开和本地链接只读；不自动创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不加融资",
+      tone: "good"
+    }
+  ];
   const marginEtfRiskCardStatus = noEtfRows
     ? "等待 ETF 候选：先看融资现金线，不新增融资。"
     : allowNewMargin
@@ -454,6 +496,17 @@ export default function MarginEtf() {
           <p className="ordinary-status-note" aria-label="margin etf ordinary quick read summary" aria-live="polite">{ordinaryQuickReadSummary}</p>
           <MetricGrid items={ordinaryQuickReadItems} />
           <p className="risk-note">这张速读只读本地 ETF/融资快照和本地融资状态；不会新建任务、不会调用外部数据或模型服务、不会交易或改写策略。</p>
+        </div>
+        <div aria-label="margin etf app visible now summary">
+          <h3>打开 app 能看到什么</h3>
+          <p className="ordinary-status-note" aria-label="margin etf app visible now sentence" aria-live="polite">{marginEtfAppVisibleNowSentence}</p>
+          <MetricGrid items={marginEtfAppVisibleNowItems} />
+          <div className="actions" aria-label="margin etf app visible now local actions">
+            <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf visible now">换标的</a>
+            <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf visible now">看风险护栏</a>
+            <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf visible now">今日作战台</a>
+          </div>
+          <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、降级原因和下一步入口；普通链接只切换本地页面，不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不加融资、不改 strategy action。</p>
         </div>
         <div aria-label="margin etf ordinary risk card">
           <h3>ETF / 融资风险卡</h3>

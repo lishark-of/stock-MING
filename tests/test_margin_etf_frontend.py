@@ -107,6 +107,50 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertNotIn("postTask(", quick_read_slice)
         self.assertNotIn("fetch(", quick_read_slice)
 
+    def test_margin_etf_app_visible_now_summary_is_first_screen_read_only(self):
+        card_start = self.page.index('title="ETF / 融资操作台"')
+        audit_start = self.page.index('aria-label="margin etf audit details"')
+        quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
+        visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
+        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        visible_slice = self.page[visible_start:risk_card_start]
+        source_before_audit = self.page[:audit_start]
+
+        self.assertLess(quick_read_start, visible_start)
+        self.assertLess(visible_start, risk_card_start)
+        self.assertLess(visible_start, actions_start)
+        self.assertLess(visible_start, audit_start)
+        self.assertIn("marginEtfAppVisibleNowSentence", source_before_audit)
+        self.assertIn("marginEtfAppVisibleNowItems", source_before_audit)
+        self.assertIn("打开 app 能看到 ETF/融资的降级等待态", source_before_audit)
+        self.assertIn("打开 app 能看到 ${allVisibleEtfRows.length} 行 ETF 候选", source_before_audit)
+        for label in (
+            'label: "打开可见"',
+            'label: "ETF 候选"',
+            'label: "融资现金线"',
+            'label: "来源层"',
+            'label: "明确降级"',
+            'label: "下一步入口"',
+            'label: "安全边界"',
+        ):
+            self.assertIn(label, source_before_audit)
+        self.assertIn("打开 app 能看到什么", visible_slice)
+        self.assertIn('aria-label="margin etf app visible now sentence"', visible_slice)
+        self.assertIn("{marginEtfAppVisibleNowSentence}", visible_slice)
+        self.assertIn("MetricGrid items={marginEtfAppVisibleNowItems}", visible_slice)
+        self.assertIn('aria-label="margin etf app visible now local actions"', visible_slice)
+        self.assertIn('href="#candidates"', visible_slice)
+        self.assertIn('href="#risk"', visible_slice)
+        self.assertIn('href="#home"', visible_slice)
+        self.assertIn("这个条带只回答普通用户打开页面能看到什么", visible_slice)
+        self.assertIn("普通链接只切换本地页面", visible_slice)
+        self.assertIn("不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不加融资", visible_slice)
+        self.assertNotIn("onClick=", visible_slice)
+        self.assertNotIn("postTask(", visible_slice)
+        self.assertNotIn("fetch(", visible_slice)
+        self.assertNotIn("TaskStatusPanel", visible_slice)
+
     def test_margin_etf_local_refresh_result_quick_read_after_button(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
