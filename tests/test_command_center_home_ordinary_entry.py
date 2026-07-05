@@ -762,9 +762,11 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         card_end = source.index('aria-label="daily command research assist audit details"', card_start)
         card = source[card_start:card_end]
         recent_result_start = card.index('aria-label="ordinary home first screen recent result read"')
-        recent_result_end = card.index('aria-label="ordinary home first screen research route map"', recent_result_start)
+        tushare_data_card_start = card.index('aria-label="ordinary home first screen tushare data card"', recent_result_start)
+        recent_result_end = tushare_data_card_start
         recent_result = card[recent_result_start:recent_result_end]
-        route_map_start = card.index('aria-label="ordinary home first screen research route map"')
+        route_map_start = card.index('aria-label="ordinary home first screen research route map"', tushare_data_card_start)
+        tushare_data_card = card[tushare_data_card_start:route_map_start]
         candidate_radar_start = card.index('aria-label="ordinary home candidate radar visible slice"', route_map_start)
         route_map_end = candidate_radar_start
         route_map = card[route_map_start:route_map_end]
@@ -774,7 +776,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         route = card[route_start:]
 
         self.assertLess(card.index('aria-label="ordinary home confirm status"'), recent_result_start)
-        self.assertLess(recent_result_start, route_map_start)
+        self.assertLess(recent_result_start, tushare_data_card_start)
+        self.assertLess(tushare_data_card_start, route_map_start)
         self.assertLess(card.index('aria-label="ordinary home confirm status"'), route_map_start)
         self.assertLess(route_map_start, candidate_radar_start)
         self.assertLess(candidate_radar_start, card.index('aria-label="ordinary home first screen post confirm status"'))
@@ -806,6 +809,23 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("不会重复创建确认任务", recent_result)
         self.assertNotIn("onClick=", recent_result)
         self.assertNotIn("postTask", recent_result)
+        self.assertIn('aria-label="ordinary home first screen tushare data card"', card)
+        self.assertIn("确认后 Tushare 数据卡", tushare_data_card)
+        self.assertIn('aria-label="ordinary home first screen tushare data card summary"', tushare_data_card)
+        self.assertIn("{dailyCommandTushareDataCardSummary}", tushare_data_card)
+        self.assertIn("MetricGrid items={dailyCommandTushareDataCardItems}", tushare_data_card)
+        self.assertIn('aria-label="ordinary home first screen tushare data card actions"', tushare_data_card)
+        self.assertIn('href={dailyCommandCandidateConfirmHref}', tushare_data_card)
+        self.assertIn('href="#factor/factor-score"', tushare_data_card)
+        self.assertIn('href="#next/next-session-chart"', tushare_data_card)
+        self.assertIn("只读确认后的本地记录、数据调用记录和结果摘要", tushare_data_card)
+        self.assertIn("不从首页补调外部数据、不重复发起确认流程", tushare_data_card)
+        for noisy_text in ("task", "ledger", "packet", "DeepSeek"):
+            self.assertNotIn(noisy_text, tushare_data_card)
+        self.assertNotIn("onClick=", tushare_data_card)
+        self.assertNotIn("fetch(", tushare_data_card)
+        self.assertNotIn("postTask", tushare_data_card)
+        self.assertNotIn("postCandidateRadar", tushare_data_card)
         self.assertIn("dailyCommandResearchRouteMapItems", source)
         self.assertIn("今日投研路径", route_map)
         self.assertIn("确认股票、看候选、查 ETF/融资风险、再看次日图谱", route_map)

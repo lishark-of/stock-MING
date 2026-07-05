@@ -3521,6 +3521,17 @@ export default function CommandCenterHome() {
           <MetricGrid items={ordinaryHomeRecentResultItems} />
           <p className="risk-note">这张速读只读首页已拿到的本地记录、数据凭证、结果包和任务索引；没有结果时显示等待或 degraded，不把空结果当无风险，也不会重复创建确认任务。</p>
         </div>
+        <div aria-label="ordinary home first screen tushare data card">
+          <h3>确认后 Tushare 数据卡</h3>
+          <p className="ordinary-status-note" aria-label="ordinary home first screen tushare data card summary" aria-live="polite">{dailyCommandTushareDataCardSummary}</p>
+          <MetricGrid items={dailyCommandTushareDataCardItems} />
+          <div className="actions" aria-label="ordinary home first screen tushare data card actions">
+            <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate confirm from ordinary home tushare data card">确认或换一只票</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from ordinary home tushare data card">股票量化推演</a>
+            <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next from ordinary home tushare data card">次日图谱</a>
+          </div>
+          <p className="risk-note">这张数据卡只读确认后的本地记录、数据调用记录和结果摘要；没有回放时显示等待或 degraded，不从首页补调外部数据、不重复发起确认流程、不交易、不改策略。</p>
+        </div>
         <div aria-label="ordinary home first screen research route map">
           <h3>今日投研路径</h3>
           <p className="ordinary-status-note">打开 app 先按这条路走：确认股票、看候选、查 ETF/融资风险、再看次日图谱；缺数据时显示 pending/degraded，不把空结果当无风险。</p>
