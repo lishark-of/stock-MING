@@ -643,6 +643,54 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('{ label: "解释状态", value: ordinaryDeepSeekSourceLabel }', summary_slice)
         self.assertNotIn('DeepSeek", value: bootstrapLiveLight.deepseek_on_open === true ? "轻量实时后台任务"', summary_slice)
 
+    def test_candidate_pool_current_result_card_is_local_navigation_only(self):
+        pool_start = self.page.index('title="下一票候选池"')
+        pool_end = self.page.index('title="搜票量化推演"', pool_start)
+        pool = self.page[pool_start:pool_end]
+
+        self.assertIn("candidatePoolLeadCandidateRow", self.page)
+        self.assertIn("candidatePoolLeadCandidateDisplay", self.page)
+        self.assertIn("candidatePoolCurrentResultSentence", self.page)
+        self.assertIn("candidatePoolCurrentResultItems", self.page)
+        self.assertIn("当前候选池可继续复核：先看", self.page)
+        self.assertIn("这张卡只帮你挑复核对象；不生成买入、卖出、加仓或融资指令", self.page)
+        self.assertIn('aria-label="candidate pool current result card"', pool)
+        self.assertIn("当前候选怎么用", pool)
+        self.assertIn('aria-label="candidate pool current result sentence"', pool)
+        self.assertIn("MetricGrid items={candidatePoolCurrentResultItems}", pool)
+        for label in (
+            'label: "当前候选池"',
+            'label: "先看一票"',
+            'label: "为什么能看"',
+            'label: "还缺什么"',
+            'label: "下一步"',
+            'label: "非买入边界"',
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn('aria-label="candidate pool current result actions"', pool)
+        self.assertIn('aria-label="explain lead candidate from current result card"', pool)
+        self.assertIn('aria-label="open factor from current result card"', pool)
+        self.assertIn('aria-label="open next session from current result card"', pool)
+        self.assertIn('aria-label="open margin etf from current result card"', pool)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', pool)
+        self.assertIn('href="#factor"', pool)
+        self.assertIn('href="#next"', pool)
+        self.assertIn('href="#marginEtf"', pool)
+        self.assertIn("只读候选池当前缓存和本地来源状态", pool)
+        self.assertIn("链接只切换本地页面，不刷新外部数据、不创建新任务、不交易、不改策略", pool)
+
+        plain_start = pool.index('aria-label="candidate pool plain result conclusion"')
+        current_start = pool.index('aria-label="candidate pool current result card"')
+        first_screen_items_start = pool.index("MetricGrid items={candidatePoolFirstScreenItems}", current_start)
+        self.assertLess(plain_start, current_start)
+        self.assertLess(current_start, first_screen_items_start)
+        current = pool[current_start:first_screen_items_start]
+        self.assertNotIn("onClick=", current)
+        self.assertNotIn("fetch(", current)
+        self.assertNotIn("postCandidateRadar", current)
+        self.assertNotIn("launchQuantProjection", current)
+        self.assertNotIn("TaskStatusPanel", current)
+
     def test_candidate_radar_progress_checkpoint_is_navigation_only(self):
         summary_start = self.page.index('title="普通用户雷达摘要"')
         summary_end = self.page.index('aria-label="candidate radar first screen quant projection confirmation"', summary_start)

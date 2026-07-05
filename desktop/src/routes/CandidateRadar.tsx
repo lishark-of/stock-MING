@@ -926,6 +926,12 @@ export default function CandidateRadar() {
   const ordinaryScoringReasonLabel = Number(candidatePriorityExplanation.explained_candidate_count ?? 0)
     ? `按缓存顺序解释 ${String(candidatePriorityExplanation.explained_candidate_count)} 个候选；不重排、不生成交易动作`
     : "按本地缓存顺序展示；评分理由不足会作为缺口显示";
+  const candidatePoolLeadCandidateRow = rows(cache.candidate_rows)[0] ?? topWatchExcludedGroupRows[0] ?? {};
+  const candidatePoolLeadCandidateTicker = displayText(candidatePoolLeadCandidateRow.ticker ?? candidatePoolLeadCandidateRow["标的"], "暂无首位候选");
+  const candidatePoolLeadCandidateName = displayText(candidatePoolLeadCandidateRow.name ?? candidatePoolLeadCandidateRow["名称"], "待补名称");
+  const candidatePoolLeadCandidateDisplay = candidatePoolLeadCandidateTicker === "暂无首位候选"
+    ? candidatePoolLeadCandidateTicker
+    : `${candidatePoolLeadCandidateTicker} ${candidatePoolLeadCandidateName}`;
   const candidatePoolFirstScreenItems: MetricItem[] = [
     {
       label: "Top / Watch / Excluded",
@@ -996,6 +1002,47 @@ export default function CandidateRadar() {
     : candidatePoolPlainConclusionStatus === "p0_check"
       ? "neutral"
       : "warn";
+  const candidatePoolCurrentResultSentence = candidatePoolPlainConclusionStatus === "ready"
+    ? `当前候选池可继续复核：先看 ${candidatePoolLeadCandidateDisplay}，再按 Top / Watch / Excluded 顺序看来源和缺口。`
+    : candidatePoolPlainConclusionStatus === "readable_degraded"
+      ? `当前候选池可读但有缺口：先复核 ${candidatePoolLeadCandidateDisplay} 的来源，再决定是否解释单票。`
+      : candidatePoolPlainConclusionStatus === "empty_cache"
+        ? "当前候选池暂无候选：先回确认输入区解释单票，或等待本地候选缓存。"
+        : "当前候选池暂不可读：先恢复本地连接，再看候选来源和缺口。";
+  const candidatePoolCurrentResultItems: MetricItem[] = [
+    {
+      label: "当前候选池",
+      value: ordinaryCandidateGroupLabel,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "先看一票",
+      value: candidatePoolLeadCandidateDisplay,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "为什么能看",
+      value: coarseFineSourceLabel,
+      tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn"
+    },
+    {
+      label: "还缺什么",
+      value: candidatePoolPlainConclusionMissing,
+      tone: candidatePoolPlainConclusionStatus === "ready" ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: ordinaryCandidateTopCount
+        ? "解释单票，或继续看量化推演、次日图谱和 ETF/融资风险"
+        : candidatePoolPlainConclusionNext,
+      tone: candidateRadarCacheGetReadable ? "good" : "warn"
+    },
+    {
+      label: "非买入边界",
+      value: "这张卡只帮你挑复核对象；不生成买入、卖出、加仓或融资指令",
+      tone: "good"
+    }
+  ];
   const candidatePoolPlainConclusionItems: MetricItem[] = [
     {
       label: "一句话结论",
@@ -4317,6 +4364,18 @@ export default function CandidateRadar() {
                 <h3>普通结论</h3>
                 <p className="ordinary-status-note" aria-label="candidate pool plain result conclusion text" aria-live="polite">{candidatePoolPlainConclusionText}</p>
                 <MetricGrid items={candidatePoolPlainConclusionItems} />
+              </div>
+              <div aria-label="candidate pool current result card">
+                <h3>当前候选怎么用</h3>
+                <p className="ordinary-status-note" aria-label="candidate pool current result sentence" aria-live="polite">{candidatePoolCurrentResultSentence}</p>
+                <MetricGrid items={candidatePoolCurrentResultItems} />
+                <div className="actions" aria-label="candidate pool current result actions">
+                  <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="explain lead candidate from current result card">解释单票</a>
+                  <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from current result card">量化推演</a>
+                  <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from current result card">次日图谱</a>
+                  <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from current result card">ETF/融资风险</a>
+                </div>
+                <p className="risk-note">这张结果卡只读候选池当前缓存和本地来源状态；链接只切换本地页面，不刷新外部数据、不创建新任务、不交易、不改策略。</p>
               </div>
               <MetricGrid items={candidatePoolFirstScreenItems} />
               <div className="actions" aria-label="candidate pool first screen actions">
