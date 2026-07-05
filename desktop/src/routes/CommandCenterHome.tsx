@@ -2046,6 +2046,53 @@ export default function CommandCenterHome() {
       tone: dailyCommandP3OneGlanceReadable ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
     }
   ];
+  const ordinaryHomeAppVisibleNowSentence = dailyCommandP3OneGlanceReadable
+    ? `打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果：${dailyCommandExplainableResultLabel}；下一步看股票量化推演和次日图谱。`
+    : dailyCommandP0LocalReadinessReady
+      ? "打开 app 能看到本地已接上、股票确认入口和等待结果状态；先输入股票代码并点击确认。"
+      : "打开 app 能看到本地连接待恢复：先看桌面壳预检，等 FastAPI、bootstrap、desktop preflight 和 React 变绿。";
+  const ordinaryHomeAppVisibleNowItems: MetricItem[] = [
+    {
+      label: "打开可见",
+      value: ordinaryHomeAppVisibleNowSentence,
+      tone: dailyCommandP3OneGlanceReadable || dailyCommandP0LocalReadinessReady ? "good" : "warn"
+    },
+    {
+      label: "本地联通",
+      value: dailyCommandP0LocalReadinessReady ? "FastAPI / bootstrap / desktop preflight / React 已接上" : "等待四段本地联通",
+      tone: dailyCommandP0LocalReadinessReady ? "good" : "warn"
+    },
+    {
+      label: "当前标的",
+      value: ordinaryHomeCurrentSymbol,
+      tone: ordinaryHomeCurrentSymbol === "待输入" ? "warn" : "good"
+    },
+    {
+      label: "最近结果",
+      value: ordinaryHomeRecentResult,
+      tone: dailyCommandP3OneGlanceReadable ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
+    },
+    {
+      label: "来源层",
+      value: ordinaryHomeRecentResultSource,
+      tone: dailyCommandP3OneGlanceReadable || homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "good" : "warn"
+    },
+    {
+      label: "明确缺口",
+      value: ordinaryHomeRecentResultGap,
+      tone: dailyCommandP3OneGlanceReadable && ordinaryHomeRecentResultGap === "暂无额外缺口" ? "good" : "warn"
+    },
+    {
+      label: "下一步入口",
+      value: ordinaryHomePlainConclusionNext,
+      tone: dailyCommandP3OneGlanceReadable || dailyCommandP0LocalReadinessReady ? "good" : "warn"
+    },
+    {
+      label: "安全说明",
+      value: "页面打开、输入和本地链接只读；只有确认按钮启动确认流程；不调用外部服务、不交易",
+      tone: "good"
+    }
+  ];
   const ordinaryHomeRecentResultItems: MetricItem[] = [
     {
       label: "最近结果",
@@ -3381,6 +3428,17 @@ export default function CommandCenterHome() {
       </div>
       <PacketCard title="今日可用" subtitle="普通首页只看能不能用、看哪只票、有没有结果、下一步点哪里" status={dailyCommandP0LocalReadinessReady ? "ready" : "check"}>
         <MetricGrid items={ordinaryHomeStatusItems} />
+        <div aria-label="ordinary home app visible now summary">
+          <h3>打开 app 能看到什么</h3>
+          <p className="ordinary-status-note" aria-label="ordinary home app visible now sentence" aria-live="polite">{ordinaryHomeAppVisibleNowSentence}</p>
+          <MetricGrid items={ordinaryHomeAppVisibleNowItems} />
+          <div className="actions" aria-label="ordinary home app visible now local actions">
+            <a href={dailyCommandHomeConfirmHref} title="跳到首页确认股票代码；输入保持静默" aria-label="open home confirm from visible now summary">确认股票</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from home visible now summary">股票量化推演</a>
+            <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next session from home visible now summary">次日图谱</a>
+          </div>
+          <p className="risk-note">这个条带只回答普通用户打开首页能看到什么：本地是否接上、当前标的、最近结果、来源层、缺口和下一步入口；普通链接只切换本地页面或锚点，不启动确认流程、不调用外部服务、不交易、不改策略。</p>
+        </div>
         <div id="home-p1-symbol-confirm" className="actions" aria-label="daily command ordinary home primary controls">
           <input
             value={homeQuantSymbol}

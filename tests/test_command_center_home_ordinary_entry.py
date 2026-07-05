@@ -388,6 +388,52 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
             self.assertNotIn(hidden_label, summary_slice)
         self.assertNotIn('{ label: "今日作战台"', source)
 
+    def test_ordinary_home_app_visible_now_summary_is_first_screen_read_only(self):
+        source = self.source
+        card_start = source.index('title="今日可用"')
+        visible_start = source.index('aria-label="ordinary home app visible now summary"', card_start)
+        controls_start = source.index('aria-label="daily command ordinary home primary controls"', card_start)
+        recent_start = source.index('aria-label="ordinary home first screen recent result read"', card_start)
+        audit_start = source.index('aria-label="daily command research assist audit details"')
+        visible_slice = source[visible_start:controls_start]
+        source_before_audit = source[:audit_start]
+
+        self.assertLess(card_start, visible_start)
+        self.assertLess(visible_start, controls_start)
+        self.assertLess(controls_start, recent_start)
+        self.assertLess(visible_start, audit_start)
+        self.assertIn("ordinaryHomeAppVisibleNowSentence", source_before_audit)
+        self.assertIn("ordinaryHomeAppVisibleNowItems", source_before_audit)
+        self.assertIn("打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果", source_before_audit)
+        self.assertIn("打开 app 能看到本地已接上、股票确认入口和等待结果状态", source_before_audit)
+        self.assertIn("打开 app 能看到本地连接待恢复", source_before_audit)
+        for label in (
+            'label: "打开可见"',
+            'label: "本地联通"',
+            'label: "当前标的"',
+            'label: "最近结果"',
+            'label: "来源层"',
+            'label: "明确缺口"',
+            'label: "下一步入口"',
+            'label: "安全说明"',
+        ):
+            self.assertIn(label, source_before_audit)
+        self.assertIn("打开 app 能看到什么", visible_slice)
+        self.assertIn('aria-label="ordinary home app visible now sentence"', visible_slice)
+        self.assertIn("{ordinaryHomeAppVisibleNowSentence}", visible_slice)
+        self.assertIn("MetricGrid items={ordinaryHomeAppVisibleNowItems}", visible_slice)
+        self.assertIn('aria-label="ordinary home app visible now local actions"', visible_slice)
+        self.assertIn('href={dailyCommandHomeConfirmHref}', visible_slice)
+        self.assertIn('href="#factor/factor-score"', visible_slice)
+        self.assertIn('href="#next/next-session-chart"', visible_slice)
+        self.assertIn("这个条带只回答普通用户打开首页能看到什么", visible_slice)
+        self.assertIn("普通链接只切换本地页面或锚点", visible_slice)
+        self.assertIn("不启动确认流程、不调用外部服务、不交易、不改策略", visible_slice)
+        self.assertNotIn("onClick=", visible_slice)
+        self.assertNotIn("fetch(", visible_slice)
+        self.assertNotIn("postCandidateRadarQuantProjection", visible_slice)
+        self.assertNotIn("TaskStatusPanel", visible_slice)
+
     def test_local_fastapi_connection_card_is_first_screen_and_read_only(self):
         source = self.source
         card_start = source.index('title="本地 FastAPI 接线速读"')
