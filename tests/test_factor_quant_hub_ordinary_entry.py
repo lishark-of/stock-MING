@@ -77,6 +77,35 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", compact_slice)
         self.assertNotIn("launch" + "Task", compact_slice)
         self.assertNotIn("post" + "Task(", compact_slice)
+        self.assertIn("ordinaryQuantModeLayeredLiveLightItems", source)
+        self.assertIn('aria-label="stock quant mode layered live light evidence boundary"', summary_slice)
+        self.assertIn("运行模式分层", summary_slice)
+        self.assertIn("cache/render、按钮任务、真实数据、模型解释、生产验收和交易隔离分开显示", summary_slice)
+        self.assertIn("live_light 也只能是可审计 task，不是页面渲染外联", summary_slice)
+        mode_layer_start = summary_slice.index('aria-label="stock quant mode layered live light evidence boundary"')
+        mode_layer_end = summary_slice.index('aria-label="stock quant projection primary next action"', mode_layer_start)
+        mode_layer_slice = summary_slice[mode_layer_start:mode_layer_end]
+        for mode_layer_label in (
+            'label: "缓存渲染层"',
+            'label: "按钮任务层"',
+            'label: "真实数据层"',
+            'label: "模型解释层"',
+            'label: "生产验收层"',
+            'label: "交易隔离层"',
+        ):
+            self.assertIn(mode_layer_label, source)
+        self.assertIn("GET cache / React render 只读；页面打开、查看结果和本地路由切换不创建 task、不外联", source)
+        self.assertIn("manual 或 live_light 补证只能进入显式 POST task / worker / local fallback，本页不自启小池", source)
+        self.assertIn("需要 scope hash、payload、call_ledger、样本行和 failure-mode evidence", source)
+        self.assertIn("DeepSeek governed executor 单独排期；不作为数据源", source)
+        self.assertIn("LTG-03 strict closeout 仍按 snapshot", source)
+        self.assertIn("local ticket、dry-run、execution request、matrix 或 sanitizer 不等于 production complete", source)
+        self.assertIn("Factor 分数只做研究复核；不接 broker、不创建 order endpoint", source)
+        self.assertLess(summary_slice.index('aria-label="stock quant compact vertical slice status"'), mode_layer_start)
+        self.assertLess(mode_layer_start, summary_slice.index('aria-label="stock quant projection primary next action"'))
+        self.assertNotIn("onClick=", mode_layer_slice)
+        self.assertNotIn("launch" + "Task", mode_layer_slice)
+        self.assertNotIn("post" + "Task(", mode_layer_slice)
         for engineering_label in (
             'label: "cache"',
             'label: "Tushare"',

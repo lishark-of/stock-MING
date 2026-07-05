@@ -1341,6 +1341,40 @@ export default function FactorQuantHub() {
       : `LTG-03 当前 degraded：dry-run=${String(factorTestProviderSmallPoolDryRun.status ?? "missing")}，credential=${String(factorTestProviderSmallPoolCredential.status ?? "unknown")}，blocker=${factorTestProviderSmallPoolBlockers.join(" / ") || "provider_task_and_sample_rows_pending"}；本地 execution request 不能替代真实 provider task，下一步只能是用户授权后的 provider-backed 小池验收。`;
   const ordinaryFactorTestProviderBoundary =
     "本卡只读 Factor cache；不触发 dry-run、execution request 或 provider task；真实小池验收只能在用户明确授权后走 POST task";
+  const ordinaryQuantModeLayeredLiveLightItems: MetricItem[] = [
+    {
+      label: "缓存渲染层",
+      value: "GET cache / React render 只读；页面打开、查看结果和本地路由切换不创建 task、不外联",
+      tone: "good"
+    },
+    {
+      label: "按钮任务层",
+      value: `${ordinaryQuantRuntimeModeLabel}；manual 或 live_light 补证只能进入显式 POST task / worker / local fallback，本页不自启小池`,
+      tone: ordinaryQuantRuntimeMode === "cache_only" ? "good" : "warn"
+    },
+    {
+      label: "真实数据层",
+      value: factorTestProductionValidation.provider_backed_small_pool_validation_done === true
+        ? "provider-backed 小池直接证据已可见；继续复核样本行、call_ledger 和 failure-mode evidence"
+        : `provider-backed 小池仍待授权；需要 scope hash、payload、call_ledger、样本行和 failure-mode evidence；${ordinaryFactorTestProviderEvidenceGap}`,
+      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "模型解释层",
+      value: "DeepSeek governed executor 单独排期；不作为数据源，不覆盖价格、因子、operation_zones 或 strategy action",
+      tone: "good"
+    },
+    {
+      label: "生产验收层",
+      value: "LTG-03 strict closeout 仍按 snapshot；local ticket、dry-run、execution request、matrix 或 sanitizer 不等于 production complete",
+      tone: "warn"
+    },
+    {
+      label: "交易隔离层",
+      value: "Factor 分数只做研究复核；不接 broker、不创建 order endpoint、不真实交易、不改 strategy action",
+      tone: "good"
+    }
+  ];
   const ordinaryFactorTestProductionStageCount = Number(factorTestProductionStageScopeManifest.stage_count ?? factorTestProductionStageScopeRows.length ?? 0);
   const ordinaryFactorTestProductionStagePendingCount = Number(factorTestProductionStageScopeManifest.pending_stage_count ?? factorTestProductionStageScopeRows.length ?? 0);
   const ordinaryFactorTestProductionStageLocalCount = Number(factorTestProductionStageScopeManifest.local_surface_stage_count ?? 0);
@@ -1583,6 +1617,11 @@ export default function FactorQuantHub() {
             <h3>当前纵切状态</h3>
             <p className="ordinary-status-note">确认链、P2/P3、支持/压制、小池验收和缺口先给结论；需要真实 provider 小池时只显示授权边界，不自动创建任务。</p>
             <MetricGrid items={ordinaryQuantCompactVerticalSliceItems} />
+          </div>
+          <div aria-label="stock quant mode layered live light evidence boundary">
+            <h3>运行模式分层</h3>
+            <p className="ordinary-status-note">cache/render、按钮任务、真实数据、模型解释、生产验收和交易隔离分开显示；live_light 也只能是可审计 task，不是页面渲染外联。</p>
+            <MetricGrid items={ordinaryQuantModeLayeredLiveLightItems} />
           </div>
           <div className="actions" aria-label="stock quant projection primary next action">
             <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
