@@ -1353,6 +1353,84 @@ export default function CandidateRadar() {
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_next_step ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.next_action ?? "") ||
     "确认任务完成后回放本地 cache / ledger / packet。";
+  const quantProjectionProviderCallSource =
+    String(searchQuantProjectionSmallDataWriteback.provider_call_source ?? "") ||
+    "pending_no_provider_call";
+  const quantProjectionTushareDataCardSummary = quantProjectionProviderLedgerReady
+    ? `Tushare 数据卡已回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口可从本地账本读取。`
+    : taskReceipt?.ok || quantProjectionPersistedTaskId
+      ? "Tushare 数据卡等待任务回写：先看任务状态，成功后刷新本地 cache。"
+      : "Tushare 数据卡等待确认：输入股票代码不会取数，点击确认后才进入本地数据链。";
+  const quantProjectionTushareDataCardGap = quantProjectionProviderLedgerReady
+    ? quantProjectionSmallDataReady
+      ? "cache / call_ledger / packet 三面已进入本地回放。"
+      : "已有 call_ledger；cache / packet 仍等待小数据三面 ready。"
+    : "缺 Tushare call_ledger；等待确认任务、本地阻断或授权后的后台回写。";
+  const quantProjectionTushareDataCardNext = quantProjectionProviderLedgerReady
+    ? quantProjectionSmallDataReady
+      ? "查看量化推演结果，再看次日图谱。"
+      : "继续看任务状态或刷新本地 cache，等 packet 和 cache 回放齐备。"
+    : quantProjectionCanSubmit
+      ? "点击确认并生成 3.0 量化推演。"
+      : "先让本地连接和股票代码校验通过。";
+  const quantProjectionTushareDataCardItems: MetricItem[] = [
+    {
+      label: "Tushare 数据",
+      value: quantProjectionTushareDataCardSummary,
+      tone: quantProjectionProviderLedgerReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "接口回放",
+      value: quantProjectionProviderLedgerReady
+        ? `${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}`
+        : "等待本地账本",
+      tone: quantProjectionProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "写入三面",
+      value: quantProjectionSmallDataStageLabel,
+      tone: quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "DeepSeek",
+      value: quantProjectionDeepSeekSkipped ? "已跳过；不影响 Tushare-first 回放" : quantProjectionModelSourceLabel,
+      tone: "good"
+    },
+    {
+      label: "缺口",
+      value: quantProjectionTushareDataCardGap,
+      tone: quantProjectionProviderLedgerReady && quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: quantProjectionTushareDataCardNext,
+      tone: quantProjectionProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只读本地 cache / call_ledger / packet；不会从数据卡调用 Tushare/DeepSeek、创建第二个 task 或交易",
+      tone: "good"
+    }
+  ];
+  const quantProjectionTushareDataCardRows = quantProjectionProviderApiRows.length
+    ? quantProjectionProviderApiRows.slice(0, 6).map((row) => ({
+        接口: displayText(row.api ?? row.interface ?? row.name ?? row.provider_api),
+        当前状态: displayText(row.ordinary_label ?? row.status ?? row.call_status),
+        证据: displayText(row.evidence ?? row.call_ledger_key ?? row.scope_hash_short, quantProjectionProviderCallSource),
+        用户下一步: displayText(row.next_action ?? row["用户下一步"], quantProjectionTushareDataCardNext),
+        边界: displayText(row.boundary ?? row["边界"], "接口回放只读本地账本；不会补调数据源、模型或交易")
+      }))
+    : [
+        {
+          接口: "trade_cal / daily / daily_basic / moneyflow",
+          当前状态: quantProjectionProviderLedgerReady
+            ? `已看到 Tushare 账本 ${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}`
+            : "等待 Tushare 账本或本地阻断回放",
+          证据: quantProjectionProviderCallSource,
+          用户下一步: quantProjectionTushareDataCardNext,
+          边界: "接口明细只读本地 cache；不会补调数据源、模型或交易"
+        }
+      ];
   const quantProjectionSmallDataActionRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_action_rows).map((row) => ({
     行动: displayText(row["行动"] ?? row.action_key),
     当前状态: displayText(row["当前状态"] ?? row.status),
@@ -1412,9 +1490,6 @@ export default function CandidateRadar() {
   const quantProjectionWritebackSurfaceRows = quantProjectionWritebackSurfaceSummaryRows.length
     ? quantProjectionWritebackSurfaceSummaryRows
     : quantProjectionSmallDataWritebackRows;
-  const quantProjectionProviderCallSource =
-    String(searchQuantProjectionSmallDataWriteback.provider_call_source ?? "") ||
-    "pending_no_provider_call";
   const quantProjectionWritebackIntegrityPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_integrity_rows).map((row) => ({
     检查项: displayText(row["检查项"] ?? row.integrity_key),
     当前状态: displayText(row["当前状态"] ?? row.status),
@@ -4273,6 +4348,17 @@ export default function CandidateRadar() {
             <p className="risk-note" aria-live="polite">{quantProjectionTushareFirstState}</p>
             <p className="risk-note">普通确认状态：等待输入 / 任务接收 / 任务轮询 / cache 回放；这条状态轨只读本地 task receipt 和 cache，不补调 Tushare、DeepSeek 或 GitHub。</p>
           </details>
+          <div aria-label="quant projection ordinary tushare data card">
+            <h3>Tushare 数据卡</h3>
+            <p className="ordinary-status-note" aria-label="quant projection ordinary tushare data card summary" aria-live="polite">{quantProjectionTushareDataCardSummary}</p>
+            <MetricGrid items={quantProjectionTushareDataCardItems} />
+            <details className="developer-audit-details" aria-label="quant projection ordinary tushare data card rows">
+              <summary>查看接口回放</summary>
+              <p className="risk-note">这张明细只读本地 Tushare light 接口回放；没有账本时显示等待或阻断，不从页面补调数据。</p>
+              <DataLineageTable rows={quantProjectionTushareDataCardRows} />
+            </details>
+            <p className="risk-note">数据卡只整理确认后已有的本地 cache / call_ledger / packet；不会调用 Tushare、DeepSeek、GitHub，不交易、不改交易策略。</p>
+          </div>
           <div aria-label="quant projection p1 visible progress summary">
             <h3>确认进度速读</h3>
             <p className="risk-note">点确认后先看这里：是否接收、最近确认、数据链和 P2 回放状态会直接出现在普通视图，不需要展开工程明细。</p>

@@ -83,6 +83,48 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn('label: "小数据写入"', search_panel)
         self.assertIn('label: "provider 来源"', search_panel)
         self.assertIn('label: "回放合同"', search_panel)
+        self.assertIn("quantProjectionTushareDataCardItems", self.page)
+        self.assertIn("quantProjectionTushareDataCardRows", self.page)
+        self.assertIn("quantProjectionTushareDataCardSummary", self.page)
+        self.assertIn("quantProjectionTushareDataCardGap", self.page)
+        self.assertIn("quantProjectionTushareDataCardNext", self.page)
+        self.assertIn('aria-label="quant projection ordinary tushare data card"', search_panel_top)
+        self.assertIn("Tushare 数据卡", search_panel_top)
+        self.assertIn('aria-label="quant projection ordinary tushare data card summary"', search_panel_top)
+        self.assertIn("MetricGrid items={quantProjectionTushareDataCardItems}", search_panel_top)
+        self.assertIn('aria-label="quant projection ordinary tushare data card rows"', search_panel_top)
+        self.assertIn("<summary>查看接口回放</summary>", search_panel_top)
+        self.assertIn("DataLineageTable rows={quantProjectionTushareDataCardRows}", search_panel_top)
+        self.assertIn("只读本地 cache / call_ledger / packet", self.page)
+        self.assertIn("不会从数据卡调用 Tushare/DeepSeek、创建第二个 task 或交易", self.page)
+        self.assertIn("没有账本时显示等待或阻断，不从页面补调数据", search_panel_top)
+        self.assertIn("不会调用 Tushare、DeepSeek、GitHub，不交易、不改交易策略", search_panel_top)
+        for data_card_label in (
+            'label: "Tushare 数据"',
+            'label: "接口回放"',
+            'label: "写入三面"',
+            'label: "DeepSeek"',
+            'label: "缺口"',
+            'label: "下一步"',
+            'label: "边界"',
+        ):
+            self.assertIn(data_card_label, self.page)
+        data_card_start = search_panel_top.index('aria-label="quant projection ordinary tushare data card"')
+        data_card_end = search_panel_top.index('aria-label="quant projection p1 visible progress summary"', data_card_start)
+        data_card_slice = search_panel_top[data_card_start:data_card_end]
+        self.assertLess(
+            search_panel_top.index('aria-label="quant projection ordinary input and submit notes"'),
+            data_card_start,
+        )
+        self.assertLess(
+            data_card_start,
+            search_panel_top.index('aria-label="quant projection p1 visible progress summary"'),
+        )
+        self.assertNotIn("onClick=", data_card_slice)
+        self.assertNotIn("postCandidateRadar", data_card_slice)
+        self.assertNotIn("launchQuantProjection", data_card_slice)
+        self.assertNotIn("fetch(", data_card_slice)
+        self.assertNotIn("TaskStatusPanel", data_card_slice)
         self.assertIn("rows={quantProjectionSmallDataRows}", search_panel)
         self.assertIn("ordinary_readback_rows", self.page)
         self.assertIn('label: "投研图谱联动"', search_panel)
