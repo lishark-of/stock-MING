@@ -233,6 +233,14 @@ def build_contract() -> dict[str, Any]:
     )
     strict_closeout_gate_start = route_source.find('title="LTG-10 Streamlit strict closeout gate"')
     bridge_cache_card_start = route_source.find('title="旧工作台桥接 cache"', strict_closeout_gate_start)
+    legacy_evidence_factory_start = route_source.find(
+        'aria-label="legacy streamlit evidence factory task strip"'
+    )
+    legacy_evidence_factory_slice = (
+        route_source[legacy_evidence_factory_start:strict_closeout_gate_start]
+        if legacy_evidence_factory_start != -1 and strict_closeout_gate_start != -1
+        else ""
+    )
 
     rows = [
         _row(
@@ -509,6 +517,39 @@ def build_contract() -> dict[str, Any]:
             and strict_closeout_gate_start != -1
             and ordinary_compass_start < strict_closeout_gate_start < bridge_cache_card_start,
             "React page must show a user-visible LTG-10 strict closeout blocker after the ordinary replacement compass and before bridge/audit details, without opening Streamlit, removing fallback, deleting app.py, or claiming retirement completion.",
+        ),
+        _row(
+            "legacy_streamlit_evidence_factory_is_button_gated_local_review",
+            "postTask" in route_source
+            and "TaskLaunchReceipt" in route_source
+            and "TaskStatusPanel" in route_source
+            and "taskReceipt" in route_source
+            and "taskId" in route_source
+            and "setTaskReceipt(res)" in route_source
+            and "streamlitRetirementEvidenceFactoryItems" in route_source
+            and "streamlitOrdinaryWorkflowParityReview" in route_source
+            and "streamlitFallbackRetirementReview" in route_source
+            and legacy_evidence_factory_start != -1
+            and strict_closeout_gate_start != -1
+            and ordinary_compass_start < legacy_evidence_factory_start < strict_closeout_gate_start
+            and 'aria-label="legacy streamlit evidence factory actions"' in legacy_evidence_factory_slice
+            and 'aria-label="legacy streamlit evidence factory review rows"' in legacy_evidence_factory_slice
+            and "LTG-10 本地退场证据按钮" in legacy_evidence_factory_slice
+            and "这些按钮只创建本地 review task" in legacy_evidence_factory_slice
+            and "不打开 Streamlit、不运行旧工具、不移除 fallback、不删除 app.py" in legacy_evidence_factory_slice
+            and "streamlit_retirement_complete=false" in legacy_evidence_factory_slice
+            and "reviewStreamlitOrdinaryWorkflowParity" in legacy_evidence_factory_slice
+            and "reviewStreamlitFallbackRetirement" in legacy_evidence_factory_slice
+            and "/api/legacy/ordinary-workflow-parity-review" in route_source
+            and "/api/legacy/fallback-retirement-review" in route_source
+            and "<TaskLaunchReceipt receipt={taskReceipt} />" in legacy_evidence_factory_slice
+            and "<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />" in legacy_evidence_factory_slice
+            and "LTG-10 首屏按钮是显式 POST local review task" in legacy_evidence_factory_slice
+            and "不会把 local review 当 Streamlit 退场完成" in legacy_evidence_factory_slice
+            and "TUSHARE_TOKEN" not in route_source
+            and "DEEPSEEK_API_KEY" not in route_source
+            and "GITHUB_TOKEN" not in route_source,
+            "Legacy Streamlit evidence factory must expose button-gated local review tasks with receipt/status readback while keeping Streamlit opening, fallback removal, app.py deletion, provider/model/GitHub calls, trades, and retirement completion disabled.",
         ),
         _row(
             "react_legacy_page_displays_boundaries",

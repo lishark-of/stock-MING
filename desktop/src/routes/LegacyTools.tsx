@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { getLegacyBridgeCache } from "../api/client";
+import { getLegacyBridgeCache, postTask, type TaskCreationEnvelope } from "../api/client";
 import PacketCard from "../components/PacketCard";
 import MetricGrid from "../components/MetricGrid";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import PageStateBanner from "../components/PageStateBanner";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
+import TaskStatusPanel from "../components/TaskStatusPanel";
 
 const LEGACY_BOUNDARIES = [
   { boundary: "正式主入口", status: "Command Center 3 React/Tauri", note: "普通主流程请使用 3.0 前端和 FastAPI cache/task API。" },
@@ -37,8 +39,10 @@ export default function LegacyTools() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [taskId, setTaskId] = useState("");
+  const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
 
-  useEffect(() => {
+  const refreshCache = () => {
     setLoading(true);
     setError("");
     void getLegacyBridgeCache().then((res) => {
@@ -49,6 +53,17 @@ export default function LegacyTools() {
     }).catch((err) => {
       setError(err instanceof Error ? err.message : String(err));
     }).finally(() => setLoading(false));
+  };
+
+  const launchStreamlitRetirementReview = (path: string, payload: Record<string, unknown>) =>
+    void postTask(path, payload).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+      refreshCache();
+    });
+
+  useEffect(() => {
+    refreshCache();
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -99,6 +114,10 @@ export default function LegacyTools() {
   const streamlitRetirementReadinessRows = rows(cache.streamlit_retirement_readiness_rows);
   const streamlitRetirementDurableEvidenceRecipe = (cache.streamlit_retirement_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const streamlitRetirementDurableEvidenceRows = rows(cache.streamlit_retirement_durable_evidence_rows);
+  const streamlitOrdinaryWorkflowParityReview = (cache.streamlit_ordinary_workflow_parity_review as Record<string, unknown> | undefined) ?? {};
+  const streamlitOrdinaryWorkflowParityReviewRows = rows(cache.streamlit_ordinary_workflow_parity_review_rows);
+  const streamlitFallbackRetirementReview = (cache.streamlit_fallback_retirement_review as Record<string, unknown> | undefined) ?? {};
+  const streamlitFallbackRetirementReviewRows = rows(cache.streamlit_fallback_retirement_review_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const empty = !loading && !error && !Object.keys(cache).length;
@@ -147,6 +166,47 @@ export default function LegacyTools() {
       边界: "local receipt、matrix、route inventory 或本页罗盘都不是 Streamlit retirement completion。"
     }
   ];
+  const streamlitRetirementEvidenceFactoryItems = [
+    {
+      label: "ordinary parity",
+      value: String(streamlitOrdinaryWorkflowParityReview.status ?? "pending local review"),
+      tone: streamlitOrdinaryWorkflowParityReview.local_review_ready === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "fallback review",
+      value: String(streamlitFallbackRetirementReview.status ?? "blocked until parity"),
+      tone: streamlitFallbackRetirementReview.local_review_ready === true ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "fallback retained",
+      value: streamlitFallbackRetirementReview.streamlit_fallback_retained === false ? "check" : "retained",
+      tone: streamlitFallbackRetirementReview.streamlit_fallback_retained === false ? ("bad" as const) : ("good" as const)
+    },
+    {
+      label: "ordinary exit",
+      value: streamlitOrdinaryWorkflowParityReview.ordinary_workflow_exit_complete === true ? "complete" : "blocked",
+      tone: streamlitOrdinaryWorkflowParityReview.ordinary_workflow_exit_complete === true ? ("warn" as const) : ("good" as const)
+    },
+    {
+      label: "review boundary",
+      value: "no Streamlit / no provider / no trade",
+      tone: "good" as const
+    }
+  ];
+  const reviewStreamlitOrdinaryWorkflowParity = () =>
+    launchStreamlitRetirementReview("/api/legacy/ordinary-workflow-parity-review", {
+      review_scope: "legacy_first_screen_ordinary_workflow_parity_local_review",
+      operator: "legacy_first_screen",
+      streamlit_fallback_retained: true,
+      streamlit_retirement_complete: false
+    });
+  const reviewStreamlitFallbackRetirement = () =>
+    launchStreamlitRetirementReview("/api/legacy/fallback-retirement-review", {
+      review_scope: "legacy_first_screen_fallback_retirement_blocker_review",
+      operator: "legacy_first_screen",
+      streamlit_fallback_retained: true,
+      streamlit_retirement_complete: false
+    });
   const streamlitStrictCloseoutGateRows = [
     {
       gate_key: "ordinary_replacement_visible_fallback_retained",
@@ -288,6 +348,24 @@ export default function LegacyTools() {
         <p>普通主流程请使用 Command Center 3；3.0 正式主路径会逐步迁移到 React + FastAPI + Tauri。</p>
         <p>Streamlit 不是正式主入口；Legacy 页面不会创建任务，不调用 Tushare、DeepSeek 或 GitHub，也不会打开 Streamlit 或运行旧工具。</p>
         <p>GET /api/legacy/cache 只读展示旧工作台桥接和迁移清单，不会绕过 strategy_execution_packet。</p>
+        <div aria-label="legacy streamlit evidence factory task strip">
+          <h3>LTG-10 本地退场证据按钮</h3>
+          <p className="risk-note">这些按钮只创建本地 review task，用来审查 ordinary workflow replacement parity 和 Streamlit fallback retirement blockers；它们不打开 Streamlit、不运行旧工具、不移除 fallback、不删除 app.py、不调用 provider/model/GitHub、不交易，streamlit_retirement_complete=false。</p>
+          <MetricGrid items={streamlitRetirementEvidenceFactoryItems} />
+          <div className="actions" aria-label="legacy streamlit evidence factory actions">
+            <button type="button" onClick={reviewStreamlitOrdinaryWorkflowParity}>审查 ordinary parity</button>
+            <button type="button" onClick={reviewStreamlitFallbackRetirement}>审查 fallback blocker</button>
+            <a href="#tasks" title="只切换到任务目录查看本地 task 状态" aria-label="open task catalog from legacy streamlit evidence factory">任务进度</a>
+          </div>
+          <TaskLaunchReceipt receipt={taskReceipt} />
+          <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+          <details className="developer-audit-details" aria-label="legacy streamlit evidence factory review rows">
+            <summary>本地 review 明细</summary>
+            <DataLineageTable rows={streamlitOrdinaryWorkflowParityReviewRows} />
+            <DataLineageTable rows={streamlitFallbackRetirementReviewRows} />
+          </details>
+          <p className="risk-note">LTG-10 首屏按钮是显式 POST local review task：ordinary parity 可以记录 route inventory/fallback 证据，fallback retirement 缺证时继续 blocked，不会把 local review 当 Streamlit 退场完成。</p>
+        </div>
       </PacketCard>
 
       <PacketCard title="LTG-10 Streamlit strict closeout gate" subtitle="纵切先让 3.0 普通替代入口可读；Streamlit fallback 仍保留到 direct replacement evidence 完成" status="strict_closeout_blocked">

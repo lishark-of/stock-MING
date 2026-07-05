@@ -4659,6 +4659,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
                 "ChokepointScan.tsx",
                 "DesktopShellPreflight.tsx",
                 "FactorQuantHub.tsx",
+                "LegacyTools.tsx",
                 "NextSessionMap.tsx",
                 "SerenityMethodRadar.tsx",
                 "TaskCatalog.tsx",
@@ -7882,11 +7883,32 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不能退掉 Streamlit fallback", page)
         self.assertIn("不证明 LTG-10 退场完成", page)
         self.assertIn("不能把 Streamlit fallback 标记为可移除", page)
+        self.assertIn("streamlitRetirementEvidenceFactoryItems", page)
+        self.assertIn("streamlitOrdinaryWorkflowParityReview", page)
+        self.assertIn("streamlitFallbackRetirementReview", page)
+        self.assertIn('aria-label="legacy streamlit evidence factory task strip"', page)
+        self.assertIn('aria-label="legacy streamlit evidence factory actions"', page)
+        self.assertIn('aria-label="legacy streamlit evidence factory review rows"', page)
+        self.assertIn("LTG-10 本地退场证据按钮", page)
+        self.assertIn("这些按钮只创建本地 review task", page)
+        self.assertIn("不打开 Streamlit、不运行旧工具、不移除 fallback、不删除 app.py", page)
+        self.assertIn("streamlit_retirement_complete=false", page)
+        self.assertIn("/api/legacy/ordinary-workflow-parity-review", page)
+        self.assertIn("/api/legacy/fallback-retirement-review", page)
+        self.assertIn("onClick={reviewStreamlitOrdinaryWorkflowParity}", page)
+        self.assertIn("onClick={reviewStreamlitFallbackRetirement}", page)
+        self.assertIn("<TaskLaunchReceipt receipt={taskReceipt} />", page)
+        self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", page)
+        self.assertIn("LTG-10 首屏按钮是显式 POST local review task", page)
+        self.assertIn("不会把 local review 当 Streamlit 退场完成", page)
         compass_start = page.index('aria-label="legacy ordinary replacement compass"')
         metric_start = page.index("<MetricGrid\n          items={[", compass_start)
         compass_slice = page[compass_start:metric_start]
+        evidence_factory_start = page.index('aria-label="legacy streamlit evidence factory task strip"')
         self.assertLess(page.index("Legacy 页面只读展示旧工作台边界"), compass_start)
         self.assertLess(compass_start, page.index('label: "正式入口"'))
+        self.assertLess(compass_start, evidence_factory_start)
+        self.assertLess(evidence_factory_start, page.index("LTG-10 Streamlit strict closeout gate"))
         self.assertIn('href="#home"', compass_slice)
         self.assertIn('href="#candidates"', compass_slice)
         self.assertIn('href="#factor"', compass_slice)
@@ -8049,7 +8071,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("真实交易", page)
         self.assertIn("自动下单", page)
         self.assertIn("DataLineageTable", page)
-        self.assertNotIn("postTask", page)
+        self.assertNotIn("postTask", compass_slice)
+        self.assertIn("postTask", page)
         self.assertNotIn("tushare_adapter", page)
         self.assertNotIn("DEEPSEEK_API_KEY", page)
         self.assertNotIn("GITHUB_TOKEN", page)
