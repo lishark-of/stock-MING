@@ -2348,6 +2348,50 @@ export default function CommandCenterHome() {
       tone: "good"
     }
   ];
+  const ordinaryHomeConfirmResultChainSentence = dailyCommandP3OneGlanceReadable
+    ? `${dailyCommandConfirmedSymbolLabel} 已有结果链路：确认已接收，进度已可看，本地记录可回放，结果入口已指向量化推演和次日图谱。`
+    : homeQuantVisibleTaskId || homeQuantTaskId || dailyCommandP2ThreeSurfaceReady
+      ? "确认后结果链路正在回放：先看进度，再看本地记录，最后进入量化推演或次日图谱。"
+      : dailyCommandP0LocalReadinessReady
+        ? "确认后结果链路等待开始：先输入股票并点击确认，随后按进度、本地记录、结果入口顺序看。"
+        : "确认后结果链路暂停：先恢复本地连接，再回首页确认股票。";
+  const ordinaryHomeConfirmResultChainItems: MetricItem[] = [
+    {
+      label: "1. 确认接收",
+      value: homeQuantVisibleTaskId || homeQuantTaskId
+        ? "已接收确认"
+        : dailyCommandP0LocalReadinessReady
+          ? "等待点击确认"
+          : "等待本地连接",
+      tone: homeQuantVisibleTaskId || homeQuantTaskId ? "good" : "warn"
+    },
+    {
+      label: "2. 进度",
+      value: homeQuantPostConfirmStageLabel,
+      tone: homeQuantVisibleTaskId || homeQuantP1P2P3CheckpointReady ? "good" : "warn"
+    },
+    {
+      label: "3. 本地记录",
+      value: dailyCommandP2ThreeSurfaceReady || dailyCommandP3OneGlanceReadable
+        ? "可回放"
+        : homeQuantVisibleTaskId || homeQuantTaskId
+          ? "写入中或降级显示"
+          : "等待确认",
+      tone: dailyCommandP2ThreeSurfaceReady || dailyCommandP3OneGlanceReadable ? "good" : "warn"
+    },
+    {
+      label: "4. 结果入口",
+      value: dailyCommandP3OneGlanceReadable
+        ? "可看量化推演和次日图谱"
+        : "等待结果后进入量化推演/次日图谱",
+      tone: dailyCommandP3OneGlanceReadable ? "good" : "warn"
+    },
+    {
+      label: "安全说明",
+      value: "只读当前结果链；普通链接只切换本地页面；不调用外部服务、不交易、不改策略",
+      tone: "good"
+    }
+  ];
   const ordinaryHomePostConfirmReplaySummary = homeQuantVisibleTaskId
     ? `确认回执 ${homeQuantVisibleTaskId} 已可读；${homeQuantP1P2P3CheckpointLabel}；下一步看股票量化推演 / 次日图谱。`
     : dailyCommandP2ThreeSurfaceReady || dailyCommandP3OneGlanceReadable
@@ -3507,6 +3551,17 @@ export default function CommandCenterHome() {
           <h3>确认后状态</h3>
           <p className="ordinary-status-note" aria-label="ordinary home post confirm status summary" aria-live="polite">{homeQuantPostConfirmReadableSentence}</p>
           <MetricGrid items={ordinaryHomePostConfirmItems} />
+          <div aria-label="ordinary home confirm result chain">
+            <h3>确认后结果链路</h3>
+            <p className="ordinary-status-note" aria-label="ordinary home confirm result chain summary" aria-live="polite">{ordinaryHomeConfirmResultChainSentence}</p>
+            <MetricGrid items={ordinaryHomeConfirmResultChainItems} />
+            <div className="actions" aria-label="ordinary home confirm result chain actions">
+              <a href={ordinaryHomeProgressHref} title="切换到进度目录；只读查看本地进度" aria-label="open progress from ordinary home confirm result chain">看进度</a>
+              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from ordinary home confirm result chain">股票量化推演</a>
+              <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next session from ordinary home confirm result chain">次日图谱</a>
+            </div>
+            <p className="risk-note">这里顺序只读当前确认、本地进度、本地记录和结果入口；普通链接只切换页面，不调用外部服务、不读取敏感凭据、不交易、不改策略。</p>
+          </div>
           <div aria-label="ordinary home post confirm replay state strip">
             <h3>确认后回放速读</h3>
             <p className="ordinary-status-note" aria-label="ordinary home post confirm replay summary" aria-live="polite">{ordinaryHomePostConfirmReplaySummary}</p>
