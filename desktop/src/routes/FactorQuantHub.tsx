@@ -1748,6 +1748,41 @@ export default function FactorQuantHub() {
     { label: "解释状态", value: ordinaryQuantDeepSeekSourceLabel },
     { label: "仅供研究", value: "量化推演不是买卖指令；不真实交易、不下单、不改交易策略或操作区", tone: "good" }
   ];
+  const ordinaryQuantPostConfirmOneMinuteSentence = ordinaryQuantResultRouteReady
+    ? `${candidateRadarConfirmedSymbol || "当前标的"} 确认后一眼读图：先看支持/压制，再看完整次日图谱；缺口看 P2 三面和降级提示。`
+    : "确认后一眼读图等待结果：先回下一票雷达确认代码；本页会显示支持/压制、图谱入口和缺口。";
+  const ordinaryQuantPostConfirmOneMinuteItems: MetricItem[] = [
+    {
+      label: "当前标的",
+      value: candidateRadarConfirmedSymbol || "等待下一票雷达确认",
+      tone: candidateRadarConfirmedSymbol ? "good" : "warn"
+    },
+    {
+      label: "一句话结论",
+      value: ordinaryQuantP3ReadableConclusion,
+      tone: ordinaryQuantResultRouteReady ? "good" : "warn"
+    },
+    {
+      label: "先看",
+      value: "支持/压制摘要",
+      tone: ordinaryQuantResultRouteReady ? "good" : "warn"
+    },
+    {
+      label: "再看",
+      value: "完整次日图谱",
+      tone: ordinaryQuantResultRouteReady ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: ordinaryQuantP3ExplainableGapLine,
+      tone: ordinaryQuantP2ReadySurfaceCount === 3 && ordinaryQuantResultRouteReady ? "good" : "warn"
+    },
+    {
+      label: "非交易边界",
+      value: "支持/压制和图谱只供研究复核，不是买卖、加仓、减仓或融资指令",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantExpandedSummaryItems: MetricItem[] = [
     { label: "主下一步", value: ordinaryQuantPrimaryActionLabel },
     { label: "主下一步边界", value: ordinaryQuantPrimaryActionBoundary, tone: "good" },
@@ -1805,6 +1840,17 @@ export default function FactorQuantHub() {
           <h3>一屏速读</h3>
           <p className="risk-note">默认先看当前标的、结论、下一步、数据链、图谱/解释和边界；任务记录、数据凭证、合同和回放细节继续收起在下方。</p>
           <MetricGrid items={ordinaryQuantUserFirstItems} />
+          <div aria-label="stock quant post confirm one minute read">
+            <h3>确认后一眼读图</h3>
+            <p className="ordinary-status-note" aria-label="stock quant post confirm one minute sentence" aria-live="polite">{ordinaryQuantPostConfirmOneMinuteSentence}</p>
+            <MetricGrid items={ordinaryQuantPostConfirmOneMinuteItems} />
+            <div className="actions" aria-label="stock quant post confirm one minute actions">
+              <a href="#factor-score" title="跳到支持/压制摘要；只读 Factor cache" aria-label="open support suppress from stock quant one minute read">支持/压制</a>
+              <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱图表区域；只读本地次日图谱数据" aria-label="open next chart from stock quant one minute read">完整次日图谱</a>
+              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；换标的仍需确认按钮" aria-label="open candidate confirm from stock quant one minute read">换一只票</a>
+            </div>
+            <p className="risk-note">这张一眼读图只读本地量化缓存、下一票雷达回放和次日图谱预览；本地链接只切换页面或锚点，不创建确认流程、不调用外部数据或模型、不交易、不改策略。</p>
+          </div>
           <div aria-label="stock quant visible now app result">
             <h3>打开 app 能看到什么</h3>
             <p className="ordinary-status-note">这张速读只合成 Factor 页当前本地状态：可读结论、下一步入口、LTG-03 真实数据授权状态和授权后应产出的证据；它不创建 task、不调用 provider/model。</p>

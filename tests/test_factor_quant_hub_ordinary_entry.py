@@ -405,17 +405,24 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinaryQuantUpstreamOneScreenLabel", source)
         self.assertIn("ordinaryQuantUpstreamConfirmOutcomeRows", source)
         self.assertIn("ordinaryQuantPrimarySummaryItems", source)
+        self.assertIn("ordinaryQuantPostConfirmOneMinuteSentence", source)
+        self.assertIn("ordinaryQuantPostConfirmOneMinuteItems", source)
         self.assertIn("ordinaryQuantExpandedSummaryItems", source)
         self.assertIn('aria-label="stock quant ordinary summary extra details"', source)
         self.assertIn("<summary>更多量化摘要字段</summary>", source)
         self.assertIn("普通首屏只保留当前标的、结论、下一步、数据链、图谱/解释和安全边界", source)
         user_first_index = source.index('aria-label="stock quant ordinary user first summary"')
         user_first_action_index = source.index('aria-label="stock quant projection primary next action"', user_first_index)
+        one_minute_index = source.index('aria-label="stock quant post confirm one minute read"', user_first_index)
+        one_minute_end = source.index('aria-label="stock quant visible now app result"', one_minute_index)
+        one_minute_slice = source[one_minute_index:one_minute_end]
         primary_grid_index = source.index("MetricGrid items={ordinaryQuantPrimarySummaryItems}")
         p3_one_screen_index = source.index('aria-label="stock quant p3 one screen explanation"')
         summary_extra_index = source.index('aria-label="stock quant ordinary summary extra details"')
         readable_result_index = source.index('aria-label="stock quant latest candidate readable result"')
         readable_actions_index = source.index('aria-label="stock quant readable result local actions"', readable_result_index)
+        self.assertLess(user_first_index, one_minute_index)
+        self.assertLess(one_minute_index, p3_one_screen_index)
         self.assertLess(user_first_index, user_first_action_index)
         self.assertLess(user_first_index, p3_one_screen_index)
         self.assertLess(user_first_index, readable_result_index)
@@ -429,6 +436,29 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", p3_one_screen_slice)
         self.assertNotIn("launchTask", p3_one_screen_slice)
         self.assertNotIn("postTask(", p3_one_screen_slice)
+        self.assertIn("确认后一眼读图", one_minute_slice)
+        self.assertIn('aria-label="stock quant post confirm one minute sentence"', one_minute_slice)
+        self.assertIn("{ordinaryQuantPostConfirmOneMinuteSentence}", one_minute_slice)
+        self.assertIn("MetricGrid items={ordinaryQuantPostConfirmOneMinuteItems}", one_minute_slice)
+        for label in (
+            'label: "当前标的"',
+            'label: "一句话结论"',
+            'label: "先看"',
+            'label: "再看"',
+            'label: "缺口"',
+            'label: "非交易边界"',
+        ):
+            self.assertIn(label, source)
+        self.assertIn("确认后一眼读图：先看支持/压制，再看完整次日图谱", source)
+        self.assertIn("支持/压制和图谱只供研究复核，不是买卖、加仓、减仓或融资指令", source)
+        self.assertIn('aria-label="stock quant post confirm one minute actions"', one_minute_slice)
+        self.assertIn('href="#factor-score"', one_minute_slice)
+        self.assertIn('href={NEXT_SESSION_CHART_HREF}', one_minute_slice)
+        self.assertIn('href={CANDIDATE_CONFIRM_HREF}', one_minute_slice)
+        self.assertIn("不创建确认流程、不调用外部数据或模型、不交易、不改策略", one_minute_slice)
+        self.assertNotIn("onClick=", one_minute_slice)
+        self.assertNotIn("launchTask", one_minute_slice)
+        self.assertNotIn("postTask(", one_minute_slice)
         readable_result_end = source.index('aria-label="stock quant ordinary task provenance details"', readable_result_index)
         readable_result_slice = source[readable_result_index:readable_result_end]
         self.assertIn('href="#factor-score"', readable_result_slice)
