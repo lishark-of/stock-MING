@@ -708,6 +708,48 @@ export default function NextSessionMap() {
       tone: "good"
     }
   ];
+  const nextSessionPostConfirmOneMinuteSentence = chartSummary.has_drawable_data === true
+    ? `${candidateRadarConfirmedSymbol || "当前标的"} 确认后一眼读图：先看 ${String(chartSummary.scenario_series_count ?? 0)} 条图表路径，再看 ${String(chartSummary.reference_line_count ?? 0)} 条参考线和 ${String(chartSummary.operation_zone_count ?? 0)} 个操作区；最后核对证据缺口。`
+    : candidateRadarReadableResultReady
+      ? `${candidateRadarConfirmedSymbol || "当前标的"} 已有上游搜票结论；完整次日图谱等待手动生成，先看来源、缺口和支持/压制。`
+      : "确认后一眼读图等待标的：先回下一票雷达输入股票代码并点击确认，再回本页看路径、参考线和操作区。";
+  const nextSessionPostConfirmOneMinuteItems: MetricItem[] = [
+    {
+      label: "当前标的",
+      value: candidateRadarConfirmedSymbolLabel,
+      tone: candidateRadarConfirmedSymbol ? "good" : "warn"
+    },
+    {
+      label: "图表路径",
+      value: chartSummary.has_drawable_data === true ? `${String(chartSummary.scenario_series_count ?? 0)} 条路径` : "等待完整图谱",
+      tone: chartSummary.has_drawable_data === true ? "good" : candidateRadarReadableResultReady ? "warn" : "neutral"
+    },
+    {
+      label: "参考线",
+      value: chartSummary.has_drawable_data === true ? `${String(chartSummary.reference_line_count ?? 0)} 条参考线` : "等待参考线",
+      tone: chartSummary.has_drawable_data === true ? "good" : "warn"
+    },
+    {
+      label: "操作区",
+      value: chartSummary.has_drawable_data === true ? `${String(chartSummary.operation_zone_count ?? 0)} 个操作区` : "等待操作区",
+      tone: Number(chartSummary.operation_zone_count ?? 0) > 0 ? "good" : chartSummary.has_drawable_data === true ? "warn" : "neutral"
+    },
+    {
+      label: "证据缺口",
+      value: nextSessionMissingEvidence,
+      tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: nextSessionReadableChartReviewOrder,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "非交易边界",
+      value: "路径、参考线和操作区只供研究复核，不是买卖、下单或改策略指令",
+      tone: "good"
+    }
+  ];
   const nextSessionAppVisibleNowSentence = chartSummary.has_drawable_data === true
     ? `打开 app 能看到 ${candidateRadarConfirmedSymbolLabel} 的完整次日图谱：路径、参考线、operation_zones 和证据缺口都在首屏可读。`
     : candidateRadarReadableResultReady
@@ -1386,6 +1428,17 @@ export default function NextSessionMap() {
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session first screen">换标的</a>
         </div>
         <p className="risk-note">首屏只汇总当前股票、最近结果、下一步、证据缺口和 operation_zones 边界；查看缓存只读本地 GET cache，链接只切换本地锚点，不创建 task、不调用 Tushare/DeepSeek、不下单。</p>
+      </div>
+      <div aria-label="next session post confirm one minute chart read">
+        <h3>确认后一眼读图</h3>
+        <p className="ordinary-status-note" aria-label="next session post confirm one minute sentence" aria-live="polite">{nextSessionPostConfirmOneMinuteSentence}</p>
+        <MetricGrid items={nextSessionPostConfirmOneMinuteItems} />
+        <div className="actions" aria-label="next session post confirm one minute actions">
+          <a href="#next-session-chart" title="跳到完整次日图谱区域；只读本地次日图谱数据" aria-label="open next session chart from post confirm one minute read">看图表</a>
+          <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from post confirm one minute read">看支持/压制</a>
+          <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from post confirm one minute read">换一只票</a>
+        </div>
+        <p className="risk-note">这张一眼读图只读本地次日图谱数据和下一票雷达回放；本地链接只切换页面或锚点，不生成新图谱、不调用外部数据或模型、不交易、不改策略。</p>
       </div>
       <div aria-label="next session app visible now summary">
         <h3>打开 app 能看到什么</h3>
