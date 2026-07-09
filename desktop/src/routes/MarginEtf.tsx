@@ -321,6 +321,28 @@ export default function MarginEtf() {
       tone: "good"
     }
   ];
+  const marginEtfFirstViewportRiskSentence = noEtfRows
+    ? "首屏风险卡：暂无 ETF 候选，先看融资现金线和缺口；缺数据按保守处理，不新增融资。"
+    : `首屏风险卡：${allVisibleEtfRows.length} 行 ETF 候选只做风险预算参考；${marginDecision}，先核对现金线。`;
+  const marginEtfFirstViewportRiskItems: MetricItem[] = [
+    {
+      label: "候选/现金线",
+      value: noEtfRows
+        ? `ETF 候选暂无；融资现金线 当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 缓冲 ${percent(recommendedCashRatio)}`
+        : `ETF 候选 ${allVisibleEtfRows.length} 行；融资现金线 当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 缓冲 ${percent(recommendedCashRatio)}`,
+      tone: noEtfRows || !recommendedCashRatio ? "warn" : "good"
+    },
+    {
+      label: "缺口读法",
+      value: ordinaryMissingEvidence,
+      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+    },
+    {
+      label: "禁令",
+      value: "ETF 候选不是买入指令；融资比例不是加杠杆许可",
+      tone: "good"
+    }
+  ];
   const marginEtfPostResearchRiskPathSentence = noEtfRows
     ? "从量化推演或次日图谱过来后，ETF/融资先显示降级风险预算：没有 ETF 候选时保持观察，不新增融资。"
     : `从量化推演或次日图谱过来后，先把 ${allVisibleEtfRows.length} 行 ETF 候选、融资现金线和缺口合成风险预算；${marginDecision}。`;
@@ -769,6 +791,12 @@ export default function MarginEtf() {
           <p className="ordinary-status-note" aria-label="margin etf ordinary plain conclusion sentence" aria-live="polite">{ordinaryPlainConclusion}</p>
           <MetricGrid items={ordinaryPlainItems} />
           <p className="risk-note">普通结论只读本地 ETF/融资快照；页面打开、查看结果和切换入口都不会启动刷新流程、刷新外部数据或模型、改写交易策略。</p>
+        </div>
+        <div aria-label="margin etf first viewport risk summary card">
+          <h3>ETF / 融资一屏风险卡</h3>
+          <p className="ordinary-status-note" aria-label="margin etf first viewport risk sentence" aria-live="polite">{marginEtfFirstViewportRiskSentence}</p>
+          <MetricGrid items={marginEtfFirstViewportRiskItems} />
+          <p className="risk-note">这张风险卡只合成本地 ETF 候选、融资现金线和缺口；不启动刷新流程、不刷新外部数据或模型、不交易、不加融资。</p>
         </div>
         <div aria-label="margin etf first viewport action strip">
           <h3>首屏下一步</h3>

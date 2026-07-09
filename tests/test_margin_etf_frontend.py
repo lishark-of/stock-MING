@@ -151,6 +151,44 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertNotIn("postTask(", quick_read_slice)
         self.assertNotIn("fetch(", quick_read_slice)
 
+    def test_margin_etf_first_viewport_risk_summary_card_combines_etf_and_cash_line(self):
+        card_start = self.page.index('title="ETF / 融资操作台"')
+        plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
+        risk_start = self.page.index('aria-label="margin etf first viewport risk summary card"', card_start)
+        action_start = self.page.index('aria-label="margin etf first viewport action strip"', card_start)
+        visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        primary_actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        audit_start = self.page.index('aria-label="margin etf audit details"')
+        risk_slice = self.page[risk_start:action_start]
+
+        self.assertLess(plain_start, risk_start)
+        self.assertLess(risk_start, action_start)
+        self.assertLess(risk_start, visible_start)
+        self.assertLess(risk_start, primary_actions_start)
+        self.assertLess(risk_start, audit_start)
+        self.assertIn("marginEtfFirstViewportRiskSentence", self.page)
+        self.assertIn("marginEtfFirstViewportRiskItems", self.page)
+        self.assertIn("首屏风险卡：暂无 ETF 候选", self.page)
+        self.assertIn("首屏风险卡：${allVisibleEtfRows.length} 行 ETF 候选只做风险预算参考", self.page)
+        self.assertIn("ETF / 融资一屏风险卡", risk_slice)
+        self.assertIn('aria-label="margin etf first viewport risk sentence"', risk_slice)
+        self.assertIn("MetricGrid items={marginEtfFirstViewportRiskItems}", risk_slice)
+        for label in (
+            'label: "候选/现金线"',
+            'label: "缺口读法"',
+            'label: "禁令"',
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn("ETF 候选暂无；融资现金线 当前", self.page)
+        self.assertIn("ETF 候选 ${allVisibleEtfRows.length} 行；融资现金线 当前", self.page)
+        self.assertIn("ETF 候选不是买入指令；融资比例不是加杠杆许可", self.page)
+        self.assertIn("这张风险卡只合成本地 ETF 候选、融资现金线和缺口", risk_slice)
+        self.assertIn("不启动刷新流程、不刷新外部数据或模型、不交易、不加融资", risk_slice)
+        self.assertNotIn("onClick=", risk_slice)
+        self.assertNotIn("postTask(", risk_slice)
+        self.assertNotIn("fetch(", risk_slice)
+        self.assertNotIn("TaskStatusPanel", risk_slice)
+
     def test_margin_etf_app_visible_now_summary_is_first_screen_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         audit_start = self.page.index('aria-label="margin etf audit details"')
