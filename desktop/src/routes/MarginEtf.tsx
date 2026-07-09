@@ -291,6 +291,36 @@ export default function MarginEtf() {
       tone: "good"
     }
   ];
+  const marginEtfFirstViewportActionSentence = noEtfRows
+    ? "首屏下一步：先看融资现金线；需要更新时跳到本地回放按钮；换标的回下一票雷达。"
+    : `首屏下一步：先看 ${allVisibleEtfRows.length} 行 ETF 候选，再核对融资现金线；需要更新时跳到本地回放按钮。`;
+  const marginEtfFirstViewportActionItems: MetricItem[] = [
+    {
+      label: "先点哪里",
+      value: noEtfRows ? "融资现金线 / 本地回放按钮 / 下一票雷达" : "ETF 候选 / 融资现金线 / 本地回放按钮",
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "看 ETF",
+      value: noEtfRows ? "暂无候选；先保持观察" : `候选 ${allVisibleEtfRows.length} 行，先按状态和理由复核`,
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "看现金线",
+      value: `当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 缓冲 ${percent(recommendedCashRatio)}`,
+      tone: recommendedCashRatio ? "good" : "warn"
+    },
+    {
+      label: "刷新方式",
+      value: "首屏链接只定位本地按钮；真正刷新仍要用户点击，不自动补外部数据",
+      tone: "good"
+    },
+    {
+      label: "边界",
+      value: "不买入、不加仓、不加融资、不下单",
+      tone: "good"
+    }
+  ];
   const marginEtfPostResearchRiskPathSentence = noEtfRows
     ? "从量化推演或次日图谱过来后，ETF/融资先显示降级风险预算：没有 ETF 候选时保持观察，不新增融资。"
     : `从量化推演或次日图谱过来后，先把 ${allVisibleEtfRows.length} 行 ETF 候选、融资现金线和缺口合成风险预算；${marginDecision}。`;
@@ -740,6 +770,19 @@ export default function MarginEtf() {
           <MetricGrid items={ordinaryPlainItems} />
           <p className="risk-note">普通结论只读本地 ETF/融资快照；页面打开、查看结果和切换入口都不会启动刷新流程、刷新外部数据或模型、改写交易策略。</p>
         </div>
+        <div aria-label="margin etf first viewport action strip">
+          <h3>首屏下一步</h3>
+          <p className="ordinary-status-note" aria-label="margin etf first viewport action sentence" aria-live="polite">{marginEtfFirstViewportActionSentence}</p>
+          <MetricGrid items={marginEtfFirstViewportActionItems} />
+          <div className="actions" aria-label="margin etf first viewport local links">
+            <a href="#margin-etf-candidate-rows" title="跳到 ETF 候选行；只读本地快照" aria-label="open etf candidate rows from first viewport">看 ETF 候选</a>
+            <a href="#margin-etf-cash-line" title="跳到融资现金线；只读本地快照" aria-label="open cash line from first viewport">看现金线</a>
+            <a href="#margin-etf-local-refresh-actions" title="跳到下方本地回放按钮；不会自动点击或创建任务" aria-label="jump local refresh actions from first viewport">本地回放按钮</a>
+            <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from first viewport action strip">换标的</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from first viewport action strip">数据能力</a>
+          </div>
+          <p className="risk-note">首屏操作条只做本地锚点跳转；不会自动刷新 ETF、不会调用 Tushare/DeepSeek/GitHub、不会创建 task、不会交易或改写策略。</p>
+        </div>
         <MetricGrid items={summaryItems} />
         <div aria-label="margin etf ordinary first screen quick read">
           <h3>现在能看什么</h3>
@@ -793,7 +836,7 @@ export default function MarginEtf() {
           </details>
           <p className="risk-note">这张承接卡只读本地 ETF/融资快照；普通链接只切换本地页面，不刷新外部数据、不启动刷新流程、不交易、不改策略。</p>
         </div>
-        <div aria-label="margin etf cash line quick read">
+        <div id="margin-etf-cash-line" aria-label="margin etf cash line quick read">
           <h3>融资现金线怎么读</h3>
           <p className="ordinary-status-note" aria-label="margin etf cash line sentence" aria-live="polite">{marginEtfCashLineSentence}</p>
           <MetricGrid items={marginEtfCashLineItems} />
@@ -826,7 +869,7 @@ export default function MarginEtf() {
           <MetricGrid items={modeLayerItems} />
         </div>
         <p className="ordinary-status-note">{text(etfPacket.evidence_summary, text(etfPacket.summary, "暂无 ETF/融资快照；先保留观察，不新增融资。"))}</p>
-        <div className="actions" aria-label="margin etf primary actions">
+        <div id="margin-etf-local-refresh-actions" className="actions" aria-label="margin etf primary actions">
           <button
             type="button"
             onClick={refresh}
@@ -862,7 +905,7 @@ export default function MarginEtf() {
       </PacketCard>
 
       <PacketCard title="ETF 候选分组" subtitle="推荐、观察、回避和排除分开看" status={noEtfRows ? "waiting" : "ready"}>
-        <div aria-label="margin etf candidate row reading guide">
+        <div id="margin-etf-candidate-rows" aria-label="margin etf candidate row reading guide">
           <h3>每行怎么读</h3>
           <p className="ordinary-status-note" aria-label="margin etf candidate row reading summary" aria-live="polite">{marginEtfCandidateReadingSummary}</p>
           <MetricGrid items={marginEtfCandidateReadingItems} />

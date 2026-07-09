@@ -88,14 +88,17 @@ class MarginEtfFrontendTests(unittest.TestCase):
     def test_margin_etf_first_screen_shows_ordinary_quick_read_before_actions(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
+        viewport_action_start = self.page.index('aria-label="margin etf first viewport action strip"', card_start)
         quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
         mode_start = self.page.index('aria-label="margin etf mode layered live light boundary"', card_start)
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
-        plain_slice = self.page[plain_start:quick_read_start]
+        plain_slice = self.page[plain_start:viewport_action_start]
         quick_read_slice = self.page[quick_read_start:mode_start]
 
         self.assertLess(card_start, plain_start)
+        self.assertLess(plain_start, viewport_action_start)
+        self.assertLess(viewport_action_start, quick_read_start)
         self.assertLess(plain_start, quick_read_start)
         self.assertLess(card_start, quick_read_start)
         self.assertLess(quick_read_start, mode_start)
@@ -196,6 +199,55 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertNotIn("postTask(", visible_slice)
         self.assertNotIn("fetch(", visible_slice)
         self.assertNotIn("TaskStatusPanel", visible_slice)
+
+    def test_margin_etf_first_viewport_action_strip_links_to_local_sections(self):
+        card_start = self.page.index('title="ETF / 融资操作台"')
+        plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
+        quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
+        visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        action_start = self.page.index('aria-label="margin etf first viewport action strip"', card_start)
+        post_research_start = self.page.index('aria-label="margin etf post research risk path"', card_start)
+        primary_actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        audit_start = self.page.index('aria-label="margin etf audit details"')
+        action_slice = self.page[action_start:quick_read_start]
+
+        self.assertLess(plain_start, action_start)
+        self.assertLess(action_start, quick_read_start)
+        self.assertLess(action_start, visible_start)
+        self.assertLess(action_start, post_research_start)
+        self.assertLess(action_start, primary_actions_start)
+        self.assertLess(action_start, audit_start)
+        self.assertIn("marginEtfFirstViewportActionSentence", self.page)
+        self.assertIn("marginEtfFirstViewportActionItems", self.page)
+        self.assertIn("首屏下一步：先看融资现金线", self.page)
+        self.assertIn("首屏下一步：先看 ${allVisibleEtfRows.length} 行 ETF 候选", self.page)
+        self.assertIn("首屏下一步", action_slice)
+        self.assertIn('aria-label="margin etf first viewport action sentence"', action_slice)
+        self.assertIn("MetricGrid items={marginEtfFirstViewportActionItems}", action_slice)
+        for label in (
+            'label: "先点哪里"',
+            'label: "看 ETF"',
+            'label: "看现金线"',
+            'label: "刷新方式"',
+            'label: "边界"',
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn('aria-label="margin etf first viewport local links"', action_slice)
+        self.assertIn('href="#margin-etf-candidate-rows"', action_slice)
+        self.assertIn('href="#margin-etf-cash-line"', action_slice)
+        self.assertIn('href="#margin-etf-local-refresh-actions"', action_slice)
+        self.assertIn('href="#candidates"', action_slice)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', action_slice)
+        self.assertIn('id="margin-etf-candidate-rows"', self.page)
+        self.assertIn('id="margin-etf-cash-line"', self.page)
+        self.assertIn('id="margin-etf-local-refresh-actions"', self.page)
+        self.assertIn("首屏操作条只做本地锚点跳转", action_slice)
+        self.assertIn("不会自动刷新 ETF、不会调用 Tushare/DeepSeek/GitHub、不会创建 task", action_slice)
+        self.assertIn("不会交易或改写策略", action_slice)
+        self.assertNotIn("onClick=", action_slice)
+        self.assertNotIn("postTask(", action_slice)
+        self.assertNotIn("fetch(", action_slice)
+        self.assertNotIn("TaskStatusPanel", action_slice)
 
     def test_margin_etf_post_research_risk_path_is_first_screen_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
