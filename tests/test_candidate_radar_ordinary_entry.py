@@ -50,6 +50,41 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar operator symbol input"', operator_slice)
         self.assertIn("确认并生成", operator_slice)
         self.assertIn("刷新本地回放", operator_slice)
+        self.assertIn("candidateRadarCompactLeadCandidateItems", self.page)
+        self.assertIn("candidateRadarCompactOperatorSubtitle", self.page)
+        self.assertIn("先看一票：", self.page)
+        self.assertIn("缺口：${candidatePoolLeadCandidateGap}", self.page)
+        self.assertIn("候选池暂无候选；${candidatePoolPlainConclusionMissing}", self.page)
+        self.assertIn("等待候选缓存；先确认一只股票或刷新本地回放", self.page)
+        self.assertIn('subtitle={candidateRadarCompactOperatorSubtitle}', operator_slice)
+        self.assertIn('aria-label="candidate radar compact lead candidate result"', operator_slice)
+        self.assertIn("首位候选速读", operator_slice)
+        self.assertIn('aria-label="candidate radar compact lead candidate sentence"', operator_slice)
+        self.assertIn("MetricGrid items={candidateRadarCompactLeadCandidateItems}", operator_slice)
+        compact_lead_start = operator_slice.index('aria-label="candidate radar compact lead candidate result"')
+        compact_lead_end = operator_slice.index('aria-label="candidate radar compact vertical slice status"', compact_lead_start)
+        compact_lead_slice = operator_slice[compact_lead_start:compact_lead_end]
+        for compact_lead_label in (
+            'label: "先看一票"',
+            'label: "分组/评分"',
+            'label: "来源/缺口"',
+            'label: "下一步"',
+            'label: "边界"',
+        ):
+            self.assertIn(compact_lead_label, self.page)
+        self.assertIn("首位候选只是复核对象；不预填、不提交、不买入", self.page)
+        self.assertIn("candidatePoolLeadReviewSentence", compact_lead_slice)
+        self.assertNotIn("onClick=", compact_lead_slice)
+        self.assertNotIn("postCandidateRadar", compact_lead_slice)
+        self.assertNotIn("launchQuantProjection", compact_lead_slice)
+        self.assertLess(
+            operator_slice.index('aria-label="candidate radar compact operator actions"'),
+            compact_lead_start,
+        )
+        self.assertLess(
+            compact_lead_start,
+            operator_slice.index('aria-label="candidate radar compact vertical slice status"'),
+        )
 
         for required_label in (
             'label: "下一步"',

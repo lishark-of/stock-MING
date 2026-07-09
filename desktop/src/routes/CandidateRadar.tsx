@@ -3228,6 +3228,38 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarCompactLeadCandidateItems: MetricItem[] = [
+    {
+      label: "先看一票",
+      value: candidatePoolLeadCandidateDisplay,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "分组/评分",
+      value: `${candidatePoolLeadCandidateGroup} / ${candidatePoolLeadCandidateScore}`,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "来源/缺口",
+      value: `${candidatePoolLeadCandidateSource}；${candidatePoolLeadCandidateGap}`,
+      tone: candidatePoolLeadCandidateGap.includes("缺") || candidatePoolLeadCandidateGap.includes("待补") || candidatePoolLeadCandidateGap.includes("阻断") ? "warn" : "good"
+    },
+    {
+      label: "下一步",
+      value: ordinaryCandidateTopCount ? "解释单票或继续看候选池" : candidatePoolPlainConclusionNext,
+      tone: candidateRadarCacheGetReadable ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "首位候选只是复核对象；不预填、不提交、不买入",
+      tone: "good"
+    }
+  ];
+  const candidateRadarCompactOperatorSubtitle = ordinaryCandidateTopCount && candidatePoolLeadCandidateTicker !== "暂无首位候选"
+    ? `先看一票：${candidatePoolLeadCandidateTicker}；${candidatePoolLeadCandidateGroup}；缺口：${candidatePoolLeadCandidateGap}`
+    : candidateRadarCacheGetReadable
+      ? `候选池暂无候选；${candidatePoolPlainConclusionMissing}`
+      : "等待候选缓存；先确认一只股票或刷新本地回放";
   const candidateRadarOpenNowPathItems: MetricItem[] = [
     {
       label: "候选池",
@@ -4568,7 +4600,7 @@ export default function CandidateRadar() {
         <StatusBadge label={candidateRadarStatusLabel} tone={cache.status === "ready" ? "good" : "neutral"} />
       </div>
 
-      <PacketCard title="下一票雷达操作台" subtitle="先看能不能用、看哪组候选、该点哪里" status={candidateRadarStatusLabel}>
+      <PacketCard title="下一票雷达操作台" subtitle={candidateRadarCompactOperatorSubtitle} status={candidateRadarStatusLabel}>
         <div className="actions" aria-label="candidate radar compact operator actions">
           <input
             value={searchSymbol}
@@ -4602,6 +4634,11 @@ export default function CandidateRadar() {
         </div>
         <p id={candidateRadarOperatorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p id={candidateRadarOperatorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        <div aria-label="candidate radar compact lead candidate result">
+          <h3>首位候选速读</h3>
+          <p className="ordinary-status-note" aria-label="candidate radar compact lead candidate sentence" aria-live="polite">{candidatePoolLeadReviewSentence}</p>
+          <MetricGrid items={candidateRadarCompactLeadCandidateItems} />
+        </div>
         <MetricGrid
           items={[
             { label: "本地联通", value: candidateRadarP0Blocked ? "未接上" : "已接上", tone: candidateRadarP0Blocked ? "bad" : "good" },
