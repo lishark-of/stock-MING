@@ -3314,6 +3314,82 @@ export default function CandidateRadar() {
       边界: "结果入口只切换本地页面；不补调 Tushare、DeepSeek、GitHub，不交易。"
     }
   ];
+  const candidateRadarConfirmButtonPrimarySentence = quantProjectionCanSubmit
+    ? `确认按钮已可点：当前 ${quantProjectionSymbolValidation.normalized} 可以进入本地投研链；点击后先看任务状态和本地回放。`
+    : quantProjectionP0Ready
+      ? `确认按钮暂不可点：${quantProjectionDisabledReason}；输入有效 A 股代码后再确认。`
+      : `确认按钮暂不可点：${quantProjectionDisabledReason}；先恢复本地 FastAPI / cache 联通。`;
+  const candidateRadarConfirmButtonPrimaryItems: MetricItem[] = [
+    {
+      label: "当前输入",
+      value: quantProjectionSymbolReady ? quantProjectionSymbolValidation.normalized : "等待有效 A 股代码",
+      tone: quantProjectionSymbolReady ? "good" : "warn"
+    },
+    {
+      label: "确认按钮",
+      value: quantProjectionCanSubmit ? "可点击" : quantProjectionDisabledReason,
+      tone: quantProjectionCanSubmit ? "good" : "warn"
+    },
+    {
+      label: "主动作",
+      value: quantProjectionCanSubmit
+        ? "去确认输入区点击一次确认并生成"
+        : quantProjectionP0Ready
+          ? "先修正输入，再看确认按钮"
+          : "先恢复本地联通，再回确认输入区",
+      tone: quantProjectionCanSubmit || quantProjectionP0Ready ? "good" : "warn"
+    },
+    {
+      label: "提交后看",
+      value: taskReceipt?.ok || quantProjectionPersistedTaskId ? "TaskStatusPanel 和最近投研结果" : "任务状态、量化推演和次日图谱",
+      tone: taskReceipt?.ok || quantProjectionPersistedTaskId || quantProjectionCanSubmit ? "good" : "neutral"
+    },
+    {
+      label: "禁用原因",
+      value: quantProjectionSubmitDisabled ? quantProjectionDisabledReason : "按钮可用；仍需用户手动点击",
+      tone: quantProjectionSubmitDisabled ? "warn" : "good"
+    },
+    {
+      label: "不会发生",
+      value: "这张卡不提交、不 POST、不调用 Tushare/DeepSeek/GitHub",
+      tone: "good"
+    },
+    {
+      label: "边界",
+      value: "确认只生成本地研究任务；不是买入、卖出、加仓或融资指令",
+      tone: "good"
+    }
+  ];
+  const candidateRadarConfirmButtonPrimaryRows = [
+    {
+      读法: "1. 输入校验",
+      当前状态: quantProjectionInputValidation,
+      用户下一步: quantProjectionSymbolReady ? "看确认按钮是否可点。" : "输入 6 位 A 股代码或带 .SZ/.SH/.BJ 后缀。",
+      证据: "searchSymbol / normalizeAshareSymbolInput",
+      边界: "输入只做本地校验；不会创建 task、不会调用 provider/model。"
+    },
+    {
+      读法: "2. 按钮状态",
+      当前状态: quantProjectionCanSubmit ? "确认按钮可点。" : quantProjectionDisabledReason,
+      用户下一步: quantProjectionCanSubmit ? "跳到确认输入区，点击一次确认并生成。" : "先处理禁用原因。",
+      证据: "quantProjectionCanSubmit / quantProjectionSubmitDisabled",
+      边界: "只有原确认按钮 onClick 会创建本地 POST task；本卡片链接不会提交。"
+    },
+    {
+      读法: "3. 点击后看",
+      当前状态: quantProjectionReplayDestinationState,
+      用户下一步: "看 TaskStatusPanel、最近投研结果、量化推演和次日图谱。",
+      证据: "taskReceipt / taskIndex / quant projection cache replay",
+      边界: "状态和结果只读本地 task/cache/ledger/packet；不会补调 provider/model。"
+    },
+    {
+      读法: "4. 安全边界",
+      当前状态: "确认按钮是本地研究入口，不是交易入口。",
+      用户下一步: "需要换票时回确认输入区重新输入并确认。",
+      证据: "local route anchors + POST task boundary copy",
+      边界: "不交易、不改持仓、不改 strategy action。"
+    }
+  ];
   const candidateRadarRecentResearchResultSentence =
     quantProjectionInterpretationReady || quantProjectionSmallDataReady
       ? `最近投研结果可回放：${quantProjectionOrdinaryResultSummary}`
@@ -3384,6 +3460,84 @@ export default function CandidateRadar() {
       用户下一步: quantProjectionReplayDestinationNextStep,
       证据: "ordinary_replay_destination_rows / local route anchors",
       边界: quantProjectionReplayBoundary
+    }
+  ];
+  const candidatePoolEmptyStatePrimarySentence = candidatePoolPlainConclusionStatus === "empty_cache"
+    ? "候选池为空：现在先回确认输入区输入一只 A 股，点确认后等待本地投研结果；这张卡本身不创建任务。"
+    : candidatePoolPlainConclusionStatus === "p0_check"
+      ? "候选池暂不可读：先恢复本地连接，再回候选池或确认输入区。"
+      : `候选池已有复核对象：先看 ${candidatePoolLeadCandidateDisplay}；需要换票再回确认输入区。`;
+  const candidatePoolEmptyStatePrimaryItems: MetricItem[] = [
+    {
+      label: "当前状态",
+      value: candidatePoolPlainConclusionText,
+      tone: candidatePoolPlainConclusionStatus === "ready" ? "good" : "warn"
+    },
+    {
+      label: "主动作",
+      value: quantProjectionCanSubmit
+        ? `回确认输入区，点击确认 ${quantProjectionSymbolValidation.normalized}`
+        : quantProjectionP0Ready
+          ? "回确认输入区，输入 6 位 A 股代码后再确认"
+          : "先恢复本地 FastAPI / cache 联通",
+      tone: quantProjectionCanSubmit || quantProjectionP0Ready ? "good" : "warn"
+    },
+    {
+      label: "可回放",
+      value: quantProjectionReplayDestinationState,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "来源",
+      value: `${coarseFineSourceLabel}；GET cache 只读`,
+      tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: candidatePoolPlainConclusionMissing,
+      tone: candidatePoolPlainConclusionStatus === "ready" ? "good" : "warn"
+    },
+    {
+      label: "不会发生",
+      value: "本卡片不快扫、不 POST、不调用 provider/model/worker",
+      tone: "good"
+    },
+    {
+      label: "边界",
+      value: ordinaryCandidateGroupBoundary,
+      tone: "good"
+    }
+  ];
+  const candidatePoolEmptyStatePrimaryRows = [
+    {
+      读法: "1. 空候选判断",
+      当前状态: `${candidatePoolPlainConclusionStatus}；${ordinaryCandidateGroupLabel}`,
+      用户下一步: candidatePoolPlainConclusionStatus === "empty_cache"
+        ? "先回确认输入区输入或确认一只股票。"
+        : "先按已有候选或当前阻断状态复核。",
+      证据: "candidate_rows length / top_watch_excluded_group_rows / candidatePoolPlainConclusionStatus",
+      边界: "空候选只说明本地候选 cache 暂无对象；不是全市场扫描结论。"
+    },
+    {
+      读法: "2. 主动作",
+      当前状态: quantProjectionCanSubmit ? `确认按钮可用于 ${quantProjectionSymbolValidation.normalized}` : quantProjectionDisabledReason,
+      用户下一步: quantProjectionCanSubmit ? "点击确认按钮，等待 TaskStatusPanel 或本地 cache 回写。" : "先处理输入格式或本地联通阻断。",
+      证据: "quantProjectionCanSubmit / normalizeAshareSymbolInput",
+      边界: "只有确认按钮才创建本地投研 task；本卡片链接不创建 task。"
+    },
+    {
+      读法: "3. 本地回放",
+      当前状态: quantProjectionReplayDestinationState,
+      用户下一步: "有结果就看量化推演和次日图谱；没有结果就回确认输入。",
+      证据: "task receipt / quant projection cache replay",
+      边界: "回放只读本地 cache / ledger / packet；不会补调 Tushare、DeepSeek 或 GitHub。"
+    },
+    {
+      读法: "4. 边界",
+      当前状态: ordinaryCandidateGroupBoundary,
+      用户下一步: "候选、推演和图谱都只作为研究复核入口。",
+      证据: "local route anchors only",
+      边界: "不交易、不改持仓、不改 strategy action，不把空候选变成买入建议。"
     }
   ];
   const candidateRadarUserRouteQaSummary = candidateRadarUserRouteQaPassed
@@ -4254,6 +4408,23 @@ export default function CandidateRadar() {
             </details>
             <p className="risk-note">输入股票只是本地会话状态；只有确认按钮点击才进入按钮门控 POST task。结果链接只做本地页面跳转，不交易、不改交易策略。</p>
           </div>
+          <div aria-label="candidate radar confirm button primary status card">
+            <h3>确认按钮现在能不能点</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar confirm button primary status sentence" aria-live="polite">{candidateRadarConfirmButtonPrimarySentence}</p>
+            <MetricGrid items={candidateRadarConfirmButtonPrimaryItems} />
+            <div className="actions" aria-label="candidate radar confirm button primary status links">
+              <a href="#candidate-radar-search-quant-projection" title="跳到真正的确认输入区；只有那里的确认按钮会创建本地任务" aria-label="open real confirm input from confirm button status">去确认输入区</a>
+              <a href="#tasks" title="切换到任务状态；只读本地 task index" aria-label="open task status from confirm button status">任务状态</a>
+              <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from confirm button status">量化推演</a>
+              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from confirm button status">次日图谱</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar confirm button primary status rows">
+              <summary>查看按钮状态读法</summary>
+              <p className="risk-note">这张按钮状态卡只读本地输入校验、按钮禁用原因、task/status 和 cache 回放；不会提交表单、不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <DataLineageTable rows={candidateRadarConfirmButtonPrimaryRows} />
+            </details>
+            <p className="risk-note">真正会创建本地研究任务的只有确认输入区的确认按钮；本卡片链接只帮助定位，不买卖、不改持仓、不改 strategy action。</p>
+          </div>
           <div aria-label="candidate radar recent research result card">
             <h3>确认后最近投研结果</h3>
             <p className="ordinary-status-note" aria-label="candidate radar recent research result sentence" aria-live="polite">{candidateRadarRecentResearchResultSentence}</p>
@@ -4288,6 +4459,23 @@ export default function CandidateRadar() {
               <DataLineageTable rows={candidatePoolLeadReviewRows} />
             </details>
             <p className="risk-note">首位候选只是复核顺序，不是推荐买入；理由、来源或缺口不足时按 degraded 显示，不重排、不重算、不改交易策略。</p>
+          </div>
+          <div aria-label="candidate radar empty pool primary action card">
+            <h3>候选池为空时现在点哪</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar empty pool primary action sentence" aria-live="polite">{candidatePoolEmptyStatePrimarySentence}</p>
+            <MetricGrid items={candidatePoolEmptyStatePrimaryItems} />
+            <div className="actions" aria-label="candidate radar empty pool primary action links">
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from empty candidate pool action">确认输入</a>
+              <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from empty candidate pool action">候选池</a>
+              <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from empty candidate pool action">量化推演</a>
+              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from empty candidate pool action">次日图谱</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar empty pool primary action rows">
+              <summary>查看空池读法</summary>
+              <p className="risk-note">这张空池动作卡只读 candidate cache、确认输入状态和最近本地回放；不会创建 task、不会快扫、不会调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <DataLineageTable rows={candidatePoolEmptyStatePrimaryRows} />
+            </details>
+            <p className="risk-note">空候选池不是买入或清仓信号；主动作只是去确认输入区生成本地研究回放，候选池和结果页继续按 degraded 显示缺口。</p>
           </div>
           <div aria-label="candidate radar user route qa latest evidence">
             <h3>本轮路线 QA</h3>

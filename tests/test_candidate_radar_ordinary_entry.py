@@ -166,6 +166,47 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postCandidateRadar", typed_symbol_slice)
         self.assertNotIn("launchQuantProjection", typed_symbol_slice)
         self.assertLess(visible_now_start, typed_symbol_start)
+        self.assertIn("candidateRadarConfirmButtonPrimarySentence", self.page)
+        self.assertIn("candidateRadarConfirmButtonPrimaryItems", self.page)
+        self.assertIn("candidateRadarConfirmButtonPrimaryRows", self.page)
+        self.assertIn('aria-label="candidate radar confirm button primary status card"', summary_primary_slice)
+        self.assertIn("确认按钮现在能不能点", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar confirm button primary status sentence"', summary_primary_slice)
+        self.assertIn("MetricGrid items={candidateRadarConfirmButtonPrimaryItems}", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar confirm button primary status links"', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar confirm button primary status rows"', summary_primary_slice)
+        self.assertIn("<summary>查看按钮状态读法</summary>", summary_primary_slice)
+        self.assertIn("DataLineageTable rows={candidateRadarConfirmButtonPrimaryRows}", summary_primary_slice)
+        self.assertIn("真正会创建本地研究任务的只有确认输入区的确认按钮", summary_primary_slice)
+        confirm_button_status_start = summary_primary_slice.index('aria-label="candidate radar confirm button primary status card"')
+        confirm_button_status_end = summary_primary_slice.index('aria-label="candidate radar recent research result card"', confirm_button_status_start)
+        confirm_button_status_slice = summary_primary_slice[confirm_button_status_start:confirm_button_status_end]
+        for confirm_button_status_label in (
+            'label: "当前输入"',
+            'label: "确认按钮"',
+            'label: "主动作"',
+            'label: "提交后看"',
+            'label: "禁用原因"',
+            'label: "不会发生"',
+            'label: "边界"',
+        ):
+            self.assertIn(confirm_button_status_label, self.page)
+        for confirm_button_status_row in (
+            '读法: "1. 输入校验"',
+            '读法: "2. 按钮状态"',
+            '读法: "3. 点击后看"',
+            '读法: "4. 安全边界"',
+        ):
+            self.assertIn(confirm_button_status_row, self.page)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', confirm_button_status_slice)
+        self.assertIn('href="#tasks"', confirm_button_status_slice)
+        self.assertIn('href="#factor"', confirm_button_status_slice)
+        self.assertIn('href="#next"', confirm_button_status_slice)
+        self.assertIn("不会提交表单、不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", confirm_button_status_slice)
+        self.assertNotIn("onClick=", confirm_button_status_slice)
+        self.assertNotIn("launchQuantProjection", confirm_button_status_slice)
+        self.assertNotIn("postCandidateRadar", confirm_button_status_slice)
+        self.assertLess(typed_symbol_start, confirm_button_status_start)
         self.assertIn("candidateRadarRecentResearchResultSentence", self.page)
         self.assertIn("candidateRadarRecentResearchResultItems", self.page)
         self.assertIn("candidateRadarRecentResearchResultRows", self.page)
@@ -206,7 +247,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", recent_result_slice)
         self.assertNotIn("postCandidateRadar", recent_result_slice)
         self.assertNotIn("launchQuantProjection", recent_result_slice)
-        self.assertLess(typed_symbol_start, recent_result_start)
+        self.assertLess(confirm_button_status_start, recent_result_start)
         self.assertIn("candidatePoolLeadReviewSentence", self.page)
         self.assertIn("candidatePoolLeadReviewItems", self.page)
         self.assertIn("candidatePoolLeadReviewRows", self.page)
@@ -249,6 +290,49 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launchQuickScan", lead_candidate_slice)
         self.assertNotIn("postCandidateRadar", lead_candidate_slice)
         self.assertLess(recent_result_start, lead_candidate_start)
+        self.assertIn("candidatePoolEmptyStatePrimarySentence", self.page)
+        self.assertIn("candidatePoolEmptyStatePrimaryItems", self.page)
+        self.assertIn("candidatePoolEmptyStatePrimaryRows", self.page)
+        self.assertIn('aria-label="candidate radar empty pool primary action card"', summary_primary_slice)
+        self.assertIn("候选池为空时现在点哪", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar empty pool primary action sentence"', summary_primary_slice)
+        self.assertIn("MetricGrid items={candidatePoolEmptyStatePrimaryItems}", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar empty pool primary action links"', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar empty pool primary action rows"', summary_primary_slice)
+        self.assertIn("<summary>查看空池读法</summary>", summary_primary_slice)
+        self.assertIn("DataLineageTable rows={candidatePoolEmptyStatePrimaryRows}", summary_primary_slice)
+        self.assertIn("空候选池不是买入或清仓信号", summary_primary_slice)
+        empty_pool_action_start = summary_primary_slice.index('aria-label="candidate radar empty pool primary action card"')
+        empty_pool_action_end = summary_primary_slice.index('aria-label="candidate radar user route qa latest evidence"', empty_pool_action_start)
+        empty_pool_action_slice = summary_primary_slice[empty_pool_action_start:empty_pool_action_end]
+        for empty_pool_action_label in (
+            'label: "当前状态"',
+            'label: "主动作"',
+            'label: "可回放"',
+            'label: "来源"',
+            'label: "缺口"',
+            'label: "不会发生"',
+            'label: "边界"',
+        ):
+            self.assertIn(empty_pool_action_label, self.page)
+        for empty_pool_action_row in (
+            '读法: "1. 空候选判断"',
+            '读法: "2. 主动作"',
+            '读法: "3. 本地回放"',
+            '读法: "4. 边界"',
+        ):
+            self.assertIn(empty_pool_action_row, self.page)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', empty_pool_action_slice)
+        self.assertIn('href="#candidate-pool"', empty_pool_action_slice)
+        self.assertIn('href="#factor"', empty_pool_action_slice)
+        self.assertIn('href="#next"', empty_pool_action_slice)
+        self.assertIn("不会创建 task、不会快扫、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", empty_pool_action_slice)
+        self.assertNotIn("onClick=", empty_pool_action_slice)
+        self.assertNotIn("launchQuickScan", empty_pool_action_slice)
+        self.assertNotIn("postCandidateRadar", empty_pool_action_slice)
+        self.assertNotIn("launchQuantProjection", empty_pool_action_slice)
+        self.assertLess(lead_candidate_start, empty_pool_action_start)
+        self.assertLess(empty_pool_action_start, summary_primary_slice.index('aria-label="candidate radar user route qa latest evidence"'))
         self.assertIn("getAuditCache", self.page)
         self.assertIn("user_route_qa_evidence_contract", self.page)
         self.assertIn("candidateRadarUserRouteQaSummary", self.page)
