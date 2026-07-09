@@ -19,11 +19,21 @@ class DataCapabilityFrontendTests(unittest.TestCase):
         self.assertIn("dataCapabilityTushareSummary", self.page)
         self.assertIn("dataCapabilityTushareNextStep", self.page)
         self.assertIn("dataCapabilityTushareOrdinaryItems", self.page)
+        self.assertIn("dataCapabilityTushareResultCardSentence", self.page)
+        self.assertIn("dataCapabilityTushareResultCardItems", self.page)
+        self.assertIn("dataCapabilityTushareDegradedResultRows", self.page)
         self.assertIn("dataCapabilityTushareReadableRows", self.page)
         self.assertIn("dataCapabilityTushareResultHandoffRows", self.page)
         self.assertIn("普通用户先看：可用、受限、待补和下一步", card)
         self.assertIn('aria-label="data capability tushare ordinary summary"', card)
         self.assertIn("MetricGrid items={dataCapabilityTushareOrdinaryItems}", card)
+        self.assertIn('aria-label="data capability tushare degraded result card"', card)
+        self.assertIn("确认后数据卡怎么读", card)
+        self.assertIn('aria-label="data capability tushare degraded result sentence"', card)
+        self.assertIn("MetricGrid items={dataCapabilityTushareResultCardItems}", card)
+        self.assertIn('aria-label="data capability tushare degraded result rows"', card)
+        self.assertIn("<summary>查看 degraded 读法</summary>", card)
+        self.assertIn("DataLineageTable rows={dataCapabilityTushareDegradedResultRows}", card)
         self.assertIn('aria-label="data capability tushare readable rows"', card)
         self.assertIn("DataLineageTable rows={dataCapabilityTushareReadableRows}", card)
         self.assertIn('aria-label="data capability tushare result handoff actions"', card)
@@ -46,8 +56,21 @@ class DataCapabilityFrontendTests(unittest.TestCase):
             'label: "待补/缓存"',
             'label: "用户下一步"',
             'label: "安全边界"',
+            'label: "结果读法"',
+            'label: "来源层"',
+            'label: "确认后看"',
+            'label: "degraded 含义"',
+            'label: "不会发生"',
         ):
             self.assertIn(label, self.page)
+        self.assertIn("权限不足、空窗口、缓存陈旧或待补证据；不是低风险结论", self.page)
+        self.assertIn("degraded / pending 不是安全信号", self.page)
+        self.assertIn("需要真实补证必须另行授权按钮门控 provider run", self.page)
+        self.assertIn("不生成买入、卖出、加仓、融资或交易动作", self.page)
+        self.assertLess(
+            card.index('aria-label="data capability tushare degraded result card"'),
+            card.index('aria-label="data capability tushare readable rows"'),
+        )
         self.assertIn("GET cache 只读；不 ping Tushare、DeepSeek、GitHub，不创建 task、不交易", self.page)
         self.assertIn("不能当作无数据或低风险", self.page)
         self.assertIn("不会把权限不足、空窗口或缓存降级解释成无风险", card)

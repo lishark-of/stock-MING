@@ -105,6 +105,65 @@ export default function DataCapabilityConsole() {
       tone: "good"
     }
   ];
+  const dataCapabilityTushareResultCardState = tushareRestrictedCount
+    ? "degraded：存在权限/配置受限，不能当作无数据"
+    : tusharePendingCount
+      ? "degraded：存在空窗口、缓存或待补接口，先按保守处理"
+      : tushareAvailableCount
+        ? "ready：已有 Tushare 本地账本可回放"
+        : "missing：等待本地 data health 账本";
+  const dataCapabilityTushareResultCardSentence = `确认股票后先看数据卡：${dataCapabilityTushareResultCardState}；再回首页、下一票雷达、量化推演或次日图谱读结果。`;
+  const dataCapabilityTushareResultCardItems: MetricItem[] = [
+    {
+      label: "结果读法",
+      value: dataCapabilityTushareResultCardState,
+      tone: tushareRestrictedCount || tusharePendingCount ? "warn" : tushareAvailableCount ? "good" : "neutral"
+    },
+    {
+      label: "来源层",
+      value: tushareHealthRows.length ? "data_health_ledger rows" : Object.keys(tushareProviderCard).length ? "provider_cards summary" : "missing local ledger",
+      tone: tushareHealthRows.length || Object.keys(tushareProviderCard).length ? "good" : "warn"
+    },
+    {
+      label: "确认后看",
+      value: "首页当前标的、下一票雷达确认链、Factor 支持/压制、Next 图谱",
+      tone: "good"
+    },
+    {
+      label: "degraded 含义",
+      value: "权限不足、空窗口、缓存陈旧或待补证据；不是低风险结论",
+      tone: tushareRestrictedCount || tusharePendingCount || !tushareAvailableCount ? "warn" : "good"
+    },
+    {
+      label: "不会发生",
+      value: "不刷新 provider、不调用模型、不创建 task、不交易",
+      tone: "good"
+    }
+  ];
+  const dataCapabilityTushareDegradedResultRows = [
+    {
+      步骤: "1. 先确认读法",
+      当前状态: dataCapabilityTushareResultCardState,
+      用户下一步: tushareRestrictedCount || tusharePendingCount
+        ? "把结果页标为 degraded/pending，先复核权限、空窗口、缓存时间和 call_ledger。"
+        : tushareAvailableCount
+          ? "把可用接口当作本地证据来源，再去结果页读结论。"
+          : "等待本地 data health 账本，不把空账本当作无风险。",
+      边界: "只读本地 data capability / data health cache；不调用 Tushare。"
+    },
+    {
+      步骤: "2. 再看结果入口",
+      当前状态: "本页只解释数据能力，不替用户下结论",
+      用户下一步: "回首页、下一票雷达、股票量化推演和次日图谱读同一条确认链的结果。",
+      边界: "链接只切换本地页面或锚点；不创建 task、不调用 DeepSeek。"
+    },
+    {
+      步骤: "3. 最后看风险边界",
+      当前状态: "degraded / pending 不是安全信号",
+      用户下一步: "缺数据时维持保守口径；需要真实补证必须另行授权按钮门控 provider run。",
+      边界: "不生成买入、卖出、加仓、融资或交易动作。"
+    }
+  ];
   const dataCapabilityTushareReadableRows = (tushareHealthRows.length ? tushareHealthRows : recoveryActions.filter(isTushareRow)).slice(0, 8).map((row, index) => {
     const state = displayText(row.capability_state ?? row.state ?? row.status ?? row.status_label, "waiting");
     return {
@@ -176,6 +235,16 @@ export default function DataCapabilityConsole() {
       <PacketCard title="Tushare 数据能力速读" subtitle="普通用户先看：可用、受限、待补和下一步" status={String(cache.status ?? "missing")}>
         <p className="ordinary-status-note" aria-label="data capability tushare ordinary summary" aria-live="polite">{dataCapabilityTushareSummary}</p>
         <MetricGrid items={dataCapabilityTushareOrdinaryItems} />
+        <div aria-label="data capability tushare degraded result card">
+          <h3>确认后数据卡怎么读</h3>
+          <p className="ordinary-status-note" aria-label="data capability tushare degraded result sentence" aria-live="polite">{dataCapabilityTushareResultCardSentence}</p>
+          <MetricGrid items={dataCapabilityTushareResultCardItems} />
+          <details className="developer-audit-details" aria-label="data capability tushare degraded result rows">
+            <summary>查看 degraded 读法</summary>
+            <p className="risk-note">这张表只把 Tushare 可用、受限、待补和结果入口翻成用户读法；不刷新 provider、不创建任务、不调用模型。</p>
+            <DataLineageTable rows={dataCapabilityTushareDegradedResultRows} />
+          </details>
+        </div>
         <div aria-label="data capability tushare readable rows">
           <DataLineageTable rows={dataCapabilityTushareReadableRows} />
         </div>
