@@ -24,6 +24,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         operator_start = self.page.index('title="下一票雷达操作台"')
         operator_end = self.page.index('title="普通用户雷达摘要"', operator_start)
         operator_slice = self.page[operator_start:operator_end]
+        self.assertLess(operator_start, self.page.index("<PageStateBanner"))
         self.assertIn("candidateRadarCompactVerticalSliceItems", self.page)
         self.assertIn('aria-label="candidate radar compact vertical slice status"', operator_slice)
         self.assertIn("当前纵切状态", operator_slice)
@@ -39,9 +40,16 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("无 active degraded；缺口：", self.page)
         self.assertIn("只做本地投研证据回放；不是买入/卖出/加仓指令", self.page)
         self.assertLess(
-            operator_slice.index('aria-label="candidate radar compact vertical slice status"'),
             operator_slice.index('aria-label="candidate radar compact operator actions"'),
+            operator_slice.index("MetricGrid"),
         )
+        self.assertLess(
+            operator_slice.index('aria-label="candidate radar compact operator actions"'),
+            operator_slice.index('aria-label="candidate radar compact vertical slice status"'),
+        )
+        self.assertIn('aria-label="candidate radar operator symbol input"', operator_slice)
+        self.assertIn("确认并生成", operator_slice)
+        self.assertIn("刷新本地回放", operator_slice)
 
         for required_label in (
             'label: "下一步"',

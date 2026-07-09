@@ -4568,34 +4568,7 @@ export default function CandidateRadar() {
         <StatusBadge label={candidateRadarStatusLabel} tone={cache.status === "ready" ? "good" : "neutral"} />
       </div>
 
-      <PageStateBanner
-        loading={loading}
-        error={error}
-        empty={empty}
-        emptyTitle="暂无下一票雷达本地缓存"
-        emptyDetail="雷达页只读取本地候选缓存；不会在页面打开或 React 渲染中自动扫描全市场。"
-      />
-
       <PacketCard title="下一票雷达操作台" subtitle="先看能不能用、看哪组候选、该点哪里" status={candidateRadarStatusLabel}>
-        <MetricGrid
-          items={[
-            { label: "本地联通", value: candidateRadarP0Blocked ? "未接上" : "已接上", tone: candidateRadarP0Blocked ? "bad" : "good" },
-            { label: "当前标的", value: quantProjectionDisplaySymbol || "等待输入" },
-            { label: "候选分组", value: ordinaryCandidateGroupLabel, tone: ordinaryCandidateTopCount ? "good" : "warn" },
-            { label: "来源", value: coarseFineSourceLabel, tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn" },
-            { label: "最近结果", value: quantProjectionP3OrdinaryReadableSentence, tone: quantProjectionP3OrdinaryReadableSentence.includes("等待") ? "warn" : "good" },
-            { label: "缺口", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") ? "warn" : "good" },
-            { label: "退旧雷达", value: ordinaryRetirementReadinessStateLabel, tone: productionStageScopeManifest.production_radar_replacement_complete === true ? "good" : "warn" },
-            { label: "页面 QA", value: ordinaryBrowserQaStatusLabel, tone: browserQaReview.local_browser_qa_review_ready === true || browserQaEvidence.candidate_browser_qa_evidence_ready === true ? "good" : "warn" },
-            { label: "下一步", value: ordinaryPrimaryActionLabel },
-            { label: "边界", value: "候选不是买入指令；不交易", tone: "good" }
-          ]}
-        />
-        <div aria-label="candidate radar compact vertical slice status">
-          <h3>当前纵切状态</h3>
-          <p className="ordinary-status-note">输入、确认、最近结果、候选池和缺口先给结论；降级或待补会直接显示，不进入买卖动作。</p>
-          <MetricGrid items={candidateRadarCompactVerticalSliceItems} />
-        </div>
         <div className="actions" aria-label="candidate radar compact operator actions">
           <input
             value={searchSymbol}
@@ -4629,9 +4602,36 @@ export default function CandidateRadar() {
         </div>
         <p id={candidateRadarOperatorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p id={candidateRadarOperatorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        <MetricGrid
+          items={[
+            { label: "本地联通", value: candidateRadarP0Blocked ? "未接上" : "已接上", tone: candidateRadarP0Blocked ? "bad" : "good" },
+            { label: "当前标的", value: quantProjectionDisplaySymbol || "等待输入" },
+            { label: "候选分组", value: ordinaryCandidateGroupLabel, tone: ordinaryCandidateTopCount ? "good" : "warn" },
+            { label: "来源", value: coarseFineSourceLabel, tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn" },
+            { label: "最近结果", value: quantProjectionP3OrdinaryReadableSentence, tone: quantProjectionP3OrdinaryReadableSentence.includes("等待") ? "warn" : "good" },
+            { label: "缺口", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") ? "warn" : "good" },
+            { label: "退旧雷达", value: ordinaryRetirementReadinessStateLabel, tone: productionStageScopeManifest.production_radar_replacement_complete === true ? "good" : "warn" },
+            { label: "页面 QA", value: ordinaryBrowserQaStatusLabel, tone: browserQaReview.local_browser_qa_review_ready === true || browserQaEvidence.candidate_browser_qa_evidence_ready === true ? "good" : "warn" },
+            { label: "下一步", value: ordinaryPrimaryActionLabel },
+            { label: "边界", value: "候选不是买入指令；不交易", tone: "good" }
+          ]}
+        />
+        <div aria-label="candidate radar compact vertical slice status">
+          <h3>当前纵切状态</h3>
+          <p className="ordinary-status-note">输入、确认、最近结果、候选池和缺口先给结论；降级或待补会直接显示，不进入买卖动作。</p>
+          <MetricGrid items={candidateRadarCompactVerticalSliceItems} />
+        </div>
         <p className="risk-note">退旧雷达前还缺什么：{ordinaryRetirementReadinessMainGaps}；页面 QA：{ordinaryBrowserQaStatusLabel}。</p>
         <p className="risk-note">{ordinaryCandidateGroupBoundary} 页面打开、输入、GET cache 和 React render 都不会自动外联。</p>
       </PacketCard>
+
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={empty}
+        emptyTitle="暂无下一票雷达本地缓存"
+        emptyDetail="雷达页只读取本地候选缓存；不会在页面打开或 React 渲染中自动扫描全市场。"
+      />
 
       <PacketCard title="普通用户雷达摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={candidateRadarStatusLabel}>
         <div aria-label="candidate radar ordinary user first summary">
