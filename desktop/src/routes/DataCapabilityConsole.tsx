@@ -2,9 +2,37 @@ import { useEffect, useState } from "react";
 import { getDataCapabilityCache } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
-import MetricGrid from "../components/MetricGrid";
+import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
+
+function displayText(value: unknown, fallback = "--") {
+  if (value === undefined || value === null || value === "") return fallback;
+  return String(value);
+}
+
+function isTushareRow(row: Record<string, unknown>) {
+  return displayText(row.provider, "").toLowerCase() === "tushare" || displayText(row.source, "").includes("Tushare");
+}
+
+function isAvailableState(value: unknown) {
+  const text = displayText(value, "").toLowerCase();
+  return text.includes("available") || text.includes("ready") || text.includes("可用");
+}
+
+function isRestrictedState(value: unknown) {
+  const text = displayText(value, "").toLowerCase();
+  return text.includes("permission") || text.includes("restricted") || text.includes("denied") || text.includes("权限");
+}
+
+function isPendingState(value: unknown) {
+  const text = displayText(value, "").toLowerCase();
+  return text.includes("empty") || text.includes("stale") || text.includes("fallback") || text.includes("manual") || text.includes("pending") || text.includes("跳过") || text.includes("缓存") || text.includes("无数据");
+}
+
+function countRows(rows: Array<Record<string, unknown>>, matcher: (value: unknown) => boolean) {
+  return rows.filter((row) => matcher(row.capability_state ?? row.state ?? row.status ?? row.status_label)).length;
+}
 
 export default function DataCapabilityConsole() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
@@ -29,6 +57,69 @@ export default function DataCapabilityConsole() {
   const healthRows = (healthLedger.rows as Array<Record<string, unknown>> | undefined) ?? [];
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
+  const tushareProviderCard = providerCards.find((card) => isTushareRow(card)) ?? {};
+  const tushareHealthRows = healthRows.filter(isTushareRow);
+  const tushareAvailableCount = Number(tushareProviderCard.available_count ?? countRows(tushareHealthRows, isAvailableState));
+  const tushareRestrictedCount = Number(tushareProviderCard.restricted_count ?? countRows(tushareHealthRows, isRestrictedState));
+  const tusharePendingCount = Number(tushareProviderCard.pending_count ?? countRows(tushareHealthRows, isPendingState));
+  const tushareRecoveryAction = recoveryActions.find((action) => isTushareRow(action)) ?? {};
+  const dataCapabilityTushareSummary = tushareHealthRows.length || Object.keys(tushareProviderCard).length
+    ? `Tushare 本地账本可读：可用 ${tushareAvailableCount}，受限 ${tushareRestrictedCount}，待补/缓存 ${tusharePendingCount}。`
+    : "Tushare 数据能力等待本地账本；页面打开只显示 degraded，不自动探测接口。";
+  const dataCapabilityTushareNextStep = tushareRestrictedCount || tusharePendingCount
+    ? `先看受限/待补接口原因；需要更新时走按钮门控任务，当前建议：${displayText(tushareRecoveryAction.action_label, "继续只读本地缓存")}`
+    : tushareAvailableCount
+      ? "可用接口只作为本地证据来源；继续回首页、下一票雷达、量化推演和次日图谱读结果。"
+      : "等待本地 data health 回放；不要把空账本当作无风险。";
+  const dataCapabilityTushareTone: MetricItem["tone"] =
+    tushareRestrictedCount ? "warn" : tushareAvailableCount ? "good" : "neutral";
+  const dataCapabilityTushareOrdinaryItems: MetricItem[] = [
+    {
+      label: "Tushare 数据",
+      value: dataCapabilityTushareSummary,
+      tone: dataCapabilityTushareTone
+    },
+    {
+      label: "可用接口",
+      value: tushareAvailableCount ? `${tushareAvailableCount} 个可用` : "等待可用接口回放",
+      tone: tushareAvailableCount ? "good" : "warn"
+    },
+    {
+      label: "受限接口",
+      value: tushareRestrictedCount ? `${tushareRestrictedCount} 个权限/配置受限` : "未标记受限",
+      tone: tushareRestrictedCount ? "warn" : "good"
+    },
+    {
+      label: "待补/缓存",
+      value: tusharePendingCount ? `${tusharePendingCount} 个仍需窗口/缓存/手动复核` : "未标记待补",
+      tone: tusharePendingCount ? "warn" : "good"
+    },
+    {
+      label: "用户下一步",
+      value: dataCapabilityTushareNextStep,
+      tone: tushareAvailableCount ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "GET cache 只读；不 ping Tushare、DeepSeek、GitHub，不创建 task、不交易",
+      tone: "good"
+    }
+  ];
+  const dataCapabilityTushareReadableRows = (tushareHealthRows.length ? tushareHealthRows : recoveryActions.filter(isTushareRow)).slice(0, 8).map((row, index) => {
+    const state = displayText(row.capability_state ?? row.state ?? row.status ?? row.status_label, "waiting");
+    return {
+      序号: index + 1,
+      接口: displayText(row.api ?? row.label, "Tushare 接口"),
+      当前状态: displayText(row.status_label ?? row.status ?? state, state),
+      用户读法: isAvailableState(state)
+        ? "可作为本地证据来源，仍需看对应结果页。"
+        : isRestrictedState(state)
+          ? "权限/配置受限，不能当作无数据或低风险。"
+          : "按缓存、空窗口或待补处理，先保持保守。",
+      下一步: displayText(row.next_action ?? row.action_label, dataCapabilityTushareNextStep),
+      边界: "只读本地数据能力账本；不从页面打开触发 provider、模型或交易。"
+    };
+  });
 
   const providerRows = providerCards.map((card) => ({
     provider: card.provider,
@@ -55,6 +146,15 @@ export default function DataCapabilityConsole() {
         <h1>数据能力</h1>
         <StatusBadge label={String(cache.status ?? "missing")} tone={cache.status === "ready" ? "good" : "neutral"} />
       </div>
+
+      <PacketCard title="Tushare 数据能力速读" subtitle="普通用户先看：可用、受限、待补和下一步" status={String(cache.status ?? "missing")}>
+        <p className="ordinary-status-note" aria-label="data capability tushare ordinary summary" aria-live="polite">{dataCapabilityTushareSummary}</p>
+        <MetricGrid items={dataCapabilityTushareOrdinaryItems} />
+        <div aria-label="data capability tushare readable rows">
+          <DataLineageTable rows={dataCapabilityTushareReadableRows} />
+        </div>
+        <p className="risk-note">这张卡只整理本地 data capability / data health cache；不会在页面打开时调用 Tushare、DeepSeek、GitHub，不会创建 task，不会把权限不足、空窗口或缓存降级解释成无风险，也不会生成买入、加仓或融资指令。</p>
+      </PacketCard>
 
       <MetricGrid
         items={[
