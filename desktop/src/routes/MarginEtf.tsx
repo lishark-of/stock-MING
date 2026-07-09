@@ -291,6 +291,78 @@ export default function MarginEtf() {
       tone: "good"
     }
   ];
+  const marginEtfPostResearchRiskPathSentence = noEtfRows
+    ? "从量化推演或次日图谱过来后，ETF/融资先显示降级风险预算：没有 ETF 候选时保持观察，不新增融资。"
+    : `从量化推演或次日图谱过来后，先把 ${allVisibleEtfRows.length} 行 ETF 候选、融资现金线和缺口合成风险预算；${marginDecision}。`;
+  const marginEtfPostResearchRiskPathItems: MetricItem[] = [
+    {
+      label: "来自结果",
+      value: "Factor / Next 只给研究结果；ETF/融资只补风险预算，不改结论动作",
+      tone: "good"
+    },
+    {
+      label: "先看 ETF",
+      value: noEtfRows ? "暂无 ETF 候选；保持观察" : `候选 ${allVisibleEtfRows.length} 行，先看推荐/观察/回避/排除`,
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "再看现金线",
+      value: `当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 现金缓冲 ${percent(recommendedCashRatio)}`,
+      tone: recommendedCashRatio ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: ordinaryMissingEvidence,
+      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+    },
+    {
+      label: "回流入口",
+      value: "数据能力 / 下一票雷达 / 风险护栏 / 今日作战台",
+      tone: "good"
+    },
+    {
+      label: "边界",
+      value: "不把量化结果、ETF 强弱或融资比例变成买入、加仓、加融资或下单指令",
+      tone: "good"
+    }
+  ];
+  const marginEtfPostResearchRiskPathRows = [
+    {
+      步骤: "1. 从结果页过来",
+      当前状态: "Factor / Next 是研究回放入口",
+      用户下一步: "只把上游结果当背景，再看 ETF/融资风险预算。",
+      入口: "#factor / #next",
+      边界: "结果页链接只切换本地页面；不刷新 provider/model。"
+    },
+    {
+      步骤: "2. 看 ETF 候选",
+      当前状态: noEtfRows ? "暂无可读 ETF 候选" : `${allVisibleEtfRows.length} 行 ETF 候选可读`,
+      用户下一步: noEtfRows ? "保持观察，先看融资现金线。" : "按推荐、观察、回避和排除分组复核。",
+      入口: "#marginEtf",
+      边界: "ETF 候选只做风险预算参考，不是买入或加仓指令。"
+    },
+    {
+      步骤: "3. 看融资现金线",
+      当前状态: `当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 现金缓冲 ${percent(recommendedCashRatio)}`,
+      用户下一步: "现金缓冲不足或数据缺失时按保守处理。",
+      入口: "#marginEtf",
+      边界: "融资比例不是加杠杆许可。"
+    },
+    {
+      步骤: "4. 处理缺口",
+      当前状态: ordinaryMissingEvidence,
+      用户下一步: "去数据能力页看 Tushare、权限、空窗口和本地 packet 状态。",
+      入口: "DATA_CAPABILITY_HREF",
+      边界: "缺口只提示补证；不会从本卡创建任务或调用外部数据。"
+    },
+    {
+      步骤: "5. 回到主路径",
+      当前状态: "需要换票回下一票雷达；看全局风险回风险护栏。",
+      用户下一步: "继续只读复核，不下单、不加融资。",
+      入口: "#candidates / #risk / #home",
+      边界: "本地链接不创建 task、不交易、不改 strategy action。"
+    }
+  ];
   const marginEtfRiskCardStatus = noEtfRows
     ? "等待 ETF 候选：先看融资现金线，不新增融资。"
     : allowNewMargin
@@ -686,6 +758,24 @@ export default function MarginEtf() {
             <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf visible now">今日作战台</a>
           </div>
           <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、降级原因和下一步入口；普通链接只切换本地页面，不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不加融资、不改 strategy action。</p>
+        </div>
+        <div aria-label="margin etf post research risk path">
+          <h3>确认结果后查风险预算</h3>
+          <p className="ordinary-status-note" aria-label="margin etf post research risk path sentence" aria-live="polite">{marginEtfPostResearchRiskPathSentence}</p>
+          <MetricGrid items={marginEtfPostResearchRiskPathItems} />
+          <div className="actions" aria-label="margin etf post research risk path actions">
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from margin etf post research path">看 Factor</a>
+            <a href="#next/next-session-chart" title="切换到次日图谱；只读本地 next-session cache" aria-label="open next from margin etf post research path">看 Next</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare、权限、空窗口和本地 packet 状态" aria-label="open data capability from margin etf post research path">数据能力</a>
+            <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf post research path">换标的</a>
+            <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf post research path">风险护栏</a>
+          </div>
+          <details className="developer-audit-details" aria-label="margin etf post research risk path rows">
+            <summary>查看结果到风险预算路径</summary>
+            <p className="risk-note">这张路径表只说明从量化推演或次日图谱到 ETF/融资风险预算怎么读；不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易。</p>
+            <DataLineageTable rows={marginEtfPostResearchRiskPathRows} />
+          </details>
+          <p className="risk-note">确认结果后的风险预算只读本地快照：ETF 候选不是买入，融资比例不是加杠杆许可，缺数据按保守处理。</p>
         </div>
         <div aria-label="margin etf candidate radar risk budget bridge">
           <h3>从候选页过来怎么看</h3>

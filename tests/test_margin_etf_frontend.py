@@ -197,9 +197,64 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertNotIn("fetch(", visible_slice)
         self.assertNotIn("TaskStatusPanel", visible_slice)
 
+    def test_margin_etf_post_research_risk_path_is_first_screen_read_only(self):
+        card_start = self.page.index('title="ETF / 融资操作台"')
+        visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        post_research_start = self.page.index('aria-label="margin etf post research risk path"', card_start)
+        bridge_start = self.page.index('aria-label="margin etf candidate radar risk budget bridge"', card_start)
+        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        audit_start = self.page.index('aria-label="margin etf audit details"')
+        post_research = self.page[post_research_start:bridge_start]
+
+        self.assertLess(visible_start, post_research_start)
+        self.assertLess(post_research_start, bridge_start)
+        self.assertLess(post_research_start, actions_start)
+        self.assertLess(post_research_start, audit_start)
+        self.assertIn("marginEtfPostResearchRiskPathSentence", self.page)
+        self.assertIn("marginEtfPostResearchRiskPathItems", self.page)
+        self.assertIn("marginEtfPostResearchRiskPathRows", self.page)
+        self.assertIn("从量化推演或次日图谱过来后", self.page)
+        self.assertIn("确认结果后查风险预算", post_research)
+        self.assertIn('aria-label="margin etf post research risk path sentence"', post_research)
+        self.assertIn("MetricGrid items={marginEtfPostResearchRiskPathItems}", post_research)
+        for label in (
+            'label: "来自结果"',
+            'label: "先看 ETF"',
+            'label: "再看现金线"',
+            'label: "缺口"',
+            'label: "回流入口"',
+            'label: "边界"',
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn('aria-label="margin etf post research risk path actions"', post_research)
+        self.assertIn('href="#factor/factor-score"', post_research)
+        self.assertIn('href="#next/next-session-chart"', post_research)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', post_research)
+        self.assertIn('href="#candidates"', post_research)
+        self.assertIn('href="#risk"', post_research)
+        self.assertIn('aria-label="margin etf post research risk path rows"', post_research)
+        self.assertIn("<summary>查看结果到风险预算路径</summary>", post_research)
+        self.assertIn("DataLineageTable rows={marginEtfPostResearchRiskPathRows}", post_research)
+        for row in (
+            '步骤: "1. 从结果页过来"',
+            '步骤: "2. 看 ETF 候选"',
+            '步骤: "3. 看融资现金线"',
+            '步骤: "4. 处理缺口"',
+            '步骤: "5. 回到主路径"',
+        ):
+            self.assertIn(row, self.page)
+        self.assertIn("不把量化结果、ETF 强弱或融资比例变成买入、加仓、加融资或下单指令", self.page)
+        self.assertIn("不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易", post_research)
+        self.assertIn("ETF 候选不是买入，融资比例不是加杠杆许可，缺数据按保守处理", post_research)
+        self.assertNotIn("onClick=", post_research)
+        self.assertNotIn("postTask(", post_research)
+        self.assertNotIn("fetch(", post_research)
+        self.assertNotIn("TaskStatusPanel", post_research)
+
     def test_margin_etf_candidate_bridge_is_first_screen_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        post_research_start = self.page.index('aria-label="margin etf post research risk path"', card_start)
         bridge_start = self.page.index('aria-label="margin etf candidate radar risk budget bridge"', card_start)
         cash_line_start = self.page.index('aria-label="margin etf cash line quick read"', card_start)
         risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
@@ -208,6 +263,8 @@ class MarginEtfFrontendTests(unittest.TestCase):
         bridge = self.page[bridge_start:cash_line_start]
 
         self.assertLess(visible_start, bridge_start)
+        self.assertLess(visible_start, post_research_start)
+        self.assertLess(post_research_start, bridge_start)
         self.assertLess(bridge_start, cash_line_start)
         self.assertLess(cash_line_start, risk_card_start)
         self.assertLess(bridge_start, actions_start)
