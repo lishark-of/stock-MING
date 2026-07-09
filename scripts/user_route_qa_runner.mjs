@@ -8,16 +8,55 @@
  */
 
 import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(SCRIPT_DIR, "..");
+const DESKTOP_PACKAGE_JSON = resolve(REPO_ROOT, "desktop/package.json");
+const desktopRequire = existsSync(DESKTOP_PACKAGE_JSON) ? createRequire(DESKTOP_PACKAGE_JSON) : null;
 
 const SCHEMA_VERSION = "command_center_3_user_route_qa_result.v1";
 const DEFAULT_BASE_URL = "http://127.0.0.1:5173";
 const DEFAULT_API_BASE = "http://127.0.0.1:8710";
 const DEFAULT_ARTIFACT_ROOT = ".stock_ming_3/user_route_qa";
-const CHROMIUM_EXECUTABLE_PATH = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "";
+const SYSTEM_CHROMIUM_EXECUTABLE_PATHS = [
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+  "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+];
+const CHROMIUM_EXECUTABLE_PATH =
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ||
+  SYSTEM_CHROMIUM_EXECUTABLE_PATHS.find((path) => existsSync(path)) ||
+  "";
+
+function requirePlaywright() {
+  try {
+    return require("playwright");
+  } catch (rootError) {
+    if (desktopRequire) {
+      try {
+        return desktopRequire("playwright");
+      } catch {
+        // Fall through to the clearer error below.
+      }
+    }
+    throw new Error(
+      `Cannot find module 'playwright'. Run PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm --prefix desktop install, or set NODE_PATH to a Playwright install. Original error: ${rootError.message}`
+    );
+  }
+}
+
+function chromiumLaunchOptions() {
+  return {
+    headless: true,
+    ...(CHROMIUM_EXECUTABLE_PATH ? { executablePath: CHROMIUM_EXECUTABLE_PATH } : {})
+  };
+}
 
 const QA_ROUTES = [
   { route: "#home", label: "Daily Command Center", focus: "first-card readiness, current symbol, next action, source state" },
@@ -241,15 +280,12 @@ async function runQa(args) {
   if (!isLocalUrl(args.baseUrl) || !isLocalUrl(args.apiBase)) {
     throw new Error("base-url and api-base must be local 127.0.0.1/localhost URLs");
   }
-  const { chromium } = require("playwright");
+  const { chromium } = requirePlaywright();
   const routes = selectedRoutes(args);
   const runId = timestampId();
   const outputDir = resolve(args.artifactRoot, runId);
   await mkdir(outputDir, { recursive: true });
-  const browser = await chromium.launch({
-    headless: true,
-    ...(CHROMIUM_EXECUTABLE_PATH ? { executablePath: CHROMIUM_EXECUTABLE_PATH } : {})
-  });
+  const browser = await chromium.launch(chromiumLaunchOptions());
   const rows = [];
   const errors = [];
   try {
@@ -384,6 +420,6 @@ try {
 } catch (error) {
   const message = error && error.message ? error.message : String(error);
   console.error(`user_route_qa_runner: failed: ${message}`);
-  console.error("Start local FastAPI/Vite first, set NODE_PATH to a Playwright install if needed, and set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH to an installed Chrome/Chromium binary when Playwright browsers are not downloaded.");
+  console.error("Start local FastAPI/Vite first. The runner resolves Playwright from desktop/node_modules when available; set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH only if no system Chrome/Chromium is installed.");
   process.exit(1);
 }
