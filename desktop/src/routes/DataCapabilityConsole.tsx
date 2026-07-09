@@ -64,13 +64,13 @@ export default function DataCapabilityConsole() {
   const tusharePendingCount = Number(tushareProviderCard.pending_count ?? countRows(tushareHealthRows, isPendingState));
   const tushareRecoveryAction = recoveryActions.find((action) => isTushareRow(action)) ?? {};
   const dataCapabilityTushareSummary = tushareHealthRows.length || Object.keys(tushareProviderCard).length
-    ? `Tushare 本地账本可读：可用 ${tushareAvailableCount}，受限 ${tushareRestrictedCount}，待补/缓存 ${tusharePendingCount}。`
-    : "Tushare 数据能力等待本地账本；页面打开只显示 degraded，不自动探测接口。";
+    ? `Tushare 本地数据记录可读：可用 ${tushareAvailableCount}，受限 ${tushareRestrictedCount}，待补/缓存 ${tusharePendingCount}。`
+    : "Tushare 数据能力等待本地记录；页面打开只显示 degraded，不自动探测接口。";
   const dataCapabilityTushareNextStep = tushareRestrictedCount || tusharePendingCount
-    ? `先看受限/待补接口原因；需要更新时走按钮门控任务，当前建议：${displayText(tushareRecoveryAction.action_label, "继续只读本地缓存")}`
+    ? `先看受限/待补接口原因；需要更新时走明确授权的数据任务，当前建议：${displayText(tushareRecoveryAction.action_label, "继续只读本地缓存")}`
     : tushareAvailableCount
       ? "可用接口只作为本地证据来源；继续回首页、下一票雷达、量化推演和次日图谱读结果。"
-      : "等待本地 data health 回放；不要把空账本当作无风险。";
+      : "等待本地数据健康记录；不要把空记录当作无风险。";
   const dataCapabilityTushareTone: MetricItem["tone"] =
     tushareRestrictedCount ? "warn" : tushareAvailableCount ? "good" : "neutral";
   const dataCapabilityTushareOrdinaryItems: MetricItem[] = [
@@ -101,7 +101,7 @@ export default function DataCapabilityConsole() {
     },
     {
       label: "安全边界",
-      value: "GET cache 只读；不 ping Tushare、DeepSeek、GitHub，不创建 task、不交易",
+      value: "页面打开只读本地记录；不探测 Tushare、DeepSeek、GitHub，不创建确认流程、不交易",
       tone: "good"
     }
   ];
@@ -110,9 +110,42 @@ export default function DataCapabilityConsole() {
     : tusharePendingCount
       ? "degraded：存在空窗口、缓存或待补接口，先按保守处理"
       : tushareAvailableCount
-        ? "ready：已有 Tushare 本地账本可回放"
-        : "missing：等待本地 data health 账本";
+        ? "可读：已有 Tushare 本地数据记录可回放"
+        : "等待：暂无本地数据健康记录";
   const dataCapabilityTushareResultCardSentence = `确认股票后先看数据卡：${dataCapabilityTushareResultCardState}；再回首页、下一票雷达、量化推演或次日图谱读结果。`;
+  const dataCapabilityTushareSourceLayerLabel = tushareHealthRows.length
+    ? "本地数据健康记录"
+    : Object.keys(tushareProviderCard).length
+      ? "本地数据能力摘要"
+      : "等待本地记录";
+  const dataCapabilityVisibleNowSentence = `打开数据能力页先看：${dataCapabilityTushareResultCardState}；下一步是${tushareRestrictedCount || tusharePendingCount ? "复核受限/待补原因，再回结果页保守阅读" : "回首页或下一票雷达读同一条确认链结果"}。`;
+  const dataCapabilityVisibleNowItems: MetricItem[] = [
+    {
+      label: "打开可见",
+      value: dataCapabilityTushareSummary,
+      tone: dataCapabilityTushareTone
+    },
+    {
+      label: "数据卡读法",
+      value: dataCapabilityTushareResultCardState,
+      tone: tushareRestrictedCount || tusharePendingCount ? "warn" : tushareAvailableCount ? "good" : "neutral"
+    },
+    {
+      label: "来源层",
+      value: dataCapabilityTushareSourceLayerLabel,
+      tone: tushareHealthRows.length || Object.keys(tushareProviderCard).length ? "good" : "warn"
+    },
+    {
+      label: "下一步入口",
+      value: "首页 / 下一票雷达 / 股票量化推演 / 次日图谱",
+      tone: "good"
+    },
+    {
+      label: "安全说明",
+      value: "页面打开只读本地记录；不刷新外部数据、不创建确认流程、不交易",
+      tone: "good"
+    }
+  ];
   const dataCapabilityTushareResultCardItems: MetricItem[] = [
     {
       label: "结果读法",
@@ -121,7 +154,7 @@ export default function DataCapabilityConsole() {
     },
     {
       label: "来源层",
-      value: tushareHealthRows.length ? "data_health_ledger rows" : Object.keys(tushareProviderCard).length ? "provider_cards summary" : "missing local ledger",
+      value: dataCapabilityTushareSourceLayerLabel,
       tone: tushareHealthRows.length || Object.keys(tushareProviderCard).length ? "good" : "warn"
     },
     {
@@ -136,7 +169,7 @@ export default function DataCapabilityConsole() {
     },
     {
       label: "不会发生",
-      value: "不刷新 provider、不调用模型、不创建 task、不交易",
+      value: "不刷新外部数据、不调用模型、不创建确认流程、不交易",
       tone: "good"
     }
   ];
@@ -145,22 +178,22 @@ export default function DataCapabilityConsole() {
       步骤: "1. 先确认读法",
       当前状态: dataCapabilityTushareResultCardState,
       用户下一步: tushareRestrictedCount || tusharePendingCount
-        ? "把结果页标为 degraded/pending，先复核权限、空窗口、缓存时间和 call_ledger。"
+        ? "把结果页标为 degraded/pending，先复核权限、空窗口、缓存时间和调用记录。"
         : tushareAvailableCount
           ? "把可用接口当作本地证据来源，再去结果页读结论。"
-          : "等待本地 data health 账本，不把空账本当作无风险。",
+          : "等待本地数据健康记录，不把空记录当作无风险。",
       边界: "只读本地 data capability / data health cache；不调用 Tushare。"
     },
     {
       步骤: "2. 再看结果入口",
       当前状态: "本页只解释数据能力，不替用户下结论",
       用户下一步: "回首页、下一票雷达、股票量化推演和次日图谱读同一条确认链的结果。",
-      边界: "链接只切换本地页面或锚点；不创建 task、不调用 DeepSeek。"
+      边界: "链接只切换本地页面或锚点；不创建确认流程、不调用模型。"
     },
     {
       步骤: "3. 最后看风险边界",
       当前状态: "degraded / pending 不是安全信号",
-      用户下一步: "缺数据时维持保守口径；需要真实补证必须另行授权按钮门控 provider run。",
+      用户下一步: "缺数据时维持保守口径；需要真实补证必须另行授权按钮门控数据任务。",
       边界: "不生成买入、卖出、加仓、融资或交易动作。"
     }
   ];
@@ -176,7 +209,7 @@ export default function DataCapabilityConsole() {
           ? "权限/配置受限，不能当作无数据或低风险。"
           : "按缓存、空窗口或待补处理，先保持保守。",
       下一步: displayText(row.next_action ?? row.action_label, dataCapabilityTushareNextStep),
-      边界: "只读本地数据能力账本；不从页面打开触发 provider、模型或交易。"
+      边界: "只读本地数据能力记录；不从页面打开触发外部数据、模型或交易。"
     };
   });
   const dataCapabilityTushareResultHandoffRows = [
@@ -184,12 +217,12 @@ export default function DataCapabilityConsole() {
       结果入口: "今日作战台",
       页面: "#home",
       用户看法: "确认当前股票、最近结果和 Tushare-first 是否已经回放。",
-      边界: "首页输入静默；只有确认按钮才创建 Tushare-first task。"
+      边界: "首页输入静默；只有确认按钮才启动 Tushare-first 确认流程。"
     },
     {
       结果入口: "下一票雷达",
       页面: "#candidates/candidate-radar-search-quant-projection",
-      用户看法: "确认股票代码、任务回执、call_ledger 和候选来源。",
+      用户看法: "确认股票代码、确认回执、数据调用记录和候选来源。",
       边界: "候选不是买入指令；链接只切换本地页面。"
     },
     {
@@ -235,63 +268,79 @@ export default function DataCapabilityConsole() {
       <PacketCard title="Tushare 数据能力速读" subtitle="普通用户先看：可用、受限、待补和下一步" status={String(cache.status ?? "missing")}>
         <p className="ordinary-status-note" aria-label="data capability tushare ordinary summary" aria-live="polite">{dataCapabilityTushareSummary}</p>
         <MetricGrid items={dataCapabilityTushareOrdinaryItems} />
+        <div aria-label="data capability visible now summary">
+          <h3>打开这里先看什么</h3>
+          <p className="ordinary-status-note" aria-label="data capability visible now sentence" aria-live="polite">{dataCapabilityVisibleNowSentence}</p>
+          <MetricGrid items={dataCapabilityVisibleNowItems} />
+          <div className="actions" aria-label="data capability visible now local actions">
+            <a href="#home" title="回今日作战台；只读查看当前标的和最近结果" aria-label="open home from data capability visible now">今日作战台</a>
+            <a href="#candidates/candidate-radar-search-quant-projection" title="切换到下一票雷达确认输入区；输入静默，确认按钮才启动确认流程" aria-label="open candidate radar from data capability visible now">下一票雷达</a>
+            <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from data capability visible now">股票量化推演</a>
+            <a href="#next" title="切换到次日图谱；只读本地图谱" aria-label="open next session from data capability visible now">次日图谱</a>
+          </div>
+          <p className="risk-note">这个条带只回答普通用户打开数据能力页能看到什么；普通链接只切换本地页面，不刷新外部数据、不创建确认流程、不交易、不改策略。</p>
+        </div>
         <div aria-label="data capability tushare degraded result card">
           <h3>确认后数据卡怎么读</h3>
           <p className="ordinary-status-note" aria-label="data capability tushare degraded result sentence" aria-live="polite">{dataCapabilityTushareResultCardSentence}</p>
           <MetricGrid items={dataCapabilityTushareResultCardItems} />
           <details className="developer-audit-details" aria-label="data capability tushare degraded result rows">
             <summary>查看 degraded 读法</summary>
-            <p className="risk-note">这张表只把 Tushare 可用、受限、待补和结果入口翻成用户读法；不刷新 provider、不创建任务、不调用模型。</p>
+            <p className="risk-note">这张表只把 Tushare 可用、受限、待补和结果入口翻成用户读法；不刷新外部数据、不创建确认流程、不调用模型。</p>
             <DataLineageTable rows={dataCapabilityTushareDegradedResultRows} />
           </details>
         </div>
-        <div aria-label="data capability tushare readable rows">
+        <details className="developer-audit-details" aria-label="data capability tushare readable rows">
+          <summary>查看接口状态明细</summary>
+          <p className="risk-note">接口明细默认收起；普通读法先看上方“打开这里先看什么”和“确认后数据卡怎么读”。</p>
           <DataLineageTable rows={dataCapabilityTushareReadableRows} />
-        </div>
+        </details>
         <div className="actions" aria-label="data capability tushare result handoff actions">
           <a href="#home" title="回今日作战台；只读查看当前标的和最近结果" aria-label="open home from data capability tushare card">今日作战台</a>
-          <a href="#candidates/candidate-radar-search-quant-projection" title="切换到下一票雷达确认输入区；输入静默，确认按钮才创建任务" aria-label="open candidate radar from data capability tushare card">下一票雷达</a>
+          <a href="#candidates/candidate-radar-search-quant-projection" title="切换到下一票雷达确认输入区；输入静默，确认按钮才启动确认流程" aria-label="open candidate radar from data capability tushare card">下一票雷达</a>
           <a href="#factor" title="切换到股票量化推演；只读 Factor cache" aria-label="open factor from data capability tushare card">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读本地图谱 cache" aria-label="open next session from data capability tushare card">次日图谱</a>
         </div>
         <details className="developer-audit-details" aria-label="data capability tushare result handoff rows">
           <summary>这些数据去哪看结果</summary>
-          <p className="risk-note">这张小表只把 Tushare 能力状态回流到普通投研入口；不提交刷新、不创建任务、不调用外部服务。</p>
+          <p className="risk-note">这张小表只把 Tushare 能力状态回流到普通投研入口；不提交刷新、不创建确认流程、不调用外部服务。</p>
           <DataLineageTable rows={dataCapabilityTushareResultHandoffRows} />
         </details>
-        <p className="risk-note">这张卡只整理本地 data capability / data health cache；不会在页面打开时调用 Tushare、DeepSeek、GitHub，不会创建 task，不会把权限不足、空窗口或缓存降级解释成无风险，也不会生成买入、加仓或融资指令。</p>
+        <p className="risk-note">这张卡只整理本地数据能力和数据健康记录；不会在页面打开时调用 Tushare、DeepSeek、GitHub，不会创建确认流程，不会把权限不足、空窗口或缓存降级解释成无风险，也不会生成买入、加仓或融资指令。</p>
       </PacketCard>
 
-      <MetricGrid
-        items={[
-          { label: "available", value: counts.available as number | undefined },
-          { label: "restricted", value: counts.restricted as number | undefined },
-          { label: "pending", value: counts.pending as number | undefined },
-          { label: "blocked", value: counts.blocked as number | undefined },
-          { label: "manual", value: counts.manual as number | undefined },
-          { label: "stale", value: counts.stale as number | undefined },
-          { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
-          { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
-          { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" },
-          { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
-          { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
-          { label: "cache warnings", value: cacheWarnings.length }
-        ]}
-      />
+      <details className="developer-audit-details" aria-label="data capability provider audit details">
+        <summary>数据能力 / 审计详情</summary>
+        <MetricGrid
+          items={[
+            { label: "available", value: counts.available as number | undefined },
+            { label: "restricted", value: counts.restricted as number | undefined },
+            { label: "pending", value: counts.pending as number | undefined },
+            { label: "blocked", value: counts.blocked as number | undefined },
+            { label: "manual", value: counts.manual as number | undefined },
+            { label: "stale", value: counts.stale as number | undefined },
+            { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
+            { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
+            { label: "修改 action", value: cache.does_not_modify_strategy_action === false ? "可能" : "不会", tone: cache.does_not_modify_strategy_action === false ? "bad" : "good" },
+            { label: "真实交易", value: cache.does_not_execute_trades === false ? "可能" : "禁止", tone: cache.does_not_execute_trades === false ? "bad" : "good" },
+            { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
+            { label: "cache warnings", value: cacheWarnings.length }
+          ]}
+        />
 
-      <div className="grid">
-        <PacketCard title="数据能力 cache" subtitle="GET /api/data-capability/cache 只读展示本地检测结果" status="cache_only">
-          <p>{String(dashboard.summary ?? consolePacket.headline ?? "尚未检测数据能力；页面打开不会自动请求外部接口。")}</p>
-          <p>{String(consolePacket.safe_mode_text ?? "只允许读取本地缓存；刷新必须通过按钮门控任务。")}</p>
-          <p>cache API 永不外联：不 ping Tushare、AkShare、yfinance、Supabase，不调用 DeepSeek 或 GitHub。</p>
-        </PacketCard>
+        <div className="grid">
+          <PacketCard title="数据能力 cache" subtitle="GET /api/data-capability/cache 只读展示本地检测结果" status="cache_only">
+            <p>{String(dashboard.summary ?? consolePacket.headline ?? "尚未检测数据能力；页面打开不会自动请求外部接口。")}</p>
+            <p>{String(consolePacket.safe_mode_text ?? "只允许读取本地缓存；刷新必须通过按钮门控任务。")}</p>
+            <p>cache API 永不外联：不 ping Tushare、AkShare、yfinance、Supabase，不调用 DeepSeek 或 GitHub。</p>
+          </PacketCard>
 
-        <PacketCard title="决策边界" subtitle="数据能力只影响证据置信度和手动恢复建议" status={String(consolePacket.decision_readiness ?? "missing")}>
-          <p>readiness: {String(consolePacket.decision_readiness_label ?? "--")}</p>
-          <p>short_answer: {String(consolePacket.short_answer ?? "--")}</p>
-          <p>strategy action: {cache.does_not_modify_strategy_action === false ? "可能被修改" : "不会被修改"}</p>
-        </PacketCard>
-      </div>
+          <PacketCard title="决策边界" subtitle="数据能力只影响证据置信度和手动恢复建议" status={String(consolePacket.decision_readiness ?? "missing")}>
+            <p>readiness: {String(consolePacket.decision_readiness_label ?? "--")}</p>
+            <p>short_answer: {String(consolePacket.short_answer ?? "--")}</p>
+            <p>strategy action: {cache.does_not_modify_strategy_action === false ? "可能被修改" : "不会被修改"}</p>
+          </PacketCard>
+        </div>
 
       <PacketCard title="Provider 状态" subtitle="Tushare / AkShare / yfinance / Supabase 本地检测摘要" status="providers">
         <DataLineageTable rows={providerRows} />
@@ -326,6 +375,7 @@ export default function DataCapabilityConsole() {
       <PacketCard title="原始 data capability cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">
         <JsonDetails title="data capability cache raw" data={cache} />
       </PacketCard>
+      </details>
     </>
   );
 }
