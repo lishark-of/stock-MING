@@ -1644,6 +1644,116 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
+  const ordinaryFactorTestSmallPoolEvidenceDone =
+    factorTestProductionValidation.provider_backed_small_pool_validation_done === true;
+  const ordinaryFactorTestSmallPoolSampleRowsDone =
+    ordinaryFactorTestSmallPoolEvidenceDone ||
+    factorTestProviderSmallPoolAcceptance.sample_rows_done === true ||
+    factorTestProviderSmallPoolAcceptance.sample_rows_written === true;
+  const ordinaryFactorTestSmallPoolRollingDone =
+    ordinaryFactorTestSmallPoolEvidenceDone ||
+    factorTestProviderSmallPoolAcceptance.rolling_validation_done === true ||
+    factorTestProviderSmallPoolAcceptance.rolling_ic_done === true ||
+    factorTestProviderSmallPoolAcceptance.rolling_icir_done === true;
+  const ordinaryFactorTestSmallPoolCostDone =
+    ordinaryFactorTestSmallPoolEvidenceDone ||
+    factorTestProviderSmallPoolAcceptance.cost_validation_done === true ||
+    factorTestProviderSmallPoolAcceptance.cost_model_done === true;
+  const ordinaryFactorTestSmallPoolNeutralizationDone =
+    ordinaryFactorTestSmallPoolEvidenceDone ||
+    factorTestProviderSmallPoolAcceptance.neutralization_done === true ||
+    factorTestProviderSmallPoolAcceptance.neutralized_metric_done === true;
+  const ordinaryFactorTestSmallPoolBiasDone =
+    ordinaryFactorTestSmallPoolEvidenceDone ||
+    factorTestProviderSmallPoolAcceptance.pit_bias_review_done === true ||
+    factorTestProviderSmallPoolAcceptance.bias_review_done === true;
+  const ordinaryFactorTestSmallPoolPromotionDone =
+    ordinaryFactorTestSmallPoolEvidenceDone ||
+    factorTestProviderSmallPoolAcceptance.promotion_review_done === true ||
+    factorTestProviderSmallPoolAcceptance.production_promotion_review_done === true;
+  const ordinaryFactorTestSmallPoolEvidenceSentence =
+    ordinaryFactorTestSmallPoolEvidenceDone
+      ? "真实小池样本证据已回放；继续按样本、滚动、成本、中性化、偏差和推广复核检查生产阶段。"
+      : "真实小池样本证据仍待授权：样本、滚动、成本、中性化、偏差和推广复核都要由 future provider task 留痕。";
+  const ordinaryFactorTestSmallPoolEvidenceItems: MetricItem[] = [
+    {
+      label: "样本行",
+      value: ordinaryFactorTestSmallPoolSampleRowsDone ? "真实样本行已回放" : "等待 provider task 写入样本行",
+      tone: ordinaryFactorTestSmallPoolSampleRowsDone ? "good" : "warn"
+    },
+    {
+      label: "滚动验证",
+      value: ordinaryFactorTestSmallPoolRollingDone ? "rolling IC/ICIR 已回放" : "等待 rolling IC/ICIR 证据",
+      tone: ordinaryFactorTestSmallPoolRollingDone ? "good" : "warn"
+    },
+    {
+      label: "交易成本",
+      value: ordinaryFactorTestSmallPoolCostDone ? "成本假设已回放" : "等待 cost / slippage 证据",
+      tone: ordinaryFactorTestSmallPoolCostDone ? "good" : "warn"
+    },
+    {
+      label: "中性化",
+      value: ordinaryFactorTestSmallPoolNeutralizationDone ? "中性化结果已回放" : "等待行业/市值中性化证据",
+      tone: ordinaryFactorTestSmallPoolNeutralizationDone ? "good" : "warn"
+    },
+    {
+      label: "PIT/bias",
+      value: ordinaryFactorTestSmallPoolBiasDone ? "PIT/bias review 已回放" : "等待 point-in-time 和偏差复核",
+      tone: ordinaryFactorTestSmallPoolBiasDone ? "good" : "warn"
+    },
+    {
+      label: "推广复核",
+      value: ordinaryFactorTestSmallPoolPromotionDone ? "promotion review 已回放" : "等待生产推广复核",
+      tone: ordinaryFactorTestSmallPoolPromotionDone ? "good" : "warn"
+    },
+    {
+      label: "授权前",
+      value: "只读看本地 scope、execution request、数据能力和任务目录；不把 ticket 当生产验收",
+      tone: "good"
+    },
+    {
+      label: "不会发生",
+      value: "不会创建 provider task、不会调用 Tushare/DeepSeek/GitHub、不会交易、不改 strategy action",
+      tone: "good"
+    }
+  ];
+  const ordinaryFactorTestSmallPoolEvidenceRows = [
+    {
+      检查项: "1. 样本行",
+      当前状态: ordinaryFactorTestSmallPoolSampleRowsDone ? "已回放真实样本行" : "等待真实 provider task 写入样本行",
+      用户下一步: "先看本地 scope 和 execution request；授权后才允许生成 provider task。",
+      生产口径: "样本行必须和 scope hash、payload、call_ledger 对齐。",
+      边界: "本页只读 cache，不补调 Tushare。"
+    },
+    {
+      检查项: "2. 滚动验证",
+      当前状态: ordinaryFactorTestSmallPoolRollingDone ? "rolling IC/ICIR 已回放" : "等待多周期 rolling IC/ICIR",
+      用户下一步: "授权任务完成后复核窗口、股票池、指标和 failure-mode evidence。",
+      生产口径: "rolling 结果必须能解释稳定性，不用单次 light observation 代替。",
+      边界: "不从 React render 或 GET cache 计算生产 IC。"
+    },
+    {
+      检查项: "3. 成本和中性化",
+      当前状态: ordinaryFactorTestSmallPoolCostDone && ordinaryFactorTestSmallPoolNeutralizationDone ? "成本和中性化已回放" : "等待成本与行业/市值中性化",
+      用户下一步: "确认成本假设、slippage、行业和市值中性化都在 provider-backed 包里。",
+      生产口径: "成本和中性化必须是同一 scope 的直接证据。",
+      边界: "不把本地矩阵或 sanitizer 当生产验收。"
+    },
+    {
+      检查项: "4. PIT/bias",
+      当前状态: ordinaryFactorTestSmallPoolBiasDone ? "PIT/bias 已复核" : "等待 point-in-time 和偏差复核",
+      用户下一步: "检查未来数据穿越、幸存者偏差和样本选择偏差是否有明示结论。",
+      生产口径: "偏差复核必须能和样本行及 ledger 一起回放。",
+      边界: "不由模型解释或普通摘要补证。"
+    },
+    {
+      检查项: "5. 推广复核",
+      当前状态: ordinaryFactorTestSmallPoolPromotionDone ? "生产推广复核已回放" : "等待 promotion / release review",
+      用户下一步: "真实证据齐备后再走 promotion review；strict closeout 仍按 snapshot。",
+      生产口径: "promotion review 只能在真实 provider evidence 齐备后推进。",
+      边界: "不交易、不下单、不接 broker、不改 strategy action。"
+    }
+  ];
   const ordinaryFactorTestProviderAcceptanceGateState =
     factorTestProviderSmallPoolAcceptance.status
       ? String(factorTestProviderSmallPoolAcceptance.status)
@@ -1956,6 +2066,23 @@ export default function FactorQuantHub() {
           <p className="ordinary-status-note" aria-label="stock quant factor small pool degraded sentence" aria-live="polite">{ordinaryFactorTestProviderCurrentBlockerSentence}</p>
           <MetricGrid items={ordinaryFactorTestProviderSmallPoolItems} />
           <p className="risk-note">{ordinaryFactorTestProviderBoundary}；本地 light observations、本地 scope 或执行请求都不能当作生产级 Factor Test 验收完成。</p>
+        </div>
+        <div aria-label="stock quant ordinary factor small pool evidence checklist">
+          <h3>小池样本证据怎么看</h3>
+          <p className="ordinary-status-note" aria-label="stock quant factor small pool evidence sentence" aria-live="polite">{ordinaryFactorTestSmallPoolEvidenceSentence}</p>
+          <MetricGrid items={ordinaryFactorTestSmallPoolEvidenceItems} />
+          <div className="actions" aria-label="stock quant factor small pool evidence local actions">
+            <a href="#factor-provider-small-pool-gate" title="跳到授权闸门；只读本地 scope / execution request" aria-label="open factor provider gate from small pool evidence">看授权闸门</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读查看数据和外联边界" aria-label="open data capability from small pool evidence">数据能力</a>
+            <a href="#tasks" title="切换到任务目录；只读查看本地 task / receipt 状态" aria-label="open tasks from small pool evidence">任务目录</a>
+            <a href="#factor-score" title="回到支持/压制摘要；只读 Factor cache" aria-label="open factor score from small pool evidence">支持/压制</a>
+          </div>
+          <details className="developer-audit-details" aria-label="stock quant factor small pool evidence rows">
+            <summary>查看小池证据读法</summary>
+            <p className="risk-note">这些行把样本、滚动、成本、中性化、偏差和推广复核拆成普通检查项；只读本地 cache，不创建 provider task、不调用 Tushare/DeepSeek/GitHub。</p>
+            <DataLineageTable rows={ordinaryFactorTestSmallPoolEvidenceRows} />
+          </details>
+          <p className="risk-note">这张卡只帮助用户判断授权后要看什么；授权前不会提交 provider task，不会把 local ticket / dry-run / execution request 当作 production complete。</p>
         </div>
         <div id="factor-provider-small-pool-gate" aria-label="stock quant ordinary factor provider next gate">
           <h3>LTG-03 下一步安全闸门</h3>
