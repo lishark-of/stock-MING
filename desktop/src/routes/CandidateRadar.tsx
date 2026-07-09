@@ -3040,6 +3040,53 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarPostConfirmNextStepSentence = quantProjectionFactorNextReady
+    ? `${quantProjectionProgressWatchSymbol || quantProjectionDisplaySymbol || "当前标的"} 确认后已可回放：先看股票量化推演支持/压制，再看次日图谱，涉及仓位或融资预算时再看 ETF/融资风险。`
+    : quantProjectionInterpretationReady || quantProjectionSmallDataReady
+      ? `${quantProjectionProgressWatchSymbol || quantProjectionDisplaySymbol || "当前标的"} 已有本地结果线索：先读 P3 结果和 P2 三面，Factor / Next 若仍等待 cache 就按降级提示处理。`
+      : ordinaryCandidateTopCount
+        ? `先从候选池选一只，例如 ${candidatePoolLeadCandidateDisplay}，回确认输入区点击确认；成功后再看 Factor、Next 和 ETF/融资风险。`
+        : "确认后下一步等待候选或输入：先恢复本地 cache 或输入 A 股代码，确认按钮才会创建本地投研任务。";
+  const candidateRadarPostConfirmNextStepItems: MetricItem[] = [
+    {
+      label: "候选来源",
+      value: ordinaryCandidateGroupLabel,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "确认动作",
+      value: quantProjectionCanSubmit
+        ? `可确认 ${quantProjectionSymbolValidation.normalized}`
+        : quantProjectionP0Ready
+          ? "输入有效 A 股代码后再确认"
+          : "先恢复本地联通",
+      tone: quantProjectionCanSubmit || quantProjectionP0Ready ? "good" : "warn"
+    },
+    {
+      label: "先看 Factor",
+      value: quantProjectionFactorNextReady || quantProjectionInterpretationReady
+        ? "支持/压制摘要可作为第一站回放"
+        : "等待确认结果或本地 cache 回写",
+      tone: quantProjectionFactorNextReady || quantProjectionInterpretationReady ? "good" : "warn"
+    },
+    {
+      label: "再看 Next",
+      value: quantProjectionFactorNextReady
+        ? "次日图谱可复核路径、参考线和操作区"
+        : "等待 P3 回放后再打开次日图谱",
+      tone: quantProjectionFactorNextReady ? "good" : "warn"
+    },
+    {
+      label: "风险补看",
+      value: "ETF/融资风险只读本地预算，不生成加仓或加融资指令",
+      tone: "good"
+    },
+    {
+      label: "边界",
+      value: "这些入口只切换本地页面或锚点，不创建第二个 task、不调用 Tushare/DeepSeek、不交易",
+      tone: "good"
+    }
+  ];
   const ordinaryCandidateReviewCompassItems: MetricItem[] = [
     {
       label: "先看哪组",
@@ -3777,6 +3824,18 @@ export default function CandidateRadar() {
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from visible now app result">确认输入</a>
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from visible now app result">ETF/融资风险</a>
             </div>
+          </div>
+          <div aria-label="candidate radar post confirm next step bridge">
+            <h3>确认后看这 3 处</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar post confirm next step sentence" aria-live="polite">{candidateRadarPostConfirmNextStepSentence}</p>
+            <MetricGrid items={candidateRadarPostConfirmNextStepItems} />
+            <div className="actions" aria-label="candidate radar post confirm next step actions">
+              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor after candidate radar confirm">看 Factor</a>
+              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session after candidate radar confirm">看 Next 图谱</a>
+              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf after candidate radar confirm">看 ETF/融资</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="return confirm input after candidate radar confirm bridge">换一只票</a>
+            </div>
+            <p className="risk-note">确认后桥接只解释本地回放入口：Factor、Next 和 ETF/融资都只读已有 cache / packet；普通链接不刷新 provider、不调用模型、不写 cache、不交易、不改交易策略。</p>
           </div>
           <div aria-label="candidate radar ordinary vertical slice readback">
             <h3>纵切速读</h3>

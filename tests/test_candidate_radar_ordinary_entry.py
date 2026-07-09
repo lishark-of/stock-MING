@@ -126,6 +126,44 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             visible_now_start,
             summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"'),
         )
+        self.assertIn("candidateRadarPostConfirmNextStepSentence", self.page)
+        self.assertIn("candidateRadarPostConfirmNextStepItems", self.page)
+        self.assertIn('aria-label="candidate radar post confirm next step bridge"', summary_primary_slice)
+        self.assertIn("确认后看这 3 处", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar post confirm next step sentence"', summary_primary_slice)
+        self.assertIn("Factor、Next 和 ETF/融资都只读已有 cache / packet", summary_primary_slice)
+        post_confirm_start = summary_primary_slice.index('aria-label="candidate radar post confirm next step bridge"')
+        post_confirm_end = summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"', post_confirm_start)
+        post_confirm_slice = summary_primary_slice[post_confirm_start:post_confirm_end]
+        self.assertIn("MetricGrid items={candidateRadarPostConfirmNextStepItems}", post_confirm_slice)
+        self.assertIn('aria-label="candidate radar post confirm next step actions"', post_confirm_slice)
+        self.assertIn('href="#factor/factor-score"', post_confirm_slice)
+        self.assertIn('href="#next/next-session-chart"', post_confirm_slice)
+        self.assertIn('href="#marginEtf"', post_confirm_slice)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', post_confirm_slice)
+        self.assertIn('aria-label="open factor after candidate radar confirm"', post_confirm_slice)
+        self.assertIn('aria-label="open next session after candidate radar confirm"', post_confirm_slice)
+        self.assertIn('aria-label="open margin etf after candidate radar confirm"', post_confirm_slice)
+        self.assertIn('aria-label="return confirm input after candidate radar confirm bridge"', post_confirm_slice)
+        self.assertNotIn("onClick=", post_confirm_slice)
+        self.assertNotIn("postCandidateRadar", post_confirm_slice)
+        self.assertNotIn("launchQuantProjection", post_confirm_slice)
+        post_confirm_items_start = self.page.index("const candidateRadarPostConfirmNextStepItems")
+        post_confirm_items_end = self.page.index("const ordinaryCandidateReviewCompassItems", post_confirm_items_start)
+        post_confirm_items_slice = self.page[post_confirm_items_start:post_confirm_items_end]
+        for post_confirm_label in (
+            'label: "候选来源"',
+            'label: "确认动作"',
+            'label: "先看 Factor"',
+            'label: "再看 Next"',
+            'label: "风险补看"',
+            'label: "边界"',
+        ):
+            self.assertIn(post_confirm_label, post_confirm_items_slice)
+        self.assertIn("ETF/融资风险只读本地预算，不生成加仓或加融资指令", post_confirm_items_slice)
+        self.assertIn("不创建第二个 task、不调用 Tushare/DeepSeek、不交易", post_confirm_items_slice)
+        self.assertLess(visible_now_start, post_confirm_start)
+        self.assertLess(post_confirm_start, summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"'))
         self.assertIn('aria-label="candidate radar user first actions"', summary_primary_slice)
         self.assertIn('href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"}', summary_primary_slice)
         self.assertIn('aria-label="candidate radar denoised first screen guide"', summary_primary_slice)
