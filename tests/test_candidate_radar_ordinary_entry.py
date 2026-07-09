@@ -166,6 +166,47 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postCandidateRadar", typed_symbol_slice)
         self.assertNotIn("launchQuantProjection", typed_symbol_slice)
         self.assertLess(visible_now_start, typed_symbol_start)
+        self.assertIn("candidateRadarRecentResearchResultSentence", self.page)
+        self.assertIn("candidateRadarRecentResearchResultItems", self.page)
+        self.assertIn("candidateRadarRecentResearchResultRows", self.page)
+        self.assertIn('aria-label="candidate radar recent research result card"', summary_primary_slice)
+        self.assertIn("确认后最近投研结果", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar recent research result sentence"', summary_primary_slice)
+        self.assertIn("MetricGrid items={candidateRadarRecentResearchResultItems}", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar recent research result actions"', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar recent research result rows"', summary_primary_slice)
+        self.assertIn("<summary>查看结果读法</summary>", summary_primary_slice)
+        self.assertIn("DataLineageTable rows={candidateRadarRecentResearchResultRows}", summary_primary_slice)
+        self.assertIn("最近投研结果卡只帮助复核来源、缺口和下一步", summary_primary_slice)
+        recent_result_start = summary_primary_slice.index('aria-label="candidate radar recent research result card"')
+        recent_result_end = summary_primary_slice.index('aria-label="candidate radar user route qa latest evidence"', recent_result_start)
+        recent_result_slice = summary_primary_slice[recent_result_start:recent_result_end]
+        for recent_result_label in (
+            'label: "最近结果"',
+            'label: "结果归属"',
+            'label: "来源状态"',
+            'label: "degraded / 缺口"',
+            'label: "下一步"',
+            'label: "研究边界"',
+        ):
+            self.assertIn(recent_result_label, self.page)
+        for recent_result_row in (
+            '读法: "1. 先看结论"',
+            '读法: "2. 再看来源"',
+            '读法: "3. 识别降级"',
+            '读法: "4. 去哪里看"',
+        ):
+            self.assertIn(recent_result_row, self.page)
+        self.assertIn('href="#factor"', recent_result_slice)
+        self.assertIn('href="#next/next-session-chart"', recent_result_slice)
+        self.assertIn('href="#marginEtf"', recent_result_slice)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', recent_result_slice)
+        self.assertIn("不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", recent_result_slice)
+        self.assertIn("不是买卖建议，不下单、不改持仓、不改 strategy action", recent_result_slice)
+        self.assertNotIn("onClick=", recent_result_slice)
+        self.assertNotIn("postCandidateRadar", recent_result_slice)
+        self.assertNotIn("launchQuantProjection", recent_result_slice)
+        self.assertLess(typed_symbol_start, recent_result_start)
         self.assertIn("getAuditCache", self.page)
         self.assertIn("user_route_qa_evidence_contract", self.page)
         self.assertIn("candidateRadarUserRouteQaSummary", self.page)
@@ -201,6 +242,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", qa_slice)
         self.assertNotIn("postCandidateRadar", qa_slice)
         self.assertNotIn("launchQuantProjection", qa_slice)
+        self.assertLess(recent_result_start, qa_start)
         self.assertLess(typed_symbol_start, qa_start)
         self.assertLess(visible_now_start, qa_start)
         self.assertIn("candidateRadarPostConfirmNextStepSentence", self.page)

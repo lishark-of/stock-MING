@@ -3230,6 +3230,78 @@ export default function CandidateRadar() {
       边界: "结果入口只切换本地页面；不补调 Tushare、DeepSeek、GitHub，不交易。"
     }
   ];
+  const candidateRadarRecentResearchResultSentence =
+    quantProjectionInterpretationReady || quantProjectionSmallDataReady
+      ? `最近投研结果可回放：${quantProjectionOrdinaryResultSummary}`
+      : taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? `最近投研结果正在回写：${quantProjectionReplayDestinationState}`
+        : quantProjectionCanSubmit
+          ? `当前 ${quantProjectionSymbolValidation.normalized} 可以确认；确认后这里会显示最近投研结果、来源和缺口。`
+          : "最近投研结果等待确认；当前先看候选池和本地缓存，不会自动取数。";
+  const candidateRadarRecentResearchResultItems: MetricItem[] = [
+    {
+      label: "最近结果",
+      value: quantProjectionInterpretationReady || quantProjectionSmallDataReady
+        ? quantProjectionOrdinaryResultSummary
+        : quantProjectionReplayDestinationState,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "结果归属",
+      value: quantProjectionLastResult,
+      tone: quantProjectionDisplaySymbol || quantProjectionPersistedTaskId || taskReceipt?.ok ? "good" : "neutral"
+    },
+    {
+      label: "来源状态",
+      value: `${quantProjectionCacheSourceLabel}；${quantProjectionProviderSourceLabel}；${quantProjectionModelSourceLabel}`,
+      tone: quantProjectionProviderLedgerReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "degraded / 缺口",
+      value: `${ordinaryActiveDegradedLabel}；${quantProjectionMissingEvidence}`,
+      tone: ordinaryActiveDegradedCount || quantProjectionMissingEvidence.includes("待补") || quantProjectionMissingEvidence.includes("阻断") ? "warn" : "good"
+    },
+    {
+      label: "下一步",
+      value: quantProjectionReplayDestinationNextStep,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady || quantProjectionCanSubmit ? "good" : "warn"
+    },
+    {
+      label: "研究边界",
+      value: "结果卡只读本地 cache / ledger / packet；不是买入、卖出或加仓指令",
+      tone: "good"
+    }
+  ];
+  const candidateRadarRecentResearchResultRows = [
+    {
+      读法: "1. 先看结论",
+      当前状态: quantProjectionOrdinaryResultSummary,
+      用户下一步: quantProjectionOrdinaryResultNext,
+      证据: quantProjectionOrdinaryResultEvidence,
+      边界: quantProjectionOrdinaryResultBoundary
+    },
+    {
+      读法: "2. 再看来源",
+      当前状态: `${quantProjectionCacheSourceLabel} / ${quantProjectionProviderSourceLabel} / ${quantProjectionModelSourceLabel}`,
+      用户下一步: quantProjectionProviderLedgerReady ? "回放量化推演和次日图谱。" : "等待确认任务或真实数据授权后的后台回写。",
+      证据: quantProjectionProviderCallSource,
+      边界: "来源只读本地 cache / call_ledger / packet；不会从结果卡补调 provider/model。"
+    },
+    {
+      读法: "3. 识别降级",
+      当前状态: `${ordinaryActiveDegradedLabel}；${quantProjectionBlockedState}`,
+      用户下一步: quantProjectionMissingEvidence,
+      证据: "degraded_mode_rows / search_quant_projection_receipt",
+      边界: "degraded 和 missing evidence 只提示待补证据，不创建 task、不升级 production complete。"
+    },
+    {
+      读法: "4. 去哪里看",
+      当前状态: quantProjectionReplayDestinationState,
+      用户下一步: quantProjectionReplayDestinationNextStep,
+      证据: "ordinary_replay_destination_rows / local route anchors",
+      边界: quantProjectionReplayBoundary
+    }
+  ];
   const candidateRadarUserRouteQaSummary = candidateRadarUserRouteQaPassed
     ? `本轮本地路线 QA 已覆盖下一票雷达：${userRouteQaCoveredViewports.join(" / ") || "desktop / mobile"}，打开和输入未创建任务。`
     : userRouteQaEvidence.latest_report_status
@@ -4097,6 +4169,23 @@ export default function CandidateRadar() {
               <DataLineageTable rows={candidateRadarTypedSymbolRows} />
             </details>
             <p className="risk-note">输入股票只是本地会话状态；只有确认按钮点击才进入按钮门控 POST task。结果链接只做本地页面跳转，不交易、不改交易策略。</p>
+          </div>
+          <div aria-label="candidate radar recent research result card">
+            <h3>确认后最近投研结果</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar recent research result sentence" aria-live="polite">{candidateRadarRecentResearchResultSentence}</p>
+            <MetricGrid items={candidateRadarRecentResearchResultItems} />
+            <div className="actions" aria-label="candidate radar recent research result actions">
+              <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from recent research result card">量化推演</a>
+              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from recent research result card">次日图谱</a>
+              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from recent research result card">ETF/融资风险</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="return confirm input from recent research result card">换一只票</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar recent research result rows">
+              <summary>查看结果读法</summary>
+              <p className="risk-note">这张结果读法只读本地 cache / ledger / packet、degraded 和 missing evidence；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <DataLineageTable rows={candidateRadarRecentResearchResultRows} />
+            </details>
+            <p className="risk-note">最近投研结果卡只帮助复核来源、缺口和下一步；它不是买卖建议，不下单、不改持仓、不改 strategy action。</p>
           </div>
           <div aria-label="candidate radar user route qa latest evidence">
             <h3>本轮路线 QA</h3>
