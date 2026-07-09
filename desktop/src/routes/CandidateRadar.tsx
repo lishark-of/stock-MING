@@ -4778,6 +4778,20 @@ export default function CandidateRadar() {
         </div>
         <p id={candidateRadarOperatorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p id={candidateRadarOperatorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        <div aria-label="candidate radar single ticket closed loop">
+          <h3>单票闭环</h3>
+          <p className="ordinary-status-note" aria-label="candidate radar single ticket closed loop sentence" aria-live="polite">{candidateRadarSingleTicketLoopSentence}</p>
+          <MetricGrid items={candidateRadarSingleTicketLoopItems} />
+          <div className="actions" aria-label="candidate radar single ticket closed loop actions">
+            <a href="#candidate-pool" title="跳到候选池；只读 Top / Watch / Excluded" aria-label="open candidate pool from single ticket loop">候选池</a>
+            <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from single ticket loop">确认输入</a>
+            <a href="#tasks" title="查看本地任务目录；不创建新任务" aria-label="open tasks from single ticket loop">任务进度</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from single ticket loop">看 Factor</a>
+            <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next from single ticket loop">看 Next</a>
+            <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from single ticket loop">ETF/融资风险</a>
+          </div>
+          <p className="risk-note">单票闭环只把候选、确认、任务、最近结果和三个回放入口串起来；不提交、不重试、不调用 Tushare/DeepSeek/GitHub、不改交易策略。</p>
+        </div>
         <div aria-label="candidate radar compact result and group bridge">
           <h3>结果和分组一屏速读</h3>
           <p className="ordinary-status-note">最近结果、Top/Watch/Excluded 理由、来源和缺口先合成一张短卡；只读本地 cache / task 回放，不创建 task。</p>
@@ -4990,20 +5004,6 @@ export default function CandidateRadar() {
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="return confirm input after candidate radar confirm bridge">换一只票</a>
             </div>
             <p className="risk-note">确认后桥接只解释本地回放入口：Factor、Next 和 ETF/融资都只读已有 cache / packet；普通链接不刷新 provider、不调用模型、不写 cache、不交易、不改交易策略。</p>
-          </div>
-          <div aria-label="candidate radar single ticket closed loop">
-            <h3>单票闭环</h3>
-            <p className="ordinary-status-note" aria-label="candidate radar single ticket closed loop sentence" aria-live="polite">{candidateRadarSingleTicketLoopSentence}</p>
-            <MetricGrid items={candidateRadarSingleTicketLoopItems} />
-            <div className="actions" aria-label="candidate radar single ticket closed loop actions">
-              <a href="#candidate-pool" title="跳到候选池；只读 Top / Watch / Excluded" aria-label="open candidate pool from single ticket loop">候选池</a>
-              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from single ticket loop">确认输入</a>
-              <a href="#tasks" title="查看本地任务目录；不创建新任务" aria-label="open tasks from single ticket loop">任务进度</a>
-              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from single ticket loop">看 Factor</a>
-              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next from single ticket loop">看 Next</a>
-              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from single ticket loop">ETF/融资风险</a>
-            </div>
-            <p className="risk-note">单票闭环只把候选、确认、任务、最近结果和三个回放入口串起来；不提交、不重试、不调用 Tushare/DeepSeek/GitHub、不改交易策略。</p>
           </div>
           <div aria-label="candidate radar ordinary vertical slice readback">
             <h3>纵切速读</h3>
