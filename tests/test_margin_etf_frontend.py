@@ -29,6 +29,47 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertIn("现金/杠杆", ordinary_slice)
         self.assertIn("所有 ETF 行都不是买入、加仓或加融资指令", ordinary_slice)
 
+    def test_margin_etf_candidate_row_reading_guide_explains_each_visible_row(self):
+        table_start = self.page.index('title="ETF 候选分组"')
+        guide_start = self.page.index('aria-label="margin etf candidate row reading guide"', table_start)
+        table_rows_start = self.page.index("DataLineageTable rows={allVisibleEtfRows}", guide_start)
+        audit_start = self.page.index('aria-label="margin etf audit details"')
+        guide = self.page[guide_start:table_rows_start]
+
+        self.assertLess(table_start, guide_start)
+        self.assertLess(guide_start, table_rows_start)
+        self.assertLess(guide_start, audit_start)
+        self.assertIn("marginEtfCandidateReadingSummary", self.page)
+        self.assertIn("marginEtfCandidateReadingItems", self.page)
+        self.assertIn("marginEtfCandidateReadingRows", self.page)
+        self.assertIn("每行怎么读", guide)
+        self.assertIn('aria-label="margin etf candidate row reading summary"', guide)
+        self.assertIn("MetricGrid items={marginEtfCandidateReadingItems}", guide)
+        self.assertIn('aria-label="margin etf candidate row reading rows"', guide)
+        self.assertIn("<summary>查看逐行读法</summary>", guide)
+        self.assertIn("DataLineageTable rows={marginEtfCandidateReadingRows}", guide)
+        for label in (
+            'label: "逐行读法"',
+            'label: "状态含义"',
+            'label: "风险核对"',
+            'label: "缺口处理"',
+            'label: "边界"',
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn("推荐=优先复核；观察=等触发；回避/排除=不要追高", self.page)
+        self.assertIn("流动性、同类重叠、现金/杠杆必须一起看", self.page)
+        self.assertIn("ETF 行只是风险预算参考，不是买入、加仓、加融资或下单指令", self.page)
+        self.assertIn("怎么读", self.page)
+        self.assertIn("风险核对", self.page)
+        self.assertIn("缺数据时保持观察，不新增融资、不追高、不下单", self.page)
+        self.assertIn("逐行读法只重排本地候选行", guide)
+        self.assertIn("不刷新外部数据、不创建任务、不交易", guide)
+        self.assertIn("推荐不是买入，观察不是加仓，回避/排除不是反向交易信号", guide)
+        self.assertNotIn("onClick=", guide)
+        self.assertNotIn("postTask(", guide)
+        self.assertNotIn("fetch(", guide)
+        self.assertNotIn("TaskStatusPanel", guide)
+
     def test_margin_etf_page_keeps_render_and_local_replay_boundaries(self):
         self.assertIn("getBootstrapStatus", self.page)
         self.assertIn("runtimeModeLabel", self.page)

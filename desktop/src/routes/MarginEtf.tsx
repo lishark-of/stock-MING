@@ -517,6 +517,55 @@ export default function MarginEtf() {
     ...textRows(etfPacket.margin_risk_notice, "margin_risk_notice"),
     ...textRows(etfPacket.decision_guardrail, "decision_guardrail")
   ].slice(0, 12);
+  const marginEtfCandidateReadingSummary = noEtfRows
+    ? "暂无 ETF 候选行；先看融资现金线和缺口，不把缺数据当成低风险。"
+    : `当前 ${allVisibleEtfRows.length} 行 ETF 候选先按状态和理由阅读，再核对流动性、重叠和现金/杠杆。`;
+  const marginEtfCandidateReadingItems: MetricItem[] = [
+    {
+      label: "逐行读法",
+      value: noEtfRows ? "没有候选行时先保持观察" : "先看状态和理由，再看三项风险核对",
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "状态含义",
+      value: "推荐=优先复核；观察=等触发；回避/排除=不要追高",
+      tone: "good"
+    },
+    {
+      label: "风险核对",
+      value: "流动性、同类重叠、现金/杠杆必须一起看",
+      tone: "good"
+    },
+    {
+      label: "缺口处理",
+      value: noEtfRows ? ordinaryMissingEvidence : "缺字段按保守处理，不自动补调外部数据",
+      tone: noEtfRows ? "warn" : "good"
+    },
+    {
+      label: "边界",
+      value: "ETF 行只是风险预算参考，不是买入、加仓、加融资或下单指令",
+      tone: "good"
+    }
+  ];
+  const marginEtfCandidateReadingRows = allVisibleEtfRows.length
+    ? allVisibleEtfRows.map((row, index) => ({
+        顺序: index + 1,
+        ETF: text(row.ETF),
+        怎么看: `${text(row.状态, "观察")}：${text(row.理由, "等本地快照补充")}`,
+        来源: text(row.来源, source),
+        风险核对: `流动性 ${text(row.流动性)} / 重叠 ${text(row.重叠)} / 现金杠杆 ${text(row["现金/杠杆"])}`,
+        边界: text(row.边界, "不是买入、加仓或加融资指令")
+      }))
+    : [
+        {
+          顺序: "等待",
+          ETF: "暂无可读 ETF 候选",
+          怎么看: "先看融资现金线、降级原因和本地回放按钮",
+          来源: source,
+          风险核对: ordinaryMissingEvidence,
+          边界: "缺数据时保持观察，不新增融资、不追高、不下单"
+        }
+      ];
   const detailItems: MetricItem[] = [
     { label: "packet", value: text(etfPacket.packet_key, "command_center_etf_packet") },
     { label: "角色", value: text(etfPacket.packet_role, "ETF/融资配置证据") },
@@ -638,6 +687,17 @@ export default function MarginEtf() {
       </PacketCard>
 
       <PacketCard title="ETF 候选分组" subtitle="推荐、观察、回避和排除分开看" status={noEtfRows ? "waiting" : "ready"}>
+        <div aria-label="margin etf candidate row reading guide">
+          <h3>每行怎么读</h3>
+          <p className="ordinary-status-note" aria-label="margin etf candidate row reading summary" aria-live="polite">{marginEtfCandidateReadingSummary}</p>
+          <MetricGrid items={marginEtfCandidateReadingItems} />
+          <details className="developer-audit-details" aria-label="margin etf candidate row reading rows">
+            <summary>查看逐行读法</summary>
+            <p className="risk-note">逐行读法只重排本地候选行的状态、理由、来源、流动性、重叠和现金/杠杆；不刷新外部数据、不创建任务、不交易。</p>
+            <DataLineageTable rows={marginEtfCandidateReadingRows} />
+          </details>
+          <p className="risk-note">读法卡只帮助普通用户看懂已有 ETF 行；推荐不是买入，观察不是加仓，回避/排除不是反向交易信号。</p>
+        </div>
         <DataLineageTable rows={allVisibleEtfRows} />
         <p className="risk-note">每行先看来源、状态、理由、流动性、同类重叠、融资现金线（现金/杠杆）和边界。推荐只表示优先复核；观察等待触发条件；回避/排除不能拿来追高。所有 ETF 行都不是买入、加仓或加融资指令。</p>
       </PacketCard>
