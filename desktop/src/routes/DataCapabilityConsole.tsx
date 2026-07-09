@@ -120,6 +120,32 @@ export default function DataCapabilityConsole() {
       边界: "只读本地数据能力账本；不从页面打开触发 provider、模型或交易。"
     };
   });
+  const dataCapabilityTushareResultHandoffRows = [
+    {
+      结果入口: "今日作战台",
+      页面: "#home",
+      用户看法: "确认当前股票、最近结果和 Tushare-first 是否已经回放。",
+      边界: "首页输入静默；只有确认按钮才创建 Tushare-first task。"
+    },
+    {
+      结果入口: "下一票雷达",
+      页面: "#candidates/candidate-radar-search-quant-projection",
+      用户看法: "确认股票代码、任务回执、call_ledger 和候选来源。",
+      边界: "候选不是买入指令；链接只切换本地页面。"
+    },
+    {
+      结果入口: "股票量化推演",
+      页面: "#factor",
+      用户看法: "用已回放的数据看支持/压制、P2 三面和 P3 结论。",
+      边界: "Factor 页 GET cache 只读，不补调 Tushare/DeepSeek。"
+    },
+    {
+      结果入口: "次日图谱",
+      页面: "#next",
+      用户看法: "用同一条确认链看路径、参考线和 operation_zones。",
+      边界: "operation_zones 只是条件区间，不是交易动作。"
+    }
+  ];
 
   const providerRows = providerCards.map((card) => ({
     provider: card.provider,
@@ -153,6 +179,17 @@ export default function DataCapabilityConsole() {
         <div aria-label="data capability tushare readable rows">
           <DataLineageTable rows={dataCapabilityTushareReadableRows} />
         </div>
+        <div className="actions" aria-label="data capability tushare result handoff actions">
+          <a href="#home" title="回今日作战台；只读查看当前标的和最近结果" aria-label="open home from data capability tushare card">今日作战台</a>
+          <a href="#candidates/candidate-radar-search-quant-projection" title="切换到下一票雷达确认输入区；输入静默，确认按钮才创建任务" aria-label="open candidate radar from data capability tushare card">下一票雷达</a>
+          <a href="#factor" title="切换到股票量化推演；只读 Factor cache" aria-label="open factor from data capability tushare card">股票量化推演</a>
+          <a href="#next" title="切换到次日图谱；只读本地图谱 cache" aria-label="open next session from data capability tushare card">次日图谱</a>
+        </div>
+        <details className="developer-audit-details" aria-label="data capability tushare result handoff rows">
+          <summary>这些数据去哪看结果</summary>
+          <p className="risk-note">这张小表只把 Tushare 能力状态回流到普通投研入口；不提交刷新、不创建任务、不调用外部服务。</p>
+          <DataLineageTable rows={dataCapabilityTushareResultHandoffRows} />
+        </details>
         <p className="risk-note">这张卡只整理本地 data capability / data health cache；不会在页面打开时调用 Tushare、DeepSeek、GitHub，不会创建 task，不会把权限不足、空窗口或缓存降级解释成无风险，也不会生成买入、加仓或融资指令。</p>
       </PacketCard>
 
