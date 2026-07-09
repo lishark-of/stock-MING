@@ -12,6 +12,7 @@ import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
+const DATA_CAPABILITY_HREF = "#dataCapability";
 
 function rowsFromArray(items: unknown, fallbackKey = "value"): Array<Record<string, unknown>> {
   if (!Array.isArray(items)) return [];
@@ -557,6 +558,9 @@ export default function NextSessionMap() {
       ? "先看图表路径、参考线和 operation_zones。"
       : "先看上游 Tushare-first 结论，再手动生成完整次日图谱。"
     : "回下一票雷达确认输入区，输入股票代码并点击确认按钮。";
+  const nextSessionDataCapabilityReviewLabel = nextSessionTushareDataCardReady
+    ? "Tushare 数据凭证已有本地回放；图谱缺口、空窗口和结果包去数据能力页复核。"
+    : "Tushare 数据凭证、权限、空窗口或本地结果包缺口去数据能力页复核；本页不探测接口。";
   const nextSessionTushareDataCardItems: MetricItem[] = [
     {
       label: "Tushare 数据卡",
@@ -784,6 +788,11 @@ export default function NextSessionMap() {
       label: "明确降级",
       value: nextSessionDegradedSourceLabel,
       tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn"
+    },
+    {
+      label: "数据能力",
+      value: nextSessionDataCapabilityReviewLabel,
+      tone: nextSessionTushareDataCardReady ? "good" : "warn"
     },
     {
       label: "下一步按钮",
@@ -1447,6 +1456,7 @@ export default function NextSessionMap() {
         <div className="actions" aria-label="next session app visible now local actions">
           <a href={nextSessionOrdinaryProgressCheckpointAnchor} title="跳到当前最短可读位置；只切换本地锚点" aria-label="open current visible next session area">{nextSessionOrdinaryProgressCheckpointLabel}</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from visible now summary">换标的</a>
+          <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare 数据凭证、权限、空窗口和本地结果包缺口" aria-label="open data capability from next session visible now summary">数据能力</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from visible now summary">看支持/压制</a>
         </div>
         <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：股票、图谱状态、来源层、降级原因和下一步入口；普通链接只切换本地页面或锚点，不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不改 operation_zones 或 strategy action。</p>
