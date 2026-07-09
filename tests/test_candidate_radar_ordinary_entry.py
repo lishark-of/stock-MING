@@ -1235,6 +1235,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("candidatePoolLeadCandidateDisplay", self.page)
         self.assertIn("candidatePoolCurrentResultSentence", self.page)
         self.assertIn("candidatePoolCurrentResultItems", self.page)
+        self.assertIn("candidatePoolGroupActionItems", self.page)
         self.assertIn("当前候选池可继续复核：先看", self.page)
         self.assertIn("这张卡只帮你挑复核对象；不生成买入、卖出、加仓或融资指令", self.page)
         self.assertIn('aria-label="candidate pool current result card"', pool)
@@ -1261,18 +1262,47 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('href="#marginEtf"', pool)
         self.assertIn("只读候选池当前缓存和本地来源状态", pool)
         self.assertIn("链接只切换本地页面，不刷新外部数据、不创建新任务、不交易、不改策略", pool)
+        self.assertIn('aria-label="candidate pool top watch excluded direct actions"', pool)
+        self.assertIn("按分组直接下一步", pool)
+        self.assertIn("Top 先解释单票，Watch 只观察触发条件，Excluded 先看排除原因", pool)
+        self.assertIn("MetricGrid items={candidatePoolGroupActionItems}", pool)
+        for group_label in (
+            'label: "Top"',
+            'label: "Watch"',
+            'label: "Excluded"',
+            'label: "结果回放"',
+            'label: "边界"',
+        ):
+            self.assertIn(group_label, self.page)
+        self.assertIn('aria-label="candidate pool top watch excluded direct action links"', pool)
+        self.assertIn('aria-label="explain top candidate from candidate pool group actions"', pool)
+        self.assertIn('aria-label="watch candidates stay in candidate pool group actions"', pool)
+        self.assertIn('aria-label="review excluded candidates in candidate pool group actions"', pool)
+        self.assertIn('aria-label="open factor from candidate pool group actions"', pool)
+        self.assertIn('aria-label="open next session from candidate pool group actions"', pool)
+        self.assertIn('aria-label="open margin etf from candidate pool group actions"', pool)
+        self.assertIn("不会买入、卖出、加仓、加融资、下单或修改 strategy action", pool)
 
         plain_start = pool.index('aria-label="candidate pool plain result conclusion"')
         current_start = pool.index('aria-label="candidate pool current result card"')
         first_screen_items_start = pool.index("MetricGrid items={candidatePoolFirstScreenItems}", current_start)
+        group_direct_start = pool.index('aria-label="candidate pool top watch excluded direct actions"', first_screen_items_start)
+        group_direct_end = pool.index('<p>{String(cache.summary', group_direct_start)
         self.assertLess(plain_start, current_start)
         self.assertLess(current_start, first_screen_items_start)
+        self.assertLess(first_screen_items_start, group_direct_start)
         current = pool[current_start:first_screen_items_start]
+        group_direct = pool[group_direct_start:group_direct_end]
         self.assertNotIn("onClick=", current)
         self.assertNotIn("fetch(", current)
         self.assertNotIn("postCandidateRadar", current)
         self.assertNotIn("launchQuantProjection", current)
         self.assertNotIn("TaskStatusPanel", current)
+        self.assertNotIn("onClick=", group_direct)
+        self.assertNotIn("fetch(", group_direct)
+        self.assertNotIn("postCandidateRadar", group_direct)
+        self.assertNotIn("launchQuickScan", group_direct)
+        self.assertNotIn("TaskStatusPanel", group_direct)
 
     def test_candidate_radar_progress_checkpoint_is_navigation_only(self):
         summary_start = self.page.index('title="普通用户雷达摘要"')

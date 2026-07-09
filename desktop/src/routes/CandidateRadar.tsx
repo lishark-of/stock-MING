@@ -1081,6 +1081,33 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidatePoolGroupActionItems: MetricItem[] = [
+    {
+      label: "Top",
+      value: ordinaryCandidateTopCount ? `先解释 ${candidatePoolLeadCandidateDisplay}` : "等待 Top 候选",
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "Watch",
+      value: ordinaryCandidateWatchCount ? "只观察触发条件、来源和缺口" : "当前无 Watch，继续看 Top 或输入单票",
+      tone: ordinaryCandidateWatchCount ? "good" : "neutral"
+    },
+    {
+      label: "Excluded",
+      value: ordinaryCandidateExcludedCount ? "先看排除原因，不当成清仓或低风险信号" : "当前无 Excluded，保留排除边界",
+      tone: ordinaryCandidateExcludedCount ? "warn" : "neutral"
+    },
+    {
+      label: "结果回放",
+      value: "解释单票后再看 Factor、Next 和 ETF/融资风险",
+      tone: "good"
+    },
+    {
+      label: "边界",
+      value: "这些入口只切本地页面或锚点；不快扫、不 POST、不交易",
+      tone: "good"
+    }
+  ];
   const candidatePoolLeadCandidateGroup = displayText(candidatePoolLeadCandidateRow.group ?? candidatePoolLeadCandidateRow["分组"], ordinaryCandidateTopCount ? "Top" : "无候选");
   const candidatePoolLeadCandidateScore = displayText(candidatePoolLeadCandidateRow.score ?? candidatePoolLeadCandidateRow["分数"], ordinaryCandidateTopCount ? "未标记分数" : "无分数");
   const candidatePoolLeadCandidateReason = displayText(
@@ -5565,6 +5592,20 @@ export default function CandidateRadar() {
                 <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from candidate pool first screen">量化推演</a>
                 <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照，不生成加融资指令" aria-label="open margin etf risk budget from candidate pool first screen">ETF/融资风险</a>
                 <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate pool first screen">次日图谱</a>
+              </div>
+              <div aria-label="candidate pool top watch excluded direct actions">
+                <h3>按分组直接下一步</h3>
+                <p className="ordinary-status-note">Top 先解释单票，Watch 只观察触发条件，Excluded 先看排除原因；这些入口只切换本地页面，不创建任务。</p>
+                <MetricGrid items={candidatePoolGroupActionItems} />
+                <div className="actions" aria-label="candidate pool top watch excluded direct action links">
+                  <a href="#candidate-radar-search-quant-projection" title="Top 候选需要解释时回确认输入区；输入静默，确认按钮才创建本地任务" aria-label="explain top candidate from candidate pool group actions">解释 Top</a>
+                  <a href="#candidate-pool" title="Watch 继续留在候选池观察触发条件、来源和缺口" aria-label="watch candidates stay in candidate pool group actions">观察 Watch</a>
+                  <a href="#candidate-pool" title="Excluded 继续留在候选池查看排除原因；不删除证据、不创建交易动作" aria-label="review excluded candidates in candidate pool group actions">看 Excluded</a>
+                  <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from candidate pool group actions">看 Factor</a>
+                  <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate pool group actions">看 Next</a>
+                  <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from candidate pool group actions">ETF/融资风险</a>
+                </div>
+                <p className="risk-note">分组动作只决定复核入口；不会买入、卖出、加仓、加融资、下单或修改 strategy action。</p>
               </div>
             </div>
             <p>{String(cache.summary ?? "候选雷达本地缓存只读展示。")}</p>
