@@ -201,13 +201,15 @@ class MarginEtfFrontendTests(unittest.TestCase):
         card_start = self.page.index('title="ETF / 融资操作台"')
         visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
         bridge_start = self.page.index('aria-label="margin etf candidate radar risk budget bridge"', card_start)
+        cash_line_start = self.page.index('aria-label="margin etf cash line quick read"', card_start)
         risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
-        bridge = self.page[bridge_start:risk_card_start]
+        bridge = self.page[bridge_start:cash_line_start]
 
         self.assertLess(visible_start, bridge_start)
-        self.assertLess(bridge_start, risk_card_start)
+        self.assertLess(bridge_start, cash_line_start)
+        self.assertLess(cash_line_start, risk_card_start)
         self.assertLess(bridge_start, actions_start)
         self.assertLess(bridge_start, audit_start)
         self.assertIn("marginEtfCandidateBridgeSentence", self.page)
@@ -247,6 +249,58 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertNotIn("postTask(", bridge)
         self.assertNotIn("fetch(", bridge)
         self.assertNotIn("TaskStatusPanel", bridge)
+
+    def test_margin_etf_cash_line_quick_read_is_first_screen_read_only(self):
+        card_start = self.page.index('title="ETF / 融资操作台"')
+        bridge_start = self.page.index('aria-label="margin etf candidate radar risk budget bridge"', card_start)
+        cash_line_start = self.page.index('aria-label="margin etf cash line quick read"', card_start)
+        risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
+        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        audit_start = self.page.index('aria-label="margin etf audit details"')
+        cash_line = self.page[cash_line_start:risk_card_start]
+
+        self.assertLess(bridge_start, cash_line_start)
+        self.assertLess(cash_line_start, risk_card_start)
+        self.assertLess(cash_line_start, actions_start)
+        self.assertLess(cash_line_start, audit_start)
+        self.assertIn("marginEtfCashLineSentence", self.page)
+        self.assertIn("marginEtfCashLineItems", self.page)
+        self.assertIn("marginEtfCashLineRows", self.page)
+        self.assertIn("融资现金线显示仍要现金优先", self.page)
+        self.assertIn("融资现金线当前结论是不新增融资", self.page)
+        self.assertIn("融资现金线怎么读", cash_line)
+        self.assertIn('aria-label="margin etf cash line sentence"', cash_line)
+        self.assertIn("MetricGrid items={marginEtfCashLineItems}", cash_line)
+        for label in (
+            'label: "当前融资"',
+            'label: "建议融资"',
+            'label: "现金缓冲"',
+            'label: "读法"',
+            'label: "缺口"',
+            'label: "禁令"',
+        ):
+            self.assertIn(label, self.page)
+        self.assertIn('aria-label="margin etf cash line local actions"', cash_line)
+        self.assertIn('href="#candidates"', cash_line)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', cash_line)
+        self.assertIn('href="#risk"', cash_line)
+        self.assertIn('aria-label="margin etf cash line rows"', cash_line)
+        self.assertIn("<summary>查看现金线读法</summary>", cash_line)
+        self.assertIn("DataLineageTable rows={marginEtfCashLineRows}", cash_line)
+        for row in (
+            '读法: "1. 当前融资"',
+            '读法: "2. 建议融资"',
+            '读法: "3. 现金缓冲"',
+            '读法: "4. 回流复核"',
+        ):
+            self.assertIn(row, self.page)
+        self.assertIn("缺数据按保守处理", cash_line)
+        self.assertIn("ETF 强弱不能变成买入、加仓、加融资或下单指令", cash_line)
+        self.assertIn("不会刷新外部数据、不创建任务、不交易、不改策略", cash_line)
+        self.assertNotIn("onClick=", cash_line)
+        self.assertNotIn("postTask(", cash_line)
+        self.assertNotIn("fetch(", cash_line)
+        self.assertNotIn("TaskStatusPanel", cash_line)
 
     def test_margin_etf_local_refresh_result_quick_read_after_button(self):
         card_start = self.page.index('title="ETF / 融资操作台"')

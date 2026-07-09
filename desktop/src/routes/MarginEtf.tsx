@@ -393,6 +393,67 @@ export default function MarginEtf() {
       边界: "链接只切换本地页面，不创建任务、不交易、不改策略"
     }
   ];
+  const marginEtfCashLineSentence = allowNewMargin
+    ? "融资现金线显示仍要现金优先；即便允许小额，也必须等触发条件和数据证据齐备。"
+    : "融资现金线当前结论是不新增融资；ETF 强弱只能作为研究参考，不能当加杠杆许可。";
+  const marginEtfCashLineItems: MetricItem[] = [
+    {
+      label: "当前融资",
+      value: percent(currentMarginRatio),
+      tone: currentMarginRatio ? "warn" : "neutral"
+    },
+    {
+      label: "建议融资",
+      value: percent(recommendedMarginRatio),
+      tone: allowNewMargin ? "warn" : "good"
+    },
+    {
+      label: "现金缓冲",
+      value: percent(recommendedCashRatio),
+      tone: recommendedCashRatio ? "good" : "warn"
+    },
+    {
+      label: "读法",
+      value: marginEtfCashLineSentence,
+      tone: allowNewMargin ? "warn" : "good"
+    },
+    {
+      label: "缺口",
+      value: ordinaryMissingEvidence,
+      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+    },
+    {
+      label: "禁令",
+      value: "融资比例不是加杠杆许可；ETF 候选不是买入或加融资指令",
+      tone: "good"
+    }
+  ];
+  const marginEtfCashLineRows = [
+    {
+      读法: "1. 当前融资",
+      当前状态: percent(currentMarginRatio),
+      用户下一步: "先确认当前融资压力，再看是否需要降低风险敞口。",
+      边界: "当前比例只读本地 packet，不生成调仓或融资动作。"
+    },
+    {
+      读法: "2. 建议融资",
+      当前状态: percent(recommendedMarginRatio),
+      用户下一步: allowNewMargin ? "即便允许小额，也要等触发条件和人工复核。" : "保持不新增融资。",
+      边界: "建议比例不是下单、加仓或加融资指令。"
+    },
+    {
+      读法: "3. 现金缓冲",
+      当前状态: percent(recommendedCashRatio),
+      用户下一步: "现金缓冲不足或缺失时按保守处理。",
+      边界: "缺数据不等于低风险，也不自动补调外部数据。"
+    },
+    {
+      读法: "4. 回流复核",
+      当前状态: ordinaryMissingEvidence,
+      用户下一步: "数据缺口去数据能力页；换标的回下一票雷达；全局风险回风险护栏。",
+      边界: "本地链接只切换页面，不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易。"
+    }
+  ];
   const marginEtfRiskCardRows = [
     {
       复核项: "1. ETF 候选",
@@ -641,6 +702,22 @@ export default function MarginEtf() {
             <DataLineageTable rows={marginEtfCandidateBridgeRows} />
           </details>
           <p className="risk-note">这张承接卡只读本地 ETF/融资快照；普通链接只切换本地页面，不刷新外部数据、不创建任务、不交易、不改策略。</p>
+        </div>
+        <div aria-label="margin etf cash line quick read">
+          <h3>融资现金线怎么读</h3>
+          <p className="ordinary-status-note" aria-label="margin etf cash line sentence" aria-live="polite">{marginEtfCashLineSentence}</p>
+          <MetricGrid items={marginEtfCashLineItems} />
+          <div className="actions" aria-label="margin etf cash line local actions">
+            <a href="#candidates" title="切换到下一票雷达；候选不是买入指令" aria-label="return candidate radar from margin etf cash line">换标的</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare、权限、空窗口和本地 packet 状态" aria-label="open data capability from margin etf cash line">数据能力</a>
+            <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf cash line">风险护栏</a>
+          </div>
+          <details className="developer-audit-details" aria-label="margin etf cash line rows">
+            <summary>查看现金线读法</summary>
+            <p className="risk-note">现金线读法只整理本地融资比例、建议比例、现金缓冲和缺口；不会刷新外部数据、不创建任务、不交易、不改策略。</p>
+            <DataLineageTable rows={marginEtfCashLineRows} />
+          </details>
+          <p className="risk-note">融资现金线只用于风险预算：缺数据按保守处理；ETF 强弱不能变成买入、加仓、加融资或下单指令。</p>
         </div>
         <div aria-label="margin etf ordinary risk card">
           <h3>ETF / 融资风险卡</h3>
