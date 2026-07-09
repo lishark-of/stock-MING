@@ -3979,6 +3979,46 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarSingleTicketLoopSentence =
+    quantProjectionInterpretationReady || quantProjectionSmallDataReady
+      ? `单票闭环已有结果：${quantProjectionProgressWatchSymbol || quantProjectionDisplaySymbol || "当前标的"} 先看最近结果，再去 Factor、Next 和 ETF/融资风险做只读复核。`
+      : taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? `单票闭环正在回放：先看任务进度，success 后刷新本地 cache，再看最近结果、Factor、Next 和 ETF/融资风险。`
+        : ordinaryCandidateTopCount
+          ? `单票闭环从 Top 开始：先解释 ${candidatePoolLeadCandidateDisplay}，确认输入后看任务进度和最近结果。`
+          : "单票闭环等待候选或输入：先回确认输入区，确认按钮才会创建本地投研任务。";
+  const candidateRadarSingleTicketLoopItems: MetricItem[] = [
+    {
+      label: "1. 解释 Top",
+      value: ordinaryCandidateTopCount ? candidatePoolLeadCandidateDisplay : "暂无 Top；先看候选池或输入单票",
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "2. 确认输入",
+      value: quantProjectionCanSubmit ? `可确认 ${quantProjectionSymbolValidation.normalized}` : quantProjectionDisabledReason,
+      tone: quantProjectionCanSubmit ? "good" : quantProjectionP0Ready ? "neutral" : "warn"
+    },
+    {
+      label: "3. 任务进度",
+      value: taskReceipt?.ok || quantProjectionPersistedTaskId ? quantProjectionLatestUserProgress : "确认后看 TaskStatusPanel / 任务目录",
+      tone: taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : quantProjectionCanSubmit ? "neutral" : "warn"
+    },
+    {
+      label: "4. 最近结果",
+      value: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? quantProjectionOrdinaryResultSummary : quantProjectionReplayDestinationState,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "5. 后续入口",
+      value: quantProjectionP2P3ConnectionReady ? "Factor -> Next -> ETF/融资风险只读复核" : "结果待回放时先看 Factor / Next 的降级提示",
+      tone: quantProjectionP2P3ConnectionReady ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "闭环卡只切换本地页面或锚点；不创建第二个 task、不补调 provider/model、不交易",
+      tone: "good"
+    }
+  ];
   const ordinaryCandidateReviewCompassItems: MetricItem[] = [
     {
       label: "先看哪组",
@@ -4950,6 +4990,20 @@ export default function CandidateRadar() {
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="return confirm input after candidate radar confirm bridge">换一只票</a>
             </div>
             <p className="risk-note">确认后桥接只解释本地回放入口：Factor、Next 和 ETF/融资都只读已有 cache / packet；普通链接不刷新 provider、不调用模型、不写 cache、不交易、不改交易策略。</p>
+          </div>
+          <div aria-label="candidate radar single ticket closed loop">
+            <h3>单票闭环</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar single ticket closed loop sentence" aria-live="polite">{candidateRadarSingleTicketLoopSentence}</p>
+            <MetricGrid items={candidateRadarSingleTicketLoopItems} />
+            <div className="actions" aria-label="candidate radar single ticket closed loop actions">
+              <a href="#candidate-pool" title="跳到候选池；只读 Top / Watch / Excluded" aria-label="open candidate pool from single ticket loop">候选池</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from single ticket loop">确认输入</a>
+              <a href="#tasks" title="查看本地任务目录；不创建新任务" aria-label="open tasks from single ticket loop">任务进度</a>
+              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from single ticket loop">看 Factor</a>
+              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next from single ticket loop">看 Next</a>
+              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from single ticket loop">ETF/融资风险</a>
+            </div>
+            <p className="risk-note">单票闭环只把候选、确认、任务、最近结果和三个回放入口串起来；不提交、不重试、不调用 Tushare/DeepSeek/GitHub、不改交易策略。</p>
           </div>
           <div aria-label="candidate radar ordinary vertical slice readback">
             <h3>纵切速读</h3>

@@ -560,6 +560,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(visible_now_start, qa_start)
         self.assertIn("candidateRadarPostConfirmNextStepSentence", self.page)
         self.assertIn("candidateRadarPostConfirmNextStepItems", self.page)
+        self.assertIn("candidateRadarSingleTicketLoopSentence", self.page)
+        self.assertIn("candidateRadarSingleTicketLoopItems", self.page)
         self.assertIn('aria-label="candidate radar post confirm next step bridge"', summary_primary_slice)
         self.assertIn("确认后看这 3 处", summary_primary_slice)
         self.assertIn('aria-label="candidate radar post confirm next step sentence"', summary_primary_slice)
@@ -567,6 +569,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         post_confirm_start = summary_primary_slice.index('aria-label="candidate radar post confirm next step bridge"')
         post_confirm_end = summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"', post_confirm_start)
         post_confirm_slice = summary_primary_slice[post_confirm_start:post_confirm_end]
+        single_ticket_start = summary_primary_slice.index('aria-label="candidate radar single ticket closed loop"', post_confirm_start)
+        single_ticket_end = summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"', single_ticket_start)
+        single_ticket_slice = summary_primary_slice[single_ticket_start:single_ticket_end]
         self.assertIn("MetricGrid items={candidateRadarPostConfirmNextStepItems}", post_confirm_slice)
         self.assertIn('aria-label="candidate radar post confirm next step actions"', post_confirm_slice)
         self.assertIn('href="#factor/factor-score"', post_confirm_slice)
@@ -577,9 +582,29 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="open next session after candidate radar confirm"', post_confirm_slice)
         self.assertIn('aria-label="open margin etf after candidate radar confirm"', post_confirm_slice)
         self.assertIn('aria-label="return confirm input after candidate radar confirm bridge"', post_confirm_slice)
+        self.assertIn("单票闭环", single_ticket_slice)
+        self.assertIn('aria-label="candidate radar single ticket closed loop sentence"', single_ticket_slice)
+        self.assertIn("MetricGrid items={candidateRadarSingleTicketLoopItems}", single_ticket_slice)
+        self.assertIn('aria-label="candidate radar single ticket closed loop actions"', single_ticket_slice)
+        self.assertIn('href="#candidate-pool"', single_ticket_slice)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', single_ticket_slice)
+        self.assertIn('href="#tasks"', single_ticket_slice)
+        self.assertIn('href="#factor/factor-score"', single_ticket_slice)
+        self.assertIn('href="#next/next-session-chart"', single_ticket_slice)
+        self.assertIn('href="#marginEtf"', single_ticket_slice)
+        self.assertIn('aria-label="open candidate pool from single ticket loop"', single_ticket_slice)
+        self.assertIn('aria-label="open confirm input from single ticket loop"', single_ticket_slice)
+        self.assertIn('aria-label="open tasks from single ticket loop"', single_ticket_slice)
+        self.assertIn('aria-label="open factor from single ticket loop"', single_ticket_slice)
+        self.assertIn('aria-label="open next from single ticket loop"', single_ticket_slice)
+        self.assertIn('aria-label="open margin etf from single ticket loop"', single_ticket_slice)
+        self.assertIn("不提交、不重试、不调用 Tushare/DeepSeek/GitHub、不改交易策略", single_ticket_slice)
         self.assertNotIn("onClick=", post_confirm_slice)
         self.assertNotIn("postCandidateRadar", post_confirm_slice)
         self.assertNotIn("launchQuantProjection", post_confirm_slice)
+        self.assertNotIn("onClick=", single_ticket_slice)
+        self.assertNotIn("postCandidateRadar", single_ticket_slice)
+        self.assertNotIn("launchQuantProjection", single_ticket_slice)
         post_confirm_items_start = self.page.index("const candidateRadarPostConfirmNextStepItems")
         post_confirm_items_end = self.page.index("const ordinaryCandidateReviewCompassItems", post_confirm_items_start)
         post_confirm_items_slice = self.page[post_confirm_items_start:post_confirm_items_end]
@@ -592,10 +617,19 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "边界"',
         ):
             self.assertIn(post_confirm_label, post_confirm_items_slice)
+        for single_ticket_label in (
+            'label: "1. 解释 Top"',
+            'label: "2. 确认输入"',
+            'label: "3. 任务进度"',
+            'label: "4. 最近结果"',
+            'label: "5. 后续入口"',
+        ):
+            self.assertIn(single_ticket_label, post_confirm_items_slice)
         self.assertIn("ETF/融资风险只读本地预算，不生成加仓或加融资指令", post_confirm_items_slice)
         self.assertIn("不创建第二个 task、不调用 Tushare/DeepSeek、不交易", post_confirm_items_slice)
         self.assertLess(visible_now_start, post_confirm_start)
-        self.assertLess(post_confirm_start, summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"'))
+        self.assertLess(post_confirm_start, single_ticket_start)
+        self.assertLess(single_ticket_start, summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"'))
         self.assertIn('aria-label="candidate radar user first actions"', summary_primary_slice)
         self.assertIn('href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"}', summary_primary_slice)
         self.assertIn('aria-label="candidate radar denoised first screen guide"', summary_primary_slice)
