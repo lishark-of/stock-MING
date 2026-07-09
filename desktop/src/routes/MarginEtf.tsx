@@ -70,6 +70,8 @@ function textRows(value: unknown, source: string) {
   }));
 }
 
+const DATA_CAPABILITY_HREF = "#dataCapability";
+
 export default function MarginEtf() {
   const [etfPacket, setEtfPacket] = useState<Record<string, unknown>>({});
   const [marginPacket, setMarginPacket] = useState<Record<string, unknown>>({});
@@ -267,6 +269,11 @@ export default function MarginEtf() {
       label: "来源层",
       value: `${source} / command_center_margin_packet / bootstrap status`,
       tone: dataStatus === "ready" || dataStatus === "cached" ? "good" : "warn"
+    },
+    {
+      label: "数据能力",
+      value: "ETF/融资缺口去数据能力页复核 Tushare、权限、空窗口和本地 packet 状态",
+      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
     },
     {
       label: "明确降级",
@@ -614,6 +621,7 @@ export default function MarginEtf() {
           <div className="actions" aria-label="margin etf app visible now local actions">
             <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf visible now">换标的</a>
             <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf visible now">看风险护栏</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare、权限、空窗口和本地 packet 状态" aria-label="open data capability from margin etf visible now">看数据能力</a>
             <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf visible now">今日作战台</a>
           </div>
           <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、降级原因和下一步入口；普通链接只切换本地页面，不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不加融资、不改 strategy action。</p>

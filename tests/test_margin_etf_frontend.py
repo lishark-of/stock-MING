@@ -164,6 +164,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertLess(visible_start, audit_start)
         self.assertIn("marginEtfAppVisibleNowSentence", source_before_audit)
         self.assertIn("marginEtfAppVisibleNowItems", source_before_audit)
+        self.assertIn("DATA_CAPABILITY_HREF", source_before_audit)
         self.assertIn("打开 app 能看到 ETF/融资的降级等待态", source_before_audit)
         self.assertIn("打开 app 能看到 ${allVisibleEtfRows.length} 行 ETF 候选", source_before_audit)
         for label in (
@@ -171,11 +172,13 @@ class MarginEtfFrontendTests(unittest.TestCase):
             'label: "ETF 候选"',
             'label: "融资现金线"',
             'label: "来源层"',
+            'label: "数据能力"',
             'label: "明确降级"',
             'label: "下一步入口"',
             'label: "安全边界"',
         ):
             self.assertIn(label, source_before_audit)
+        self.assertIn("ETF/融资缺口去数据能力页复核 Tushare、权限、空窗口和本地 packet 状态", source_before_audit)
         self.assertIn("打开 app 能看到什么", visible_slice)
         self.assertIn('aria-label="margin etf app visible now sentence"', visible_slice)
         self.assertIn("{marginEtfAppVisibleNowSentence}", visible_slice)
@@ -183,7 +186,9 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertIn('aria-label="margin etf app visible now local actions"', visible_slice)
         self.assertIn('href="#candidates"', visible_slice)
         self.assertIn('href="#risk"', visible_slice)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', visible_slice)
         self.assertIn('href="#home"', visible_slice)
+        self.assertIn("看数据能力", visible_slice)
         self.assertIn("这个条带只回答普通用户打开页面能看到什么", visible_slice)
         self.assertIn("普通链接只切换本地页面", visible_slice)
         self.assertIn("不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不加融资", visible_slice)
