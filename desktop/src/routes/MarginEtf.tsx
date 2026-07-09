@@ -786,18 +786,26 @@ export default function MarginEtf() {
       />
 
       <PacketCard title="ETF / 融资操作台" subtitle="普通用户先看这里" status={status}>
+        <div aria-label="margin etf app visible now summary">
+          <h3>打开 app 能看到什么</h3>
+          <p className="ordinary-status-note" aria-label="margin etf app visible now sentence" aria-live="polite">{marginEtfAppVisibleNowSentence}</p>
+          <MetricGrid items={marginEtfAppVisibleNowItems} />
+          <div className="actions" aria-label="margin etf app visible now local actions">
+            <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf visible now">换标的</a>
+            <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf visible now">看风险护栏</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf visible now">看数据能力</a>
+            <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf visible now">今日作战台</a>
+          </div>
+          <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、降级原因和下一步入口；普通链接只切换本地页面，不启动刷新流程、不刷新外部数据或模型、不交易、不加融资、不改交易策略。</p>
+        </div>
+
         <div aria-label="margin etf ordinary plain conclusion">
           <h3>普通结论</h3>
           <p className="ordinary-status-note" aria-label="margin etf ordinary plain conclusion sentence" aria-live="polite">{ordinaryPlainConclusion}</p>
           <MetricGrid items={ordinaryPlainItems} />
           <p className="risk-note">普通结论只读本地 ETF/融资快照；页面打开、查看结果和切换入口都不会启动刷新流程、刷新外部数据或模型、改写交易策略。</p>
         </div>
-        <div aria-label="margin etf first viewport risk summary card">
-          <h3>ETF / 融资一屏风险卡</h3>
-          <p className="ordinary-status-note" aria-label="margin etf first viewport risk sentence" aria-live="polite">{marginEtfFirstViewportRiskSentence}</p>
-          <MetricGrid items={marginEtfFirstViewportRiskItems} />
-          <p className="risk-note">这张风险卡只合成本地 ETF 候选、融资现金线和缺口；不启动刷新流程、不刷新外部数据或模型、不交易、不加融资。</p>
-        </div>
+
         <div aria-label="margin etf first viewport action strip">
           <h3>首屏下一步</h3>
           <p className="ordinary-status-note" aria-label="margin etf first viewport action sentence" aria-live="polite">{marginEtfFirstViewportActionSentence}</p>
@@ -811,59 +819,7 @@ export default function MarginEtf() {
           </div>
           <p className="risk-note">首屏操作条只做本地锚点跳转；不会自动刷新 ETF、不会调用 Tushare/DeepSeek/GitHub、不会创建 task、不会交易或改写策略。</p>
         </div>
-        <MetricGrid items={summaryItems} />
-        <div aria-label="margin etf ordinary first screen quick read">
-          <h3>现在能看什么</h3>
-          <p className="ordinary-status-note" aria-label="margin etf ordinary quick read summary" aria-live="polite">{ordinaryQuickReadSummary}</p>
-          <MetricGrid items={ordinaryQuickReadItems} />
-          <p className="risk-note">这张速读只读本地 ETF/融资快照和本地融资状态；不会启动刷新流程、不会调用外部数据或模型服务、不会交易或改写策略。</p>
-        </div>
-        <div aria-label="margin etf app visible now summary">
-          <h3>打开 app 能看到什么</h3>
-          <p className="ordinary-status-note" aria-label="margin etf app visible now sentence" aria-live="polite">{marginEtfAppVisibleNowSentence}</p>
-          <MetricGrid items={marginEtfAppVisibleNowItems} />
-          <div className="actions" aria-label="margin etf app visible now local actions">
-            <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf visible now">换标的</a>
-            <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf visible now">看风险护栏</a>
-            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf visible now">看数据能力</a>
-            <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf visible now">今日作战台</a>
-          </div>
-          <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、降级原因和下一步入口；普通链接只切换本地页面，不启动刷新流程、不刷新外部数据或模型、不交易、不加融资、不改交易策略。</p>
-        </div>
-        <div aria-label="margin etf post research risk path">
-          <h3>确认结果后查风险预算</h3>
-          <p className="ordinary-status-note" aria-label="margin etf post research risk path sentence" aria-live="polite">{marginEtfPostResearchRiskPathSentence}</p>
-          <MetricGrid items={marginEtfPostResearchRiskPathItems} />
-          <div className="actions" aria-label="margin etf post research risk path actions">
-            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from margin etf post research path">看 Factor</a>
-            <a href="#next/next-session-chart" title="切换到次日图谱；只读本地 next-session cache" aria-label="open next from margin etf post research path">看 Next</a>
-            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf post research path">数据能力</a>
-            <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf post research path">换标的</a>
-            <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf post research path">风险护栏</a>
-          </div>
-          <details className="developer-audit-details" aria-label="margin etf post research risk path rows">
-            <summary>查看结果到风险预算路径</summary>
-            <p className="risk-note">这张路径表只说明从量化推演或次日图谱到 ETF/融资风险预算怎么读；不启动刷新流程、不刷新外部数据或模型、不交易。</p>
-            <DataLineageTable rows={marginEtfPostResearchRiskPathRows} />
-          </details>
-          <p className="risk-note">确认结果后的风险预算只读本地快照：ETF 候选不是买入，融资比例不是加杠杆许可，缺数据按保守处理。</p>
-        </div>
-        <div aria-label="margin etf candidate radar risk budget bridge">
-          <h3>从候选页过来怎么看</h3>
-          <p className="ordinary-status-note" aria-label="margin etf candidate bridge sentence" aria-live="polite">{marginEtfCandidateBridgeSentence}</p>
-          <MetricGrid items={marginEtfCandidateBridgeItems} />
-          <div className="actions" aria-label="margin etf candidate bridge local actions">
-            <a href="#candidates" title="切换到下一票雷达；候选不是买入指令" aria-label="return candidate radar from margin etf bridge">回下一票雷达</a>
-            <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf bridge">看风险护栏</a>
-            <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf bridge">今日作战台</a>
-          </div>
-          <details className="developer-audit-details" aria-label="margin etf candidate bridge rows">
-            <summary>查看承接顺序</summary>
-            <p className="risk-note">承接顺序只说明候选页、ETF/融资和风险护栏怎么读；不读取外部数据，不启动刷新流程，不生成交易动作。</p>
-            <DataLineageTable rows={marginEtfCandidateBridgeRows} />
-          </details>
-          <p className="risk-note">这张承接卡只读本地 ETF/融资快照；普通链接只切换本地页面，不刷新外部数据、不启动刷新流程、不交易、不改策略。</p>
-        </div>
+
         <div id="margin-etf-cash-line" aria-label="margin etf cash line quick read">
           <h3>融资现金线怎么读</h3>
           <p className="ordinary-status-note" aria-label="margin etf cash line sentence" aria-live="polite">{marginEtfCashLineSentence}</p>
@@ -880,23 +836,7 @@ export default function MarginEtf() {
           </details>
           <p className="risk-note">融资现金线只用于风险预算：缺数据按保守处理；ETF 强弱不能变成买入、加仓、加融资或下单指令。</p>
         </div>
-        <div aria-label="margin etf ordinary risk card">
-          <h3>ETF / 融资风险卡</h3>
-          <p className="ordinary-status-note" aria-label="margin etf ordinary risk card summary" aria-live="polite">{marginEtfRiskCardStatus}</p>
-          <MetricGrid items={marginEtfRiskCardItems} />
-          <details className="developer-audit-details" aria-label="margin etf ordinary risk card rows">
-            <summary>风险复核顺序</summary>
-            <p className="risk-note">这张明细只整理本地 ETF 候选、融资现金线和缺口；不读取外部数据，不启动刷新流程，不把候选变成交易动作。</p>
-            <DataLineageTable rows={marginEtfRiskCardRows} />
-          </details>
-          <p className="risk-note">风险卡只读本地 ETF/融资快照；ETF 候选不是买入指令，融资比例不是加杠杆许可，缺数据时按保守处理。</p>
-        </div>
-        <div aria-label="margin etf mode layered live light boundary">
-          <h3>运行模式分层</h3>
-          <p className="ordinary-status-note">把本地快照、按钮刷新、数据证据、旧入口退场和交易隔离分开看；live_light 也只能是可审计后台流程，不是页面渲染外联。</p>
-          <MetricGrid items={modeLayerItems} />
-        </div>
-        <p className="ordinary-status-note">{text(etfPacket.evidence_summary, text(etfPacket.summary, "暂无 ETF/融资快照；先保留观察，不新增融资。"))}</p>
+
         <div id="margin-etf-local-refresh-actions" className="actions" aria-label="margin etf primary actions">
           <button
             type="button"
@@ -930,6 +870,75 @@ export default function MarginEtf() {
         <TaskLaunchReceipt receipt={taskReceipt} />
         <TaskStatusPanel taskId={taskId} onSuccess={refresh} />
         <p className="risk-note">{boundary}</p>
+
+        <details className="developer-audit-details" aria-label="margin etf supporting read details">
+          <summary>展开 ETF/融资更多读法</summary>
+          <p className="risk-note">下面保留路径承接、运行模式和审计口径；默认收起，避免普通用户第一眼被长表淹没。</p>
+          <div aria-label="margin etf first viewport risk summary card">
+            <h3>ETF / 融资一屏风险卡</h3>
+            <p className="ordinary-status-note" aria-label="margin etf first viewport risk sentence" aria-live="polite">{marginEtfFirstViewportRiskSentence}</p>
+            <MetricGrid items={marginEtfFirstViewportRiskItems} />
+            <p className="risk-note">这张风险卡只合成本地 ETF 候选、融资现金线和缺口；不启动刷新流程、不刷新外部数据或模型、不交易、不加融资。</p>
+          </div>
+          <MetricGrid items={summaryItems} />
+          <div aria-label="margin etf ordinary first screen quick read">
+            <h3>现在能看什么</h3>
+            <p className="ordinary-status-note" aria-label="margin etf ordinary quick read summary" aria-live="polite">{ordinaryQuickReadSummary}</p>
+            <MetricGrid items={ordinaryQuickReadItems} />
+            <p className="risk-note">这张速读只读本地 ETF/融资快照和本地融资状态；不会启动刷新流程、不会调用外部数据或模型服务、不会交易或改写策略。</p>
+          </div>
+          <div aria-label="margin etf post research risk path">
+            <h3>确认结果后查风险预算</h3>
+            <p className="ordinary-status-note" aria-label="margin etf post research risk path sentence" aria-live="polite">{marginEtfPostResearchRiskPathSentence}</p>
+            <MetricGrid items={marginEtfPostResearchRiskPathItems} />
+            <div className="actions" aria-label="margin etf post research risk path actions">
+              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from margin etf post research path">看 Factor</a>
+              <a href="#next/next-session-chart" title="切换到次日图谱；只读本地 next-session cache" aria-label="open next from margin etf post research path">看 Next</a>
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf post research path">数据能力</a>
+              <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf post research path">换标的</a>
+              <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf post research path">风险护栏</a>
+            </div>
+            <details className="developer-audit-details" aria-label="margin etf post research risk path rows">
+              <summary>查看结果到风险预算路径</summary>
+              <p className="risk-note">这张路径表只说明从量化推演或次日图谱到 ETF/融资风险预算怎么读；不启动刷新流程、不刷新外部数据或模型、不交易。</p>
+              <DataLineageTable rows={marginEtfPostResearchRiskPathRows} />
+            </details>
+            <p className="risk-note">确认结果后的风险预算只读本地快照：ETF 候选不是买入，融资比例不是加杠杆许可，缺数据按保守处理。</p>
+          </div>
+          <div aria-label="margin etf candidate radar risk budget bridge">
+            <h3>从候选页过来怎么看</h3>
+            <p className="ordinary-status-note" aria-label="margin etf candidate bridge sentence" aria-live="polite">{marginEtfCandidateBridgeSentence}</p>
+            <MetricGrid items={marginEtfCandidateBridgeItems} />
+            <div className="actions" aria-label="margin etf candidate bridge local actions">
+              <a href="#candidates" title="切换到下一票雷达；候选不是买入指令" aria-label="return candidate radar from margin etf bridge">回下一票雷达</a>
+              <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf bridge">看风险护栏</a>
+              <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf bridge">今日作战台</a>
+            </div>
+            <details className="developer-audit-details" aria-label="margin etf candidate bridge rows">
+              <summary>查看承接顺序</summary>
+              <p className="risk-note">承接顺序只说明候选页、ETF/融资和风险护栏怎么读；不读取外部数据，不启动刷新流程，不生成交易动作。</p>
+              <DataLineageTable rows={marginEtfCandidateBridgeRows} />
+            </details>
+            <p className="risk-note">这张承接卡只读本地 ETF/融资快照；普通链接只切换本地页面，不刷新外部数据、不启动刷新流程、不交易、不改策略。</p>
+          </div>
+          <div aria-label="margin etf ordinary risk card">
+            <h3>ETF / 融资风险卡</h3>
+            <p className="ordinary-status-note" aria-label="margin etf ordinary risk card summary" aria-live="polite">{marginEtfRiskCardStatus}</p>
+            <MetricGrid items={marginEtfRiskCardItems} />
+            <details className="developer-audit-details" aria-label="margin etf ordinary risk card rows">
+              <summary>风险复核顺序</summary>
+              <p className="risk-note">这张明细只整理本地 ETF 候选、融资现金线和缺口；不读取外部数据，不启动刷新流程，不把候选变成交易动作。</p>
+              <DataLineageTable rows={marginEtfRiskCardRows} />
+            </details>
+            <p className="risk-note">风险卡只读本地 ETF/融资快照；ETF 候选不是买入指令，融资比例不是加杠杆许可，缺数据时按保守处理。</p>
+          </div>
+          <div aria-label="margin etf mode layered live light boundary">
+            <h3>运行模式分层</h3>
+            <p className="ordinary-status-note">把本地快照、按钮刷新、数据证据、旧入口退场和交易隔离分开看；live_light 也只能是可审计后台流程，不是页面渲染外联。</p>
+            <MetricGrid items={modeLayerItems} />
+          </div>
+          <p className="ordinary-status-note">{text(etfPacket.evidence_summary, text(etfPacket.summary, "暂无 ETF/融资快照；先保留观察，不新增融资。"))}</p>
+        </details>
       </PacketCard>
 
       <PacketCard title="ETF 候选分组" subtitle="推荐、观察、回避和排除分开看" status={noEtfRows ? "waiting" : "ready"}>

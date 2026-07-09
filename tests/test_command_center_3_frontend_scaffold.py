@@ -66,6 +66,37 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("react", package["dependencies"])
         self.assertIn("echarts", package["dependencies"])
 
+    def test_margin_etf_first_card_leads_with_app_visible_risk_review(self):
+        source = (ROOT / "src" / "routes" / "MarginEtf.tsx").read_text(encoding="utf-8")
+
+        card_start = source.index('      <PacketCard title="ETF / 融资操作台"')
+        card_end = source.index('      <PacketCard title="ETF 候选分组"', card_start)
+        card = source[card_start:card_end]
+        visible_start = card.index('aria-label="margin etf app visible now summary"')
+        plain_start = card.index('aria-label="margin etf ordinary plain conclusion"')
+        action_start = card.index('aria-label="margin etf first viewport action strip"')
+        cash_line_start = card.index('id="margin-etf-cash-line"')
+        local_refresh_start = card.index('id="margin-etf-local-refresh-actions"')
+        supporting_details_start = card.index('aria-label="margin etf supporting read details"')
+
+        self.assertEqual(card.count('aria-label="margin etf app visible now summary"'), 1)
+        self.assertLess(visible_start, plain_start)
+        self.assertLess(plain_start, action_start)
+        self.assertLess(action_start, cash_line_start)
+        self.assertLess(cash_line_start, local_refresh_start)
+        self.assertLess(local_refresh_start, supporting_details_start)
+        self.assertIn("打开 app 能看到什么", card[:plain_start])
+        self.assertIn("MetricGrid items={marginEtfAppVisibleNowItems}", card[:plain_start])
+        self.assertIn('aria-label="margin etf app visible now local actions"', card[:plain_start])
+        self.assertIn("不会自动刷新 ETF、不会调用 Tushare/DeepSeek/GitHub、不会创建 task、不会交易或改写策略", card[:cash_line_start])
+        self.assertIn("展开 ETF/融资更多读法", card[supporting_details_start:])
+        self.assertIn('aria-label="margin etf first viewport risk summary card"', card[supporting_details_start:])
+        self.assertIn('aria-label="margin etf ordinary first screen quick read"', card[supporting_details_start:])
+        self.assertIn('aria-label="margin etf post research risk path"', card[supporting_details_start:])
+        self.assertIn('aria-label="margin etf mode layered live light boundary"', card[supporting_details_start:])
+        self.assertNotIn("运行模式分层", card[:supporting_details_start])
+        self.assertNotIn("确认结果后查风险预算", card[:supporting_details_start])
+
     def test_vite_build_splits_route_and_vendor_chunks(self):
         source = (ROOT / "vite.config.ts").read_text(encoding="utf-8")
 

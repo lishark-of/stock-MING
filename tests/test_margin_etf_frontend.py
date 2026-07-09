@@ -87,22 +87,29 @@ class MarginEtfFrontendTests(unittest.TestCase):
 
     def test_margin_etf_first_screen_shows_ordinary_quick_read_before_actions(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
+        visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
         plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
         viewport_action_start = self.page.index('aria-label="margin etf first viewport action strip"', card_start)
-        quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
-        mode_start = self.page.index('aria-label="margin etf mode layered live light boundary"', card_start)
+        cash_line_start = self.page.index('aria-label="margin etf cash line quick read"', card_start)
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        supporting_details_start = self.page.index('aria-label="margin etf supporting read details"', card_start)
+        quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
+        post_research_start = self.page.index('aria-label="margin etf post research risk path"', card_start)
+        mode_start = self.page.index('aria-label="margin etf mode layered live light boundary"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
         plain_slice = self.page[plain_start:viewport_action_start]
-        quick_read_slice = self.page[quick_read_start:mode_start]
+        quick_read_slice = self.page[quick_read_start:post_research_start]
 
-        self.assertLess(card_start, plain_start)
+        self.assertLess(card_start, visible_start)
+        self.assertLess(visible_start, plain_start)
         self.assertLess(plain_start, viewport_action_start)
-        self.assertLess(viewport_action_start, quick_read_start)
+        self.assertLess(viewport_action_start, cash_line_start)
+        self.assertLess(cash_line_start, actions_start)
+        self.assertLess(actions_start, supporting_details_start)
+        self.assertLess(supporting_details_start, quick_read_start)
         self.assertLess(plain_start, quick_read_start)
         self.assertLess(card_start, quick_read_start)
         self.assertLess(quick_read_start, mode_start)
-        self.assertLess(quick_read_start, actions_start)
         self.assertLess(quick_read_start, audit_start)
         self.assertIn("ordinaryPlainConclusion", self.page)
         self.assertIn("ordinaryPlainGap", self.page)
@@ -153,18 +160,22 @@ class MarginEtfFrontendTests(unittest.TestCase):
 
     def test_margin_etf_first_viewport_risk_summary_card_combines_etf_and_cash_line(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
-        plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
-        risk_start = self.page.index('aria-label="margin etf first viewport risk summary card"', card_start)
-        action_start = self.page.index('aria-label="margin etf first viewport action strip"', card_start)
         visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
+        action_start = self.page.index('aria-label="margin etf first viewport action strip"', card_start)
         primary_actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        supporting_details_start = self.page.index('aria-label="margin etf supporting read details"', card_start)
+        risk_start = self.page.index('aria-label="margin etf first viewport risk summary card"', card_start)
+        quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
-        risk_slice = self.page[risk_start:action_start]
+        risk_slice = self.page[risk_start:quick_read_start]
 
+        self.assertLess(visible_start, plain_start)
         self.assertLess(plain_start, risk_start)
-        self.assertLess(risk_start, action_start)
-        self.assertLess(risk_start, visible_start)
-        self.assertLess(risk_start, primary_actions_start)
+        self.assertLess(action_start, primary_actions_start)
+        self.assertLess(primary_actions_start, supporting_details_start)
+        self.assertLess(supporting_details_start, risk_start)
+        self.assertLess(risk_start, quick_read_start)
         self.assertLess(risk_start, audit_start)
         self.assertIn("marginEtfFirstViewportRiskSentence", self.page)
         self.assertIn("marginEtfFirstViewportRiskItems", self.page)
@@ -192,16 +203,17 @@ class MarginEtfFrontendTests(unittest.TestCase):
     def test_margin_etf_app_visible_now_summary_is_first_screen_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         audit_start = self.page.index('aria-label="margin etf audit details"')
-        quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
         visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
         risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
-        visible_slice = self.page[visible_start:risk_card_start]
+        visible_slice = self.page[visible_start:plain_start]
         source_before_audit = self.page[:audit_start]
 
-        self.assertLess(quick_read_start, visible_start)
-        self.assertLess(visible_start, risk_card_start)
+        self.assertLess(card_start, visible_start)
+        self.assertLess(visible_start, plain_start)
         self.assertLess(visible_start, actions_start)
+        self.assertLess(visible_start, risk_card_start)
         self.assertLess(visible_start, audit_start)
         self.assertIn("marginEtfAppVisibleNowSentence", source_before_audit)
         self.assertIn("marginEtfAppVisibleNowItems", source_before_audit)
@@ -240,20 +252,24 @@ class MarginEtfFrontendTests(unittest.TestCase):
 
     def test_margin_etf_first_viewport_action_strip_links_to_local_sections(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
-        plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
-        quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
         visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
         action_start = self.page.index('aria-label="margin etf first viewport action strip"', card_start)
-        post_research_start = self.page.index('aria-label="margin etf post research risk path"', card_start)
+        cash_line_start = self.page.index('aria-label="margin etf cash line quick read"', card_start)
         primary_actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        supporting_details_start = self.page.index('aria-label="margin etf supporting read details"', card_start)
+        quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
+        post_research_start = self.page.index('aria-label="margin etf post research risk path"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
-        action_slice = self.page[action_start:quick_read_start]
+        action_slice = self.page[action_start:cash_line_start]
 
+        self.assertLess(visible_start, plain_start)
         self.assertLess(plain_start, action_start)
-        self.assertLess(action_start, quick_read_start)
-        self.assertLess(action_start, visible_start)
-        self.assertLess(action_start, post_research_start)
+        self.assertLess(action_start, cash_line_start)
         self.assertLess(action_start, primary_actions_start)
+        self.assertLess(primary_actions_start, supporting_details_start)
+        self.assertLess(supporting_details_start, quick_read_start)
+        self.assertLess(action_start, post_research_start)
         self.assertLess(action_start, audit_start)
         self.assertIn("marginEtfFirstViewportActionSentence", self.page)
         self.assertIn("marginEtfFirstViewportActionItems", self.page)
@@ -290,15 +306,17 @@ class MarginEtfFrontendTests(unittest.TestCase):
     def test_margin_etf_post_research_risk_path_is_first_screen_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        supporting_details_start = self.page.index('aria-label="margin etf supporting read details"', card_start)
         post_research_start = self.page.index('aria-label="margin etf post research risk path"', card_start)
         bridge_start = self.page.index('aria-label="margin etf candidate radar risk budget bridge"', card_start)
-        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
         post_research = self.page[post_research_start:bridge_start]
 
         self.assertLess(visible_start, post_research_start)
+        self.assertLess(actions_start, supporting_details_start)
+        self.assertLess(supporting_details_start, post_research_start)
         self.assertLess(post_research_start, bridge_start)
-        self.assertLess(post_research_start, actions_start)
         self.assertLess(post_research_start, audit_start)
         self.assertIn("marginEtfPostResearchRiskPathSentence", self.page)
         self.assertIn("marginEtfPostResearchRiskPathItems", self.page)
@@ -344,20 +362,22 @@ class MarginEtfFrontendTests(unittest.TestCase):
     def test_margin_etf_candidate_bridge_is_first_screen_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
+        cash_line_start = self.page.index('aria-label="margin etf cash line quick read"', card_start)
+        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        supporting_details_start = self.page.index('aria-label="margin etf supporting read details"', card_start)
         post_research_start = self.page.index('aria-label="margin etf post research risk path"', card_start)
         bridge_start = self.page.index('aria-label="margin etf candidate radar risk budget bridge"', card_start)
-        cash_line_start = self.page.index('aria-label="margin etf cash line quick read"', card_start)
         risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
-        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
-        bridge = self.page[bridge_start:cash_line_start]
+        bridge = self.page[bridge_start:risk_card_start]
 
         self.assertLess(visible_start, bridge_start)
+        self.assertLess(visible_start, cash_line_start)
+        self.assertLess(cash_line_start, actions_start)
+        self.assertLess(actions_start, supporting_details_start)
         self.assertLess(visible_start, post_research_start)
         self.assertLess(post_research_start, bridge_start)
-        self.assertLess(bridge_start, cash_line_start)
-        self.assertLess(cash_line_start, risk_card_start)
-        self.assertLess(bridge_start, actions_start)
+        self.assertLess(bridge_start, risk_card_start)
         self.assertLess(bridge_start, audit_start)
         self.assertIn("marginEtfCandidateBridgeSentence", self.page)
         self.assertIn("marginEtfCandidateBridgeItems", self.page)
@@ -399,16 +419,20 @@ class MarginEtfFrontendTests(unittest.TestCase):
 
     def test_margin_etf_cash_line_quick_read_is_first_screen_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
-        bridge_start = self.page.index('aria-label="margin etf candidate radar risk budget bridge"', card_start)
+        visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
         cash_line_start = self.page.index('aria-label="margin etf cash line quick read"', card_start)
-        risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        supporting_details_start = self.page.index('aria-label="margin etf supporting read details"', card_start)
+        bridge_start = self.page.index('aria-label="margin etf candidate radar risk budget bridge"', card_start)
+        risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
-        cash_line = self.page[cash_line_start:risk_card_start]
+        cash_line = self.page[cash_line_start:actions_start]
 
-        self.assertLess(bridge_start, cash_line_start)
-        self.assertLess(cash_line_start, risk_card_start)
+        self.assertLess(visible_start, cash_line_start)
         self.assertLess(cash_line_start, actions_start)
+        self.assertLess(actions_start, supporting_details_start)
+        self.assertLess(supporting_details_start, bridge_start)
+        self.assertLess(bridge_start, risk_card_start)
         self.assertLess(cash_line_start, audit_start)
         self.assertIn("marginEtfCashLineSentence", self.page)
         self.assertIn("marginEtfCashLineItems", self.page)
@@ -489,16 +513,18 @@ class MarginEtfFrontendTests(unittest.TestCase):
 
     def test_margin_etf_risk_card_is_first_screen_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
+        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        supporting_details_start = self.page.index('aria-label="margin etf supporting read details"', card_start)
         quick_read_start = self.page.index('aria-label="margin etf ordinary first screen quick read"', card_start)
         risk_card_start = self.page.index('aria-label="margin etf ordinary risk card"', card_start)
         mode_start = self.page.index('aria-label="margin etf mode layered live light boundary"', card_start)
-        actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
         risk_card = self.page[risk_card_start:mode_start]
 
+        self.assertLess(actions_start, supporting_details_start)
+        self.assertLess(supporting_details_start, quick_read_start)
         self.assertLess(quick_read_start, risk_card_start)
         self.assertLess(risk_card_start, mode_start)
-        self.assertLess(risk_card_start, actions_start)
         self.assertLess(risk_card_start, audit_start)
         self.assertIn("marginEtfRiskCardStatus", self.page)
         self.assertIn("marginEtfRiskCardItems", self.page)
@@ -539,15 +565,17 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertNotIn("fetch(", risk_card)
         self.assertNotIn("TaskStatusPanel", risk_card)
 
-    def test_margin_etf_mode_layers_are_visible_before_actions_and_read_only(self):
+    def test_margin_etf_mode_layers_are_folded_after_actions_and_read_only(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
         actions_start = self.page.index('aria-label="margin etf primary actions"', card_start)
+        supporting_details_start = self.page.index('aria-label="margin etf supporting read details"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
         mode_start = self.page.index('aria-label="margin etf mode layered live light boundary"', card_start)
-        mode_slice = self.page[mode_start:actions_start]
+        card_end = self.page.index('      <PacketCard title="ETF 候选分组"', card_start)
+        mode_slice = self.page[mode_start:card_end]
 
-        self.assertLess(card_start, mode_start)
-        self.assertLess(mode_start, actions_start)
+        self.assertLess(actions_start, supporting_details_start)
+        self.assertLess(supporting_details_start, mode_start)
         self.assertLess(mode_start, audit_start)
         self.assertIn("运行模式分层", mode_slice)
         self.assertIn("把本地快照、按钮刷新、数据证据、旧入口退场和交易隔离分开看", mode_slice)
