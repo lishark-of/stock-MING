@@ -3135,6 +3135,101 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarTypedSymbolSentence = quantProjectionTaskReceiptInputMismatch
+    ? `当前输入 ${quantProjectionSymbolValidation.normalized} 和最近结果 ${quantProjectionAcceptedTaskSymbol} 不一致；旧结果只作为参考，需要重新点击确认。`
+    : quantProjectionSymbolReady
+      ? `当前输入 ${quantProjectionSymbolValidation.normalized} 已通过本地格式校验；输入本身不会创建任务，确认按钮才进入本地投研链。`
+      : searchSymbol.trim()
+        ? `当前输入还没通过本地格式校验：${quantProjectionSymbolValidation.reason}；页面不会自动取数。`
+        : "等待输入股票代码；页面先展示候选池和最近本地回放，不会自动取数。";
+  const candidateRadarTypedSymbolItems: MetricItem[] = [
+    {
+      label: "当前输入",
+      value: quantProjectionSymbolReady
+        ? quantProjectionSymbolValidation.normalized
+        : searchSymbol.trim()
+          ? "格式待修正"
+          : "等待 6 位 A 股代码",
+      tone: quantProjectionSymbolReady ? "good" : searchSymbol.trim() ? "warn" : "neutral"
+    },
+    {
+      label: "本地校验",
+      value: quantProjectionSymbolReady
+        ? "格式通过；还未自动创建任务"
+        : searchSymbol.trim()
+          ? `阻断：${quantProjectionSymbolValidation.reason}`
+          : "输入框保持静默",
+      tone: quantProjectionSymbolReady ? "good" : searchSymbol.trim() ? "warn" : "neutral"
+    },
+    {
+      label: "最近结果归属",
+      value: quantProjectionTaskReceiptInputMismatch
+        ? `最近结果属于 ${quantProjectionAcceptedTaskSymbol}，当前输入需重新确认`
+        : quantProjectionAcceptedTaskSymbol
+          ? `最近结果属于 ${quantProjectionAcceptedTaskSymbol}`
+          : "暂无可归属的最近确认结果",
+      tone: quantProjectionTaskReceiptInputMismatch ? "warn" : quantProjectionAcceptedTaskSymbol ? "good" : "neutral"
+    },
+    {
+      label: "确认按钮",
+      value: quantProjectionCanSubmit
+        ? `可确认 ${quantProjectionSymbolValidation.normalized}`
+        : quantProjectionDisabledReason,
+      tone: quantProjectionCanSubmit ? "good" : "warn"
+    },
+    {
+      label: "结果入口",
+      value: quantProjectionInterpretationReady || quantProjectionSmallDataReady
+        ? "可去股票量化推演和次日图谱回放"
+        : taskReceipt?.ok || quantProjectionPersistedTaskId
+          ? "先看任务状态，成功后刷新本地回放"
+          : "确认后再看量化推演、次日图谱和 ETF/融资风险",
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "不会发生",
+      value: "输入、GET cache 和本地跳转不会创建 task、调用 Tushare/DeepSeek 或交易",
+      tone: "good"
+    }
+  ];
+  const candidateRadarTypedSymbolRows = [
+    {
+      检查项: "1. 输入股票",
+      当前状态: candidateRadarTypedSymbolSentence,
+      用户下一步: quantProjectionSymbolReady ? "检查确认按钮状态，再决定是否点击确认。" : "输入 6 位 A 股代码或带 SH/SZ/BJ 后缀的代码。",
+      证据: "searchSymbol + normalizeAshareSymbolInput",
+      边界: "输入只做本地校验；不会创建 task、不会调用 provider/model。"
+    },
+    {
+      检查项: "2. 归属最近结果",
+      当前状态: quantProjectionTaskReceiptInputMismatch
+        ? `旧结果属于 ${quantProjectionAcceptedTaskSymbol}，当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认。`
+        : quantProjectionAcceptedTaskSymbol
+          ? `最近结果归属 ${quantProjectionAcceptedTaskSymbol}。`
+          : "没有最近确认结果可归属。",
+      用户下一步: quantProjectionTaskReceiptInputMismatch ? "重新确认当前输入，避免把旧结果当作当前票。" : "有最近结果时先作为历史参考。",
+      证据: "taskReceipt payload_safe / search_quant_projection_receipt",
+      边界: "页面不会取消旧 task，也不会把旧回执改写成新代码。"
+    },
+    {
+      检查项: "3. 点击确认",
+      当前状态: quantProjectionCanSubmit ? "确认按钮可用。" : quantProjectionDisabledReason,
+      用户下一步: quantProjectionCanSubmit ? "点击一次确认并等待 TaskStatusPanel 或本地 cache 回写。" : "先处理禁用原因。",
+      证据: "quantProjectionCanSubmit / quantProjectionP0Ready",
+      边界: "只有确认按钮点击才进入 POST task；本卡片和链接不会启动数据链。"
+    },
+    {
+      检查项: "4. 看结果",
+      当前状态: quantProjectionInterpretationReady || quantProjectionSmallDataReady
+        ? "本地结果已有可读回放。"
+        : taskReceipt?.ok || quantProjectionPersistedTaskId
+          ? "等待任务或本地 cache 回放。"
+          : "尚未确认，先看候选池和本地缓存。",
+      用户下一步: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "打开量化推演、次日图谱和 ETF/融资风险。" : quantProjectionTushareDataCardNext,
+      证据: "quantProjectionSmallDataReady / quantProjectionInterpretationReady / task receipt",
+      边界: "结果入口只切换本地页面；不补调 Tushare、DeepSeek、GitHub，不交易。"
+    }
+  ];
   const candidateRadarUserRouteQaSummary = candidateRadarUserRouteQaPassed
     ? `本轮本地路线 QA 已覆盖下一票雷达：${userRouteQaCoveredViewports.join(" / ") || "desktop / mobile"}，打开和输入未创建任务。`
     : userRouteQaEvidence.latest_report_status
@@ -3985,6 +4080,23 @@ export default function CandidateRadar() {
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from visible now app result">确认输入</a>
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from visible now app result">ETF/融资风险</a>
             </div>
+          </div>
+          <div aria-label="candidate radar typed symbol immediate readback">
+            <h3>输入股票后先看这里</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar typed symbol immediate sentence" aria-live="polite">{candidateRadarTypedSymbolSentence}</p>
+            <MetricGrid items={candidateRadarTypedSymbolItems} />
+            <div className="actions" aria-label="candidate radar typed symbol immediate actions">
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from typed symbol readback">确认输入</a>
+              <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from typed symbol readback">量化推演</a>
+              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from typed symbol readback">次日图谱</a>
+              <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from typed symbol readback">候选池</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar typed symbol immediate rows">
+              <summary>查看输入链路</summary>
+              <p className="risk-note">这张输入链路只读当前输入、最近 task receipt 和本地 cache 回放；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <DataLineageTable rows={candidateRadarTypedSymbolRows} />
+            </details>
+            <p className="risk-note">输入股票只是本地会话状态；只有确认按钮点击才进入按钮门控 POST task。结果链接只做本地页面跳转，不交易、不改交易策略。</p>
           </div>
           <div aria-label="candidate radar user route qa latest evidence">
             <h3>本轮路线 QA</h3>

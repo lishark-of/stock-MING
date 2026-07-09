@@ -126,6 +126,46 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             visible_now_start,
             summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"'),
         )
+        self.assertIn("candidateRadarTypedSymbolSentence", self.page)
+        self.assertIn("candidateRadarTypedSymbolItems", self.page)
+        self.assertIn("candidateRadarTypedSymbolRows", self.page)
+        self.assertIn('aria-label="candidate radar typed symbol immediate readback"', summary_primary_slice)
+        self.assertIn("输入股票后先看这里", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar typed symbol immediate sentence"', summary_primary_slice)
+        self.assertIn("MetricGrid items={candidateRadarTypedSymbolItems}", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar typed symbol immediate actions"', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar typed symbol immediate rows"', summary_primary_slice)
+        self.assertIn("<summary>查看输入链路</summary>", summary_primary_slice)
+        self.assertIn("DataLineageTable rows={candidateRadarTypedSymbolRows}", summary_primary_slice)
+        self.assertIn("输入股票只是本地会话状态；只有确认按钮点击才进入按钮门控 POST task", summary_primary_slice)
+        typed_symbol_start = summary_primary_slice.index('aria-label="candidate radar typed symbol immediate readback"')
+        typed_symbol_end = summary_primary_slice.index('aria-label="candidate radar user route qa latest evidence"', typed_symbol_start)
+        typed_symbol_slice = summary_primary_slice[typed_symbol_start:typed_symbol_end]
+        for typed_symbol_label in (
+            'label: "当前输入"',
+            'label: "本地校验"',
+            'label: "最近结果归属"',
+            'label: "确认按钮"',
+            'label: "结果入口"',
+            'label: "不会发生"',
+        ):
+            self.assertIn(typed_symbol_label, self.page)
+        for typed_symbol_row in (
+            '检查项: "1. 输入股票"',
+            '检查项: "2. 归属最近结果"',
+            '检查项: "3. 点击确认"',
+            '检查项: "4. 看结果"',
+        ):
+            self.assertIn(typed_symbol_row, self.page)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', typed_symbol_slice)
+        self.assertIn('href="#factor"', typed_symbol_slice)
+        self.assertIn('href="#next"', typed_symbol_slice)
+        self.assertIn('href="#candidate-pool"', typed_symbol_slice)
+        self.assertIn("不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", typed_symbol_slice)
+        self.assertNotIn("onClick=", typed_symbol_slice)
+        self.assertNotIn("postCandidateRadar", typed_symbol_slice)
+        self.assertNotIn("launchQuantProjection", typed_symbol_slice)
+        self.assertLess(visible_now_start, typed_symbol_start)
         self.assertIn("getAuditCache", self.page)
         self.assertIn("user_route_qa_evidence_contract", self.page)
         self.assertIn("candidateRadarUserRouteQaSummary", self.page)
@@ -161,6 +201,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", qa_slice)
         self.assertNotIn("postCandidateRadar", qa_slice)
         self.assertNotIn("launchQuantProjection", qa_slice)
+        self.assertLess(typed_symbol_start, qa_start)
         self.assertLess(visible_now_start, qa_start)
         self.assertIn("candidateRadarPostConfirmNextStepSentence", self.page)
         self.assertIn("candidateRadarPostConfirmNextStepItems", self.page)
