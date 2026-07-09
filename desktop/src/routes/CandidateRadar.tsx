@@ -2044,6 +2044,80 @@ export default function CandidateRadar() {
       边界: "不连接 broker、不创建 order endpoint、不修改 holdings 或 strategy action"
     }
   ];
+  const candidateRadarRealDataPreflightState = quantProjectionProviderLedgerReady
+    ? "真实数据账本已有回放；仍要等推广复核、CI/release 和旧雷达退场"
+    : searchQuantProjectionExecutionRequest.local_execution_request_ready === true
+      ? "真实数据补证未授权：execution request 已准备，按钮仍保持禁用/降级"
+      : "真实数据补证未授权：当前只读本地候选 cache、确认状态和缺口提示";
+  const candidateRadarRealDataPreflightItems: MetricItem[] = [
+    {
+      label: "当前状态",
+      value: candidateRadarRealDataPreflightState,
+      tone: quantProjectionProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "授权前提",
+      value: "需要用户明确授权本轮真实数据补证；未授权就保持 disabled/degraded",
+      tone: "warn"
+    },
+    {
+      label: "安全载荷",
+      value: "需要 scope hash + safe payload；敏感凭据不进前端、日志、packet 或报告",
+      tone: "good"
+    },
+    {
+      label: "必须留痕",
+      value: "provider call_ledger、failure-mode evidence、redaction/no-secret 边界",
+      tone: "warn"
+    },
+    {
+      label: "现在可做",
+      value: "先看候选池、确认单票、回放 Factor / Next / ETF 风险",
+      tone: "good"
+    },
+    {
+      label: "不会发生",
+      value: "打开页面、输入、GET cache、本地链接不会调用 Tushare/DeepSeek/GitHub/worker",
+      tone: "good"
+    },
+    {
+      label: "交易边界",
+      value: "候选不是买入指令；不下单、不改交易策略",
+      tone: "good"
+    }
+  ];
+  const candidateRadarRealDataPreflightRows = [
+    {
+      检查项: "1. 明确授权",
+      当前状态: quantProjectionProviderLedgerReady ? "已有账本回放；仍需推广复核" : "未授权时禁用/降级",
+      用户下一步: "需要真实数据补证时，先明确授权本轮 scope",
+      边界: "不从 render、输入、GET cache 或本地链接触发"
+    },
+    {
+      检查项: "2. 绑定 scope",
+      当前状态: searchQuantProjectionExecutionRequest.local_execution_request_ready === true ? "execution request 已准备" : "等待确认票和补证准备",
+      用户下一步: "绑定 scope hash 与 safe payload 后再进入补证任务",
+      边界: "敏感凭据不进前端、日志、packet 或报告"
+    },
+    {
+      检查项: "3. 留痕回放",
+      当前状态: quantProjectionProviderLedgerReady ? "call_ledger 已可回放" : "等待 provider call_ledger 与 failure-mode evidence",
+      用户下一步: "补齐 payload、call_ledger、failure-mode evidence 和 redaction 记录",
+      边界: "不把 receipt、dry-run、execution request 或 matrix 当 production complete"
+    },
+    {
+      检查项: "4. 推广复核",
+      当前状态: productionPromotionReview.ready_to_mark_production_radar_replacement_complete === true ? "推广复核可进入最终确认" : "最终推广仍 blocked",
+      用户下一步: "等真实数据账本、durable CI/release 和旧雷达退场证据齐后再复核",
+      边界: "本地页面只展示状态，不运行 GitHub、worker 或 legacy retirement"
+    },
+    {
+      检查项: "5. 交易隔离",
+      当前状态: "research-only",
+      用户下一步: "继续把候选当研究线索，必要时换一只票确认",
+      边界: "不下单、不连接 broker、不创建 order endpoint、不改 strategy action"
+    }
+  ];
   const quantProjectionTushareFirstState = quantProjectionProviderLedgerReady
     ? "数据链已回放；下一步看量化推演和次日图谱预览"
     : searchQuantProjectionReceipt.status
@@ -3878,6 +3952,24 @@ export default function CandidateRadar() {
               <DataLineageTable rows={candidateRadarLtg13NextDirectEvidenceRows} />
             </details>
             <p className="risk-note">这条速读只把下一条 direct evidence chain 讲清楚：不把本地 receipt、dry-run、execution request、matrix、browser artifact 或 local review 当 production replacement complete。</p>
+          </div>
+          <div aria-label="candidate radar real data preflight">
+            <h3>真实数据补证授权前状态</h3>
+            <p className="ordinary-status-note">{candidateRadarRealDataPreflightState}；这张卡只解释为什么现在是禁用/降级，以及授权前必须准备哪些证据。</p>
+            <MetricGrid items={candidateRadarRealDataPreflightItems} />
+            <div className="actions" aria-label="candidate radar real data preflight local actions">
+              <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from real data preflight">先看候选池</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from real data preflight">确认一只股票</a>
+              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from real data preflight">看 Factor</a>
+              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from real data preflight">看 Next</a>
+              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from real data preflight">看 ETF/融资</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar real data preflight rows">
+              <summary>查看授权前检查项</summary>
+              <p className="risk-note">检查项默认收起；展开后仍只读本地状态，不创建 task、不调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <DataLineageTable rows={candidateRadarRealDataPreflightRows} />
+            </details>
+            <p className="risk-note">真实数据补证只会在未来明确授权的 scope-bound provider run 中发生；普通页面打开、输入、GET cache、React render 和本地链接都不会触发。</p>
           </div>
           <div className="actions" aria-label="candidate radar user first actions">
             <a href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"} aria-label="open candidate radar user first primary action">{ordinaryPrimaryActionLabel}</a>

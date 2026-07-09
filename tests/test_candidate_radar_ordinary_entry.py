@@ -199,6 +199,65 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launchQuantProjectionProviderModelAcceptance", summary_primary_slice)
         self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", summary_primary_slice)
         self.assertNotIn("quant-projection-provider-model-acceptance", summary_primary_slice)
+        self.assertIn("candidateRadarRealDataPreflightState", self.page)
+        self.assertIn("candidateRadarRealDataPreflightItems", self.page)
+        self.assertIn("candidateRadarRealDataPreflightRows", self.page)
+        self.assertIn('aria-label="candidate radar real data preflight"', summary_primary_slice)
+        self.assertIn("真实数据补证授权前状态", summary_primary_slice)
+        self.assertIn("为什么现在是禁用/降级", summary_primary_slice)
+        self.assertIn("MetricGrid items={candidateRadarRealDataPreflightItems}", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar real data preflight local actions"', summary_primary_slice)
+        self.assertIn('href="#candidate-pool"', summary_primary_slice)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', summary_primary_slice)
+        self.assertIn('href="#factor/factor-score"', summary_primary_slice)
+        self.assertIn('href="#next/next-session-chart"', summary_primary_slice)
+        self.assertIn('href="#marginEtf"', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar real data preflight rows"', summary_primary_slice)
+        self.assertIn("<summary>查看授权前检查项</summary>", summary_primary_slice)
+        self.assertIn("不创建 task、不调用 Tushare/DeepSeek/GitHub、不启动 worker", summary_primary_slice)
+        self.assertIn("DataLineageTable rows={candidateRadarRealDataPreflightRows}", summary_primary_slice)
+        self.assertIn("scope-bound provider run", summary_primary_slice)
+        real_data_preflight_start = summary_primary_slice.index('aria-label="candidate radar real data preflight"')
+        real_data_preflight_end = summary_primary_slice.index(
+            'aria-label="candidate radar user first actions"',
+            real_data_preflight_start,
+        )
+        real_data_preflight_slice = summary_primary_slice[real_data_preflight_start:real_data_preflight_end]
+        for real_data_label in (
+            'label: "当前状态"',
+            'label: "授权前提"',
+            'label: "安全载荷"',
+            'label: "必须留痕"',
+            'label: "现在可做"',
+            'label: "不会发生"',
+            'label: "交易边界"',
+        ):
+            self.assertIn(real_data_label, self.page)
+        for real_data_row in (
+            '检查项: "1. 明确授权"',
+            '检查项: "2. 绑定 scope"',
+            '检查项: "3. 留痕回放"',
+            '检查项: "4. 推广复核"',
+            '检查项: "5. 交易隔离"',
+        ):
+            self.assertIn(real_data_row, self.page)
+        self.assertIn("需要用户明确授权本轮真实数据补证；未授权就保持 disabled/degraded", self.page)
+        self.assertIn("需要 scope hash + safe payload；敏感凭据不进前端、日志、packet 或报告", self.page)
+        self.assertIn("provider call_ledger、failure-mode evidence、redaction/no-secret 边界", self.page)
+        self.assertIn("先看候选池、确认单票、回放 Factor / Next / ETF 风险", self.page)
+        self.assertIn("打开页面、输入、GET cache、本地链接不会调用 Tushare/DeepSeek/GitHub/worker", self.page)
+        self.assertNotIn("onClick=", real_data_preflight_slice)
+        self.assertNotIn("postCandidateRadar", real_data_preflight_slice)
+        self.assertNotIn("launchQuantProjection", real_data_preflight_slice)
+        self.assertNotIn("launchProductionPromotionReview", real_data_preflight_slice)
+        self.assertLess(
+            summary_primary_slice.index('aria-label="candidate radar ltg13 next direct evidence quick read"'),
+            real_data_preflight_start,
+        )
+        self.assertLess(
+            real_data_preflight_start,
+            summary_primary_slice.index('aria-label="candidate radar ordinary candidate review compass"'),
+        )
         self.assertLess(
             summary_primary_slice.index('aria-label="candidate radar ltg13 next direct evidence quick read"'),
             summary_primary_slice.index('aria-label="candidate radar ordinary candidate review compass"'),
