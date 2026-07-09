@@ -207,6 +207,48 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postCandidateRadar", recent_result_slice)
         self.assertNotIn("launchQuantProjection", recent_result_slice)
         self.assertLess(typed_symbol_start, recent_result_start)
+        self.assertIn("candidatePoolLeadReviewSentence", self.page)
+        self.assertIn("candidatePoolLeadReviewItems", self.page)
+        self.assertIn("candidatePoolLeadReviewRows", self.page)
+        self.assertIn('aria-label="candidate radar lead candidate review card"', summary_primary_slice)
+        self.assertIn("候选池首位复核", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar lead candidate review sentence"', summary_primary_slice)
+        self.assertIn("MetricGrid items={candidatePoolLeadReviewItems}", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar lead candidate review actions"', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar lead candidate review rows"', summary_primary_slice)
+        self.assertIn("<summary>查看复核读法</summary>", summary_primary_slice)
+        self.assertIn("DataLineageTable rows={candidatePoolLeadReviewRows}", summary_primary_slice)
+        self.assertIn("首位候选只是复核顺序，不是推荐买入", summary_primary_slice)
+        lead_candidate_start = summary_primary_slice.index('aria-label="candidate radar lead candidate review card"')
+        lead_candidate_end = summary_primary_slice.index('aria-label="candidate radar user route qa latest evidence"', lead_candidate_start)
+        lead_candidate_slice = summary_primary_slice[lead_candidate_start:lead_candidate_end]
+        for lead_candidate_label in (
+            'label: "首个候选"',
+            'label: "分组"',
+            'label: "评分/理由"',
+            'label: "来源"',
+            'label: "缺口"',
+            'label: "下一步"',
+            'label: "非买入边界"',
+        ):
+            self.assertIn(lead_candidate_label, self.page)
+        for lead_candidate_row in (
+            '读法: "1. 首位候选"',
+            '读法: "2. 评分理由"',
+            '读法: "3. 来源和缺口"',
+            '读法: "4. 复核入口"',
+        ):
+            self.assertIn(lead_candidate_row, self.page)
+        self.assertIn('href="#candidate-pool"', lead_candidate_slice)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', lead_candidate_slice)
+        self.assertIn('href="#factor"', lead_candidate_slice)
+        self.assertIn('href="#next"', lead_candidate_slice)
+        self.assertIn('href="#marginEtf"', lead_candidate_slice)
+        self.assertIn("不会创建 task、不会运行快扫、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", lead_candidate_slice)
+        self.assertNotIn("onClick=", lead_candidate_slice)
+        self.assertNotIn("launchQuickScan", lead_candidate_slice)
+        self.assertNotIn("postCandidateRadar", lead_candidate_slice)
+        self.assertLess(recent_result_start, lead_candidate_start)
         self.assertIn("getAuditCache", self.page)
         self.assertIn("user_route_qa_evidence_contract", self.page)
         self.assertIn("candidateRadarUserRouteQaSummary", self.page)
@@ -242,6 +284,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", qa_slice)
         self.assertNotIn("postCandidateRadar", qa_slice)
         self.assertNotIn("launchQuantProjection", qa_slice)
+        self.assertLess(lead_candidate_start, qa_start)
         self.assertLess(recent_result_start, qa_start)
         self.assertLess(typed_symbol_start, qa_start)
         self.assertLess(visible_now_start, qa_start)

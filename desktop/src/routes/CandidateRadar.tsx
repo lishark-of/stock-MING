@@ -1064,6 +1064,90 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidatePoolLeadCandidateGroup = displayText(candidatePoolLeadCandidateRow.group ?? candidatePoolLeadCandidateRow["分组"], ordinaryCandidateTopCount ? "Top" : "无候选");
+  const candidatePoolLeadCandidateScore = displayText(candidatePoolLeadCandidateRow.score ?? candidatePoolLeadCandidateRow["分数"], ordinaryCandidateTopCount ? "未标记分数" : "无分数");
+  const candidatePoolLeadCandidateReason = displayText(
+    candidatePoolLeadCandidateRow.reason ?? candidatePoolLeadCandidateRow.evidence_chain_summary ?? candidatePoolLeadCandidateRow["理由"],
+    ordinaryCandidateTopCount ? "评分理由待补；先看来源和缺口" : "当前本地候选 cache 没有 candidate_rows；先看确认输入或刷新本地回放"
+  );
+  const candidatePoolLeadCandidateSource = displayText(
+    candidatePoolLeadCandidateRow.source_mode ?? candidatePoolLeadCandidateRow.data_source ?? candidatePoolLeadCandidateRow.source ?? candidatePoolLeadCandidateRow["来源"],
+    coarseFineSourceLabel
+  );
+  const candidatePoolLeadCandidateGap = displayText(
+    candidatePoolLeadCandidateRow.gap_summary ?? candidatePoolLeadCandidateRow.gap ?? candidatePoolLeadCandidateRow["缺口"],
+    candidatePoolPlainConclusionMissing
+  );
+  const candidatePoolLeadReviewSentence = ordinaryCandidateTopCount && candidatePoolLeadCandidateTicker !== "暂无首位候选"
+    ? `首个复核对象：${candidatePoolLeadCandidateDisplay}，分组 ${candidatePoolLeadCandidateGroup}，先看评分理由、来源和缺口；它不是买入指令。`
+    : "首个复核对象暂缺：当前本地候选 cache 没有 candidate_rows；先看确认输入、最近结果或等待本地候选缓存。";
+  const candidatePoolLeadReviewItems: MetricItem[] = [
+    {
+      label: "首个候选",
+      value: candidatePoolLeadCandidateDisplay,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "分组",
+      value: candidatePoolLeadCandidateGroup,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "评分/理由",
+      value: `${candidatePoolLeadCandidateScore}；${candidatePoolLeadCandidateReason}`,
+      tone: candidatePoolLeadCandidateReason.includes("待补") || candidatePoolLeadCandidateReason.includes("没有") ? "warn" : "good"
+    },
+    {
+      label: "来源",
+      value: candidatePoolLeadCandidateSource,
+      tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn"
+    },
+    {
+      label: "缺口",
+      value: candidatePoolLeadCandidateGap,
+      tone: candidatePoolLeadCandidateGap.includes("缺") || candidatePoolLeadCandidateGap.includes("待补") || candidatePoolLeadCandidateGap.includes("阻断") ? "warn" : "good"
+    },
+    {
+      label: "下一步",
+      value: ordinaryCandidateTopCount ? "解释单票或继续看量化推演、次日图谱和 ETF/融资风险" : candidatePoolPlainConclusionNext,
+      tone: candidateRadarCacheGetReadable ? "good" : "warn"
+    },
+    {
+      label: "非买入边界",
+      value: "Top/Watch/Excluded 只决定复核顺序；不下单、不改持仓、不改 strategy action",
+      tone: "good"
+    }
+  ];
+  const candidatePoolLeadReviewRows = [
+    {
+      读法: "1. 首位候选",
+      当前状态: candidatePoolLeadCandidateDisplay,
+      用户下一步: ordinaryCandidateTopCount ? "先读评分理由、来源和缺口，再决定是否解释单票。" : "回确认输入区或等待本地候选 cache 回放。",
+      证据: "candidate_rows[0] / top_watch_excluded_group_rows[0]",
+      边界: "首位候选只是复核对象，不是买入指令。"
+    },
+    {
+      读法: "2. 评分理由",
+      当前状态: `${candidatePoolLeadCandidateScore}；${candidatePoolLeadCandidateReason}`,
+      用户下一步: "理由不足时先把它当作缺口，不重排、不重算分数。",
+      证据: "score / reason / evidence_chain_summary",
+      边界: "React 只读缓存字段；不调用模型、不重新打分。"
+    },
+    {
+      读法: "3. 来源和缺口",
+      当前状态: `${candidatePoolLeadCandidateSource}；${candidatePoolLeadCandidateGap}`,
+      用户下一步: candidatePoolPlainConclusionNext,
+      证据: "source_mode / gap_summary / coarse_fine_screening_contract",
+      边界: "缺口只提示待补证据；不会从卡片创建 task 或调用 provider。"
+    },
+    {
+      读法: "4. 复核入口",
+      当前状态: ordinaryCandidateGroupBoundary,
+      用户下一步: ordinaryCandidateTopCount ? "打开确认输入、量化推演、次日图谱或 ETF/融资风险做只读复核。" : "先确认一只股票或等待候选缓存。",
+      证据: "local route anchors only",
+      边界: "链接只切换本地页面或锚点；不交易、不改策略。"
+    }
+  ];
   const candidatePoolPlainConclusionItems: MetricItem[] = [
     {
       label: "一句话结论",
@@ -4186,6 +4270,24 @@ export default function CandidateRadar() {
               <DataLineageTable rows={candidateRadarRecentResearchResultRows} />
             </details>
             <p className="risk-note">最近投研结果卡只帮助复核来源、缺口和下一步；它不是买卖建议，不下单、不改持仓、不改 strategy action。</p>
+          </div>
+          <div aria-label="candidate radar lead candidate review card">
+            <h3>候选池首位复核</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar lead candidate review sentence" aria-live="polite">{candidatePoolLeadReviewSentence}</p>
+            <MetricGrid items={candidatePoolLeadReviewItems} />
+            <div className="actions" aria-label="candidate radar lead candidate review actions">
+              <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from lead candidate review">候选池</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from lead candidate review">解释单票</a>
+              <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from lead candidate review">量化推演</a>
+              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from lead candidate review">次日图谱</a>
+              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from lead candidate review">ETF/融资风险</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar lead candidate review rows">
+              <summary>查看复核读法</summary>
+              <p className="risk-note">这张复核读法只读 candidate_rows / Top-Watch-Excluded 缓存；不会创建 task、不会运行快扫、不会调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <DataLineageTable rows={candidatePoolLeadReviewRows} />
+            </details>
+            <p className="risk-note">首位候选只是复核顺序，不是推荐买入；理由、来源或缺口不足时按 degraded 显示，不重排、不重算、不改交易策略。</p>
           </div>
           <div aria-label="candidate radar user route qa latest evidence">
             <h3>本轮路线 QA</h3>
