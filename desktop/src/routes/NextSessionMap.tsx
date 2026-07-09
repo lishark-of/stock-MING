@@ -805,6 +805,47 @@ export default function NextSessionMap() {
       tone: "good"
     }
   ];
+  const nextSessionAppFirstResearchReadSentence = chartSummary.has_drawable_data === true
+    ? `${candidateRadarConfirmedSymbol || "当前标的"} 次日图谱已可读：先看路径、参考线和 operation_zones，再看缺口。`
+    : candidateRadarReadableResultReady
+      ? `${candidateRadarConfirmedSymbol || "当前标的"} 上游结论已可读；完整图谱仍是 degraded 等待，需要手动生成或等待本地 cache。`
+      : "次日图谱当前是 degraded 等待态：先回下一票雷达确认股票，本页不会自动补调数据。";
+  const nextSessionAppFirstResearchReadItems: MetricItem[] = [
+    {
+      label: "现在能看",
+      value: nextSessionAppFirstResearchReadSentence,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "读图顺序",
+      value: chartSummary.has_drawable_data === true
+        ? "路径 -> 参考线 -> operation_zones -> 缺口"
+        : candidateRadarReadableResultReady
+          ? "上游结论 -> 生成完整图谱入口 -> 支持/压制"
+          : "下一票雷达确认 -> 本地缓存回放 -> 图谱复核",
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "证据来源",
+      value: `${nextSessionCacheSourceLabel} / ${nextSessionReplayOrigin}`,
+      tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn"
+    },
+    {
+      label: "degraded 缺口",
+      value: nextSessionMissingEvidence,
+      tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn"
+    },
+    {
+      label: "下一步入口",
+      value: nextSessionOrdinaryProgressCheckpointLabel,
+      tone: chartSummary.has_drawable_data === true || candidateRadarReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "研究边界",
+      value: "图谱和 operation_zones 只做条件复核；查看页面和链接跳转不创建任务、不外联、不交易、不改策略",
+      tone: "good"
+    }
+  ];
   const nextSessionPlainConclusion = chartSummary.has_drawable_data === true
     ? `完整次日图谱可读：${String(chartSummary.scenario_series_count ?? 0)} 条路径、${String(chartSummary.reference_line_count ?? 0)} 条参考线、${String(chartSummary.operation_zone_count ?? 0)} 个操作区。`
     : candidateRadarReadableResultReady
@@ -1414,6 +1455,18 @@ export default function NextSessionMap() {
   return (
     <>
     <PacketCard title="普通用户次日图谱摘要" subtitle="下一步、来源、缺口、边界和最近结果" status={nextSessionReadableStatusLabel}>
+      <div aria-label="next session app first research read">
+        <h3>本地投研速读</h3>
+        <p className="ordinary-status-note" aria-label="next session app first research read sentence" aria-live="polite">{nextSessionAppFirstResearchReadSentence}</p>
+        <MetricGrid items={nextSessionAppFirstResearchReadItems} />
+        <div className="actions" aria-label="next session app first research read actions">
+          <a href={nextSessionOrdinaryProgressCheckpointAnchor} title="跳到当前最短可读位置；只切换本地锚点" aria-label="open current next session research read target">{nextSessionOrdinaryProgressCheckpointLabel}</a>
+          <a href="#next-session-chart" title="跳到完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart from next session research read">图谱区域</a>
+          <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from next session research read">支持/压制</a>
+          <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from next session research read">确认或换一只票</a>
+        </div>
+        <p className="risk-note">这张首屏只回答用户打开次日图谱能先读什么：路径、参考线、operation_zones、缺口和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek/GitHub、不真实交易。</p>
+      </div>
       <PageStateBanner
         loading={loading}
         error={error}

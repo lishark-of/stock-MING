@@ -16,10 +16,43 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         source_before_audit = self.page[:audit_start]
 
         self.assertLess(summary_start, audit_start)
+        app_first_start = ordinary_slice.index('aria-label="next session app first research read"')
         plain_start = ordinary_slice.index('aria-label="next session ordinary plain conclusion"')
         decision_start = ordinary_slice.index('aria-label="next session first screen readable decision"')
+        app_first_slice = ordinary_slice[app_first_start:plain_start]
         plain_slice = ordinary_slice[plain_start:decision_start]
+        self.assertLess(app_first_start, plain_start)
         self.assertLess(plain_start, decision_start)
+        self.assertLess(
+            ordinary_slice.index('aria-label="next session app first research read"'),
+            ordinary_slice.index("<PageStateBanner"),
+        )
+        self.assertIn("nextSessionAppFirstResearchReadSentence", source_before_audit)
+        self.assertIn("nextSessionAppFirstResearchReadItems", source_before_audit)
+        self.assertIn("本地投研速读", app_first_slice)
+        self.assertIn('aria-label="next session app first research read sentence"', app_first_slice)
+        self.assertIn("MetricGrid items={nextSessionAppFirstResearchReadItems}", app_first_slice)
+        self.assertIn('aria-label="next session app first research read actions"', app_first_slice)
+        for app_first_label in (
+            'label: "现在能看"',
+            'label: "读图顺序"',
+            'label: "证据来源"',
+            'label: "degraded 缺口"',
+            'label: "下一步入口"',
+            'label: "研究边界"',
+        ):
+            self.assertIn(app_first_label, source_before_audit)
+        self.assertIn("路径 -> 参考线 -> operation_zones -> 缺口", source_before_audit)
+        self.assertIn("图谱和 operation_zones 只做条件复核", source_before_audit)
+        self.assertIn("链接只切换本地页面或锚点，不创建 task", app_first_slice)
+        self.assertIn('href={nextSessionOrdinaryProgressCheckpointAnchor}', app_first_slice)
+        self.assertIn('href="#next-session-chart"', app_first_slice)
+        self.assertIn('href="#factor"', app_first_slice)
+        self.assertIn('href={CANDIDATE_CONFIRM_HREF}', app_first_slice)
+        self.assertNotIn("onClick=", app_first_slice)
+        self.assertNotIn("launch" + "Task", app_first_slice)
+        self.assertNotIn("post" + "Task(", app_first_slice)
+        self.assertNotIn("TaskStatusPanel", app_first_slice)
         self.assertIn("nextSessionPlainConclusion", source_before_audit)
         self.assertIn("nextSessionPlainGap", source_before_audit)
         self.assertIn("nextSessionPlainNow", source_before_audit)
