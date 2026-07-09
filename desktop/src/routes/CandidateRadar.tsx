@@ -3817,6 +3817,73 @@ export default function CandidateRadar() {
       边界: "输入保持静默；只有确认按钮创建本地任务"
     }
   ];
+  const ordinaryCandidateGroupActionSentence = ordinaryCandidateTopCount
+    ? `分组已可读：Top ${ordinaryCandidateTopCount} 先解释首位候选，Watch ${ordinaryCandidateWatchCount} 只观察触发条件，Excluded ${ordinaryCandidateExcludedCount} 先看排除原因。`
+    : "候选分组暂无可操作对象：先回确认输入区，或等待本地候选 cache 回放；不要把空池当交易信号。";
+  const ordinaryCandidateGroupActionItems: MetricItem[] = [
+    {
+      label: "Top 下一步",
+      value: ordinaryCandidateTopCount
+        ? `先解释 ${candidatePoolLeadCandidateDisplay}`
+        : "等待 Top 候选",
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "Watch 下一步",
+      value: ordinaryCandidateWatchCount
+        ? "只观察触发条件和缺口，不追买、不加仓"
+        : "当前无 Watch，继续看 Top 或输入单票",
+      tone: ordinaryCandidateWatchCount ? "good" : "neutral"
+    },
+    {
+      label: "Excluded 下一步",
+      value: ordinaryCandidateExcludedCount
+        ? "先看排除原因，避免把缺数据误读成低风险"
+        : "当前无 Excluded，仍保留排除边界",
+      tone: ordinaryCandidateExcludedCount ? "warn" : "neutral"
+    },
+    {
+      label: "结果入口",
+      value: "解释单票后看 Factor、Next 和 ETF/融资风险",
+      tone: "good"
+    },
+    {
+      label: "数据缺口",
+      value: coarseFineGapLabel,
+      tone: Number(coarseFineScreening.gap_visible_count ?? 0) ? "warn" : "good"
+    },
+    {
+      label: "不会发生",
+      value: "本行动条只切换本地页面；不快扫、不 POST、不调用 provider/model/worker、不交易",
+      tone: "good"
+    }
+  ];
+  const ordinaryCandidateGroupActionRows = [
+    {
+      分组: "Top",
+      用户动作: ordinaryCandidateTopCount ? "解释首位候选或继续看候选池理由。" : "等待 Top 候选或回确认输入区。",
+      入口: ordinaryCandidateTopCount ? "#candidate-radar-search-quant-projection" : "#candidate-pool",
+      边界: "Top 只是优先复核，不是买入、加仓或融资指令。"
+    },
+    {
+      分组: "Watch",
+      用户动作: "只观察触发条件、来源和缺口；需要单票解释时仍要手动确认。",
+      入口: "#candidate-pool",
+      边界: "Watch 不代表追买、不代表提高仓位，也不会改交易策略。"
+    },
+    {
+      分组: "Excluded",
+      用户动作: "先看排除原因和缺失证据；不要把排除行当作自动清仓信号。",
+      入口: "#candidate-pool",
+      边界: "Excluded 只保留研究排除理由；不删除旧证据、不创建交易动作。"
+    },
+    {
+      分组: "结果回放",
+      用户动作: "确认单票后再看 Factor、Next、数据能力和 ETF/融资风险。",
+      入口: "#factor / #next / #dataCapability / #marginEtf",
+      边界: "结果入口只读本地 cache / packet；不创建第二个 task、不补调外部数据。"
+    }
+  ];
   const quantProjectionPostConfirmReplayContractReady =
     quantProjectionPostConfirmReplayContract.schema_version === "candidate_radar_search_quant_projection_post_confirm_replay_contract.v1";
   const quantProjectionPostConfirmReplaySequence = Array.isArray(quantProjectionPostConfirmReplayContract.readback_sequence)
@@ -4725,6 +4792,24 @@ export default function CandidateRadar() {
               <DataLineageTable rows={ordinaryCandidateReviewCompassRows} />
             </details>
             <p className="risk-note">候选复核顺序只帮助用户看懂现有缓存：不交易、不下单、不改交易策略，也不声称 LTG-13 已完成。</p>
+          </div>
+          <div aria-label="candidate radar ordinary group action strip">
+            <h3>分组后下一步</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar ordinary group action sentence" aria-live="polite">{ordinaryCandidateGroupActionSentence}</p>
+            <MetricGrid items={ordinaryCandidateGroupActionItems} />
+            <div className="actions" aria-label="candidate radar ordinary group action local links">
+              <a href="#candidate-pool" title="回到候选池；只读本地 Top / Watch / Excluded" aria-label="open candidate pool from group action strip">看分组</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open searched symbol confirm from group action strip">解释单票</a>
+              <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from group action strip">看 Factor</a>
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限和缺口" aria-label="open data capability from group action strip">数据能力</a>
+              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from group action strip">ETF/融资风险</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar ordinary group action rows">
+              <summary>查看分组动作读法</summary>
+              <p className="risk-note">分组动作明细默认收起；展开后仍只读本地候选缓存，不运行快扫、不创建 task、不调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <DataLineageTable rows={ordinaryCandidateGroupActionRows} />
+            </details>
+            <p className="risk-note">Top / Watch / Excluded 只决定复核顺序和入口；不会买入、卖出、加仓、加融资、下单或修改 strategy action。</p>
           </div>
           <div aria-label="candidate radar ordinary retirement readiness quick read">
             <h3>退旧雷达前还缺什么</h3>

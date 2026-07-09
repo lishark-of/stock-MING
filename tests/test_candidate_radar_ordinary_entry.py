@@ -583,7 +583,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("不交易、不下单、不改交易策略，也不声称 LTG-13 已完成", summary_primary_slice)
         compass_start = summary_primary_slice.index('aria-label="candidate radar ordinary candidate review compass"')
         compass_end = summary_primary_slice.index(
-            'aria-label="candidate radar ordinary retirement readiness quick read"',
+            'aria-label="candidate radar ordinary group action strip"',
             compass_start,
         )
         compass_slice = summary_primary_slice[compass_start:compass_end]
@@ -603,6 +603,60 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         )
         self.assertLess(
             compass_start,
+            summary_primary_slice.index('aria-label="candidate radar ordinary retirement readiness quick read"'),
+        )
+        self.assertIn("ordinaryCandidateGroupActionSentence", self.page)
+        self.assertIn("ordinaryCandidateGroupActionItems", self.page)
+        self.assertIn("ordinaryCandidateGroupActionRows", self.page)
+        self.assertIn('aria-label="candidate radar ordinary group action strip"', summary_primary_slice)
+        self.assertIn("分组后下一步", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar ordinary group action sentence"', summary_primary_slice)
+        self.assertIn("Top ${ordinaryCandidateTopCount} 先解释首位候选", self.page)
+        self.assertIn("Watch ${ordinaryCandidateWatchCount} 只观察触发条件", self.page)
+        self.assertIn("Excluded ${ordinaryCandidateExcludedCount} 先看排除原因", self.page)
+        for group_action_label in (
+            'label: "Top 下一步"',
+            'label: "Watch 下一步"',
+            'label: "Excluded 下一步"',
+            'label: "结果入口"',
+            'label: "数据缺口"',
+            'label: "不会发生"',
+        ):
+            self.assertIn(group_action_label, self.page)
+        for group_action_row in (
+            '分组: "Top"',
+            '分组: "Watch"',
+            '分组: "Excluded"',
+            '分组: "结果回放"',
+        ):
+            self.assertIn(group_action_row, self.page)
+        group_action_start = summary_primary_slice.index('aria-label="candidate radar ordinary group action strip"')
+        group_action_end = summary_primary_slice.index(
+            'aria-label="candidate radar ordinary retirement readiness quick read"',
+            group_action_start,
+        )
+        group_action_slice = summary_primary_slice[group_action_start:group_action_end]
+        self.assertIn("MetricGrid items={ordinaryCandidateGroupActionItems}", group_action_slice)
+        self.assertIn('aria-label="candidate radar ordinary group action local links"', group_action_slice)
+        self.assertIn('href="#candidate-pool"', group_action_slice)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', group_action_slice)
+        self.assertIn('href="#factor"', group_action_slice)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', group_action_slice)
+        self.assertIn('href="#marginEtf"', group_action_slice)
+        self.assertIn('aria-label="candidate radar ordinary group action rows"', group_action_slice)
+        self.assertIn("<summary>查看分组动作读法</summary>", group_action_slice)
+        self.assertIn("DataLineageTable rows={ordinaryCandidateGroupActionRows}", group_action_slice)
+        self.assertIn("不运行快扫、不创建 task、不调用 Tushare/DeepSeek/GitHub、不启动 worker", group_action_slice)
+        self.assertIn("不会买入、卖出、加仓、加融资、下单或修改 strategy action", group_action_slice)
+        self.assertIn("本行动条只切换本地页面；不快扫、不 POST、不调用 provider/model/worker、不交易", self.page)
+        self.assertIn("Watch 不代表追买、不代表提高仓位，也不会改交易策略", self.page)
+        self.assertIn("Excluded 只保留研究排除理由；不删除旧证据、不创建交易动作", self.page)
+        self.assertNotIn("onClick=", group_action_slice)
+        self.assertNotIn("launchQuickScan", group_action_slice)
+        self.assertNotIn("postCandidateRadar", group_action_slice)
+        self.assertLess(compass_start, group_action_start)
+        self.assertLess(
+            group_action_start,
             summary_primary_slice.index('aria-label="candidate radar ordinary retirement readiness quick read"'),
         )
         self.assertLess(
