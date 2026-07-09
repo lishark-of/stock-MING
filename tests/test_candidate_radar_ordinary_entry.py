@@ -97,6 +97,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "下一步入口"', self.page)
         self.assertIn('label: "边界"', self.page)
         self.assertIn("candidateRadarVisibleNowItems", self.page)
+        self.assertIn("DATA_CAPABILITY_HREF", self.page)
         self.assertIn('aria-label="candidate radar visible now app result"', summary_primary_slice)
         self.assertIn("打开 app 能看到什么", summary_primary_slice)
         self.assertIn("这张速读只合成当前本地页面状态", summary_primary_slice)
@@ -104,8 +105,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "现在能操作"', self.page)
         self.assertIn('label: "现在能跳转"', self.page)
         self.assertIn('label: "来源层"', self.page)
+        self.assertIn('label: "数据能力"', self.page)
         self.assertIn('label: "还缺什么"', self.page)
         self.assertIn('label: "不会发生"', self.page)
+        self.assertIn("真实数据、权限、空窗口或本地 packet 缺口去数据能力页复核", self.page)
         self.assertIn("候选池 / 搜票确认 / 量化推演 / 次日图谱 / ETF 融资风险", self.page)
         self.assertIn("页面打开、搜索输入和本地跳转不会创建 task、不会调用 provider/model、不会交易", self.page)
         visible_now_start = summary_primary_slice.index('aria-label="candidate radar visible now app result"')
@@ -114,6 +117,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar visible now app result actions"', visible_now_slice)
         self.assertIn('href="#candidate-pool"', visible_now_slice)
         self.assertIn('href="#candidate-radar-search-quant-projection"', visible_now_slice)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', visible_now_slice)
         self.assertIn('href="#marginEtf"', visible_now_slice)
         self.assertNotIn("onClick=", visible_now_slice)
         self.assertNotIn("postCandidateRadar", visible_now_slice)
@@ -229,11 +233,13 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "最近任务"',
             'label: "P2/P3 去向"',
             'label: "来源状态"',
+            'label: "数据能力"',
             'label: "degraded / 缺口"',
             'label: "下一步"',
             'label: "研究边界"',
         ):
             self.assertIn(recent_result_label, self.page)
+        self.assertIn("Tushare ledger、权限、空窗口和 degraded 原因去数据能力页复核", self.page)
         for recent_result_row in (
             '读法: "1. 先看结论"',
             '读法: "2. 再看来源"',
@@ -249,6 +255,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("P2/P3 去向只切换本地结果页；不创建第二个 task、不交易、不改 strategy action", self.page)
         self.assertIn('href="#factor"', recent_result_slice)
         self.assertIn('href="#next/next-session-chart"', recent_result_slice)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', recent_result_slice)
         self.assertIn('href="#marginEtf"', recent_result_slice)
         self.assertIn('href="#candidate-radar-search-quant-projection"', recent_result_slice)
         self.assertIn("不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", recent_result_slice)

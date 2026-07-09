@@ -105,6 +105,8 @@ function candidateRadarRouteAnchorFromHash() {
   return parts.length > 1 ? parts.slice(1).join("/").split("?")[0] : "";
 }
 
+const DATA_CAPABILITY_HREF = "#dataCapability";
+
 export default function CandidateRadar() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -3209,6 +3211,11 @@ export default function CandidateRadar() {
       tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn"
     },
     {
+      label: "数据能力",
+      value: "真实数据、权限、空窗口或本地 packet 缺口去数据能力页复核；本页不探测接口",
+      tone: ordinaryProviderGapLabel.includes("缺口") || candidatePoolPlainConclusionStatus !== "ready" ? "warn" : "good"
+    },
+    {
       label: "还缺什么",
       value: candidatePoolPlainConclusionMissing,
       tone: candidatePoolPlainConclusionStatus === "ready" ? "good" : "warn"
@@ -3430,6 +3437,11 @@ export default function CandidateRadar() {
       label: "来源状态",
       value: `${quantProjectionCacheSourceLabel}；${quantProjectionProviderSourceLabel}；${quantProjectionModelSourceLabel}`,
       tone: quantProjectionProviderLedgerReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "数据能力",
+      value: "Tushare ledger、权限、空窗口和 degraded 原因去数据能力页复核",
+      tone: quantProjectionProviderLedgerReady ? "good" : "warn"
     },
     {
       label: "degraded / 缺口",
@@ -4421,6 +4433,7 @@ export default function CandidateRadar() {
             <div className="actions" aria-label="candidate radar visible now app result actions">
               <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from visible now app result">候选池</a>
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from visible now app result">确认输入</a>
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare、权限、空窗口和本地 packet 状态" aria-label="open data capability from candidate radar visible now">数据能力</a>
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from visible now app result">ETF/融资风险</a>
             </div>
           </div>
@@ -4465,6 +4478,7 @@ export default function CandidateRadar() {
             <div className="actions" aria-label="candidate radar recent research result actions">
               <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from recent research result card">量化推演</a>
               <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from recent research result card">次日图谱</a>
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare ledger、权限、空窗口和 degraded 原因" aria-label="open data capability from recent research result card">数据能力</a>
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from recent research result card">ETF/融资风险</a>
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="return confirm input from recent research result card">换一只票</a>
             </div>
