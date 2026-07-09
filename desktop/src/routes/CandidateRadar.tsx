@@ -2468,6 +2468,23 @@ export default function CandidateRadar() {
       : taskIndexLatestConfirmedTaskId
         ? `最近确认：${taskIndexLatestConfirmedStatus || "本地索引回放"} / ${taskIndexLatestConfirmedStep || "等待状态"}`
       : "最近确认：暂无；点击确认按钮后显示本地进度";
+  const quantProjectionLatestUserProgress = taskReceipt
+    ? quantProjectionTaskReceiptInputMismatch
+      ? `最近结果属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认`
+      : taskReceipt.ok
+        ? "最近确认：已接收；等待本地进度完成"
+        : "最近确认：失败；请查看本地进度提示"
+    : quantProjectionPersistedTaskId
+      ? "最近确认：本地进度已回放；可刷新结果"
+      : taskIndexLatestConfirmedTaskId
+        ? "最近确认：本地进度已记录；可继续看结果入口"
+        : "最近确认：暂无；点击确认按钮后显示本地进度";
+  const quantProjectionSourcePlainStatus =
+    quantProjectionProviderLedgerReady || quantProjectionSmallDataReady
+      ? "本地结果已有数据来源记录；模型解释仍按高级能力单独补"
+      : taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? "等待本地结果写回；外部数据或模型不会自动刷新"
+        : "尚未确认；页面只显示本地候选和历史结果";
   const quantProjectionTushareFirstOrdinaryStage = quantProjectionSubmitError
     ? "确认未完成：先恢复本地 FastAPI 后再重新点击确认"
     : quantProjectionProviderLedgerReady
@@ -2995,7 +3012,7 @@ export default function CandidateRadar() {
     },
     {
       label: "确认按钮",
-      value: quantProjectionCanSubmit ? "可用：点击后才创建后台任务" : quantProjectionDisabledReason,
+      value: quantProjectionCanSubmit ? "可用：点击后才启动本地确认流程" : quantProjectionDisabledReason,
       tone: quantProjectionCanSubmit ? "good" : "warn"
     },
     {
@@ -3012,7 +3029,7 @@ export default function CandidateRadar() {
     },
     {
       label: "边界",
-      value: "输入不外联；确认按钮才触发 Tushare-first；DeepSeek 等 P5；不交易、不改交易策略",
+      value: "输入不外联；确认按钮才启动本地确认流程；外部数据或模型需单独授权；不交易、不改交易策略",
       tone: "good"
     }
   ];
@@ -3273,7 +3290,7 @@ export default function CandidateRadar() {
     },
     {
       label: "数据能力",
-      value: "真实数据、权限、空窗口或本地 packet 缺口去数据能力页复核；本页不探测接口",
+      value: "真实数据、权限、空窗口或本地结果缺口去数据能力页复核；本页不探测接口",
       tone: ordinaryProviderGapLabel.includes("缺口") || candidatePoolPlainConclusionStatus !== "ready" ? "warn" : "good"
     },
     {
@@ -3283,7 +3300,7 @@ export default function CandidateRadar() {
     },
     {
       label: "不会发生",
-      value: "页面打开、搜索输入和本地跳转不会创建 task、不会调用 provider/model、不会交易",
+      value: "页面打开、搜索输入和本地跳转不会启动确认流程、不会刷新外部数据或模型、不会交易",
       tone: "good"
     }
   ];
@@ -3307,7 +3324,7 @@ export default function CandidateRadar() {
     {
       label: "本地校验",
       value: quantProjectionSymbolReady
-        ? "格式通过；还未自动创建任务"
+        ? "格式通过；还未启动确认流程"
         : searchSymbol.trim()
           ? `阻断：${quantProjectionSymbolValidation.reason}`
           : "输入框保持静默",
@@ -3340,7 +3357,7 @@ export default function CandidateRadar() {
     },
     {
       label: "不会发生",
-      value: "输入、GET cache 和本地跳转不会创建 task、调用 Tushare/DeepSeek 或交易",
+      value: "输入和本地跳转不会启动确认流程、刷新外部数据或交易",
       tone: "good"
     }
   ];
@@ -3383,7 +3400,7 @@ export default function CandidateRadar() {
     }
   ];
   const candidateRadarConfirmButtonPrimarySentence = quantProjectionCanSubmit
-    ? `确认按钮已可点：当前 ${quantProjectionSymbolValidation.normalized} 可以进入本地投研链；点击后先看任务状态和本地回放。`
+    ? `确认按钮已可点：当前 ${quantProjectionSymbolValidation.normalized} 可以进入本地投研链；点击后先看本地进度和结果回放。`
     : quantProjectionP0Ready
       ? `确认按钮暂不可点：${quantProjectionDisabledReason}；输入有效 A 股代码后再确认。`
       : `确认按钮暂不可点：${quantProjectionDisabledReason}；先恢复本地 FastAPI / cache 联通。`;
@@ -3409,7 +3426,7 @@ export default function CandidateRadar() {
     },
     {
       label: "提交后看",
-      value: taskReceipt?.ok || quantProjectionPersistedTaskId ? "TaskStatusPanel 和最近投研结果" : "任务状态、量化推演和次日图谱",
+      value: taskReceipt?.ok || quantProjectionPersistedTaskId ? "本地进度和最近投研结果" : "本地进度、量化推演和次日图谱",
       tone: taskReceipt?.ok || quantProjectionPersistedTaskId || quantProjectionCanSubmit ? "good" : "neutral"
     },
     {
@@ -3419,12 +3436,12 @@ export default function CandidateRadar() {
     },
     {
       label: "不会发生",
-      value: "这张卡不提交、不 POST、不调用 Tushare/DeepSeek/GitHub",
+      value: "这张卡不提交、不启动确认流程、不刷新外部数据或模型",
       tone: "good"
     },
     {
       label: "边界",
-      value: "确认只生成本地研究任务；不是买入、卖出、加仓或融资指令",
+      value: "确认只启动本地研究流程；不是买入、卖出、加仓或融资指令",
       tone: "good"
     }
   ];
@@ -3459,10 +3476,10 @@ export default function CandidateRadar() {
     }
   ];
   const candidateRadarOnePathSentence = taskReceipt?.ok || quantProjectionPersistedTaskId
-    ? "已有本地确认任务或历史结果：按任务状态、最近结果、Factor/Next 和 ETF/融资风险一条线复核。"
+    ? "已有本地确认进度或历史结果：按本地进度、最近结果、Factor/Next 和 ETF/融资风险一条线复核。"
     : quantProjectionCanSubmit
-      ? `下一票主路径已就绪：确认 ${quantProjectionSymbolValidation.normalized} 后，先看任务，再看最近结果和三面回放。`
-      : "下一票主路径等待输入或本地联通：先让确认按钮可用，再按任务、结果、风险顺序看。";
+      ? `下一票主路径已就绪：确认 ${quantProjectionSymbolValidation.normalized} 后，先看本地进度，再看最近结果和三面回放。`
+      : "下一票主路径等待输入或本地联通：先让确认按钮可用，再按进度、结果、风险顺序看。";
   const candidateRadarOnePathItems: MetricItem[] = [
     {
       label: "1. 确认",
@@ -3470,8 +3487,8 @@ export default function CandidateRadar() {
       tone: quantProjectionCanSubmit ? "good" : "warn"
     },
     {
-      label: "2. 任务",
-      value: taskReceipt?.ok || quantProjectionPersistedTaskId ? quantProjectionLatestTaskState : "确认后看 TaskStatusPanel / 任务目录",
+      label: "2. 进度",
+      value: taskReceipt?.ok || quantProjectionPersistedTaskId ? quantProjectionLatestUserProgress : "确认后看本地进度 / 任务目录",
       tone: taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : quantProjectionCanSubmit ? "neutral" : "warn"
     },
     {
@@ -3486,7 +3503,7 @@ export default function CandidateRadar() {
     },
     {
       label: "不会发生",
-      value: "这张路径卡不会提交、不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不会启动 worker",
+      value: "这张路径卡不会提交、不会启动确认流程、不会刷新外部数据或模型",
       tone: "good"
     },
     {
@@ -3553,7 +3570,7 @@ export default function CandidateRadar() {
     },
     {
       label: "最近任务",
-      value: quantProjectionLatestTaskState,
+      value: quantProjectionLatestUserProgress,
       tone: taskReceipt?.ok || quantProjectionPersistedTaskId || taskIndexLatestConfirmedTaskId ? "good" : quantProjectionSubmitError ? "bad" : "neutral"
     },
     {
@@ -3563,12 +3580,12 @@ export default function CandidateRadar() {
     },
     {
       label: "来源状态",
-      value: `${quantProjectionCacheSourceLabel}；${quantProjectionProviderSourceLabel}；${quantProjectionModelSourceLabel}`,
+      value: quantProjectionSourcePlainStatus,
       tone: quantProjectionProviderLedgerReady || quantProjectionSmallDataReady ? "good" : "warn"
     },
     {
       label: "数据能力",
-      value: "Tushare ledger、权限、空窗口和 degraded 原因去数据能力页复核",
+      value: "真实数据、权限、空窗口和降级原因去数据能力页复核",
       tone: quantProjectionProviderLedgerReady ? "good" : "warn"
     },
     {
@@ -3583,7 +3600,7 @@ export default function CandidateRadar() {
     },
     {
       label: "研究边界",
-      value: "结果卡只读本地 cache / ledger / packet；不是买入、卖出或加仓指令",
+      value: "结果卡只读本地结果记录；不是买入、卖出或加仓指令",
       tone: "good"
     }
   ];
@@ -4602,7 +4619,7 @@ export default function CandidateRadar() {
           <button
             onClick={refreshQuantProjectionReadback}
             disabled={loading}
-            title="只回读 CandidateRadar cache、bootstrap status 和本地 task index；不创建 task、不调用 provider/model"
+            title="只刷新本地回放；不启动确认流程、不刷新外部数据或模型"
             aria-label="refresh candidate radar compact operator readback"
           >刷新本地回放</button>
           <a href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"} aria-label="open candidate radar compact primary action">更多搜票状态</a>
@@ -4619,16 +4636,16 @@ export default function CandidateRadar() {
       <PacketCard title="普通用户雷达摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={candidateRadarStatusLabel}>
         <div aria-label="candidate radar ordinary user first summary">
           <h3>一屏确认</h3>
-          <p className="risk-note">默认先看现在做什么、输入状态、确认按钮、最近结果、下一步入口和边界；P0/P1/P2 checkpoint、task、ledger 和补证细节继续收起。</p>
+          <p className="risk-note">默认先看现在做什么、输入状态、确认按钮、最近结果、下一步入口和边界；进度、数据记录和补证细节继续收起。</p>
           <MetricGrid items={candidateRadarUserFirstItems} />
           <div aria-label="candidate radar visible now app result">
             <h3>打开 app 能看到什么</h3>
-            <p className="ordinary-status-note">这张速读只合成当前本地页面状态：候选池、确认按钮、来源层、缺口和可跳转入口；它不创建 task、不调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+            <p className="ordinary-status-note">这张速读只合成当前本地页面状态：候选池、确认按钮、来源层、缺口和可跳转入口；它不启动确认流程、不刷新外部数据或模型、不交易。</p>
             <MetricGrid items={candidateRadarVisibleNowItems} />
             <div className="actions" aria-label="candidate radar visible now app result actions">
               <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from visible now app result">候选池</a>
-              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from visible now app result">确认输入</a>
-              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare、权限、空窗口和本地 packet 状态" aria-label="open data capability from candidate radar visible now">数据能力</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才启动本地确认流程" aria-label="open confirm input from visible now app result">确认输入</a>
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from candidate radar visible now">数据能力</a>
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from visible now app result">ETF/融资风险</a>
             </div>
           </div>
@@ -4637,31 +4654,31 @@ export default function CandidateRadar() {
             <p className="ordinary-status-note" aria-label="candidate radar typed symbol immediate sentence" aria-live="polite">{candidateRadarTypedSymbolSentence}</p>
             <MetricGrid items={candidateRadarTypedSymbolItems} />
             <div className="actions" aria-label="candidate radar typed symbol immediate actions">
-              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from typed symbol readback">确认输入</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才启动本地确认流程" aria-label="open confirm input from typed symbol readback">确认输入</a>
               <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from typed symbol readback">量化推演</a>
               <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from typed symbol readback">次日图谱</a>
               <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from typed symbol readback">候选池</a>
             </div>
             <details className="developer-audit-details" aria-label="candidate radar typed symbol immediate rows">
               <summary>查看输入链路</summary>
-              <p className="risk-note">这张输入链路只读当前输入、最近 task receipt 和本地 cache 回放；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <p className="risk-note">这张输入链路只读当前输入、最近确认记录和本地回放；不会启动确认流程、不会刷新外部数据或模型。</p>
               <DataLineageTable rows={candidateRadarTypedSymbolRows} />
             </details>
-            <p className="risk-note">输入股票只是本地会话状态；只有确认按钮点击才进入按钮门控 POST task。结果链接只做本地页面跳转，不交易、不改交易策略。</p>
+            <p className="risk-note">输入股票只是本地会话状态；只有确认按钮点击才启动本地确认流程。结果链接只做本地页面跳转，不交易、不改交易策略。</p>
           </div>
           <div aria-label="candidate radar confirm button primary status card">
             <h3>确认按钮现在能不能点</h3>
             <p className="ordinary-status-note" aria-label="candidate radar confirm button primary status sentence" aria-live="polite">{candidateRadarConfirmButtonPrimarySentence}</p>
             <MetricGrid items={candidateRadarConfirmButtonPrimaryItems} />
             <div className="actions" aria-label="candidate radar confirm button primary status links">
-              <a href="#candidate-radar-search-quant-projection" title="跳到真正的确认输入区；只有那里的确认按钮会创建本地任务" aria-label="open real confirm input from confirm button status">去确认输入区</a>
-              <a href="#tasks" title="切换到任务状态；只读本地 task index" aria-label="open task status from confirm button status">任务状态</a>
+              <a href="#candidate-radar-search-quant-projection" title="跳到真正的确认输入区；只有那里的确认按钮会启动本地确认流程" aria-label="open real confirm input from confirm button status">去确认输入区</a>
+              <a href="#tasks" title="切换到本地进度；只读本地状态" aria-label="open task status from confirm button status">任务状态</a>
               <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from confirm button status">量化推演</a>
               <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from confirm button status">次日图谱</a>
             </div>
             <details className="developer-audit-details" aria-label="candidate radar confirm button primary status rows">
               <summary>查看按钮状态读法</summary>
-              <p className="risk-note">这张按钮状态卡只读本地输入校验、按钮禁用原因、task/status 和 cache 回放；不会提交表单、不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <p className="risk-note">这张按钮状态卡只读本地输入校验、按钮禁用原因、进度和本地回放；不会提交表单、不会启动确认流程、不会刷新外部数据或模型。</p>
               <DataLineageTable rows={candidateRadarConfirmButtonPrimaryRows} />
             </details>
             <p className="risk-note">真正会创建本地研究任务的只有确认输入区的确认按钮；本卡片链接只帮助定位，不买卖、不改持仓、不改 strategy action。</p>
@@ -4671,15 +4688,15 @@ export default function CandidateRadar() {
             <p className="ordinary-status-note" aria-label="candidate radar one path p1 p2 p3 sentence" aria-live="polite">{candidateRadarOnePathSentence}</p>
             <MetricGrid items={candidateRadarOnePathItems} />
             <div className="actions" aria-label="candidate radar one path p1 p2 p3 links">
-              <a href="#candidate-radar-search-quant-projection" title="跳到确认输入区；只有原确认按钮会创建本地任务" aria-label="open confirm input from candidate radar one path">确认输入</a>
-              <a href="#tasks" title="切换到任务目录；只读本地 task index" aria-label="open task status from candidate radar one path">任务状态</a>
+              <a href="#candidate-radar-search-quant-projection" title="跳到确认输入区；只有原确认按钮会启动本地确认流程" aria-label="open confirm input from candidate radar one path">确认输入</a>
+              <a href="#tasks" title="切换到任务目录；只读本地进度" aria-label="open task status from candidate radar one path">任务状态</a>
               <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from candidate radar one path">看 Factor</a>
               <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar one path">看 Next</a>
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from candidate radar one path">ETF/融资风险</a>
             </div>
             <details className="developer-audit-details" aria-label="candidate radar one path p1 p2 p3 rows">
               <summary>查看主路径读法</summary>
-              <p className="risk-note">这张路径表只把确认、任务、结果、风险四步串起来；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <p className="risk-note">这张路径表只把确认、进度、结果、风险四步串起来；不会启动确认流程、不会刷新外部数据或模型。</p>
               <DataLineageTable rows={candidateRadarOnePathRows} />
             </details>
             <p className="risk-note">下一票主路径只帮助用户按一条线使用本地投研客户端；候选和结果不是买入、卖出、加仓、融资或下单指令，不下单、不改持仓、不改 strategy action。</p>
@@ -4691,13 +4708,13 @@ export default function CandidateRadar() {
             <div className="actions" aria-label="candidate radar recent research result actions">
               <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from recent research result card">量化推演</a>
               <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from recent research result card">次日图谱</a>
-              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare ledger、权限、空窗口和 degraded 原因" aria-label="open data capability from recent research result card">数据能力</a>
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和降级原因" aria-label="open data capability from recent research result card">数据能力</a>
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from recent research result card">ETF/融资风险</a>
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="return confirm input from recent research result card">换一只票</a>
             </div>
             <details className="developer-audit-details" aria-label="candidate radar recent research result rows">
               <summary>查看结果读法</summary>
-              <p className="risk-note">这张结果读法只读本地 cache / ledger / packet、degraded 和 missing evidence；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <p className="risk-note">这张结果读法只读本地结果记录、降级和缺口；不会启动确认流程、不会刷新外部数据或模型。</p>
               <DataLineageTable rows={candidateRadarRecentResearchResultRows} />
             </details>
             <p className="risk-note">最近投研结果卡只帮助复核来源、缺口和下一步；它不是买卖建议，不下单、不改持仓、不改 strategy action。</p>

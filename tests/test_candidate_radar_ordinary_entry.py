@@ -108,9 +108,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "数据能力"', self.page)
         self.assertIn('label: "还缺什么"', self.page)
         self.assertIn('label: "不会发生"', self.page)
-        self.assertIn("真实数据、权限、空窗口或本地 packet 缺口去数据能力页复核", self.page)
+        self.assertIn("真实数据、权限、空窗口或本地结果缺口去数据能力页复核", self.page)
         self.assertIn("候选池 / 搜票确认 / 量化推演 / 次日图谱 / ETF 融资风险", self.page)
-        self.assertIn("页面打开、搜索输入和本地跳转不会创建 task、不会调用 provider/model、不会交易", self.page)
+        self.assertIn("页面打开、搜索输入和本地跳转不会启动确认流程、不会刷新外部数据或模型、不会交易", self.page)
         visible_now_start = summary_primary_slice.index('aria-label="candidate radar visible now app result"')
         visible_now_end = summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"', visible_now_start)
         visible_now_slice = summary_primary_slice[visible_now_start:visible_now_end]
@@ -141,7 +141,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar typed symbol immediate rows"', summary_primary_slice)
         self.assertIn("<summary>查看输入链路</summary>", summary_primary_slice)
         self.assertIn("DataLineageTable rows={candidateRadarTypedSymbolRows}", summary_primary_slice)
-        self.assertIn("输入股票只是本地会话状态；只有确认按钮点击才进入按钮门控 POST task", summary_primary_slice)
+        self.assertIn("输入股票只是本地会话状态；只有确认按钮点击才启动本地确认流程", summary_primary_slice)
         typed_symbol_start = summary_primary_slice.index('aria-label="candidate radar typed symbol immediate readback"')
         typed_symbol_end = summary_primary_slice.index('aria-label="candidate radar user route qa latest evidence"', typed_symbol_start)
         typed_symbol_slice = summary_primary_slice[typed_symbol_start:typed_symbol_end]
@@ -165,7 +165,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('href="#factor"', typed_symbol_slice)
         self.assertIn('href="#next"', typed_symbol_slice)
         self.assertIn('href="#candidate-pool"', typed_symbol_slice)
-        self.assertIn("不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", typed_symbol_slice)
+        self.assertIn("不会启动确认流程、不会刷新外部数据或模型", typed_symbol_slice)
         self.assertNotIn("onClick=", typed_symbol_slice)
         self.assertNotIn("postCandidateRadar", typed_symbol_slice)
         self.assertNotIn("launchQuantProjection", typed_symbol_slice)
@@ -206,7 +206,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('href="#tasks"', confirm_button_status_slice)
         self.assertIn('href="#factor"', confirm_button_status_slice)
         self.assertIn('href="#next"', confirm_button_status_slice)
-        self.assertIn("不会提交表单、不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", confirm_button_status_slice)
+        self.assertIn("不会提交表单、不会启动确认流程、不会刷新外部数据或模型", confirm_button_status_slice)
         self.assertNotIn("onClick=", confirm_button_status_slice)
         self.assertNotIn("launchQuantProjection", confirm_button_status_slice)
         self.assertNotIn("postCandidateRadar", confirm_button_status_slice)
@@ -222,14 +222,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar one path p1 p2 p3 rows"', summary_primary_slice)
         self.assertIn("<summary>查看主路径读法</summary>", summary_primary_slice)
         self.assertIn("DataLineageTable rows={candidateRadarOnePathRows}", summary_primary_slice)
-        self.assertIn("确认、任务、结果、风险四步", summary_primary_slice)
-        self.assertIn("不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", summary_primary_slice)
+        self.assertIn("确认、进度、结果、风险四步", summary_primary_slice)
+        self.assertIn("不会启动确认流程、不会刷新外部数据或模型", summary_primary_slice)
         one_path_start = summary_primary_slice.index('aria-label="candidate radar one path p1 p2 p3 route"')
         one_path_end = summary_primary_slice.index('aria-label="candidate radar recent research result card"', one_path_start)
         one_path_slice = summary_primary_slice[one_path_start:one_path_end]
         for one_path_label in (
             'label: "1. 确认"',
-            'label: "2. 任务"',
+            'label: "2. 进度"',
             'label: "3. 结果"',
             'label: "4. 风险"',
             'label: "不会发生"',
@@ -281,7 +281,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "研究边界"',
         ):
             self.assertIn(recent_result_label, self.page)
-        self.assertIn("Tushare ledger、权限、空窗口和 degraded 原因去数据能力页复核", self.page)
+        self.assertIn("真实数据、权限、空窗口和降级原因去数据能力页复核", self.page)
         for recent_result_row in (
             '读法: "1. 先看结论"',
             '读法: "2. 再看来源"',
@@ -300,7 +300,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('href={DATA_CAPABILITY_HREF}', recent_result_slice)
         self.assertIn('href="#marginEtf"', recent_result_slice)
         self.assertIn('href="#candidate-radar-search-quant-projection"', recent_result_slice)
-        self.assertIn("不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", recent_result_slice)
+        self.assertIn("不会启动确认流程、不会刷新外部数据或模型", recent_result_slice)
         self.assertIn("不是买卖建议，不下单、不改持仓、不改 strategy action", recent_result_slice)
         self.assertNotIn("onClick=", recent_result_slice)
         self.assertNotIn("postCandidateRadar", recent_result_slice)
