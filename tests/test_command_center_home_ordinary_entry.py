@@ -687,6 +687,41 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("fetch(", card)
         self.assertNotIn("postCandidateRadar", card)
 
+    def test_home_routes_data_gaps_to_data_capability_without_new_task(self):
+        source = self.source
+        visible_start = source.index('aria-label="ordinary home app visible now summary"')
+        visible_end = source.index('id="home-p1-symbol-confirm"', visible_start)
+        visible_card = source[visible_start:visible_end]
+        p1_start = source.index('title="P1 Tushare-first 链路速读"')
+        p1_end = source.index('title="当前可用投研链路"', p1_start)
+        p1_card = source[p1_start:p1_end]
+        workflow_start = source.index('title="当前可用投研链路"')
+        workflow_end = source.index('title="P2 小数据三面速读"', workflow_start)
+        workflow_card = source[workflow_start:workflow_end]
+        latest_start = source.index('title="最近确认进度"')
+        latest_end = source.index('aria-label="daily command latest confirm technical details"', latest_start)
+        latest_card = source[latest_start:latest_end]
+
+        self.assertIn('const DATA_CAPABILITY_HREF = "#dataCapability";', source)
+        self.assertIn("dailyCommandDataCapabilityReviewLabel", source)
+        self.assertIn("Tushare 数据凭证、权限、空窗口或本地结果包缺口去数据能力页复核；首页不探测接口。", source)
+        self.assertIn("MetricGrid items={ordinaryHomeAppVisibleNowItems}", visible_card)
+        self.assertIn('label: "数据能力"', source)
+        self.assertIn("value: dailyCommandDataCapabilityReviewLabel", source)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', visible_card)
+        self.assertIn('aria-label="open data capability from home visible now summary"', visible_card)
+        self.assertIn('label: "数据能力"', source)
+        self.assertIn("value: dailyCommandDataCapabilityReviewLabel", source)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', p1_card)
+        self.assertIn('aria-label="open data capability from home p1 tushare data card"', p1_card)
+        self.assertIn('label: "数据能力"', workflow_card)
+        self.assertIn('aria-label="open data capability from current research workflow"', workflow_card)
+        self.assertIn('aria-label="open data capability from latest local confirm"', latest_card)
+        for card in (visible_card, p1_card, workflow_card, latest_card):
+            self.assertNotIn("onClick=", card)
+            self.assertNotIn("fetch(", card)
+            self.assertNotIn("postCandidateRadar", card)
+
     def test_p2_three_surface_proof_is_before_writeback_table_and_read_only(self):
         source = self.source
         card_start = source.index('title="P2 小数据三面速读"')

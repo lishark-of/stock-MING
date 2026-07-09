@@ -10,6 +10,7 @@ import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
 const LIVE_BOOTSTRAP_SESSION_KEY = "command_center_3_live_bootstrap_session_key";
+const DATA_CAPABILITY_HREF = "#dataCapability";
 
 function readLiveBootstrapSessionKey(): string {
   try {
@@ -809,6 +810,9 @@ export default function CommandCenterHome() {
   const dailyCommandTushareDataCardNext = dailyCommandTushareFirstLedgerReady
     ? "继续看股票量化推演、P2 三面和次日图谱。"
     : "先确认股票；确认前输入保持静默，不创建 task。";
+  const dailyCommandDataCapabilityReviewLabel = dailyCommandTushareFirstLedgerReady
+    ? "Tushare 数据凭证已有本地回放；权限、空窗口和结果包缺口仍可去数据能力页复核。"
+    : "Tushare 数据凭证、权限、空窗口或本地结果包缺口去数据能力页复核；首页不探测接口。";
   const dailyCommandTushareDataCardItems: MetricItem[] = [
     {
       label: "Tushare 数据卡",
@@ -828,6 +832,11 @@ export default function CommandCenterHome() {
     {
       label: "下一步",
       value: dailyCommandTushareDataCardNext,
+      tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "数据能力",
+      value: dailyCommandDataCapabilityReviewLabel,
       tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
     },
     {
@@ -2158,6 +2167,11 @@ export default function CommandCenterHome() {
       label: "明确缺口",
       value: ordinaryHomeRecentResultGap,
       tone: dailyCommandP3OneGlanceReadable && ordinaryHomeRecentResultGap === "暂无额外缺口" ? "good" : "warn"
+    },
+    {
+      label: "数据能力",
+      value: dailyCommandDataCapabilityReviewLabel,
+      tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
     },
     {
       label: "下一步入口",
@@ -3586,6 +3600,7 @@ export default function CommandCenterHome() {
           <div className="actions" aria-label="ordinary home app visible now local actions">
             <a href={dailyCommandHomeConfirmHref} title="跳到首页确认股票代码；输入保持静默" aria-label="open home confirm from visible now summary">确认股票</a>
             <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate radar from home visible now summary">下一票雷达</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare 数据凭证、权限、空窗口和本地结果包缺口" aria-label="open data capability from home visible now summary">数据能力</a>
             <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from home visible now summary">ETF/融资风险</a>
             <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from home visible now summary">股票量化推演</a>
             <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next session from home visible now summary">次日图谱</a>
@@ -4019,6 +4034,7 @@ export default function CommandCenterHome() {
         </details>
         <div className="actions" aria-label="daily command p1 tushare first front actions">
           <a href={dailyCommandCandidateConfirmHref} title="回到下一票雷达确认输入区；输入静默，确认按钮才创建 Tushare-first task" aria-label="open candidate confirm from p1 tushare first front row">确认或换一只票</a>
+          <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare ledger、权限、空窗口和本地 packet 缺口" aria-label="open data capability from home p1 tushare data card">数据能力</a>
           <a href="#factor" title="切换到股票量化推演；只读回放 Tushare-first 后的本地结果" aria-label="open factor after p1 tushare first front row">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读回放 Tushare-first 后的本地图谱" aria-label="open next session after p1 tushare first front row">次日图谱</a>
         </div>
@@ -4033,6 +4049,7 @@ export default function CommandCenterHome() {
             { label: "P2 三面", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
             { label: "P3 结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
             { label: "下一步", value: dailyCommandResearchWorkflowNext },
+            { label: "数据能力", value: dailyCommandDataCapabilityReviewLabel, tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn" },
             { label: "P5 单独补证", value: modelStrategyP5StatusLabel, tone: dailyCommandP3OneGlanceUsesModelOutput ? "warn" : "good" },
             { label: "P5 不阻塞", value: modelStrategyP5NextAllowedAction, tone: "good" },
             { label: "边界", value: "当前链路卡只读 CandidateRadar cache / ledger / packet；只有首页确认卡创建 P1 task；不交易；当前链路卡只读本地三面结果；只有首页确认卡启动 P1 确认；不交易", tone: "good" }
@@ -4041,6 +4058,7 @@ export default function CommandCenterHome() {
         <DataLineageTable rows={dailyCommandResearchWorkflowRows} />
         <div className="actions" aria-label="daily command current research workflow actions">
           <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入代码后仍需确认按钮" aria-label="open candidate radar confirm from current research workflow">确认或换一只票</a>
+          <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核当前标的的数据账本和 degraded 缺口" aria-label="open data capability from current research workflow">数据能力</a>
           <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from current research workflow">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session replay from current research workflow">次日图谱</a>
         </div>
@@ -4197,6 +4215,7 @@ export default function CommandCenterHome() {
         <DataLineageTable rows={dailyCommandLatestTaskRows} />
         <div className="actions" aria-label="daily command latest local confirm actions">
           <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入代码后仍需确认按钮" aria-label="open candidate radar confirm input from latest local task">下一票雷达确认代码</a>
+          <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读查看最近确认的数据能力缺口" aria-label="open data capability from latest local confirm">数据能力</a>
           <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor projection from latest local task">股票量化推演</a>
           <a href="#next" title="切换到次日图谱；只读回放本地图谱" aria-label="open next session map from latest local task">次日图谱</a>
           <a href="#tasks" title="切换到进度明细；只读查看完整确认记录" aria-label="open progress details from latest local confirm">进度明细</a>
