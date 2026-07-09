@@ -54,13 +54,21 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("candidateRadarCompactOperatorSubtitle", self.page)
         self.assertIn("先看一票：", self.page)
         self.assertIn("缺口：${candidatePoolLeadCandidateGap}", self.page)
-        self.assertIn("候选池暂无候选；${candidatePoolPlainConclusionMissing}", self.page)
-        self.assertIn("等待候选缓存；先确认一只股票或刷新本地回放", self.page)
+        self.assertIn("Top/Watch/Excluded 理由见下方速读", self.page)
+        self.assertIn("候选池暂无候选；Top/Watch/Excluded 暂无理由；${candidatePoolPlainConclusionMissing}", self.page)
+        self.assertIn("等待候选缓存；Top/Watch/Excluded 暂无理由；先确认一只股票或刷新本地回放", self.page)
         self.assertIn('subtitle={candidateRadarCompactOperatorSubtitle}', operator_slice)
         self.assertIn('aria-label="candidate radar compact lead candidate result"', operator_slice)
         self.assertIn("首位候选速读", operator_slice)
         self.assertIn('aria-label="candidate radar compact lead candidate sentence"', operator_slice)
         self.assertIn("MetricGrid items={candidateRadarCompactLeadCandidateItems}", operator_slice)
+        self.assertIn("candidateRadarCompactGroupDecisionItems", self.page)
+        self.assertIn("candidateRadarGroupBriefRow", self.page)
+        self.assertIn("candidateRadarGroupBriefText", self.page)
+        self.assertIn('aria-label="candidate radar compact top watch excluded reasons"', operator_slice)
+        self.assertIn("分组理由速读", operator_slice)
+        self.assertIn("Top 先复核，Watch 只观察，Excluded 是排除或等待", operator_slice)
+        self.assertIn("MetricGrid items={candidateRadarCompactGroupDecisionItems}", operator_slice)
         compact_lead_start = operator_slice.index('aria-label="candidate radar compact lead candidate result"')
         compact_lead_end = operator_slice.index('aria-label="candidate radar compact vertical slice status"', compact_lead_start)
         compact_lead_slice = operator_slice[compact_lead_start:compact_lead_end]
@@ -70,8 +78,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "来源/缺口"',
             'label: "下一步"',
             'label: "边界"',
+            'label: "Top 先看"',
+            'label: "Watch 观察"',
+            'label: "Excluded 排除/等待"',
+            'label: "评分理由"',
         ):
             self.assertIn(compact_lead_label, self.page)
+        self.assertIn("理由待补", self.page)
+        self.assertIn("分组只决定复核顺序；不是买入、卖出、加仓或清仓指令", self.page)
         self.assertIn("首位候选只是复核对象；不预填、不提交、不买入", self.page)
         self.assertIn("candidatePoolLeadReviewSentence", compact_lead_slice)
         self.assertNotIn("onClick=", compact_lead_slice)

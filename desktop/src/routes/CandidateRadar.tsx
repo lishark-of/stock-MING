@@ -955,6 +955,21 @@ export default function CandidateRadar() {
   const candidatePoolLeadCandidateDisplay = candidatePoolLeadCandidateTicker === "暂无首位候选"
     ? candidatePoolLeadCandidateTicker
     : `${candidatePoolLeadCandidateTicker} ${candidatePoolLeadCandidateName}`;
+  const candidateRadarGroupBriefRow = (keywords: string[]) =>
+    topWatchExcludedGroupRows.find((row) => {
+      const group = String(row.group ?? row["分组"] ?? "").toLowerCase();
+      return keywords.some((keyword) => group.includes(keyword));
+    }) ?? {};
+  const candidateRadarTopBriefRow = candidateRadarGroupBriefRow(["top", "优先"]);
+  const candidateRadarWatchBriefRow = candidateRadarGroupBriefRow(["watch", "观察"]);
+  const candidateRadarExcludedBriefRow = candidateRadarGroupBriefRow(["excluded", "exclude", "排除", "等待"]);
+  const candidateRadarGroupBriefText = (row: Record<string, unknown>, fallback: string) => {
+    const ticker = displayText(row.ticker ?? row["标的"], fallback);
+    if (ticker === fallback) return fallback;
+    const name = displayText(row.name ?? row["名称"], "");
+    const reason = displayText(row.reason ?? row.evidence_chain_summary ?? row["理由"], "理由待补");
+    return `${ticker}${name ? ` ${name}` : ""}；${reason}`;
+  };
   const candidatePoolFirstScreenItems: MetricItem[] = [
     {
       label: "Top / Watch / Excluded",
@@ -3255,11 +3270,38 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarCompactGroupDecisionItems: MetricItem[] = [
+    {
+      label: "Top 先看",
+      value: candidateRadarGroupBriefText(candidateRadarTopBriefRow, "暂无 Top 候选；先看缺口"),
+      tone: Object.keys(candidateRadarTopBriefRow).length ? "good" : "warn"
+    },
+    {
+      label: "Watch 观察",
+      value: candidateRadarGroupBriefText(candidateRadarWatchBriefRow, "暂无 Watch 候选；先看 Top 和缺口"),
+      tone: Object.keys(candidateRadarWatchBriefRow).length ? "good" : "warn"
+    },
+    {
+      label: "Excluded 排除/等待",
+      value: candidateRadarGroupBriefText(candidateRadarExcludedBriefRow, "暂无 Excluded 记录；未标记排除原因"),
+      tone: Object.keys(candidateRadarExcludedBriefRow).length ? "warn" : "neutral"
+    },
+    {
+      label: "评分理由",
+      value: ordinaryScoringReasonLabel,
+      tone: Number(candidatePriorityExplanation.explained_candidate_count ?? 0) ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "分组只决定复核顺序；不是买入、卖出、加仓或清仓指令",
+      tone: "good"
+    }
+  ];
   const candidateRadarCompactOperatorSubtitle = ordinaryCandidateTopCount && candidatePoolLeadCandidateTicker !== "暂无首位候选"
-    ? `先看一票：${candidatePoolLeadCandidateTicker}；${candidatePoolLeadCandidateGroup}；缺口：${candidatePoolLeadCandidateGap}`
+    ? `先看一票：${candidatePoolLeadCandidateTicker}；${candidatePoolLeadCandidateGroup}；缺口：${candidatePoolLeadCandidateGap}；Top/Watch/Excluded 理由见下方速读`
     : candidateRadarCacheGetReadable
-      ? `候选池暂无候选；${candidatePoolPlainConclusionMissing}`
-      : "等待候选缓存；先确认一只股票或刷新本地回放";
+      ? `候选池暂无候选；Top/Watch/Excluded 暂无理由；${candidatePoolPlainConclusionMissing}`
+      : "等待候选缓存；Top/Watch/Excluded 暂无理由；先确认一只股票或刷新本地回放";
   const candidateRadarOpenNowPathItems: MetricItem[] = [
     {
       label: "候选池",
@@ -4638,6 +4680,11 @@ export default function CandidateRadar() {
           <h3>首位候选速读</h3>
           <p className="ordinary-status-note" aria-label="candidate radar compact lead candidate sentence" aria-live="polite">{candidatePoolLeadReviewSentence}</p>
           <MetricGrid items={candidateRadarCompactLeadCandidateItems} />
+          <div aria-label="candidate radar compact top watch excluded reasons">
+            <h3>分组理由速读</h3>
+            <p className="ordinary-status-note">Top 先复核，Watch 只观察，Excluded 是排除或等待；理由不足会显示为缺口，不自动重排候选。</p>
+            <MetricGrid items={candidateRadarCompactGroupDecisionItems} />
+          </div>
         </div>
         <MetricGrid
           items={[
