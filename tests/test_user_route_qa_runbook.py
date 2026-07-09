@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from server.api import routes_audit
 from server.services import audit_service
 
 
@@ -157,6 +158,7 @@ class UserRouteQaRunbookTests(unittest.TestCase):
             try:
                 evidence, rows = audit_service._user_route_qa_evidence_contract()
                 packet = audit_service.read_call_ledger_audit_cache()
+                route_envelope = routes_audit.get_user_route_qa_evidence_cache()
             finally:
                 audit_service.USER_ROUTE_QA_ARTIFACT_ROOT = original_root
 
@@ -216,6 +218,18 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertTrue(packet["policy"]["user_route_qa_evidence_does_not_open_browser"])
         self.assertTrue(packet["policy"]["user_route_qa_evidence_is_not_streamlit_retirement"])
         self.assertTrue(packet["policy"]["user_route_qa_evidence_is_not_production_replacement"])
+
+        self.assertTrue(route_envelope["ok"])
+        route_packet = route_envelope["data"]
+        self.assertEqual(route_packet["packet_key"], "command_center_3_user_route_qa_evidence_cache")
+        self.assertEqual(route_packet["status"], "user_route_qa_evidence_available_review_pending")
+        self.assertEqual(route_packet["user_route_qa_evidence_contract"]["latest_report_status"], "user_route_qa_passed")
+        self.assertTrue(route_packet["counts"]["user_route_qa_latest_report_passed"])
+        self.assertTrue(route_packet["policy"]["user_route_qa_evidence_does_not_create_task"])
+        self.assertFalse(route_packet["external_calls_triggered"])
+        self.assertFalse(route_packet["tushare_called"])
+        self.assertFalse(route_packet["deepseek_called"])
+        self.assertTrue(route_packet["does_not_execute_trades"])
 
 
 if __name__ == "__main__":

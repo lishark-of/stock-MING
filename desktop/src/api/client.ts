@@ -321,6 +321,10 @@ export function getAuditCache() {
   return request<Record<string, unknown>>("/api/audit/cache");
 }
 
+export function getAuditUserRouteQa() {
+  return request<Record<string, unknown>>("/api/audit/user-route-qa");
+}
+
 export function postMotionBrowserQaReview(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/audit/motion-browser-qa-review", {
     method: "POST",

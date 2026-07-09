@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, postCandidateRadarQuantProjection, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getAuditUserRouteQa, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, postCandidateRadarQuantProjection, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
@@ -85,6 +85,7 @@ export default function CommandCenterHome() {
   const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [healthEnvelopeWarnings, setHealthEnvelopeWarnings] = useState<Array<string>>([]);
   const [audit, setAudit] = useState<Record<string, unknown>>({});
+  const [auditUserRouteQa, setAuditUserRouteQa] = useState<Record<string, unknown>>({});
   const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
   const [bootstrapEnvelopeLedger, setBootstrapEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [bootstrapEnvelopeWarnings, setBootstrapEnvelopeWarnings] = useState<Array<string>>([]);
@@ -171,6 +172,7 @@ export default function CommandCenterHome() {
       setHealthEnvelopeWarnings(res.warnings ?? []);
     });
     track("audit", getAuditCache(), (res) => setAudit(res.data));
+    track("audit_user_route_qa", getAuditUserRouteQa(), (res) => setAuditUserRouteQa(res.data));
     track("bootstrap", getBootstrapStatus(), (res) => {
       setBootstrapStatus(res.data);
       setBootstrapEnvelopeLedger(res.call_ledger ?? []);
@@ -243,7 +245,8 @@ export default function CommandCenterHome() {
 
   const packetKeys = packets.available_cache_keys as unknown[] | undefined;
   const auditCounts = audit.counts as Record<string, unknown> | undefined;
-  const userRouteQaEvidence = (audit.user_route_qa_evidence_contract as Record<string, unknown> | undefined) ?? {};
+  const userRouteQaEvidenceSource = Object.keys(auditUserRouteQa).length ? auditUserRouteQa : audit;
+  const userRouteQaEvidence = (userRouteQaEvidenceSource.user_route_qa_evidence_contract as Record<string, unknown> | undefined) ?? {};
   const userRouteQaCoveredRoutes = Array.isArray(userRouteQaEvidence.covered_routes)
     ? (userRouteQaEvidence.covered_routes as unknown[]).map((route) => String(route))
     : [];
@@ -2153,6 +2156,11 @@ export default function CommandCenterHome() {
     : dailyCommandP0LocalReadinessReady
       ? "打开 app 能看到本地已接上、股票确认入口和等待结果状态；先输入股票代码并点击确认。"
       : "打开 app 能看到本地连接待恢复：先看桌面壳预检，等 FastAPI、bootstrap、desktop preflight 和 React 变绿。";
+  const ordinaryHomeRouteHealthLabel = userRouteQaLatestPassed
+    ? `路线健康：${userRouteQaCoveredRoutes.length}/5 条普通入口已通过 ${userRouteQaCoveredViewports.join(" / ") || "本地 QA"}；输入静默。`
+    : userRouteQaEvidence.latest_report_is_current_evidence === true
+      ? `路线健康待复核：${homeText(userRouteQaEvidence.latest_report_status, "pending")}。`
+      : "路线健康等待本地 QA；普通入口仍可只读使用。";
   const ordinaryHomeAppVisibleNowItems: MetricItem[] = [
     {
       label: "打开可见",
@@ -2188,6 +2196,11 @@ export default function CommandCenterHome() {
       label: "数据能力",
       value: dailyCommandDataCapabilityReviewLabel,
       tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "路线健康",
+      value: ordinaryHomeRouteHealthLabel,
+      tone: userRouteQaLatestPassed && userRouteQaTypingSilenceVerified && userRouteQaTaskSilenceFailedCount === 0 ? "good" : "warn"
     },
     {
       label: "下一步入口",

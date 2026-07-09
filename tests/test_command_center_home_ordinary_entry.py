@@ -414,10 +414,15 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
             'label: "最近结果"',
             'label: "来源层"',
             'label: "明确缺口"',
+            'label: "路线健康"',
             'label: "下一步入口"',
             'label: "安全说明"',
         ):
             self.assertIn(label, source_before_audit)
+        self.assertIn("ordinaryHomeRouteHealthLabel", source_before_audit)
+        self.assertIn("路线健康：${userRouteQaCoveredRoutes.length}/5 条普通入口已通过", source_before_audit)
+        self.assertIn("路线健康待复核", source_before_audit)
+        self.assertIn("路线健康等待本地 QA", source_before_audit)
         self.assertIn("打开 app 能看到什么", visible_slice)
         self.assertIn('aria-label="ordinary home app visible now sentence"', visible_slice)
         self.assertIn("{ordinaryHomeAppVisibleNowSentence}", visible_slice)
@@ -995,6 +1000,10 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("userRouteQaEvidence", source)
         self.assertIn("userRouteQaCoveredRoutes", source)
         self.assertIn("userRouteQaCoveredViewports", source)
+        self.assertIn("getAuditUserRouteQa", source)
+        self.assertIn('track("audit_user_route_qa", getAuditUserRouteQa()', source)
+        self.assertIn("userRouteQaEvidenceSource", source)
+        self.assertIn("Object.keys(auditUserRouteQa).length ? auditUserRouteQa : audit", source)
         self.assertIn("ordinaryHomeUserRouteQaSummary", source)
         self.assertIn("ordinaryHomeUserRouteQaItems", source)
         self.assertIn("ordinaryHomeUserRouteQaRows", source)
