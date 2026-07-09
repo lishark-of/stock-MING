@@ -306,6 +306,48 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launchQuickScan", lead_candidate_slice)
         self.assertNotIn("postCandidateRadar", lead_candidate_slice)
         self.assertLess(recent_result_start, lead_candidate_start)
+        self.assertIn("candidatePoolLeadHandoffSentence", self.page)
+        self.assertIn("candidatePoolLeadHandoffItems", self.page)
+        self.assertIn("candidatePoolLeadHandoffRows", self.page)
+        self.assertIn('aria-label="candidate radar lead candidate handoff card"', summary_primary_slice)
+        self.assertIn("首位候选怎么继续", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar lead candidate handoff sentence"', summary_primary_slice)
+        self.assertIn("MetricGrid items={candidatePoolLeadHandoffItems}", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar lead candidate handoff actions"', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar lead candidate handoff rows"', summary_primary_slice)
+        self.assertIn("<summary>查看交接读法</summary>", summary_primary_slice)
+        self.assertIn("DataLineageTable rows={candidatePoolLeadHandoffRows}", summary_primary_slice)
+        self.assertIn("首位候选交接只是把“下一票”变成可复核的当前标的路径", summary_primary_slice)
+        lead_handoff_start = summary_primary_slice.index('aria-label="candidate radar lead candidate handoff card"')
+        lead_handoff_end = summary_primary_slice.index('aria-label="candidate radar empty pool primary action card"', lead_handoff_start)
+        lead_handoff_slice = summary_primary_slice[lead_handoff_start:lead_handoff_end]
+        for lead_handoff_label in (
+            'label: "候选代码"',
+            'label: "主动作"',
+            'label: "复核顺序"',
+            'label: "数据缺口"',
+            'label: "不会发生"',
+            'label: "非买入边界"',
+        ):
+            self.assertIn(lead_handoff_label, self.page)
+        for lead_handoff_row in (
+            '步骤: "1. 拿到代码"',
+            '步骤: "2. 解释单票"',
+            '步骤: "3. 看三面结果"',
+            '步骤: "4. 保持研究边界"',
+        ):
+            self.assertIn(lead_handoff_row, self.page)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', lead_handoff_slice)
+        self.assertIn('href="#factor"', lead_handoff_slice)
+        self.assertIn('href="#next"', lead_handoff_slice)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', lead_handoff_slice)
+        self.assertIn('href="#marginEtf"', lead_handoff_slice)
+        self.assertIn("不会预填、提交、快扫、调用 Tushare/DeepSeek/GitHub、启动 worker 或交易", lead_handoff_slice)
+        self.assertNotIn("onClick=", lead_handoff_slice)
+        self.assertNotIn("launchQuickScan", lead_handoff_slice)
+        self.assertNotIn("postCandidateRadar", lead_handoff_slice)
+        self.assertNotIn("launchQuantProjection", lead_handoff_slice)
+        self.assertLess(lead_candidate_start, lead_handoff_start)
         self.assertIn("candidatePoolEmptyStatePrimarySentence", self.page)
         self.assertIn("candidatePoolEmptyStatePrimaryItems", self.page)
         self.assertIn("candidatePoolEmptyStatePrimaryRows", self.page)
@@ -347,7 +389,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launchQuickScan", empty_pool_action_slice)
         self.assertNotIn("postCandidateRadar", empty_pool_action_slice)
         self.assertNotIn("launchQuantProjection", empty_pool_action_slice)
-        self.assertLess(lead_candidate_start, empty_pool_action_start)
+        self.assertLess(lead_handoff_start, empty_pool_action_start)
         self.assertLess(empty_pool_action_start, summary_primary_slice.index('aria-label="candidate radar user route qa latest evidence"'))
         self.assertIn("getAuditCache", self.page)
         self.assertIn("user_route_qa_evidence_contract", self.page)

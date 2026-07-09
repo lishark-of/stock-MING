@@ -1150,6 +1150,67 @@ export default function CandidateRadar() {
       边界: "链接只切换本地页面或锚点；不交易、不改策略。"
     }
   ];
+  const candidatePoolLeadHandoffSentence = ordinaryCandidateTopCount && candidatePoolLeadCandidateTicker !== "暂无首位候选"
+    ? `要继续研究 ${candidatePoolLeadCandidateTicker}，先把它作为当前标的回到确认输入区；再看 Factor、Next、数据能力和 ETF/融资风险。`
+    : "暂无首位候选可交接；先回确认输入区或等待本地候选 cache。";
+  const candidatePoolLeadHandoffItems: MetricItem[] = [
+    {
+      label: "候选代码",
+      value: candidatePoolLeadCandidateTicker,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "主动作",
+      value: ordinaryCandidateTopCount ? "回确认输入区解释单票" : "先确认一只股票",
+      tone: candidateRadarCacheGetReadable ? "good" : "warn"
+    },
+    {
+      label: "复核顺序",
+      value: "确认输入 -> Factor -> Next 图谱 -> 数据能力 -> ETF/融资风险",
+      tone: "good"
+    },
+    {
+      label: "数据缺口",
+      value: candidatePoolLeadCandidateGap,
+      tone: candidatePoolLeadCandidateGap.includes("缺") || candidatePoolLeadCandidateGap.includes("待补") || candidatePoolLeadCandidateGap.includes("阻断") ? "warn" : "good"
+    },
+    {
+      label: "不会发生",
+      value: "本卡不会预填、提交、快扫、外联、启动 worker 或交易",
+      tone: "good"
+    },
+    {
+      label: "非买入边界",
+      value: "首位候选只是下一步复核对象，不是买入、卖出、加仓或融资指令",
+      tone: "good"
+    }
+  ];
+  const candidatePoolLeadHandoffRows = [
+    {
+      步骤: "1. 拿到代码",
+      当前状态: candidatePoolLeadCandidateTicker,
+      用户下一步: ordinaryCandidateTopCount ? "回确认输入区，用该代码生成本地研究回放。" : "等待候选或手动输入股票代码。",
+      边界: "页面不会自动把首位候选写进输入框，也不会自动提交。"
+    },
+    {
+      步骤: "2. 解释单票",
+      当前状态: "确认按钮仍按当前输入/P0 状态判断",
+      用户下一步: "只有用户在确认输入区点击确认按钮，才创建按钮门控本地任务。",
+      边界: "本卡链接只跳转；不会调用 postCandidateRadar 或 launchQuantProjection。"
+    },
+    {
+      步骤: "3. 看三面结果",
+      当前状态: "Factor / Next / 数据能力 / ETF 融资都是本地只读入口",
+      用户下一步: "按同一个标的复核来源、图谱、数据缺口和风险预算。",
+      边界: "只读已有 cache / packet；不补调 Tushare、DeepSeek、GitHub 或 worker。"
+    },
+    {
+      步骤: "4. 保持研究边界",
+      当前状态: "research-only",
+      用户下一步: "把候选当研究线索，不当交易动作。",
+      边界: "不下单、不连接 broker、不创建 order endpoint、不改 strategy action。"
+    }
+  ];
   const candidatePoolPlainConclusionItems: MetricItem[] = [
     {
       label: "一句话结论",
@@ -4506,6 +4567,24 @@ export default function CandidateRadar() {
               <DataLineageTable rows={candidatePoolLeadReviewRows} />
             </details>
             <p className="risk-note">首位候选只是复核顺序，不是推荐买入；理由、来源或缺口不足时按 degraded 显示，不重排、不重算、不改交易策略。</p>
+          </div>
+          <div aria-label="candidate radar lead candidate handoff card">
+            <h3>首位候选怎么继续</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar lead candidate handoff sentence" aria-live="polite">{candidatePoolLeadHandoffSentence}</p>
+            <MetricGrid items={candidatePoolLeadHandoffItems} />
+            <div className="actions" aria-label="candidate radar lead candidate handoff actions">
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from lead candidate handoff">解释单票</a>
+              <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from lead candidate handoff">看 Factor</a>
+              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from lead candidate handoff">看 Next</a>
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地 packet 缺口" aria-label="open data capability from lead candidate handoff">数据能力</a>
+              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from lead candidate handoff">ETF/融资风险</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar lead candidate handoff rows">
+              <summary>查看交接读法</summary>
+              <p className="risk-note">这张交接卡只读首位候选、本地输入状态和本地结果入口；不会预填、提交、快扫、调用 Tushare/DeepSeek/GitHub、启动 worker 或交易。</p>
+              <DataLineageTable rows={candidatePoolLeadHandoffRows} />
+            </details>
+            <p className="risk-note">首位候选交接只是把“下一票”变成可复核的当前标的路径；不把候选包装成买入建议，也不证明 LTG-13 production replacement complete。</p>
           </div>
           <div aria-label="candidate radar empty pool primary action card">
             <h3>候选池为空时现在点哪</h3>
