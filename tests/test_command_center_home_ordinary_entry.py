@@ -395,13 +395,21 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         controls_start = source.index('aria-label="daily command ordinary home primary controls"', card_start)
         recent_start = source.index('aria-label="ordinary home first screen recent result read"', card_start)
         audit_start = source.index('aria-label="daily command research assist audit details"')
-        visible_slice = source[visible_start:controls_start]
+        controls_slice = source[controls_start:visible_start]
+        visible_slice = source[visible_start:recent_start]
         source_before_audit = source[:audit_start]
 
-        self.assertLess(card_start, visible_start)
-        self.assertLess(visible_start, controls_start)
-        self.assertLess(controls_start, recent_start)
+        self.assertLess(card_start, controls_start)
+        self.assertLess(controls_start, visible_start)
+        self.assertLess(visible_start, recent_start)
         self.assertLess(visible_start, audit_start)
+        self.assertIn('aria-label="ordinary home input confirm first sentence"', source[card_start:controls_start])
+        self.assertIn("输入确认速读：输入只做本地校验", source[card_start:controls_start])
+        self.assertIn("确认后看最近结果、候选池、ETF/融资、股票量化推演和次日图谱", source[card_start:controls_start])
+        self.assertIn('aria-label="ordinary home stock symbol"', controls_slice)
+        self.assertIn('aria-label="run ordinary home next action"', controls_slice)
+        self.assertIn('aria-label="open ordinary home next action"', controls_slice)
+        self.assertIn('aria-label="ordinary home confirm status"', source[controls_start:visible_start])
         self.assertIn("ordinaryHomeAppVisibleNowSentence", source_before_audit)
         self.assertIn("ordinaryHomeAppVisibleNowItems", source_before_audit)
         self.assertIn("打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果", source_before_audit)
@@ -697,7 +705,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
     def test_home_routes_data_gaps_to_data_capability_without_new_task(self):
         source = self.source
         visible_start = source.index('aria-label="ordinary home app visible now summary"')
-        visible_end = source.index('id="home-p1-symbol-confirm"', visible_start)
+        visible_end = source.index('aria-label="ordinary home first screen recent result read"', visible_start)
         visible_card = source[visible_start:visible_end]
         ordinary_tushare_start = source.index('aria-label="ordinary home first screen tushare data card"')
         ordinary_tushare_end = source.index('aria-label="ordinary home first screen research route map"', ordinary_tushare_start)

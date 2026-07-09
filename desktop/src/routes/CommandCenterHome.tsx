@@ -3622,20 +3622,7 @@ export default function CommandCenterHome() {
       </div>
       <PacketCard title="今日可用" subtitle="普通首页只看能不能用、看哪只票、有没有结果、下一步点哪里" status={dailyCommandP0LocalReadinessReady ? "ready" : "check"}>
         <MetricGrid items={ordinaryHomeStatusItems} />
-        <div aria-label="ordinary home app visible now summary">
-          <h3>打开 app 能看到什么</h3>
-          <p className="ordinary-status-note" aria-label="ordinary home app visible now sentence" aria-live="polite">{ordinaryHomeAppVisibleNowSentence}</p>
-          <MetricGrid items={ordinaryHomeAppVisibleNowItems} />
-          <div className="actions" aria-label="ordinary home app visible now local actions">
-            <a href={dailyCommandHomeConfirmHref} title="跳到首页确认股票代码；输入保持静默" aria-label="open home confirm from visible now summary">确认股票</a>
-            <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate radar from home visible now summary">下一票雷达</a>
-            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare 数据凭证、权限、空窗口和本地结果包缺口" aria-label="open data capability from home visible now summary">数据能力</a>
-            <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from home visible now summary">ETF/融资风险</a>
-            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from home visible now summary">股票量化推演</a>
-            <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next session from home visible now summary">次日图谱</a>
-          </div>
-          <p className="risk-note">这个条带只回答普通用户打开首页能看到什么：本地是否接上、当前标的、最近结果、来源层、缺口和下一步入口；普通链接只切换本地页面或锚点，不启动确认流程、不调用外部服务、不交易、不改策略。</p>
-        </div>
+        <p className="ordinary-status-note" aria-label="ordinary home input confirm first sentence">输入确认速读：输入只做本地校验；确认后看最近结果、候选池、ETF/融资、股票量化推演和次日图谱。</p>
         <div id="home-p1-symbol-confirm" className="actions" aria-label="daily command ordinary home primary controls">
           <input
             value={homeQuantSymbol}
@@ -3661,6 +3648,20 @@ export default function CommandCenterHome() {
         </div>
         {homeQuantSubmitError ? <p className="ordinary-status-note" aria-live="polite">确认失败：请检查本地连接后重试。</p> : null}
         <p className="ordinary-status-note" aria-label="ordinary home confirm status" aria-live="polite">{ordinaryHomeConfirmStatusLine}</p>
+        <div aria-label="ordinary home app visible now summary">
+          <h3>打开 app 能看到什么</h3>
+          <p className="ordinary-status-note" aria-label="ordinary home app visible now sentence" aria-live="polite">{ordinaryHomeAppVisibleNowSentence}</p>
+          <MetricGrid items={ordinaryHomeAppVisibleNowItems} />
+          <div className="actions" aria-label="ordinary home app visible now local actions">
+            <a href={dailyCommandHomeConfirmHref} title="跳到首页确认股票代码；输入保持静默" aria-label="open home confirm from visible now summary">确认股票</a>
+            <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate radar from home visible now summary">下一票雷达</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare 数据凭证、权限、空窗口和本地结果包缺口" aria-label="open data capability from home visible now summary">数据能力</a>
+            <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from home visible now summary">ETF/融资风险</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from home visible now summary">股票量化推演</a>
+            <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next session from home visible now summary">次日图谱</a>
+          </div>
+          <p className="risk-note">这个条带只回答普通用户打开首页能看到什么：本地是否接上、当前标的、最近结果、来源层、缺口和下一步入口；普通链接只切换本地页面或锚点，不启动确认流程、不调用外部服务、不交易、不改策略。</p>
+        </div>
         <div aria-label="ordinary home first screen recent result read">
           <h3>最近结果速读</h3>
           <p className="ordinary-status-note" aria-label="ordinary home recent result summary" aria-live="polite">{ordinaryHomeRecentResultSummary}</p>

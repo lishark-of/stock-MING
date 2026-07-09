@@ -1811,6 +1811,9 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('label: "最近结果"', ordinary_home_status_definition)
         self.assertNotIn('label: "本地数据"', ordinary_home_status_definition)
         self.assertNotIn('label: "下一步"', ordinary_home_status_definition)
+        self.assertIn('aria-label="ordinary home input confirm first sentence"', ordinary_home_slice)
+        self.assertIn("输入确认速读：输入只做本地校验", ordinary_home_slice)
+        self.assertIn("确认后看最近结果、候选池、ETF/融资、股票量化推演和次日图谱", ordinary_home_slice)
         self.assertIn('id="home-p1-symbol-confirm"', ordinary_home_slice)
         self.assertIn('aria-label="daily command ordinary home primary controls"', ordinary_home_slice)
         self.assertIn('title={ordinaryHomePrimaryActionTitle}', ordinary_home_slice)
@@ -1819,6 +1822,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('aria-label="ordinary home confirm status"', ordinary_home_slice)
         self.assertIn("{ordinaryHomeConfirmStatusLine}", ordinary_home_slice)
         self.assertIn('ordinaryHomePrimaryActionKind === "refresh" ? refreshHomeResearchReadback : launchHomeQuantProjection', ordinary_home_slice)
+        self.assertLess(
+            ordinary_home_slice.index('aria-label="daily command ordinary home primary controls"'),
+            ordinary_home_slice.index('aria-label="ordinary home app visible now summary"'),
+        )
         self.assertNotIn("填入当前标的", ordinary_home_slice)
         self.assertNotIn('aria-label="refresh ordinary home result"', ordinary_home_slice)
         self.assertNotIn('aria-label="open ordinary home quant result"', ordinary_home_slice)
