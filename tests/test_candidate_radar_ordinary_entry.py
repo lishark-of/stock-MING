@@ -211,6 +211,48 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launchQuantProjection", confirm_button_status_slice)
         self.assertNotIn("postCandidateRadar", confirm_button_status_slice)
         self.assertLess(typed_symbol_start, confirm_button_status_start)
+        self.assertIn("candidateRadarOnePathSentence", self.page)
+        self.assertIn("candidateRadarOnePathItems", self.page)
+        self.assertIn("candidateRadarOnePathRows", self.page)
+        self.assertIn('aria-label="candidate radar one path p1 p2 p3 route"', summary_primary_slice)
+        self.assertIn("下一票主路径", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar one path p1 p2 p3 sentence"', summary_primary_slice)
+        self.assertIn("MetricGrid items={candidateRadarOnePathItems}", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar one path p1 p2 p3 links"', summary_primary_slice)
+        self.assertIn('aria-label="candidate radar one path p1 p2 p3 rows"', summary_primary_slice)
+        self.assertIn("<summary>查看主路径读法</summary>", summary_primary_slice)
+        self.assertIn("DataLineageTable rows={candidateRadarOnePathRows}", summary_primary_slice)
+        self.assertIn("确认、任务、结果、风险四步", summary_primary_slice)
+        self.assertIn("不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker", summary_primary_slice)
+        one_path_start = summary_primary_slice.index('aria-label="candidate radar one path p1 p2 p3 route"')
+        one_path_end = summary_primary_slice.index('aria-label="candidate radar recent research result card"', one_path_start)
+        one_path_slice = summary_primary_slice[one_path_start:one_path_end]
+        for one_path_label in (
+            'label: "1. 确认"',
+            'label: "2. 任务"',
+            'label: "3. 结果"',
+            'label: "4. 风险"',
+            'label: "不会发生"',
+            'label: "边界"',
+        ):
+            self.assertIn(one_path_label, self.page)
+        for one_path_row in (
+            '步骤: "1. 输入并确认"',
+            '步骤: "2. 看任务"',
+            '步骤: "3. 回放结果"',
+            '步骤: "4. 补看风险"',
+        ):
+            self.assertIn(one_path_row, self.page)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', one_path_slice)
+        self.assertIn('href="#tasks"', one_path_slice)
+        self.assertIn('href="#factor/factor-score"', one_path_slice)
+        self.assertIn('href="#next/next-session-chart"', one_path_slice)
+        self.assertIn('href="#marginEtf"', one_path_slice)
+        self.assertIn("不是买入、卖出、加仓、融资或下单指令", one_path_slice)
+        self.assertNotIn("onClick=", one_path_slice)
+        self.assertNotIn("launchQuantProjection", one_path_slice)
+        self.assertNotIn("postCandidateRadar", one_path_slice)
+        self.assertLess(confirm_button_status_start, one_path_start)
         self.assertIn("candidateRadarRecentResearchResultSentence", self.page)
         self.assertIn("candidateRadarRecentResearchResultItems", self.page)
         self.assertIn("candidateRadarRecentResearchResultRows", self.page)
@@ -263,6 +305,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", recent_result_slice)
         self.assertNotIn("postCandidateRadar", recent_result_slice)
         self.assertNotIn("launchQuantProjection", recent_result_slice)
+        self.assertLess(one_path_start, recent_result_start)
         self.assertLess(confirm_button_status_start, recent_result_start)
         self.assertIn("candidatePoolLeadReviewSentence", self.page)
         self.assertIn("candidatePoolLeadReviewItems", self.page)

@@ -3458,6 +3458,73 @@ export default function CandidateRadar() {
       边界: "不交易、不改持仓、不改 strategy action。"
     }
   ];
+  const candidateRadarOnePathSentence = taskReceipt?.ok || quantProjectionPersistedTaskId
+    ? "已有本地确认任务或历史结果：按任务状态、最近结果、Factor/Next 和 ETF/融资风险一条线复核。"
+    : quantProjectionCanSubmit
+      ? `下一票主路径已就绪：确认 ${quantProjectionSymbolValidation.normalized} 后，先看任务，再看最近结果和三面回放。`
+      : "下一票主路径等待输入或本地联通：先让确认按钮可用，再按任务、结果、风险顺序看。";
+  const candidateRadarOnePathItems: MetricItem[] = [
+    {
+      label: "1. 确认",
+      value: quantProjectionCanSubmit ? `可确认 ${quantProjectionSymbolValidation.normalized}` : quantProjectionDisabledReason,
+      tone: quantProjectionCanSubmit ? "good" : "warn"
+    },
+    {
+      label: "2. 任务",
+      value: taskReceipt?.ok || quantProjectionPersistedTaskId ? quantProjectionLatestTaskState : "确认后看 TaskStatusPanel / 任务目录",
+      tone: taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : quantProjectionCanSubmit ? "neutral" : "warn"
+    },
+    {
+      label: "3. 结果",
+      value: quantProjectionP2P3ConnectionReady ? "P2/P3 可回放：量化推演和次日图谱" : quantProjectionReplayDestinationState,
+      tone: quantProjectionP2P3ConnectionReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "4. 风险",
+      value: "最后看数据能力和 ETF/融资风险预算；不生成加仓或融资指令",
+      tone: "good"
+    },
+    {
+      label: "不会发生",
+      value: "这张路径卡不会提交、不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不会启动 worker",
+      tone: "good"
+    },
+    {
+      label: "边界",
+      value: "下一票只是研究复核路径，不是买入、卖出、加仓、融资或下单指令",
+      tone: "good"
+    }
+  ];
+  const candidateRadarOnePathRows = [
+    {
+      步骤: "1. 输入并确认",
+      当前状态: quantProjectionCanSubmit ? `确认按钮可用：${quantProjectionSymbolValidation.normalized}` : quantProjectionDisabledReason,
+      用户下一步: quantProjectionCanSubmit ? "跳到确认输入区，点击一次确认并生成。" : "先让 P0 联通和股票代码校验通过。",
+      入口: "#candidate-radar-search-quant-projection",
+      边界: "只有真正确认按钮会 POST；本路径卡只是本地链接和读法。"
+    },
+    {
+      步骤: "2. 看任务",
+      当前状态: taskReceipt?.ok || quantProjectionPersistedTaskId ? quantProjectionLatestTaskState : "等待确认后生成本地任务",
+      用户下一步: "打开任务目录或首屏 TaskStatusPanel，看是否接收和回写。",
+      入口: "#tasks",
+      边界: "任务状态只轮询本地 FastAPI；不创建第二个 task。"
+    },
+    {
+      步骤: "3. 回放结果",
+      当前状态: quantProjectionP2P3ConnectionReady ? "P2/P3 已可回放" : quantProjectionReplayDestinationState,
+      用户下一步: "先看 Factor 支持/压制，再看 Next 图谱。",
+      入口: "#factor / #next",
+      边界: "结果回放只读 cache / ledger / packet；不补调 provider/model。"
+    },
+    {
+      步骤: "4. 补看风险",
+      当前状态: "数据能力 + ETF/融资风险预算",
+      用户下一步: "复核 Tushare ledger、权限、空窗口、degraded 原因和融资约束。",
+      入口: "DATA_CAPABILITY_HREF / #marginEtf",
+      边界: "风险入口只读本地状态；不交易、不下单、不改 strategy action。"
+    }
+  ];
   const candidateRadarRecentResearchResultSentence =
     quantProjectionInterpretationReady || quantProjectionSmallDataReady
       ? `最近投研结果可回放：${quantProjectionOrdinaryResultSummary}`
@@ -4598,6 +4665,24 @@ export default function CandidateRadar() {
               <DataLineageTable rows={candidateRadarConfirmButtonPrimaryRows} />
             </details>
             <p className="risk-note">真正会创建本地研究任务的只有确认输入区的确认按钮；本卡片链接只帮助定位，不买卖、不改持仓、不改 strategy action。</p>
+          </div>
+          <div aria-label="candidate radar one path p1 p2 p3 route">
+            <h3>下一票主路径</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar one path p1 p2 p3 sentence" aria-live="polite">{candidateRadarOnePathSentence}</p>
+            <MetricGrid items={candidateRadarOnePathItems} />
+            <div className="actions" aria-label="candidate radar one path p1 p2 p3 links">
+              <a href="#candidate-radar-search-quant-projection" title="跳到确认输入区；只有原确认按钮会创建本地任务" aria-label="open confirm input from candidate radar one path">确认输入</a>
+              <a href="#tasks" title="切换到任务目录；只读本地 task index" aria-label="open task status from candidate radar one path">任务状态</a>
+              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from candidate radar one path">看 Factor</a>
+              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar one path">看 Next</a>
+              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from candidate radar one path">ETF/融资风险</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar one path p1 p2 p3 rows">
+              <summary>查看主路径读法</summary>
+              <p className="risk-note">这张路径表只把确认、任务、结果、风险四步串起来；不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不启动 worker。</p>
+              <DataLineageTable rows={candidateRadarOnePathRows} />
+            </details>
+            <p className="risk-note">下一票主路径只帮助用户按一条线使用本地投研客户端；候选和结果不是买入、卖出、加仓、融资或下单指令，不下单、不改持仓、不改 strategy action。</p>
           </div>
           <div aria-label="candidate radar recent research result card">
             <h3>确认后最近投研结果</h3>
