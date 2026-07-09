@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getBootstrapStatus, getCandidateRadarCache, getDesktopPreflightCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getAuditCache, getBootstrapStatus, getCandidateRadarCache, getDesktopPreflightCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import { getTasks, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
@@ -109,6 +109,7 @@ export default function CandidateRadar() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
+  const [auditCache, setAuditCache] = useState<Record<string, unknown>>({});
   const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
   const [bootstrapEnvelopeLedger, setBootstrapEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [bootstrapEnvelopeWarnings, setBootstrapEnvelopeWarnings] = useState<Array<string>>([]);
@@ -171,10 +172,14 @@ export default function CandidateRadar() {
   const refreshTaskIndex = () => {
     void getTasks().then((res) => setTaskIndex(res.data));
   };
+  const refreshAuditCache = () => {
+    void getAuditCache().then((res) => setAuditCache(res.data));
+  };
   const refreshQuantProjectionReadback = () => {
     refreshCache();
     refreshBootstrapStatus();
     refreshTaskIndex();
+    refreshAuditCache();
   };
   const refreshDesktopPreflight = () => {
     void getDesktopPreflightCache().then((res) => {
@@ -314,6 +319,7 @@ export default function CandidateRadar() {
     refreshBootstrapStatus();
     refreshDesktopPreflight();
     refreshTaskIndex();
+    refreshAuditCache();
   }, []);
   useEffect(() => {
     const anchor = candidateRadarRouteAnchorFromHash();
@@ -322,6 +328,21 @@ export default function CandidateRadar() {
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
+  const userRouteQaEvidence = (auditCache.user_route_qa_evidence_contract as Record<string, unknown> | undefined) ?? {};
+  const userRouteQaCoveredRoutes = Array.isArray(userRouteQaEvidence.covered_routes)
+    ? (userRouteQaEvidence.covered_routes as unknown[]).map((route) => String(route))
+    : [];
+  const userRouteQaCoveredViewports = Array.isArray(userRouteQaEvidence.covered_viewports)
+    ? (userRouteQaEvidence.covered_viewports as unknown[]).map((viewport) => String(viewport))
+    : [];
+  const userRouteQaLatestPassedCount = Number(userRouteQaEvidence.latest_report_passed_count ?? 0);
+  const userRouteQaLatestMatrixCount = Number(userRouteQaEvidence.latest_report_qa_matrix_count ?? 0);
+  const userRouteQaLatestReviewRequiredCount = Number(userRouteQaEvidence.latest_report_review_required_count ?? 0);
+  const userRouteQaLatestConsoleErrorCount = Number(userRouteQaEvidence.latest_report_console_error_count ?? 0);
+  const userRouteQaTaskSilenceFailedCount = Number(userRouteQaEvidence.task_silence_failed_count ?? 0);
+  const candidateRadarUserRouteQaPassed =
+    userRouteQaEvidence.latest_report_candidate_route_passed === true ||
+    userRouteQaEvidence.candidate_route_visual_qa_passed === true;
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const scanCoverage = (cache.scan_coverage as Record<string, unknown> | undefined) ?? {};
   const coverageDetail = (cache.coverage_detail_summary as Record<string, unknown> | undefined) ?? {};
@@ -3114,6 +3135,72 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarUserRouteQaSummary = candidateRadarUserRouteQaPassed
+    ? `本轮本地路线 QA 已覆盖下一票雷达：${userRouteQaCoveredViewports.join(" / ") || "desktop / mobile"}，打开和输入未创建任务。`
+    : userRouteQaEvidence.latest_report_status
+      ? `已有本地路线 QA 报告，但下一票雷达仍需复核：${displayText(userRouteQaEvidence.latest_report_status)}。`
+      : "等待本地路线 QA 报告；不影响当前候选缓存和确认按钮使用。";
+  const candidateRadarUserRouteQaItems: MetricItem[] = [
+    {
+      label: "路线 QA",
+      value: candidateRadarUserRouteQaPassed ? "下一票雷达已通过本地路线 QA" : "等待下一票雷达路线 QA",
+      tone: candidateRadarUserRouteQaPassed ? "good" : "warn"
+    },
+    {
+      label: "视口",
+      value: userRouteQaCoveredViewports.length ? userRouteQaCoveredViewports.join(" / ") : "等待 desktop / mobile",
+      tone: userRouteQaCoveredViewports.includes("desktop") && userRouteQaCoveredViewports.includes("mobile") ? "good" : "warn"
+    },
+    {
+      label: "路线",
+      value: userRouteQaCoveredRoutes.includes("#candidates")
+        ? `${userRouteQaCoveredRoutes.length} 条普通路线已覆盖`
+        : "等待 #candidates 覆盖",
+      tone: userRouteQaCoveredRoutes.includes("#candidates") ? "good" : "warn"
+    },
+    {
+      label: "输入静默",
+      value: userRouteQaEvidence.typing_silence_verified === true && !userRouteQaTaskSilenceFailedCount
+        ? "搜索输入和页面渲染未创建任务"
+        : `需复核 ${userRouteQaTaskSilenceFailedCount} 条任务静默`,
+      tone: userRouteQaEvidence.typing_silence_verified === true && !userRouteQaTaskSilenceFailedCount ? "good" : "warn"
+    },
+    {
+      label: "最新报告",
+      value: `${userRouteQaLatestPassedCount}/${userRouteQaLatestMatrixCount || "--"} passed；review ${userRouteQaLatestReviewRequiredCount}；console ${userRouteQaLatestConsoleErrorCount}`,
+      tone: userRouteQaEvidence.latest_report_passed === true ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只读 ignored 本地 QA 摘要；不是 provider、CI 或旧雷达退场证据",
+      tone: "good"
+    }
+  ];
+  const candidateRadarUserRouteQaRows = [
+    {
+      检查项: "1. 打开候选页",
+      当前状态: candidateRadarUserRouteQaPassed ? "latest local route QA passed" : "waiting local route QA",
+      用户下一步: "先看候选池、确认输入和非买入边界；需要补证再看审计区",
+      证据: "user_route_qa_evidence_contract.latest_report_candidate_route_passed",
+      边界: "只读 ignored 本地报告摘要；普通页不打开浏览器、不写截图"
+    },
+    {
+      检查项: "2. 视口覆盖",
+      当前状态: userRouteQaCoveredViewports.length ? userRouteQaCoveredViewports.join(" / ") : "waiting desktop/mobile",
+      用户下一步: "desktop/mobile 都通过后，再把普通入口问题转成具体 UI 修复",
+      证据: "covered_viewports",
+      边界: "本地视口 evidence 不是 durable CI 或 packaged-runtime evidence"
+    },
+    {
+      检查项: "3. 输入静默",
+      当前状态: userRouteQaEvidence.typing_silence_verified === true && !userRouteQaTaskSilenceFailedCount
+        ? "typing/render task silence verified"
+        : "typing silence review required",
+      用户下一步: "输入股票代码前先确认不会自动创建任务；确认按钮才是工作入口",
+      证据: "typing_silence_verified + task_silence_failed_count",
+      边界: "输入、GET cache、React render 不调用 Tushare、DeepSeek、GitHub、worker 或交易路径"
+    }
+  ];
   const candidateRadarPostConfirmNextStepSentence = quantProjectionFactorNextReady
     ? `${quantProjectionProgressWatchSymbol || quantProjectionDisplaySymbol || "当前标的"} 确认后已可回放：先看股票量化推演支持/压制，再看次日图谱，涉及仓位或融资预算时再看 ETF/融资风险。`
     : quantProjectionInterpretationReady || quantProjectionSmallDataReady
@@ -3898,6 +3985,22 @@ export default function CandidateRadar() {
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from visible now app result">确认输入</a>
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from visible now app result">ETF/融资风险</a>
             </div>
+          </div>
+          <div aria-label="candidate radar user route qa latest evidence">
+            <h3>本轮路线 QA</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar user route qa summary" aria-live="polite">{candidateRadarUserRouteQaSummary}</p>
+            <MetricGrid items={candidateRadarUserRouteQaItems} />
+            <div className="actions" aria-label="candidate radar user route qa local actions">
+              <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from user route qa evidence">看候选池</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from user route qa evidence">确认输入</a>
+              <a href="#audit" title="跳到折叠审计区；只读查看本地 QA 摘要" aria-label="open audit details from user route qa evidence">审计摘要</a>
+            </div>
+            <details className="developer-audit-details" aria-label="candidate radar user route qa evidence rows">
+              <summary>查看 QA 明细</summary>
+              <p className="risk-note">QA 明细只读 `/api/audit/cache` 汇总的 ignored 本地报告；本页不会打开浏览器、不会写截图、不会创建任务。</p>
+              <DataLineageTable rows={candidateRadarUserRouteQaRows} />
+            </details>
+            <p className="risk-note">这张 QA 速读证明普通路线在本机可打开和可输入；它不是 provider/model 证据、不是远端 CI，也不代表旧雷达可以退场。</p>
           </div>
           <div aria-label="candidate radar post confirm next step bridge">
             <h3>确认后看这 3 处</h3>

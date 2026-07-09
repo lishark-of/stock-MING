@@ -126,6 +126,42 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             visible_now_start,
             summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"'),
         )
+        self.assertIn("getAuditCache", self.page)
+        self.assertIn("user_route_qa_evidence_contract", self.page)
+        self.assertIn("candidateRadarUserRouteQaSummary", self.page)
+        self.assertIn("candidateRadarUserRouteQaItems", self.page)
+        self.assertIn("candidateRadarUserRouteQaRows", self.page)
+        self.assertIn('aria-label="candidate radar user route qa latest evidence"', summary_primary_slice)
+        self.assertIn("本轮路线 QA", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar user route qa summary"', summary_primary_slice)
+        self.assertIn("本轮本地路线 QA 已覆盖下一票雷达", self.page)
+        self.assertIn("等待本地路线 QA 报告；不影响当前候选缓存和确认按钮使用。", self.page)
+        self.assertIn("MetricGrid items={candidateRadarUserRouteQaItems}", summary_primary_slice)
+        for qa_label in (
+            'label: "路线 QA"',
+            'label: "视口"',
+            'label: "路线"',
+            'label: "输入静默"',
+            'label: "最新报告"',
+            'label: "边界"',
+        ):
+            self.assertIn(qa_label, self.page)
+        qa_start = summary_primary_slice.index('aria-label="candidate radar user route qa latest evidence"')
+        qa_end = summary_primary_slice.index('aria-label="candidate radar post confirm next step bridge"', qa_start)
+        qa_slice = summary_primary_slice[qa_start:qa_end]
+        self.assertIn('aria-label="candidate radar user route qa local actions"', qa_slice)
+        self.assertIn('href="#candidate-pool"', qa_slice)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', qa_slice)
+        self.assertIn('href="#audit"', qa_slice)
+        self.assertIn('aria-label="candidate radar user route qa evidence rows"', qa_slice)
+        self.assertIn("<summary>查看 QA 明细</summary>", qa_slice)
+        self.assertIn("DataLineageTable rows={candidateRadarUserRouteQaRows}", qa_slice)
+        self.assertIn("不会打开浏览器、不会写截图、不会创建任务", qa_slice)
+        self.assertIn("不是 provider/model 证据、不是远端 CI，也不代表旧雷达可以退场", qa_slice)
+        self.assertNotIn("onClick=", qa_slice)
+        self.assertNotIn("postCandidateRadar", qa_slice)
+        self.assertNotIn("launchQuantProjection", qa_slice)
+        self.assertLess(visible_now_start, qa_start)
         self.assertIn("candidateRadarPostConfirmNextStepSentence", self.page)
         self.assertIn("candidateRadarPostConfirmNextStepItems", self.page)
         self.assertIn('aria-label="candidate radar post confirm next step bridge"', summary_primary_slice)
