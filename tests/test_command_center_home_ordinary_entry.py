@@ -930,6 +930,64 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postBootstrapLiveStartup", route)
         self.assertNotIn("launchHomeQuantProjection", route)
 
+    def test_ordinary_home_user_route_qa_quick_read_is_visible_and_read_only(self):
+        source = self.source
+        card_start = source.index('title="今日可用"')
+        card_end = source.index('aria-label="daily command research assist audit details"', card_start)
+        card = source[card_start:card_end]
+        route_map_start = card.index('aria-label="ordinary home first screen research route map"')
+        qa_start = card.index('aria-label="ordinary home user route qa quick read"', route_map_start)
+        candidate_start = card.index('aria-label="ordinary home candidate radar visible slice"', qa_start)
+        qa = card[qa_start:candidate_start]
+
+        self.assertLess(route_map_start, qa_start)
+        self.assertLess(qa_start, candidate_start)
+        self.assertIn("userRouteQaEvidence", source)
+        self.assertIn("userRouteQaCoveredRoutes", source)
+        self.assertIn("userRouteQaCoveredViewports", source)
+        self.assertIn("ordinaryHomeUserRouteQaSummary", source)
+        self.assertIn("ordinaryHomeUserRouteQaItems", source)
+        self.assertIn("ordinaryHomeUserRouteQaRows", source)
+        self.assertIn("普通路线 QA 速读", qa)
+        self.assertIn('aria-label="ordinary home user route qa summary"', qa)
+        self.assertIn("MetricGrid items={ordinaryHomeUserRouteQaItems}", qa)
+        for label in (
+            'label: "路线覆盖"',
+            'label: "视口覆盖"',
+            'label: "输入静默"',
+            'label: "任务静默"',
+            'label: "候选页"',
+            'label: "最新报告"',
+            'label: "边界"',
+        ):
+            self.assertIn(label, source)
+        for route in ('"#home"', '"#candidates"', '"#marginEtf"', '"#factor"', '"#next"'):
+            self.assertIn(route, source)
+        self.assertIn("最新普通路线 QA 已通过", source)
+        self.assertIn("已有本地普通路线 QA 报告，但仍需复核", source)
+        self.assertIn("等待显式本地普通路线 QA", source)
+        self.assertIn("已验证：可见输入不会创建任务", source)
+        self.assertIn("渲染/输入未创建任务", source)
+        self.assertIn("下一票雷达 desktop/mobile 已在本地 QA 覆盖", source)
+        self.assertIn("首页只读 ignored 本地 QA 摘要；不打开浏览器、不提交截图、不调用外部服务", source)
+        self.assertIn('aria-label="ordinary home user route qa local actions"', qa)
+        self.assertIn('href="#audit"', qa)
+        self.assertIn('href="#candidates"', qa)
+        self.assertIn('href="#marginEtf"', qa)
+        self.assertIn('href="#factor/factor-score"', qa)
+        self.assertIn('href="#next/next-session-chart"', qa)
+        self.assertIn('aria-label="ordinary home user route qa rows"', qa)
+        self.assertIn("<summary>查看路线 QA 覆盖</summary>", qa)
+        self.assertIn("DataLineageTable rows={ordinaryHomeUserRouteQaRows}", qa)
+        self.assertIn("`.stock_ming_3/user_route_qa` ignored 本地报告摘要", qa)
+        self.assertIn("不会打开浏览器、不会写截图、不会创建任务", qa)
+        self.assertIn("不是外部数据/模型证据、不是远端 CI，也不关闭 Streamlit 或任何 LTG", qa)
+        self.assertNotIn("onClick=", qa)
+        self.assertNotIn("fetch(", qa)
+        self.assertNotIn("postTask", qa)
+        self.assertNotIn("postCandidateRadar", qa)
+        self.assertNotIn("TaskStatusPanel", qa)
+
     def test_ordinary_home_first_card_shows_post_confirm_status_without_second_task(self):
         source = self.source
         card_start = source.index('title="今日可用"')

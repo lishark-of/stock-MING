@@ -242,6 +242,83 @@ export default function CommandCenterHome() {
 
   const packetKeys = packets.available_cache_keys as unknown[] | undefined;
   const auditCounts = audit.counts as Record<string, unknown> | undefined;
+  const userRouteQaEvidence = (audit.user_route_qa_evidence_contract as Record<string, unknown> | undefined) ?? {};
+  const userRouteQaCoveredRoutes = Array.isArray(userRouteQaEvidence.covered_routes)
+    ? (userRouteQaEvidence.covered_routes as unknown[]).map((route) => String(route))
+    : [];
+  const userRouteQaCoveredViewports = Array.isArray(userRouteQaEvidence.covered_viewports)
+    ? (userRouteQaEvidence.covered_viewports as unknown[]).map((viewport) => String(viewport))
+    : [];
+  const userRouteQaRequiredRoutes = ["#home", "#candidates", "#marginEtf", "#factor", "#next"];
+  const userRouteQaMissingRoutes = userRouteQaRequiredRoutes.filter((route) => !userRouteQaCoveredRoutes.includes(route));
+  const userRouteQaLatestMatrixCount = Number(userRouteQaEvidence.latest_report_qa_matrix_count ?? 0);
+  const userRouteQaLatestReviewRequiredCount = Number(userRouteQaEvidence.latest_report_review_required_count ?? 0);
+  const userRouteQaLatestConsoleErrorCount = Number(userRouteQaEvidence.latest_report_console_error_count ?? 0);
+  const userRouteQaTaskSilenceFailedCount = Number(userRouteQaEvidence.task_silence_failed_count ?? 0);
+  const userRouteQaVisualComplete = userRouteQaEvidence.ordinary_route_visual_qa_complete === true;
+  const userRouteQaTypingSilenceVerified = userRouteQaEvidence.typing_silence_verified === true;
+  const userRouteQaLatestPassed = userRouteQaEvidence.latest_report_passed === true;
+  const userRouteQaCandidatePassed = userRouteQaEvidence.candidate_route_visual_qa_passed === true ||
+    userRouteQaEvidence.latest_report_candidate_route_passed === true;
+  const ordinaryHomeUserRouteQaSummary = userRouteQaLatestPassed
+    ? `最新普通路线 QA 已通过：${userRouteQaCoveredRoutes.join(" / ") || "等待路线列表"}；${userRouteQaCoveredViewports.join(" / ") || "等待视口"}。`
+    : userRouteQaEvidence.latest_report_is_current_evidence === true
+      ? `已有本地普通路线 QA 报告，但仍需复核：${homeText(userRouteQaEvidence.latest_report_status, "pending")}。`
+      : "等待显式本地普通路线 QA；不影响当前首页使用。";
+  const ordinaryHomeUserRouteQaItems: MetricItem[] = [
+    {
+      label: "路线覆盖",
+      value: userRouteQaMissingRoutes.length
+        ? `待补 ${userRouteQaMissingRoutes.join(" / ")}`
+        : `已覆盖 ${userRouteQaCoveredRoutes.join(" / ")}`,
+      tone: userRouteQaVisualComplete ? "good" : "warn"
+    },
+    {
+      label: "视口覆盖",
+      value: userRouteQaCoveredViewports.length ? userRouteQaCoveredViewports.join(" / ") : "等待 desktop/mobile",
+      tone: userRouteQaCoveredViewports.length >= 2 ? "good" : "warn"
+    },
+    {
+      label: "输入静默",
+      value: userRouteQaTypingSilenceVerified ? "已验证：可见输入不会创建任务" : "等待显式 runner 验证",
+      tone: userRouteQaTypingSilenceVerified ? "good" : "warn"
+    },
+    {
+      label: "任务静默",
+      value: userRouteQaTaskSilenceFailedCount ? `${userRouteQaTaskSilenceFailedCount} 条路线需复核` : "渲染/输入未创建任务",
+      tone: userRouteQaTaskSilenceFailedCount ? "warn" : "good"
+    },
+    {
+      label: "候选页",
+      value: userRouteQaCandidatePassed ? "下一票雷达 desktop/mobile 已在本地 QA 覆盖" : "等待下一票雷达路线 QA",
+      tone: userRouteQaCandidatePassed ? "good" : "warn"
+    },
+    {
+      label: "最新报告",
+      value: `${homeText(userRouteQaEvidence.latest_report_status, "missing")} / matrix ${userRouteQaLatestMatrixCount} / review ${userRouteQaLatestReviewRequiredCount} / console ${userRouteQaLatestConsoleErrorCount}`,
+      tone: userRouteQaLatestPassed ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "首页只读 ignored 本地 QA 摘要；不打开浏览器、不提交截图、不调用外部服务",
+      tone: "good"
+    }
+  ];
+  const ordinaryHomeUserRouteQaRows = userRouteQaRequiredRoutes.map((route) => ({
+    路线: route,
+    当前状态: userRouteQaCoveredRoutes.includes(route) ? "latest passing report covered" : "waiting explicit local QA",
+    用户看法: route === "#home"
+      ? "首页首屏是否清楚、确认输入是否静默"
+      : route === "#candidates"
+        ? "下一票雷达候选池、确认按钮和非买入边界是否清楚"
+        : route === "#marginEtf"
+          ? "ETF/融资风险预算、逐行读法和非加融资边界是否清楚"
+          : route === "#factor"
+            ? "股票量化推演、Factor 支持/压制和 provider 缺口是否清楚"
+            : "次日图谱、操作区条件和非交易边界是否清楚",
+    视口: userRouteQaCoveredViewports.length ? userRouteQaCoveredViewports.join(" / ") : "waiting desktop/mobile",
+    边界: "只读本地 QA 摘要；不创建任务、不调用外部数据或模型、不交易"
+  }));
   const snapshotAvailable = Boolean(packets.snapshot_available);
   const sqliteMeta = packets.sqlite_meta as Record<string, unknown> | undefined;
   const sqlitePackets = sqliteMeta?.packet_metadata as unknown[] | undefined;
@@ -3572,6 +3649,24 @@ export default function CommandCenterHome() {
             <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from ordinary home route map">ETF/融资风险</a>
             <a href="#next/next-session-chart" title="切换到次日图谱；只读本地图谱" aria-label="open next session from ordinary home route map">次日图谱</a>
           </div>
+        </div>
+        <div aria-label="ordinary home user route qa quick read">
+          <h3>普通路线 QA 速读</h3>
+          <p className="ordinary-status-note" aria-label="ordinary home user route qa summary" aria-live="polite">{ordinaryHomeUserRouteQaSummary}</p>
+          <MetricGrid items={ordinaryHomeUserRouteQaItems} />
+          <div className="actions" aria-label="ordinary home user route qa local actions">
+            <a href="#audit" title="切换到调用审计；只读本地 QA 摘要和调用记录" aria-label="open audit from ordinary home user route qa">调用审计</a>
+            <a href="#candidates" title="切换到下一票雷达；只读本地候选缓存" aria-label="open candidates from ordinary home user route qa">下一票雷达</a>
+            <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from ordinary home user route qa">ETF/融资</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演；只读本地结果" aria-label="open factor from ordinary home user route qa">股票量化推演</a>
+            <a href="#next/next-session-chart" title="切换到次日图谱；只读本地图谱" aria-label="open next from ordinary home user route qa">次日图谱</a>
+          </div>
+          <details className="developer-audit-details" aria-label="ordinary home user route qa rows">
+            <summary>查看路线 QA 覆盖</summary>
+            <p className="risk-note">路线 QA 行只读 `.stock_ming_3/user_route_qa` ignored 本地报告摘要；首页不会打开浏览器、不会写截图、不会创建任务。</p>
+            <DataLineageTable rows={ordinaryHomeUserRouteQaRows} />
+          </details>
+          <p className="risk-note">这张速读只说明普通路线是否有本地视觉和输入静默证据；它不是外部数据/模型证据、不是远端 CI，也不关闭 Streamlit 或任何 LTG。</p>
         </div>
         <div aria-label="ordinary home candidate radar visible slice">
           <h3>下一票雷达速读</h3>
