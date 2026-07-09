@@ -16,6 +16,7 @@ import TaskStatusPanel from "../components/TaskStatusPanel";
 // Legacy marker: plain href="#candidates" module-top links are superseded by the confirm-input deep link.
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
 const NEXT_SESSION_CHART_HREF = "#next/next-session-chart";
+const DATA_CAPABILITY_HREF = "#dataCapability";
 
 function toRows(items: unknown, bucket?: string): Array<Record<string, unknown>> {
   if (!Array.isArray(items)) return [];
@@ -763,6 +764,9 @@ export default function FactorQuantHub() {
       ? "看支持/压制和完整次日图谱。"
       : "继续看任务进度或刷新本地 cache，等 P2 三面齐备。"
     : "回下一票雷达确认输入区，确认后再回量化页读数据卡。";
+  const ordinaryQuantTushareDataCapabilityHandoff = ordinaryQuantTushareDataCardLedgerReady
+    ? "已有确认后数据账本；接口受限、空窗口或待补原因可去数据能力页复核。"
+    : "等待确认后数据账本；先去数据能力页看 Tushare 可用、受限和待补状态。";
   const ordinaryQuantTushareDataCardItems: MetricItem[] = [
     {
       label: "Tushare 数据卡",
@@ -797,6 +801,11 @@ export default function FactorQuantHub() {
     {
       label: "下一步",
       value: ordinaryQuantTushareDataCardNext,
+      tone: ordinaryQuantTushareDataCardLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "数据能力回看",
+      value: ordinaryQuantTushareDataCapabilityHandoff,
       tone: ordinaryQuantTushareDataCardLedgerReady ? "good" : "warn"
     },
     {
@@ -1871,6 +1880,10 @@ export default function FactorQuantHub() {
             <h3>确认后 Tushare 数据卡</h3>
             <p className="ordinary-status-note" aria-label="stock quant ordinary tushare data card summary" aria-live="polite">{ordinaryQuantTushareDataCardSummary}</p>
             <MetricGrid items={ordinaryQuantTushareDataCardItems} />
+            <div className="actions" aria-label="stock quant ordinary tushare data capability handoff actions">
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读查看 Tushare 可用、受限和待补原因" aria-label="open data capability from stock quant tushare data card">复核数据能力</a>
+              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认按钮才创建任务" aria-label="return candidate confirm from stock quant tushare data card">确认或换一只票</a>
+            </div>
             <details className="developer-audit-details" aria-label="stock quant ordinary tushare data card rows">
               <summary>查看接口回放</summary>
               <p className="risk-note">这张明细只读 CandidateRadar 的 Tushare light 接口回放；没有账本时显示等待或阻断，不从 Factor 页补调数据。</p>

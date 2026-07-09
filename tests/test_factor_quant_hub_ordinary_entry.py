@@ -139,12 +139,16 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinaryQuantTushareDataCardSummary", source)
         self.assertIn("ordinaryQuantTushareDataCardGap", source)
         self.assertIn("ordinaryQuantTushareDataCardNext", source)
+        self.assertIn("ordinaryQuantTushareDataCapabilityHandoff", source)
         self.assertIn("ordinaryQuantTushareDataCardItems", source)
         self.assertIn("ordinaryQuantTushareDataCardRows", source)
+        self.assertIn("DATA_CAPABILITY_HREF", source)
         self.assertIn('aria-label="stock quant ordinary tushare data card"', summary_slice)
         self.assertIn("确认后 Tushare 数据卡", summary_slice)
         self.assertIn('aria-label="stock quant ordinary tushare data card summary"', summary_slice)
         self.assertIn("MetricGrid items={ordinaryQuantTushareDataCardItems}", summary_slice)
+        self.assertIn('aria-label="stock quant ordinary tushare data capability handoff actions"', summary_slice)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', summary_slice)
         self.assertIn('aria-label="stock quant ordinary tushare data card rows"', summary_slice)
         self.assertIn("<summary>查看接口回放</summary>", summary_slice)
         self.assertIn("DataLineageTable rows={ordinaryQuantTushareDataCardRows}", summary_slice)
@@ -156,9 +160,12 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
             'label: "模型解释"',
             'label: "缺口"',
             'label: "下一步"',
+            'label: "数据能力回看"',
             'label: "边界"',
         ):
             self.assertIn(tushare_data_card_label, source)
+        self.assertIn("接口受限、空窗口或待补原因可去数据能力页复核", source)
+        self.assertIn("复核数据能力", source)
         self.assertIn("不会从 Factor 页调用 Tushare/DeepSeek、创建第二个 task 或交易", source)
         self.assertIn("没有账本时显示等待或阻断，不从 Factor 页补调数据", source)
         self.assertIn("不会调用 Tushare、DeepSeek、GitHub，不交易、不改交易策略", source)
