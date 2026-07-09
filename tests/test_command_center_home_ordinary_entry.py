@@ -694,6 +694,9 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         visible_start = source.index('aria-label="ordinary home app visible now summary"')
         visible_end = source.index('id="home-p1-symbol-confirm"', visible_start)
         visible_card = source[visible_start:visible_end]
+        ordinary_tushare_start = source.index('aria-label="ordinary home first screen tushare data card"')
+        ordinary_tushare_end = source.index('aria-label="ordinary home first screen research route map"', ordinary_tushare_start)
+        ordinary_tushare_card = source[ordinary_tushare_start:ordinary_tushare_end]
         p1_start = source.index('title="P1 Tushare-first 链路速读"')
         p1_end = source.index('title="当前可用投研链路"', p1_start)
         p1_card = source[p1_start:p1_end]
@@ -706,12 +709,18 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
 
         self.assertIn('const DATA_CAPABILITY_HREF = "#dataCapability";', source)
         self.assertIn("dailyCommandDataCapabilityReviewLabel", source)
+        self.assertIn("dailyCommandTushareDataCardReviewSentence", source)
         self.assertIn("Tushare 数据凭证、权限、空窗口或本地结果包缺口去数据能力页复核；首页不探测接口。", source)
+        self.assertIn("如果这里显示等待或 degraded，去数据能力页看权限、空窗口和本地回放缺口；首页不会补调接口。", source)
+        self.assertIn('label: "降级复核"', source)
         self.assertIn("MetricGrid items={ordinaryHomeAppVisibleNowItems}", visible_card)
         self.assertIn('label: "数据能力"', source)
         self.assertIn("value: dailyCommandDataCapabilityReviewLabel", source)
         self.assertIn('href={DATA_CAPABILITY_HREF}', visible_card)
         self.assertIn('aria-label="open data capability from home visible now summary"', visible_card)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', ordinary_tushare_card)
+        self.assertIn('aria-label="open data capability from ordinary home tushare data card"', ordinary_tushare_card)
+        self.assertIn('aria-label="ordinary home first screen tushare degraded review"', ordinary_tushare_card)
         self.assertIn('label: "数据能力"', source)
         self.assertIn("value: dailyCommandDataCapabilityReviewLabel", source)
         self.assertIn('href={DATA_CAPABILITY_HREF}', p1_card)
@@ -719,7 +728,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "数据能力"', workflow_card)
         self.assertIn('aria-label="open data capability from current research workflow"', workflow_card)
         self.assertIn('aria-label="open data capability from latest local confirm"', latest_card)
-        for card in (visible_card, p1_card, workflow_card, latest_card):
+        for card in (visible_card, ordinary_tushare_card, p1_card, workflow_card, latest_card):
             self.assertNotIn("onClick=", card)
             self.assertNotIn("fetch(", card)
             self.assertNotIn("postCandidateRadar", card)
@@ -855,10 +864,14 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="ordinary home first screen tushare data card summary"', tushare_data_card)
         self.assertIn("{dailyCommandTushareDataCardSummary}", tushare_data_card)
         self.assertIn("MetricGrid items={dailyCommandTushareDataCardItems}", tushare_data_card)
+        self.assertIn('aria-label="ordinary home first screen tushare degraded review"', tushare_data_card)
+        self.assertIn("{dailyCommandTushareDataCardReviewSentence}", tushare_data_card)
         self.assertIn('aria-label="ordinary home first screen tushare data card actions"', tushare_data_card)
         self.assertIn('href={dailyCommandCandidateConfirmHref}', tushare_data_card)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', tushare_data_card)
         self.assertIn('href="#factor/factor-score"', tushare_data_card)
         self.assertIn('href="#next/next-session-chart"', tushare_data_card)
+        self.assertIn('aria-label="open data capability from ordinary home tushare data card"', tushare_data_card)
         self.assertIn("只读确认后的本地记录、数据调用记录和结果摘要", tushare_data_card)
         self.assertIn("不从首页补调外部数据、不重复发起确认流程", tushare_data_card)
         for noisy_text in ("task", "ledger", "packet", "DeepSeek"):

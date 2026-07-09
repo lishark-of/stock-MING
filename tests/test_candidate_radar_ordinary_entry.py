@@ -1455,7 +1455,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
                     self.assertIn('label: "接口明细"', text)
                     self.assertIn("首页只把确认后已有的 Tushare-first 本地回放整理成数据卡", text)
                     self.assertIn("接口明细继续在下一票雷达和股票量化推演页展开", text)
-                    self.assertIn("首页数据卡只读 CandidateRadar cache / call_ledger / packet；不创建第二个 task、不补调 Tushare/DeepSeek、不交易", text)
+                    self.assertIn("首页数据卡只读本地确认记录、数据调用记录和结果摘要；不创建第二次确认、不补调外部数据或模型、不交易", text)
                     data_card_start = text.index('aria-label="daily command p1 tushare data card"')
                     data_card_end = text.index('aria-label="daily command p1 shortest path checkpoint"', data_card_start)
                     data_card_slice = text[data_card_start:data_card_end]

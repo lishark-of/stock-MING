@@ -809,10 +809,21 @@ export default function CommandCenterHome() {
     : "确认后 Tushare 数据卡等待回写：先在首页或下一票雷达输入股票代码并点击确认。";
   const dailyCommandTushareDataCardNext = dailyCommandTushareFirstLedgerReady
     ? "继续看股票量化推演、P2 三面和次日图谱。"
-    : "先确认股票；确认前输入保持静默，不创建 task。";
+    : "先确认股票；确认前输入保持静默，不启动确认流程。";
   const dailyCommandDataCapabilityReviewLabel = dailyCommandTushareFirstLedgerReady
     ? "Tushare 数据凭证已有本地回放；权限、空窗口和结果包缺口仍可去数据能力页复核。"
     : "Tushare 数据凭证、权限、空窗口或本地结果包缺口去数据能力页复核；首页不探测接口。";
+  const dailyCommandTushareDataCardReviewSentence = dailyCommandTushareFirstLedgerReady
+    ? "数据能力页可复核接口凭证、权限、空窗口和降级说明；首页只展示确认后的本地回放。"
+    : "如果这里显示等待或 degraded，去数据能力页看权限、空窗口和本地回放缺口；首页不会补调接口。";
+  const dailyCommandTushareDataCardReplayLabel = dailyCommandTushareFirstLedgerReady
+    ? `${dailyCommandTushareFirstSuccessCount}/${dailyCommandTushareFirstApiCount} 个接口已有本地数据记录`
+    : "等待确认后的本地数据记录";
+  const dailyCommandTushareDataCardApiDetailLabel = candidateQuantProviderApiRows.length
+    ? `${candidateQuantProviderApiRows.length} 行接口明细可在下一票雷达 / 量化页回放`
+    : "等待接口明细回放";
+  const dailyCommandTushareDataCardBoundary =
+    "首页数据卡只读本地确认记录、数据调用记录和结果摘要；不创建第二次确认、不补调外部数据或模型、不交易";
   const dailyCommandTushareDataCardItems: MetricItem[] = [
     {
       label: "Tushare 数据卡",
@@ -821,12 +832,12 @@ export default function CommandCenterHome() {
     },
     {
       label: "接口回放",
-      value: dailyCommandTushareFirstLedgerReady ? dailyCommandTushareFirstLedgerLabel : "等待本地 call_ledger",
+      value: dailyCommandTushareDataCardReplayLabel,
       tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
     },
     {
       label: "接口明细",
-      value: candidateQuantProviderApiRows.length ? `${candidateQuantProviderApiRows.length} 行可在下一票雷达 / 量化页回放` : "等待 ordinary_provider_api_rows",
+      value: dailyCommandTushareDataCardApiDetailLabel,
       tone: candidateQuantProviderApiRows.length ? "good" : "warn"
     },
     {
@@ -840,8 +851,13 @@ export default function CommandCenterHome() {
       tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
     },
     {
+      label: "降级复核",
+      value: dailyCommandTushareDataCardReviewSentence,
+      tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
+    },
+    {
       label: "边界",
-      value: "首页数据卡只读 CandidateRadar cache / call_ledger / packet；不创建第二个 task、不补调 Tushare/DeepSeek、不交易",
+      value: dailyCommandTushareDataCardBoundary,
       tone: "good"
     }
   ];
@@ -3647,8 +3663,10 @@ export default function CommandCenterHome() {
           <h3>确认后 Tushare 数据卡</h3>
           <p className="ordinary-status-note" aria-label="ordinary home first screen tushare data card summary" aria-live="polite">{dailyCommandTushareDataCardSummary}</p>
           <MetricGrid items={dailyCommandTushareDataCardItems} />
+          <p className="ordinary-status-note" aria-label="ordinary home first screen tushare degraded review" aria-live="polite">{dailyCommandTushareDataCardReviewSentence}</p>
           <div className="actions" aria-label="ordinary home first screen tushare data card actions">
             <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate confirm from ordinary home tushare data card">确认或换一只票</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核数据凭证、权限、空窗口和降级说明" aria-label="open data capability from ordinary home tushare data card">数据能力</a>
             <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from ordinary home tushare data card">股票量化推演</a>
             <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next from ordinary home tushare data card">次日图谱</a>
           </div>
