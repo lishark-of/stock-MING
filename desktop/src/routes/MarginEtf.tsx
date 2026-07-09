@@ -26,8 +26,8 @@ function percent(value: unknown) {
 
 const runtimeModeLabels: Record<string, string> = {
   cache_only: "cache_only（只读缓存，不外联）",
-  manual: "manual（仅按钮任务）",
-  live_light: "live_light（轻量 task 口径，页面渲染仍不外联）",
+  manual: "manual（仅用户点击刷新）",
+  live_light: "live_light（轻量后台口径，页面渲染仍不外联）",
   live_full: "live_full（预留关闭）"
 };
 
@@ -159,15 +159,15 @@ export default function MarginEtf() {
     ? "先读取或手动刷新本地 ETF/融资快照"
     : "先看推荐/观察/回避分组，再复核流动性、重叠和融资现金线";
   const taskDisabledReason = loading
-    ? "等待本地 packet 读取完成后再创建任务"
+    ? "等待本地快照读取完成后再刷新"
     : error
-      ? "本地 packet 读取异常；先恢复 FastAPI/cache 连接"
+      ? "本地快照读取异常；先恢复 FastAPI/cache 连接"
       : "";
   const taskDegradedReason = noEtfRows
-    ? "当前没有 ETF 候选；任务只生成 degraded 本地回放收据，不会自动外联补数据。"
+    ? "当前没有 ETF 候选；刷新只生成 degraded 本地回放收据，不会自动外联补数据。"
     : "";
   const boundary =
-    "页面打开只读本地 packet；不会自动全量发现 ETF，不调用 Tushare/DeepSeek/GitHub，不下单，不把 ETF 候选写成买入或加融资指令。";
+    "页面打开只读本地快照；不会自动全量发现 ETF，不刷新外部数据或模型，不下单，不把 ETF 候选写成买入或加融资指令。";
   const ordinaryQuickReadSummary = noEtfRows
     ? "当前没有可读 ETF 候选：先看本地快照状态和融资现金线，必要时只刷新本地回放。"
     : `当前可读 ${allVisibleEtfRows.length} 行 ETF 候选：先看来源、理由、流动性、重叠和现金/杠杆，再决定是否继续研究。`;
@@ -267,12 +267,12 @@ export default function MarginEtf() {
     },
     {
       label: "来源层",
-      value: `${source} / command_center_margin_packet / bootstrap status`,
+      value: `${source} / 本地融资快照 / 运行状态`,
       tone: dataStatus === "ready" || dataStatus === "cached" ? "good" : "warn"
     },
     {
       label: "数据能力",
-      value: "ETF/融资缺口去数据能力页复核 Tushare、权限、空窗口和本地 packet 状态",
+      value: "ETF/融资缺口去数据能力页复核真实数据、权限、空窗口和本地结果状态",
       tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
     },
     {
@@ -287,7 +287,7 @@ export default function MarginEtf() {
     },
     {
       label: "安全边界",
-      value: "页面打开和本地链接只读；不自动创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不加融资",
+      value: "页面打开和本地链接只读；不启动刷新流程、不刷新外部数据或模型、不交易、不加融资",
       tone: "good"
     }
   ];
@@ -332,7 +332,7 @@ export default function MarginEtf() {
       当前状态: "Factor / Next 是研究回放入口",
       用户下一步: "只把上游结果当背景，再看 ETF/融资风险预算。",
       入口: "#factor / #next",
-      边界: "结果页链接只切换本地页面；不刷新 provider/model。"
+      边界: "结果页链接只切换本地页面；不刷新外部数据或模型。"
     },
     {
       步骤: "2. 看 ETF 候选",
@@ -351,16 +351,16 @@ export default function MarginEtf() {
     {
       步骤: "4. 处理缺口",
       当前状态: ordinaryMissingEvidence,
-      用户下一步: "去数据能力页看 Tushare、权限、空窗口和本地 packet 状态。",
+      用户下一步: "去数据能力页看真实数据、权限、空窗口和本地结果状态。",
       入口: "DATA_CAPABILITY_HREF",
-      边界: "缺口只提示补证；不会从本卡创建任务或调用外部数据。"
+      边界: "缺口只提示补证；不会从本卡启动刷新流程或调用外部数据。"
     },
     {
       步骤: "5. 回到主路径",
       当前状态: "需要换票回下一票雷达；看全局风险回风险护栏。",
       用户下一步: "继续只读复核，不下单、不加融资。",
       入口: "#candidates / #risk / #home",
-      边界: "本地链接不创建 task、不交易、不改 strategy action。"
+      边界: "本地链接不启动刷新流程、不交易、不改交易策略。"
     }
   ];
   const marginEtfRiskCardStatus = noEtfRows
@@ -462,7 +462,7 @@ export default function MarginEtf() {
       步骤: "4. 回流",
       用户看法: "换票回下一票雷达；看全局风险回风险护栏",
       入口: "#candidates / #risk",
-      边界: "链接只切换本地页面，不创建任务、不交易、不改策略"
+      边界: "链接只切换本地页面，不启动刷新流程、不交易、不改策略"
     }
   ];
   const marginEtfCashLineSentence = allowNewMargin
@@ -505,7 +505,7 @@ export default function MarginEtf() {
       读法: "1. 当前融资",
       当前状态: percent(currentMarginRatio),
       用户下一步: "先确认当前融资压力，再看是否需要降低风险敞口。",
-      边界: "当前比例只读本地 packet，不生成调仓或融资动作。"
+      边界: "当前比例只读本地快照，不生成调仓或融资动作。"
     },
     {
       读法: "2. 建议融资",
@@ -523,7 +523,7 @@ export default function MarginEtf() {
       读法: "4. 回流复核",
       当前状态: ordinaryMissingEvidence,
       用户下一步: "数据缺口去数据能力页；换标的回下一票雷达；全局风险回风险护栏。",
-      边界: "本地链接只切换页面，不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易。"
+      边界: "本地链接只切换页面，不启动刷新流程、不刷新外部数据或模型、不交易。"
     }
   ];
   const marginEtfRiskCardRows = [
@@ -549,7 +549,7 @@ export default function MarginEtf() {
       复核项: "4. 回流",
       当前状态: "可回今日作战台、下一票雷达或风险护栏继续看",
       用户下一步: "换标的回下一票雷达；看整体风险回风险护栏。",
-      边界: "本地链接只切换页面，不创建任务、不交易、不改策略。"
+      边界: "本地链接只切换页面，不启动刷新流程、不交易、不改策略。"
     }
   ];
   const localRefreshTask = taskReceipt?.data?.task;
@@ -626,28 +626,28 @@ export default function MarginEtf() {
   ];
   const modeLayerItems: MetricItem[] = [
     {
-      label: "缓存渲染层",
-      value: `GET packet + bootstrap status 只读；runtime packet ${bootstrapPacketReady ? "可读" : "等待回放"}；页面打开、React render 和本地链接不创建 task`,
+      label: "本地读取层",
+      value: `本地快照和运行状态只读；运行状态 ${bootstrapPacketReady ? "可读" : "等待回放"}；页面打开、React render 和本地链接不启动刷新流程`,
       tone: bootstrapPacketReady ? "good" : "warn"
     },
     {
-      label: "按钮任务层",
-      value: `${runtimeModeLabel(runtimeMode)}；刷新/重建本地包只创建 local_packet_replay POST task，不调用 provider/model`,
+      label: "按钮刷新层",
+      value: `${runtimeModeLabel(runtimeMode)}；刷新/重建本地包只走用户点击后的本地流程，不刷新外部数据或模型`,
       tone: runtimeMode === "cache_only" ? "good" : "warn"
     },
     {
       label: "数据证据层",
-      value: `${dataStatus} / ${marginStatus}；缺 ETF 或融资数据只显示 degraded，不当作无风险，也不自动补调 Tushare`,
+      value: `${dataStatus} / ${marginStatus}；缺 ETF 或融资数据只显示 degraded，不当作无风险，也不自动补外部数据`,
       tone: dataStatus === "ready" || dataStatus === "cached" ? "good" : "warn"
     },
     {
       label: "旧入口退场层",
-      value: "本页是 ETF/leverage 普通替代纵切；不打开 Streamlit，不移除 fallback，不把本地 packet 回放当 LTG-10 strict closeout",
+      value: "本页是 ETF/leverage 普通替代纵切；不打开 Streamlit，不移除 fallback，不把本地回放当 LTG-10 strict closeout",
       tone: "warn"
     },
     {
       label: "交易隔离层",
-      value: "ETF 候选和融资比例只供研究复核；不接 broker、不创建 order endpoint、不下单、不改 strategy action",
+      value: "ETF 候选和融资比例只供研究复核；不接券商、不下单、不改交易策略",
       tone: "good"
     }
   ];
@@ -707,7 +707,7 @@ export default function MarginEtf() {
         }
       ];
   const detailItems: MetricItem[] = [
-    { label: "packet", value: text(etfPacket.packet_key, "command_center_etf_packet") },
+    { label: "本地快照", value: text(etfPacket.packet_role, "ETF/融资本地快照") },
     { label: "角色", value: text(etfPacket.packet_role, "ETF/融资配置证据") },
     { label: "验证", value: text(etfPacket.verification_status, "待验证"), tone: text(etfPacket.verification_status).includes("通过") ? "good" : "warn" },
     { label: "融资融券", value: marginStatus, tone: marginStatus === "ready" ? "good" : "warn" },
@@ -730,7 +730,7 @@ export default function MarginEtf() {
         error={error}
         empty={!loading && !error && !Object.keys(etfPacket).length && !Object.keys(marginPacket).length}
         emptyTitle="暂无 ETF/融资本地快照"
-        emptyDetail="本页只读取本地 packet；不会在页面打开时自动发现 ETF、拉行情或调用模型。"
+        emptyDetail="本页只读取本地快照；不会在页面打开时自动发现 ETF、拉行情或调用模型。"
       />
 
       <PacketCard title="ETF / 融资操作台" subtitle="普通用户先看这里" status={status}>
@@ -738,14 +738,14 @@ export default function MarginEtf() {
           <h3>普通结论</h3>
           <p className="ordinary-status-note" aria-label="margin etf ordinary plain conclusion sentence" aria-live="polite">{ordinaryPlainConclusion}</p>
           <MetricGrid items={ordinaryPlainItems} />
-          <p className="risk-note">普通结论只读本地 ETF/融资快照；页面打开、查看结果和切换入口都不会自动创建任务、调用外部服务或改写交易策略。</p>
+          <p className="risk-note">普通结论只读本地 ETF/融资快照；页面打开、查看结果和切换入口都不会启动刷新流程、刷新外部数据或模型、改写交易策略。</p>
         </div>
         <MetricGrid items={summaryItems} />
         <div aria-label="margin etf ordinary first screen quick read">
           <h3>现在能看什么</h3>
           <p className="ordinary-status-note" aria-label="margin etf ordinary quick read summary" aria-live="polite">{ordinaryQuickReadSummary}</p>
           <MetricGrid items={ordinaryQuickReadItems} />
-          <p className="risk-note">这张速读只读本地 ETF/融资快照和本地融资状态；不会新建任务、不会调用外部数据或模型服务、不会交易或改写策略。</p>
+          <p className="risk-note">这张速读只读本地 ETF/融资快照和本地融资状态；不会启动刷新流程、不会调用外部数据或模型服务、不会交易或改写策略。</p>
         </div>
         <div aria-label="margin etf app visible now summary">
           <h3>打开 app 能看到什么</h3>
@@ -754,10 +754,10 @@ export default function MarginEtf() {
           <div className="actions" aria-label="margin etf app visible now local actions">
             <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf visible now">换标的</a>
             <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf visible now">看风险护栏</a>
-            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare、权限、空窗口和本地 packet 状态" aria-label="open data capability from margin etf visible now">看数据能力</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf visible now">看数据能力</a>
             <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf visible now">今日作战台</a>
           </div>
-          <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、降级原因和下一步入口；普通链接只切换本地页面，不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不加融资、不改 strategy action。</p>
+          <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、降级原因和下一步入口；普通链接只切换本地页面，不启动刷新流程、不刷新外部数据或模型、不交易、不加融资、不改交易策略。</p>
         </div>
         <div aria-label="margin etf post research risk path">
           <h3>确认结果后查风险预算</h3>
@@ -766,13 +766,13 @@ export default function MarginEtf() {
           <div className="actions" aria-label="margin etf post research risk path actions">
             <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from margin etf post research path">看 Factor</a>
             <a href="#next/next-session-chart" title="切换到次日图谱；只读本地 next-session cache" aria-label="open next from margin etf post research path">看 Next</a>
-            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare、权限、空窗口和本地 packet 状态" aria-label="open data capability from margin etf post research path">数据能力</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf post research path">数据能力</a>
             <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf post research path">换标的</a>
             <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf post research path">风险护栏</a>
           </div>
           <details className="developer-audit-details" aria-label="margin etf post research risk path rows">
             <summary>查看结果到风险预算路径</summary>
-            <p className="risk-note">这张路径表只说明从量化推演或次日图谱到 ETF/融资风险预算怎么读；不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易。</p>
+            <p className="risk-note">这张路径表只说明从量化推演或次日图谱到 ETF/融资风险预算怎么读；不启动刷新流程、不刷新外部数据或模型、不交易。</p>
             <DataLineageTable rows={marginEtfPostResearchRiskPathRows} />
           </details>
           <p className="risk-note">确认结果后的风险预算只读本地快照：ETF 候选不是买入，融资比例不是加杠杆许可，缺数据按保守处理。</p>
@@ -788,10 +788,10 @@ export default function MarginEtf() {
           </div>
           <details className="developer-audit-details" aria-label="margin etf candidate bridge rows">
             <summary>查看承接顺序</summary>
-            <p className="risk-note">承接顺序只说明候选页、ETF/融资和风险护栏怎么读；不读取外部数据，不创建任务，不生成交易动作。</p>
+            <p className="risk-note">承接顺序只说明候选页、ETF/融资和风险护栏怎么读；不读取外部数据，不启动刷新流程，不生成交易动作。</p>
             <DataLineageTable rows={marginEtfCandidateBridgeRows} />
           </details>
-          <p className="risk-note">这张承接卡只读本地 ETF/融资快照；普通链接只切换本地页面，不刷新外部数据、不创建任务、不交易、不改策略。</p>
+          <p className="risk-note">这张承接卡只读本地 ETF/融资快照；普通链接只切换本地页面，不刷新外部数据、不启动刷新流程、不交易、不改策略。</p>
         </div>
         <div aria-label="margin etf cash line quick read">
           <h3>融资现金线怎么读</h3>
@@ -799,12 +799,12 @@ export default function MarginEtf() {
           <MetricGrid items={marginEtfCashLineItems} />
           <div className="actions" aria-label="margin etf cash line local actions">
             <a href="#candidates" title="切换到下一票雷达；候选不是买入指令" aria-label="return candidate radar from margin etf cash line">换标的</a>
-            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare、权限、空窗口和本地 packet 状态" aria-label="open data capability from margin etf cash line">数据能力</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf cash line">数据能力</a>
             <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf cash line">风险护栏</a>
           </div>
           <details className="developer-audit-details" aria-label="margin etf cash line rows">
             <summary>查看现金线读法</summary>
-            <p className="risk-note">现金线读法只整理本地融资比例、建议比例、现金缓冲和缺口；不会刷新外部数据、不创建任务、不交易、不改策略。</p>
+            <p className="risk-note">现金线读法只整理本地融资比例、建议比例、现金缓冲和缺口；不会刷新外部数据、不启动刷新流程、不交易、不改策略。</p>
             <DataLineageTable rows={marginEtfCashLineRows} />
           </details>
           <p className="risk-note">融资现金线只用于风险预算：缺数据按保守处理；ETF 强弱不能变成买入、加仓、加融资或下单指令。</p>
@@ -815,14 +815,14 @@ export default function MarginEtf() {
           <MetricGrid items={marginEtfRiskCardItems} />
           <details className="developer-audit-details" aria-label="margin etf ordinary risk card rows">
             <summary>风险复核顺序</summary>
-            <p className="risk-note">这张明细只整理本地 ETF 候选、融资现金线和缺口；不读取外部数据，不创建任务，不把候选变成交易动作。</p>
+            <p className="risk-note">这张明细只整理本地 ETF 候选、融资现金线和缺口；不读取外部数据，不启动刷新流程，不把候选变成交易动作。</p>
             <DataLineageTable rows={marginEtfRiskCardRows} />
           </details>
           <p className="risk-note">风险卡只读本地 ETF/融资快照；ETF 候选不是买入指令，融资比例不是加杠杆许可，缺数据时按保守处理。</p>
         </div>
         <div aria-label="margin etf mode layered live light boundary">
           <h3>运行模式分层</h3>
-          <p className="ordinary-status-note">把本地 packet、按钮任务、数据证据、旧入口退场和交易隔离分开看；live_light 也只能是可审计 task，不是页面渲染外联。</p>
+          <p className="ordinary-status-note">把本地快照、按钮刷新、数据证据、旧入口退场和交易隔离分开看；live_light 也只能是可审计后台流程，不是页面渲染外联。</p>
           <MetricGrid items={modeLayerItems} />
         </div>
         <p className="ordinary-status-note">{text(etfPacket.evidence_summary, text(etfPacket.summary, "暂无 ETF/融资快照；先保留观察，不新增融资。"))}</p>
@@ -831,21 +831,21 @@ export default function MarginEtf() {
             type="button"
             onClick={refresh}
             disabled={loading}
-            title="只重新读取本地 packet；不创建 task、不调用 provider/model"
-            aria-label="refresh margin etf local packets"
+            title="只重新读取本地快照；不启动刷新流程、不刷新外部数据或模型"
+            aria-label="refresh margin etf local readback"
           >刷新本地回放</button>
           <button
             type="button"
             onClick={launchLocalRefreshTask}
             disabled={Boolean(taskDisabledReason) || taskSubmitting}
-            title={taskDisabledReason || "创建本地 ETF/融资 packet 回放任务；不调用 provider/model"}
-            aria-label="create margin etf local refresh task"
-          >{taskSubmitting ? "创建中" : "刷新/重建本地包"}</button>
+            title={taskDisabledReason || "启动本地 ETF/融资回放流程；不刷新外部数据或模型"}
+            aria-label="start margin etf local refresh flow"
+          >{taskSubmitting ? "创建中" : "刷新本地回放"}</button>
           <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf">今日作战台</a>
           <a href="#candidates" title="切换到下一票雷达；候选不是买入指令" aria-label="open candidate radar from margin etf">下一票雷达</a>
           <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf">风险护栏</a>
         </div>
-        {taskDisabledReason && <p className="risk-note">任务暂不可用：{taskDisabledReason}</p>}
+        {taskDisabledReason && <p className="risk-note">刷新暂不可用：{taskDisabledReason}</p>}
         {taskDegradedReason && <p className="risk-note">{taskDegradedReason}</p>}
         {taskError && <p className="risk-note">{taskError}</p>}
         {(taskReceipt || taskSubmitting || taskError || taskId) ? (
@@ -853,7 +853,7 @@ export default function MarginEtf() {
             <h3>刷新后结果</h3>
             <p className="ordinary-status-note" aria-label="margin etf local refresh result summary" aria-live="polite">{localRefreshReadableSummary}</p>
             <MetricGrid items={localRefreshResultItems} />
-            <p className="risk-note">这张结果摘要只读按钮返回的本地回执和本地审计记录；缺 ETF 或融资包时只显示降级原因，不会补外部数据、调用模型、交易或改写策略。</p>
+            <p className="risk-note">这张结果摘要只读按钮返回的本地回执和本地审计记录；缺 ETF 或融资本地快照时只显示降级原因，不会补外部数据、调用模型、交易或改写策略。</p>
           </div>
         ) : null}
         <TaskLaunchReceipt receipt={taskReceipt} />
@@ -868,7 +868,7 @@ export default function MarginEtf() {
           <MetricGrid items={marginEtfCandidateReadingItems} />
           <details className="developer-audit-details" aria-label="margin etf candidate row reading rows">
             <summary>查看逐行读法</summary>
-            <p className="risk-note">逐行读法只重排本地候选行的状态、理由、来源、流动性、重叠和现金/杠杆；不刷新外部数据、不创建任务、不交易。</p>
+            <p className="risk-note">逐行读法只重排本地候选行的状态、理由、来源、流动性、重叠和现金/杠杆；不刷新外部数据、不启动刷新流程、不交易。</p>
             <DataLineageTable rows={marginEtfCandidateReadingRows} />
           </details>
           <p className="risk-note">读法卡只帮助普通用户看懂已有 ETF 行；推荐不是买入，观察不是加仓，回避/排除不是反向交易信号。</p>
