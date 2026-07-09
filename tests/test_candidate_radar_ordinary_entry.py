@@ -872,6 +872,28 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postCandidateRadarProductionReplacementReview", production_blocker_slice)
         self.assertNotIn("launchBrowserQaReview", production_blocker_slice)
         self.assertNotIn("postCandidateRadarBrowserQaReview", production_blocker_slice)
+        self.assertIn('aria-label="candidate radar ordinary repeated result progress details"', summary_primary_slice)
+        self.assertIn("<summary>Research Assist / Audit Details：结果和进度明细</summary>", summary_primary_slice)
+        self.assertIn("最近 P3、P2/P3 checkpoint 和进度 watch 默认收起", summary_primary_slice)
+        self.assertIn("普通首屏先看操作台、确认按钮、TaskStatusPanel 和确认后一屏结果", summary_primary_slice)
+        repeated_progress_start = summary_primary_slice.index(
+            'aria-label="candidate radar ordinary repeated result progress details"'
+        )
+        repeated_progress_end = summary_primary_slice.index(
+            'aria-label="candidate radar ordinary task progress details"',
+            repeated_progress_start,
+        )
+        repeated_progress_slice = summary_primary_slice[repeated_progress_start:repeated_progress_end]
+        self.assertIn('aria-label="candidate radar ordinary p3 one minute result"', repeated_progress_slice)
+        self.assertIn('aria-label="candidate radar p2 p3 connection checkpoint"', repeated_progress_slice)
+        self.assertIn('aria-label="candidate radar ordinary visible progress watch"', repeated_progress_slice)
+        self.assertIn("最近任务、当前步骤和回放入口收在普通摘要明细里", repeated_progress_slice)
+        self.assertNotIn("postCandidateRadar", repeated_progress_slice)
+        self.assertNotIn("launchQuantProjectionProviderModelAcceptance", repeated_progress_slice)
+        self.assertLess(
+            repeated_progress_start,
+            summary_primary_slice.index('aria-label="candidate radar ordinary task progress details"'),
+        )
         self.assertIn('aria-label="candidate radar ordinary usable now strip"', summary_primary_slice)
         self.assertIn("现在可用状态", summary_primary_slice)
         self.assertIn("quantProjectionUsableNowItems", summary_primary_slice)

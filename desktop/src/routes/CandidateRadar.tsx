@@ -5156,52 +5156,56 @@ export default function CandidateRadar() {
           ) : null}
           <p className="risk-note">这条切片只说明当前候选分组可读；不是最终替代完成：cache-only / local fallback / Tushare-backed sample 会分开显示；不声称旧雷达可以退场。</p>
         </div>
-        <div aria-label="candidate radar ordinary p3 one minute result">
-          <h3>最近搜票 P3 一分钟结果</h3>
-          <p className="ordinary-status-note" aria-label="candidate radar summary p3 readable sentence">{quantProjectionP3OrdinaryReadableSentence}</p>
-          <MetricGrid items={quantProjectionP3ResultSummaryItems} />
-          <div aria-label="candidate radar p3 result route strip">
-            <h3>P3 结果路标</h3>
-            <p className="ordinary-status-note" aria-label="candidate radar p3 result route sentence" aria-live="polite">{quantProjectionP3ResultRouteSentence}</p>
-            <MetricGrid items={quantProjectionP3ResultRouteItems} />
-            <div className="actions" aria-label="candidate radar p3 result route actions">
-              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读回放本地结果" aria-label="open factor support suppress from candidate radar p3 result route">股票量化推演</a>
-              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next chart from candidate radar p3 result route">次日图谱</a>
-              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="open confirm input from candidate radar p3 result route">换一只票</a>
+        <details className="developer-audit-details" aria-label="candidate radar ordinary repeated result progress details">
+          <summary>Research Assist / Audit Details：结果和进度明细</summary>
+          <p className="risk-note">最近 P3、P2/P3 checkpoint 和进度 watch 默认收起；普通首屏先看操作台、确认按钮、TaskStatusPanel 和确认后一屏结果。</p>
+          <div aria-label="candidate radar ordinary p3 one minute result">
+            <h3>最近搜票 P3 一分钟结果</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar summary p3 readable sentence">{quantProjectionP3OrdinaryReadableSentence}</p>
+            <MetricGrid items={quantProjectionP3ResultSummaryItems} />
+            <div aria-label="candidate radar p3 result route strip">
+              <h3>P3 结果路标</h3>
+              <p className="ordinary-status-note" aria-label="candidate radar p3 result route sentence" aria-live="polite">{quantProjectionP3ResultRouteSentence}</p>
+              <MetricGrid items={quantProjectionP3ResultRouteItems} />
+              <div className="actions" aria-label="candidate radar p3 result route actions">
+                <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读回放本地结果" aria-label="open factor support suppress from candidate radar p3 result route">股票量化推演</a>
+                <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next chart from candidate radar p3 result route">次日图谱</a>
+                <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="open confirm input from candidate radar p3 result route">换一只票</a>
+              </div>
+              <p className="risk-note">{quantProjectionP3ResultRouteBoundary}</p>
             </div>
-            <p className="risk-note">{quantProjectionP3ResultRouteBoundary}</p>
+            <p className="risk-note">这条结果只读最近确认 task 的本地 cache / call_ledger / packet；不创建第二个 task、不调用 Tushare/DeepSeek、不生成买卖动作。</p>
           </div>
-          <p className="risk-note">这条结果只读最近确认 task 的本地 cache / call_ledger / packet；不创建第二个 task、不调用 Tushare/DeepSeek、不生成买卖动作。</p>
-        </div>
-        <div aria-label="candidate radar p2 p3 connection checkpoint">
-          <h3>P2/P3 接通 checkpoint</h3>
-          <p className="ordinary-status-note" aria-label="candidate radar p2 p3 connection sentence" aria-live="polite">{quantProjectionP2P3ConnectionSentence}</p>
-          <MetricGrid items={quantProjectionP2P3ConnectionItems} />
-          <div className="actions" aria-label="candidate radar p2 p3 connection actions">
-            <a href={quantProjectionP2P3ConnectionPrimaryHref} title={quantProjectionP2P3ConnectionActionBoundary} aria-label="open candidate radar p2 p3 primary action">{quantProjectionP2P3ConnectionPrimaryLabel}</a>
-            <a href="#factor" title="切换到股票量化推演；只读回放 P2/P3 本地结果" aria-label="open factor from candidate radar p2 p3 checkpoint">股票量化推演</a>
-            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar p2 p3 checkpoint">次日图谱</a>
-            <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入仍保持静默" aria-label="open confirm input from candidate radar p2 p3 checkpoint">确认或换一只票</a>
+          <div aria-label="candidate radar p2 p3 connection checkpoint">
+            <h3>P2/P3 接通 checkpoint</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar p2 p3 connection sentence" aria-live="polite">{quantProjectionP2P3ConnectionSentence}</p>
+            <MetricGrid items={quantProjectionP2P3ConnectionItems} />
+            <div className="actions" aria-label="candidate radar p2 p3 connection actions">
+              <a href={quantProjectionP2P3ConnectionPrimaryHref} title={quantProjectionP2P3ConnectionActionBoundary} aria-label="open candidate radar p2 p3 primary action">{quantProjectionP2P3ConnectionPrimaryLabel}</a>
+              <a href="#factor" title="切换到股票量化推演；只读回放 P2/P3 本地结果" aria-label="open factor from candidate radar p2 p3 checkpoint">股票量化推演</a>
+              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar p2 p3 checkpoint">次日图谱</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入仍保持静默" aria-label="open confirm input from candidate radar p2 p3 checkpoint">确认或换一只票</a>
+            </div>
+            <p className="risk-note">这条 checkpoint 只合成最近确认 task 的 P2 三面和 P3 可读结果；如果缺口还在，只显示待回放，不从页面补调 Tushare/DeepSeek。</p>
           </div>
-          <p className="risk-note">这条 checkpoint 只合成最近确认 task 的 P2 三面和 P3 可读结果；如果缺口还在，只显示待回放，不从页面补调 Tushare/DeepSeek。</p>
-        </div>
-        <div aria-label="candidate radar ordinary visible progress watch">
-          <h3>边用边看进度</h3>
-          <p className="risk-note">最近任务、当前步骤和回放入口直接显示在普通摘要里；这里只读 GET /api/tasks 与 CandidateRadar cache，不创建 task、不补调 Tushare/DeepSeek。</p>
-          <MetricGrid items={quantProjectionTaskIndexProgressItems} />
-          <div className="actions" aria-label="candidate radar ordinary visible progress actions">
-            <button
-              onClick={refreshQuantProjectionReadback}
-              disabled={loading}
-              title="只回读 CandidateRadar cache 和 bootstrap status；不创建 task、不调用 provider/model"
-              aria-label="refresh candidate radar visible progress readback"
-            >刷新本地回放</button>
-            <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from candidate radar visible progress">任务目录</a>
-            <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar visible progress">股票量化推演</a>
-            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar visible progress">次日图谱</a>
+          <div aria-label="candidate radar ordinary visible progress watch">
+            <h3>边用边看进度</h3>
+            <p className="risk-note">最近任务、当前步骤和回放入口收在普通摘要明细里；这里只读 GET /api/tasks 与 CandidateRadar cache，不创建 task、不补调 Tushare/DeepSeek。</p>
+            <MetricGrid items={quantProjectionTaskIndexProgressItems} />
+            <div className="actions" aria-label="candidate radar ordinary visible progress actions">
+              <button
+                onClick={refreshQuantProjectionReadback}
+                disabled={loading}
+                title="只回读 CandidateRadar cache 和 bootstrap status；不创建 task、不调用 provider/model"
+                aria-label="refresh candidate radar visible progress readback"
+              >刷新本地回放</button>
+              <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task catalog from candidate radar visible progress">任务目录</a>
+              <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar visible progress">股票量化推演</a>
+              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from candidate radar visible progress">次日图谱</a>
+            </div>
+            <p className="risk-note">进度回放只确认 task id、任务步骤、P2/P3 和结果入口；页面打开、搜索输入、React render 和 GET cache 仍不会自动外联。</p>
           </div>
-          <p className="risk-note">进度回放只确认 task id、任务步骤、P2/P3 和结果入口；页面打开、搜索输入、React render 和 GET cache 仍不会自动外联。</p>
-        </div>
+        </details>
         <details className="developer-audit-details" aria-label="candidate radar ordinary task progress details">
           <summary>任务和回放状态</summary>
           <p className="risk-note">任务编号、任务索引、checkpoint 和 P2/P3 回放状态默认收起；需要边用边看进度时再展开。本区只读 GET /api/tasks 与 CandidateRadar cache。</p>
