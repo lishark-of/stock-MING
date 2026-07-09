@@ -70,6 +70,38 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         summary_start = source.index("普通用户量化推演摘要")
         summary_end = source.index("高级验收任务", summary_start)
         summary_slice = source[summary_start:summary_end]
+        self.assertIn("ordinaryQuantAppFirstEvidenceFactoryItems", source)
+        self.assertIn('aria-label="stock quant app first evidence factory"', summary_slice)
+        self.assertIn("本地投研速读", summary_slice)
+        self.assertIn('aria-label="stock quant app first evidence factory sentence"', summary_slice)
+        self.assertIn('aria-label="stock quant app first evidence factory actions"', summary_slice)
+        for app_first_label in (
+            'label: "现在能读"',
+            'label: "下一步按钮"',
+            'label: "数据证据"',
+            'label: "验证缺口"',
+            'label: "安全边界"',
+        ):
+            self.assertIn(app_first_label, source)
+        self.assertIn("degraded：真实小池验证未授权", source)
+        self.assertIn("查看页面和本地跳转不外联、不创建 provider/model 任务、不交易、不改策略", source)
+        self.assertIn("打开页面、查看结果和切换锚点都不会创建 task", summary_slice)
+        app_first_start = summary_slice.index('aria-label="stock quant app first evidence factory"')
+        app_first_end = summary_slice.index('aria-label="stock quant ordinary plain conclusion"', app_first_start)
+        app_first_slice = summary_slice[app_first_start:app_first_end]
+        self.assertIn("MetricGrid items={ordinaryQuantAppFirstEvidenceFactoryItems}", app_first_slice)
+        self.assertIn('href={ordinaryQuantPrimaryActionHref}', app_first_slice)
+        self.assertIn('href={NEXT_SESSION_CHART_HREF}', app_first_slice)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', app_first_slice)
+        self.assertIn('href={CANDIDATE_CONFIRM_HREF}', app_first_slice)
+        self.assertNotIn("onClick=", app_first_slice)
+        self.assertNotIn("launch" + "Task", app_first_slice)
+        self.assertNotIn("post" + "Task(", app_first_slice)
+        self.assertNotIn("TaskStatusPanel", app_first_slice)
+        self.assertLess(
+            app_first_start,
+            summary_slice.index('aria-label="stock quant ordinary plain conclusion"'),
+        )
         self.assertIn("ordinaryQuantVisibleNowItems", source)
         self.assertIn('aria-label="stock quant visible now app result"', summary_slice)
         self.assertIn("打开 app 能看到什么", summary_slice)

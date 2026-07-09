@@ -1533,6 +1533,41 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
+  const ordinaryQuantAppFirstEvidenceFactorySentence =
+    ordinaryQuantCandidateRadarP3Ready || !empty
+      ? `${candidateRadarConfirmedSymbol || "当前标的"} 已有可读研究回放：${ordinaryQuantPlainResultSentence}`
+      : "先从下一票雷达确认一只股票；确认前本页只显示本地缓存等待状态。";
+  const ordinaryQuantAppFirstEvidenceFactoryItems: MetricItem[] = [
+    {
+      label: "现在能读",
+      value: ordinaryQuantAppFirstEvidenceFactorySentence,
+      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+    },
+    {
+      label: "下一步按钮",
+      value: ordinaryQuantPrimaryActionLabel,
+      tone: ordinaryQuantPrimaryActionHref === CANDIDATE_CONFIRM_HREF ? "warn" : "good"
+    },
+    {
+      label: "数据证据",
+      value: ordinaryQuantTushareDataCardLedgerReady
+        ? `确认后数据账本已回放 ${ordinaryQuantTushareFirstProviderLedgerRatio}`
+        : "等待确认后的本地账本；页面查看不会补调数据",
+      tone: ordinaryQuantTushareDataCardLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "验证缺口",
+      value: factorTestProductionValidation.provider_backed_small_pool_validation_done === true
+        ? "真实小池验证证据已回放"
+        : "degraded：真实小池验证未授权；等待 scope-bound provider task 的样本行、call_ledger 和 failure-mode evidence",
+      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "查看页面和本地跳转不外联、不创建 provider/model 任务、不交易、不改策略",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantModeLayeredLiveLightItems: MetricItem[] = [
     {
       label: "缓存渲染层",
@@ -1947,6 +1982,18 @@ export default function FactorQuantHub() {
       />
       <PacketCard title="普通用户量化推演摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={ordinaryQuantStatusLabel}>
         <div aria-label="stock quant ordinary user first summary">
+          <div aria-label="stock quant app first evidence factory">
+            <h3>本地投研速读</h3>
+            <p className="ordinary-status-note" aria-label="stock quant app first evidence factory sentence" aria-live="polite">{ordinaryQuantAppFirstEvidenceFactorySentence}</p>
+            <MetricGrid items={ordinaryQuantAppFirstEvidenceFactoryItems} />
+            <div className="actions" aria-label="stock quant app first evidence factory actions">
+              <a href={ordinaryQuantPrimaryActionHref} title="只切换本地页面或锚点；不会自动调用外部数据或模型服务" aria-label="open primary action from app first evidence factory">{ordinaryQuantPrimaryActionLabel}</a>
+              <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱；只读本地次日图谱数据" aria-label="open next chart from app first evidence factory">次日图谱</a>
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读查看数据可用、受限和待补原因" aria-label="open data capability from app first evidence factory">数据能力</a>
+              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认按钮才创建任务" aria-label="open candidate confirm from app first evidence factory">确认或换一只票</a>
+            </div>
+            <p className="risk-note">这张首屏只合成当前本地 cache、确认后数据账本、真实验证缺口和下一步入口；打开页面、查看结果和切换锚点都不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不真实交易。</p>
+          </div>
           <div aria-label="stock quant ordinary plain conclusion">
             <h3>普通结论</h3>
             <p className="ordinary-status-note" aria-label="stock quant ordinary plain conclusion sentence" aria-live="polite">{ordinaryQuantPlainResultSentence}</p>
