@@ -52,12 +52,21 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("刷新本地回放", operator_slice)
         self.assertIn("candidateRadarCompactLeadCandidateItems", self.page)
         self.assertIn("candidateRadarCompactOperatorSubtitle", self.page)
+        self.assertIn("candidateRadarCompactRecentResultText", self.page)
+        self.assertIn("candidateRadarCompactResultStatusLabel", self.page)
+        self.assertIn("candidateRadarCompactGroupStatusLabel", self.page)
+        self.assertIn("candidateRadarCompactResultGroupItems", self.page)
+        self.assertIn("最近：${candidateRadarCompactResultStatusLabel}", self.page)
         self.assertIn("先看一票：", self.page)
         self.assertIn("缺口：${candidatePoolLeadCandidateGap}", self.page)
         self.assertIn("Top/Watch/Excluded 理由见下方速读", self.page)
         self.assertIn("候选池暂无候选；Top/Watch/Excluded 暂无理由；${candidatePoolPlainConclusionMissing}", self.page)
         self.assertIn("等待候选缓存；Top/Watch/Excluded 暂无理由；先确认一只股票或刷新本地回放", self.page)
         self.assertIn('subtitle={candidateRadarCompactOperatorSubtitle}', operator_slice)
+        self.assertIn('aria-label="candidate radar compact result and group bridge"', operator_slice)
+        self.assertIn("结果和分组一屏速读", operator_slice)
+        self.assertIn("最近结果、Top/Watch/Excluded 理由、来源和缺口先合成一张短卡", operator_slice)
+        self.assertIn("MetricGrid items={candidateRadarCompactResultGroupItems}", operator_slice)
         self.assertIn('aria-label="candidate radar compact lead candidate result"', operator_slice)
         self.assertIn("首位候选速读", operator_slice)
         self.assertIn('aria-label="candidate radar compact lead candidate sentence"', operator_slice)
@@ -69,9 +78,24 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("分组理由速读", operator_slice)
         self.assertIn("Top 先复核，Watch 只观察，Excluded 是排除或等待", operator_slice)
         self.assertIn("MetricGrid items={candidateRadarCompactGroupDecisionItems}", operator_slice)
+        bridge_start = operator_slice.index('aria-label="candidate radar compact result and group bridge"')
+        bridge_end = operator_slice.index('aria-label="candidate radar compact lead candidate result"', bridge_start)
+        bridge_slice = operator_slice[bridge_start:bridge_end]
         compact_lead_start = operator_slice.index('aria-label="candidate radar compact lead candidate result"')
         compact_lead_end = operator_slice.index('aria-label="candidate radar compact vertical slice status"', compact_lead_start)
         compact_lead_slice = operator_slice[compact_lead_start:compact_lead_end]
+        for bridge_label in (
+            'label: "最近结果"',
+            'label: "分组理由"',
+            'label: "来源/缺口"',
+            'label: "下一步"',
+            'label: "边界"',
+        ):
+            self.assertIn(bridge_label, self.page)
+        self.assertIn("结果和分组只做研究复核；不买卖、不加仓、不交易", self.page)
+        self.assertNotIn("onClick=", bridge_slice)
+        self.assertNotIn("postCandidateRadar", bridge_slice)
+        self.assertNotIn("launchQuantProjection", bridge_slice)
         for compact_lead_label in (
             'label: "先看一票"',
             'label: "分组/评分"',
@@ -93,6 +117,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launchQuantProjection", compact_lead_slice)
         self.assertLess(
             operator_slice.index('aria-label="candidate radar compact operator actions"'),
+            bridge_start,
+        )
+        self.assertLess(
+            bridge_start,
             compact_lead_start,
         )
         self.assertLess(

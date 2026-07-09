@@ -3270,6 +3270,41 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarCompactRecentResultText =
+    quantProjectionInterpretationReady || quantProjectionSmallDataReady
+      ? quantProjectionOrdinaryResultSummary
+      : quantProjectionP3OrdinaryReadableSentence;
+  const candidateRadarCompactResultStatusLabel =
+    quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "最近结果已回放" : "最近结果待回放";
+  const candidateRadarCompactGroupStatusLabel =
+    ordinaryCandidateTopCount ? "Top/Watch/Excluded 理由见下方速读" : "Top/Watch/Excluded 暂无理由";
+  const candidateRadarCompactResultGroupItems: MetricItem[] = [
+    {
+      label: "最近结果",
+      value: candidateRadarCompactRecentResultText,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"
+    },
+    {
+      label: "分组理由",
+      value: candidateRadarCompactGroupStatusLabel,
+      tone: ordinaryCandidateTopCount ? "good" : "warn"
+    },
+    {
+      label: "来源/缺口",
+      value: `${coarseFineSourceLabel}；${candidatePoolPlainConclusionMissing}`,
+      tone: candidatePoolPlainConclusionMissing.includes("缺") || candidatePoolPlainConclusionMissing.includes("待补") || candidatePoolPlainConclusionMissing.includes("阻断") ? "warn" : "good"
+    },
+    {
+      label: "下一步",
+      value: quantProjectionCanSubmit ? "确认当前输入，再看量化推演、次日图谱或 ETF/融资风险" : candidatePoolPlainConclusionNext,
+      tone: quantProjectionCanSubmit || candidateRadarCacheGetReadable ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "结果和分组只做研究复核；不买卖、不加仓、不交易",
+      tone: "good"
+    }
+  ];
   const candidateRadarCompactGroupDecisionItems: MetricItem[] = [
     {
       label: "Top 先看",
@@ -3298,10 +3333,10 @@ export default function CandidateRadar() {
     }
   ];
   const candidateRadarCompactOperatorSubtitle = ordinaryCandidateTopCount && candidatePoolLeadCandidateTicker !== "暂无首位候选"
-    ? `先看一票：${candidatePoolLeadCandidateTicker}；${candidatePoolLeadCandidateGroup}；缺口：${candidatePoolLeadCandidateGap}；Top/Watch/Excluded 理由见下方速读`
+    ? `最近：${candidateRadarCompactResultStatusLabel}；先看一票：${candidatePoolLeadCandidateTicker}；${candidatePoolLeadCandidateGroup}；缺口：${candidatePoolLeadCandidateGap}；Top/Watch/Excluded 理由见下方速读`
     : candidateRadarCacheGetReadable
-      ? `候选池暂无候选；Top/Watch/Excluded 暂无理由；${candidatePoolPlainConclusionMissing}`
-      : "等待候选缓存；Top/Watch/Excluded 暂无理由；先确认一只股票或刷新本地回放";
+      ? `最近：${candidateRadarCompactResultStatusLabel}；候选池暂无候选；Top/Watch/Excluded 暂无理由；${candidatePoolPlainConclusionMissing}`
+      : `最近：${candidateRadarCompactResultStatusLabel}；等待候选缓存；Top/Watch/Excluded 暂无理由；先确认一只股票或刷新本地回放`;
   const candidateRadarOpenNowPathItems: MetricItem[] = [
     {
       label: "候选池",
@@ -4676,6 +4711,11 @@ export default function CandidateRadar() {
         </div>
         <p id={candidateRadarOperatorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p id={candidateRadarOperatorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        <div aria-label="candidate radar compact result and group bridge">
+          <h3>结果和分组一屏速读</h3>
+          <p className="ordinary-status-note">最近结果、Top/Watch/Excluded 理由、来源和缺口先合成一张短卡；只读本地 cache / task 回放，不创建 task。</p>
+          <MetricGrid items={candidateRadarCompactResultGroupItems} />
+        </div>
         <div aria-label="candidate radar compact lead candidate result">
           <h3>首位候选速读</h3>
           <p className="ordinary-status-note" aria-label="candidate radar compact lead candidate sentence" aria-live="polite">{candidatePoolLeadReviewSentence}</p>
