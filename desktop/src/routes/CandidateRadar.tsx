@@ -4745,6 +4745,7 @@ export default function CandidateRadar() {
       </div>
 
       <PacketCard title="下一票雷达操作台" subtitle={candidateRadarCompactOperatorSubtitle} status={candidateRadarStatusLabel}>
+        <p className="ordinary-status-note" aria-label="candidate radar operator input confirm first sentence">输入确认速读：输入只做本地校验；确认后看最近结果、候选池、量化推演、次日图谱和 ETF/融资风险。</p>
         <div className="actions" aria-label="candidate radar compact operator actions">
           <input
             value={searchSymbol}
@@ -4778,6 +4779,19 @@ export default function CandidateRadar() {
         </div>
         <p id={candidateRadarOperatorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p id={candidateRadarOperatorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        <div aria-label="candidate radar operator input confirm first read">
+          <h3>输入确认速读</h3>
+          <p className="ordinary-status-note">输入股票后先看本地校验和确认按钮；确认后再看最近结果、候选池、量化推演、次日图谱和 ETF/融资风险。</p>
+          <MetricGrid items={candidateRadarVisibleNowItems} />
+          <div className="actions" aria-label="candidate radar operator input confirm first read links">
+            <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from operator first read">确认输入</a>
+            <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from operator first read">候选池</a>
+            <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from operator first read">量化推演</a>
+            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from operator first read">次日图谱</a>
+            <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from operator first read">ETF/融资风险</a>
+          </div>
+          <p className="risk-note">操作台速读只读本地页面状态；输入、链接和刷新本地回放不会调用 Tushare/DeepSeek/GitHub、不会启动 worker、不会交易。</p>
+        </div>
         <div aria-label="candidate radar single ticket closed loop">
           <h3>单票闭环</h3>
           <p className="ordinary-status-note" aria-label="candidate radar single ticket closed loop sentence" aria-live="polite">{candidateRadarSingleTicketLoopSentence}</p>
@@ -5190,7 +5204,7 @@ export default function CandidateRadar() {
           </div>
           <div aria-label="candidate radar ordinary visible progress watch">
             <h3>边用边看进度</h3>
-            <p className="risk-note">最近任务、当前步骤和回放入口收在普通摘要明细里；这里只读 GET /api/tasks 与 CandidateRadar cache，不创建 task、不补调 Tushare/DeepSeek。</p>
+            <p className="risk-note">最近任务、当前步骤和回放入口直接显示在普通摘要里；最近任务、当前步骤和回放入口收在普通摘要明细里；这里只读 GET /api/tasks 与 CandidateRadar cache，不创建 task、不补调 Tushare/DeepSeek。</p>
             <MetricGrid items={quantProjectionTaskIndexProgressItems} />
             <div className="actions" aria-label="candidate radar ordinary visible progress actions">
               <button

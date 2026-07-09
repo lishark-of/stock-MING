@@ -47,9 +47,34 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             operator_slice.index('aria-label="candidate radar compact operator actions"'),
             operator_slice.index('aria-label="candidate radar compact vertical slice status"'),
         )
+        self.assertIn('aria-label="candidate radar operator input confirm first sentence"', operator_slice)
+        self.assertIn("输入确认速读：输入只做本地校验", operator_slice)
+        self.assertIn("确认后看最近结果、候选池、量化推演、次日图谱和 ETF/融资风险", operator_slice)
+        self.assertLess(
+            operator_slice.index('aria-label="candidate radar operator input confirm first sentence"'),
+            operator_slice.index('aria-label="candidate radar compact operator actions"'),
+        )
         self.assertIn('aria-label="candidate radar operator symbol input"', operator_slice)
         self.assertIn("确认并生成", operator_slice)
         self.assertIn("刷新本地回放", operator_slice)
+        self.assertIn('aria-label="candidate radar operator input confirm first read"', operator_slice)
+        self.assertIn("输入确认速读", operator_slice)
+        self.assertIn("输入股票后先看本地校验和确认按钮", operator_slice)
+        self.assertIn("确认后再看最近结果、候选池、量化推演、次日图谱和 ETF/融资风险", operator_slice)
+        self.assertIn("MetricGrid items={candidateRadarVisibleNowItems}", operator_slice)
+        self.assertIn('aria-label="candidate radar operator input confirm first read links"', operator_slice)
+        self.assertIn('aria-label="open confirm input from operator first read"', operator_slice)
+        self.assertIn('aria-label="open candidate pool from operator first read"', operator_slice)
+        self.assertIn('aria-label="open factor from operator first read"', operator_slice)
+        self.assertIn('aria-label="open next session from operator first read"', operator_slice)
+        self.assertIn('aria-label="open margin etf from operator first read"', operator_slice)
+        self.assertIn("操作台速读只读本地页面状态", operator_slice)
+        operator_first_read_start = operator_slice.index('aria-label="candidate radar operator input confirm first read"')
+        operator_first_read_end = operator_slice.index('aria-label="candidate radar single ticket closed loop"', operator_first_read_start)
+        operator_first_read_slice = operator_slice[operator_first_read_start:operator_first_read_end]
+        self.assertNotIn("onClick=", operator_first_read_slice)
+        self.assertNotIn("postCandidateRadar", operator_first_read_slice)
+        self.assertNotIn("launchQuantProjection", operator_first_read_slice)
         self.assertIn("candidateRadarCompactLeadCandidateItems", self.page)
         self.assertIn("candidateRadarCompactOperatorSubtitle", self.page)
         self.assertIn("candidateRadarCompactRecentResultText", self.page)
@@ -136,6 +161,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launchQuantProjection", compact_lead_slice)
         self.assertLess(
             operator_slice.index('aria-label="candidate radar compact operator actions"'),
+            operator_first_read_start,
+        )
+        self.assertLess(
+            operator_first_read_start,
             single_ticket_start,
         )
         self.assertLess(
