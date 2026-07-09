@@ -95,6 +95,9 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("parts.length > 1 ? parts.slice(1).join(\"/\").split(\"?\")[0] : \"\"", app)
         self.assertIn("target.scrollIntoView({ block: \"start\" })", app)
         self.assertIn("new MutationObserver", app)
+        self.assertIn("const [hashScrollVersion, setHashScrollVersion] = useState(0);", app)
+        self.assertIn("setHashScrollVersion((value) => value + 1);", app)
+        self.assertIn("}, [route, localFastapiRefreshNonce, hashScrollVersion]);", app)
 
         self.assertIn('const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";', factor)
         self.assertIn('const NEXT_SESSION_CHART_HREF = "#next/next-session-chart";', factor)

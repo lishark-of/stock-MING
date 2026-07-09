@@ -145,6 +145,7 @@ function persistRoute(route: RouteKey) {
 export default function App() {
   const [route, setRoute] = useState<RouteKey>(() => readInitialRoute());
   const [localFastapiRefreshNonce, setLocalFastapiRefreshNonce] = useState(0);
+  const [hashScrollVersion, setHashScrollVersion] = useState(0);
   const ActiveRoute = ROUTE_COMPONENTS[route];
 
   useEffect(() => {
@@ -172,12 +173,13 @@ export default function App() {
       cancelled = true;
       observer.disconnect();
     };
-  }, [route, localFastapiRefreshNonce]);
+  }, [route, localFastapiRefreshNonce, hashScrollVersion]);
 
   useEffect(() => {
     const onHashChange = () => {
       const nextRoute = routeFromHash();
       if (nextRoute) setRoute(nextRoute);
+      setHashScrollVersion((value) => value + 1);
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
