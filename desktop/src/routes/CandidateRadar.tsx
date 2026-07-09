@@ -3412,6 +3412,21 @@ export default function CandidateRadar() {
       tone: quantProjectionDisplaySymbol || quantProjectionPersistedTaskId || taskReceipt?.ok ? "good" : "neutral"
     },
     {
+      label: "当前票",
+      value: quantProjectionDisplaySymbol || quantProjectionAcceptedTaskSymbol || "等待确认股票",
+      tone: quantProjectionDisplaySymbol || quantProjectionAcceptedTaskSymbol ? "good" : "neutral"
+    },
+    {
+      label: "最近任务",
+      value: quantProjectionLatestTaskState,
+      tone: taskReceipt?.ok || quantProjectionPersistedTaskId || taskIndexLatestConfirmedTaskId ? "good" : quantProjectionSubmitError ? "bad" : "neutral"
+    },
+    {
+      label: "P2/P3 去向",
+      value: quantProjectionP2P3ConnectionReady ? "可回放：先量化推演，再次日图谱" : quantProjectionProgressWatchNext,
+      tone: quantProjectionP2P3ConnectionReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
+    },
+    {
       label: "来源状态",
       value: `${quantProjectionCacheSourceLabel}；${quantProjectionProviderSourceLabel}；${quantProjectionModelSourceLabel}`,
       tone: quantProjectionProviderLedgerReady || quantProjectionSmallDataReady ? "good" : "warn"
@@ -3460,6 +3475,24 @@ export default function CandidateRadar() {
       用户下一步: quantProjectionReplayDestinationNextStep,
       证据: "ordinary_replay_destination_rows / local route anchors",
       边界: quantProjectionReplayBoundary
+    },
+    {
+      读法: "5. 当前票和任务",
+      当前状态: `${quantProjectionDisplaySymbol || "等待确认股票"}；${quantProjectionLatestTaskState}`,
+      用户下一步: taskReceipt?.ok || quantProjectionPersistedTaskId || taskIndexLatestConfirmedTaskId
+        ? "先看 TaskStatusPanel 或最近任务回放，再刷新本地 cache。"
+        : quantProjectionCanSubmit
+          ? "点击确认按钮生成当前票的本地投研任务。"
+          : "先输入有效 A 股代码或恢复本地联通。",
+      证据: "searchSymbol / taskReceipt / taskIndex / search_quant_projection_receipt",
+      边界: "这行只读当前票和本地任务索引；不提交、不轮询外部、不补调 provider/model。"
+    },
+    {
+      读法: "6. P2/P3 回放",
+      当前状态: quantProjectionP2P3ConnectionReady ? "P2 三面和 P3 结果已经连到同一条本地确认链。" : quantProjectionProgressWatchNext,
+      用户下一步: quantProjectionP2P3ConnectionReady ? "打开量化推演和次日图谱，只读复核结果。" : quantProjectionTushareFirstOrdinaryNextStep,
+      证据: "quantProjectionP2P3ConnectionReady / Factor / Next local cache",
+      边界: "P2/P3 去向只切换本地结果页；不创建第二个 task、不交易、不改 strategy action。"
     }
   ];
   const candidatePoolEmptyStatePrimarySentence = candidatePoolPlainConclusionStatus === "empty_cache"

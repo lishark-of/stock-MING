@@ -225,6 +225,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         for recent_result_label in (
             'label: "最近结果"',
             'label: "结果归属"',
+            'label: "当前票"',
+            'label: "最近任务"',
+            'label: "P2/P3 去向"',
             'label: "来源状态"',
             'label: "degraded / 缺口"',
             'label: "下一步"',
@@ -236,8 +239,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             '读法: "2. 再看来源"',
             '读法: "3. 识别降级"',
             '读法: "4. 去哪里看"',
+            '读法: "5. 当前票和任务"',
+            '读法: "6. P2/P3 回放"',
         ):
             self.assertIn(recent_result_row, self.page)
+        self.assertIn("quantProjectionLatestTaskState", self.page)
+        self.assertIn("quantProjectionP2P3ConnectionReady", self.page)
+        self.assertIn("这行只读当前票和本地任务索引；不提交、不轮询外部、不补调 provider/model", self.page)
+        self.assertIn("P2/P3 去向只切换本地结果页；不创建第二个 task、不交易、不改 strategy action", self.page)
         self.assertIn('href="#factor"', recent_result_slice)
         self.assertIn('href="#next/next-session-chart"', recent_result_slice)
         self.assertIn('href="#marginEtf"', recent_result_slice)
