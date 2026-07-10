@@ -23,8 +23,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("生成 3.0 量化推演", self.page)
         operator_start = self.page.index('title="下一票雷达操作台"')
         operator_end = self.page.index('title="普通用户雷达摘要"', operator_start)
+        page_state_start = self.page.index("<PageStateBanner")
         operator_slice = self.page[operator_start:operator_end]
-        self.assertLess(operator_start, self.page.index("<PageStateBanner"))
+        self.assertLess(operator_start, page_state_start)
+        self.assertLess(self.page.index('title="普通用户雷达摘要"'), page_state_start)
+        self.assertLess(page_state_start, self.page.index('title="下一票候选池"'))
         self.assertIn("candidateRadarCompactVerticalSliceItems", self.page)
         self.assertIn('aria-label="candidate radar compact vertical slice status"', operator_slice)
         self.assertIn("当前纵切状态", operator_slice)

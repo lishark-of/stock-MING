@@ -4880,14 +4880,6 @@ export default function CandidateRadar() {
         <p className="risk-note">{ordinaryCandidateGroupBoundary} 页面打开、输入、GET cache 和 React render 都不会自动外联。</p>
       </PacketCard>
 
-      <PageStateBanner
-        loading={loading}
-        error={error}
-        empty={empty}
-        emptyTitle="暂无下一票雷达本地缓存"
-        emptyDetail="雷达页只读取本地候选缓存；不会在页面打开或 React 渲染中自动扫描全市场。"
-      />
-
       <PacketCard title="普通用户雷达摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={candidateRadarStatusLabel}>
         <div aria-label="candidate radar ordinary user first summary">
           <h3>一屏确认</h3>
@@ -5683,6 +5675,14 @@ export default function CandidateRadar() {
           <p className="risk-note">工程审计明细继续默认收起；完整 call ledger、release gate 和配置状态下沉在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
         </details>
       </PacketCard>
+
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={empty}
+        emptyTitle="暂无下一票雷达本地缓存"
+        emptyDetail="雷达页只读取本地候选缓存；不会在页面打开或 React 渲染中自动扫描全市场。"
+      />
 
       <div className="grid radar-result-cluster" data-radar-state={radarMotionState}>
         <div id="candidate-pool">
