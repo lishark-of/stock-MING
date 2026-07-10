@@ -5966,6 +5966,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn(
             factor_handoff["status"],
             {
+                "factor_test_provider_small_pool_sample_ready_metric_validation_pending",
                 "factor_test_execution_request_ready_provider_task_pending",
                 "factor_test_scope_ticket_ready_execution_request_needed",
                 "factor_test_provider_small_pool_scope_ticket_needed",
@@ -5975,12 +5976,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             p3_factor["supporting_factor_test_lab_provider_validation_next_local_step"],
             factor_handoff["next_local_step"],
         )
-        self.assertTrue(p3_factor["supporting_factor_test_lab_provider_validation_requires_provider_task"])
+        factor_provider_sample_ready = (
+            factor_handoff["status"]
+            == "factor_test_provider_small_pool_sample_ready_metric_validation_pending"
+        )
+        self.assertEqual(
+            p3_factor["supporting_factor_test_lab_provider_validation_requires_provider_task"],
+            not factor_provider_sample_ready,
+        )
         self.assertFalse(p3_factor["supporting_factor_test_lab_provider_validation_creates_task_from_get"])
-        self.assertFalse(factor_handoff["provider_task_created"])
-        self.assertFalse(factor_handoff["provider_execution_implemented_by_handoff"])
-        self.assertFalse(factor_handoff["provider_call_ledger_evidence_done"])
-        self.assertFalse(factor_handoff["provider_backed_small_pool_validation_done"])
+        self.assertEqual(factor_handoff["provider_task_created"], factor_provider_sample_ready)
+        self.assertEqual(
+            factor_handoff["provider_execution_implemented_by_handoff"],
+            factor_provider_sample_ready,
+        )
+        self.assertEqual(
+            factor_handoff["provider_call_ledger_evidence_done"],
+            factor_provider_sample_ready,
+        )
+        self.assertEqual(
+            factor_handoff["provider_backed_small_pool_validation_done"],
+            factor_provider_sample_ready,
+        )
         self.assertFalse(factor_handoff["full_market_validation_done"])
         self.assertFalse(factor_handoff["production_factor_test_validation_complete"])
         self.assertFalse(factor_handoff["cache_get_creates_task"])
@@ -60098,6 +60115,174 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_execution_implemented"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_backed_small_pool_validation_done"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["production_factor_test_validation_complete"])
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(factor, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(factor, ensure_ascii=False))
+
+    def test_factor_test_provider_small_pool_acceptance_executes_tushare_sample_when_authorized(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        provider_calls = []
+        original_run_tushare = factor_service.tushare_task_service.run_tushare_refresh_task
+
+        def fake_run_tushare_refresh_task(payload=None, **kwargs):
+            safe_payload = dict(payload if isinstance(payload, dict) else {})
+            provider_calls.append({"payload": safe_payload, "kwargs": dict(kwargs)})
+            apis = list(safe_payload.get("apis") or kwargs.get("default_apis") or [])
+            ts_code = str(safe_payload.get("ts_code") or "")
+            task_id = f"fake-factor-provider-{len(provider_calls)}"
+            ledger = []
+            for api in apis:
+                params = {
+                    "start_date": safe_payload.get("start_date"),
+                    "end_date": safe_payload.get("end_date"),
+                }
+                if ts_code:
+                    params["ts_code"] = ts_code
+                ledger.append(
+                    {
+                        "api": api,
+                        "request_params_safe": params,
+                        "row_count": 4 if api == "trade_cal" else 3,
+                        "data_date": "20260614",
+                        "local_fetched_at": "2026-06-14T15:00:00",
+                        "call_status": "success",
+                        "failure_mode": "none",
+                        "failure_mode_status": "ok",
+                        "safe_failure_mode_visible": True,
+                        "error_message_safe": "",
+                        "parquet_dataset": api,
+                        "parquet_status": "written",
+                        "parquet_row_count": 4 if api == "trade_cal" else 3,
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                )
+            return {
+                "task_id": task_id,
+                "status": "success",
+                "current_step": "tushare_refresh_completed",
+                "call_ledger": ledger,
+            }
+
+        factor_service.tushare_task_service.run_tushare_refresh_task = fake_run_tushare_refresh_task
+        self.addCleanup(setattr, factor_service.tushare_task_service, "run_tushare_refresh_task", original_run_tushare)
+
+        dry_run_response = self.client.post(
+            "/api/factor-quant/provider-small-pool-dry-run",
+            json={
+                "approved_by_user": True,
+                "symbols": ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"],
+                "start_date": "20260401",
+                "end_date": "20260614",
+                "forward_return_horizons": ["1d", "5d"],
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run_receipt = dry_run_response["data"]["task"]["payload_safe"][
+            "provider_small_pool_acceptance_dry_run_receipt"
+        ]
+
+        execution_response = self.client.post(
+            "/api/factor-quant/provider-small-pool-execution-request",
+            json={
+                "approved_by_user": True,
+                "acceptance_scope_hash": dry_run_receipt["acceptance_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(execution_response["ok"])
+        execution_receipt = execution_response["data"]["task"]["payload_safe"][
+            "provider_small_pool_execution_request_receipt"
+        ]
+
+        response = self.client.post(
+            "/api/factor-quant/provider-small-pool-acceptance",
+            json={
+                "approved_by_user": True,
+                "authorize_live_provider_call": True,
+                "provider_run_approved_by_user": True,
+                "acceptance_scope_hash": execution_receipt["acceptance_scope_hash"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(len(provider_calls), 6)
+        self.assertEqual(provider_calls[0]["payload"]["apis"], ["trade_cal"])
+        self.assertEqual(
+            [call["payload"].get("ts_code") for call in provider_calls[1:]],
+            ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"],
+        )
+        self.assertNotIn("SHOULD_DROP", json.dumps(provider_calls, ensure_ascii=False))
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(response, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(response, ensure_ascii=False))
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_factor_test_provider_small_pool_acceptance")
+        self.assertEqual(
+            task["current_step"],
+            "factor_test_provider_small_pool_acceptance_provider_sample_ready_metric_validation_pending",
+        )
+        receipt = task["payload_safe"]["provider_small_pool_acceptance_receipt"]
+        rows = {row["criterion"]: row for row in task["payload_safe"]["provider_small_pool_acceptance_rows"]}
+        self.assertEqual(
+            receipt["scope"],
+            "factor_test_provider_small_pool_acceptance_provider_sample_execution",
+        )
+        self.assertTrue(receipt["live_provider_authorized"])
+        self.assertTrue(receipt["provider_task_created"])
+        self.assertTrue(receipt["provider_execution_implemented"])
+        self.assertTrue(receipt["provider_call_ledger_evidence_done"])
+        self.assertTrue(receipt["sample_rows_collected"])
+        self.assertTrue(receipt["provider_backed_small_pool_sample_done"])
+        self.assertTrue(receipt["provider_backed_small_pool_validation_done"])
+        self.assertFalse(receipt["production_factor_test_validation_complete"])
+        self.assertTrue(receipt["external_calls_triggered"])
+        self.assertTrue(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertFalse(receipt["contains_secret"])
+        self.assertEqual(receipt["provider_task_count"], 6)
+        self.assertEqual(receipt["provider_api_call_count"], 16)
+        self.assertEqual(receipt["provider_failed_call_count"], 0)
+        self.assertEqual(receipt["provider_latest_data_date"], "20260614")
+        self.assertEqual(receipt["symbols_with_core_row_count"], 5)
+        self.assertTrue(rows["provider_task_created"]["passed"])
+        self.assertTrue(rows["provider_call_ledger_evidence"]["passed"])
+        self.assertTrue(rows["provider_sample_rows_collected"]["passed"])
+        self.assertTrue(rows["production_metric_boundary"]["passed"])
+        self.assertIn("rolling IC/Rank IC/ICIR evidence", receipt["missing_evidence"])
+        self.assertIn("cost and neutralization validation evidence", receipt["missing_evidence"])
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+        self.assertIn("daily", {row.get("api") for row in task["call_ledger"]})
+        self.assertIn("trade_cal", {row.get("api") for row in task["call_ledger"]})
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        cached = factor["data"]["factor_tests"]["provider_small_pool_acceptance_receipt"]
+        self.assertEqual(cached["status"], receipt["status"])
+        self.assertTrue(cached["provider_call_ledger_evidence_done"])
+        self.assertTrue(cached["sample_rows_collected"])
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"]["provider_execution_implemented"]
+        )
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"]["provider_call_ledger_evidence_done"]
+        )
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"]["provider_backed_small_pool_validation_done"]
+        )
+        self.assertFalse(
+            factor["data"]["factor_tests"]["acceptance_contract"]["production_factor_test_validation_complete"]
+        )
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(factor, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(factor, ensure_ascii=False))
 

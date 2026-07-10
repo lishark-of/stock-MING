@@ -640,6 +640,7 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/tasks/tushare-provider-target-sample-execution-request",
   "/api/factor-quant/provider-small-pool-dry-run",
   "/api/factor-quant/provider-small-pool-execution-request",
+  "/api/factor-quant/provider-small-pool-acceptance",
   "/api/factor-quant/universe-worker-batch-dry-run",
   "/api/factor-quant/universe-worker-batch-execution-request",
   "/api/factor-quant/universe-worker-batch-research",

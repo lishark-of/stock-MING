@@ -317,6 +317,9 @@ FACTOR_TEST_PRODUCTION_STAGE_MISSING_EVIDENCE = (
     "PIT, lookahead, and survivorship evidence",
     "explicit promotion review before production completion",
 )
+FACTOR_TEST_PROVIDER_SMALL_POOL_SAMPLE_SIZE = 5
+FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS = ("daily", "daily_basic", "moneyflow")
+FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY = "command_center_factor_test_provider_small_pool_tushare_packet"
 
 
 def _now_iso() -> str:
@@ -5651,6 +5654,13 @@ def _factor_test_provider_small_pool_acceptance_row(
     next_action: str,
     *,
     required: bool = True,
+    provider_task_created: bool = False,
+    provider_execution_implemented: bool = False,
+    provider_call_ledger_evidence_done: bool = False,
+    sample_rows_collected: bool = False,
+    provider_backed_small_pool_validation_done: bool = False,
+    external_calls_triggered: bool = False,
+    tushare_called: bool = False,
 ) -> dict[str, Any]:
     return {
         "criterion": criterion,
@@ -5661,16 +5671,16 @@ def _factor_test_provider_small_pool_acceptance_row(
         "evidence": evidence,
         "next_action": next_action,
         "local_acceptance_gate_task_record_created": True,
-        "provider_task_created": False,
-        "provider_execution_implemented": False,
-        "provider_call_ledger_evidence_done": False,
-        "sample_rows_collected": False,
-        "provider_backed_small_pool_validation_done": False,
+        "provider_task_created": bool(provider_task_created),
+        "provider_execution_implemented": bool(provider_execution_implemented),
+        "provider_call_ledger_evidence_done": bool(provider_call_ledger_evidence_done),
+        "sample_rows_collected": bool(sample_rows_collected),
+        "provider_backed_small_pool_validation_done": bool(provider_backed_small_pool_validation_done),
         "production_factor_test_validation_complete": False,
         "cache_get_external_calls": False,
         "react_render_external_calls": False,
-        "external_calls_triggered": False,
-        "tushare_called": False,
+        "external_calls_triggered": bool(external_calls_triggered),
+        "tushare_called": bool(tushare_called),
         "deepseek_called": False,
         "github_called": False,
         "does_not_execute_trades": True,
@@ -5717,7 +5727,7 @@ def _factor_test_provider_small_pool_acceptance_payload(
         "required_datasets": list(FACTOR_TEST_PROVIDER_SMALL_POOL_ALLOWED_DATASETS),
         "target_acceptance_mode": "provider_backed_factor_test_small_pool_validation",
         "live_provider_authorized": live_provider_authorized,
-        "provider_execution_implemented": False,
+        "provider_execution_implemented": live_provider_authorized,
         "created_at": now,
         "server_secret_values_read": False,
         "env_key_names_exposed": False,
@@ -5775,8 +5785,9 @@ def _factor_test_provider_small_pool_acceptance_receipt(
             "provider_execution_implementation_boundary",
             "passed_provider_execution_implemented" if provider_execution_implemented else "blocked_provider_execution_not_implemented",
             provider_execution_implemented,
-            "This local gate does not implement provider-backed sample collection or production metric computation.",
-            "Implement the provider-backed validation executor only in a separately authorized Tushare-first LTG-03 pass.",
+            "Provider-backed sample collection is implemented only behind explicit live-provider authorization; production IC/Rank IC/ICIR remains a later gate.",
+            "Execute the scope-bound Tushare sample and keep production metrics pending until rolling/cost/neutralization evidence exists.",
+            provider_execution_implemented=provider_execution_implemented,
         ),
         _factor_test_provider_small_pool_acceptance_row(
             "no_provider_model_github_trade_side_effects",
@@ -5808,17 +5819,24 @@ def _factor_test_provider_small_pool_acceptance_receipt(
     elif not live_provider_authorized:
         status = "factor_test_provider_small_pool_acceptance_blocked_live_provider_authorization_required"
         allowed_next_step = "request_separate_user_authorized_tushare_provider_run"
-    else:
+    elif not provider_execution_implemented:
         status = "factor_test_provider_small_pool_acceptance_blocked_provider_execution_not_implemented"
         allowed_next_step = "implement_provider_backed_factor_test_small_pool_executor"
+    else:
+        status = "factor_test_provider_small_pool_acceptance_ready_for_provider_sample_execution"
+        allowed_next_step = "execute_scope_bound_tushare_provider_small_pool_sample"
     receipt = {
         "schema_version": "factor_test_provider_small_pool_acceptance.v1",
         "status": status,
-        "scope": "local_factor_test_provider_small_pool_acceptance_gate_no_provider_execution",
+        "scope": (
+            "factor_test_provider_small_pool_acceptance_provider_sample_execution"
+            if provider_execution_implemented
+            else "local_factor_test_provider_small_pool_acceptance_gate_no_provider_execution"
+        ),
         "created_at": now,
         "ltg": "LTG-03/LTG-02/LTG-11/LTG-12",
         "local_acceptance_gate_task_record_created": True,
-        "ready_for_live_provider_execution": False,
+        "ready_for_live_provider_execution": bool(not blockers and provider_execution_implemented),
         "allowed_next_step": allowed_next_step,
         "execution_request_status": payload_safe.get("execution_request_status"),
         "execution_request_ready": execution_request_ready,
@@ -5835,10 +5853,10 @@ def _factor_test_provider_small_pool_acceptance_receipt(
         "metrics": payload_safe.get("metrics") or [],
         "forward_return_horizons": payload_safe.get("forward_return_horizons") or [],
         "required_datasets": payload_safe.get("required_datasets") or [],
-        "requires_separate_user_authorized_provider_execution": True,
+        "requires_separate_user_authorized_provider_execution": not live_provider_authorized,
         "live_provider_authorized": live_provider_authorized,
         "provider_task_created": False,
-        "provider_execution_implemented": False,
+        "provider_execution_implemented": provider_execution_implemented,
         "provider_call_ledger_evidence_done": False,
         "sample_rows_collected": False,
         "multi_horizon_forward_returns_done": False,
@@ -5896,7 +5914,7 @@ def _factor_test_provider_small_pool_acceptance_receipt(
                 "symbol_count": receipt["symbol_count"],
                 "scope_hash_short": receipt["acceptance_scope_hash_short"],
                 "live_provider_authorized": live_provider_authorized,
-                "provider_execution_implemented": False,
+                "provider_execution_implemented": provider_execution_implemented,
                 "provider_backed_small_pool_validation_done": False,
                 "production_factor_test_validation_complete": False,
             },
@@ -5910,6 +5928,324 @@ def _factor_test_provider_small_pool_acceptance_receipt(
     ]
     receipt["call_ledger"] = ledger
     return receipt, rows
+
+
+def _factor_test_provider_small_pool_provider_failure_row(
+    *,
+    api: str,
+    now: str,
+    error_message_safe: str,
+    scope_hash_short: str,
+) -> dict[str, Any]:
+    return {
+        "api": api,
+        "request_params_safe": {
+            "acceptance_scope_hash_short": scope_hash_short,
+            "provider_acceptance_mode": "factor_test_provider_small_pool_sample",
+        },
+        "row_count": 0,
+        "data_date": None,
+        "local_fetched_at": now,
+        "call_status": "failed",
+        "failure_mode": "provider_task_launch_failed",
+        "failure_mode_status": "degraded_provider_unavailable",
+        "safe_failure_mode_visible": True,
+        "error_message_safe": _safe_text(error_message_safe),
+        "external": True,
+        "external_calls_triggered": True,
+        "tushare_called": True,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _factor_test_provider_small_pool_provider_ledgers(
+    task: dict[str, Any],
+    *,
+    acceptance_task_id: str,
+    scope_hash_short: str,
+) -> list[dict[str, Any]]:
+    ledgers: list[dict[str, Any]] = []
+    provider_task_id = str(task.get("task_id") or "")
+    for row in task.get("call_ledger") if isinstance(task.get("call_ledger"), list) else []:
+        if not isinstance(row, dict):
+            continue
+        safe_row = dict(row)
+        safe_row["provider_task_id"] = provider_task_id
+        safe_row["acceptance_task_id"] = acceptance_task_id
+        safe_row["acceptance_scope_hash_short"] = scope_hash_short
+        safe_row["factor_provider_small_pool_acceptance"] = True
+        safe_row.setdefault("deepseek_called", False)
+        safe_row.setdefault("github_called", False)
+        safe_row.setdefault("does_not_execute_trades", True)
+        safe_row.setdefault("does_not_modify_strategy_action", True)
+        ledgers.append(safe_row)
+    return ledgers
+
+
+def _factor_test_provider_small_pool_acceptance_provider_run(
+    payload_safe: dict[str, Any],
+    receipt: dict[str, Any],
+    rows: list[dict[str, Any]],
+    now: str,
+    *,
+    acceptance_task_id: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    scope_hash_short = str(receipt.get("acceptance_scope_hash_short") or "")
+    symbols = [str(item) for item in payload_safe.get("symbols", []) if item][:FACTOR_TEST_PROVIDER_SMALL_POOL_SAMPLE_SIZE]
+    start_date = str(payload_safe.get("start_date") or "")
+    end_date = str(payload_safe.get("end_date") or "")
+    provider_tasks: list[dict[str, Any]] = []
+    provider_ledgers: list[dict[str, Any]] = []
+
+    def run_provider_task(
+        provider_payload: dict[str, Any],
+        *,
+        task_type: str,
+        default_apis: tuple[str, ...],
+    ) -> dict[str, Any]:
+        try:
+            return tushare_task_service.run_tushare_refresh_task(
+                provider_payload,
+                task_type=task_type,
+                output_packet_key=FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY,
+                default_apis=default_apis,
+            )
+        except Exception as exc:
+            return {
+                "task_id": "",
+                "status": "failed",
+                "current_step": "factor_test_provider_small_pool_provider_task_launch_failed",
+                "call_ledger": [
+                    _factor_test_provider_small_pool_provider_failure_row(
+                        api="tushare_provider_task_launch",
+                        now=_now_iso(),
+                        error_message_safe=str(exc),
+                        scope_hash_short=scope_hash_short,
+                    )
+                ],
+            }
+
+    if len(symbols) >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS and start_date and end_date:
+        base_provider_payload = {
+            "approved_by_user": True,
+            "authorize_live_provider_call": True,
+            "provider_run_approved_by_user": True,
+            "provider_acceptance_mode": "factor_test_provider_small_pool_sample",
+            "acceptance_scope_hash_short": scope_hash_short,
+            "acceptance_scope_hash": receipt.get("acceptance_scope_hash") or "",
+            "start_date": start_date,
+            "end_date": end_date,
+            "source_task_type": "run_factor_test_provider_small_pool_acceptance",
+        }
+        calendar_payload = {**base_provider_payload, "apis": ["trade_cal"]}
+        provider_tasks.append(
+            run_provider_task(
+                calendar_payload,
+                task_type="run_factor_test_provider_small_pool_trade_cal_sample",
+                default_apis=("trade_cal",),
+            )
+        )
+        for symbol in symbols:
+            symbol_payload = {
+                **base_provider_payload,
+                "ts_code": symbol,
+                "symbol": symbol,
+                "apis": list(FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS),
+            }
+            provider_tasks.append(
+                run_provider_task(
+                    symbol_payload,
+                    task_type="run_factor_test_provider_small_pool_symbol_sample",
+                    default_apis=FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS,
+                )
+            )
+    else:
+        provider_ledgers.append(
+            _factor_test_provider_small_pool_provider_failure_row(
+                api="factor_test_provider_small_pool_preflight",
+                now=now,
+                error_message_safe="provider_small_pool_sample_requires_five_symbols_and_date_window",
+                scope_hash_short=scope_hash_short,
+            )
+        )
+
+    for provider_task in provider_tasks:
+        provider_ledgers.extend(
+            _factor_test_provider_small_pool_provider_ledgers(
+                provider_task,
+                acceptance_task_id=acceptance_task_id,
+                scope_hash_short=scope_hash_short,
+            )
+        )
+
+    provider_task_ids = [str(task.get("task_id") or "") for task in provider_tasks if str(task.get("task_id") or "")]
+    provider_call_count = len(provider_ledgers)
+    provider_success_rows = [
+        row for row in provider_ledgers if row.get("call_status") == "success" and int(row.get("row_count") or 0) > 0
+    ]
+    provider_failed_rows = [
+        row
+        for row in provider_ledgers
+        if row.get("call_status") == "failed" or str(row.get("call_status") or "").startswith("blocked_")
+    ]
+    provider_total_row_count = sum(int(row.get("row_count") or 0) for row in provider_ledgers)
+    provider_data_dates = sorted({str(row.get("data_date") or "") for row in provider_ledgers if row.get("data_date")})
+    symbol_api_success: dict[str, set[str]] = {symbol: set() for symbol in symbols}
+    calendar_success = False
+    for row in provider_success_rows:
+        api = str(row.get("api") or "")
+        params = row.get("request_params_safe") if isinstance(row.get("request_params_safe"), dict) else {}
+        ts_code = str(params.get("ts_code") or params.get("symbol") or "")
+        if api == "trade_cal":
+            calendar_success = True
+        if ts_code in symbol_api_success and api in FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS:
+            symbol_api_success[ts_code].add(api)
+    symbols_with_core_rows = [
+        symbol for symbol, apis in symbol_api_success.items() if set(FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS).issubset(apis)
+    ]
+    provider_call_ledger_evidence_done = provider_call_count > 0
+    sample_rows_collected = bool(calendar_success and len(symbols_with_core_rows) >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS)
+    safe_failure_modes = sorted(
+        {
+            str(row.get("failure_mode") or row.get("call_status") or "unknown")
+            for row in provider_failed_rows
+            if str(row.get("failure_mode") or row.get("call_status") or "")
+        }
+    )
+    if sample_rows_collected:
+        status = "factor_test_provider_small_pool_acceptance_provider_sample_ready_metric_validation_pending"
+        allowed_next_step = "add_multi_horizon_rolling_cost_neutralization_validation"
+        missing_evidence = [
+            "multi-horizon forward-return labels",
+            "rolling IC/Rank IC/ICIR evidence",
+            "cost and neutralization validation evidence",
+            "PIT/lookahead/survivorship controls evidence",
+            "manual Factor Test production promotion review",
+        ]
+    elif provider_call_ledger_evidence_done:
+        status = "factor_test_provider_small_pool_acceptance_provider_degraded_sample_rows_missing"
+        allowed_next_step = "review_safe_provider_failure_mode_before_retry"
+        missing_evidence = [
+            "non-empty provider-backed sample rows",
+            "multi-horizon forward-return labels",
+            "rolling IC/Rank IC/ICIR evidence",
+            "cost and neutralization validation evidence",
+            "PIT/lookahead/survivorship controls evidence",
+            "manual Factor Test production promotion review",
+        ]
+    else:
+        status = "factor_test_provider_small_pool_acceptance_provider_degraded_no_call_ledger"
+        allowed_next_step = "review_provider_task_launch_failure"
+        missing_evidence = [
+            "provider task_id bound to scope hash",
+            "safe provider call ledger rows for target pool",
+            "non-empty provider-backed sample rows",
+            "multi-horizon forward-return labels",
+            "rolling IC/Rank IC/ICIR evidence",
+            "cost and neutralization validation evidence",
+            "PIT/lookahead/survivorship controls evidence",
+            "manual Factor Test production promotion review",
+        ]
+
+    provider_rows = [
+        _factor_test_provider_small_pool_acceptance_row(
+            "provider_task_created",
+            "passed_provider_task_created" if provider_task_ids else "degraded_provider_task_missing",
+            bool(provider_task_ids),
+            f"provider_task_count={len(provider_task_ids)}; sample_symbol_count={len(symbols)}; scope_hash_short={scope_hash_short}",
+            "Keep provider task IDs bound to the acceptance scope hash.",
+            provider_task_created=bool(provider_task_ids),
+            provider_execution_implemented=True,
+            external_calls_triggered=True,
+            tushare_called=True,
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "provider_call_ledger_evidence",
+            "passed_safe_provider_call_ledger_visible" if provider_call_ledger_evidence_done else "degraded_provider_call_ledger_missing",
+            provider_call_ledger_evidence_done,
+            f"provider_api_call_count={provider_call_count}; success_call_count={len(provider_success_rows)}; failed_call_count={len(provider_failed_rows)}",
+            "Review safe call_ledger rows before treating the sample as usable.",
+            provider_task_created=bool(provider_task_ids),
+            provider_execution_implemented=True,
+            provider_call_ledger_evidence_done=provider_call_ledger_evidence_done,
+            external_calls_triggered=True,
+            tushare_called=True,
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "provider_sample_rows_collected",
+            "passed_provider_sample_rows_collected" if sample_rows_collected else "degraded_provider_sample_rows_missing",
+            sample_rows_collected,
+            f"symbols_with_core_rows={len(symbols_with_core_rows)}; total_row_count={provider_total_row_count}; latest_data_date={provider_data_dates[-1] if provider_data_dates else ''}",
+            "Add rolling and cost validation only after sample rows are visible.",
+            provider_task_created=bool(provider_task_ids),
+            provider_execution_implemented=True,
+            provider_call_ledger_evidence_done=provider_call_ledger_evidence_done,
+            sample_rows_collected=sample_rows_collected,
+            provider_backed_small_pool_validation_done=sample_rows_collected,
+            external_calls_triggered=True,
+            tushare_called=True,
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "production_metric_boundary",
+            "passed_production_metrics_still_pending",
+            True,
+            "Provider sample rows are not rolling IC/Rank IC/ICIR, cost, neutralization, PIT/bias, or production promotion evidence.",
+            "Keep production_factor_test_validation_complete=false until the remaining direct evidence exists.",
+            required=False,
+            provider_task_created=bool(provider_task_ids),
+            provider_execution_implemented=True,
+            provider_call_ledger_evidence_done=provider_call_ledger_evidence_done,
+            sample_rows_collected=sample_rows_collected,
+            provider_backed_small_pool_validation_done=sample_rows_collected,
+            external_calls_triggered=True,
+            tushare_called=True,
+        ),
+    ]
+    receipt.update(
+        {
+            "status": status,
+            "scope": "factor_test_provider_small_pool_acceptance_provider_sample_execution",
+            "ready_for_live_provider_execution": False,
+            "allowed_next_step": allowed_next_step,
+            "requires_separate_user_authorized_provider_execution": False,
+            "provider_task_created": bool(provider_task_ids),
+            "provider_execution_implemented": True,
+            "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
+            "sample_rows_collected": sample_rows_collected,
+            "sample_rows_done": sample_rows_collected,
+            "provider_backed_small_pool_sample_done": sample_rows_collected,
+            "provider_backed_small_pool_validation_done": sample_rows_collected,
+            "production_factor_test_validation_complete": False,
+            "external_calls_triggered": True,
+            "tushare_called": True,
+            "deepseek_called": False,
+            "github_called": False,
+            "provider_task_ids": provider_task_ids,
+            "provider_task_count": len(provider_task_ids),
+            "provider_api_call_count": provider_call_count,
+            "provider_success_call_count": len(provider_success_rows),
+            "provider_failed_call_count": len(provider_failed_rows),
+            "provider_total_row_count": provider_total_row_count,
+            "provider_data_dates": provider_data_dates,
+            "provider_latest_data_date": provider_data_dates[-1] if provider_data_dates else "",
+            "sample_symbol_count": len(symbols),
+            "symbols_with_core_rows": symbols_with_core_rows,
+            "symbols_with_core_row_count": len(symbols_with_core_rows),
+            "safe_provider_failure_modes": safe_failure_modes,
+            "blocking_criterion_count": len([row for row in rows + provider_rows if row["blocks_provider_backed_acceptance"]]),
+            "blocking_criteria": [
+                row["criterion"] for row in rows + provider_rows if row["blocks_provider_backed_acceptance"]
+            ],
+            "missing_evidence": missing_evidence,
+            "row_count": len(rows) + len(provider_rows),
+            "rows": rows + provider_rows,
+            "call_ledger": list(receipt.get("call_ledger") or []) + provider_ledgers,
+        }
+    )
+    return receipt, rows + provider_rows
 
 
 def _factor_test_production_stage_scope_rows() -> list[dict[str, Any]]:
@@ -5970,11 +6306,48 @@ def _factor_test_production_stage_scope_manifest(
     now: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     rows = _factor_test_production_stage_scope_rows()
+    acceptance_receipt = _dict(factor_tests.get("provider_small_pool_acceptance_receipt"))
+    provider_sample_done = bool(acceptance_receipt.get("sample_rows_collected"))
+    provider_execution_implemented = bool(acceptance_receipt.get("provider_execution_implemented"))
+    provider_call_ledger_evidence_done = bool(acceptance_receipt.get("provider_call_ledger_evidence_done"))
+    provider_task_created = bool(acceptance_receipt.get("provider_task_created"))
+    if provider_sample_done:
+        for row in rows:
+            if row.get("stage_key") != "provider_backed_small_pool_sample":
+                continue
+            row.update(
+                {
+                    "current_status": "provider_direct_sample_ready_metric_validation_pending",
+                    "provider_direct_evidence_present": True,
+                    "provider_backed_small_pool_validation_done": True,
+                    "real_provider_sample_still_required": False,
+                    "provider_execution_implemented": provider_execution_implemented,
+                    "provider_task_created": provider_task_created,
+                    "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
+                    "sample_rows_collected": True,
+                    "provider_task_ids": acceptance_receipt.get("provider_task_ids") or [],
+                    "provider_total_row_count": int(acceptance_receipt.get("provider_total_row_count") or 0),
+                    "provider_latest_data_date": acceptance_receipt.get("provider_latest_data_date") or "",
+                    "missing_evidence": [
+                        "multi-horizon forward-return labels",
+                        "rolling-window IC and ICIR evidence",
+                        "cost and turnover assumption review",
+                        "neutralization stability evidence",
+                        "PIT, lookahead, and survivorship evidence",
+                        "explicit promotion review before production completion",
+                    ],
+                }
+            )
     stage_keys = [str(row.get("stage_key") or "") for row in rows]
     local_stage_keys = [
         str(row.get("stage_key") or "")
         for row in rows
         if row.get("local_stage_evidence_present") is True
+    ]
+    provider_direct_stage_keys = [
+        str(row.get("stage_key") or "")
+        for row in rows
+        if row.get("provider_direct_evidence_present") is True
     ]
     pending_stage_keys = [
         str(row.get("stage_key") or "")
@@ -5993,8 +6366,8 @@ def _factor_test_production_stage_scope_manifest(
         "stage_keys": stage_keys,
         "local_surface_stage_count": len(local_stage_keys),
         "local_surface_stage_keys": local_stage_keys,
-        "provider_direct_evidence_stage_count": 0,
-        "provider_direct_evidence_stage_keys": [],
+        "provider_direct_evidence_stage_count": len(provider_direct_stage_keys),
+        "provider_direct_evidence_stage_keys": provider_direct_stage_keys,
         "pending_stage_count": len(pending_stage_keys),
         "pending_stage_keys": pending_stage_keys,
         "production_blocker_count": len(pending_stage_keys),
@@ -6002,16 +6375,16 @@ def _factor_test_production_stage_scope_manifest(
         "scope_ticket_hash_short": dry_run.get("acceptance_scope_hash_short"),
         "execution_request_status": execution_request.get("status") or "missing",
         "local_manifest_ready": True,
-        "provider_task_created": False,
-        "provider_execution_implemented": False,
-        "provider_call_ledger_evidence_done": False,
-        "sample_rows_collected": False,
+        "provider_task_created": provider_task_created,
+        "provider_execution_implemented": provider_execution_implemented,
+        "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
+        "sample_rows_collected": provider_sample_done,
         "multi_horizon_forward_returns_done": False,
         "rolling_window_validation_done": False,
         "cost_assumption_validation_done": False,
         "neutralization_stability_done": False,
         "pit_bias_controls_done": False,
-        "provider_backed_small_pool_validation_done": False,
+        "provider_backed_small_pool_validation_done": provider_sample_done,
         "full_market_validation_done": False,
         "production_factor_test_validation_complete": False,
         "metrics_remain_research_only": True,
@@ -6050,7 +6423,7 @@ def _factor_test_production_stage_scope_manifest(
                 "scope": manifest["scope"],
                 "stage_count": len(rows),
                 "pending_stage_count": len(pending_stage_keys),
-                "provider_direct_evidence_stage_count": 0,
+                "provider_direct_evidence_stage_count": len(provider_direct_stage_keys),
                 "production_factor_test_validation_complete": False,
             },
             "row_count": len(rows),
@@ -6079,13 +6452,20 @@ def _attach_factor_test_production_stage_scope_manifest(
     acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
     if acceptance:
         acceptance = dict(acceptance)
+        acceptance_receipt = _dict(factor_tests.get("provider_small_pool_acceptance_receipt"))
+        provider_execution_implemented = bool(acceptance_receipt.get("provider_execution_implemented"))
+        provider_call_ledger_evidence_done = bool(acceptance_receipt.get("provider_call_ledger_evidence_done"))
+        sample_rows_collected = bool(acceptance_receipt.get("sample_rows_collected"))
         acceptance["production_stage_scope_manifest_ready"] = True
         acceptance["production_stage_scope_manifest_status"] = manifest["status"]
         acceptance["production_stage_scope_manifest_is_not_provider_execution"] = True
         acceptance["production_stage_scope_manifest_is_not_production_completion"] = True
         acceptance["production_stage_scope_pending_count"] = manifest["pending_stage_count"]
-        acceptance["provider_execution_implemented"] = False
-        acceptance["provider_backed_small_pool_validation_done"] = False
+        acceptance["provider_task_created"] = bool(acceptance_receipt.get("provider_task_created"))
+        acceptance["provider_execution_implemented"] = provider_execution_implemented
+        acceptance["provider_call_ledger_evidence_done"] = provider_call_ledger_evidence_done
+        acceptance["sample_rows_collected"] = sample_rows_collected
+        acceptance["provider_backed_small_pool_validation_done"] = sample_rows_collected
         acceptance["full_market_validation_done"] = False
         acceptance["production_factor_test_validation_complete"] = False
         factor_tests["acceptance_contract"] = acceptance
@@ -6095,7 +6475,9 @@ def _attach_factor_test_production_stage_scope_manifest(
             "factor_test_production_stage_scope_count": manifest["stage_count"],
             "factor_test_production_stage_scope_pending_count": manifest["pending_stage_count"],
             "factor_test_production_stage_scope_local_surface_count": manifest["local_surface_stage_count"],
-            "factor_test_production_stage_scope_provider_direct_evidence_count": 0,
+            "factor_test_production_stage_scope_provider_direct_evidence_count": manifest[
+                "provider_direct_evidence_stage_count"
+            ],
         }
     )
     packet["counts"] = counts
@@ -6698,8 +7080,8 @@ def run_factor_test_provider_small_pool_acceptance_task(payload: Any = None) -> 
         payload=payload_safe,
         current_step="factor_test_provider_small_pool_acceptance_gate_queued",
         warnings=[
-            "Factor Test provider 小股票池 acceptance gate 只写本地授权闸门回执，不调用 Tushare、DeepSeek 或 GitHub。",
-            "acceptance gate 不采集 provider 样本、不计算生产 IC/Rank IC/ICIR、不修改 strategy action、不执行真实交易。",
+            "Factor Test provider 小股票池 acceptance 只能由 POST 按钮任务触发；GET cache 和页面渲染不会调用 Tushare。",
+            "只有 scope hash 匹配且 live provider 已授权时才采集 Tushare 小样本；仍不调用 DeepSeek/GitHub、不计算生产 IC、不修改 strategy action、不执行真实交易。",
         ],
     )
     if task.get("dedupe_reused_existing"):
@@ -6711,6 +7093,24 @@ def run_factor_test_provider_small_pool_acceptance_task(payload: Any = None) -> 
         current_step="building_factor_test_provider_small_pool_acceptance_gate_receipt",
     )
     receipt["task_id"] = task["task_id"]
+    if receipt.get("ready_for_live_provider_execution") is True:
+        update_task_status(
+            task["task_id"],
+            status="running",
+            progress=0.45,
+            current_step="running_factor_test_provider_small_pool_tushare_sample",
+            call_ledger=list(receipt.get("call_ledger") or []),
+        )
+        receipt, rows = _factor_test_provider_small_pool_acceptance_provider_run(
+            payload_safe,
+            receipt,
+            rows,
+            now,
+            acceptance_task_id=str(task["task_id"]),
+        )
+        receipt["task_id"] = task["task_id"]
+        payload_safe["provider_small_pool_acceptance_receipt"] = receipt
+        payload_safe["provider_small_pool_acceptance_rows"] = rows
     try:
         hub = dict(read_factor_quant_cache())
         factor_tests = hub.get("factor_tests") if isinstance(hub.get("factor_tests"), dict) else {}
@@ -6722,18 +7122,23 @@ def run_factor_test_provider_small_pool_acceptance_task(payload: Any = None) -> 
             acceptance = dict(acceptance)
             acceptance["provider_small_pool_acceptance_status"] = receipt.get("status")
             acceptance["provider_small_pool_acceptance_gate_recorded"] = True
-            acceptance["provider_small_pool_acceptance_is_not_provider_execution"] = True
-            acceptance["provider_task_created"] = False
-            acceptance["provider_execution_implemented"] = False
-            acceptance["provider_call_ledger_evidence_done"] = False
-            acceptance["provider_backed_small_pool_validation_done"] = False
+            acceptance["provider_small_pool_acceptance_is_not_provider_execution"] = receipt.get("provider_execution_implemented") is not True
+            acceptance["provider_task_created"] = bool(receipt.get("provider_task_created"))
+            acceptance["provider_execution_implemented"] = bool(receipt.get("provider_execution_implemented"))
+            acceptance["provider_call_ledger_evidence_done"] = bool(receipt.get("provider_call_ledger_evidence_done"))
+            acceptance["sample_rows_collected"] = bool(receipt.get("sample_rows_collected"))
+            acceptance["provider_backed_small_pool_validation_done"] = bool(receipt.get("provider_backed_small_pool_validation_done"))
             acceptance["production_factor_test_validation_complete"] = False
             factor_tests["acceptance_contract"] = acceptance
         existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
         factor_tests["call_ledger"] = list(receipt.get("call_ledger") or []) + list(existing_test_ledger)
         hub["factor_tests"] = factor_tests
         hub["call_ledger"] = list(receipt.get("call_ledger") or []) + list(hub.get("call_ledger") if isinstance(hub.get("call_ledger"), list) else [])
-        warning = "Factor Test provider 小股票池 acceptance gate 已记录：本地授权闸门，不调用 provider，不代表生产验收完成。"
+        warning = (
+            "Factor Test provider 小股票池已记录真实 Tushare 样本；仍不是生产 Factor Test 完成。"
+            if receipt.get("tushare_called") is True
+            else "Factor Test provider 小股票池 acceptance gate 已记录：本地授权闸门，不调用 provider，不代表生产验收完成。"
+        )
         existing_warnings = hub.get("warnings") if isinstance(hub.get("warnings"), list) else []
         hub["warnings"] = [warning] + [item for item in existing_warnings if item != warning]
         hub["external_calls_triggered"] = False

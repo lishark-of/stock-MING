@@ -1766,6 +1766,7 @@ export default function FactorQuantHub() {
     factorTestProductionValidation.provider_backed_small_pool_validation_done === true;
   const ordinaryFactorTestSmallPoolSampleRowsDone =
     ordinaryFactorTestSmallPoolEvidenceDone ||
+    factorTestProviderSmallPoolAcceptance.sample_rows_collected === true ||
     factorTestProviderSmallPoolAcceptance.sample_rows_done === true ||
     factorTestProviderSmallPoolAcceptance.sample_rows_written === true;
   const ordinaryFactorTestSmallPoolRollingDone =
@@ -1792,6 +1793,8 @@ export default function FactorQuantHub() {
   const ordinaryFactorTestSmallPoolEvidenceSentence =
     ordinaryFactorTestSmallPoolEvidenceDone
       ? "真实小池样本证据已回放；继续按样本、滚动、成本、中性化、偏差和推广复核检查生产阶段。"
+      : ordinaryFactorTestSmallPoolSampleRowsDone
+        ? "真实 Tushare 小池样本已回放；滚动、成本、中性化、偏差和推广复核仍待补齐，不能当生产完成。"
       : "真实小池样本证据仍待授权：样本、滚动、成本、中性化、偏差和推广复核都要由 future provider task 留痕。";
   const ordinaryFactorTestSmallPoolEvidenceItems: MetricItem[] = [
     {
@@ -1887,12 +1890,14 @@ export default function FactorQuantHub() {
     {
       label: "验收门槛",
       value: ordinaryFactorTestProviderAcceptanceGateState,
-      tone: factorTestProviderSmallPoolAcceptance.provider_execution_implemented === true ? "bad" : "warn"
+      tone: factorTestProviderSmallPoolAcceptance.sample_rows_collected === true ? "good" : "warn"
     },
     {
       label: "真实 provider",
-      value: "必须另行授权 provider-backed 小池任务；本页不自动提交",
-      tone: "warn"
+      value: factorTestProviderSmallPoolAcceptance.tushare_called === true
+        ? `Tushare 已执行；样本行 ${String(factorTestProviderSmallPoolAcceptance.provider_total_row_count ?? 0)}；数据日 ${String(factorTestProviderSmallPoolAcceptance.provider_latest_data_date ?? "--")}`
+        : "必须点击真实小池按钮后才会提交 provider-backed 小池任务",
+      tone: factorTestProviderSmallPoolAcceptance.tushare_called === true ? "good" : "warn"
     },
     {
       label: "生产结论",
@@ -2422,7 +2427,7 @@ export default function FactorQuantHub() {
           <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-research", { approved_by_user: true, worker_batch_scope_hash: String(universeWorkerBatchExecutionRequest.worker_batch_scope_hash ?? universeWorkerBatchDryRun.worker_batch_scope_hash ?? ""), execution_request_task_id: String(universeWorkerBatchExecutionRequest.task_id ?? "") })}>批量研究回执</button>
           <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-dry-run", { approved_by_user: true, symbols: ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"], forward_return_horizons: ["1d", "5d"] })}>小池验收预检</button>
           <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-execution-request", { approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "") })}>小池执行请求</button>
-          <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-acceptance", { approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolExecutionRequest.acceptance_scope_hash ?? "") })}>真实小池验收门槛</button>
+          <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-acceptance", { approved_by_user: true, authorize_live_provider_call: true, provider_run_approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolExecutionRequest.acceptance_scope_hash ?? "") })}>真实小池样本验收（调用 Tushare）</button>
           <button onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-scope-ticket", { approved_by_user: true, sample_count: 40, response_format: "json_schema", max_retry_per_sample: 2 })}>DeepSeek benchmark 预检</button>
           <button onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-execution-request", { approved_by_user: true, benchmark_scope_hash: String(deepseekProviderBenchmarkScopeTicket.benchmark_scope_hash ?? "") })}>DeepSeek benchmark 执行请求</button>
         </div>
@@ -2823,7 +2828,7 @@ export default function FactorQuantHub() {
       <DataLineageTable rows={factorTestProviderSmallPoolExecutionRequestCriterionRows} />
       <DataLineageTable rows={factorTestProviderSmallPoolExecutionRequestRows} />
       <h3>Factor Test provider 小股票池 acceptance gate</h3>
-      <p className="risk-note">provider_small_pool_acceptance_gate 只记录显式小池验收门槛、scope hash 和缺失证据；默认不授权 live provider、不调用 Tushare、不采集样本、不计算生产指标，也不代表 provider-backed validation。</p>
+      <p className="risk-note">provider_small_pool_acceptance 默认不授权 live provider；点击真实小池按钮后只按 scope-bound POST 采集 Tushare 小样本和安全 ledger，不调用 DeepSeek/GitHub、不计算生产指标，也不代表 production_factor_test_validation_complete。</p>
       <DataLineageTable rows={factorTestProviderSmallPoolAcceptanceCriterionRows} />
       <DataLineageTable rows={factorTestProviderSmallPoolAcceptanceRows} />
       <h3>Factor Test durable evidence recipe</h3>

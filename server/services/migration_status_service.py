@@ -3543,6 +3543,7 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
     dry_run = _dict_or_empty(factor_tests.get("provider_small_pool_acceptance_dry_run_receipt"))
     recipe = _dict_or_empty(factor_tests.get("provider_small_pool_execution_recipe"))
     request = _dict_or_empty(factor_tests.get("provider_small_pool_execution_request_receipt"))
+    provider_acceptance = _dict_or_empty(factor_tests.get("provider_small_pool_acceptance_receipt"))
     items = factor_tests.get("items") if isinstance(factor_tests.get("items"), list) else []
 
     task_rows = _task_statuses_by_type()
@@ -3609,6 +3610,14 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
             "contains_secret": False,
             "acceptance_scope_hash_short": request.get("acceptance_scope_hash_short") or "",
         }
+    if (
+        provider_acceptance.get("schema_version") != "factor_test_provider_small_pool_acceptance.v1"
+        or str(provider_acceptance.get("status") or "").endswith("_missing")
+    ):
+        provider_acceptance, _provider_acceptance_payload = _task_receipt(
+            "run_factor_test_provider_small_pool_acceptance",
+            "provider_small_pool_acceptance_receipt",
+        )
 
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is False
@@ -3698,8 +3707,24 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
         direct_stage_keys.append("local_light_metric_baseline")
     if provider_small_pool_scope_ticket:
         direct_stage_keys.append("provider_small_pool_scope_ticket")
+    provider_backed_small_pool_sample = bool(
+        provider_acceptance.get("schema_version") == "factor_test_provider_small_pool_acceptance.v1"
+        and provider_acceptance.get("provider_task_created") is True
+        and provider_acceptance.get("provider_execution_implemented") is True
+        and provider_acceptance.get("provider_call_ledger_evidence_done") is True
+        and provider_acceptance.get("sample_rows_collected") is True
+        and provider_acceptance.get("production_factor_test_validation_complete") is False
+        and provider_acceptance.get("deepseek_called") is False
+        and provider_acceptance.get("github_called") is False
+        and provider_acceptance.get("does_not_execute_trades") is True
+        and provider_acceptance.get("does_not_modify_strategy_action") is True
+        and provider_acceptance.get("contains_secret") is False
+    )
+    if provider_backed_small_pool_sample:
+        direct_stage_keys.append("provider_backed_small_pool_sample")
     scope_hash_short = (
-        request.get("acceptance_scope_hash_short")
+        provider_acceptance.get("acceptance_scope_hash_short")
+        or request.get("acceptance_scope_hash_short")
         or dry_run.get("acceptance_scope_hash_short")
         or recipe.get("acceptance_scope_hash_short")
         or ""
@@ -3719,11 +3744,19 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
         "provider_small_pool_execution_recipe_ready": recipe.get("local_recipe_ready") is True,
         "provider_small_pool_execution_request_ready": request.get("local_execution_request_ready") is True,
         "provider_small_pool_scope_hash_short": scope_hash_short,
-        "provider_backed_small_pool_validation_done": False,
+        "provider_backed_small_pool_sample_done": provider_backed_small_pool_sample,
+        "provider_backed_small_pool_validation_done": provider_backed_small_pool_sample,
+        "provider_task_created": provider_acceptance.get("provider_task_created") is True,
+        "provider_execution_implemented": provider_acceptance.get("provider_execution_implemented") is True,
+        "provider_call_ledger_evidence_done": provider_acceptance.get("provider_call_ledger_evidence_done") is True,
+        "sample_rows_collected": provider_acceptance.get("sample_rows_collected") is True,
+        "provider_api_call_count": int(provider_acceptance.get("provider_api_call_count") or 0),
+        "provider_success_call_count": int(provider_acceptance.get("provider_success_call_count") or 0),
+        "provider_failed_call_count": int(provider_acceptance.get("provider_failed_call_count") or 0),
+        "provider_total_row_count": int(provider_acceptance.get("provider_total_row_count") or 0),
+        "provider_latest_data_date": provider_acceptance.get("provider_latest_data_date") or "",
         "full_market_validation_done": False,
         "production_factor_test_validation_complete": False,
-        "provider_execution_implemented": False,
-        "provider_call_ledger_evidence_done": False,
         "metrics_remain_research_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -3755,6 +3788,7 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
     dry_run = _dict_or_empty(factor_tests.get("provider_small_pool_acceptance_dry_run_receipt"))
     recipe = _dict_or_empty(factor_tests.get("provider_small_pool_execution_recipe"))
     request = _dict_or_empty(factor_tests.get("provider_small_pool_execution_request_receipt"))
+    provider_acceptance = _dict_or_empty(factor_tests.get("provider_small_pool_acceptance_receipt"))
     durable_recipe = _dict_or_empty(factor_tests.get("durable_evidence_recipe"))
     direct_evidence = _latest_factor_test_lab_direct_research_evidence_summary()
 
@@ -3767,9 +3801,12 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
         and int(request.get("blocking_criterion_count") or 0) == 0
     )
     local_scope_evidence_visible = direct_evidence.get("provider_small_pool_scope_ticket_verified") is True
+    provider_sample_done = direct_evidence.get("provider_backed_small_pool_sample_done") is True
     durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
     next_step = (
-        "future explicit provider-backed factor validation task"
+        "add multi-horizon rolling/cost/neutralization validation evidence"
+        if provider_sample_done
+        else "future explicit provider-backed factor validation task"
         if execution_request_ready
         else "POST /api/factor-quant/provider-small-pool-execution-request"
         if dry_run_ready or recipe_ready
@@ -3778,7 +3815,9 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
     return {
         "schema_version": "ltg03_factor_test_provider_validation_handoff_summary.v1",
         "status": (
-            "factor_test_execution_request_ready_provider_task_pending"
+            "factor_test_provider_small_pool_sample_ready_metric_validation_pending"
+            if provider_sample_done
+            else "factor_test_execution_request_ready_provider_task_pending"
             if execution_request_ready
             else "factor_test_scope_ticket_ready_execution_request_needed"
             if dry_run_ready or recipe_ready or local_scope_evidence_visible
@@ -3822,22 +3861,28 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
         "durable_recipe_ready": durable_recipe_ready,
         "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
         "durable_promotion_ready": durable_recipe.get("durable_promotion_ready") is True,
-        "provider_task_created": False,
-        "provider_execution_implemented_by_handoff": False,
-        "provider_call_ledger_evidence_done": False,
-        "sample_rows_collected": False,
+        "provider_task_created": direct_evidence.get("provider_task_created") is True,
+        "provider_execution_implemented_by_handoff": direct_evidence.get("provider_execution_implemented") is True,
+        "provider_call_ledger_evidence_done": direct_evidence.get("provider_call_ledger_evidence_done") is True,
+        "sample_rows_collected": direct_evidence.get("sample_rows_collected") is True,
+        "provider_api_call_count": int(direct_evidence.get("provider_api_call_count") or 0),
+        "provider_success_call_count": int(direct_evidence.get("provider_success_call_count") or 0),
+        "provider_failed_call_count": int(direct_evidence.get("provider_failed_call_count") or 0),
+        "provider_total_row_count": int(direct_evidence.get("provider_total_row_count") or 0),
+        "provider_latest_data_date": direct_evidence.get("provider_latest_data_date") or "",
+        "provider_acceptance_status": provider_acceptance.get("status") or "missing",
         "multi_horizon_forward_returns_done": False,
         "rolling_window_validation_done": False,
         "cost_assumption_validation_done": False,
         "neutralization_stability_done": False,
         "pit_bias_controls_done": False,
-        "provider_backed_small_pool_validation_done": False,
+        "provider_backed_small_pool_validation_done": provider_sample_done,
         "full_market_validation_done": False,
         "production_factor_test_validation_complete": False,
         "next_local_step": next_step,
-        "requires_separate_user_approved_provider_task": True,
-        "requires_provider_call_ledger": True,
-        "requires_sample_rows": True,
+        "requires_separate_user_approved_provider_task": not provider_sample_done,
+        "requires_provider_call_ledger": not provider_sample_done,
+        "requires_sample_rows": not provider_sample_done,
         "requires_multi_horizon_rolling_cost_neutralization_bias_evidence": True,
         "requires_full_market_boundary_review": True,
         "requires_promotion_review": True,
@@ -3880,6 +3925,7 @@ def _latest_factor_test_lab_production_validation_handoff_summary() -> dict[str,
     execution_request_ready = (
         provider_handoff.get("provider_small_pool_execution_request_ready") is True
     )
+    provider_sample_done = provider_handoff.get("provider_backed_small_pool_validation_done") is True
     scope_or_recipe_ready = (
         provider_handoff.get("provider_small_pool_dry_run_ready") is True
         or provider_handoff.get("provider_small_pool_execution_recipe_ready") is True
@@ -3908,7 +3954,20 @@ def _latest_factor_test_lab_production_validation_handoff_summary() -> dict[str,
         "matching remote CI review after local gate",
         "release review after matching remote CI green",
     ]
-    if execution_request_ready:
+    if provider_sample_done:
+        missing_evidence_items = [
+            item
+            for item in missing_evidence_items
+            if item
+            not in {
+                "explicit provider-backed small-pool task execution",
+                "safe provider call ledger rows for target pool",
+                "provider sample rows collected under bound scope",
+            }
+        ]
+        status = "factor_test_production_handoff_provider_sample_ready_metrics_pending"
+        next_step = "add multi-horizon rolling/cost/neutralization validation evidence"
+    elif execution_request_ready:
         status = "factor_test_production_handoff_execution_request_ready_provider_task_pending"
         next_step = "future explicit provider-backed factor validation task"
     elif scope_or_recipe_ready:
@@ -3956,22 +4015,30 @@ def _latest_factor_test_lab_production_validation_handoff_summary() -> dict[str,
         "durable_evidence_blocker_count": durable_blocker_count,
         "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
         "durable_promotion_ready": durable_recipe.get("durable_promotion_ready") is True,
-        "provider_task_created": False,
-        "provider_execution_implemented_by_handoff": False,
-        "provider_call_ledger_evidence_done": False,
-        "sample_rows_collected": False,
+        "provider_task_created": provider_handoff.get("provider_task_created") is True,
+        "provider_execution_implemented_by_handoff": provider_handoff.get(
+            "provider_execution_implemented_by_handoff"
+        )
+        is True,
+        "provider_call_ledger_evidence_done": provider_handoff.get("provider_call_ledger_evidence_done") is True,
+        "sample_rows_collected": provider_handoff.get("sample_rows_collected") is True,
+        "provider_api_call_count": int(provider_handoff.get("provider_api_call_count") or 0),
+        "provider_success_call_count": int(provider_handoff.get("provider_success_call_count") or 0),
+        "provider_failed_call_count": int(provider_handoff.get("provider_failed_call_count") or 0),
+        "provider_total_row_count": int(provider_handoff.get("provider_total_row_count") or 0),
+        "provider_latest_data_date": provider_handoff.get("provider_latest_data_date") or "",
         "multi_horizon_forward_returns_done": False,
         "rolling_window_validation_done": False,
         "cost_assumption_validation_done": False,
         "neutralization_stability_done": False,
         "pit_bias_controls_done": False,
-        "provider_backed_small_pool_validation_done": False,
+        "provider_backed_small_pool_validation_done": provider_sample_done,
         "full_market_validation_done": False,
         "production_factor_test_validation_complete": False,
         "missing_evidence_items": missing_evidence_items,
         "missing_evidence_count": len(missing_evidence_items),
-        "requires_separate_user_approved_provider_task": True,
-        "requires_provider_call_ledger": True,
+        "requires_separate_user_approved_provider_task": not provider_sample_done,
+        "requires_provider_call_ledger": not provider_sample_done,
         "requires_durable_evidence_review": True,
         "requires_full_market_boundary_review": True,
         "requires_remote_ci_review_after_local_complete": True,
@@ -12626,6 +12693,29 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 else "missing_from_factor_test_lab_static_contract"
             )
         )
+        provider_sample_done = direct_evidence.get("provider_backed_small_pool_validation_done") is True
+        ltg03_missing_evidence = [
+            "provider-backed small-pool samples",
+            "safe provider call ledger rows for target pool",
+            "multi-horizon forward-return labels",
+            "rolling IC/Rank IC/ICIR evidence",
+            "cost and turnover assumption review",
+            "neutralization stability evidence",
+            "PIT, lookahead, and survivorship evidence",
+            "manual Factor Test production promotion review",
+            "local completion before remote CI review",
+            "release review after matching remote CI green",
+        ]
+        if provider_sample_done:
+            ltg03_missing_evidence = [
+                item
+                for item in ltg03_missing_evidence
+                if item
+                not in {
+                    "provider-backed small-pool samples",
+                    "safe provider call ledger rows for target pool",
+                }
+            ]
         rows.append(
             {
                 "id": "LTG-03",
@@ -12655,18 +12745,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "release_review_status": "release_review_waiting_for_local_and_remote_complete",
                 "release_review_pending_count": 0,
                 "strict_closeout_ready": False,
-                "missing_evidence_items": [
-                    "provider-backed small-pool samples",
-                    "safe provider call ledger rows for target pool",
-                    "multi-horizon forward-return labels",
-                    "rolling IC/Rank IC/ICIR evidence",
-                    "cost and turnover assumption review",
-                    "neutralization stability evidence",
-                    "PIT, lookahead, and survivorship evidence",
-                    "manual Factor Test production promotion review",
-                    "local completion before remote CI review",
-                    "release review after matching remote CI green",
-                ],
+                "missing_evidence_items": ltg03_missing_evidence,
                 "factor_test_direct_evidence_layer": direct_evidence.get("direct_evidence_layer"),
                 "local_light_metric_baseline_verified": direct_evidence.get("local_light_metric_baseline_verified")
                 is True,
@@ -12686,13 +12765,20 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "provider_small_pool_scope_hash_short": direct_evidence.get("provider_small_pool_scope_hash_short")
                 or "",
                 "production_blocker_count": effective_pending_count,
-                "provider_backed_small_pool_validation_done": False,
+                "provider_backed_small_pool_validation_done": provider_sample_done,
                 "full_market_validation_done": False,
                 "production_factor_test_validation_complete": False,
-                "real_provider_sample_still_required": True,
+                "real_provider_sample_still_required": not provider_sample_done,
                 "provider_promotion_still_required": True,
-                "provider_execution_implemented": False,
-                "provider_call_ledger_evidence_done": False,
+                "provider_execution_implemented": direct_evidence.get("provider_execution_implemented") is True,
+                "provider_call_ledger_evidence_done": direct_evidence.get("provider_call_ledger_evidence_done")
+                is True,
+                "sample_rows_collected": direct_evidence.get("sample_rows_collected") is True,
+                "provider_api_call_count": int(direct_evidence.get("provider_api_call_count") or 0),
+                "provider_success_call_count": int(direct_evidence.get("provider_success_call_count") or 0),
+                "provider_failed_call_count": int(direct_evidence.get("provider_failed_call_count") or 0),
+                "provider_total_row_count": int(direct_evidence.get("provider_total_row_count") or 0),
+                "provider_latest_data_date": direct_evidence.get("provider_latest_data_date") or "",
                 "multi_horizon_forward_returns_done": False,
                 "rolling_window_validation_done": False,
                 "cost_assumption_validation_done": False,
