@@ -21,6 +21,7 @@ from server.services import packet_service, task_service, tushare_task_service
 
 
 PACKET_KEY = "command_center_3_candidate_radar_cache"
+FACTOR_QUANT_HUB_PACKET_KEY = "command_center_factor_quant_hub_packet"
 NEXT_SESSION_PACKET_KEY = "command_center_next_session_projection_packet"
 SCHEMA_VERSION = "candidate_radar_cache.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -1565,6 +1566,238 @@ def _next_session_local_map_readback(symbol: str) -> dict[str, Any]:
         "deepseek_called": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
+    }
+
+
+def _search_quant_projection_cross_module_alignment_readback(symbol: str) -> dict[str, Any]:
+    symbol_safe = _safe_text(symbol, limit=32).upper()
+
+    def _safe_packet(packet_key: str) -> tuple[dict[str, Any], str]:
+        try:
+            packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(packet_key)
+        except Exception:
+            return {}, "read_failed"
+        if not isinstance(packet, Mapping):
+            return {}, "missing"
+        if packet.get("contains_secret") is True or packet.get("external_calls_triggered") is True:
+            return {}, "unsafe_packet_ignored"
+        return dict(packet), "ready"
+
+    def _symbol_items(values: Any) -> list[str]:
+        items: list[str] = []
+        for item in _as_list(values):
+            text = _safe_text(item, limit=32).upper()
+            if text and text not in items:
+                items.append(text)
+        return items
+
+    factor_packet, factor_read_status = _safe_packet(FACTOR_QUANT_HUB_PACKET_KEY)
+    factor_universe = _as_dict(factor_packet.get("universe"))
+    factor_items = _symbol_items(
+        factor_universe.get("items")
+        or factor_packet.get("symbols")
+        or factor_packet.get("ts_codes")
+        or factor_packet.get("watchlist")
+    )
+    factor_symbol_label = " / ".join(factor_items[:3]) if factor_items else ""
+    if not symbol_safe:
+        factor_alignment_state = "waiting_confirm_symbol"
+        factor_label = "等待确认股票后再比对 Factor cache。"
+    elif factor_read_status != "ready":
+        factor_alignment_state = factor_read_status
+        factor_label = "Factor cache 暂无可安全读取的本地包。"
+    elif symbol_safe in factor_items:
+        factor_alignment_state = "aligned"
+        factor_label = f"Factor cache 已对齐 {symbol_safe}。"
+    elif factor_items:
+        factor_alignment_state = "mismatch"
+        factor_label = f"Factor cache 当前是 {factor_symbol_label}；本次确认 {symbol_safe} 还未刷新到 Factor。"
+    else:
+        factor_alignment_state = "missing_symbol"
+        factor_label = f"Factor cache 已读取，但没有 {symbol_safe} 的 universe items。"
+
+    next_packet, next_read_status = _safe_packet(NEXT_SESSION_PACKET_KEY)
+    chart_payload = _as_dict(next_packet.get("chart_payload"))
+    chart_summary = _as_dict(next_packet.get("chart_summary")) or _as_dict(chart_payload.get("chart_summary"))
+    next_symbol = _safe_text(
+        chart_summary.get("symbol")
+        or chart_summary.get("ts_code")
+        or chart_summary.get("confirmed_symbol")
+        or chart_payload.get("symbol")
+        or chart_payload.get("ts_code")
+        or chart_payload.get("confirmed_symbol")
+        or next_packet.get("symbol")
+        or next_packet.get("ts_code")
+        or next_packet.get("confirmed_symbol")
+        or next_packet.get("latest_confirmed_symbol")
+        or "",
+        limit=32,
+    ).upper()
+    next_has_drawable_data = bool(
+        chart_summary.get("has_drawable_data") is True
+        or _as_list(chart_payload.get("historical_points"))
+        or _as_list(chart_payload.get("scenario_series"))
+    )
+    if not symbol_safe:
+        next_alignment_state = "waiting_confirm_symbol"
+        next_label = "等待确认股票后再比对 Next Session cache。"
+    elif next_read_status != "ready":
+        next_alignment_state = next_read_status
+        next_label = "Next Session cache 暂无可安全读取的本地包。"
+    elif next_symbol == symbol_safe and next_has_drawable_data:
+        next_alignment_state = "aligned"
+        next_label = f"Next Session cache 已对齐 {symbol_safe}，且有可绘制数据。"
+    elif next_symbol == symbol_safe:
+        next_alignment_state = "aligned_empty_chart"
+        next_label = f"Next Session cache 已是 {symbol_safe}，但 ECharts 数据点仍为空。"
+    elif next_symbol:
+        next_alignment_state = "mismatch"
+        next_label = f"Next Session cache 当前是 {next_symbol}；本次确认 {symbol_safe} 还未刷新到次日图谱。"
+    else:
+        next_alignment_state = "missing_symbol"
+        next_label = f"Next Session cache 已读取，但没有 {symbol_safe} 的 symbol。"
+
+    echarts_alignment_state = (
+        "aligned"
+        if next_alignment_state == "aligned"
+        else "empty_chart"
+        if next_alignment_state == "aligned_empty_chart"
+        else "pending_current_symbol_refresh"
+    )
+    aligned = factor_alignment_state == "aligned" and next_alignment_state in {"aligned", "aligned_empty_chart"}
+    if not symbol_safe:
+        status = "waiting_confirm_symbol"
+        summary_label = "等待确认股票后再复核 Factor/Next/ECharts 本地包是否对齐。"
+    elif aligned:
+        status = "aligned"
+        summary_label = f"{symbol_safe} 的 Factor/Next 本地包已对齐；ECharts 状态={echarts_alignment_state}。"
+    elif factor_alignment_state == "mismatch" or next_alignment_state == "mismatch":
+        status = "mismatch"
+        summary_label = (
+            f"本次确认 {symbol_safe} 的 Tushare/DeepSeek 回放已在候选雷达；"
+            f"Factor cache 当前是 {factor_symbol_label or factor_alignment_state}，"
+            f"Next cache 当前是 {next_symbol or next_alignment_state}，还未刷新到当前票。"
+        )
+    else:
+        status = "pending_current_symbol_refresh"
+        summary_label = (
+            f"本次确认 {symbol_safe} 的 Tushare/DeepSeek 回放可读；"
+            "Factor/Next/ECharts 仍等待本地包刷新到当前票。"
+        )
+    next_action = (
+        "先读当前票的 Tushare/DeepSeek 结果；下一步用按钮任务补 Factor/Next/ECharts 对齐证据。"
+        if symbol_safe
+        else "先输入股票并点击确认。"
+    )
+    boundary = (
+        "本对齐摘要只读本地 packet；不创建 task、不调用 Tushare/DeepSeek/worker、不交易、不改 strategy action。"
+    )
+    rows = [
+        {
+            "alignment_key": "confirmed_symbol",
+            "模块": "本次确认",
+            "当前状态": symbol_safe or "waiting_confirm_symbol",
+            "本次确认": symbol_safe or "",
+            "本地包标的": symbol_safe or "",
+            "用户下一步": next_action,
+            "证据": f"packet={PACKET_KEY}",
+            "边界": boundary,
+            "packet_key": PACKET_KEY,
+            "alignment_state": "confirmed" if symbol_safe else "waiting_confirm_symbol",
+        },
+        {
+            "alignment_key": "factor_cache",
+            "模块": "Factor 量化推演",
+            "当前状态": factor_label,
+            "本次确认": symbol_safe or "",
+            "本地包标的": factor_symbol_label or factor_alignment_state,
+            "用户下一步": next_action,
+            "证据": f"packet={FACTOR_QUANT_HUB_PACKET_KEY}; read_status={factor_read_status}",
+            "边界": boundary,
+            "packet_key": FACTOR_QUANT_HUB_PACKET_KEY,
+            "alignment_state": factor_alignment_state,
+        },
+        {
+            "alignment_key": "next_session_cache",
+            "模块": "Next Session 次日图谱",
+            "当前状态": next_label,
+            "本次确认": symbol_safe or "",
+            "本地包标的": next_symbol or next_alignment_state,
+            "用户下一步": next_action,
+            "证据": f"packet={NEXT_SESSION_PACKET_KEY}; read_status={next_read_status}; drawable={next_has_drawable_data}",
+            "边界": boundary,
+            "packet_key": NEXT_SESSION_PACKET_KEY,
+            "alignment_state": next_alignment_state,
+        },
+        {
+            "alignment_key": "echarts_payload",
+            "模块": "ECharts 图谱",
+            "当前状态": (
+                "ECharts payload 已对齐当前票"
+                if echarts_alignment_state == "aligned"
+                else "ECharts 数据点为空，等待本地刷新"
+                if echarts_alignment_state == "empty_chart"
+                else "ECharts 仍等待当前票本地刷新"
+            ),
+            "本次确认": symbol_safe or "",
+            "本地包标的": next_symbol or next_alignment_state,
+            "用户下一步": next_action,
+            "证据": f"next_alignment_state={next_alignment_state}; drawable={next_has_drawable_data}",
+            "边界": boundary,
+            "packet_key": NEXT_SESSION_PACKET_KEY,
+            "alignment_state": echarts_alignment_state,
+        },
+    ]
+    for row in rows:
+        row.update(
+            {
+                "cache_only_readback": True,
+                "creates_task_from_readback": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "worker_called": False,
+                "uses_deepseek_output": False,
+                "model_output_used": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
+            }
+        )
+    return {
+        "schema_version": "candidate_radar_cross_module_alignment_readback.v1",
+        "status": status,
+        "summary_label": summary_label,
+        "next_action": next_action,
+        "boundary": boundary,
+        "confirmed_symbol": symbol_safe,
+        "factor_packet_key": FACTOR_QUANT_HUB_PACKET_KEY,
+        "factor_read_status": factor_read_status,
+        "factor_symbols": factor_items[:5],
+        "factor_alignment_state": factor_alignment_state,
+        "next_packet_key": NEXT_SESSION_PACKET_KEY,
+        "next_read_status": next_read_status,
+        "next_symbol": next_symbol,
+        "next_alignment_state": next_alignment_state,
+        "echarts_alignment_state": echarts_alignment_state,
+        "overall_alignment_ready": aligned,
+        "rows": rows,
+        "row_count": len(rows),
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "worker_called": False,
+        "uses_deepseek_output": False,
+        "model_output_used": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
     }
 
 
@@ -18711,11 +18944,13 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         limit=32,
     ).upper()
     next_session_local_map = _next_session_local_map_readback(confirmed_symbol)
+    cross_module_alignment = _search_quant_projection_cross_module_alignment_readback(confirmed_symbol)
     factor_next_ready = bool(
         provider_receipt.get("factor_refresh_executed") is True
         or provider_receipt.get("next_session_refresh_executed") is True
         or provider_receipt.get("echarts_payload_refreshed") is True
         or next_session_local_map.get("ready") is True
+        or cross_module_alignment.get("overall_alignment_ready") is True
     )
     missing_evidence: list[str] = []
     if not small_data_ready:
@@ -20003,6 +20238,13 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_readback_rows_create_task": False,
         "ordinary_result_readback_rows_use_model_output": False,
         "ordinary_result_readback_rows_are_not_trade_signals": True,
+        "ordinary_cross_module_alignment": cross_module_alignment,
+        "ordinary_cross_module_alignment_rows": cross_module_alignment["rows"],
+        "ordinary_cross_module_alignment_row_count": cross_module_alignment["row_count"],
+        "ordinary_cross_module_alignment_rows_are_cache_only": True,
+        "ordinary_cross_module_alignment_rows_create_task": False,
+        "ordinary_cross_module_alignment_rows_use_model_output": False,
+        "ordinary_cross_module_alignment_rows_are_not_trade_signals": True,
         "ordinary_result_action_rows": ordinary_result_action_rows,
         "ordinary_result_action_row_count": len(ordinary_result_action_rows),
         "ordinary_result_action_rows_are_cache_only": True,
@@ -20115,6 +20357,10 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     ordinary_result_readback_rows = [
         row for row in _as_list(summary.get("ordinary_result_readback_rows")) if isinstance(row, dict)
     ]
+    ordinary_cross_module_alignment = _as_dict(summary.get("ordinary_cross_module_alignment"))
+    ordinary_cross_module_alignment_rows = [
+        row for row in _as_list(summary.get("ordinary_cross_module_alignment_rows")) if isinstance(row, dict)
+    ]
     ordinary_result_action_rows = [
         row for row in _as_list(summary.get("ordinary_result_action_rows")) if isinstance(row, dict)
     ]
@@ -20147,6 +20393,10 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["ordinary_result_quick_read_rows"] = ordinary_result_quick_read_rows
     view["ordinary_result_handoff_rows"] = ordinary_result_handoff_rows
     view["ordinary_result_readback_rows"] = ordinary_result_readback_rows
+    view["ordinary_cross_module_alignment"] = ordinary_cross_module_alignment
+    view["ordinary_cross_module_alignment_rows"] = ordinary_cross_module_alignment_rows
+    view["search_quant_projection_cross_module_alignment"] = ordinary_cross_module_alignment
+    view["search_quant_projection_cross_module_alignment_rows"] = ordinary_cross_module_alignment_rows
     view["ordinary_result_action_rows"] = ordinary_result_action_rows
     view["ordinary_result_checkpoint_rows"] = ordinary_result_checkpoint_rows
     view["ordinary_result_decision_brief_rows"] = ordinary_result_decision_brief_rows
@@ -20161,6 +20411,8 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     view["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
     view["ordinary_result_handoff_row_count"] = len(ordinary_result_handoff_rows)
     view["ordinary_result_readback_row_count"] = len(ordinary_result_readback_rows)
+    view["ordinary_cross_module_alignment_row_count"] = len(ordinary_cross_module_alignment_rows)
+    view["search_quant_projection_cross_module_alignment_row_count"] = len(ordinary_cross_module_alignment_rows)
     view["ordinary_result_action_row_count"] = len(ordinary_result_action_rows)
     view["ordinary_result_checkpoint_row_count"] = len(ordinary_result_checkpoint_rows)
     view["ordinary_result_decision_brief_row_count"] = len(ordinary_result_decision_brief_rows)
@@ -20199,6 +20451,11 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["ordinary_result_quick_read_row_count"] = len(ordinary_result_quick_read_rows)
     counts["ordinary_result_handoff_row_count"] = len(ordinary_result_handoff_rows)
     counts["ordinary_result_readback_row_count"] = len(ordinary_result_readback_rows)
+    counts["ordinary_cross_module_alignment_row_count"] = len(ordinary_cross_module_alignment_rows)
+    counts["search_quant_projection_cross_module_alignment_row_count"] = len(ordinary_cross_module_alignment_rows)
+    counts["search_quant_projection_cross_module_alignment_ready"] = (
+        ordinary_cross_module_alignment.get("overall_alignment_ready") is True
+    )
     counts["ordinary_result_action_row_count"] = len(ordinary_result_action_rows)
     counts["ordinary_result_checkpoint_row_count"] = len(ordinary_result_checkpoint_rows)
     counts["ordinary_result_decision_brief_row_count"] = len(ordinary_result_decision_brief_rows)
@@ -20318,6 +20575,16 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["ordinary_result_readback_rows_create_task"] = False
     policy["ordinary_result_readback_rows_call_model"] = False
     policy["ordinary_result_readback_rows_are_not_trade_signals"] = True
+    policy["ordinary_cross_module_alignment_rows_are_cache_only"] = True
+    policy["ordinary_cross_module_alignment_rows_create_task"] = False
+    policy["ordinary_cross_module_alignment_rows_call_model"] = False
+    policy["ordinary_cross_module_alignment_rows_use_model_output"] = False
+    policy["ordinary_cross_module_alignment_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_cross_module_alignment_rows_are_cache_only"] = True
+    policy["search_quant_projection_cross_module_alignment_rows_create_task"] = False
+    policy["search_quant_projection_cross_module_alignment_rows_call_model"] = False
+    policy["search_quant_projection_cross_module_alignment_rows_use_model_output"] = False
+    policy["search_quant_projection_cross_module_alignment_rows_are_not_trade_signals"] = True
     policy["ordinary_result_action_rows_are_cache_only"] = True
     policy["ordinary_result_action_rows_create_task"] = False
     policy["ordinary_result_action_rows_call_model"] = False

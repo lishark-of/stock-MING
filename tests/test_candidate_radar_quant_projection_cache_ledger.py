@@ -2273,6 +2273,111 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         }
         self.assertIn("本地图谱可回放", handoff_rows["replay_next_session_map"]["当前状态"])
 
+    def test_interpretation_surfaces_factor_next_symbol_mismatch_without_external_calls(self):
+        self._with_meta_store()
+        store = SQLiteMetaStore(candidate_service.SQLITE_META_PATH)
+        store.write_packet(
+            candidate_service.FACTOR_QUANT_HUB_PACKET_KEY,
+            {
+                "packet_key": candidate_service.FACTOR_QUANT_HUB_PACKET_KEY,
+                "schema_version": "factor_quant_hub.v1",
+                "status": "ready",
+                "universe": {"type": "current_target", "items": ["002837.SZ"], "size": 1},
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+        )
+        store.write_packet(
+            candidate_service.NEXT_SESSION_PACKET_KEY,
+            {
+                "packet_key": candidate_service.NEXT_SESSION_PACKET_KEY,
+                "schema_version": "next_session_projection.v1",
+                "status": "ready",
+                "symbol": "000001.SZ",
+                "confirmed_symbol": "000001.SZ",
+                "chart_payload": {
+                    "status": "ready",
+                    "symbol": "000001.SZ",
+                    "historical_points": [{"x": "2026-07-10", "price": 10.0}],
+                    "scenario_series": [{"scenario_key": "base", "points": [{"x": "T+1", "price": 10.2}]}],
+                },
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+        )
+
+        packet = candidate_service._attach_search_quant_projection_interpretation_summary(
+            {
+                "packet_key": candidate_service.PACKET_KEY,
+                "latest_confirmed_symbol": "000063.SZ",
+                "search_quant_projection_receipt": {
+                    "symbol": "000063.SZ",
+                    "task_id": "local-confirm-task",
+                    "latest_task_id": "local-confirm-task",
+                    "latest_task_status": "success",
+                },
+                "search_quant_provider_model_acceptance_receipt": {
+                    "symbol": "000063.SZ",
+                    "provider_api_call_count": 4,
+                    "provider_api_success_count": 4,
+                    "deepseek_output_acceptance_done": True,
+                    "deepseek_model_ledger_evidence_done": True,
+                },
+                "search_quant_projection_small_data_writeback_summary": {
+                    "symbol": "000063.SZ",
+                    "small_data_writeback_ready": True,
+                    "provider_api_call_count": 4,
+                    "provider_api_success_count": 4,
+                    "provider_call_ledger_written": True,
+                    "source_task_tushare_provider_ledger_ready": True,
+                },
+                "counts": {},
+                "policy": {},
+            }
+        )
+
+        interpretation = packet["search_quant_projection_interpretation_summary"]
+        alignment = interpretation["ordinary_cross_module_alignment"]
+        self.assertEqual(alignment["status"], "mismatch")
+        self.assertEqual(alignment["confirmed_symbol"], "000063.SZ")
+        self.assertEqual(alignment["factor_alignment_state"], "mismatch")
+        self.assertEqual(alignment["next_alignment_state"], "mismatch")
+        self.assertFalse(alignment["overall_alignment_ready"])
+        self.assertIn("Factor cache 当前是 002837.SZ", alignment["summary_label"])
+        self.assertIn("Next cache 当前是 000001.SZ", alignment["summary_label"])
+        self.assertFalse(alignment["external_calls_triggered"])
+        self.assertFalse(alignment["tushare_called"])
+        self.assertFalse(alignment["deepseek_called"])
+        self.assertTrue(alignment["does_not_execute_trades"])
+        self.assertTrue(alignment["does_not_modify_strategy_action"])
+
+        rows = {row["alignment_key"]: row for row in packet["ordinary_cross_module_alignment_rows"]}
+        self.assertIn("Factor cache 当前是 002837.SZ", rows["factor_cache"]["当前状态"])
+        self.assertIn("Next Session cache 当前是 000001.SZ", rows["next_session_cache"]["当前状态"])
+        for row in rows.values():
+            self.assertTrue(row["cache_only_readback"])
+            self.assertFalse(row["creates_task_from_readback"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+
+        self.assertEqual(packet["counts"]["search_quant_projection_cross_module_alignment_row_count"], 4)
+        self.assertFalse(packet["counts"]["search_quant_projection_cross_module_alignment_ready"])
+        self.assertTrue(packet["policy"]["ordinary_cross_module_alignment_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["ordinary_cross_module_alignment_rows_create_task"])
+        self.assertIn("Factor/Next/ECharts local cache replay", interpretation["missing_evidence"])
+
     def test_confirm_tushare_first_blocks_missing_credentials_without_provider_call(self):
         self._with_meta_store()
         self._with_env(TUSHARE_TOKEN=None, DEEPSEEK_API_KEY=None)

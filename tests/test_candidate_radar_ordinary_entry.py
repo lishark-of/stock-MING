@@ -730,6 +730,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="open next session after candidate radar confirm"', post_confirm_slice)
         self.assertIn('aria-label="open margin etf after candidate radar confirm"', post_confirm_slice)
         self.assertIn('aria-label="return confirm input after candidate radar confirm bridge"', post_confirm_slice)
+        self.assertIn('aria-label="candidate radar post confirm factor next alignment details"', post_confirm_slice)
+        self.assertIn("Factor/Next 对齐明细", post_confirm_slice)
         self.assertNotIn("onClick=", post_confirm_slice)
         self.assertNotIn("postCandidateRadar", post_confirm_slice)
         self.assertNotIn("launchQuantProjection", post_confirm_slice)
@@ -742,10 +744,13 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "确认动作"',
             'label: "先看量化推演"',
             'label: "再看次日图谱"',
+            'label: "Factor/Next 对齐"',
             'label: "风险补看"',
             'label: "边界"',
         ):
             self.assertIn(post_confirm_label, post_confirm_items_slice)
+        self.assertIn("quantProjectionCrossModuleAlignmentRows", self.page)
+        self.assertIn("只读本地 packet；不创建 task、不调用 Tushare/DeepSeek/worker、不交易、不改 strategy action", self.page)
         self.assertIn("const quantProjectionResultSymbol", self.page)
         self.assertIn("quantProjectionAcceptedTaskSymbol ||", self.page)
         self.assertIn("String(searchQuantProviderModelAcceptance.symbol ?? \"\")", self.page)

@@ -2357,6 +2357,49 @@ export default function CandidateRadar() {
           边界: "候选雷达不是买入指令；真实交易路径隔离"
         }
       ];
+  const quantProjectionCrossModuleAlignment =
+    (cache.search_quant_projection_cross_module_alignment as Record<string, unknown> | undefined) ??
+    (cache.ordinary_cross_module_alignment as Record<string, unknown> | undefined) ??
+    (searchQuantProjectionInterpretation.ordinary_cross_module_alignment as Record<string, unknown> | undefined) ??
+    {};
+  const quantProjectionCrossModuleAlignmentStatus = displayText(
+    quantProjectionCrossModuleAlignment.status,
+    quantProjectionFactorNextReady ? "aligned" : "pending_current_symbol_refresh"
+  );
+  const quantProjectionCrossModuleAlignmentSummary = displayText(
+    quantProjectionCrossModuleAlignment.summary_label,
+    quantProjectionFactorNextReady
+      ? "Factor/Next 本地包已可回放；请核对是否属于当前确认股票。"
+      : "Factor/Next 本地包等待刷新到当前确认股票。"
+  );
+  const quantProjectionCrossModuleAlignmentNext = displayText(
+    quantProjectionCrossModuleAlignment.next_action,
+    quantProjectionMapNextStep
+  );
+  const quantProjectionCrossModuleAlignmentTone: MetricItem["tone"] =
+    quantProjectionCrossModuleAlignmentStatus === "aligned"
+      ? "good"
+      : quantProjectionCrossModuleAlignmentStatus.includes("mismatch") ||
+          quantProjectionCrossModuleAlignmentStatus.includes("pending") ||
+          quantProjectionCrossModuleAlignmentStatus.includes("missing")
+        ? "warn"
+        : "neutral";
+  const quantProjectionCrossModuleAlignmentRows = rows(
+    cache.search_quant_projection_cross_module_alignment_rows ??
+    cache.ordinary_cross_module_alignment_rows ??
+    searchQuantProjectionInterpretation.ordinary_cross_module_alignment_rows
+  ).map((row) => ({
+    模块: displayText(row["模块"] ?? row.module ?? row.alignment_key),
+    当前状态: displayText(row["当前状态"] ?? row.status ?? row.alignment_state),
+    本次确认: displayText(row["本次确认"] ?? row.confirmed_symbol, quantProjectionDisplaySymbol || "等待确认"),
+    本地包标的: displayText(row["本地包标的"] ?? row.local_symbol ?? row.symbol),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionCrossModuleAlignmentNext),
+    证据: displayText(row["证据"] ?? row.evidence),
+    边界: displayText(
+      row["边界"] ?? row.boundary,
+      "只读本地 packet；不创建 task、不调用 Tushare/DeepSeek/worker、不交易、不改 strategy action"
+    )
+  }));
   const quantProjectionOrdinaryResultActionRows = rows(searchQuantProjectionInterpretation.ordinary_result_action_rows).map((row) => ({
     行动: displayText(row["行动"] ?? row.action_key),
     当前状态: displayText(row["当前状态"] ?? row.status),
@@ -4219,6 +4262,11 @@ export default function CandidateRadar() {
       tone: quantProjectionFactorNextReady ? "good" : "warn"
     },
     {
+      label: "Factor/Next 对齐",
+      value: quantProjectionCrossModuleAlignmentSummary,
+      tone: quantProjectionCrossModuleAlignmentTone
+    },
+    {
       label: "风险补看",
       value: "ETF/融资风险只读本地预算，不生成加仓或加融资指令",
       tone: "good"
@@ -5319,6 +5367,13 @@ export default function CandidateRadar() {
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf after candidate radar confirm">看 ETF/融资</a>
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="return confirm input after candidate radar confirm bridge">换一只票</a>
             </div>
+            {quantProjectionCrossModuleAlignmentRows.length ? (
+              <details className="developer-audit-details" aria-label="candidate radar post confirm factor next alignment details">
+                <summary>Factor/Next 对齐明细</summary>
+                <p className="risk-note">{quantProjectionCrossModuleAlignmentNext}</p>
+                <DataLineageTable rows={quantProjectionCrossModuleAlignmentRows} />
+              </details>
+            ) : null}
             <p className="risk-note">确认后桥接只解释本地回放入口：Factor、Next 和 ETF/融资都只读已有 cache / packet；普通链接不刷新 provider、不调用模型、不写 cache、不交易、不改交易策略。</p>
           </div>
           <div aria-label="candidate radar ordinary vertical slice readback">
