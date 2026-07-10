@@ -746,8 +746,13 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "边界"',
         ):
             self.assertIn(post_confirm_label, post_confirm_items_slice)
+        self.assertIn("const quantProjectionResultSymbol", self.page)
+        self.assertIn("quantProjectionAcceptedTaskSymbol ||", self.page)
+        self.assertIn("String(searchQuantProviderModelAcceptance.symbol ?? \"\")", self.page)
+        self.assertIn('label: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "1. 确认股票" : "1. 解释 Top"', post_confirm_items_slice)
+        self.assertIn('`${quantProjectionResultSymbol || "当前标的"} 已有本地结果`', post_confirm_items_slice)
+        self.assertIn('`最近结果归属 ${quantProjectionResultSymbol || "当前标的"}；换票时回确认输入区重新输入并点击确认`', post_confirm_items_slice)
         for single_ticket_label in (
-            'label: "1. 解释 Top"',
             'label: "2. 确认输入"',
             'label: "3. 任务进度"',
             'label: "4. 最近结果"',

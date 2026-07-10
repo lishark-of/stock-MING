@@ -2575,7 +2575,12 @@ export default function CandidateRadar() {
     taskIndex.latest_confirmed_symbol_readback_external_calls_triggered !== true &&
     taskIndex.latest_confirmed_symbol_creates_task_from_readback !== true;
   const quantProjectionProgressWatchTaskId = taskIndexLatestConfirmedTaskId || quantProjectionDisplayTaskId;
-  const quantProjectionProgressWatchSymbol = taskIndexLatestConfirmedSymbol || quantProjectionDisplaySymbol;
+  const quantProjectionResultSymbol =
+    quantProjectionAcceptedTaskSymbol ||
+    String(searchQuantProviderModelAcceptance.symbol ?? "") ||
+    taskIndexLatestConfirmedSymbol ||
+    quantProjectionDisplaySymbol;
+  const quantProjectionProgressWatchSymbol = quantProjectionResultSymbol || taskIndexLatestConfirmedSymbol || quantProjectionDisplaySymbol;
   const quantProjectionProgressWatchStatus =
     taskIndexLatestConfirmedStatus ||
     (quantProjectionDisplayTaskId ? "cache_replay" : "waiting_confirm");
@@ -4226,7 +4231,7 @@ export default function CandidateRadar() {
   ];
   const candidateRadarSingleTicketLoopSentence =
     quantProjectionInterpretationReady || quantProjectionSmallDataReady
-      ? `单票闭环已有结果：${quantProjectionProgressWatchSymbol || quantProjectionDisplaySymbol || "当前标的"} 先看最近结果，再去 Factor、Next 和 ETF/融资风险做只读复核。`
+      ? `单票闭环已有结果：${quantProjectionResultSymbol || "当前标的"} 先看最近结果，再去 Factor、Next 和 ETF/融资风险做只读复核。`
       : taskReceipt?.ok || quantProjectionPersistedTaskId
         ? "单票闭环正在回放：先看本地进度，完成后刷新本地结果，再看量化推演、次日图谱和 ETF/融资风险。"
         : ordinaryCandidateTopCount
@@ -4234,14 +4239,18 @@ export default function CandidateRadar() {
           : "单票闭环等待候选或输入：先回确认输入区，确认按钮才会创建本地投研任务。";
   const candidateRadarSingleTicketLoopItems: MetricItem[] = [
     {
-      label: "1. 解释 Top",
-      value: ordinaryCandidateTopCount ? candidatePoolLeadCandidateDisplay : "暂无 Top；先看候选池或输入单票",
-      tone: ordinaryCandidateTopCount ? "good" : "warn"
+      label: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "1. 确认股票" : "1. 解释 Top",
+      value: quantProjectionInterpretationReady || quantProjectionSmallDataReady
+        ? `${quantProjectionResultSymbol || "当前标的"} 已有本地结果`
+        : ordinaryCandidateTopCount ? candidatePoolLeadCandidateDisplay : "暂无 Top；先看候选池或输入单票",
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady || ordinaryCandidateTopCount ? "good" : "warn"
     },
     {
       label: "2. 确认输入",
-      value: quantProjectionCanSubmit ? `可确认 ${quantProjectionSymbolValidation.normalized}` : quantProjectionDisabledReason,
-      tone: quantProjectionCanSubmit ? "good" : quantProjectionP0Ready ? "neutral" : "warn"
+      value: quantProjectionInterpretationReady || quantProjectionSmallDataReady
+        ? `最近结果归属 ${quantProjectionResultSymbol || "当前标的"}；换票时回确认输入区重新输入并点击确认`
+        : quantProjectionCanSubmit ? `可确认 ${quantProjectionSymbolValidation.normalized}` : quantProjectionDisabledReason,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady || quantProjectionCanSubmit ? "good" : quantProjectionP0Ready ? "neutral" : "warn"
     },
     {
       label: "3. 任务进度",
