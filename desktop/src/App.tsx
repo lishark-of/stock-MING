@@ -198,9 +198,9 @@ export default function App() {
           className="route-stage"
           key={route}
           data-local-fastapi-refresh-nonce={localFastapiRefreshNonce}
-          data-local-fastapi-refresh-boundary="local_health_only_get_cache_remount"
+          data-local-fastapi-refresh-boundary="local_health_only_no_route_remount"
         >
-          <ActiveRoute key={`${route}:${localFastapiRefreshNonce}`} />
+          <ActiveRoute key={route} />
         </div>
       </Suspense>
     </Layout>

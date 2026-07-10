@@ -55,7 +55,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             operator_slice.index('aria-label="candidate radar compact operator actions"'),
         )
         self.assertIn('aria-label="candidate radar operator symbol input"', operator_slice)
-        self.assertIn("确认并生成", operator_slice)
+        self.assertIn("确认并生成 3.0 量化推演", operator_slice)
         self.assertIn("刷新本地回放", operator_slice)
         self.assertIn('aria-label="candidate radar operator input confirm first read"', operator_slice)
         self.assertIn("输入确认速读", operator_slice)

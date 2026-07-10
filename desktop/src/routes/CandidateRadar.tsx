@@ -4765,7 +4765,7 @@ export default function CandidateRadar() {
             title={quantProjectionSubmitButtonLabel}
             aria-label={quantProjectionSubmitAriaLabel}
             aria-describedby={candidateRadarOperatorSubmitHelpId}
-          >{quantProjectionSubmitting ? "提交中..." : "确认并生成"}</button>
+          >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
           <button
             onClick={refreshQuantProjectionReadback}
             disabled={loading}
