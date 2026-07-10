@@ -28,7 +28,25 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
         clear_task_statuses_for_tests(clear_persisted=True)
         self.tmp.cleanup()
 
-    def _write_candidate_packet(self):
+    def _write_candidate_packet(self, *, interpretation_uses_model_output: bool = False):
+        interpretation_summary = {
+            "interpretation_ready": True,
+            "ordinary_result_summary": "可读结论：Tushare-first 账本已回放 4/4 个接口。",
+            "ordinary_result_next_step": "先看上游结论，再手动生成完整次日图谱。",
+            "ordinary_result_boundary": "只读本地 cache / ledger / packet；不调用 DeepSeek。",
+            "deepseek_governed_executor_status": "skipped_waiting_governed_executor",
+            "ordinary_result_quick_read_rows": [{"quick_read_item": "conclusion"}],
+        }
+        if interpretation_uses_model_output:
+            interpretation_summary.update(
+                {
+                    "uses_model_output": True,
+                    "uses_deepseek_output": True,
+                    "model_output_used": True,
+                    "ordinary_result_summary": "模型解释不应作为次日图谱依据。",
+                    "deepseek_governed_executor_status": "success",
+                }
+            )
         SQLiteMetaStore(self.db_path).write_packet(
             "command_center_3_candidate_radar_cache",
             {
@@ -50,14 +68,7 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
                     "source_task_tushare_provider_ledger_ready": True,
                     "ordinary_readback_summary": "Tushare-first 小数据已写入 cache / ledger / packet。",
                 },
-                "search_quant_projection_interpretation_summary": {
-                    "interpretation_ready": True,
-                    "ordinary_result_summary": "可读结论：Tushare-first 账本已回放 4/4 个接口。",
-                    "ordinary_result_next_step": "先看上游结论，再手动生成完整次日图谱。",
-                    "ordinary_result_boundary": "只读本地 cache / ledger / packet；不调用 DeepSeek。",
-                    "deepseek_governed_executor_status": "skipped_waiting_governed_executor",
-                    "ordinary_result_quick_read_rows": [{"quick_read_item": "conclusion"}],
-                },
+                "search_quant_projection_interpretation_summary": interpretation_summary,
             },
         )
 
@@ -149,6 +160,56 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
         self.assertTrue(packet["policy"]["next_session_ordinary_result_replay_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["next_session_ordinary_result_replay_rows_create_task"])
         self.assertFalse(packet["policy"]["next_session_ordinary_result_replay_rows_call_provider_or_model"])
+
+    def test_next_session_accepts_p2_handoff_when_deepseek_interpretation_is_ignored(self):
+        self._write_candidate_packet(interpretation_uses_model_output=True)
+        self._write_next_session_packet(ts_code=None)
+
+        packet = next_session_service.read_next_session_cache()
+
+        self.assertEqual(packet["latest_confirmed_symbol"], "002008.SZ")
+        self.assertEqual(packet["latest_confirmed_symbol_source"], "candidate_radar_p3_handoff")
+        handoff = packet["candidate_radar_p3_handoff"]
+        self.assertTrue(handoff["p2_small_data_ready"])
+        self.assertFalse(handoff["p3_readable_result_ready"])
+        self.assertTrue(handoff["p3_model_output_ignored_for_chart"])
+        self.assertTrue(handoff["p2_tushare_handoff_used_without_deepseek_output"])
+        self.assertFalse(handoff["uses_model_output"])
+        self.assertFalse(handoff["uses_deepseek_output"])
+        self.assertEqual(
+            handoff["deepseek_governed_executor_status"],
+            "model_output_ignored_for_next_session_handoff",
+        )
+        self.assertIn("Tushare-first 小数据", handoff["ordinary_result_summary"])
+        self.assertNotIn("模型解释", handoff["ordinary_result_summary"])
+        summary = packet["ordinary_result_replay_summary"]
+        self.assertEqual(summary["status"], "candidate_readable_result_replay_chart_pending")
+        self.assertTrue(summary["chart_stale_for_confirmed_symbol"])
+        self.assertTrue(packet["counts"]["next_session_candidate_radar_p2_handoff_ready"])
+
+        task = next_session_service.create_next_session_task(
+            {
+                "schema_version": "next_session_confirmed_symbol_generate_payload.v1",
+                "source": "next_session_map_manual_generate_button",
+                "symbol": "002008.SZ",
+                "source_task_id": "local-next-handoff",
+                "p2_small_data_ready": True,
+                "p3_readable_result_ready": False,
+                "manual_button_required": True,
+                "cache_get_external_calls_triggered": False,
+                "react_render_external_calls_triggered": False,
+                "deepseek_execution_requested": False,
+                "does_not_include_token_or_raw_log": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_operation_zones": True,
+            }
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "local_confirmed_symbol_preview_written")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
 
     def test_next_session_marks_chart_ready_when_bound_to_confirmed_symbol(self):
         self._write_candidate_packet()

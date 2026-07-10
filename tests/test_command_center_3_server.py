@@ -27773,7 +27773,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(any(row["calls_provider_or_model"] for row in preview_rows.values()))
         self.assertFalse(any(row["is_trade_signal"] for row in preview_rows.values()))
         self.assertFalse(any(row["contains_secret"] for row in preview_rows.values()))
-        self.assertIn("上游 P3 结果已接上", packet["ordinary_summary"])
+        self.assertIn("上游确认结果已接上", packet["ordinary_summary"])
         condition_rows = {row["速读项"]: row for row in packet["ordinary_condition_quick_read_rows"]}
         self.assertIn("上游搜票结论可读", condition_rows["1. 来源"]["当前状态"])
         self.assertIn("不要把上游可读结论当完整图谱", condition_rows["3. 失效"]["当前状态"])

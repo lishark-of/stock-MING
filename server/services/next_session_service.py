@@ -2689,8 +2689,8 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
     candidate_handoff = _as_dict(packet.get("candidate_radar_p3_handoff"))
     latest_close_anchor = _as_dict(chart_payload.get("latest_close_anchor"))
     has_drawable_data = chart_summary.get("has_drawable_data") is True
-    candidate_readable = candidate_handoff.get("p3_readable_result_ready") is True
     candidate_p2_ready = candidate_handoff.get("p2_small_data_ready") is True
+    candidate_readable = candidate_handoff.get("p3_readable_result_ready") is True or candidate_p2_ready
     confirmed_symbol = _safe_text(
         candidate_handoff.get("symbol") or packet.get("latest_confirmed_symbol") or "",
         limit=32,
@@ -2977,6 +2977,8 @@ def read_next_session_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_next_session_cache())
     candidate_radar_p3_handoff = _read_candidate_radar_p3_handoff()
     candidate_radar_p3_ready = candidate_radar_p3_handoff.get("p3_readable_result_ready") is True
+    candidate_radar_p2_ready = candidate_radar_p3_handoff.get("p2_small_data_ready") is True
+    candidate_radar_handoff_ready = candidate_radar_p3_ready or candidate_radar_p2_ready
     if candidate_radar_p3_handoff:
         packet["candidate_radar_p3_handoff"] = candidate_radar_p3_handoff
         packet["latest_confirmed_symbol"] = candidate_radar_p3_handoff["symbol"]
@@ -2986,11 +2988,11 @@ def read_next_session_cache() -> dict[str, Any]:
         packet["latest_confirmed_task_current_step"] = candidate_radar_p3_handoff["source_task_current_step"]
         packet["latest_confirmed_symbol_readback_external_calls_triggered"] = False
         packet["latest_confirmed_symbol_creates_task_from_readback"] = False
-    if packet.get("status") == "cache_missing" and candidate_radar_p3_ready:
+    if packet.get("status") == "cache_missing" and candidate_radar_handoff_ready:
         packet["status"] = "candidate_readable_result_replay_chart_pending"
         packet["cache_source"] = "candidate_radar_p3_handoff_readonly"
         packet["summary"] = (
-            "上游搜票量化推演已有 Tushare-first 可读结论；完整次日图谱仍需手动生成本地 cache。"
+            "上游搜票量化推演已有 Tushare-first 可读结果；完整次日图谱仍需手动生成本地 cache。"
         )
         packet["manual_required_text"] = (
             "可先读上游结论；点击本页生成任务才会写 next-session 图谱 cache，GET cache 不补调 provider/model。"
@@ -3119,7 +3121,7 @@ def read_next_session_cache() -> dict[str, Any]:
     packet["ordinary_summary"] = (
         "次日图谱已可读：路径、参考线和操作区来自本地 cache。"
         if ordinary_result_replay["chart_ready_for_confirmed_symbol"]
-        else "上游 P3 结果已接上；完整次日图谱待手动生成，本页只读展示预览和边界。"
+        else "上游确认结果已接上；完整次日图谱待手动生成，本页只读展示预览和边界。"
         if ordinary_result_replay["status"] == "candidate_readable_result_replay_chart_pending"
         else "等待确认标的或本地图谱 cache。"
     )
@@ -3153,6 +3155,7 @@ def read_next_session_cache() -> dict[str, Any]:
                 "condition_quick_read_row_count"
             ],
             "next_session_candidate_radar_p3_handoff_ready": candidate_radar_p3_ready,
+            "next_session_candidate_radar_p2_handoff_ready": candidate_radar_p2_ready,
             "next_session_latest_confirmed_readback_ready": bool(candidate_radar_p3_handoff),
             "next_session_chart_has_drawable_data": ordinary_result_replay["chart_has_drawable_data"],
             "next_session_chart_ready_for_confirmed_symbol": ordinary_result_replay[
@@ -3545,8 +3548,19 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
     interpretation = _as_dict(candidate_packet.get("search_quant_projection_interpretation_summary"))
     receipt = _as_dict(candidate_packet.get("search_quant_projection_receipt"))
     p2_ready = small_data.get("small_data_writeback_ready") is True
-    p3_ready = interpretation.get("interpretation_ready") is True or bool(
-        str(interpretation.get("ordinary_result_summary") or candidate_packet.get("ordinary_result_summary") or "").strip()
+    interpretation_uses_model_output = any(
+        interpretation.get(key) is True
+        for key in ("uses_model_output", "uses_deepseek_output", "model_output_used")
+    )
+    p3_ready = not interpretation_uses_model_output and (
+        interpretation.get("interpretation_ready") is True
+        or bool(
+            str(
+                interpretation.get("ordinary_result_summary")
+                or candidate_packet.get("ordinary_result_summary")
+                or ""
+            ).strip()
+        )
     )
     if not (p2_ready or p3_ready):
         return {}
@@ -3554,9 +3568,6 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
         candidate_packet.get("contains_secret") is True
         or interpretation.get("contains_secret") is True
         or small_data.get("contains_secret") is True
-        or interpretation.get("uses_model_output") is True
-        or interpretation.get("uses_deepseek_output") is True
-        or interpretation.get("model_output_used") is True
     ):
         return {}
     symbol = _safe_text(
@@ -3590,13 +3601,51 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
         or "",
         limit=160,
     )
-    result_summary_raw = (
-        interpretation.get("ordinary_result_summary")
-        or candidate_packet.get("ordinary_result_summary")
-        or small_data.get("ordinary_readback_summary")
-        or small_data.get("summary_label")
-        or "上游 Tushare-first 结果可读；完整次日图谱待手动生成。"
-    )
+    if p3_ready:
+        result_summary_raw = (
+            interpretation.get("ordinary_result_summary")
+            or candidate_packet.get("ordinary_result_summary")
+            or small_data.get("ordinary_readback_summary")
+            or small_data.get("summary_label")
+            or "上游 Tushare-first 结果可读；完整次日图谱待手动生成。"
+        )
+        result_next_step_raw = (
+            interpretation.get("ordinary_result_next_step")
+            or candidate_packet.get("ordinary_result_next_step")
+            or small_data.get("ordinary_readback_next_step")
+            or "可在本页手动生成完整次日图谱；GET cache 不会补调 provider/model。"
+        )
+        result_boundary_raw = (
+            interpretation.get("ordinary_result_boundary")
+            or candidate_packet.get("ordinary_result_boundary")
+            or "只读回放 CandidateRadar cache / ledger / packet；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。"
+        )
+        interpretation_rows = _as_list(interpretation.get("ordinary_result_quick_read_rows"))
+        deepseek_governed_executor_status = (
+            interpretation.get("deepseek_governed_executor_status")
+            or candidate_packet.get("ordinary_result_deepseek_governed_executor_status")
+            or "skipped_or_pending_governed_executor"
+        )
+    else:
+        result_summary_raw = (
+            small_data.get("ordinary_readback_summary")
+            or small_data.get("summary_label")
+            or "上游 Tushare-first 小数据账本已可读；DeepSeek 解释不作为次日图谱依据。"
+        )
+        result_next_step_raw = (
+            small_data.get("ordinary_readback_next_step")
+            or "可在本页手动生成完整次日图谱；GET cache 不会补调 provider/model。"
+        )
+        result_boundary_raw = (
+            small_data.get("ordinary_result_boundary")
+            or "只读回放 CandidateRadar 的 Tushare 小数据账本；DeepSeek 解释不用于价格、区间或 strategy action。"
+        )
+        interpretation_rows = []
+        deepseek_governed_executor_status = (
+            "model_output_ignored_for_next_session_handoff"
+            if interpretation_uses_model_output
+            else "skipped_or_pending_governed_executor"
+        )
     provider_success_count = int(small_data.get("provider_api_success_count") or 0)
     provider_call_count = int(small_data.get("provider_api_call_count") or 0)
     provider_call_source = _safe_text(small_data.get("provider_call_source") or "candidate_radar_cache")
@@ -3618,16 +3667,11 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
         limit=360,
     )
     result_next_step = _safe_text(
-        interpretation.get("ordinary_result_next_step")
-        or candidate_packet.get("ordinary_result_next_step")
-        or small_data.get("ordinary_readback_next_step")
-        or "可在本页手动生成完整次日图谱；GET cache 不会补调 provider/model。",
+        result_next_step_raw,
         limit=300,
     )
     result_boundary = _safe_text(
-        interpretation.get("ordinary_result_boundary")
-        or candidate_packet.get("ordinary_result_boundary")
-        or "只读回放 CandidateRadar cache / ledger / packet；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。",
+        result_boundary_raw,
         limit=360,
     )
     ordinary_readback_provenance_summary = _safe_text(
@@ -3647,10 +3691,11 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
             "provider_api_success_count": provider_success_count,
             "provider_api_call_count": provider_call_count,
             "source_task_tushare_called": source_task_tushare_called,
+            "p3_model_output_ignored_for_chart": interpretation_uses_model_output,
             "readback_tushare_called": False,
             "does_not_include_token_or_raw_log": True,
         },
-        "row_count": len(_as_list(interpretation.get("ordinary_result_quick_read_rows"))),
+        "row_count": len(interpretation_rows),
         "data_date": small_data.get("data_date") or candidate_packet.get("trade_date"),
         "local_fetched_at": _now_iso(),
         "call_status": status,
@@ -3677,14 +3722,12 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
         "source_task_external_calls_triggered": source_task_external_calls_triggered,
         "source_task_tushare_called": source_task_tushare_called,
         "source_task_tushare_provider_ledger_ready": source_task_tushare_provider_ledger_ready,
+        "p3_model_output_ignored_for_chart": interpretation_uses_model_output,
+        "p2_tushare_handoff_used_without_deepseek_output": bool(p2_ready and interpretation_uses_model_output),
         "readback_external_calls_triggered": False,
         "readback_tushare_called": False,
         "ordinary_readback_provenance_summary": ordinary_readback_provenance_summary,
-        "deepseek_governed_executor_status": (
-            interpretation.get("deepseek_governed_executor_status")
-            or candidate_packet.get("ordinary_result_deepseek_governed_executor_status")
-            or "skipped_or_pending_governed_executor"
-        ),
+        "deepseek_governed_executor_status": deepseek_governed_executor_status,
         "chart_payload_generated": False,
         "operation_zones_generated": False,
         "manual_next_session_generate_required": True,
