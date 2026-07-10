@@ -3439,6 +3439,16 @@ export default function CandidateRadar() {
       tone: quantProjectionCanSubmit || quantProjectionP0Ready ? "good" : "warn"
     },
     {
+      label: "运行模式",
+      value: candidateRadarRuntimeModeLabel,
+      tone: candidateRadarRuntimeModeLabel === "未知运行模式" ? "warn" : "good"
+    },
+    {
+      label: "现在做什么",
+      value: ordinaryPrimaryActionLabel,
+      tone: candidateRadarP0Blocked ? "warn" : "good"
+    },
+    {
       label: "现在能跳转",
       value: "候选池 / 搜票确认 / 量化推演 / 次日图谱 / ETF 融资风险",
       tone: "good"

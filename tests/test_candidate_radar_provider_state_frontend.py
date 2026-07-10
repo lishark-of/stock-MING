@@ -160,7 +160,18 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("MetricGrid items={quantProjectionTaskIndexProgressItems}", summary_panel)
         self.assertIn("<summary>Research Assist / Audit Details：P1/P2/P3 回放明细</summary>", summary_panel)
         self.assertIn("candidateRadarOpenNowPathItems", self.page)
+        visible_items_start = self.page.index("const candidateRadarVisibleNowItems")
+        visible_items_end = self.page.index("const candidateRadarTypedSymbolSentence", visible_items_start)
+        visible_items_definition = self.page[visible_items_start:visible_items_end]
+        self.assertIn('label: "运行模式"', visible_items_definition)
+        self.assertIn("candidateRadarRuntimeModeLabel", visible_items_definition)
+        self.assertIn('label: "现在做什么"', visible_items_definition)
+        self.assertIn("ordinaryPrimaryActionLabel", visible_items_definition)
         self.assertIn('aria-label="candidate radar open app shortest path"', summary_panel)
+        visible_now_start = summary_panel.index('aria-label="candidate radar visible now app result"')
+        visible_now_end = summary_panel.index('aria-label="candidate radar typed symbol immediate readback"', visible_now_start)
+        visible_now_slice = summary_panel[visible_now_start:visible_now_end]
+        self.assertIn("MetricGrid items={candidateRadarVisibleNowItems}", visible_now_slice)
         self.assertIn("打开先看这 4 步", summary_panel)
         self.assertIn("候选池、确认输入、最近结果和非买入边界放在同一屏", summary_panel)
         for shortest_path_label in (
