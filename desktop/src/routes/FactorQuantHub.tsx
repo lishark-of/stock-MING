@@ -7,7 +7,6 @@ import DataLineageTable from "../components/DataLineageTable";
 import EChartPanel from "../components/EChartPanel";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
-import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
@@ -30,6 +29,60 @@ function toRows(items: unknown, bucket?: string): Array<Record<string, unknown>>
 
 function objectRows(record: Record<string, unknown>, labelKey = "field") {
   return Object.entries(record).map(([key, value]) => ({ [labelKey]: key, value: String(value) }));
+}
+
+function ordinaryFactorText(value: unknown, fallback = "--"): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  const raw = typeof value === "boolean" ? (value ? "是" : "否") : String(value);
+  return raw
+    .replace(/GET cache/g, "本地缓存读取")
+    .replace(/POST task/g, "手动后台流程")
+    .replace(/provider\/model/g, "数据接口或模型")
+    .replace(/Tushare-first/g, "真实数据链")
+    .replace(/Tushare light/g, "轻量数据接口")
+    .replace(/Tushare/g, "真实数据")
+    .replace(/DeepSeek/g, "模型解释")
+    .replace(/GitHub/g, "远端检查")
+    .replace(/CandidateRadar/g, "下一票雷达")
+    .replace(/\bFactor\b/g, "量化推演")
+    .replace(/call_ledger/g, "数据记录")
+    .replace(/\bledger\b/g, "数据记录")
+    .replace(/\bpacket\b/g, "本地结果包")
+    .replace(/\bcache\b/g, "本地缓存")
+    .replace(/provider task/g, "数据回写流程")
+    .replace(/\bprovider\b/g, "数据接口")
+    .replace(/\bmodel\b/g, "模型")
+    .replace(/\bworker\b/g, "后台执行器")
+    .replace(/\btask\b/g, "后台流程")
+    .replace(/scope hash/g, "范围校验")
+    .replace(/\bpayload\b/g, "请求范围")
+    .replace(/failure-mode evidence/g, "失败模式记录")
+    .replace(/strategy action/g, "交易动作")
+    .replace(/React render/g, "页面渲染")
+    .replace(/LTG-\d+/g, "长期目标")
+    .replace(/degraded/g, "待补")
+    .replace(/pending/g, "待补")
+    .replace(/cache_only/g, "只读缓存模式")
+    .replace(/manual/g, "手动模式")
+    .replace(/live_light/g, "轻量后台模式")
+    .replace(/账本/g, "记录")
+    .replace(/scope \/ execution request/g, "范围和执行申请")
+    .replace(/execution request/g, "执行申请")
+    .replace(/dry-run/g, "本地预检")
+    .replace(/\bscope\b/g, "范围")
+    .replace(/本地 本地缓存/g, "本地缓存")
+    .replace(/数据接口或模型 任务/g, "数据接口或模型流程")
+    .replace(/真实数据链 账本/g, "真实数据记录")
+    .replace(/真实数据链 数据卡/g, "数据链状态");
+}
+
+function ordinaryFactorMetricItems(items: MetricItem[]): MetricItem[] {
+  return items.map((item) => ({
+    ...item,
+    label: ordinaryFactorText(item.label),
+    value: ordinaryFactorText(item.value),
+    tone: undefined
+  }));
 }
 
 const runtimeModeLabels: Record<string, string> = {
@@ -1524,7 +1577,7 @@ export default function FactorQuantHub() {
     },
     {
       label: "下一步入口",
-      value: "支持/压制 / 次日图谱 / 下一票雷达确认 / LTG-03 安全闸门",
+      value: "支持/压制 / 次日图谱 / 下一票雷达确认 / 真实验证边界",
       tone: "good"
     },
     {
@@ -1559,12 +1612,12 @@ export default function FactorQuantHub() {
       label: "验证缺口",
       value: factorTestProductionValidation.provider_backed_small_pool_validation_done === true
         ? "真实小池验证证据已回放"
-        : "degraded：真实小池验证未授权；等待 scope-bound provider task 的样本行、call_ledger 和 failure-mode evidence",
+        : "degraded：真实小池验证未授权；等待 scope hash、payload、call_ledger、样本行和 failure-mode evidence",
       tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
     },
     {
       label: "安全边界",
-      value: "查看页面和本地跳转不外联、不创建 provider/model 任务、不交易、不改策略",
+      value: "查看页面和本地跳转不外联、不创建 provider/model 任务、不交易、不改策略；打开页面、查看速读和切换锚点都只读本地 cache",
       tone: "good"
     }
   ];
@@ -1863,7 +1916,7 @@ export default function FactorQuantHub() {
     {
       label: "确认链",
       value: candidateRadarLatestTaskId
-        ? `已接上 ${candidateRadarConfirmedSymbol || "当前标的"}；task=${candidateRadarLatestTaskId}`
+        ? `已接上 ${candidateRadarConfirmedSymbol || "当前标的"}；本地确认已接上`
         : "等待下一票雷达确认；本页不接收股票输入",
       tone: candidateRadarLatestTaskId ? "good" : "warn"
     },
@@ -1977,32 +2030,32 @@ export default function FactorQuantHub() {
         <div aria-label="stock quant ordinary user first summary">
           <div aria-label="stock quant app first evidence factory">
             <h3>本地投研速读</h3>
-            <p className="ordinary-status-note" aria-label="stock quant app first evidence factory sentence" aria-live="polite">{ordinaryQuantAppFirstEvidenceFactorySentence}</p>
-            <MetricGrid items={ordinaryQuantAppFirstEvidenceFactoryItems} />
+            <p className="ordinary-status-note" aria-label="stock quant app first evidence factory sentence" aria-live="polite">{ordinaryFactorText(ordinaryQuantAppFirstEvidenceFactorySentence)}</p>
+            <MetricGrid items={ordinaryFactorMetricItems(ordinaryQuantAppFirstEvidenceFactoryItems)} />
             <div className="actions" aria-label="stock quant app first evidence factory actions">
               <a href={ordinaryQuantPrimaryActionHref} title="只切换本地页面或锚点；不会自动调用外部数据或模型服务" aria-label="open primary action from app first evidence factory">{ordinaryQuantPrimaryActionLabel}</a>
               <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱；只读本地次日图谱数据" aria-label="open next chart from app first evidence factory">次日图谱</a>
               <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读查看数据可用、受限和待补原因" aria-label="open data capability from app first evidence factory">数据能力</a>
-              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认按钮才创建任务" aria-label="open candidate confirm from app first evidence factory">确认或换一只票</a>
+              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认后才进入后台流程" aria-label="open candidate confirm from app first evidence factory">确认或换一只票</a>
             </div>
-            <p className="risk-note">这张首屏只合成当前本地 cache、确认后数据账本、真实验证缺口和下一步入口；打开页面、查看结果和切换锚点都不会创建 task、不会调用 Tushare/DeepSeek/GitHub、不真实交易。</p>
+            <p className="risk-note">这张首屏只合成当前本地结果、确认后数据记录、真实验证缺口和下一步入口；打开页面、查看结果和切换锚点都不会创建后台流程、不会刷新外部数据或模型、不真实交易。</p>
           </div>
           <div aria-label="stock quant ordinary plain conclusion">
             <h3>普通结论</h3>
-            <p className="ordinary-status-note" aria-label="stock quant ordinary plain conclusion sentence" aria-live="polite">{ordinaryQuantPlainResultSentence}</p>
-            <MetricGrid items={ordinaryQuantPlainConclusionItems} />
+            <p className="ordinary-status-note" aria-label="stock quant ordinary plain conclusion sentence" aria-live="polite">{ordinaryFactorText(ordinaryQuantPlainResultSentence)}</p>
+            <MetricGrid items={ordinaryFactorMetricItems(ordinaryQuantPlainConclusionItems)} />
             <div className="actions" aria-label="stock quant ordinary plain conclusion actions">
               <a href={ordinaryQuantPrimaryActionHref} title="只切换本地页面或锚点；不会自动调用外部数据或模型服务" aria-label="open stock quant plain conclusion next action">{ordinaryQuantPrimaryActionLabel}</a>
             </div>
-            <p className="risk-note">普通结论只读本地结果、数据凭证和次日图谱预览；页面打开、查看结果和切换入口都不会自动创建任务或调用外部服务。</p>
+            <p className="risk-note">普通结论只读本地结果、数据凭证和次日图谱预览；页面打开、查看结果和切换入口都不会自动创建后台流程或调用外部服务，也不会改写操作区。</p>
           </div>
           <h3>一屏速读</h3>
-          <p className="risk-note">默认先看当前标的、结论、下一步、数据链、图谱/解释和边界；任务记录、数据凭证、合同和回放细节继续收起在下方。</p>
-          <MetricGrid items={ordinaryQuantUserFirstItems} />
+          <p className="risk-note">默认先看当前标的、结论、下一步、数据链、图谱/解释和边界；后台记录、数据凭证、合同和回放细节继续收起在下方。</p>
+          <MetricGrid items={ordinaryFactorMetricItems(ordinaryQuantUserFirstItems)} />
           <div aria-label="stock quant post confirm one minute read">
             <h3>确认后一眼读图</h3>
-            <p className="ordinary-status-note" aria-label="stock quant post confirm one minute sentence" aria-live="polite">{ordinaryQuantPostConfirmOneMinuteSentence}</p>
-            <MetricGrid items={ordinaryQuantPostConfirmOneMinuteItems} />
+            <p className="ordinary-status-note" aria-label="stock quant post confirm one minute sentence" aria-live="polite">{ordinaryFactorText(ordinaryQuantPostConfirmOneMinuteSentence)}</p>
+            <MetricGrid items={ordinaryFactorMetricItems(ordinaryQuantPostConfirmOneMinuteItems)} />
             <div className="actions" aria-label="stock quant post confirm one minute actions">
               <a href="#factor-score" title="跳到支持/压制摘要；只读 Factor cache" aria-label="open support suppress from stock quant one minute read">支持/压制</a>
               <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱图表区域；只读本地次日图谱数据" aria-label="open next chart from stock quant one minute read">完整次日图谱</a>
@@ -2012,34 +2065,34 @@ export default function FactorQuantHub() {
           </div>
           <div aria-label="stock quant visible now app result">
             <h3>打开 app 能看到什么</h3>
-            <p className="ordinary-status-note">这张速读只合成 Factor 页当前本地状态：可读结论、下一步入口、LTG-03 真实数据授权状态和授权后应产出的证据；它不创建 task、不调用 provider/model。</p>
-            <MetricGrid items={ordinaryQuantVisibleNowItems} />
+            <p className="ordinary-status-note">这张速读只合成量化推演页当前本地状态：可读结论、下一步入口、真实数据授权状态和授权后应产出的记录；它不创建数据回写流程、不刷新外部数据或模型、不交易。</p>
+            <MetricGrid items={ordinaryFactorMetricItems(ordinaryQuantVisibleNowItems)} />
             <div className="actions" aria-label="stock quant visible now app result actions">
               <a href="#factor-score" title="跳到支持/压制摘要；只读 Factor cache" aria-label="open support suppress from stock quant visible now">支持/压制</a>
               <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱；只读本地次日图谱数据" aria-label="open next chart from stock quant visible now">次日图谱</a>
-              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认按钮才创建任务" aria-label="open candidate confirm from stock quant visible now">确认或换一只票</a>
-              <a href="#stock-quant-provider-evidence-details" title="跳到真实验证证据区；只读本地 scope 和 execution request" aria-label="open provider evidence details from stock quant visible now">真实验证边界</a>
+              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认后才进入后台流程" aria-label="open candidate confirm from stock quant visible now">确认或换一只票</a>
+              <a href="#stock-quant-provider-evidence-details" title="跳到真实验证证据区；只读本地范围和执行申请" aria-label="open provider evidence details from stock quant visible now">真实验证边界</a>
             </div>
           </div>
           <div aria-label="stock quant compact vertical slice status">
             <h3>当前纵切状态</h3>
-            <p className="ordinary-status-note">确认链、P2/P3、支持/压制、小池验收和缺口先给结论；需要真实 provider 小池时只显示授权边界，不自动创建任务。</p>
-            <MetricGrid items={ordinaryQuantCompactVerticalSliceItems} />
+            <p className="ordinary-status-note">确认链、P2/P3、支持/压制、小池验收和缺口先给结论；需要真实数据小池时只显示授权边界，不自动创建后台流程。</p>
+            <MetricGrid items={ordinaryFactorMetricItems(ordinaryQuantCompactVerticalSliceItems)} />
           </div>
           <div aria-label="stock quant ordinary tushare data card">
-            <h3>确认后 Tushare 数据卡</h3>
-            <p className="ordinary-status-note" aria-label="stock quant ordinary tushare data card summary" aria-live="polite">{ordinaryQuantTushareDataCardSummary}</p>
-            <MetricGrid items={ordinaryQuantTushareDataCardItems} />
+            <h3>确认后数据链状态</h3>
+            <p className="ordinary-status-note" aria-label="stock quant ordinary tushare data card summary" aria-live="polite">{ordinaryFactorText(ordinaryQuantTushareDataCardSummary)}</p>
+            <MetricGrid items={ordinaryFactorMetricItems(ordinaryQuantTushareDataCardItems)} />
             <div className="actions" aria-label="stock quant ordinary tushare data capability handoff actions">
-              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读查看 Tushare 可用、受限和待补原因" aria-label="open data capability from stock quant tushare data card">复核数据能力</a>
-              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认按钮才创建任务" aria-label="return candidate confirm from stock quant tushare data card">确认或换一只票</a>
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读查看真实数据可用、受限和待补原因" aria-label="open data capability from stock quant tushare data card">复核数据能力</a>
+              <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认后才进入后台流程" aria-label="return candidate confirm from stock quant tushare data card">确认或换一只票</a>
             </div>
             <details className="developer-audit-details" aria-label="stock quant ordinary tushare data card rows">
               <summary>查看接口回放</summary>
-              <p className="risk-note">这张明细只读 CandidateRadar 的 Tushare light 接口回放；没有账本时显示等待或阻断，不从 Factor 页补调数据。</p>
+              <p className="risk-note">这张明细只读下一票雷达的轻量接口回放；没有数据记录时显示等待或阻断，不从量化推演页补调数据。</p>
               <DataLineageTable rows={ordinaryQuantTushareDataCardRows} />
             </details>
-            <p className="risk-note">数据卡只整理确认后已有的本地 cache / call_ledger / packet；不会调用 Tushare、DeepSeek、GitHub，不交易、不改交易策略。</p>
+            <p className="risk-note">数据链状态只整理确认后已有的本地缓存、数据记录和本地结果包；不会刷新外部数据或模型，不交易、不改交易策略。</p>
           </div>
           <div className="actions" aria-label="stock quant projection primary next action">
             <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
@@ -2286,22 +2339,28 @@ export default function FactorQuantHub() {
           <a href="#factor-deepseek" title="跳到本页模型解释状态；DeepSeek 仍等 governed executor" aria-label="view model explanation status">查看模型解释状态</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return to candidate radar confirm input without creating a task">去下一票雷达确认生成</a>
         </div>
-        <p className="risk-note">没有标的时先去 <a href={CANDIDATE_CONFIRM_HREF}>下一票雷达确认输入区</a> 输入代码并点击生成 3.0 量化推演；这个链接只切换本地页面，不创建 task。</p>
+        <p className="risk-note">没有标的时先去 <a href={CANDIDATE_CONFIRM_HREF}>下一票雷达确认输入区</a> 输入代码并点击生成 3.0 量化推演；这个链接只切换本地页面，不创建后台流程。</p>
         <p className="risk-note">本页不接收股票代码输入；换标的必须回下一票雷达确认输入区，避免把查看缓存误当成重新推演。</p>
-        <p className="risk-note">来自下一票雷达的搜票结果在本页只回放 Factor cache、次日图谱预览和模型解释状态；本页链接不重新触发 Tushare-first 或 DeepSeek。</p>
+        <p className="risk-note">来自下一票雷达的搜票结果在本页只回放量化缓存、次日图谱预览和模型解释状态；本页链接不重新刷新外部数据或模型。</p>
         <p className="risk-note">{ordinaryQuantResultLocation}</p>
         <p className="risk-note">{ordinaryQuantFullNextSessionBoundary}。</p>
-        <p className="risk-note">生成后先按“支持/压制 → 次日图谱预览 → 模型解释状态”复核；缺数据就看 pending/缺少证据，不把空结果当成无风险。</p>
+        <p className="risk-note">生成后先按“支持/压制 → 次日图谱预览 → 模型解释状态”复核；缺数据就看待补原因，不把空结果当成无风险。</p>
         <p className="risk-note">{ordinaryQuantRouteHandoffBoundary}。</p>
-        <p className="risk-note">工程审计明细默认收起；完整 factor/provider/model ledger 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
+        <p className="risk-note">工程审计明细默认收起；完整数据接口、模型、记录和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
-      <PageStateBanner
-        loading={loading}
-        error={error}
-        empty={empty}
-        emptyTitle="暂无股票量化推演本地缓存"
-        emptyDetail="本页只读取本地缓存；不会自动刷新外部数据。若需要更新，请手动点击任务按钮。"
-      />
+      {(loading || error || empty) ? (
+        <div className="page-state page-state-empty motion-surface" data-page-state="factor_quant_ordinary_cache_state" data-motion-scope="ordinary_user_factor_quant_clarity" data-motion-purpose="readable_cache_state">
+          <strong>{loading ? "正在读取本地量化结果" : error ? "本地量化结果待补" : "暂无股票量化推演本地缓存"}</strong>
+          <p>{ordinaryFactorText(error || "本页只读取本地缓存；不会自动刷新外部数据。若需要更新，请手动点击按钮。")}</p>
+          <MetricGrid
+            items={ordinaryFactorMetricItems([
+              { label: "当前状态", value: loading ? "正在读取本地量化结果" : error ? "本地量化结果待补" : "等待本地量化结果" },
+              { label: "下一步", value: candidateRadarConfirmedSymbol ? "查看缓存或手动运行轻量推演" : "先回下一票雷达确认股票" },
+              { label: "安全边界", value: "页面打开只读本地缓存；不刷新外部数据或模型、不交易" }
+            ])}
+          />
+        </div>
+      ) : null}
       <div className="actions">
         <button onClick={refreshCache} title={ordinaryQuantCacheButtonLabel} aria-label={ordinaryQuantCacheButtonLabel}>查看本地缓存</button>
         <button onClick={() => launchTask("/api/factor-quant/refresh-data")} title={ordinaryQuantRefreshButtonLabel} aria-label={ordinaryQuantRefreshButtonLabel}>手动刷新数据</button>

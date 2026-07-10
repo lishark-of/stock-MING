@@ -5,7 +5,6 @@ import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import NextSessionChart from "../components/NextSessionChart";
-import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
@@ -26,6 +25,83 @@ function rowsFromArray(items: unknown, fallbackKey = "value"): Array<Record<stri
 
 function isCacheMissingError(message: string | null | undefined): boolean {
   return typeof message === "string" && message.startsWith("cache_missing:");
+}
+
+function ordinaryNextText(value: unknown, fallback = "--"): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  const text = typeof value === "boolean" ? (value ? "是" : "否") : String(value);
+  return text
+    .replace(/Tushare 数据卡/g, "数据链状态")
+    .replace(/Tushare-first/g, "真实数据链")
+    .replace(/Tushare light/g, "轻量数据接口")
+    .replace(/Tushare/g, "真实数据")
+    .replace(/DeepSeek/g, "模型解释")
+    .replace(/GitHub/g, "远端检查")
+    .replace(/CandidateRadar/g, "下一票雷达")
+    .replace(/\bFactor\b/g, "量化推演")
+    .replace(/call_ledger/g, "数据记录")
+    .replace(/ledger/g, "数据记录")
+    .replace(/packet/g, "本地结果包")
+    .replace(/cache/g, "本地缓存")
+    .replace(/POST task/g, "手动后台流程")
+    .replace(/task_readback/g, "任务回放")
+    .replace(/task/g, "后台流程")
+    .replace(/scope hash/g, "范围校验")
+    .replace(/safe payload/g, "安全请求范围")
+    .replace(/payload/g, "请求范围")
+    .replace(/provider\/model\/worker/g, "数据接口、模型和后台执行器")
+    .replace(/CandidateRadar cache/g, "下一票雷达本地回放")
+    .replace(/GET tasks/g, "本地进度")
+    .replace(/sqlite_meta/g, "本地结果")
+    .replace(/retained signal\/capability coverage/g, "保留信号和能力覆盖")
+    .replace(/real close/g, "真实收口")
+    .replace(/provider/g, "数据接口")
+    .replace(/model/g, "模型")
+    .replace(/worker/g, "后台执行器")
+    .replace(/strategy action/g, "交易动作")
+    .replace(/operation_zones/g, "操作区")
+    .replace(/governed executor/g, "受控解释流程")
+    .replace(/React render/g, "页面渲染")
+    .replace(/GET cache/g, "本地缓存读取")
+    .replace(/LTG-\d+/g, "长期目标")
+    .replace(/production replacement complete/g, "生产替代验收完成")
+    .replace(/degraded/g, "待补")
+    .replace(/pending/g, "待补")
+    .replace(/真实数据链 数据卡/g, "数据链卡")
+    .replace(/真实数据 数据卡/g, "数据卡")
+    .replace(/真实数据 数据凭证/g, "真实数据凭证")
+    .replace(/真实数据链 账本/g, "真实数据记录")
+    .replace(/真实数据链 结论/g, "真实数据链结论")
+    .replace(/本地 数据记录/g, "本地数据记录")
+    .replace(/本地 本地缓存/g, "本地缓存")
+    .replace(/数据接口 后台流程/g, "数据后台流程")
+    .replace(/按钮门控 数据后台流程/g, "确认后数据回写")
+    .replace(/确认后数据回写 回写/g, "确认后数据回写")
+    .replace(/确认后数据回写 数据记录/g, "确认后数据回写")
+    .replace(/candidate_radar_p3_handoff_readonly/g, "下一票雷达回放")
+    .replace(/legacy\/本地缓存 投影/g, "旧缓存回放")
+    .replace(/降级预览/g, "待补预览")
+    .replace(/真实 close/g, "真实收口")
+    .replace(/GET 后台流程s/g, "本地进度")
+    .replace(/下一票雷达 本地缓存/g, "下一票雷达本地回放")
+    .replace(/不调用 真实数据\/模型解释\/远端检查/g, "不刷新外部数据或模型")
+    .replace(/证据缺口/g, "缺口原因")
+    .replace(/证据来源/g, "只读来源")
+    .replace(/浏览器视觉 QA/g, "图谱显示检查")
+    .replace(/证据待确认/g, "仍待确认")
+    .replace(/生产替代证据/g, "完整验收材料")
+    .replace(/生产替代/g, "完整替代")
+    .replace(/保留信号和能力覆盖/g, "图谱覆盖")
+    .replace(/真实收口/g, "最终复核");
+}
+
+function ordinaryNextMetricItems(items: MetricItem[]): MetricItem[] {
+  return items.map((item) => ({
+    ...item,
+    label: ordinaryNextText(item.label),
+    value: ordinaryNextText(item.value),
+    tone: undefined
+  }));
 }
 
 export default function NextSessionMap() {
@@ -594,7 +670,7 @@ export default function NextSessionMap() {
     },
     {
       label: "边界",
-      value: "只读 CandidateRadar cache / call_ledger / packet 和 next-session cache；不补调 Tushare/DeepSeek、不交易",
+      value: "只读已有本地结果、数据记录和次日图谱缓存；不刷新外部数据或模型、不交易",
       tone: "good"
     }
   ];
@@ -842,7 +918,7 @@ export default function NextSessionMap() {
     },
     {
       label: "研究边界",
-      value: "图谱和操作区只做条件复核；查看页面和链接跳转不创建任务、不外联、不交易、不改策略",
+      value: "图谱和操作区只做条件复核；查看页面和链接跳转不创建后台流程、不外联、不交易、不改策略",
       tone: "good"
     }
   ];
@@ -1457,44 +1533,50 @@ export default function NextSessionMap() {
     <PacketCard title="普通用户次日图谱摘要" subtitle="下一步、来源、缺口、边界和最近结果" status={nextSessionReadableStatusLabel}>
       <div aria-label="next session app first research read">
         <h3>本地投研速读</h3>
-        <p className="ordinary-status-note" aria-label="next session app first research read sentence" aria-live="polite">{nextSessionAppFirstResearchReadSentence}</p>
-        <MetricGrid items={nextSessionAppFirstResearchReadItems} />
+        <p className="ordinary-status-note" aria-label="next session app first research read sentence" aria-live="polite">{ordinaryNextText(nextSessionAppFirstResearchReadSentence)}</p>
+        <MetricGrid items={ordinaryNextMetricItems(nextSessionAppFirstResearchReadItems)} />
         <div className="actions" aria-label="next session app first research read actions">
           <a href={nextSessionOrdinaryProgressCheckpointAnchor} title="跳到当前最短可读位置；只切换本地锚点" aria-label="open current next session research read target">{nextSessionOrdinaryProgressCheckpointLabel}</a>
           <a href="#next-session-chart" title="跳到完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart from next session research read">图谱区域</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from next session research read">支持/压制</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from next session research read">确认或换一只票</a>
         </div>
-        <p className="risk-note">这张首屏只回答用户打开次日图谱能先读什么：路径、参考线、操作区、缺口和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek/GitHub、不真实交易。</p>
+        <p className="risk-note">这张首屏只回答用户打开次日图谱能先读什么：路径、参考线、操作区、缺口和下一步入口；链接只切换本地页面或锚点，不创建后台流程、不刷新外部数据或模型、不真实交易。</p>
       </div>
-      <PageStateBanner
-        loading={loading}
-        error={error}
-        empty={empty}
-        emptyTitle="暂无已缓存次日操作图谱"
-        emptyDetail={cacheMissingMessage || "请在允许按钮任务的情况下点击生成任务；查看缓存不会触发 Tushare。"}
-      />
+      {(loading || error || empty) ? (
+        <div className="page-state page-state-empty motion-surface" data-page-state="next_session_ordinary_cache_state" data-motion-scope="ordinary_user_next_session_clarity" data-motion-purpose="readable_cache_state">
+          <strong>{loading ? "正在读取本地图谱" : error ? "本地图谱待补" : "暂无已缓存次日操作图谱"}</strong>
+          <p>{ordinaryNextText(error ? cacheMissingMessage || error : loading ? "正在读取本地图谱；页面不会自动刷新外部数据或模型。" : "请回下一票雷达确认股票，或使用手动按钮生成本地图谱；查看缓存不会刷新外部数据。")}</p>
+          <MetricGrid
+            items={ordinaryNextMetricItems([
+              { label: "当前状态", value: loading ? "正在读取本地图谱" : error ? "本地图谱待补" : "等待本地图谱" },
+              { label: "下一步", value: candidateRadarConfirmedSymbol ? "查看缓存或手动生成本地图谱" : "先回下一票雷达确认股票" },
+              { label: "安全边界", value: "页面打开只读本地缓存；不刷新外部数据或模型、不交易" }
+            ])}
+          />
+        </div>
+      ) : null}
       <div aria-label="next session ordinary plain conclusion">
         <h3>普通结论</h3>
-        <p className="ordinary-status-note" aria-label="next session ordinary plain conclusion sentence" aria-live="polite">{nextSessionPlainConclusion}</p>
-        <MetricGrid items={nextSessionPlainConclusionItems} />
+        <p className="ordinary-status-note" aria-label="next session ordinary plain conclusion sentence" aria-live="polite">{ordinaryNextText(nextSessionPlainConclusion)}</p>
+        <MetricGrid items={ordinaryNextMetricItems(nextSessionPlainConclusionItems)} />
         <p className="risk-note">普通结论只读本地次日图谱和上游确认结果；页面打开、查看结果和切换入口都不会自动创建任务、调用外部服务或改写操作区。</p>
       </div>
       <div aria-label="next session first screen readable decision">
         <h3>一眼结论</h3>
-        <p className="ordinary-status-note" aria-label="next session first screen readable sentence" aria-live="polite">{nextSessionFirstScreenReadableSentence}</p>
-        <MetricGrid items={nextSessionFirstScreenItems} />
+        <p className="ordinary-status-note" aria-label="next session first screen readable sentence" aria-live="polite">{ordinaryNextText(nextSessionFirstScreenReadableSentence)}</p>
+        <MetricGrid items={ordinaryNextMetricItems(nextSessionFirstScreenItems)} />
         <div className="actions" aria-label="next session first screen safe actions">
           <a href={nextSessionOrdinaryProgressCheckpointAnchor} aria-label="open next session first screen primary next step">{nextSessionOrdinaryProgressCheckpointLabel}</a>
           <button onClick={refreshCache} title={nextSessionCacheButtonLabel} aria-label="refresh next session cache from first screen">查看缓存</button>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session first screen">换标的</a>
         </div>
-        <p className="risk-note">首屏只汇总当前股票、最近结果、下一步、证据缺口和操作区边界；查看缓存只读本地 GET cache，链接只切换本地锚点，不创建 task、不调用 Tushare/DeepSeek、不下单。</p>
+        <p className="risk-note">首屏只汇总当前股票、最近结果、下一步、缺口原因和操作区边界；查看缓存只读本地缓存，链接只切换本地锚点，不创建后台流程、不刷新外部数据或模型、不下单。</p>
       </div>
       <div aria-label="next session post confirm one minute chart read">
         <h3>确认后一眼读图</h3>
-        <p className="ordinary-status-note" aria-label="next session post confirm one minute sentence" aria-live="polite">{nextSessionPostConfirmOneMinuteSentence}</p>
-        <MetricGrid items={nextSessionPostConfirmOneMinuteItems} />
+        <p className="ordinary-status-note" aria-label="next session post confirm one minute sentence" aria-live="polite">{ordinaryNextText(nextSessionPostConfirmOneMinuteSentence)}</p>
+        <MetricGrid items={ordinaryNextMetricItems(nextSessionPostConfirmOneMinuteItems)} />
         <div className="actions" aria-label="next session post confirm one minute actions">
           <a href="#next-session-chart" title="跳到完整次日图谱区域；只读本地次日图谱数据" aria-label="open next session chart from post confirm one minute read">看图表</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from post confirm one minute read">看支持/压制</a>
@@ -1504,36 +1586,36 @@ export default function NextSessionMap() {
       </div>
       <div aria-label="next session app visible now summary">
         <h3>打开 app 能看到什么</h3>
-        <p className="ordinary-status-note" aria-label="next session app visible now sentence" aria-live="polite">{nextSessionAppVisibleNowSentence}</p>
-        <MetricGrid items={nextSessionAppVisibleNowItems} />
+        <p className="ordinary-status-note" aria-label="next session app visible now sentence" aria-live="polite">{ordinaryNextText(nextSessionAppVisibleNowSentence)}</p>
+        <MetricGrid items={ordinaryNextMetricItems(nextSessionAppVisibleNowItems)} />
         <div className="actions" aria-label="next session app visible now local actions">
           <a href={nextSessionOrdinaryProgressCheckpointAnchor} title="跳到当前最短可读位置；只切换本地锚点" aria-label="open current visible next session area">{nextSessionOrdinaryProgressCheckpointLabel}</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from visible now summary">换标的</a>
-          <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare 数据凭证、权限、空窗口和本地结果包缺口" aria-label="open data capability from next session visible now summary">数据能力</a>
+          <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据凭证、权限、空窗口和本地结果包缺口" aria-label="open data capability from next session visible now summary">数据能力</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from visible now summary">看支持/压制</a>
         </div>
-        <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：股票、图谱状态、来源层、降级原因和下一步入口；普通链接只切换本地页面或锚点，不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不改操作区或 strategy action。</p>
+        <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：股票、图谱状态、来源层、缺口原因和下一步入口；普通链接只切换本地页面或锚点，不创建后台流程、不刷新外部数据或模型、不交易、不改操作区。</p>
       </div>
-      <div aria-label="next session live light evidence layers">
-        <h3>运行模式分层</h3>
-        <MetricGrid items={nextSessionLiveLightEvidenceItems} />
-        <p className="risk-note">轻量实时证据只读本地 cache、CandidateRadar 回放和任务索引；不会因为页面打开、React render 或本地链接调用 Tushare/DeepSeek/GitHub，也不证明 LTG-08 production replacement complete。</p>
-      </div>
+      <details className="developer-audit-details" aria-label="next session live light evidence layers">
+        <summary>运行模式分层</summary>
+        <MetricGrid items={ordinaryNextMetricItems(nextSessionLiveLightEvidenceItems)} />
+        <p className="risk-note">轻量实时证据只读本地缓存、下一票雷达回放和任务索引；不会因为页面打开、页面渲染或本地链接刷新外部数据或模型，也不证明长期目标生产替代完成。</p>
+      </details>
       <div aria-label="next session ordinary tushare data card">
-        <h3>确认后 Tushare 数据卡</h3>
-        <p className="ordinary-status-note" aria-label="next session ordinary tushare data card summary" aria-live="polite">{nextSessionTushareDataCardSummary}</p>
-        <MetricGrid items={nextSessionTushareDataCardItems} />
+        <h3>确认后数据链状态</h3>
+        <p className="ordinary-status-note" aria-label="next session ordinary tushare data card summary" aria-live="polite">{ordinaryNextText(nextSessionTushareDataCardSummary)}</p>
+        <MetricGrid items={ordinaryNextMetricItems(nextSessionTushareDataCardItems)} />
         <details className="developer-audit-details" aria-label="next session ordinary tushare data card rows">
           <summary>接口回放明细</summary>
-          <p className="risk-note">这张明细优先读取 CandidateRadar 的 ordinary_provider_api_rows；旧缓存缺字段时显示轻量接口 fallback，不从次日图谱页补调数据。</p>
+          <p className="risk-note">这张明细优先读取下一票雷达的普通接口回放；旧缓存缺字段时显示轻量接口回退，不从次日图谱页补调数据。</p>
           <DataLineageTable rows={nextSessionTushareDataCardRows} />
         </details>
-        <p className="risk-note">确认后数据卡只整理已有 CandidateRadar 缓存、调用账本、结果包和本地 next-session cache；不会创建第二个 task、调用 Tushare、DeepSeek、GitHub，不交易、不改操作区或 strategy action。</p>
+        <p className="risk-note">确认后数据链状态只整理已有下一票雷达回放和本地次日图谱缓存；不会创建第二个后台流程、刷新外部数据或模型，不交易、不改操作区或交易动作。</p>
       </div>
       <div aria-label="next session ordinary review compass">
         <h3>次日图谱复核顺序</h3>
         <p className="ordinary-status-note">先看图表路径和参考线，再看操作区条件，最后看缺口和回流入口；这只是研究复核顺序，不是买卖、下单或加仓指令。</p>
-        <MetricGrid items={nextSessionOrdinaryReviewCompassItems} />
+        <MetricGrid items={ordinaryNextMetricItems(nextSessionOrdinaryReviewCompassItems)} />
         <div className="actions" aria-label="next session ordinary review compass actions">
           <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart from next session review compass">看图表</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from next session review compass">看支持/压制</a>
@@ -1544,9 +1626,10 @@ export default function NextSessionMap() {
           <p className="risk-note">明细只解释本地缓存的读图顺序；不会打开浏览器 QA，不创建 provider/model/worker task，也不证明 LTG-08 production replacement。</p>
           <DataLineageTable rows={nextSessionOrdinaryReviewCompassRows} />
         </details>
-        <p className="risk-note">读图罗盘只切换本地锚点和页面入口；GET cache、React render、普通链接都不调用 Tushare/DeepSeek/GitHub，不真实交易，也不改操作区或 strategy action。</p>
+        <p className="risk-note">读图罗盘只切换本地锚点和页面入口；本地缓存读取、页面渲染、普通链接都不刷新外部数据或模型，不真实交易，也不改操作区或 strategy action。</p>
       </div>
-      <div aria-label="next session ordinary evidence factory task strip">
+      <details className="developer-audit-details" aria-label="next session ordinary evidence factory task strip">
+        <summary>研究辅助 / 审计按钮</summary>
         <h3>LTG-08 本地证据按钮</h3>
         <p className="ordinary-status-note" aria-label="next session ordinary evidence factory sentence">
           用户现在可以从首屏读取本地 browser QA artifact、same-packet retained signal/capability coverage 和 promotion blocker 的审查状态；这些按钮只创建本地 review task，不打开浏览器、不写 artifact、不调用 provider/model/GitHub。
@@ -1565,7 +1648,7 @@ export default function NextSessionMap() {
         <TaskLaunchReceipt receipt={productionPromotionReceipt} />
         <TaskStatusPanel taskId={productionPromotionTaskId} onSuccess={refreshCache} />
         <p className="risk-note">LTG-08 首屏按钮是显式 POST local review task：不打开浏览器、不写 screenshots/report artifact、不调用 Tushare/DeepSeek/GitHub，不真实交易，不改操作区或 strategy action；local review 仍不是 production replacement complete。</p>
-      </div>
+      </details>
       <MetricGrid
         items={[
           { label: "主下一步", value: nextSessionReadableNextClick },
@@ -1600,7 +1683,8 @@ export default function NextSessionMap() {
         <MetricGrid items={nextSessionUsableNowItems} />
         <p className="risk-note">这条只合成图谱可绘制、P3 结论、P2 三面、操作区和下一步；不创建 task、不调用 Tushare/DeepSeek、不改操作区或 strategy action。</p>
       </div>
-      <div aria-label="next session local task index progress watch">
+      <details className="developer-audit-details" aria-label="next session local task index progress watch">
+        <summary>研究辅助 / 本地进度</summary>
         <h3>本地任务进度</h3>
         <MetricGrid items={nextSessionTaskIndexProgressItems} />
         <div className="actions" aria-label="next session local task index progress actions">
@@ -1609,7 +1693,7 @@ export default function NextSessionMap() {
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant from next session progress watch">股票量化推演</a>
         </div>
         <p className="risk-note">边用边看：{nextSessionProgressWatchNext}；这只来自 GET /api/tasks、本地次日图谱数据和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易，也不改操作区。</p>
-      </div>
+      </details>
       <div aria-label="next session ordinary progress checkpoint">
         <h3>当前图谱 checkpoint</h3>
         <MetricGrid items={nextSessionOrdinaryProgressCheckpointItems} />
@@ -1618,7 +1702,7 @@ export default function NextSessionMap() {
           <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart area from next session checkpoint">图谱区域</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session checkpoint">下一票雷达确认</a>
         </div>
-        <p className="risk-note">checkpoint 只汇总 CandidateRadar 上游结论、来源 task、图谱状态和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek，也不改操作区或 strategy action。</p>
+        <p className="risk-note">checkpoint 只汇总下一票雷达上游结论、来源流程、图谱状态和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek，也不改操作区或交易动作。</p>
       </div>
       <StateClarityRail
         label="next session ordinary replay status"

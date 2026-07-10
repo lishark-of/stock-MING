@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getMigrationStatus, postLegacyAuditObservationDryRun, postLtgNextAcceptanceLocalStep, postTushareDeepseekLinkageReview, type TaskCreationEnvelope } from "../api/client";
+import { getHealth, getMigrationStatus, postLegacyAuditObservationDryRun, postLtgNextAcceptanceLocalStep, postTushareDeepseekLinkageReview, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
@@ -48,6 +48,57 @@ function stringArray(value: unknown, fallback: Array<string>): Array<string> {
   return Array.isArray(value) && value.every((item) => typeof item === "string")
     ? value as Array<string>
     : fallback;
+}
+
+function ordinaryMigrationText(value: unknown, fallback = "--"): string {
+  let result = String(value ?? fallback);
+  const replacements: Array<[RegExp, string]> = [
+    [/LTG-?0?1/gi, "交易日历新鲜度"],
+    [/LTG-?0?2/gi, "外部数据接口样本"],
+    [/LTG-?0?3/gi, "量化验证"],
+    [/LTG-?0?4/gi, "股票池和因子"],
+    [/LTG-?0?5/gi, "本地数据存储"],
+    [/LTG-?0?6/gi, "后台任务"],
+    [/LTG-?0?7/gi, "模型解释治理"],
+    [/LTG-?0?8/gi, "次日图谱"],
+    [/LTG-?0?9/gi, "桌面打包"],
+    [/LTG-?10/gi, "旧入口退场"],
+    [/LTG-?11/gi, "测试和发布检查"],
+    [/LTG-?12/gi, "交易隔离"],
+    [/LTG-?13/gi, "下一票雷达"],
+    [/LTG-?14/gi, "动效体验"],
+    [/strict closeout/gi, "最终收口"],
+    [/direct evidence/gi, "直接证据"],
+    [/remote CI/gi, "远端检查"],
+    [/release review/gi, "发布复核"],
+    [/provider/gi, "外部数据"],
+    [/DeepSeek/gi, "模型解释"],
+    [/Tushare/gi, "外部数据"],
+    [/GitHub/gi, "远端仓库"],
+    [/worker/gi, "后台任务"],
+    [/cache/gi, "本地缓存"],
+    [/ledger/gi, "调用记录"],
+    [/packet/gi, "结果包"],
+    [/receipt/gi, "回执"],
+    [/scope hash/gi, "范围校验"],
+    [/payload/gi, "请求范围"],
+    [/task[_ -]?id/gi, "任务编号"],
+    [/\btask\b/gi, "后台任务"],
+    [/blocked/gi, "待处理"],
+    [/pending/gi, "等待"],
+    [/dry-run/gi, "本地预检"],
+    [/execution-request/gi, "执行申请"],
+    [/matrix/gi, "检查表"],
+    [/sanitizer/gi, "脱敏检查"],
+    [/mock/gi, "模拟样本"]
+  ];
+  for (const [pattern, replacement] of replacements) {
+    result = result.replace(pattern, replacement);
+  }
+  return result
+    .replace(/[_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim() || fallback;
 }
 
 function releaseGatePublishStatusLabel(value: unknown): string {
@@ -360,8 +411,12 @@ export default function MigrationStatus() {
   const [ltgNextActionReceipt, setLtgNextActionReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [ltgNextActionTaskId, setLtgNextActionTaskId] = useState("");
   const [ltgNextActionError, setLtgNextActionError] = useState("");
+  const [healthReady, setHealthReady] = useState(false);
 
   useEffect(() => {
+    void getHealth().then((res) => {
+      setHealthReady(res.ok && String((res.data as Record<string, unknown>)?.status ?? "") === "ok");
+    });
     void getMigrationStatus().then((res) => {
       setPacket(res.data);
       setCacheEnvelopeLedger(res.call_ledger ?? []);
@@ -1208,29 +1263,37 @@ export default function MigrationStatus() {
     });
   };
   const migrationPacketLoaded = Object.keys(packet).length > 0;
+  const migrationLocalConnected = migrationPacketLoaded || healthReady;
   const migrationStrictCloseoutLabel = String(longTermGoalSummary.strict_closeout ?? "0/14");
   const migrationGoalCountLabel = String(longTermGoalSummary.goal_count ?? 14);
-  const migrationCurrentMainFocus =
-    longTermNextPriority[0] ??
-    "普通用户可用化并行修补；14 LTG 主线继续收直接证据";
-  const migrationOrdinaryNextStep =
+  const migrationCurrentMainFocus = ordinaryMigrationText(
+    longTermNextPriority[0] ?? "普通用户可用化并行修补；长期主线继续收证据"
+  );
+  const migrationOrdinaryNextStep = ordinaryMigrationText(
     usablePathCurrentCheckpointRows[0]?.["用户下一步"] ??
-    usablePathCurrentCheckpointRows[0]?.next_action ??
-    "先看今日作战台、下一票雷达、股票量化推演和次日图谱；工程详情留在折叠区";
+      usablePathCurrentCheckpointRows[0]?.next_action ??
+      "先看今日作战台、下一票雷达、股票量化推演和次日图谱；工程详情留在折叠区"
+  );
   const migrationAheadLabel = releaseGateCurrentHeadAheadCount > 0
     ? `当前本地领先 ${releaseGateCurrentHeadAheadCount}`
     : "当前本地领先数量待复核";
-  const migrationBlockerSummary = releaseGateCurrentHeadPushRequired || releaseGateRemoteReviewWaitingForPush
-    ? `长期主线还缺本地门禁、发布和同版本远端查收；${migrationAheadLabel}`
-    : "provider 验收、CI 查收、发布复核和生产证据未完全收口，不能称为 14 LTG 完成";
+  const migrationBlockerSummary = ordinaryMigrationText(
+    releaseGateCurrentHeadPushRequired || releaseGateRemoteReviewWaitingForPush
+      ? `长期主线还缺本地门禁、发布和同版本远端查收；${migrationAheadLabel}`
+      : "外部数据验收、远端自动检查、发布复核和生产证据未完全收口，不能称为长期目标全部完成"
+  );
   const migrationOrdinaryStatusItems: MetricItem[] = [
     {
       label: "当前状态",
-      value: migrationPacketLoaded ? "本地迁移摘要已接上" : "正在读取本地迁移摘要"
+      value: migrationPacketLoaded
+        ? "本地迁移摘要已接上"
+        : healthReady
+          ? "本地已接上，迁移摘要读取中"
+          : "正在读取本地迁移摘要"
     },
     {
       label: "长期目标",
-      value: `${migrationStrictCloseoutLabel} 已严格关闭 / 共 ${migrationGoalCountLabel} 个`
+      value: `${migrationStrictCloseoutLabel} 完成最终收口 / 共 ${migrationGoalCountLabel} 个`
     },
     {
       label: "当前主攻",
@@ -1254,14 +1317,14 @@ export default function MigrationStatus() {
     },
     {
       label: "说明",
-      value: "这里不是 14 LTG 完成声明；工程查收、队列和原始表在下方详情"
+      value: "这里不是长期目标全部完成声明；工程查收、队列和原始表在下方详情"
     }
   ];
 
   return (
     <>
-      <PacketCard title="迁移状态摘要" subtitle="普通用户只看当前进度、主攻方向、下一步和阻断原因" status={migrationPacketLoaded ? "本地已接上" : undefined}>
-        <p className="ordinary-status-note">这张卡只回答现在迁移到哪、下一步去哪、为什么不能说 14 LTG 完成；工程表和开发按钮默认下沉。</p>
+      <PacketCard title="迁移状态摘要" subtitle="普通用户只看当前进度、主攻方向、下一步和阻断原因" status={migrationLocalConnected ? "本地已接上" : undefined}>
+        <p className="ordinary-status-note">这张卡只回答现在迁移到哪、下一步去哪、为什么不能说长期目标全部完成；工程表和开发按钮默认下沉。</p>
         <MetricGrid items={migrationOrdinaryStatusItems} />
         <div className="actions" aria-label="migration ordinary summary actions">
           <button onClick={refreshMigrationStatus} title="只刷新本地迁移摘要；不创建任务、不外联">刷新本地摘要</button>
@@ -1270,7 +1333,7 @@ export default function MigrationStatus() {
           <a href="#factor" title="打开股票量化推演；只读本地结果">股票量化推演</a>
           <a href="#next" title="打开次日图谱；只读本地缓存">次日图谱</a>
         </div>
-        <p className="risk-note">页面打开和刷新摘要只读本地 GET；不调用 Tushare、DeepSeek、GitHub、worker 或交易路径。</p>
+        <p className="risk-note">页面打开和刷新摘要只读本地结果；不调用外部数据、模型、远端检查、后台执行或交易路径。</p>
       </PacketCard>
 
       <details className="developer-audit-details" aria-label="migration status developer audit details">

@@ -33,7 +33,7 @@ export type RouteKey =
   | "legacy";
 
 const ORDINARY_NAVIGATION_BOUNDARY =
-  "普通用户先用三入口；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、审计、设置或回退。";
+  "普通用户先用三入口；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、排查、设置或回退。";
 const LOCAL_FASTAPI_HEALTH_POLL_MS = 3000;
 type LocalFastapiStatus = "checking" | "online" | "offline";
 
@@ -65,7 +65,7 @@ const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; rout
   },
   {
     title: "数据与治理",
-    hint: "lineage、receipt 和审计表在这里，不压过普通用户页面。",
+    hint: "数据来源、结果记录和排查表在这里，不压过普通用户页面。",
     routes: [
       { key: "audit", label: "调用审计" },
       { key: "evidence", label: "证据雷达" },
@@ -77,7 +77,7 @@ const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; rout
   },
   {
     title: "系统迁移",
-    hint: "配置、任务、迁移和 Legacy 只作 settings/developer/audit 入口。",
+    hint: "配置、任务、迁移和旧工作台只作设置、排查或回退入口。",
     routes: [
       { key: "health", label: "健康" },
       { key: "settings", label: "配置健康" },
@@ -214,7 +214,7 @@ export default function Layout({
             )
           ))}
         </nav>
-        <p className="sidebar-note">三入口先行：今日作战台、股票量化推演、下一票雷达；ETF / 融资作为补充普通入口。研究-only，不下单；旧 Streamlit 仅作 legacy/admin/debug fallback。</p>
+        <p className="sidebar-note">三入口先行：今日作战台、股票量化推演、下一票雷达；ETF / 融资作为补充普通入口。只做研究辅助，不下单；旧工作台仅作排查回退入口。</p>
       </aside>
       <main className="content">{children}</main>
     </div>

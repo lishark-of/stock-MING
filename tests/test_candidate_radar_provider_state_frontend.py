@@ -35,7 +35,8 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("provider_api_call_count", self.page)
         self.assertIn("deepseek_skipped_by_request", self.page)
         self.assertIn("Tushare ledger 已回放", self.page)
-        self.assertIn("GET cache 已回放 Tushare provider ledger", self.page)
+        self.assertIn("本地缓存已回放数据来源记录；模型解释待单独补，不改交易策略", self.page)
+        self.assertIn("Tushare provider ledger 可回放", self.page)
         self.assertIn("quantProjectionSmallDataReplayState", self.page)
         self.assertIn("quantProjectionSmallDataRows", self.page)
         self.assertIn("quantProjectionSmallDataWritebackSurfaces", self.page)
@@ -63,7 +64,7 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("const quantProjectionInterpretationPartialLedgerReady", self.page)
         self.assertIn("const quantProjectionInterpretationReady = quantProjectionInterpretationExplicitReady", self.page)
         self.assertIn("等待小数据三面 ready 后再开放 P3 速读", self.page)
-        self.assertIn("不要把单独 call_ledger 当作 P3 结果完成", self.page)
+        self.assertIn("继续等待小数据三面 ready；不要把单独数据来源记录当作 P3 结果完成", self.page)
         self.assertNotIn(
             "searchQuantProjectionInterpretation.interpretation_ready === true || quantProjectionProviderLedgerReady",
             self.page,
@@ -76,7 +77,7 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("可解释结果行动", search_panel)
         self.assertIn("优先读取服务端 ordinary_result_action_rows", search_panel)
         self.assertIn("读可读结论、回放量化推演、打开次日图谱", search_panel)
-        self.assertIn("DeepSeek 已跳过：等待 governed executor", self.page)
+        self.assertIn("模型解释已跳过：等待单独治理能力", self.page)
         self.assertIn('label: "Tushare ledger"', search_panel)
         self.assertIn('label: "cache / ledger / packet"', search_panel)
         self.assertIn('label: "小数据回放"', search_panel)

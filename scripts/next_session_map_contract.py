@@ -1052,7 +1052,10 @@ def build_contract() -> dict[str, Any]:
             and ("post" + "Task(") not in review_compass_slice
             and ("launch" + "Task") not in review_compass_slice
             and 'aria-label="refresh next session cache from first screen"' in next_page
-            and "首屏只汇总当前股票、最近结果、下一步、证据缺口和操作区边界" in next_page
+            and (
+                "首屏只汇总当前股票、最近结果、下一步、证据缺口和操作区边界" in next_page
+                or "首屏只汇总当前股票、最近结果、下一步、缺口原因和操作区边界" in next_page
+            )
             and "nextSessionOrdinaryProgressCheckpointItems" in next_page
             and "nextSessionOrdinaryProgressCheckpointAnchor" in next_page
             and 'aria-label="next session ordinary progress checkpoint"' in next_page

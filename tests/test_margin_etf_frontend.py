@@ -87,7 +87,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
 
     def test_margin_etf_first_screen_shows_ordinary_quick_read_before_actions(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
-        page_state_start = self.page.index("<PageStateBanner")
+        page_state_start = self.page.index('data-page-state="margin_etf_snapshot_issue"', card_start)
         candidate_group_start = self.page.index('title="ETF 候选分组"')
         visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
         plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
@@ -222,7 +222,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertIn("marginEtfAppVisibleNowSentence", source_before_audit)
         self.assertIn("marginEtfAppVisibleNowItems", source_before_audit)
         self.assertIn("DATA_CAPABILITY_HREF", source_before_audit)
-        self.assertIn("打开 app 能看到 ETF/融资的降级等待态", source_before_audit)
+        self.assertIn("打开 app 能看到 ETF/融资的待补风险快照", source_before_audit)
         self.assertIn("打开 app 能看到 ${allVisibleEtfRows.length} 行 ETF 候选", source_before_audit)
         for label in (
             'label: "打开可见"',
@@ -230,7 +230,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
             'label: "融资现金线"',
             'label: "来源层"',
             'label: "数据能力"',
-            'label: "明确降级"',
+            'label: "缺口原因"',
             'label: "下一步入口"',
             'label: "安全边界"',
         ):
@@ -300,7 +300,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertIn('id="margin-etf-cash-line"', self.page)
         self.assertIn('id="margin-etf-local-refresh-actions"', self.page)
         self.assertIn("首屏操作条只做本地锚点跳转", action_slice)
-        self.assertIn("不会自动刷新 ETF、不会调用 Tushare/DeepSeek/GitHub、不会创建 task", action_slice)
+        self.assertIn("不会自动刷新 ETF、不会调用外部数据、模型或远端检查、不会创建后台流程", action_slice)
         self.assertIn("不会交易或改写策略", action_slice)
         self.assertNotIn("onClick=", action_slice)
         self.assertNotIn("postTask(", action_slice)
@@ -500,16 +500,16 @@ class MarginEtfFrontendTests(unittest.TestCase):
         for label in (
             'label: "本地回执"',
             'label: "本地结果"',
-            'label: "降级原因"',
+            'label: "待补原因"',
             'label: "ETF 行数"',
             'label: "范围校验"',
             'label: "安全说明"',
         ):
             self.assertIn(label, self.page)
-        self.assertIn("本地刷新已返回降级结果", self.page)
-        self.assertIn("点击刷新/重建本地包后，这里会显示回执、降级原因、行数和安全说明。", self.page)
-        self.assertIn("只读按钮返回的本地回执和本地审计记录", result_slice)
-        self.assertIn("缺 ETF 或融资本地快照时只显示降级原因", result_slice)
+        self.assertIn("本地刷新已返回待补结果", self.page)
+        self.assertIn("点击刷新/重建本地包后，这里会显示回执、待补原因、行数和安全说明。", self.page)
+        self.assertIn("只读按钮返回的本地回执和本地记录", result_slice)
+        self.assertIn("缺 ETF 或融资本地快照时只显示待补原因", result_slice)
         self.assertIn("不会补外部数据、调用模型、交易或改写策略", result_slice)
         self.assertNotIn("onClick=", result_slice)
         self.assertNotIn("postTask(", result_slice)
@@ -596,7 +596,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertIn("本地快照和运行状态只读", self.page)
         self.assertIn("页面打开、React render 和本地链接不启动刷新流程", self.page)
         self.assertIn("刷新/重建本地包只走用户点击后的本地流程，不刷新外部数据或模型", self.page)
-        self.assertIn("缺 ETF 或融资数据只显示 degraded，不当作无风险，也不自动补外部数据", self.page)
+        self.assertIn("缺 ETF 或融资数据只显示待补风险快照，不当作无风险，也不自动补外部数据", self.page)
         self.assertIn("不打开 Streamlit，不移除 fallback，不把本地回放当 LTG-10 strict closeout", self.page)
         self.assertIn("ETF 候选和融资比例只供研究复核；不接券商、不下单、不改交易策略", self.page)
         self.assertNotIn("onClick=", mode_slice)
