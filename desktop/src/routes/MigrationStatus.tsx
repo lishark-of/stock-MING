@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getMigrationStatus, postLegacyAuditObservationDryRun, postLtgNextAcceptanceLocalStep, postTushareDeepseekLinkageReview, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
-import MetricGrid from "../components/MetricGrid";
+import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
@@ -1207,9 +1207,75 @@ export default function MigrationStatus() {
       }
     });
   };
+  const migrationPacketLoaded = Object.keys(packet).length > 0;
+  const migrationStrictCloseoutLabel = String(longTermGoalSummary.strict_closeout ?? "0/14");
+  const migrationGoalCountLabel = String(longTermGoalSummary.goal_count ?? 14);
+  const migrationCurrentMainFocus =
+    longTermNextPriority[0] ??
+    "普通用户可用化并行修补；14 LTG 主线继续收直接证据";
+  const migrationOrdinaryNextStep =
+    usablePathCurrentCheckpointRows[0]?.["用户下一步"] ??
+    usablePathCurrentCheckpointRows[0]?.next_action ??
+    "先看今日作战台、下一票雷达、股票量化推演和次日图谱；工程详情留在折叠区";
+  const migrationAheadLabel = releaseGateCurrentHeadAheadCount > 0
+    ? `当前本地领先 ${releaseGateCurrentHeadAheadCount}`
+    : "当前本地领先数量待复核";
+  const migrationBlockerSummary = releaseGateCurrentHeadPushRequired || releaseGateRemoteReviewWaitingForPush
+    ? `长期主线还缺本地门禁、发布和同版本远端查收；${migrationAheadLabel}`
+    : "provider 验收、CI 查收、发布复核和生产证据未完全收口，不能称为 14 LTG 完成";
+  const migrationOrdinaryStatusItems: MetricItem[] = [
+    {
+      label: "当前状态",
+      value: migrationPacketLoaded ? "本地迁移摘要已接上" : "正在读取本地迁移摘要"
+    },
+    {
+      label: "长期目标",
+      value: `${migrationStrictCloseoutLabel} 已严格关闭 / 共 ${migrationGoalCountLabel} 个`
+    },
+    {
+      label: "当前主攻",
+      value: migrationCurrentMainFocus
+    },
+    {
+      label: "下一步",
+      value: String(migrationOrdinaryNextStep)
+    },
+    {
+      label: "阻断原因",
+      value: migrationBlockerSummary
+    },
+    {
+      label: "普通入口",
+      value: "今日作战台 / 下一票雷达 / 股票量化推演 / 次日图谱"
+    },
+    {
+      label: "安全边界",
+      value: "本页只读查看；不创建任务、不调用外部服务、不交易"
+    },
+    {
+      label: "说明",
+      value: "这里不是 14 LTG 完成声明；工程查收、队列和原始表在下方详情"
+    }
+  ];
 
   return (
-    <PacketCard title="Command Center 3.0 迁移状态" subtitle="固定长期参考基线；只读、不重新估算、不外联" status={String(packet.status ?? "loading")}>
+    <>
+      <PacketCard title="迁移状态摘要" subtitle="普通用户只看当前进度、主攻方向、下一步和阻断原因" status={migrationPacketLoaded ? "本地已接上" : undefined}>
+        <p className="ordinary-status-note">这张卡只回答现在迁移到哪、下一步去哪、为什么不能说 14 LTG 完成；工程表和开发按钮默认下沉。</p>
+        <MetricGrid items={migrationOrdinaryStatusItems} />
+        <div className="actions" aria-label="migration ordinary summary actions">
+          <button onClick={refreshMigrationStatus} title="只刷新本地迁移摘要；不创建任务、不外联">刷新本地摘要</button>
+          <a href="#home" title="回今日作战台；普通用户主入口">今日作战台</a>
+          <a href="#candidates/candidate-radar-search-quant-projection" title="去下一票雷达确认输入区；输入静默">下一票雷达</a>
+          <a href="#factor" title="打开股票量化推演；只读本地结果">股票量化推演</a>
+          <a href="#next" title="打开次日图谱；只读本地缓存">次日图谱</a>
+        </div>
+        <p className="risk-note">页面打开和刷新摘要只读本地 GET；不调用 Tushare、DeepSeek、GitHub、worker 或交易路径。</p>
+      </PacketCard>
+
+      <details className="developer-audit-details" aria-label="migration status developer audit details">
+        <summary>研究辅助 / 工程迁移详情</summary>
+        <PacketCard title="Command Center 3.0 迁移状态" subtitle="固定长期参考基线；只读、不重新估算、不外联" status={String(packet.status ?? "loading")}>
       <div className="actions">
         <button onClick={refreshMigrationStatus}>查看迁移基线</button>
         <button onClick={launchLinkageReview}>生成联动 review 收据</button>
@@ -1755,5 +1821,7 @@ export default function MigrationStatus() {
       <JsonDetails title="迁移原则" data={packet.principles ?? []} />
       <JsonDetails title="迁移状态 packet" data={packet} />
     </PacketCard>
+    </details>
+    </>
   );
 }

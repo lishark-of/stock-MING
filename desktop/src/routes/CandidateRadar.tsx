@@ -530,15 +530,15 @@ export default function CandidateRadar() {
   const dataCapabilityEvidenceLedgerCount = dataCapabilityPayloadLedger.length + dataCapabilityEnvelopeLedger.length;
   const dataCapabilityMode = displayText(dataCapabilityCache.mode ?? "cache_only");
   const dataCapabilityModeLabel = dataCapabilityMode === "cache_only"
-    ? "cache_only（只读缓存，不外联）"
+    ? "只读缓存模式（不外联）"
     : `${dataCapabilityMode}（按页面边界复核）`;
   const dataCapabilityDegradedState = dataCapabilityTushareRestrictedCount
     ? "degraded：存在权限/配置受限，不能当作无数据"
     : dataCapabilityTusharePendingCount
       ? "degraded：存在空窗口、缓存或待补接口，先按保守处理"
       : dataCapabilityTushareAvailableCount
-        ? "可读：已有 Tushare 本地数据记录可回放"
-        : "等待：暂无 Tushare 本地数据健康记录";
+        ? "可读：已有本地数据记录可回放"
+        : "等待：暂无本地数据健康记录";
   const dataCapabilityEvidenceLedgerLabel = dataCapabilityEvidenceLedgerCount
     ? `payload ${dataCapabilityPayloadLedger.length} 条；envelope ${dataCapabilityEnvelopeLedger.length} 条本地 call_ledger`
     : "等待本地 call_ledger 回读";
@@ -4888,6 +4888,10 @@ export default function CandidateRadar() {
             <h3>确认后数据能力</h3>
             <p className="ordinary-status-note" aria-label="candidate radar post confirm data capability sentence" aria-live="polite">{candidateRadarPostConfirmDataCapabilitySentence}</p>
             <MetricGrid items={candidateRadarPostConfirmDataCapabilityItems} />
+            <details className="developer-audit-details" aria-label="candidate radar post confirm data capability audit details">
+              <summary>研究辅助 / 数据能力明细</summary>
+              <p className="risk-note">证据血缘：{dataCapabilityEvidenceLedgerLabel}。真实补证必须另走授权范围、safe payload、call_ledger 和 failure-mode evidence；普通首屏不展示这些字段。</p>
+            </details>
           </div>
           <div className="actions" aria-label="candidate radar operator post confirm one glance actions">
             <a href="#tasks" title="切换到任务目录；只读本地进度" aria-label="open tasks from operator post confirm one glance">任务状态</a>

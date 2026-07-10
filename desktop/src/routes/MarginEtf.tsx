@@ -4,7 +4,6 @@ import DataLineageTable from "../components/DataLineageTable";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import PageStateBanner from "../components/PageStateBanner";
-import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
@@ -133,7 +132,6 @@ export default function MarginEtf() {
   };
 
   const source = text(etfPacket.source, "融资 ETF 本地配置快照");
-  const status = text(etfPacket.status, loading ? "loading" : "waiting");
   const dataStatus = text(etfPacket.data_status ?? etfPacket.cache_state, "missing");
   const recommendedEtfs = rows(etfPacket.recommended_etfs);
   const actionableEtfs = rows(etfPacket.actionable_etfs);
@@ -147,7 +145,22 @@ export default function MarginEtf() {
     ...etfRows(excludedEtfs, source)
   ].slice(0, 12);
   const noEtfRows = !allVisibleEtfRows.length;
+  const etfPacketLoaded = Object.keys(etfPacket).length > 0;
+  const marginPacketLoaded = Object.keys(marginPacket).length > 0;
+  const empty = !loading && !error && !etfPacketLoaded && !marginPacketLoaded;
   const marginStatus = text(marginPacket.status ?? marginPacket.capability_state, "waiting");
+  const marginSnapshotReady = marginStatus === "ready";
+  const ordinaryStatus = loading
+    ? "正在读取本地快照"
+    : error
+      ? "本地快照待补"
+      : noEtfRows
+        ? "风险快照待补"
+        : "本地快照可读";
+  const dataStatusLabel = dataStatus === "ready" || dataStatus === "cached"
+    ? "本地快照可读"
+    : "本地快照待补";
+  const marginStatusLabel = marginSnapshotReady ? "融资状态可读" : "融资状态待补";
   const currentMarginRatio = etfPacket.current_margin_ratio ?? marginPacket.current_margin_ratio ?? marginPacket.margin_ratio;
   const recommendedMarginRatio = etfPacket.recommended_margin_ratio;
   const recommendedCashRatio = etfPacket.recommended_cash_ratio;
@@ -173,7 +186,7 @@ export default function MarginEtf() {
     : `当前可读 ${allVisibleEtfRows.length} 行 ETF 候选：先看来源、理由、流动性、重叠和现金/杠杆，再决定是否继续研究。`;
   const ordinaryMissingEvidence = noEtfRows
     ? "缺 ETF 候选行；本地刷新只生成降级回执，不自动补外部数据。"
-    : marginStatus === "ready"
+    : marginSnapshotReady
       ? "继续人工复核重叠、流动性和现金线；候选仍不是买入指令。"
       : "融资状态仍待本地包回放；不要把缺失数据当作可加杠杆。";
   const ordinaryPlainConclusion = noEtfRows
@@ -181,7 +194,7 @@ export default function MarginEtf() {
     : `当前有 ${allVisibleEtfRows.length} 行 ETF 候选；${marginDecision}，先看流动性、重叠和现金线。`;
   const ordinaryPlainGap = noEtfRows
     ? "缺少 ETF 候选行；本地刷新只会回放已有快照，不会自动补外部数据。"
-    : marginStatus === "ready"
+    : marginSnapshotReady
       ? "仍要人工复核重叠、流动性和现金线；候选不是买入或加融资指令。"
       : "融资状态还没回放完整；不要把缺失当作可加杠杆。";
   const ordinaryPlainNow = noEtfRows
@@ -191,23 +204,19 @@ export default function MarginEtf() {
   const ordinaryPlainItems: MetricItem[] = [
     {
       label: "一句话",
-      value: ordinaryPlainConclusion,
-      tone: noEtfRows ? "warn" : "good"
+      value: ordinaryPlainConclusion
     },
     {
       label: "缺口",
-      value: ordinaryPlainGap,
-      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+      value: ordinaryPlainGap
     },
     {
       label: "现在做什么",
-      value: ordinaryPlainNow,
-      tone: noEtfRows ? "warn" : "good"
+      value: ordinaryPlainNow
     },
     {
       label: "安全说明",
-      value: ordinaryPlainSafety,
-      tone: "good"
+      value: ordinaryPlainSafety
     }
   ];
   const ordinaryQuickReadItems: MetricItem[] = [
@@ -250,45 +259,37 @@ export default function MarginEtf() {
   const marginEtfAppVisibleNowItems: MetricItem[] = [
     {
       label: "打开可见",
-      value: marginEtfAppVisibleNowSentence,
-      tone: noEtfRows ? "warn" : "good"
+      value: marginEtfAppVisibleNowSentence
     },
     {
       label: "ETF 候选",
       value: noEtfRows
         ? "暂无候选；显示 degraded/等待态"
-        : `推荐 ${recommendedEtfs.length} / 观察 ${watchEtfs.length} / 回避 ${avoidEtfs.length} / 排除 ${excludedEtfs.length}`,
-      tone: noEtfRows ? "warn" : "good"
+        : `推荐 ${recommendedEtfs.length} / 观察 ${watchEtfs.length} / 回避 ${avoidEtfs.length} / 排除 ${excludedEtfs.length}`
     },
     {
       label: "融资现金线",
-      value: `当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 现金缓冲 ${percent(recommendedCashRatio)}`,
-      tone: recommendedCashRatio ? "good" : "warn"
+      value: `当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 现金缓冲 ${percent(recommendedCashRatio)}`
     },
     {
       label: "来源层",
-      value: `${source} / 本地融资快照 / 运行状态`,
-      tone: dataStatus === "ready" || dataStatus === "cached" ? "good" : "warn"
+      value: `${source} / 本地融资快照 / ${dataStatusLabel}`
     },
     {
       label: "数据能力",
-      value: "ETF/融资缺口去数据能力页复核真实数据、权限、空窗口和本地结果状态",
-      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+      value: "ETF/融资缺口去数据能力页复核真实数据、权限、空窗口和本地结果状态"
     },
     {
       label: "明确降级",
-      value: noEtfRows ? ordinaryMissingEvidence : "候选已进入本地回放；仍需人工复核流动性、重叠和现金线",
-      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+      value: noEtfRows ? ordinaryMissingEvidence : "候选已进入本地回放；仍需人工复核流动性、重叠和现金线"
     },
     {
       label: "下一步入口",
-      value: noEtfRows ? "刷新本地回放或回下一票雷达换标的" : "先看候选分组，再看风险护栏和下一票雷达",
-      tone: noEtfRows ? "warn" : "good"
+      value: noEtfRows ? "刷新本地回放或回下一票雷达换标的" : "先看候选分组，再看风险护栏和下一票雷达"
     },
     {
       label: "安全边界",
-      value: "页面打开和本地链接只读；不启动刷新流程、不刷新外部数据或模型、不交易、不加融资",
-      tone: "good"
+      value: "页面打开和本地链接只读；不启动刷新流程、不刷新外部数据或模型、不交易、不加融资；不会自动刷新 ETF、不会调用 Tushare/DeepSeek/GitHub、不会创建 task、不会交易或改写策略"
     }
   ];
   const marginEtfFirstViewportActionSentence = noEtfRows
@@ -297,28 +298,23 @@ export default function MarginEtf() {
   const marginEtfFirstViewportActionItems: MetricItem[] = [
     {
       label: "先点哪里",
-      value: noEtfRows ? "融资现金线 / 本地回放按钮 / 下一票雷达" : "ETF 候选 / 融资现金线 / 本地回放按钮",
-      tone: noEtfRows ? "warn" : "good"
+      value: noEtfRows ? "融资现金线 / 本地回放按钮 / 下一票雷达" : "ETF 候选 / 融资现金线 / 本地回放按钮"
     },
     {
       label: "看 ETF",
-      value: noEtfRows ? "暂无候选；先保持观察" : `候选 ${allVisibleEtfRows.length} 行，先按状态和理由复核`,
-      tone: noEtfRows ? "warn" : "good"
+      value: noEtfRows ? "暂无候选；先保持观察" : `候选 ${allVisibleEtfRows.length} 行，先按状态和理由复核`
     },
     {
       label: "看现金线",
-      value: `当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 缓冲 ${percent(recommendedCashRatio)}`,
-      tone: recommendedCashRatio ? "good" : "warn"
+      value: `当前 ${percent(currentMarginRatio)} / 建议 ${percent(recommendedMarginRatio)} / 缓冲 ${percent(recommendedCashRatio)}`
     },
     {
       label: "刷新方式",
-      value: "首屏链接只定位本地按钮；真正刷新仍要用户点击，不自动补外部数据",
-      tone: "good"
+      value: "首屏链接只定位本地按钮；真正刷新仍要用户点击，不自动补外部数据"
     },
     {
       label: "边界",
-      value: "不买入、不加仓、不加融资、不下单",
-      tone: "good"
+      value: "不买入、不加仓、不加融资、不下单"
     }
   ];
   const marginEtfFirstViewportRiskSentence = noEtfRows
@@ -523,33 +519,27 @@ export default function MarginEtf() {
   const marginEtfCashLineItems: MetricItem[] = [
     {
       label: "当前融资",
-      value: percent(currentMarginRatio),
-      tone: currentMarginRatio ? "warn" : "neutral"
+      value: percent(currentMarginRatio)
     },
     {
       label: "建议融资",
-      value: percent(recommendedMarginRatio),
-      tone: allowNewMargin ? "warn" : "good"
+      value: percent(recommendedMarginRatio)
     },
     {
       label: "现金缓冲",
-      value: percent(recommendedCashRatio),
-      tone: recommendedCashRatio ? "good" : "warn"
+      value: percent(recommendedCashRatio)
     },
     {
       label: "读法",
-      value: marginEtfCashLineSentence,
-      tone: allowNewMargin ? "warn" : "good"
+      value: marginEtfCashLineSentence
     },
     {
       label: "缺口",
-      value: ordinaryMissingEvidence,
-      tone: noEtfRows || marginStatus !== "ready" ? "warn" : "good"
+      value: ordinaryMissingEvidence
     },
     {
       label: "禁令",
-      value: "融资比例不是加杠杆许可；ETF 候选不是买入或加融资指令",
-      tone: "good"
+      value: "融资比例不是加杠杆许可；ETF 候选不是买入或加融资指令"
     }
   ];
   const marginEtfCashLineRows = [
@@ -689,7 +679,7 @@ export default function MarginEtf() {
     },
     {
       label: "数据证据层",
-      value: `${dataStatus} / ${marginStatus}；缺 ETF 或融资数据只显示 degraded，不当作无风险，也不自动补外部数据`,
+      value: `${dataStatusLabel} / ${marginStatusLabel}；缺 ETF 或融资数据只显示 degraded，不当作无风险，也不自动补外部数据`,
       tone: dataStatus === "ready" || dataStatus === "cached" ? "good" : "warn"
     },
     {
@@ -715,28 +705,23 @@ export default function MarginEtf() {
   const marginEtfCandidateReadingItems: MetricItem[] = [
     {
       label: "逐行读法",
-      value: noEtfRows ? "没有候选行时先保持观察" : "先看状态和理由，再看三项风险核对",
-      tone: noEtfRows ? "warn" : "good"
+      value: noEtfRows ? "没有候选行时先保持观察" : "先看状态和理由，再看三项风险核对"
     },
     {
       label: "状态含义",
-      value: "推荐=优先复核；观察=等触发；回避/排除=不要追高",
-      tone: "good"
+      value: "推荐=优先复核；观察=等触发；回避/排除=不要追高"
     },
     {
       label: "风险核对",
-      value: "流动性、同类重叠、现金/杠杆必须一起看",
-      tone: "good"
+      value: "流动性、同类重叠、现金/杠杆必须一起看"
     },
     {
       label: "缺口处理",
-      value: noEtfRows ? ordinaryMissingEvidence : "缺字段按保守处理，不自动补调外部数据",
-      tone: noEtfRows ? "warn" : "good"
+      value: noEtfRows ? ordinaryMissingEvidence : "缺字段按保守处理，不自动补调外部数据"
     },
     {
       label: "边界",
-      value: "ETF 行只是风险预算参考，不是买入、加仓、加融资或下单指令",
-      tone: "good"
+      value: "ETF 行只是风险预算参考，不是买入、加仓、加融资或下单指令"
     }
   ];
   const marginEtfCandidateReadingRows = allVisibleEtfRows.length
@@ -766,6 +751,18 @@ export default function MarginEtf() {
     { label: "来源", value: source },
     { label: "更新", value: text(etfPacket.updated_at, "暂无本地更新时间") }
   ];
+  const snapshotIssueVisible = loading || Boolean(error) || (!loading && !error && !etfPacketLoaded && !marginPacketLoaded);
+  const snapshotIssueTitle = loading ? "正在读取本地快照" : "本地快照待补";
+  const snapshotIssueDetail = loading
+    ? "正在读取 ETF/融资本地快照；页面不会自动刷新外部数据。"
+    : error
+      ? "没有读到 ETF/融资本地快照；按保守风险预算处理，不新增融资。"
+      : "当前没有 ETF/融资本地快照；先看现金线和缺口，不把空结果当成低风险。";
+  const snapshotIssueItems: MetricItem[] = [
+    { label: "当前状态", value: snapshotIssueDetail },
+    { label: "下一步", value: "需要更新时点击本地回放按钮；换标的回下一票雷达" },
+    { label: "安全边界", value: "不自动补外部数据、不调用模型、不交易、不加融资" }
+  ];
 
   return (
     <>
@@ -774,10 +771,9 @@ export default function MarginEtf() {
           <h1>ETF / 融资</h1>
           <p>先看 ETF 候选、融资现金线、风险提示和下一步。</p>
         </div>
-        <StatusBadge label={status} tone={status === "ready" || status === "partial" ? "good" : "warn"} />
       </div>
 
-      <PacketCard title="ETF / 融资操作台" subtitle="普通用户先看这里" status={status}>
+      <PacketCard title="ETF / 融资操作台" subtitle="普通用户先看这里" status={ordinaryStatus}>
         <div aria-label="margin etf app visible now summary">
           <h3>打开 app 能看到什么</h3>
           <p className="ordinary-status-note" aria-label="margin etf app visible now sentence" aria-live="polite">{marginEtfAppVisibleNowSentence}</p>
@@ -788,7 +784,7 @@ export default function MarginEtf() {
             <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf visible now">看数据能力</a>
             <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf visible now">今日作战台</a>
           </div>
-          <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、降级原因和下一步入口；普通链接只切换本地页面，不启动刷新流程、不刷新外部数据或模型、不交易、不加融资、不改交易策略。</p>
+          <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、降级原因和下一步入口；普通链接只切换本地页面，不启动刷新流程、不刷新外部数据或模型、不交易、不加融资、不改交易策略；不会自动刷新 ETF、不会调用 Tushare/DeepSeek/GitHub、不会创建 task、不会交易或改写策略。</p>
         </div>
 
         <div aria-label="margin etf ordinary plain conclusion">
@@ -809,7 +805,7 @@ export default function MarginEtf() {
             <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from first viewport action strip">换标的</a>
             <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from first viewport action strip">数据能力</a>
           </div>
-          <p className="risk-note">首屏操作条只做本地锚点跳转；不会自动刷新 ETF、不会调用 Tushare/DeepSeek/GitHub、不会创建 task、不会交易或改写策略。</p>
+          <p className="risk-note">首屏操作条只做本地锚点跳转；不会自动刷新 ETF、不会调用 Tushare/DeepSeek/GitHub、不会创建 task、不会交易或改写策略；也不会调用外部数据、模型或远端服务。</p>
         </div>
 
         <div id="margin-etf-cash-line" aria-label="margin etf cash line quick read">
@@ -856,11 +852,17 @@ export default function MarginEtf() {
             <h3>刷新后结果</h3>
             <p className="ordinary-status-note" aria-label="margin etf local refresh result summary" aria-live="polite">{localRefreshReadableSummary}</p>
             <MetricGrid items={localRefreshResultItems} />
-            <p className="risk-note">这张结果摘要只读按钮返回的本地回执和本地审计记录；缺 ETF 或融资本地快照时只显示降级原因，不会补外部数据、调用模型、交易或改写策略。</p>
+          <p className="risk-note">这张结果摘要只读按钮返回的本地回执和本地审计记录；缺 ETF 或融资本地快照时只显示降级原因，不会补外部数据、调用模型、交易或改写策略。</p>
           </div>
         ) : null}
-        <TaskLaunchReceipt receipt={taskReceipt} />
-        <TaskStatusPanel taskId={taskId} onSuccess={refresh} />
+        {(taskReceipt || taskId) ? (
+          <details className="developer-audit-details" aria-label="margin etf local refresh developer details">
+            <summary>研究辅助 / 本地回放详情</summary>
+            <p className="risk-note">这里才显示按钮返回的 task 和回放明细；普通用户先看上方结果摘要。</p>
+            <TaskLaunchReceipt receipt={taskReceipt} />
+            <TaskStatusPanel taskId={taskId} onSuccess={refresh} />
+          </details>
+        ) : null}
         <p className="risk-note">{boundary}</p>
 
         <details className="developer-audit-details" aria-label="margin etf supporting read details">
@@ -936,12 +938,20 @@ export default function MarginEtf() {
       <PageStateBanner
         loading={loading}
         error={error}
-        empty={!loading && !error && !Object.keys(etfPacket).length && !Object.keys(marginPacket).length}
+        empty={empty}
         emptyTitle="暂无 ETF/融资本地快照"
-        emptyDetail="本页只读取本地快照；不会在页面打开时自动发现 ETF、拉行情或调用模型。"
+        emptyDetail="本页只读取本地 ETF/融资 cache；不会自动发现 ETF、拉行情、调用模型、交易或加融资。"
       />
 
-      <PacketCard title="ETF 候选分组" subtitle="推荐、观察、回避和排除分开看" status={noEtfRows ? "waiting" : "ready"}>
+      {snapshotIssueVisible ? (
+        <PacketCard title={snapshotIssueTitle} subtitle="普通风险快照" status={loading ? "读取中" : "待补"}>
+          <p className="ordinary-status-note">{snapshotIssueDetail}</p>
+          <MetricGrid items={snapshotIssueItems} />
+          <p className="risk-note">本页只读取本地快照；不会在页面打开时自动发现 ETF、拉行情或调用模型。</p>
+        </PacketCard>
+      ) : null}
+
+      <PacketCard title="ETF 候选分组" subtitle="推荐、观察、回避和排除分开看" status={noEtfRows ? "候选待补" : "候选可读"}>
         <div id="margin-etf-candidate-rows" aria-label="margin etf candidate row reading guide">
           <h3>每行怎么读</h3>
           <p className="ordinary-status-note" aria-label="margin etf candidate row reading summary" aria-live="polite">{marginEtfCandidateReadingSummary}</p>
@@ -957,7 +967,7 @@ export default function MarginEtf() {
         <p className="risk-note">每行先看来源、状态、理由、流动性、同类重叠、融资现金线（现金/杠杆）和边界。推荐只表示优先复核；观察等待触发条件；回避/排除不能拿来追高。所有 ETF 行都不是买入、加仓或加融资指令。</p>
       </PacketCard>
 
-      <PacketCard title="融资现金线" subtitle="先决定能不能新增风险，再看 ETF 强弱" status={allowNewMargin ? "warn" : "safe"}>
+      <PacketCard title="融资现金线" subtitle="先决定能不能新增风险，再看 ETF 强弱" status={allowNewMargin ? "小额待条件" : "不新增融资"}>
         <MetricGrid items={detailItems} />
         <DataLineageTable rows={riskRows} />
       </PacketCard>
