@@ -534,7 +534,7 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；本页不会从输入或渲染创建 Tushare-first task", text)
         self.assertIn("确认后创建 Tushare-first 按钮门控 POST task / worker", text)
         self.assertIn("Tushare ledger 来自 cache / call_ledger 回放", text)
-        self.assertIn("DeepSeek 仍需 governed executor，普通页不展示 prompt/output", text)
+        self.assertIn("DeepSeek 只展示 sanitized explanation / model_ledger，普通页不展示 prompt/output", text)
         self.assertNotIn("确认后立即启动后台投研 task", text)
         self.assertNotIn("后台先拉 Tushare 单票小全量数据", text)
         self.assertNotIn("后端会先跑 Tushare trade_cal / daily / daily_basic / moneyflow", text)

@@ -1199,7 +1199,13 @@ def _latest_search_quant_projection_provider_model_status_surface() -> dict[str,
     call_ledger = [row for row in _list(latest_task.get("call_ledger")) if isinstance(row, dict)]
     first_ledger = _dict(call_ledger[0] if call_ledger else {})
     request_params = _dict(first_ledger.get("request_params_safe"))
-    provider_ledgers = [row for row in call_ledger if row.get("tushare_called") is True]
+    selected_api_set = {str(api) for api in _list(request_params.get("selected_apis"))}
+    provider_ledgers = [
+        row
+        for row in call_ledger
+        if row.get("tushare_called") is True
+        and (not selected_api_set or str(row.get("api") or "") in selected_api_set)
+    ]
     provider_success_ledgers = [
         row for row in provider_ledgers if str(row.get("call_status") or "") == "success"
     ]

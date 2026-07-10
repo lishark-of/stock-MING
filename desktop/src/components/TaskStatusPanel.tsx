@@ -219,8 +219,8 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     },
     {
       回放项: "DeepSeek",
-      当前状态: taskDeepSeekCalled ? "检测到 DeepSeek ledger；需查看治理详情" : "DeepSeek skipped / 未调用；P1/P2/P3 不等待模型",
-      用户下一步: "DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱",
+      当前状态: taskDeepSeekCalled ? "检测到 DeepSeek ledger；只读查看治理详情" : "未检测到模型账本；Tushare-first 和基础图谱不等待模型",
+      用户下一步: "DeepSeek 解释只读回放或安全降级，不阻塞 Tushare-first 和基础图谱",
       证据: "task.deepseek_called + task.call_ledger",
       边界: "模型输出不能覆盖价格、factor、operation_zones 或 strategy action。"
     },

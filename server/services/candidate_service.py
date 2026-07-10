@@ -9,7 +9,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from config import get_deepseek_auto_explain_enabled, get_deepseek_factor_explain_mode
+import command_center_factor_research as factor_research
+from config import (
+    get_deepseek_auto_explain_enabled,
+    get_deepseek_factor_explain_mode,
+    get_deepseek_keys,
+    get_deepseek_model,
+)
 from storage.sqlite_meta import SQLiteMetaStore
 from server.services import packet_service, task_service, tushare_task_service
 
@@ -1444,7 +1450,7 @@ def _quant_projection_post_confirm_replay_contract(payload: Mapping[str, Any]) -
         "result_anchors": ["#tasks", "#factor", "#next"],
         "include_tushare_requested": include_tushare,
         "include_deepseek_requested": include_deepseek,
-        "deepseek_policy": "skipped_until_governed_executor",
+        "deepseek_policy": "governed_explanation_only" if include_deepseek else "skipped_until_governed_executor",
         "creates_second_task_from_readback": False,
         "cache_get_external_calls": False,
         "react_render_external_calls": False,
@@ -1750,6 +1756,14 @@ def _build_quant_projection_acceptance_dry_run(
         include_deepseek=include_deepseek,
     )
     missing_credentials = int(credential_summary.get("missing_provider_count") or 0)
+    missing_providers = [
+        str(row.get("provider") or "")
+        for row in credential_rows
+        if row.get("required") and row.get("present") is not True
+    ]
+    tushare_credential_missing = "tushare" in missing_providers
+    deepseek_credential_missing = "deepseek" in missing_providers
+    blocking_missing_credentials = int(tushare_credential_missing and include_tushare)
     scope_ticket = _quant_acceptance_scope_ticket(
         symbol=symbol,
         selected_apis=selected_apis,
@@ -1794,11 +1808,21 @@ def _build_quant_projection_acceptance_dry_run(
         ),
         _quant_projection_acceptance_row(
             "server_credential_presence_checked",
-            "passed_no_values_read" if not missing_credentials else "blocked_missing_server_credentials",
-            f"credential_presence_status={credential_summary.get('status')}; missing={missing_credentials}",
-            "Configure missing server-side credentials, then rerun dry-run; never expose credential values.",
-            passed=not missing_credentials,
-            blocks_real_execution=bool(missing_credentials),
+            (
+                "passed_no_values_read"
+                if not missing_credentials
+                else "passed_tushare_ready_deepseek_degraded"
+                if deepseek_credential_missing and not blocking_missing_credentials
+                else "blocked_missing_server_credentials"
+            ),
+            (
+                f"credential_presence_status={credential_summary.get('status')}; "
+                f"missing={missing_credentials}; blocking_missing={blocking_missing_credentials}; "
+                f"missing_providers={missing_providers}"
+            ),
+            "Configure missing server-side credentials; DeepSeek missing degrades independently and must not block Tushare.",
+            passed=not blocking_missing_credentials,
+            blocks_real_execution=bool(blocking_missing_credentials),
         ),
         _quant_projection_acceptance_row(
             "tushare_call_ledger_required",
@@ -1856,7 +1880,7 @@ def _build_quant_projection_acceptance_dry_run(
     elif not user_approved:
         status = "quant_projection_acceptance_dry_run_blocked_user_approval_required"
         allowed_next_step = "rerun_dry_run_with_explicit_user_approval"
-    elif missing_credentials:
+    elif blocking_missing_credentials:
         status = "quant_projection_acceptance_dry_run_blocked_missing_credentials"
         allowed_next_step = "configure_server_credentials_then_rerun_dry_run"
     else:
@@ -1881,7 +1905,9 @@ def _build_quant_projection_acceptance_dry_run(
         "acceptance_scope_hash": scope_ticket["scope_hash"],
         "acceptance_scope_hash_short": scope_ticket["scope_hash_short"],
         "local_dry_run_ready": symbol_valid,
-        "ready_for_user_approved_real_acceptance": bool(symbol_valid and user_approved and not missing_credentials),
+        "ready_for_user_approved_real_acceptance": bool(
+            symbol_valid and user_approved and not blocking_missing_credentials
+        ),
         "ready_to_execute_real_provider_model_task": False,
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
@@ -1912,6 +1938,11 @@ def _build_quant_projection_acceptance_dry_run(
         "row_count": len(rows),
         "blocking_phase_count": len(blocking_rows),
         "credential_missing_provider_count": missing_credentials,
+        "blocking_credential_missing_provider_count": blocking_missing_credentials,
+        "deepseek_credential_missing_provider_count": int(deepseek_credential_missing),
+        "deepseek_missing_degrades_without_blocking_tushare": bool(
+            deepseek_credential_missing and not blocking_missing_credentials
+        ),
         "credential_present_provider_count": credential_summary.get("present_provider_count", 0),
         "credential_required_provider_count": credential_summary.get("required_provider_count", 0),
         "rows": rows,
@@ -1994,12 +2025,23 @@ def _candidate_radar_quant_projection_execution_request(
         and dry_run.get("user_approved") is True
         and dry_run.get("local_dry_run_ready") is True
         and dry_run.get("ready_for_user_approved_real_acceptance") is True
-        and int(dry_run.get("credential_missing_provider_count") or 0) == 0
+        and int(
+            dry_run.get("blocking_credential_missing_provider_count")
+            if dry_run.get("blocking_credential_missing_provider_count") is not None
+            else dry_run.get("credential_missing_provider_count")
+            or 0
+        )
+        == 0
     )
     selected_apis = [str(api) for api in _as_list(dry_run.get("selected_apis"))]
     include_tushare = dry_run.get("include_tushare") is True
     include_deepseek = dry_run.get("include_deepseek") is True
     credential_missing = int(dry_run.get("credential_missing_provider_count") or 0)
+    blocking_credential_missing = int(
+        dry_run.get("blocking_credential_missing_provider_count")
+        if dry_run.get("blocking_credential_missing_provider_count") is not None
+        else credential_missing
+    )
     rows = [
         _quant_projection_execution_request_row(
             "explicit_post_quant_projection_execution_request_done",
@@ -2050,7 +2092,8 @@ def _candidate_radar_quant_projection_execution_request(
                 f"local_dry_run_ready={dry_run.get('local_dry_run_ready')}; "
                 f"user_approved={dry_run.get('user_approved')}; "
                 f"ready_for_user_approved_real_acceptance={dry_run.get('ready_for_user_approved_real_acceptance')}; "
-                f"credential_missing_for_future_execution={credential_missing}"
+                f"credential_missing_for_future_execution={credential_missing}; "
+                f"blocking_credential_missing_for_tushare={blocking_credential_missing}"
             ),
             next_action="Resolve dry-run blockers before requesting a future provider/model task.",
         ),
@@ -2149,6 +2192,13 @@ def _candidate_radar_quant_projection_execution_request(
         "include_deepseek": include_deepseek,
         "selected_apis": selected_apis,
         "credential_missing_provider_count": credential_missing,
+        "blocking_credential_missing_provider_count": blocking_credential_missing,
+        "deepseek_credential_missing_provider_count": int(
+            dry_run.get("deepseek_credential_missing_provider_count") or 0
+        ),
+        "deepseek_missing_degrades_without_blocking_tushare": (
+            dry_run.get("deepseek_missing_degrades_without_blocking_tushare") is True
+        ),
         "target_provider_model_route": "future POST /api/candidate-radar/quant-projection-provider-model-acceptance",
         "target_provider_model_task_type": "future_run_candidate_radar_quant_projection_provider_model_acceptance",
         "allowed_next_step": allowed_next_step,
@@ -14763,7 +14813,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         current_step="candidate_radar_quant_projection_queued",
         warnings=[
             "搜票量化推演必须由输入代码后的 POST 确认触发；React render 和 GET cache 不会调用 Tushare、DeepSeek 或 GitHub。",
-            "带 user_approved 且 include_tushare 的确认提交可创建 Tushare-first 后台补证链；DeepSeek 保持 skipped。",
+            "带 user_approved 且 include_tushare 的确认提交可创建 Tushare-first 后台补证链；DeepSeek 只读解释可安全降级。",
             "量化推演是 research-only 补证路线，不生成买卖建议、不修改 strategy action、不执行真实交易。",
         ],
     )
@@ -14895,7 +14945,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                     "scan_mode": QUANT_PROJECTION_SCAN_MODE,
                     "symbol": projection_receipt.get("symbol"),
                     "include_tushare": True,
-                    "include_deepseek": False,
+                    "include_deepseek": _coerce_bool(payload_safe.get("include_deepseek"), False),
                     "user_approved": True,
                     "selected_apis": list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS),
                     "requested_by": "candidate_radar_quant_projection_confirm_chain",
@@ -14921,14 +14971,20 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                     request_ready = (
                         latest_request.get("local_execution_request_ready") is True
                         and latest_dry_run.get("ready_for_user_approved_real_acceptance") is True
-                        and int(latest_dry_run.get("credential_missing_provider_count") or 0) == 0
+                        and int(
+                            latest_dry_run.get("blocking_credential_missing_provider_count")
+                            if latest_dry_run.get("blocking_credential_missing_provider_count") is not None
+                            else latest_dry_run.get("credential_missing_provider_count")
+                            or 0
+                        )
+                        == 0
                     )
                     if request_ready:
                         run_candidate_quant_projection_provider_model_acceptance_task(
                             {
                                 "operator_approved": True,
                                 "acceptance_scope_hash": scope_hash,
-                                "include_deepseek": False,
+                                "include_deepseek": _coerce_bool(payload_safe.get("include_deepseek"), False),
                                 "requested_by": "candidate_radar_quant_projection_confirm_chain",
                             }
                         )
@@ -14936,15 +14992,34 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                         latest_provider = _as_dict(latest_packet.get("search_quant_provider_model_acceptance_receipt"))
                         if (
                             latest_provider.get("tushare_call_ledger_evidence_done") is True
-                            and latest_provider.get("deepseek_skipped_by_request") is True
                         ):
-                            final_step = "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
+                            if latest_provider.get("deepseek_output_acceptance_done") is True:
+                                final_step = (
+                                    "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_explained"
+                                )
+                            elif latest_provider.get("deepseek_model_ledger_recorded") is True:
+                                final_step = (
+                                    "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_degraded"
+                                )
+                            elif latest_provider.get("deepseek_skipped_by_request") is True:
+                                final_step = (
+                                    "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
+                                )
+                            else:
+                                final_step = (
+                                    "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_pending"
+                                )
                         else:
                             final_step = (
                                 "candidate_radar_quant_projection_tushare_first_chain_blocked_provider_ledger_missing"
                             )
                         final_warning = final_step
-                    elif latest_dry_run.get("credential_missing_provider_count"):
+                    elif int(
+                        latest_dry_run.get("blocking_credential_missing_provider_count")
+                        if latest_dry_run.get("blocking_credential_missing_provider_count") is not None
+                        else latest_dry_run.get("credential_missing_provider_count")
+                        or 0
+                    ):
                         final_step = "candidate_radar_quant_projection_tushare_first_chain_blocked_missing_credentials"
                         final_warning = final_step
                     else:
@@ -15285,11 +15360,345 @@ def _quant_projection_provider_model_acceptance_row(
     }
 
 
+def _quant_projection_deepseek_hash(payload: Any) -> str:
+    serialized = json.dumps(_safe_value(payload), ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _quant_projection_deepseek_fact_summary(
+    *,
+    receipt: Mapping[str, Any],
+    provider_ledger: list[dict[str, Any]],
+    selected_apis: list[str],
+) -> dict[str, Any]:
+    safe_rows: list[dict[str, Any]] = []
+    data_dates: list[str] = []
+    for row in provider_ledger[:SAFE_LIST_LIMIT]:
+        data_date = _safe_text(row.get("data_date") or "", limit=32)
+        if data_date:
+            data_dates.append(data_date)
+        safe_rows.append(
+            {
+                "api": _safe_text(row.get("api") or "", limit=40),
+                "call_status": _safe_text(row.get("call_status") or "", limit=80),
+                "row_count": int(row.get("row_count") or 0),
+                "data_date": data_date,
+                "failure_mode": _safe_text(
+                    row.get("failure_mode")
+                    or row.get("failure_mode_status")
+                    or row.get("safe_failure_mode_visible")
+                    or "",
+                    limit=120,
+                ),
+            }
+        )
+    return {
+        "schema_version": "candidate_radar_search_quant_projection_deepseek_fact_summary.v1",
+        "symbol": _safe_text(receipt.get("symbol") or "", limit=32),
+        "data_source": "Tushare",
+        "selected_apis": [_safe_text(api, limit=40) for api in selected_apis],
+        "provider_api_call_count": int(receipt.get("provider_api_call_count") or len(provider_ledger) or 0),
+        "provider_api_success_count": int(receipt.get("provider_api_success_count") or 0),
+        "provider_api_failed_count": int(receipt.get("provider_api_failed_count") or 0),
+        "provider_data_date": max(data_dates) if data_dates else "",
+        "provider_rows": safe_rows,
+        "fact_boundary": "Use only this Tushare call_ledger summary. Do not infer missing prices or actions.",
+        "explanation_only": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+    }
+
+
+def _call_quant_projection_deepseek_model(
+    *,
+    api_key: str,
+    fact_summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    from openai import OpenAI
+
+    client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1", timeout=30.0)
+    fact_text = json.dumps(_safe_value(fact_summary), ensure_ascii=False, sort_keys=True, default=str)
+    response = client.chat.completions.create(
+        model=get_deepseek_model("projection"),
+        temperature=0.1,
+        max_tokens=700,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "你是 Command Center 3.0 的只读投研解释器。只根据用户消息里的 Tushare "
+                    "事实摘要解释数据链状态，不编造缺失事实，不给买入、卖出、加仓、融资或下单指令。"
+                    "只输出 JSON，键必须限定在 summary、support_notes、suppress_notes、"
+                    "conflict_notes、missing_data_notes、discipline_notes。"
+                ),
+            },
+            {"role": "user", "content": fact_text},
+        ],
+    )
+    choice = response.choices[0] if getattr(response, "choices", None) else None
+    message = getattr(choice, "message", None)
+    usage = getattr(response, "usage", None)
+    return {
+        "text": _safe_text(getattr(message, "content", "") if message else "", limit=6000),
+        "usage": {
+            "prompt_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+            "completion_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
+            "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
+        },
+    }
+
+
+def _quant_projection_deepseek_degraded_explanation(
+    *,
+    status: str,
+    failure_mode: str,
+    input_hash: str,
+    model: str,
+) -> dict[str, Any]:
+    payload = {
+        "summary": "模型解释暂不可用；页面继续回放 Tushare 数据记录和本地量化结果，不编造缺失事实。",
+        "support_notes": [],
+        "suppress_notes": [],
+        "conflict_notes": [],
+        "missing_data_notes": [failure_mode],
+        "discipline_notes": ["仅解释、不构成交易指令；不覆盖价格、因子、operation_zones 或 strategy action。"],
+    }
+    return {
+        "called": False,
+        "status": status,
+        "parse_failed": False,
+        "payload": payload,
+        "ignored_keys": [],
+        "error_message_safe": failure_mode,
+        "model_used": model,
+        "input_hash": input_hash,
+        "output_hash": "",
+        "token_estimate": 0,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+    }
+
+
+def _run_quant_projection_deepseek_explanation(
+    *,
+    receipt: Mapping[str, Any],
+    provider_ledger: list[dict[str, Any]],
+    selected_apis: list[str],
+    include_deepseek: bool,
+) -> dict[str, Any]:
+    model = get_deepseek_model("projection")
+    field_whitelist = sorted(factor_research.DEEPSEEK_EXPLANATION_ALLOWED_KEYS)
+    fact_summary = _quant_projection_deepseek_fact_summary(
+        receipt=receipt,
+        provider_ledger=provider_ledger,
+        selected_apis=selected_apis,
+    )
+    input_hash = _quant_projection_deepseek_hash(fact_summary)
+    keys = get_deepseek_keys()
+    key_present = bool(keys)
+    base_ledger = {
+        "schema_version": "candidate_radar_search_quant_projection_deepseek_model_ledger.v1",
+        "provider": "DeepSeek",
+        "purpose": "search_quant_projection_explanation",
+        "model": model,
+        "model_used": model,
+        "server_key_present": key_present,
+        "field_whitelist": field_whitelist,
+        "field_whitelist_hash": _quant_projection_deepseek_hash(field_whitelist),
+        "input_summary_hash": input_hash,
+        "input_hash": input_hash,
+        "input_summary_source": "sanitized_tushare_call_ledger_summary",
+        "raw_prompt_stored": False,
+        "raw_output_stored": False,
+        "cache_packet_contains_raw_prompt": False,
+        "cache_packet_contains_raw_output": False,
+        "log_contains_raw_prompt": False,
+        "log_contains_raw_output": False,
+        "cost_estimate_usd": None,
+        "cost_estimate_status": "not_priced_in_app",
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+    if not include_deepseek:
+        return {
+            "requested": False,
+            "model_ledger_recorded": False,
+            "output_acceptance_done": False,
+            "deepseek_called": False,
+            "external_calls_triggered": False,
+            "safe_failure_mode": "skipped_by_request",
+            "status": "skipped_by_request",
+            "model_ledger": {**base_ledger, "status": "skipped_by_request", "model_call_status": "not_requested"},
+            "explanation": {},
+            "call_ledger_row": None,
+        }
+
+    if not provider_ledger:
+        sanitized = _quant_projection_deepseek_degraded_explanation(
+            status="degraded_tushare_not_ready",
+            failure_mode="tushare_call_ledger_missing",
+            input_hash=input_hash,
+            model=model,
+        )
+        model_ledger = {
+            **base_ledger,
+            "status": "degraded_tushare_not_ready",
+            "model_call_status": "skipped_tushare_not_ready",
+            "model_ledger_recorded": True,
+            "deepseek_called": False,
+            "external_calls_triggered": False,
+            "safe_failure_mode": "tushare_call_ledger_missing",
+            "latency_ms": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "output_hash": "",
+            "sanitizer_status": sanitized["status"],
+        }
+    elif not key_present:
+        sanitized = _quant_projection_deepseek_degraded_explanation(
+            status="degraded_missing_server_key",
+            failure_mode="missing_server_key",
+            input_hash=input_hash,
+            model=model,
+        )
+        model_ledger = {
+            **base_ledger,
+            "status": "degraded_missing_server_key",
+            "model_call_status": "skipped_missing_server_key",
+            "model_ledger_recorded": True,
+            "deepseek_called": False,
+            "external_calls_triggered": False,
+            "safe_failure_mode": "missing_server_key",
+            "latency_ms": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "output_hash": "",
+            "sanitizer_status": sanitized["status"],
+        }
+    else:
+        started_at = _dt.datetime.now()
+        try:
+            model_response = _call_quant_projection_deepseek_model(
+                api_key=keys[0],
+                fact_summary=fact_summary,
+            )
+            latency_ms = int((_dt.datetime.now() - started_at).total_seconds() * 1000)
+            sanitized = factor_research.sanitize_factor_deepseek_explanation(
+                model_response.get("text") or "",
+                model_used=model,
+                input_hash=input_hash,
+            )
+            usage = _as_dict(model_response.get("usage"))
+            output_acceptance_done = sanitized.get("status") == "success" and sanitized.get("parse_failed") is False
+            model_ledger = {
+                **base_ledger,
+                "status": "success" if output_acceptance_done else "degraded_parse_failed",
+                "model_call_status": "called",
+                "model_ledger_recorded": True,
+                "deepseek_called": True,
+                "external_calls_triggered": True,
+                "safe_failure_mode": "" if output_acceptance_done else "sanitizer_parse_failed",
+                "latency_ms": latency_ms,
+                "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+                "completion_tokens": int(usage.get("completion_tokens") or 0),
+                "total_tokens": int(usage.get("total_tokens") or 0),
+                "token_usage_source": "provider_usage" if usage else "not_returned",
+                "output_hash": sanitized.get("output_hash") or "",
+                "sanitizer_status": sanitized.get("status") or "",
+                "parse_failed": sanitized.get("parse_failed") is True,
+                "ignored_key_count": len(_as_list(sanitized.get("ignored_keys"))),
+            }
+        except Exception as exc:
+            latency_ms = int((_dt.datetime.now() - started_at).total_seconds() * 1000)
+            failure_mode = "model_client_unavailable" if isinstance(exc, ImportError) else "model_call_failed_or_timeout"
+            sanitized = _quant_projection_deepseek_degraded_explanation(
+                status=f"degraded_{failure_mode}",
+                failure_mode=failure_mode,
+                input_hash=input_hash,
+                model=model,
+            )
+            model_ledger = {
+                **base_ledger,
+                "status": f"degraded_{failure_mode}",
+                "model_call_status": failure_mode,
+                "model_ledger_recorded": True,
+                "deepseek_called": failure_mode != "model_client_unavailable",
+                "external_calls_triggered": failure_mode != "model_client_unavailable",
+                "safe_failure_mode": failure_mode,
+                "latency_ms": latency_ms,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "output_hash": "",
+                "sanitizer_status": sanitized["status"],
+            }
+
+    explanation = {
+        "schema_version": "candidate_radar_search_quant_projection_deepseek_explanation.v1",
+        "status": sanitized.get("status") or model_ledger.get("status"),
+        "source": "DeepSeek" if model_ledger.get("deepseek_called") is True else "safe_degraded_status",
+        "fact_source": "Tushare call_ledger summary",
+        "input_hash": input_hash,
+        "output_hash": sanitized.get("output_hash") or "",
+        "model_used": model,
+        "payload": sanitized.get("payload") or {},
+        "ignored_keys": _as_list(sanitized.get("ignored_keys")),
+        "parse_failed": sanitized.get("parse_failed") is True,
+        "explanation_only": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+        "contains_secret": False,
+    }
+    call_row = _candidate_call_ledger_row(
+        api="deepseek_quant_projection_explanation",
+        source_snapshot="sanitized_tushare_call_ledger_summary",
+        row_count=1 if explanation.get("status") == "success" else 0,
+        call_status=str(model_ledger.get("status") or "deepseek_explanation_recorded"),
+        request_params_safe={
+            "model": model,
+            "server_key_present": key_present,
+            "input_hash_short": input_hash[:16],
+            "output_hash_short": str(model_ledger.get("output_hash") or "")[:16],
+            "field_whitelist": field_whitelist,
+            "raw_prompt_stored": False,
+            "raw_output_stored": False,
+            "safe_failure_mode": model_ledger.get("safe_failure_mode") or "",
+            "explanation_only": True,
+        },
+    )
+    call_row["external"] = model_ledger.get("external_calls_triggered") is True
+    call_row["external_calls_triggered"] = model_ledger.get("external_calls_triggered") is True
+    call_row["deepseek_called"] = model_ledger.get("deepseek_called") is True
+    call_row["call_status"] = str(model_ledger.get("status") or call_row["call_status"])
+    call_row["error_message_safe"] = _safe_text(model_ledger.get("safe_failure_mode") or "", limit=160)
+    return {
+        "requested": True,
+        "model_ledger_recorded": True,
+        "output_acceptance_done": explanation.get("status") == "success" and explanation.get("parse_failed") is False,
+        "deepseek_called": model_ledger.get("deepseek_called") is True,
+        "external_calls_triggered": model_ledger.get("external_calls_triggered") is True,
+        "safe_failure_mode": model_ledger.get("safe_failure_mode") or "",
+        "status": explanation.get("status") or model_ledger.get("status"),
+        "model_ledger": model_ledger,
+        "explanation": explanation,
+        "call_ledger_row": call_row,
+    }
+
+
 def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
     packet: Mapping[str, Any],
     *,
     payload_safe: Mapping[str, Any],
     provider_task: Mapping[str, Any] | None,
+    deepseek_result: Mapping[str, Any] | None,
     explicit_request: bool,
     task_id: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -15306,6 +15715,12 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
     scope_hash_matches = bool(requested_scope_hash and expected_scope_hash and requested_scope_hash == expected_scope_hash)
     execution_request_ready = quant_request.get("local_execution_request_ready") is True
     include_deepseek = _coerce_bool(payload_safe.get("include_deepseek"), False)
+    deepseek = _as_dict(deepseek_result)
+    deepseek_model_ledger_recorded = deepseek.get("model_ledger_recorded") is True
+    deepseek_output_acceptance_done = deepseek.get("output_acceptance_done") is True
+    deepseek_called = deepseek.get("deepseek_called") is True
+    deepseek_status = _safe_text(deepseek.get("status") or "", limit=120)
+    deepseek_failure_mode = _safe_text(deepseek.get("safe_failure_mode") or "", limit=120)
     selected_apis = [
         str(api)
         for api in _as_list(quant_request.get("selected_apis"))
@@ -15366,11 +15781,23 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         ),
         _quant_projection_provider_model_acceptance_row(
             "deepseek_model_ledger_policy",
-            "passed_deepseek_skipped_by_request" if not include_deepseek else "pending_deepseek_model_ledger",
-            passed=not include_deepseek,
-            production_blocker=include_deepseek,
-            evidence=f"include_deepseek={include_deepseek}; model_execution_implemented=false; output_acceptance=pending",
-            next_action="Run DeepSeek explanation through model ledger, sanitizer, and output acceptance before cache promotion.",
+            (
+                "passed_deepseek_skipped_by_request"
+                if not include_deepseek
+                else "passed_deepseek_explanation_sanitized"
+                if deepseek_output_acceptance_done
+                else "passed_deepseek_safe_degraded"
+                if deepseek_model_ledger_recorded
+                else "pending_deepseek_model_ledger"
+            ),
+            passed=not include_deepseek or deepseek_model_ledger_recorded,
+            production_blocker=include_deepseek and not deepseek_model_ledger_recorded,
+            evidence=(
+                f"include_deepseek={include_deepseek}; "
+                f"model_ledger_recorded={deepseek_model_ledger_recorded}; "
+                f"output_acceptance={deepseek_output_acceptance_done}; status={deepseek_status or 'skipped'}"
+            ),
+            next_action="Use sanitized explanation when available; if model is unavailable, keep Tushare data visible.",
         ),
         _quant_projection_provider_model_acceptance_row(
             "tushare_light_provider_call_ledger",
@@ -15398,7 +15825,11 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         ),
     ]
     blocking_rows = [row for row in rows if row.get("production_blocker")]
-    if include_deepseek and provider_evidence_done:
+    if include_deepseek and provider_evidence_done and deepseek_output_acceptance_done:
+        status = "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_explained"
+    elif include_deepseek and provider_evidence_done and deepseek_model_ledger_recorded:
+        status = "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_degraded"
+    elif include_deepseek and provider_evidence_done:
         status = "search_quant_provider_model_acceptance_waiting_deepseek_output_acceptance"
     elif include_deepseek:
         status = "search_quant_provider_model_acceptance_blocked_deepseek_model_ledger_pending"
@@ -15411,7 +15842,11 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
     else:
         status = "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped"
     scope = "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_skipped"
-    if include_deepseek:
+    if include_deepseek and deepseek_output_acceptance_done:
+        scope = "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_explained"
+    elif include_deepseek and deepseek_model_ledger_recorded:
+        scope = "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_degraded"
+    elif include_deepseek:
         scope = "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_pending"
     receipt = {
         "schema_version": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION,
@@ -15430,11 +15865,18 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         "operator_approved": operator_approved,
         "execution_request_ready": execution_request_ready,
         "provider_execution_implemented": provider_executed,
-        "model_execution_implemented": False,
+        "model_execution_implemented": include_deepseek and deepseek_model_ledger_recorded,
         "tushare_call_ledger_evidence_done": provider_evidence_done,
-        "deepseek_model_ledger_evidence_done": False,
+        "deepseek_model_ledger_evidence_done": deepseek_model_ledger_recorded,
+        "deepseek_model_ledger_recorded": deepseek_model_ledger_recorded,
+        "deepseek_output_acceptance_done": deepseek_output_acceptance_done,
+        "deepseek_explanation_status": deepseek_status,
+        "deepseek_safe_failure_mode": deepseek_failure_mode,
+        "deepseek_safe_degraded": include_deepseek and deepseek_model_ledger_recorded and not deepseek_output_acceptance_done,
         "deepseek_skipped_by_request": not include_deepseek,
-        "direct_evidence_verified": provider_evidence_done and not include_deepseek,
+        "direct_evidence_verified": provider_evidence_done and (not include_deepseek or deepseek_model_ledger_recorded),
+        "deepseek_model_ledger": _as_dict(deepseek.get("model_ledger")),
+        "deepseek_explanation": _as_dict(deepseek.get("explanation")),
         "provider_call_ledger": provider_ledger,
         "provider_api_call_count": len(provider_ledger),
         "provider_api_success_count": len(success_rows),
@@ -15449,7 +15891,7 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         "production_blockers": [row["criterion"] for row in blocking_rows],
         "external_calls_triggered_by_task": provider_executed,
         "tushare_called_by_task": provider_executed,
-        "deepseek_called": False,
+        "deepseek_called": deepseek_called,
         "github_called": False,
         "cache_get_external_calls": False,
         "react_render_external_calls": False,
@@ -15492,6 +15934,29 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         or (provider_receipt.get("external_calls_triggered_by_task") is True and bool(provider_ledger))
         or (provider_receipt.get("provider_execution_implemented") is True and bool(provider_ledger))
     )
+    deepseek_skipped_by_request = provider_receipt.get("deepseek_skipped_by_request") is True
+    deepseek_model_ledger_recorded = (
+        provider_receipt.get("deepseek_model_ledger_recorded") is True
+        or provider_receipt.get("deepseek_model_ledger_evidence_done") is True
+    )
+    deepseek_output_acceptance_done = provider_receipt.get("deepseek_output_acceptance_done") is True
+    deepseek_safe_degraded = provider_receipt.get("deepseek_safe_degraded") is True
+    deepseek_explanation_status = _safe_text(
+        provider_receipt.get("deepseek_explanation_status") or "",
+        limit=120,
+    )
+    if deepseek_skipped_by_request:
+        deepseek_readback_phrase = "DeepSeek 未请求；Tushare 数据仍可回放。"
+        deepseek_next_phrase = "如需解释，下一次确认走 governed explanation 账本或安全降级。"
+    elif deepseek_output_acceptance_done:
+        deepseek_readback_phrase = "DeepSeek 解释已写入安全模型账本。"
+        deepseek_next_phrase = "同屏查看模型解释；它只解释、不构成交易指令。"
+    elif deepseek_model_ledger_recorded:
+        deepseek_readback_phrase = "DeepSeek 已安全降级，Tushare 数据仍可回放。"
+        deepseek_next_phrase = "先使用 Tushare 数据和本地结果；模型解释状态已记录。"
+    else:
+        deepseek_readback_phrase = "DeepSeek 解释等待安全账本。"
+        deepseek_next_phrase = "先使用 Tushare-first 回放；模型解释不阻塞基础结果。"
     cache_packet_written = bool(quant_receipt or dry_run or execution_request or provider_receipt)
     provider_acceptance_task_id = _safe_text(provider_receipt.get("task_id") or "", limit=128)
     latest_task_id = _safe_text(
@@ -15542,9 +16007,12 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         ordinary_readback_summary = (
             f"小数据已写入 cache / ledger / packet：源任务 Tushare "
             f"{provider_api_success_count}/{provider_api_call_count} 个接口可回放；"
-            "本次 GET cache 未外联，DeepSeek 未参与。"
+            f"本次 GET cache 未外联，{deepseek_readback_phrase}"
         )
-        ordinary_readback_next_step = "先看本地量化推演和次日图谱回放；Factor/Next/ECharts 缺口只作为待补证据。"
+        ordinary_readback_next_step = (
+            "先看本地量化推演和次日图谱回放；"
+            f"{deepseek_next_phrase} Factor/Next/ECharts 缺口只作为待补证据。"
+        )
         ordinary_readback_stage_label = "已回放源任务 Tushare POST task ledger；当前页面只读 cache / ledger / packet。"
     elif p0_confirm_gate_blocked:
         status = "small_data_writeback_blocked_p0_confirm_gate"
@@ -15576,7 +16044,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             f"cache / ledger / packet 已回放部分 Tushare ledger："
             f"{provider_api_success_count}/{provider_api_call_count} 个接口；仍需补齐。"
         )
-        next_action = "补齐 Tushare light ledger 后再联动 Factor/Next/ECharts；DeepSeek 仍保持 skipped。"
+        next_action = f"补齐 Tushare light ledger 后再联动 Factor/Next/ECharts；{deepseek_next_phrase}"
         ordinary_readback_status = "partial_tushare_ledger_replayed"
         ordinary_readback_summary = (
             f"小数据已回放部分 Tushare 账本：{provider_api_success_count}/{provider_api_call_count} 个接口；仍需补齐。"
@@ -15590,10 +16058,10 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             else "small_data_writeback_blocked_execution_request"
         )
         summary_label = "cache / ledger / packet 已写入本地申请；等待 Tushare-first provider ledger 回放。"
-        next_action = "执行请求 ready 后才允许按钮门控 provider task；DeepSeek 仍保持 skipped。"
+        next_action = f"执行请求 ready 后才允许按钮门控 provider task；{deepseek_next_phrase}"
         ordinary_readback_status = "waiting_tushare_first_ledger"
         ordinary_readback_summary = "小数据已写入本地申请；等待 Tushare-first provider ledger 回放。"
-        ordinary_readback_next_step = "执行请求 ready 后再运行按钮门控 provider task；DeepSeek 仍保持 skipped。"
+        ordinary_readback_next_step = f"执行请求 ready 后再运行按钮门控 provider task；{deepseek_next_phrase}"
         ordinary_readback_stage_label = "执行申请已写入；等待按钮门控 provider task 回写 ledger。"
     elif quant_receipt:
         status = "small_data_writeback_local_receipt_ready_provider_pending"
@@ -16194,9 +16662,9 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         {
             "recovery_key": "deepseek_not_blocking",
             "恢复项": "DeepSeek 状态",
-            "当前状态": "DeepSeek governed executor 单独补；P2 阻断恢复不等待模型。",
-            "用户下一步": "先恢复 Tushare-first / cache / ledger / packet 回放；模型解释留到 P5。",
-            "证据": "deepseek_skipped_or_governed_pending",
+            "当前状态": "DeepSeek 解释只读回放或安全降级；P2 阻断恢复不等待模型。",
+            "用户下一步": "先恢复 Tushare-first / cache / ledger / packet 回放；模型解释失败时只安全降级。",
+            "证据": "deepseek_governed_explanation_or_safe_degraded",
             "边界": "DeepSeek 不是数据源，不能覆盖价格、factor、operation_zones 或 strategy action。",
             "readback_source": "local_governance_policy",
             "cache_only_readback": True,
@@ -16277,7 +16745,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             f"源任务 Tushare ledger 已回放 {provider_api_success_count}/{provider_api_call_count} 个接口；"
             "本次 GET cache 未外联。"
         )
-        p1_shortest_next = "直接回放股票量化推演和次日图谱；DeepSeek 仍等 P5 governed executor。"
+        p1_shortest_next = f"直接回放股票量化推演和次日图谱；{deepseek_next_phrase}"
     elif credential_missing_count:
         p1_shortest_status = "blocked_missing_tushare_credentials"
         p1_shortest_label = "P1 最短路径已到服务端凭据闸门：确认任务已接收，但 Tushare 未调用。"
@@ -16323,7 +16791,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "cache_get_external_calls": False,
         "react_render_external_calls": False,
         "readback_creates_task": False,
-        "deepseek_skipped_until_governed_executor": True,
+        "deepseek_skipped_until_governed_executor": deepseek_skipped_by_request,
+        "deepseek_model_ledger_recorded": deepseek_model_ledger_recorded,
+        "deepseek_output_acceptance_done": deepseek_output_acceptance_done,
+        "deepseek_safe_degraded": deepseek_safe_degraded,
+        "deepseek_explanation_status": deepseek_explanation_status,
         "contains_secret": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
@@ -16365,7 +16837,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "当前状态": f"task_id={latest_task_id}" if latest_task_id else "等待点击确认按钮",
             "允许动作": "POST /api/candidate-radar/quant-projection",
             "证据": "candidate_radar_cache_packet.task_id" if latest_task_id else "button_not_clicked",
-            "边界": "只有确认按钮可创建 Tushare-first POST task；DeepSeek skipped，不交易。",
+            "边界": "只有确认按钮可创建 Tushare-first POST task；DeepSeek 只读解释可安全降级，不交易。",
             "readback_source": "candidate_radar_cache_packet",
             "cache_only_readback": True,
             "creates_task_from_readback": False,
@@ -16485,7 +16957,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
                 else "点击一次确认并生成 3.0 量化推演"
             ),
             "允许动作": "按钮门控 POST /api/candidate-radar/quant-projection",
-            "边界": "只有确认按钮可创建 Tushare-first POST task；DeepSeek skipped，不交易。",
+            "边界": "只有确认按钮可创建 Tushare-first POST task；DeepSeek 只读解释可安全降级，不交易。",
             "may_create_task_after_confirm": True,
             "post_task_may_call_tushare": True,
         },
@@ -16599,7 +17071,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         {
             "stage_key": "result_replay",
             "速读项": "结果回放",
-            "当前状态": "结果只从本地 cache / ledger / packet 回放；DeepSeek governed executor 单独补。",
+            "当前状态": "结果只从本地 cache / ledger / packet 回放；DeepSeek 解释只读回放或安全降级。",
             "用户下一步": "打开股票量化推演和次日图谱；把结果当研究线索。",
             "证据": f"provider_ready={provider_ready}; small_data_status={status}",
             "边界": "回放入口只切换本地页面或锚点；不交易、不改 strategy action。",
@@ -16665,7 +17137,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
                 else "等待确认按钮写入 P1 安全合同"
             ),
             "readback_source": "search_quant_projection_receipt.call_ledger.request_params_safe.ordinary_confirm_chain_contract",
-            "boundary": "合同只记录按钮点击、输入静默、DeepSeek skipped 和 cache/ledger/packet 回放面；不含 token/key/raw log。",
+            "boundary": "合同只记录按钮点击、输入静默、DeepSeek 解释治理和 cache/ledger/packet 回放面；不含 token/key/raw log。",
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -16740,7 +17212,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "status": "local_replay_destinations_visible" if latest_task_id else "waiting_confirm",
             "ordinary_label": "股票量化推演 / 次日图谱 / 候选池只读回放",
             "readback_source": "local_navigation_and_cache_replay",
-            "boundary": "DeepSeek 等 governed executor；不真实交易、不改 strategy action",
+            "boundary": "DeepSeek 只读解释可安全降级；不真实交易、不改 strategy action",
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -17147,7 +17619,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
                 f"provider_api_call_count={provider_api_call_count}"
             ),
             "下一步": tushare_chain_next,
-            "边界": "Tushare 只允许由按钮门控 POST task / worker 调用；DeepSeek skipped，不作为数据源。",
+            "边界": "Tushare 只允许由按钮门控 POST task / worker 调用；DeepSeek 只解释事实摘要，不作为数据源。",
             "readback_source": "search_quant_provider_model_acceptance_receipt.provider_call_ledger",
             "readback_external_calls_triggered": False,
             "readback_creates_task": False,
@@ -17616,7 +18088,13 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "provider_api_success_count": provider_api_success_count,
         "credential_missing_provider_count": credential_missing_count,
         "execution_request_ready": execution_request_ready,
-        "deepseek_skipped_by_request": provider_receipt.get("deepseek_skipped_by_request") is True,
+        "deepseek_skipped_by_request": deepseek_skipped_by_request,
+        "deepseek_model_ledger_recorded": deepseek_model_ledger_recorded,
+        "deepseek_model_ledger_evidence_done": deepseek_model_ledger_recorded,
+        "deepseek_output_acceptance_done": deepseek_output_acceptance_done,
+        "deepseek_safe_degraded": deepseek_safe_degraded,
+        "deepseek_explanation_status": deepseek_explanation_status,
+        "deepseek_safe_failure_mode": provider_receipt.get("deepseek_safe_failure_mode") or "",
         "factor_refresh_executed": provider_receipt.get("factor_refresh_executed") is True,
         "next_session_refresh_executed": provider_receipt.get("next_session_refresh_executed") is True,
         "echarts_payload_refreshed": provider_receipt.get("echarts_payload_refreshed") is True,
@@ -18172,6 +18650,8 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         provider_receipt.get("deepseek_model_ledger_evidence_done") is True
         or provider_receipt.get("model_ledger_evidence_done") is True
     )
+    deepseek_output_acceptance_done = provider_receipt.get("deepseek_output_acceptance_done") is True
+    deepseek_safe_degraded = provider_receipt.get("deepseek_safe_degraded") is True
     confirmed_symbol = _safe_text(
         provider_receipt.get("symbol")
         or quant_receipt.get("symbol")
@@ -18192,9 +18672,15 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         missing_evidence.append("Tushare-first provider ledger")
     if not factor_next_ready:
         missing_evidence.append("Factor/Next/ECharts local cache replay")
-    if provider_receipt.get("deepseek_skipped_by_request") is not True:
+    if deepseek_requested and not deepseek_model_ledger_ready:
         missing_evidence.append("DeepSeek governed executor/model ledger")
-    if deepseek_model_ledger_ready:
+    if deepseek_output_acceptance_done:
+        deepseek_governed_executor_status = "model_ledger_ready_sanitized_explanation_replay"
+        deepseek_governed_executor_label = "DeepSeek 解释已通过 sanitizer/字段白名单回放；仅解释来源和缺口，不改数据或 action。"
+    elif deepseek_safe_degraded:
+        deepseek_governed_executor_status = "model_ledger_ready_safe_degraded"
+        deepseek_governed_executor_label = "DeepSeek 已安全降级；Tushare、Factor light、Radar 和 Next Session 回放不被阻塞。"
+    elif deepseek_model_ledger_ready:
         deepseek_governed_executor_status = "model_ledger_ready_governed_output_replay"
         deepseek_governed_executor_label = "DeepSeek model_ledger 可回放；仍只解释来源和缺口，不改数据或 action。"
     elif deepseek_requested:
@@ -18202,7 +18688,7 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         deepseek_governed_executor_label = "DeepSeek 已请求；等待 governed executor 写入 model_ledger 后才可回放。"
     elif deepseek_skipped:
         deepseek_governed_executor_status = "skipped_by_tushare_first_request_waiting_governed_executor"
-        deepseek_governed_executor_label = "当前 Tushare-first 链路 DeepSeek skipped；P5 单独补 governed executor。"
+        deepseek_governed_executor_label = "当前任务未请求 DeepSeek；确认按钮可走 governed explanation 账本或安全降级。"
     else:
         deepseek_governed_executor_status = "governed_executor_pending_not_requested"
         deepseek_governed_executor_label = "DeepSeek 未请求；等待 P5 governed executor。"
@@ -18221,7 +18707,7 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             if not factor_next_ready
             else "量化推演和 Next Session 图谱已有本地回放，可只读查看。"
         )
-        next_action = "查看量化推演摘要，再补 Factor/Next/ECharts 本地刷新证据；DeepSeek 单独等待 governed executor。"
+        next_action = "查看量化推演摘要，再补 Factor/Next/ECharts 本地刷新证据；DeepSeek 解释状态按 model_ledger 回放或安全降级。"
         ordinary_result_status = "ready_with_local_map" if factor_next_ready else "ready_pending_local_map"
         ordinary_result_summary = (
             f"可读结论：源任务 Tushare-first 账本已回放 {provider_success_count}/{provider_call_count} 个接口；"
@@ -18236,7 +18722,7 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         status = "interpretation_blocked_missing_tushare_credentials"
         summary_label = "解释结果暂不可用：服务端 Tushare 凭据缺失，只有本地阻断记录，没有 provider 账本。"
         result_replay_label = "当前只能回放本地阻断原因；不会从 GET cache 或 React render 补调 provider。"
-        next_action = "配置服务端凭据后重新确认；DeepSeek 仍保持 skipped。"
+        next_action = "配置服务端凭据后重新确认；Tushare 缺失时 DeepSeek 不编造事实。"
         ordinary_result_status = "blocked_missing_credentials"
         ordinary_result_summary = "可读结论：还没有真实 provider 账本；当前只能解释服务端凭据缺失这一阻断原因。"
         ordinary_result_next_step = "配置服务端凭据后重新点击确认；页面打开、输入和 GET cache 仍不补调 provider。"
@@ -18257,11 +18743,11 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         ordinary_result_summary = "可读结论：等待输入股票代码并点击确认。"
         ordinary_result_next_step = "先输入有效 A 股代码；输入本身不会创建任务或外联。"
     ordinary_result_boundary = (
-        "解释只基于本地 cache / ledger / packet；不调用 DeepSeek，不覆盖价格、持仓、因子、operation_zones 或 strategy action。"
+        "解释只基于本地 cache / ledger / packet；DeepSeek 不作为数据源，不覆盖价格、持仓、因子、operation_zones 或 strategy action。"
     )
     ordinary_result_evidence = (
         f"证据：源任务 Tushare 接口 {provider_success_count}/{provider_call_count}；"
-        f"本次 GET cache 未外联；DeepSeek 未参与；图谱{'已回放' if factor_next_ready else '待本地刷新'}。"
+        f"本次 GET cache 未外联；{deepseek_governed_executor_label}；图谱{'已回放' if factor_next_ready else '待本地刷新'}。"
     )
     missing_evidence_label = " / ".join(missing_evidence) if missing_evidence else "基础图谱已有本地回放"
     latest_task_id = str(
@@ -18448,7 +18934,7 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "当前状态": f"待补证据：{missing_evidence_label}",
             "用户下一步": next_action,
             "证据": f"missing_evidence_count={len(missing_evidence)}",
-            "边界": "缺口只是待补证据；DeepSeek governed executor 单独补，候选雷达不是买卖指令。",
+            "边界": "缺口只是待补证据；DeepSeek 只解释不覆盖数据，候选雷达不是买卖指令。",
             "readback_source": "local_evidence_gap_summary",
             "cache_only_readback": True,
             "creates_task_from_readback": False,
@@ -18684,7 +19170,7 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "readiness_key": "explicit_p5_task_gate",
             "检查项": "显式 P5 任务门控",
             "当前状态": (
-                "blocked：当前 Tushare-first 链路保持 DeepSeek skipped；没有单独 P5 governed executor task。"
+                "blocked：当前没有可回放 model_ledger；确认按钮后模型失败只能安全降级。"
                 if not deepseek_model_ledger_ready
                 else "ready_to_replay：已有 model_ledger，可只读回放安全摘要。"
             ),
@@ -18870,11 +19356,11 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
     ordinary_deepseek_governed_executor_contract_rows = [
         {
             "contract_key": "standalone_p5_task",
-            "合同项": "1. 单独 P5 任务",
+            "合同项": "1. 按钮门控解释任务",
             "当前状态": (
                 "已有 model_ledger 时只能只读回放安全摘要。"
                 if deepseek_model_ledger_ready
-                else "等待未来单独 P5 governed executor task；当前不真实调用 DeepSeek。"
+                else "等待按钮门控 governed explanation；当前 GET cache 不真实调用 DeepSeek。"
             ),
             "允许动作": "未来按钮门控 POST task；当前 GET cache / React render 只读回放",
             "用户下一步": "先使用 P1 Tushare-first、P2 小数据和 P3 基础图谱；DeepSeek 单独补证。",
@@ -19033,7 +19519,7 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "status": "research_only_safe",
             "ordinary_label": "只解释来源、缺口和下一步；不覆盖价格、持仓、因子、operation_zones 或 strategy action",
             "readback_source": "local_safety_policy",
-            "boundary": "DeepSeek 未参与；候选雷达不是买入指令；真实交易路径隔离",
+            "boundary": "DeepSeek 只解释、不作为数据源；候选雷达不是买入指令；真实交易路径隔离",
             "external_calls_triggered": False,
             "uses_tushare_ledger": small_data_ready,
             "uses_deepseek_output": False,
@@ -19113,7 +19599,7 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "用户下一步": "把缺口当待补证据，不当买入或卖出指令",
             "入口": "候选雷达普通入口",
             "证据": "local_safety_policy",
-            "边界": "DeepSeek 未参与；真实交易隔离；token/key 不进入前端、日志、packet 或 cache。",
+            "边界": "DeepSeek 只解释、不作为数据源；真实交易隔离；token/key 不进入前端、日志、packet 或 cache。",
             "cache_only_readback": True,
             "creates_task_from_readback": False,
             "external_calls_triggered": False,
@@ -19317,8 +19803,8 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         {
             "checkpoint_key": "safety_boundary",
             "检查点": "4. 安全边界",
-            "当前状态": "只解释 source / gap / next_step / safety_summary；DeepSeek governed executor 单独补。",
-            "用户下一步": "把结果当研究线索；P5 前不展示模型输出，P6 前不声明 14 LTG 完成。",
+            "当前状态": "只解释 source / gap / next_step / safety_summary；DeepSeek 只读解释可安全降级。",
+            "用户下一步": "把结果当研究线索；没有 model_ledger 时只显示安全降级，P6 前不声明 14 LTG 完成。",
             "证据": (
                 "safe_explanation_fields="
                 + "/".join(str(item) for item in ordinary_result_checkpoint_contract["safe_explanation_fields"])
@@ -19934,10 +20420,30 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
             task_type="candidate_radar_quant_projection_tushare_light_provider",
             output_packet_key="command_center_candidate_radar_quant_projection_tushare_light_packet",
         )
+    provider_ledger = [
+        row for row in _as_list((provider_task or {}).get("call_ledger")) if isinstance(row, dict)
+    ]
+    deepseek_result = _run_quant_projection_deepseek_explanation(
+        receipt={
+            "symbol": quant_request.get("symbol") or "",
+            "provider_api_call_count": len(provider_ledger),
+            "provider_api_success_count": sum(1 for row in provider_ledger if row.get("call_status") == "success"),
+            "provider_api_failed_count": sum(
+                1
+                for row in provider_ledger
+                if row.get("call_status") == "failed"
+                or str(row.get("call_status") or "").startswith("blocked_")
+            ),
+        },
+        provider_ledger=provider_ledger,
+        selected_apis=selected_apis,
+        include_deepseek=include_deepseek,
+    )
     receipt, receipt_rows = _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         packet,
         payload_safe=payload_safe,
         provider_task=provider_task,
+        deepseek_result=deepseek_result,
         explicit_request=True,
         task_id=str(task["task_id"]),
     )
@@ -19951,9 +20457,12 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         "operator_approved": receipt.get("operator_approved"),
         "include_deepseek": include_deepseek,
         "provider_execution_implemented": receipt.get("provider_execution_implemented"),
-        "model_execution_implemented": False,
+        "model_execution_implemented": receipt.get("model_execution_implemented"),
         "tushare_call_ledger_evidence_done": receipt.get("tushare_call_ledger_evidence_done"),
-        "deepseek_model_ledger_evidence_done": False,
+        "deepseek_model_ledger_evidence_done": receipt.get("deepseek_model_ledger_evidence_done"),
+        "deepseek_output_acceptance_done": receipt.get("deepseek_output_acceptance_done"),
+        "deepseek_explanation_status": receipt.get("deepseek_explanation_status"),
+        "deepseek_safe_failure_mode": receipt.get("deepseek_safe_failure_mode"),
         "production_quant_projection_complete": False,
     }
     local_ledger = _candidate_call_ledger_row(
@@ -19963,11 +20472,20 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         call_status=str(receipt.get("status")),
         request_params_safe=request_params_safe,
     )
+    local_ledger["external"] = receipt.get("external_calls_triggered_by_task") is True or deepseek_result.get(
+        "external_calls_triggered"
+    ) is True
+    local_ledger["external_calls_triggered"] = local_ledger["external"]
+    local_ledger["tushare_called"] = receipt.get("tushare_called_by_task") is True
+    local_ledger["deepseek_called"] = receipt.get("deepseek_called") is True
     packet["task_id"] = task["task_id"]
     packet["scan_mode"] = "quant_projection_provider_model_acceptance"
     packet["search_quant_provider_model_acceptance_completed_at"] = _now_iso()
     packet["search_quant_provider_model_acceptance_receipt"] = receipt
     packet["search_quant_provider_model_acceptance_rows"] = receipt_rows
+    if include_deepseek:
+        packet["search_quant_deepseek_explanation"] = _as_dict(deepseek_result.get("explanation"))
+        packet["search_quant_deepseek_model_ledger"] = _as_dict(deepseek_result.get("model_ledger"))
     packet_counts = _as_dict(packet.get("counts"))
     packet_counts["search_quant_provider_model_acceptance_row_count"] = len(receipt_rows)
     packet_counts["search_quant_provider_model_acceptance_direct_evidence_verified"] = (
@@ -19987,14 +20505,23 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
     packet_policy["search_quant_provider_model_acceptance_deepseek_skipped"] = receipt.get(
         "deepseek_skipped_by_request"
     )
+    packet_policy["search_quant_provider_model_acceptance_deepseek_safe_degraded"] = receipt.get(
+        "deepseek_safe_degraded"
+    )
+    packet_policy["search_quant_provider_model_acceptance_deepseek_explanation_only"] = include_deepseek
     packet_policy["search_quant_provider_model_acceptance_is_not_production_completion"] = True
     packet["policy"] = packet_policy
     provider_ledger = [
         row for row in _as_list(receipt.get("provider_call_ledger")) if isinstance(row, dict)
     ]
-    packet["call_ledger"] = [local_ledger] + provider_ledger
+    deepseek_call_ledger = [
+        row
+        for row in [_as_dict(deepseek_result.get("call_ledger_row"))]
+        if row
+    ]
+    packet["call_ledger"] = [local_ledger] + provider_ledger + deepseek_call_ledger
     packet["warnings"] = [
-        "搜票量化推演 provider/model acceptance 已记录 Tushare light provider ledger；DeepSeek/Factor/Next/ECharts/production promotion 仍是后续证据。"
+        "搜票量化推演 provider/model acceptance 已记录 Tushare light provider ledger；DeepSeek 仅解释并可安全降级，Factor/Next/ECharts/production promotion 仍是后续证据。"
     ] + [
         warning
         for warning in _as_list(packet.get("warnings"))
@@ -20017,7 +20544,7 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
             warning="candidate_radar_quant_projection_provider_model_acceptance_storage_failed",
         ) or task
 
-    task_ledger = [local_ledger] + provider_ledger
+    task_ledger = [local_ledger] + provider_ledger + deepseek_call_ledger
     provider_evidence_done = receipt.get("tushare_call_ledger_evidence_done") is True
     final_status = "success" if provider_evidence_done or receipt.get("direct_evidence_verified") is True else "failed"
     return task_service.update_task_status(

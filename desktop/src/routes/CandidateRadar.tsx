@@ -195,8 +195,8 @@ export default function CandidateRadar() {
     react_render_external_calls: false,
     get_cache_external_calls: false,
     include_tushare_first: true,
-    include_deepseek: false,
-    deepseek_policy: "skipped_until_governed_executor",
+    include_deepseek: true,
+    deepseek_policy: "governed_explanation_only_safe_degraded",
     requires_p0_gate_ready: true,
     p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "p0_stability_or_local_link_evidence", "candidate_cache_get_readable"],
     writeback_surfaces: ["cache", "call_ledger", "packet"],
@@ -284,13 +284,14 @@ export default function CandidateRadar() {
       scan_mode: "search_quant_projection",
       symbol: normalizeAshareSymbolInput(searchSymbol).normalized,
       include_tushare: true,
-      include_deepseek: false,
+      include_deepseek: true,
+      deepseek_policy: "governed_explanation_only_safe_degraded",
       user_approved: true,
       requested_by: "candidate_radar_page",
       p0_confirm_gate_evidence: {
         schema_version: "candidate_radar_p0_confirm_gate.v1",
-        p0_ready: quantProjectionP0Ready,
-        fastapi_cache_get_ready: !loading && !error,
+        p0_ready: quantProjectionConfirmGateReady,
+        fastapi_cache_get_ready: !loading && !error && candidateRadarCacheGetReadable,
         bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady,
         p0_runtime_mode_or_handoff_ready: desktopP0RuntimeModeOrHandoffReady,
         desktop_preflight_ready: desktopPreflightReady,
@@ -442,6 +443,9 @@ export default function CandidateRadar() {
   const searchQuantProjectionAcceptanceDryRun = (cache.search_quant_projection_acceptance_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionExecutionRequest = (cache.search_quant_projection_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProviderModelAcceptance = (cache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
+  const searchQuantDeepSeekExplanation = (cache.search_quant_deepseek_explanation as Record<string, unknown> | undefined) ?? {};
+  const searchQuantDeepSeekModelLedger = (cache.search_quant_deepseek_model_ledger as Record<string, unknown> | undefined) ?? {};
+  const searchQuantDeepSeekPayload = (searchQuantDeepSeekExplanation.payload as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionSmallDataWriteback = (cache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionConfirmChainCheckpoint =
     (cache.search_quant_projection_confirm_chain_checkpoint as Record<string, unknown> | undefined) ?? {};
@@ -500,7 +504,7 @@ export default function CandidateRadar() {
       scan_mode: "quant_projection_provider_model_acceptance",
       operator_approved: true,
       acceptance_scope_hash: String(searchQuantProjectionExecutionRequest.acceptance_scope_hash ?? ""),
-      include_deepseek: false,
+      include_deepseek: true,
       requested_by: "candidate_radar_page"
     }).then((res) => {
       setTaskReceipt(res);
@@ -829,7 +833,14 @@ export default function CandidateRadar() {
   const quantProjectionP0Ready =
     desktopP0ContractEvidenceReady &&
     desktopP0RuntimePacketsReady;
-  const quantProjectionP0ReadbackReady = quantProjectionP0Ready && candidateRadarCacheGetReadable;
+  const quantProjectionConfirmGateReady =
+    quantProjectionP0Ready &&
+    !loading &&
+    !error &&
+    bootstrapRuntimeModeReady &&
+    desktopPreflightReady &&
+    candidateRadarCacheGetReadable;
+  const quantProjectionP0ReadbackReady = quantProjectionConfirmGateReady;
   const ordinaryCacheSourceLabel = candidateRadarCacheReady
     ? "本地候选缓存可用"
     : candidateRadarCacheGetReadable
@@ -1506,7 +1517,7 @@ export default function CandidateRadar() {
     {
       交接项: "2. P1 确认按钮",
       当前状态: quantProjectionP0Ready ? "可进入搜票确认" : "暂不进入 P1",
-      用户下一步: "代码通过本地校验后点击确认按钮，确认后生成本地投研结果；模型解释后续单独补。",
+      用户下一步: "代码通过本地校验后点击确认按钮，确认后生成本地投研结果；DeepSeek 解释随确认任务治理执行或安全降级。",
       入口: "下一票雷达确认按钮",
       证据: "fallback from candidateRadarP0AutoLinkRows",
       边界: "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker"
@@ -1545,7 +1556,7 @@ export default function CandidateRadar() {
     quantProjectionSymbolReady &&
     Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
     quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized;
-  const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionP0Ready;
+  const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionConfirmGateReady;
   const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;
   const quantProjectionCanLaunch = !quantProjectionSubmitDisabled;
   const quantProjectionConnectionReadyLabel = quantProjectionP0Ready
@@ -1640,7 +1651,7 @@ export default function CandidateRadar() {
           : ordinaryUserText(quantProjectionSymbolValidation.reason);
   const quantProjectionSummaryGuidance = quantProjectionSymbolReady
     ? quantProjectionP0Ready
-      ? `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，只由确认按钮启动本地投研流程，模型解释单独补。`
+      ? `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，只由确认按钮启动本地投研流程；DeepSeek 解释随任务写入安全模型账本或安全降级。`
       : `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；确认按钮在等本地联通闸门变绿，输入和页面打开不会创建后台流程。`
     : searchSymbol.trim()
       ? `摘要搜票格式未通过：${quantProjectionValidationReasonLabel}；不会创建后台流程。`
@@ -1676,15 +1687,44 @@ export default function CandidateRadar() {
   const quantProjectionDeepSeekSkipped =
     searchQuantProviderModelAcceptance.deepseek_skipped_by_request === true ||
     policy.search_quant_provider_model_acceptance_deepseek_skipped === true;
+  const quantProjectionDeepSeekModelLedgerReady =
+    searchQuantProviderModelAcceptance.deepseek_model_ledger_evidence_done === true ||
+    searchQuantProviderModelAcceptance.deepseek_model_ledger_recorded === true ||
+    Boolean(searchQuantDeepSeekModelLedger.input_hash || searchQuantDeepSeekModelLedger.input_summary_hash);
+  const quantProjectionDeepSeekOutputReady =
+    searchQuantProviderModelAcceptance.deepseek_output_acceptance_done === true ||
+    searchQuantDeepSeekExplanation.status === "success";
+  const quantProjectionDeepSeekDegraded =
+    searchQuantProviderModelAcceptance.deepseek_safe_degraded === true ||
+    String(searchQuantDeepSeekExplanation.status ?? "").startsWith("degraded");
+  const quantProjectionDeepSeekSummary = displayText(
+    searchQuantDeepSeekPayload.summary,
+    quantProjectionDeepSeekOutputReady
+      ? "DeepSeek 解释已写入安全模型账本"
+      : quantProjectionDeepSeekDegraded
+        ? `模型解释已降级：${displayText(searchQuantProviderModelAcceptance.deepseek_safe_failure_mode ?? searchQuantDeepSeekModelLedger.safe_failure_mode, "safe degraded")}`
+        : quantProjectionDeepSeekSkipped
+          ? "模型解释未请求；Tushare 结果不受影响"
+          : "等待模型解释账本"
+  );
+  const quantProjectionDeepSeekVisibleStatus = quantProjectionDeepSeekOutputReady
+    ? `${quantProjectionDeepSeekSummary}；安全模型账本已写入`
+    : quantProjectionDeepSeekDegraded
+      ? `${quantProjectionDeepSeekSummary}；Tushare 数据、Factor light 和本地图谱继续显示`
+      : quantProjectionDeepSeekSummary;
   const quantProjectionCacheSourceLabel =
     searchQuantProjectionReceipt.status ? "本地推演记录可用" : cache.status === "ready" ? "候选缓存可用" : "等待本地缓存";
   const quantProjectionProviderSourceLabel = quantProjectionProviderLedgerReady
     ? `Tushare 数据有本地记录：${quantProjectionProviderApiSuccessLabel} 个接口`
     : searchQuantProjectionReceipt.provider_execution_implemented === true ? "Tushare 数据有本地记录" : "待后台补齐 Tushare 数据记录";
   const quantProjectionModelSourceLabel = quantProjectionDeepSeekSkipped
-    ? "模型解释已跳过：等待单独治理能力"
-    : searchQuantProviderModelAcceptance.deepseek_model_ledger_evidence_done === true
-      ? "DeepSeek 解释有本地记录"
+    ? "模型解释未请求；确认按钮可走治理账本或安全降级"
+    : quantProjectionDeepSeekOutputReady
+      ? "DeepSeek 解释已写入安全模型账本"
+      : quantProjectionDeepSeekDegraded
+        ? "DeepSeek 已安全降级，Tushare 结果不受影响"
+      : quantProjectionDeepSeekModelLedgerReady
+        ? "DeepSeek 模型账本有本地记录"
       : searchQuantProjectionReceipt.model_execution_implemented === true ? "DeepSeek 解释有本地记录" : "模型解释待单独治理能力";
   const quantProjectionTaskBoundary =
     "输入不触发外联；点击确认后只经 POST task / worker 后台运行，React 渲染不直连 Tushare 或 DeepSeek。";
@@ -1707,9 +1747,9 @@ export default function CandidateRadar() {
     },
     {
       链路项: "DeepSeek",
-      当前状态: quantProjectionDeepSeekSkipped ? "skipped：等待 governed executor" : "pending：本轮不调用模型",
-      用户下一步: "先使用 Tushare-first 和本地图谱；DeepSeek 留到 P5 单独补",
-      证据: "include_deepseek=false / governed executor pending",
+      当前状态: quantProjectionDeepSeekVisibleStatus,
+      用户下一步: quantProjectionDeepSeekOutputReady ? "同屏阅读解释边界，再看量化推演和次日图谱" : "先使用 Tushare-first 和本地图谱；模型失败只按降级展示",
+      证据: "include_deepseek=true / sanitized explanation / model_ledger",
       边界: "DeepSeek 不作为数据源，不覆盖价格、因子、operation_zones 或 strategy action"
     },
     {
@@ -1721,7 +1761,7 @@ export default function CandidateRadar() {
     }
   ];
   const quantProjectionProviderModelReplayState = quantProjectionProviderLedgerReady
-    ? "本地缓存已回放数据来源记录；模型解释待单独补，不改交易策略"
+    ? `本地缓存已回放数据来源记录；${quantProjectionModelSourceLabel}，不改交易策略`
     : "等待确认按钮启动数据链；本地缓存只显示等待状态";
   const quantProjectionSmallDataExplicitReady =
     searchQuantProjectionSmallDataReadbackCheckpoint.ready === true ||
@@ -1815,7 +1855,7 @@ export default function CandidateRadar() {
     },
     {
       label: "DeepSeek",
-      value: quantProjectionDeepSeekSkipped ? "已跳过；不影响 Tushare-first 回放" : quantProjectionModelSourceLabel,
+      value: quantProjectionDeepSeekVisibleStatus,
       tone: "good"
     },
     {
@@ -1998,9 +2038,9 @@ export default function CandidateRadar() {
         },
         {
           恢复项: "DeepSeek 状态",
-          当前状态: "DeepSeek governed executor 单独补；P2 阻断恢复不等待模型。",
-          用户下一步: "先恢复 Tushare-first / cache / ledger / packet 回放；模型解释留到 P5。",
-          证据: "deepseek_skipped_or_governed_pending",
+          当前状态: "DeepSeek 解释只读回放或安全降级；P2 阻断恢复不等待模型。",
+          用户下一步: "先恢复 Tushare-first / cache / ledger / packet 回放；模型解释失败时只安全降级。",
+          证据: "deepseek_governed_explanation_or_safe_degraded",
           边界: "DeepSeek 不是数据源，不能覆盖价格、factor、operation_zones 或 strategy action。"
         }
       ];
@@ -2048,8 +2088,8 @@ export default function CandidateRadar() {
   const quantProjectionInterpretationReady = quantProjectionInterpretationExplicitReady;
   const quantProjectionResearchMapState = quantProjectionInterpretationReady
     ? quantProjectionFactorNextReady
-      ? "量化推演 / Next Session 图谱已有本地回放；DeepSeek skipped/pending，只解释不改交易策略"
-      : "Tushare 已回放；量化推演 / Next Session 图谱等待本地 cache 写入；DeepSeek skipped"
+      ? `量化推演 / Next Session 图谱已有本地回放；${quantProjectionDeepSeekVisibleStatus}；只解释不改交易策略`
+      : `Tushare 已回放；量化推演 / Next Session 图谱等待本地 cache 写入；${quantProjectionDeepSeekVisibleStatus}`
     : quantProjectionInterpretationPartialLedgerReady
       ? "call_ledger 已回放；等待小数据三面 ready 后再开放 P3 速读"
     : searchQuantProjectionReceipt.status
@@ -2072,16 +2112,16 @@ export default function CandidateRadar() {
     quantProjectionInterpretationState;
   const quantProjectionInterpretationNext =
     String(searchQuantProjectionInterpretation.next_action ?? "") ||
-    "先点击确认并生成 3.0 量化推演；DeepSeek governed executor 单独补";
+    "先点击确认并生成 3.0 量化推演；DeepSeek 解释只读运行，可安全降级";
   const quantProjectionOrdinaryResultNext =
     String(searchQuantProjectionInterpretation.ordinary_result_next_step ?? "") ||
     quantProjectionInterpretationNext;
   const quantProjectionOrdinaryResultBoundary =
     String(searchQuantProjectionInterpretation.ordinary_result_boundary ?? "") ||
-    "解释只基于本地 cache / ledger / packet；不调用 DeepSeek，不改交易策略。";
+    "解释只基于本地 cache / ledger / packet；DeepSeek 不作为数据源，不改交易策略。";
   const quantProjectionOrdinaryResultEvidence =
     String(searchQuantProjectionInterpretation.ordinary_result_evidence ?? "") ||
-    "证据：等待 Tushare-first 账本；DeepSeek 未参与。";
+    `证据：等待 Tushare-first 账本；${quantProjectionDeepSeekVisibleStatus}。`;
   const quantProjectionP3OrdinaryReadableSentence = [
     readableSentencePart("结论", quantProjectionOrdinaryResultSummary, ["结论：", "可读结论："]),
     readableSentencePart("下一步", quantProjectionOrdinaryResultNext, ["下一步："]),
@@ -2171,8 +2211,8 @@ export default function CandidateRadar() {
         },
         {
           检查点: "4. 安全边界",
-          当前状态: "只解释 source / gap / next_step / safety_summary；DeepSeek governed executor 单独补。",
-          用户下一步: "把结果当研究线索；P5 前不展示模型输出，P6 前不声明 14 LTG 完成。",
+          当前状态: "只解释 source / gap / next_step / safety_summary；DeepSeek 只读解释可安全降级。",
+          用户下一步: "把结果当研究线索；没有 model_ledger 时只显示安全降级，P6 前不声明 14 LTG 完成。",
           证据: `safe_explanation_fields=${quantProjectionSafeExplanationFields}`,
           边界: "不真实交易、不改 strategy action、不覆盖价格/持仓/factor/operation_zones。"
         }
@@ -2196,10 +2236,10 @@ export default function CandidateRadar() {
         },
         {
           结论: "还缺什么",
-          当前状态: "Tushare-first 账本、Factor/Next/ECharts 本地回放或 DeepSeek governed executor 仍按证据状态显示",
+          当前状态: "Tushare-first 账本、Factor/Next/ECharts 本地回放或 DeepSeek 解释账本仍按证据状态显示",
           用户下一步: quantProjectionInterpretationNext,
           证据: "local_evidence_gap_summary",
-          边界: "缺口不是买卖指令；DeepSeek governed executor 单独补"
+          边界: "缺口不是买卖指令；DeepSeek 只解释不覆盖数据"
         }
       ];
   const quantProjectionP3DecisionBriefRows = quantProjectionOrdinaryResultDecisionBriefPacketRows.length
@@ -2224,7 +2264,7 @@ export default function CandidateRadar() {
           当前状态: `missing_evidence_count=${String(searchQuantProjectionResultCheckpoint.missing_evidence_count ?? searchQuantProjectionInterpretation.missing_evidence_count ?? 0)}`,
           用户下一步: quantProjectionInterpretationNext,
           证据: "local_evidence_gap_summary",
-          边界: "只作为研究线索；不下单、不改 strategy action，DeepSeek 单独等 governed executor。"
+          边界: "只作为研究线索；不下单、不改 strategy action，DeepSeek 只解释不覆盖数据。"
         }
       ];
   const quantProjectionModelGovernanceRows = rows(searchQuantProjectionInterpretation.ordinary_model_governance_rows).map((row) => ({
@@ -2232,7 +2272,7 @@ export default function CandidateRadar() {
     当前状态: displayText(row["当前状态"] ?? row.status),
     用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionInterpretationNext),
     证据: displayText(row["证据"] ?? row.evidence, "search_quant_projection_interpretation_summary"),
-    边界: displayText(row["边界"] ?? row.boundary, "DeepSeek governed executor 单独补；不作为数据源或交易动作")
+    边界: displayText(row["边界"] ?? row.boundary, "DeepSeek 只读解释可安全降级；不作为数据源或交易动作")
   }));
   const quantProjectionDeepSeekChecklistRows = rows(searchQuantProjectionInterpretation.ordinary_deepseek_governed_executor_checklist_rows).map((row) => ({
     检查项: displayText(row["检查项"] ?? row.check_key),
@@ -2264,7 +2304,7 @@ export default function CandidateRadar() {
         {
           治理项: "执行门控",
           当前状态: quantProjectionModelSourceLabel,
-          用户下一步: "先使用 Tushare-first 和本地图谱；DeepSeek 等 governed executor 单独补",
+          用户下一步: "先使用 Tushare-first 和本地图谱；DeepSeek 只读解释可安全降级",
           证据: "local_model_governance_policy",
           边界: "GET cache 和 React render 不调用 DeepSeek"
         },
@@ -2305,10 +2345,16 @@ export default function CandidateRadar() {
           边界: "次日图谱只读回放本地 cache；缺口只作为待补证据，不创建交易动作"
         },
         {
+          回放项: "DeepSeek 解释",
+          当前状态: quantProjectionDeepSeekVisibleStatus,
+          来源: quantProjectionDeepSeekModelLedgerReady ? "sanitized fact summary / model_ledger" : "safe degraded replay",
+          边界: "仅解释，不构成交易指令；不覆盖 Tushare 数据、factor、operation_zones 或 strategy action"
+        },
+        {
           回放项: "安全边界",
           当前状态: "只解释来源、缺口和下一步；不覆盖价格、持仓、因子、operation_zones 或 strategy action",
           来源: "local_safety_policy",
-          边界: "DeepSeek 未参与；候选雷达不是买入指令；真实交易路径隔离"
+          边界: "候选雷达不是买入指令；真实交易路径隔离"
         }
       ];
   const quantProjectionOrdinaryResultActionRows = rows(searchQuantProjectionInterpretation.ordinary_result_action_rows).map((row) => ({
@@ -2336,10 +2382,10 @@ export default function CandidateRadar() {
   const quantProjectionBlockedState = searchQuantProjectionReceipt.symbol_valid === false
     ? "输入代码未通过本地校验；不会创建真实数据或模型补证"
     : quantProjectionProviderLedgerReady
-      ? "Tushare-first 已回放；Factor/Next/完整推演和 DeepSeek governed executor 仍按后续步骤补齐"
+      ? "Tushare-first 已回放；DeepSeek 解释按安全模型账本回放或安全降级；Factor/Next/完整推演继续补齐"
     : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
       ? "可创建按钮门控补证请求；页面显示仍不自动外联"
-      : "等待确认按钮启动本地投研数据链；模型解释后续单独补";
+      : "等待确认按钮启动本地投研数据链；DeepSeek 解释随确认任务治理执行或安全降级";
   const candidateRadarLtg13DataLedgerState = quantProjectionProviderLedgerReady
     ? `真实数据账本已回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}`
     : searchQuantProjectionExecutionRequest.local_execution_request_ready === true
@@ -2688,7 +2734,7 @@ export default function CandidateRadar() {
         : "最近确认：暂无；点击确认按钮后显示本地进度";
   const quantProjectionSourcePlainStatus =
     quantProjectionProviderLedgerReady || quantProjectionSmallDataReady
-      ? "本地结果已有数据来源记录；模型解释仍按高级能力单独补"
+      ? "本地结果已有数据来源记录；DeepSeek 解释按安全模型账本回放或安全降级"
       : taskReceipt?.ok || quantProjectionPersistedTaskId
         ? "等待本地结果写回；外部数据或模型不会自动刷新"
         : "尚未确认；页面只显示本地候选和历史结果";
@@ -2960,7 +3006,7 @@ export default function CandidateRadar() {
       回执项: "Tushare-first 链路",
       当前状态: quantProjectionAcceptedTaskId
         ? `include_tushare=${String(quantProjectionAcceptedPayload.include_tushare ?? true)} / include_deepseek=${String(quantProjectionAcceptedPayload.include_deepseek ?? false)}`
-        : "等待确认；DeepSeek 默认 skipped",
+        : "等待确认；DeepSeek 按按钮任务治理或安全降级",
       用户看法: "确认按钮提交 Tushare-first 后台链；服务端凭据缺失时只写本地阻断",
       边界: "只有 POST task / worker 可调用 Tushare；React render、搜索输入、GET cache 不外联"
     },
@@ -2974,7 +3020,7 @@ export default function CandidateRadar() {
       回执项: "结果去向",
       当前状态: "股票量化推演 / 次日图谱 / 候选池只读回放",
       用户看法: "先看 TaskStatusPanel；成功后刷新 cache，再打开两个回放入口",
-      边界: "DeepSeek 等 governed executor；不真实交易、不改 strategy action"
+      边界: "DeepSeek 只读解释可安全降级；不真实交易、不改 strategy action"
     }
   ];
   const quantProjectionTaskCacheReadbackRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_task_readback_rows).length
@@ -3002,7 +3048,7 @@ export default function CandidateRadar() {
   const quantProjectionResultReplayState =
     "成功后回放本地结果和结果包；本地缓存只读展示";
   const quantProjectionReplayOrder = quantProjectionInterpretationReady
-    ? "回放顺序：先看 Tushare ledger，再看股票量化推演，最后看次日图谱；DeepSeek 只看 skipped/pending 状态"
+    ? "回放顺序：先看 Tushare ledger，再看股票量化推演和 DeepSeek 解释账本，最后看次日图谱"
     : taskReceipt?.ok
       ? "确认任务已接收：先看 TaskStatusPanel，再通过 GET cache 回放 Tushare ledger、量化推演和次日图谱"
       : "回放顺序：确认生成后先看任务编号，再刷新本地缓存，最后查看量化推演和次日图谱";
@@ -3222,7 +3268,7 @@ export default function CandidateRadar() {
     },
     {
       label: "安全边界",
-      value: "输入不外联；确认按钮才启动本地数据链；模型解释单独补；不交易、不改交易策略",
+      value: "输入不外联；确认按钮才启动本地数据链；DeepSeek 解释随任务治理执行或安全降级；不交易、不改交易策略",
       tone: "good"
     }
   ];
@@ -4433,7 +4479,7 @@ export default function CandidateRadar() {
         : "等待按钮门控 POST task 写入 provider ledger 或本地阻断",
       用户下一步: quantProjectionProviderLedgerReady ? "继续回放 P2 三面和 P3 结果" : "先看任务状态；凭据缺失时按本地阻断处理",
       证据: `provider_call_source=${quantProjectionProviderCallSource}`,
-      边界: "Tushare 只允许在 POST task / worker 内调用；DeepSeek 默认 skipped，等 governed executor；DeepSeek 默认 skipped，需 governed executor 完成后再单独补"
+      边界: "Tushare 只允许在 POST task / worker 内调用；DeepSeek 只读取安全事实摘要，可成功或安全降级"
     },
     {
       链路节点: "3. P2 三面写回",
@@ -4568,7 +4614,7 @@ export default function CandidateRadar() {
       阶段: "2. 点击确认按钮",
       当前状态: quantProjectionDisabledReason,
       用户下一步: quantProjectionCanLaunch ? "点击确认并生成 3.0 量化推演" : "等待有效代码和本地后端联通",
-      边界: "只有确认按钮创建本地 POST task；DeepSeek skipped；不交易；只有确认按钮会 POST /api/candidate-radar/quant-projection"
+      边界: "只有确认按钮创建本地 POST task；DeepSeek 只读解释可安全降级；不交易；只有确认按钮会 POST /api/candidate-radar/quant-projection"
     },
     {
       阶段: "3. 看任务接收",
@@ -4735,7 +4781,7 @@ export default function CandidateRadar() {
       触发: "后台任务",
       后台: "凭据可用才写 call_ledger / cache / packet",
       回放: quantProjectionProviderModelReplayState,
-      边界: "凭据可用才写 provider ledger，凭据缺失只写本地阻断；DeepSeek skipped；凭据缺失只写本地阻断，不补调 DeepSeek"
+      边界: "凭据可用才写 provider ledger；Tushare 缺失只写本地阻断，DeepSeek 不编造事实"
     },
     {
       步骤: "结果回放",
@@ -4796,7 +4842,7 @@ export default function CandidateRadar() {
       当前状态: quantProjectionDisabledReason,
       用户下一步: quantProjectionCanLaunch ? "点击一次确认并生成 3.0 量化推演" : "等待按钮启用，或先恢复本地 FastAPI 连接",
       允许动作: "按钮门控 POST /api/candidate-radar/quant-projection",
-      边界: "只有确认按钮可创建 Tushare-first task；DeepSeek skipped，不交易"
+      边界: "只有确认按钮可创建 Tushare-first task；DeepSeek 只读解释可安全降级，不交易"
     },
     {
       门控项: "3. 任务接收",
@@ -4836,7 +4882,7 @@ export default function CandidateRadar() {
       当前状态: quantProjectionConfirmChainState,
       允许动作: "POST /api/candidate-radar/quant-projection",
       证据: quantProjectionAcceptedTaskId || quantProjectionPersistedTaskId || "button_not_clicked",
-      边界: "只有确认按钮可创建 Tushare-first POST task；DeepSeek skipped，不交易"
+      边界: "只有确认按钮可创建 Tushare-first POST task；DeepSeek 只读解释可安全降级，不交易"
     },
     {
       触发点: "3. Tushare-first task ledger",
@@ -4873,7 +4919,7 @@ export default function CandidateRadar() {
       用户动作: "点击确认并生成 3.0 量化推演",
       当前状态: quantProjectionConfirmChainState,
       下一步: taskReceipt?.ok || quantProjectionPersistedTaskId ? "看任务编号和 TaskStatusPanel" : "等待按钮启用，或先恢复本地后端连接",
-      边界: "只有确认按钮创建 Tushare-first POST task / worker；DeepSeek skipped，不交易"
+      边界: "只有确认按钮创建 Tushare-first POST task / worker；DeepSeek 只读解释可安全降级，不交易"
     },
     {
       步骤: "4. 回放结果",
@@ -4900,6 +4946,11 @@ export default function CandidateRadar() {
       label: "数据来源",
       value: quantProjectionOrdinaryResultEvidence,
       tone: quantProjectionProviderLedgerReady ? "good" as const : "warn" as const
+    },
+    {
+      label: "DeepSeek 解释",
+      value: quantProjectionDeepSeekVisibleStatus,
+      tone: quantProjectionDeepSeekOutputReady ? "good" as const : quantProjectionDeepSeekDegraded ? "warn" as const : "neutral" as const
     },
     {
       label: "下一步",
@@ -5801,7 +5852,7 @@ export default function CandidateRadar() {
         </div>
         <div aria-label="candidate radar ordinary p2 writeback recovery">
           <h3>P2 阻断恢复速读</h3>
-          <p className="risk-note">如果 Tushare-first 没有回放，先看这张表区分任务等待、服务端凭据阻断和 DeepSeek 单独补；它只读本地 cache，不创建任务。</p>
+          <p className="risk-note">如果 Tushare-first 没有回放，先看这张表区分任务等待、服务端凭据阻断和 DeepSeek 安全降级；它只读本地 cache，不创建任务。</p>
           <DataLineageTable rows={quantProjectionWritebackRecoveryDisplayRows} />
         </div>
         <div aria-label="candidate radar ordinary p2 post confirm cache handoff">
@@ -5948,7 +5999,7 @@ export default function CandidateRadar() {
         </div>
 
         <div id="factor" aria-label="quant projection factor replay anchor">
-        <PacketCard title="搜票量化推演" subtitle="输入代码并确认后生成本地投研结果；模型解释作为高级能力单独补" status={String(searchQuantProjectionReceipt.status ?? "local_receipt")}>
+        <PacketCard title="搜票量化推演" subtitle="输入代码并确认后生成本地投研结果；模型解释在确认任务中治理或安全降级" status={String(searchQuantProjectionReceipt.status ?? "local_receipt")}>
           <div className="actions">
             <input
               value={searchSymbol}
@@ -6040,7 +6091,7 @@ export default function CandidateRadar() {
               { label: "小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "可读结论", value: quantProjectionOrdinaryResultSummary, tone: quantProjectionInterpretationReady ? "good" : "warn" },
               { label: "下一步", value: quantProjectionOrdinaryResultNext },
-              { label: "安全边界", value: "不交易、不改 strategy action；DeepSeek 等 governed executor；不交易、不改交易策略", tone: "good" }
+              { label: "安全边界", value: "不交易、不改 strategy action；DeepSeek 只读解释可安全降级；不交易、不改交易策略", tone: "good" }
             ]}
           />
           <div aria-label="quant projection ordinary end to end path">
@@ -6054,7 +6105,7 @@ export default function CandidateRadar() {
           </div>
           <div aria-label="quant projection confirmed task receipt readback">
             <h3>确认任务接收回执</h3>
-            <p className="risk-note">点击确认后先看这张回执：它只回放本地 POST task 是否接收、Tushare-first / DeepSeek skipped 参数和安全步骤，不补调数据源或模型。</p>
+            <p className="risk-note">点击确认后先看这张回执：它只回放本地 POST task 是否接收、Tushare-first / DeepSeek 只读解释参数和安全步骤；回放本身不补调数据源或模型。</p>
             <DataLineageTable rows={quantProjectionConfirmedTaskReceiptRows} />
           </div>
           <div aria-label="quant projection persisted task resume">
@@ -6120,19 +6171,19 @@ export default function CandidateRadar() {
               <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
             </div>
             <details className="developer-audit-details" aria-label="quant projection ordinary deepseek governance status">
-              <summary>高级：P5 DeepSeek 单独补证</summary>
-              <p className="risk-note">P5 只作为高级单独补证：这里优先读取 ordinary_model_governance_rows，说明何时才允许模型补证；不作为普通用户当前下一步，不阻塞 P1/P2/P3 本地回放，不会从治理状态创建 task 或调用模型。</p>
+              <summary>高级：DeepSeek 解释治理</summary>
+              <p className="risk-note">这里优先读取 ordinary_model_governance_rows，说明按钮门控模型解释何时可回放或安全降级；不作为数据源，不阻塞 P1/P2/P3 本地回放，不会从治理状态创建 task 或调用模型。</p>
               {quantProjectionDeepSeekContractRows.length ? (
                 <div aria-label="quant projection ordinary deepseek governed executor contract">
-                  <h3>P5 DeepSeek 单独补证合同</h3>
-                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：明确未来单独 P5 task、model_ledger、sanitizer、output acceptance、安全字段和不阻塞 P1/P2/P3；这张表只读回放，不创建 task、不调用模型。</p>
+                  <h3>DeepSeek 解释治理合同</h3>
+                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：确认按钮后的解释必须有 model_ledger、sanitizer、output acceptance、安全字段和不阻塞 P1/P2/P3；这张表只读回放，不创建 task、不调用模型。</p>
                   <DataLineageTable rows={quantProjectionDeepSeekContractRows} />
                 </div>
               ) : null}
               {quantProjectionDeepSeekReadinessRows.length ? (
                 <div aria-label="quant projection ordinary deepseek governed executor readiness">
                   <h3>P5 governed executor readiness</h3>
-                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_readiness_rows：说明何时才允许单独补 DeepSeek、当前为什么不能调、以及后续只能写安全摘要；这张表只读回放，不创建 task、不调用模型。</p>
+                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_readiness_rows：说明何时允许 DeepSeek 解释、当前是否安全降级、以及只能写安全摘要；这张表只读回放，不创建 task、不调用模型。</p>
                   <DataLineageTable rows={quantProjectionDeepSeekReadinessRows} />
                 </div>
               ) : null}
@@ -6231,10 +6282,10 @@ export default function CandidateRadar() {
             <p className="risk-note">任务接收后立即回读本地 cache receipt，再看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。</p>
             <p className="risk-note">最近任务优先显示本次确认返回的 task id；页面刷新后再从本地 cache / packet 回放 task id 和安全 current_step；GET cache 不会因此补调 provider。</p>
             <p className="risk-note">确认按钮只提交后台链路；服务端凭据可用才写入 Tushare call_ledger / cache / packet，凭据缺失只写本地阻断，GET cache 和 React render 不补调 provider。</p>
-            <p>普通入口保留“确认并生成”作为 P1 主按钮；点击后在本卡显示任务接收和状态，DeepSeek 保持 skipped，不交易、不改交易策略；审计原文：不交易、不改 strategy action。</p>
+            <p>普通入口保留“确认并生成”作为 P1 主按钮；点击后在本卡显示任务接收和状态，DeepSeek 只读解释可安全降级，不交易、不改交易策略；审计原文：不交易、不改 strategy action。</p>
             <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
-            <p className="risk-note">Tushare ledger 来自 cache / call_ledger 回放；DeepSeek 仍需 governed executor，普通页不展示 prompt/output。</p>
-            <p>确认后创建 Tushare-first 按钮门控 POST task / worker；Tushare 小全量数据写入 call_ledger；DeepSeek 保持 skipped，待 governed executor / model_ledger 后再展示缓存，React render 不直接外联。</p>
+            <p className="risk-note">Tushare ledger 来自 cache / call_ledger 回放；DeepSeek 只展示 sanitized explanation / model_ledger，普通页不展示 prompt/output。</p>
+            <p>确认后创建 Tushare-first 按钮门控 POST task / worker；Tushare 小全量数据写入 call_ledger；DeepSeek 只读解释可成功或安全降级，React render 不直接外联。</p>
           </details>
           <details className="developer-audit-details">
             <summary>搜票推演记录详情</summary>
@@ -6367,7 +6418,7 @@ export default function CandidateRadar() {
                 确认 Tushare-first 补证
               </button>
             </div>
-            <p>该按钮只在 execution request 有 scope hash 后可点；它通过 POST task 触发 Tushare light provider ledger，DeepSeek 保持 skipped，仍不交易、不改交易策略；审计原文：不交易、不改 strategy action。</p>
+            <p>该按钮只在 execution request 有 scope hash 后可点；它通过 POST task 触发 Tushare light provider ledger，DeepSeek 只读解释可安全降级，仍不交易、不改交易策略；审计原文：不交易、不改 strategy action。</p>
             <p>点击后本区域会显示任务创建记录和状态；成功后自动刷新本地 cache，下一轮 GET 只回放 search_quant_provider_model_acceptance_receipt / call_ledger / packet，不在 React render 里补调 provider。</p>
             <TaskLaunchReceipt receipt={taskReceipt} />
             {manualTaskPanelVisible ? (
@@ -6416,16 +6467,16 @@ export default function CandidateRadar() {
           </PacketCard>
         </details>
         <details className="developer-audit-details" aria-label="candidate radar audit p5 governance details">
-          <summary>P5 DeepSeek 单独补证状态</summary>
-          <p className="risk-note">P4 将 P5 治理状态下沉到开发审计区；普通主线先停在 P1 确认、P2 三面回放和 P3 结果速读，DeepSeek governed executor 只作为高级补证参考。</p>
+          <summary>DeepSeek 解释治理状态</summary>
+          <p className="risk-note">P4 将模型治理状态下沉到开发审计区；普通主线先看 P1 确认、P2 三面回放和 P3 结果速读，DeepSeek 只作为解释层回放或安全降级。</p>
           <div aria-label="candidate radar audit p5 deepseek standalone governance">
-            <h3>P5 DeepSeek 单独治理速读</h3>
-            <p className="risk-note">DeepSeek 只作为 governed executor 单独补证；P1 Tushare-first、P2 小数据写入和 P3 基础图谱继续先走本地回放，不等待模型。</p>
+            <h3>DeepSeek 解释治理速读</h3>
+            <p className="risk-note">DeepSeek 只作为 governed explanation；P1 Tushare-first、P2 小数据写入和 P3 基础图谱继续先走本地回放，不等待模型。</p>
             <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
           </div>
           <div aria-label="candidate radar audit p5 governed executor contract">
-            <h3>P5 DeepSeek 单独补证合同</h3>
-            <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：未来 DeepSeek 只能作为单独 P5 按钮任务，必须有 model_ledger、sanitizer、output acceptance 和安全摘要字段；本表只读回放，不创建 task、不调用模型。</p>
+            <h3>DeepSeek 解释治理合同</h3>
+            <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_contract_rows：DeepSeek 解释必须有 model_ledger、sanitizer、output acceptance 和安全摘要字段；本表只读回放，不创建 task、不调用模型。</p>
             <DataLineageTable rows={quantProjectionDeepSeekContractRows} />
           </div>
           <div aria-label="candidate radar audit p5 governed executor readiness">

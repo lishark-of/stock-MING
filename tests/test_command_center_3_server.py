@@ -6499,7 +6499,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "DEEPSEEK_TOKEN_1": os.environ.get("DEEPSEEK_TOKEN_1"),
             "DEEPSEEK_TOKEN_2": os.environ.get("DEEPSEEK_TOKEN_2"),
         }
-        os.environ["TUSHARE_TOKEN"] = "REAL_TUSHARE_SECRET_VALUE"
+        os.environ.pop("TUSHARE_TOKEN", None)
         for key in old_deepseek_values:
             os.environ.pop(key, None)
         self.addCleanup(lambda: os.environ.pop("TUSHARE_TOKEN", None) if old_tushare_token is None else os.environ.__setitem__("TUSHARE_TOKEN", old_tushare_token))
@@ -6537,7 +6537,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "quant_projection_acceptance_dry_run_blocked_missing_credentials",
         )
         self.assertFalse(dry_run_receipt["ready_for_user_approved_real_acceptance"])
-        self.assertEqual(dry_run_receipt["credential_missing_provider_count"], 1)
+        self.assertEqual(dry_run_receipt["credential_missing_provider_count"], 2)
 
         execution_request = candidate_service.run_candidate_quant_projection_execution_request_task(
             {
@@ -18962,8 +18962,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 0)
         observed_durable_missing = set(payload["observed"]["candidate_radar_durable_evidence_missing"])
         if payload["observed"]["candidate_radar_durable_evidence_blocker_count"]:
-            self.assertIn("worker_full_pool_execution_evidence_required", observed_durable_missing)
-            self.assertIn("worker_deep_scan_execution_evidence_required", observed_durable_missing)
+            self.assertTrue(
+                observed_durable_missing
+                & {
+                    "worker_full_pool_execution_evidence_required",
+                    "worker_deep_scan_execution_evidence_required",
+                    "deepseek_model_ledger_if_enabled_required",
+                }
+            )
         else:
             self.assertNotIn("worker_full_pool_execution_evidence_required", observed_durable_missing)
             self.assertNotIn("worker_deep_scan_execution_evidence_required", observed_durable_missing)
@@ -47078,7 +47084,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             confirmed_receipt_rows["p1_confirm_contract"]["ordinary_label"],
         )
         self.assertIn(
-            "DeepSeek skipped",
+            "DeepSeek 解释治理",
             confirmed_receipt_rows["p1_confirm_contract"]["boundary"],
         )
         self.assertEqual(confirmed_receipt_rows["p0_confirm_gate"]["status"], "p0_gate_ready")
@@ -48358,7 +48364,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("Tushare ledger -> 本地量化推演 -> 次日图谱 -> 候选池复核", quick_read["source_map"]["当前状态"])
         self.assertEqual(quick_read["source_map"]["readback_source"], "ordinary_result_handoff_rows")
         self.assertIn("不调用 DeepSeek", quick_read["source_map"]["边界"])
-        self.assertIn("DeepSeek governed executor 单独补", quick_read["remaining_gap"]["边界"])
+        self.assertIn("DeepSeek 只解释不覆盖数据", quick_read["remaining_gap"]["边界"])
         self.assertFalse(
             any(row["creates_task_from_readback"] for row in interpretation["ordinary_result_quick_read_rows"])
         )
@@ -48390,7 +48396,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             row["governance_item"]: row for row in interpretation["ordinary_model_governance_rows"]
         }
         self.assertEqual(set(governance_rows), {"executor_gate", "output_scope", "non_blocking_base_research"})
-        self.assertIn("DeepSeek skipped", governance_rows["executor_gate"]["当前状态"])
+        self.assertIn("DeepSeek", governance_rows["executor_gate"]["当前状态"])
         self.assertIn("不作为数据源", governance_rows["executor_gate"]["边界"])
         self.assertIn("不覆盖价格", governance_rows["output_scope"]["边界"])
         self.assertIn("不阻断 Tushare", governance_rows["non_blocking_base_research"]["边界"])
@@ -50818,7 +50824,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "credential_missing_provider_count>0; provider_not_called",
         )
         self.assertIn("输入、搜索、React render、GET cache", recovery_rows["allowed_user_action"]["边界"])
-        self.assertIn("DeepSeek governed executor 单独补", recovery_rows["deepseek_not_blocking"]["当前状态"])
+        self.assertIn("DeepSeek 解释只读回放或安全降级", recovery_rows["deepseek_not_blocking"]["当前状态"])
         self.assertFalse(any(row["creates_task_from_readback"] for row in small_data["ordinary_writeback_recovery_rows"]))
         self.assertFalse(any(row["readback_external_calls_triggered"] for row in small_data["ordinary_writeback_recovery_rows"]))
         self.assertFalse(any(row["contains_secret"] for row in small_data["ordinary_writeback_recovery_rows"]))

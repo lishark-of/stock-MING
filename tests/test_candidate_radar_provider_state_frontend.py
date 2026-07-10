@@ -35,7 +35,7 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("provider_api_call_count", self.page)
         self.assertIn("deepseek_skipped_by_request", self.page)
         self.assertIn("Tushare ledger 已回放", self.page)
-        self.assertIn("本地缓存已回放数据来源记录；模型解释待单独补，不改交易策略", self.page)
+        self.assertIn("本地缓存已回放数据来源记录；${quantProjectionModelSourceLabel}，不改交易策略", self.page)
         self.assertIn("Tushare provider ledger 可回放", self.page)
         self.assertIn("quantProjectionSmallDataReplayState", self.page)
         self.assertIn("quantProjectionSmallDataRows", self.page)
@@ -72,12 +72,13 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("量化推演 / Next Session 图谱等待本地 cache 写入", self.page)
         self.assertIn("查看量化推演结果，再看次日图谱预览", self.page)
         self.assertIn("解释只基于本地 cache / ledger / packet", self.page)
-        self.assertIn("证据：等待 Tushare-first 账本；DeepSeek 未参与", self.page)
+        self.assertIn("证据：等待 Tushare-first 账本；${quantProjectionDeepSeekVisibleStatus}", self.page)
         self.assertIn('aria-label="quant projection ordinary explainable result actions"', search_panel)
         self.assertIn("可解释结果行动", search_panel)
         self.assertIn("优先读取服务端 ordinary_result_action_rows", search_panel)
         self.assertIn("读可读结论、回放量化推演、打开次日图谱", search_panel)
-        self.assertIn("模型解释已跳过：等待单独治理能力", self.page)
+        self.assertIn("DeepSeek 解释已写入安全模型账本", self.page)
+        self.assertIn("quantProjectionDeepSeekVisibleStatus", self.page)
         self.assertIn('label: "Tushare ledger"', search_panel)
         self.assertIn('label: "cache / ledger / packet"', search_panel)
         self.assertIn('label: "小数据回放"', search_panel)
@@ -306,7 +307,7 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
             '<details className="developer-audit-details" aria-label="quant projection ordinary input and submit notes">'
         )
         ordinary_visible_top = search_panel_top[:ordinary_visible_end]
-        self.assertIn("输入代码并确认后生成本地投研结果；模型解释作为高级能力单独补", ordinary_visible_top)
+        self.assertIn("输入代码并确认后生成本地投研结果；模型解释在确认任务中治理或安全降级", ordinary_visible_top)
         self.assertIn("本地 FastAPI 已接上：可以输入股票代码；只有确认按钮会启动本地投研数据链。", self.page)
         self.assertNotIn("POST task", ordinary_visible_top)
         self.assertNotIn("DeepSeek skipped", ordinary_visible_top)
@@ -397,7 +398,8 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         search_panel = self.page[search_panel_start:search_panel_end]
 
         self.assertIn("include_tushare: true", submit_slice)
-        self.assertIn("include_deepseek: false", submit_slice)
+        self.assertIn("include_deepseek: true", submit_slice)
+        self.assertIn('deepseek_policy: "governed_explanation_only_safe_degraded"', submit_slice)
         self.assertIn("user_approved: true", submit_slice)
         self.assertNotIn("run_provider_model_now", submit_slice)
         self.assertNotIn("operator_approved", submit_slice)
