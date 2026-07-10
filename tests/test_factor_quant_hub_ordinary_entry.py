@@ -65,6 +65,7 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index("普通用户量化推演摘要"), source.index('launchTask("/api/factor-quant/run-light"'))
         self.assertLess(source.index("普通用户量化推演摘要"), source.index("高级验收任务"))
         self.assertLess(source.index("普通用户量化推演摘要"), source.index("开发 / 审计指标"))
+        self.assertLess(source.index("普通用户量化推演摘要"), source.index("<PageStateBanner"))
         self.assertLess(source.index('label: "本地缓存"'), source.index("开发 / 审计指标"))
         self.assertLess(source.index('label: "最近成功回放"'), source.index("开发 / 审计指标"))
         summary_start = source.index("普通用户量化推演摘要")

@@ -1973,13 +1973,6 @@ export default function FactorQuantHub() {
 
   return (
     <PacketCard title="股票量化推演" subtitle="因子、次日图谱和模型解释状态一屏看清；只做研究预览，不修改交易动作" status={ordinaryQuantStatusLabel}>
-      <PageStateBanner
-        loading={loading}
-        error={error}
-        empty={empty}
-        emptyTitle="暂无股票量化推演本地缓存"
-        emptyDetail="本页只读取本地缓存；不会自动刷新外部数据。若需要更新，请手动点击任务按钮。"
-      />
       <PacketCard title="普通用户量化推演摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={ordinaryQuantStatusLabel}>
         <div aria-label="stock quant ordinary user first summary">
           <div aria-label="stock quant app first evidence factory">
@@ -2302,6 +2295,13 @@ export default function FactorQuantHub() {
         <p className="risk-note">{ordinaryQuantRouteHandoffBoundary}。</p>
         <p className="risk-note">工程审计明细默认收起；完整 factor/provider/model ledger 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={empty}
+        emptyTitle="暂无股票量化推演本地缓存"
+        emptyDetail="本页只读取本地缓存；不会自动刷新外部数据。若需要更新，请手动点击任务按钮。"
+      />
       <div className="actions">
         <button onClick={refreshCache} title={ordinaryQuantCacheButtonLabel} aria-label={ordinaryQuantCacheButtonLabel}>查看本地缓存</button>
         <button onClick={() => launchTask("/api/factor-quant/refresh-data")} title={ordinaryQuantRefreshButtonLabel} aria-label={ordinaryQuantRefreshButtonLabel}>手动刷新数据</button>
