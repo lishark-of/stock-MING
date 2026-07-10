@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getBootstrapStatus, getPacket, postTask, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, getPacket, postTask, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
@@ -65,6 +65,11 @@ function percent(value: unknown) {
   return text(value);
 }
 
+function numeric(value: unknown, fallback = 0) {
+  const result = Number(value);
+  return Number.isFinite(result) ? result : fallback;
+}
+
 const runtimeModeLabels: Record<string, string> = {
   cache_only: "cache_only（只读缓存，不外联）",
   manual: "manual（仅手动按钮任务）",
@@ -116,6 +121,8 @@ const DATA_CAPABILITY_HREF = "#dataCapability";
 export default function MarginEtf() {
   const [etfPacket, setEtfPacket] = useState<Record<string, unknown>>({});
   const [marginPacket, setMarginPacket] = useState<Record<string, unknown>>({});
+  const [candidateRadarCache, setCandidateRadarCache] = useState<Record<string, unknown>>({});
+  const [candidateRadarCacheError, setCandidateRadarCacheError] = useState("");
   const [callLedger, setCallLedger] = useState<Array<Record<string, unknown>>>([]);
   const [warnings, setWarnings] = useState<Array<string>>([]);
   const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
@@ -126,9 +133,27 @@ export default function MarginEtf() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const refreshCandidateRadarCache = () => {
+    setCandidateRadarCacheError("");
+    void getCandidateRadarCache()
+      .then((res) => {
+        if (res.ok !== false) {
+          setCandidateRadarCache(res.data ?? {});
+        } else {
+          setCandidateRadarCache({});
+          setCandidateRadarCacheError(res.error ?? "candidate_radar_cache_not_ok");
+        }
+      })
+      .catch((err) => {
+        setCandidateRadarCache({});
+        setCandidateRadarCacheError(err instanceof Error ? err.message : String(err));
+      });
+  };
+
   const refresh = () => {
     setLoading(true);
     setError("");
+    refreshCandidateRadarCache();
     Promise.all([
       getPacket("command_center_etf_packet"),
       getPacket("command_center_margin_packet")
@@ -243,6 +268,136 @@ export default function MarginEtf() {
     ? "先看融资现金线；需要更新时点刷新本地回放或重建本地包。"
     : "先看 ETF 候选分组，再看融资现金线和风险提示；换票回下一票雷达。";
   const ordinaryPlainSafety = "ETF 候选只供研究，不是买入、加仓、加融资或下单指令。";
+  const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarProviderModelAcceptance =
+    (candidateRadarCache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarSmallDataWriteback =
+    (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarInterpretation =
+    (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarDeepSeekExplanation =
+    (candidateRadarCache.search_quant_deepseek_explanation as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarDeepSeekPayload =
+    (candidateRadarDeepSeekExplanation.payload as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarDeepSeekModelLedger =
+    (candidateRadarCache.search_quant_deepseek_model_ledger as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarProviderLedgerRows = rows(candidateRadarCache.call_ledger).filter((row) => {
+    const api = text(row.api, "").toLowerCase();
+    const provider = text(row.provider ?? row.source, "").toLowerCase();
+    return row.tushare_called === true || provider.includes("tushare") || ["trade_cal", "daily", "daily_basic", "moneyflow"].includes(api);
+  });
+  const candidateRadarConfirmedSymbol = text(
+    candidateRadarCache.latest_confirmed_symbol ??
+      candidateRadarCache.search_quant_projection_latest_confirmed_symbol ??
+      candidateRadarProviderModelAcceptance.symbol ??
+      candidateRadarReceipt.symbol ??
+      candidateRadarSmallDataWriteback.symbol ??
+      candidateRadarInterpretation.symbol,
+    ""
+  );
+  const candidateRadarProviderSuccessCount = numeric(
+    candidateRadarProviderModelAcceptance.provider_api_success_count ??
+      candidateRadarReceipt.p1_provider_api_success_count ??
+      candidateRadarSmallDataWriteback.provider_api_success_count,
+    0
+  );
+  const candidateRadarProviderCallCount = numeric(
+    candidateRadarProviderModelAcceptance.provider_api_call_count ??
+      candidateRadarReceipt.p1_provider_api_call_count ??
+      candidateRadarSmallDataWriteback.provider_api_call_count,
+    candidateRadarProviderSuccessCount
+  );
+  const candidateRadarProviderTotalCount = candidateRadarProviderCallCount > 0
+    ? candidateRadarProviderCallCount
+    : candidateRadarProviderSuccessCount;
+  const candidateRadarProviderLedgerReady =
+    candidateRadarProviderModelAcceptance.tushare_call_ledger_evidence_done === true ||
+    candidateRadarReceipt.p1_tushare_first_provider_ledger_ready === true ||
+    candidateRadarSmallDataWriteback.source_task_tushare_provider_ledger_ready === true ||
+    candidateRadarSmallDataWriteback.provider_call_ledger_replayed_from_source_task === true ||
+    candidateRadarSmallDataWriteback.provider_call_ledger_written === true ||
+    candidateRadarSmallDataWriteback.ledger_ready === true ||
+    candidateRadarProviderSuccessCount > 0;
+  const candidateRadarProviderCountLabel = candidateRadarProviderLedgerReady
+    ? `Tushare ${candidateRadarProviderSuccessCount}/${candidateRadarProviderTotalCount || candidateRadarProviderSuccessCount} 个接口`
+    : "等待确认按钮后的 Tushare-first 数据链";
+  const candidateRadarDataDate = text(
+    candidateRadarProviderModelAcceptance.data_date ??
+      candidateRadarProviderModelAcceptance.trade_date ??
+      candidateRadarSmallDataWriteback.data_date ??
+      candidateRadarInterpretation.data_date ??
+      candidateRadarProviderLedgerRows.find((row) => row.data_date)?.data_date ??
+      candidateRadarProviderLedgerRows.find((row) => row.trade_date)?.trade_date ??
+      candidateRadarProviderLedgerRows.find((row) => row.end_date)?.end_date,
+    "待确认"
+  );
+  const candidateRadarDataSource = candidateRadarProviderLedgerReady ? "Tushare" : "等待后台确认任务";
+  const candidateRadarDeepSeekLedgerRecorded =
+    candidateRadarDeepSeekModelLedger.model_ledger_recorded === true ||
+    candidateRadarProviderModelAcceptance.deepseek_model_ledger_recorded === true ||
+    candidateRadarProviderModelAcceptance.deepseek_model_ledger_evidence_done === true ||
+    Boolean(candidateRadarDeepSeekModelLedger.input_summary_hash || candidateRadarDeepSeekModelLedger.input_hash);
+  const candidateRadarDeepSeekExplanationReady =
+    candidateRadarDeepSeekExplanation.status === "success" ||
+    candidateRadarProviderModelAcceptance.deepseek_output_acceptance_done === true;
+  const candidateRadarDeepSeekSafeDegraded =
+    candidateRadarProviderModelAcceptance.deepseek_safe_degraded === true ||
+    String(candidateRadarDeepSeekExplanation.status ?? "").startsWith("degraded") ||
+    String(candidateRadarDeepSeekModelLedger.status ?? "").startsWith("degraded");
+  const candidateRadarDeepSeekSkipped =
+    candidateRadarProviderModelAcceptance.deepseek_skipped_by_request === true ||
+    candidateRadarReceipt.p1_deepseek_skipped_by_request === true ||
+    candidateRadarSmallDataWriteback.deepseek_skipped_by_request === true;
+  const candidateRadarDeepSeekState = candidateRadarDeepSeekExplanationReady
+    ? `DeepSeek 解释已写入安全模型账本：${text(candidateRadarDeepSeekPayload.summary, "只解释来源和缺口，不改数值或动作")}`
+    : candidateRadarDeepSeekSafeDegraded
+      ? `DeepSeek 已安全降级：${text(candidateRadarProviderModelAcceptance.deepseek_safe_failure_mode ?? candidateRadarDeepSeekModelLedger.safe_failure_mode, "Tushare 数据、Factor light、Candidate Radar、Next Session 继续显示")}`
+      : candidateRadarDeepSeekLedgerRecorded
+        ? "DeepSeek 安全模型账本已记录；只读 hash、耗时、token/cost 摘要和安全状态"
+        : candidateRadarDeepSeekSkipped
+          ? "DeepSeek 未请求；Tushare 数据链和风险预算不被阻塞"
+          : "DeepSeek 待治理或待确认；不影响 ETF/融资只读风险预算";
+  const marginEtfConfirmedDataBridgeSentence = candidateRadarConfirmedSymbol
+    ? `当前确认标的 ${candidateRadarConfirmedSymbol} 已从下一票雷达带入风险预算；来源=${candidateRadarDataSource}，数据日期=${candidateRadarDataDate}，${candidateRadarProviderCountLabel}。`
+    : candidateRadarCacheError
+      ? `下一票雷达缓存暂不可读：${ordinaryText(candidateRadarCacheError)}；ETF/融资仍按本地风险快照显示。`
+      : "还没有确认标的带入 ETF/融资；先回下一票雷达输入股票并点击确认。";
+  const marginEtfConfirmedDataBridgeItems: MetricItem[] = [
+    {
+      label: "当前确认标的",
+      value: candidateRadarConfirmedSymbol || "等待下一票雷达确认输入",
+      tone: candidateRadarConfirmedSymbol ? "good" : "warn"
+    },
+    {
+      label: "数据来源",
+      value: `来源=${candidateRadarDataSource} / 数据日期=${candidateRadarDataDate}`,
+      tone: candidateRadarProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "Tushare 数据链",
+      value: candidateRadarProviderLedgerReady
+        ? `${candidateRadarProviderCountLabel} 已从 POST task 的 cache / call_ledger / packet 回放`
+        : candidateRadarCacheError
+          ? `候选雷达缓存待补：${ordinaryText(candidateRadarCacheError)}`
+          : "等待用户在下一票雷达点击确认按钮后回放",
+      tone: candidateRadarProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "DeepSeek 解释",
+      value: candidateRadarDeepSeekState,
+      tone: candidateRadarDeepSeekExplanationReady || candidateRadarDeepSeekLedgerRecorded || candidateRadarDeepSeekSkipped ? "good" : "warn"
+    },
+    {
+      label: "ETF/融资承接",
+      value: "只把确认结果当风险预算上下文；不覆盖 ETF 候选、现金线、价格、因子或交易动作",
+      tone: "good"
+    },
+    {
+      label: "读取边界",
+      value: "只读 CandidateRadar cache / call_ledger / packet；不会创建 ETF/融资刷新、不会调用 Tushare/DeepSeek、不会加融资",
+      tone: "good"
+    }
+  ];
   const ordinaryPlainItems: MetricItem[] = [
     {
       label: "一句话",
@@ -302,6 +457,22 @@ export default function MarginEtf() {
     {
       label: "打开可见",
       value: marginEtfAppVisibleNowSentence
+    },
+    {
+      label: "当前确认标的",
+      value: candidateRadarConfirmedSymbol
+        ? `${candidateRadarConfirmedSymbol} / 来源=${candidateRadarDataSource} / 数据日期=${candidateRadarDataDate}`
+        : "等待下一票雷达确认输入"
+    },
+    {
+      label: "确认后数据链",
+      value: candidateRadarProviderLedgerReady
+        ? `${candidateRadarProviderCountLabel} 已回放到 cache / call_ledger / packet`
+        : "等待确认按钮后的 Tushare-first 结果或明确降级原因"
+    },
+    {
+      label: "DeepSeek 解释状态",
+      value: candidateRadarDeepSeekState
     },
     {
       label: "ETF 候选",
@@ -834,6 +1005,19 @@ export default function MarginEtf() {
             <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf visible now">今日作战台</a>
           </div>
           <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：ETF 候选、融资现金线、来源层、缺口原因和下一步入口；普通链接只切换本地页面，不启动刷新流程、不刷新外部数据或模型、不交易、不加融资、不改交易策略。</p>
+        </div>
+
+        <div aria-label="margin etf candidate radar confirmed data bridge">
+          <h3>确认结果承接</h3>
+          <p className="ordinary-status-note" aria-label="margin etf candidate radar confirmed data bridge sentence" aria-live="polite">{marginEtfConfirmedDataBridgeSentence}</p>
+          <MetricGrid items={marginEtfConfirmedDataBridgeItems} />
+          <div className="actions" aria-label="margin etf candidate radar confirmed data bridge actions">
+            <a href="#candidates/candidate-radar-search-quant-projection" title="回下一票雷达确认输入区；输入和读取不外联" aria-label="return candidate radar confirm input from margin etf data bridge">回确认输入</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演；只读本地回放" aria-label="open factor from margin etf data bridge">看量化推演</a>
+            <a href="#next/next-session-chart" title="切换到次日图谱；只读本地回放" aria-label="open next session from margin etf data bridge">看次日图谱</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf data bridge">数据能力</a>
+          </div>
+          <p className="risk-note">承接卡只读下一票雷达已经写入的 cache / call_ledger / packet；不会因为打开 ETF/融资页而创建 task、调用 Tushare/DeepSeek、启动 worker、交易、加融资或改写 strategy action。</p>
         </div>
 
         <div aria-label="margin etf ordinary plain conclusion">
