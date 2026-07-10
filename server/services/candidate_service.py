@@ -15419,18 +15419,22 @@ def _call_quant_projection_deepseek_model(
 
     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1", timeout=30.0)
     fact_text = json.dumps(_safe_value(fact_summary), ensure_ascii=False, sort_keys=True, default=str)
+    response_format = {"type": "json_object"}
     response = client.chat.completions.create(
         model=get_deepseek_model("projection"),
         temperature=0.1,
         max_tokens=700,
+        response_format=response_format,
         messages=[
             {
                 "role": "system",
                 "content": (
                     "你是 Command Center 3.0 的只读投研解释器。只根据用户消息里的 Tushare "
                     "事实摘要解释数据链状态，不编造缺失事实，不给买入、卖出、加仓、融资或下单指令。"
-                    "只输出 JSON，键必须限定在 summary、support_notes、suppress_notes、"
+                    "只输出一个 JSON object，不要输出 Markdown、代码块或额外正文。"
+                    "顶层键必须严格限定在 summary、support_notes、suppress_notes、"
                     "conflict_notes、missing_data_notes、discipline_notes。"
+                    "summary 必须是短字符串；其余字段必须是字符串数组，每个数组最多 2 条、每条不超过 60 个中文字符。"
                 ),
             },
             {"role": "user", "content": fact_text},
@@ -15446,6 +15450,8 @@ def _call_quant_projection_deepseek_model(
             "completion_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
             "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
         },
+        "response_format": response_format["type"],
+        "provider_response_format_requested": True,
     }
 
 
@@ -15511,6 +15517,10 @@ def _run_quant_projection_deepseek_explanation(
         "input_summary_source": "sanitized_tushare_call_ledger_summary",
         "raw_prompt_stored": False,
         "raw_output_stored": False,
+        "response_format": "json_object",
+        "provider_response_format_requested": True,
+        "provider_response_format_scope": "search_quant_projection_single_call_not_ltg07_production_benchmark",
+        "production_response_format_benchmark_done": False,
         "cache_packet_contains_raw_prompt": False,
         "cache_packet_contains_raw_output": False,
         "log_contains_raw_prompt": False,
@@ -15668,6 +15678,10 @@ def _run_quant_projection_deepseek_explanation(
             "input_hash_short": input_hash[:16],
             "output_hash_short": str(model_ledger.get("output_hash") or "")[:16],
             "field_whitelist": field_whitelist,
+            "response_format": "json_object",
+            "provider_response_format_requested": True,
+            "provider_response_format_scope": "search_quant_projection_single_call_not_ltg07_production_benchmark",
+            "production_response_format_benchmark_done": False,
             "raw_prompt_stored": False,
             "raw_output_stored": False,
             "safe_failure_mode": model_ledger.get("safe_failure_mode") or "",

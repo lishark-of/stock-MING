@@ -3,7 +3,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -1641,6 +1643,69 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", dumped)
         self.assertNotIn("DEEPSEEK_API_KEY", dumped)
 
+    def test_deepseek_model_call_requests_json_object_response_format(self):
+        captured = {}
+        original_openai = sys.modules.get("openai")
+        original_get_deepseek_model = candidate_service.get_deepseek_model
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                captured["create"] = kwargs
+                return types.SimpleNamespace(
+                    choices=[
+                        types.SimpleNamespace(
+                            message=types.SimpleNamespace(
+                                content=json.dumps(
+                                    {
+                                        "summary": "ok",
+                                        "support_notes": [],
+                                        "suppress_notes": [],
+                                        "conflict_notes": [],
+                                        "missing_data_notes": [],
+                                        "discipline_notes": [],
+                                    }
+                                )
+                            )
+                        )
+                    ],
+                    usage=types.SimpleNamespace(prompt_tokens=3, completion_tokens=4, total_tokens=7),
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                captured["client"] = kwargs
+                self.chat = types.SimpleNamespace(completions=FakeCompletions())
+
+        sys.modules["openai"] = types.SimpleNamespace(OpenAI=FakeOpenAI)
+        candidate_service.get_deepseek_model = lambda purpose="projection": "deepseek-test-model"
+
+        def restore_openai():
+            if original_openai is None:
+                sys.modules.pop("openai", None)
+            else:
+                sys.modules["openai"] = original_openai
+
+        self.addCleanup(restore_openai)
+        self.addCleanup(setattr, candidate_service, "get_deepseek_model", original_get_deepseek_model)
+
+        result = candidate_service._call_quant_projection_deepseek_model(
+            api_key="SAFE_TEST_KEY",
+            fact_summary={"symbol": "000001.SZ", "data_source": "Tushare"},
+        )
+
+        self.assertEqual(captured["client"]["api_key"], "SAFE_TEST_KEY")
+        self.assertEqual(captured["client"]["base_url"], "https://api.deepseek.com/v1")
+        self.assertEqual(captured["create"]["model"], "deepseek-test-model")
+        self.assertEqual(captured["create"]["response_format"], {"type": "json_object"})
+        system_prompt = captured["create"]["messages"][0]["content"]
+        self.assertIn("只输出一个 JSON object", system_prompt)
+        self.assertIn("不要输出 Markdown", system_prompt)
+        self.assertIn("每个数组最多 2 条", system_prompt)
+        self.assertEqual(json.loads(captured["create"]["messages"][1]["content"])["symbol"], "000001.SZ")
+        self.assertEqual(result["response_format"], "json_object")
+        self.assertTrue(result["provider_response_format_requested"])
+        self.assertEqual(result["usage"]["total_tokens"], 7)
+
     def test_confirm_tushare_first_with_deepseek_explanation_writes_model_ledger(self):
         self._with_meta_store()
         self._with_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")
@@ -1789,6 +1854,13 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(model_ledger["total_tokens"], 20)
         self.assertTrue(model_ledger["input_hash"])
         self.assertTrue(model_ledger["output_hash"])
+        self.assertEqual(model_ledger["response_format"], "json_object")
+        self.assertTrue(model_ledger["provider_response_format_requested"])
+        self.assertEqual(
+            model_ledger["provider_response_format_scope"],
+            "search_quant_projection_single_call_not_ltg07_production_benchmark",
+        )
+        self.assertFalse(model_ledger["production_response_format_benchmark_done"])
         self.assertFalse(model_ledger["raw_prompt_stored"])
         self.assertFalse(model_ledger["raw_output_stored"])
         self.assertTrue(model_ledger["does_not_override_numeric_values"])
@@ -1799,6 +1871,9 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(len(deepseek_rows), 1)
         self.assertTrue(deepseek_rows[0]["deepseek_called"])
         self.assertFalse(deepseek_rows[0]["tushare_called"])
+        self.assertEqual(deepseek_rows[0]["request_params_safe"]["response_format"], "json_object")
+        self.assertTrue(deepseek_rows[0]["request_params_safe"]["provider_response_format_requested"])
+        self.assertFalse(deepseek_rows[0]["request_params_safe"]["production_response_format_benchmark_done"])
         self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
 
     def test_confirm_tushare_first_deepseek_missing_key_degrades_after_tushare(self):
