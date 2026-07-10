@@ -57,6 +57,31 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="candidate radar operator symbol input"', operator_slice)
         self.assertIn("确认并生成 3.0 量化推演", operator_slice)
         self.assertIn("刷新本地回放", operator_slice)
+        self.assertIn("candidateRadarOperatorPostConfirmOneGlanceItems", self.page)
+        self.assertIn('aria-label="candidate radar operator post confirm one glance result"', operator_slice)
+        self.assertIn("确认后马上看这里", operator_slice)
+        self.assertIn('aria-label="candidate radar operator post confirm one glance sentence"', operator_slice)
+        self.assertIn("MetricGrid items={candidateRadarOperatorPostConfirmOneGlanceItems}", operator_slice)
+        self.assertIn('aria-label="candidate radar operator post confirm one glance actions"', operator_slice)
+        self.assertIn("操作台确认后结果条只读本地 task receipt、cache、call_ledger 和 packet", operator_slice)
+        operator_post_confirm_start = operator_slice.index('aria-label="candidate radar operator post confirm one glance result"')
+        operator_post_confirm_end = operator_slice.index('aria-label="candidate radar operator input confirm first read"', operator_post_confirm_start)
+        operator_post_confirm_slice = operator_slice[operator_post_confirm_start:operator_post_confirm_end]
+        for operator_post_confirm_label in (
+            'label: "任务接收"',
+            'label: "P2/P3"',
+            'label: "下一步入口"',
+            'label: "安全边界"',
+        ):
+            self.assertIn(operator_post_confirm_label, self.page)
+        self.assertIn('href="#tasks"', operator_post_confirm_slice)
+        self.assertIn('href="#factor/factor-score"', operator_post_confirm_slice)
+        self.assertIn('href="#next/next-session-chart"', operator_post_confirm_slice)
+        self.assertIn('href="#marginEtf"', operator_post_confirm_slice)
+        self.assertIn("不创建第二个 task、不调用 Tushare/DeepSeek/GitHub、不交易", operator_post_confirm_slice)
+        self.assertNotIn("onClick=", operator_post_confirm_slice)
+        self.assertNotIn("postCandidateRadar", operator_post_confirm_slice)
+        self.assertNotIn("launchQuantProjection", operator_post_confirm_slice)
         self.assertIn('aria-label="candidate radar operator input confirm first read"', operator_slice)
         self.assertIn("输入确认速读", operator_slice)
         self.assertIn("输入股票后先看本地校验和确认按钮", operator_slice)
@@ -75,6 +100,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("onClick=", operator_first_read_slice)
         self.assertNotIn("postCandidateRadar", operator_first_read_slice)
         self.assertNotIn("launchQuantProjection", operator_first_read_slice)
+        self.assertLess(
+            operator_slice.index('aria-label="candidate radar compact operator actions"'),
+            operator_post_confirm_start,
+        )
+        self.assertLess(operator_post_confirm_start, operator_first_read_start)
         self.assertIn("candidateRadarCompactLeadCandidateItems", self.page)
         self.assertIn("candidateRadarCompactOperatorSubtitle", self.page)
         self.assertIn("candidateRadarCompactRecentResultText", self.page)
@@ -348,6 +378,37 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launchQuantProjection", confirm_button_status_slice)
         self.assertNotIn("postCandidateRadar", confirm_button_status_slice)
         self.assertLess(typed_symbol_start, confirm_button_status_start)
+        self.assertIn("quantProjectionPostConfirmWaitLabel", self.page)
+        self.assertIn("quantProjectionPostConfirmOneScreenItems", self.page)
+        self.assertIn('aria-label="candidate radar post confirm one glance result card"', summary_primary_slice)
+        self.assertIn("确认后马上看这里", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar post confirm one glance result sentence"', summary_primary_slice)
+        self.assertIn("MetricGrid items={quantProjectionPostConfirmOneScreenItems}", summary_primary_slice)
+        self.assertIn('aria-label="candidate radar post confirm one glance result actions"', summary_primary_slice)
+        self.assertIn("这张确认后一眼结果卡只读 task receipt、cache、call_ledger 和 packet", summary_primary_slice)
+        post_confirm_result_start = summary_primary_slice.index('aria-label="candidate radar post confirm one glance result card"')
+        post_confirm_result_end = summary_primary_slice.index('aria-label="candidate radar one path p1 p2 p3 route"', post_confirm_result_start)
+        post_confirm_result_slice = summary_primary_slice[post_confirm_result_start:post_confirm_result_end]
+        for post_confirm_result_label in (
+            'label: "任务接收"',
+            'label: "P1 最短链路"',
+            'label: "当前阶段"',
+            'label: "P2 三面"',
+            'label: "P3 结论"',
+            'label: "下一步入口"',
+            'label: "只读边界"',
+        ):
+            self.assertIn(post_confirm_result_label, self.page)
+        self.assertIn('href="#tasks"', post_confirm_result_slice)
+        self.assertIn('href="#factor/factor-score"', post_confirm_result_slice)
+        self.assertIn('href="#next/next-session-chart"', post_confirm_result_slice)
+        self.assertIn('href="#marginEtf"', post_confirm_result_slice)
+        self.assertIn('href="#candidate-radar-search-quant-projection"', post_confirm_result_slice)
+        self.assertIn("不创建第二个 task、不调用 Tushare/DeepSeek/GitHub、不交易、不改 strategy action", post_confirm_result_slice)
+        self.assertNotIn("onClick=", post_confirm_result_slice)
+        self.assertNotIn("launchQuantProjection", post_confirm_result_slice)
+        self.assertNotIn("postCandidateRadar", post_confirm_result_slice)
+        self.assertLess(confirm_button_status_start, post_confirm_result_start)
         self.assertIn("candidateRadarOnePathSentence", self.page)
         self.assertIn("candidateRadarOnePathItems", self.page)
         self.assertIn("candidateRadarOnePathRows", self.page)
@@ -364,6 +425,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         one_path_start = summary_primary_slice.index('aria-label="candidate radar one path p1 p2 p3 route"')
         one_path_end = summary_primary_slice.index('aria-label="candidate radar recent research result card"', one_path_start)
         one_path_slice = summary_primary_slice[one_path_start:one_path_end]
+        self.assertLess(post_confirm_result_start, one_path_start)
         for one_path_label in (
             'label: "1. 确认"',
             'label: "2. 进度"',

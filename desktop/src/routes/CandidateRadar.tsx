@@ -2945,6 +2945,30 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const candidateRadarOperatorPostConfirmOneGlanceItems: MetricItem[] = [
+    {
+      label: "任务接收",
+      value: quantProjectionLatestTaskState,
+      tone: taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : quantProjectionSubmitError ? "bad" : "warn"
+    },
+    {
+      label: "P2/P3",
+      value: quantProjectionP2P3ConnectionReady
+        ? "P2 三面和 P3 结论可回放"
+        : quantProjectionPostConfirmWaitLabel,
+      tone: quantProjectionP2P3ConnectionReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "下一步入口",
+      value: quantProjectionReplayDestinationNextStep,
+      tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady || quantProjectionCanSubmit ? "good" : "warn"
+    },
+    {
+      label: "安全边界",
+      value: "只读本地结果；不创建第二个 task、不交易、不改 strategy action",
+      tone: "good"
+    }
+  ];
   const quantProjectionOrdinaryProgressCheckpointAnchor = quantProjectionSubmitError
     ? "#desktop"
     : quantProjectionSmallDataReady || quantProjectionInterpretationReady
@@ -4779,6 +4803,18 @@ export default function CandidateRadar() {
         </div>
         <p id={candidateRadarOperatorInputHelpId} className="risk-note" aria-live="polite">{quantProjectionInputSessionState}</p>
         <p id={candidateRadarOperatorSubmitHelpId} className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        <div aria-label="candidate radar operator post confirm one glance result">
+          <h3>确认后马上看这里</h3>
+          <p className="ordinary-status-note" aria-label="candidate radar operator post confirm one glance sentence" aria-live="polite">{quantProjectionPostConfirmWaitLabel}</p>
+          <MetricGrid items={candidateRadarOperatorPostConfirmOneGlanceItems} />
+          <div className="actions" aria-label="candidate radar operator post confirm one glance actions">
+            <a href="#tasks" title="切换到任务目录；只读本地进度" aria-label="open tasks from operator post confirm one glance">任务状态</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from operator post confirm one glance">量化推演</a>
+            <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next from operator post confirm one glance">次日图谱</a>
+            <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from operator post confirm one glance">ETF/融资风险</a>
+          </div>
+          <p className="risk-note">操作台确认后结果条只读本地 task receipt、cache、call_ledger 和 packet；链接只切换本地页面或锚点，不创建第二个 task、不调用 Tushare/DeepSeek/GitHub、不交易。</p>
+        </div>
         <div aria-label="candidate radar operator input confirm first read">
           <h3>输入确认速读</h3>
           <p className="ordinary-status-note">输入股票后先看本地校验和确认按钮；确认后再看最近结果、候选池、量化推演、次日图谱和 ETF/融资风险。</p>
@@ -4901,6 +4937,19 @@ export default function CandidateRadar() {
               <DataLineageTable rows={candidateRadarConfirmButtonPrimaryRows} />
             </details>
             <p className="risk-note">真正会创建本地研究任务的只有确认输入区的确认按钮；本卡片链接只帮助定位，不买卖、不改持仓、不改 strategy action。</p>
+          </div>
+          <div aria-label="candidate radar post confirm one glance result card">
+            <h3>确认后马上看这里</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar post confirm one glance result sentence" aria-live="polite">{quantProjectionPostConfirmWaitLabel}</p>
+            <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
+            <div className="actions" aria-label="candidate radar post confirm one glance result actions">
+              <a href="#tasks" title="切换到任务目录；只读本地进度" aria-label="open task status from post confirm one glance result">任务状态</a>
+              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from post confirm one glance result">量化推演</a>
+              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from post confirm one glance result">次日图谱</a>
+              <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from post confirm one glance result">ETF/融资风险</a>
+              <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="return confirm input from post confirm one glance result">换一只票</a>
+            </div>
+            <p className="risk-note">这张确认后一眼结果卡只读 task receipt、cache、call_ledger 和 packet；链接只切换本地页面或锚点，不创建第二个 task、不调用 Tushare/DeepSeek/GitHub、不交易、不改 strategy action。</p>
           </div>
           <div aria-label="candidate radar one path p1 p2 p3 route">
             <h3>下一票主路径</h3>
