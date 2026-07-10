@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getAuditUserRouteQa, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, postCandidateRadarQuantProjection, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getAuditUserRouteQa, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataCapabilityCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, postCandidateRadarQuantProjection, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
@@ -114,6 +114,8 @@ export default function CommandCenterHome() {
   const [next, setNext] = useState<Record<string, unknown>>({});
   const [nextEnvelopeLedger, setNextEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [nextEnvelopeWarnings, setNextEnvelopeWarnings] = useState<Array<string>>([]);
+  const [dataCapabilityCache, setDataCapabilityCache] = useState<Record<string, unknown>>({});
+  const [dataCapabilityEnvelopeLedger, setDataCapabilityEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [dataHealth, setDataHealth] = useState<Record<string, unknown>>({});
   const [desktopPreflight, setDesktopPreflight] = useState<Record<string, unknown>>({});
   const [recovery, setRecovery] = useState<Record<string, unknown>>({});
@@ -201,6 +203,10 @@ export default function CommandCenterHome() {
       setNextEnvelopeLedger(res.call_ledger ?? []);
       setNextEnvelopeWarnings(res.warnings ?? []);
       setNext(res.data);
+    });
+    track("data_capability", getDataCapabilityCache(), (res) => {
+      setDataCapabilityEnvelopeLedger(res.call_ledger ?? []);
+      setDataCapabilityCache(res.data);
     });
     track("data_health", getDataHealthCache(), (res) => setDataHealth(res.data));
     track("desktop_preflight", getDesktopPreflightCache(), (res) => setDesktopPreflight(res.data));
@@ -807,6 +813,29 @@ export default function CommandCenterHome() {
   const dailyCommandConfirmedSymbolLabel = dailyCommandConfirmedSymbol
     ? `当前确认标的：${dailyCommandConfirmedSymbol}`
     : "等待下一票雷达确认标的";
+  const dataCapabilityProviderCards = homeRows(dataCapabilityCache.provider_cards);
+  const dataCapabilityTushareCard = dataCapabilityProviderCards.find(
+    (card) => homeText(card.provider, "").toLowerCase() === "tushare"
+  ) ?? {};
+  const dataCapabilityTushareAvailableCount = Number(dataCapabilityTushareCard.available_count ?? 0);
+  const dataCapabilityTushareRestrictedCount = Number(dataCapabilityTushareCard.restricted_count ?? 0);
+  const dataCapabilityTusharePendingCount = Number(dataCapabilityTushareCard.pending_count ?? 0);
+  const dataCapabilityPayloadLedger = homeRows(dataCapabilityCache.call_ledger);
+  const dataCapabilityEvidenceLedgerCount = dataCapabilityPayloadLedger.length + dataCapabilityEnvelopeLedger.length;
+  const dataCapabilityMode = homeText(dataCapabilityCache.mode ?? "cache_only");
+  const dataCapabilityModeLabel = dataCapabilityMode === "cache_only"
+    ? "cache_only（只读缓存，不外联）"
+    : `${dataCapabilityMode}（按页面边界复核）`;
+  const dataCapabilityDegradedState = dataCapabilityTushareRestrictedCount
+    ? "degraded：存在权限/配置受限，不能当作无数据"
+    : dataCapabilityTusharePendingCount
+      ? "degraded：存在空窗口、缓存或待补接口，先按保守处理"
+      : dataCapabilityTushareAvailableCount
+        ? "可读：已有 Tushare 本地数据记录可回放"
+        : "等待：暂无 Tushare 本地数据健康记录";
+  const dataCapabilityEvidenceLedgerLabel = dataCapabilityEvidenceLedgerCount
+    ? `payload ${dataCapabilityPayloadLedger.length} 条；envelope ${dataCapabilityEnvelopeLedger.length} 条本地 call_ledger`
+    : "等待本地 call_ledger 回读";
   const dailyCommandTushareDataCardSummary = dailyCommandTushareFirstLedgerReady
     ? `${dailyCommandConfirmedSymbol || "当前标的"} 确认后 Tushare 数据卡可读：${dailyCommandTushareFirstSuccessCount}/${dailyCommandTushareFirstApiCount} 个接口已进入本地回放。`
     : "确认后 Tushare 数据卡等待回写：先在首页或下一票雷达输入股票代码并点击确认。";
@@ -814,8 +843,8 @@ export default function CommandCenterHome() {
     ? "继续看股票量化推演、P2 三面和次日图谱。"
     : "先确认股票；确认前输入保持静默，不启动确认流程。";
   const dailyCommandDataCapabilityReviewLabel = dailyCommandTushareFirstLedgerReady
-    ? "Tushare 数据凭证已有本地回放；权限、空窗口和结果包缺口仍可去数据能力页复核。"
-    : "Tushare 数据凭证、权限、空窗口或本地结果包缺口去数据能力页复核；首页不探测接口。";
+    ? `Tushare 数据凭证已有本地回放；${dataCapabilityDegradedState}。`
+    : `${dataCapabilityDegradedState}；首页不探测接口。`;
   const dailyCommandTushareDataCardReviewSentence = dailyCommandTushareFirstLedgerReady
     ? "数据能力页可复核接口凭证、权限、空窗口和降级说明；首页只展示确认后的本地回放。"
     : "如果这里显示等待或 degraded，去数据能力页看权限、空窗口和本地回放缺口；首页不会补调接口。";
@@ -851,7 +880,17 @@ export default function CommandCenterHome() {
     {
       label: "数据能力",
       value: dailyCommandDataCapabilityReviewLabel,
-      tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
+      tone: dataCapabilityTushareRestrictedCount || dataCapabilityTusharePendingCount ? "warn" : dailyCommandTushareFirstLedgerReady || dataCapabilityTushareAvailableCount ? "good" : "warn"
+    },
+    {
+      label: "能力模式",
+      value: dataCapabilityModeLabel,
+      tone: dataCapabilityCache.cache_only === false ? "bad" : "good"
+    },
+    {
+      label: "证据血缘",
+      value: dataCapabilityEvidenceLedgerLabel,
+      tone: dataCapabilityEvidenceLedgerCount ? "good" : "warn"
     },
     {
       label: "降级复核",
@@ -2219,7 +2258,22 @@ export default function CommandCenterHome() {
     {
       label: "数据能力",
       value: dailyCommandDataCapabilityReviewLabel,
-      tone: dailyCommandTushareFirstLedgerReady ? "good" : "warn"
+      tone: dataCapabilityTushareRestrictedCount || dataCapabilityTusharePendingCount ? "warn" : dailyCommandTushareFirstLedgerReady || dataCapabilityTushareAvailableCount ? "good" : "warn"
+    },
+    {
+      label: "数据能力模式",
+      value: dataCapabilityModeLabel,
+      tone: dataCapabilityCache.cache_only === false ? "bad" : "good"
+    },
+    {
+      label: "数据能力血缘",
+      value: dataCapabilityEvidenceLedgerLabel,
+      tone: dataCapabilityEvidenceLedgerCount ? "good" : "warn"
+    },
+    {
+      label: "数据能力缺口",
+      value: "真实 Tushare 补证仍需授权 POST task + scope hash + payload + call_ledger + failure-mode evidence",
+      tone: "warn"
     },
     {
       label: "路线健康",

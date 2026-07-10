@@ -435,6 +435,10 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
             'label: "最近结果"',
             'label: "来源层"',
             'label: "明确缺口"',
+            'label: "数据能力"',
+            'label: "数据能力模式"',
+            'label: "数据能力血缘"',
+            'label: "数据能力缺口"',
             'label: "路线健康"',
             'label: "下一步入口"',
             'label: "安全说明"',
@@ -737,14 +741,31 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         latest_card = source[latest_start:latest_end]
 
         self.assertIn('const DATA_CAPABILITY_HREF = "#dataCapability";', source)
+        self.assertIn("getDataCapabilityCache", source)
+        self.assertIn("dataCapabilityCache", source)
+        self.assertIn("dataCapabilityEnvelopeLedger", source)
+        self.assertIn('track("data_capability", getDataCapabilityCache()', source)
+        self.assertIn("dataCapabilityDegradedState", source)
+        self.assertIn("dataCapabilityModeLabel", source)
+        self.assertIn("dataCapabilityEvidenceLedgerLabel", source)
         self.assertIn("dailyCommandDataCapabilityReviewLabel", source)
         self.assertIn("dailyCommandTushareDataCardReviewSentence", source)
-        self.assertIn("Tushare 数据凭证、权限、空窗口或本地结果包缺口去数据能力页复核；首页不探测接口。", source)
+        self.assertIn("首页不探测接口", source)
+        self.assertIn("degraded：存在权限/配置受限，不能当作无数据", source)
+        self.assertIn("degraded：存在空窗口、缓存或待补接口，先按保守处理", source)
         self.assertIn("如果这里显示等待或 degraded，去数据能力页看权限、空窗口和本地回放缺口；首页不会补调接口。", source)
         self.assertIn('label: "降级复核"', source)
         self.assertIn("MetricGrid items={ordinaryHomeAppVisibleNowItems}", visible_card)
         self.assertIn('label: "数据能力"', source)
+        self.assertIn('label: "数据能力模式"', source)
+        self.assertIn('label: "数据能力血缘"', source)
+        self.assertIn('label: "数据能力缺口"', source)
+        self.assertIn('label: "能力模式"', source)
+        self.assertIn('label: "证据血缘"', source)
         self.assertIn("value: dailyCommandDataCapabilityReviewLabel", source)
+        self.assertIn("value: dataCapabilityModeLabel", source)
+        self.assertIn("value: dataCapabilityEvidenceLedgerLabel", source)
+        self.assertIn("真实 Tushare 补证仍需授权 POST task + scope hash + payload + call_ledger + failure-mode evidence", source)
         self.assertIn('href={DATA_CAPABILITY_HREF}', visible_card)
         self.assertIn('aria-label="open data capability from home visible now summary"', visible_card)
         self.assertIn('href={DATA_CAPABILITY_HREF}', ordinary_tushare_card)
