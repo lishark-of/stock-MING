@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getAuditCache, getBootstrapStatus, getCandidateRadarCache, getDesktopPreflightCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getAuditCache, getBootstrapStatus, getCandidateRadarCache, getDataCapabilityCache, getDesktopPreflightCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import { getTasks, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
@@ -117,6 +117,8 @@ export default function CandidateRadar() {
   const [bootstrapEnvelopeWarnings, setBootstrapEnvelopeWarnings] = useState<Array<string>>([]);
   const [desktopPreflight, setDesktopPreflight] = useState<Record<string, unknown>>({});
   const [desktopPreflightEnvelopeLedger, setDesktopPreflightEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [dataCapabilityCache, setDataCapabilityCache] = useState<Record<string, unknown>>({});
+  const [dataCapabilityEnvelopeLedger, setDataCapabilityEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
@@ -177,11 +179,18 @@ export default function CandidateRadar() {
   const refreshAuditCache = () => {
     void getAuditCache().then((res) => setAuditCache(res.data));
   };
+  const refreshDataCapabilityCache = () => {
+    void getDataCapabilityCache().then((res) => {
+      setDataCapabilityCache(res.data);
+      setDataCapabilityEnvelopeLedger(res.call_ledger ?? []);
+    });
+  };
   const refreshQuantProjectionReadback = () => {
     refreshCache();
     refreshBootstrapStatus();
     refreshTaskIndex();
     refreshAuditCache();
+    refreshDataCapabilityCache();
   };
   const refreshDesktopPreflight = () => {
     void getDesktopPreflightCache().then((res) => {
@@ -322,6 +331,7 @@ export default function CandidateRadar() {
     refreshDesktopPreflight();
     refreshTaskIndex();
     refreshAuditCache();
+    refreshDataCapabilityCache();
   }, []);
   useEffect(() => {
     const anchor = candidateRadarRouteAnchorFromHash();
@@ -509,6 +519,63 @@ export default function CandidateRadar() {
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
+  const dataCapabilityProviderCards = rows(dataCapabilityCache.provider_cards);
+  const dataCapabilityTushareCard = dataCapabilityProviderCards.find(
+    (card) => displayText(card.provider, "").toLowerCase() === "tushare"
+  ) ?? {};
+  const dataCapabilityTushareAvailableCount = Number(dataCapabilityTushareCard.available_count ?? 0);
+  const dataCapabilityTushareRestrictedCount = Number(dataCapabilityTushareCard.restricted_count ?? 0);
+  const dataCapabilityTusharePendingCount = Number(dataCapabilityTushareCard.pending_count ?? 0);
+  const dataCapabilityPayloadLedger = rows(dataCapabilityCache.call_ledger);
+  const dataCapabilityEvidenceLedgerCount = dataCapabilityPayloadLedger.length + dataCapabilityEnvelopeLedger.length;
+  const dataCapabilityMode = displayText(dataCapabilityCache.mode ?? "cache_only");
+  const dataCapabilityModeLabel = dataCapabilityMode === "cache_only"
+    ? "cache_only（只读缓存，不外联）"
+    : `${dataCapabilityMode}（按页面边界复核）`;
+  const dataCapabilityDegradedState = dataCapabilityTushareRestrictedCount
+    ? "degraded：存在权限/配置受限，不能当作无数据"
+    : dataCapabilityTusharePendingCount
+      ? "degraded：存在空窗口、缓存或待补接口，先按保守处理"
+      : dataCapabilityTushareAvailableCount
+        ? "可读：已有 Tushare 本地数据记录可回放"
+        : "等待：暂无 Tushare 本地数据健康记录";
+  const dataCapabilityEvidenceLedgerLabel = dataCapabilityEvidenceLedgerCount
+    ? `payload ${dataCapabilityPayloadLedger.length} 条；envelope ${dataCapabilityEnvelopeLedger.length} 条本地 call_ledger`
+    : "等待本地 call_ledger 回读";
+  const candidateRadarPostConfirmDataCapabilitySentence =
+    `确认股票后旁边先看数据能力：${dataCapabilityDegradedState}；真实补证仍需授权 POST task、scope hash、payload、call_ledger 和 failure-mode evidence。`;
+  const candidateRadarPostConfirmDataCapabilityItems: MetricItem[] = [
+    {
+      label: "数据卡状态",
+      value: dataCapabilityDegradedState,
+      tone: dataCapabilityTushareRestrictedCount || dataCapabilityTusharePendingCount ? "warn" : dataCapabilityTushareAvailableCount ? "good" : "neutral"
+    },
+    {
+      label: "运行模式",
+      value: dataCapabilityModeLabel,
+      tone: dataCapabilityCache.cache_only === false ? "bad" : "good"
+    },
+    {
+      label: "证据血缘",
+      value: dataCapabilityEvidenceLedgerLabel,
+      tone: dataCapabilityEvidenceLedgerCount ? "good" : "warn"
+    },
+    {
+      label: "补证缺口",
+      value: "真实 Tushare 补证仍需授权 POST task + scope hash + payload + call_ledger + failure-mode evidence",
+      tone: "warn"
+    },
+    {
+      label: "结果旁边看",
+      value: "确认结果、Factor、Next 旁边同步复核权限、空窗口、缓存和 degraded 原因",
+      tone: "good"
+    },
+    {
+      label: "安全边界",
+      value: "GET data capability 只读；不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易",
+      tone: "good"
+    }
+  ];
   const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
   const legacySignalRows = rows(cache.legacy_signal_group_rows);
   const legacyParityRows = rows(cache.legacy_parity_rows);
@@ -4817,13 +4884,19 @@ export default function CandidateRadar() {
           <h3>确认后马上看这里</h3>
           <p className="ordinary-status-note" aria-label="candidate radar operator post confirm one glance sentence" aria-live="polite">{quantProjectionPostConfirmWaitLabel}</p>
           <MetricGrid items={candidateRadarOperatorPostConfirmOneGlanceItems} />
+          <div aria-label="candidate radar post confirm data capability card">
+            <h3>确认后数据能力</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar post confirm data capability sentence" aria-live="polite">{candidateRadarPostConfirmDataCapabilitySentence}</p>
+            <MetricGrid items={candidateRadarPostConfirmDataCapabilityItems} />
+          </div>
           <div className="actions" aria-label="candidate radar operator post confirm one glance actions">
             <a href="#tasks" title="切换到任务目录；只读本地进度" aria-label="open tasks from operator post confirm one glance">任务状态</a>
+            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare degraded、call_ledger 和补证缺口" aria-label="open data capability from operator post confirm one glance">数据能力</a>
             <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from operator post confirm one glance">量化推演</a>
             <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next from operator post confirm one glance">次日图谱</a>
             <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from operator post confirm one glance">ETF/融资风险</a>
           </div>
-          <p className="risk-note">操作台确认后结果条只读本地 task receipt、cache、call_ledger 和 packet；链接只切换本地页面或锚点，不创建第二个 task、不调用 Tushare/DeepSeek/GitHub、不交易。</p>
+          <p className="risk-note">操作台确认后结果条只读本地 task receipt、cache、call_ledger、packet 和 data capability cache；链接只切换本地页面或锚点，不创建第二个 task、不调用 Tushare/DeepSeek/GitHub、不交易。</p>
         </div>
         <div aria-label="candidate radar operator input confirm first read">
           <h3>输入确认速读</h3>

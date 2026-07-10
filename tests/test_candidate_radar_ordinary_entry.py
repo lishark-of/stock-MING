@@ -65,8 +65,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("确认后马上看这里", operator_slice)
         self.assertIn('aria-label="candidate radar operator post confirm one glance sentence"', operator_slice)
         self.assertIn("MetricGrid items={candidateRadarOperatorPostConfirmOneGlanceItems}", operator_slice)
+        self.assertIn("candidateRadarPostConfirmDataCapabilitySentence", self.page)
+        self.assertIn("candidateRadarPostConfirmDataCapabilityItems", self.page)
+        self.assertIn('aria-label="candidate radar post confirm data capability card"', operator_slice)
+        self.assertIn("确认后数据能力", operator_slice)
+        self.assertIn('aria-label="candidate radar post confirm data capability sentence"', operator_slice)
+        self.assertIn("MetricGrid items={candidateRadarPostConfirmDataCapabilityItems}", operator_slice)
         self.assertIn('aria-label="candidate radar operator post confirm one glance actions"', operator_slice)
-        self.assertIn("操作台确认后结果条只读本地 task receipt、cache、call_ledger 和 packet", operator_slice)
+        self.assertIn("操作台确认后结果条只读本地 task receipt、cache、call_ledger、packet 和 data capability cache", operator_slice)
         operator_post_confirm_start = operator_slice.index('aria-label="candidate radar operator post confirm one glance result"')
         operator_post_confirm_end = operator_slice.index('aria-label="candidate radar operator input confirm first read"', operator_post_confirm_start)
         operator_post_confirm_slice = operator_slice[operator_post_confirm_start:operator_post_confirm_end]
@@ -74,13 +80,21 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "任务接收"',
             'label: "P2/P3"',
             'label: "下一步入口"',
+            'label: "数据卡状态"',
+            'label: "运行模式"',
+            'label: "证据血缘"',
+            'label: "补证缺口"',
+            'label: "结果旁边看"',
             'label: "安全边界"',
         ):
             self.assertIn(operator_post_confirm_label, self.page)
         self.assertIn('href="#tasks"', operator_post_confirm_slice)
+        self.assertIn('href={DATA_CAPABILITY_HREF}', operator_post_confirm_slice)
         self.assertIn('href="#factor/factor-score"', operator_post_confirm_slice)
         self.assertIn('href="#next/next-session-chart"', operator_post_confirm_slice)
         self.assertIn('href="#marginEtf"', operator_post_confirm_slice)
+        self.assertIn("真实 Tushare 补证仍需授权 POST task + scope hash + payload + call_ledger + failure-mode evidence", self.page)
+        self.assertIn("GET data capability 只读；不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易", self.page)
         self.assertIn("不创建第二个 task、不调用 Tushare/DeepSeek/GitHub、不交易", operator_post_confirm_slice)
         self.assertNotIn("onClick=", operator_post_confirm_slice)
         self.assertNotIn("postCandidateRadar", operator_post_confirm_slice)
