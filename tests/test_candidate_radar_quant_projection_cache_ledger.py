@@ -1700,10 +1700,14 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         system_prompt = captured["create"]["messages"][0]["content"]
         self.assertIn("只输出一个 JSON object", system_prompt)
         self.assertIn("不要输出 Markdown", system_prompt)
-        self.assertIn("每个数组最多 2 条", system_prompt)
+        self.assertIn("每个数组最多 1 条", system_prompt)
+        self.assertIn("总输出控制在 220 个中文字符以内", system_prompt)
+        self.assertEqual(captured["create"]["max_tokens"], 1200)
         self.assertEqual(json.loads(captured["create"]["messages"][1]["content"])["symbol"], "000001.SZ")
         self.assertEqual(result["response_format"], "json_object")
         self.assertTrue(result["provider_response_format_requested"])
+        self.assertEqual(result["max_tokens"], 1200)
+        self.assertTrue(result["content_present"])
         self.assertEqual(result["usage"]["total_tokens"], 7)
 
     def test_confirm_tushare_first_with_deepseek_explanation_writes_model_ledger(self):
@@ -1875,6 +1879,140 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(deepseek_rows[0]["request_params_safe"]["provider_response_format_requested"])
         self.assertFalse(deepseek_rows[0]["request_params_safe"]["production_response_format_benchmark_done"])
         self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
+
+    def test_confirm_tushare_first_deepseek_empty_output_records_safe_failure_mode(self):
+        self._with_meta_store()
+        self._with_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "candidate cache"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
+        original_call_deepseek = candidate_service._call_quant_projection_deepseek_model
+        original_get_deepseek_keys = candidate_service.get_deepseek_keys
+        original_get_deepseek_model = candidate_service.get_deepseek_model
+
+        def fake_run_tushare_refresh_task(payload, **_kwargs):
+            return {
+                "task_id": "fake-tushare-light-cache-ledger",
+                "status": "success",
+                "current_step": "tushare_refresh_completed",
+                "call_ledger": [
+                    {
+                        "api": api,
+                        "request_params_safe": {
+                            "ts_code": payload["ts_code"],
+                            "start_date": payload["start_date"],
+                            "end_date": payload["end_date"],
+                        },
+                        "row_count": 3,
+                        "data_date": payload["end_date"],
+                        "local_fetched_at": "2026-06-19T10:00:00",
+                        "call_status": "success",
+                        "error_message_safe": "",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                    for api in payload["apis"]
+                ],
+            }
+
+        def fake_call_deepseek_model(*, api_key, fact_summary):
+            self.assertEqual(api_key, "FAKE_DEEPSEEK_KEY")
+            self.assertEqual(fact_summary["data_source"], "Tushare")
+            return {
+                "text": "",
+                "usage": {"prompt_tokens": 10, "completion_tokens": 1200, "total_tokens": 1210},
+                "response_format": "json_object",
+                "provider_response_format_requested": True,
+                "finish_reason": "length",
+                "max_tokens": 1200,
+                "content_present": False,
+            }
+
+        candidate_service.tushare_task_service.run_tushare_refresh_task = fake_run_tushare_refresh_task
+        candidate_service._call_quant_projection_deepseek_model = fake_call_deepseek_model
+        candidate_service.get_deepseek_keys = lambda: ["FAKE_DEEPSEEK_KEY"]
+        candidate_service.get_deepseek_model = lambda purpose="projection": "deepseek-test-model"
+        self.addCleanup(
+            setattr,
+            candidate_service.tushare_task_service,
+            "run_tushare_refresh_task",
+            original_run_tushare,
+        )
+        self.addCleanup(setattr, candidate_service, "_call_quant_projection_deepseek_model", original_call_deepseek)
+        self.addCleanup(setattr, candidate_service, "get_deepseek_keys", original_get_deepseek_keys)
+        self.addCleanup(setattr, candidate_service, "get_deepseek_model", original_get_deepseek_model)
+
+        response = self.client.post(
+            "/api/candidate-radar/quant-projection",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+                "p0_confirm_gate_evidence": {
+                    "schema_version": "candidate_radar_p0_confirm_gate.v1",
+                    "p0_ready": True,
+                    "fastapi_cache_get_ready": True,
+                    "bootstrap_runtime_mode_ready": True,
+                    "desktop_preflight_ready": True,
+                    "p0_stability_check_ready": True,
+                    "candidate_cache_ready": True,
+                    "candidate_cache_status": "ready",
+                    "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+                    "desktop_preflight_packet_key": "command_center_3_desktop_shell_preflight_cache",
+                    "creates_task_only_after_button": True,
+                    "react_render_external_calls": False,
+                    "get_cache_external_calls": False,
+                    "contains_secret": False,
+                },
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(
+            task["current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_degraded",
+        )
+
+        packet = self.client.get("/api/candidate-radar/cache").json()["data"]
+        receipt = packet["search_quant_provider_model_acceptance_receipt"]
+        model_ledger = packet["search_quant_deepseek_model_ledger"]
+        explanation = packet["search_quant_deepseek_explanation"]
+        deepseek_rows = [
+            row for row in packet["call_ledger"] if row.get("api") == "deepseek_quant_projection_explanation"
+        ]
+
+        self.assertEqual(
+            receipt["status"],
+            "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_degraded",
+        )
+        self.assertTrue(receipt["tushare_call_ledger_evidence_done"])
+        self.assertTrue(receipt["deepseek_model_ledger_recorded"])
+        self.assertFalse(receipt["deepseek_output_acceptance_done"])
+        self.assertEqual(receipt["deepseek_safe_failure_mode"], "empty_model_output")
+        self.assertEqual(model_ledger["safe_failure_mode"], "empty_model_output")
+        self.assertEqual(model_ledger["finish_reason"], "length")
+        self.assertEqual(model_ledger["max_tokens"], 1200)
+        self.assertFalse(model_ledger["content_present"])
+        self.assertEqual(explanation["error_message_safe"], "empty_model_output")
+        self.assertTrue(explanation["parse_failed"])
+        self.assertEqual(deepseek_rows[0]["error_message_safe"], "empty_model_output")
+        self.assertFalse(model_ledger["raw_prompt_stored"])
+        self.assertFalse(model_ledger["raw_output_stored"])
+        self.assertTrue(model_ledger["does_not_modify_strategy_action"])
+        self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(packet, ensure_ascii=False))
 
     def test_confirm_tushare_first_deepseek_missing_key_degrades_after_tushare(self):
         self._with_meta_store()

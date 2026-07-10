@@ -59,6 +59,7 @@ QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION = (
 QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_small_data_writeback.v1"
 )
+QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS = 1200
 QUANT_PROJECTION_SMALL_DATA_READBACK_CHECKPOINT_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_small_data_readback_checkpoint.v1"
 )
@@ -15422,8 +15423,8 @@ def _call_quant_projection_deepseek_model(
     response_format = {"type": "json_object"}
     response = client.chat.completions.create(
         model=get_deepseek_model("projection"),
-        temperature=0.1,
-        max_tokens=700,
+        temperature=0,
+        max_tokens=QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS,
         response_format=response_format,
         messages=[
             {
@@ -15434,7 +15435,8 @@ def _call_quant_projection_deepseek_model(
                     "只输出一个 JSON object，不要输出 Markdown、代码块或额外正文。"
                     "顶层键必须严格限定在 summary、support_notes、suppress_notes、"
                     "conflict_notes、missing_data_notes、discipline_notes。"
-                    "summary 必须是短字符串；其余字段必须是字符串数组，每个数组最多 2 条、每条不超过 60 个中文字符。"
+                    "summary 必须是一句短字符串；其余字段必须是字符串数组，每个数组最多 1 条、每条不超过 40 个中文字符。"
+                    "总输出控制在 220 个中文字符以内，不要展开推理过程。"
                 ),
             },
             {"role": "user", "content": fact_text},
@@ -15443,8 +15445,9 @@ def _call_quant_projection_deepseek_model(
     choice = response.choices[0] if getattr(response, "choices", None) else None
     message = getattr(choice, "message", None)
     usage = getattr(response, "usage", None)
+    text = _safe_text(getattr(message, "content", "") if message else "", limit=6000)
     return {
-        "text": _safe_text(getattr(message, "content", "") if message else "", limit=6000),
+        "text": text,
         "usage": {
             "prompt_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
             "completion_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
@@ -15452,7 +15455,26 @@ def _call_quant_projection_deepseek_model(
         },
         "response_format": response_format["type"],
         "provider_response_format_requested": True,
+        "finish_reason": _safe_text(getattr(choice, "finish_reason", "") if choice else "", limit=80),
+        "max_tokens": QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS,
+        "content_present": bool(text),
     }
+
+
+def _quant_projection_deepseek_safe_failure_mode(
+    *,
+    sanitized: Mapping[str, Any],
+    model_response: Mapping[str, Any],
+) -> str:
+    if sanitized.get("status") == "success" and sanitized.get("parse_failed") is not True:
+        return ""
+    if not _safe_text(model_response.get("text") or "", limit=80):
+        return "empty_model_output"
+    if _safe_text(model_response.get("finish_reason") or "", limit=80) == "length":
+        return "model_output_truncated"
+    if _safe_text(sanitized.get("error_message_safe") or "", limit=120):
+        return "json_parse_failed"
+    return "empty_sanitized_output"
 
 
 def _quant_projection_deepseek_degraded_explanation(
@@ -15606,6 +15628,10 @@ def _run_quant_projection_deepseek_explanation(
             )
             usage = _as_dict(model_response.get("usage"))
             output_acceptance_done = sanitized.get("status") == "success" and sanitized.get("parse_failed") is False
+            safe_failure_mode = _quant_projection_deepseek_safe_failure_mode(
+                sanitized=sanitized,
+                model_response=model_response,
+            )
             model_ledger = {
                 **base_ledger,
                 "status": "success" if output_acceptance_done else "degraded_parse_failed",
@@ -15613,7 +15639,7 @@ def _run_quant_projection_deepseek_explanation(
                 "model_ledger_recorded": True,
                 "deepseek_called": True,
                 "external_calls_triggered": True,
-                "safe_failure_mode": "" if output_acceptance_done else "sanitizer_parse_failed",
+                "safe_failure_mode": safe_failure_mode,
                 "latency_ms": latency_ms,
                 "prompt_tokens": int(usage.get("prompt_tokens") or 0),
                 "completion_tokens": int(usage.get("completion_tokens") or 0),
@@ -15623,6 +15649,9 @@ def _run_quant_projection_deepseek_explanation(
                 "sanitizer_status": sanitized.get("status") or "",
                 "parse_failed": sanitized.get("parse_failed") is True,
                 "ignored_key_count": len(_as_list(sanitized.get("ignored_keys"))),
+                "finish_reason": _safe_text(model_response.get("finish_reason") or "", limit=80),
+                "max_tokens": int(model_response.get("max_tokens") or QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS),
+                "content_present": model_response.get("content_present") is True,
             }
         except Exception as exc:
             latency_ms = int((_dt.datetime.now() - started_at).total_seconds() * 1000)
@@ -15660,6 +15689,10 @@ def _run_quant_projection_deepseek_explanation(
         "payload": sanitized.get("payload") or {},
         "ignored_keys": _as_list(sanitized.get("ignored_keys")),
         "parse_failed": sanitized.get("parse_failed") is True,
+        "error_message_safe": _safe_text(
+            sanitized.get("error_message_safe") or model_ledger.get("safe_failure_mode") or "",
+            limit=160,
+        ),
         "explanation_only": True,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
@@ -15682,6 +15715,9 @@ def _run_quant_projection_deepseek_explanation(
             "provider_response_format_requested": True,
             "provider_response_format_scope": "search_quant_projection_single_call_not_ltg07_production_benchmark",
             "production_response_format_benchmark_done": False,
+            "finish_reason": model_ledger.get("finish_reason") or "",
+            "max_tokens": model_ledger.get("max_tokens") or QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS,
+            "content_present": model_ledger.get("content_present") is True,
             "raw_prompt_stored": False,
             "raw_output_stored": False,
             "safe_failure_mode": model_ledger.get("safe_failure_mode") or "",
