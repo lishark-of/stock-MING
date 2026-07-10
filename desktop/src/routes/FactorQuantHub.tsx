@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { EChartsOption } from "echarts";
-import { getBootstrapStatus, getCandidateRadarCache, getFactorQuantCache, postTask, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, getFactorQuantCache, getNextSessionCache, postTask, type TaskCreationEnvelope } from "../api/client";
 import { getTasks, type TaskStatusIndex } from "../api/client";
 import ChartSafetyStrip from "../components/ChartSafetyStrip";
 import DataLineageTable from "../components/DataLineageTable";
@@ -100,6 +100,7 @@ function runtimeModeLabel(value: unknown): string {
 export default function FactorQuantHub() {
   const [packet, setPacket] = useState<Record<string, any>>({});
   const [candidateRadarCache, setCandidateRadarCache] = useState<Record<string, unknown>>({});
+  const [nextSessionCache, setNextSessionCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
@@ -130,6 +131,10 @@ export default function FactorQuantHub() {
     void getCandidateRadarCache().then((res) => {
       if (res.ok !== false) setCandidateRadarCache(res.data ?? {});
     });
+  const refreshNextSessionCache = () =>
+    void getNextSessionCache().then((res) => {
+      if (res.ok !== false) setNextSessionCache(res.data ?? {});
+    });
   const refreshTaskIndex = () =>
     void getTasks().then((res) => setTaskIndex(res.data));
   const launchTask = (path: string, payload: Record<string, unknown> = {}) =>
@@ -143,6 +148,7 @@ export default function FactorQuantHub() {
     refreshCache();
     refreshBootstrapStatus();
     refreshCandidateRadarCache();
+    refreshNextSessionCache();
     refreshTaskIndex();
   }, []);
 
@@ -379,6 +385,32 @@ export default function FactorQuantHub() {
   const runtime = packet.runtime ?? {};
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
+  const nextSessionChartPayload = (nextSessionCache.chart_payload as Record<string, unknown> | undefined) ?? {};
+  const nextSessionReplaySummary = (nextSessionCache.ordinary_result_replay_summary as Record<string, unknown> | undefined) ?? {};
+  const nextSessionChartSymbol = String(
+    nextSessionChartPayload.symbol ??
+      nextSessionChartPayload.ts_code ??
+      nextSessionChartPayload.confirmed_symbol ??
+      nextSessionCache.symbol ??
+      nextSessionCache.ts_code ??
+      nextSessionCache.confirmed_symbol ??
+      ""
+  ).toUpperCase();
+  const nextSessionScenarioCount = Array.isArray(nextSessionChartPayload.scenario_series)
+    ? nextSessionChartPayload.scenario_series.length
+    : Number(nextSessionReplaySummary.scenario_series_count ?? 0);
+  const nextSessionReferenceLineCount = Array.isArray(nextSessionChartPayload.reference_lines)
+    ? nextSessionChartPayload.reference_lines.length
+    : Number(nextSessionReplaySummary.reference_line_count ?? 0);
+  const nextSessionOperationZoneCount = Array.isArray(nextSessionChartPayload.operation_zones)
+    ? nextSessionChartPayload.operation_zones.length
+    : Number(nextSessionReplaySummary.operation_zone_count ?? 0);
+  const nextSessionChartReadyForConfirmedSymbol = Boolean(candidateRadarConfirmedSymbol) &&
+    nextSessionReplaySummary.chart_ready_for_confirmed_symbol === true &&
+    nextSessionChartSymbol === candidateRadarConfirmedSymbol.toUpperCase();
+  const ordinaryQuantFullNextSessionState = nextSessionChartReadyForConfirmedSymbol
+    ? `${candidateRadarConfirmedSymbol} 完整图谱已可读：路径 ${String(nextSessionScenarioCount)} / 参考线 ${String(nextSessionReferenceLineCount)} / 操作区 ${String(nextSessionOperationZoneCount)}；只读本地 Next Session cache。`
+    : String(bridge.status ?? bridge.bridge_status ?? "等待 next-session bridge cache");
   const freshnessGate = packet.data_freshness_gate ?? {};
   const universeResearch = packet.universe_research_contract ?? {};
   const universeExecutionReadiness = packet.universe_execution_readiness_audit ?? {};
@@ -787,9 +819,11 @@ export default function FactorQuantHub() {
   const ordinaryQuantFullNextSessionRows = [
     {
       交接项: "预览状态",
-      当前状态: String(bridge.status ?? bridge.bridge_status ?? (empty ? "等待本地量化缓存" : "等待 next-session bridge cache")),
-      用户下一步: empty ? "先回下一票雷达确认代码并生成推演" : "先读本页次日图谱预览，再按需打开完整图谱",
-      边界: "预览只读本地 bridge cache；不会补调 Tushare/DeepSeek，也不会写 operation_zones"
+      当前状态: ordinaryQuantFullNextSessionState,
+      用户下一步: nextSessionChartReadyForConfirmedSymbol
+        ? "直接打开完整图谱，复核路径、参考线、操作区和缺口边界。"
+        : empty ? "先回下一票雷达确认代码并生成推演" : "先读本页次日图谱预览，再按需打开完整图谱",
+      边界: "预览只读本地 bridge cache / Next Session cache；不会补调 Tushare/DeepSeek，也不会写 operation_zones"
     },
     {
       交接项: "完整图谱入口",
@@ -809,7 +843,7 @@ export default function FactorQuantHub() {
     : "先看支持/压制，再看次日图谱预览，最后看模型解释状态；不要从工程审计表开始";
   const ordinaryQuantResultComposition = [
     `支持 ${String(score.support_factors?.length ?? 0)} / 压制 ${String(score.suppress_factors?.length ?? 0)} / 冲突 ${String(score.conflict_factors?.length ?? 0)} / 缺失 ${String(score.missing_factors?.length ?? 0)}`,
-    `次日图谱：${String(bridge.status ?? bridge.bridge_status ?? "等待本地缓存")}`,
+    `次日图谱：${ordinaryQuantFullNextSessionState}`,
     `模型解释：${ordinaryQuantDeepSeekSourceLabel}`
   ].join(" / ");
   const ordinaryQuantP3ReadableConclusion = ordinaryQuantCandidateRadarP3Ready
@@ -1159,7 +1193,7 @@ export default function FactorQuantHub() {
       : "等待 governed executor；不阻塞 Tushare-first、支持/压制和次日图谱";
   const ordinaryQuantResultRailState = [
     empty ? "waiting_radar_confirm" : "factor_cache_visible",
-    bridge.status || bridge.bridge_status ? "next_preview_visible" : "next_preview_waiting",
+    nextSessionChartReadyForConfirmedSymbol || bridge.status || bridge.bridge_status ? "next_preview_visible" : "next_preview_waiting",
     deepseek.called === true ? "deepseek_cache_visible" : "deepseek_governed_pending"
   ].join(" ");
   const ordinaryQuantResultRailSteps = [
@@ -1175,8 +1209,8 @@ export default function FactorQuantHub() {
     },
     {
       label: "次日图谱",
-      state: empty ? ("waiting" as const) : (bridge.status || bridge.bridge_status) ? ("done" as const) : ("active" as const),
-      detail: String(bridge.status ?? bridge.bridge_status ?? "等待本地 bridge cache")
+      state: empty ? ("waiting" as const) : nextSessionChartReadyForConfirmedSymbol || bridge.status || bridge.bridge_status ? ("done" as const) : ("active" as const),
+      detail: ordinaryQuantFullNextSessionState
     },
     {
       label: "DeepSeek 状态",
@@ -1306,8 +1340,8 @@ export default function FactorQuantHub() {
     },
     {
       结果段: "次日图谱预览",
-      可读结论: `图谱状态：${String(bridge.status ?? bridge.bridge_status ?? "等待本地缓存")}`,
-      证据: "Next Session preview / bridge cache",
+      可读结论: `图谱状态：${ordinaryQuantFullNextSessionState}`,
+      证据: nextSessionChartReadyForConfirmedSymbol ? "GET /api/next-session/cache.chart_payload" : "Next Session preview / bridge cache",
       下一步: "再打开次日图谱复核路径、参考线和操作区",
       边界: "预览不改 operation_zones，不写交易动作"
     },
@@ -1376,8 +1410,8 @@ export default function FactorQuantHub() {
     },
     {
       交接段: "次日图谱",
-      用户看到: `桥接状态：${String(bridge.status ?? bridge.bridge_status ?? "等待本地缓存")}`,
-      写入位置: "Next Session preview 只读取本地 bridge cache",
+      用户看到: `桥接状态：${ordinaryQuantFullNextSessionState}`,
+      写入位置: nextSessionChartReadyForConfirmedSymbol ? "完整图谱来自 GET /api/next-session/cache" : "Next Session preview 只读取本地 bridge cache",
       边界: "预览是条件路径复核，不是买入指令、不真实交易、不下单"
     }
   ];
@@ -1482,7 +1516,7 @@ export default function FactorQuantHub() {
     },
     {
       label: "图谱/解释",
-      value: `次日图谱：${String(bridge.status ?? bridge.bridge_status ?? "等待本地缓存")} / ${candidateRadarOrdinaryDeepSeekState}`,
+      value: `次日图谱：${ordinaryQuantFullNextSessionState} / ${candidateRadarOrdinaryDeepSeekState}`,
       tone: candidateRadarUsesModelOutput ? "warn" : "good"
     },
     {
@@ -2602,7 +2636,7 @@ export default function FactorQuantHub() {
       </div>
       <section id="factor-next-session" aria-label="next session bridge preview">
         <h3>次日图谱预览</h3>
-        <p>桥接状态：{String(bridge.status ?? bridge.bridge_status ?? "等待本地缓存")}</p>
+        <p>桥接状态：{ordinaryQuantFullNextSessionState}</p>
         <p>动作边界：{bridge.does_not_modify_action === false ? "边界异常：需要审计" : "只读条件预览，不修改交易动作"}</p>
         <p>最近可用结果：{ordinaryQuantLastCache}</p>
       </section>

@@ -571,7 +571,7 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('交接项: "预览状态"', source)
         self.assertIn('交接项: "完整图谱入口"', source)
         self.assertIn('交接项: "阅读顺序"', source)
-        self.assertIn("预览只读本地 bridge cache；不会补调 Tushare/DeepSeek，也不会写 operation_zones", source)
+        self.assertIn("预览只读本地 bridge cache / Next Session cache；不会补调 Tushare/DeepSeek，也不会写 operation_zones", source)
         self.assertIn("完整图谱页继续按路径、参考线、操作区、缺口边界复核", source)
         self.assertIn('title="跳到本页支持/压制摘要；只读 Factor cache"', source)
         self.assertIn('title="跳到本页次日图谱预览；不刷新 provider/model"', source)
