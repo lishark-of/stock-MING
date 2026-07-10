@@ -118,12 +118,26 @@ export default function DataCapabilityConsole() {
     : Object.keys(tushareProviderCard).length
       ? "本地数据能力摘要"
       : "等待本地记录";
+  const dataCapabilityRuntimeMode = displayText(cache.mode ?? "cache_only");
+  const dataCapabilityRuntimeModeLabel = dataCapabilityRuntimeMode === "cache_only"
+    ? "cache_only（只读缓存，不外联）"
+    : `${dataCapabilityRuntimeMode}（按页面边界复核）`;
+  const dataCapabilityEvidenceLedgerCount = payloadCallLedger.length + cacheEnvelopeLedger.length;
+  const dataCapabilityEvidenceLedgerLabel = dataCapabilityEvidenceLedgerCount
+    ? `payload ${payloadCallLedger.length} 条；envelope ${cacheEnvelopeLedger.length} 条本地 call_ledger`
+    : "等待本地 call_ledger 回读";
+  const dataCapabilityProviderEvidenceGap = "真实补证仍需授权 POST task + scope hash + payload + call_ledger + failure-mode";
   const dataCapabilityVisibleNowSentence = `打开数据能力页先看：${dataCapabilityTushareResultCardState}；下一步是${tushareRestrictedCount || tusharePendingCount ? "复核受限/待补原因，再回结果页保守阅读" : "回首页或下一票雷达读同一条确认链结果"}。`;
   const dataCapabilityVisibleNowItems: MetricItem[] = [
     {
       label: "打开可见",
       value: dataCapabilityTushareSummary,
       tone: dataCapabilityTushareTone
+    },
+    {
+      label: "运行模式",
+      value: dataCapabilityRuntimeModeLabel,
+      tone: cache.cache_only === false ? "bad" : "good"
     },
     {
       label: "数据卡读法",
@@ -134,6 +148,16 @@ export default function DataCapabilityConsole() {
       label: "来源层",
       value: dataCapabilityTushareSourceLayerLabel,
       tone: tushareHealthRows.length || Object.keys(tushareProviderCard).length ? "good" : "warn"
+    },
+    {
+      label: "证据血缘",
+      value: dataCapabilityEvidenceLedgerLabel,
+      tone: dataCapabilityEvidenceLedgerCount ? "good" : "warn"
+    },
+    {
+      label: "补证缺口",
+      value: dataCapabilityProviderEvidenceGap,
+      tone: "warn"
     },
     {
       label: "下一步入口",
@@ -269,7 +293,7 @@ export default function DataCapabilityConsole() {
         <p className="ordinary-status-note" aria-label="data capability tushare ordinary summary" aria-live="polite">{dataCapabilityTushareSummary}</p>
         <MetricGrid items={dataCapabilityTushareOrdinaryItems} />
         <div aria-label="data capability visible now summary">
-          <h3>打开这里先看什么</h3>
+          <h3>打开 app 能看到什么</h3>
           <p className="ordinary-status-note" aria-label="data capability visible now sentence" aria-live="polite">{dataCapabilityVisibleNowSentence}</p>
           <MetricGrid items={dataCapabilityVisibleNowItems} />
           <div className="actions" aria-label="data capability visible now local actions">

@@ -25,6 +25,9 @@ class DataCapabilityFrontendTests(unittest.TestCase):
         self.assertIn("dataCapabilityVisibleNowSentence", self.page)
         self.assertIn("dataCapabilityVisibleNowItems", self.page)
         self.assertIn("dataCapabilityTushareSourceLayerLabel", self.page)
+        self.assertIn("dataCapabilityRuntimeModeLabel", self.page)
+        self.assertIn("dataCapabilityEvidenceLedgerLabel", self.page)
+        self.assertIn("dataCapabilityProviderEvidenceGap", self.page)
         self.assertIn("dataCapabilityTushareResultCardSentence", self.page)
         self.assertIn("dataCapabilityTushareResultCardItems", self.page)
         self.assertIn("dataCapabilityTushareDegradedResultRows", self.page)
@@ -34,7 +37,7 @@ class DataCapabilityFrontendTests(unittest.TestCase):
         self.assertIn('aria-label="data capability tushare ordinary summary"', card)
         self.assertIn("MetricGrid items={dataCapabilityTushareOrdinaryItems}", card)
         self.assertIn('aria-label="data capability visible now summary"', card)
-        self.assertIn("打开这里先看什么", card)
+        self.assertIn("打开 app 能看到什么", card)
         self.assertIn('aria-label="data capability visible now sentence"', card)
         self.assertIn("MetricGrid items={dataCapabilityVisibleNowItems}", card)
         self.assertIn('aria-label="data capability visible now local actions"', card)
@@ -78,8 +81,11 @@ class DataCapabilityFrontendTests(unittest.TestCase):
             'label: "用户下一步"',
             'label: "安全边界"',
             'label: "打开可见"',
+            'label: "运行模式"',
             'label: "数据卡读法"',
             'label: "下一步入口"',
+            'label: "证据血缘"',
+            'label: "补证缺口"',
             'label: "安全说明"',
             'label: "结果读法"',
             'label: "来源层"',
@@ -101,6 +107,9 @@ class DataCapabilityFrontendTests(unittest.TestCase):
             card.index('aria-label="data capability tushare readable rows"'),
         )
         self.assertIn("页面打开只读本地记录；不探测 Tushare、DeepSeek、GitHub，不创建确认流程、不交易", self.page)
+        self.assertIn("cache_only（只读缓存，不外联）", self.page)
+        self.assertIn("本地 call_ledger", self.page)
+        self.assertIn("真实补证仍需授权 POST task + scope hash + payload + call_ledger + failure-mode", self.page)
         self.assertIn("本地数据健康记录", self.page)
         self.assertIn("本地数据能力摘要", self.page)
         self.assertIn("不能当作无数据或低风险", self.page)
