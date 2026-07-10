@@ -87,6 +87,8 @@ class MarginEtfFrontendTests(unittest.TestCase):
 
     def test_margin_etf_first_screen_shows_ordinary_quick_read_before_actions(self):
         card_start = self.page.index('title="ETF / 融资操作台"')
+        page_state_start = self.page.index("<PageStateBanner")
+        candidate_group_start = self.page.index('title="ETF 候选分组"')
         visible_start = self.page.index('aria-label="margin etf app visible now summary"', card_start)
         plain_start = self.page.index('aria-label="margin etf ordinary plain conclusion"', card_start)
         viewport_action_start = self.page.index('aria-label="margin etf first viewport action strip"', card_start)
@@ -100,6 +102,8 @@ class MarginEtfFrontendTests(unittest.TestCase):
         plain_slice = self.page[plain_start:viewport_action_start]
         quick_read_slice = self.page[quick_read_start:post_research_start]
 
+        self.assertLess(card_start, page_state_start)
+        self.assertLess(page_state_start, candidate_group_start)
         self.assertLess(card_start, visible_start)
         self.assertLess(visible_start, plain_start)
         self.assertLess(plain_start, viewport_action_start)

@@ -777,14 +777,6 @@ export default function MarginEtf() {
         <StatusBadge label={status} tone={status === "ready" || status === "partial" ? "good" : "warn"} />
       </div>
 
-      <PageStateBanner
-        loading={loading}
-        error={error}
-        empty={!loading && !error && !Object.keys(etfPacket).length && !Object.keys(marginPacket).length}
-        emptyTitle="暂无 ETF/融资本地快照"
-        emptyDetail="本页只读取本地快照；不会在页面打开时自动发现 ETF、拉行情或调用模型。"
-      />
-
       <PacketCard title="ETF / 融资操作台" subtitle="普通用户先看这里" status={status}>
         <div aria-label="margin etf app visible now summary">
           <h3>打开 app 能看到什么</h3>
@@ -940,6 +932,14 @@ export default function MarginEtf() {
           <p className="ordinary-status-note">{text(etfPacket.evidence_summary, text(etfPacket.summary, "暂无 ETF/融资快照；先保留观察，不新增融资。"))}</p>
         </details>
       </PacketCard>
+
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={!loading && !error && !Object.keys(etfPacket).length && !Object.keys(marginPacket).length}
+        emptyTitle="暂无 ETF/融资本地快照"
+        emptyDetail="本页只读取本地快照；不会在页面打开时自动发现 ETF、拉行情或调用模型。"
+      />
 
       <PacketCard title="ETF 候选分组" subtitle="推荐、观察、回避和排除分开看" status={noEtfRows ? "waiting" : "ready"}>
         <div id="margin-etf-candidate-rows" aria-label="margin etf candidate row reading guide">
