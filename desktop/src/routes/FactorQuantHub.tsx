@@ -333,11 +333,36 @@ export default function FactorQuantHub() {
       factorPacketCandidateHandoff.deepseek_governed_executor_status ??
       "governed_executor_pending"
   );
+  const candidateRadarDeepSeekExplanation =
+    (candidateRadarCache.search_quant_deepseek_explanation as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarDeepSeekPayload =
+    (candidateRadarDeepSeekExplanation.payload as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarDeepSeekModelLedger =
+    (candidateRadarCache.search_quant_deepseek_model_ledger as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarProviderModelAcceptance =
+    (candidateRadarCache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarDeepSeekLedgerRecorded =
+    candidateRadarDeepSeekModelLedger.model_ledger_recorded === true ||
+    candidateRadarProviderModelAcceptance.deepseek_model_ledger_recorded === true ||
+    candidateRadarProviderModelAcceptance.deepseek_model_ledger_evidence_done === true ||
+    Boolean(candidateRadarDeepSeekModelLedger.input_summary_hash);
+  const candidateRadarDeepSeekExplanationReady =
+    candidateRadarDeepSeekExplanation.status === "success" ||
+    candidateRadarProviderModelAcceptance.deepseek_output_acceptance_done === true;
+  const candidateRadarDeepSeekSafeDegraded =
+    candidateRadarProviderModelAcceptance.deepseek_safe_degraded === true ||
+    String(candidateRadarDeepSeekExplanation.status ?? "").startsWith("degraded") ||
+    String(candidateRadarDeepSeekModelLedger.status ?? "").startsWith("degraded");
   const candidateRadarUsesModelOutput =
+    candidateRadarDeepSeekExplanationReady ||
     candidateRadarInterpretation.uses_deepseek_output === true ||
     candidateRadarInterpretation.uses_model_output === true;
   const candidateRadarOrdinaryDeepSeekState = candidateRadarUsesModelOutput
-    ? "检测到模型输出；需回 P5 governed executor 审核后再展示"
+    ? `DeepSeek 解释已写入安全模型账本：${ordinaryFactorText(candidateRadarDeepSeekPayload.summary, "只解释来源和缺口，不改数值或动作")}`
+    : candidateRadarDeepSeekSafeDegraded
+      ? `DeepSeek 已安全降级：${ordinaryFactorText(candidateRadarProviderModelAcceptance.deepseek_safe_failure_mode ?? candidateRadarDeepSeekModelLedger.safe_failure_mode, "Tushare-first、支持/压制和次日图谱继续可读")}`
+    : candidateRadarDeepSeekLedgerRecorded
+      ? "DeepSeek 安全模型账本已记录；普通页只读 hash、token、耗时和安全状态"
     : candidateRadarDeepSeekStateRaw.includes("skipped")
       ? "DeepSeek 不用等：Tushare-first、支持/压制和次日图谱可先看"
       : candidateRadarDeepSeekStateRaw.includes("pending")
@@ -569,8 +594,13 @@ export default function FactorQuantHub() {
     if (upstreamStage) return `Tushare-first：${upstreamStage}`;
     return ordinaryQuantGlobalTushareSourceLabel;
   })();
-  const ordinaryQuantDeepSeekSourceLabel =
-    deepseek.called === true ? "DeepSeek 解释已有本地结果；只解释不改数值或动作" : "DeepSeek 待 governed executor；普通页只读状态";
+  const ordinaryQuantDeepSeekSourceLabel = candidateRadarUsesModelOutput
+    ? "DeepSeek 解释已从下一票雷达安全账本回放；只解释不改数值或动作"
+    : candidateRadarDeepSeekSafeDegraded
+      ? "DeepSeek 已安全降级；Tushare-first、支持/压制和次日图谱继续可读"
+      : candidateRadarDeepSeekLedgerRecorded
+        ? "DeepSeek 安全模型账本已记录；普通页只读状态"
+        : deepseek.called === true ? "DeepSeek 解释已有本地结果；只解释不改数值或动作" : "DeepSeek 待 governed executor；普通页只读状态";
   const ordinaryQuantModelSourceLabel =
     deepseekValidation.model_call_status && deepseekValidation.model_call_status !== "not_called" ? "模型状态已有本地记录" : "模型未调用或等待 governed executor";
   const ordinaryQuantRuntimeMode = String(bootstrapStatus.mode ?? packet.mode ?? "cache_only");
