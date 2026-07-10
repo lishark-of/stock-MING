@@ -2126,7 +2126,9 @@ export default function CommandCenterHome() {
       ? "本地数据已齐：等待可解释结论刷新。"
     : dailyCommandP0LocalReadinessReady
       ? "准备就绪：输入股票代码后点击确认。"
-      : "待恢复：先把本地连接接上。";
+      : dailyCommandHealthOk
+        ? "只读可用：可以查看本地缓存、最近结果和入口；确认按钮仍等待 P0 四段证据。"
+        : "待恢复：先把本地连接接上。";
   const ordinaryHomeResultRouteSummary = dailyCommandP3OneGlanceReadable
     ? "结果已可读：先看股票量化推演，再看次日图谱；需要换标的再回下一票雷达详情。"
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
@@ -2136,9 +2138,15 @@ export default function CommandCenterHome() {
         : "本地连接恢复后，先确认股票代码，再看结果入口。";
   const ordinaryHomeStatusItems: MetricItem[] = [
     {
-      label: "本地已接上",
-      value: dailyCommandP0LocalReadinessReady ? "已接上" : dailyCommandP0ReadbackPending ? "连接中" : "待恢复",
-      tone: dailyCommandP0LocalReadinessReady ? "good" : "warn"
+      label: "只读入口",
+      value: dailyCommandHealthOk
+        ? dailyCommandP0LocalReadinessReady
+          ? "已接上；确认按钮可用"
+          : "已接上；确认闸门待 P0 证据"
+        : dailyCommandP0ReadbackPending
+          ? "连接中"
+          : "待恢复",
+      tone: dailyCommandHealthOk ? "good" : "warn"
     },
     {
       label: "当前标的",
@@ -2155,7 +2163,9 @@ export default function CommandCenterHome() {
     ? `打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果：${dailyCommandExplainableResultLabel}；下一步看股票量化推演和次日图谱。`
     : dailyCommandP0LocalReadinessReady
       ? "打开 app 能看到本地已接上、股票确认入口和等待结果状态；先输入股票代码并点击确认。"
-      : "打开 app 能看到本地连接待恢复：先看桌面壳预检，等 FastAPI、bootstrap、desktop preflight 和 React 变绿。";
+      : dailyCommandHealthOk
+        ? "打开 app 能看到只读入口已接上：可以看当前标的、最近结果、数据能力和下一步入口；确认按钮仍等待 P0 四段证据。"
+        : "打开 app 能看到本地连接待恢复：先看桌面壳预检，等 FastAPI、bootstrap、desktop preflight 和 React 变绿。";
   const ordinaryHomeRouteHealthLabel = userRouteQaLatestPassed
     ? `路线健康：${userRouteQaCoveredRoutes.length}/5 条普通入口已通过 ${userRouteQaCoveredViewports.join(" / ") || "本地 QA"}；输入静默。`
     : userRouteQaEvidence.latest_report_is_current_evidence === true
@@ -2169,8 +2179,12 @@ export default function CommandCenterHome() {
     },
     {
       label: "本地联通",
-      value: dailyCommandP0LocalReadinessReady ? "FastAPI / bootstrap / desktop preflight / React 已接上" : "等待四段本地联通",
-      tone: dailyCommandP0LocalReadinessReady ? "good" : "warn"
+      value: dailyCommandP0LocalReadinessReady
+        ? "FastAPI / bootstrap / desktop preflight / React 已接上"
+        : dailyCommandHealthOk
+          ? "只读入口已接上；确认按钮等待 P0 四段证据"
+          : "等待四段本地联通",
+      tone: dailyCommandHealthOk ? "good" : "warn"
     },
     {
       label: "当前标的",

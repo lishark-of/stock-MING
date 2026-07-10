@@ -414,6 +414,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinaryHomeAppVisibleNowItems", source_before_audit)
         self.assertIn("打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果", source_before_audit)
         self.assertIn("打开 app 能看到本地已接上、股票确认入口和等待结果状态", source_before_audit)
+        self.assertIn("打开 app 能看到只读入口已接上", source_before_audit)
+        self.assertIn("确认按钮仍等待 P0 四段证据", source_before_audit)
         self.assertIn("打开 app 能看到本地连接待恢复", source_before_audit)
         for label in (
             'label: "打开可见"',
