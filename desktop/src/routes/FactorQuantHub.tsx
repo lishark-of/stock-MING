@@ -2025,7 +2025,7 @@ export default function FactorQuantHub() {
               <a href="#factor-score" title="跳到支持/压制摘要；只读 Factor cache" aria-label="open support suppress from stock quant visible now">支持/压制</a>
               <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱；只读本地次日图谱数据" aria-label="open next chart from stock quant visible now">次日图谱</a>
               <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认按钮才创建任务" aria-label="open candidate confirm from stock quant visible now">确认或换一只票</a>
-              <a href="#factor-provider-small-pool-gate" title="跳到 LTG-03 安全闸门；只读本地 scope 和 execution request" aria-label="open ltg03 provider gate from stock quant visible now">LTG-03 安全闸门</a>
+              <a href="#stock-quant-provider-evidence-details" title="跳到真实验证证据区；只读本地 scope 和 execution request" aria-label="open provider evidence details from stock quant visible now">真实验证边界</a>
             </div>
           </div>
           <div aria-label="stock quant compact vertical slice status">
@@ -2048,19 +2048,23 @@ export default function FactorQuantHub() {
             </details>
             <p className="risk-note">数据卡只整理确认后已有的本地 cache / call_ledger / packet；不会调用 Tushare、DeepSeek、GitHub，不交易、不改交易策略。</p>
           </div>
-          <div aria-label="stock quant provider validation ordinary quick read">
-            <h3>真实验证速读</h3>
-            <p className="ordinary-status-note" aria-label="stock quant provider validation quick read sentence" aria-live="polite">{ordinaryFactorTestProviderCurrentBlockerSentence}</p>
-            <MetricGrid items={ordinaryFactorTestProviderQuickReadItems} />
-          </div>
-          <div aria-label="stock quant mode layered live light evidence boundary">
-            <h3>运行模式分层</h3>
-            <p className="ordinary-status-note">cache/render、按钮任务、真实数据、模型解释、生产验收和交易隔离分开显示；live_light 也只能是可审计 task，不是页面渲染外联。</p>
-            <MetricGrid items={ordinaryQuantModeLayeredLiveLightItems} />
-          </div>
           <div className="actions" aria-label="stock quant projection primary next action">
             <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
           </div>
+          <details id="stock-quant-provider-evidence-details" className="developer-audit-details" aria-label="stock quant provider evidence details">
+            <summary>真实验证和运行边界</summary>
+            <p className="risk-note">真实 provider 验证、运行模式分层和 LTG-03 证据默认收起；普通投研先看上方结论、数据卡和下一步。</p>
+            <div aria-label="stock quant provider validation ordinary quick read">
+              <h3>真实验证速读</h3>
+              <p className="ordinary-status-note" aria-label="stock quant provider validation quick read sentence" aria-live="polite">{ordinaryFactorTestProviderCurrentBlockerSentence}</p>
+              <MetricGrid items={ordinaryFactorTestProviderQuickReadItems} />
+            </div>
+            <div aria-label="stock quant mode layered live light evidence boundary">
+              <h3>运行模式分层</h3>
+              <p className="ordinary-status-note">cache/render、按钮任务、真实数据、模型解释、生产验收和交易隔离分开显示；live_light 也只能是可审计 task，不是页面渲染外联。</p>
+              <MetricGrid items={ordinaryQuantModeLayeredLiveLightItems} />
+            </div>
+          </details>
         </div>
         <div aria-label="stock quant p3 one screen explanation">
           <h3>P3 一屏结论</h3>
@@ -2107,52 +2111,56 @@ export default function FactorQuantHub() {
           </div>
           <p className="risk-note">这条行动条只把下一票雷达确认、P2 三面和 P3 可读结果在量化页串成同一条本地回放；缺口只提示待回放，不补调数据源或模型。</p>
         </div>
-        <div aria-label="stock quant ordinary factor test provider small pool status">
-          <h3>LTG-03 真实小池验收</h3>
-          <p className="ordinary-status-note">普通页先说明真实小池验收是否已经运行、下一步是否需要授权、哪些证据仍缺；当前只读本地 cache 和历史 ticket，不从页面渲染或查看结果创建 provider 任务。</p>
-          <p className="ordinary-status-note" aria-label="stock quant factor small pool degraded sentence" aria-live="polite">{ordinaryFactorTestProviderCurrentBlockerSentence}</p>
-          <MetricGrid items={ordinaryFactorTestProviderSmallPoolItems} />
-          <p className="risk-note">{ordinaryFactorTestProviderBoundary}；本地 light observations、本地 scope 或执行请求都不能当作生产级 Factor Test 验收完成。</p>
-        </div>
-        <div aria-label="stock quant ordinary factor small pool evidence checklist">
-          <h3>小池样本证据怎么看</h3>
-          <p className="ordinary-status-note" aria-label="stock quant factor small pool evidence sentence" aria-live="polite">{ordinaryFactorTestSmallPoolEvidenceSentence}</p>
-          <MetricGrid items={ordinaryFactorTestSmallPoolEvidenceItems} />
-          <div className="actions" aria-label="stock quant factor small pool evidence local actions">
-            <a href="#factor-provider-small-pool-gate" title="跳到授权闸门；只读本地 scope / execution request" aria-label="open factor provider gate from small pool evidence">看授权闸门</a>
-            <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读查看数据和外联边界" aria-label="open data capability from small pool evidence">数据能力</a>
-            <a href="#tasks" title="切换到任务目录；只读查看本地 task / receipt 状态" aria-label="open tasks from small pool evidence">任务目录</a>
-            <a href="#factor-score" title="回到支持/压制摘要；只读 Factor cache" aria-label="open factor score from small pool evidence">支持/压制</a>
+        <details id="stock-quant-ltg03-evidence-details" className="developer-audit-details" aria-label="stock quant factor provider evidence details">
+          <summary>LTG-03 小池验收证据</summary>
+          <p className="risk-note">小池验收、授权闸门和生产阶段清单默认收起；它们保留为后台路线图证据，不挡住普通用户的量化结果阅读。</p>
+          <div aria-label="stock quant ordinary factor test provider small pool status">
+            <h3>LTG-03 真实小池验收</h3>
+            <p className="ordinary-status-note">普通页先说明真实小池验收是否已经运行、下一步是否需要授权、哪些证据仍缺；当前只读本地 cache 和历史 ticket，不从页面渲染或查看结果创建 provider 任务。</p>
+            <p className="ordinary-status-note" aria-label="stock quant factor small pool degraded sentence" aria-live="polite">{ordinaryFactorTestProviderCurrentBlockerSentence}</p>
+            <MetricGrid items={ordinaryFactorTestProviderSmallPoolItems} />
+            <p className="risk-note">{ordinaryFactorTestProviderBoundary}；本地 light observations、本地 scope 或执行请求都不能当作生产级 Factor Test 验收完成。</p>
           </div>
-          <details className="developer-audit-details" aria-label="stock quant factor small pool evidence rows">
-            <summary>查看小池证据读法</summary>
-            <p className="risk-note">这些行把样本、滚动、成本、中性化、偏差和推广复核拆成普通检查项；只读本地 cache，不创建 provider task、不调用 Tushare/DeepSeek/GitHub。</p>
-            <DataLineageTable rows={ordinaryFactorTestSmallPoolEvidenceRows} />
-          </details>
-          <p className="risk-note">这张卡只帮助用户判断授权后要看什么；授权前不会提交 provider task，不会把 local ticket / dry-run / execution request 当作 production complete。</p>
-        </div>
-        <div id="factor-provider-small-pool-gate" aria-label="stock quant ordinary factor provider next gate">
-          <h3>LTG-03 下一步安全闸门</h3>
-          <p className="ordinary-status-note">先按这张闸门表确认：本地 scope、execution request 和 acceptance gate 都只是 future provider-backed 小池任务的前置证据；真实 provider 小池样本必须另行授权。</p>
-          <MetricGrid items={ordinaryFactorTestProviderNextGateItems} />
-          <DataLineageTable rows={ordinaryFactorTestProviderNextGateRows} />
-          <div className="actions" aria-label="stock quant ordinary factor provider next gate actions">
-            <a href="#tasks" title="切换到任务目录；只读查看本地 task / receipt 状态" aria-label="open task catalog from factor provider gate">任务目录</a>
-            <a href="#audit" title="切换到调用审计；只读查看 call ledger 和外联边界" aria-label="open audit from factor provider gate">调用审计</a>
-            <a href="#factor-score" title="回到支持/压制摘要；只读 Factor cache" aria-label="return factor score from provider gate">支持/压制</a>
+          <div aria-label="stock quant ordinary factor small pool evidence checklist">
+            <h3>小池样本证据怎么看</h3>
+            <p className="ordinary-status-note" aria-label="stock quant factor small pool evidence sentence" aria-live="polite">{ordinaryFactorTestSmallPoolEvidenceSentence}</p>
+            <MetricGrid items={ordinaryFactorTestSmallPoolEvidenceItems} />
+            <div className="actions" aria-label="stock quant factor small pool evidence local actions">
+              <a href="#factor-provider-small-pool-gate" title="跳到授权闸门；只读本地 scope / execution request" aria-label="open factor provider gate from small pool evidence">看授权闸门</a>
+              <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读查看数据和外联边界" aria-label="open data capability from small pool evidence">数据能力</a>
+              <a href="#tasks" title="切换到任务目录；只读查看本地 task / receipt 状态" aria-label="open tasks from small pool evidence">任务目录</a>
+              <a href="#factor-score" title="回到支持/压制摘要；只读 Factor cache" aria-label="open factor score from small pool evidence">支持/压制</a>
+            </div>
+            <details className="developer-audit-details" aria-label="stock quant factor small pool evidence rows">
+              <summary>查看小池证据读法</summary>
+              <p className="risk-note">这些行把样本、滚动、成本、中性化、偏差和推广复核拆成普通检查项；只读本地 cache，不创建 provider task、不调用 Tushare/DeepSeek/GitHub。</p>
+              <DataLineageTable rows={ordinaryFactorTestSmallPoolEvidenceRows} />
+            </details>
+            <p className="risk-note">这张卡只帮助用户判断授权后要看什么；授权前不会提交 provider task，不会把 local ticket / dry-run / execution request 当作 production complete。</p>
           </div>
-          <p className="risk-note">这张闸门只读 Factor cache 和本地 ticket；不触发小池预检、不创建 execution request、不提交 provider task、不调用 Tushare/DeepSeek/GitHub、不真实交易。</p>
-        </div>
-        <div aria-label="stock quant ordinary factor test production stage scope">
-          <h3>LTG-03 生产阶段清单</h3>
-          <p className="ordinary-status-note">普通页直接显示 factor_test_production_stage_scope_manifest：本地可见阶段、provider 直接证据和仍待补的生产阶段分开看；清单只读 cache，不创建 provider 任务。</p>
-          <MetricGrid items={ordinaryFactorTestProductionStageItems} />
-          <details className="developer-audit-details" aria-label="stock quant ordinary factor test production stage rows">
-            <summary>LTG-03 生产阶段明细</summary>
-            <p className="risk-note">这些行只展示 local surface 与 provider direct evidence 的缺口；不调用 Tushare/DeepSeek/GitHub、不计算生产 IC/Rank IC/ICIR、不进入 strategy action。</p>
-            <DataLineageTable rows={factorTestProductionStageScopeRows} />
-          </details>
-        </div>
+          <div id="factor-provider-small-pool-gate" aria-label="stock quant ordinary factor provider next gate">
+            <h3>LTG-03 下一步安全闸门</h3>
+            <p className="ordinary-status-note">先按这张闸门表确认：本地 scope、execution request 和 acceptance gate 都只是 future provider-backed 小池任务的前置证据；真实 provider 小池样本必须另行授权。</p>
+            <MetricGrid items={ordinaryFactorTestProviderNextGateItems} />
+            <DataLineageTable rows={ordinaryFactorTestProviderNextGateRows} />
+            <div className="actions" aria-label="stock quant ordinary factor provider next gate actions">
+              <a href="#tasks" title="切换到任务目录；只读查看本地 task / receipt 状态" aria-label="open task catalog from factor provider gate">任务目录</a>
+              <a href="#audit" title="切换到调用审计；只读查看 call ledger 和外联边界" aria-label="open audit from factor provider gate">调用审计</a>
+              <a href="#factor-score" title="回到支持/压制摘要；只读 Factor cache" aria-label="return factor score from provider gate">支持/压制</a>
+            </div>
+            <p className="risk-note">这张闸门只读 Factor cache 和本地 ticket；不触发小池预检、不创建 execution request、不提交 provider task、不调用 Tushare/DeepSeek/GitHub、不真实交易。</p>
+          </div>
+          <div aria-label="stock quant ordinary factor test production stage scope">
+            <h3>LTG-03 生产阶段清单</h3>
+            <p className="ordinary-status-note">普通页直接显示 factor_test_production_stage_scope_manifest：本地可见阶段、provider 直接证据和仍待补的生产阶段分开看；清单只读 cache，不创建 provider 任务。</p>
+            <MetricGrid items={ordinaryFactorTestProductionStageItems} />
+            <details className="developer-audit-details" aria-label="stock quant ordinary factor test production stage rows">
+              <summary>LTG-03 生产阶段明细</summary>
+              <p className="risk-note">这些行只展示 local surface 与 provider direct evidence 的缺口；不调用 Tushare/DeepSeek/GitHub、不计算生产 IC/Rank IC/ICIR、不进入 strategy action。</p>
+              <DataLineageTable rows={factorTestProductionStageScopeRows} />
+            </details>
+          </div>
+        </details>
         <details className="developer-audit-details" aria-label="stock quant ordinary summary extra details">
           <summary>更多量化摘要字段</summary>
           <p className="risk-note">普通首屏只保留当前标的、结论、下一步、数据链、图谱/解释和安全边界；P1/P2/P3 完整字段、运行模式、回放位置、缺口和补证方式默认收起。</p>
