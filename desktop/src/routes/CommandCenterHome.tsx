@@ -2157,6 +2157,16 @@ export default function CommandCenterHome() {
       label: "最近结果",
       value: ordinaryHomeRecentResult,
       tone: dailyCommandP3OneGlanceReadable ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
+    },
+    {
+      label: "运行模式",
+      value: dailyCommandRuntimeModeLabel,
+      tone: dailyCommandRuntimeModeLabel === "未知运行模式" ? "warn" : "good"
+    },
+    {
+      label: "现在做什么",
+      value: ordinaryHomePlainConclusionNext,
+      tone: dailyCommandP0LocalReadinessReady || dailyCommandP3OneGlanceReadable ? "good" : "warn"
     }
   ];
   const ordinaryHomeAppVisibleNowSentence = dailyCommandP3OneGlanceReadable

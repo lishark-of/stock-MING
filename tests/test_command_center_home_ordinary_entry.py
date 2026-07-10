@@ -210,6 +210,17 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("mock、matrix、sanitizer、local receipt 不能关闭 LTG", source)
         self.assertIn("P0-P5 是使用者可用化 checkpoint；14 LTG strict closeout 仍需 current-head direct evidence", source)
         self.assertIn("普通路径已经在上方 P1 确认、P2 三面和 P3 可解释结果", source)
+        ordinary_status_start = source.index("const ordinaryHomeStatusItems")
+        ordinary_status_end = source.index("const ordinaryHomeAppVisibleNowSentence", ordinary_status_start)
+        ordinary_status_slice = source[ordinary_status_start:ordinary_status_end]
+        self.assertIn('label: "运行模式"', ordinary_status_slice)
+        self.assertIn("dailyCommandRuntimeModeLabel", ordinary_status_slice)
+        self.assertIn('label: "现在做什么"', ordinary_status_slice)
+        self.assertIn("ordinaryHomePlainConclusionNext", ordinary_status_slice)
+        first_card_start = source.index('title="今日可用"')
+        first_card_end = source.index('aria-label="ordinary home app visible now summary"', first_card_start)
+        first_card_slice = source[first_card_start:first_card_end]
+        self.assertIn("MetricGrid items={ordinaryHomeStatusItems}", first_card_slice)
         snapshot_start = source.index('aria-label="daily command current research snapshot"')
         snapshot_end = source.index("DataLineageTable rows={dailyCommandUsableShortestPathPrimaryRows}", snapshot_start)
         snapshot_slice = source[snapshot_start:snapshot_end]
