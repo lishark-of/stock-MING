@@ -239,7 +239,7 @@ export default function NextSessionMap() {
   const nextSessionLastResultLabel = chartSummary.has_drawable_data === true
     ? `最近结果：${String(chartSummary.scenario_series_count ?? 0)} 条路径、${String(chartSummary.reference_line_count ?? 0)} 条参考线、${String(chartSummary.operation_zone_count ?? 0)} 个操作区；${latestCloseAnchor.price ? `最新收盘 ${String(latestCloseAnchor.price)}` : "等待最新收盘锚点"}`
     : "暂无最近结果；先查看缓存状态或手动生成任务。";
-  const nextSessionTaskBoundary = "GET cache 只读；生成或审查都必须走按钮门控 POST task；React 渲染不直连 Tushare 或 DeepSeek，不改 operation_zones";
+  const nextSessionTaskBoundary = "GET cache 只读；生成或审查都必须走按钮门控 POST task；React 渲染不直连 Tushare 或 DeepSeek，不改操作区";
   const nextSessionResearchOnlyLabel = "次日图谱只解释缓存场景；不是买卖指令，不真实交易、不下单、不改 strategy action";
   const nextSessionChartReviewOrder = chartSummary.has_drawable_data === true
     ? "先看图表路径、参考线和操作区，再看缺少证据；工程审计在开发详情"
@@ -252,8 +252,8 @@ export default function NextSessionMap() {
   const nextSessionReplayPath =
     "回放路径：下一票雷达确认代码 -> 股票量化推演支持/压制 -> 次日图谱路径/参考线/操作区";
   const nextSessionReplayDestinationBoundary =
-    "回放入口只切换本地模块路由（#candidates/... 直达确认输入区，#factor 到量化推演）；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones";
-  const nextSessionOperationZoneBoundary = "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
+    "回放入口只切换本地模块路由（#candidates/... 直达确认输入区，#factor 到量化推演）；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改操作区";
+  const nextSessionOperationZoneBoundary = "操作区只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
   const nextSessionPacketHandoffLabel = packetCandidateRadarP3HandoffReady
     ? `本地次日图谱数据已接上 ${packetCandidateRadarP3HandoffSymbol || "当前标的"}`
     : "本地次日图谱数据等待 CandidateRadar P3 结果";
@@ -432,7 +432,7 @@ export default function NextSessionMap() {
     packetCandidateRadarP3HandoffBoundary ||
       candidateRadarCache.ordinary_result_boundary ||
       candidateRadarInterpretation.ordinary_result_boundary ||
-      "次日图谱只读 CandidateRadar cache / ledger / packet 的可读结论；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。"
+      "次日图谱只读 CandidateRadar cache / ledger / packet 的可读结论；不创建 task、不调用 Tushare/DeepSeek、不改操作区或 strategy action。"
   );
   const candidateRadarDeepSeekStateRaw = String(
     packetCandidateRadarP3HandoffDeepSeekState ||
@@ -499,7 +499,7 @@ export default function NextSessionMap() {
         ? "degraded-light: 暂无本地 cache，只显示等待和回流入口"
         : "cache-check: 等待可绘制图谱，先看本地 cache 状态";
   const nextSessionLiveLightNextStep = chartSummary.has_drawable_data === true
-    ? "看图表路径、参考线和 operation_zones"
+    ? "看图表路径、参考线和操作区"
     : candidateRadarReadableResultReady
       ? "确认上游结论和 P2 三面后，再手动生成完整图谱"
       : "回下一票雷达输入股票代码并点击确认";
@@ -531,7 +531,7 @@ export default function NextSessionMap() {
     },
     {
       label: "动作层",
-      value: "仅供研究；不下单、不改 operation_zones 或 strategy action",
+      value: "仅供研究；不下单、不改操作区或 strategy action",
       tone: "good"
     },
     {
@@ -555,7 +555,7 @@ export default function NextSessionMap() {
     : "缺 Tushare call_ledger；等待确认任务、本地阻断或后续授权回写。";
   const nextSessionTushareDataCardNext = nextSessionTushareDataCardReady
     ? chartSummary.has_drawable_data === true
-      ? "先看图表路径、参考线和 operation_zones。"
+      ? "先看图表路径、参考线和操作区。"
       : "先看上游 Tushare-first 结论，再手动生成完整次日图谱。"
     : "回下一票雷达确认输入区，输入股票代码并点击确认按钮。";
   const nextSessionDataCapabilityReviewLabel = nextSessionTushareDataCardReady
@@ -675,7 +675,7 @@ export default function NextSessionMap() {
     },
     {
       label: "安全边界",
-      value: "只读回放；生成必须手动按钮；不调用 DeepSeek、不交易、不改 operation_zones",
+      value: "只读回放；生成必须手动按钮；不调用 DeepSeek、不交易、不改操作区",
       tone: "good"
     }
   ];
@@ -755,7 +755,7 @@ export default function NextSessionMap() {
     }
   ];
   const nextSessionAppVisibleNowSentence = chartSummary.has_drawable_data === true
-    ? `打开 app 能看到 ${candidateRadarConfirmedSymbolLabel} 的完整次日图谱：路径、参考线、operation_zones 和证据缺口都在首屏可读。`
+    ? `打开 app 能看到 ${candidateRadarConfirmedSymbolLabel} 的完整次日图谱：路径、参考线、操作区和证据缺口都在首屏可读。`
     : candidateRadarReadableResultReady
       ? `打开 app 能看到 ${candidateRadarConfirmedSymbolLabel} 的上游搜票结论、Tushare-first 数据卡和生成完整图谱入口。`
       : "打开 app 能看到降级等待态：先回下一票雷达输入股票并点击确认，本页只保留本地回流入口。";
@@ -773,7 +773,7 @@ export default function NextSessionMap() {
     {
       label: "先读哪里",
       value: chartSummary.has_drawable_data === true
-        ? "完整图谱区域：路径、参考线、operation_zones"
+        ? "完整图谱区域：路径、参考线、操作区"
         : candidateRadarReadableResultReady
           ? "上游结论、Tushare 数据卡、生成完整图谱入口"
           : "下一票雷达确认输入区",
@@ -801,12 +801,12 @@ export default function NextSessionMap() {
     },
     {
       label: "安全边界",
-      value: "页面打开和本地链接只读；不自动创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不改 operation_zones",
+      value: "页面打开和本地链接只读；不自动创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不改操作区",
       tone: "good"
     }
   ];
   const nextSessionAppFirstResearchReadSentence = chartSummary.has_drawable_data === true
-    ? `${candidateRadarConfirmedSymbol || "当前标的"} 次日图谱已可读：先看路径、参考线和 operation_zones，再看缺口。`
+    ? `${candidateRadarConfirmedSymbol || "当前标的"} 次日图谱已可读：先看路径、参考线和操作区，再看缺口。`
     : candidateRadarReadableResultReady
       ? `${candidateRadarConfirmedSymbol || "当前标的"} 上游结论已可读；完整图谱仍是 degraded 等待，需要手动生成或等待本地 cache。`
       : "次日图谱当前是 degraded 等待态：先回下一票雷达确认股票，本页不会自动补调数据。";
@@ -819,7 +819,7 @@ export default function NextSessionMap() {
     {
       label: "读图顺序",
       value: chartSummary.has_drawable_data === true
-        ? "路径 -> 参考线 -> operation_zones -> 缺口"
+        ? "路径 -> 参考线 -> 操作区 -> 缺口"
         : candidateRadarReadableResultReady
           ? "上游结论 -> 生成完整图谱入口 -> 支持/压制"
           : "下一票雷达确认 -> 本地缓存回放 -> 图谱复核",
@@ -842,7 +842,7 @@ export default function NextSessionMap() {
     },
     {
       label: "研究边界",
-      value: "图谱和 operation_zones 只做条件复核；查看页面和链接跳转不创建任务、不外联、不交易、不改策略",
+      value: "图谱和操作区只做条件复核；查看页面和链接跳转不创建任务、不外联、不交易、不改策略",
       tone: "good"
     }
   ];
@@ -981,7 +981,7 @@ export default function NextSessionMap() {
     {
       label: "操作区",
       value: chartSummary.has_drawable_data === true
-        ? `operation_zones=${String(chartSummary.operation_zone_count ?? 0)}；${nextSessionOperationZoneBoundary}`
+        ? `操作区 ${String(chartSummary.operation_zone_count ?? 0)} 个；${nextSessionOperationZoneBoundary}`
         : `等待完整图谱；${nextSessionOperationZoneBoundary}`,
       tone: Number(chartSummary.operation_zone_count ?? 0) > 0 ? "good" : chartSummary.has_drawable_data === true ? "warn" : "neutral"
     },
@@ -992,7 +992,7 @@ export default function NextSessionMap() {
     },
     {
       label: "安全边界",
-      value: "只读回放；生成必须手动按钮；DeepSeek 单独补；不交易、不改 operation_zones",
+      value: "只读回放；生成必须手动按钮；DeepSeek 单独补；不交易、不改操作区",
       tone: "good"
     }
   ];
@@ -1018,7 +1018,7 @@ export default function NextSessionMap() {
     },
     {
       label: "读取边界",
-      value: "图谱页只读 CandidateRadar cache；不创建第二个 task、不补调 Tushare/DeepSeek、不改 operation_zones",
+      value: "图谱页只读 CandidateRadar cache；不创建第二个 task、不补调 Tushare/DeepSeek、不改操作区",
       tone: "good"
     }
   ];
@@ -1085,8 +1085,8 @@ export default function NextSessionMap() {
     {
       交接段: "4. 操作区",
       当前状态: nextSessionOperationZoneBoundary,
-      用户下一步: "把 operation_zones 当条件区间和复核提示，继续人工判断。",
-      边界: "operation_zones 不是买卖指令，不下单，不写 strategy action。"
+      用户下一步: "把操作区当条件区间和复核提示，继续人工判断。",
+      边界: "操作区不是买卖指令，不下单，不写 strategy action。"
     }
   ];
   const nextSessionP3OneMinuteReadRows = [
@@ -1107,9 +1107,9 @@ export default function NextSessionMap() {
     {
       读图顺序: "3. 操作区",
       当前状态: Number(chartSummary.operation_zone_count ?? 0) > 0
-        ? `operation_zones ${String(chartSummary.operation_zone_count ?? 0)} 个；只表示条件区间和复核提示`
-        : "等待 operation_zones cache；不能把空操作区解释成无风险",
-      用户下一步: "把 operation_zones 当条件区间复核。",
+        ? `操作区 ${String(chartSummary.operation_zone_count ?? 0)} 个；只表示条件区间和复核提示`
+        : "等待操作区 cache；不能把空操作区解释成无风险",
+      用户下一步: "把操作区当条件区间复核。",
       证据: "chart_payload.operation_zones",
       边界: nextSessionOperationZoneBoundary
     },
@@ -1162,7 +1162,7 @@ export default function NextSessionMap() {
           行动: "4. 结果",
           当前状态: nextSessionLastResultLabel,
           用户下一步: nextSessionChartReviewOrder,
-          入口: "图表路径 / 参考线 / operation_zones",
+          入口: "图表路径 / 参考线 / 操作区",
           边界: nextSessionResearchOnlyLabel
         }
       ];
@@ -1196,7 +1196,7 @@ export default function NextSessionMap() {
           确认结果: "P3 回放结果",
           当前状态: nextSessionLastResultLabel,
           用户下一步: nextSessionChartReviewOrder,
-          入口: "次日图谱路径 / 参考线 / operation_zones",
+          入口: "次日图谱路径 / 参考线 / 操作区",
           边界: nextSessionResearchOnlyLabel
         }
       ];
@@ -1210,22 +1210,22 @@ export default function NextSessionMap() {
     {
       速读项: "1. 先读路径",
       当前状态: chartSummary.has_drawable_data === true ? nextSessionLastResultLabel : "暂无可绘制路径；先看缓存状态或手动生成任务",
-      用户下一步: "先看图表路径和参考线，再看 operation_zones 对哪些条件敏感。",
+      用户下一步: "先看图表路径和参考线，再看操作区对哪些条件敏感。",
       边界: "只读 chart cache；不重算价格、不调用 Tushare/DeepSeek、不写 cache。"
     },
     {
       速读项: "2. 再读操作区",
       当前状态: Number(chartSummary.operation_zone_count ?? 0) > 0
-        ? `operation_zones ${String(chartSummary.operation_zone_count ?? 0)} 个；只表示条件区间和复核提示`
-        : "等待 operation_zones cache；不能把空操作区解释成无风险",
+        ? `操作区 ${String(chartSummary.operation_zone_count ?? 0)} 个；只表示条件区间和复核提示`
+        : "等待操作区 cache；不能把空操作区解释成无风险",
       用户下一步: "把操作区当作人工复核条件，回到证据和风险来源确认。",
       边界: nextSessionOperationZoneBoundary
     },
     {
       速读项: "3. 动作隔离",
-      当前状态: nextSessionOrdinaryReplayBoundaryBlocked ? "边界异常：先停在审计检查" : "边界正常：前端只读，不改 action 或 operation_zones",
+      当前状态: nextSessionOrdinaryReplayBoundaryBlocked ? "边界异常：先停在审计检查" : "边界正常：前端只读，不改 action 或操作区",
       用户下一步: nextSessionOrdinaryReplayBoundaryBlocked ? "不要继续解释图谱；先看开发审计里的边界异常" : "继续按缺口和仅供研究边界复核。",
-      边界: "次日图谱不下单、不写 strategy action；DeepSeek 也不能覆盖 operation_zones。"
+      边界: "次日图谱不下单、不写 strategy action；DeepSeek 也不能覆盖操作区。"
     }
   ];
   const nextSessionOperationZoneQuickReadRows = packetOrdinaryConditionQuickReadRows.length
@@ -1251,11 +1251,11 @@ export default function NextSessionMap() {
     {
       行动: "3. 读操作区",
       当前状态: chartSummary.has_drawable_data === true
-        ? `operation_zones ${String(chartSummary.operation_zone_count ?? 0)} 个`
-        : "等待 operation_zones cache",
+        ? `操作区 ${String(chartSummary.operation_zone_count ?? 0)} 个`
+        : "等待操作区 cache",
       用户下一步: "把操作区当条件区间和复核提示，回到风险/证据源确认",
       证据: nextSessionOperationZoneBoundary,
-      边界: "不改 operation_zones、不下单、不把区域当交易指令。"
+      边界: "不改操作区、不下单、不把区域当交易指令。"
     },
     {
       行动: "4. 读缺口并回流",
@@ -1268,9 +1268,9 @@ export default function NextSessionMap() {
   const ordinaryDeepSeekGovernanceRows = [
     {
       治理段: "数据源边界",
-      当前状态: "次日图谱只读取 chart cache、reference_lines 和 operation_zones",
+      当前状态: "次日图谱只读取 chart cache、reference_lines 和操作区",
       用户下一步: "先按图谱路径、参考线和操作区复核基础结果",
-      边界: "DeepSeek 不作为数据源，不覆盖图谱路径、价格、参考线或 operation_zones。"
+      边界: "DeepSeek 不作为数据源，不覆盖图谱路径、价格、参考线或操作区。"
     },
     {
       治理段: "模型状态",
@@ -1312,9 +1312,9 @@ export default function NextSessionMap() {
       复核项: "操作区",
       看什么: chartSummary.has_drawable_data === true
         ? `操作区 ${String(chartSummary.operation_zone_count ?? 0)} 个；只看条件区间、触发条件和风险提示`
-        : "等待 operation_zones cache",
+        : "等待操作区 cache",
       证据: nextSessionOperationZoneBoundary,
-      边界: "不改 operation_zones、不下单、不写 strategy action"
+      边界: "不改操作区、不下单、不写 strategy action"
     },
     {
       复核项: "缺少证据",
@@ -1338,7 +1338,7 @@ export default function NextSessionMap() {
     { boundary: "GET /api/next-session/cache", value: "cache_only", note: "只读缓存，不触发 Tushare、DeepSeek 或 GitHub。" },
     { boundary: "POST /api/next-session/generate", value: "button_gated_task", note: "手动任务才可能生成/刷新图谱。" },
     { boundary: "does_not_modify_action", value: String(packet.does_not_modify_action !== false), note: "前端只读，不改 strategy action。" },
-    { boundary: "does_not_modify_operation_zones", value: String(packet.does_not_modify_operation_zones !== false), note: "前端只读，不改 operation_zones。" },
+    { boundary: "does_not_modify_operation_zones", value: String(packet.does_not_modify_operation_zones !== false), note: "前端只读，不改操作区。" },
     { boundary: "is_exact_next_session_packet", value: String(chartPayload?.is_exact_next_session_packet === true), note: "非精确 packet 时只显示 legacy/cache 投影。" },
     { boundary: "uses_real_daily_close", value: String(chartPayload?.uses_real_daily_close === true), note: "未验证真实 close 时必须展示风险提示。" }
   ];
@@ -1382,7 +1382,7 @@ export default function NextSessionMap() {
     {
       label: "再看什么",
       value: Number(chartSummary.operation_zone_count ?? 0) > 0
-        ? `operation_zones ${String(chartSummary.operation_zone_count ?? 0)} 个`
+        ? `操作区 ${String(chartSummary.operation_zone_count ?? 0)} 个`
         : "操作区等待缓存",
       tone: Number(chartSummary.operation_zone_count ?? 0) > 0 ? "good" : "warn"
     },
@@ -1402,8 +1402,8 @@ export default function NextSessionMap() {
     {
       复核顺序: "2. 参考线和操作区",
       看什么: Number(chartSummary.operation_zone_count ?? 0) > 0
-        ? `operation_zones ${String(chartSummary.operation_zone_count ?? 0)} 个；只表示条件区间和复核提示`
-        : "等待 operation_zones cache；不能把空操作区解释成无风险",
+        ? `操作区 ${String(chartSummary.operation_zone_count ?? 0)} 个；只表示条件区间和复核提示`
+        : "等待操作区 cache；不能把空操作区解释成无风险",
       用户下一步: "把操作区当条件区间，回到证据来源和缺口确认。",
       入口: "#next-session-chart",
       边界: nextSessionOperationZoneBoundary
@@ -1420,7 +1420,7 @@ export default function NextSessionMap() {
       看什么: nextSessionResearchOnlyLabel,
       用户下一步: "人工复核条件和证据，不把图谱当买入、卖出、下单或加仓指令。",
       入口: "本页普通摘要",
-      边界: "不真实交易、不下单、不改 strategy action 或 operation_zones。"
+      边界: "不真实交易、不下单、不改 strategy action 或操作区。"
     }
   ];
   const nextSessionEvidenceFactoryItems: MetricItem[] = [
@@ -1465,7 +1465,7 @@ export default function NextSessionMap() {
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from next session research read">支持/压制</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from next session research read">确认或换一只票</a>
         </div>
-        <p className="risk-note">这张首屏只回答用户打开次日图谱能先读什么：路径、参考线、operation_zones、缺口和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek/GitHub、不真实交易。</p>
+        <p className="risk-note">这张首屏只回答用户打开次日图谱能先读什么：路径、参考线、操作区、缺口和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek/GitHub、不真实交易。</p>
       </div>
       <PageStateBanner
         loading={loading}
@@ -1489,7 +1489,7 @@ export default function NextSessionMap() {
           <button onClick={refreshCache} title={nextSessionCacheButtonLabel} aria-label="refresh next session cache from first screen">查看缓存</button>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session first screen">换标的</a>
         </div>
-        <p className="risk-note">首屏只汇总当前股票、最近结果、下一步、证据缺口和 operation_zones 边界；查看缓存只读本地 GET cache，链接只切换本地锚点，不创建 task、不调用 Tushare/DeepSeek、不下单。</p>
+        <p className="risk-note">首屏只汇总当前股票、最近结果、下一步、证据缺口和操作区边界；查看缓存只读本地 GET cache，链接只切换本地锚点，不创建 task、不调用 Tushare/DeepSeek、不下单。</p>
       </div>
       <div aria-label="next session post confirm one minute chart read">
         <h3>确认后一眼读图</h3>
@@ -1512,7 +1512,7 @@ export default function NextSessionMap() {
           <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核 Tushare 数据凭证、权限、空窗口和本地结果包缺口" aria-label="open data capability from next session visible now summary">数据能力</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from visible now summary">看支持/压制</a>
         </div>
-        <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：股票、图谱状态、来源层、降级原因和下一步入口；普通链接只切换本地页面或锚点，不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不改 operation_zones 或 strategy action。</p>
+        <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：股票、图谱状态、来源层、降级原因和下一步入口；普通链接只切换本地页面或锚点，不创建任务、不调用 Tushare/DeepSeek/GitHub、不交易、不改操作区或 strategy action。</p>
       </div>
       <div aria-label="next session live light evidence layers">
         <h3>运行模式分层</h3>
@@ -1528,11 +1528,11 @@ export default function NextSessionMap() {
           <p className="risk-note">这张明细优先读取 CandidateRadar 的 ordinary_provider_api_rows；旧缓存缺字段时显示轻量接口 fallback，不从次日图谱页补调数据。</p>
           <DataLineageTable rows={nextSessionTushareDataCardRows} />
         </details>
-        <p className="risk-note">确认后数据卡只整理已有 CandidateRadar 缓存、调用账本、结果包和本地 next-session cache；不会创建第二个 task、调用 Tushare、DeepSeek、GitHub，不交易、不改 operation_zones 或 strategy action。</p>
+        <p className="risk-note">确认后数据卡只整理已有 CandidateRadar 缓存、调用账本、结果包和本地 next-session cache；不会创建第二个 task、调用 Tushare、DeepSeek、GitHub，不交易、不改操作区或 strategy action。</p>
       </div>
       <div aria-label="next session ordinary review compass">
         <h3>次日图谱复核顺序</h3>
-        <p className="ordinary-status-note">先看图表路径和参考线，再看 operation_zones 条件区间，最后看缺口和回流入口；这只是研究复核顺序，不是买卖、下单或加仓指令。</p>
+        <p className="ordinary-status-note">先看图表路径和参考线，再看操作区条件，最后看缺口和回流入口；这只是研究复核顺序，不是买卖、下单或加仓指令。</p>
         <MetricGrid items={nextSessionOrdinaryReviewCompassItems} />
         <div className="actions" aria-label="next session ordinary review compass actions">
           <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart from next session review compass">看图表</a>
@@ -1544,7 +1544,7 @@ export default function NextSessionMap() {
           <p className="risk-note">明细只解释本地缓存的读图顺序；不会打开浏览器 QA，不创建 provider/model/worker task，也不证明 LTG-08 production replacement。</p>
           <DataLineageTable rows={nextSessionOrdinaryReviewCompassRows} />
         </details>
-        <p className="risk-note">读图罗盘只切换本地锚点和页面入口；GET cache、React render、普通链接都不调用 Tushare/DeepSeek/GitHub，不真实交易，也不改 operation_zones 或 strategy action。</p>
+        <p className="risk-note">读图罗盘只切换本地锚点和页面入口；GET cache、React render、普通链接都不调用 Tushare/DeepSeek/GitHub，不真实交易，也不改操作区或 strategy action。</p>
       </div>
       <div aria-label="next session ordinary evidence factory task strip">
         <h3>LTG-08 本地证据按钮</h3>
@@ -1564,7 +1564,7 @@ export default function NextSessionMap() {
         <TaskStatusPanel taskId={streamlitParityTaskId} onSuccess={refreshCache} />
         <TaskLaunchReceipt receipt={productionPromotionReceipt} />
         <TaskStatusPanel taskId={productionPromotionTaskId} onSuccess={refreshCache} />
-        <p className="risk-note">LTG-08 首屏按钮是显式 POST local review task：不打开浏览器、不写 screenshots/report artifact、不调用 Tushare/DeepSeek/GitHub，不真实交易，不改 operation_zones 或 strategy action；local review 仍不是 production replacement complete。</p>
+        <p className="risk-note">LTG-08 首屏按钮是显式 POST local review task：不打开浏览器、不写 screenshots/report artifact、不调用 Tushare/DeepSeek/GitHub，不真实交易，不改操作区或 strategy action；local review 仍不是 production replacement complete。</p>
       </div>
       <MetricGrid
         items={[
@@ -1598,7 +1598,7 @@ export default function NextSessionMap() {
       <div aria-label="next session ordinary usable now strip">
         <h3>现在可读状态</h3>
         <MetricGrid items={nextSessionUsableNowItems} />
-        <p className="risk-note">这条只合成图谱可绘制、P3 结论、P2 三面、操作区和下一步；不创建 task、不调用 Tushare/DeepSeek、不改 operation_zones 或 strategy action。</p>
+        <p className="risk-note">这条只合成图谱可绘制、P3 结论、P2 三面、操作区和下一步；不创建 task、不调用 Tushare/DeepSeek、不改操作区或 strategy action。</p>
       </div>
       <div aria-label="next session local task index progress watch">
         <h3>本地任务进度</h3>
@@ -1608,7 +1608,7 @@ export default function NextSessionMap() {
           <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart area from next session progress watch">图谱区域</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant from next session progress watch">股票量化推演</a>
         </div>
-        <p className="risk-note">边用边看：{nextSessionProgressWatchNext}；这只来自 GET /api/tasks、本地次日图谱数据和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易，也不改 operation_zones。</p>
+        <p className="risk-note">边用边看：{nextSessionProgressWatchNext}；这只来自 GET /api/tasks、本地次日图谱数据和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易，也不改操作区。</p>
       </div>
       <div aria-label="next session ordinary progress checkpoint">
         <h3>当前图谱 checkpoint</h3>
@@ -1618,7 +1618,7 @@ export default function NextSessionMap() {
           <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart area from next session checkpoint">图谱区域</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar confirm input from next session checkpoint">下一票雷达确认</a>
         </div>
-        <p className="risk-note">checkpoint 只汇总 CandidateRadar 上游结论、来源 task、图谱状态和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek，也不改 operation_zones 或 strategy action。</p>
+        <p className="risk-note">checkpoint 只汇总 CandidateRadar 上游结论、来源 task、图谱状态和下一步入口；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek，也不改操作区或 strategy action。</p>
       </div>
       <StateClarityRail
         label="next session ordinary replay status"
@@ -1629,7 +1629,7 @@ export default function NextSessionMap() {
       <div aria-label="next session latest candidate readable result">
         <h3>最近搜票可读结论</h3>
         <p className="ordinary-status-note" aria-label="next session latest candidate readable sentence" aria-live="polite">{nextSessionLatestCandidateReadableSentence}</p>
-        <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_post_confirm_one_glance_items；没有后端一屏结果时，fallback 仍读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows，并优先读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows 作为可读行，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放。本卡不创建 task、不补调数据源或模型，也不改 operation_zones；只读本地 cache。</p>
+        <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_post_confirm_one_glance_items；没有后端一屏结果时，fallback 仍读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows，并优先读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows 作为可读行，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放。本卡不创建 task、不补调数据源或模型，也不改操作区；只读本地 cache。</p>
         <MetricGrid
           items={nextSessionBackendPostConfirmOneGlanceItems.length ? nextSessionBackendPostConfirmOneGlanceItems : [
             { label: "标的", value: candidateRadarConfirmedSymbolLabel, tone: candidateRadarConfirmedSymbol ? "good" : "warn" },
@@ -1652,13 +1652,13 @@ export default function NextSessionMap() {
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant replay from next session readable result">查看支持/压制</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return candidate radar confirm input from next session readable result">回下一票雷达确认</a>
         </div>
-        <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变 operation_zones 或 strategy action。</p>
+        <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变操作区或 strategy action。</p>
         {candidateRadarResultQuickRows.length ? <DataLineageTable rows={candidateRadarResultQuickRows} /> : null}
         {candidateRadarResultHandoffRows.length ? <DataLineageTable rows={candidateRadarResultHandoffRows} /> : null}
       </div>
       <div aria-label="next session p3 one minute read">
         <h3>P3 一分钟读图</h3>
-        <p className="risk-note">普通用户先看这张表：用一分钟确认来源、可读结论、operation_zones、缺口和回流入口；它只读本地次日图谱数据。</p>
+        <p className="risk-note">普通用户先看这张表：用一分钟确认来源、可读结论、操作区、缺口和回流入口；它只读本地次日图谱数据。</p>
         <DataLineageTable rows={nextSessionP3OneMinuteReadRows} />
       </div>
       <div aria-label="next session p3 result handoff quick read">
@@ -1668,7 +1668,7 @@ export default function NextSessionMap() {
       </div>
       <div aria-label="next session ordinary operation zone quick read">
         <h3>操作区解释速读</h3>
-        <p className="risk-note">普通用户先按路径、参考线、操作区的顺序读；operation_zones 只是条件区间和复核提示，不是买卖、下单或 strategy action。优先读取本地缓存里的条件速读；旧缓存缺字段时才使用前端 fallback。</p>
+        <p className="risk-note">普通用户先按路径、参考线、操作区的顺序读；操作区只是条件区间和复核提示，不是买卖、下单或 strategy action。优先读取本地缓存里的条件速读；旧缓存缺字段时才使用前端 fallback。</p>
         <DataLineageTable rows={nextSessionOperationZoneQuickReadRows} />
       </div>
       <details className="developer-audit-details" aria-label="next session upstream readback details">
@@ -1704,7 +1704,7 @@ export default function NextSessionMap() {
       </details>
       <details className="developer-audit-details" aria-label="next session ordinary p5 governance details">
         <summary>P5 解释治理单独补证状态</summary>
-        <p className="risk-note">普通主线先复核 P3 图谱来源、路径、参考线和 operation_zones；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
+        <p className="risk-note">普通主线先复核 P3 图谱来源、路径、参考线和操作区；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
         <div aria-label="next session ordinary deepseek governance">
           <h3>解释治理单独补证状态</h3>
           <p className="risk-note">DeepSeek 解释单独补证；基础图谱先按本地 cache 回放，普通页不展示 prompt/output，也不让模型改写图谱或动作。</p>
@@ -1721,7 +1721,7 @@ export default function NextSessionMap() {
       </div>
       <p className="risk-note">{nextSessionReplayPath}；这些回放入口只做本地模块路由切换，不创建任务、不刷新 Tushare/DeepSeek。</p>
       <p className="risk-note">摘要里的查看缓存只读取本地 GET cache；生成任务只创建按钮门控 POST task，不调用 Tushare 或 DeepSeek，不写交易动作。</p>
-      <p className="risk-note">普通用户先按“图表路径 -&gt; 参考线 -&gt; 操作区 -&gt; 缺少证据”复核；operation_zones 只是条件区间，不是买卖或下单指令。</p>
+      <p className="risk-note">普通用户先按“图表路径 -&gt; 参考线 -&gt; 操作区 -&gt; 缺少证据”复核；操作区只是条件区间，不是买卖或下单指令。</p>
       <details className="ordinary-audit-shortcuts" aria-label="next session ordinary audit shortcuts">
         <summary>高级诊断入口</summary>
         <p className="risk-note">工程审计明细继续默认收起；QA、promotion、cache ledger 和原始 packet 下沉到 <a href="#next-session-audit">开发审计</a>。</p>

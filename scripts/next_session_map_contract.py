@@ -1018,7 +1018,7 @@ def build_contract() -> dict[str, Any]:
             and 'aria-label="next session ordinary review compass actions"' in next_page
             and 'aria-label="next session ordinary review compass rows"' in next_page
             and "次日图谱复核顺序" in next_page
-            and "先看图表路径和参考线，再看 operation_zones 条件区间" in next_page
+            and "先看图表路径和参考线，再看操作区条件" in next_page
             and "条件区间不是买卖或下单指令" in next_page
             and "不证明 LTG-08 production replacement" in next_page
             and next_page.find('aria-label="next session first screen readable decision"')
@@ -1052,7 +1052,7 @@ def build_contract() -> dict[str, Any]:
             and ("post" + "Task(") not in review_compass_slice
             and ("launch" + "Task") not in review_compass_slice
             and 'aria-label="refresh next session cache from first screen"' in next_page
-            and "首屏只汇总当前股票、最近结果、下一步、证据缺口和 operation_zones 边界" in next_page
+            and "首屏只汇总当前股票、最近结果、下一步、证据缺口和操作区边界" in next_page
             and "nextSessionOrdinaryProgressCheckpointItems" in next_page
             and "nextSessionOrdinaryProgressCheckpointAnchor" in next_page
             and 'aria-label="next session ordinary progress checkpoint"' in next_page
