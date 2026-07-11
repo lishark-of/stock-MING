@@ -164,6 +164,12 @@ export default function FactorQuantHub() {
   const candidateRadarWritebackSurfaceRows = toRows(candidateRadarSmallDataWriteback.ordinary_writeback_surface_summary_rows);
   const candidateRadarProviderApiRows = toRows(candidateRadarSmallDataWriteback.ordinary_provider_api_rows);
   const candidateRadarInterpretation = (candidateRadarCache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarProviderModelAcceptance =
+    (candidateRadarCache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarResultLineage =
+    (candidateRadarCache.search_quant_result_lineage as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarResultVersionSummary =
+    (candidateRadarCache.search_quant_result_version_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarPostConfirmOneGlanceRows = toRows(
     candidateRadarCache.search_quant_projection_post_confirm_one_glance_items ??
       candidateRadarInterpretation.ordinary_post_confirm_one_glance_items
@@ -184,7 +190,11 @@ export default function FactorQuantHub() {
       ""
   );
   const candidateRadarLatestTaskId = String(
-    packet.latest_confirmed_task_id ??
+    candidateRadarResultVersionSummary.current_result_task_id ??
+      candidateRadarResultVersionSummary.latest_task_id ??
+      candidateRadarResultLineage.task_id ??
+      candidateRadarProviderModelAcceptance.task_id ??
+      packet.latest_confirmed_task_id ??
       candidateRadarCache.latest_confirmed_task_id ??
       factorPacketCandidateHandoff.source_task_id ??
       candidateRadarCache.search_quant_projection_latest_task_id ??
@@ -345,12 +355,6 @@ export default function FactorQuantHub() {
     (candidateRadarDeepSeekExplanation.payload as Record<string, unknown> | undefined) ?? {};
   const candidateRadarDeepSeekModelLedger =
     (candidateRadarCache.search_quant_deepseek_model_ledger as Record<string, unknown> | undefined) ?? {};
-  const candidateRadarProviderModelAcceptance =
-    (candidateRadarCache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
-  const candidateRadarResultLineage =
-    (candidateRadarCache.search_quant_result_lineage as Record<string, unknown> | undefined) ?? {};
-  const candidateRadarResultVersionSummary =
-    (candidateRadarCache.search_quant_result_version_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarCurrentResultVersion = String(
     candidateRadarResultVersionSummary.current_result_version ??
       candidateRadarResultLineage.result_version ??

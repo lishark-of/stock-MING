@@ -50,6 +50,9 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         margin_matrix = [row for row in payload["qa_matrix"] if row["route"] == "#marginEtf"]
         self.assertEqual(len(margin_matrix), 2)
         self.assertTrue(all(row["route_specific_check"] == "margin_etf_confirmed_data_bridge_visible" for row in margin_matrix))
+        result_chain_matrix = [row for row in payload["qa_matrix"] if row["route"] in {"#candidates", "#factor", "#next"}]
+        self.assertEqual(len(result_chain_matrix), 6)
+        self.assertTrue(all(row["route_specific_check"] == "search_quant_same_result_chain_visible" for row in result_chain_matrix))
 
     def test_runner_plan_is_local_only_and_checks_typing_silence(self):
         result = subprocess.run(
@@ -84,17 +87,26 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertTrue(plan["does_not_execute_trades"])
         self.assertIn("typing into visible inputs does not create a task", plan["checks"])
         self.assertIn("visible editable inputs must be typed before typing silence is accepted", plan["checks"])
+        self.assertIn("candidate/factor/next routes display the same symbol, task id, and result_version when current result cache exists", plan["checks"])
         self.assertIn("route-specific checks verify the margin ETF confirmed data bridge is visible", plan["checks"])
         margin_matrix = [row for row in plan["qa_matrix"] if row["route"] == "#marginEtf"]
         self.assertEqual(len(margin_matrix), 2)
         self.assertTrue(all(row["route_specific_check"] == "margin_etf_confirmed_data_bridge_visible" for row in margin_matrix))
         self.assertTrue(all(row["route_specific_check_required"] for row in margin_matrix))
+        result_chain_matrix = [row for row in plan["qa_matrix"] if row["route"] in {"#candidates", "#factor", "#next"}]
+        self.assertEqual(len(result_chain_matrix), 6)
+        self.assertTrue(all(row["route_specific_check"] == "search_quant_same_result_chain_visible" for row in result_chain_matrix))
+        self.assertTrue(all(row["route_specific_check_required"] for row in result_chain_matrix))
         self.assertIn("typed_without_submit", runner_source)
         self.assertIn("editable_visible_input_count", runner_source)
         self.assertIn("typing_required", runner_source)
         self.assertIn("typing_covered", runner_source)
         self.assertIn("task_created_by_render_or_typing", runner_source)
         self.assertIn("route_specific_check_passed", runner_source)
+        self.assertIn("search_quant_same_result_chain_visible", runner_source)
+        self.assertIn("candidate_result_chain", runner_source)
+        self.assertIn("current_result_matches_latest_task", runner_source)
+        self.assertIn("old_task_can_overwrite_current", runner_source)
         self.assertIn("margin_etf_confirmed_data_bridge_visible", runner_source)
         self.assertIn('aria-label="margin etf candidate radar confirmed data bridge"', runner_source)
         self.assertIn("Tushare 数据链", runner_source)
@@ -141,6 +153,8 @@ class UserRouteQaRunbookTests(unittest.TestCase):
                 "typing_reason": "typed_editable_visible_input",
                 "route_specific_check": "margin_etf_confirmed_data_bridge_visible"
                 if route == "#marginEtf"
+                else "search_quant_same_result_chain_visible"
+                if route in {"#candidates", "#factor", "#next"}
                 else "generic_route_heading_visible",
                 "route_specific_check_passed": True,
                 "route_specific_missing": [],

@@ -39,6 +39,14 @@ QA_VIEWPORTS = [
 ]
 
 
+def _route_specific_check(route: str) -> str:
+    if route == "#marginEtf":
+        return "margin_etf_confirmed_data_bridge_visible"
+    if route in {"#candidates", "#factor", "#next"}:
+        return "search_quant_same_result_chain_visible"
+    return "generic_route_heading_visible"
+
+
 def _read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -77,6 +85,10 @@ def build_runbook() -> dict[str, Any]:
         and "typing_covered" in runner
         and "task_created_by_render_or_typing" in runner
         and "route_specific_check_passed" in runner
+        and "search_quant_same_result_chain_visible" in runner
+        and "candidate_result_chain" in runner
+        and "current_result_matches_latest_task" in runner
+        and "old_task_can_overwrite_current" in runner
         and "margin_etf_confirmed_data_bridge_visible" in runner
         and 'aria-label="margin etf candidate radar confirmed data bridge"' in runner
         and ARTIFACT_ROOT in runner
@@ -104,9 +116,7 @@ def build_runbook() -> dict[str, Any]:
             "height": viewport["height"],
             "url": f"{LOCAL_VITE_BASE}/{route['route']}",
             "focus": route["focus"],
-            "route_specific_check": "margin_etf_confirmed_data_bridge_visible"
-            if route["route"] == "#marginEtf"
-            else "generic_route_heading_visible",
+            "route_specific_check": _route_specific_check(route["route"]),
             "visual_qa_complete": False,
             "typing_silence_verified": False,
         }
@@ -133,6 +143,11 @@ def build_runbook() -> dict[str, Any]:
             "visual_clarity_check",
             "execution_pending",
             "runner records h1, clipped primary text, disabled-button reason, audit-noise count, and screenshots",
+        ),
+        _row(
+            "search_quant_same_result_chain_browser_check",
+            "execution_pending",
+            "runner verifies #candidates, #factor, and #next display the same symbol/task/result_version chain when CandidateRadar cache has a current result",
         ),
         _row(
             "margin_etf_confirmed_data_bridge_check",

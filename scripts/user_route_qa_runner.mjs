@@ -71,6 +71,12 @@ const QA_VIEWPORTS = [
   { name: "mobile", width: 390, height: 844 }
 ];
 
+function routeSpecificCheckName(route) {
+  if (route === "#marginEtf") return "margin_etf_confirmed_data_bridge_visible";
+  if (["#candidates", "#factor", "#next"].includes(route)) return "search_quant_same_result_chain_visible";
+  return "generic_route_heading_visible";
+}
+
 function parseArgs(argv) {
   const args = {
     baseUrl: DEFAULT_BASE_URL,
@@ -130,7 +136,7 @@ function makePlan(args) {
       height: viewport.height,
       url: `${args.baseUrl}/${route.route}`,
       focus: route.focus,
-      route_specific_check: route.route === "#marginEtf" ? "margin_etf_confirmed_data_bridge_visible" : "generic_route_heading_visible",
+      route_specific_check: routeSpecificCheckName(route.route),
       route_specific_check_required: true,
       visual_qa_complete: false,
       typing_silence_verified: false
@@ -150,6 +156,7 @@ function makePlan(args) {
       "audit details do not dominate the first viewport",
       "typing into visible inputs does not create a task",
       "visible editable inputs must be typed before typing silence is accepted",
+      "candidate/factor/next routes display the same symbol, task id, and result_version when current result cache exists",
       "route-specific checks verify the margin ETF confirmed data bridge is visible",
       "screenshots and JSON report stay under ignored .stock_ming_3"
     ],
@@ -172,6 +179,113 @@ async function fetchTaskCount(apiBase) {
   const data = payload && typeof payload === "object" ? payload.data || payload : {};
   const taskCount = Number(data.task_count ?? (Array.isArray(data.tasks) ? data.tasks.length : 0));
   return Number.isFinite(taskCount) ? taskCount : 0;
+}
+
+function safeString(value) {
+  return String(value ?? "").trim();
+}
+
+function safeStringList(value) {
+  return Array.isArray(value) ? value.map((item) => safeString(item)).filter(Boolean) : [];
+}
+
+async function fetchCandidateResultChain(apiBase) {
+  try {
+    const response = await fetch(`${apiBase.replace(/\/$/, "")}/api/candidate-radar/cache`);
+    const payload = await response.json();
+    const data = payload && typeof payload === "object" ? payload.data || payload : {};
+    const summary = data.search_quant_result_version_summary || {};
+    const currentLineage = data.search_quant_current_result_lineage || {};
+    const resultLineage = data.search_quant_result_lineage || {};
+    const providerReceipt = data.search_quant_provider_model_acceptance_receipt || {};
+    const modelLedger = data.search_quant_deepseek_model_ledger || {};
+    const symbol = safeString(
+      summary.current_result_symbol ||
+        summary.latest_task_symbol ||
+        currentLineage.symbol ||
+        resultLineage.symbol ||
+        providerReceipt.symbol ||
+        data.latest_confirmed_symbol
+    );
+    const resultVersion = safeString(
+      summary.current_result_version ||
+        summary.latest_task_result_version ||
+        summary.latest_result_version ||
+        currentLineage.result_version ||
+        resultLineage.result_version ||
+        providerReceipt.result_version ||
+        data.search_quant_result_version
+    );
+    const taskId = safeString(
+      summary.current_result_task_id ||
+        summary.latest_task_id ||
+        currentLineage.task_id ||
+        resultLineage.task_id ||
+        providerReceipt.task_id ||
+        data.latest_confirmed_task_id
+    );
+    const modelLedgerId = safeString(
+      summary.current_result_model_ledger_id ||
+        summary.latest_task_model_ledger_id ||
+        currentLineage.model_ledger_id ||
+        resultLineage.model_ledger_id ||
+        providerReceipt.model_ledger_id ||
+        modelLedger.model_ledger_id
+    );
+    const providerLedgerIds = safeStringList(
+      summary.current_result_provider_call_ledger_ids ||
+        summary.latest_task_provider_call_ledger_ids ||
+        currentLineage.provider_call_ledger_ids ||
+        resultLineage.provider_call_ledger_ids ||
+        providerReceipt.provider_call_ledger_ids
+    );
+    return {
+      available: Boolean(symbol && resultVersion),
+      symbol,
+      result_version: resultVersion,
+      task_id: taskId,
+      scope_hash_short: safeString(
+        summary.current_result_scope_hash_short ||
+          summary.latest_task_scope_hash_short ||
+          currentLineage.scope_hash_short ||
+          resultLineage.scope_hash_short ||
+          providerReceipt.acceptance_scope_hash_short
+      ),
+      data_date: safeString(summary.current_result_data_date || summary.latest_task_data_date || currentLineage.data_date || resultLineage.data_date || providerReceipt.data_date),
+      freshness_state: safeString(summary.current_result_freshness_state || summary.latest_task_freshness_state || currentLineage.freshness_state || resultLineage.freshness_state || providerReceipt.freshness_state),
+      model_ledger_id: modelLedgerId,
+      provider_call_ledger_ids: providerLedgerIds,
+      provider_call_ledger_count: providerLedgerIds.length,
+      status: safeString(summary.status || providerReceipt.status || resultLineage.facts_package_status),
+      current_result_matches_latest_task: summary.current_result_matches_latest_task === true,
+      old_task_can_overwrite_current: summary.old_task_can_overwrite_current === true,
+      readback_route: "GET /api/candidate-radar/cache",
+      cache_only_readback: true,
+      creates_task_from_readback: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      contains_secret: false
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error_message_safe: `candidate_result_chain_unavailable:${error && error.message ? error.message : String(error)}`,
+      readback_route: "GET /api/candidate-radar/cache",
+      cache_only_readback: true,
+      creates_task_from_readback: false,
+      external_calls_triggered: false,
+      tushare_called: false,
+      deepseek_called: false,
+      github_called: false,
+      does_not_execute_trades: true,
+      does_not_modify_strategy_action: true,
+      contains_secret: false
+    };
+  }
 }
 
 async function inspectPage(page) {
@@ -252,7 +366,67 @@ async function inspectPage(page) {
   });
 }
 
-async function inspectRouteSpecific(page, route) {
+async function inspectRouteSpecific(page, route, candidateResultChain) {
+  if (["#candidates", "#factor", "#next"].includes(route)) {
+    const check = "search_quant_same_result_chain_visible";
+    if (!candidateResultChain.available) {
+      return {
+        check,
+        passed: true,
+        evidence: ["no current search quant result chain in cache; generic route and task-silence checks apply"],
+        missing: [],
+        candidate_result_chain: candidateResultChain
+      };
+    }
+    await page
+      .waitForFunction(
+        ({ symbol, resultVersion, taskId }) => {
+          const bodyText = (document.body?.innerText || "").replace(/\s+/g, " ");
+          return (
+            Boolean(symbol && bodyText.includes(symbol)) &&
+            Boolean(resultVersion && bodyText.includes(resultVersion)) &&
+            (!taskId || bodyText.includes(taskId))
+          );
+        },
+        {
+          symbol: candidateResultChain.symbol,
+          resultVersion: candidateResultChain.result_version,
+          taskId: candidateResultChain.task_id
+        },
+        { timeout: 4000 }
+      )
+      .catch(() => {});
+    return page.evaluate((chain) => {
+      const bodyText = (document.body?.innerText || "").replace(/\s+/g, " ");
+      const textChecks = [
+        { label: "same_result_symbol", ok: Boolean(chain.symbol && bodyText.includes(chain.symbol)) },
+        { label: "same_result_version", ok: Boolean(chain.result_version && bodyText.includes(chain.result_version)) },
+        { label: "same_result_task_id", ok: !chain.task_id || bodyText.includes(chain.task_id) },
+        { label: "result_version_label", ok: /结果版本|result_version/i.test(bodyText) },
+        { label: "tushare_source_visible", ok: /Tushare|真实数据链|数据来源/.test(bodyText) },
+        { label: "deepseek_boundary_visible", ok: /DeepSeek|模型解释|解释状态/.test(bodyText) },
+        { label: "no_trade_boundary_visible", ok: /不交易|不下单|不改(写)?(交易策略| strategy action|操作区)|不构成交易指令/.test(bodyText) },
+      ];
+      const missing = textChecks.filter((item) => !item.ok).map((item) => item.label);
+      return {
+        check: "search_quant_same_result_chain_visible",
+        passed: missing.length === 0,
+        evidence: [
+          `symbol=${chain.symbol}`,
+          `task_id=${chain.task_id || "missing"}`,
+          `result_version=${chain.result_version}`,
+          `provider_call_ledger_count=${chain.provider_call_ledger_count || 0}`,
+          `data_date=${chain.data_date || "missing"}`,
+          `freshness_state=${chain.freshness_state || "missing"}`,
+          `model_ledger_id=${chain.model_ledger_id || "missing"}`,
+          `current_result_matches_latest_task=${chain.current_result_matches_latest_task === true}`,
+          `old_task_can_overwrite_current=${chain.old_task_can_overwrite_current === true}`
+        ],
+        missing,
+        candidate_result_chain: chain
+      };
+    }, candidateResultChain);
+  }
   if (route !== "#marginEtf") {
     return {
       check: "generic_route_heading_visible",
@@ -363,8 +537,9 @@ async function runQa(args) {
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
         await page.waitForSelector("h1, h2, h3", { state: "attached", timeout: 10000 });
         await page.waitForTimeout(800);
+        const candidateResultChain = await fetchCandidateResultChain(args.apiBase);
         const inspected = await inspectPage(page);
-        const routeSpecific = await inspectRouteSpecific(page, route.route);
+        const routeSpecific = await inspectRouteSpecific(page, route.route, candidateResultChain);
         const typing = await typeWithoutSubmit(page);
         const afterTaskCount = await fetchTaskCount(args.apiBase);
         const screenshotPath = resolve(outputDir, viewport.name, `${route.route.replace("#", "") || "home"}.png`);
@@ -402,6 +577,7 @@ async function runQa(args) {
           route_specific_check_passed: routeSpecific.passed,
           route_specific_evidence: routeSpecific.evidence,
           route_specific_missing: routeSpecific.missing,
+          candidate_result_chain: routeSpecific.candidate_result_chain || null,
           disabled_buttons_without_reason_count: inspected.disabled_buttons_without_reason_count,
           disabled_buttons_without_reason: inspected.disabled_buttons_without_reason,
           visible_input_count: inspected.visible_input_count,
