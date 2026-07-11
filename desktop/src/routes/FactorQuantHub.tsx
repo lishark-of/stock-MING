@@ -440,6 +440,22 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolAcceptance = factorTests.provider_small_pool_acceptance_receipt ?? {};
   const factorTestDurableEvidenceRecipe = factorTests.durable_evidence_recipe ?? {};
   const factorTestProductionStageScopeManifest = factorTests.production_stage_scope_manifest ?? {};
+  const factorTestProviderSmallPoolSampleDone =
+    factorTestProviderSmallPoolAcceptance.sample_rows_collected === true ||
+    factorTestProviderSmallPoolAcceptance.sample_rows_done === true ||
+    factorTestProviderSmallPoolAcceptance.sample_rows_written === true ||
+    factorTestProviderSmallPoolAcceptance.provider_backed_small_pool_sample_done === true ||
+    factorTestProviderSmallPoolAcceptance.provider_backed_small_pool_validation_done === true ||
+    factorTestAcceptance.sample_rows_collected === true ||
+    factorTestAcceptance.provider_backed_small_pool_validation_done === true ||
+    factorTestProductionStageScopeManifest.sample_rows_collected === true ||
+    factorTestProductionStageScopeManifest.provider_backed_small_pool_validation_done === true ||
+    factorTestProductionValidation.provider_backed_small_pool_validation_done === true;
+  const factorTestProviderSmallPoolDirectEvidenceDone =
+    factorTestProviderSmallPoolSampleDone ||
+    factorTestProviderSmallPoolAcceptance.provider_call_ledger_evidence_done === true ||
+    factorTestAcceptance.provider_call_ledger_evidence_done === true ||
+    factorTestProductionStageScopeManifest.provider_call_ledger_evidence_done === true;
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
   const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
   const tushareProviderTargetSamplePlan = packet.provider_target_sample_plan_contract ?? {};
@@ -639,7 +655,7 @@ export default function FactorQuantHub() {
   const ordinaryQuantHasPendingEvidence =
     empty ||
     Number(runtime.missing_count ?? 0) > 0 ||
-    factorTestProductionValidation.provider_backed_small_pool_validation_done !== true ||
+    !factorTestProviderSmallPoolSampleDone ||
     deepseekProductionActivationReceipt.provider_benchmark_done !== true ||
     tushareProviderPromotionAudit.promotion_ready !== true;
   const ordinaryQuantPendingStateLabel = empty
@@ -787,7 +803,7 @@ export default function FactorQuantHub() {
     "交接清单：下一票雷达确认按钮 → Tushare-first task → Factor cache / call_ledger / packet → 次日图谱预览";
   const ordinaryQuantMissingEvidence = [
     Number(runtime.missing_count ?? 0) ? `待补因子数量=${String(runtime.missing_count)}` : "",
-    factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "" : "真实小股票池研究证据待确认",
+    factorTestProviderSmallPoolSampleDone ? "" : "真实小股票池研究证据待确认",
     deepseekProductionActivationReceipt.provider_benchmark_done === true ? "" : "模型解释质量证据待确认",
     tushareProviderPromotionAudit.promotion_ready === true ? "" : "Tushare 数据质量证据待确认"
   ].filter(Boolean).join(" / ") || "本地因子缓存已有；真实数据质量证据仍待补";
@@ -1566,28 +1582,32 @@ export default function FactorQuantHub() {
     }
   ];
   const ordinaryFactorTestProviderSmallPoolState =
-    factorTestProductionValidation.provider_backed_small_pool_validation_done === true
-      ? "真实小池验收已有直接证据"
+    factorTestProviderSmallPoolSampleDone
+      ? `真实小池验收已有直接证据；真实小池样本已回放：${String(factorTestProviderSmallPoolAcceptance.provider_total_row_count ?? 0)} 行`
+      : factorTestProviderSmallPoolDirectEvidenceDone
+        ? "真实小池 call_ledger 已回放；样本行仍待确认"
       : "真实小池验收未运行；等待授权";
   const ordinaryFactorTestProviderScopeState =
     factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true
       ? `本地 scope 已就绪：${String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash_short ?? factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "已生成")}`
       : "等待小池预检 scope";
   const ordinaryFactorTestProviderRequestState =
-    factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true
+    factorTestProviderSmallPoolSampleDone
+      ? "真实小池样本任务已完成；下一步补 rolling、成本、中性化、PIT/bias 和 promotion review"
+      : factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true
       ? "本地执行请求已绑定 scope；下一步只能是用户授权后的 provider task"
       : "等待本地执行请求；真实任务仍需授权";
   const ordinaryFactorTestProviderEvidenceGap =
-    factorTestProductionValidation.provider_backed_small_pool_validation_done === true
-      ? "真实小池样本和指标已回放"
+    factorTestProviderSmallPoolSampleDone
+      ? "真实小池样本、scope hash 和 call_ledger 已回放；rolling/cost/neutralization/PIT/promotion 待补"
       : "还缺真实 provider task、样本行、rolling IC/ICIR、成本、中性化、PIT/bias 和 promotion review";
   const factorTestProviderSmallPoolCredential = (factorTestProviderSmallPoolDryRun.credential_presence_summary as Record<string, unknown> | undefined) ?? {};
   const factorTestProviderSmallPoolBlockers = Array.isArray(factorTestProviderSmallPoolDryRun.blocking_criteria)
     ? factorTestProviderSmallPoolDryRun.blocking_criteria.map((item: unknown) => String(item)).filter(Boolean)
     : [];
   const ordinaryFactorTestProviderCurrentBlockerSentence =
-    factorTestProductionValidation.provider_backed_small_pool_validation_done === true
-      ? "真实小池 provider-backed 直接证据已可见；仍需按生产阶段清单完成 promotion/release 边界。"
+    factorTestProviderSmallPoolSampleDone
+      ? "真实小池 Tushare 样本、scope hash 和安全 call_ledger 已回放；rolling、成本、中性化、PIT/bias 和 promotion/release 仍待补齐，不能当生产完成。"
       : `LTG-03 当前 degraded：dry-run=${String(factorTestProviderSmallPoolDryRun.status ?? "missing")}，credential=${String(factorTestProviderSmallPoolCredential.status ?? "unknown")}，blocker=${factorTestProviderSmallPoolBlockers.join(" / ") || "provider_task_and_sample_rows_pending"}；本地 execution request 不能替代真实 provider task，下一步只能是用户授权后的 provider-backed 小池验收。`;
   const ordinaryFactorTestProviderBoundary =
     "本卡只读 Factor cache；不触发 dry-run、execution request 或 provider task；真实小池验收只能在用户明确授权后走 POST task";
@@ -1595,7 +1615,7 @@ export default function FactorQuantHub() {
     {
       label: "真实验证",
       value: ordinaryFactorTestProviderSmallPoolState,
-      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
       label: "授权状态",
@@ -1605,12 +1625,14 @@ export default function FactorQuantHub() {
     {
       label: "缺口",
       value: ordinaryFactorTestProviderEvidenceGap,
-      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
       label: "下一步",
-      value: "先看本地 scope / execution request；真实小池验证必须另行授权",
-      tone: "warn"
+      value: factorTestProviderSmallPoolSampleDone
+        ? "继续补 rolling、成本、中性化、PIT/bias 和 promotion review"
+        : "先看本地 scope / execution request；真实小池验证必须另行授权",
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
       label: "边界",
@@ -1632,12 +1654,14 @@ export default function FactorQuantHub() {
     {
       label: "真实数据状态",
       value: `${ordinaryFactorTestProviderSmallPoolState}；${ordinaryFactorTestProviderRequestState}`,
-      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
       label: "授权后产物",
-      value: "scope hash、payload、call_ledger、样本行和 failure-mode evidence",
-      tone: "warn"
+      value: factorTestProviderSmallPoolSampleDone
+        ? "已产出 scope hash、payload、call_ledger、1006 行样本和 failure-mode evidence；生产指标仍待补"
+        : "scope hash、payload、call_ledger、样本行和 failure-mode evidence",
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
       label: "下一步入口",
@@ -1674,10 +1698,10 @@ export default function FactorQuantHub() {
     },
     {
       label: "验证缺口",
-      value: factorTestProductionValidation.provider_backed_small_pool_validation_done === true
+      value: factorTestProviderSmallPoolSampleDone
         ? "真实小池验证证据已回放"
         : "degraded：真实小池验证未授权；等待 scope hash、payload、call_ledger、样本行和 failure-mode evidence",
-      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
       label: "安全边界",
@@ -1698,10 +1722,10 @@ export default function FactorQuantHub() {
     },
     {
       label: "真实数据层",
-      value: factorTestProductionValidation.provider_backed_small_pool_validation_done === true
+      value: factorTestProviderSmallPoolSampleDone
         ? "provider-backed 小池直接证据已可见；继续复核样本行、call_ledger 和 failure-mode evidence"
         : `provider-backed 小池仍待授权；需要 scope hash、payload、call_ledger、样本行和 failure-mode evidence；${ordinaryFactorTestProviderEvidenceGap}`,
-      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
       label: "模型解释层",
@@ -1773,7 +1797,7 @@ export default function FactorQuantHub() {
     {
       label: "真实验收",
       value: ordinaryFactorTestProviderSmallPoolState,
-      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
       label: "本地 scope",
@@ -1788,7 +1812,7 @@ export default function FactorQuantHub() {
     {
       label: "还缺",
       value: ordinaryFactorTestProviderEvidenceGap,
-      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
       label: "边界",
@@ -1797,31 +1821,26 @@ export default function FactorQuantHub() {
     }
   ];
   const ordinaryFactorTestSmallPoolEvidenceDone =
-    factorTestProductionValidation.provider_backed_small_pool_validation_done === true;
+    factorTestProviderSmallPoolSampleDone;
   const ordinaryFactorTestSmallPoolSampleRowsDone =
-    ordinaryFactorTestSmallPoolEvidenceDone ||
+    factorTestProviderSmallPoolSampleDone ||
     factorTestProviderSmallPoolAcceptance.sample_rows_collected === true ||
     factorTestProviderSmallPoolAcceptance.sample_rows_done === true ||
     factorTestProviderSmallPoolAcceptance.sample_rows_written === true;
   const ordinaryFactorTestSmallPoolRollingDone =
-    ordinaryFactorTestSmallPoolEvidenceDone ||
     factorTestProviderSmallPoolAcceptance.rolling_validation_done === true ||
     factorTestProviderSmallPoolAcceptance.rolling_ic_done === true ||
     factorTestProviderSmallPoolAcceptance.rolling_icir_done === true;
   const ordinaryFactorTestSmallPoolCostDone =
-    ordinaryFactorTestSmallPoolEvidenceDone ||
     factorTestProviderSmallPoolAcceptance.cost_validation_done === true ||
     factorTestProviderSmallPoolAcceptance.cost_model_done === true;
   const ordinaryFactorTestSmallPoolNeutralizationDone =
-    ordinaryFactorTestSmallPoolEvidenceDone ||
     factorTestProviderSmallPoolAcceptance.neutralization_done === true ||
     factorTestProviderSmallPoolAcceptance.neutralized_metric_done === true;
   const ordinaryFactorTestSmallPoolBiasDone =
-    ordinaryFactorTestSmallPoolEvidenceDone ||
     factorTestProviderSmallPoolAcceptance.pit_bias_review_done === true ||
     factorTestProviderSmallPoolAcceptance.bias_review_done === true;
   const ordinaryFactorTestSmallPoolPromotionDone =
-    ordinaryFactorTestSmallPoolEvidenceDone ||
     factorTestProviderSmallPoolAcceptance.promotion_review_done === true ||
     factorTestProviderSmallPoolAcceptance.production_promotion_review_done === true;
   const ordinaryFactorTestSmallPoolEvidenceSentence =
@@ -2002,7 +2021,7 @@ export default function FactorQuantHub() {
     {
       label: "小池验收",
       value: `${ordinaryFactorTestProviderSmallPoolState}；${ordinaryFactorTestProviderEvidenceGap}`,
-      tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn"
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
       label: "降级/缺口",
@@ -2530,7 +2549,7 @@ export default function FactorQuantHub() {
           { label: "local small pool", value: factorTestSmallPool.local_light_observation_acceptance_done === true ? "ready" : "pending", tone: factorTestSmallPool.local_light_observation_acceptance_done === true ? "good" : "warn" },
           { label: "real small pool", value: factorTestSmallPool.real_small_pool_validation_done === true ? "完成" : "未完成", tone: factorTestSmallPool.real_small_pool_validation_done === true ? "bad" : "good" },
           { label: "production QA", value: factorTestProductionValidation.status ?? "missing", tone: factorTestProductionValidation.production_factor_test_validation_complete === true ? "good" : "warn" },
-          { label: "provider small pool", value: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "完成" : "未完成", tone: factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "good" : "warn" },
+          { label: "provider small pool", value: factorTestProviderSmallPoolSampleDone ? "样本已回放" : "未完成", tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn" },
           { label: "factor test production", value: factorTestProductionValidation.production_factor_test_validation_complete === true ? "完成" : "未完成", tone: factorTestProductionValidation.production_factor_test_validation_complete === true ? "good" : "warn" },
           { label: "provider blockers", value: factorTestProviderValidationBlocker.production_blocker_count ?? 0, tone: Number(factorTestProviderValidationBlocker.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "provider validation", value: factorTestProviderValidationBlocker.provider_validation_ready === true ? "ready" : "blocked", tone: factorTestProviderValidationBlocker.provider_validation_ready === true ? "good" : "warn" },
