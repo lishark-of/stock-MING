@@ -1163,6 +1163,7 @@ def _latest_search_quant_projection_provider_model_status_surface() -> dict[str,
             "provider_call_ledger_count": 0,
             "provider_api_success_count": 0,
             "model_ledger_count": 0,
+            "local_factor_next_refresh_call_ledger_count": 0,
             "call_status": "",
             "provider_model_acceptance_visible": False,
             "provider_call_ledger_evidence_done": False,
@@ -1210,6 +1211,23 @@ def _latest_search_quant_projection_provider_model_status_surface() -> dict[str,
         row for row in provider_ledgers if str(row.get("call_status") or "") == "success"
     ]
     model_ledgers = [row for row in call_ledger if row.get("deepseek_called") is True]
+    local_refresh_ledgers = [
+        row
+        for row in call_ledger
+        if str(row.get("api") or "").startswith("local_candidate_quant_projection_")
+    ]
+    factor_refresh_executed = (
+        request_params.get("factor_refresh_executed") is True
+        or any(row.get("api") == "local_candidate_quant_projection_factor_light_refresh" and int(row.get("row_count") or 0) > 0 for row in local_refresh_ledgers)
+    )
+    next_session_refresh_executed = (
+        request_params.get("next_session_refresh_executed") is True
+        or any(row.get("api") == "local_candidate_quant_projection_next_session_refresh" and int(row.get("row_count") or 0) > 0 for row in local_refresh_ledgers)
+    )
+    echarts_payload_refreshed = (
+        request_params.get("echarts_payload_refreshed") is True
+        or any(row.get("api") == "local_candidate_quant_projection_echarts_payload_readback" and int(row.get("row_count") or 0) > 0 for row in local_refresh_ledgers)
+    )
     storage_source = str(latest_task.get("storage_source") or "")
     durable_task_visible = storage_source in {"memory_and_sqlite", "sqlite_meta"}
     task_success = latest_task.get("status") == "success"
@@ -1287,6 +1305,7 @@ def _latest_search_quant_projection_provider_model_status_surface() -> dict[str,
         "provider_call_ledger_count": len(provider_ledgers),
         "provider_api_success_count": len(provider_success_ledgers),
         "model_ledger_count": len(model_ledgers),
+        "local_factor_next_refresh_call_ledger_count": len(local_refresh_ledgers),
         "call_status": first_ledger.get("call_status") or "",
         "provider_model_acceptance_visible": task_success
         and (not deepseek_output_acceptance_required or deepseek_output_acceptance_done),
@@ -1303,9 +1322,9 @@ def _latest_search_quant_projection_provider_model_status_surface() -> dict[str,
         "deepseek_skipped_by_default": latest_task.get("deepseek_called") is not True,
         "provider_execution_observed": latest_task.get("tushare_called") is True,
         "model_execution_observed": latest_task.get("deepseek_called") is True,
-        "factor_refresh_executed": False,
-        "next_session_refresh_executed": False,
-        "echarts_payload_refreshed": False,
+        "factor_refresh_executed": factor_refresh_executed,
+        "next_session_refresh_executed": next_session_refresh_executed,
+        "echarts_payload_refreshed": echarts_payload_refreshed,
         "production_quant_projection_complete": False,
         "production_radar_replacement_complete": False,
         "task_success_is_provider_call_evidence": task_success and provider_call_ledger_evidence_done,

@@ -9,7 +9,14 @@ import types
 import unittest
 from pathlib import Path
 
-from server.services import candidate_service, packet_service, task_service, tushare_task_service
+from server.services import (
+    candidate_service,
+    factor_service,
+    next_session_service,
+    packet_service,
+    task_service,
+    tushare_task_service,
+)
 from server.services.task_service import clear_task_statuses_for_tests
 from storage.sqlite_meta import SQLiteMetaStore
 
@@ -30,6 +37,8 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             task_service: task_service.SQLITE_META_PATH,
             tushare_task_service: tushare_task_service.SQLITE_META_PATH,
             candidate_service: candidate_service.SQLITE_META_PATH,
+            factor_service: factor_service.SQLITE_META_PATH,
+            next_session_service: next_session_service.SQLITE_META_PATH,
         }
         for module in originals:
             module.SQLITE_META_PATH = db_path
@@ -355,14 +364,33 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         ]
         self.assertEqual([row["api"] for row in task_provider_ledger], expected_apis)
         self.assertTrue(task["call_ledger"][0]["delegated_tushare_first_call_ledger_replayed"])
-        self.assertEqual(task["call_ledger"][0]["delegated_tushare_first_call_ledger_count"], 5)
+        self.assertEqual(task["call_ledger"][0]["delegated_tushare_first_call_ledger_count"], 4)
         self.assertEqual(task["call_ledger"][0]["delegated_tushare_first_provider_api_success_count"], 4)
+        self.assertEqual(task["call_ledger"][0]["delegated_local_factor_next_refresh_call_ledger_count"], 3)
         self.assertTrue(
             any(
                 row["api"] == "local_candidate_radar_quant_projection_provider_model_acceptance"
                 for row in task["call_ledger"]
             )
         )
+        local_refresh_ledger = [
+            row
+            for row in task["call_ledger"]
+            if str(row.get("api") or "").startswith("local_candidate_quant_projection_")
+        ]
+        self.assertEqual(
+            [row["api"] for row in local_refresh_ledger],
+            [
+                "local_candidate_quant_projection_factor_light_refresh",
+                "local_candidate_quant_projection_next_session_refresh",
+                "local_candidate_quant_projection_echarts_payload_readback",
+            ],
+        )
+        self.assertFalse(any(row["external_calls_triggered"] for row in local_refresh_ledger))
+        self.assertFalse(any(row["tushare_called"] for row in local_refresh_ledger))
+        self.assertFalse(any(row["deepseek_called"] for row in local_refresh_ledger))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in local_refresh_ledger))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in local_refresh_ledger))
         self.assertTrue(task["external_calls_triggered"])
         self.assertTrue(task["tushare_called"])
         self.assertFalse(task["deepseek_called"])
@@ -455,7 +483,33 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(receipt["tushare_call_ledger_evidence_done"])
         self.assertTrue(receipt["deepseek_skipped_by_request"])
         self.assertFalse(receipt["deepseek_called"])
+        self.assertTrue(receipt["factor_refresh_executed"])
+        self.assertTrue(receipt["next_session_refresh_executed"])
+        self.assertTrue(receipt["echarts_payload_refreshed"])
+        self.assertEqual(
+            receipt["local_factor_next_refresh_status"],
+            "local_factor_next_echarts_refreshed",
+        )
         self.assertFalse(receipt["production_quant_projection_complete"])
+        local_refresh = packet["search_quant_projection_local_factor_next_refresh"]
+        self.assertEqual(local_refresh["symbol"], "002008.SZ")
+        self.assertEqual(local_refresh["status"], "local_factor_next_echarts_refreshed")
+        self.assertTrue(local_refresh["factor_refresh_executed"])
+        self.assertTrue(local_refresh["next_session_refresh_executed"])
+        self.assertTrue(local_refresh["echarts_payload_refreshed"])
+        self.assertFalse(local_refresh["external_calls_triggered"])
+        self.assertFalse(local_refresh["tushare_called"])
+        self.assertFalse(local_refresh["deepseek_called"])
+        self.assertTrue(local_refresh["does_not_execute_trades"])
+        self.assertTrue(local_refresh["does_not_modify_strategy_action"])
+        factor_packet = SQLiteMetaStore(candidate_service.SQLITE_META_PATH).read_packet(
+            "command_center_factor_quant_hub_packet"
+        )
+        next_packet = SQLiteMetaStore(candidate_service.SQLITE_META_PATH).read_packet(
+            "command_center_next_session_projection_packet"
+        )
+        self.assertIn("002008.SZ", factor_packet["universe"]["items"])
+        self.assertEqual(next_packet["chart_payload"]["symbol"], "002008.SZ")
 
         packet_provider_ledger = [
             row for row in packet["call_ledger"] if row.get("api") in expected_apis
@@ -1103,13 +1157,13 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         )
         self.assertEqual(
             interpretation["status"],
-            "interpretation_ready_tushare_ledger_pending_local_map",
+            "interpretation_ready_tushare_ledger_with_local_map",
         )
         self.assertIn("Tushare 4/4 接口账本已回放", interpretation["summary_label"])
-        self.assertEqual(interpretation["ordinary_result_status"], "ready_pending_local_map")
+        self.assertEqual(interpretation["ordinary_result_status"], "ready_with_local_map")
         self.assertIn("可读结论：源任务 Tushare-first 账本已回放 4/4 个接口", interpretation["ordinary_result_summary"])
         self.assertIn("本次 GET cache 未外联", interpretation["ordinary_result_summary"])
-        self.assertIn("先读 Tushare 账本和本地推演摘要", interpretation["ordinary_result_next_step"])
+        self.assertIn("先查看量化推演和次日图谱回放", interpretation["ordinary_result_next_step"])
         self.assertIn("解释只基于本地 cache / ledger / packet", interpretation["ordinary_result_boundary"])
         self.assertIn("源任务 Tushare 接口 4/4", interpretation["ordinary_result_evidence"])
         self.assertIn("本次 GET cache 未外联", interpretation["ordinary_result_evidence"])
@@ -1133,7 +1187,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             ["source", "gap", "next_step", "safety_summary"],
         )
         self.assertIn("Tushare-first", safe_explanation["source"])
-        self.assertIn("Factor/Next/ECharts", safe_explanation["gap"])
+        self.assertIn("基础图谱已有本地回放", safe_explanation["gap"])
         self.assertEqual(safe_explanation["next_step"], interpretation["ordinary_result_next_step"])
         self.assertEqual(safe_explanation["safety_summary"], interpretation["ordinary_result_boundary"])
         self.assertTrue(safe_explanation["ordinary_result_readable"])
@@ -1373,7 +1427,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             result_checkpoint["schema_version"],
             "candidate_radar_search_quant_projection_result_checkpoint.v1",
         )
-        self.assertEqual(result_checkpoint["status"], "ready_pending_local_map")
+        self.assertEqual(result_checkpoint["status"], "ready_with_local_map")
         self.assertEqual(result_checkpoint["readback_route"], "GET /api/candidate-radar/cache")
         self.assertEqual(result_checkpoint["source_packet_key"], "command_center_3_candidate_radar_cache")
         self.assertIn(response["data"]["task_id"], result_checkpoint["source_task_id"])
@@ -1382,9 +1436,9 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(result_checkpoint["blocker_explanation_visible"])
         self.assertEqual(result_checkpoint["data_source_state"], "tushare_first_ledger_ready")
         self.assertEqual(result_checkpoint["evidence_source"], "Tushare-first ledger")
-        self.assertEqual(result_checkpoint["next_session_map_state"], "pending_local_cache_refresh")
-        self.assertEqual(result_checkpoint["missing_evidence"], ["Factor/Next/ECharts local cache replay"])
-        self.assertEqual(result_checkpoint["missing_evidence_count"], 1)
+        self.assertEqual(result_checkpoint["next_session_map_state"], "local_map_ready")
+        self.assertEqual(result_checkpoint["missing_evidence"], [])
+        self.assertEqual(result_checkpoint["missing_evidence_count"], 0)
         self.assertEqual(result_checkpoint["safe_explanation_fields"], ["source", "gap", "next_step", "safety_summary"])
         self.assertEqual(
             result_checkpoint["deepseek_state"],
@@ -1409,7 +1463,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             p3_checkpoint["schema_version"],
             "candidate_radar_p3_explainable_result_checkpoint.v1",
         )
-        self.assertEqual(p3_checkpoint["status"], "p3_explainable_result_ready_pending_local_map")
+        self.assertEqual(p3_checkpoint["status"], "p3_explainable_result_ready_local_map")
         self.assertIn("P3 结果 checkpoint", p3_checkpoint["ordinary_label"])
         self.assertIn("Tushare-first ledger 回放 4/4", p3_checkpoint["ordinary_label"])
         self.assertEqual(p3_checkpoint["readback_route"], "GET /api/candidate-radar/cache")
@@ -1417,7 +1471,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(p3_checkpoint["ordinary_result_readable"])
         self.assertTrue(p3_checkpoint["provider_data_source_verified"])
         self.assertEqual(p3_checkpoint["evidence_source"], "Tushare-first ledger")
-        self.assertEqual(p3_checkpoint["missing_evidence_count"], 1)
+        self.assertEqual(p3_checkpoint["missing_evidence_count"], 0)
         self.assertEqual(p3_checkpoint["safe_explanation_fields"], ["source", "gap", "next_step", "safety_summary"])
         self.assertEqual(p3_checkpoint["safe_explanation"], safe_explanation)
         self.assertTrue(p3_checkpoint["uses_tushare_ledger"])
@@ -1445,7 +1499,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(packet["counts"]["search_quant_projection_p3_explainable_result_readable"])
         self.assertEqual(
             packet["counts"]["search_quant_projection_p3_explainable_result_checkpoint_missing_evidence_count"],
-            1,
+            0,
         )
         self.assertTrue(packet["policy"]["search_quant_projection_p3_explainable_result_checkpoint_is_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_p3_explainable_result_checkpoint_creates_task"])
@@ -1457,7 +1511,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["policy"]["search_quant_projection_p3_safe_explanation_calls_model"])
         self.assertFalse(packet["policy"]["search_quant_projection_p3_safe_explanation_uses_model_output"])
         self.assertTrue(packet["policy"]["search_quant_projection_p3_safe_explanation_is_not_trade_signal"])
-        self.assertEqual(packet["counts"]["search_quant_projection_result_checkpoint_missing_evidence_count"], 1)
+        self.assertEqual(packet["counts"]["search_quant_projection_result_checkpoint_missing_evidence_count"], 0)
         self.assertTrue(packet["counts"]["search_quant_projection_result_checkpoint_readable"])
         self.assertEqual(packet["counts"]["search_quant_projection_result_checkpoint_row_count"], 4)
         self.assertTrue(packet["policy"]["search_quant_projection_result_checkpoint_is_cache_only"])
@@ -1478,7 +1532,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         )
         self.assertIn("可读结论", checkpoint_rows["readable_result"]["检查点"])
         self.assertIn("Tushare-first", checkpoint_rows["data_source"]["当前状态"])
-        self.assertIn("missing_evidence_count=1", checkpoint_rows["gap_and_next_step"]["证据"])
+        self.assertIn("missing_evidence_count=0", checkpoint_rows["gap_and_next_step"]["证据"])
         self.assertIn("safe_explanation_fields=source/gap/next_step/safety_summary", checkpoint_rows["safety_boundary"]["证据"])
         for checkpoint_row in checkpoint_rows.values():
             self.assertTrue(checkpoint_row["cache_only_readback"])
@@ -1506,8 +1560,8 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(result_rows["data_source"]["status"], "tushare_first_ledger_ready")
         self.assertIn("Tushare-first 账本已回放 4/4", result_rows["data_source"]["ordinary_label"])
         self.assertEqual(result_rows["quant_projection"]["status"], "readable_summary")
-        self.assertEqual(result_rows["next_session_map"]["status"], "pending_local_cache_refresh")
-        self.assertIn("Next Session 图谱仍等待本地 cache 刷新", result_rows["next_session_map"]["ordinary_label"])
+        self.assertEqual(result_rows["next_session_map"]["status"], "local_map_ready")
+        self.assertIn("Next Session 图谱已有本地回放", result_rows["next_session_map"]["ordinary_label"])
         self.assertEqual(result_rows["research_only_boundary"]["status"], "research_only_safe")
         for result_row in result_rows.values():
             self.assertFalse(result_row["external_calls_triggered"])
@@ -1526,7 +1580,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(handoff_rows["replay_quant_projection"]["href"], "#factor")
         self.assertEqual(handoff_rows["replay_next_session_map"]["href"], "#next")
         self.assertEqual(handoff_rows["return_candidate_pool"]["href"], "#candidate-pool")
-        self.assertIn("pending_local_cache_refresh", handoff_rows["replay_next_session_map"]["当前状态"])
+        self.assertIn("本地图谱可回放", handoff_rows["replay_next_session_map"]["当前状态"])
         self.assertIn("不发 POST task", handoff_rows["replay_quant_projection"]["边界"])
         self.assertIn("不生成交易动作", handoff_rows["replay_next_session_map"]["边界"])
         self.assertIn("候选不是买入指令", handoff_rows["return_candidate_pool"]["用户下一步"])
@@ -1552,7 +1606,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         )
         self.assertIn("读可读结论", action_rows["read_interpretable_conclusion"]["行动"])
         self.assertIn("回放量化推演", action_rows["replay_quant_projection"]["行动"])
-        self.assertIn("等待本地 cache 刷新", action_rows["replay_next_session_map"]["当前状态"])
+        self.assertIn("本地图谱可回放", action_rows["replay_next_session_map"]["当前状态"])
         self.assertIn("不当买入或卖出指令", action_rows["keep_research_only_boundary"]["用户下一步"])
         for action_row in action_rows.values():
             self.assertTrue(action_row["cache_only_readback"])
@@ -1626,8 +1680,8 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertTrue(readiness_row["candidate_is_not_buy_instruction"])
         self.assertTrue(interpretation["interpretation_ready"])
         self.assertEqual(interpretation["provider_api_success_count"], 4)
-        self.assertEqual(interpretation["next_session_map_state"], "pending_local_cache_refresh")
-        self.assertIn("Factor/Next/ECharts local cache replay", interpretation["missing_evidence"])
+        self.assertEqual(interpretation["next_session_map_state"], "local_map_ready")
+        self.assertNotIn("Factor/Next/ECharts local cache replay", interpretation["missing_evidence"])
         self.assertFalse(interpretation["uses_deepseek_output"])
         self.assertFalse(interpretation["model_output_used"])
         self.assertFalse(interpretation["cache_get_external_calls"])

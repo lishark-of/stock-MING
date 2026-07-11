@@ -47606,10 +47606,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(latest_provider_model["symbol"], "002008.SZ")
         self.assertEqual(latest_provider_model["selected_apis"], ["trade_cal", "daily", "daily_basic", "moneyflow"])
         self.assertFalse(latest_provider_model["include_deepseek_requested"])
-        self.assertEqual(latest_provider_model["call_ledger_count"], 5)
+        self.assertEqual(latest_provider_model["call_ledger_count"], 8)
         self.assertEqual(latest_provider_model["provider_call_ledger_count"], 4)
         self.assertEqual(latest_provider_model["provider_api_success_count"], 4)
         self.assertEqual(latest_provider_model["model_ledger_count"], 0)
+        self.assertEqual(latest_provider_model["local_factor_next_refresh_call_ledger_count"], 3)
         self.assertEqual(
             latest_provider_model["call_status"],
             "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
@@ -47631,6 +47632,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(latest_provider_model["deepseek_skipped_by_default"])
         self.assertTrue(latest_provider_model["provider_execution_observed"])
         self.assertFalse(latest_provider_model["model_execution_observed"])
+        self.assertTrue(latest_provider_model["factor_refresh_executed"])
+        self.assertTrue(latest_provider_model["next_session_refresh_executed"])
+        self.assertTrue(latest_provider_model["echarts_payload_refreshed"])
         self.assertTrue(latest_provider_model["task_success_is_provider_call_evidence"])
         self.assertFalse(latest_provider_model["task_success_is_model_evidence"])
         self.assertFalse(latest_provider_model["task_success_is_model_output_evidence"])
@@ -47759,11 +47763,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["deepseek_skipped_by_request"])
         self.assertEqual(receipt["provider_api_call_count"], 4)
         self.assertEqual(receipt["provider_api_success_count"], 4)
+        self.assertTrue(receipt["factor_refresh_executed"])
+        self.assertTrue(receipt["next_session_refresh_executed"])
+        self.assertTrue(receipt["echarts_payload_refreshed"])
+        self.assertEqual(receipt["local_factor_next_refresh_status"], "local_factor_next_echarts_refreshed")
         self.assertFalse(receipt["production_quant_projection_complete"])
         self.assertFalse(receipt["production_radar_replacement_complete"])
         self.assertEqual(rows["tushare_light_provider_call_ledger"]["status"], "passed_tushare_light_provider_ledger")
         self.assertEqual(rows["deepseek_model_ledger_policy"]["status"], "passed_deepseek_skipped_by_request")
-        self.assertTrue(rows["factor_next_echarts_refresh_still_pending"]["production_blocker"])
+        self.assertTrue(rows["factor_next_echarts_local_preview_refresh"]["production_blocker"])
+        self.assertEqual(
+            rows["factor_next_echarts_local_preview_refresh"]["status"],
+            "passed_local_factor_next_echarts_preview_refreshed_production_pending",
+        )
         self.assertIn("search_quant_provider_model_acceptance", stage_manifest["direct_evidence_stage_keys"])
         self.assertTrue(stage_rows["search_quant_provider_model_acceptance"]["direct_evidence_complete"])
         self.assertFalse(packet["external_calls_triggered"])

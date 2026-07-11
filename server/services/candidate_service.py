@@ -1801,6 +1801,218 @@ def _search_quant_projection_cross_module_alignment_readback(symbol: str) -> dic
     }
 
 
+def _run_quant_projection_local_factor_next_refresh(
+    *,
+    symbol: str,
+    source_task_id: str,
+) -> dict[str, Any]:
+    symbol_safe = _safe_text(symbol, limit=32).upper()
+    refreshed_at = _now_iso()
+    if not symbol_safe:
+        return {
+            "schema_version": "candidate_radar_quant_projection_local_factor_next_refresh.v1",
+            "status": "blocked_missing_symbol",
+            "symbol": "",
+            "factor_refresh_executed": False,
+            "next_session_refresh_executed": False,
+            "echarts_payload_refreshed": False,
+            "overall_alignment_ready": False,
+            "rows": [],
+            "call_ledger": [],
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "worker_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "production_quant_projection_complete": False,
+        }
+
+    from server.services import factor_service, next_session_service
+
+    factor_task: Mapping[str, Any] = {}
+    next_task: Mapping[str, Any] = {}
+    factor_status = "not_started"
+    next_status = "not_started"
+    factor_error = ""
+    next_error = ""
+    try:
+        factor_task = factor_service.create_factor_task(
+            "run_factor_light",
+            {
+                "ts_code": symbol_safe,
+                "symbol": symbol_safe,
+                "source_task_id": source_task_id,
+                "trigger": "candidate_radar_quant_projection_provider_model_acceptance",
+                "auto_after_candidate_confirm": True,
+                "auto_after_task": False,
+            },
+        )
+        factor_status = _safe_text(
+            factor_task.get("current_step") or factor_task.get("status") or "factor_light_task_returned",
+            limit=160,
+        )
+    except Exception as exc:
+        factor_status = "factor_light_local_refresh_failed"
+        factor_error = _safe_text(str(exc), limit=180)
+
+    try:
+        next_task = next_session_service.create_next_session_task(
+            {
+                "ts_code": symbol_safe,
+                "symbol": symbol_safe,
+                "source_task_id": source_task_id,
+                "manual_button_required": True,
+                "p2_small_data_ready": True,
+                "p3_readable_result_ready": True,
+                "trigger": "candidate_radar_quant_projection_provider_model_acceptance",
+            },
+        )
+        next_status = _safe_text(
+            next_task.get("current_step") or next_task.get("status") or "next_session_task_returned",
+            limit=160,
+        )
+    except Exception as exc:
+        next_status = "next_session_local_refresh_failed"
+        next_error = _safe_text(str(exc), limit=180)
+
+    alignment = _search_quant_projection_cross_module_alignment_readback(symbol_safe)
+    factor_aligned = alignment.get("factor_alignment_state") == "aligned"
+    next_aligned = alignment.get("next_alignment_state") in {"aligned", "aligned_empty_chart"}
+    echarts_refreshed = alignment.get("echarts_alignment_state") == "aligned"
+    overall_ready = alignment.get("overall_alignment_ready") is True
+
+    rows = [
+        {
+            "refresh_key": "factor_light_current_symbol",
+            "模块": "Factor 量化推演",
+            "当前状态": "已刷新当前票本地 Factor 包" if factor_aligned else "Factor 本地刷新未对齐当前票",
+            "本次确认": symbol_safe,
+            "任务状态": factor_status,
+            "证据": f"packet={FACTOR_QUANT_HUB_PACKET_KEY}; task_id={factor_task.get('task_id') or ''}",
+            "用户下一步": "查看 Factor/Next 对齐摘要；生产级因子验收仍需后续 provider-backed validation。",
+            "边界": "本地 Factor light 任务不调用 Tushare/DeepSeek/worker，不生成交易动作。",
+            "aligned": factor_aligned,
+            "error_message_safe": factor_error,
+        },
+        {
+            "refresh_key": "next_session_current_symbol",
+            "模块": "Next Session 次日图谱",
+            "当前状态": "已刷新当前票本地 Next Session 包" if next_aligned else "Next Session 本地刷新未对齐当前票",
+            "本次确认": symbol_safe,
+            "任务状态": next_status,
+            "证据": f"packet={NEXT_SESSION_PACKET_KEY}; task_id={next_task.get('task_id') or ''}",
+            "用户下一步": "查看同票次日图谱预览；生产级 ECharts 替代仍需后续验收。",
+            "边界": "本地 Next Session 预览只读研究，不调用 provider/model，不改 operation_zones。",
+            "aligned": next_aligned,
+            "error_message_safe": next_error,
+        },
+        {
+            "refresh_key": "echarts_payload_current_symbol",
+            "模块": "ECharts 图谱",
+            "当前状态": "ECharts payload 已有当前票可绘制数据" if echarts_refreshed else "ECharts payload 未形成当前票可绘制数据",
+            "本次确认": symbol_safe,
+            "任务状态": str(alignment.get("echarts_alignment_state") or ""),
+            "证据": f"alignment={alignment.get('status') or ''}; next_symbol={alignment.get('next_symbol') or ''}",
+            "用户下一步": "普通页面可先看同票预览；完整生产替代继续按 LTG-08 推进。",
+            "边界": "ECharts 本地预览不构成买卖、加仓、融资或操作区改写。",
+            "aligned": echarts_refreshed,
+            "error_message_safe": "",
+        },
+    ]
+    for row in rows:
+        row.update(
+            {
+                "cache_only_readback": False,
+                "creates_task_from_post_task": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "worker_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
+            }
+        )
+
+    call_ledger = [
+        _candidate_call_ledger_row(
+            api="local_candidate_quant_projection_factor_light_refresh",
+            source_snapshot="candidate_radar_provider_model_acceptance_post_task",
+            row_count=1 if factor_aligned else 0,
+            call_status="success" if factor_aligned else factor_status,
+            request_params_safe={
+                "symbol": symbol_safe,
+                "source_task_id": source_task_id,
+                "factor_task_id": factor_task.get("task_id") or "",
+                "external_sources_allowed": False,
+                "production_factor_validation_complete": False,
+            },
+        ),
+        _candidate_call_ledger_row(
+            api="local_candidate_quant_projection_next_session_refresh",
+            source_snapshot="candidate_radar_provider_model_acceptance_post_task",
+            row_count=1 if next_aligned else 0,
+            call_status="success" if next_aligned else next_status,
+            request_params_safe={
+                "symbol": symbol_safe,
+                "source_task_id": source_task_id,
+                "next_session_task_id": next_task.get("task_id") or "",
+                "external_sources_allowed": False,
+                "production_next_session_replacement_complete": False,
+            },
+        ),
+        _candidate_call_ledger_row(
+            api="local_candidate_quant_projection_echarts_payload_readback",
+            source_snapshot=NEXT_SESSION_PACKET_KEY,
+            row_count=1 if echarts_refreshed else 0,
+            call_status="success" if echarts_refreshed else str(alignment.get("echarts_alignment_state") or "pending"),
+            request_params_safe={
+                "symbol": symbol_safe,
+                "source_task_id": source_task_id,
+                "alignment_status": alignment.get("status") or "",
+                "external_sources_allowed": False,
+                "production_echarts_replacement_complete": False,
+            },
+        ),
+    ]
+    for row in call_ledger:
+        row["worker_called"] = False
+        row["contains_secret"] = False
+
+    return {
+        "schema_version": "candidate_radar_quant_projection_local_factor_next_refresh.v1",
+        "status": "local_factor_next_echarts_refreshed" if overall_ready else "local_factor_next_echarts_refresh_degraded",
+        "symbol": symbol_safe,
+        "source_task_id": source_task_id,
+        "refreshed_at": refreshed_at,
+        "factor_refresh_executed": factor_aligned,
+        "next_session_refresh_executed": next_aligned,
+        "echarts_payload_refreshed": echarts_refreshed,
+        "overall_alignment_ready": overall_ready,
+        "alignment": alignment,
+        "rows": rows,
+        "row_count": len(rows),
+        "call_ledger": call_ledger,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "worker_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_quant_projection_complete": False,
+        "production_factor_validation_complete": False,
+        "production_next_session_replacement_complete": False,
+        "production_echarts_replacement_complete": False,
+    }
+
+
 def _quant_projection_task_payload(payload: Any) -> Any:
     if not isinstance(payload, Mapping):
         return payload
@@ -15315,9 +15527,15 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
             for row in task_call_ledger
             if row.get("tushare_called") is True and row.get("call_status") == "success"
         )
+        local_refresh_count = sum(
+            1
+            for row in task_call_ledger
+            if str(row.get("api") or "").startswith("local_candidate_quant_projection_")
+        )
         ledger["delegated_tushare_first_call_ledger_replayed"] = len(task_call_ledger) > 1
-        ledger["delegated_tushare_first_call_ledger_count"] = max(0, len(task_call_ledger) - 1)
+        ledger["delegated_tushare_first_call_ledger_count"] = provider_success_count
         ledger["delegated_tushare_first_provider_api_success_count"] = provider_success_count
+        ledger["delegated_local_factor_next_refresh_call_ledger_count"] = local_refresh_count
     return task_service.update_task_status(
         task["task_id"],
         status="success",
@@ -20764,6 +20982,60 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         explicit_request=True,
         task_id=str(task["task_id"]),
     )
+    local_factor_next_refresh = {}
+    local_factor_next_ledger: list[dict[str, Any]] = []
+    if receipt.get("tushare_call_ledger_evidence_done") is True:
+        task_service.update_task_status(
+            task["task_id"],
+            status="running",
+            progress=0.72,
+            current_step="refreshing_local_factor_next_echarts_for_confirmed_symbol",
+        )
+        local_factor_next_refresh = _run_quant_projection_local_factor_next_refresh(
+            symbol=str(receipt.get("symbol") or ""),
+            source_task_id=str(task["task_id"]),
+        )
+        local_factor_next_ledger = [
+            row for row in _as_list(local_factor_next_refresh.get("call_ledger")) if isinstance(row, dict)
+        ]
+        receipt["local_factor_next_refresh"] = local_factor_next_refresh
+        receipt["local_factor_next_refresh_rows"] = [
+            row for row in _as_list(local_factor_next_refresh.get("rows")) if isinstance(row, dict)
+        ]
+        receipt["factor_refresh_executed"] = local_factor_next_refresh.get("factor_refresh_executed") is True
+        receipt["next_session_refresh_executed"] = local_factor_next_refresh.get("next_session_refresh_executed") is True
+        receipt["echarts_payload_refreshed"] = local_factor_next_refresh.get("echarts_payload_refreshed") is True
+        receipt["local_factor_next_refresh_status"] = local_factor_next_refresh.get("status") or ""
+        for row in receipt_rows:
+            if row.get("criterion") == "factor_next_echarts_refresh_still_pending":
+                row.update(
+                    {
+                        "criterion": "factor_next_echarts_local_preview_refresh",
+                        "status": (
+                            "passed_local_factor_next_echarts_preview_refreshed_production_pending"
+                            if local_factor_next_refresh.get("overall_alignment_ready") is True
+                            else "passed_local_factor_next_echarts_preview_degraded_production_pending"
+                        ),
+                        "passed": True,
+                        "production_blocker": True,
+                        "evidence": (
+                            f"factor_refresh_executed={receipt['factor_refresh_executed']}; "
+                            f"next_session_refresh_executed={receipt['next_session_refresh_executed']}; "
+                            f"echarts_payload_refreshed={receipt['echarts_payload_refreshed']}; "
+                            f"status={receipt['local_factor_next_refresh_status']}"
+                        ),
+                        "next_action": (
+                            "Local same-symbol preview is visible; continue provider-backed Factor validation "
+                            "and Next Session production promotion before strict closeout."
+                        ),
+                    }
+                )
+        receipt["rows"] = receipt_rows
+        receipt["row_count"] = len(receipt_rows)
+        receipt["production_blocker_count"] = len([row for row in receipt_rows if row.get("production_blocker")])
+        receipt["production_blockers"] = [
+            str(row.get("criterion") or "") for row in receipt_rows if row.get("production_blocker")
+        ]
     request_params_safe = {
         "symbol": receipt.get("symbol"),
         "selected_apis": selected_apis,
@@ -20780,6 +21052,10 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         "deepseek_output_acceptance_done": receipt.get("deepseek_output_acceptance_done"),
         "deepseek_explanation_status": receipt.get("deepseek_explanation_status"),
         "deepseek_safe_failure_mode": receipt.get("deepseek_safe_failure_mode"),
+        "factor_refresh_executed": receipt.get("factor_refresh_executed"),
+        "next_session_refresh_executed": receipt.get("next_session_refresh_executed"),
+        "echarts_payload_refreshed": receipt.get("echarts_payload_refreshed"),
+        "local_factor_next_refresh_status": receipt.get("local_factor_next_refresh_status") or "",
         "production_quant_projection_complete": False,
     }
     local_ledger = _candidate_call_ledger_row(
@@ -20837,8 +21113,14 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         if row
     ]
     packet["call_ledger"] = [local_ledger] + provider_ledger + deepseek_call_ledger
+    if local_factor_next_ledger:
+        packet["call_ledger"].extend(local_factor_next_ledger)
+        packet["search_quant_projection_local_factor_next_refresh"] = local_factor_next_refresh
+        packet["search_quant_projection_local_factor_next_refresh_rows"] = [
+            row for row in _as_list(local_factor_next_refresh.get("rows")) if isinstance(row, dict)
+        ]
     packet["warnings"] = [
-        "搜票量化推演 provider/model acceptance 已记录 Tushare light provider ledger；DeepSeek 仅解释并可安全降级，Factor/Next/ECharts/production promotion 仍是后续证据。"
+        "搜票量化推演 provider/model acceptance 已记录 Tushare light provider ledger；DeepSeek 仅解释并可安全降级，Factor/Next/ECharts 当前票本地预览可刷新但不代表生产 closeout。"
     ] + [
         warning
         for warning in _as_list(packet.get("warnings"))
@@ -20861,7 +21143,7 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
             warning="candidate_radar_quant_projection_provider_model_acceptance_storage_failed",
         ) or task
 
-    task_ledger = [local_ledger] + provider_ledger + deepseek_call_ledger
+    task_ledger = [local_ledger] + provider_ledger + deepseek_call_ledger + local_factor_next_ledger
     provider_evidence_done = receipt.get("tushare_call_ledger_evidence_done") is True
     final_status = "success" if provider_evidence_done or receipt.get("direct_evidence_verified") is True else "failed"
     return task_service.update_task_status(
