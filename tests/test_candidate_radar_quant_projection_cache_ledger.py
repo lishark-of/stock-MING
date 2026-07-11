@@ -376,8 +376,10 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         )
 
         original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
+        provider_payloads = []
 
         def fake_run_tushare_refresh_task(payload, **_kwargs):
+            provider_payloads.append(dict(payload))
             return {
                 "task_id": "fake-tushare-light-cache-ledger",
                 "status": "success",
@@ -422,6 +424,9 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
                 "include_tushare": True,
                 "include_deepseek": False,
                 "user_approved": True,
+                "start_date": "20260601",
+                "end_date": "20260612",
+                "lookback_days": 30,
                 "p0_confirm_gate_evidence": {
                     "schema_version": "candidate_radar_p0_confirm_gate.v1",
                     "p0_ready": True,
@@ -448,14 +453,24 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             task["current_step"],
             "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
         )
+        self.assertEqual(len(provider_payloads), 1)
+        self.assertEqual(provider_payloads[0]["start_date"], "20260601")
+        self.assertEqual(provider_payloads[0]["end_date"], "20260612")
+        self.assertEqual(provider_payloads[0]["apis"], ["trade_cal", "daily", "daily_basic", "moneyflow"])
         expected_apis = ["trade_cal", "daily", "daily_basic", "moneyflow"]
         task_provider_ledger = [
             row for row in task["call_ledger"] if row.get("api") in expected_apis
         ]
         self.assertEqual([row["api"] for row in task_provider_ledger], expected_apis)
+        for row in task_provider_ledger:
+            self.assertEqual(row["request_params_safe"]["start_date"], "20260601")
+            self.assertEqual(row["request_params_safe"]["end_date"], "20260612")
         self.assertTrue(task["call_ledger"][0]["delegated_tushare_first_call_ledger_replayed"])
         self.assertEqual(task["call_ledger"][0]["delegated_tushare_first_call_ledger_count"], 4)
         self.assertEqual(task["call_ledger"][0]["delegated_tushare_first_provider_api_success_count"], 4)
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["start_date"], "20260601")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["end_date"], "20260612")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["lookback_days"], 30)
         self.assertEqual(task["call_ledger"][0]["delegated_local_factor_next_refresh_call_ledger_count"], 3)
         self.assertTrue(
             any(

@@ -15368,6 +15368,11 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         "symbol": projection_receipt.get("symbol"),
         "raw_input_safe": projection_receipt.get("raw_input_safe"),
         "symbol_valid": projection_receipt.get("symbol_valid") is True,
+        "start_date": _safe_text(payload_safe.get("start_date") or "", limit=16),
+        "end_date": _safe_text(payload_safe.get("end_date") or "", limit=16),
+        "lookback_days": int(payload_safe.get("lookback_days") or 0)
+        if str(payload_safe.get("lookback_days") or "").isdigit()
+        else 0,
         "include_tushare_requested": payload_safe.get("include_tushare") is True,
         "include_deepseek_requested": payload_safe.get("include_deepseek") is True,
         "deepseek_failure_mode_for_acceptance": _safe_text(
@@ -15454,6 +15459,9 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                     "include_deepseek": _coerce_bool(payload_safe.get("include_deepseek"), False),
                     "user_approved": True,
                     "selected_apis": list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS),
+                    "start_date": request_params_safe["start_date"],
+                    "end_date": request_params_safe["end_date"],
+                    "lookback_days": request_params_safe["lookback_days"],
                     "requested_by": "candidate_radar_quant_projection_confirm_chain",
                 }
                 run_candidate_quant_projection_acceptance_dry_run_task(chain_payload)
@@ -15491,6 +15499,9 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                                 "operator_approved": True,
                                 "acceptance_scope_hash": scope_hash,
                                 "include_deepseek": _coerce_bool(payload_safe.get("include_deepseek"), False),
+                                "start_date": request_params_safe["start_date"],
+                                "end_date": request_params_safe["end_date"],
+                                "lookback_days": request_params_safe["lookback_days"],
                                 "deepseek_failure_mode_for_acceptance": _safe_text(
                                     payload_safe.get("deepseek_failure_mode_for_acceptance") or "",
                                     limit=80,
