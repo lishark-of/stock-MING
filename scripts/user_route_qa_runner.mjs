@@ -83,6 +83,7 @@ function parseArgs(argv) {
     apiBase: DEFAULT_API_BASE,
     artifactRoot: DEFAULT_ARTIFACT_ROOT,
     route: null,
+    candidateResultScenario: "live",
     screenshots: true,
     json: false,
     printPlan: false
@@ -93,13 +94,17 @@ function parseArgs(argv) {
     else if (arg === "--api-base") args.apiBase = argv[++index] || args.apiBase;
     else if (arg === "--out") args.artifactRoot = argv[++index] || args.artifactRoot;
     else if (arg === "--route") args.route = argv[++index] || args.route;
+    else if (arg === "--candidate-result-scenario") args.candidateResultScenario = argv[++index] || args.candidateResultScenario;
     else if (arg === "--no-screenshots") args.screenshots = false;
     else if (arg === "--json") args.json = true;
     else if (arg === "--print-plan") args.printPlan = true;
     else if (arg === "--help") {
-      console.log("Usage: node scripts/user_route_qa_runner.mjs [--base-url http://127.0.0.1:5173] [--api-base http://127.0.0.1:8710] [--out .stock_ming_3/user_route_qa] [--route #home] [--no-screenshots] [--json] [--print-plan]");
+      console.log("Usage: node scripts/user_route_qa_runner.mjs [--base-url http://127.0.0.1:5173] [--api-base http://127.0.0.1:8710] [--out .stock_ming_3/user_route_qa] [--route #home] [--candidate-result-scenario live|degraded-last-good] [--no-screenshots] [--json] [--print-plan]");
       process.exit(0);
     }
+  }
+  if (!["live", "degraded-last-good"].includes(args.candidateResultScenario)) {
+    throw new Error(`Unknown candidate result scenario: ${args.candidateResultScenario}`);
   }
   return args;
 }
@@ -157,12 +162,15 @@ function makePlan(args) {
       "typing into visible inputs does not create a task",
       "visible editable inputs must be typed before typing silence is accepted",
       "candidate/factor/next routes display the same symbol, task id, and result_version when current result cache exists",
+      "optional degraded-last-good replay proves visible degraded reason, last-good retention, and stale-result overwrite guard without writing cache",
       "route-specific checks verify the margin ETF confirmed data bridge is visible",
       "screenshots and JSON report stay under ignored .stock_ming_3"
     ],
     base_url: args.baseUrl,
     api_base: args.apiBase,
     artifact_root: args.artifactRoot,
+    candidate_result_scenario: args.candidateResultScenario,
+    candidate_result_scenario_replay: args.candidateResultScenario !== "live",
     local_urls_only: isLocalUrl(args.baseUrl) && isLocalUrl(args.apiBase),
     external_calls_triggered: false,
     tushare_called: false,
@@ -189,90 +197,240 @@ function safeStringList(value) {
   return Array.isArray(value) ? value.map((item) => safeString(item)).filter(Boolean) : [];
 }
 
-async function fetchCandidateResultChain(apiBase) {
+async function fetchCandidateCacheEnvelope(apiBase) {
+  const response = await fetch(`${apiBase.replace(/\/$/, "")}/api/candidate-radar/cache`);
+  return response.json();
+}
+
+function buildDegradedLastGoodCandidateEnvelope(livePayload) {
+  const envelope = JSON.parse(JSON.stringify(livePayload && typeof livePayload === "object" ? livePayload : {}));
+  const data = envelope.data && typeof envelope.data === "object" ? envelope.data : {};
+  const summary = data.search_quant_result_version_summary || {};
+  const currentLineage = data.search_quant_current_result_lineage || data.search_quant_result_lineage || {};
+  const currentSymbol = safeString(summary.current_result_symbol || currentLineage.symbol || "002008.SZ");
+  const currentVersion = safeString(summary.current_result_version || currentLineage.result_version || "qrv_last_good_browser_qa");
+  const degradedLineage = {
+    schema_version: "candidate_radar_search_quant_projection_result_lineage.v1",
+    task_id: "local-qa-degraded-task",
+    symbol: "000001.SZ",
+    scope_hash: "qa-degraded-scope-hash",
+    scope_hash_short: "qa-degraded-scope",
+    provider_call_ledger_ids: ["pcl_qa_trade_cal_only"],
+    input_packet_keys: [
+      "command_center_candidate_radar_quant_projection_receipt",
+      "command_center_candidate_radar_quant_projection_tushare_light_packet"
+    ],
+    output_packet_keys: ["command_center_3_candidate_radar_cache"],
+    data_date: safeString(summary.current_result_data_date || currentLineage.data_date || "20260711"),
+    freshness_state: "partial_provider",
+    model_ledger_id: "mlg_qa_skipped_missing_facts",
+    result_version: "qrv_degraded_browser_qa",
+    facts_packet_key: "command_center_candidate_radar_quant_projection_tushare_light_packet",
+    facts_package_status: "partial_provider",
+    factor_next_same_result_ready: false,
+    current_result_promoted: false,
+    last_good_policy: "promote_current_result_only_after_tushare_facts_factor_next_same_result_ready",
+    late_task_overwrite_guard: "symbol_and_result_version_must_match",
+    old_task_can_overwrite_current: false,
+    deepseek_status: "skipped_missing_facts",
+    deepseek_skipped_missing_facts: true,
+    deepseek_is_data_source: false,
+    does_not_execute_trades: true,
+    does_not_modify_strategy_action: true,
+    does_not_override_numeric_values: true,
+    contains_secret: false
+  };
+  data.latest_confirmed_symbol = degradedLineage.symbol;
+  data.search_quant_result_lineage = degradedLineage;
+  data.search_quant_degraded_result_lineage = degradedLineage;
+  data.search_quant_current_result_lineage = currentLineage;
+  data.search_quant_last_good_result_lineage = currentLineage;
+  data.search_quant_result_version_summary = {
+    schema_version: "candidate_radar_search_quant_projection_result_version_summary.v1",
+    status: "degraded_result_recorded_last_good_retained",
+    latest_task_id: degradedLineage.task_id,
+    latest_task_symbol: degradedLineage.symbol,
+    latest_task_result_version: degradedLineage.result_version,
+    latest_result_version: degradedLineage.result_version,
+    latest_task_scope_hash: degradedLineage.scope_hash,
+    latest_task_scope_hash_short: degradedLineage.scope_hash_short,
+    latest_task_provider_call_ledger_ids: degradedLineage.provider_call_ledger_ids,
+    latest_task_input_packet_keys: degradedLineage.input_packet_keys,
+    latest_task_output_packet_keys: degradedLineage.output_packet_keys,
+    latest_task_data_date: degradedLineage.data_date,
+    latest_task_freshness_state: degradedLineage.freshness_state,
+    latest_task_model_ledger_id: degradedLineage.model_ledger_id,
+    current_result_version: currentVersion,
+    current_result_task_id: safeString(currentLineage.task_id || "local-last-good-task"),
+    current_result_symbol: currentSymbol,
+    current_result_scope_hash_short: safeString(currentLineage.scope_hash_short || "last-good-scope"),
+    current_result_provider_call_ledger_ids: safeStringList(currentLineage.provider_call_ledger_ids),
+    current_result_input_packet_keys: safeStringList(currentLineage.input_packet_keys),
+    current_result_output_packet_keys: safeStringList(currentLineage.output_packet_keys),
+    current_result_data_date: safeString(currentLineage.data_date || degradedLineage.data_date),
+    current_result_freshness_state: safeString(currentLineage.freshness_state || "fresh_provider"),
+    current_result_model_ledger_id: safeString(currentLineage.model_ledger_id || ""),
+    last_good_result_version: currentVersion,
+    last_good_task_id: safeString(currentLineage.task_id || "local-last-good-task"),
+    last_good_result_symbol: currentSymbol,
+    degraded_result_version: degradedLineage.result_version,
+    degraded_task_id: degradedLineage.task_id,
+    degraded_result_symbol: degradedLineage.symbol,
+    degraded_scope_hash: degradedLineage.scope_hash,
+    degraded_scope_hash_short: degradedLineage.scope_hash_short,
+    degraded_provider_call_ledger_ids: degradedLineage.provider_call_ledger_ids,
+    degraded_input_packet_keys: degradedLineage.input_packet_keys,
+    degraded_output_packet_keys: degradedLineage.output_packet_keys,
+    degraded_data_date: degradedLineage.data_date,
+    degraded_freshness_state: degradedLineage.freshness_state,
+    degraded_model_ledger_id: degradedLineage.model_ledger_id,
+    degraded_deepseek_status: "skipped_missing_facts",
+    degraded_deepseek_skipped_missing_facts: true,
+    degraded_reason: "skipped_missing_facts",
+    current_result_promoted: false,
+    current_result_matches_latest_task: false,
+    last_good_result_available: true,
+    degraded_result_visible: true,
+    last_good_policy: degradedLineage.last_good_policy,
+    late_task_overwrite_guard: degradedLineage.late_task_overwrite_guard,
+    old_task_can_overwrite_current: false,
+    ordinary_summary: "本次确认已标记 degraded；页面保留上一条 last-good current result，不让失败任务覆盖当前结果。",
+    ordinary_next_step: "先按 last-good 只读回放；本次 degraded 只用于查看缺口和重试条件。",
+    readback_route: "GET /api/candidate-radar/cache",
+    cache_only_readback: true,
+    creates_task_from_readback: false,
+    readback_external_calls_triggered: false,
+    tushare_called_from_readback: false,
+    deepseek_called_from_readback: false,
+    does_not_execute_trades: true,
+    does_not_modify_strategy_action: true,
+    candidate_is_not_buy_instruction: true,
+    contains_secret: false
+  };
+  data.search_quant_provider_model_acceptance_receipt = {
+    ...(data.search_quant_provider_model_acceptance_receipt || {}),
+    status: "search_quant_provider_model_acceptance_degraded_tushare_facts_missing_deepseek_skipped",
+    task_id: degradedLineage.task_id,
+    symbol: degradedLineage.symbol,
+    result_version: degradedLineage.result_version,
+    result_version_summary: data.search_quant_result_version_summary,
+    provider_call_ledger_ids: degradedLineage.provider_call_ledger_ids,
+    provider_api_call_count: 4,
+    provider_api_success_count: 1,
+    tushare_call_ledger_evidence_done: false,
+    deepseek_model_ledger_recorded: true,
+    deepseek_skipped_missing_facts: true,
+    deepseek_safe_failure_mode: "skipped_missing_facts",
+    deepseek_called: false,
+    old_task_can_overwrite_current: false,
+    contains_secret: false
+  };
+  data.search_quant_deepseek_model_ledger = {
+    schema_version: "candidate_radar_search_quant_projection_deepseek_model_ledger.v1",
+    status: "skipped_missing_facts",
+    model_call_status: "skipped_missing_facts",
+    model_ledger_id: degradedLineage.model_ledger_id,
+    deepseek_called: false,
+    external_calls_triggered: false,
+    raw_prompt_stored: false,
+    raw_output_stored: false,
+    safe_failure_mode: "skipped_missing_facts",
+    contains_secret: false
+  };
+  data.search_quant_deepseek_explanation = {
+    schema_version: "candidate_radar_search_quant_projection_deepseek_explanation.v1",
+    status: "skipped_missing_facts",
+    source: "safe_degraded_status",
+    model_ledger_id: degradedLineage.model_ledger_id,
+    error_message_safe: "skipped_missing_facts",
+    explanation_only: true,
+    does_not_execute_trades: true,
+    does_not_modify_strategy_action: true,
+    contains_secret: false
+  };
+  envelope.data = data;
+  envelope.call_ledger = Array.isArray(envelope.call_ledger) ? envelope.call_ledger : [];
+  envelope.warnings = [
+    ...(Array.isArray(envelope.warnings) ? envelope.warnings : []),
+    "local_browser_qa_degraded_last_good_replay_only_no_cache_write_no_provider_model_call"
+  ];
+  return envelope;
+}
+
+function buildCandidateEnvelopeForScenario(livePayload, scenario) {
+  if (scenario === "degraded-last-good") return buildDegradedLastGoodCandidateEnvelope(livePayload);
+  return livePayload;
+}
+
+function candidateResultChainFromEnvelope(payload, scenario = "live") {
+  const data = payload && typeof payload === "object" ? payload.data || payload : {};
+  const summary = data.search_quant_result_version_summary || {};
+  const currentLineage = data.search_quant_current_result_lineage || {};
+  const resultLineage = data.search_quant_result_lineage || {};
+  const degradedLineage = data.search_quant_degraded_result_lineage || {};
+  const providerReceipt = data.search_quant_provider_model_acceptance_receipt || {};
+  const modelLedger = data.search_quant_deepseek_model_ledger || {};
+  const currentSymbol = safeString(summary.current_result_symbol || currentLineage.symbol || resultLineage.symbol || providerReceipt.symbol || data.latest_confirmed_symbol);
+  const latestSymbol = safeString(summary.latest_task_symbol || resultLineage.symbol || providerReceipt.symbol || data.latest_confirmed_symbol || currentSymbol);
+  const currentVersion = safeString(summary.current_result_version || currentLineage.result_version || resultLineage.result_version || providerReceipt.result_version || data.search_quant_result_version);
+  const latestVersion = safeString(summary.latest_task_result_version || summary.latest_result_version || resultLineage.result_version || providerReceipt.result_version || currentVersion);
+  const degradedVersion = safeString(summary.degraded_result_version || degradedLineage.result_version || "");
+  const degradedVisible = summary.degraded_result_visible === true || Boolean(degradedVersion);
+  const providerLedgerIds = safeStringList(
+    summary.current_result_provider_call_ledger_ids ||
+      summary.latest_task_provider_call_ledger_ids ||
+      currentLineage.provider_call_ledger_ids ||
+      resultLineage.provider_call_ledger_ids ||
+      providerReceipt.provider_call_ledger_ids
+  );
+  const degradedProviderLedgerIds = safeStringList(
+    summary.degraded_provider_call_ledger_ids || degradedLineage.provider_call_ledger_ids
+  );
+  return {
+    available: Boolean(currentSymbol && currentVersion),
+    scenario,
+    symbol: currentSymbol,
+    result_version: currentVersion,
+    task_id: safeString(summary.current_result_task_id || summary.latest_task_id || currentLineage.task_id || resultLineage.task_id || providerReceipt.task_id || data.latest_confirmed_task_id),
+    latest_symbol: latestSymbol,
+    latest_result_version: latestVersion,
+    latest_task_id: safeString(summary.latest_task_id || resultLineage.task_id || providerReceipt.task_id || data.latest_confirmed_task_id),
+    degraded_result_visible: degradedVisible,
+    degraded_symbol: safeString(summary.degraded_result_symbol || degradedLineage.symbol || (degradedVisible ? latestSymbol : "")),
+    degraded_result_version: degradedVersion,
+    degraded_reason: safeString(summary.degraded_reason || providerReceipt.deepseek_safe_failure_mode || degradedLineage.freshness_state || ""),
+    scope_hash_short: safeString(summary.current_result_scope_hash_short || summary.latest_task_scope_hash_short || currentLineage.scope_hash_short || resultLineage.scope_hash_short || providerReceipt.acceptance_scope_hash_short),
+    data_date: safeString(summary.current_result_data_date || summary.latest_task_data_date || currentLineage.data_date || resultLineage.data_date || providerReceipt.data_date),
+    freshness_state: safeString(summary.current_result_freshness_state || summary.latest_task_freshness_state || currentLineage.freshness_state || resultLineage.freshness_state || providerReceipt.freshness_state),
+    model_ledger_id: safeString(summary.current_result_model_ledger_id || summary.latest_task_model_ledger_id || currentLineage.model_ledger_id || resultLineage.model_ledger_id || providerReceipt.model_ledger_id || modelLedger.model_ledger_id),
+    provider_call_ledger_ids: providerLedgerIds,
+    provider_call_ledger_count: providerLedgerIds.length || degradedProviderLedgerIds.length,
+    degraded_provider_call_ledger_ids: degradedProviderLedgerIds,
+    status: safeString(summary.status || providerReceipt.status || resultLineage.facts_package_status),
+    current_result_matches_latest_task: summary.current_result_matches_latest_task === true,
+    old_task_can_overwrite_current: summary.old_task_can_overwrite_current === true,
+    old_task_overwrite_guard_ready: summary.old_task_can_overwrite_current === false || resultLineage.old_task_can_overwrite_current === false,
+    readback_route: "GET /api/candidate-radar/cache",
+    cache_only_readback: true,
+    creates_task_from_readback: false,
+    external_calls_triggered: false,
+    tushare_called: false,
+    deepseek_called: false,
+    github_called: false,
+    does_not_execute_trades: true,
+    does_not_modify_strategy_action: true,
+    contains_secret: false
+  };
+}
+
+async function fetchCandidateResultChain(apiBase, scenarioEnvelope = null, scenario = "live") {
   try {
-    const response = await fetch(`${apiBase.replace(/\/$/, "")}/api/candidate-radar/cache`);
-    const payload = await response.json();
-    const data = payload && typeof payload === "object" ? payload.data || payload : {};
-    const summary = data.search_quant_result_version_summary || {};
-    const currentLineage = data.search_quant_current_result_lineage || {};
-    const resultLineage = data.search_quant_result_lineage || {};
-    const providerReceipt = data.search_quant_provider_model_acceptance_receipt || {};
-    const modelLedger = data.search_quant_deepseek_model_ledger || {};
-    const symbol = safeString(
-      summary.current_result_symbol ||
-        summary.latest_task_symbol ||
-        currentLineage.symbol ||
-        resultLineage.symbol ||
-        providerReceipt.symbol ||
-        data.latest_confirmed_symbol
-    );
-    const resultVersion = safeString(
-      summary.current_result_version ||
-        summary.latest_task_result_version ||
-        summary.latest_result_version ||
-        currentLineage.result_version ||
-        resultLineage.result_version ||
-        providerReceipt.result_version ||
-        data.search_quant_result_version
-    );
-    const taskId = safeString(
-      summary.current_result_task_id ||
-        summary.latest_task_id ||
-        currentLineage.task_id ||
-        resultLineage.task_id ||
-        providerReceipt.task_id ||
-        data.latest_confirmed_task_id
-    );
-    const modelLedgerId = safeString(
-      summary.current_result_model_ledger_id ||
-        summary.latest_task_model_ledger_id ||
-        currentLineage.model_ledger_id ||
-        resultLineage.model_ledger_id ||
-        providerReceipt.model_ledger_id ||
-        modelLedger.model_ledger_id
-    );
-    const providerLedgerIds = safeStringList(
-      summary.current_result_provider_call_ledger_ids ||
-        summary.latest_task_provider_call_ledger_ids ||
-        currentLineage.provider_call_ledger_ids ||
-        resultLineage.provider_call_ledger_ids ||
-        providerReceipt.provider_call_ledger_ids
-    );
-    return {
-      available: Boolean(symbol && resultVersion),
-      symbol,
-      result_version: resultVersion,
-      task_id: taskId,
-      scope_hash_short: safeString(
-        summary.current_result_scope_hash_short ||
-          summary.latest_task_scope_hash_short ||
-          currentLineage.scope_hash_short ||
-          resultLineage.scope_hash_short ||
-          providerReceipt.acceptance_scope_hash_short
-      ),
-      data_date: safeString(summary.current_result_data_date || summary.latest_task_data_date || currentLineage.data_date || resultLineage.data_date || providerReceipt.data_date),
-      freshness_state: safeString(summary.current_result_freshness_state || summary.latest_task_freshness_state || currentLineage.freshness_state || resultLineage.freshness_state || providerReceipt.freshness_state),
-      model_ledger_id: modelLedgerId,
-      provider_call_ledger_ids: providerLedgerIds,
-      provider_call_ledger_count: providerLedgerIds.length,
-      status: safeString(summary.status || providerReceipt.status || resultLineage.facts_package_status),
-      current_result_matches_latest_task: summary.current_result_matches_latest_task === true,
-      old_task_can_overwrite_current: summary.old_task_can_overwrite_current === true,
-      readback_route: "GET /api/candidate-radar/cache",
-      cache_only_readback: true,
-      creates_task_from_readback: false,
-      external_calls_triggered: false,
-      tushare_called: false,
-      deepseek_called: false,
-      github_called: false,
-      does_not_execute_trades: true,
-      does_not_modify_strategy_action: true,
-      contains_secret: false
-    };
+    const payload = scenarioEnvelope || (await fetchCandidateCacheEnvelope(apiBase));
+    return candidateResultChainFromEnvelope(payload, scenario);
   } catch (error) {
     return {
       available: false,
+      scenario,
       error_message_safe: `candidate_result_chain_unavailable:${error && error.message ? error.message : String(error)}`,
       readback_route: "GET /api/candidate-radar/cache",
       cache_only_readback: true,
@@ -380,18 +538,30 @@ async function inspectRouteSpecific(page, route, candidateResultChain) {
     }
     await page
       .waitForFunction(
-        ({ symbol, resultVersion, taskId }) => {
+        ({ symbol, resultVersion, taskId, latestTaskId, latestSymbol, degradedResultVersion, degradedResultVisible }) => {
           const bodyText = (document.body?.innerText || "").replace(/\s+/g, " ");
+          const taskVisible = degradedResultVisible
+            ? Boolean((latestTaskId && bodyText.includes(latestTaskId)) || (taskId && bodyText.includes(taskId)))
+            : (!taskId || bodyText.includes(taskId));
           return (
             Boolean(symbol && bodyText.includes(symbol)) &&
             Boolean(resultVersion && bodyText.includes(resultVersion)) &&
-            (!taskId || bodyText.includes(taskId))
+            taskVisible &&
+            (!degradedResultVisible ||
+              (
+                Boolean(latestSymbol && bodyText.includes(latestSymbol)) &&
+                Boolean(degradedResultVersion && bodyText.includes(degradedResultVersion))
+              ))
           );
         },
         {
           symbol: candidateResultChain.symbol,
           resultVersion: candidateResultChain.result_version,
-          taskId: candidateResultChain.task_id
+          taskId: candidateResultChain.task_id,
+          latestTaskId: candidateResultChain.latest_task_id,
+          latestSymbol: candidateResultChain.latest_symbol,
+          degradedResultVersion: candidateResultChain.degraded_result_version,
+          degradedResultVisible: candidateResultChain.degraded_result_visible
         },
         { timeout: 4000 }
       )
@@ -401,7 +571,12 @@ async function inspectRouteSpecific(page, route, candidateResultChain) {
       const textChecks = [
         { label: "same_result_symbol", ok: Boolean(chain.symbol && bodyText.includes(chain.symbol)) },
         { label: "same_result_version", ok: Boolean(chain.result_version && bodyText.includes(chain.result_version)) },
-        { label: "same_result_task_id", ok: !chain.task_id || bodyText.includes(chain.task_id) },
+        { label: "same_result_task_id", ok: chain.degraded_result_visible ? Boolean((chain.latest_task_id && bodyText.includes(chain.latest_task_id)) || (chain.task_id && bodyText.includes(chain.task_id))) : (!chain.task_id || bodyText.includes(chain.task_id)) },
+        { label: "latest_degraded_symbol", ok: !chain.degraded_result_visible || Boolean(chain.latest_symbol && bodyText.includes(chain.latest_symbol)) },
+        { label: "latest_degraded_version", ok: !chain.degraded_result_visible || Boolean(chain.degraded_result_version && bodyText.includes(chain.degraded_result_version)) },
+        { label: "degraded_reason_visible", ok: !chain.degraded_result_visible || /skipped_missing_facts|缺事实|degraded|降级|partial_provider/.test(bodyText) },
+        { label: "last_good_retention_visible", ok: !chain.degraded_result_visible || /last-good|current\/last-good|保留上一条|不覆盖 current/.test(bodyText) },
+        { label: "stale_overwrite_guard_visible", ok: !chain.degraded_result_visible || /旧任务不能覆盖|不覆盖 current|symbol \\+ result_version|覆盖保护/.test(bodyText) },
         { label: "result_version_label", ok: /结果版本|result_version/i.test(bodyText) },
         { label: "tushare_source_visible", ok: /Tushare|真实数据链|数据来源/.test(bodyText) },
         { label: "deepseek_boundary_visible", ok: /DeepSeek|模型解释|解释状态/.test(bodyText) },
@@ -420,7 +595,12 @@ async function inspectRouteSpecific(page, route, candidateResultChain) {
           `freshness_state=${chain.freshness_state || "missing"}`,
           `model_ledger_id=${chain.model_ledger_id || "missing"}`,
           `current_result_matches_latest_task=${chain.current_result_matches_latest_task === true}`,
-          `old_task_can_overwrite_current=${chain.old_task_can_overwrite_current === true}`
+          `old_task_can_overwrite_current=${chain.old_task_can_overwrite_current === true}`,
+          `degraded_result_visible=${chain.degraded_result_visible === true}`,
+          `degraded_symbol=${chain.degraded_symbol || "missing"}`,
+          `degraded_result_version=${chain.degraded_result_version || "missing"}`,
+          `degraded_reason=${chain.degraded_reason || "missing"}`,
+          `scenario=${chain.scenario || "live"}`
         ],
         missing,
         candidate_result_chain: chain
@@ -519,6 +699,11 @@ async function runQa(args) {
   const runId = timestampId();
   const outputDir = resolve(args.artifactRoot, runId);
   await mkdir(outputDir, { recursive: true });
+  const liveCandidateEnvelope = await fetchCandidateCacheEnvelope(args.apiBase).catch(() => ({ ok: false, data: {} }));
+  const candidateScenarioEnvelope = buildCandidateEnvelopeForScenario(
+    liveCandidateEnvelope,
+    args.candidateResultScenario
+  );
   const browser = await chromium.launch(chromiumLaunchOptions());
   const rows = [];
   const errors = [];
@@ -526,6 +711,15 @@ async function runQa(args) {
     for (const viewport of QA_VIEWPORTS) {
       const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
       const page = await context.newPage();
+      if (args.candidateResultScenario !== "live") {
+        await page.route("**/api/candidate-radar/cache", async (routeHandle) =>
+          routeHandle.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(candidateScenarioEnvelope)
+          })
+        );
+      }
       page.on("console", (message) => {
         if (message.type() === "error") errors.push({ viewport: viewport.name, console_error: message.text() });
       });
@@ -537,7 +731,11 @@ async function runQa(args) {
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
         await page.waitForSelector("h1, h2, h3", { state: "attached", timeout: 10000 });
         await page.waitForTimeout(800);
-        const candidateResultChain = await fetchCandidateResultChain(args.apiBase);
+        const candidateResultChain = await fetchCandidateResultChain(
+          args.apiBase,
+          args.candidateResultScenario !== "live" ? candidateScenarioEnvelope : null,
+          args.candidateResultScenario
+        );
         const inspected = await inspectPage(page);
         const routeSpecific = await inspectRouteSpecific(page, route.route, candidateResultChain);
         const typing = await typeWithoutSubmit(page);
@@ -578,6 +776,8 @@ async function runQa(args) {
           route_specific_evidence: routeSpecific.evidence,
           route_specific_missing: routeSpecific.missing,
           candidate_result_chain: routeSpecific.candidate_result_chain || null,
+          candidate_result_scenario: args.candidateResultScenario,
+          candidate_result_scenario_replay: args.candidateResultScenario !== "live",
           disabled_buttons_without_reason_count: inspected.disabled_buttons_without_reason_count,
           disabled_buttons_without_reason: inspected.disabled_buttons_without_reason,
           visible_input_count: inspected.visible_input_count,
@@ -613,6 +813,9 @@ async function runQa(args) {
     generated_at: new Date().toISOString(),
     base_url: args.baseUrl,
     api_base: args.apiBase,
+    candidate_result_scenario: args.candidateResultScenario,
+    candidate_result_scenario_replay: args.candidateResultScenario !== "live",
+    candidate_result_scenario_writes_cache: false,
     artifact_root: args.artifactRoot,
     output_dir: outputDir,
     route_count: routes.length,

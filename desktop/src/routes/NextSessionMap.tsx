@@ -394,6 +394,49 @@ export default function NextSessionMap() {
   const candidateRadarConfirmedSymbolLabel = candidateRadarConfirmedSymbol
     ? `当前确认标的：${candidateRadarConfirmedSymbol}`
     : "等待下一票雷达确认标的";
+  const candidateRadarCurrentResultSymbol = String(
+    candidateRadarResultVersionSummary.current_result_symbol ??
+      candidateRadarResultLineage.symbol ??
+      candidateRadarProviderModelAcceptance.symbol ??
+      ""
+  );
+  const candidateRadarLatestTaskSymbol = String(
+    candidateRadarResultVersionSummary.latest_task_symbol ??
+      candidateRadarResultLineage.symbol ??
+      candidateRadarProviderModelAcceptance.symbol ??
+      candidateRadarConfirmedSymbol ??
+      ""
+  );
+  const candidateRadarDegradedVisible =
+    candidateRadarResultVersionSummary.degraded_result_visible === true ||
+    Boolean(candidateRadarResultVersionSummary.degraded_result_version);
+  const candidateRadarDegradedVersion = String(
+    candidateRadarResultVersionSummary.degraded_result_version ??
+      (candidateRadarDegradedVisible ? candidateRadarLatestResultVersion : "") ??
+      ""
+  );
+  const candidateRadarDegradedSymbol = String(
+    candidateRadarResultVersionSummary.degraded_result_symbol ??
+      (candidateRadarDegradedVisible ? candidateRadarLatestTaskSymbol : "") ??
+      ""
+  );
+  const candidateRadarDegradedReason = String(
+    candidateRadarResultVersionSummary.degraded_reason ??
+      candidateRadarProviderModelAcceptance.deepseek_safe_failure_mode ??
+      candidateRadarResultLineage.freshness_state ??
+      "未降级"
+  );
+  const candidateRadarLastGoodLabel = candidateRadarCurrentResultVersion
+    ? `current/last-good ${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion}`
+    : "等待 current / last-good 结果";
+  const candidateRadarDegradedLabel = candidateRadarDegradedVisible
+    ? `本次 degraded ${candidateRadarDegradedSymbol || "本次标的"} / ${candidateRadarDegradedVersion || candidateRadarLatestResultVersion || "等待版本"}；task ${String(candidateRadarResultVersionSummary.latest_task_id ?? candidateRadarResultLineage.task_id ?? "等待任务")}：${candidateRadarDegradedReason}；不覆盖 current`
+    : "未降级；current 与 latest 可按同一结果回放";
+  const candidateRadarOverwriteGuardLabel =
+    candidateRadarResultVersionSummary.old_task_can_overwrite_current === false ||
+    candidateRadarResultLineage.old_task_can_overwrite_current === false
+      ? "旧任务不能覆盖 current；latest 与 current 不同则保留 last-good"
+      : "等待 symbol + result_version 覆盖保护";
   const nextSessionGenerateButtonDisabled = !candidateRadarConfirmedSymbol;
   const nextSessionGenerateButtonLabel = candidateRadarConfirmedSymbol
     ? `为 ${candidateRadarConfirmedSymbol} 生成完整次日图谱；按钮门控 POST task，只带当前确认标的和来源 task 的 safe payload`
@@ -402,7 +445,11 @@ export default function NextSessionMap() {
     ? `为 ${candidateRadarConfirmedSymbol} 生成完整图谱`
     : "等待确认标的";
   const candidateRadarSourceTaskLabel = String(
-    packet.latest_confirmed_task_id ||
+    candidateRadarResultVersionSummary.current_result_task_id ||
+      candidateRadarResultVersionSummary.latest_task_id ||
+      candidateRadarResultLineage.task_id ||
+      candidateRadarProviderModelAcceptance.task_id ||
+      packet.latest_confirmed_task_id ||
       candidateRadarCache.latest_confirmed_task_id ||
       packetCandidateRadarP3HandoffSourceTask ||
       candidateRadarCache.search_quant_projection_latest_task_id ||
@@ -557,6 +604,11 @@ export default function NextSessionMap() {
       tone: (["good", "warn", "bad", "neutral"].includes(tone) ? tone : "neutral") as MetricItem["tone"]
     };
   });
+  const nextSessionResultVersionGuardItems: MetricItem[] = [
+    { label: "current/last-good", value: candidateRadarLastGoodLabel, tone: candidateRadarCurrentResultVersion ? "good" : "warn" },
+    { label: "本次降级", value: candidateRadarDegradedLabel, tone: candidateRadarDegradedVisible ? "warn" : "good" },
+    { label: "覆盖保护", value: candidateRadarOverwriteGuardLabel, tone: candidateRadarOverwriteGuardLabel.includes("旧任务不能覆盖") ? "good" : "warn" }
+  ];
   const candidateRadarReadableResultReady =
     Boolean(candidateRadarConfirmedSymbol) &&
     (
@@ -1741,9 +1793,10 @@ export default function NextSessionMap() {
         <p className="ordinary-status-note" aria-label="next session latest candidate readable sentence" aria-live="polite">{nextSessionLatestCandidateReadableSentence}</p>
         <p className="risk-note">优先读取 CandidateRadar 的 search_quant_projection_post_confirm_one_glance_items；没有后端一屏结果时，fallback 仍读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows，并优先读取 CandidateRadar 的 ordinary_result_quick_read_rows / ordinary_result_handoff_rows 作为可读行，旧 cache 再回退 search_quant_projection_interpretation_summary；确认后的 Tushare-first、P2 三面和 P3 结论在图谱页首屏直接回放。本卡不创建 task、不补调数据源或模型，也不改操作区；只读本地 cache。</p>
         <MetricGrid
-          items={nextSessionBackendPostConfirmOneGlanceItems.length ? nextSessionBackendPostConfirmOneGlanceItems : [
+          items={nextSessionBackendPostConfirmOneGlanceItems.length ? nextSessionBackendPostConfirmOneGlanceItems.concat(nextSessionResultVersionGuardItems) : [
             { label: "标的", value: candidateRadarConfirmedSymbolLabel, tone: candidateRadarConfirmedSymbol ? "good" : "warn" },
             { label: "来源任务", value: candidateRadarSourceTaskLabel, tone: candidateRadarSourceTaskLabel.includes("等待") ? "warn" : "good" },
+            ...nextSessionResultVersionGuardItems,
             { label: "可读结论", value: candidateRadarReadableResult, tone: candidateRadarInterpretation.interpretation_ready === true ? "good" : "warn" },
             { label: "下一步", value: candidateRadarReadableNextStep },
             { label: "P2 小数据", value: candidateRadarSmallDataWriteback.small_data_writeback_ready === true ? "CandidateRadar P2 small_data_writeback_ready 已回放" : candidateRadarWritebackSurfaceStatus, tone: candidateRadarWritebackSurfaceReady ? "good" : "warn" },

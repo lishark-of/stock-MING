@@ -86,6 +86,9 @@ def build_runbook() -> dict[str, Any]:
         and "task_created_by_render_or_typing" in runner
         and "route_specific_check_passed" in runner
         and "search_quant_same_result_chain_visible" in runner
+        and "--candidate-result-scenario" in runner
+        and "degraded-last-good" in runner
+        and "candidate_result_scenario_writes_cache: false" in runner
         and "candidate_result_chain" in runner
         and "current_result_matches_latest_task" in runner
         and "old_task_can_overwrite_current" in runner
@@ -148,6 +151,11 @@ def build_runbook() -> dict[str, Any]:
             "search_quant_same_result_chain_browser_check",
             "execution_pending",
             "runner verifies #candidates, #factor, and #next display the same symbol/task/result_version chain when CandidateRadar cache has a current result",
+        ),
+        _row(
+            "search_quant_degraded_last_good_browser_replay",
+            "execution_pending",
+            "runner can replay a local degraded-last-good CandidateRadar cache response in the browser to verify degraded reason, last-good retention, and stale-result overwrite guard without writing cache or calling provider/model",
         ),
         _row(
             "margin_etf_confirmed_data_bridge_check",

@@ -367,6 +367,49 @@ export default function FactorQuantHub() {
       candidateRadarResultLineage.result_version ??
       ""
   );
+  const candidateRadarCurrentResultSymbol = String(
+    candidateRadarResultVersionSummary.current_result_symbol ??
+      candidateRadarResultLineage.symbol ??
+      candidateRadarProviderModelAcceptance.symbol ??
+      ""
+  );
+  const candidateRadarLatestTaskSymbol = String(
+    candidateRadarResultVersionSummary.latest_task_symbol ??
+      candidateRadarResultLineage.symbol ??
+      candidateRadarProviderModelAcceptance.symbol ??
+      candidateRadarCurrentResultSymbol ??
+      ""
+  );
+  const candidateRadarDegradedVisible =
+    candidateRadarResultVersionSummary.degraded_result_visible === true ||
+    Boolean(candidateRadarResultVersionSummary.degraded_result_version);
+  const candidateRadarDegradedVersion = String(
+    candidateRadarResultVersionSummary.degraded_result_version ??
+      (candidateRadarDegradedVisible ? candidateRadarLatestResultVersion : "") ??
+      ""
+  );
+  const candidateRadarDegradedSymbol = String(
+    candidateRadarResultVersionSummary.degraded_result_symbol ??
+      (candidateRadarDegradedVisible ? candidateRadarLatestTaskSymbol : "") ??
+      ""
+  );
+  const candidateRadarDegradedReason = String(
+    candidateRadarResultVersionSummary.degraded_reason ??
+      candidateRadarProviderModelAcceptance.deepseek_safe_failure_mode ??
+      candidateRadarResultLineage.freshness_state ??
+      "未降级"
+  );
+  const candidateRadarLastGoodLabel = candidateRadarCurrentResultVersion
+    ? `current/last-good ${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion}`
+    : "等待 current / last-good 结果";
+  const candidateRadarDegradedLabel = candidateRadarDegradedVisible
+    ? `本次 degraded ${candidateRadarDegradedSymbol || "本次标的"} / ${candidateRadarDegradedVersion || candidateRadarLatestResultVersion || "等待版本"}；task ${String(candidateRadarResultVersionSummary.latest_task_id ?? candidateRadarResultLineage.task_id ?? "等待任务")}：${candidateRadarDegradedReason}；不覆盖 current`
+    : "未降级；current 与 latest 可按同一结果回放";
+  const candidateRadarOverwriteGuardLabel =
+    candidateRadarResultVersionSummary.old_task_can_overwrite_current === false ||
+    candidateRadarResultLineage.old_task_can_overwrite_current === false
+      ? "旧任务不能覆盖 current；latest 与 current 不同则保留 last-good"
+      : "等待 symbol + result_version 覆盖保护";
   const candidateRadarResultVersionLabel = candidateRadarCurrentResultVersion
     ? `当前结果版本 ${candidateRadarCurrentResultVersion}; latest ${candidateRadarLatestResultVersion || candidateRadarCurrentResultVersion}`
     : "等待 result_version 回放";
@@ -1085,6 +1128,21 @@ export default function FactorQuantHub() {
       label: "结果版本",
       value: candidateRadarResultVersionLabel,
       tone: candidateRadarCurrentResultVersion ? "good" : "warn"
+    },
+    {
+      label: "current/last-good",
+      value: candidateRadarLastGoodLabel,
+      tone: candidateRadarCurrentResultVersion ? "good" : "warn"
+    },
+    {
+      label: "本次降级",
+      value: candidateRadarDegradedLabel,
+      tone: candidateRadarDegradedVisible ? "warn" : "good"
+    },
+    {
+      label: "覆盖保护",
+      value: candidateRadarOverwriteGuardLabel,
+      tone: candidateRadarOverwriteGuardLabel.includes("旧任务不能覆盖") ? "good" : "warn"
     },
     {
       label: "本页结果",
