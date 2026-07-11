@@ -1708,9 +1708,17 @@ export default function CandidateRadar() {
     searchQuantProjectionSmallDataWriteback.provider_call_ledger_written === true ||
     searchQuantProjectionSmallDataWriteback.ledger_ready === true ||
     quantProjectionProviderApiSuccessCount > 0;
-  const quantProjectionDeepSeekSkipped =
+  const quantProjectionDeepSeekSkippedMissingFacts =
+    searchQuantProviderModelAcceptance.deepseek_skipped_missing_facts === true ||
+    searchQuantResultLineage.deepseek_skipped_missing_facts === true ||
+    searchQuantDeepSeekExplanation.status === "skipped_missing_facts" ||
+    searchQuantDeepSeekModelLedger.status === "skipped_missing_facts";
+  const quantProjectionDeepSeekSkippedByRequest =
     searchQuantProviderModelAcceptance.deepseek_skipped_by_request === true ||
     policy.search_quant_provider_model_acceptance_deepseek_skipped === true;
+  const quantProjectionDeepSeekSkipped =
+    quantProjectionDeepSeekSkippedByRequest ||
+    quantProjectionDeepSeekSkippedMissingFacts;
   const quantProjectionDeepSeekModelLedgerReady =
     searchQuantProviderModelAcceptance.deepseek_model_ledger_evidence_done === true ||
     searchQuantProviderModelAcceptance.deepseek_model_ledger_recorded === true ||
@@ -1719,6 +1727,7 @@ export default function CandidateRadar() {
     searchQuantProviderModelAcceptance.deepseek_output_acceptance_done === true ||
     searchQuantDeepSeekExplanation.status === "success";
   const quantProjectionDeepSeekDegraded =
+    quantProjectionDeepSeekSkippedMissingFacts ||
     searchQuantProviderModelAcceptance.deepseek_safe_degraded === true ||
     String(searchQuantDeepSeekExplanation.status ?? "").startsWith("degraded");
   const quantProjectionDeepSeekSummary = displayText(
@@ -1726,13 +1735,17 @@ export default function CandidateRadar() {
     quantProjectionDeepSeekOutputReady
       ? "DeepSeek 解释已写入安全模型账本"
       : quantProjectionDeepSeekDegraded
-        ? `模型解释已降级：${displayText(searchQuantProviderModelAcceptance.deepseek_safe_failure_mode ?? searchQuantDeepSeekModelLedger.safe_failure_mode, "safe degraded")}`
-        : quantProjectionDeepSeekSkipped
+        ? quantProjectionDeepSeekSkippedMissingFacts
+          ? "模型解释已跳过：Tushare 事实缺失，不编造事实"
+          : `模型解释已降级：${displayText(searchQuantProviderModelAcceptance.deepseek_safe_failure_mode ?? searchQuantDeepSeekModelLedger.safe_failure_mode, "safe degraded")}`
+        : quantProjectionDeepSeekSkippedByRequest
           ? "模型解释未请求；Tushare 结果不受影响"
           : "等待模型解释账本"
   );
   const quantProjectionDeepSeekVisibleStatus = quantProjectionDeepSeekOutputReady
     ? `${quantProjectionDeepSeekSummary}；安全模型账本已写入`
+    : quantProjectionDeepSeekSkippedMissingFacts
+      ? `${quantProjectionDeepSeekSummary}；页面保留 Tushare 降级原因和 last-good，不让模型补事实`
     : quantProjectionDeepSeekDegraded
       ? `${quantProjectionDeepSeekSummary}；Tushare 数据、Factor light 和本地图谱继续显示`
       : quantProjectionDeepSeekSummary;
@@ -1741,7 +1754,9 @@ export default function CandidateRadar() {
   const quantProjectionProviderSourceLabel = quantProjectionProviderLedgerReady
     ? `Tushare 数据有本地记录：${quantProjectionProviderApiSuccessLabel} 个接口`
     : searchQuantProjectionReceipt.provider_execution_implemented === true ? "Tushare 数据有本地记录" : "待后台补齐 Tushare 数据记录";
-  const quantProjectionModelSourceLabel = quantProjectionDeepSeekSkipped
+  const quantProjectionModelSourceLabel = quantProjectionDeepSeekSkippedMissingFacts
+    ? "模型解释已跳过；缺少事实时不编造，结果按降级/last-good 回放"
+    : quantProjectionDeepSeekSkippedByRequest
     ? "模型解释未请求；确认按钮可走治理账本或安全降级"
     : quantProjectionDeepSeekOutputReady
       ? "DeepSeek 解释已写入安全模型账本"

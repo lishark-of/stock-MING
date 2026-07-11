@@ -386,6 +386,25 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
             search_panel.index('aria-label="quant projection ordinary p1 p2 engineering details"'),
         )
 
+    def test_missing_tushare_facts_show_deepseek_skipped_not_pending(self):
+        status_start = self.page.index("const quantProjectionDeepSeekSkippedMissingFacts")
+        status_end = self.page.index("const quantProjectionTaskBoundary", status_start)
+        status_slice = self.page[status_start:status_end]
+
+        self.assertIn("searchQuantProviderModelAcceptance.deepseek_skipped_missing_facts", status_slice)
+        self.assertIn("searchQuantResultLineage.deepseek_skipped_missing_facts", status_slice)
+        self.assertIn('searchQuantDeepSeekExplanation.status === "skipped_missing_facts"', status_slice)
+        self.assertIn('searchQuantDeepSeekModelLedger.status === "skipped_missing_facts"', status_slice)
+        self.assertIn("const quantProjectionDeepSeekDegraded", status_slice)
+        self.assertIn("quantProjectionDeepSeekSkippedMissingFacts ||", status_slice)
+        self.assertIn("模型解释已跳过：Tushare 事实缺失，不编造事实", status_slice)
+        self.assertIn("页面保留 Tushare 降级原因和 last-good，不让模型补事实", status_slice)
+        self.assertIn("模型解释已跳过；缺少事实时不编造，结果按降级/last-good 回放", status_slice)
+        self.assertLess(
+            status_slice.index("模型解释已跳过：Tushare 事实缺失，不编造事实"),
+            status_slice.index("等待模型解释账本"),
+        )
+
     def test_search_panel_keeps_external_work_button_gated(self):
         submit_start = self.page.index("const launchQuantProjection = () =>")
         submit_end = self.page.index(
