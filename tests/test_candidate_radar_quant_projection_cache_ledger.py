@@ -137,6 +137,17 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         gate["p0_quick_action_ready"] = False
         self.assertFalse(candidate_service._quant_projection_p0_confirm_gate_ready(gate))
 
+    def test_p0_confirm_gate_allows_confirm_when_candidate_cache_is_degraded_not_required(self):
+        gate = self._ready_p0_gate()
+        gate["candidate_cache_ready"] = False
+        gate["candidate_cache_status"] = "cache_missing"
+        gate["candidate_cache_required_for_confirm_button"] = False
+
+        self.assertTrue(candidate_service._quant_projection_p0_confirm_gate_ready(gate))
+
+        gate["candidate_cache_required_for_confirm_button"] = True
+        self.assertFalse(candidate_service._quant_projection_p0_confirm_gate_ready(gate))
+
     def test_legacy_provider_ledger_without_p0_gate_does_not_show_p2_as_blocked(self):
         packet = {
             "search_quant_projection_receipt": {

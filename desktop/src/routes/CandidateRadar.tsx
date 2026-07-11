@@ -291,7 +291,7 @@ export default function CandidateRadar() {
       p0_confirm_gate_evidence: {
         schema_version: "candidate_radar_p0_confirm_gate.v1",
         p0_ready: quantProjectionConfirmGateReady,
-        fastapi_cache_get_ready: !loading && !error && candidateRadarCacheGetReadable,
+        fastapi_cache_get_ready: !loading && !error,
         bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady,
         p0_runtime_mode_or_handoff_ready: desktopP0RuntimeModeOrHandoffReady,
         desktop_preflight_ready: desktopPreflightReady,
@@ -858,8 +858,7 @@ export default function CandidateRadar() {
     !loading &&
     !error &&
     bootstrapRuntimeModeReady &&
-    desktopPreflightReady &&
-    candidateRadarCacheGetReadable;
+    desktopP0RuntimePacketsReady;
   const quantProjectionP0ReadbackReady = quantProjectionConfirmGateReady;
   const ordinaryCacheSourceLabel = candidateRadarCacheReady
     ? "本地候选缓存可用"
@@ -1590,6 +1589,8 @@ export default function CandidateRadar() {
     ? quantProjectionHistoricalTaskMatchesInput
       ? `按钮已启用：${quantProjectionSymbolValidation.normalized} 已有历史结果；再次确认会重新生成本地结果。`
       : `按钮已启用：确认后生成 ${quantProjectionSymbolValidation.normalized} 的本地投研结果。`
+    : !quantProjectionConfirmGateReady
+    ? "按钮不可用原因：本地运行包还没完全接上；先刷新本地回放或回一键启动预检。"
     : searchSymbol.trim()
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会启动数据链";

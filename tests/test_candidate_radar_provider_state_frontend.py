@@ -409,6 +409,24 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("React render 不直接外联", search_panel)
         self.assertIn("React 渲染不直连 Tushare 或 DeepSeek", self.page)
 
+    def test_confirm_button_allows_six_digit_symbol_without_candidate_cache_hard_block(self):
+        gate_start = self.page.index("const quantProjectionConfirmGateReady =")
+        gate_end = self.page.index("const quantProjectionP0ReadbackReady", gate_start)
+        gate_slice = self.page[gate_start:gate_end]
+        submit_start = self.page.index("const launchQuantProjection = () =>")
+        submit_end = self.page.index(
+            "const launchQuantProjectionAcceptanceDryRun = () =>",
+            submit_start,
+        )
+        submit_slice = self.page[submit_start:submit_end]
+
+        self.assertIn('reason: "inferred_market_suffix"', self.page)
+        self.assertIn("valid: true", self.page)
+        self.assertIn("candidate_cache_required_for_confirm_button: false", submit_slice)
+        self.assertIn("fastapi_cache_get_ready: !loading && !error", submit_slice)
+        self.assertNotIn("candidateRadarCacheGetReadable", gate_slice)
+        self.assertNotIn("desktopPreflightReady &&", gate_slice)
+
 
 if __name__ == "__main__":
     unittest.main()

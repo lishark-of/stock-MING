@@ -1502,12 +1502,14 @@ def _quant_projection_p0_confirm_gate_ready(p0_gate: Mapping[str, Any]) -> bool:
     contains_sensitive_material = p0_gate.get("contains_sensitive_material")
     if contains_sensitive_material is None:
         contains_sensitive_material = p0_gate.get("contains_secret")
+    candidate_cache_required = p0_gate.get("candidate_cache_required_for_confirm_button") is not False
+    candidate_cache_ready = p0_gate.get("candidate_cache_ready") is True
     return bool(
         p0_gate.get("schema_version") == "candidate_radar_p0_confirm_gate.v1"
         and p0_gate.get("p0_ready") is True
         and runtime_packets_ready
         and p0_connection_evidence_ready
-        and p0_gate.get("candidate_cache_ready") is True
+        and (candidate_cache_ready or not candidate_cache_required)
         and p0_gate.get("creates_task_only_after_button") is True
         and p0_gate.get("react_render_external_calls") is False
         and p0_gate.get("get_cache_external_calls") is False
@@ -15305,6 +15307,9 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
             p0_gate_payload.get("p0_local_link_is_ui_gate_only_not_release_evidence") is True
         ),
         "candidate_cache_ready": p0_gate_payload.get("candidate_cache_ready") is True,
+        "candidate_cache_required_for_confirm_button": (
+            p0_gate_payload.get("candidate_cache_required_for_confirm_button") is not False
+        ),
         "candidate_cache_status": _safe_text(p0_gate_payload.get("candidate_cache_status") or "missing", limit=80),
         "bootstrap_packet_key": _safe_text(p0_gate_payload.get("bootstrap_packet_key") or "missing", limit=160),
         "desktop_preflight_packet_key": _safe_text(
