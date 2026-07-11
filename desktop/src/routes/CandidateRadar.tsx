@@ -463,6 +463,9 @@ export default function CandidateRadar() {
   const searchQuantResultOutputPacketKeys = Array.isArray(searchQuantResultLineage.output_packet_keys)
     ? searchQuantResultLineage.output_packet_keys.map((item) => String(item)).filter(Boolean)
     : [];
+  const searchQuantResultInputPacketKeys = Array.isArray(searchQuantResultLineage.input_packet_keys)
+    ? searchQuantResultLineage.input_packet_keys.map((item) => String(item)).filter(Boolean)
+    : [];
   const searchQuantResultProviderLedgerIds = Array.isArray(searchQuantResultLineage.provider_call_ledger_ids)
     ? searchQuantResultLineage.provider_call_ledger_ids.map((item) => String(item)).filter(Boolean)
     : [];
@@ -3225,6 +3228,25 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const searchQuantResultCurrentSymbol = displayText(
+    searchQuantResultVersionSummary.current_result_symbol ?? searchQuantCurrentResultLineage.symbol,
+    ""
+  );
+  const searchQuantResultTaskSymbol = displayText(
+    searchQuantResultVersionSummary.latest_task_symbol ?? searchQuantResultLineage.symbol ?? searchQuantProviderModelAcceptance.symbol,
+    ""
+  );
+  const searchQuantResultSymbolLabel =
+    searchQuantResultCurrentSymbol && searchQuantResultTaskSymbol && searchQuantResultCurrentSymbol !== searchQuantResultTaskSymbol
+      ? `current ${searchQuantResultCurrentSymbol} / task ${searchQuantResultTaskSymbol}`
+      : displayText(searchQuantResultTaskSymbol || searchQuantResultCurrentSymbol, "等待同源标的");
+  const searchQuantResultScopeLabel = displayText(
+    searchQuantResultLineage.scope_hash_short ??
+      searchQuantResultLineage.scope_hash ??
+      searchQuantProviderModelAcceptance.acceptance_scope_hash_short ??
+      searchQuantProviderModelAcceptance.acceptance_scope_hash,
+    "等待确认范围"
+  );
   const quantProjectionResultLineageItems: MetricItem[] = [
     {
       label: "当前结果版本",
@@ -3269,9 +3291,24 @@ export default function CandidateRadar() {
       tone: searchQuantResultVersionSummary.latest_task_id || searchQuantResultLineage.task_id || searchQuantProviderModelAcceptance.task_id || quantProjectionProgressWatchTaskId ? "good" : "warn"
     },
     {
+      label: "同源标的",
+      value: searchQuantResultSymbolLabel,
+      tone: searchQuantResultTaskSymbol || searchQuantResultCurrentSymbol ? "good" : "warn"
+    },
+    {
+      label: "确认范围",
+      value: searchQuantResultScopeLabel,
+      tone: searchQuantResultScopeLabel === "等待确认范围" ? "warn" : "good"
+    },
+    {
       label: "事实包",
       value: displayText(searchQuantResultLineage.facts_packet_key, "等待 Tushare facts packet"),
       tone: searchQuantResultLineage.facts_package_status === "ready" ? "good" : "warn"
+    },
+    {
+      label: "输入包",
+      value: searchQuantResultInputPacketKeys.length ? searchQuantResultInputPacketKeys.join(" / ") : "等待输入包 key",
+      tone: searchQuantResultInputPacketKeys.length ? "good" : "warn"
     },
     {
       label: "数据日期",

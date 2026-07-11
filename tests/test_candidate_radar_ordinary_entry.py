@@ -2110,6 +2110,19 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("<summary>查看同源回放</summary>", one_screen_result_slice)
         self.assertIn("search_quant_projection_post_confirm_one_glance_items", backend_one_glance_slice)
         self.assertIn("MetricGrid items={quantProjectionBackendPostConfirmOneGlanceItems}", backend_one_glance_slice)
+        self.assertIn("MetricGrid items={quantProjectionResultLineageItems}", one_screen_result_slice)
+        result_lineage_definition_start = self.page.index("const quantProjectionResultLineageItems")
+        result_lineage_definition_end = self.page.index(
+            "const candidateRadarOperatorPostConfirmOneGlanceItems",
+            result_lineage_definition_start,
+        )
+        result_lineage_definition = self.page[result_lineage_definition_start:result_lineage_definition_end]
+        self.assertIn('label: "同源标的"', result_lineage_definition)
+        self.assertIn("searchQuantResultSymbolLabel", result_lineage_definition)
+        self.assertIn('label: "确认范围"', result_lineage_definition)
+        self.assertIn("searchQuantResultScopeLabel", result_lineage_definition)
+        self.assertIn('label: "输入包"', result_lineage_definition)
+        self.assertIn("searchQuantResultInputPacketKeys", result_lineage_definition)
         self.assertIn("quantProjectionPostConfirmReplayContract", self.page)
         self.assertIn("ordinary_post_confirm_replay_contract", self.page)
         self.assertIn("quantProjectionReceiptRequestParams", self.page)
