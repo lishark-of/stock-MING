@@ -364,7 +364,10 @@ export default function NextSessionMap() {
   const candidateRadarProviderModelAcceptance =
     (candidateRadarCache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
   const candidateRadarResultLineage =
-    (candidateRadarCache.search_quant_result_lineage as Record<string, unknown> | undefined) ?? {};
+    (candidateRadarCache.search_quant_canonical_result_lineage as Record<string, unknown> | undefined) ??
+    (candidateRadarCache.search_quant_current_result_lineage as Record<string, unknown> | undefined) ??
+    (candidateRadarCache.search_quant_result_lineage as Record<string, unknown> | undefined) ??
+    {};
   const candidateRadarResultVersionSummary =
     (candidateRadarCache.search_quant_result_version_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarCurrentResultVersion = String(

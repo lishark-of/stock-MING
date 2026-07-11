@@ -587,9 +587,12 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             "candidate_radar_search_quant_projection_result_lineage.v1",
         )
         self.assertEqual(lineage["task_id"], receipt["task_id"])
+        self.assertEqual(lineage["canonical_result_task_id"], receipt["task_id"])
+        self.assertEqual(lineage["user_confirm_task_id"], task["task_id"])
         self.assertEqual(lineage["symbol"], "002008.SZ")
         self.assertEqual(lineage["scope_hash"], receipt["acceptance_scope_hash"])
         self.assertEqual(lineage["result_version"], receipt["result_version"])
+        self.assertEqual(lineage["facts_package_hash"], receipt["facts_package_hash"])
         self.assertEqual(packet["search_quant_result_version"], lineage["result_version"])
         self.assertEqual(
             packet["search_quant_current_result_lineage"]["result_version"],
@@ -613,6 +616,29 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(lineage["current_result_promoted"])
         self.assertFalse(lineage["old_task_can_overwrite_current"])
         self.assertFalse(lineage["deepseek_is_data_source"])
+        canonical = packet["search_quant_canonical_result_lineage"]
+        summary = packet["search_quant_result_version_summary"]
+        self.assertEqual(
+            canonical["schema_version"],
+            "candidate_radar_search_quant_projection_canonical_result_lineage.v1",
+        )
+        self.assertEqual(canonical["canonical_source"], "current_result")
+        self.assertEqual(canonical["task_id"], lineage["task_id"])
+        self.assertEqual(canonical["canonical_result_task_id"], lineage["task_id"])
+        self.assertEqual(canonical["user_confirm_task_id"], task["task_id"])
+        self.assertEqual(canonical["facts_package_hash"], lineage["facts_package_hash"])
+        self.assertEqual(canonical["result_version"], lineage["result_version"])
+        self.assertEqual(canonical["provider_call_ledger_ids"], lineage["provider_call_ledger_ids"])
+        self.assertTrue(canonical["same_task_fact_model_result_version_ready"])
+        self.assertTrue(canonical["current_result_matches_latest_task"])
+        self.assertEqual(receipt["canonical_result_lineage"], canonical)
+        self.assertEqual(summary["canonical_task_id"], lineage["task_id"])
+        self.assertEqual(summary["canonical_result_task_id"], lineage["task_id"])
+        self.assertEqual(summary["canonical_result_version"], lineage["result_version"])
+        self.assertEqual(summary["canonical_facts_package_hash"], lineage["facts_package_hash"])
+        self.assertEqual(summary["canonical_provider_call_ledger_ids"], lineage["provider_call_ledger_ids"])
+        self.assertTrue(summary["canonical_same_task_fact_model_result_version_ready"])
+        self.assertEqual(summary["user_confirm_task_id"], task["task_id"])
         for row in receipt["provider_call_ledger"]:
             self.assertTrue(row["call_ledger_id"].startswith("pcl_"))
             self.assertIn(row["call_ledger_id"], lineage["provider_call_ledger_ids"])
@@ -3327,6 +3353,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             },
         ).json()
         self.assertTrue(second["ok"])
+        second_task = second["data"]["task"]
         self.assertEqual(model_call_attempts, [])
 
         packet = self.client.get("/api/candidate-radar/cache").json()["data"]
@@ -3344,6 +3371,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(receipt["deepseek_safe_failure_mode"], "skipped_missing_facts")
         self.assertFalse(lineage["current_result_promoted"])
         self.assertEqual(lineage["symbol"], "000001.SZ")
+        self.assertEqual(lineage["user_confirm_task_id"], second_task["task_id"])
         self.assertEqual(packet["search_quant_degraded_result_lineage"]["result_version"], lineage["result_version"])
         self.assertEqual(packet["search_quant_current_result_lineage"]["result_version"], first_current_version)
         self.assertEqual(packet["search_quant_current_result_lineage"]["symbol"], "002008.SZ")
@@ -3389,6 +3417,21 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(summary["last_good_result_available"])
         self.assertTrue(summary["degraded_result_visible"])
         self.assertFalse(summary["old_task_can_overwrite_current"])
+        canonical = packet["search_quant_canonical_result_lineage"]
+        self.assertEqual(canonical["canonical_source"], "current_result")
+        self.assertEqual(canonical["symbol"], "002008.SZ")
+        self.assertEqual(canonical["result_version"], first_current_version)
+        self.assertEqual(canonical["latest_attempt_symbol"], "000001.SZ")
+        self.assertEqual(canonical["latest_attempt_result_version"], lineage["result_version"])
+        self.assertEqual(canonical["degraded_result_version"], lineage["result_version"])
+        self.assertFalse(canonical["current_result_matches_latest_task"])
+        self.assertTrue(canonical["same_task_fact_model_result_version_ready"])
+        self.assertEqual(summary["canonical_symbol"], "002008.SZ")
+        self.assertEqual(summary["canonical_result_version"], first_current_version)
+        self.assertEqual(summary["canonical_task_id"], current_lineage["task_id"])
+        self.assertEqual(summary["canonical_facts_package_hash"], current_lineage["facts_package_hash"])
+        self.assertEqual(summary["canonical_provider_call_ledger_ids"], current_lineage["provider_call_ledger_ids"])
+        self.assertTrue(summary["canonical_same_task_fact_model_result_version_ready"])
         self.assertEqual(receipt["result_version_summary"], summary)
 
     def test_persisted_cache_overlays_result_summary_lineage_without_rewrite_or_external_calls(self):

@@ -446,10 +446,17 @@ export default function CandidateRadar() {
   const searchQuantDeepSeekExplanation = (cache.search_quant_deepseek_explanation as Record<string, unknown> | undefined) ?? {};
   const searchQuantDeepSeekModelLedger = (cache.search_quant_deepseek_model_ledger as Record<string, unknown> | undefined) ?? {};
   const searchQuantDeepSeekPayload = (searchQuantDeepSeekExplanation.payload as Record<string, unknown> | undefined) ?? {};
-  const searchQuantResultLineage =
-    (cache.search_quant_result_lineage as Record<string, unknown> | undefined) ??
-    (searchQuantProviderModelAcceptance.result_lineage as Record<string, unknown> | undefined) ??
+  const searchQuantCanonicalResultLineage =
+    (cache.search_quant_canonical_result_lineage as Record<string, unknown> | undefined) ??
+    (searchQuantProviderModelAcceptance.canonical_result_lineage as Record<string, unknown> | undefined) ??
     {};
+  const searchQuantResultLineage =
+    Object.keys(searchQuantCanonicalResultLineage).length
+      ? searchQuantCanonicalResultLineage
+      : (cache.search_quant_current_result_lineage as Record<string, unknown> | undefined) ??
+        (cache.search_quant_result_lineage as Record<string, unknown> | undefined) ??
+        (searchQuantProviderModelAcceptance.result_lineage as Record<string, unknown> | undefined) ??
+        {};
   const searchQuantCurrentResultLineage =
     (cache.search_quant_current_result_lineage as Record<string, unknown> | undefined) ?? {};
   const searchQuantLastGoodResultLineage =
@@ -3282,7 +3289,10 @@ export default function CandidateRadar() {
     ""
   );
   const searchQuantResultTaskSymbol = displayText(
-    searchQuantResultVersionSummary.latest_task_symbol ?? searchQuantResultLineage.symbol ?? searchQuantProviderModelAcceptance.symbol,
+    searchQuantResultVersionSummary.latest_task_symbol ??
+      searchQuantCanonicalResultLineage.latest_attempt_symbol ??
+      searchQuantResultLineage.symbol ??
+      searchQuantProviderModelAcceptance.symbol,
     ""
   );
   const searchQuantResultSymbolLabel =
@@ -3290,14 +3300,34 @@ export default function CandidateRadar() {
       ? `current ${searchQuantResultCurrentSymbol} / task ${searchQuantResultTaskSymbol}`
       : displayText(searchQuantResultTaskSymbol || searchQuantResultCurrentSymbol, "等待同源标的");
   const searchQuantResultScopeLabel = displayText(
-    searchQuantResultLineage.scope_hash_short ??
+    searchQuantResultVersionSummary.canonical_scope_hash_short ??
+      searchQuantResultLineage.scope_hash_short ??
       searchQuantResultLineage.scope_hash ??
       searchQuantProviderModelAcceptance.acceptance_scope_hash_short ??
       searchQuantProviderModelAcceptance.acceptance_scope_hash,
     "等待确认范围"
   );
+  const searchQuantCanonicalTaskLabel = displayText(
+    searchQuantResultVersionSummary.canonical_task_id ??
+      searchQuantResultVersionSummary.canonical_result_task_id ??
+      searchQuantCanonicalResultLineage.task_id ??
+      searchQuantResultLineage.task_id,
+    "等待同源 task"
+  );
+  const searchQuantCanonicalFactsLabel = displayText(
+    searchQuantResultVersionSummary.canonical_facts_package_hash ??
+      searchQuantCanonicalResultLineage.facts_package_hash ??
+      searchQuantResultLineage.facts_package_hash,
+    "等待 facts hash"
+  );
+  const searchQuantCanonicalReady =
+    searchQuantResultVersionSummary.canonical_same_task_fact_model_result_version_ready === true ||
+    searchQuantCanonicalResultLineage.same_task_fact_model_result_version_ready === true;
   const searchQuantCurrentResultVersion = displayText(
-    searchQuantResultVersionSummary.current_result_version ?? searchQuantCurrentResultLineage.result_version,
+    searchQuantResultVersionSummary.canonical_result_version ??
+      searchQuantResultVersionSummary.current_result_version ??
+      searchQuantCanonicalResultLineage.result_version ??
+      searchQuantCurrentResultLineage.result_version,
     ""
   );
   const searchQuantCurrentResultLabel = searchQuantCurrentResultVersion
@@ -3364,12 +3394,23 @@ export default function CandidateRadar() {
       tone: searchQuantDegradedResultVisible ? "warn" : "good"
     },
     {
+      label: "同源结果",
+      value: searchQuantCanonicalReady
+        ? `${searchQuantCanonicalTaskLabel} / ${searchQuantCanonicalFactsLabel} / ${searchQuantCurrentResultVersion || "等待 result_version"}`
+        : "等待同一 task + facts package + result_version",
+      tone: searchQuantCanonicalReady ? "good" : "warn"
+    },
+    {
       label: "同源 task",
       value: displayText(
-        searchQuantResultVersionSummary.latest_task_id ?? searchQuantResultLineage.task_id ?? searchQuantProviderModelAcceptance.task_id ?? quantProjectionProgressWatchTaskId,
+        searchQuantResultVersionSummary.canonical_task_id ??
+          searchQuantResultVersionSummary.latest_task_id ??
+          searchQuantResultLineage.task_id ??
+          searchQuantProviderModelAcceptance.task_id ??
+          quantProjectionProgressWatchTaskId,
         "等待确认 task"
       ),
-      tone: searchQuantResultVersionSummary.latest_task_id || searchQuantResultLineage.task_id || searchQuantProviderModelAcceptance.task_id || quantProjectionProgressWatchTaskId ? "good" : "warn"
+      tone: searchQuantResultVersionSummary.canonical_task_id || searchQuantResultVersionSummary.latest_task_id || searchQuantResultLineage.task_id || searchQuantProviderModelAcceptance.task_id || quantProjectionProgressWatchTaskId ? "good" : "warn"
     },
     {
       label: "同源标的",
@@ -3383,7 +3424,9 @@ export default function CandidateRadar() {
     },
     {
       label: "事实包",
-      value: displayText(searchQuantResultLineage.facts_packet_key, "等待 Tushare facts packet"),
+      value: searchQuantCanonicalFactsLabel !== "等待 facts hash"
+        ? searchQuantCanonicalFactsLabel
+        : displayText(searchQuantResultLineage.facts_packet_key, "等待 Tushare facts packet"),
       tone: searchQuantResultLineage.facts_package_status === "ready" ? "good" : "warn"
     },
     {

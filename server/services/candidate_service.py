@@ -15487,6 +15487,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                                 "operator_approved": True,
                                 "acceptance_scope_hash": scope_hash,
                                 "include_deepseek": _coerce_bool(payload_safe.get("include_deepseek"), False),
+                                "user_confirm_task_id": str(task["task_id"]),
                                 "requested_by": "candidate_radar_quant_projection_confirm_chain",
                             }
                         )
@@ -15983,6 +15984,29 @@ def _quant_projection_attach_result_lineage(
     if receipt.get("next_session_refresh_executed") is True or local_refresh.get("next_session_refresh_executed") is True:
         output_packet_keys.append(NEXT_SESSION_PACKET_KEY)
     facts_ready = receipt.get("tushare_call_ledger_evidence_done") is True
+    user_confirm_task_id = _safe_text(receipt.get("user_confirm_task_id") or "", limit=128)
+    facts_package_hash = _quant_projection_safe_id(
+        "qfp",
+        {
+            "task_id": task_id,
+            "symbol": receipt.get("symbol") or "",
+            "scope_hash": receipt.get("acceptance_scope_hash") or "",
+            "facts_packet_key": QUANT_PROJECTION_FACTS_PACKET_KEY,
+            "provider_call_ledger_ids": provider_call_ledger_ids,
+            "data_date": provider_data_date,
+            "freshness_state": freshness_state,
+        },
+    )
+    task_family_id = _quant_projection_safe_id(
+        "qtf",
+        {
+            "user_confirm_task_id": user_confirm_task_id,
+            "result_task_id": task_id,
+            "symbol": receipt.get("symbol") or "",
+            "scope_hash": receipt.get("acceptance_scope_hash") or "",
+            "facts_package_hash": facts_package_hash,
+        },
+    )
     factor_next_same_result_ready = (
         (
             receipt.get("factor_refresh_executed") is True
@@ -16009,6 +16033,7 @@ def _quant_projection_attach_result_lineage(
             "output_packet_keys": output_packet_keys,
             "data_date": provider_data_date,
             "freshness_state": freshness_state,
+            "facts_package_hash": facts_package_hash,
             "model_ledger_id": model_ledger_id,
             "status": receipt.get("status") or "",
         },
@@ -16016,6 +16041,10 @@ def _quant_projection_attach_result_lineage(
     lineage = {
         "schema_version": "candidate_radar_search_quant_projection_result_lineage.v1",
         "task_id": task_id,
+        "canonical_task_id": task_id,
+        "canonical_result_task_id": task_id,
+        "user_confirm_task_id": user_confirm_task_id,
+        "task_family_id": task_family_id,
         "symbol": receipt.get("symbol") or "",
         "scope_hash": receipt.get("acceptance_scope_hash") or "",
         "scope_hash_short": receipt.get("acceptance_scope_hash_short") or "",
@@ -16028,6 +16057,7 @@ def _quant_projection_attach_result_lineage(
         "result_version": result_version,
         "facts_packet_key": QUANT_PROJECTION_FACTS_PACKET_KEY,
         "facts_package_status": "ready" if facts_ready else freshness_state,
+        "facts_package_hash": facts_package_hash,
         "factor_next_same_result_ready": factor_next_same_result_ready,
         "current_result_promoted": current_result_promoted,
         "last_good_policy": "promote_current_result_only_after_tushare_facts_factor_next_same_result_ready",
@@ -16047,13 +16077,132 @@ def _quant_projection_attach_result_lineage(
     receipt["output_packet_keys"] = output_packet_keys
     receipt["data_date"] = provider_data_date
     receipt["freshness_state"] = freshness_state
+    receipt["facts_package_hash"] = facts_package_hash
     receipt["model_ledger_id"] = model_ledger_id
     receipt["result_version"] = result_version
     receipt["result_lineage"] = lineage
+    receipt["canonical_result_task_id"] = task_id
+    receipt["task_family_id"] = task_family_id
     receipt["current_result_promoted"] = lineage["current_result_promoted"]
     receipt["late_task_overwrite_guard"] = lineage["late_task_overwrite_guard"]
     receipt["old_task_can_overwrite_current"] = False
     return lineage
+
+
+def _quant_projection_canonical_result_lineage(
+    *,
+    result_lineage: Mapping[str, Any],
+    current_lineage: Mapping[str, Any],
+    last_good_lineage: Mapping[str, Any],
+    degraded_lineage: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    canonical_source = "current_result" if current_lineage else "latest_task"
+    canonical = dict(current_lineage or result_lineage)
+    if not canonical:
+        return {}
+    latest_task_version = _safe_text(result_lineage.get("result_version") or "", limit=80)
+    canonical_result_version = _safe_text(canonical.get("result_version") or "", limit=80)
+    provider_ledger_ids = [
+        _safe_text(item, limit=120)
+        for item in _as_list(canonical.get("provider_call_ledger_ids"))
+        if _safe_text(item, limit=120)
+    ]
+    input_packet_keys = [
+        _safe_text(item, limit=120)
+        for item in _as_list(canonical.get("input_packet_keys"))
+        if _safe_text(item, limit=120)
+    ]
+    output_packet_keys = [
+        _safe_text(item, limit=120)
+        for item in _as_list(canonical.get("output_packet_keys"))
+        if _safe_text(item, limit=120)
+    ]
+    model_ledger_id = _safe_text(canonical.get("model_ledger_id") or "", limit=80)
+    deepseek_status = _safe_text(canonical.get("deepseek_status") or "", limit=80)
+    facts_package_hash = _safe_text(canonical.get("facts_package_hash") or "", limit=80)
+    if not facts_package_hash:
+        facts_package_hash = _quant_projection_safe_id(
+            "qfp",
+            {
+                "task_id": canonical.get("task_id") or "",
+                "symbol": canonical.get("symbol") or "",
+                "scope_hash": canonical.get("scope_hash") or "",
+                "facts_packet_key": canonical.get("facts_packet_key") or QUANT_PROJECTION_FACTS_PACKET_KEY,
+                "provider_call_ledger_ids": provider_ledger_ids,
+                "data_date": canonical.get("data_date") or "",
+                "freshness_state": canonical.get("freshness_state") or "",
+            },
+        )
+    canonical.update(
+        {
+            "schema_version": "candidate_radar_search_quant_projection_canonical_result_lineage.v1",
+            "source_lineage_schema_version": _safe_text(
+                (current_lineage or result_lineage).get("schema_version") or "",
+                limit=120,
+            ),
+            "canonical_source": canonical_source,
+            "task_id": _safe_text(canonical.get("task_id") or "", limit=128),
+            "canonical_task_id": _safe_text(
+                canonical.get("canonical_task_id") or canonical.get("task_id") or "",
+                limit=128,
+            ),
+            "canonical_result_task_id": _safe_text(
+                canonical.get("canonical_result_task_id") or canonical.get("task_id") or "",
+                limit=128,
+            ),
+            "user_confirm_task_id": _safe_text(
+                canonical.get("user_confirm_task_id") or receipt.get("user_confirm_task_id") or "",
+                limit=128,
+            ),
+            "latest_attempt_task_id": _safe_text(result_lineage.get("task_id") or "", limit=128),
+            "latest_attempt_result_version": latest_task_version,
+            "latest_attempt_symbol": _safe_text(result_lineage.get("symbol") or "", limit=32),
+            "current_result_version": canonical_result_version,
+            "last_good_result_version": _safe_text(last_good_lineage.get("result_version") or "", limit=80),
+            "degraded_result_version": _safe_text(degraded_lineage.get("result_version") or "", limit=80),
+            "facts_package_hash": facts_package_hash,
+            "facts_packet_key": _safe_text(
+                canonical.get("facts_packet_key") or QUANT_PROJECTION_FACTS_PACKET_KEY,
+                limit=120,
+            ),
+            "provider_call_ledger_ids": provider_ledger_ids,
+            "input_packet_keys": input_packet_keys,
+            "output_packet_keys": output_packet_keys,
+            "model_ledger_id": model_ledger_id,
+            "same_task_fact_model_result_version_ready": bool(
+                canonical.get("task_id")
+                and canonical.get("symbol")
+                and canonical.get("scope_hash")
+                and provider_ledger_ids
+                and input_packet_keys
+                and output_packet_keys
+                and canonical_result_version
+                and facts_package_hash
+                and (
+                    model_ledger_id
+                    or deepseek_status in {"skipped_by_request", "skipped_missing_facts"}
+                    or canonical.get("deepseek_skipped_missing_facts") is True
+                    or receipt.get("deepseek_skipped_by_request") is True
+                )
+            ),
+            "current_result_matches_latest_task": bool(
+                canonical_result_version and canonical_result_version == latest_task_version
+            ),
+            "last_good_policy": "promote_current_result_only_after_tushare_facts_factor_next_same_result_ready",
+            "late_task_overwrite_guard": "symbol_and_result_version_must_match",
+            "old_task_can_overwrite_current": False,
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "deepseek_is_data_source": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_override_numeric_values": True,
+            "contains_secret": False,
+        }
+    )
+    return canonical
 
 
 def _quant_projection_result_version_summary(
@@ -16078,6 +16227,13 @@ def _quant_projection_result_version_summary(
     current_result_version = _safe_text(current_lineage.get("result_version") or "", limit=80)
     last_good_result_version = _safe_text(last_good_lineage.get("result_version") or "", limit=80)
     degraded_result_version = _safe_text(degraded_lineage.get("result_version") or "", limit=80)
+    canonical_lineage = _quant_projection_canonical_result_lineage(
+        result_lineage=result_lineage,
+        current_lineage=current_lineage,
+        last_good_lineage=last_good_lineage,
+        degraded_lineage=degraded_lineage,
+        receipt=receipt,
+    )
     current_promoted = result_lineage.get("current_result_promoted") is True
     status = (
         "current_result_promoted"
@@ -16117,6 +16273,32 @@ def _quant_projection_result_version_summary(
         "latest_task_data_date": _lineage_text(result_lineage, "data_date", limit=32),
         "latest_task_freshness_state": _lineage_text(result_lineage, "freshness_state", limit=64),
         "latest_task_model_ledger_id": _lineage_text(result_lineage, "model_ledger_id", limit=80),
+        "latest_task_facts_package_hash": _lineage_text(result_lineage, "facts_package_hash", limit=80),
+        "canonical_task_id": _safe_text(canonical_lineage.get("task_id") or "", limit=128),
+        "canonical_result_task_id": _safe_text(
+            canonical_lineage.get("canonical_result_task_id") or "",
+            limit=128,
+        ),
+        "canonical_result_version": _safe_text(
+            canonical_lineage.get("result_version") or canonical_lineage.get("current_result_version") or "",
+            limit=80,
+        ),
+        "canonical_symbol": _safe_text(canonical_lineage.get("symbol") or "", limit=32),
+        "canonical_scope_hash": _safe_text(canonical_lineage.get("scope_hash") or "", limit=160),
+        "canonical_scope_hash_short": _safe_text(canonical_lineage.get("scope_hash_short") or "", limit=32),
+        "canonical_provider_call_ledger_ids": _lineage_list(canonical_lineage, "provider_call_ledger_ids"),
+        "canonical_input_packet_keys": _lineage_list(canonical_lineage, "input_packet_keys"),
+        "canonical_output_packet_keys": _lineage_list(canonical_lineage, "output_packet_keys"),
+        "canonical_data_date": _safe_text(canonical_lineage.get("data_date") or "", limit=32),
+        "canonical_freshness_state": _safe_text(canonical_lineage.get("freshness_state") or "", limit=64),
+        "canonical_model_ledger_id": _safe_text(canonical_lineage.get("model_ledger_id") or "", limit=80),
+        "canonical_facts_package_hash": _safe_text(canonical_lineage.get("facts_package_hash") or "", limit=80),
+        "canonical_source": _safe_text(canonical_lineage.get("canonical_source") or "", limit=80),
+        "canonical_same_task_fact_model_result_version_ready": (
+            canonical_lineage.get("same_task_fact_model_result_version_ready") is True
+        ),
+        "user_confirm_task_id": _safe_text(canonical_lineage.get("user_confirm_task_id") or "", limit=128),
+        "task_family_id": _safe_text(canonical_lineage.get("task_family_id") or "", limit=80),
         "current_result_version": current_result_version,
         "current_result_task_id": _lineage_text(current_lineage, "task_id", limit=128),
         "current_result_symbol": _safe_text(current_lineage.get("symbol") or "", limit=32),
@@ -16128,6 +16310,7 @@ def _quant_projection_result_version_summary(
         "current_result_data_date": _lineage_text(current_lineage, "data_date", limit=32),
         "current_result_freshness_state": _lineage_text(current_lineage, "freshness_state", limit=64),
         "current_result_model_ledger_id": _lineage_text(current_lineage, "model_ledger_id", limit=80),
+        "current_result_facts_package_hash": _lineage_text(current_lineage, "facts_package_hash", limit=80),
         "last_good_result_version": last_good_result_version,
         "last_good_task_id": _lineage_text(last_good_lineage, "task_id", limit=128),
         "last_good_result_symbol": _safe_text(last_good_lineage.get("symbol") or "", limit=32),
@@ -16139,6 +16322,7 @@ def _quant_projection_result_version_summary(
         "last_good_data_date": _lineage_text(last_good_lineage, "data_date", limit=32),
         "last_good_freshness_state": _lineage_text(last_good_lineage, "freshness_state", limit=64),
         "last_good_model_ledger_id": _lineage_text(last_good_lineage, "model_ledger_id", limit=80),
+        "last_good_facts_package_hash": _lineage_text(last_good_lineage, "facts_package_hash", limit=80),
         "degraded_result_version": degraded_result_version,
         "degraded_task_id": _lineage_text(degraded_lineage, "task_id", limit=128),
         "degraded_result_symbol": _safe_text(degraded_lineage.get("symbol") or "", limit=32),
@@ -16150,6 +16334,7 @@ def _quant_projection_result_version_summary(
         "degraded_data_date": _lineage_text(degraded_lineage, "data_date", limit=32),
         "degraded_freshness_state": _lineage_text(degraded_lineage, "freshness_state", limit=64),
         "degraded_model_ledger_id": _lineage_text(degraded_lineage, "model_ledger_id", limit=80),
+        "degraded_facts_package_hash": _lineage_text(degraded_lineage, "facts_package_hash", limit=80),
         "degraded_deepseek_status": _lineage_text(degraded_lineage, "deepseek_status", limit=80),
         "degraded_deepseek_skipped_missing_facts": degraded_lineage.get("deepseek_skipped_missing_facts") is True,
         "degraded_reason": degraded_reason,
@@ -16261,6 +16446,10 @@ def _attach_quant_projection_result_version_summary_overlay(view: dict[str, Any]
         "current_result_task_id",
         "current_result_scope_hash",
         "current_result_provider_call_ledger_ids",
+        "canonical_task_id",
+        "canonical_result_version",
+        "canonical_facts_package_hash",
+        "canonical_same_task_fact_model_result_version_ready",
     )
     if not promoted_from_readback and summary and all(field in summary for field in required_fields):
         return view
@@ -16278,6 +16467,16 @@ def _attach_quant_projection_result_version_summary_overlay(view: dict[str, Any]
     if receipt:
         receipt = dict(receipt)
         receipt["result_version_summary"] = merged_summary
+        canonical_lineage = _quant_projection_canonical_result_lineage(
+            result_lineage=result_lineage,
+            current_lineage=_as_dict(view.get("search_quant_current_result_lineage")),
+            last_good_lineage=_as_dict(view.get("search_quant_last_good_result_lineage")),
+            degraded_lineage=_as_dict(view.get("search_quant_degraded_result_lineage")),
+            receipt=receipt,
+        )
+        if canonical_lineage:
+            receipt["canonical_result_lineage"] = canonical_lineage
+            view["search_quant_canonical_result_lineage"] = canonical_lineage
         view["search_quant_provider_model_acceptance_receipt"] = receipt
     return view
 
@@ -16689,6 +16888,13 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         payload_safe.get("acceptance_scope_hash") or payload_safe.get("scope_hash") or "",
         limit=128,
     )
+    user_confirm_task_id = _safe_text(
+        payload_safe.get("user_confirm_task_id")
+        or payload_safe.get("confirm_task_id")
+        or payload_safe.get("parent_task_id")
+        or "",
+        limit=128,
+    )
     expected_scope_hash = _safe_text(quant_request.get("acceptance_scope_hash") or "", limit=128)
     scope_hash_matches = bool(requested_scope_hash and expected_scope_hash and requested_scope_hash == expected_scope_hash)
     execution_request_ready = quant_request.get("local_execution_request_ready") is True
@@ -16862,6 +17068,7 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         "route": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_ROUTE,
         "task_type": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE,
         "task_id": task_id,
+        "user_confirm_task_id": user_confirm_task_id,
         "provider_task_id": provider_task_id,
         "symbol": quant_request.get("symbol") or "",
         "selected_apis": selected_apis,
@@ -21631,8 +21838,17 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         degraded_lineage=_as_dict(packet.get("search_quant_degraded_result_lineage")),
         receipt=receipt,
     )
+    canonical_result_lineage = _quant_projection_canonical_result_lineage(
+        result_lineage=result_lineage,
+        current_lineage=_as_dict(packet.get("search_quant_current_result_lineage")),
+        last_good_lineage=_as_dict(packet.get("search_quant_last_good_result_lineage")),
+        degraded_lineage=_as_dict(packet.get("search_quant_degraded_result_lineage")),
+        receipt=receipt,
+    )
     receipt["result_version_summary"] = result_version_summary
+    receipt["canonical_result_lineage"] = canonical_result_lineage
     packet["search_quant_result_version_summary"] = result_version_summary
+    packet["search_quant_canonical_result_lineage"] = canonical_result_lineage
     packet_counts = _as_dict(packet.get("counts"))
     packet_counts["search_quant_provider_model_acceptance_row_count"] = len(receipt_rows)
     packet_counts["search_quant_provider_model_acceptance_direct_evidence_verified"] = (
