@@ -21104,6 +21104,33 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "production_quant_projection_complete": False,
         },
     ]
+    deepseek_failure_mode = _safe_text(
+        provider_receipt.get("deepseek_safe_failure_mode")
+        or provider_receipt.get("deepseek_explanation_status")
+        or "",
+        limit=120,
+    )
+    if deepseek_output_acceptance_done:
+        deepseek_one_glance_value = "解释成功：安全模型账本已写入；仅解释来源和缺口，不构成交易指令。"
+        deepseek_one_glance_tone = "good"
+    elif deepseek_safe_degraded:
+        deepseek_one_glance_value = (
+            f"安全降级：{deepseek_failure_mode or 'model_unavailable'}；"
+            "Tushare / Factor / Next 结果不被阻塞。"
+        )
+        deepseek_one_glance_tone = "warn"
+    elif deepseek_model_ledger_ready:
+        deepseek_one_glance_value = "model_ledger 已记录；只读回放安全摘要，不覆盖数值或动作。"
+        deepseek_one_glance_tone = "good"
+    elif deepseek_requested:
+        deepseek_one_glance_value = "已请求解释；等待 governed model_ledger，基础结果先回放。"
+        deepseek_one_glance_tone = "warn"
+    elif deepseek_skipped:
+        deepseek_one_glance_value = "未请求 DeepSeek；Tushare-first 结果仍可回放。"
+        deepseek_one_glance_tone = "good"
+    else:
+        deepseek_one_glance_value = "DeepSeek 未请求；等待 governed executor。"
+        deepseek_one_glance_tone = "neutral"
     ordinary_post_confirm_one_glance_items = [
         {
             "item_key": "task_id",
@@ -21140,9 +21167,9 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         {
             "item_key": "deepseek",
             "label": "DeepSeek",
-            "value": "skipped/pending 不阻塞；P5 governed executor 单独补",
-            "tone": "good",
-            "readback_source": "ordinary_model_governance_rows",
+            "value": deepseek_one_glance_value,
+            "tone": deepseek_one_glance_tone,
+            "readback_source": "search_quant_provider_model_acceptance_receipt / model_ledger",
             "boundary": "DeepSeek 不作为数据源，不覆盖价格、持仓、factor、operation_zones 或 strategy action。",
         },
         {

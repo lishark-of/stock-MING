@@ -2047,6 +2047,9 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         model_ledger = packet["search_quant_deepseek_model_ledger"]
         explanation = packet["search_quant_deepseek_explanation"]
         payload = explanation["payload"]
+        one_glance = {
+            row["item_key"]: row for row in packet["search_quant_projection_post_confirm_one_glance_items"]
+        }
 
         self.assertEqual(
             receipt["status"],
@@ -2070,6 +2073,11 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(explanation["model_ledger_id"], receipt["model_ledger_id"])
         self.assertEqual(packet["search_quant_result_lineage"]["model_ledger_id"], receipt["model_ledger_id"])
         self.assertTrue(receipt["model_ledger_id"].startswith("mlg_"))
+        self.assertIn("解释成功", one_glance["deepseek"]["value"])
+        self.assertIn("安全模型账本", one_glance["deepseek"]["value"])
+        self.assertNotIn("skipped/pending", one_glance["deepseek"]["value"])
+        self.assertEqual(one_glance["deepseek"]["tone"], "good")
+        self.assertFalse(one_glance["deepseek"]["uses_deepseek_output"])
         self.assertTrue(model_ledger["input_hash"])
         self.assertTrue(model_ledger["output_hash"])
         self.assertEqual(model_ledger["response_format"], "json_object")
@@ -2342,6 +2350,9 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         model_ledger = packet["search_quant_deepseek_model_ledger"]
         explanation = packet["search_quant_deepseek_explanation"]
         small_data = packet["search_quant_projection_small_data_writeback_summary"]
+        one_glance = {
+            row["item_key"]: row for row in packet["search_quant_projection_post_confirm_one_glance_items"]
+        }
 
         self.assertEqual(dry_run["credential_missing_provider_count"], 1)
         self.assertEqual(dry_run["blocking_credential_missing_provider_count"], 0)
@@ -2361,6 +2372,11 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(small_data["status"], "small_data_writeback_ready_tushare_ledger_replayed")
         self.assertTrue(small_data["deepseek_model_ledger_recorded"])
         self.assertTrue(small_data["deepseek_safe_degraded"])
+        self.assertIn("安全降级", one_glance["deepseek"]["value"])
+        self.assertIn("missing_server_key", one_glance["deepseek"]["value"])
+        self.assertIn("Tushare / Factor / Next", one_glance["deepseek"]["value"])
+        self.assertEqual(one_glance["deepseek"]["tone"], "warn")
+        self.assertFalse(one_glance["deepseek"]["uses_deepseek_output"])
 
     def test_deepseek_forced_missing_key_acceptance_keeps_tushare_factor_next_result(self):
         self._with_meta_store()

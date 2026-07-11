@@ -1782,7 +1782,7 @@ export default function CandidateRadar() {
           : "等待模型解释账本"
   );
   const quantProjectionDeepSeekVisibleStatus = quantProjectionDeepSeekOutputReady
-    ? `${quantProjectionDeepSeekSummary}；安全模型账本已写入`
+    ? `DeepSeek 解释：${quantProjectionDeepSeekSummary}；安全模型账本已写入`
     : quantProjectionDeepSeekSkippedMissingFacts
       ? `${quantProjectionDeepSeekSummary}；页面保留 Tushare 降级原因和 last-good，不让模型补事实`
     : quantProjectionDeepSeekDegraded
@@ -3270,6 +3270,15 @@ export default function CandidateRadar() {
       label: "P3 结论",
       value: quantProjectionOrdinaryResultSummary,
       tone: quantProjectionInterpretationReady ? "good" : "warn"
+    },
+    {
+      label: "模型解释",
+      value: quantProjectionDeepSeekVisibleStatus,
+      tone: quantProjectionDeepSeekOutputReady
+        ? "good"
+        : quantProjectionDeepSeekDegraded || quantProjectionDeepSeekSkipped
+          ? "warn"
+          : "neutral"
     },
     {
       label: "结果状态",
