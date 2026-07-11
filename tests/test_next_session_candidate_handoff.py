@@ -297,6 +297,50 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
         self.assertIn("情景=1", result_rows["次日图谱"]["readable_result"])
         self.assertFalse(any(row["external_calls_triggered"] for row in packet["ordinary_result_replay_rows"]))
 
+    def test_generate_task_recovers_preview_when_packet_service_meta_path_drifted(self):
+        self._write_candidate_packet()
+        drift_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(drift_tmp.cleanup)
+        packet_service.SQLITE_META_PATH = Path(drift_tmp.name) / "drifted.sqlite"
+
+        task = next_session_service.create_next_session_task(
+            {
+                "schema_version": "next_session_confirmed_symbol_generate_payload.v1",
+                "source": "candidate_radar_quant_projection_provider_model_acceptance",
+                "symbol": "002008.SZ",
+                "source_task_id": "local-next-handoff",
+                "p2_small_data_ready": True,
+                "p3_readable_result_ready": True,
+                "manual_button_required": True,
+                "cache_get_external_calls_triggered": False,
+                "react_render_external_calls_triggered": False,
+                "deepseek_execution_requested": False,
+                "does_not_include_token_or_raw_log": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_operation_zones": True,
+            }
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(Path(packet_service.SQLITE_META_PATH), self.db_path)
+        self.assertEqual(task["call_ledger"][0]["call_status"], "local_confirmed_symbol_preview_written")
+        persisted = SQLiteMetaStore(self.db_path).read_packet("command_center_next_session_projection_packet")
+        chart = persisted["chart_payload"]
+        self.assertEqual(chart["status"], "ready")
+        self.assertEqual(chart["symbol"], "002008.SZ")
+        self.assertTrue(chart["historical_points"])
+        self.assertTrue(chart["scenario_series"])
+        self.assertTrue(chart["operation_zones"])
+
+        packet = next_session_service.read_next_session_cache()
+        summary = packet["ordinary_result_replay_summary"]
+        self.assertEqual(summary["status"], "ready_cache_replay")
+        self.assertTrue(summary["chart_ready_for_confirmed_symbol"])
+        self.assertEqual(summary["chart_symbol"], "002008.SZ")
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+
     def test_generate_task_recovers_missing_chart_preview_from_cache_handoff(self):
         self._write_candidate_packet()
         self._write_broken_preview_packet()

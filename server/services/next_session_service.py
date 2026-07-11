@@ -90,6 +90,11 @@ NEXT_SESSION_RELEASE_GATE_REQUIRED_CHECKS = {
 }
 
 
+def _sync_packet_service_sqlite_path() -> None:
+    if Path(packet_service.SQLITE_META_PATH) != Path(SQLITE_META_PATH):
+        packet_service.SQLITE_META_PATH = SQLITE_META_PATH
+
+
 def _now_iso() -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
 
@@ -2974,6 +2979,7 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
 
 
 def read_next_session_cache() -> dict[str, Any]:
+    _sync_packet_service_sqlite_path()
     packet = dict(packet_service.build_next_session_cache())
     candidate_radar_p3_handoff = _read_candidate_radar_p3_handoff()
     candidate_radar_p3_ready = candidate_radar_p3_handoff.get("p3_readable_result_ready") is True

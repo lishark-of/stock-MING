@@ -218,17 +218,20 @@ def _build_exact_sample_packet() -> dict[str, Any]:
 def _build_exact_service_packet() -> dict[str, Any]:
     original_snapshot = packet_service.SNAPSHOT_CACHE_PATH
     original_meta = packet_service.SQLITE_META_PATH
+    original_next_meta = next_session_service.SQLITE_META_PATH
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         snapshot_path = temp_path / "command_center_latest.json"
         snapshot_path.write_text(json.dumps(_synthetic_next_session_snapshot(), ensure_ascii=False), encoding="utf-8")
         packet_service.SNAPSHOT_CACHE_PATH = snapshot_path
         packet_service.SQLITE_META_PATH = temp_path / "meta.sqlite"
+        next_session_service.SQLITE_META_PATH = temp_path / "meta.sqlite"
         try:
             return next_session_service.read_next_session_cache()
         finally:
             packet_service.SNAPSHOT_CACHE_PATH = original_snapshot
             packet_service.SQLITE_META_PATH = original_meta
+            next_session_service.SQLITE_META_PATH = original_next_meta
 
 
 def _next_session_production_stage_scope_rows() -> list[dict[str, Any]]:
