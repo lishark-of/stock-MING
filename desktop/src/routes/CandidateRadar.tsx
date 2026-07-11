@@ -4252,7 +4252,9 @@ export default function CandidateRadar() {
     }
   ];
   const candidateRadarRecentResearchResultSentence =
-    quantProjectionInterpretationReady || quantProjectionSmallDataReady
+    searchQuantDegradedResultVisible && searchQuantResultCurrentSymbol && searchQuantDegradedResultSymbol && searchQuantResultCurrentSymbol !== searchQuantDegradedResultSymbol
+      ? `最近尝试 ${searchQuantDegradedResultSymbol} 已降级；当前可用结果仍保留 ${searchQuantResultCurrentSymbol}，旧任务不会覆盖 current。`
+      : quantProjectionInterpretationReady || quantProjectionSmallDataReady
       ? `最近投研结果可回放：${quantProjectionOrdinaryResultSummary}`
       : taskReceipt?.ok || quantProjectionPersistedTaskId
         ? `最近投研结果正在回写：${quantProjectionReplayDestinationState}`
@@ -4266,6 +4268,28 @@ export default function CandidateRadar() {
         ? quantProjectionOrdinaryResultSummary
         : quantProjectionReplayDestinationState,
       tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "warn" : "neutral"
+    },
+    {
+      label: "当前可用",
+      value: searchQuantCurrentResultLabel,
+      tone: searchQuantCurrentResultVersion ? "good" : "warn"
+    },
+    {
+      label: "最新尝试",
+      value: searchQuantLatestTaskResultLabel,
+      tone: searchQuantLatestTaskResultVersion ? (searchQuantDegradedResultVisible ? "warn" : "good") : "warn"
+    },
+    {
+      label: "last-good",
+      value: searchQuantLastGoodResultLabel,
+      tone: searchQuantResultVersionSummary.last_good_result_available === true || searchQuantLastGoodResultVersion ? "good" : "warn"
+    },
+    {
+      label: "覆盖保护",
+      value: searchQuantResultVersionSummary.old_task_can_overwrite_current === false || searchQuantResultLineage.old_task_can_overwrite_current === false
+        ? "旧任务不能覆盖当前结果"
+        : "等待 symbol + result_version 保护",
+      tone: searchQuantResultVersionSummary.old_task_can_overwrite_current === false || searchQuantResultLineage.old_task_can_overwrite_current === false ? "good" : "warn"
     },
     {
       label: "结果归属",
@@ -4330,10 +4354,14 @@ export default function CandidateRadar() {
     },
     {
       读法: "3. 识别降级",
-      当前状态: `${ordinaryActiveDegradedLabel}；${quantProjectionBlockedState}`,
-      用户下一步: quantProjectionMissingEvidence,
-      证据: "degraded_mode_rows / search_quant_projection_receipt",
-      边界: "degraded 和 missing evidence 只提示待补证据，不创建 task、不升级 production complete。"
+      当前状态: searchQuantDegradedResultVisible
+        ? `${searchQuantDegradedResultLabel}；current=${searchQuantCurrentResultLabel}；last-good=${searchQuantLastGoodResultLabel}`
+        : `${ordinaryActiveDegradedLabel}；${quantProjectionBlockedState}`,
+      用户下一步: searchQuantDegradedResultVisible
+        ? "先看 current/last-good 结果；最新 degraded 只用于复核缺口和重试条件。"
+        : quantProjectionMissingEvidence,
+      证据: "search_quant_result_version_summary / degraded_mode_rows / search_quant_projection_receipt",
+      边界: "degraded 和 missing evidence 只提示待补证据；旧任务不能覆盖当前结果，不创建 task、不升级 production complete。"
     },
     {
       读法: "4. 去哪里看",

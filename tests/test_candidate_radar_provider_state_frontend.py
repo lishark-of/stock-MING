@@ -88,6 +88,18 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("quantProjectionTushareDataCardItems", self.page)
         self.assertIn("quantProjectionTushareDataCardRows", self.page)
         self.assertIn("quantProjectionTushareDataCardSummary", self.page)
+        self.assertIn('aria-label="candidate radar recent research result card"', summary_panel)
+        self.assertIn("最近尝试", self.page)
+        self.assertIn("当前可用", self.page)
+        self.assertIn("最新尝试", self.page)
+        self.assertIn("last-good", self.page)
+        self.assertIn("覆盖保护", self.page)
+        self.assertIn("旧任务不会覆盖 current", self.page)
+        self.assertIn("先看 current/last-good 结果", self.page)
+        self.assertIn(
+            "searchQuantDegradedResultVisible && searchQuantResultCurrentSymbol && searchQuantDegradedResultSymbol",
+            self.page,
+        )
         self.assertIn("quantProjectionTushareDataCardGap", self.page)
         self.assertIn("quantProjectionTushareDataCardNext", self.page)
         self.assertIn('aria-label="quant projection ordinary tushare data card"', search_panel_top)
