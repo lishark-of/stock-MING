@@ -60,7 +60,7 @@ QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION = (
 QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_small_data_writeback.v1"
 )
-QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS = 1200
+QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS = 512
 QUANT_PROJECTION_SMALL_DATA_READBACK_CHECKPOINT_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_small_data_readback_checkpoint.v1"
 )
@@ -16549,17 +16549,19 @@ def _call_quant_projection_deepseek_model(
         temperature=0,
         max_tokens=QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS,
         response_format=response_format,
+        extra_body={"thinking": {"type": "disabled"}},
         messages=[
             {
                 "role": "system",
                 "content": (
                     "你是 Command Center 3.0 的只读投研解释器。只根据用户消息里的 Tushare "
                     "事实摘要解释数据链状态，不编造缺失事实，不给买入、卖出、加仓、融资或下单指令。"
+                    "禁用思考模式，直接输出最终 JSON。"
                     "只输出一个 JSON object，不要输出 Markdown、代码块或额外正文。"
                     "顶层键必须严格限定在 summary、support_notes、suppress_notes、"
                     "conflict_notes、missing_data_notes、discipline_notes。"
                     "summary 必须是一句短字符串；其余字段必须是字符串数组，每个数组最多 1 条、每条不超过 40 个中文字符。"
-                    "总输出控制在 220 个中文字符以内，不要展开推理过程。"
+                    "总输出控制在 180 个中文字符以内，不要展开推理过程。"
                 ),
             },
             {"role": "user", "content": fact_text},
@@ -16569,6 +16571,9 @@ def _call_quant_projection_deepseek_model(
     message = getattr(choice, "message", None)
     usage = getattr(response, "usage", None)
     text = _safe_text(getattr(message, "content", "") if message else "", limit=6000)
+    reasoning_content_present = bool(
+        _safe_text(getattr(message, "reasoning_content", "") if message else "", limit=80)
+    )
     return {
         "text": text,
         "usage": {
@@ -16578,6 +16583,9 @@ def _call_quant_projection_deepseek_model(
         },
         "response_format": response_format["type"],
         "provider_response_format_requested": True,
+        "thinking_mode": "disabled",
+        "thinking_disabled": True,
+        "reasoning_content_present": reasoning_content_present,
         "finish_reason": _safe_text(getattr(choice, "finish_reason", "") if choice else "", limit=80),
         "max_tokens": QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS,
         "content_present": bool(text),
@@ -16591,10 +16599,15 @@ def _quant_projection_deepseek_safe_failure_mode(
 ) -> str:
     if sanitized.get("status") == "success" and sanitized.get("parse_failed") is not True:
         return ""
+    if _safe_text(model_response.get("finish_reason") or "", limit=80) == "length":
+        if model_response.get("reasoning_content_present") is True and not _safe_text(
+            model_response.get("text") or "",
+            limit=80,
+        ):
+            return "thinking_output_truncated"
+        return "model_output_truncated"
     if not _safe_text(model_response.get("text") or "", limit=80):
         return "empty_model_output"
-    if _safe_text(model_response.get("finish_reason") or "", limit=80) == "length":
-        return "model_output_truncated"
     if _safe_text(sanitized.get("error_message_safe") or "", limit=120):
         return "json_parse_failed"
     return "empty_sanitized_output"
@@ -16671,6 +16684,8 @@ def _run_quant_projection_deepseek_explanation(
         "raw_output_stored": False,
         "response_format": "json_object",
         "provider_response_format_requested": True,
+        "thinking_mode": "disabled",
+        "thinking_disabled": True,
         "provider_response_format_scope": "search_quant_projection_single_call_not_ltg07_production_benchmark",
         "production_response_format_benchmark_done": False,
         "cache_packet_contains_raw_prompt": False,
@@ -16793,6 +16808,9 @@ def _run_quant_projection_deepseek_explanation(
                 "finish_reason": _safe_text(model_response.get("finish_reason") or "", limit=80),
                 "max_tokens": int(model_response.get("max_tokens") or QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS),
                 "content_present": model_response.get("content_present") is True,
+                "thinking_mode": _safe_text(model_response.get("thinking_mode") or "disabled", limit=40),
+                "thinking_disabled": model_response.get("thinking_disabled") is not False,
+                "reasoning_content_present": model_response.get("reasoning_content_present") is True,
             }
         except Exception as exc:
             latency_ms = int((_dt.datetime.now() - started_at).total_seconds() * 1000)
@@ -16858,6 +16876,8 @@ def _run_quant_projection_deepseek_explanation(
             "model_ledger_id": model_ledger_id,
             "response_format": "json_object",
             "provider_response_format_requested": True,
+            "thinking_mode": model_ledger.get("thinking_mode") or "disabled",
+            "thinking_disabled": model_ledger.get("thinking_disabled") is not False,
             "provider_response_format_scope": "search_quant_projection_single_call_not_ltg07_production_benchmark",
             "production_response_format_benchmark_done": False,
             "acceptance_forced_failure_mode": model_ledger.get("acceptance_forced_failure_mode") or "",
@@ -16867,6 +16887,7 @@ def _run_quant_projection_deepseek_explanation(
             "finish_reason": model_ledger.get("finish_reason") or "",
             "max_tokens": model_ledger.get("max_tokens") or QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS,
             "content_present": model_ledger.get("content_present") is True,
+            "reasoning_content_present": model_ledger.get("reasoning_content_present") is True,
             "raw_prompt_stored": False,
             "raw_output_stored": False,
             "safe_failure_mode": model_ledger.get("safe_failure_mode") or "",

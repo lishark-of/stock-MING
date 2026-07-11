@@ -1906,12 +1906,17 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertIn("只输出一个 JSON object", system_prompt)
         self.assertIn("不要输出 Markdown", system_prompt)
         self.assertIn("每个数组最多 1 条", system_prompt)
-        self.assertIn("总输出控制在 220 个中文字符以内", system_prompt)
-        self.assertEqual(captured["create"]["max_tokens"], 1200)
+        self.assertIn("禁用思考模式，直接输出最终 JSON", system_prompt)
+        self.assertIn("总输出控制在 180 个中文字符以内", system_prompt)
+        self.assertEqual(captured["create"]["extra_body"], {"thinking": {"type": "disabled"}})
+        self.assertEqual(captured["create"]["max_tokens"], 512)
         self.assertEqual(json.loads(captured["create"]["messages"][1]["content"])["symbol"], "000001.SZ")
         self.assertEqual(result["response_format"], "json_object")
         self.assertTrue(result["provider_response_format_requested"])
-        self.assertEqual(result["max_tokens"], 1200)
+        self.assertTrue(result["thinking_disabled"])
+        self.assertEqual(result["thinking_mode"], "disabled")
+        self.assertFalse(result["reasoning_content_present"])
+        self.assertEqual(result["max_tokens"], 512)
         self.assertTrue(result["content_present"])
         self.assertEqual(result["usage"]["total_tokens"], 7)
 
@@ -2140,11 +2145,13 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertEqual(fact_summary["data_source"], "Tushare")
             return {
                 "text": "",
-                "usage": {"prompt_tokens": 10, "completion_tokens": 1200, "total_tokens": 1210},
+                "usage": {"prompt_tokens": 10, "completion_tokens": 512, "total_tokens": 522},
                 "response_format": "json_object",
                 "provider_response_format_requested": True,
+                "thinking_mode": "disabled",
+                "thinking_disabled": True,
                 "finish_reason": "length",
-                "max_tokens": 1200,
+                "max_tokens": 512,
                 "content_present": False,
             }
 
@@ -2210,14 +2217,18 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(receipt["tushare_call_ledger_evidence_done"])
         self.assertTrue(receipt["deepseek_model_ledger_recorded"])
         self.assertFalse(receipt["deepseek_output_acceptance_done"])
-        self.assertEqual(receipt["deepseek_safe_failure_mode"], "empty_model_output")
-        self.assertEqual(model_ledger["safe_failure_mode"], "empty_model_output")
+        self.assertEqual(receipt["deepseek_safe_failure_mode"], "model_output_truncated")
+        self.assertEqual(model_ledger["safe_failure_mode"], "model_output_truncated")
         self.assertEqual(model_ledger["finish_reason"], "length")
-        self.assertEqual(model_ledger["max_tokens"], 1200)
+        self.assertEqual(model_ledger["max_tokens"], 512)
         self.assertFalse(model_ledger["content_present"])
-        self.assertEqual(explanation["error_message_safe"], "empty_model_output")
+        self.assertTrue(model_ledger["thinking_disabled"])
+        self.assertEqual(model_ledger["thinking_mode"], "disabled")
+        self.assertEqual(explanation["error_message_safe"], "model_output_truncated")
         self.assertTrue(explanation["parse_failed"])
-        self.assertEqual(deepseek_rows[0]["error_message_safe"], "empty_model_output")
+        self.assertEqual(deepseek_rows[0]["error_message_safe"], "model_output_truncated")
+        self.assertTrue(deepseek_rows[0]["request_params_safe"]["thinking_disabled"])
+        self.assertEqual(deepseek_rows[0]["request_params_safe"]["thinking_mode"], "disabled")
         self.assertFalse(model_ledger["raw_prompt_stored"])
         self.assertFalse(model_ledger["raw_output_stored"])
         self.assertTrue(model_ledger["does_not_modify_strategy_action"])
