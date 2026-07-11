@@ -446,6 +446,16 @@ export default function CandidateRadar() {
   const searchQuantDeepSeekExplanation = (cache.search_quant_deepseek_explanation as Record<string, unknown> | undefined) ?? {};
   const searchQuantDeepSeekModelLedger = (cache.search_quant_deepseek_model_ledger as Record<string, unknown> | undefined) ?? {};
   const searchQuantDeepSeekPayload = (searchQuantDeepSeekExplanation.payload as Record<string, unknown> | undefined) ?? {};
+  const searchQuantResultLineage =
+    (cache.search_quant_result_lineage as Record<string, unknown> | undefined) ??
+    (searchQuantProviderModelAcceptance.result_lineage as Record<string, unknown> | undefined) ??
+    {};
+  const searchQuantResultOutputPacketKeys = Array.isArray(searchQuantResultLineage.output_packet_keys)
+    ? searchQuantResultLineage.output_packet_keys.map((item) => String(item)).filter(Boolean)
+    : [];
+  const searchQuantResultProviderLedgerIds = Array.isArray(searchQuantResultLineage.provider_call_ledger_ids)
+    ? searchQuantResultLineage.provider_call_ledger_ids.map((item) => String(item)).filter(Boolean)
+    : [];
   const searchQuantProjectionSmallDataWriteback = (cache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionConfirmChainCheckpoint =
     (cache.search_quant_projection_confirm_chain_checkpoint as Record<string, unknown> | undefined) ?? {};
@@ -3204,6 +3214,68 @@ export default function CandidateRadar() {
       tone: "good"
     }
   ];
+  const quantProjectionResultLineageItems: MetricItem[] = [
+    {
+      label: "结果版本",
+      value: displayText(
+        searchQuantResultLineage.result_version ?? searchQuantProviderModelAcceptance.result_version,
+        "等待确认后的同源结果版本"
+      ),
+      tone: searchQuantResultLineage.result_version || searchQuantProviderModelAcceptance.result_version ? "good" : "warn"
+    },
+    {
+      label: "同源 task",
+      value: displayText(
+        searchQuantResultLineage.task_id ?? searchQuantProviderModelAcceptance.task_id ?? quantProjectionProgressWatchTaskId,
+        "等待确认 task"
+      ),
+      tone: searchQuantResultLineage.task_id || searchQuantProviderModelAcceptance.task_id || quantProjectionProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "事实包",
+      value: displayText(searchQuantResultLineage.facts_packet_key, "等待 Tushare facts packet"),
+      tone: searchQuantResultLineage.facts_package_status === "ready" ? "good" : "warn"
+    },
+    {
+      label: "数据日期",
+      value: displayText(searchQuantResultLineage.data_date ?? searchQuantProviderModelAcceptance.data_date, "等待数据日期"),
+      tone: searchQuantResultLineage.data_date || searchQuantProviderModelAcceptance.data_date ? "good" : "warn"
+    },
+    {
+      label: "freshness",
+      value: displayText(searchQuantResultLineage.freshness_state ?? searchQuantProviderModelAcceptance.freshness_state, "waiting_confirm"),
+      tone: searchQuantResultLineage.freshness_state === "fresh_provider" ? "good" : "warn"
+    },
+    {
+      label: "账本关联",
+      value: searchQuantResultProviderLedgerIds.length
+        ? `${searchQuantResultProviderLedgerIds.length} 条 provider ledger`
+        : "等待 provider ledger id",
+      tone: searchQuantResultProviderLedgerIds.length ? "good" : "warn"
+    },
+    {
+      label: "模型账本",
+      value: displayText(
+        searchQuantResultLineage.model_ledger_id ?? searchQuantProviderModelAcceptance.model_ledger_id,
+        quantProjectionDeepSeekModelLedgerReady ? "model ledger recorded" : "DeepSeek skipped/degraded"
+      ),
+      tone: searchQuantResultLineage.model_ledger_id || searchQuantProviderModelAcceptance.model_ledger_id
+        ? "good"
+        : quantProjectionDeepSeekSkipped || quantProjectionDeepSeekDegraded ? "warn" : "neutral"
+    },
+    {
+      label: "输出包",
+      value: searchQuantResultOutputPacketKeys.length ? searchQuantResultOutputPacketKeys.join(" / ") : "等待输出包 key",
+      tone: searchQuantResultOutputPacketKeys.length ? "good" : "warn"
+    },
+    {
+      label: "覆盖保护",
+      value: searchQuantResultLineage.old_task_can_overwrite_current === false
+        ? "旧任务不能覆盖当前结果"
+        : "等待 symbol + result_version 保护",
+      tone: searchQuantResultLineage.old_task_can_overwrite_current === false ? "good" : "warn"
+    }
+  ];
   const candidateRadarOperatorPostConfirmOneGlanceItems: MetricItem[] = [
     {
       label: "确认接收",
@@ -5721,6 +5793,8 @@ export default function CandidateRadar() {
               </details>
             ) : null}
             <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
+            <MetricGrid items={quantProjectionResultLineageItems} />
+            <p className="risk-note">结果版本把本次 task、Tushare 事实包、provider 账本、输出包和模型账本绑在一起；旧任务迟到只能保留为历史回放，不能覆盖当前标的。</p>
             <details className="developer-audit-details" aria-label="candidate radar post confirm backend replay contract">
               <summary>查看回放顺序</summary>
               <p className="risk-note">这里展示确认后的回放顺序：先看任务编号和状态，再看本地 cache、三面回放、量化推演和次日图谱；这张表只读，不创建 task。</p>

@@ -94,6 +94,7 @@ QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE = (
 QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_ROUTE = (
     "POST /api/candidate-radar/quant-projection-provider-model-acceptance"
 )
+QUANT_PROJECTION_FACTS_PACKET_KEY = "command_center_candidate_radar_quant_projection_tushare_light_packet"
 QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS = ("trade_cal", "daily", "daily_basic", "moneyflow")
 QUANT_PROJECTION_PROVIDER_LOOKBACK_DAYS = 180
 CANDIDATE_PROVIDER_PARITY_DRY_RUN_SCHEMA_VERSION = "candidate_radar_provider_parity_dry_run.v1"
@@ -15817,6 +15818,189 @@ def _quant_projection_deepseek_hash(payload: Any) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def _quant_projection_safe_id(prefix: str, payload: Any) -> str:
+    return f"{prefix}_{_quant_projection_deepseek_hash(payload)[:16]}"
+
+
+def _quant_projection_assign_call_ledger_ids(
+    rows: list[dict[str, Any]],
+    *,
+    task_id: str,
+    prefix: str,
+) -> list[str]:
+    ids: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        ledger_id = _safe_text(row.get("call_ledger_id") or row.get("ledger_id") or "", limit=80)
+        if not ledger_id:
+            ledger_id = _quant_projection_safe_id(
+                prefix,
+                {
+                    "task_id": task_id,
+                    "index": index,
+                    "api": row.get("api"),
+                    "request_params_safe": row.get("request_params_safe"),
+                    "row_count": row.get("row_count"),
+                    "data_date": row.get("data_date"),
+                    "call_status": row.get("call_status"),
+                    "local_fetched_at": row.get("local_fetched_at"),
+                },
+            )
+        row["call_ledger_id"] = ledger_id
+        row["ledger_id"] = ledger_id
+        row["source_task_id"] = task_id
+        ids.append(ledger_id)
+    return ids
+
+
+def _quant_projection_model_ledger_id(model_ledger: Mapping[str, Any], *, task_id: str) -> str:
+    if not model_ledger:
+        return ""
+    return _quant_projection_safe_id(
+        "mlg",
+        {
+            "task_id": task_id,
+            "model": model_ledger.get("model") or model_ledger.get("model_used"),
+            "purpose": model_ledger.get("purpose"),
+            "status": model_ledger.get("status"),
+            "input_hash": model_ledger.get("input_hash") or model_ledger.get("input_summary_hash"),
+            "output_hash": model_ledger.get("output_hash"),
+            "safe_failure_mode": model_ledger.get("safe_failure_mode"),
+        },
+    )
+
+
+def _quant_projection_provider_data_date(provider_ledger: list[dict[str, Any]]) -> str:
+    dates = [
+        _safe_text(row.get("data_date") or "", limit=32)
+        for row in provider_ledger
+        if _safe_text(row.get("data_date") or "", limit=32)
+    ]
+    return max(dates) if dates else ""
+
+
+def _quant_projection_freshness_state(
+    *,
+    provider_evidence_done: bool,
+    provider_ledger: list[dict[str, Any]],
+    provider_data_date: str,
+) -> str:
+    if provider_evidence_done and provider_data_date:
+        return "fresh_provider"
+    if provider_evidence_done:
+        return "provider_success_missing_data_date"
+    if provider_ledger and any(row.get("call_status") == "success" for row in provider_ledger):
+        return "partial_provider"
+    if provider_ledger:
+        return "provider_failure_or_empty"
+    return "skipped_missing_facts"
+
+
+def _quant_projection_attach_result_lineage(
+    receipt: dict[str, Any],
+    *,
+    task_id: str,
+    local_factor_next_refresh: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    local_refresh = _as_dict(local_factor_next_refresh)
+    provider_ledger = [
+        dict(row) for row in _as_list(receipt.get("provider_call_ledger")) if isinstance(row, dict)
+    ]
+    provider_call_ledger_ids = [
+        _safe_text(row.get("call_ledger_id") or row.get("ledger_id") or "", limit=80)
+        for row in provider_ledger
+        if _safe_text(row.get("call_ledger_id") or row.get("ledger_id") or "", limit=80)
+    ]
+    model_ledger = _as_dict(receipt.get("deepseek_model_ledger"))
+    model_ledger_id = _safe_text(model_ledger.get("model_ledger_id") or "", limit=80)
+    provider_data_date = _quant_projection_provider_data_date(provider_ledger)
+    freshness_state = _quant_projection_freshness_state(
+        provider_evidence_done=receipt.get("tushare_call_ledger_evidence_done") is True,
+        provider_ledger=provider_ledger,
+        provider_data_date=provider_data_date,
+    )
+    input_packet_keys = [
+        "command_center_candidate_radar_quant_projection_receipt",
+        QUANT_PROJECTION_FACTS_PACKET_KEY,
+    ]
+    output_packet_keys = [PACKET_KEY]
+    if receipt.get("factor_refresh_executed") is True or local_refresh.get("factor_refresh_executed") is True:
+        output_packet_keys.append(FACTOR_QUANT_HUB_PACKET_KEY)
+    if receipt.get("next_session_refresh_executed") is True or local_refresh.get("next_session_refresh_executed") is True:
+        output_packet_keys.append(NEXT_SESSION_PACKET_KEY)
+    facts_ready = receipt.get("tushare_call_ledger_evidence_done") is True
+    factor_next_same_result_ready = (
+        (
+            receipt.get("factor_refresh_executed") is True
+            or local_refresh.get("factor_refresh_executed") is True
+        )
+        and (
+            receipt.get("next_session_refresh_executed") is True
+            or local_refresh.get("next_session_refresh_executed") is True
+        )
+        and (
+            receipt.get("echarts_payload_refreshed") is True
+            or local_refresh.get("echarts_payload_refreshed") is True
+        )
+    )
+    current_result_promoted = facts_ready and factor_next_same_result_ready
+    result_version = _quant_projection_safe_id(
+        "qrv",
+        {
+            "task_id": task_id,
+            "symbol": receipt.get("symbol") or "",
+            "scope_hash": receipt.get("acceptance_scope_hash") or "",
+            "provider_call_ledger_ids": provider_call_ledger_ids,
+            "input_packet_keys": input_packet_keys,
+            "output_packet_keys": output_packet_keys,
+            "data_date": provider_data_date,
+            "freshness_state": freshness_state,
+            "model_ledger_id": model_ledger_id,
+            "status": receipt.get("status") or "",
+        },
+    )
+    lineage = {
+        "schema_version": "candidate_radar_search_quant_projection_result_lineage.v1",
+        "task_id": task_id,
+        "symbol": receipt.get("symbol") or "",
+        "scope_hash": receipt.get("acceptance_scope_hash") or "",
+        "scope_hash_short": receipt.get("acceptance_scope_hash_short") or "",
+        "provider_call_ledger_ids": provider_call_ledger_ids,
+        "input_packet_keys": input_packet_keys,
+        "output_packet_keys": output_packet_keys,
+        "data_date": provider_data_date,
+        "freshness_state": freshness_state,
+        "model_ledger_id": model_ledger_id,
+        "result_version": result_version,
+        "facts_packet_key": QUANT_PROJECTION_FACTS_PACKET_KEY,
+        "facts_package_status": "ready" if facts_ready else freshness_state,
+        "factor_next_same_result_ready": factor_next_same_result_ready,
+        "current_result_promoted": current_result_promoted,
+        "last_good_policy": "promote_current_result_only_after_tushare_facts_factor_next_same_result_ready",
+        "late_task_overwrite_guard": "symbol_and_result_version_must_match",
+        "old_task_can_overwrite_current": False,
+        "deepseek_status": receipt.get("deepseek_explanation_status") or "",
+        "deepseek_skipped_missing_facts": receipt.get("deepseek_safe_failure_mode") == "skipped_missing_facts",
+        "deepseek_is_data_source": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "contains_secret": False,
+    }
+    receipt["provider_call_ledger"] = provider_ledger
+    receipt["provider_call_ledger_ids"] = provider_call_ledger_ids
+    receipt["input_packet_keys"] = input_packet_keys
+    receipt["output_packet_keys"] = output_packet_keys
+    receipt["data_date"] = provider_data_date
+    receipt["freshness_state"] = freshness_state
+    receipt["model_ledger_id"] = model_ledger_id
+    receipt["result_version"] = result_version
+    receipt["result_lineage"] = lineage
+    receipt["current_result_promoted"] = lineage["current_result_promoted"]
+    receipt["late_task_overwrite_guard"] = lineage["late_task_overwrite_guard"]
+    receipt["old_task_can_overwrite_current"] = False
+    return lineage
+
+
 def _quant_projection_deepseek_fact_summary(
     *,
     receipt: Mapping[str, Any],
@@ -15965,6 +16149,7 @@ def _run_quant_projection_deepseek_explanation(
     provider_ledger: list[dict[str, Any]],
     selected_apis: list[str],
     include_deepseek: bool,
+    task_id: str = "",
 ) -> dict[str, Any]:
     model = get_deepseek_model("projection")
     field_whitelist = sorted(factor_research.DEEPSEEK_EXPLANATION_ALLOWED_KEYS)
@@ -16022,19 +16207,19 @@ def _run_quant_projection_deepseek_explanation(
 
     if not provider_ledger:
         sanitized = _quant_projection_deepseek_degraded_explanation(
-            status="degraded_tushare_not_ready",
-            failure_mode="tushare_call_ledger_missing",
+            status="skipped_missing_facts",
+            failure_mode="skipped_missing_facts",
             input_hash=input_hash,
             model=model,
         )
         model_ledger = {
             **base_ledger,
-            "status": "degraded_tushare_not_ready",
-            "model_call_status": "skipped_tushare_not_ready",
+            "status": "skipped_missing_facts",
+            "model_call_status": "skipped_missing_facts",
             "model_ledger_recorded": True,
             "deepseek_called": False,
             "external_calls_triggered": False,
-            "safe_failure_mode": "tushare_call_ledger_missing",
+            "safe_failure_mode": "skipped_missing_facts",
             "latency_ms": 0,
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -16129,6 +16314,8 @@ def _run_quant_projection_deepseek_explanation(
                 "sanitizer_status": sanitized["status"],
             }
 
+    model_ledger_id = _quant_projection_model_ledger_id(model_ledger, task_id=task_id or input_hash[:16])
+    model_ledger["model_ledger_id"] = model_ledger_id
     explanation = {
         "schema_version": "candidate_radar_search_quant_projection_deepseek_explanation.v1",
         "status": sanitized.get("status") or model_ledger.get("status"),
@@ -16136,6 +16323,7 @@ def _run_quant_projection_deepseek_explanation(
         "fact_source": "Tushare call_ledger summary",
         "input_hash": input_hash,
         "output_hash": sanitized.get("output_hash") or "",
+        "model_ledger_id": model_ledger_id,
         "model_used": model,
         "payload": sanitized.get("payload") or {},
         "ignored_keys": _as_list(sanitized.get("ignored_keys")),
@@ -16162,6 +16350,7 @@ def _run_quant_projection_deepseek_explanation(
             "input_hash_short": input_hash[:16],
             "output_hash_short": str(model_ledger.get("output_hash") or "")[:16],
             "field_whitelist": field_whitelist,
+            "model_ledger_id": model_ledger_id,
             "response_format": "json_object",
             "provider_response_format_requested": True,
             "provider_response_format_scope": "search_quant_projection_single_call_not_ltg07_production_benchmark",
@@ -16217,6 +16406,17 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
     execution_request_ready = quant_request.get("local_execution_request_ready") is True
     include_deepseek = _coerce_bool(payload_safe.get("include_deepseek"), False)
     deepseek = _as_dict(deepseek_result)
+    model_ledger = _as_dict(deepseek.get("model_ledger"))
+    if model_ledger and deepseek.get("model_ledger_recorded") is True:
+        model_ledger_id = _safe_text(model_ledger.get("model_ledger_id") or "", limit=80)
+        if not model_ledger_id:
+            model_ledger_id = _quant_projection_model_ledger_id(model_ledger, task_id=task_id)
+            model_ledger["model_ledger_id"] = model_ledger_id
+        deepseek["model_ledger"] = model_ledger
+        explanation = _as_dict(deepseek.get("explanation"))
+        if explanation:
+            explanation["model_ledger_id"] = model_ledger_id
+            deepseek["explanation"] = explanation
     deepseek_model_ledger_recorded = deepseek.get("model_ledger_recorded") is True
     deepseek_output_acceptance_done = deepseek.get("output_acceptance_done") is True
     deepseek_called = deepseek.get("deepseek_called") is True
@@ -16227,9 +16427,15 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         for api in _as_list(quant_request.get("selected_apis"))
         if str(api) in QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS
     ] or list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS)
+    provider_task_id = _safe_text((provider_task or {}).get("task_id") or "", limit=128)
     provider_ledger = [
-        row for row in _as_list((provider_task or {}).get("call_ledger")) if isinstance(row, dict)
+        dict(row) for row in _as_list((provider_task or {}).get("call_ledger")) if isinstance(row, dict)
     ]
+    provider_call_ledger_ids = _quant_projection_assign_call_ledger_ids(
+        provider_ledger,
+        task_id=provider_task_id or task_id,
+        prefix="pcl",
+    )
     success_rows = [row for row in provider_ledger if row.get("call_status") == "success"]
     failed_rows = [
         row
@@ -16358,6 +16564,7 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         "route": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_ROUTE,
         "task_type": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE,
         "task_id": task_id,
+        "provider_task_id": provider_task_id,
         "symbol": quant_request.get("symbol") or "",
         "selected_apis": selected_apis,
         "acceptance_scope_hash": expected_scope_hash,
@@ -16376,9 +16583,10 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         "deepseek_safe_degraded": include_deepseek and deepseek_model_ledger_recorded and not deepseek_output_acceptance_done,
         "deepseek_skipped_by_request": not include_deepseek,
         "direct_evidence_verified": provider_evidence_done and (not include_deepseek or deepseek_model_ledger_recorded),
-        "deepseek_model_ledger": _as_dict(deepseek.get("model_ledger")),
+        "deepseek_model_ledger": model_ledger,
         "deepseek_explanation": _as_dict(deepseek.get("explanation")),
         "provider_call_ledger": provider_ledger,
+        "provider_call_ledger_ids": provider_call_ledger_ids,
         "provider_api_call_count": len(provider_ledger),
         "provider_api_success_count": len(success_rows),
         "provider_api_failed_count": len(failed_rows),
@@ -20973,6 +21181,7 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         provider_ledger=provider_ledger,
         selected_apis=selected_apis,
         include_deepseek=include_deepseek,
+        task_id=str(task["task_id"]),
     )
     receipt, receipt_rows = _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         packet,
@@ -21036,10 +21245,22 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         receipt["production_blockers"] = [
             str(row.get("criterion") or "") for row in receipt_rows if row.get("production_blocker")
         ]
+    result_lineage = _quant_projection_attach_result_lineage(
+        receipt,
+        task_id=str(task["task_id"]),
+        local_factor_next_refresh=local_factor_next_refresh,
+    )
     request_params_safe = {
         "symbol": receipt.get("symbol"),
         "selected_apis": selected_apis,
         "acceptance_scope_hash_short": receipt.get("acceptance_scope_hash_short"),
+        "result_version": receipt.get("result_version"),
+        "provider_call_ledger_ids": receipt.get("provider_call_ledger_ids") or [],
+        "input_packet_keys": receipt.get("input_packet_keys") or [],
+        "output_packet_keys": receipt.get("output_packet_keys") or [],
+        "data_date": receipt.get("data_date"),
+        "freshness_state": receipt.get("freshness_state"),
+        "model_ledger_id": receipt.get("model_ledger_id") or "",
         "requested_acceptance_scope_hash_matches_latest": receipt.get(
             "requested_acceptance_scope_hash_matches_latest"
         ),
@@ -21079,6 +21300,18 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
     if include_deepseek:
         packet["search_quant_deepseek_explanation"] = _as_dict(deepseek_result.get("explanation"))
         packet["search_quant_deepseek_model_ledger"] = _as_dict(deepseek_result.get("model_ledger"))
+    packet["search_quant_result_lineage"] = result_lineage
+    packet["search_quant_result_version"] = result_lineage["result_version"]
+    previous_current_lineage = _as_dict(packet.get("search_quant_current_result_lineage"))
+    if result_lineage["current_result_promoted"] is True:
+        packet["search_quant_current_result_lineage"] = result_lineage
+        packet["search_quant_last_good_result_lineage"] = result_lineage
+    else:
+        packet["search_quant_degraded_result_lineage"] = result_lineage
+        if previous_current_lineage:
+            packet["search_quant_current_result_lineage"] = previous_current_lineage
+            packet["search_quant_last_good_result_lineage"] = previous_current_lineage
+            receipt["last_good_result_version"] = previous_current_lineage.get("result_version") or ""
     packet_counts = _as_dict(packet.get("counts"))
     packet_counts["search_quant_provider_model_acceptance_row_count"] = len(receipt_rows)
     packet_counts["search_quant_provider_model_acceptance_direct_evidence_verified"] = (

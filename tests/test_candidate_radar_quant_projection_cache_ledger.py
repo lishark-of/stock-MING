@@ -491,6 +491,41 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             "local_factor_next_echarts_refreshed",
         )
         self.assertFalse(receipt["production_quant_projection_complete"])
+        lineage = packet["search_quant_result_lineage"]
+        self.assertEqual(
+            lineage["schema_version"],
+            "candidate_radar_search_quant_projection_result_lineage.v1",
+        )
+        self.assertEqual(lineage["task_id"], receipt["task_id"])
+        self.assertEqual(lineage["symbol"], "002008.SZ")
+        self.assertEqual(lineage["scope_hash"], receipt["acceptance_scope_hash"])
+        self.assertEqual(lineage["result_version"], receipt["result_version"])
+        self.assertEqual(packet["search_quant_result_version"], lineage["result_version"])
+        self.assertEqual(
+            packet["search_quant_current_result_lineage"]["result_version"],
+            lineage["result_version"],
+        )
+        self.assertEqual(
+            packet["search_quant_last_good_result_lineage"]["result_version"],
+            lineage["result_version"],
+        )
+        self.assertEqual(
+            lineage["facts_packet_key"],
+            "command_center_candidate_radar_quant_projection_tushare_light_packet",
+        )
+        self.assertEqual(lineage["data_date"], receipt["data_date"])
+        self.assertEqual(lineage["freshness_state"], "fresh_provider")
+        self.assertEqual(lineage["provider_call_ledger_ids"], receipt["provider_call_ledger_ids"])
+        self.assertEqual(len(lineage["provider_call_ledger_ids"]), 4)
+        self.assertIn("command_center_factor_quant_hub_packet", lineage["output_packet_keys"])
+        self.assertIn("command_center_next_session_projection_packet", lineage["output_packet_keys"])
+        self.assertTrue(lineage["factor_next_same_result_ready"])
+        self.assertTrue(lineage["current_result_promoted"])
+        self.assertFalse(lineage["old_task_can_overwrite_current"])
+        self.assertFalse(lineage["deepseek_is_data_source"])
+        for row in receipt["provider_call_ledger"]:
+            self.assertTrue(row["call_ledger_id"].startswith("pcl_"))
+            self.assertIn(row["call_ledger_id"], lineage["provider_call_ledger_ids"])
         local_refresh = packet["search_quant_projection_local_factor_next_refresh"]
         self.assertEqual(local_refresh["symbol"], "002008.SZ")
         self.assertEqual(local_refresh["status"], "local_factor_next_echarts_refreshed")
@@ -1910,6 +1945,10 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(model_ledger["prompt_tokens"], 12)
         self.assertEqual(model_ledger["completion_tokens"], 8)
         self.assertEqual(model_ledger["total_tokens"], 20)
+        self.assertEqual(model_ledger["model_ledger_id"], receipt["model_ledger_id"])
+        self.assertEqual(explanation["model_ledger_id"], receipt["model_ledger_id"])
+        self.assertEqual(packet["search_quant_result_lineage"]["model_ledger_id"], receipt["model_ledger_id"])
+        self.assertTrue(receipt["model_ledger_id"].startswith("mlg_"))
         self.assertTrue(model_ledger["input_hash"])
         self.assertTrue(model_ledger["output_hash"])
         self.assertEqual(model_ledger["response_format"], "json_object")
