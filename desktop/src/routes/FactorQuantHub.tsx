@@ -543,6 +543,7 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolExecutionRecipe = factorTests.provider_small_pool_execution_recipe ?? {};
   const factorTestProviderSmallPoolExecutionRequest = factorTests.provider_small_pool_execution_request_receipt ?? {};
   const factorTestProviderSmallPoolAcceptance = factorTests.provider_small_pool_acceptance_receipt ?? {};
+  const factorTestProviderSmallPoolForwardReturnAudit = factorTests.provider_small_pool_forward_return_label_audit ?? {};
   const factorTestDurableEvidenceRecipe = factorTests.durable_evidence_recipe ?? {};
   const factorTestProductionStageScopeManifest = factorTests.production_stage_scope_manifest ?? {};
   const factorTestProviderSmallPoolSampleDone =
@@ -650,6 +651,9 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolExecutionRequestCriterionRows = toRows(factorTests.provider_small_pool_execution_request_rows);
   const factorTestProviderSmallPoolAcceptanceRows = objectRows(factorTestProviderSmallPoolAcceptance as Record<string, unknown>, "provider_small_pool_acceptance_gate");
   const factorTestProviderSmallPoolAcceptanceCriterionRows = toRows(factorTests.provider_small_pool_acceptance_rows);
+  const factorTestProviderSmallPoolForwardReturnRows = objectRows(factorTestProviderSmallPoolForwardReturnAudit as Record<string, unknown>, "provider_small_pool_forward_return_label_audit");
+  const factorTestProviderSmallPoolForwardReturnCriterionRows = toRows(factorTests.provider_small_pool_forward_return_label_rows);
+  const factorTestProviderSmallPoolForwardReturnSampleRows = toRows(factorTests.provider_small_pool_forward_return_label_sample_rows);
   const factorTestDurableEvidenceRecipeRows = objectRows(factorTestDurableEvidenceRecipe as Record<string, unknown>, "factor_test_durable_evidence_recipe");
   const factorTestDurableEvidenceRows = toRows(factorTests.durable_evidence_rows);
   const factorTestProductionStageScopeManifestRows = objectRows(factorTestProductionStageScopeManifest as Record<string, unknown>, "factor_test_production_stage_scope_manifest");
@@ -1744,6 +1748,43 @@ export default function FactorQuantHub() {
     factorTestProviderSmallPoolSampleDone
       ? "真实小池 Tushare 样本、scope hash 和安全 call_ledger 已回放；rolling、成本、中性化、PIT/bias 和 promotion/release 仍待补齐，不能当生产完成。"
       : `LTG-03 当前 degraded：dry-run=${String(factorTestProviderSmallPoolDryRun.status ?? "missing")}，credential=${String(factorTestProviderSmallPoolCredential.status ?? "unknown")}，blocker=${factorTestProviderSmallPoolBlockers.join(" / ") || "provider_task_and_sample_rows_pending"}；本地 execution request 不能替代真实 provider task，下一步只能是用户授权后的 provider-backed 小池验收。`;
+  const factorTestProviderSmallPoolForwardReturnDone =
+    factorTestProviderSmallPoolForwardReturnAudit.multi_horizon_forward_returns_done === true;
+  const factorTestProviderSmallPoolForwardReturnPartial =
+    Number(factorTestProviderSmallPoolForwardReturnAudit.forward_return_label_row_count ?? 0) > 0;
+  const ordinaryFactorTestForwardReturnSentence =
+    factorTestProviderSmallPoolForwardReturnDone
+      ? `1d/5d forward-return 标签已覆盖 scope 内 ${String(factorTestProviderSmallPoolForwardReturnAudit.labeled_symbol_count ?? 0)} 只票；下一步才能进入 rolling IC/Rank IC/ICIR。`
+      : factorTestProviderSmallPoolForwardReturnPartial
+        ? `forward-return 标签已部分生成：${String(factorTestProviderSmallPoolForwardReturnAudit.forward_return_label_row_count ?? 0)} 行，覆盖 ${String(factorTestProviderSmallPoolForwardReturnAudit.labeled_symbol_count ?? 0)}/${String(factorTestProviderSmallPoolForwardReturnAudit.expected_symbol_count ?? 0)} 只票；缺 ${String((factorTestProviderSmallPoolForwardReturnAudit.missing_symbols as unknown[] | undefined)?.join?.(", ") ?? "部分 scope 标的")}。`
+        : "forward-return 标签还不可用；先完成真实小池样本和本地 daily 落盘回放。";
+  const ordinaryFactorTestForwardReturnItems: MetricItem[] = [
+    {
+      label: "标签状态",
+      value: String(factorTestProviderSmallPoolForwardReturnAudit.status ?? "missing_forward_return_label_audit"),
+      tone: factorTestProviderSmallPoolForwardReturnDone ? "good" : factorTestProviderSmallPoolForwardReturnPartial ? "warn" : "bad"
+    },
+    {
+      label: "标签行",
+      value: `${String(factorTestProviderSmallPoolForwardReturnAudit.forward_return_label_row_count ?? 0)} 行 / ${String((factorTestProviderSmallPoolForwardReturnAudit.requested_horizons as unknown[] | undefined)?.join?.(", ") ?? "1d, 5d")}`,
+      tone: factorTestProviderSmallPoolForwardReturnPartial ? "good" : "warn"
+    },
+    {
+      label: "覆盖",
+      value: `${String(factorTestProviderSmallPoolForwardReturnAudit.labeled_symbol_count ?? 0)} / ${String(factorTestProviderSmallPoolForwardReturnAudit.expected_symbol_count ?? 0)} 只 scope 股票`,
+      tone: factorTestProviderSmallPoolForwardReturnDone ? "good" : "warn"
+    },
+    {
+      label: "下一步",
+      value: String(factorTestProviderSmallPoolForwardReturnAudit.allowed_next_step ?? "先补完整小池标签覆盖，再计算 rolling IC"),
+      tone: factorTestProviderSmallPoolForwardReturnDone ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只读本地 Parquet；不调用 Tushare/DeepSeek/GitHub，不计算交易指令，不代表 production complete",
+      tone: "good"
+    }
+  ];
   const ordinaryFactorTestProviderBoundary =
     "本卡只读 Factor cache；不触发 dry-run、execution request 或 provider task；真实小池验收只能在用户明确授权后走 POST task";
   const ordinaryFactorTestProviderQuickReadItems: MetricItem[] = [
@@ -2389,6 +2430,18 @@ export default function FactorQuantHub() {
             <p className="ordinary-status-note" aria-label="stock quant factor small pool degraded sentence" aria-live="polite">{ordinaryFactorTestProviderCurrentBlockerSentence}</p>
             <MetricGrid items={ordinaryFactorTestProviderSmallPoolItems} />
             <p className="risk-note">{ordinaryFactorTestProviderBoundary}；本地 light observations、本地 scope 或执行请求都不能当作生产级 Factor Test 验收完成。</p>
+          </div>
+          <div aria-label="stock quant ordinary factor forward return labels">
+            <h3>1d / 5d 标签审计</h3>
+            <p className="ordinary-status-note" aria-label="stock quant factor forward return label sentence" aria-live="polite">{ordinaryFactorTestForwardReturnSentence}</p>
+            <MetricGrid items={ordinaryFactorTestForwardReturnItems} />
+            <details className="developer-audit-details" aria-label="stock quant factor forward return label rows">
+              <summary>查看标签样本和覆盖缺口</summary>
+              <p className="risk-note">这组行只读本地 daily Parquet，显示当前 provider 小池样本能否生成 1d/5d forward-return 标签；部分覆盖会保持 degraded，不计算 rolling IC、不调用 provider、不交易。</p>
+              <DataLineageTable rows={factorTestProviderSmallPoolForwardReturnCriterionRows} />
+              <DataLineageTable rows={factorTestProviderSmallPoolForwardReturnSampleRows} />
+              <DataLineageTable rows={factorTestProviderSmallPoolForwardReturnRows} />
+            </details>
           </div>
           <div aria-label="stock quant ordinary factor small pool evidence checklist">
             <h3>小池样本证据怎么看</h3>

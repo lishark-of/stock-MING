@@ -493,6 +493,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, provider_sample_activation_ledger = _attach_factor_test_provider_sample_activation_receipt(packet, now)
     packet, provider_small_pool_recipe_ledger = _attach_factor_test_provider_small_pool_execution_recipe(packet, now)
     packet, provider_small_pool_request_ledger = _attach_factor_test_provider_small_pool_execution_request(packet, now)
+    packet, provider_small_pool_forward_return_ledger = _attach_factor_test_provider_small_pool_forward_return_label_audit(packet, now)
     packet, factor_test_durable_recipe_ledger = _attach_factor_test_durable_evidence_recipe(packet, now)
     packet, factor_test_production_stage_ledger = _attach_factor_test_production_stage_scope_manifest(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
@@ -520,6 +521,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + provider_sample_activation_ledger
         + provider_small_pool_recipe_ledger
         + provider_small_pool_request_ledger
+        + provider_small_pool_forward_return_ledger
         + factor_test_durable_recipe_ledger
         + factor_test_production_stage_ledger
         + candidate_handoff_ledger
@@ -544,6 +546,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     provider_sample_activation_warning = "Factor Test provider small-pool activation receipt 只串联下一步真实小股票池验收清单；不会调用 provider、创建任务或标记生产完成。"
     provider_small_pool_recipe_warning = "Factor Test provider small-pool execution recipe 只固定未来真实小股票池验收顺序；不会调用 Tushare、计算生产 IC 或标记生产完成。"
     provider_small_pool_request_warning = "Factor Test provider small-pool execution request ticket 只绑定 dry-run scope hash 和后续手工 provider task 请求；不会调用 Tushare、创建 provider task 或标记生产完成。"
+    provider_small_pool_forward_return_warning = "Factor Test provider 小池 forward-return label audit 只读本地 Parquet 样本；部分覆盖会明确 degraded，不调用 Tushare/DeepSeek/GitHub，也不代表 rolling IC 或生产完成。"
     factor_test_durable_recipe_warning = "Factor Test durable evidence recipe 只固定 LTG-03 生产验收直接证据清单；不会调用 Tushare/DeepSeek/GitHub、计算生产 IC 或标记生产完成。"
     factor_test_production_stage_warning = "Factor Test production stage manifest 只展示 LTG-03 生产阶段 direct evidence / pending 缺口；不会创建 provider task、调用 Tushare 或标记生产完成。"
     candidate_handoff_warning = "Factor Quant CandidateRadar handoff 只读本地搜票确认结果和 Tushare-first 回放摘要；不会创建 task、调用 Tushare/DeepSeek、修改 operation_zones 或标记生产完成。"
@@ -568,6 +571,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_sample_activation_warning,
         provider_small_pool_recipe_warning,
         provider_small_pool_request_warning,
+        provider_small_pool_forward_return_warning,
         factor_test_durable_recipe_warning,
         factor_test_production_stage_warning,
         candidate_handoff_warning,
@@ -592,6 +596,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_sample_activation_warning,
         provider_small_pool_recipe_warning,
         provider_small_pool_request_warning,
+        provider_small_pool_forward_return_warning,
         factor_test_durable_recipe_warning,
         factor_test_production_stage_warning,
         candidate_handoff_warning,
@@ -6248,6 +6253,347 @@ def _factor_test_provider_small_pool_acceptance_provider_run(
     return receipt, rows + provider_rows
 
 
+def _factor_test_provider_small_pool_horizon_days(value: Any) -> int | None:
+    text = str(value or "").strip().lower()
+    if text.endswith("d"):
+        text = text[:-1]
+    if not text.isdigit():
+        return None
+    days = int(text)
+    if days <= 0 or days > 60:
+        return None
+    return days
+
+
+def _factor_test_provider_small_pool_forward_return_label_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_for_multi_horizon_forward_return_validation": bool(required),
+        "blocks_multi_horizon_forward_return_validation": bool(required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "multi_horizon_forward_returns_done": False,
+        "rolling_window_validation_done": False,
+        "cost_assumption_validation_done": False,
+        "neutralization_stability_done": False,
+        "pit_bias_controls_done": False,
+        "provider_backed_small_pool_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+
+
+def _factor_test_provider_small_pool_forward_return_label_audit(
+    factor_tests: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    acceptance = _dict(factor_tests.get("provider_small_pool_acceptance_receipt"))
+    dry_run = _dict(factor_tests.get("provider_small_pool_acceptance_dry_run_receipt"))
+    provider_sample_done = bool(
+        acceptance.get("sample_rows_collected")
+        or acceptance.get("sample_rows_done")
+        or acceptance.get("provider_backed_small_pool_sample_done")
+        or acceptance.get("provider_backed_small_pool_validation_done")
+    )
+    expected_symbols = [
+        str(item)
+        for item in (
+            acceptance.get("symbols_with_core_rows")
+            or acceptance.get("symbols")
+            or dry_run.get("symbols")
+            or []
+        )
+        if str(item or "").strip()
+    ]
+    expected_symbol_set = set(expected_symbols)
+    raw_horizons = acceptance.get("forward_return_horizons") or dry_run.get("forward_return_horizons") or ["1d", "5d"]
+    horizon_pairs: list[tuple[str, int]] = []
+    for item in raw_horizons if isinstance(raw_horizons, list) else [raw_horizons]:
+        days = _factor_test_provider_small_pool_horizon_days(item)
+        label = f"{days}d" if days is not None else ""
+        if days is not None and (label, days) not in horizon_pairs:
+            horizon_pairs.append((label, days))
+    if not horizon_pairs:
+        horizon_pairs = [("1d", 1), ("5d", 5)]
+
+    daily_error_safe = ""
+    try:
+        daily_packet = storage_service.parquet_dataset_status("daily", limit=10000)
+    except Exception as exc:
+        daily_packet = {"status": "read_failed", "query": {"rows": []}, "row_count": 0}
+        daily_error_safe = str(exc).splitlines()[0][:240]
+    daily_rows = _storage_query_rows(daily_packet)
+    by_symbol: dict[str, list[dict[str, Any]]] = {}
+    for row in daily_rows:
+        if not isinstance(row, dict):
+            continue
+        ts_code = str(row.get("ts_code") or "").strip()
+        trade_date = str(row.get("trade_date") or "").strip()
+        close = row.get("close")
+        if not ts_code or not trade_date or not _is_finite_number(close):
+            continue
+        if expected_symbol_set and ts_code not in expected_symbol_set:
+            continue
+        by_symbol.setdefault(ts_code, []).append(row)
+    for rows_for_symbol in by_symbol.values():
+        rows_for_symbol.sort(key=lambda item: str(item.get("trade_date") or ""))
+
+    label_rows: list[dict[str, Any]] = []
+    label_count_by_horizon = {label: 0 for label, _ in horizon_pairs}
+    symbols_by_horizon = {label: set() for label, _ in horizon_pairs}
+    for symbol, rows_for_symbol in by_symbol.items():
+        for label, days in horizon_pairs:
+            symbol_label_count = 0
+            for index, current_row in enumerate(rows_for_symbol):
+                future_index = index + days
+                if future_index >= len(rows_for_symbol):
+                    continue
+                future_row = rows_for_symbol[future_index]
+                close = _safe_float(current_row.get("close"), default=math.nan)
+                future_close = _safe_float(future_row.get("close"), default=math.nan)
+                if not math.isfinite(close) or not math.isfinite(future_close) or close == 0:
+                    continue
+                forward_return = future_close / close - 1.0
+                label_rows.append(
+                    {
+                        "ts_code": symbol,
+                        "trade_date": str(current_row.get("trade_date") or ""),
+                        "forward_trade_date": str(future_row.get("trade_date") or ""),
+                        "horizon": label,
+                        "close": round(close, 6),
+                        "forward_close": round(future_close, 6),
+                        "forward_return": round(forward_return, 8),
+                        "forward_return_pct": round(forward_return * 100.0, 4),
+                        "source_dataset": "daily.parquet",
+                        "scope_hash_short": acceptance.get("acceptance_scope_hash_short") or "",
+                        "research_only": True,
+                        "enters_strategy_action": False,
+                    }
+                )
+                symbol_label_count += 1
+            if symbol_label_count:
+                label_count_by_horizon[label] += symbol_label_count
+                symbols_by_horizon[label].add(symbol)
+
+    label_symbols = sorted({row["ts_code"] for row in label_rows})
+    missing_symbols = sorted(expected_symbol_set - set(label_symbols))
+    unexpected_symbols = sorted(set(label_symbols) - expected_symbol_set) if expected_symbol_set else []
+    all_horizons_have_labels = all(label_count_by_horizon.get(label, 0) > 0 for label, _ in horizon_pairs)
+    symbol_coverage_complete = bool(expected_symbol_set and not missing_symbols)
+    multi_horizon_done = bool(provider_sample_done and symbol_coverage_complete and all_horizons_have_labels)
+    partial_labels_visible = bool(label_rows)
+
+    if not provider_sample_done:
+        status = "provider_small_pool_forward_return_labels_blocked_missing_provider_sample"
+        allowed_next_step = "run_scope_bound_provider_small_pool_sample_first"
+    elif not partial_labels_visible:
+        status = "provider_small_pool_forward_return_labels_degraded_missing_daily_rows"
+        allowed_next_step = "review_local_parquet_daily_persistence_before_recomputing_labels"
+    elif not symbol_coverage_complete:
+        status = "provider_small_pool_forward_return_labels_degraded_partial_symbol_coverage"
+        allowed_next_step = "repair_provider_sample_parquet_append_or_replay_before_rolling_ic"
+    else:
+        status = "provider_small_pool_forward_return_labels_ready_metric_validation_pending"
+        allowed_next_step = "compute_rolling_ic_rank_ic_icir_with_cost_neutralization_controls"
+
+    rows = [
+        _factor_test_provider_small_pool_forward_return_label_row(
+            "provider_sample_receipt_visible",
+            "passed_provider_sample_visible" if provider_sample_done else "blocked_missing_provider_sample",
+            provider_sample_done,
+            f"acceptance_status={acceptance.get('status')}; task_id={acceptance.get('task_id')}",
+            "Run the scope-bound provider small-pool acceptance task before labeling forward returns.",
+        ),
+        _factor_test_provider_small_pool_forward_return_label_row(
+            "local_daily_parquet_readable",
+            "passed_daily_rows_visible" if by_symbol else "degraded_daily_rows_missing",
+            bool(by_symbol),
+            f"daily_status={daily_packet.get('status')}; returned_rows={len(daily_rows)}; error={daily_error_safe}",
+            "Use only local persisted daily rows for cache readback; do not call providers from GET cache.",
+        ),
+        _factor_test_provider_small_pool_forward_return_label_row(
+            "scope_symbol_coverage",
+            "passed_all_scope_symbols_labeled" if symbol_coverage_complete else "degraded_partial_scope_symbol_coverage",
+            symbol_coverage_complete,
+            f"labeled_symbols={label_symbols}; expected_symbols={expected_symbols}; missing_symbols={missing_symbols}",
+            "Repair provider sample persistence or replay before treating forward-return labels as small-pool complete.",
+        ),
+        _factor_test_provider_small_pool_forward_return_label_row(
+            "multi_horizon_label_rows",
+            "passed_multi_horizon_label_rows" if all_horizons_have_labels else "degraded_missing_horizon_rows",
+            all_horizons_have_labels,
+            f"label_count_by_horizon={label_count_by_horizon}",
+            "Compute every configured horizon before rolling IC/Rank IC/ICIR validation.",
+        ),
+        _factor_test_provider_small_pool_forward_return_label_row(
+            "production_metric_boundary",
+            "passed_not_rolling_ic_or_production_metric",
+            True,
+            "Forward-return labels are an input to later rolling IC/Rank IC/ICIR; they are not a trading signal or production promotion.",
+            "Keep rolling, cost, neutralization, PIT/bias, full-market, and promotion review separate.",
+            required=False,
+        ),
+        _factor_test_provider_small_pool_forward_return_label_row(
+            "cache_render_external_boundary",
+            "passed_cache_read_only_no_external_calls",
+            True,
+            "This audit reads local Parquet through GET cache and does not call Tushare, DeepSeek, GitHub, workers, or trading paths.",
+            "Keep future provider/model work behind explicit POST tasks.",
+            required=False,
+        ),
+    ]
+    blocking_criteria = [row["criterion"] for row in rows if row["blocks_multi_horizon_forward_return_validation"]]
+    receipt = {
+        "schema_version": "factor_test_provider_small_pool_forward_return_label_audit.v1",
+        "status": status,
+        "scope": "local_factor_test_provider_small_pool_forward_return_label_audit",
+        "created_at": now,
+        "ltg": "LTG-03/LTG-11/LTG-12",
+        "allowed_next_step": allowed_next_step,
+        "source_acceptance_task_id": acceptance.get("task_id") or "",
+        "source_acceptance_scope_hash": acceptance.get("acceptance_scope_hash") or "",
+        "source_acceptance_scope_hash_short": acceptance.get("acceptance_scope_hash_short") or "",
+        "source_provider_tushare_called": acceptance.get("tushare_called") is True,
+        "provider_sample_done": provider_sample_done,
+        "expected_symbols": expected_symbols,
+        "expected_symbol_count": len(expected_symbols),
+        "persisted_daily_symbol_count": len(by_symbol),
+        "labeled_symbols": label_symbols,
+        "labeled_symbol_count": len(label_symbols),
+        "missing_symbols": missing_symbols,
+        "unexpected_symbols": unexpected_symbols,
+        "symbol_coverage_complete": symbol_coverage_complete,
+        "requested_horizons": [label for label, _ in horizon_pairs],
+        "label_count_by_horizon": label_count_by_horizon,
+        "label_symbol_count_by_horizon": {
+            label: len(symbols_by_horizon[label]) for label, _ in horizon_pairs
+        },
+        "forward_return_label_row_count": len(label_rows),
+        "forward_return_label_sample_rows": label_rows[:20],
+        "partial_forward_return_labels_visible": partial_labels_visible,
+        "multi_horizon_forward_returns_done": multi_horizon_done,
+        "rolling_window_validation_done": False,
+        "cost_assumption_validation_done": False,
+        "neutralization_stability_done": False,
+        "pit_bias_controls_done": False,
+        "provider_backed_small_pool_validation_done": provider_sample_done,
+        "production_factor_test_validation_complete": False,
+        "blocking_criterion_count": len(blocking_criteria),
+        "blocking_criteria": blocking_criteria,
+        "missing_evidence": (
+            [
+                "complete persisted daily rows for every scoped symbol",
+                "rolling IC/Rank IC/ICIR evidence",
+                "cost and neutralization validation evidence",
+                "PIT/lookahead/survivorship controls evidence",
+                "manual Factor Test production promotion review",
+            ]
+            if not multi_horizon_done
+            else [
+                "rolling IC/Rank IC/ICIR evidence",
+                "cost and neutralization validation evidence",
+                "PIT/lookahead/survivorship controls evidence",
+                "manual Factor Test production promotion review",
+            ]
+        ),
+        "row_count": len(rows),
+        "rows": rows,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+    ledger = [
+        {
+            "api": "local_factor_test_provider_small_pool_forward_return_label_audit",
+            "request_params_safe": {
+                "scope": receipt["scope"],
+                "acceptance_scope_hash_short": receipt["source_acceptance_scope_hash_short"],
+                "expected_symbol_count": len(expected_symbols),
+                "labeled_symbol_count": len(label_symbols),
+                "requested_horizons": receipt["requested_horizons"],
+                "forward_return_label_row_count": len(label_rows),
+                "multi_horizon_forward_returns_done": multi_horizon_done,
+                "production_factor_test_validation_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": acceptance.get("provider_latest_data_date") or dry_run.get("end_date"),
+            "local_fetched_at": now,
+            "call_status": status,
+            "error_message_safe": daily_error_safe,
+            **_local_ledger_boundary(),
+        }
+    ]
+    receipt["call_ledger"] = ledger
+    return receipt, rows, ledger
+
+
+def _attach_factor_test_provider_small_pool_forward_return_label_audit(
+    packet: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    factor_tests = packet.get("factor_tests") if isinstance(packet.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    audit, rows, ledger = _factor_test_provider_small_pool_forward_return_label_audit(factor_tests, now)
+    factor_tests["provider_small_pool_forward_return_label_audit"] = audit
+    factor_tests["provider_small_pool_forward_return_label_rows"] = rows
+    factor_tests["provider_small_pool_forward_return_label_sample_rows"] = audit.get(
+        "forward_return_label_sample_rows", []
+    )
+    existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+    factor_tests["call_ledger"] = list(ledger) + list(existing_test_ledger)
+    packet["factor_tests"] = factor_tests
+    counts = _dict(packet.get("counts"))
+    counts.update(
+        {
+            "factor_test_provider_small_pool_forward_return_label_rows": audit[
+                "forward_return_label_row_count"
+            ],
+            "factor_test_provider_small_pool_forward_return_labeled_symbols": audit["labeled_symbol_count"],
+            "factor_test_provider_small_pool_forward_return_expected_symbols": audit["expected_symbol_count"],
+        }
+    )
+    packet["counts"] = counts
+    policy = _dict(packet.get("policy"))
+    policy.update(
+        {
+            "factor_test_provider_small_pool_forward_return_audit_is_cache_only": True,
+            "factor_test_provider_small_pool_forward_return_audit_calls_provider": False,
+            "factor_test_provider_small_pool_forward_return_audit_is_not_rolling_ic": True,
+            "factor_test_provider_small_pool_forward_return_audit_is_not_production_completion": True,
+        }
+    )
+    packet["policy"] = policy
+    return packet, ledger
+
+
 def _factor_test_production_stage_scope_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for stage_key in FACTOR_TEST_PRODUCTION_STAGE_KEYS:
@@ -6307,10 +6653,13 @@ def _factor_test_production_stage_scope_manifest(
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     rows = _factor_test_production_stage_scope_rows()
     acceptance_receipt = _dict(factor_tests.get("provider_small_pool_acceptance_receipt"))
+    forward_return_audit = _dict(factor_tests.get("provider_small_pool_forward_return_label_audit"))
     provider_sample_done = bool(acceptance_receipt.get("sample_rows_collected"))
     provider_execution_implemented = bool(acceptance_receipt.get("provider_execution_implemented"))
     provider_call_ledger_evidence_done = bool(acceptance_receipt.get("provider_call_ledger_evidence_done"))
     provider_task_created = bool(acceptance_receipt.get("provider_task_created"))
+    forward_label_count = int(forward_return_audit.get("forward_return_label_row_count") or 0)
+    forward_labels_done = bool(forward_return_audit.get("multi_horizon_forward_returns_done"))
     if provider_sample_done:
         for row in rows:
             if row.get("stage_key") != "provider_backed_small_pool_sample":
@@ -6336,6 +6685,45 @@ def _factor_test_production_stage_scope_manifest(
                         "PIT, lookahead, and survivorship evidence",
                         "explicit promotion review before production completion",
                     ],
+                }
+            )
+    if forward_label_count:
+        for row in rows:
+            if row.get("stage_key") != "multi_horizon_forward_returns":
+                continue
+            row.update(
+                {
+                    "current_status": (
+                        "provider_forward_return_labels_ready_metric_validation_pending"
+                        if forward_labels_done
+                        else "provider_forward_return_labels_partial_coverage_degraded"
+                    ),
+                    "provider_direct_evidence_present": forward_labels_done,
+                    "partial_provider_direct_evidence_present": not forward_labels_done,
+                    "multi_horizon_forward_returns_done": forward_labels_done,
+                    "forward_return_label_row_count": forward_label_count,
+                    "labeled_symbols": forward_return_audit.get("labeled_symbols") or [],
+                    "missing_symbols": forward_return_audit.get("missing_symbols") or [],
+                    "requested_horizons": forward_return_audit.get("requested_horizons") or [],
+                    "label_count_by_horizon": forward_return_audit.get("label_count_by_horizon") or {},
+                    "missing_evidence": (
+                        [
+                            "rolling-window IC and ICIR evidence",
+                            "cost and turnover assumption review",
+                            "neutralization stability evidence",
+                            "PIT, lookahead, and survivorship evidence",
+                            "explicit promotion review before production completion",
+                        ]
+                        if forward_labels_done
+                        else [
+                            "complete persisted forward-return label coverage for every scoped symbol",
+                            "rolling-window IC and ICIR evidence",
+                            "cost and turnover assumption review",
+                            "neutralization stability evidence",
+                            "PIT, lookahead, and survivorship evidence",
+                            "explicit promotion review before production completion",
+                        ]
+                    ),
                 }
             )
     stage_keys = [str(row.get("stage_key") or "") for row in rows]
