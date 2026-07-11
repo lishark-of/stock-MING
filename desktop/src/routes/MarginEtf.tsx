@@ -281,6 +281,36 @@ export default function MarginEtf() {
     (candidateRadarDeepSeekExplanation.payload as Record<string, unknown> | undefined) ?? {};
   const candidateRadarDeepSeekModelLedger =
     (candidateRadarCache.search_quant_deepseek_model_ledger as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarResultLineage =
+    (candidateRadarCache.search_quant_current_result_lineage as Record<string, unknown> | undefined) ??
+    (candidateRadarCache.search_quant_result_lineage as Record<string, unknown> | undefined) ??
+    (candidateRadarProviderModelAcceptance.result_lineage as Record<string, unknown> | undefined) ??
+    {};
+  const candidateRadarResultVersionSummary =
+    (candidateRadarCache.search_quant_result_version_summary as Record<string, unknown> | undefined) ??
+    (candidateRadarProviderModelAcceptance.result_version_summary as Record<string, unknown> | undefined) ??
+    {};
+  const candidateRadarResultVersion = text(
+    candidateRadarResultVersionSummary.current_result_version ??
+      candidateRadarResultVersionSummary.latest_task_result_version ??
+      candidateRadarResultLineage.result_version,
+    ""
+  );
+  const candidateRadarSourceTaskId = text(
+    candidateRadarResultVersionSummary.current_result_task_id ??
+      candidateRadarResultVersionSummary.latest_task_id ??
+      candidateRadarResultLineage.task_id ??
+      candidateRadarProviderModelAcceptance.task_id ??
+      candidateRadarReceipt.latest_task_id,
+    ""
+  );
+  const candidateRadarResultLedgerIds = Array.isArray(candidateRadarResultLineage.provider_call_ledger_ids)
+    ? candidateRadarResultLineage.provider_call_ledger_ids.map((item) => String(item)).filter(Boolean)
+    : Array.isArray(candidateRadarResultVersionSummary.current_result_provider_call_ledger_ids)
+      ? candidateRadarResultVersionSummary.current_result_provider_call_ledger_ids.map((item) => String(item)).filter(Boolean)
+      : Array.isArray(candidateRadarResultVersionSummary.latest_task_provider_call_ledger_ids)
+        ? candidateRadarResultVersionSummary.latest_task_provider_call_ledger_ids.map((item) => String(item)).filter(Boolean)
+        : [];
   const candidateRadarProviderLedgerRows = rows(candidateRadarCache.call_ledger).filter((row) => {
     const api = text(row.api, "").toLowerCase();
     const provider = text(row.provider ?? row.source, "").toLowerCase();
@@ -332,6 +362,14 @@ export default function MarginEtf() {
     "待确认"
   );
   const candidateRadarDataSource = candidateRadarProviderLedgerReady ? "Tushare" : "等待后台确认任务";
+  const candidateRadarLineageLabel = candidateRadarResultVersion
+    ? `结果版本=${candidateRadarResultVersion}${candidateRadarSourceTaskId ? ` / task=${candidateRadarSourceTaskId}` : ""}`
+    : "等待同一 task/result_version";
+  const candidateRadarLedgerLineageLabel = candidateRadarResultLedgerIds.length
+    ? `${candidateRadarResultLedgerIds.length} 条 provider ledger：${candidateRadarResultLedgerIds.slice(0, 4).join(" / ")}${candidateRadarResultLedgerIds.length > 4 ? " / ..." : ""}`
+    : candidateRadarProviderLedgerReady
+      ? "provider ledger 可回放；等待 result lineage ids"
+      : "等待 provider ledger";
   const candidateRadarDeepSeekLedgerRecorded =
     candidateRadarDeepSeekModelLedger.model_ledger_recorded === true ||
     candidateRadarProviderModelAcceptance.deepseek_model_ledger_recorded === true ||
@@ -358,7 +396,7 @@ export default function MarginEtf() {
           ? "DeepSeek 未请求；Tushare 数据链和风险预算不被阻塞"
           : "DeepSeek 待治理或待确认；不影响 ETF/融资只读风险预算";
   const marginEtfConfirmedDataBridgeSentence = candidateRadarConfirmedSymbol
-    ? `当前确认标的 ${candidateRadarConfirmedSymbol} 已从下一票雷达带入风险预算；来源=${candidateRadarDataSource}，数据日期=${candidateRadarDataDate}，${candidateRadarProviderCountLabel}。`
+    ? `当前确认标的 ${candidateRadarConfirmedSymbol} 已从下一票雷达带入风险预算；来源=${candidateRadarDataSource}，数据日期=${candidateRadarDataDate}，${candidateRadarProviderCountLabel}；${candidateRadarLineageLabel}。`
     : candidateRadarCacheError
       ? `下一票雷达缓存暂不可读：${ordinaryText(candidateRadarCacheError)}；ETF/融资仍按本地风险快照显示。`
       : "还没有确认标的带入 ETF/融资；先回下一票雷达输入股票并点击确认。";
@@ -381,6 +419,16 @@ export default function MarginEtf() {
           ? `候选雷达缓存待补：${ordinaryText(candidateRadarCacheError)}`
           : "等待用户在下一票雷达点击确认按钮后回放",
       tone: candidateRadarProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "结果版本",
+      value: candidateRadarLineageLabel,
+      tone: candidateRadarResultVersion ? "good" : "warn"
+    },
+    {
+      label: "同源账本",
+      value: candidateRadarLedgerLineageLabel,
+      tone: candidateRadarResultLedgerIds.length ? "good" : "warn"
     },
     {
       label: "DeepSeek 解释",
