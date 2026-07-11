@@ -105,6 +105,7 @@ export const API_BASE_URL = API_BASE;
 export const DEFAULT_LOCAL_API_BASE_URL = DEFAULT_LOCAL_API_BASE;
 export const BACKEND_OFFLINE_ERROR = "backend_offline_or_unreachable";
 const RESPONSE_PARSE_ERROR = "response_parse_failed";
+const inFlightReadOnlyRequests = new Map<string, Promise<ApiEnvelope<unknown>>>();
 
 function safeApiBaseDisplay(value: string): string {
   try {
@@ -258,49 +259,68 @@ function failedRequestEnvelope<T>(
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  let lastError: unknown = "local FastAPI backend unavailable";
-  let lastCallStatus = BACKEND_OFFLINE_ERROR;
-  const triedApiBases: string[] = [];
-  for (const apiBase of API_BASE_CANDIDATES) {
-    triedApiBases.push(apiBase);
-    try {
-      const res = await fetch(`${apiBase}${path}`, {
-        ...init,
-        headers: {
-          "Content-Type": "application/json",
-          ...(init?.headers ?? {})
-        }
-      });
-      if (!res.ok) {
-        if (res.status === 404 && API_BASE_CANDIDATES.length > 1) {
-          lastError = `HTTP ${res.status} from ${safeApiBaseDisplay(apiBase)}`;
-          lastCallStatus = BACKEND_OFFLINE_ERROR;
-          continue;
-        }
-        return { ok: false, data: {} as T, error: `HTTP ${res.status}`, call_ledger: [], warnings: [] };
-      }
+  const method = String(init?.method ?? "GET").toUpperCase();
+  const canDedupeReadOnlyRequest = method === "GET" && !init?.body && !init?.signal;
+  const readOnlyDedupeKey = canDedupeReadOnlyRequest ? `${method}:${path}` : "";
+  if (readOnlyDedupeKey) {
+    const existing = inFlightReadOnlyRequests.get(readOnlyDedupeKey);
+    if (existing) return existing as Promise<ApiEnvelope<T>>;
+  }
+  const runRequest = async (): Promise<ApiEnvelope<T>> => {
+    let lastError: unknown = "local FastAPI backend unavailable";
+    let lastCallStatus = BACKEND_OFFLINE_ERROR;
+    const triedApiBases: string[] = [];
+    for (const apiBase of API_BASE_CANDIDATES) {
+      triedApiBases.push(apiBase);
       try {
-        const payload = await res.json();
-        return {
-          ...payload,
-          data: payload.data === null ? ({} as T) : payload.data,
-          error: errorToMessage(payload.error),
-          call_ledger: [
-            frontendBackendAutoLinkLedger(path, apiBase, triedApiBases),
-            ...envelopeCallLedger(payload),
-          ],
-          warnings: payload.warnings ?? [],
-        } as ApiEnvelope<T>;
+        const res = await fetch(`${apiBase}${path}`, {
+          ...init,
+          headers: {
+            "Content-Type": "application/json",
+            ...(init?.headers ?? {})
+          }
+        });
+        if (!res.ok) {
+          if (res.status === 404 && API_BASE_CANDIDATES.length > 1) {
+            lastError = `HTTP ${res.status} from ${safeApiBaseDisplay(apiBase)}`;
+            lastCallStatus = BACKEND_OFFLINE_ERROR;
+            continue;
+          }
+          return { ok: false, data: {} as T, error: `HTTP ${res.status}`, call_ledger: [], warnings: [] };
+        }
+        try {
+          const payload = await res.json();
+          return {
+            ...payload,
+            data: payload.data === null ? ({} as T) : payload.data,
+            error: errorToMessage(payload.error),
+            call_ledger: [
+              frontendBackendAutoLinkLedger(path, apiBase, triedApiBases),
+              ...envelopeCallLedger(payload),
+            ],
+            warnings: payload.warnings ?? [],
+          } as ApiEnvelope<T>;
+        } catch (error) {
+          lastError = error;
+          lastCallStatus = RESPONSE_PARSE_ERROR;
+        }
       } catch (error) {
         lastError = error;
-        lastCallStatus = RESPONSE_PARSE_ERROR;
+        lastCallStatus = BACKEND_OFFLINE_ERROR;
       }
-    } catch (error) {
-      lastError = error;
-      lastCallStatus = BACKEND_OFFLINE_ERROR;
     }
+    return failedRequestEnvelope<T>(path, lastCallStatus, lastError, triedApiBases.length ? triedApiBases : API_BASE_CANDIDATES);
+  };
+  const promise = runRequest();
+  if (readOnlyDedupeKey) {
+    inFlightReadOnlyRequests.set(readOnlyDedupeKey, promise as Promise<ApiEnvelope<unknown>>);
+    promise.finally(() => {
+      if (inFlightReadOnlyRequests.get(readOnlyDedupeKey) === promise) {
+        inFlightReadOnlyRequests.delete(readOnlyDedupeKey);
+      }
+    });
   }
-  return failedRequestEnvelope<T>(path, lastCallStatus, lastError, triedApiBases.length ? triedApiBases : API_BASE_CANDIDATES);
+  return promise;
 }
 
 function queryString(params: Record<string, string | number | undefined | null> = {}): string {
