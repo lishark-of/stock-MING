@@ -450,6 +450,16 @@ export default function CandidateRadar() {
     (cache.search_quant_result_lineage as Record<string, unknown> | undefined) ??
     (searchQuantProviderModelAcceptance.result_lineage as Record<string, unknown> | undefined) ??
     {};
+  const searchQuantCurrentResultLineage =
+    (cache.search_quant_current_result_lineage as Record<string, unknown> | undefined) ?? {};
+  const searchQuantLastGoodResultLineage =
+    (cache.search_quant_last_good_result_lineage as Record<string, unknown> | undefined) ?? {};
+  const searchQuantDegradedResultLineage =
+    (cache.search_quant_degraded_result_lineage as Record<string, unknown> | undefined) ?? {};
+  const searchQuantResultVersionSummary =
+    (cache.search_quant_result_version_summary as Record<string, unknown> | undefined) ??
+    (searchQuantProviderModelAcceptance.result_version_summary as Record<string, unknown> | undefined) ??
+    {};
   const searchQuantResultOutputPacketKeys = Array.isArray(searchQuantResultLineage.output_packet_keys)
     ? searchQuantResultLineage.output_packet_keys.map((item) => String(item)).filter(Boolean)
     : [];
@@ -3216,20 +3226,46 @@ export default function CandidateRadar() {
   ];
   const quantProjectionResultLineageItems: MetricItem[] = [
     {
-      label: "结果版本",
+      label: "当前结果版本",
       value: displayText(
-        searchQuantResultLineage.result_version ?? searchQuantProviderModelAcceptance.result_version,
+        searchQuantResultVersionSummary.current_result_version ?? searchQuantCurrentResultLineage.result_version,
+        "成功后才提升 current result"
+      ),
+      tone: searchQuantResultVersionSummary.current_result_version || searchQuantCurrentResultLineage.result_version ? "good" : "warn"
+    },
+    {
+      label: "本次任务版本",
+      value: displayText(
+        searchQuantResultVersionSummary.latest_task_result_version ?? searchQuantResultLineage.result_version ?? searchQuantProviderModelAcceptance.result_version,
         "等待确认后的同源结果版本"
       ),
-      tone: searchQuantResultLineage.result_version || searchQuantProviderModelAcceptance.result_version ? "good" : "warn"
+      tone: searchQuantResultVersionSummary.latest_task_result_version || searchQuantResultLineage.result_version || searchQuantProviderModelAcceptance.result_version ? "good" : "warn"
+    },
+    {
+      label: "last-good",
+      value: displayText(
+        searchQuantResultVersionSummary.last_good_result_version ?? searchQuantLastGoodResultLineage.result_version,
+        "暂无 last-good"
+      ),
+      tone: searchQuantResultVersionSummary.last_good_result_available === true || searchQuantLastGoodResultLineage.result_version ? "good" : "warn"
+    },
+    {
+      label: "本次降级",
+      value: searchQuantResultVersionSummary.degraded_result_visible === true || searchQuantDegradedResultLineage.result_version
+        ? displayText(
+            searchQuantResultVersionSummary.degraded_reason ?? searchQuantDegradedResultLineage.freshness_state,
+            "degraded，不覆盖当前结果"
+          )
+        : displayText(searchQuantResultVersionSummary.status, "未降级"),
+      tone: searchQuantResultVersionSummary.degraded_result_visible === true || searchQuantDegradedResultLineage.result_version ? "warn" : "good"
     },
     {
       label: "同源 task",
       value: displayText(
-        searchQuantResultLineage.task_id ?? searchQuantProviderModelAcceptance.task_id ?? quantProjectionProgressWatchTaskId,
+        searchQuantResultVersionSummary.latest_task_id ?? searchQuantResultLineage.task_id ?? searchQuantProviderModelAcceptance.task_id ?? quantProjectionProgressWatchTaskId,
         "等待确认 task"
       ),
-      tone: searchQuantResultLineage.task_id || searchQuantProviderModelAcceptance.task_id || quantProjectionProgressWatchTaskId ? "good" : "warn"
+      tone: searchQuantResultVersionSummary.latest_task_id || searchQuantResultLineage.task_id || searchQuantProviderModelAcceptance.task_id || quantProjectionProgressWatchTaskId ? "good" : "warn"
     },
     {
       label: "事实包",
@@ -3270,10 +3306,10 @@ export default function CandidateRadar() {
     },
     {
       label: "覆盖保护",
-      value: searchQuantResultLineage.old_task_can_overwrite_current === false
+      value: searchQuantResultVersionSummary.old_task_can_overwrite_current === false || searchQuantResultLineage.old_task_can_overwrite_current === false
         ? "旧任务不能覆盖当前结果"
         : "等待 symbol + result_version 保护",
-      tone: searchQuantResultLineage.old_task_can_overwrite_current === false ? "good" : "warn"
+      tone: searchQuantResultVersionSummary.old_task_can_overwrite_current === false || searchQuantResultLineage.old_task_can_overwrite_current === false ? "good" : "warn"
     }
   ];
   const candidateRadarOperatorPostConfirmOneGlanceItems: MetricItem[] = [

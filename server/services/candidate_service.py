@@ -735,6 +735,15 @@ def _preserve_candidate_radar_persisted_receipts(
         if not previous_rows:
             previous_rows = [row for row in _as_list(previous_receipt.get("rows")) if isinstance(row, dict)]
         view[rows_key] = previous_rows
+    for lineage_key in ("search_quant_current_result_lineage", "search_quant_last_good_result_lineage"):
+        if isinstance(view.get(lineage_key), dict):
+            continue
+        previous_lineage = _as_dict(previous_packet.get(lineage_key))
+        if previous_lineage.get("schema_version") != "candidate_radar_search_quant_projection_result_lineage.v1":
+            continue
+        if previous_lineage.get("contains_secret") is True:
+            continue
+        view[lineage_key] = previous_lineage
     return view
 
 
@@ -16001,6 +16010,77 @@ def _quant_projection_attach_result_lineage(
     return lineage
 
 
+def _quant_projection_result_version_summary(
+    *,
+    result_lineage: Mapping[str, Any],
+    current_lineage: Mapping[str, Any],
+    last_good_lineage: Mapping[str, Any],
+    degraded_lineage: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    latest_task_version = _safe_text(result_lineage.get("result_version") or "", limit=80)
+    current_result_version = _safe_text(current_lineage.get("result_version") or "", limit=80)
+    last_good_result_version = _safe_text(last_good_lineage.get("result_version") or "", limit=80)
+    degraded_result_version = _safe_text(degraded_lineage.get("result_version") or "", limit=80)
+    current_promoted = result_lineage.get("current_result_promoted") is True
+    status = (
+        "current_result_promoted"
+        if current_promoted
+        else "degraded_result_recorded_last_good_retained"
+        if last_good_result_version
+        else "degraded_result_recorded_no_last_good"
+    )
+    degraded_reason = _safe_text(
+        receipt.get("deepseek_safe_failure_mode")
+        or result_lineage.get("freshness_state")
+        or receipt.get("status")
+        or "",
+        limit=160,
+    )
+    if current_promoted:
+        ordinary_summary = "本次确认的事实包、Factor 和次日图谱已对齐，当前结果已提升。"
+        ordinary_next_step = "直接查看量化推演和次日图谱；DeepSeek 只作为解释层。"
+    elif last_good_result_version:
+        ordinary_summary = "本次确认已标记 degraded；页面保留上一条 last-good current result，不让失败任务覆盖当前结果。"
+        ordinary_next_step = "先按 last-good 只读回放；本次 degraded 只用于查看缺口和重试条件。"
+    else:
+        ordinary_summary = "本次确认已标记 degraded；暂无 last-good current result，可先查看降级原因。"
+        ordinary_next_step = "修复 Tushare facts 或权限/空数据问题后，再用确认按钮重跑。"
+    return {
+        "schema_version": "candidate_radar_search_quant_projection_result_version_summary.v1",
+        "status": status,
+        "latest_task_id": _safe_text(result_lineage.get("task_id") or receipt.get("task_id") or "", limit=128),
+        "latest_task_symbol": _safe_text(result_lineage.get("symbol") or receipt.get("symbol") or "", limit=32),
+        "latest_task_result_version": latest_task_version,
+        "current_result_version": current_result_version,
+        "current_result_symbol": _safe_text(current_lineage.get("symbol") or "", limit=32),
+        "last_good_result_version": last_good_result_version,
+        "last_good_result_symbol": _safe_text(last_good_lineage.get("symbol") or "", limit=32),
+        "degraded_result_version": degraded_result_version,
+        "degraded_result_symbol": _safe_text(degraded_lineage.get("symbol") or "", limit=32),
+        "degraded_reason": degraded_reason,
+        "current_result_promoted": current_promoted,
+        "current_result_matches_latest_task": bool(current_result_version and current_result_version == latest_task_version),
+        "last_good_result_available": bool(last_good_result_version),
+        "degraded_result_visible": bool(degraded_result_version),
+        "last_good_policy": "promote_current_result_only_after_tushare_facts_factor_next_same_result_ready",
+        "late_task_overwrite_guard": "symbol_and_result_version_must_match",
+        "old_task_can_overwrite_current": False,
+        "ordinary_summary": ordinary_summary,
+        "ordinary_next_step": ordinary_next_step,
+        "readback_route": "GET /api/candidate-radar/cache",
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "readback_external_calls_triggered": False,
+        "tushare_called_from_readback": False,
+        "deepseek_called_from_readback": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+
+
 def _quant_projection_deepseek_fact_summary(
     *,
     receipt: Mapping[str, Any],
@@ -21330,6 +21410,15 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
             packet["search_quant_current_result_lineage"] = previous_current_lineage
             packet["search_quant_last_good_result_lineage"] = previous_current_lineage
             receipt["last_good_result_version"] = previous_current_lineage.get("result_version") or ""
+    result_version_summary = _quant_projection_result_version_summary(
+        result_lineage=result_lineage,
+        current_lineage=_as_dict(packet.get("search_quant_current_result_lineage")),
+        last_good_lineage=_as_dict(packet.get("search_quant_last_good_result_lineage")),
+        degraded_lineage=_as_dict(packet.get("search_quant_degraded_result_lineage")),
+        receipt=receipt,
+    )
+    receipt["result_version_summary"] = result_version_summary
+    packet["search_quant_result_version_summary"] = result_version_summary
     packet_counts = _as_dict(packet.get("counts"))
     packet_counts["search_quant_provider_model_acceptance_row_count"] = len(receipt_rows)
     packet_counts["search_quant_provider_model_acceptance_direct_evidence_verified"] = (
