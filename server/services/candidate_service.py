@@ -16205,7 +16205,14 @@ def _run_quant_projection_deepseek_explanation(
             "call_ledger_row": None,
         }
 
-    if not provider_ledger:
+    provider_fact_rows = [
+        row
+        for row in provider_ledger
+        if row.get("call_status") == "success"
+        and int(row.get("row_count") or 0) > 0
+        and _safe_text(row.get("api") or "", limit=40) in {"daily", "daily_basic", "moneyflow"}
+    ]
+    if not provider_fact_rows:
         sanitized = _quant_projection_deepseek_degraded_explanation(
             status="skipped_missing_facts",
             failure_mode="skipped_missing_facts",
@@ -16532,14 +16539,20 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         ),
     ]
     blocking_rows = [row for row in rows if row.get("production_blocker")]
+    provider_has_any_ledger = bool(provider_ledger)
+    deepseek_skipped_missing_facts = deepseek_failure_mode == "skipped_missing_facts"
     if include_deepseek and provider_evidence_done and deepseek_output_acceptance_done:
         status = "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_explained"
     elif include_deepseek and provider_evidence_done and deepseek_model_ledger_recorded:
         status = "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_degraded"
     elif include_deepseek and provider_evidence_done:
         status = "search_quant_provider_model_acceptance_waiting_deepseek_output_acceptance"
+    elif include_deepseek and provider_has_any_ledger and deepseek_skipped_missing_facts:
+        status = "search_quant_provider_model_acceptance_degraded_tushare_facts_missing_deepseek_skipped"
+    elif include_deepseek and provider_has_any_ledger and deepseek_model_ledger_recorded:
+        status = "search_quant_provider_model_acceptance_degraded_tushare_partial_deepseek_recorded"
     elif include_deepseek:
-        status = "search_quant_provider_model_acceptance_blocked_deepseek_model_ledger_pending"
+        status = "search_quant_provider_model_acceptance_blocked_provider_ledger_missing_or_failed"
     elif not execution_request_ready:
         status = "search_quant_provider_model_acceptance_blocked_execution_request_required"
     elif not scope_hash_matches:
@@ -16552,7 +16565,11 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
     if include_deepseek and deepseek_output_acceptance_done:
         scope = "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_explained"
     elif include_deepseek and deepseek_model_ledger_recorded:
-        scope = "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_degraded"
+        scope = (
+            "button_gated_search_quant_provider_model_acceptance_tushare_degraded_deepseek_skipped_missing_facts"
+            if deepseek_skipped_missing_facts
+            else "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_degraded"
+        )
     elif include_deepseek:
         scope = "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_pending"
     receipt = {
@@ -16581,6 +16598,7 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         "deepseek_explanation_status": deepseek_status,
         "deepseek_safe_failure_mode": deepseek_failure_mode,
         "deepseek_safe_degraded": include_deepseek and deepseek_model_ledger_recorded and not deepseek_output_acceptance_done,
+        "deepseek_skipped_missing_facts": include_deepseek and deepseek_skipped_missing_facts,
         "deepseek_skipped_by_request": not include_deepseek,
         "direct_evidence_verified": provider_evidence_done and (not include_deepseek or deepseek_model_ledger_recorded),
         "deepseek_model_ledger": model_ledger,

@@ -72,6 +72,24 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
 
         self.addCleanup(restore)
 
+    def _ready_p0_gate(self):
+        return {
+            "schema_version": "candidate_radar_p0_confirm_gate.v1",
+            "p0_ready": True,
+            "fastapi_cache_get_ready": True,
+            "bootstrap_runtime_mode_ready": True,
+            "desktop_preflight_ready": True,
+            "p0_stability_check_ready": True,
+            "candidate_cache_ready": True,
+            "candidate_cache_status": "ready",
+            "bootstrap_packet_key": "command_center_3_bootstrap_runtime_mode_packet",
+            "desktop_preflight_packet_key": "command_center_3_desktop_shell_preflight_cache",
+            "creates_task_only_after_button": True,
+            "react_render_external_calls": False,
+            "get_cache_external_calls": False,
+            "contains_secret": False,
+        }
+
     def test_p0_confirm_gate_requires_stability_or_local_link_evidence(self):
         gate = {
             "schema_version": "candidate_radar_p0_confirm_gate.v1",
@@ -3015,6 +3033,223 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", dumped)
         self.assertNotIn("TUSHARE_TOKEN", dumped)
         self.assertNotIn("DEEPSEEK_API_KEY", dumped)
+
+    def test_deepseek_skips_when_tushare_has_no_non_empty_stock_facts(self):
+        self._with_meta_store()
+        self._with_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "candidate cache"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
+        original_model_call = candidate_service._call_quant_projection_deepseek_model
+        model_call_attempts = []
+
+        def fake_run_tushare_refresh_task(payload, **_kwargs):
+            return {
+                "task_id": "fake-tushare-trade-cal-only-ledger",
+                "status": "success",
+                "current_step": "tushare_refresh_partial_empty_stock_facts_safe",
+                "call_ledger": [
+                    {
+                        "api": api,
+                        "request_params_safe": {
+                            "ts_code": payload["ts_code"],
+                            "start_date": payload["start_date"],
+                            "end_date": payload["end_date"],
+                        },
+                        "row_count": 181 if api == "trade_cal" else 0,
+                        "data_date": payload["end_date"] if api == "trade_cal" else "",
+                        "local_fetched_at": "2026-06-19T10:00:00",
+                        "call_status": "success" if api == "trade_cal" else "empty",
+                        "error_message_safe": "" if api == "trade_cal" else "empty_result_or_no_record",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                    for api in payload["apis"]
+                ],
+            }
+
+        def forbidden_model_call(**_kwargs):
+            model_call_attempts.append(True)
+            return {"text": "{}"}
+
+        candidate_service.tushare_task_service.run_tushare_refresh_task = fake_run_tushare_refresh_task
+        candidate_service._call_quant_projection_deepseek_model = forbidden_model_call
+        self.addCleanup(
+            setattr,
+            candidate_service.tushare_task_service,
+            "run_tushare_refresh_task",
+            original_run_tushare,
+        )
+        self.addCleanup(setattr, candidate_service, "_call_quant_projection_deepseek_model", original_model_call)
+
+        response = self.client.post(
+            "/api/candidate-radar/quant-projection",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+                "p0_confirm_gate_evidence": self._ready_p0_gate(),
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(model_call_attempts, [])
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        receipt = packet["search_quant_provider_model_acceptance_receipt"]
+        lineage = packet["search_quant_result_lineage"]
+        model_ledger = packet["search_quant_deepseek_model_ledger"]
+        explanation = packet["search_quant_deepseek_explanation"]
+
+        self.assertEqual(
+            receipt["status"],
+            "search_quant_provider_model_acceptance_degraded_tushare_facts_missing_deepseek_skipped",
+        )
+        self.assertFalse(receipt["tushare_call_ledger_evidence_done"])
+        self.assertEqual(receipt["provider_api_call_count"], 4)
+        self.assertEqual(receipt["provider_api_success_count"], 1)
+        self.assertTrue(receipt["deepseek_model_ledger_recorded"])
+        self.assertTrue(receipt["deepseek_skipped_missing_facts"])
+        self.assertEqual(receipt["deepseek_safe_failure_mode"], "skipped_missing_facts")
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(model_ledger["deepseek_called"])
+        self.assertFalse(model_ledger["external_calls_triggered"])
+        self.assertEqual(model_ledger["status"], "skipped_missing_facts")
+        self.assertEqual(model_ledger["model_call_status"], "skipped_missing_facts")
+        self.assertFalse(model_ledger["raw_prompt_stored"])
+        self.assertFalse(model_ledger["raw_output_stored"])
+        self.assertEqual(explanation["status"], "skipped_missing_facts")
+        self.assertEqual(explanation["source"], "safe_degraded_status")
+        self.assertEqual(explanation["error_message_safe"], "skipped_missing_facts")
+        self.assertEqual(lineage["facts_package_status"], "partial_provider")
+        self.assertTrue(lineage["deepseek_skipped_missing_facts"])
+        self.assertFalse(lineage["current_result_promoted"])
+        self.assertFalse(lineage["deepseek_is_data_source"])
+        self.assertEqual(packet["search_quant_degraded_result_lineage"]["result_version"], lineage["result_version"])
+        self.assertNotIn("search_quant_current_result_lineage", packet)
+
+    def test_deepseek_failure_does_not_block_tushare_factor_next_result(self):
+        self._with_meta_store()
+        self._with_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "candidate cache"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
+        original_model_call = candidate_service._call_quant_projection_deepseek_model
+        model_call_attempts = []
+
+        def fake_run_tushare_refresh_task(payload, **_kwargs):
+            return {
+                "task_id": "fake-tushare-success-ledger",
+                "status": "success",
+                "current_step": "tushare_refresh_completed",
+                "call_ledger": [
+                    {
+                        "api": api,
+                        "request_params_safe": {
+                            "ts_code": payload["ts_code"],
+                            "start_date": payload["start_date"],
+                            "end_date": payload["end_date"],
+                        },
+                        "row_count": 3,
+                        "data_date": payload["end_date"],
+                        "local_fetched_at": "2026-06-19T10:00:00",
+                        "call_status": "success",
+                        "error_message_safe": "",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                    for api in payload["apis"]
+                ],
+            }
+
+        def failing_model_call(**_kwargs):
+            model_call_attempts.append(True)
+            raise TimeoutError("unit test model timeout")
+
+        candidate_service.tushare_task_service.run_tushare_refresh_task = fake_run_tushare_refresh_task
+        candidate_service._call_quant_projection_deepseek_model = failing_model_call
+        self.addCleanup(
+            setattr,
+            candidate_service.tushare_task_service,
+            "run_tushare_refresh_task",
+            original_run_tushare,
+        )
+        self.addCleanup(setattr, candidate_service, "_call_quant_projection_deepseek_model", original_model_call)
+
+        response = self.client.post(
+            "/api/candidate-radar/quant-projection",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+                "p0_confirm_gate_evidence": self._ready_p0_gate(),
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(len(model_call_attempts), 1)
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        receipt = packet["search_quant_provider_model_acceptance_receipt"]
+        lineage = packet["search_quant_result_lineage"]
+        model_ledger = packet["search_quant_deepseek_model_ledger"]
+        explanation = packet["search_quant_deepseek_explanation"]
+
+        self.assertEqual(
+            receipt["status"],
+            "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_degraded",
+        )
+        self.assertTrue(receipt["tushare_call_ledger_evidence_done"])
+        self.assertEqual(receipt["provider_api_success_count"], 4)
+        self.assertTrue(receipt["deepseek_model_ledger_recorded"])
+        self.assertFalse(receipt["deepseek_output_acceptance_done"])
+        self.assertTrue(receipt["deepseek_called"])
+        self.assertTrue(receipt["deepseek_safe_degraded"])
+        self.assertEqual(receipt["deepseek_safe_failure_mode"], "model_call_failed_or_timeout")
+        self.assertEqual(model_ledger["status"], "degraded_model_call_failed_or_timeout")
+        self.assertEqual(model_ledger["model_call_status"], "model_call_failed_or_timeout")
+        self.assertTrue(model_ledger["deepseek_called"])
+        self.assertTrue(model_ledger["external_calls_triggered"])
+        self.assertFalse(model_ledger["raw_prompt_stored"])
+        self.assertFalse(model_ledger["raw_output_stored"])
+        self.assertEqual(explanation["status"], "degraded_model_call_failed_or_timeout")
+        self.assertTrue(receipt["factor_refresh_executed"])
+        self.assertTrue(receipt["next_session_refresh_executed"])
+        self.assertTrue(receipt["echarts_payload_refreshed"])
+        self.assertEqual(lineage["freshness_state"], "fresh_provider")
+        self.assertTrue(lineage["factor_next_same_result_ready"])
+        self.assertTrue(lineage["current_result_promoted"])
+        self.assertEqual(lineage["model_ledger_id"], receipt["model_ledger_id"])
+        self.assertEqual(packet["search_quant_current_result_lineage"]["result_version"], lineage["result_version"])
+        self.assertEqual(packet["search_quant_last_good_result_lineage"]["result_version"], lineage["result_version"])
+        self.assertFalse(lineage["deepseek_is_data_source"])
+        self.assertFalse(lineage["deepseek_skipped_missing_facts"])
 
     def test_provider_receipt_task_id_replays_when_task_status_rows_are_cleared(self):
         self._with_meta_store()
