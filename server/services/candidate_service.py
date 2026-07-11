@@ -15531,6 +15531,15 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                                 final_step = (
                                     "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_pending"
                                 )
+                        elif int(latest_provider.get("provider_api_call_count") or 0) > 0:
+                            if latest_provider.get("deepseek_skipped_missing_facts") is True:
+                                final_step = (
+                                    "candidate_radar_quant_projection_tushare_first_chain_degraded_tushare_facts_missing_deepseek_skipped"
+                                )
+                            else:
+                                final_step = (
+                                    "candidate_radar_quant_projection_tushare_first_chain_degraded_provider_ledger_recorded"
+                                )
                         else:
                             final_step = (
                                 "candidate_radar_quant_projection_tushare_first_chain_blocked_provider_ledger_missing"

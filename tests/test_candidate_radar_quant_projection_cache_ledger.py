@@ -3363,6 +3363,10 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         ).json()
 
         self.assertTrue(response["ok"])
+        self.assertEqual(
+            response["data"]["task"]["current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_degraded_tushare_facts_missing_deepseek_skipped",
+        )
         self.assertEqual(model_call_attempts, [])
         cache = self.client.get("/api/candidate-radar/cache").json()
         self.assertTrue(cache["ok"])
@@ -3514,6 +3518,10 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         ).json()
         self.assertTrue(second["ok"])
         second_task = second["data"]["task"]
+        self.assertEqual(
+            second_task["current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_degraded_tushare_facts_missing_deepseek_skipped",
+        )
         self.assertEqual(model_call_attempts, [])
 
         packet = self.client.get("/api/candidate-radar/cache").json()["data"]
