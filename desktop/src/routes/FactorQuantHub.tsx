@@ -347,6 +347,25 @@ export default function FactorQuantHub() {
     (candidateRadarCache.search_quant_deepseek_model_ledger as Record<string, unknown> | undefined) ?? {};
   const candidateRadarProviderModelAcceptance =
     (candidateRadarCache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarResultLineage =
+    (candidateRadarCache.search_quant_result_lineage as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarResultVersionSummary =
+    (candidateRadarCache.search_quant_result_version_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarCurrentResultVersion = String(
+    candidateRadarResultVersionSummary.current_result_version ??
+      candidateRadarResultLineage.result_version ??
+      candidateRadarProviderModelAcceptance.result_version ??
+      ""
+  );
+  const candidateRadarLatestResultVersion = String(
+    candidateRadarResultVersionSummary.latest_task_result_version ??
+      candidateRadarResultVersionSummary.latest_result_version ??
+      candidateRadarResultLineage.result_version ??
+      ""
+  );
+  const candidateRadarResultVersionLabel = candidateRadarCurrentResultVersion
+    ? `当前结果版本 ${candidateRadarCurrentResultVersion}; latest ${candidateRadarLatestResultVersion || candidateRadarCurrentResultVersion}`
+    : "等待 result_version 回放";
   const candidateRadarDeepSeekLedgerRecorded =
     candidateRadarDeepSeekModelLedger.model_ledger_recorded === true ||
     candidateRadarProviderModelAcceptance.deepseek_model_ledger_recorded === true ||
@@ -1057,6 +1076,11 @@ export default function FactorQuantHub() {
       label: "来源任务",
       value: candidateRadarLatestTaskId || "等待确认 task",
       tone: candidateRadarLatestTaskId ? "good" : "warn"
+    },
+    {
+      label: "结果版本",
+      value: candidateRadarResultVersionLabel,
+      tone: candidateRadarCurrentResultVersion ? "good" : "warn"
     },
     {
       label: "本页结果",

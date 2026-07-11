@@ -1634,6 +1634,19 @@ def _search_quant_projection_cross_module_alignment_readback(
         factor_label = f"Factor cache 已读取，但没有 {symbol_safe} 的 universe items。"
 
     next_packet, next_read_status = _safe_packet(NEXT_SESSION_PACKET_KEY)
+    try:
+        next_packet_from_cache = packet_service.build_next_session_cache()
+    except Exception:
+        next_packet_from_cache = {}
+    if (
+        isinstance(next_packet_from_cache, Mapping)
+        and next_packet_from_cache.get("packet_key") == NEXT_SESSION_PACKET_KEY
+        and next_packet_from_cache.get("status") != "cache_missing"
+        and next_packet_from_cache.get("contains_secret") is not True
+        and next_packet_from_cache.get("external_calls_triggered") is not True
+    ):
+        next_packet = dict(next_packet_from_cache)
+        next_read_status = "ready"
     chart_payload = _as_dict(next_packet.get("chart_payload"))
     chart_summary = _as_dict(next_packet.get("chart_summary")) or _as_dict(chart_payload.get("chart_summary"))
     next_symbol = _safe_text(

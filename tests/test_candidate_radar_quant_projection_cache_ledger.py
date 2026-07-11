@@ -3641,6 +3641,164 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
 
+    def test_cache_readback_promotes_latest_result_from_current_next_cache_when_meta_paths_split(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        next_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(next_temp.cleanup)
+        next_db = Path(next_temp.name) / "next.sqlite"
+        next_session_service.SQLITE_META_PATH = next_db
+        packet_service.SQLITE_META_PATH = next_db
+        candidate_store = SQLiteMetaStore(candidate_service.SQLITE_META_PATH)
+        next_store = SQLiteMetaStore(next_db)
+        candidate_store.write_packet(
+            candidate_service.FACTOR_QUANT_HUB_PACKET_KEY,
+            {
+                "packet_key": candidate_service.FACTOR_QUANT_HUB_PACKET_KEY,
+                "status": "ready",
+                "universe": {"items": ["002008.SZ"]},
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "contains_secret": False,
+            },
+        )
+        candidate_store.write_packet(
+            candidate_service.NEXT_SESSION_PACKET_KEY,
+            {
+                "packet_key": candidate_service.NEXT_SESSION_PACKET_KEY,
+                "status": "ready",
+                "source_task_id": "local-old-task",
+                "chart_payload": {
+                    "status": "ready",
+                    "symbol": "000001.SZ",
+                    "source_task_id": "local-old-task",
+                    "historical_points": [{"x": "2026-07-10", "price": 10.0}],
+                    "scenario_series": [{"scenario_key": "base", "points": [{"x": "T+1", "price": 10.3}]}],
+                },
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "contains_secret": False,
+            },
+        )
+        next_store.write_packet(
+            candidate_service.NEXT_SESSION_PACKET_KEY,
+            {
+                "packet_key": candidate_service.NEXT_SESSION_PACKET_KEY,
+                "status": "ready",
+                "source_task_id": "local-provider-task",
+                "chart_payload": {
+                    "status": "ready",
+                    "symbol": "002008.SZ",
+                    "source_task_id": "local-provider-task",
+                    "historical_points": [{"x": "2026-07-10", "price": 10.0}],
+                    "scenario_series": [{"scenario_key": "base", "points": [{"x": "T+1", "price": 10.3}]}],
+                },
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "contains_secret": False,
+            },
+        )
+        latest_lineage = {
+            "schema_version": "candidate_radar_search_quant_projection_result_lineage.v1",
+            "task_id": "local-provider-task",
+            "symbol": "002008.SZ",
+            "scope_hash": "scope-current",
+            "scope_hash_short": "scope-current",
+            "provider_call_ledger_ids": ["pcl_1", "pcl_2", "pcl_3", "pcl_4"],
+            "input_packet_keys": [
+                "command_center_candidate_radar_quant_projection_receipt",
+                "command_center_candidate_radar_quant_projection_tushare_light_packet",
+            ],
+            "output_packet_keys": [candidate_service.PACKET_KEY, candidate_service.FACTOR_QUANT_HUB_PACKET_KEY],
+            "data_date": "20260711",
+            "freshness_state": "fresh_provider",
+            "model_ledger_id": "mlg_current",
+            "result_version": "qrv_current",
+            "facts_packet_key": candidate_service.QUANT_PROJECTION_FACTS_PACKET_KEY,
+            "facts_package_status": "ready",
+            "factor_next_same_result_ready": False,
+            "current_result_promoted": False,
+            "old_task_can_overwrite_current": False,
+        }
+        previous_lineage = {
+            **latest_lineage,
+            "task_id": "local-old-task",
+            "symbol": "000001.SZ",
+            "scope_hash": "scope-old",
+            "scope_hash_short": "scope-old",
+            "result_version": "qrv_old",
+            "current_result_promoted": True,
+            "factor_next_same_result_ready": True,
+        }
+        candidate_store.write_packet(
+            candidate_service.PACKET_KEY,
+            {
+                "packet_key": candidate_service.PACKET_KEY,
+                "schema_version": "candidate_radar_cache.v1",
+                "status": "ready",
+                "scan_mode": "quant_projection_provider_model_acceptance",
+                "candidate_rows": [],
+                "counts": {},
+                "policy": {},
+                "latest_confirmed_symbol": "002008.SZ",
+                "search_quant_provider_model_acceptance_receipt": {
+                    "schema_version": candidate_service.QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION,
+                    "task_id": "local-provider-task",
+                    "status": "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_explained",
+                    "symbol": "002008.SZ",
+                    "tushare_call_ledger_evidence_done": True,
+                    "provider_api_success_count": 4,
+                    "provider_api_call_count": 4,
+                    "provider_call_ledger": [
+                        {
+                            "call_ledger_id": f"pcl_{index}",
+                            "api": "daily",
+                            "call_status": "success",
+                            "data_date": "20260711",
+                        }
+                        for index in range(1, 5)
+                    ],
+                    "contains_secret": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                },
+                "search_quant_result_lineage": latest_lineage,
+                "search_quant_current_result_lineage": previous_lineage,
+                "search_quant_last_good_result_lineage": previous_lineage,
+                "search_quant_degraded_result_lineage": latest_lineage,
+                "search_quant_result_version_summary": {
+                    "schema_version": "candidate_radar_search_quant_projection_result_version_summary.v1",
+                    "status": "degraded_result_recorded_last_good_retained",
+                    "latest_task_id": "local-provider-task",
+                    "latest_task_symbol": "002008.SZ",
+                    "latest_task_result_version": "qrv_current",
+                    "current_result_version": "qrv_old",
+                    "current_result_symbol": "000001.SZ",
+                    "current_result_promoted": False,
+                },
+            },
+        )
+
+        packet = self.client.get("/api/candidate-radar/cache").json()["data"]
+        summary = packet["search_quant_result_version_summary"]
+        lineage = packet["search_quant_result_lineage"]
+        alignment = packet["search_quant_projection_local_factor_next_refresh"]["alignment"]
+
+        self.assertEqual(summary["status"], "current_result_promoted")
+        self.assertEqual(summary["current_result_symbol"], "002008.SZ")
+        self.assertTrue(summary["current_result_matches_latest_task"])
+        self.assertTrue(lineage["current_result_promoted"])
+        self.assertIn(candidate_service.NEXT_SESSION_PACKET_KEY, lineage["output_packet_keys"])
+        self.assertEqual(alignment["next_symbol"], "002008.SZ")
+        self.assertEqual(alignment["next_source_task_id"], "local-provider-task")
+        self.assertTrue(alignment["overall_alignment_ready"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+
     def test_deepseek_failure_does_not_block_tushare_factor_next_result(self):
         self._with_meta_store()
         self._with_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")

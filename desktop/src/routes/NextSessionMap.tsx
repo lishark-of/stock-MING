@@ -361,6 +361,27 @@ export default function NextSessionMap() {
       candidateRadarInterpretation.ordinary_post_confirm_one_glance_items
   );
   const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarProviderModelAcceptance =
+    (candidateRadarCache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarResultLineage =
+    (candidateRadarCache.search_quant_result_lineage as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarResultVersionSummary =
+    (candidateRadarCache.search_quant_result_version_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarCurrentResultVersion = String(
+    candidateRadarResultVersionSummary.current_result_version ??
+      candidateRadarResultLineage.result_version ??
+      candidateRadarProviderModelAcceptance.result_version ??
+      ""
+  );
+  const candidateRadarLatestResultVersion = String(
+    candidateRadarResultVersionSummary.latest_task_result_version ??
+      candidateRadarResultVersionSummary.latest_result_version ??
+      candidateRadarResultLineage.result_version ??
+      ""
+  );
+  const candidateRadarResultVersionLabel = candidateRadarCurrentResultVersion
+    ? `当前结果版本 ${candidateRadarCurrentResultVersion}; latest ${candidateRadarLatestResultVersion || candidateRadarCurrentResultVersion}`
+    : "等待 result_version 回放";
   const candidateRadarConfirmedSymbol = String(
     packet.latest_confirmed_symbol ||
       candidateRadarCache.latest_confirmed_symbol ||
@@ -738,6 +759,11 @@ export default function NextSessionMap() {
       label: "来源 task",
       value: candidateRadarSourceTaskLabel,
       tone: candidateRadarSourceTaskLabel.includes("等待") ? "warn" : "good"
+    },
+    {
+      label: "结果版本",
+      value: candidateRadarResultVersionLabel,
+      tone: candidateRadarCurrentResultVersion ? "good" : "warn"
     },
     {
       label: "上游结论",
