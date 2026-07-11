@@ -61,7 +61,7 @@ function chromiumLaunchOptions() {
 const QA_ROUTES = [
   { route: "#home", label: "Daily Command Center", focus: "first-card readiness, current symbol, next action, source state" },
   { route: "#candidates", label: "Candidate Radar", focus: "candidate pool, confirm button, local-only controls, no-buy boundary" },
-  { route: "#marginEtf", label: "ETF / Margin", focus: "ETF row evidence, cash/leverage guardrail, degraded task reason" },
+  { route: "#marginEtf", label: "ETF / Margin", focus: "confirmed radar bridge, ETF row evidence, cash/leverage guardrail, degraded task reason" },
   { route: "#factor", label: "Stock Quant Projection", focus: "symbol result, factor support/suppression, provider gaps" },
   { route: "#next", label: "Next Session Map", focus: "operation zones as conditions, chart readability, no-action boundary" }
 ];
@@ -130,6 +130,8 @@ function makePlan(args) {
       height: viewport.height,
       url: `${args.baseUrl}/${route.route}`,
       focus: route.focus,
+      route_specific_check: route.route === "#marginEtf" ? "margin_etf_confirmed_data_bridge_visible" : "generic_route_heading_visible",
+      route_specific_check_required: true,
       visual_qa_complete: false,
       typing_silence_verified: false
     }))
@@ -148,6 +150,7 @@ function makePlan(args) {
       "audit details do not dominate the first viewport",
       "typing into visible inputs does not create a task",
       "visible editable inputs must be typed before typing silence is accepted",
+      "route-specific checks verify the margin ETF confirmed data bridge is visible",
       "screenshots and JSON report stay under ignored .stock_ming_3"
     ],
     base_url: args.baseUrl,
@@ -249,6 +252,63 @@ async function inspectPage(page) {
   });
 }
 
+async function inspectRouteSpecific(page, route) {
+  if (route !== "#marginEtf") {
+    return {
+      check: "generic_route_heading_visible",
+      passed: true,
+      evidence: ["generic route heading and task-silence checks apply"],
+      missing: []
+    };
+  }
+  return page.evaluate(() => {
+    const isVisible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || 1) > 0.01;
+    };
+    const selectorChecks = [
+      { selector: '[aria-label="margin etf app visible now summary"]', label: "app_visible_now_summary" },
+      { selector: '[aria-label="margin etf candidate radar confirmed data bridge"]', label: "confirmed_data_bridge_card" },
+      { selector: '[aria-label="return candidate radar confirm input from margin etf data bridge"]', label: "return_confirm_input_link" },
+      { selector: '[aria-label="open factor from margin etf data bridge"]', label: "open_factor_link" },
+      { selector: '[aria-label="open next session from margin etf data bridge"]', label: "open_next_link" },
+      { selector: '[aria-label="open data capability from margin etf data bridge"]', label: "open_data_capability_link" }
+    ];
+    const visibleMissing = selectorChecks
+      .filter((item) => !isVisible(document.querySelector(item.selector)))
+      .map((item) => item.label);
+    const bodyText = (document.body?.innerText || "").replace(/\s+/g, " ");
+    const textChecks = [
+      { label: "confirmed_bridge_heading", pattern: /确认结果承接/ },
+      { label: "confirmed_symbol_field", pattern: /当前确认标的/ },
+      { label: "source_and_date_fields", pattern: /数据来源/ },
+      { label: "tushare_chain_field", pattern: /Tushare 数据链/ },
+      { label: "result_version_field", pattern: /结果版本/ },
+      { label: "same_provider_ledger_field", pattern: /同源账本/ },
+      { label: "deepseek_explanation_field", pattern: /DeepSeek 解释/ },
+      { label: "etf_margin_handoff_field", pattern: /ETF\/融资承接/ },
+      { label: "read_boundary_field", pattern: /读取边界/ },
+      { label: "no_task_on_open_boundary", pattern: /不会因为打开 ETF\/融资页而创建 task/ },
+      { label: "no_provider_model_trade_boundary", pattern: /调用 Tushare\/DeepSeek、启动 worker、交易、加融资或改写 strategy action/ }
+    ];
+    const textMissing = textChecks.filter((item) => !item.pattern.test(bodyText)).map((item) => item.label);
+    const missing = [...visibleMissing, ...textMissing];
+    return {
+      check: "margin_etf_confirmed_data_bridge_visible",
+      passed: missing.length === 0,
+      evidence: [
+        "margin ETF visible-now summary rendered",
+        "confirmed data bridge rendered before local refresh/audit details",
+        "factor/next/data-capability/candidate links are local anchors",
+        "Tushare/result-version/provider-ledger/DeepSeek/boundary labels are visible"
+      ],
+      missing
+    };
+  });
+}
+
 async function typeWithoutSubmit(page) {
   const target = await page.evaluate(() => {
     const isVisible = (element) => {
@@ -304,6 +364,7 @@ async function runQa(args) {
         await page.waitForSelector("h1, h2, h3", { state: "attached", timeout: 10000 });
         await page.waitForTimeout(800);
         const inspected = await inspectPage(page);
+        const routeSpecific = await inspectRouteSpecific(page, route.route);
         const typing = await typeWithoutSubmit(page);
         const afterTaskCount = await fetchTaskCount(args.apiBase);
         const screenshotPath = resolve(outputDir, viewport.name, `${route.route.replace("#", "") || "home"}.png`);
@@ -320,7 +381,8 @@ async function runQa(args) {
           inspected.clipped_count === 0 &&
           inspected.disabled_buttons_without_reason_count === 0 &&
           noTaskCreated &&
-          typingCovered;
+          typingCovered &&
+          routeSpecific.passed;
         rows.push({
           route: route.route,
           label: route.label,
@@ -336,6 +398,10 @@ async function runQa(args) {
           clipped_rows: inspected.clipped_rows,
           audit_noise_count: inspected.audit_noise_count,
           audit_noise_text: inspected.audit_noise_text,
+          route_specific_check: routeSpecific.check,
+          route_specific_check_passed: routeSpecific.passed,
+          route_specific_evidence: routeSpecific.evidence,
+          route_specific_missing: routeSpecific.missing,
           disabled_buttons_without_reason_count: inspected.disabled_buttons_without_reason_count,
           disabled_buttons_without_reason: inspected.disabled_buttons_without_reason,
           visible_input_count: inspected.visible_input_count,
@@ -360,6 +426,9 @@ async function runQa(args) {
     await browser.close();
   }
   const reviewRows = rows.filter((row) => row.status !== "passed");
+  const routeSpecificReviewRows = rows.filter((row) => row.route_specific_check_passed === false);
+  const marginEtfBridgeRows = rows.filter((row) => row.route === "#marginEtf" && row.route_specific_check === "margin_etf_confirmed_data_bridge_visible");
+  const marginEtfBridgePassed = marginEtfBridgeRows.length > 0 && marginEtfBridgeRows.every((row) => row.route_specific_check_passed === true);
   const report = {
     schema_version: SCHEMA_VERSION,
     status: reviewRows.length || errors.length ? "user_route_qa_review_required" : "user_route_qa_passed",
@@ -375,6 +444,9 @@ async function runQa(args) {
     qa_matrix_count: rows.length,
     passed_count: rows.length - reviewRows.length,
     review_required_count: reviewRows.length,
+    route_specific_review_required_count: routeSpecificReviewRows.length,
+    margin_etf_confirmed_bridge_row_count: marginEtfBridgeRows.length,
+    margin_etf_confirmed_bridge_passed: marginEtfBridgePassed,
     console_error_count: errors.length,
     visual_qa_complete: reviewRows.length === 0 && errors.length === 0,
     typing_silence_verified: rows.every((row) => row.task_created_by_render_or_typing === false && row.typing_covered === true),

@@ -37,9 +37,25 @@ def get_user_route_qa_evidence_cache() -> dict:
             "user_route_qa_latest_report_review_required_count": evidence.get("latest_report_review_required_count", 0),
             "user_route_qa_latest_report_console_error_count": evidence.get("latest_report_console_error_count", 0),
             "user_route_qa_latest_report_candidate_route_passed": evidence.get("latest_report_candidate_route_passed") is True,
+            "user_route_qa_latest_report_margin_etf_confirmed_bridge_passed": evidence.get(
+                "latest_report_margin_etf_confirmed_bridge_passed"
+            )
+            is True,
+            "user_route_qa_latest_report_margin_etf_confirmed_bridge_row_count": evidence.get(
+                "latest_report_margin_etf_confirmed_bridge_row_count",
+                0,
+            ),
             "user_route_qa_visual_complete": evidence.get("ordinary_route_visual_qa_complete") is True,
             "user_route_qa_typing_silence_verified": evidence.get("typing_silence_verified") is True,
             "user_route_qa_candidate_route_passed": evidence.get("candidate_route_visual_qa_passed") is True,
+            "user_route_qa_margin_etf_confirmed_bridge_passed": evidence.get(
+                "margin_etf_confirmed_bridge_passed"
+            )
+            is True,
+            "user_route_qa_margin_etf_confirmed_bridge_row_count": evidence.get(
+                "margin_etf_confirmed_bridge_row_count",
+                0,
+            ),
             "user_route_qa_task_silence_failed_count": evidence.get("task_silence_failed_count", 0),
         },
         "policy": {

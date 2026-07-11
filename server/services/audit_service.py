@@ -4501,6 +4501,12 @@ def _user_route_qa_evidence_row(report: Mapping[str, Any], row: Mapping[str, Any
     visual_complete = row.get("visual_qa_complete") is True
     typing_covered = row.get("typing_covered") is not False
     typing_silent = row.get("typing_silence_verified") is True and typing_covered and not task_created
+    route_specific_passed = row.get("route_specific_check_passed") is not False
+    route_specific_missing = [
+        _safe_text(item, limit=160)
+        for item in _as_list(row.get("route_specific_missing"))
+        if item
+    ][:12]
     return {
         "run_id": report.get("run_id") or report_path.parent.name,
         "generated_at": report.get("generated_at"),
@@ -4508,11 +4514,18 @@ def _user_route_qa_evidence_row(report: Mapping[str, Any], row: Mapping[str, Any
         "label": row.get("label"),
         "viewport": row.get("viewport"),
         "status": status,
-        "passed": status == "passed" and visual_complete and typing_silent,
+        "passed": status == "passed" and visual_complete and typing_silent and route_specific_passed,
         "route_heading": _safe_text(row.get("route_heading"), limit=180),
         "visual_qa_complete": visual_complete,
         "typing_silence_verified": typing_silent,
         "task_created_by_render_or_typing": task_created,
+        "route_specific_check": _safe_text(
+            row.get("route_specific_check") or "generic_route_heading_visible",
+            limit=180,
+        ),
+        "route_specific_check_passed": route_specific_passed,
+        "route_specific_missing": route_specific_missing,
+        "route_specific_missing_count": len(route_specific_missing),
         "task_count_before": int(row.get("task_count_before") or 0),
         "task_count_after": int(row.get("task_count_after") or 0),
         "clipped_count": int(row.get("clipped_count") or 0),
@@ -4555,6 +4568,7 @@ def _user_route_qa_report_passed(report: Mapping[str, Any]) -> bool:
         and {"desktop", "mobile"}.issubset(viewports)
         and all(row.get("task_created_by_render_or_typing") is not True for row in rows)
         and all(row.get("typing_covered") is not False for row in rows)
+        and all(row.get("route_specific_check_passed") is not False for row in rows)
         and report.get("external_calls_triggered") is not True
         and report.get("tushare_called") is not True
         and report.get("deepseek_called") is not True
@@ -4597,6 +4611,9 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
                 "task_silence_failed_count": sum(
                     1 for row in evidence_rows if row.get("task_created_by_render_or_typing") is True
                 ),
+                "route_specific_failed_count": sum(
+                    1 for row in evidence_rows if row.get("route_specific_check_passed") is False
+                ),
                 "covered_routes": sorted(
                     {str(row.get("route") or "") for row in passed_evidence_rows if row.get("route")}
                 ),
@@ -4605,6 +4622,12 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
                 ),
                 "passed_row_count": len(passed_evidence_rows),
                 "candidate_route_row_count": sum(1 for row in passed_evidence_rows if row.get("route") == "#candidates"),
+                "margin_etf_confirmed_bridge_row_count": sum(
+                    1
+                    for row in passed_evidence_rows
+                    if row.get("route") == "#marginEtf"
+                    and row.get("route_specific_check") == "margin_etf_confirmed_data_bridge_visible"
+                ),
             }
         )
         rows.extend(evidence_rows)
@@ -4628,10 +4651,18 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
     latest_report = report_records[-1] if report_records else {}
     latest_passing = passing_reports[-1] if passing_reports else {}
     latest_report_candidate_route_row_count = int(latest_report.get("candidate_route_row_count") or 0)
+    latest_report_margin_etf_bridge_row_count = int(
+        latest_report.get("margin_etf_confirmed_bridge_row_count") or 0
+    )
     latest_report_passed = latest_report.get("passed") is True
     covered_routes = [str(route) for route in latest_passing.get("covered_routes", [])] if latest_passing else []
     covered_viewports = [str(viewport) for viewport in latest_passing.get("covered_viewports", [])] if latest_passing else []
     candidate_route_row_count = int(latest_passing.get("candidate_route_row_count") or 0) if latest_passing else 0
+    margin_etf_bridge_row_count = (
+        int(latest_passing.get("margin_etf_confirmed_bridge_row_count") or 0)
+        if latest_passing
+        else 0
+    )
     evidence_ready = bool(
         latest_passing
         and len(covered_routes) >= 5
@@ -4639,6 +4670,7 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
         and int(latest_passing.get("passed_row_count") or 0) >= 10
     )
     candidate_ready = bool(evidence_ready and candidate_route_row_count >= 2)
+    margin_etf_bridge_ready = bool(evidence_ready and margin_etf_bridge_row_count >= 2)
     contract = {
         "schema_version": "command_center_3_user_route_qa_evidence.v1",
         "status": "user_route_qa_evidence_available_review_pending" if evidence_ready else "user_route_qa_evidence_pending",
@@ -4659,9 +4691,13 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
         "latest_report_visual_qa_complete": latest_report.get("visual_qa_complete") is True,
         "latest_report_typing_silence_verified": latest_report.get("typing_silence_verified") is True,
         "latest_report_task_silence_failed_count": int(latest_report.get("task_silence_failed_count") or 0),
+        "latest_report_route_specific_failed_count": int(latest_report.get("route_specific_failed_count") or 0),
         "latest_report_candidate_route_row_count": latest_report_candidate_route_row_count,
         "latest_report_candidate_route_passed": latest_report_passed
         and latest_report_candidate_route_row_count >= 2,
+        "latest_report_margin_etf_confirmed_bridge_row_count": latest_report_margin_etf_bridge_row_count,
+        "latest_report_margin_etf_confirmed_bridge_passed": latest_report_passed
+        and latest_report_margin_etf_bridge_row_count >= 2,
         "latest_report_is_current_evidence": bool(latest_report),
         "latest_passing_run_id": latest_passing.get("run_id"),
         "latest_passing_report_path": latest_passing.get("report_path"),
@@ -4677,6 +4713,9 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
         "candidate_route": "#candidates",
         "candidate_route_row_count": candidate_route_row_count,
         "candidate_route_visual_qa_passed": candidate_ready,
+        "margin_etf_route": "#marginEtf",
+        "margin_etf_confirmed_bridge_row_count": margin_etf_bridge_row_count,
+        "margin_etf_confirmed_bridge_passed": margin_etf_bridge_ready,
         "production_replacement_complete": False,
         "streamlit_fallback_retirement_ready": False,
         "cache_only": True,
@@ -6084,6 +6123,14 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "latest_report_candidate_route_passed"
             )
             is True,
+            "user_route_qa_latest_report_margin_etf_confirmed_bridge_passed": user_route_qa_evidence_contract.get(
+                "latest_report_margin_etf_confirmed_bridge_passed"
+            )
+            is True,
+            "user_route_qa_latest_report_margin_etf_confirmed_bridge_row_count": user_route_qa_evidence_contract.get(
+                "latest_report_margin_etf_confirmed_bridge_row_count",
+                0,
+            ),
             "user_route_qa_visual_complete": user_route_qa_evidence_contract.get(
                 "ordinary_route_visual_qa_complete"
             )
@@ -6096,6 +6143,14 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "candidate_route_visual_qa_passed"
             )
             is True,
+            "user_route_qa_margin_etf_confirmed_bridge_passed": user_route_qa_evidence_contract.get(
+                "margin_etf_confirmed_bridge_passed"
+            )
+            is True,
+            "user_route_qa_margin_etf_confirmed_bridge_row_count": user_route_qa_evidence_contract.get(
+                "margin_etf_confirmed_bridge_row_count",
+                0,
+            ),
             "user_route_qa_task_silence_failed_count": user_route_qa_evidence_contract.get(
                 "task_silence_failed_count",
                 0,

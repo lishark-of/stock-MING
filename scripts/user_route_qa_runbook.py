@@ -23,7 +23,12 @@ LOCAL_API_BASE = "http://127.0.0.1:8710"
 QA_ROUTES = [
     {"route": "#home", "label": "Daily Command Center", "ltg": "LTG-10", "focus": "first-card readiness and next action"},
     {"route": "#candidates", "label": "Candidate Radar", "ltg": "LTG-13", "focus": "candidate controls and no-buy boundary"},
-    {"route": "#marginEtf", "label": "ETF / Margin", "ltg": "LTG-10/LTG-12", "focus": "risk-budget rows and no-margin boundary"},
+    {
+        "route": "#marginEtf",
+        "label": "ETF / Margin",
+        "ltg": "LTG-10/LTG-12",
+        "focus": "confirmed radar bridge, risk-budget rows, and no-margin boundary",
+    },
     {"route": "#factor", "label": "Stock Quant Projection", "ltg": "LTG-03/LTG-10", "focus": "factor summary and provider gaps"},
     {"route": "#next", "label": "Next Session Map", "ltg": "LTG-08/LTG-10", "focus": "chart readability and no-action boundary"},
 ]
@@ -71,6 +76,9 @@ def build_runbook() -> dict[str, Any]:
         and "typing_required" in runner
         and "typing_covered" in runner
         and "task_created_by_render_or_typing" in runner
+        and "route_specific_check_passed" in runner
+        and "margin_etf_confirmed_data_bridge_visible" in runner
+        and 'aria-label="margin etf candidate radar confirmed data bridge"' in runner
         and ARTIFACT_ROOT in runner
         and "starts_no_servers: true" in runner
         and "local_urls_only: true" in runner
@@ -96,6 +104,9 @@ def build_runbook() -> dict[str, Any]:
             "height": viewport["height"],
             "url": f"{LOCAL_VITE_BASE}/{route['route']}",
             "focus": route["focus"],
+            "route_specific_check": "margin_etf_confirmed_data_bridge_visible"
+            if route["route"] == "#marginEtf"
+            else "generic_route_heading_visible",
             "visual_qa_complete": False,
             "typing_silence_verified": False,
         }
@@ -122,6 +133,11 @@ def build_runbook() -> dict[str, Any]:
             "visual_clarity_check",
             "execution_pending",
             "runner records h1, clipped primary text, disabled-button reason, audit-noise count, and screenshots",
+        ),
+        _row(
+            "margin_etf_confirmed_data_bridge_check",
+            "execution_pending",
+            "runner verifies the rendered ETF/Margin route exposes the confirmed Candidate Radar bridge, same-result lineage labels, local links, and no provider/model/trade boundary",
         ),
         _row(
             "artifact_policy",

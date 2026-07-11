@@ -45,6 +45,11 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertFalse(payload["github_called"])
         self.assertTrue(payload["does_not_execute_trades"])
         self.assertTrue(payload["does_not_modify_strategy_action"])
+        margin_route = next(row for row in payload["qa_routes"] if row["route"] == "#marginEtf")
+        self.assertIn("confirmed radar bridge", margin_route["focus"])
+        margin_matrix = [row for row in payload["qa_matrix"] if row["route"] == "#marginEtf"]
+        self.assertEqual(len(margin_matrix), 2)
+        self.assertTrue(all(row["route_specific_check"] == "margin_etf_confirmed_data_bridge_visible" for row in margin_matrix))
 
     def test_runner_plan_is_local_only_and_checks_typing_silence(self):
         result = subprocess.run(
@@ -79,11 +84,25 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertTrue(plan["does_not_execute_trades"])
         self.assertIn("typing into visible inputs does not create a task", plan["checks"])
         self.assertIn("visible editable inputs must be typed before typing silence is accepted", plan["checks"])
+        self.assertIn("route-specific checks verify the margin ETF confirmed data bridge is visible", plan["checks"])
+        margin_matrix = [row for row in plan["qa_matrix"] if row["route"] == "#marginEtf"]
+        self.assertEqual(len(margin_matrix), 2)
+        self.assertTrue(all(row["route_specific_check"] == "margin_etf_confirmed_data_bridge_visible" for row in margin_matrix))
+        self.assertTrue(all(row["route_specific_check_required"] for row in margin_matrix))
         self.assertIn("typed_without_submit", runner_source)
         self.assertIn("editable_visible_input_count", runner_source)
         self.assertIn("typing_required", runner_source)
         self.assertIn("typing_covered", runner_source)
         self.assertIn("task_created_by_render_or_typing", runner_source)
+        self.assertIn("route_specific_check_passed", runner_source)
+        self.assertIn("margin_etf_confirmed_data_bridge_visible", runner_source)
+        self.assertIn('aria-label="margin etf candidate radar confirmed data bridge"', runner_source)
+        self.assertIn("Tushare 数据链", runner_source)
+        self.assertIn("结果版本", runner_source)
+        self.assertIn("同源账本", runner_source)
+        self.assertIn("DeepSeek 解释", runner_source)
+        self.assertIn("no_task_on_open_boundary", runner_source)
+        self.assertIn("创建 task", runner_source)
         self.assertIn("desktopRequire", runner_source)
         self.assertIn("desktop/node_modules", runner_source)
         self.assertIn("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", runner_source)
@@ -120,6 +139,11 @@ class UserRouteQaRunbookTests(unittest.TestCase):
                 "typing_required": True,
                 "typing_covered": True,
                 "typing_reason": "typed_editable_visible_input",
+                "route_specific_check": "margin_etf_confirmed_data_bridge_visible"
+                if route == "#marginEtf"
+                else "generic_route_heading_visible",
+                "route_specific_check_passed": True,
+                "route_specific_missing": [],
                 "route_observed_ms": 320,
             }
             for route in routes
@@ -135,6 +159,9 @@ class UserRouteQaRunbookTests(unittest.TestCase):
             "qa_matrix_count": len(report_rows),
             "passed_count": len(report_rows),
             "review_required_count": 0,
+            "route_specific_review_required_count": 0,
+            "margin_etf_confirmed_bridge_row_count": 2,
+            "margin_etf_confirmed_bridge_passed": True,
             "console_error_count": 0,
             "visual_qa_complete": True,
             "typing_silence_verified": True,
@@ -180,8 +207,11 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertTrue(evidence["latest_report_visual_qa_complete"])
         self.assertTrue(evidence["latest_report_typing_silence_verified"])
         self.assertEqual(evidence["latest_report_task_silence_failed_count"], 0)
+        self.assertEqual(evidence["latest_report_route_specific_failed_count"], 0)
         self.assertEqual(evidence["latest_report_candidate_route_row_count"], 2)
         self.assertTrue(evidence["latest_report_candidate_route_passed"])
+        self.assertEqual(evidence["latest_report_margin_etf_confirmed_bridge_row_count"], 2)
+        self.assertTrue(evidence["latest_report_margin_etf_confirmed_bridge_passed"])
         self.assertEqual(evidence["row_count"], 10)
         self.assertEqual(evidence["task_silence_failed_count"], 0)
         self.assertFalse(evidence["production_replacement_complete"])
@@ -200,6 +230,8 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertTrue(all(row["typing_covered"] for row in rows))
         self.assertEqual(sum(1 for row in rows if row["typing_required"]), 10)
         self.assertEqual(sum(1 for row in rows if row["route"] == "#candidates"), 2)
+        self.assertEqual(sum(1 for row in rows if row["route_specific_check"] == "margin_etf_confirmed_data_bridge_visible"), 2)
+        self.assertTrue(all(row["route_specific_check_passed"] for row in rows))
 
         packet_evidence = packet["user_route_qa_evidence_contract"]
         self.assertEqual(packet_evidence["status"], evidence["status"])
@@ -211,9 +243,13 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["user_route_qa_latest_report_review_required_count"], 0)
         self.assertEqual(packet["counts"]["user_route_qa_latest_report_console_error_count"], 0)
         self.assertTrue(packet["counts"]["user_route_qa_latest_report_candidate_route_passed"])
+        self.assertTrue(packet["counts"]["user_route_qa_latest_report_margin_etf_confirmed_bridge_passed"])
+        self.assertEqual(packet["counts"]["user_route_qa_latest_report_margin_etf_confirmed_bridge_row_count"], 2)
         self.assertTrue(packet["counts"]["user_route_qa_visual_complete"])
         self.assertTrue(packet["counts"]["user_route_qa_typing_silence_verified"])
         self.assertTrue(packet["counts"]["user_route_qa_candidate_route_passed"])
+        self.assertTrue(packet["counts"]["user_route_qa_margin_etf_confirmed_bridge_passed"])
+        self.assertEqual(packet["counts"]["user_route_qa_margin_etf_confirmed_bridge_row_count"], 2)
         self.assertTrue(packet["policy"]["user_route_qa_evidence_is_local_ignored_artifact_summary"])
         self.assertTrue(packet["policy"]["user_route_qa_evidence_does_not_open_browser"])
         self.assertTrue(packet["policy"]["user_route_qa_evidence_is_not_streamlit_retirement"])
@@ -225,6 +261,7 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertEqual(route_packet["status"], "user_route_qa_evidence_available_review_pending")
         self.assertEqual(route_packet["user_route_qa_evidence_contract"]["latest_report_status"], "user_route_qa_passed")
         self.assertTrue(route_packet["counts"]["user_route_qa_latest_report_passed"])
+        self.assertTrue(route_packet["counts"]["user_route_qa_latest_report_margin_etf_confirmed_bridge_passed"])
         self.assertTrue(route_packet["policy"]["user_route_qa_evidence_does_not_create_task"])
         self.assertFalse(route_packet["external_calls_triggered"])
         self.assertFalse(route_packet["tushare_called"])
