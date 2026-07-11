@@ -416,6 +416,42 @@ export default function FactorQuantHub() {
   const candidateRadarResultVersionLabel = candidateRadarCurrentResultVersion
     ? `当前结果版本 ${candidateRadarCurrentResultVersion}; latest ${candidateRadarLatestResultVersion || candidateRadarCurrentResultVersion}`
     : "等待 result_version 回放";
+  const candidateRadarCanonicalTaskId = String(
+    candidateRadarResultVersionSummary.canonical_result_task_id ??
+      candidateRadarResultVersionSummary.canonical_task_id ??
+      candidateRadarResultLineage.canonical_result_task_id ??
+      candidateRadarResultLineage.canonical_task_id ??
+      candidateRadarResultLineage.task_id ??
+      candidateRadarLatestTaskId ??
+      ""
+  );
+  const candidateRadarFactsPackageHash = String(
+    candidateRadarResultVersionSummary.canonical_facts_package_hash ??
+      candidateRadarResultVersionSummary.current_result_facts_package_hash ??
+      candidateRadarResultLineage.facts_package_hash ??
+      candidateRadarResultLineage.facts_package_id ??
+      ""
+  );
+  const candidateRadarModelLedgerId = String(
+    candidateRadarResultVersionSummary.canonical_model_ledger_id ??
+      candidateRadarResultLineage.model_ledger_id ??
+      candidateRadarDeepSeekModelLedger.model_ledger_id ??
+      candidateRadarProviderModelAcceptance.model_ledger_id ??
+      ""
+  );
+  const candidateRadarSameTaskFactModelReady =
+    candidateRadarResultVersionSummary.canonical_same_task_fact_model_result_version_ready === true ||
+    candidateRadarResultLineage.same_task_fact_model_result_version_ready === true ||
+    (Boolean(candidateRadarCanonicalTaskId) &&
+      Boolean(candidateRadarFactsPackageHash) &&
+      Boolean(candidateRadarCurrentResultVersion) &&
+      Boolean(candidateRadarModelLedgerId));
+  const candidateRadarSameTaskFactModelLabel = candidateRadarSameTaskFactModelReady
+    ? `同一 task ${candidateRadarCanonicalTaskId}；facts package ${candidateRadarFactsPackageHash}；result_version ${candidateRadarCurrentResultVersion}`
+    : "等待同一 task + facts package + result_version + model ledger";
+  const candidateRadarModelLedgerLabel = candidateRadarModelLedgerId
+    ? `model_ledger_id ${candidateRadarModelLedgerId}；DeepSeek 只解释事实摘要`
+    : "等待安全模型账本；不影响 Tushare-first、Factor 和 Next 回放";
   const candidateRadarDeepSeekLedgerRecorded =
     candidateRadarDeepSeekModelLedger.model_ledger_recorded === true ||
     candidateRadarProviderModelAcceptance.deepseek_model_ledger_recorded === true ||
@@ -1131,6 +1167,16 @@ export default function FactorQuantHub() {
       label: "结果版本",
       value: candidateRadarResultVersionLabel,
       tone: candidateRadarCurrentResultVersion ? "good" : "warn"
+    },
+    {
+      label: "同源结果",
+      value: candidateRadarSameTaskFactModelLabel,
+      tone: candidateRadarSameTaskFactModelReady ? "good" : "warn"
+    },
+    {
+      label: "模型账本",
+      value: candidateRadarModelLedgerLabel,
+      tone: candidateRadarModelLedgerId ? "good" : "warn"
     },
     {
       label: "current/last-good",
