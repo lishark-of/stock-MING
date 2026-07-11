@@ -840,7 +840,14 @@ export default function CandidateRadar() {
   const desktopP0LocalLinkReady =
     desktopOneClickStartupSummary.frontend_backend_connection_ready === true &&
     desktopP0LocalConnectionReceipt.status === "p0_local_connection_receipt_ready";
-  const desktopP0ConnectionEvidenceReady = desktopP0StabilityReady || desktopP0LocalLinkReady;
+  const desktopP0CurrentReadbackReady =
+    candidateRadarCacheGetReadable &&
+    bootstrapRuntimeModeReady &&
+    desktopPreflightReady;
+  const desktopP0ConnectionEvidenceReady =
+    desktopP0StabilityReady ||
+    desktopP0LocalLinkReady ||
+    desktopP0CurrentReadbackReady;
   const desktopP0QuickActionReady = desktopP0CurrentNextActionRows.some(
     (row) => row.p1_entry_enabled === true || row.p0_ready_now === true
   );
@@ -858,12 +865,15 @@ export default function CandidateRadar() {
     ? "P0 stability dwell 已通过"
     : desktopP0LocalLinkReady
       ? "本机 FastAPI / desktop preflight 已接上；缺少启动前 stability receipt，仅作为 P1 UI 闸门，不作 release evidence"
+      : desktopP0CurrentReadbackReady
+        ? "本机 cache / bootstrap / desktop preflight 当前可读；stability receipt 后补，不阻断确认按钮"
       : desktopP0RuntimePacketsReady && desktopP0ContractEvidenceReady
         ? "本机 runtime packet 与 P1 快速入口已接上；旧 stability receipt 可后补"
       : "等待 P0 stability check 或本机连接回读";
   const quantProjectionP0Ready =
-    desktopP0ContractEvidenceReady &&
-    desktopP0RuntimePacketsReady;
+    desktopP0CurrentReadbackReady ||
+    (desktopP0ContractEvidenceReady &&
+      desktopP0RuntimePacketsReady);
   const quantProjectionConfirmGateReady =
     quantProjectionP0Ready &&
     !loading &&

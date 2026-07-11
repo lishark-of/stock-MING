@@ -72,7 +72,7 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
             },
         )
 
-    def _write_next_session_packet(self, *, ts_code: str | None):
+    def _write_next_session_packet(self, *, ts_code: str | None, source_task_id: str | None = None):
         chart_payload = {
             "status": "ready",
             "is_exact_next_session_packet": True,
@@ -93,16 +93,21 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
         }
         if ts_code:
             chart_payload["ts_code"] = ts_code
+        if source_task_id:
+            chart_payload["source_task_id"] = source_task_id
+        packet = {
+            "packet_key": "command_center_next_session_projection_packet",
+            "schema_version": "next_session_projection.v1",
+            "status": "ready",
+            "chart_payload": chart_payload,
+            "does_not_modify_action": True,
+            "does_not_modify_operation_zones": True,
+        }
+        if source_task_id:
+            packet["source_task_id"] = source_task_id
         SQLiteMetaStore(self.db_path).write_packet(
             "command_center_next_session_projection_packet",
-            {
-                "packet_key": "command_center_next_session_projection_packet",
-                "schema_version": "next_session_projection.v1",
-                "status": "ready",
-                "chart_payload": chart_payload,
-                "does_not_modify_action": True,
-                "does_not_modify_operation_zones": True,
-            },
+            packet,
         )
 
     def _write_broken_preview_packet(self):
@@ -211,9 +216,33 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
         self.assertFalse(task["tushare_called"])
         self.assertFalse(task["deepseek_called"])
 
+    def test_next_session_handoff_prefers_result_lineage_task_id_for_result_version(self):
+        self._write_candidate_packet()
+        store = SQLiteMetaStore(self.db_path)
+        candidate = store.read_packet("command_center_3_candidate_radar_cache")
+        candidate["search_quant_provider_model_acceptance_receipt"] = {
+            "task_id": "local-provider-model-task",
+            "symbol": "002008.SZ",
+        }
+        candidate["search_quant_result_lineage"] = {
+            "task_id": "local-provider-model-task",
+            "symbol": "002008.SZ",
+            "result_version": "qrv-current",
+        }
+        store.write_packet("command_center_3_candidate_radar_cache", candidate)
+        self._write_next_session_packet(ts_code="002008.SZ", source_task_id="local-provider-model-task")
+
+        packet = next_session_service.read_next_session_cache()
+
+        self.assertEqual(packet["latest_confirmed_task_id"], "local-provider-model-task")
+        self.assertEqual(packet["candidate_radar_p3_handoff"]["source_task_id"], "local-provider-model-task")
+        summary = packet["ordinary_result_replay_summary"]
+        self.assertEqual(summary["confirmed_source_task_id"], "local-provider-model-task")
+        self.assertTrue(summary["chart_ready_for_confirmed_symbol"])
+
     def test_next_session_marks_chart_ready_when_bound_to_confirmed_symbol(self):
         self._write_candidate_packet()
-        self._write_next_session_packet(ts_code="002008.SZ")
+        self._write_next_session_packet(ts_code="002008.SZ", source_task_id="local-next-handoff")
 
         packet = next_session_service.read_next_session_cache()
 
@@ -224,10 +253,60 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
         self.assertTrue(summary["chart_ready_for_confirmed_symbol"])
         self.assertFalse(summary["chart_stale_for_confirmed_symbol"])
         self.assertEqual(summary["confirmed_symbol"], "002008.SZ")
+        self.assertEqual(summary["confirmed_source_task_id"], "local-next-handoff")
         self.assertEqual(summary["chart_symbol"], "002008.SZ")
+        self.assertEqual(summary["chart_source_task_id"], "local-next-handoff")
         result_rows = {row["surface"]: row for row in packet["ordinary_result_replay_rows"]}
         self.assertIn("情景=1", result_rows["次日图谱"]["readable_result"])
         self.assertFalse(any(row["external_calls_triggered"] for row in packet["ordinary_result_replay_rows"]))
+
+    def test_generate_task_rewrites_same_symbol_preview_when_source_task_is_stale(self):
+        self._write_candidate_packet()
+        self._write_next_session_packet(ts_code="002008.SZ", source_task_id="local-old-handoff")
+
+        before = next_session_service.read_next_session_cache()
+        before_summary = before["ordinary_result_replay_summary"]
+        self.assertEqual(before_summary["status"], "candidate_readable_result_replay_chart_pending")
+        self.assertEqual(before_summary["chart_symbol"], "002008.SZ")
+        self.assertEqual(before_summary["chart_source_task_id"], "local-old-handoff")
+        self.assertFalse(before_summary["chart_source_task_matches_confirmed"])
+        self.assertTrue(before_summary["chart_stale_for_confirmed_symbol"])
+
+        task = next_session_service.create_next_session_task(
+            {
+                "schema_version": "next_session_confirmed_symbol_generate_payload.v1",
+                "source": "candidate_radar_quant_projection_provider_model_acceptance",
+                "symbol": "002008.SZ",
+                "source_task_id": "local-next-handoff",
+                "p2_small_data_ready": True,
+                "p3_readable_result_ready": True,
+                "manual_button_required": True,
+                "cache_get_external_calls_triggered": False,
+                "react_render_external_calls_triggered": False,
+                "deepseek_execution_requested": False,
+                "does_not_include_token_or_raw_log": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_operation_zones": True,
+            }
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "local_confirmed_symbol_preview_written")
+        request_params = task["call_ledger"][0]["request_params_safe"]
+        self.assertEqual(request_params["prior_chart_symbol"], "002008.SZ")
+        self.assertEqual(request_params["prior_chart_source_task_id"], "local-old-handoff")
+        self.assertFalse(request_params["chart_source_task_ready"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+
+        packet = next_session_service.read_next_session_cache()
+        summary = packet["ordinary_result_replay_summary"]
+        self.assertEqual(summary["status"], "ready_cache_replay")
+        self.assertTrue(summary["chart_ready_for_confirmed_symbol"])
+        self.assertTrue(summary["chart_source_task_matches_confirmed"])
+        self.assertEqual(summary["chart_source_task_id"], "local-next-handoff")
+        self.assertEqual(packet["chart_payload"]["source_task_id"], "local-next-handoff")
 
     def test_generate_task_writes_confirmed_symbol_local_preview_when_chart_is_unbound(self):
         self._write_candidate_packet()

@@ -2700,6 +2700,10 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         candidate_handoff.get("symbol") or packet.get("latest_confirmed_symbol") or "",
         limit=32,
     ).upper()
+    confirmed_source_task_id = _safe_text(
+        candidate_handoff.get("source_task_id") or packet.get("latest_confirmed_task_id") or "",
+        limit=128,
+    )
     chart_symbol = _safe_text(
         chart_summary.get("symbol")
         or chart_summary.get("ts_code")
@@ -2712,10 +2716,19 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         or "",
         limit=32,
     ).upper()
+    chart_source_task_id = _safe_text(
+        chart_payload.get("source_task_id") or packet.get("source_task_id") or "",
+        limit=128,
+    )
+    chart_source_task_matches_confirmed = (
+        True
+        if not (candidate_readable and confirmed_source_task_id)
+        else chart_source_task_id == confirmed_source_task_id
+    )
     chart_symbol_matches_confirmed = (
         bool(has_drawable_data)
         if not (candidate_readable and confirmed_symbol)
-        else bool(chart_symbol and chart_symbol == confirmed_symbol)
+        else bool(chart_symbol and chart_symbol == confirmed_symbol and chart_source_task_matches_confirmed)
     )
     chart_ready_for_confirmed_symbol = has_drawable_data and chart_symbol_matches_confirmed
     chart_stale_for_confirmed_symbol = has_drawable_data and candidate_readable and not chart_symbol_matches_confirmed
@@ -2731,7 +2744,10 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
             str(packet.get("cache_source") or "cache source unknown"),
             f"情景={scenario_count} / 参考线={reference_count} / 操作区={operation_zone_count}" if has_drawable_data else "",
             f"latest close={latest_close}" if latest_close else "",
-            f"图谱标的={chart_symbol or '未标记'} / 当前确认标的={confirmed_symbol}"
+            (
+                f"图谱标的={chart_symbol or '未标记'} / 当前确认标的={confirmed_symbol}; "
+                f"图谱任务={chart_source_task_id or '未标记'} / 当前任务={confirmed_source_task_id}"
+            )
             if chart_stale_for_confirmed_symbol
             else "",
         ]
@@ -2966,9 +2982,12 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
         "contains_secret": False,
         "production_evidence": False,
         "confirmed_symbol": confirmed_symbol,
+        "confirmed_source_task_id": confirmed_source_task_id,
         "chart_symbol": chart_symbol,
+        "chart_source_task_id": chart_source_task_id,
         "chart_has_drawable_data": has_drawable_data,
         "chart_symbol_matches_confirmed": chart_symbol_matches_confirmed,
+        "chart_source_task_matches_confirmed": chart_source_task_matches_confirmed,
         "chart_ready_for_confirmed_symbol": chart_ready_for_confirmed_symbol,
         "chart_stale_for_confirmed_symbol": chart_stale_for_confirmed_symbol,
         "result_rows": result_rows,
@@ -3553,6 +3572,8 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
     small_data = _as_dict(candidate_packet.get("search_quant_projection_small_data_writeback_summary"))
     interpretation = _as_dict(candidate_packet.get("search_quant_projection_interpretation_summary"))
     receipt = _as_dict(candidate_packet.get("search_quant_projection_receipt"))
+    provider_receipt = _as_dict(candidate_packet.get("search_quant_provider_model_acceptance_receipt"))
+    result_lineage = _as_dict(candidate_packet.get("search_quant_result_lineage"))
     p2_ready = small_data.get("small_data_writeback_ready") is True
     interpretation_uses_model_output = any(
         interpretation.get(key) is True
@@ -3585,7 +3606,9 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
         limit=32,
     )
     source_task_id = _safe_text(
-        candidate_packet.get("latest_confirmed_task_id")
+        result_lineage.get("task_id")
+        or provider_receipt.get("task_id")
+        or candidate_packet.get("latest_confirmed_task_id")
         or receipt.get("latest_task_id")
         or receipt.get("task_id")
         or small_data.get("latest_task_id")
@@ -3976,8 +3999,19 @@ def create_next_session_task(payload: Any = None) -> dict[str, Any]:
             or "",
             limit=32,
         ).upper()
+        chart_source_task_id = _safe_text(
+            chart_payload.get("source_task_id") or packet.get("source_task_id") or "",
+            limit=128,
+        )
+        chart_source_task_ready = (
+            True
+            if not (local_confirmed_preview_requested and source_task_id)
+            else chart_source_task_id == source_task_id
+        )
         chart_ready_for_requested_symbol = bool(
-            chart_has_drawable_data and (not requested_symbol or chart_symbol == requested_symbol)
+            chart_has_drawable_data
+            and (not requested_symbol or chart_symbol == requested_symbol)
+            and chart_source_task_ready
         )
         if (
             packet.get("status") == "cache_missing" and local_exact_sample_allowed
@@ -4017,6 +4051,9 @@ def create_next_session_task(payload: Any = None) -> dict[str, Any]:
             packet["task_call_ledger"][0]["request_params_safe"]["cache_confirmed_symbol"] = cache_confirmed_symbol
             packet["task_call_ledger"][0]["request_params_safe"]["symbol"] = requested_symbol
             packet["task_call_ledger"][0]["request_params_safe"]["source_task_id"] = source_task_id
+            packet["task_call_ledger"][0]["request_params_safe"]["prior_chart_symbol"] = chart_symbol
+            packet["task_call_ledger"][0]["request_params_safe"]["prior_chart_source_task_id"] = chart_source_task_id
+            packet["task_call_ledger"][0]["request_params_safe"]["chart_source_task_ready"] = chart_source_task_ready
             packet["task_call_ledger"][0]["request_params_safe"]["provider_backed"] = False
             packet["task_call_ledger"][0]["request_params_safe"]["production_evidence"] = False
         packet["does_not_modify_action"] = True

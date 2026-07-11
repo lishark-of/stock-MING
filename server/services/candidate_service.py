@@ -1581,8 +1581,13 @@ def _next_session_local_map_readback(symbol: str) -> dict[str, Any]:
     }
 
 
-def _search_quant_projection_cross_module_alignment_readback(symbol: str) -> dict[str, Any]:
+def _search_quant_projection_cross_module_alignment_readback(
+    symbol: str,
+    *,
+    source_task_id: str = "",
+) -> dict[str, Any]:
     symbol_safe = _safe_text(symbol, limit=32).upper()
+    source_task_id_safe = _safe_text(source_task_id, limit=128)
 
     def _safe_packet(packet_key: str) -> tuple[dict[str, Any], str]:
         try:
@@ -1645,6 +1650,13 @@ def _search_quant_projection_cross_module_alignment_readback(symbol: str) -> dic
         or "",
         limit=32,
     ).upper()
+    next_source_task_id = _safe_text(
+        chart_payload.get("source_task_id")
+        or next_packet.get("source_task_id")
+        or next_packet.get("latest_confirmed_task_id")
+        or "",
+        limit=128,
+    )
     next_has_drawable_data = bool(
         chart_summary.get("has_drawable_data") is True
         or _as_list(chart_payload.get("historical_points"))
@@ -1656,6 +1668,12 @@ def _search_quant_projection_cross_module_alignment_readback(symbol: str) -> dic
     elif next_read_status != "ready":
         next_alignment_state = next_read_status
         next_label = "Next Session cache 暂无可安全读取的本地包。"
+    elif next_symbol == symbol_safe and source_task_id_safe and next_source_task_id != source_task_id_safe:
+        next_alignment_state = "mismatch_source_task"
+        next_label = (
+            f"Next Session cache 已是 {symbol_safe}，但仍绑定旧任务 "
+            f"{next_source_task_id or 'missing_source_task'}；本次任务 {source_task_id_safe} 还未写入图谱。"
+        )
     elif next_symbol == symbol_safe and next_has_drawable_data:
         next_alignment_state = "aligned"
         next_label = f"Next Session cache 已对齐 {symbol_safe}，且有可绘制数据。"
@@ -1683,12 +1701,13 @@ def _search_quant_projection_cross_module_alignment_readback(symbol: str) -> dic
     elif aligned:
         status = "aligned"
         summary_label = f"{symbol_safe} 的 Factor/Next 本地包已对齐；ECharts 状态={echarts_alignment_state}。"
-    elif factor_alignment_state == "mismatch" or next_alignment_state == "mismatch":
+    elif factor_alignment_state == "mismatch" or next_alignment_state in {"mismatch", "mismatch_source_task"}:
         status = "mismatch"
         summary_label = (
             f"本次确认 {symbol_safe} 的 Tushare/DeepSeek 回放已在候选雷达；"
             f"Factor cache 当前是 {factor_symbol_label or factor_alignment_state}，"
-            f"Next cache 当前是 {next_symbol or next_alignment_state}，还未刷新到当前票。"
+            f"Next cache 当前是 {next_symbol or next_alignment_state}"
+            f" / task={next_source_task_id or 'missing_source_task'}，还未刷新到当前结果版本。"
         )
     else:
         status = "pending_current_symbol_refresh"
@@ -1736,7 +1755,10 @@ def _search_quant_projection_cross_module_alignment_readback(symbol: str) -> dic
             "本次确认": symbol_safe or "",
             "本地包标的": next_symbol or next_alignment_state,
             "用户下一步": next_action,
-            "证据": f"packet={NEXT_SESSION_PACKET_KEY}; read_status={next_read_status}; drawable={next_has_drawable_data}",
+            "证据": (
+                f"packet={NEXT_SESSION_PACKET_KEY}; read_status={next_read_status}; "
+                f"drawable={next_has_drawable_data}; source_task_id={next_source_task_id or 'missing'}"
+            ),
             "边界": boundary,
             "packet_key": NEXT_SESSION_PACKET_KEY,
             "alignment_state": next_alignment_state,
@@ -1785,6 +1807,7 @@ def _search_quant_projection_cross_module_alignment_readback(symbol: str) -> dic
         "next_action": next_action,
         "boundary": boundary,
         "confirmed_symbol": symbol_safe,
+        "expected_source_task_id": source_task_id_safe,
         "factor_packet_key": FACTOR_QUANT_HUB_PACKET_KEY,
         "factor_read_status": factor_read_status,
         "factor_symbols": factor_items[:5],
@@ -1792,6 +1815,7 @@ def _search_quant_projection_cross_module_alignment_readback(symbol: str) -> dic
         "next_packet_key": NEXT_SESSION_PACKET_KEY,
         "next_read_status": next_read_status,
         "next_symbol": next_symbol,
+        "next_source_task_id": next_source_task_id,
         "next_alignment_state": next_alignment_state,
         "echarts_alignment_state": echarts_alignment_state,
         "overall_alignment_ready": aligned,
@@ -1890,7 +1914,10 @@ def _run_quant_projection_local_factor_next_refresh(
         next_status = "next_session_local_refresh_failed"
         next_error = _safe_text(str(exc), limit=180)
 
-    alignment = _search_quant_projection_cross_module_alignment_readback(symbol_safe)
+    alignment = _search_quant_projection_cross_module_alignment_readback(
+        symbol_safe,
+        source_task_id=source_task_id,
+    )
     factor_aligned = alignment.get("factor_alignment_state") == "aligned"
     next_aligned = alignment.get("next_alignment_state") in {"aligned", "aligned_empty_chart"}
     echarts_refreshed = alignment.get("echarts_alignment_state") == "aligned"
@@ -16139,6 +16166,78 @@ def _attach_quant_projection_result_version_summary_overlay(view: dict[str, Any]
     result_lineage = _as_dict(view.get("search_quant_result_lineage"))
     if not result_lineage:
         return view
+    receipt = _as_dict(view.get("search_quant_provider_model_acceptance_receipt"))
+    promoted_from_readback = False
+    if (
+        result_lineage.get("current_result_promoted") is not True
+        and receipt.get("tushare_call_ledger_evidence_done") is True
+    ):
+        lineage_task_id = _safe_text(result_lineage.get("task_id") or receipt.get("task_id") or "", limit=128)
+        lineage_symbol = _safe_text(result_lineage.get("symbol") or receipt.get("symbol") or "", limit=32).upper()
+        alignment = _search_quant_projection_cross_module_alignment_readback(
+            lineage_symbol,
+            source_task_id=lineage_task_id,
+        )
+        if alignment.get("overall_alignment_ready") is True:
+            output_packet_keys = [
+                _safe_text(item, limit=120)
+                for item in _as_list(result_lineage.get("output_packet_keys"))
+                if _safe_text(item, limit=120)
+            ]
+            for packet_key in (FACTOR_QUANT_HUB_PACKET_KEY, NEXT_SESSION_PACKET_KEY):
+                if packet_key not in output_packet_keys:
+                    output_packet_keys.append(packet_key)
+            promoted_lineage = dict(result_lineage)
+            promoted_lineage.update(
+                {
+                    "output_packet_keys": output_packet_keys,
+                    "factor_next_same_result_ready": True,
+                    "current_result_promoted": True,
+                    "readback_promoted_from_current_factor_next_packets": True,
+                    "readback_promotion_source": "GET /api/candidate-radar/cache",
+                    "readback_external_calls_triggered": False,
+                    "tushare_called_from_readback": False,
+                    "deepseek_called_from_readback": False,
+                    "old_task_can_overwrite_current": False,
+                }
+            )
+            view["search_quant_result_lineage"] = promoted_lineage
+            view["search_quant_current_result_lineage"] = promoted_lineage
+            view["search_quant_last_good_result_lineage"] = promoted_lineage
+            receipt = dict(receipt)
+            receipt.update(
+                {
+                    "output_packet_keys": output_packet_keys,
+                    "factor_refresh_executed": True,
+                    "next_session_refresh_executed": True,
+                    "echarts_payload_refreshed": True,
+                    "current_result_promoted": True,
+                    "readback_promoted_from_current_factor_next_packets": True,
+                }
+            )
+            view["search_quant_provider_model_acceptance_receipt"] = receipt
+            view["search_quant_projection_local_factor_next_refresh"] = {
+                "schema_version": "candidate_radar_quant_projection_local_factor_next_refresh.v1",
+                "status": "local_factor_next_echarts_refreshed_from_readback",
+                "symbol": lineage_symbol,
+                "source_task_id": lineage_task_id,
+                "factor_refresh_executed": True,
+                "next_session_refresh_executed": True,
+                "echarts_payload_refreshed": True,
+                "overall_alignment_ready": True,
+                "alignment": alignment,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "worker_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "production_quant_projection_complete": False,
+            }
+            result_lineage = promoted_lineage
+            promoted_from_readback = True
     summary = _as_dict(view.get("search_quant_result_version_summary"))
     required_fields = (
         "latest_task_scope_hash",
@@ -16150,14 +16249,14 @@ def _attach_quant_projection_result_version_summary_overlay(view: dict[str, Any]
         "current_result_scope_hash",
         "current_result_provider_call_ledger_ids",
     )
-    if summary and all(field in summary for field in required_fields):
+    if not promoted_from_readback and summary and all(field in summary for field in required_fields):
         return view
     overlay = _quant_projection_result_version_summary(
         result_lineage=result_lineage,
         current_lineage=_as_dict(view.get("search_quant_current_result_lineage")),
         last_good_lineage=_as_dict(view.get("search_quant_last_good_result_lineage")),
         degraded_lineage=_as_dict(view.get("search_quant_degraded_result_lineage")),
-        receipt=_as_dict(view.get("search_quant_provider_model_acceptance_receipt")),
+        receipt=receipt,
     )
     merged_summary = dict(summary)
     merged_summary.update(overlay)
@@ -19529,6 +19628,7 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
 def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
     quant_receipt = _as_dict(packet.get("search_quant_projection_receipt"))
     provider_receipt = _as_dict(packet.get("search_quant_provider_model_acceptance_receipt"))
+    result_lineage = _as_dict(packet.get("search_quant_result_lineage"))
     small_data = _as_dict(packet.get("search_quant_projection_small_data_writeback_summary"))
     provider_success_count = int(
         provider_receipt.get("provider_api_success_count") or small_data.get("provider_api_success_count") or 0
@@ -19556,8 +19656,20 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         or "",
         limit=32,
     ).upper()
+    result_source_task_id = _safe_text(
+        result_lineage.get("task_id")
+        or provider_receipt.get("task_id")
+        or provider_receipt.get("latest_task_id")
+        or quant_receipt.get("latest_task_id")
+        or quant_receipt.get("task_id")
+        or "",
+        limit=128,
+    )
     next_session_local_map = _next_session_local_map_readback(confirmed_symbol)
-    cross_module_alignment = _search_quant_projection_cross_module_alignment_readback(confirmed_symbol)
+    cross_module_alignment = _search_quant_projection_cross_module_alignment_readback(
+        confirmed_symbol,
+        source_task_id=result_source_task_id,
+    )
     factor_next_ready = bool(
         provider_receipt.get("factor_refresh_executed") is True
         or provider_receipt.get("next_session_refresh_executed") is True
