@@ -3276,40 +3276,72 @@ export default function CandidateRadar() {
       searchQuantProviderModelAcceptance.acceptance_scope_hash,
     "等待确认范围"
   );
+  const searchQuantCurrentResultVersion = displayText(
+    searchQuantResultVersionSummary.current_result_version ?? searchQuantCurrentResultLineage.result_version,
+    ""
+  );
+  const searchQuantCurrentResultLabel = searchQuantCurrentResultVersion
+    ? `${searchQuantResultCurrentSymbol || "current"} / ${searchQuantCurrentResultVersion}`
+    : "成功后才提升 current result";
+  const searchQuantLatestTaskResultVersion = displayText(
+    searchQuantResultVersionSummary.latest_task_result_version ??
+      searchQuantResultLineage.result_version ??
+      searchQuantProviderModelAcceptance.result_version,
+    ""
+  );
+  const searchQuantLatestTaskResultLabel = searchQuantLatestTaskResultVersion
+    ? `${searchQuantResultTaskSymbol || "task"} / ${searchQuantLatestTaskResultVersion}`
+    : "等待确认后的同源结果版本";
+  const searchQuantLastGoodResultSymbol = displayText(
+    searchQuantResultVersionSummary.last_good_result_symbol ?? searchQuantLastGoodResultLineage.symbol,
+    ""
+  );
+  const searchQuantLastGoodResultVersion = displayText(
+    searchQuantResultVersionSummary.last_good_result_version ?? searchQuantLastGoodResultLineage.result_version,
+    ""
+  );
+  const searchQuantLastGoodResultLabel = searchQuantLastGoodResultVersion
+    ? `${searchQuantLastGoodResultSymbol || "last-good"} / ${searchQuantLastGoodResultVersion}`
+    : "暂无 last-good";
+  const searchQuantDegradedResultVisible =
+    searchQuantResultVersionSummary.degraded_result_visible === true || Boolean(searchQuantDegradedResultLineage.result_version);
+  const searchQuantDegradedResultSymbol = displayText(
+    searchQuantResultVersionSummary.degraded_result_symbol ??
+      searchQuantDegradedResultLineage.symbol ??
+      searchQuantResultVersionSummary.latest_task_symbol,
+    ""
+  );
+  const searchQuantDegradedResultVersion = displayText(
+    searchQuantResultVersionSummary.degraded_result_version ?? searchQuantDegradedResultLineage.result_version,
+    ""
+  );
+  const searchQuantDegradedReason = displayText(
+    searchQuantResultVersionSummary.degraded_reason ?? searchQuantDegradedResultLineage.freshness_state,
+    "degraded，不覆盖当前结果"
+  );
+  const searchQuantDegradedResultLabel = searchQuantDegradedResultVisible
+    ? `${searchQuantDegradedResultSymbol || "本次任务"} / ${searchQuantDegradedResultVersion || "等待版本"}：${searchQuantDegradedReason}；不覆盖 current`
+    : displayText(searchQuantResultVersionSummary.status, "未降级");
   const quantProjectionResultLineageItems: MetricItem[] = [
     {
       label: "当前结果版本",
-      value: displayText(
-        searchQuantResultVersionSummary.current_result_version ?? searchQuantCurrentResultLineage.result_version,
-        "成功后才提升 current result"
-      ),
-      tone: searchQuantResultVersionSummary.current_result_version || searchQuantCurrentResultLineage.result_version ? "good" : "warn"
+      value: searchQuantCurrentResultLabel,
+      tone: searchQuantCurrentResultVersion ? "good" : "warn"
     },
     {
       label: "本次任务版本",
-      value: displayText(
-        searchQuantResultVersionSummary.latest_task_result_version ?? searchQuantResultLineage.result_version ?? searchQuantProviderModelAcceptance.result_version,
-        "等待确认后的同源结果版本"
-      ),
-      tone: searchQuantResultVersionSummary.latest_task_result_version || searchQuantResultLineage.result_version || searchQuantProviderModelAcceptance.result_version ? "good" : "warn"
+      value: searchQuantLatestTaskResultLabel,
+      tone: searchQuantLatestTaskResultVersion ? "good" : "warn"
     },
     {
       label: "last-good",
-      value: displayText(
-        searchQuantResultVersionSummary.last_good_result_version ?? searchQuantLastGoodResultLineage.result_version,
-        "暂无 last-good"
-      ),
-      tone: searchQuantResultVersionSummary.last_good_result_available === true || searchQuantLastGoodResultLineage.result_version ? "good" : "warn"
+      value: searchQuantLastGoodResultLabel,
+      tone: searchQuantResultVersionSummary.last_good_result_available === true || searchQuantLastGoodResultVersion ? "good" : "warn"
     },
     {
       label: "本次降级",
-      value: searchQuantResultVersionSummary.degraded_result_visible === true || searchQuantDegradedResultLineage.result_version
-        ? displayText(
-            searchQuantResultVersionSummary.degraded_reason ?? searchQuantDegradedResultLineage.freshness_state,
-            "degraded，不覆盖当前结果"
-          )
-        : displayText(searchQuantResultVersionSummary.status, "未降级"),
-      tone: searchQuantResultVersionSummary.degraded_result_visible === true || searchQuantDegradedResultLineage.result_version ? "warn" : "good"
+      value: searchQuantDegradedResultLabel,
+      tone: searchQuantDegradedResultVisible ? "warn" : "good"
     },
     {
       label: "同源 task",

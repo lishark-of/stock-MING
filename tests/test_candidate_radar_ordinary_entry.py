@@ -2119,12 +2119,23 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("search_quant_projection_post_confirm_one_glance_items", backend_one_glance_slice)
         self.assertIn("MetricGrid items={quantProjectionBackendPostConfirmOneGlanceItems}", backend_one_glance_slice)
         self.assertIn("MetricGrid items={quantProjectionResultLineageItems}", one_screen_result_slice)
+        result_lineage_helpers_start = self.page.index("const searchQuantResultCurrentSymbol")
         result_lineage_definition_start = self.page.index("const quantProjectionResultLineageItems")
         result_lineage_definition_end = self.page.index(
             "const candidateRadarOperatorPostConfirmOneGlanceItems",
             result_lineage_definition_start,
         )
+        result_lineage_helpers = self.page[result_lineage_helpers_start:result_lineage_definition_start]
         result_lineage_definition = self.page[result_lineage_definition_start:result_lineage_definition_end]
+        self.assertIn("searchQuantCurrentResultLabel", result_lineage_definition)
+        self.assertIn("searchQuantLatestTaskResultLabel", result_lineage_definition)
+        self.assertIn("searchQuantLastGoodResultLabel", result_lineage_definition)
+        self.assertIn("searchQuantDegradedResultLabel", result_lineage_definition)
+        self.assertIn("degraded_result_symbol", result_lineage_helpers)
+        self.assertIn("degraded_result_version", result_lineage_helpers)
+        self.assertIn("last_good_result_symbol", result_lineage_helpers)
+        self.assertIn("last_good_result_version", result_lineage_helpers)
+        self.assertIn("不覆盖 current", result_lineage_helpers)
         self.assertIn('label: "同源标的"', result_lineage_definition)
         self.assertIn("searchQuantResultSymbolLabel", result_lineage_definition)
         self.assertIn('label: "确认范围"', result_lineage_definition)
