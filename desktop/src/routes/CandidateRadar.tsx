@@ -3218,6 +3218,20 @@ export default function CandidateRadar() {
       tone: quantProjectionInterpretationReady ? "good" : "warn"
     },
     {
+      label: "结果状态",
+      value: displayText(searchQuantResultVersionSummary.ordinary_summary, "等待确认后的结果状态"),
+      tone: searchQuantResultVersionSummary.current_result_promoted === true
+        ? "good"
+        : searchQuantResultVersionSummary.degraded_result_visible === true
+          ? "warn"
+          : "neutral"
+    },
+    {
+      label: "结果下一步",
+      value: displayText(searchQuantResultVersionSummary.ordinary_next_step, quantProjectionReplayDestinationNextStep),
+      tone: searchQuantResultVersionSummary.current_result_promoted === true || quantProjectionInterpretationReady ? "good" : "warn"
+    },
+    {
       label: "下一步入口",
       value: quantProjectionReplayDestinationNextStep,
       tone: quantProjectionInterpretationReady || quantProjectionSmallDataReady ? "good" : "warn"

@@ -2102,6 +2102,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         )
         backend_one_glance_slice = self.page[backend_one_glance_index:backend_one_glance_end]
         self.assertIn("MetricGrid items={quantProjectionPostConfirmOneScreenItems}", one_screen_result_slice)
+        one_screen_items_start = self.page.index("const quantProjectionPostConfirmOneScreenItems")
+        one_screen_items_end = self.page.index("const searchQuantResultCurrentSymbol", one_screen_items_start)
+        one_screen_items_definition = self.page[one_screen_items_start:one_screen_items_end]
+        self.assertIn('label: "结果状态"', one_screen_items_definition)
+        self.assertIn("searchQuantResultVersionSummary.ordinary_summary", one_screen_items_definition)
+        self.assertIn('label: "结果下一步"', one_screen_items_definition)
+        self.assertIn("searchQuantResultVersionSummary.ordinary_next_step", one_screen_items_definition)
+        self.assertIn("degraded_result_visible", one_screen_items_definition)
         self.assertNotIn("search_quant_projection_post_confirm_one_glance_items", ordinary_one_screen_intro_slice)
         self.assertIn(
             '<details className="developer-audit-details" aria-label="candidate radar backend post confirm one glance">',
