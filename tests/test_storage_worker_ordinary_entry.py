@@ -123,6 +123,9 @@ class StorageWorkerOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("workerOrdinaryFirstScreenSentence", page[:audit_start])
         self.assertIn("workerOrdinaryFirstScreenItems", page[:audit_start])
         self.assertIn("workerRuntimeQaActionItems", page[:audit_start])
+        self.assertIn("realWorkerRoundTripEvidenceReady", page[:audit_start])
+        self.assertIn('label: "Celery/Redis round-trip"', page[:audit_start])
+        self.assertIn("Celery worker + Redis broker + queue round-trip 已有本地真实 QA 证据", page[:audit_start])
         self.assertIn("运行时一眼状态", first_screen)
         self.assertIn('aria-label="worker ordinary first screen sentence"', first_screen)
         self.assertIn("MetricGrid items={workerOrdinaryFirstScreenItems}", first_screen)
@@ -157,6 +160,21 @@ class StorageWorkerOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("local execution 仍不是 production worker complete", first_screen)
         self.assertIn('id="worker-runtime-qa-details"', page)
         self.assertNotIn("runWorker", first_screen)
+
+    def test_worker_page_distinguishes_historical_roundtrip_from_get_runtime(self):
+        page = self.worker_page
+        durable_start = page.index('title="Worker runtime durable evidence recipe"')
+        durable_end = page.index("</PacketCard>", durable_start)
+        durable = page[durable_start:durable_end]
+
+        self.assertIn("celery_process_evidence_ready", page)
+        self.assertIn("redis_broker_reachability_evidence_ready", page)
+        self.assertIn("queue_round_trip_evidence_ready", page)
+        self.assertIn("Celery process / Redis broker / queue round-trip", durable)
+        self.assertIn("local_celery_filesystem_roundtrip_artifact", durable)
+        self.assertIn("local_redis_roundtrip_artifact", durable)
+        self.assertIn("当前 GET 不启动 Celery、不 ping Redis", durable)
+        self.assertIn("不等于 production worker 常驻运行", durable)
 
     def test_worker_app_visible_now_summary_is_read_only_before_task_buttons(self):
         page = self.worker_page

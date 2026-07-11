@@ -377,8 +377,19 @@ export default function WorkerRuntime() {
     { kind: "guarded_local", count: taskImplementation.guarded_local_task_count, task_types: Array.isArray(taskImplementation.guarded_local_task_types) ? (taskImplementation.guarded_local_task_types as unknown[]).join(" / ") : "" },
     { kind: "external_capable", count: taskImplementation.external_capable_task_count, task_types: Array.isArray(taskImplementation.external_capable_task_types) ? (taskImplementation.external_capable_task_types as unknown[]).join(" / ") : "" }
   ];
+  const celeryRoundTripEvidenceReady = workerRuntimeDurableEvidenceRecipe.celery_process_evidence_ready === true;
+  const redisRoundTripEvidenceReady = workerRuntimeDurableEvidenceRecipe.redis_broker_reachability_evidence_ready === true;
+  const queueRoundTripEvidenceReady = workerRuntimeDurableEvidenceRecipe.queue_round_trip_evidence_ready === true;
+  const realWorkerRoundTripEvidenceReady = Boolean(
+    celeryRoundTripEvidenceReady && redisRoundTripEvidenceReady && queueRoundTripEvidenceReady
+  );
+  const workerRoundTripEvidenceLabel = realWorkerRoundTripEvidenceReady
+    ? "Celery worker + Redis broker + queue round-trip 已有本地真实 QA 证据；当前进程已退出"
+    : `Celery process=${String(celeryRoundTripEvidenceReady)} / Redis broker=${String(redisRoundTripEvidenceReady)} / queue round-trip=${String(queueRoundTripEvidenceReady)}`;
   const workerRuntimeStateLabel = runtime.local_fallback_enabled === false
     ? "local fallback 不可用，先看任务目录和 cache 状态"
+    : realWorkerRoundTripEvidenceReady
+      ? "Celery/Redis 本地真实 round-trip 已通过；production worker 仍需持续运行和发布验收"
     : visibleRuntimeQaExecution.local_runtime_qa_execution_done === true
       ? "本地 fallback runtime QA 已有可读 evidence；Celery/Redis 仍未作为生产完成"
       : visibleRuntimeQaDryRun.local_dry_run_ready === true
@@ -386,7 +397,9 @@ export default function WorkerRuntime() {
         : visibleRuntimeQaExecutionRequest.local_execution_request_ready === true
           ? "runtime QA execution request 已绑定 scope；dry-run 待显式按钮"
           : "local fallback 可读，Celery/Redis 生产 QA 仍待显式任务";
-  const workerRuntimeNextStep = visibleRuntimeQaExecution.local_runtime_qa_execution_done === true
+  const workerRuntimeNextStep = realWorkerRoundTripEvidenceReady
+    ? "复核 promotion review、持续进程监督和重启恢复；不要把一次 QA round-trip 当常驻 production worker"
+    : visibleRuntimeQaExecution.local_runtime_qa_execution_done === true
     ? "查看 durable evidence recipe 和 promotion blocker；不要把 local fallback 当 Celery/Redis 生产完成"
     : visibleRuntimeQaDryRun.local_dry_run_ready === true
       ? "下方显式运行 runtime QA execution；它只做本地 fallback round-trip，不启动 Celery/Redis"
@@ -424,6 +437,11 @@ export default function WorkerRuntime() {
       label: "local execution",
       value: String(visibleRuntimeQaExecution.status ?? "worker_runtime_qa_execution_missing"),
       tone: visibleRuntimeQaExecution.local_runtime_qa_execution_done === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "Celery/Redis round-trip",
+      value: workerRoundTripEvidenceLabel,
+      tone: realWorkerRoundTripEvidenceReady ? "good" as const : "warn" as const
     },
     {
       label: "现在可点",
@@ -471,8 +489,8 @@ export default function WorkerRuntime() {
     },
     {
       label: "Celery/Redis",
-      value: `Celery=${String(runtime.celery_available ?? false)} / Redis package=${String(runtime.redis_package_available ?? false)} / Redis ping=${String(cache.redis_pinged ?? false)}`,
-      tone: cache.redis_pinged === true || runtime.scheduler_started === true ? "bad" as const : "warn" as const
+      value: workerRoundTripEvidenceLabel,
+      tone: realWorkerRoundTripEvidenceReady ? "good" as const : "warn" as const
     },
     {
       label: "Storage 支撑",
@@ -505,8 +523,8 @@ export default function WorkerRuntime() {
     },
     {
       label: "Celery/Redis",
-      value: `Celery=${String(runtime.celery_available ?? false)} / Redis ping=${String(cache.redis_pinged ?? false)}`,
-      tone: cache.redis_pinged === true || runtime.scheduler_started === true ? "bad" as const : "warn" as const
+      value: workerRoundTripEvidenceLabel,
+      tone: realWorkerRoundTripEvidenceReady ? "good" as const : "warn" as const
     },
     {
       label: "下一步入口",
@@ -1029,6 +1047,9 @@ export default function WorkerRuntime() {
         <p>local_recipe_ready / durable_evidence_complete: {String(workerRuntimeDurableEvidenceRecipe.local_recipe_ready ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.durable_evidence_complete ?? false)}</p>
         <p>durable_promotion_ready / production_worker_complete: {String(workerRuntimeDurableEvidenceRecipe.durable_promotion_ready ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.production_worker_complete ?? false)}</p>
         <p>missing_durable_evidence: {Array.isArray(workerRuntimeDurableEvidenceRecipe.missing_durable_evidence) ? workerRuntimeDurableEvidenceRecipe.missing_durable_evidence.join(" / ") : ""}</p>
+        <p>Celery process / Redis broker / queue round-trip: {String(celeryRoundTripEvidenceReady)} / {String(redisRoundTripEvidenceReady)} / {String(queueRoundTripEvidenceReady)}</p>
+        <p>local artifacts: {String(workerRuntimeDurableEvidenceRecipe.local_celery_filesystem_roundtrip_artifact ?? "--")} / {String(workerRuntimeDurableEvidenceRecipe.local_redis_roundtrip_artifact ?? "--")}</p>
+        <p>这些字段来自已完成的显式本地 QA receipt；当前 GET 不启动 Celery、不 ping Redis，进程证据也不等于 production worker 常驻运行。</p>
         <p>worker_started / redis_pinged / scheduler_started / task_dispatched: {String(workerRuntimeDurableEvidenceRecipe.worker_started ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.redis_pinged ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.scheduler_started ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.task_dispatched ?? false)}</p>
         <p>provider_model_task_dispatched / healthcheck_executed: {String(workerRuntimeDurableEvidenceRecipe.provider_model_task_dispatched ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.healthcheck_executed ?? false)}</p>
         <p>tushare / deepseek / github: {String(workerRuntimeDurableEvidenceRecipe.tushare_called ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.deepseek_called ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.github_called ?? false)}</p>
