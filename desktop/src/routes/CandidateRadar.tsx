@@ -466,9 +466,17 @@ export default function CandidateRadar() {
   const searchQuantResultInputPacketKeys = Array.isArray(searchQuantResultLineage.input_packet_keys)
     ? searchQuantResultLineage.input_packet_keys.map((item) => String(item)).filter(Boolean)
     : [];
+  const searchQuantResultSummaryProviderLedgerIds = Array.isArray(searchQuantResultVersionSummary.latest_task_provider_call_ledger_ids)
+    ? searchQuantResultVersionSummary.latest_task_provider_call_ledger_ids.map((item) => String(item)).filter(Boolean)
+    : Array.isArray(searchQuantResultVersionSummary.degraded_provider_call_ledger_ids)
+      ? searchQuantResultVersionSummary.degraded_provider_call_ledger_ids.map((item) => String(item)).filter(Boolean)
+      : [];
   const searchQuantResultProviderLedgerIds = Array.isArray(searchQuantResultLineage.provider_call_ledger_ids)
     ? searchQuantResultLineage.provider_call_ledger_ids.map((item) => String(item)).filter(Boolean)
-    : [];
+    : searchQuantResultSummaryProviderLedgerIds;
+  const searchQuantResultProviderLedgerLabel = searchQuantResultProviderLedgerIds.length
+    ? `${searchQuantResultProviderLedgerIds.length} 条 provider ledger：${searchQuantResultProviderLedgerIds.slice(0, 4).join(" / ")}${searchQuantResultProviderLedgerIds.length > 4 ? " / ..." : ""}`
+    : "等待 provider ledger id";
   const searchQuantProjectionSmallDataWriteback = (cache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionConfirmChainCheckpoint =
     (cache.search_quant_projection_confirm_chain_checkpoint as Record<string, unknown> | undefined) ?? {};
@@ -3383,9 +3391,7 @@ export default function CandidateRadar() {
     },
     {
       label: "账本关联",
-      value: searchQuantResultProviderLedgerIds.length
-        ? `${searchQuantResultProviderLedgerIds.length} 条 provider ledger`
-        : "等待 provider ledger id",
+      value: searchQuantResultProviderLedgerLabel,
       tone: searchQuantResultProviderLedgerIds.length ? "good" : "warn"
     },
     {

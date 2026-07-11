@@ -15138,6 +15138,7 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view = _attach_no_feature_loss_acceptance_contract(view)
     view = _attach_candidate_radar_durable_evidence_recipe(view)
     view = _attach_candidate_radar_production_stage_scope_manifest(view)
+    view = _attach_quant_projection_result_version_summary_overlay(view)
     view = _attach_search_quant_projection_small_data_writeback_summary(view)
     view = _attach_search_quant_projection_interpretation_summary(view)
     return _json_safe(view)
@@ -16132,6 +16133,41 @@ def _quant_projection_result_version_summary(
         "candidate_is_not_buy_instruction": True,
         "contains_secret": False,
     }
+
+
+def _attach_quant_projection_result_version_summary_overlay(view: dict[str, Any]) -> dict[str, Any]:
+    result_lineage = _as_dict(view.get("search_quant_result_lineage"))
+    if not result_lineage:
+        return view
+    summary = _as_dict(view.get("search_quant_result_version_summary"))
+    required_fields = (
+        "latest_task_scope_hash",
+        "latest_task_provider_call_ledger_ids",
+        "degraded_task_id",
+        "degraded_scope_hash",
+        "degraded_provider_call_ledger_ids",
+        "current_result_task_id",
+        "current_result_scope_hash",
+        "current_result_provider_call_ledger_ids",
+    )
+    if summary and all(field in summary for field in required_fields):
+        return view
+    overlay = _quant_projection_result_version_summary(
+        result_lineage=result_lineage,
+        current_lineage=_as_dict(view.get("search_quant_current_result_lineage")),
+        last_good_lineage=_as_dict(view.get("search_quant_last_good_result_lineage")),
+        degraded_lineage=_as_dict(view.get("search_quant_degraded_result_lineage")),
+        receipt=_as_dict(view.get("search_quant_provider_model_acceptance_receipt")),
+    )
+    merged_summary = dict(summary)
+    merged_summary.update(overlay)
+    view["search_quant_result_version_summary"] = merged_summary
+    receipt = _as_dict(view.get("search_quant_provider_model_acceptance_receipt"))
+    if receipt:
+        receipt = dict(receipt)
+        receipt["result_version_summary"] = merged_summary
+        view["search_quant_provider_model_acceptance_receipt"] = receipt
+    return view
 
 
 def _quant_projection_deepseek_fact_summary(

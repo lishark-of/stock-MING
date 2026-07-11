@@ -3330,6 +3330,123 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(summary["old_task_can_overwrite_current"])
         self.assertEqual(receipt["result_version_summary"], summary)
 
+    def test_persisted_cache_overlays_result_summary_lineage_without_rewrite_or_external_calls(self):
+        self._with_meta_store()
+        current_lineage = {
+            "task_id": "local-good-task",
+            "symbol": "002008.SZ",
+            "scope_hash": "good-scope-hash",
+            "scope_hash_short": "good-scope-hash",
+            "provider_call_ledger_ids": ["pcl_good_1", "pcl_good_2"],
+            "input_packet_keys": [
+                "command_center_candidate_radar_quant_projection_receipt",
+                "command_center_candidate_radar_quant_projection_tushare_light_packet",
+            ],
+            "output_packet_keys": [
+                "command_center_3_candidate_radar_cache",
+                "command_center_factor_quant_hub_packet",
+                "command_center_next_session_projection_packet",
+            ],
+            "data_date": "20260711",
+            "freshness_state": "fresh_provider",
+            "model_ledger_id": "mlg_good",
+            "result_version": "qrv_good",
+            "current_result_promoted": True,
+            "old_task_can_overwrite_current": False,
+        }
+        degraded_lineage = {
+            "task_id": "local-degraded-task",
+            "symbol": "999999.SH",
+            "scope_hash": "degraded-scope-hash",
+            "scope_hash_short": "degraded-scope",
+            "provider_call_ledger_ids": ["pcl_bad_1", "pcl_bad_2", "pcl_bad_3", "pcl_bad_4"],
+            "input_packet_keys": [
+                "command_center_candidate_radar_quant_projection_receipt",
+                "command_center_candidate_radar_quant_projection_tushare_light_packet",
+            ],
+            "output_packet_keys": ["command_center_3_candidate_radar_cache"],
+            "data_date": "20260711",
+            "freshness_state": "partial_provider",
+            "model_ledger_id": "mlg_degraded",
+            "result_version": "qrv_degraded",
+            "deepseek_status": "skipped_missing_facts",
+            "deepseek_skipped_missing_facts": True,
+            "current_result_promoted": False,
+            "old_task_can_overwrite_current": False,
+        }
+        old_summary = {
+            "schema_version": "candidate_radar_search_quant_projection_result_version_summary.v1",
+            "status": "degraded_result_recorded_last_good_retained",
+            "latest_task_id": "local-degraded-task",
+            "latest_task_symbol": "999999.SH",
+            "latest_task_result_version": "qrv_degraded",
+            "current_result_version": "qrv_good",
+            "current_result_symbol": "002008.SZ",
+            "last_good_result_version": "qrv_good",
+            "last_good_result_symbol": "002008.SZ",
+            "degraded_result_version": "qrv_degraded",
+            "degraded_result_symbol": "999999.SH",
+            "degraded_reason": "skipped_missing_facts",
+            "current_result_promoted": False,
+            "current_result_matches_latest_task": False,
+            "last_good_result_available": True,
+            "degraded_result_visible": True,
+            "old_task_can_overwrite_current": False,
+        }
+        SQLiteMetaStore(candidate_service.SQLITE_META_PATH).write_packet(
+            candidate_service.PACKET_KEY,
+            {
+                "packet_key": candidate_service.PACKET_KEY,
+                "schema_version": "candidate_radar_cache.v1",
+                "status": "ready",
+                "scan_mode": "quant_projection_provider_model_acceptance",
+                "candidate_rows": [],
+                "counts": {},
+                "policy": {},
+                "search_quant_provider_model_acceptance_receipt": {
+                    "schema_version": candidate_service.QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION,
+                    "task_id": "local-degraded-task",
+                    "status": "search_quant_provider_model_acceptance_degraded_tushare_facts_missing_deepseek_skipped",
+                    "symbol": "999999.SH",
+                    "deepseek_safe_failure_mode": "skipped_missing_facts",
+                    "contains_secret": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "result_version_summary": old_summary,
+                },
+                "search_quant_result_lineage": degraded_lineage,
+                "search_quant_current_result_lineage": current_lineage,
+                "search_quant_last_good_result_lineage": current_lineage,
+                "search_quant_degraded_result_lineage": degraded_lineage,
+                "search_quant_result_version_summary": old_summary,
+            },
+        )
+
+        packet = self.client.get("/api/candidate-radar/cache").json()["data"]
+        summary = packet["search_quant_result_version_summary"]
+        receipt = packet["search_quant_provider_model_acceptance_receipt"]
+
+        self.assertEqual(summary["latest_task_scope_hash"], degraded_lineage["scope_hash"])
+        self.assertEqual(summary["latest_task_provider_call_ledger_ids"], degraded_lineage["provider_call_ledger_ids"])
+        self.assertEqual(summary["degraded_task_id"], degraded_lineage["task_id"])
+        self.assertEqual(summary["degraded_scope_hash"], degraded_lineage["scope_hash"])
+        self.assertEqual(summary["degraded_provider_call_ledger_ids"], degraded_lineage["provider_call_ledger_ids"])
+        self.assertEqual(summary["degraded_input_packet_keys"], degraded_lineage["input_packet_keys"])
+        self.assertEqual(summary["degraded_output_packet_keys"], degraded_lineage["output_packet_keys"])
+        self.assertEqual(summary["degraded_model_ledger_id"], degraded_lineage["model_ledger_id"])
+        self.assertTrue(summary["degraded_deepseek_skipped_missing_facts"])
+        self.assertEqual(summary["current_result_task_id"], current_lineage["task_id"])
+        self.assertEqual(summary["current_result_scope_hash"], current_lineage["scope_hash"])
+        self.assertEqual(summary["current_result_provider_call_ledger_ids"], current_lineage["provider_call_ledger_ids"])
+        self.assertEqual(summary["current_result_input_packet_keys"], current_lineage["input_packet_keys"])
+        self.assertEqual(summary["current_result_output_packet_keys"], current_lineage["output_packet_keys"])
+        self.assertEqual(summary["current_result_model_ledger_id"], current_lineage["model_ledger_id"])
+        self.assertEqual(receipt["result_version_summary"], summary)
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+
     def test_deepseek_failure_does_not_block_tushare_factor_next_result(self):
         self._with_meta_store()
         self._with_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")
