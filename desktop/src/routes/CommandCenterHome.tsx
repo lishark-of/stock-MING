@@ -498,6 +498,78 @@ export default function CommandCenterHome() {
   const candidatePolicy = (candidates.policy as Record<string, unknown> | undefined) ?? {};
   const candidateQuantReceipt = (candidates.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const candidateQuantSmallDataWriteback = (candidates.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantProviderModelAcceptance = (candidates.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantCurrentResultLineage = (candidates.search_quant_current_result_lineage as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantLastGoodResultLineage = (candidates.search_quant_last_good_result_lineage as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantDegradedResultLineage = (candidates.search_quant_degraded_result_lineage as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantResultLineage =
+    (candidates.search_quant_canonical_result_lineage as Record<string, unknown> | undefined) ??
+    (candidates.search_quant_result_lineage as Record<string, unknown> | undefined) ??
+    (candidateQuantProviderModelAcceptance.result_lineage as Record<string, unknown> | undefined) ??
+    {};
+  const candidateQuantResultVersionSummary =
+    (candidates.search_quant_result_version_summary as Record<string, unknown> | undefined) ??
+    (candidateQuantProviderModelAcceptance.result_version_summary as Record<string, unknown> | undefined) ??
+    {};
+  const dailyCommandCurrentResultSymbol = homeText(
+    candidateQuantResultVersionSummary.current_result_symbol ?? candidateQuantCurrentResultLineage.symbol,
+    ""
+  );
+  const dailyCommandCurrentResultVersion = homeText(
+    candidateQuantResultVersionSummary.current_result_version ??
+      candidateQuantResultVersionSummary.canonical_result_version ??
+      candidateQuantCurrentResultLineage.result_version ??
+      candidateQuantResultLineage.result_version,
+    ""
+  );
+  const dailyCommandCurrentResultLabel = dailyCommandCurrentResultVersion
+    ? `${dailyCommandCurrentResultSymbol || "当前结果"} / ${dailyCommandCurrentResultVersion}`
+    : "成功后才提升 current result";
+  const dailyCommandLatestResultSymbol = homeText(
+    candidateQuantResultVersionSummary.latest_task_symbol ??
+      candidateQuantResultLineage.latest_attempt_symbol ??
+      candidateQuantResultLineage.symbol ??
+      candidateQuantProviderModelAcceptance.symbol,
+    ""
+  );
+  const dailyCommandLatestResultVersion = homeText(
+    candidateQuantResultVersionSummary.latest_task_result_version ??
+      candidateQuantResultVersionSummary.latest_result_version ??
+      candidateQuantResultLineage.latest_attempt_result_version ??
+      candidateQuantResultLineage.result_version ??
+      candidateQuantProviderModelAcceptance.result_version,
+    ""
+  );
+  const dailyCommandLatestResultLabel = dailyCommandLatestResultVersion
+    ? `${dailyCommandLatestResultSymbol || "最新尝试"} / ${dailyCommandLatestResultVersion}`
+    : "等待确认后的结果版本";
+  const dailyCommandLastGoodResultSymbol = homeText(
+    candidateQuantResultVersionSummary.last_good_result_symbol ?? candidateQuantLastGoodResultLineage.symbol,
+    ""
+  );
+  const dailyCommandLastGoodResultVersion = homeText(
+    candidateQuantResultVersionSummary.last_good_result_version ?? candidateQuantLastGoodResultLineage.result_version,
+    ""
+  );
+  const dailyCommandLastGoodResultLabel = dailyCommandLastGoodResultVersion
+    ? `${dailyCommandLastGoodResultSymbol || "last-good"} / ${dailyCommandLastGoodResultVersion}`
+    : "暂无 last-good";
+  const dailyCommandDegradedResultVisible =
+    candidateQuantResultVersionSummary.degraded_result_visible === true ||
+    Boolean(candidateQuantResultVersionSummary.degraded_result_version) ||
+    Boolean(candidateQuantDegradedResultLineage.result_version);
+  const dailyCommandDegradedResultSymbol = homeText(
+    candidateQuantResultVersionSummary.degraded_result_symbol ??
+      candidateQuantDegradedResultLineage.symbol ??
+      candidateQuantResultVersionSummary.latest_task_symbol,
+    ""
+  );
+  const dailyCommandResultVersionGuardReady =
+    candidateQuantResultVersionSummary.old_task_can_overwrite_current === false ||
+    candidateQuantResultLineage.old_task_can_overwrite_current === false;
+  const dailyCommandResultVersionGuardLabel = dailyCommandResultVersionGuardReady
+    ? "旧任务不能覆盖 current；只按 symbol + result_version 提升结果"
+    : "等待 symbol + result_version 覆盖保护";
   const candidateQuantSmallDataReadbackCheckpoint =
     (candidates.search_quant_projection_small_data_readback_checkpoint as Record<string, unknown> | undefined) ?? {};
   const candidateQuantP2ThreeSurfaceCheckpoint =
@@ -907,9 +979,15 @@ export default function CommandCenterHome() {
   const dataCapabilityEvidenceLedgerLabel = dataCapabilityEvidenceLedgerCount
     ? `已有 ${String(dataCapabilityEvidenceLedgerCount)} 条本地数据记录可查`
     : "等待本地数据记录回读";
-  const dailyCommandTushareDataCardSummary = dailyCommandTushareFirstLedgerReady
-    ? `${dailyCommandConfirmedSymbol || "当前标的"} 确认后数据链状态可读：${dailyCommandTushareFirstSuccessCount}/${dailyCommandTushareFirstApiCount} 个数据面已进入本地回放。`
-    : "确认后数据链状态等待写入：先在首页或下一票雷达输入股票代码并点击确认。";
+  const dailyCommandTushareDataCardSummary =
+    dailyCommandDegradedResultVisible &&
+    dailyCommandCurrentResultSymbol &&
+    dailyCommandDegradedResultSymbol &&
+    dailyCommandCurrentResultSymbol !== dailyCommandDegradedResultSymbol
+      ? `最近尝试 ${dailyCommandDegradedResultSymbol} 已降级；首页 current 仍保留 ${dailyCommandCurrentResultSymbol}，旧任务不会覆盖 current。`
+      : dailyCommandTushareFirstLedgerReady
+        ? `${dailyCommandConfirmedSymbol || "当前标的"} 确认后数据链状态可读：${dailyCommandTushareFirstSuccessCount}/${dailyCommandTushareFirstApiCount} 个数据面已进入本地回放。`
+        : "确认后数据链状态等待写入：先在首页或下一票雷达输入股票代码并点击确认。";
   const dailyCommandTushareDataCardNext = dailyCommandTushareFirstLedgerReady
     ? "继续看股票量化推演、P2 三面和次日图谱。"
     : "先确认股票；确认前输入保持静默，不启动确认流程。";
@@ -942,6 +1020,26 @@ export default function CommandCenterHome() {
       label: "接口明细",
       value: dailyCommandTushareDataCardApiDetailLabel,
       tone: candidateQuantProviderApiRows.length ? "good" : "warn"
+    },
+    {
+      label: "当前可用结果",
+      value: dailyCommandCurrentResultLabel,
+      tone: dailyCommandCurrentResultVersion ? "good" : "warn"
+    },
+    {
+      label: "最新尝试",
+      value: dailyCommandLatestResultLabel,
+      tone: dailyCommandLatestResultVersion ? (dailyCommandDegradedResultVisible ? "warn" : "good") : "warn"
+    },
+    {
+      label: "last-good",
+      value: dailyCommandLastGoodResultLabel,
+      tone: dailyCommandLastGoodResultVersion ? "good" : "warn"
+    },
+    {
+      label: "覆盖保护",
+      value: dailyCommandResultVersionGuardLabel,
+      tone: dailyCommandResultVersionGuardReady ? "good" : "warn"
     },
     {
       label: "下一步",
