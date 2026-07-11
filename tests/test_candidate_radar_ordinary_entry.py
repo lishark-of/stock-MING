@@ -2567,10 +2567,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("const desktopP0QuickActionReady = desktopP0CurrentNextActionRows.some", gate)
         self.assertIn("row.p1_entry_enabled === true || row.p0_ready_now === true", gate)
         self.assertIn("const desktopP0RuntimeModeOrHandoffReady = bootstrapRuntimeModeReady || desktopP0QuickActionReady", gate)
+        self.assertIn("const quantProjectionLocalAppReady =", self.page)
         self.assertIn("const desktopP0ContractEvidenceReady =", gate)
         self.assertIn('desktopOneClickStartupSummary.status === "one_click_frontend_backend_ready"', gate)
         self.assertIn('desktopP0LocalConnectionReceipt.status === "p0_local_connection_receipt_ready"', gate)
         self.assertIn("desktopP0RuntimePacketsReady &&", gate)
+        self.assertIn("quantProjectionLocalAppReady ||", gate)
         self.assertIn("desktopP0ContractEvidenceReady &&", gate)
         self.assertIn("desktopP0RuntimeModeOrHandoffReady &&", gate)
         self.assertNotIn("desktopPreflightReady &&\n    desktopP0ConnectionEvidenceReady", gate)
@@ -2578,10 +2580,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         submit_start = self.page.index("const launchQuantProjection = () =>")
         submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
         submit_slice = self.page[submit_start:submit_end]
-        self.assertIn("p0_runtime_packets_ready: desktopP0RuntimePacketsReady", submit_slice)
-        self.assertIn("p0_runtime_mode_or_handoff_ready: desktopP0RuntimeModeOrHandoffReady", submit_slice)
+        self.assertIn("p0_runtime_packets_ready: desktopP0RuntimePacketsReady || quantProjectionLocalAppReady", submit_slice)
+        self.assertIn("p0_runtime_mode_or_handoff_ready: desktopP0RuntimeModeOrHandoffReady || quantProjectionLocalAppReady", submit_slice)
         self.assertIn("p0_quick_action_ready: desktopP0QuickActionReady", submit_slice)
-        self.assertIn("p0_contract_evidence_ready: desktopP0ContractEvidenceReady", submit_slice)
+        self.assertIn("p0_contract_evidence_ready: desktopP0ContractEvidenceReady || quantProjectionLocalAppReady", submit_slice)
 
     def test_ordinary_quant_projection_submit_does_not_auto_chain_provider_model(self):
         submit_start = self.page.index("const launchQuantProjection = () =>")

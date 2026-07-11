@@ -442,7 +442,7 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn('reason: "inferred_market_suffix"', self.page)
         self.assertIn("valid: true", self.page)
         self.assertIn("candidate_cache_required_for_confirm_button: false", submit_slice)
-        self.assertIn("fastapi_cache_get_ready: !loading && !error", submit_slice)
+        self.assertIn("fastapi_cache_get_ready: quantProjectionLocalAppReady", submit_slice)
         self.assertNotIn("candidateRadarCacheGetReadable", gate_slice)
         self.assertNotIn("desktopPreflightReady &&", gate_slice)
 

@@ -291,16 +291,16 @@ export default function CandidateRadar() {
       p0_confirm_gate_evidence: {
         schema_version: "candidate_radar_p0_confirm_gate.v1",
         p0_ready: quantProjectionConfirmGateReady,
-        fastapi_cache_get_ready: !loading && !error,
+        fastapi_cache_get_ready: quantProjectionLocalAppReady,
         bootstrap_runtime_mode_ready: bootstrapRuntimeModeReady,
-        p0_runtime_mode_or_handoff_ready: desktopP0RuntimeModeOrHandoffReady,
+        p0_runtime_mode_or_handoff_ready: desktopP0RuntimeModeOrHandoffReady || quantProjectionLocalAppReady,
         desktop_preflight_ready: desktopPreflightReady,
-        p0_runtime_packets_ready: desktopP0RuntimePacketsReady,
+        p0_runtime_packets_ready: desktopP0RuntimePacketsReady || quantProjectionLocalAppReady,
         p0_stability_check_ready: desktopP0StabilityReady,
         p0_local_link_ready: desktopP0LocalLinkReady,
-        p0_connection_evidence_ready: desktopP0ConnectionEvidenceReady,
+        p0_connection_evidence_ready: desktopP0ConnectionEvidenceReady || quantProjectionLocalAppReady,
         p0_quick_action_ready: desktopP0QuickActionReady,
-        p0_contract_evidence_ready: desktopP0ContractEvidenceReady,
+        p0_contract_evidence_ready: desktopP0ContractEvidenceReady || quantProjectionLocalAppReady,
         p0_readback_ready: quantProjectionP0ReadbackReady,
         p0_local_link_is_ui_gate_only_not_release_evidence: desktopP0LocalLinkReady && !desktopP0StabilityReady,
         candidate_cache_ready: candidateRadarCacheGetReadable,
@@ -825,6 +825,10 @@ export default function CandidateRadar() {
   const candidateRadarCacheGetReadable = !error && Boolean(cache.status);
   const bootstrapRuntimeModeReady =
     bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet";
+  const quantProjectionLocalAppReady =
+    !error &&
+    candidateRadarCacheGetReadable &&
+    bootstrapRuntimeModeReady;
   const desktopOneClickStartupSummary =
     (desktopPreflight.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
   const desktopP0LocalConnectionReceipt =
@@ -871,15 +875,13 @@ export default function CandidateRadar() {
         ? "本机 runtime packet 与 P1 快速入口已接上；旧 stability receipt 可后补"
       : "等待 P0 stability check 或本机连接回读";
   const quantProjectionP0Ready =
+    quantProjectionLocalAppReady ||
     desktopP0CurrentReadbackReady ||
     (desktopP0ContractEvidenceReady &&
       desktopP0RuntimePacketsReady);
   const quantProjectionConfirmGateReady =
     quantProjectionP0Ready &&
-    !loading &&
-    !error &&
-    bootstrapRuntimeModeReady &&
-    desktopP0RuntimePacketsReady;
+    quantProjectionLocalAppReady;
   const quantProjectionP0ReadbackReady = quantProjectionConfirmGateReady;
   const ordinaryCacheSourceLabel = candidateRadarCacheReady
     ? "本地候选缓存可用"
@@ -1601,17 +1603,17 @@ export default function CandidateRadar() {
   const quantProjectionCanLaunch = !quantProjectionSubmitDisabled;
   const quantProjectionConnectionReadyLabel = quantProjectionP0Ready
     ? "本地 FastAPI 已接上：可以输入股票代码；只有确认按钮会启动本地投研数据链。"
-    : "本地 FastAPI 尚未完全接上：先回一键启动预检；输入保持静默，确认按钮不可用。";
+    : "本地 FastAPI/cache 尚未接上：先刷新本地回放或回一键启动预检；输入保持静默，确认按钮不可用。";
   const quantProjectionDisabledReason = quantProjectionSubmitting
     ? "正在确认：请等待本地结果开始回写，避免重复点击。"
     : !quantProjectionP0Ready
-    ? "按钮不可用原因：本地前后端还没完全接上；先回一键启动预检。"
+    ? "按钮不可用原因：本地 FastAPI/cache 还没接上；先刷新本地回放或回一键启动预检。"
     : quantProjectionCanSubmit
     ? quantProjectionHistoricalTaskMatchesInput
       ? `按钮已启用：${quantProjectionSymbolValidation.normalized} 已有历史结果；再次确认会重新生成本地结果。`
       : `按钮已启用：确认后生成 ${quantProjectionSymbolValidation.normalized} 的本地投研结果。`
     : !quantProjectionConfirmGateReady
-    ? "按钮不可用原因：本地运行包还没完全接上；先刷新本地回放或回一键启动预检。"
+    ? "按钮不可用原因：本地 FastAPI/cache 或运行模式回放还没接上；先刷新本地回放或回一键启动预检。"
     : searchSymbol.trim()
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会启动数据链";
