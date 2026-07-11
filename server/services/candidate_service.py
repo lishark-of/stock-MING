@@ -16023,6 +16023,16 @@ def _quant_projection_result_version_summary(
     degraded_lineage: Mapping[str, Any],
     receipt: Mapping[str, Any],
 ) -> dict[str, Any]:
+    def _lineage_text(lineage: Mapping[str, Any], key: str, *, limit: int = 160) -> str:
+        return _safe_text(lineage.get(key) or "", limit=limit)
+
+    def _lineage_list(lineage: Mapping[str, Any], key: str) -> list[str]:
+        return [
+            _safe_text(item, limit=120)
+            for item in _as_list(lineage.get(key))
+            if _safe_text(item, limit=120)
+        ]
+
     latest_task_version = _safe_text(result_lineage.get("result_version") or "", limit=80)
     current_result_version = _safe_text(current_lineage.get("result_version") or "", limit=80)
     last_good_result_version = _safe_text(last_good_lineage.get("result_version") or "", limit=80)
@@ -16057,12 +16067,50 @@ def _quant_projection_result_version_summary(
         "latest_task_id": _safe_text(result_lineage.get("task_id") or receipt.get("task_id") or "", limit=128),
         "latest_task_symbol": _safe_text(result_lineage.get("symbol") or receipt.get("symbol") or "", limit=32),
         "latest_task_result_version": latest_task_version,
+        "latest_result_version": latest_task_version,
+        "latest_task_scope_hash": _lineage_text(result_lineage, "scope_hash"),
+        "latest_task_scope_hash_short": _lineage_text(result_lineage, "scope_hash_short", limit=32),
+        "latest_task_provider_call_ledger_ids": _lineage_list(result_lineage, "provider_call_ledger_ids"),
+        "latest_task_input_packet_keys": _lineage_list(result_lineage, "input_packet_keys"),
+        "latest_task_output_packet_keys": _lineage_list(result_lineage, "output_packet_keys"),
+        "latest_task_data_date": _lineage_text(result_lineage, "data_date", limit=32),
+        "latest_task_freshness_state": _lineage_text(result_lineage, "freshness_state", limit=64),
+        "latest_task_model_ledger_id": _lineage_text(result_lineage, "model_ledger_id", limit=80),
         "current_result_version": current_result_version,
+        "current_result_task_id": _lineage_text(current_lineage, "task_id", limit=128),
         "current_result_symbol": _safe_text(current_lineage.get("symbol") or "", limit=32),
+        "current_result_scope_hash": _lineage_text(current_lineage, "scope_hash"),
+        "current_result_scope_hash_short": _lineage_text(current_lineage, "scope_hash_short", limit=32),
+        "current_result_provider_call_ledger_ids": _lineage_list(current_lineage, "provider_call_ledger_ids"),
+        "current_result_input_packet_keys": _lineage_list(current_lineage, "input_packet_keys"),
+        "current_result_output_packet_keys": _lineage_list(current_lineage, "output_packet_keys"),
+        "current_result_data_date": _lineage_text(current_lineage, "data_date", limit=32),
+        "current_result_freshness_state": _lineage_text(current_lineage, "freshness_state", limit=64),
+        "current_result_model_ledger_id": _lineage_text(current_lineage, "model_ledger_id", limit=80),
         "last_good_result_version": last_good_result_version,
+        "last_good_task_id": _lineage_text(last_good_lineage, "task_id", limit=128),
         "last_good_result_symbol": _safe_text(last_good_lineage.get("symbol") or "", limit=32),
+        "last_good_scope_hash": _lineage_text(last_good_lineage, "scope_hash"),
+        "last_good_scope_hash_short": _lineage_text(last_good_lineage, "scope_hash_short", limit=32),
+        "last_good_provider_call_ledger_ids": _lineage_list(last_good_lineage, "provider_call_ledger_ids"),
+        "last_good_input_packet_keys": _lineage_list(last_good_lineage, "input_packet_keys"),
+        "last_good_output_packet_keys": _lineage_list(last_good_lineage, "output_packet_keys"),
+        "last_good_data_date": _lineage_text(last_good_lineage, "data_date", limit=32),
+        "last_good_freshness_state": _lineage_text(last_good_lineage, "freshness_state", limit=64),
+        "last_good_model_ledger_id": _lineage_text(last_good_lineage, "model_ledger_id", limit=80),
         "degraded_result_version": degraded_result_version,
+        "degraded_task_id": _lineage_text(degraded_lineage, "task_id", limit=128),
         "degraded_result_symbol": _safe_text(degraded_lineage.get("symbol") or "", limit=32),
+        "degraded_scope_hash": _lineage_text(degraded_lineage, "scope_hash"),
+        "degraded_scope_hash_short": _lineage_text(degraded_lineage, "scope_hash_short", limit=32),
+        "degraded_provider_call_ledger_ids": _lineage_list(degraded_lineage, "provider_call_ledger_ids"),
+        "degraded_input_packet_keys": _lineage_list(degraded_lineage, "input_packet_keys"),
+        "degraded_output_packet_keys": _lineage_list(degraded_lineage, "output_packet_keys"),
+        "degraded_data_date": _lineage_text(degraded_lineage, "data_date", limit=32),
+        "degraded_freshness_state": _lineage_text(degraded_lineage, "freshness_state", limit=64),
+        "degraded_model_ledger_id": _lineage_text(degraded_lineage, "model_ledger_id", limit=80),
+        "degraded_deepseek_status": _lineage_text(degraded_lineage, "deepseek_status", limit=80),
+        "degraded_deepseek_skipped_missing_facts": degraded_lineage.get("deepseek_skipped_missing_facts") is True,
         "degraded_reason": degraded_reason,
         "current_result_promoted": current_promoted,
         "current_result_matches_latest_task": bool(current_result_version and current_result_version == latest_task_version),
