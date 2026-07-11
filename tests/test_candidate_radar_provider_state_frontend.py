@@ -359,11 +359,13 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("普通页只看结果状态", self.page)
         self.assertIn("不额外刷新外部数据或模型", self.page)
         self.assertNotIn("确认 Tushare-first 补证", search_panel)
+        self.assertNotIn("验证 DeepSeek 安全降级", search_panel)
         self.assertNotIn("生成 provider/model execution request", search_panel_top)
         self.assertNotIn("scope/hash", search_panel_top)
         self.assertNotIn("execution-request", search_panel_top)
         self.assertNotIn("provider/model", search_panel_top)
         self.assertIn("确认 Tushare-first 补证", self.page)
+        self.assertIn("验证 DeepSeek 安全降级", self.page)
         self.assertIn(
             "Tushare ledger 来自 cache / call_ledger 回放",
             search_panel,

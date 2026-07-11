@@ -548,6 +548,18 @@ export default function CandidateRadar() {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const launchQuantProjectionDeepSeekFailureAcceptance = () =>
+    void postCandidateRadarQuantProjectionProviderModelAcceptance({
+      scan_mode: "quant_projection_provider_model_acceptance",
+      operator_approved: true,
+      acceptance_scope_hash: String(searchQuantProjectionExecutionRequest.acceptance_scope_hash ?? ""),
+      include_deepseek: true,
+      deepseek_failure_mode_for_acceptance: "missing_server_key",
+      requested_by: "candidate_radar_page_deepseek_failure_acceptance"
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
   const launchWorkerExecutionRequest = () =>
     void postCandidateRadarWorkerExecutionRequest({
       scan_mode: "worker_execution_request",
@@ -6751,8 +6763,17 @@ export default function CandidateRadar() {
               >
                 确认 Tushare-first 补证
               </button>
+              <button
+                onClick={launchQuantProjectionDeepSeekFailureAcceptance}
+                disabled={!searchQuantProjectionExecutionRequest.acceptance_scope_hash}
+                title={searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "按钮门控 DeepSeek 安全降级验收；保留 Tushare/Factor/Next 结果" : "先生成 provider/model execution request scope hash"}
+                aria-label="verify DeepSeek safe degraded after execution request scope hash"
+              >
+                验证 DeepSeek 安全降级
+              </button>
             </div>
             <p>该按钮只在 execution request 有 scope hash 后可点；它通过 POST task 触发 Tushare light provider ledger，DeepSeek 只读解释可安全降级，仍不交易、不改交易策略；审计原文：不交易、不改 strategy action。</p>
+            <p>DeepSeek 安全降级按钮只用于验收模型不可用分支：同一个 scope hash 下先保留 Tushare / Factor / Next 事实结果，再记录 missing_server_key 降级账本；它不把模型当数据源，也不提升为 production complete。</p>
             <p>点击后本区域会显示任务创建记录和状态；成功后自动刷新本地 cache，下一轮 GET 只回放 search_quant_provider_model_acceptance_receipt / call_ledger / packet，不在 React render 里补调 provider。</p>
             <TaskLaunchReceipt receipt={taskReceipt} />
             {manualTaskPanelVisible ? (

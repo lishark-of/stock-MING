@@ -15370,6 +15370,10 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         "symbol_valid": projection_receipt.get("symbol_valid") is True,
         "include_tushare_requested": payload_safe.get("include_tushare") is True,
         "include_deepseek_requested": payload_safe.get("include_deepseek") is True,
+        "deepseek_failure_mode_for_acceptance": _safe_text(
+            payload_safe.get("deepseek_failure_mode_for_acceptance") or "",
+            limit=80,
+        ),
         "selected_light_apis": projection_receipt.get("selected_light_apis") or [],
         "external_sources_allowed": False,
         "p0_confirm_gate_ready": p0_confirm_gate_ready,
@@ -15487,6 +15491,10 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                                 "operator_approved": True,
                                 "acceptance_scope_hash": scope_hash,
                                 "include_deepseek": _coerce_bool(payload_safe.get("include_deepseek"), False),
+                                "deepseek_failure_mode_for_acceptance": _safe_text(
+                                    payload_safe.get("deepseek_failure_mode_for_acceptance") or "",
+                                    limit=80,
+                                ),
                                 "user_confirm_task_id": str(task["task_id"]),
                                 "requested_by": "candidate_radar_quant_projection_confirm_chain",
                             }
@@ -16630,6 +16638,7 @@ def _run_quant_projection_deepseek_explanation(
     selected_apis: list[str],
     include_deepseek: bool,
     task_id: str = "",
+    deepseek_failure_mode_for_acceptance: str = "",
 ) -> dict[str, Any]:
     model = get_deepseek_model("projection")
     field_whitelist = sorted(factor_research.DEEPSEEK_EXPLANATION_ALLOWED_KEYS)
@@ -16641,6 +16650,9 @@ def _run_quant_projection_deepseek_explanation(
     input_hash = _quant_projection_deepseek_hash(fact_summary)
     keys = get_deepseek_keys()
     key_present = bool(keys)
+    forced_failure_mode = _safe_text(deepseek_failure_mode_for_acceptance or "", limit=80)
+    if forced_failure_mode not in {"missing_server_key"}:
+        forced_failure_mode = ""
     base_ledger = {
         "schema_version": "candidate_radar_search_quant_projection_deepseek_model_ledger.v1",
         "provider": "DeepSeek",
@@ -16648,6 +16660,8 @@ def _run_quant_projection_deepseek_explanation(
         "model": model,
         "model_used": model,
         "server_key_present": key_present,
+        "effective_server_key_present_for_call": key_present and forced_failure_mode != "missing_server_key",
+        "acceptance_forced_failure_mode": forced_failure_mode,
         "field_whitelist": field_whitelist,
         "field_whitelist_hash": _quant_projection_deepseek_hash(field_whitelist),
         "input_summary_hash": input_hash,
@@ -16714,7 +16728,7 @@ def _run_quant_projection_deepseek_explanation(
             "output_hash": "",
             "sanitizer_status": sanitized["status"],
         }
-    elif not key_present:
+    elif forced_failure_mode == "missing_server_key" or not key_present:
         sanitized = _quant_projection_deepseek_degraded_explanation(
             status="degraded_missing_server_key",
             failure_mode="missing_server_key",
@@ -16724,7 +16738,11 @@ def _run_quant_projection_deepseek_explanation(
         model_ledger = {
             **base_ledger,
             "status": "degraded_missing_server_key",
-            "model_call_status": "skipped_missing_server_key",
+            "model_call_status": (
+                "forced_missing_server_key_for_acceptance"
+                if forced_failure_mode == "missing_server_key"
+                else "skipped_missing_server_key"
+            ),
             "model_ledger_recorded": True,
             "deepseek_called": False,
             "external_calls_triggered": False,
@@ -16842,6 +16860,10 @@ def _run_quant_projection_deepseek_explanation(
             "provider_response_format_requested": True,
             "provider_response_format_scope": "search_quant_projection_single_call_not_ltg07_production_benchmark",
             "production_response_format_benchmark_done": False,
+            "acceptance_forced_failure_mode": model_ledger.get("acceptance_forced_failure_mode") or "",
+            "effective_server_key_present_for_call": (
+                model_ledger.get("effective_server_key_present_for_call") is True
+            ),
             "finish_reason": model_ledger.get("finish_reason") or "",
             "max_tokens": model_ledger.get("max_tokens") or QUANT_PROJECTION_DEEPSEEK_MAX_TOKENS,
             "content_present": model_ledger.get("content_present") is True,
@@ -16863,6 +16885,7 @@ def _run_quant_projection_deepseek_explanation(
         "deepseek_called": model_ledger.get("deepseek_called") is True,
         "external_calls_triggered": model_ledger.get("external_calls_triggered") is True,
         "safe_failure_mode": model_ledger.get("safe_failure_mode") or "",
+        "acceptance_forced_failure_mode": model_ledger.get("acceptance_forced_failure_mode") or "",
         "status": explanation.get("status") or model_ledger.get("status"),
         "model_ledger": model_ledger,
         "explanation": explanation,
@@ -16916,6 +16939,12 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
     deepseek_called = deepseek.get("deepseek_called") is True
     deepseek_status = _safe_text(deepseek.get("status") or "", limit=120)
     deepseek_failure_mode = _safe_text(deepseek.get("safe_failure_mode") or "", limit=120)
+    deepseek_forced_failure_mode = _safe_text(
+        deepseek.get("acceptance_forced_failure_mode")
+        or model_ledger.get("acceptance_forced_failure_mode")
+        or "",
+        limit=80,
+    )
     selected_apis = [
         str(api)
         for api in _as_list(quant_request.get("selected_apis"))
@@ -17085,6 +17114,7 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         "deepseek_output_acceptance_done": deepseek_output_acceptance_done,
         "deepseek_explanation_status": deepseek_status,
         "deepseek_safe_failure_mode": deepseek_failure_mode,
+        "deepseek_failure_mode_for_acceptance": deepseek_forced_failure_mode,
         "deepseek_safe_degraded": include_deepseek and deepseek_model_ledger_recorded and not deepseek_output_acceptance_done,
         "deepseek_skipped_missing_facts": include_deepseek and deepseek_skipped_missing_facts,
         "deepseek_skipped_by_request": not include_deepseek,
@@ -21632,6 +21662,10 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
     packet = read_candidate_radar_cache()
     quant_request = _as_dict(packet.get("search_quant_projection_execution_request_receipt"))
     include_deepseek = _coerce_bool(payload_safe.get("include_deepseek"), False)
+    deepseek_failure_mode_for_acceptance = _safe_text(
+        payload_safe.get("deepseek_failure_mode_for_acceptance") or "",
+        limit=80,
+    )
     selected_apis = [
         str(api)
         for api in _as_list(quant_request.get("selected_apis"))
@@ -21701,6 +21735,7 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         selected_apis=selected_apis,
         include_deepseek=include_deepseek,
         task_id=str(task["task_id"]),
+        deepseek_failure_mode_for_acceptance=deepseek_failure_mode_for_acceptance,
     )
     receipt, receipt_rows = _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         packet,
@@ -21785,6 +21820,8 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         ),
         "operator_approved": receipt.get("operator_approved"),
         "include_deepseek": include_deepseek,
+        "deepseek_failure_mode_for_acceptance": receipt.get("deepseek_failure_mode_for_acceptance")
+        or deepseek_failure_mode_for_acceptance,
         "provider_execution_implemented": receipt.get("provider_execution_implemented"),
         "model_execution_implemented": receipt.get("model_execution_implemented"),
         "tushare_call_ledger_evidence_done": receipt.get("tushare_call_ledger_evidence_done"),
