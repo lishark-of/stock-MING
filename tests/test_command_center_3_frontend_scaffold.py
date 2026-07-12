@@ -1704,6 +1704,23 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn(".nav-group-summary", styles)
         self.assertIn("content: \"展开\"", styles)
         self.assertIn("content: \"收起\"", styles)
+        self.assertIn("MOBILE_PRIMARY_JUMPS", layout)
+        self.assertIn('home: { href: "#home/home-p1-symbol-confirm", label: "跳到股票确认" }', layout)
+        self.assertIn('candidates: { href: "#candidates/candidate-radar-search-quant-projection", label: "跳到雷达确认" }', layout)
+        self.assertIn('factor: { href: "#factor/factor-score", label: "跳到量化结果" }', layout)
+        self.assertIn('next: { href: "#next/next-session-chart", label: "跳到次日图谱" }', layout)
+        self.assertIn('marginEtf: { href: "#marginEtf/margin-etf-cash-line", label: "跳到 ETF/融资风险" }', layout)
+        self.assertIn('className="mobile-primary-jump"', layout)
+        self.assertIn("只做本地页面滚动", layout)
+        mobile_styles = styles[styles.index("@media (max-width: 760px)") : styles.index("@media (prefers-reduced-motion: reduce)")]
+        self.assertIn("max-height: 217px", mobile_styles)
+        self.assertIn("overflow-x: auto", mobile_styles)
+        self.assertIn("flex: 0 0 auto", mobile_styles)
+        self.assertIn("min-width: 96px", mobile_styles)
+        self.assertIn(".local-link-copy small", mobile_styles)
+        self.assertIn(".page-head h1", mobile_styles)
+        self.assertIn(".packet-card {", mobile_styles)
+        self.assertIn(".mobile-primary-jump {", mobile_styles)
 
     def test_ordinary_entry_task_boundaries_are_visible_before_developer_audit(self):
         route_dir = ROOT / "src" / "routes"

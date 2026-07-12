@@ -646,6 +646,11 @@ textarea:focus {
   margin-top: 28px;
 }
 
+.mobile-nav-select-wrap,
+.mobile-primary-jump {
+  display: none;
+}
+
 .content {
   padding: 24px;
 }
@@ -1233,35 +1238,107 @@ pre {
   }
 
   .sidebar {
-    max-height: 42vh;
+    max-height: 217px;
     overflow: auto;
-    padding: 14px;
+    padding: 10px 12px;
     position: sticky;
     top: 0;
     z-index: 20;
   }
 
   .brand {
-    font-size: 18px;
-    margin-bottom: 12px;
+    font-size: 16px;
+    margin-bottom: 7px;
   }
 
   .sidebar nav {
     align-items: start;
     display: flex;
-    gap: 12px;
+    gap: 6px;
     overflow-x: auto;
     padding-bottom: 4px;
   }
 
   .nav-group {
-    min-width: 156px;
+    min-width: 0;
   }
 
-  .sidebar button {
+  .nav-group[data-nav-priority="ordinary"] {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 6px;
+    scrollbar-width: thin;
+  }
+
+  .nav-group[data-nav-priority="ordinary"] .nav-group-title {
+    display: none;
+  }
+
+  .nav-group-hint {
+    display: none;
+  }
+
+  .nav-group-details {
+    display: none;
+  }
+
+  .mobile-nav-select-wrap {
+    color: #cbd5e1;
+    display: grid;
+    font-size: 12px;
+    gap: 4px;
+    margin-top: 2px;
+    min-width: 150px;
+  }
+
+  .mobile-nav-select-wrap select {
+    background: #172033;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #f8fafc;
+    font: inherit;
     min-height: 36px;
-    padding: 8px 10px;
+    padding: 7px 9px;
     width: 100%;
+  }
+
+  .mobile-primary-jump {
+    background: #2563eb;
+    border: 1px solid #3b82f6;
+    border-radius: 6px;
+    color: #ffffff;
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    margin-top: 7px;
+    padding: 8px 10px;
+    text-align: center;
+    text-decoration: none;
+  }
+
+  .sidebar button,
+  .sidebar .local-link-action {
+    flex: 0 0 auto;
+    min-height: 36px;
+    min-width: 96px;
+    padding: 8px 10px;
+    width: auto;
+  }
+
+  .local-link-status {
+    margin-bottom: 7px;
+    min-height: 42px;
+    padding: 6px 8px;
+  }
+
+  .local-link-copy small {
+    display: none;
+  }
+
+  .sidebar .local-link-action {
+    min-height: 30px;
+    padding: 5px 8px;
   }
 
   .sidebar-note {
@@ -1269,7 +1346,7 @@ pre {
   }
 
   .content {
-    padding: 16px;
+    padding: 12px;
   }
 
   .page-head,
@@ -1277,6 +1354,29 @@ pre {
   .task-panel__head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .page-head {
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .page-head h1,
+  .page-head p {
+    margin: 0;
+  }
+
+  .page-head h1 {
+    font-size: 28px;
+    line-height: 1.15;
+  }
+
+  .page-head p {
+    margin-top: 5px;
+  }
+
+  .packet-card {
+    padding: 12px;
   }
 
   .grid,

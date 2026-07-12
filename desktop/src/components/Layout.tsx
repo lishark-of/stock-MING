@@ -37,6 +37,14 @@ const ORDINARY_NAVIGATION_BOUNDARY =
 const LOCAL_FASTAPI_HEALTH_POLL_MS = 3000;
 type LocalFastapiStatus = "checking" | "online" | "offline";
 
+const MOBILE_PRIMARY_JUMPS: Partial<Record<RouteKey, { href: string; label: string }>> = {
+  home: { href: "#home/home-p1-symbol-confirm", label: "跳到股票确认" },
+  candidates: { href: "#candidates/candidate-radar-search-quant-projection", label: "跳到雷达确认" },
+  factor: { href: "#factor/factor-score", label: "跳到量化结果" },
+  next: { href: "#next/next-session-chart", label: "跳到次日图谱" },
+  marginEtf: { href: "#marginEtf/margin-etf-cash-line", label: "跳到 ETF/融资风险" }
+};
+
 const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; routes: Array<{ key: RouteKey; label: string }> }> = [
   {
     title: "普通入口",
@@ -152,6 +160,7 @@ export default function Layout({
       : localFastapiStatus === "offline"
         ? "去一键启动预检恢复"
         : "只读检查 /health";
+  const mobilePrimaryJump = MOBILE_PRIMARY_JUMPS[active];
 
   const routeButtons = (routes: Array<{ key: RouteKey; label: string }>) => (
     <>
@@ -213,7 +222,33 @@ export default function Layout({
               </details>
             )
           ))}
+          <label className="mobile-nav-select-wrap">
+            <span>更多页面</span>
+            <select
+              aria-label="研究辅助、数据治理和系统迁移页面"
+              value={ROUTE_GROUPS[0].routes.some((route) => route.key === active) ? "" : active}
+              onChange={(event) => {
+                if (event.target.value) onNavigate(event.target.value as RouteKey);
+              }}
+            >
+              <option value="">研究 / 审计 / 设置</option>
+              {ROUTE_GROUPS.filter((group) => !group.primary).map((group) => (
+                <optgroup label={group.title} key={group.title}>
+                  {group.routes.map((route) => (
+                    <option value={route.key} key={route.key}>{route.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
         </nav>
+        {mobilePrimaryJump ? (
+          <a
+            className="mobile-primary-jump"
+            href={mobilePrimaryJump.href}
+            aria-label={`${mobilePrimaryJump.label}；只做本地页面滚动`}
+          >{mobilePrimaryJump.label}</a>
+        ) : null}
         <p className="sidebar-note">普通投研主线：今日作战台 → 下一票雷达 → 股票量化推演 → 次日图谱；ETF / 融资风险随时可查。只做研究辅助，不下单；旧工作台仅作排查回退入口。</p>
       </aside>
       <main className="content">{children}</main>
