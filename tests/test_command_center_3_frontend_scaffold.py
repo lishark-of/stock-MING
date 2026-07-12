@@ -8453,7 +8453,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("普通主线先复核 P3 图谱来源、路径、参考线和操作区；DeepSeek governed executor 状态默认收起，只作为高级补证参考。", page)
         self.assertIn('aria-label="next session ordinary deepseek governance"', page)
         self.assertIn("解释治理单独补证状态", page)
-        self.assertIn("先看图表路径、参考线和操作区，再看缺少证据；工程审计在开发详情", page)
+        self.assertIn("先看图表路径、参考线和操作区，再看缺少证据；更多证据在高级诊断", page)
         self.assertIn("来自精确本地次日图谱数据；可从下一票雷达/量化推演回放到本页", page)
         self.assertIn("回放路径：下一票雷达确认代码 -> 股票量化推演支持/压制 -> 次日图谱路径/参考线/操作区", page)
         self.assertIn("回放入口只切换本地模块路由（#candidates/... 直达确认输入区，#factor 到量化推演）；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改操作区", page)

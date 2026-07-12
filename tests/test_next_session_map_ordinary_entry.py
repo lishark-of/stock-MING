@@ -546,7 +546,7 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("normalizeRouteKey(window.location.hash)", app_source)
         self.assertIn('aria-label="next session ordinary audit shortcuts"', ordinary_slice)
         self.assertIn("<summary>高级诊断入口</summary>", ordinary_slice)
-        self.assertIn("工程审计明细继续默认收起", ordinary_slice)
+        self.assertIn("详细证据继续默认收起", ordinary_slice)
         self.assertIn('href="#next-session-audit"', ordinary_slice)
         self.assertIn("QA、promotion、cache ledger 和原始 packet 下沉", ordinary_slice)
         self.assertIn('aria-label="next session task receipt details"', ordinary_slice)

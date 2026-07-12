@@ -343,7 +343,7 @@ export default function NextSessionMap() {
   const nextSessionTaskBoundary = "GET cache 只读；生成或审查都必须走按钮门控 POST task；React 渲染不直连 Tushare 或 DeepSeek，不改操作区";
   const nextSessionResearchOnlyLabel = "次日图谱只解释缓存场景；不是买卖指令，不真实交易、不下单、不改 strategy action";
   const nextSessionChartReviewOrder = chartSummary.has_drawable_data === true
-    ? "先看图表路径、参考线和操作区，再看缺少证据；工程审计在开发详情"
+    ? "先看图表路径、参考线和操作区，再看缺少证据；更多证据在高级诊断"
     : "先点击生成任务或查看缓存状态；有图表后再按路径、参考线、操作区复核";
   const nextSessionCacheButtonLabel = "查看缓存只读取本地 GET cache；复核顺序是图表路径、参考线、操作区、缺少证据";
   const nextSessionChartReviewRegionLabel = "次日图谱复核区域：先看图表路径，再看参考线、操作区和缺少证据";
@@ -1984,7 +1984,7 @@ export default function NextSessionMap() {
       </details>
       <details className="ordinary-audit-shortcuts" aria-label="next session ordinary audit shortcuts">
         <summary>高级诊断入口</summary>
-        <p className="risk-note">工程审计明细继续默认收起；QA、promotion、cache ledger 和原始 packet 下沉到 <a href="#next-session-audit">开发审计</a>。</p>
+        <p className="risk-note">详细证据继续默认收起；QA、promotion、cache ledger 和原始 packet 下沉到 <a href="#next-session-audit">高级诊断</a>。</p>
       </details>
     </PacketCard>
 
