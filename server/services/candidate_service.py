@@ -21652,10 +21652,7 @@ def _attach_search_quant_projection_task_readback(
     if not receipt:
         return view
     provider_receipt = _as_dict(view.get("search_quant_provider_model_acceptance_receipt"))
-    provider_ledger_ready = (
-        provider_receipt.get("tushare_call_ledger_evidence_done") is True
-        and current_step == "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
-    )
+    provider_ledger_ready = provider_receipt.get("tushare_call_ledger_evidence_done") is True
     credential_missing_count = int(provider_receipt.get("credential_missing_provider_count") or 0)
     if provider_ledger_ready:
         p1_readback_status = "p1_confirm_chain_tushare_first_replayed"

@@ -2058,6 +2058,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         cache = self.client.get("/api/candidate-radar/cache").json()
         self.assertTrue(cache["ok"])
         packet = cache["data"]
+        quant_receipt = packet["search_quant_projection_receipt"]
         receipt = packet["search_quant_provider_model_acceptance_receipt"]
         model_ledger = packet["search_quant_deepseek_model_ledger"]
         explanation = packet["search_quant_deepseek_explanation"]
@@ -2070,6 +2071,12 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             receipt["status"],
             "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_explained",
         )
+        self.assertEqual(
+            quant_receipt["latest_task_current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_explained",
+        )
+        self.assertEqual(quant_receipt["p1_confirm_chain_status"], "p1_confirm_chain_tushare_first_replayed")
+        self.assertTrue(quant_receipt["p1_tushare_first_provider_ledger_ready"])
         self.assertTrue(receipt["tushare_call_ledger_evidence_done"])
         self.assertTrue(receipt["deepseek_model_ledger_recorded"])
         self.assertTrue(receipt["deepseek_output_acceptance_done"])
@@ -4095,6 +4102,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         cache = self.client.get("/api/candidate-radar/cache").json()
         self.assertTrue(cache["ok"])
         packet = cache["data"]
+        quant_receipt = packet["search_quant_projection_receipt"]
         receipt = packet["search_quant_provider_model_acceptance_receipt"]
         lineage = packet["search_quant_result_lineage"]
         model_ledger = packet["search_quant_deepseek_model_ledger"]
@@ -4104,6 +4112,12 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             receipt["status"],
             "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_degraded",
         )
+        self.assertEqual(
+            quant_receipt["latest_task_current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_degraded",
+        )
+        self.assertEqual(quant_receipt["p1_confirm_chain_status"], "p1_confirm_chain_tushare_first_replayed")
+        self.assertTrue(quant_receipt["p1_tushare_first_provider_ledger_ready"])
         self.assertTrue(receipt["tushare_call_ledger_evidence_done"])
         self.assertEqual(receipt["provider_api_success_count"], 4)
         self.assertTrue(receipt["deepseek_model_ledger_recorded"])
