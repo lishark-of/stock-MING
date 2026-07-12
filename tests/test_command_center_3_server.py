@@ -60566,6 +60566,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(response["ok"])
         self.assertEqual(len(provider_calls), 6)
         self.assertEqual(provider_calls[0]["payload"]["apis"], ["trade_cal"])
+        self.assertEqual(provider_calls[0]["payload"]["exchange"], ["SSE", "SZSE"])
         self.assertEqual(
             [call["payload"].get("ts_code") for call in provider_calls[1:]],
             ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"],
@@ -60733,6 +60734,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         self.assertTrue(response["ok"])
         self.assertEqual(len(provider_calls), 6)
+        self.assertEqual(provider_calls[0]["payload"]["exchange"], ["SSE", "SZSE"])
         task = response["data"]["task"]
         receipt = task["payload_safe"]["provider_small_pool_acceptance_receipt"]
         rows = {row["criterion"]: row for row in task["payload_safe"]["provider_small_pool_acceptance_rows"]}

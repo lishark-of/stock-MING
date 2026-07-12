@@ -6138,7 +6138,7 @@ def _factor_test_provider_small_pool_acceptance_provider_run(
             "end_date": end_date,
             "source_task_type": "run_factor_test_provider_small_pool_acceptance",
         }
-        calendar_payload = {**base_provider_payload, "apis": ["trade_cal"]}
+        calendar_payload = {**base_provider_payload, "apis": ["trade_cal"], "exchange": ["SSE", "SZSE"]}
         provider_tasks.append(
             run_provider_task(
                 calendar_payload,
