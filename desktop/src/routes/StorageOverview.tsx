@@ -873,25 +873,31 @@ export default function StorageOverview() {
           </p>
           <MetricGrid items={storageCurrentResultAtomicItems} />
           <div className="actions" aria-label="storage ordinary current result atomic actions">
-            <button
-              disabled={!storageCurrentResultAtomicPromotionCanLaunch}
-              onClick={launchCurrentResultAtomicPromotion}
-              title="把同一 task_id / scope_hash / result_version 的 canonical lineage 原子提升为本地 current-result；不刷新 provider/model，不交易"
-              aria-label="atomic promote current research result from storage first screen"
-            >原子提升 current-result</button>
             <button onClick={refreshStorage} aria-label="refresh current result storage readback">查看 current/last-good</button>
-            <button
-              disabled={!storageCurrentResultRetentionCanLaunch}
-              onClick={launchCurrentResultRetentionCleanup}
-              title="按后端 retention plan hash 和候选 version ids 清理旧 current-result 版本；保护 current/last-good，不刷新 provider/model，不交易"
-              aria-label="cleanup old current result versions with retention plan from storage first screen"
-            >清理旧 current-result 版本</button>
             <a href="#candidates/candidate-radar-search-quant-projection" aria-label="open candidate confirm from current result storage">回确认股票</a>
           </div>
-          <TaskLaunchReceipt receipt={currentResultAtomicReceipt} />
-          <TaskStatusPanel taskId={currentResultAtomicTaskId} onSuccess={refreshStorage} />
-          <TaskLaunchReceipt receipt={currentResultRetentionCleanupReceipt} />
-          <TaskStatusPanel taskId={currentResultRetentionCleanupTaskId} onSuccess={refreshStorage} />
+          <details className="developer-audit-details" aria-label="storage current result advanced write actions">
+            <summary>数据写入 / 高级操作</summary>
+            <p className="risk-note">原子提升和 retention 清理会创建本地 POST task 并写 ignored Parquet 指针/版本状态；默认收起，普通用户先只查看 current/last-good。</p>
+            <div className="actions" aria-label="storage current result advanced write buttons">
+              <button
+                disabled={!storageCurrentResultAtomicPromotionCanLaunch}
+                onClick={launchCurrentResultAtomicPromotion}
+                title="把同一 task_id / scope_hash / result_version 的 canonical lineage 原子提升为本地 current-result；不刷新 provider/model，不交易"
+                aria-label="atomic promote current research result from storage advanced actions"
+              >原子提升 current-result</button>
+              <button
+                disabled={!storageCurrentResultRetentionCanLaunch}
+                onClick={launchCurrentResultRetentionCleanup}
+                title="按后端 retention plan hash 和候选 version ids 清理旧 current-result 版本；保护 current/last-good，不刷新 provider/model，不交易"
+                aria-label="cleanup old current result versions with retention plan from storage advanced actions"
+              >清理旧 current-result 版本</button>
+            </div>
+            <TaskLaunchReceipt receipt={currentResultAtomicReceipt} />
+            <TaskStatusPanel taskId={currentResultAtomicTaskId} onSuccess={refreshStorage} />
+            <TaskLaunchReceipt receipt={currentResultRetentionCleanupReceipt} />
+            <TaskStatusPanel taskId={currentResultRetentionCleanupTaskId} onSuccess={refreshStorage} />
+          </details>
           <details className="developer-audit-details" aria-label="storage current result atomic audit details">
             <summary>研究辅助 / current-result 读回详情</summary>
             <DataLineageTable rows={[storageCurrentResultAtomicPromotion]} />

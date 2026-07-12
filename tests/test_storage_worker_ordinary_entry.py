@@ -110,6 +110,33 @@ class StorageWorkerOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("TaskStatusPanel", visible_slice)
         self.assertNotIn("launchPhysicalExecution", visible_slice)
 
+    def test_storage_current_result_writes_are_advanced_not_ordinary_actions(self):
+        page = self.storage_page
+        current_start = page.index('aria-label="storage ordinary current result atomic promotion"')
+        audit_start = page.index('aria-label="storage current result atomic audit details"', current_start)
+        current_slice = page[current_start:audit_start]
+        ordinary_start = current_slice.index('aria-label="storage ordinary current result atomic actions"')
+        advanced_start = current_slice.index('aria-label="storage current result advanced write actions"')
+        ordinary_slice = current_slice[ordinary_start:advanced_start]
+        advanced_slice = current_slice[advanced_start:]
+
+        self.assertIn("当前结果版本化", current_slice)
+        self.assertIn('aria-label="refresh current result storage readback"', ordinary_slice)
+        self.assertIn('aria-label="open candidate confirm from current result storage"', ordinary_slice)
+        self.assertNotIn("launchCurrentResultAtomicPromotion", ordinary_slice)
+        self.assertNotIn("launchCurrentResultRetentionCleanup", ordinary_slice)
+        self.assertNotIn("TaskLaunchReceipt", ordinary_slice)
+        self.assertIn("<summary>数据写入 / 高级操作</summary>", advanced_slice)
+        self.assertIn("默认收起，普通用户先只查看 current/last-good", advanced_slice)
+        self.assertIn("onClick={launchCurrentResultAtomicPromotion}", advanced_slice)
+        self.assertIn("onClick={launchCurrentResultRetentionCleanup}", advanced_slice)
+        self.assertIn('aria-label="atomic promote current research result from storage advanced actions"', advanced_slice)
+        self.assertIn('aria-label="cleanup old current result versions with retention plan from storage advanced actions"', advanced_slice)
+        self.assertIn("TaskLaunchReceipt receipt={currentResultAtomicReceipt}", advanced_slice)
+        self.assertIn("TaskStatusPanel taskId={currentResultAtomicTaskId}", advanced_slice)
+        self.assertIn("TaskLaunchReceipt receipt={currentResultRetentionCleanupReceipt}", advanced_slice)
+        self.assertIn("TaskStatusPanel taskId={currentResultRetentionCleanupTaskId}", advanced_slice)
+
     def test_worker_first_screen_is_readable_before_audit_tables(self):
         page = self.worker_page
         head_start = page.index("<h1>Worker 运行时</h1>")
