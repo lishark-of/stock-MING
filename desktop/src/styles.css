@@ -566,9 +566,17 @@ textarea:focus {
 }
 
 .sidebar .research-activity-action {
+  align-items: center;
+  background: transparent;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  box-sizing: border-box;
   color: #dbeafe;
+  display: flex;
+  justify-content: center;
   min-height: 30px;
   padding: 5px 8px;
+  text-decoration: none;
   width: auto;
 }
 

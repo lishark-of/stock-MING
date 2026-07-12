@@ -197,10 +197,12 @@ export default function Layout({
             ? `${latestConfirmedSymbol || "当前标的"} · 最近研究待处理`
             : "等待确认股票";
   const researchActivityAction = researchActivityStatus === "success"
-    ? "factor"
+    ? "#factor/factor-score"
     : researchActivityStatus === "offline" || researchActivityStatus === "checking"
-      ? "desktop"
-      : "tasks";
+      ? "#desktop"
+      : researchActivityStatus === "idle"
+        ? "#candidates/candidate-radar-search-quant-projection"
+        : "#tasks";
   const researchActivityActionLabel = researchActivityStatus === "success"
     ? "看结果"
     : researchActivityStatus === "idle"
@@ -262,12 +264,11 @@ export default function Layout({
             <strong>最近研究</strong>
             <small>{researchActivityLabel}</small>
           </span>
-          <button
-            type="button"
+          <a
             className="research-activity-action"
-            onClick={() => onNavigate(researchActivityStatus === "idle" ? "candidates" : researchActivityAction)}
             aria-label={`${researchActivityActionLabel}；只切换本地页面`}
-          >{researchActivityActionLabel}</button>
+            href={researchActivityAction}
+          >{researchActivityActionLabel}</a>
         </div>
         <nav>
           {ROUTE_GROUPS.map((group) => (
