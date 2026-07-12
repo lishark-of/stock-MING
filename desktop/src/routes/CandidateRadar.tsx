@@ -247,8 +247,8 @@ export default function CandidateRadar() {
     react_render_external_calls: false,
     get_cache_external_calls: false,
     include_tushare_first: true,
-    include_deepseek: false,
-    deepseek_policy: "separate_governed_executor_after_explicit_authorization",
+    include_deepseek: true,
+    deepseek_policy: "governed_explanation_only_after_tushare_facts",
     requires_p0_gate_ready: true,
     p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "p0_stability_or_local_link_evidence", "candidate_cache_get_readable"],
     writeback_surfaces: ["cache", "call_ledger", "packet"],
@@ -342,8 +342,8 @@ export default function CandidateRadar() {
       scan_mode: "search_quant_projection",
       symbol: normalizeAshareSymbolInput(searchSymbol).normalized,
       include_tushare: true,
-      include_deepseek: false,
-      deepseek_policy: "separate_governed_executor_after_explicit_authorization",
+      include_deepseek: true,
+      deepseek_policy: "governed_explanation_only_after_tushare_facts",
       user_approved: true,
       requested_by: "candidate_radar_page",
       p0_confirm_gate_evidence: {
@@ -1748,7 +1748,7 @@ export default function CandidateRadar() {
     {
       交接项: "2. P1 确认按钮",
       当前状态: quantProjectionP0Ready ? "可进入搜票确认" : "暂不进入 P1",
-      用户下一步: "代码通过本地校验后点击确认按钮，确认后生成本地投研结果；DeepSeek 解释留给明确授权的单独治理验收。",
+      用户下一步: "代码通过本地校验后点击确认按钮，确认后生成本地投研结果；DeepSeek 只在 Tushare facts 后写受控解释账本。",
       入口: "下一票雷达确认按钮",
       证据: "fallback from candidateRadarP0AutoLinkRows",
       边界: "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker"
@@ -1943,7 +1943,7 @@ export default function CandidateRadar() {
     ? quantProjectionP0Ready
       ? quantProjectionUseRecentResultInsteadOfSubmit
         ? `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；已有最近结果，普通主动作先查看本地结果，不重复创建同票任务。`
-        : `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，只由确认按钮启动本地投研流程；DeepSeek 解释留给明确授权的单独治理验收。`
+        : `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，只由确认按钮启动本地投研流程；DeepSeek 只在 Tushare facts 后写受控解释账本。`
       : `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；确认按钮在等本地联通闸门变绿，输入和页面打开不会创建后台流程。`
     : searchSymbol.trim()
       ? `摘要搜票格式未通过：${quantProjectionValidationReasonLabel}；不会创建后台流程。`
@@ -2801,7 +2801,7 @@ export default function CandidateRadar() {
       ? "Tushare-first 已回放；DeepSeek 解释按安全模型账本回放或安全降级；Factor/Next/完整推演继续补齐"
     : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
       ? "可创建按钮门控补证请求；页面显示仍不自动外联"
-      : "等待确认按钮启动本地投研数据链；DeepSeek 解释留给明确授权的单独治理验收";
+      : "等待确认按钮启动本地投研数据链；DeepSeek 只在 Tushare facts 后写受控解释账本";
   const candidateRadarLtg13DataLedgerState = quantProjectionProviderLedgerReady
     ? `真实数据账本已回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}`
     : searchQuantProjectionExecutionRequest.local_execution_request_ready === true
@@ -3963,7 +3963,7 @@ export default function CandidateRadar() {
     },
     {
       label: "安全边界",
-      value: "输入不外联；确认按钮才启动本地数据链；DeepSeek 解释留给明确授权的单独治理验收；不交易、不改交易策略",
+      value: "输入不外联；确认按钮才启动本地数据链；DeepSeek 只在 Tushare facts 后写受控解释账本；不交易、不改交易策略",
       tone: "good"
     }
   ];

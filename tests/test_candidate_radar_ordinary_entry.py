@@ -1893,7 +1893,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("未确认；输入框不会创建任务", self.page)
         self.assertIn("已确认输入：${quantProjectionSymbolValidation.normalized}", self.page)
         self.assertIn("摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}", self.page)
-        self.assertIn("只由确认按钮启动本地投研流程；DeepSeek 解释留给明确授权的单独治理验收", self.page)
+        self.assertIn("只由确认按钮启动本地投研流程；DeepSeek 只在 Tushare facts 后写受控解释账本", self.page)
         self.assertIn("确认按钮在等本地联通闸门变绿，输入和页面打开不会创建后台流程", self.page)
         self.assertIn("摘要搜票格式未通过：${quantProjectionValidationReasonLabel}；不会创建后台流程", self.page)
         self.assertIn("摘要搜票等待输入代码；输入框只做本地校验，不创建后台流程", self.page)
@@ -2659,7 +2659,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("p0_quick_action_ready: desktopP0QuickActionReady", submit_slice)
         self.assertIn("p0_contract_evidence_ready: desktopP0ContractEvidenceReady || quantProjectionLocalAppReady", submit_slice)
 
-    def test_ordinary_quant_projection_submit_does_not_auto_chain_provider_model(self):
+    def test_ordinary_quant_projection_submit_requests_governed_deepseek_after_tushare_facts(self):
         submit_start = self.page.index("const launchQuantProjection = () =>")
         submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
         submit_slice = self.page[submit_start:submit_end]
@@ -2678,8 +2678,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('scan_mode: "search_quant_projection"', submit_slice)
         self.assertIn("symbol: normalizeAshareSymbolInput(searchSymbol).normalized", submit_slice)
         self.assertIn("include_tushare: true", submit_slice)
-        self.assertIn("include_deepseek: false", submit_slice)
-        self.assertIn('deepseek_policy: "separate_governed_executor_after_explicit_authorization"', submit_slice)
+        self.assertIn("include_deepseek: true", submit_slice)
+        self.assertIn('deepseek_policy: "governed_explanation_only_after_tushare_facts"', submit_slice)
         self.assertIn("user_approved: true", submit_slice)
         self.assertIn('requested_by: "candidate_radar_page"', submit_slice)
         self.assertIn('.catch(() => {', submit_slice)
@@ -2809,10 +2809,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("Candidate Radar searched-symbol confirmation must be reported through the active checkpoint", self.handoff)
         self.assertIn("confirmed search may submit bounded Tushare provider work through POST task and call ledger", self.handoff)
         self.assertIn("ordinary confirm action may create the Tushare-first backend task chain", self.handoff)
-        self.assertIn("keeps DeepSeek skipped", self.handoff)
+        self.assertIn("request DeepSeek into the governed explanation ledger after Tushare facts are available", self.handoff)
         self.assertIn("does not require the old `run_provider_model_now` switch", self.handoff)
         self.assertIn("page open, search typing, React render, and GET cache stay silent", self.handoff)
-        self.assertNotIn("DeepSeek is requested into the explanation ledger/governance path", self.handoff)
         self.assertNotIn("automatic v4/pro execution", self.handoff)
 
     def test_task_status_panel_surfaces_tushare_first_ledger_for_ordinary_users(self):
