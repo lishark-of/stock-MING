@@ -2276,6 +2276,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
         original_call_deepseek = candidate_service._call_quant_projection_deepseek_model
         original_get_deepseek_keys = candidate_service.get_deepseek_keys
+        original_deepseek_acceptance_env_keys = candidate_service.CANDIDATE_DEEPSEEK_ACCEPTANCE_ENV_KEYS
 
         def fake_run_tushare_refresh_task(payload, **_kwargs):
             return {
@@ -2313,6 +2314,9 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         candidate_service.tushare_task_service.run_tushare_refresh_task = fake_run_tushare_refresh_task
         candidate_service._call_quant_projection_deepseek_model = fail_if_deepseek_called
         candidate_service.get_deepseek_keys = lambda: []
+        candidate_service.CANDIDATE_DEEPSEEK_ACCEPTANCE_ENV_KEYS = (
+            "DEEPSEEK_MISSING_FOR_ACCEPTANCE_TEST",
+        )
         self.addCleanup(
             setattr,
             candidate_service.tushare_task_service,
@@ -2321,6 +2325,12 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         )
         self.addCleanup(setattr, candidate_service, "_call_quant_projection_deepseek_model", original_call_deepseek)
         self.addCleanup(setattr, candidate_service, "get_deepseek_keys", original_get_deepseek_keys)
+        self.addCleanup(
+            setattr,
+            candidate_service,
+            "CANDIDATE_DEEPSEEK_ACCEPTANCE_ENV_KEYS",
+            original_deepseek_acceptance_env_keys,
+        )
 
         response = self.client.post(
             "/api/candidate-radar/quant-projection",
