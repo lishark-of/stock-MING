@@ -489,6 +489,103 @@ export default function CandidateRadar() {
   const searchQuantResultProviderLedgerLabel = searchQuantResultProviderLedgerIds.length
     ? `${searchQuantResultProviderLedgerIds.length} 条 provider ledger：${searchQuantResultProviderLedgerIds.slice(0, 4).join(" / ")}${searchQuantResultProviderLedgerIds.length > 4 ? " / ..." : ""}`
     : "等待 provider ledger id";
+  const searchQuantLineageTaskId = displayText(
+    searchQuantResultLineage.task_id ??
+      searchQuantProviderModelAcceptance.task_id ??
+      searchQuantProjectionReceipt.latest_task_id ??
+      searchQuantProjectionReceipt.task_id,
+    "等待 task_id"
+  );
+  const searchQuantLineageUserConfirmTaskId = displayText(
+    searchQuantProviderModelAcceptance.user_confirm_task_id ?? searchQuantProjectionReceipt.latest_task_id,
+    "等待确认 task"
+  );
+  const searchQuantLineageProviderTaskId = displayText(
+    searchQuantProviderModelAcceptance.provider_task_id ?? searchQuantResultLineage.provider_task_id,
+    "等待 provider task"
+  );
+  const searchQuantLineageSymbol = displayText(
+    searchQuantResultLineage.symbol ?? searchQuantProviderModelAcceptance.symbol ?? searchQuantProjectionReceipt.symbol,
+    "等待 symbol"
+  );
+  const searchQuantLineageScopeHash = displayText(
+    searchQuantProviderModelAcceptance.acceptance_scope_hash_short ??
+      searchQuantResultLineage.scope_hash_short ??
+      searchQuantResultLineage.scope_hash,
+    "等待 scope hash"
+  );
+  const searchQuantLineageResultVersion = displayText(
+    searchQuantResultLineage.result_version ??
+      searchQuantProviderModelAcceptance.result_version ??
+      searchQuantResultVersionSummary.current_result_version ??
+      searchQuantResultVersionSummary.result_version,
+    "等待 result_version"
+  );
+  const searchQuantLineageDataDate = displayText(
+    searchQuantResultLineage.data_date ?? searchQuantProviderModelAcceptance.data_date,
+    "等待 data_date"
+  );
+  const searchQuantLineageFreshness = displayText(
+    searchQuantResultLineage.freshness_state ?? searchQuantProviderModelAcceptance.freshness_state,
+    "等待 freshness"
+  );
+  const searchQuantLineageModelLedgerId = displayText(
+    searchQuantResultLineage.model_ledger_id ??
+      searchQuantProviderModelAcceptance.model_ledger_id ??
+      searchQuantDeepSeekModelLedger.model_ledger_id,
+    "等待 model_ledger"
+  );
+  const searchQuantLineageInputPacketLabel = searchQuantResultInputPacketKeys.length
+    ? searchQuantResultInputPacketKeys.join(" / ")
+    : "等待 input packet";
+  const searchQuantLineageOutputPacketLabel = searchQuantResultOutputPacketKeys.length
+    ? searchQuantResultOutputPacketKeys.join(" / ")
+    : "等待 output packet";
+  const searchQuantLineageSameVersionReady =
+    searchQuantResultLineage.same_task_fact_model_result_version_ready === true ||
+    searchQuantResultVersionSummary.canonical_same_task_fact_model_result_version_ready === true ||
+    (
+      searchQuantLineageTaskId !== "等待 task_id" &&
+      searchQuantLineageResultVersion !== "等待 result_version" &&
+      searchQuantResultProviderLedgerIds.length > 0 &&
+      searchQuantLineageInputPacketLabel !== "等待 input packet" &&
+      searchQuantLineageOutputPacketLabel !== "等待 output packet"
+    );
+  const quantProjectionResultVersionLineageSummary = searchQuantLineageSameVersionReady
+    ? `同次结果已关联：${searchQuantLineageSymbol} / ${searchQuantLineageResultVersion} / ${searchQuantLineageTaskId}`
+    : "等待同一 task_id、事实包、result_version 和 ledger 关联";
+  const quantProjectionResultVersionLineageRows = [
+    {
+      关联项: "task / symbol / scope",
+      当前值: `${searchQuantLineageTaskId} / ${searchQuantLineageSymbol} / ${searchQuantLineageScopeHash}`,
+      证据: "search_quant_result_lineage + search_quant_provider_model_acceptance_receipt",
+      边界: "只读本地 lineage；不会创建 task 或补调 Tushare/DeepSeek"
+    },
+    {
+      关联项: "provider_call_ledger_ids",
+      当前值: searchQuantResultProviderLedgerLabel,
+      证据: "provider_call_ledger_ids",
+      边界: "只显示安全 ledger id，不展示凭据或原始 provider error"
+    },
+    {
+      关联项: "input / output packet",
+      当前值: `${searchQuantLineageInputPacketLabel} -> ${searchQuantLineageOutputPacketLabel}`,
+      证据: "input_packet_keys / output_packet_keys",
+      边界: "只读 packet key，不展示 raw packet 或密钥"
+    },
+    {
+      关联项: "data_date / freshness",
+      当前值: `${searchQuantLineageDataDate} / ${searchQuantLineageFreshness}`,
+      证据: "data_date / freshness_state",
+      边界: "旧任务迟到不能覆盖 current；页面按 symbol + result_version 回放"
+    },
+    {
+      关联项: "model_ledger / result_version",
+      当前值: `${searchQuantLineageModelLedgerId} / ${searchQuantLineageResultVersion}`,
+      证据: "model_ledger_id / result_version",
+      边界: "DeepSeek 只解释，不作为数据源，不覆盖价格、factor、operation_zones 或 strategy action"
+    }
+  ];
   const searchQuantProjectionSmallDataWriteback = (cache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionConfirmChainCheckpoint =
     (cache.search_quant_projection_confirm_chain_checkpoint as Record<string, unknown> | undefined) ?? {};
@@ -1930,6 +2027,16 @@ export default function CandidateRadar() {
         ? `${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}`
         : "等待本地账本",
       tone: quantProjectionProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "同次结果版本",
+      value: quantProjectionResultVersionLineageSummary,
+      tone: searchQuantLineageSameVersionReady ? "good" : "warn"
+    },
+    {
+      label: "事实包关联",
+      value: `${searchQuantLineageDataDate} / ${searchQuantLineageFreshness} / ${searchQuantLineageModelLedgerId}`,
+      tone: searchQuantLineageSameVersionReady ? "good" : "warn"
     },
     {
       label: "写入三面",
@@ -6487,6 +6594,11 @@ export default function CandidateRadar() {
             <h3>Tushare 数据卡</h3>
             <p className="ordinary-status-note" aria-label="quant projection ordinary tushare data card summary" aria-live="polite">{quantProjectionTushareDataCardSummary}</p>
             <MetricGrid items={quantProjectionTushareDataCardItems} />
+            <details className="developer-audit-details" aria-label="quant projection result version lineage rows">
+              <summary>查看同次结果版本</summary>
+              <p className="risk-note">这张明细只读同一 task_id / symbol / scope / result_version 的安全关联；旧任务迟到不能覆盖 current，GET cache 和 React render 不补调数据源或模型。</p>
+              <DataLineageTable rows={quantProjectionResultVersionLineageRows} />
+            </details>
             <details className="developer-audit-details" aria-label="quant projection ordinary tushare data card rows">
               <summary>查看接口回放</summary>
               <p className="risk-note">这张明细只读本地 Tushare light 接口回放；没有账本时显示等待或阻断，不从页面补调数据。</p>

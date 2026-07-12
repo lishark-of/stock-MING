@@ -88,6 +88,16 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("quantProjectionTushareDataCardItems", self.page)
         self.assertIn("quantProjectionTushareDataCardRows", self.page)
         self.assertIn("quantProjectionTushareDataCardSummary", self.page)
+        self.assertIn("quantProjectionResultVersionLineageSummary", self.page)
+        self.assertIn("quantProjectionResultVersionLineageRows", self.page)
+        self.assertIn("searchQuantLineageSameVersionReady", self.page)
+        self.assertIn("same_task_fact_model_result_version_ready", self.page)
+        self.assertIn("canonical_same_task_fact_model_result_version_ready", self.page)
+        self.assertIn("provider_call_ledger_ids", self.page)
+        self.assertIn("input_packet_keys / output_packet_keys", self.page)
+        self.assertIn("model_ledger_id / result_version", self.page)
+        self.assertIn("旧任务迟到不能覆盖 current；页面按 symbol + result_version 回放", self.page)
+        self.assertIn("只显示安全 ledger id，不展示凭据或原始 provider error", self.page)
         self.assertIn('aria-label="candidate radar recent research result card"', summary_panel)
         self.assertIn("最近尝试", self.page)
         self.assertIn("当前可用", self.page)
@@ -106,6 +116,9 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("Tushare 数据卡", search_panel_top)
         self.assertIn('aria-label="quant projection ordinary tushare data card summary"', search_panel_top)
         self.assertIn("MetricGrid items={quantProjectionTushareDataCardItems}", search_panel_top)
+        self.assertIn('aria-label="quant projection result version lineage rows"', search_panel_top)
+        self.assertIn("<summary>查看同次结果版本</summary>", search_panel_top)
+        self.assertIn("DataLineageTable rows={quantProjectionResultVersionLineageRows}", search_panel_top)
         self.assertIn('aria-label="quant projection ordinary tushare data card rows"', search_panel_top)
         self.assertIn("<summary>查看接口回放</summary>", search_panel_top)
         self.assertIn("DataLineageTable rows={quantProjectionTushareDataCardRows}", search_panel_top)
@@ -116,6 +129,8 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         for data_card_label in (
             'label: "Tushare 数据"',
             'label: "接口回放"',
+            'label: "同次结果版本"',
+            'label: "事实包关联"',
             'label: "写入三面"',
             'label: "DeepSeek"',
             'label: "缺口"',
