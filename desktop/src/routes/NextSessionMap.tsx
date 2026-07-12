@@ -1691,6 +1691,14 @@ export default function NextSessionMap() {
 
   return (
     <>
+      <div className="page-head">
+        <div>
+          <h1>次日图谱</h1>
+          <p aria-label="next session ordinary page status" aria-live="polite">
+            {nextSessionReadableStatusLabel}；{nextSessionLiveLightModeLabel}；下一步：{nextSessionLiveLightNextStep}。
+          </p>
+        </div>
+      </div>
     <PacketCard title="普通用户次日图谱摘要" subtitle="下一步、来源、缺口、边界和最近结果" status={nextSessionReadableStatusLabel}>
       <div aria-label="next session app first research read">
         <h3>本地投研速读</h3>
