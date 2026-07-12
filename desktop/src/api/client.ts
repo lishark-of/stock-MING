@@ -885,6 +885,13 @@ export function postStorageCurrentResultAtomicPromote(payload: Record<string, un
   });
 }
 
+export function postStorageCurrentResultRetentionCleanup(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/storage/current-result/retention-cleanup", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postTask(path: string, payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>(path, {
     method: "POST",

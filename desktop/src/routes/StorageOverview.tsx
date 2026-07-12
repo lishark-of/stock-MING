@@ -11,6 +11,7 @@ import {
   postStorageCompactionDryRun,
   postStorageBacktestResultsSchemaSeed,
   postStorageCurrentResultAtomicPromote,
+  postStorageCurrentResultRetentionCleanup,
   postStorageDatasetVersionManifestDryRun,
   postStorageDatasetVersionManifestReview,
   postStorageDatasetVersionManifestValidate,
@@ -116,6 +117,8 @@ export default function StorageOverview() {
   const [physicalExecutionPhaseAReceipt, setPhysicalExecutionPhaseAReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [currentResultAtomicTaskId, setCurrentResultAtomicTaskId] = useState("");
   const [currentResultAtomicReceipt, setCurrentResultAtomicReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [currentResultRetentionCleanupTaskId, setCurrentResultRetentionCleanupTaskId] = useState("");
+  const [currentResultRetentionCleanupReceipt, setCurrentResultRetentionCleanupReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshStorage = () => {
     void getStorageOverview().then((res) => {
@@ -255,6 +258,17 @@ export default function StorageOverview() {
     }).then((res) => {
       setCurrentResultAtomicReceipt(res);
       if (res.ok) setCurrentResultAtomicTaskId(res.data.task_id);
+    });
+  const launchCurrentResultRetentionCleanup = () =>
+    void postStorageCurrentResultRetentionCleanup({
+      source: "storage_overview_button",
+      approved_by_user: true,
+      expected_plan_hash: storageCurrentResultRetentionPlanHash,
+      expected_candidate_version_ids: storageCurrentResultRetentionCandidateIds,
+      max_versions: Number(storageCurrentResultAtomicPromotion.retention_max_versions ?? 2)
+    }).then((res) => {
+      setCurrentResultRetentionCleanupReceipt(res);
+      if (res.ok) setCurrentResultRetentionCleanupTaskId(res.data.task_id);
     });
 
   useEffect(() => {
@@ -461,6 +475,36 @@ export default function StorageOverview() {
   const storageCurrentResultAtomicPromotion =
     (overview.storage_current_result_atomic_promotion as Record<string, unknown> | undefined) ??
     ((storageCatalog.storage_current_result_atomic_promotion as Record<string, unknown> | undefined) ?? {});
+  const storageCurrentResultRetentionPlan =
+    (storageCurrentResultAtomicPromotion.retention_plan as Record<string, unknown> | undefined) ?? {};
+  const storageCurrentResultRetentionJournal =
+    (storageCurrentResultAtomicPromotion.retention_cleanup_journal as Record<string, unknown> | undefined) ?? {};
+  const storageCurrentResultRetentionPlanCandidateIds = Array.isArray(storageCurrentResultRetentionPlan.cleanup_candidate_version_ids)
+    ? storageCurrentResultRetentionPlan.cleanup_candidate_version_ids.map((value) => String(value)).filter(Boolean)
+    : [];
+  const storageCurrentResultRetentionJournalCandidateIds = Array.isArray(storageCurrentResultRetentionJournal.candidate_version_ids)
+    ? storageCurrentResultRetentionJournal.candidate_version_ids.map((value) => String(value)).filter(Boolean)
+    : [];
+  const storageCurrentResultRetentionProtectedIds = Array.isArray(storageCurrentResultAtomicPromotion.retention_protected_version_ids)
+    ? storageCurrentResultAtomicPromotion.retention_protected_version_ids.map((value) => String(value)).filter(Boolean)
+    : [];
+  const storageCurrentResultRetentionRecoveryReady = storageCurrentResultAtomicPromotion.retention_cleanup_recovery_ready === true;
+  const storageCurrentResultRetentionCandidateIds = storageCurrentResultRetentionRecoveryReady
+    ? storageCurrentResultRetentionJournalCandidateIds
+    : storageCurrentResultRetentionPlanCandidateIds;
+  const storageCurrentResultRetentionPlanHash = String(
+    (storageCurrentResultRetentionRecoveryReady
+      ? storageCurrentResultRetentionJournal.plan_hash
+      : storageCurrentResultRetentionPlan.plan_hash) ?? ""
+  );
+  const storageCurrentResultRetentionCanLaunch = Boolean(
+    storageCurrentResultRetentionPlanHash &&
+    storageCurrentResultRetentionCandidateIds.length > 0 &&
+    (
+      storageCurrentResultRetentionRecoveryReady ||
+      storageCurrentResultAtomicPromotion.retention_status === "retention_cleanup_candidates_ready"
+    )
+  );
   const currentResultReadback = (currentResult.result as Record<string, unknown> | undefined) ?? {};
   const schemaValidationAcceptanceEvidence =
     (overview.schema_validation_acceptance_evidence as Record<string, unknown> | undefined) ??
@@ -612,6 +656,13 @@ export default function StorageOverview() {
       label: "last-good",
       value: storageCurrentResultAtomicPromotion.last_good_pointer_ready === true ? "ready" : String(currentResult.selected_pointer_kind ?? "waiting"),
       tone: storageCurrentResultAtomicPromotion.last_good_pointer_ready === true || currentResult.degraded_recovery_active === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "retention cleanup",
+      value: storageCurrentResultRetentionCanLaunch
+        ? `${storageCurrentResultRetentionCandidateIds.length} 个旧版本可清理`
+        : `protected=${String(storageCurrentResultRetentionProtectedIds.length)} / candidates=${String(storageCurrentResultAtomicPromotion.retention_cleanup_candidate_count ?? 0)}`,
+      tone: storageCurrentResultRetentionCanLaunch ? "warn" as const : "good" as const
     },
     {
       label: "验收缺口",
@@ -783,10 +834,18 @@ export default function StorageOverview() {
               aria-label="atomic promote current research result from storage first screen"
             >原子提升 current-result</button>
             <button onClick={refreshStorage} aria-label="refresh current result storage readback">查看 current/last-good</button>
+            <button
+              disabled={!storageCurrentResultRetentionCanLaunch}
+              onClick={launchCurrentResultRetentionCleanup}
+              title="按后端 retention plan hash 和候选 version ids 清理旧 current-result 版本；保护 current/last-good，不刷新 provider/model，不交易"
+              aria-label="cleanup old current result versions with retention plan from storage first screen"
+            >清理旧 current-result 版本</button>
             <a href="#candidates/candidate-radar-search-quant-projection" aria-label="open candidate confirm from current result storage">回确认股票</a>
           </div>
           <TaskLaunchReceipt receipt={currentResultAtomicReceipt} />
           <TaskStatusPanel taskId={currentResultAtomicTaskId} onSuccess={refreshStorage} />
+          <TaskLaunchReceipt receipt={currentResultRetentionCleanupReceipt} />
+          <TaskStatusPanel taskId={currentResultRetentionCleanupTaskId} onSuccess={refreshStorage} />
           <details className="developer-audit-details" aria-label="storage current result atomic audit details">
             <summary>研究辅助 / current-result 读回详情</summary>
             <DataLineageTable rows={[storageCurrentResultAtomicPromotion]} />
@@ -794,7 +853,7 @@ export default function StorageOverview() {
             <DataLineageTable rows={currentResultCallLedger} />
             <DataLineageTable rows={currentResultWarningRows} />
           </details>
-          <p className="risk-note">当前结果版本化只接受同一 symbol + result_version 的 canonical lineage；旧任务迟到不能覆盖 current。按钮不调用 Tushare/DeepSeek/GitHub/worker，不创建交易动作，不改 strategy action；GET current-result 只读 current/last-good/degraded 状态。</p>
+          <p className="risk-note">当前结果版本化只接受同一 symbol + result_version 的 canonical lineage；旧任务迟到不能覆盖 current。retention 清理只接受后端 plan hash 与候选 version ids，保护 current/last-good。按钮不调用 Tushare/DeepSeek/GitHub/worker，不创建交易动作，不改 strategy action；GET current-result 只读 current/last-good/degraded 状态。</p>
         </div>
         <p className="risk-note">首屏只汇总本地 dataset、SQLite meta、物理执行 ticket 状态和 Worker 支撑边界；刷新只读取本地 GET cache，链接只切换本地页面，不创建 task、不写文件、不调用 Tushare/DeepSeek/GitHub、不下单。</p>
       </div>
