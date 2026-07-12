@@ -1805,7 +1805,35 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         ordinary_home_visible_slice = home_source[page_head_start:research_details_start]
         ordinary_home_slice = home_source[ordinary_home_start:research_details_start]
         research_details_intro_slice = home_source[research_details_start:fastapi_card_start]
+        ordinary_readback_start = home_source.index("const startOrdinaryReadback = () =>")
+        ordinary_readback_end = home_source.index("const p0Jobs = [", ordinary_readback_start)
+        ordinary_readback = home_source[ordinary_readback_start:ordinary_readback_end]
+        audit_readback_start = home_source.index("if (!auditReadbackRequested) return;")
+        audit_readback_end = home_source.index("}, [auditReadbackRequested]);", audit_readback_start)
+        audit_readback = home_source[audit_readback_start:audit_readback_end]
         self.assertNotIn("先看下一步、数据来源、缺少证据和仅供研究边界。", ordinary_home_visible_slice)
+        for ordinary_getter in (
+            "getCandidateRadarCache()",
+            "getFactorQuantCache()",
+            "getNextSessionCache()",
+            "getPositionCache()",
+            'getPacket("command_center_etf_packet")',
+            'getPacket("command_center_margin_packet")',
+            'getPacket("command_center_margin_etf_refresh_receipt")',
+        ):
+            self.assertIn(ordinary_getter, ordinary_readback)
+        for audit_getter in (
+            "getAuditCache()",
+            "getDataHealthCache()",
+            "getMigrationStatus()",
+            "getStorageOverview()",
+            "getModelStrategyCache()",
+            "getWorkerRuntimeCache()",
+        ):
+            self.assertNotIn(audit_getter, ordinary_readback)
+            self.assertIn(audit_getter, audit_readback)
+        self.assertEqual(2, home_source.count("if (event.currentTarget.open) setAuditReadbackRequested(true);"))
+        self.assertNotIn("postTask(", ordinary_readback)
         status_items_start = home_source.index("const ordinaryHomeStatusItems")
         status_items_end = home_source.index("const homeQuantReadbackRefreshLabel", status_items_start)
         ordinary_home_status_definition = home_source[status_items_start:status_items_end]
@@ -2069,7 +2097,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("homeQuantVisibleTaskId", home_source)
         self.assertIn("homeQuantVisibleTaskSource", home_source)
         self.assertIn("homeQuantVisibleTaskCanPoll", home_source)
-        self.assertIn("CandidateRadar cache 最近确认 task", home_source)
+        self.assertIn("CandidateRadar cache / GET /api/tasks 最近确认 task", home_source)
         self.assertIn("homeQuantPostConfirmNextStepLabel", home_source)
         self.assertIn("已进入回放：先看股票量化推演，再打开次日图谱；需要换标的再点确认", home_source)
         self.assertIn("homeQuantPostConfirmStageLabel", home_source)

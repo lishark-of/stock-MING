@@ -181,6 +181,7 @@ export default function CommandCenterHome() {
   const [taskIndexEnvelopeLedger, setTaskIndexEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [workerRuntime, setWorkerRuntime] = useState<Record<string, unknown>>({});
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([]);
+  const [auditReadbackRequested, setAuditReadbackRequested] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -219,28 +220,12 @@ export default function CommandCenterHome() {
         if (res.ok === false) setError((current) => current || `${label}: ${res.error ?? "request_not_ok"}`);
       }).catch((err) => recordRequestFailure(label, err));
     };
-    const startSecondaryReadback = () => {
+    const startOrdinaryReadback = () => {
       if (cancelled || secondaryStarted) return;
       secondaryStarted = true;
-      track("audit", getAuditCache(), (res) => setAudit(res.data));
-      track("audit_user_route_qa", getAuditUserRouteQa(), (res) => setAuditUserRouteQa(res.data));
-      track("packets", getPackets(), (res) => {
-        setPacketEnvelopeLedger(res.call_ledger ?? []);
-        setPackets(res.data);
-      });
       track("home_etf_packet", getPacket("command_center_etf_packet"), (res) => setHomeEtfPacket(res.data));
       track("home_margin_packet", getPacket("command_center_margin_packet"), (res) => setHomeMarginPacket(res.data));
       track("home_margin_etf_receipt", getPacket("command_center_margin_etf_refresh_receipt"), (res) => setHomeMarginEtfReceipt(res.data));
-      track("market", getMarketContextCache(), (res) => {
-        setMarketEnvelopeLedger(res.call_ledger ?? []);
-        setMarketEnvelopeWarnings(res.warnings ?? []);
-        setMarket(res.data);
-      });
-      track("discipline", getDisciplineLoopCache(), (res) => {
-        setDisciplineEnvelopeLedger(res.call_ledger ?? []);
-        setDisciplineEnvelopeWarnings(res.warnings ?? []);
-        setDiscipline(res.data);
-      });
       track("factor", getFactorQuantCache(), (res) => {
         setFactorEnvelopeLedger(res.call_ledger ?? []);
         setFactorEnvelopeWarnings(res.warnings ?? []);
@@ -251,39 +236,8 @@ export default function CommandCenterHome() {
         setNextEnvelopeWarnings(res.warnings ?? []);
         setNext(res.data);
       });
-      track("data_capability", getDataCapabilityCache(), (res) => {
-        setDataCapabilityEnvelopeLedger(res.call_ledger ?? []);
-        setDataCapabilityCache(res.data);
-      });
-      track("data_health", getDataHealthCache(), (res) => setDataHealth(res.data));
-      track("recovery", getRecoveryCenterCache(), (res) => setRecovery(res.data));
       track("position", getPositionCache(), (res) => setPosition(res.data));
       track("candidates", getCandidateRadarCache(), (res) => setCandidates(res.data));
-      track("risk", getRiskGuardrailsCache(), (res) => setRisk(res.data));
-      track("serenity", getSerenityCache(), (res) => {
-        setSerenityEnvelopeLedger(res.call_ledger ?? []);
-        setSerenityEnvelopeWarnings(res.warnings ?? []);
-        setSerenity(res.data);
-      });
-      track("chokepoint", getChokepointCache(), (res) => {
-        setChokepointEnvelopeLedger(res.call_ledger ?? []);
-        setChokepointEnvelopeWarnings(res.warnings ?? []);
-        setChokepoint(res.data);
-      });
-      track("storage", getStorageOverview(), (res) => setStorageOverview(res.data));
-      track("storage_catalog", getStorageCatalog(), (res) => {
-        setStorageCatalogEnvelopeLedger(res.call_ledger ?? []);
-        setStorageCatalogEnvelopeWarnings(res.warnings ?? []);
-        setStorageCatalog(res.data);
-      });
-      track("migration", getMigrationStatus(), (res) => setMigration(res.data));
-      track("model_strategy", getModelStrategyCache(), (res) => setModelStrategy(res.data));
-      track("legacy", getLegacyBridgeCache(), (res) => setLegacyBridge(res.data));
-      track("task_catalog", getTaskCatalog(), (res) => {
-        setTaskCatalogEnvelopeLedger(res.call_ledger ?? []);
-        setTaskCatalog(res.data);
-      });
-      track("worker", getWorkerRuntimeCache(), (res) => setWorkerRuntime(res.data));
     };
 
     setLoading(true);
@@ -309,7 +263,7 @@ export default function CommandCenterHome() {
     void Promise.allSettled(p0Jobs).then(() => {
       if (cancelled) return;
       setLoading(false);
-      secondaryTimer = window.setTimeout(startSecondaryReadback, 150);
+      secondaryTimer = window.setTimeout(startOrdinaryReadback, 150);
     });
 
     return () => {
@@ -317,6 +271,76 @@ export default function CommandCenterHome() {
       if (secondaryTimer !== undefined) window.clearTimeout(secondaryTimer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!auditReadbackRequested) return;
+    let cancelled = false;
+    const trackAudit = <T extends { ok?: boolean; error?: string | null }>(
+      label: string,
+      promise: Promise<T>,
+      onReady: (res: T) => void
+    ) => {
+      void promise.then((res) => {
+        if (cancelled) return;
+        onReady(res);
+        if (res.ok === false) setError((current) => current || `${label}: ${res.error ?? "request_not_ok"}`);
+      }).catch((err) => {
+        if (!cancelled) setError((current) => current || `${label}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    };
+
+    trackAudit("audit", getAuditCache(), (res) => setAudit(res.data));
+    trackAudit("audit_user_route_qa", getAuditUserRouteQa(), (res) => setAuditUserRouteQa(res.data));
+    trackAudit("packets", getPackets(), (res) => {
+      setPacketEnvelopeLedger(res.call_ledger ?? []);
+      setPackets(res.data);
+    });
+    trackAudit("market", getMarketContextCache(), (res) => {
+      setMarketEnvelopeLedger(res.call_ledger ?? []);
+      setMarketEnvelopeWarnings(res.warnings ?? []);
+      setMarket(res.data);
+    });
+    trackAudit("discipline", getDisciplineLoopCache(), (res) => {
+      setDisciplineEnvelopeLedger(res.call_ledger ?? []);
+      setDisciplineEnvelopeWarnings(res.warnings ?? []);
+      setDiscipline(res.data);
+    });
+    trackAudit("data_capability", getDataCapabilityCache(), (res) => {
+      setDataCapabilityEnvelopeLedger(res.call_ledger ?? []);
+      setDataCapabilityCache(res.data);
+    });
+    trackAudit("data_health", getDataHealthCache(), (res) => setDataHealth(res.data));
+    trackAudit("recovery", getRecoveryCenterCache(), (res) => setRecovery(res.data));
+    trackAudit("risk", getRiskGuardrailsCache(), (res) => setRisk(res.data));
+    trackAudit("serenity", getSerenityCache(), (res) => {
+      setSerenityEnvelopeLedger(res.call_ledger ?? []);
+      setSerenityEnvelopeWarnings(res.warnings ?? []);
+      setSerenity(res.data);
+    });
+    trackAudit("chokepoint", getChokepointCache(), (res) => {
+      setChokepointEnvelopeLedger(res.call_ledger ?? []);
+      setChokepointEnvelopeWarnings(res.warnings ?? []);
+      setChokepoint(res.data);
+    });
+    trackAudit("storage", getStorageOverview(), (res) => setStorageOverview(res.data));
+    trackAudit("storage_catalog", getStorageCatalog(), (res) => {
+      setStorageCatalogEnvelopeLedger(res.call_ledger ?? []);
+      setStorageCatalogEnvelopeWarnings(res.warnings ?? []);
+      setStorageCatalog(res.data);
+    });
+    trackAudit("migration", getMigrationStatus(), (res) => setMigration(res.data));
+    trackAudit("model_strategy", getModelStrategyCache(), (res) => setModelStrategy(res.data));
+    trackAudit("legacy", getLegacyBridgeCache(), (res) => setLegacyBridge(res.data));
+    trackAudit("task_catalog", getTaskCatalog(), (res) => {
+      setTaskCatalogEnvelopeLedger(res.call_ledger ?? []);
+      setTaskCatalog(res.data);
+    });
+    trackAudit("worker", getWorkerRuntimeCache(), (res) => setWorkerRuntime(res.data));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auditReadbackRequested]);
 
   const packetKeys = packets.available_cache_keys as unknown[] | undefined;
   const auditCounts = audit.counts as Record<string, unknown> | undefined;
@@ -4012,7 +4036,13 @@ export default function CommandCenterHome() {
         </div>
         {homeQuantSubmitError ? <p className="ordinary-status-note" aria-live="polite">确认失败：请检查本地连接后重试。</p> : null}
         <p className="ordinary-status-note" aria-label="ordinary home confirm status" aria-live="polite">{ordinaryHomeConfirmStatusLine}</p>
-        <details className="developer-audit-details" aria-label="ordinary home supporting research details">
+        <details
+          className="developer-audit-details"
+          aria-label="ordinary home supporting research details"
+          onToggle={(event) => {
+            if (event.currentTarget.open) setAuditReadbackRequested(true);
+          }}
+        >
           <summary>研究辅助 / 审计详情</summary>
           <p className="risk-note">候选、数据回放、任务进度、路线 QA 和来源细节统一收在这里；普通使用只需看上方四项和下一步按钮。</p>
         <div aria-label="ordinary home app visible now summary">
@@ -4159,7 +4189,13 @@ export default function CommandCenterHome() {
         </div>
         </details>
       </PacketCard>
-      <details className="developer-audit-details" aria-label="daily command research assist audit details">
+      <details
+        className="developer-audit-details"
+        aria-label="daily command research assist audit details"
+        onToggle={(event) => {
+          if (event.currentTarget.open) setAuditReadbackRequested(true);
+        }}
+      >
         <summary>研究辅助 / 审计详情</summary>
         {/* Regression guard: 先看下一步、数据来源、缺少证据和仅供研究边界。 */}
         <p className="risk-note">这里保留任务编号、数据凭证、结果包、边界说明和模型治理状态；普通使用先看上方“今日可用”。</p>
