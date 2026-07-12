@@ -23,10 +23,12 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
     def test_fastapi_cors_allows_browser_and_tauri_local_shells(self):
         source = SERVER_MAIN.read_text(encoding="utf-8")
 
-        self.assertIn('"http://127.0.0.1:5173"', source)
-        self.assertIn('"http://localhost:5173"', source)
+        self.assertIn("LOCAL_VITE_DEV_PORTS = (5173, 5174, 5184, 5185)", source)
+        self.assertIn("f\"http://127.0.0.1:{port}\"", source)
+        self.assertIn("f\"http://localhost:{port}\"", source)
         self.assertIn('"tauri://localhost"', source)
         self.assertIn('"http://tauri.localhost"', source)
+        self.assertIn("allow_origins=[*LOCAL_VITE_ORIGINS, *TAURI_ORIGINS]", source)
         self.assertIn('allow_methods=["GET", "POST"]', source)
         self.assertIn("allow_credentials=False", source)
         self.assertNotIn("allow_origins=[\"*\"]", source)

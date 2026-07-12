@@ -34,6 +34,17 @@ from server.api import (
 )
 
 
+LOCAL_VITE_DEV_PORTS = (5173, 5174, 5184, 5185)
+LOCAL_VITE_ORIGINS = [
+    origin
+    for port in LOCAL_VITE_DEV_PORTS
+    for origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
+]
+TAURI_ORIGINS = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+]
+
 app = FastAPI(
     title="stock-MING Command Center 3.0",
     version="3.0.0-mvp",
@@ -42,12 +53,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
-        "tauri://localhost",
-        "http://tauri.localhost",
-    ],
+    allow_origins=[*LOCAL_VITE_ORIGINS, *TAURI_ORIGINS],
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
