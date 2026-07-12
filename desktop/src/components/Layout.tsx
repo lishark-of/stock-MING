@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { getHealth } from "../api/client";
+import { getHealth, getTasks, type TaskRecord, type TaskStatusIndex } from "../api/client";
 
 export type RouteKey =
   | "home"
@@ -36,6 +36,7 @@ const ORDINARY_NAVIGATION_BOUNDARY =
   "普通用户先用五个入口完成本地投研；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、排查、设置或回退。";
 const LOCAL_FASTAPI_HEALTH_POLL_MS = 3000;
 type LocalFastapiStatus = "checking" | "online" | "offline";
+type ResearchActivityStatus = TaskRecord["status"] | "idle" | "offline" | "checking";
 
 const MOBILE_PRIMARY_JUMPS: Partial<Record<RouteKey, { href: string; label: string }>> = {
   home: { href: "#home/home-p1-symbol-confirm", label: "跳到股票确认" },
@@ -114,6 +115,7 @@ export default function Layout({
   children: ReactNode;
 }) {
   const [localFastapiStatus, setLocalFastapiStatus] = useState<LocalFastapiStatus>("checking");
+  const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);
   const lastLocalFastapiStatusRef = useRef<LocalFastapiStatus>("checking");
 
   useEffect(() => {
@@ -134,6 +136,13 @@ export default function Layout({
           if (cancelled) return;
           const ready = res.ok === true && String(res.data?.status ?? "") === "ok";
           publishLocalFastapiStatus(ready ? "online" : "offline");
+          if (ready) {
+            void getTasks()
+              .then((taskRes) => {
+                if (!cancelled && taskRes.ok) setTaskIndex(taskRes.data);
+              })
+              .catch(() => undefined);
+          }
         })
         .catch(() => {
           if (!cancelled) publishLocalFastapiStatus("offline");
@@ -161,6 +170,44 @@ export default function Layout({
         ? "去一键启动预检恢复"
         : "只读检查 /health";
   const mobilePrimaryJump = MOBILE_PRIMARY_JUMPS[active];
+  const latestConfirmedSymbol = String(taskIndex?.latest_confirmed_symbol ?? "").trim();
+  const latestConfirmedTaskId = String(taskIndex?.latest_confirmed_task_id ?? "").trim();
+  const latestConfirmedTask = taskIndex?.tasks.find((task) => task.task_id === latestConfirmedTaskId) ??
+    taskIndex?.tasks.find((task) => {
+      const payload = task.payload_safe ?? {};
+      return latestConfirmedSymbol && [payload.symbol, payload.ts_code, payload.stock_code, payload.ticker]
+        .some((value) => String(value ?? "").trim() === latestConfirmedSymbol);
+    }) ?? null;
+  const researchActivityStatus: ResearchActivityStatus = localFastapiStatus === "checking"
+    ? "checking"
+    : localFastapiStatus === "offline"
+      ? "offline"
+      : latestConfirmedTask?.status ??
+        (taskIndex?.latest_confirmed_task_status as TaskRecord["status"] | undefined) ??
+        "idle";
+  const researchActivityLabel = researchActivityStatus === "checking"
+    ? "正在读取本地研究状态"
+    : researchActivityStatus === "offline"
+      ? "等待本地连接"
+      : researchActivityStatus === "pending" || researchActivityStatus === "running"
+        ? `${latestConfirmedSymbol || "当前标的"} · 研究处理中${latestConfirmedTask ? ` ${Math.max(0, Math.min(100, Math.round(latestConfirmedTask.progress)))}%` : ""}`
+        : researchActivityStatus === "success"
+          ? `${latestConfirmedSymbol || "当前标的"} · 最近结果已完成`
+          : researchActivityStatus === "failed" || researchActivityStatus === "cancelled"
+            ? `${latestConfirmedSymbol || "当前标的"} · 最近研究待处理`
+            : "等待确认股票";
+  const researchActivityAction = researchActivityStatus === "success"
+    ? "factor"
+    : researchActivityStatus === "offline" || researchActivityStatus === "checking"
+      ? "desktop"
+      : "tasks";
+  const researchActivityActionLabel = researchActivityStatus === "success"
+    ? "看结果"
+    : researchActivityStatus === "idle"
+      ? "去确认"
+      : researchActivityStatus === "offline" || researchActivityStatus === "checking"
+        ? "去预检"
+        : "看进度";
 
   const routeButtons = (routes: Array<{ key: RouteKey; label: string }>) => (
     <>
@@ -202,6 +249,25 @@ export default function Layout({
           >
             {localFastapiStatus === "online" ? "健康" : "预检"}
           </button>
+        </div>
+        <div
+          className="research-activity-status"
+          data-research-activity-status={researchActivityStatus}
+          data-research-activity-boundary="local_task_index_only_no_provider_model_task"
+          role="status"
+          aria-label="latest local research status"
+        >
+          <span className="research-activity-dot" aria-hidden="true" />
+          <span className="research-activity-copy">
+            <strong>最近研究</strong>
+            <small>{researchActivityLabel}</small>
+          </span>
+          <button
+            type="button"
+            className="research-activity-action"
+            onClick={() => onNavigate(researchActivityStatus === "idle" ? "candidates" : researchActivityAction)}
+            aria-label={`${researchActivityActionLabel}；只切换本地页面`}
+          >{researchActivityActionLabel}</button>
         </div>
         <nav>
           {ROUTE_GROUPS.map((group) => (
