@@ -9,6 +9,18 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+    def test_next_session_hides_stale_chart_payload_for_latest_confirmed_symbol(self):
+        self.assertIn("const rawChartPayload = packet.chart_payload", self.page)
+        self.assertIn("const ordinaryResultReplaySummary", self.page)
+        self.assertIn("ordinaryResultReplaySummary.chart_ready_for_confirmed_symbol === true", self.page)
+        self.assertIn("ordinaryResultReplaySummary.chart_stale_for_confirmed_symbol === true", self.page)
+        self.assertIn("const chartPayload = chartReadyForConfirmedSymbol ? rawChartPayload : undefined;", self.page)
+        self.assertIn("has_drawable_data: false", self.page)
+        self.assertIn("chart_ready_for_confirmed_symbol: false", self.page)
+        self.assertIn("chart_stale_for_confirmed_symbol: chartStaleForConfirmedSymbol", self.page)
+        self.assertIn('status: chartStaleForConfirmedSymbol ? "stale_for_latest_confirmed_symbol" : rawChartSummary.status', self.page)
+        self.assertIn("<NextSessionChart payload={chartPayload} />", self.page)
+
     def test_next_session_has_three_step_ordinary_result_replay_before_audit(self):
         summary_start = self.page.index('title="普通用户次日图谱摘要"')
         audit_start = self.page.index('<details id="next-session-audit"')

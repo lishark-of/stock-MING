@@ -194,8 +194,33 @@ export default function NextSessionMap() {
   }, []);
 
   const legacy = packet.legacy_projection_cache as Record<string, unknown> | undefined;
-  const chartPayload = packet.chart_payload as Record<string, unknown> | undefined;
-  const chartSummary = (packet.chart_summary as Record<string, unknown> | undefined) ?? (chartPayload?.chart_summary as Record<string, unknown> | undefined) ?? {};
+  const rawChartPayload = packet.chart_payload as Record<string, unknown> | undefined;
+  const rawChartSummary =
+    (packet.chart_summary as Record<string, unknown> | undefined) ??
+    (rawChartPayload?.chart_summary as Record<string, unknown> | undefined) ??
+    {};
+  const ordinaryResultReplaySummary =
+    (packet.ordinary_result_replay_summary as Record<string, unknown> | undefined) ?? {};
+  const chartReadyForConfirmedSymbol =
+    ordinaryResultReplaySummary.chart_ready_for_confirmed_symbol === true ||
+    (!("chart_ready_for_confirmed_symbol" in ordinaryResultReplaySummary) && rawChartSummary.has_drawable_data === true);
+  const chartStaleForConfirmedSymbol = ordinaryResultReplaySummary.chart_stale_for_confirmed_symbol === true;
+  const chartPayload = chartReadyForConfirmedSymbol ? rawChartPayload : undefined;
+  const chartSummary = chartReadyForConfirmedSymbol
+    ? rawChartSummary
+    : {
+        ...rawChartSummary,
+        has_drawable_data: false,
+        historical_point_count: 0,
+        scenario_series_count: 0,
+        reference_line_count: 0,
+        operation_zone_count: 0,
+        is_exact_next_session_packet: false,
+        uses_real_daily_close: false,
+        chart_ready_for_confirmed_symbol: false,
+        chart_stale_for_confirmed_symbol: chartStaleForConfirmedSymbol,
+        status: chartStaleForConfirmedSymbol ? "stale_for_latest_confirmed_symbol" : rawChartSummary.status
+      };
   const chartContract = chartPayload?.chart_contract as Record<string, unknown> | undefined;
   const chartContractCounts = chartContract?.series_counts as Record<string, unknown> | undefined;
   const chartMaturity = (chartPayload?.chart_maturity as Record<string, unknown> | undefined) ?? {};
