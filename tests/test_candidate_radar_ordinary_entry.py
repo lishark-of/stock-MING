@@ -1110,6 +1110,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             first_screen_confirm_start,
             self.page.index('aria-label="candidate radar next user actions"', first_screen_confirm_start),
         )
+        first_screen_actions_start = self.page.index('aria-label="candidate radar first screen quant projection actions"', first_screen_confirm_start)
+        first_screen_actions_end = self.page.index('className="ordinary-status-note"', first_screen_actions_start)
+        first_screen_actions = self.page[first_screen_actions_start:first_screen_actions_end]
+        self.assertIn('href="#factor/factor-score"', first_screen_actions)
+        self.assertIn('href="#next/next-session-chart"', first_screen_actions)
         self.assertIn("candidateRadarP0HandoffPacketRows", self.page)
         self.assertIn("desktopPreflight.p0_to_p1_ordinary_handoff_rows", self.page)
         self.assertIn("candidateRadarP0HandoffRows", self.page)
@@ -2182,8 +2187,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("disabled={loading}", one_screen_result_slice)
         self.assertIn("刷新本地回放", one_screen_result_slice)
         self.assertIn('href="#tasks"', one_screen_result_slice)
-        self.assertIn('href="#factor"', one_screen_result_slice)
-        self.assertIn('href="#next"', one_screen_result_slice)
+        self.assertIn('href="#factor/factor-score"', one_screen_result_slice)
+        self.assertIn('href="#next/next-session-chart"', one_screen_result_slice)
         self.assertIn("只调用 GET cache / bootstrap status", one_screen_result_slice)
         self.assertIn("不会创建第二个 task、不补调 Tushare/DeepSeek、不写交易动作", one_screen_result_slice)
         self.assertNotIn("postCandidateRadarQuantProjection", one_screen_result_slice)
@@ -2561,6 +2566,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("candidate-radar-operator-confirm-help", self.page)
         self.assertIn("输入股票代码只做本地校验；不会创建任务，也不会调用 Tushare 或 DeepSeek", self.page)
         self.assertIn("点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task", self.page)
+        primary_action_start = self.page.index("const renderQuantProjectionPrimaryAction =")
+        primary_action_end = self.page.index(") : (", primary_action_start)
+        primary_action_slice = self.page[primary_action_start:primary_action_end]
+        self.assertIn('href="#factor/factor-score"', primary_action_slice)
+        self.assertIn(">查看最近结果</a>", primary_action_slice)
         submit_start = self.page.index("const launchQuantProjection = () =>")
         submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
         submit_slice = self.page[submit_start:submit_end]

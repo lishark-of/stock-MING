@@ -5661,7 +5661,7 @@ export default function CandidateRadar() {
   const renderQuantProjectionPrimaryAction = (describedBy: string) =>
     quantProjectionUseRecentResultInsteadOfSubmit ? (
       <a
-        href="#factor"
+        href="#factor/factor-score"
         title={quantProjectionRecentResultActionTitle}
         aria-label={quantProjectionRecentResultActionTitle}
         aria-describedby={describedBy}
@@ -6283,8 +6283,8 @@ export default function CandidateRadar() {
               title={quantProjectionInputBoundaryLabel}
             />
             {renderQuantProjectionPrimaryAction(quantProjectionSummarySubmitHelpId)}
-            <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar first screen confirmation">股票量化推演</a>
-            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session replay from candidate radar first screen confirmation">次日图谱</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读回放本地结果" aria-label="open factor replay from candidate radar first screen confirmation">股票量化推演</a>
+            <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session replay from candidate radar first screen confirmation">次日图谱</a>
           </div>
           <p className="ordinary-status-note" aria-live="polite">{quantProjectionConnectionReadyLabel}</p>
           <p className="risk-note" aria-live="polite">{ordinaryUserText(quantProjectionSubmitHint)}</p>
@@ -6358,8 +6358,8 @@ export default function CandidateRadar() {
                 aria-label="refresh candidate radar local replay after p1 confirm"
               >刷新本地回放</button>
               <a href="#tasks" title="切换到任务目录；只读查看本地 task 进度" aria-label="open task progress after p1 confirm">任务进度</a>
-              <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay after p1 confirm">量化推演</a>
-              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session replay after p1 confirm">次日图谱</a>
+              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读回放本地结果" aria-label="open factor replay after p1 confirm">量化推演</a>
+              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session replay after p1 confirm">次日图谱</a>
             </div>
             <p className="risk-note">刷新本地回放只读取本地缓存和启动状态，帮助确认结果是否已可读；不会启动第二个后台流程、不补调外部数据或模型解释、不写交易动作。</p>
           </div>
