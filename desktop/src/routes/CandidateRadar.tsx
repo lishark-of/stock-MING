@@ -1715,6 +1715,13 @@ export default function CandidateRadar() {
       quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized
     ? `当前输入已有历史结果：${quantProjectionAcceptedTaskSymbol}；再次点击确认会重新生成本地结果，旧结果只作为参考。`
     : "修改输入只切换本地输入会话；不会自动确认，也不会自动取数。";
+  const quantProjectionInputOwnershipGuard = quantProjectionTaskReceiptInputMismatch
+    ? `当前输入 ${quantProjectionSymbolValidation.normalized} 还未确认；最近结果属于 ${quantProjectionAcceptedTaskSymbol}，旧任务只作历史回放，不会覆盖新输入。`
+    : quantProjectionSymbolReady &&
+      Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
+      quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized
+    ? `当前输入 ${quantProjectionAcceptedTaskSymbol} 已有最近结果；再次确认才会生成新版本。`
+    : "输入只改变本地会话；不会自动确认、不会创建任务、不会取数。";
   const quantProjectionHistoricalTaskMatchesInput =
     quantProjectionSymbolReady &&
     Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
@@ -6565,6 +6572,7 @@ export default function CandidateRadar() {
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
           <p className="ordinary-status-note" aria-live="polite">{quantProjectionConnectionReadyLabel}</p>
+          <p className="ordinary-status-note" aria-label="quant projection visible input ownership guard" aria-live="polite">{quantProjectionInputOwnershipGuard}</p>
           <div aria-label="quant projection ordinary one glance state">
             <h3>确认后一眼看懂</h3>
             <MetricGrid items={quantProjectionOrdinaryOneGlanceItems} />

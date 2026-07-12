@@ -106,6 +106,10 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("覆盖保护", self.page)
         self.assertIn("旧任务不会覆盖 current", self.page)
         self.assertIn("先看 current/last-good 结果", self.page)
+        self.assertIn("quantProjectionInputOwnershipGuard", self.page)
+        self.assertIn('aria-label="quant projection visible input ownership guard"', search_panel_top)
+        self.assertIn("旧任务只作历史回放，不会覆盖新输入", self.page)
+        self.assertIn("输入只改变本地会话；不会自动确认、不会创建任务、不会取数", self.page)
         self.assertIn(
             "searchQuantDegradedResultVisible && searchQuantResultCurrentSymbol && searchQuantDegradedResultSymbol",
             self.page,
