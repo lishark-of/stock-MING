@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getAuditUserRouteQa, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataCapabilityCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, postCandidateRadarQuantProjection, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getAuditUserRouteQa, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataCapabilityCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPacket, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, postCandidateRadarQuantProjection, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
@@ -138,6 +138,9 @@ export default function CommandCenterHome() {
   const [homeQuantReadbackRefreshing, setHomeQuantReadbackRefreshing] = useState(false);
   const [homeQuantReadbackLastRefresh, setHomeQuantReadbackLastRefresh] = useState("");
   const [packets, setPackets] = useState<Record<string, unknown>>({});
+  const [homeEtfPacket, setHomeEtfPacket] = useState<Record<string, unknown>>({});
+  const [homeMarginPacket, setHomeMarginPacket] = useState<Record<string, unknown>>({});
+  const [homeMarginEtfReceipt, setHomeMarginEtfReceipt] = useState<Record<string, unknown>>({});
   const [packetEnvelopeLedger, setPacketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [market, setMarket] = useState<Record<string, unknown>>({});
   const [marketEnvelopeLedger, setMarketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -225,6 +228,9 @@ export default function CommandCenterHome() {
         setPacketEnvelopeLedger(res.call_ledger ?? []);
         setPackets(res.data);
       });
+      track("home_etf_packet", getPacket("command_center_etf_packet"), (res) => setHomeEtfPacket(res.data));
+      track("home_margin_packet", getPacket("command_center_margin_packet"), (res) => setHomeMarginPacket(res.data));
+      track("home_margin_etf_receipt", getPacket("command_center_margin_etf_refresh_receipt"), (res) => setHomeMarginEtfReceipt(res.data));
       track("market", getMarketContextCache(), (res) => {
         setMarketEnvelopeLedger(res.call_ledger ?? []);
         setMarketEnvelopeWarnings(res.warnings ?? []);
@@ -2394,7 +2400,7 @@ export default function CommandCenterHome() {
           : "本地连接恢复后，先确认股票代码，再看结果入口。";
   const ordinaryHomeStatusItems: MetricItem[] = [
     {
-      label: "只读入口",
+      label: "本地联通",
       value: dailyCommandHealthOk
         ? dailyCommandP0LocalReadinessReady
           ? "已接上；确认按钮可用"
@@ -2415,12 +2421,7 @@ export default function CommandCenterHome() {
       tone: dailyCommandP3OneGlanceReadable ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
     },
     {
-      label: "运行模式",
-      value: dailyCommandRuntimeModeLabel,
-      tone: dailyCommandRuntimeModeLabel === "未知运行模式" ? "warn" : "good"
-    },
-    {
-      label: "现在做什么",
+      label: "下一步",
       value: ordinaryHomePlainConclusionNext,
       tone: dailyCommandP0LocalReadinessReady || dailyCommandP3OneGlanceReadable ? "good" : "warn"
     }
@@ -3457,29 +3458,72 @@ export default function CommandCenterHome() {
       tone: "good"
     }
   ];
-  const ordinaryHomeMarginEtfRiskStatus = ordinaryHomeCandidateReadable
-    ? `从下一票候选过来时，先看 ETF/融资页的现金线和候选风险；${ordinaryHomeCandidateGroupLabel} 只做研究顺序。`
-    : "ETF/融资风险等待候选或确认结果；缺数据时按保守处理，不新增融资。";
+  const homeEtfProviderRows = homeRows(homeEtfPacket.recommended_etfs).slice(0, 3);
+  const homeEtfDataDate = homeText(homeEtfPacket.trade_date ?? homeEtfPacket.provider_data_date, "待补");
+  const homeMarginDataDate = homeText(homeMarginPacket.trade_date ?? homeMarginPacket.provider_data_date, "待补");
+  const homeMarginEtfAlignmentStatus = homeText(
+    homeMarginEtfReceipt.margin_etf_data_alignment_status ?? homeEtfPacket.margin_etf_data_alignment_status,
+    "not_bound"
+  );
+  const homeEtfReady = homeEtfPacket.status === "ready" && homeEtfProviderRows.length > 0;
+  const homeMarginReady = homeMarginPacket.status === "ready";
+  const homeMarginEtfSameResultBound = homeMarginEtfReceipt.margin_etf_same_result_bound === true;
+  const homeYi = (value: unknown) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? `${number.toFixed(4).replace(/0+$/, "").replace(/\.$/, "")} 亿` : "待补";
+  };
+  const homePct = (value: unknown) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? `${number.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}%` : "待补";
+  };
+  const homeMarginEtfAlignmentLabel = homeMarginEtfAlignmentStatus === "aligned_data_date"
+    ? `同批同日 ${homeEtfDataDate}`
+    : homeMarginEtfAlignmentStatus === "mixed_data_dates"
+      ? `同一回放版本，ETF ${homeEtfDataDate} / 融资 ${homeMarginDataDate} 跨日`
+      : homeMarginEtfAlignmentStatus === "etf_data_date_missing"
+        ? `同一回放版本，ETF 缺数据日 / 融资 ${homeMarginDataDate}`
+        : homeMarginEtfSameResultBound
+          ? "同一回放版本，数据日期仍待补"
+          : "ETF 与融资尚未完成同批回放";
+  const ordinaryHomeMarginEtfRiskStatus = homeEtfReady || homeMarginReady
+    ? `ETF ${homeEtfProviderRows.length} 行、融资事实已回放；${homeMarginEtfAlignmentLabel}。当前仍不新增融资。`
+    : ordinaryHomeCandidateReadable
+      ? `从下一票候选过来时，先看 ETF/融资页的现金线和候选风险；${ordinaryHomeCandidateGroupLabel} 只做研究顺序。`
+      : "ETF/融资风险等待候选或确认结果；缺数据时按保守处理，不新增融资。";
+  const ordinaryHomeMarginEtfPreviewRows = homeEtfProviderRows.map((row, index) => ({
+    序号: index + 1,
+    ETF: `${homeText(row.name, "ETF")} (${homeText(row.code, "代码待补")})`,
+    数据日: homeText(row.trade_date, homeEtfDataDate),
+    收盘: homeText(row.close, "待补"),
+    涨跌幅: homePct(row.pct_chg),
+    成交额: homeYi(row.amount_yi ?? row.turnover_yi),
+    来源: homeText(row.source, "本地 ETF 快照"),
+    边界: "行情只供研究复核，不生成买入、加仓或融资指令"
+  }));
   const ordinaryHomeMarginEtfRiskItems: MetricItem[] = [
     {
-      label: "ETF/融资",
-      value: ordinaryHomeMarginEtfRiskStatus,
-      tone: ordinaryHomeCandidateReadable ? "good" : "warn"
+      label: "同批状态",
+      value: homeMarginEtfAlignmentLabel,
+      tone: homeMarginEtfAlignmentStatus === "aligned_data_date" ? "good" : "warn"
     },
     {
-      label: "融资现金线",
-      value: "先看融资现金线和缺口；融资比例不是加杠杆许可",
+      label: "ETF 行情",
+      value: homeEtfReady
+        ? `${homeEtfProviderRows.length} 只 / ${homeEtfDataDate}；成交额 ${homeEtfProviderRows.map((row) => homeYi(row.amount_yi ?? row.turnover_yi)).join(" / ")}`
+        : "ETF 行情待补；去 ETF/融资页手动补数",
+      tone: homeEtfReady ? "good" : "warn"
+    },
+    {
+      label: "融资事实",
+      value: homeMarginReady
+        ? `${homeMarginDataDate}；融资余额 ${homeYi(homeMarginPacket.financing_balance_yi)} / 当日融资买入额 ${homeYi(homeMarginPacket.financing_buy_amount_yi ?? homeMarginPacket.financing_buy_yi)} / 两融余额 ${homeYi(homeMarginPacket.margin_balance_yi)}`
+        : "融资事实待补；缺失时不推断杠杆改善",
+      tone: homeMarginReady ? "good" : "warn"
+    },
+    {
+      label: "风险结论",
+      value: "不新增融资；ETF 候选与行情不是买入、加仓或加融资指令",
       tone: "good"
-    },
-    {
-      label: "ETF 候选",
-      value: "ETF 候选只供研究替代/分散风险，不是买入、加仓或加融资指令",
-      tone: "good"
-    },
-    {
-      label: "缺数据",
-      value: "显示等待或 degraded；按保守处理，不把空结果当无风险",
-      tone: "warn"
     },
     {
       label: "现在点哪里",
@@ -3807,6 +3851,9 @@ export default function CommandCenterHome() {
       }),
       getFactorQuantCache().then((res) => setFactor(res.data)).catch(() => undefined),
       getNextSessionCache().then((res) => setNext(res.data)).catch(() => undefined),
+      getPacket("command_center_etf_packet").then((res) => setHomeEtfPacket(res.data)).catch(() => undefined),
+      getPacket("command_center_margin_packet").then((res) => setHomeMarginPacket(res.data)).catch(() => undefined),
+      getPacket("command_center_margin_etf_refresh_receipt").then((res) => setHomeMarginEtfReceipt(res.data)).catch(() => undefined),
       getTasks().then((res) => {
         setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
         setTaskIndex(res.data);
@@ -3949,6 +3996,9 @@ export default function CommandCenterHome() {
         </div>
         {homeQuantSubmitError ? <p className="ordinary-status-note" aria-live="polite">确认失败：请检查本地连接后重试。</p> : null}
         <p className="ordinary-status-note" aria-label="ordinary home confirm status" aria-live="polite">{ordinaryHomeConfirmStatusLine}</p>
+        <details className="developer-audit-details" aria-label="ordinary home supporting research details">
+          <summary>研究辅助 / 审计详情</summary>
+          <p className="risk-note">候选、数据回放、任务进度、路线 QA 和来源细节统一收在这里；普通使用只需看上方四项和下一步按钮。</p>
         <div aria-label="ordinary home app visible now summary">
           <h3>打开 app 能看到什么</h3>
           <p className="ordinary-status-note" aria-label="ordinary home app visible now sentence" aria-live="polite">{ordinaryHomeAppVisibleNowSentence}</p>
@@ -4037,6 +4087,13 @@ export default function CommandCenterHome() {
           <h3>ETF/融资风险速读</h3>
           <p className="ordinary-status-note" aria-label="ordinary home margin etf risk sentence" aria-live="polite">{ordinaryHomeMarginEtfRiskStatus}</p>
           <MetricGrid items={ordinaryHomeMetricItems(ordinaryHomeMarginEtfRiskItems)} />
+          {ordinaryHomeMarginEtfPreviewRows.length ? (
+            <details className="developer-audit-details" aria-label="ordinary home etf market preview">
+              <summary>查看 3 只 ETF 本地行情</summary>
+              <p className="risk-note">只读已写入的 ETF 快照；表格默认收起，不在首页展示任务编号、账本或内部版本。</p>
+              <DataLineageTable rows={ordinaryHomeMarginEtfPreviewRows} />
+            </details>
+          ) : null}
           <div className="actions" aria-label="ordinary home margin etf risk actions">
             <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf risk card from ordinary home">看 ETF/融资风险</a>
             <a href="#candidates/candidate-pool" title="切换到下一票候选池；只读本地候选缓存" aria-label="open candidate pool from ordinary home margin etf bridge">回候选池</a>
@@ -4084,6 +4141,7 @@ export default function CommandCenterHome() {
           </div>
           <p className="risk-note">这些结果入口只切换本地模块；不会新建任务、不会调用外部数据或模型服务、不会读取密钥、不会交易或改写策略。</p>
         </div>
+        </details>
       </PacketCard>
       <details className="developer-audit-details" aria-label="daily command research assist audit details">
         <summary>研究辅助 / 审计详情</summary>

@@ -9,6 +9,34 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
     def setUp(self):
         self.source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
 
+    def test_home_keeps_four_user_fields_visible_and_demotes_supporting_detail(self):
+        source = self.source
+        status_start = source.index("const ordinaryHomeStatusItems")
+        status_end = source.index("const ordinaryHomeAppVisibleNowSentence", status_start)
+        status_items = source[status_start:status_end]
+
+        for label in ("本地联通", "当前标的", "最近结果", "下一步"):
+            self.assertIn(f'label: "{label}"', status_items)
+        self.assertNotIn('label: "运行模式"', status_items)
+
+        card_start = source.index('title="今日可用"')
+        supporting_start = source.index(
+            'aria-label="ordinary home supporting research details"',
+            card_start,
+        )
+        first_supporting_row = source.index(
+            'aria-label="ordinary home app visible now summary"',
+            supporting_start,
+        )
+        card_end = source.index("</PacketCard>", first_supporting_row)
+        supporting_end = source.rindex("</details>", first_supporting_row, card_end)
+
+        self.assertLess(card_start, supporting_start)
+        self.assertLess(supporting_start, first_supporting_row)
+        self.assertLess(first_supporting_row, supporting_end)
+        self.assertLess(supporting_end, card_end)
+        self.assertIn("研究辅助 / 审计详情", source[supporting_start:first_supporting_row])
+
     def test_daily_command_center_summary_shows_user_decision_fields_first(self):
         source = self.source
 
@@ -213,9 +241,9 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         ordinary_status_start = source.index("const ordinaryHomeStatusItems")
         ordinary_status_end = source.index("const ordinaryHomeAppVisibleNowSentence", ordinary_status_start)
         ordinary_status_slice = source[ordinary_status_start:ordinary_status_end]
-        self.assertIn('label: "运行模式"', ordinary_status_slice)
-        self.assertIn("dailyCommandRuntimeModeLabel", ordinary_status_slice)
-        self.assertIn('label: "现在做什么"', ordinary_status_slice)
+        self.assertIn('label: "本地联通"', ordinary_status_slice)
+        self.assertNotIn('label: "运行模式"', ordinary_status_slice)
+        self.assertIn('label: "下一步"', ordinary_status_slice)
         self.assertIn("ordinaryHomePlainConclusionNext", ordinary_status_slice)
         first_card_start = source.index('title="今日可用"')
         first_card_end = source.index('aria-label="ordinary home app visible now summary"', first_card_start)
@@ -994,15 +1022,15 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("{ordinaryHomeMarginEtfRiskStatus}", margin_etf)
         self.assertIn("MetricGrid items={ordinaryHomeMetricItems(ordinaryHomeMarginEtfRiskItems)}", margin_etf)
         for label in (
-            'label: "ETF/融资"',
-            'label: "融资现金线"',
-            'label: "ETF 候选"',
-            'label: "缺数据"',
+            'label: "同批状态"',
+            'label: "ETF 行情"',
+            'label: "融资事实"',
+            'label: "风险结论"',
             'label: "现在点哪里"',
         ):
             self.assertIn(label, source)
-        self.assertIn("融资比例不是加杠杆许可", source)
-        self.assertIn("ETF 候选只供研究替代/分散风险，不是买入、加仓或加融资指令", source)
+        self.assertIn("缺失时不推断杠杆改善", source)
+        self.assertIn("ETF 候选与行情不是买入、加仓或加融资指令", source)
         self.assertIn('aria-label="ordinary home margin etf risk actions"', margin_etf)
         self.assertIn('href="#marginEtf"', margin_etf)
         self.assertIn('href="#candidates/candidate-pool"', margin_etf)

@@ -125,8 +125,15 @@ function routeFromStorage(): RouteKey | null {
   }
 }
 
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && window.location.protocol === "tauri:";
+}
+
 function readInitialRoute(): RouteKey {
-  return routeFromHash() ?? routeFromStorage() ?? "home";
+  const explicitRoute = routeFromHash();
+  if (explicitRoute) return explicitRoute;
+  if (isTauriRuntime()) return "home";
+  return routeFromStorage() ?? "home";
 }
 
 function persistRoute(route: RouteKey) {

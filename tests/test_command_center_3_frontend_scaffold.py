@@ -1793,6 +1793,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('status={dailyCommandStatusLabel}', home_source)
         page_head_start = home_source.index('<div className="page-head">')
         ordinary_home_start = home_source.index('title="今日可用"')
+        supporting_details_start = home_source.index(
+            'aria-label="ordinary home supporting research details"',
+            ordinary_home_start,
+        )
         research_details_start = home_source.index("<summary>研究辅助 / 审计详情</summary>", ordinary_home_start)
         fastapi_card_start = home_source.index('title="本地 FastAPI 接线速读"', research_details_start)
         ordinary_home_visible_slice = home_source[page_head_start:research_details_start]
@@ -1871,12 +1875,13 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('title="今日可用"', ordinary_home_slice)
         self.assertIn("普通首页只看能不能用、看哪只票、有没有结果、下一步点哪里", ordinary_home_slice)
         self.assertIn("MetricGrid items={ordinaryHomeMetricItems(ordinaryHomeStatusItems)}", ordinary_home_slice)
-        self.assertIn('label: "只读入口"', ordinary_home_status_definition)
+        self.assertIn('label: "本地联通"', ordinary_home_status_definition)
         self.assertIn("已接上；确认闸门待 P0 证据", ordinary_home_status_definition)
         self.assertIn('label: "当前标的"', ordinary_home_status_definition)
         self.assertIn('label: "最近结果"', ordinary_home_status_definition)
         self.assertNotIn('label: "本地数据"', ordinary_home_status_definition)
-        self.assertNotIn('label: "下一步"', ordinary_home_status_definition)
+        self.assertIn('label: "下一步"', ordinary_home_status_definition)
+        self.assertNotIn('label: "运行模式"', ordinary_home_status_definition)
         self.assertIn('aria-label="ordinary home input confirm first sentence"', ordinary_home_slice)
         self.assertIn("输入确认速读：输入只做本地校验", ordinary_home_slice)
         self.assertIn("确认后看最近结果、候选池、ETF/融资、股票量化推演和次日图谱", ordinary_home_slice)
@@ -1889,8 +1894,12 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("{ordinaryHomeConfirmStatusLine}", ordinary_home_slice)
         self.assertIn('ordinaryHomePrimaryActionKind === "refresh" ? refreshHomeResearchReadback : launchHomeQuantProjection', ordinary_home_slice)
         self.assertLess(
-            ordinary_home_slice.index('aria-label="daily command ordinary home primary controls"'),
-            ordinary_home_slice.index('aria-label="ordinary home app visible now summary"'),
+            home_source.index('aria-label="daily command ordinary home primary controls"', ordinary_home_start),
+            supporting_details_start,
+        )
+        self.assertLess(
+            supporting_details_start,
+            home_source.index('aria-label="ordinary home app visible now summary"', supporting_details_start),
         )
         self.assertNotIn("填入当前标的", ordinary_home_slice)
         self.assertNotIn('aria-label="refresh ordinary home result"', ordinary_home_slice)
