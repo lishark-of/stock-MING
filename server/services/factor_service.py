@@ -259,6 +259,9 @@ FACTOR_TEST_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION = "factor_test_production_stag
 FACTOR_TEST_PROVIDER_SMALL_POOL_METRIC_VALIDATION_SCHEMA_VERSION = (
     "factor_test_provider_small_pool_metric_validation_audit.v1"
 )
+FACTOR_TEST_PROVIDER_SMALL_POOL_PIT_BIAS_SCHEMA_VERSION = (
+    "factor_test_provider_small_pool_pit_bias_audit.v1"
+)
 FACTOR_TEST_PROVIDER_SMALL_POOL_METRIC_ROLLING_WINDOW = 20
 FACTOR_TEST_PROVIDER_SMALL_POOL_ASSUMED_ROUND_TRIP_COST_BPS = 20.0
 FACTOR_TEST_PRODUCTION_STAGE_KEYS = (
@@ -500,6 +503,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, provider_small_pool_request_ledger = _attach_factor_test_provider_small_pool_execution_request(packet, now)
     packet, provider_small_pool_forward_return_ledger = _attach_factor_test_provider_small_pool_forward_return_label_audit(packet, now)
     packet, provider_small_pool_metric_validation_ledger = _attach_factor_test_provider_small_pool_metric_validation_audit(packet, now)
+    packet, provider_small_pool_pit_bias_ledger = _attach_factor_test_provider_small_pool_pit_bias_audit(packet, now)
     packet, factor_test_durable_recipe_ledger = _attach_factor_test_durable_evidence_recipe(packet, now)
     packet, factor_test_production_stage_ledger = _attach_factor_test_production_stage_scope_manifest(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
@@ -529,6 +533,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + provider_small_pool_request_ledger
         + provider_small_pool_forward_return_ledger
         + provider_small_pool_metric_validation_ledger
+        + provider_small_pool_pit_bias_ledger
         + factor_test_durable_recipe_ledger
         + factor_test_production_stage_ledger
         + candidate_handoff_ledger
@@ -555,6 +560,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     provider_small_pool_request_warning = "Factor Test provider small-pool execution request ticket 只绑定 dry-run scope hash 和后续手工 provider task 请求；不会调用 Tushare、创建 provider task 或标记生产完成。"
     provider_small_pool_forward_return_warning = "Factor Test provider 小池 forward-return label audit 只读本地 Parquet 样本；部分覆盖会明确 degraded，不调用 Tushare/DeepSeek/GitHub，也不代表 rolling IC 或生产完成。"
     provider_small_pool_metric_validation_warning = "Factor Test provider 小池 metric validation 只读同 scope 本地 Parquet，回放 rolling IC/Rank IC/ICIR、成本和市值中性化 proxy；不调用 provider/model、不代表生产完成。"
+    provider_small_pool_pit_bias_warning = "Factor Test provider 小池 PIT/bias audit 只读同 scope/result_version 本地 Parquet；验证 signal-date fact rows、future-dated labels 和 bounded-scope survivorship；不调用 provider/model、不代表全市场或生产完成。"
     factor_test_durable_recipe_warning = "Factor Test durable evidence recipe 只固定 LTG-03 生产验收直接证据清单；不会调用 Tushare/DeepSeek/GitHub、计算生产 IC 或标记生产完成。"
     factor_test_production_stage_warning = "Factor Test production stage manifest 只展示 LTG-03 生产阶段 direct evidence / pending 缺口；不会创建 provider task、调用 Tushare 或标记生产完成。"
     candidate_handoff_warning = "Factor Quant CandidateRadar handoff 只读本地搜票确认结果和 Tushare-first 回放摘要；不会创建 task、调用 Tushare/DeepSeek、修改 operation_zones 或标记生产完成。"
@@ -581,6 +587,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_small_pool_request_warning,
         provider_small_pool_forward_return_warning,
         provider_small_pool_metric_validation_warning,
+        provider_small_pool_pit_bias_warning,
         factor_test_durable_recipe_warning,
         factor_test_production_stage_warning,
         candidate_handoff_warning,
@@ -607,6 +614,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_small_pool_request_warning,
         provider_small_pool_forward_return_warning,
         provider_small_pool_metric_validation_warning,
+        provider_small_pool_pit_bias_warning,
         factor_test_durable_recipe_warning,
         factor_test_production_stage_warning,
         candidate_handoff_warning,
@@ -7246,6 +7254,348 @@ def _attach_factor_test_provider_small_pool_metric_validation_audit(
     return packet, ledger
 
 
+def _factor_test_provider_small_pool_pit_bias_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_for_pit_bias_controls": bool(required),
+        "blocks_pit_bias_controls": bool(required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "pit_bias_controls_done": False,
+        "production_factor_test_validation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _factor_test_provider_small_pool_pit_bias_audit(
+    factor_tests: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    acceptance = _dict(factor_tests.get("provider_small_pool_acceptance_receipt"))
+    forward_return_audit = _dict(factor_tests.get("provider_small_pool_forward_return_label_audit"))
+    metric_validation = _dict(factor_tests.get("provider_small_pool_metric_validation_audit"))
+    source_scope_hash = str(
+        acceptance.get("acceptance_scope_hash")
+        or metric_validation.get("source_acceptance_scope_hash")
+        or forward_return_audit.get("source_acceptance_scope_hash")
+        or ""
+    ).strip()
+    source_scope_hash_short = str(
+        acceptance.get("acceptance_scope_hash_short")
+        or metric_validation.get("source_acceptance_scope_hash_short")
+        or forward_return_audit.get("source_acceptance_scope_hash_short")
+        or ""
+    )
+    expected_symbols = [
+        str(item)
+        for item in (
+            acceptance.get("symbols_with_core_rows")
+            or metric_validation.get("expected_symbols")
+            or forward_return_audit.get("expected_symbols")
+            or []
+        )
+        if str(item or "").strip()
+    ]
+    expected_symbol_set = set(expected_symbols)
+    provider_sample_done = bool(
+        acceptance.get("sample_rows_collected")
+        or acceptance.get("provider_backed_small_pool_sample_done")
+        or acceptance.get("provider_backed_small_pool_validation_done")
+    )
+    metric_ready = bool(
+        metric_validation.get("rolling_window_validation_done")
+        and metric_validation.get("cost_assumption_validation_done")
+        and metric_validation.get("result_version")
+    )
+    daily_rows, _daily_packet, daily_error_safe = _factor_test_provider_small_pool_dataset_rows(
+        "daily",
+        source_scope_hash=source_scope_hash,
+        expected_symbols=expected_symbol_set,
+    )
+    basic_rows, _basic_packet, basic_error_safe = _factor_test_provider_small_pool_dataset_rows(
+        "daily_basic",
+        source_scope_hash=source_scope_hash,
+        expected_symbols=expected_symbol_set,
+    )
+    moneyflow_rows, _moneyflow_packet, moneyflow_error_safe = _factor_test_provider_small_pool_dataset_rows(
+        "moneyflow",
+        source_scope_hash=source_scope_hash,
+        expected_symbols=expected_symbol_set,
+    )
+    daily_keys = {
+        (str(row.get("ts_code") or ""), str(row.get("trade_date") or ""))
+        for row in daily_rows
+        if isinstance(row, dict)
+    }
+    basic_keys = {
+        (str(row.get("ts_code") or ""), str(row.get("trade_date") or ""))
+        for row in basic_rows
+        if isinstance(row, dict)
+    }
+    moneyflow_keys = {
+        (str(row.get("ts_code") or ""), str(row.get("trade_date") or ""))
+        for row in moneyflow_rows
+        if isinstance(row, dict)
+    }
+    fact_keys = basic_keys & moneyflow_keys
+    fact_rows_same_trade_date = bool(fact_keys and fact_keys.issubset(daily_keys))
+    missing_daily_fact_key_count = len(fact_keys - daily_keys)
+
+    raw_horizons = (
+        forward_return_audit.get("requested_horizons")
+        or metric_validation.get("requested_horizons")
+        or acceptance.get("forward_return_horizons")
+        or ["1d", "5d"]
+    )
+    horizon_pairs: list[tuple[str, int]] = []
+    for item in raw_horizons if isinstance(raw_horizons, list) else [raw_horizons]:
+        days = _factor_test_provider_small_pool_horizon_days(item)
+        label = f"{days}d" if days is not None else ""
+        if days is not None and (label, days) not in horizon_pairs:
+            horizon_pairs.append((label, days))
+    if not horizon_pairs:
+        horizon_pairs = [("1d", 1), ("5d", 5)]
+
+    by_symbol: dict[str, list[dict[str, Any]]] = {}
+    for row in daily_rows:
+        symbol = str(row.get("ts_code") or "").strip()
+        trade_date = str(row.get("trade_date") or "").strip()
+        if not symbol or not trade_date or not _is_finite_number(row.get("close")):
+            continue
+        by_symbol.setdefault(symbol, []).append(row)
+    for rows_for_symbol in by_symbol.values():
+        rows_for_symbol.sort(key=lambda item: str(item.get("trade_date") or ""))
+
+    label_row_count = 0
+    future_date_violation_count = 0
+    label_symbol_set: set[str] = set()
+    label_min_trade_date = ""
+    label_max_forward_trade_date = ""
+    for symbol, rows_for_symbol in by_symbol.items():
+        for _label, days in horizon_pairs:
+            for index, current_row in enumerate(rows_for_symbol):
+                future_index = index + days
+                if future_index >= len(rows_for_symbol):
+                    continue
+                trade_date = str(current_row.get("trade_date") or "")
+                forward_trade_date = str(rows_for_symbol[future_index].get("trade_date") or "")
+                if not trade_date or not forward_trade_date:
+                    continue
+                label_row_count += 1
+                label_symbol_set.add(symbol)
+                label_min_trade_date = min([date for date in (label_min_trade_date, trade_date) if date] or [""])
+                label_max_forward_trade_date = max(label_max_forward_trade_date, forward_trade_date)
+                if forward_trade_date <= trade_date:
+                    future_date_violation_count += 1
+    forward_labels_future_dated = bool(label_row_count and future_date_violation_count == 0)
+    bounded_scope_survivorship_done = bool(
+        expected_symbol_set
+        and label_symbol_set == expected_symbol_set
+        and forward_return_audit.get("symbol_coverage_complete") is True
+    )
+    same_scope_result_version_done = bool(
+        provider_sample_done
+        and metric_ready
+        and source_scope_hash
+        and metric_validation.get("source_acceptance_scope_hash") == source_scope_hash
+        and metric_validation.get("result_version")
+    )
+    dataset_error_safe = "; ".join(
+        item for item in (daily_error_safe, basic_error_safe, moneyflow_error_safe) if item
+    )
+    pit_bias_done = bool(
+        same_scope_result_version_done
+        and fact_rows_same_trade_date
+        and forward_labels_future_dated
+        and bounded_scope_survivorship_done
+    )
+    full_universe_survivorship_done = False
+    if not provider_sample_done:
+        status = "provider_small_pool_pit_bias_controls_blocked_missing_provider_sample"
+        allowed_next_step = "run_scope_bound_provider_small_pool_sample_first"
+    elif not metric_ready:
+        status = "provider_small_pool_pit_bias_controls_blocked_missing_metric_validation"
+        allowed_next_step = "compute_rolling_cost_metric_validation_first"
+    elif pit_bias_done:
+        status = "provider_small_pool_pit_bias_controls_ready_full_market_boundary_pending"
+        allowed_next_step = "add_industry_neutralization_full_market_boundary_and_promotion_review"
+    else:
+        status = "provider_small_pool_pit_bias_controls_degraded_partial_controls"
+        allowed_next_step = "review_pit_bias_control_failures_before_promotion"
+    rows = [
+        _factor_test_provider_small_pool_pit_bias_row(
+            "same_scope_result_version",
+            "passed_same_scope_result_version" if same_scope_result_version_done else "blocked_scope_or_result_version_missing",
+            same_scope_result_version_done,
+            f"scope={source_scope_hash_short}; result_version={metric_validation.get('result_version')}; task_id={acceptance.get('task_id')}",
+            "Keep every Factor Test result bound to the same provider task, scope hash, and result version.",
+        ),
+        _factor_test_provider_small_pool_pit_bias_row(
+            "fact_tables_same_trade_date",
+            "passed_fact_tables_join_on_signal_date" if fact_rows_same_trade_date else "blocked_fact_rows_missing_signal_date_match",
+            fact_rows_same_trade_date,
+            f"daily_keys={len(daily_keys)}; fact_keys={len(fact_keys)}; missing_daily_fact_keys={missing_daily_fact_key_count}; errors={dataset_error_safe}",
+            "Use only signal-date daily_basic and moneyflow rows as factor inputs.",
+        ),
+        _factor_test_provider_small_pool_pit_bias_row(
+            "forward_labels_future_dated",
+            "passed_forward_labels_after_signal_date" if forward_labels_future_dated else "blocked_forward_label_date_violation",
+            forward_labels_future_dated,
+            f"label_rows={label_row_count}; violations={future_date_violation_count}; min_signal={label_min_trade_date}; max_forward={label_max_forward_trade_date}",
+            "Forward returns may use future close only as labels, never as signal-date factor inputs.",
+        ),
+        _factor_test_provider_small_pool_pit_bias_row(
+            "bounded_scope_survivorship_boundary",
+            "passed_all_scoped_symbols_labeled_not_full_universe" if bounded_scope_survivorship_done else "blocked_scope_symbol_survivorship_gap",
+            bounded_scope_survivorship_done,
+            f"labeled_symbols={sorted(label_symbol_set)}; expected_symbols={expected_symbols}; full_universe_survivorship_done={full_universe_survivorship_done}",
+            "Treat this as bounded small-pool survivorship evidence only; full-market survivorship remains separate.",
+        ),
+        _factor_test_provider_small_pool_pit_bias_row(
+            "cache_render_external_boundary",
+            "passed_cache_read_only_no_external_calls",
+            True,
+            "PIT/bias audit reads local Parquet and existing cache receipts only; no provider, model, worker, GitHub, or trade path runs.",
+            "Keep future provider/model/full-market work behind explicit tasks.",
+            required=False,
+        ),
+    ]
+    blocking_criteria = [row["criterion"] for row in rows if row["blocks_pit_bias_controls"]]
+    receipt = {
+        "schema_version": FACTOR_TEST_PROVIDER_SMALL_POOL_PIT_BIAS_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_factor_test_provider_small_pool_pit_bias_audit",
+        "created_at": now,
+        "ltg": "LTG-03/LTG-11/LTG-12",
+        "allowed_next_step": allowed_next_step,
+        "source_acceptance_task_id": acceptance.get("task_id") or "",
+        "source_acceptance_scope_hash": source_scope_hash,
+        "source_acceptance_scope_hash_short": source_scope_hash_short,
+        "data_date": acceptance.get("provider_latest_data_date") or metric_validation.get("data_date") or "",
+        "freshness_state": metric_validation.get("freshness_state") or "unknown",
+        "result_version": metric_validation.get("result_version") or "",
+        "input_packet_keys": ["daily", "daily_basic", "moneyflow", "provider_small_pool_metric_validation_audit"],
+        "output_packet_keys": ["provider_small_pool_pit_bias_audit", "provider_small_pool_pit_bias_rows"],
+        "provider_call_ledger_ids": acceptance.get("provider_task_ids") or [],
+        "expected_symbols": expected_symbols,
+        "expected_symbol_count": len(expected_symbols),
+        "fact_rows_same_trade_date": fact_rows_same_trade_date,
+        "forward_labels_future_dated": forward_labels_future_dated,
+        "forward_label_row_count_checked": label_row_count,
+        "future_date_violation_count": future_date_violation_count,
+        "bounded_scope_survivorship_done": bounded_scope_survivorship_done,
+        "full_universe_survivorship_done": full_universe_survivorship_done,
+        "pit_bias_controls_done": pit_bias_done,
+        "provider_backed_small_pool_validation_done": provider_sample_done,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "row_count": len(rows),
+        "rows": rows,
+        "blocking_criterion_count": len(blocking_criteria),
+        "blocking_criteria": blocking_criteria,
+        "missing_evidence": [
+            item
+            for item, missing in (
+                ("same scope/result_version PIT lineage", not same_scope_result_version_done),
+                ("signal-date factor table join controls", not fact_rows_same_trade_date),
+                ("future-dated forward label separation", not forward_labels_future_dated),
+                ("bounded scope survivorship coverage", not bounded_scope_survivorship_done),
+                ("full-market survivorship and boundary review", True),
+                ("industry neutralization stability evidence", True),
+                ("manual Factor Test production promotion review", True),
+            )
+            if missing
+        ],
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    ledger = [
+        {
+            "api": "local_factor_test_provider_small_pool_pit_bias_audit",
+            "request_params_safe": {
+                "scope": receipt["scope"],
+                "acceptance_scope_hash_short": source_scope_hash_short,
+                "source_acceptance_task_id": receipt["source_acceptance_task_id"],
+                "result_version": receipt["result_version"],
+                "pit_bias_controls_done": pit_bias_done,
+                "future_date_violation_count": future_date_violation_count,
+                "production_factor_test_validation_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": receipt["data_date"],
+            "local_fetched_at": now,
+            "call_status": status,
+            "error_message_safe": dataset_error_safe,
+            **_local_ledger_boundary(),
+        }
+    ]
+    receipt["call_ledger"] = ledger
+    return receipt, rows, ledger
+
+
+def _attach_factor_test_provider_small_pool_pit_bias_audit(
+    packet: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    factor_tests = packet.get("factor_tests") if isinstance(packet.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    audit, rows, ledger = _factor_test_provider_small_pool_pit_bias_audit(factor_tests, now)
+    factor_tests["provider_small_pool_pit_bias_audit"] = audit
+    factor_tests["provider_small_pool_pit_bias_rows"] = rows
+    existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+    factor_tests["call_ledger"] = list(ledger) + list(existing_test_ledger)
+    packet["factor_tests"] = factor_tests
+    counts = _dict(packet.get("counts"))
+    counts.update(
+        {
+            "factor_test_provider_small_pool_pit_bias_controls_done": audit["pit_bias_controls_done"],
+            "factor_test_provider_small_pool_pit_bias_checked_label_rows": audit[
+                "forward_label_row_count_checked"
+            ],
+            "factor_test_provider_small_pool_future_date_violation_count": audit[
+                "future_date_violation_count"
+            ],
+        }
+    )
+    packet["counts"] = counts
+    policy = _dict(packet.get("policy"))
+    policy.update(
+        {
+            "factor_test_provider_small_pool_pit_bias_audit_is_cache_only": True,
+            "factor_test_provider_small_pool_pit_bias_audit_calls_provider": False,
+            "factor_test_provider_small_pool_pit_bias_audit_is_research_only": True,
+            "factor_test_provider_small_pool_pit_bias_audit_is_not_production_completion": True,
+        }
+    )
+    packet["policy"] = policy
+    return packet, ledger
+
+
 def _factor_test_production_stage_scope_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for stage_key in FACTOR_TEST_PRODUCTION_STAGE_KEYS:
@@ -7307,6 +7657,7 @@ def _factor_test_production_stage_scope_manifest(
     acceptance_receipt = _dict(factor_tests.get("provider_small_pool_acceptance_receipt"))
     forward_return_audit = _dict(factor_tests.get("provider_small_pool_forward_return_label_audit"))
     metric_validation = _dict(factor_tests.get("provider_small_pool_metric_validation_audit"))
+    pit_bias_audit = _dict(factor_tests.get("provider_small_pool_pit_bias_audit"))
     provider_sample_done = bool(acceptance_receipt.get("sample_rows_collected"))
     provider_execution_implemented = bool(acceptance_receipt.get("provider_execution_implemented"))
     provider_call_ledger_evidence_done = bool(acceptance_receipt.get("provider_call_ledger_evidence_done"))
@@ -7317,6 +7668,7 @@ def _factor_test_production_stage_scope_manifest(
     cost_done = bool(metric_validation.get("cost_assumption_validation_done"))
     neutralization_done = bool(metric_validation.get("neutralization_stability_done"))
     market_cap_neutralization_done = bool(metric_validation.get("market_cap_neutralization_done"))
+    pit_bias_done = bool(pit_bias_audit.get("pit_bias_controls_done"))
     if provider_sample_done:
         for row in rows:
             if row.get("stage_key") != "provider_backed_small_pool_sample":
@@ -7411,6 +7763,39 @@ def _factor_test_production_stage_scope_manifest(
                         ],
                     }
                 )
+            elif stage_key == "pit_bias_controls" and pit_bias_done:
+                row.update(
+                    {
+                        "current_status": "provider_small_pool_pit_bias_controls_ready_full_market_boundary_pending",
+                        "provider_direct_evidence_present": True,
+                        "pit_bias_controls_done": True,
+                        "result_version": pit_bias_audit.get("result_version") or "",
+                        "source_acceptance_task_id": pit_bias_audit.get("source_acceptance_task_id") or "",
+                        "source_acceptance_scope_hash_short": pit_bias_audit.get(
+                            "source_acceptance_scope_hash_short"
+                        )
+                        or "",
+                        "fact_rows_same_trade_date": pit_bias_audit.get("fact_rows_same_trade_date") is True,
+                        "forward_labels_future_dated": pit_bias_audit.get("forward_labels_future_dated") is True,
+                        "forward_label_row_count_checked": int(
+                            pit_bias_audit.get("forward_label_row_count_checked") or 0
+                        ),
+                        "future_date_violation_count": int(
+                            pit_bias_audit.get("future_date_violation_count") or 0
+                        ),
+                        "bounded_scope_survivorship_done": pit_bias_audit.get(
+                            "bounded_scope_survivorship_done"
+                        )
+                        is True,
+                        "full_universe_survivorship_done": False,
+                        "full_market_validation_done": False,
+                        "missing_evidence": [
+                            "full-market survivorship and boundary review",
+                            "industry neutralization stability evidence",
+                            "explicit promotion review before production completion",
+                        ],
+                    }
+                )
     if forward_label_count:
         for row in rows:
             if row.get("stage_key") != "multi_horizon_forward_returns":
@@ -7500,7 +7885,15 @@ def _factor_test_production_stage_scope_manifest(
         "neutralization_stability_done": neutralization_done,
         "metric_validation_result_version": metric_validation.get("result_version") or "",
         "metric_observation_count": int(metric_validation.get("metric_observation_count") or 0),
-        "pit_bias_controls_done": False,
+        "pit_bias_controls_done": pit_bias_done,
+        "pit_bias_result_version": pit_bias_audit.get("result_version") or "",
+        "pit_bias_forward_label_row_count_checked": int(
+            pit_bias_audit.get("forward_label_row_count_checked") or 0
+        ),
+        "pit_bias_future_date_violation_count": int(
+            pit_bias_audit.get("future_date_violation_count") or 0
+        ),
+        "bounded_scope_survivorship_done": pit_bias_audit.get("bounded_scope_survivorship_done") is True,
         "provider_backed_small_pool_validation_done": provider_sample_done,
         "full_market_validation_done": False,
         "production_factor_test_validation_complete": False,

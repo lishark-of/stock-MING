@@ -5963,10 +5963,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             factor_handoff["schema_version"],
             "ltg03_factor_test_provider_validation_handoff_summary.v1",
         )
+        factor_provider_sample_statuses = {
+            "factor_test_provider_small_pool_sample_ready_metric_validation_pending",
+            "factor_test_provider_small_pool_metric_validation_ready_pit_bias_pending",
+            "factor_test_provider_small_pool_pit_bias_ready_industry_neutralization_pending",
+        }
         self.assertIn(
             factor_handoff["status"],
-            {
-                "factor_test_provider_small_pool_sample_ready_metric_validation_pending",
+            factor_provider_sample_statuses
+            | {
                 "factor_test_execution_request_ready_provider_task_pending",
                 "factor_test_scope_ticket_ready_execution_request_needed",
                 "factor_test_provider_small_pool_scope_ticket_needed",
@@ -5976,10 +5981,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             p3_factor["supporting_factor_test_lab_provider_validation_next_local_step"],
             factor_handoff["next_local_step"],
         )
-        factor_provider_sample_ready = (
-            factor_handoff["status"]
-            == "factor_test_provider_small_pool_sample_ready_metric_validation_pending"
-        )
+        factor_provider_sample_ready = factor_handoff["status"] in factor_provider_sample_statuses
         self.assertEqual(
             p3_factor["supporting_factor_test_lab_provider_validation_requires_provider_task"],
             not factor_provider_sample_ready,
@@ -60345,6 +60347,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "expected_symbols": symbols,
                 "expected_symbol_count": len(symbols),
                 "labeled_symbol_count": len(symbols),
+                "symbol_coverage_complete": True,
                 "requested_horizons": ["1d", "5d"],
                 "source_acceptance_scope_hash": scope_hash,
                 "source_acceptance_scope_hash_short": "scope-full",
@@ -60393,19 +60396,75 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(rows_by_criterion["market_cap_neutralization_proxy"]["passed"])
 
         factor_tests["provider_small_pool_metric_validation_audit"] = audit
+        try:
+            factor_service.storage_service.parquet_dataset_status = fake_parquet_dataset_status
+            pit_audit, pit_rows, pit_ledger = factor_service._factor_test_provider_small_pool_pit_bias_audit(
+                factor_tests,
+                "2026-07-12T11:00:01",
+            )
+        finally:
+            factor_service.storage_service.parquet_dataset_status = original_reader
+
+        self.assertEqual(
+            pit_audit["schema_version"],
+            "factor_test_provider_small_pool_pit_bias_audit.v1",
+        )
+        self.assertEqual(pit_audit["source_acceptance_task_id"], "local-provider")
+        self.assertEqual(pit_audit["source_acceptance_scope_hash"], scope_hash)
+        self.assertEqual(pit_audit["result_version"], audit["result_version"])
+        self.assertEqual(
+            pit_audit["provider_call_ledger_ids"],
+            ["local-provider-daily", "local-provider-basic", "local-provider-moneyflow"],
+        )
+        self.assertTrue(pit_audit["pit_bias_controls_done"])
+        self.assertTrue(pit_audit["fact_rows_same_trade_date"])
+        self.assertTrue(pit_audit["forward_labels_future_dated"])
+        self.assertGreater(pit_audit["forward_label_row_count_checked"], 0)
+        self.assertEqual(pit_audit["future_date_violation_count"], 0)
+        self.assertTrue(pit_audit["bounded_scope_survivorship_done"])
+        self.assertFalse(pit_audit["full_universe_survivorship_done"])
+        self.assertFalse(pit_audit["production_factor_test_validation_complete"])
+        self.assertEqual(
+            pit_audit["input_packet_keys"],
+            ["daily", "daily_basic", "moneyflow", "provider_small_pool_metric_validation_audit"],
+        )
+        self.assertIn("provider_small_pool_pit_bias_audit", pit_audit["output_packet_keys"])
+        self.assertFalse(pit_audit["external_calls_triggered"])
+        self.assertFalse(pit_audit["tushare_called"])
+        self.assertFalse(pit_audit["deepseek_called"])
+        self.assertFalse(pit_audit["github_called"])
+        self.assertTrue(pit_audit["does_not_execute_trades"])
+        self.assertEqual(pit_ledger[0]["api"], "local_factor_test_provider_small_pool_pit_bias_audit")
+        self.assertEqual(pit_ledger[0]["request_params_safe"]["result_version"], audit["result_version"])
+        pit_rows_by_criterion = {row["criterion"]: row for row in pit_rows}
+        self.assertTrue(pit_rows_by_criterion["same_scope_result_version"]["passed"])
+        self.assertTrue(pit_rows_by_criterion["fact_tables_same_trade_date"]["passed"])
+        self.assertTrue(pit_rows_by_criterion["forward_labels_future_dated"]["passed"])
+        self.assertTrue(pit_rows_by_criterion["bounded_scope_survivorship_boundary"]["passed"])
+
+        factor_tests["provider_small_pool_pit_bias_audit"] = pit_audit
         manifest, stage_rows, _manifest_ledger = factor_service._factor_test_production_stage_scope_manifest(
             factor_tests,
-            "2026-07-12T11:00:01",
+            "2026-07-12T11:00:02",
         )
         stage_rows_by_key = {row["stage_key"]: row for row in stage_rows}
         self.assertTrue(manifest["rolling_window_validation_done"])
         self.assertTrue(manifest["cost_assumption_validation_done"])
         self.assertTrue(manifest["market_cap_neutralization_done"])
         self.assertFalse(manifest["neutralization_stability_done"])
+        self.assertTrue(manifest["pit_bias_controls_done"])
+        self.assertEqual(manifest["pit_bias_result_version"], audit["result_version"])
         self.assertIn("rolling_ic_icir_validation", manifest["provider_direct_evidence_stage_keys"])
         self.assertIn("cost_turnover_validation", manifest["provider_direct_evidence_stage_keys"])
+        self.assertIn("pit_bias_controls", manifest["provider_direct_evidence_stage_keys"])
         self.assertTrue(stage_rows_by_key["rolling_ic_icir_validation"]["provider_direct_evidence_present"])
         self.assertTrue(stage_rows_by_key["cost_turnover_validation"]["provider_direct_evidence_present"])
+        self.assertTrue(stage_rows_by_key["pit_bias_controls"]["provider_direct_evidence_present"])
+        self.assertTrue(stage_rows_by_key["pit_bias_controls"]["pit_bias_controls_done"])
+        self.assertEqual(
+            stage_rows_by_key["pit_bias_controls"]["result_version"],
+            audit["result_version"],
+        )
         self.assertTrue(stage_rows_by_key["neutralization_stability_validation"]["partial_provider_direct_evidence_present"])
         self.assertFalse(stage_rows_by_key["neutralization_stability_validation"]["provider_direct_evidence_present"])
 

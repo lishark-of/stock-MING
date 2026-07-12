@@ -547,8 +547,11 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolAcceptance = factorTests.provider_small_pool_acceptance_receipt ?? {};
   const factorTestProviderSmallPoolForwardReturnAudit = factorTests.provider_small_pool_forward_return_label_audit ?? {};
   const factorTestProviderSmallPoolMetricValidation = factorTests.provider_small_pool_metric_validation_audit ?? {};
+  const factorTestProviderSmallPoolPitBias = factorTests.provider_small_pool_pit_bias_audit ?? {};
   const factorTestDurableEvidenceRecipe = factorTests.durable_evidence_recipe ?? {};
   const factorTestProductionStageScopeManifest = factorTests.production_stage_scope_manifest ?? {};
+  const factorTestProviderSmallPoolPitBiasDone =
+    factorTestProviderSmallPoolPitBias.pit_bias_controls_done === true;
   const factorTestProviderSmallPoolSampleDone =
     factorTestProviderSmallPoolAcceptance.sample_rows_collected === true ||
     factorTestProviderSmallPoolAcceptance.sample_rows_done === true ||
@@ -660,6 +663,8 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolMetricValidationRows = objectRows(factorTestProviderSmallPoolMetricValidation as Record<string, unknown>, "provider_small_pool_metric_validation_audit");
   const factorTestProviderSmallPoolMetricValidationCriterionRows = toRows(factorTests.provider_small_pool_metric_validation_rows);
   const factorTestProviderSmallPoolMetricValidationSampleRows = toRows(factorTests.provider_small_pool_metric_validation_sample_rows);
+  const factorTestProviderSmallPoolPitBiasRows = objectRows(factorTestProviderSmallPoolPitBias as Record<string, unknown>, "provider_small_pool_pit_bias_audit");
+  const factorTestProviderSmallPoolPitBiasCriterionRows = toRows(factorTests.provider_small_pool_pit_bias_rows);
   const factorTestDurableEvidenceRecipeRows = objectRows(factorTestDurableEvidenceRecipe as Record<string, unknown>, "factor_test_durable_evidence_recipe");
   const factorTestDurableEvidenceRows = toRows(factorTests.durable_evidence_rows);
   const factorTestProductionStageScopeManifestRows = objectRows(factorTestProductionStageScopeManifest as Record<string, unknown>, "factor_test_production_stage_scope_manifest");
@@ -1738,13 +1743,17 @@ export default function FactorQuantHub() {
       : "等待小池预检 scope";
   const ordinaryFactorTestProviderRequestState =
     factorTestProviderSmallPoolSampleDone
-      ? "真实小池样本任务已完成；下一步补 rolling、成本、中性化、PIT/bias 和 promotion review"
+      ? factorTestProviderSmallPoolPitBiasDone
+        ? "真实小池样本、rolling/cost 和 PIT/bias 已回放；下一步补行业中性化、全市场边界和 promotion review"
+        : "真实小池样本任务已完成；下一步补 rolling、成本、中性化、PIT/bias 和 promotion review"
       : factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true
       ? "本地执行请求已绑定 scope；下一步只能是用户授权后的 provider task"
       : "等待本地执行请求；真实任务仍需授权";
   const ordinaryFactorTestProviderEvidenceGap =
     factorTestProviderSmallPoolSampleDone
-      ? "真实小池样本、scope hash 和 call_ledger 已回放；rolling/cost/neutralization/PIT/promotion 待补"
+      ? factorTestProviderSmallPoolPitBiasDone
+        ? "真实小池样本、rolling/cost 和 PIT/bias 已回放；industry neutralization/full-market/promotion 待补"
+        : "真实小池样本、scope hash 和 call_ledger 已回放；rolling/cost/neutralization/PIT/promotion 待补"
       : "还缺真实 provider task、样本行、rolling IC/ICIR、成本、中性化、PIT/bias 和 promotion review";
   const factorTestProviderSmallPoolCredential = (factorTestProviderSmallPoolDryRun.credential_presence_summary as Record<string, unknown> | undefined) ?? {};
   const factorTestProviderSmallPoolBlockers = Array.isArray(factorTestProviderSmallPoolDryRun.blocking_criteria)
@@ -1752,7 +1761,9 @@ export default function FactorQuantHub() {
     : [];
   const ordinaryFactorTestProviderCurrentBlockerSentence =
     factorTestProviderSmallPoolSampleDone
-      ? "真实小池 Tushare 样本、scope hash 和安全 call_ledger 已回放；rolling、成本、中性化、PIT/bias 和 promotion/release 仍待补齐，不能当生产完成。"
+      ? factorTestProviderSmallPoolPitBiasDone
+        ? "真实小池 Tushare 样本、scope hash、rolling/cost 和 PIT/bias 安全回放已可见；行业中性化、全市场边界和 promotion/release 仍待补齐，不能当生产完成。"
+        : "真实小池 Tushare 样本、scope hash 和安全 call_ledger 已回放；rolling、成本、中性化、PIT/bias 和 promotion/release 仍待补齐，不能当生产完成。"
       : `LTG-03 当前 degraded：dry-run=${String(factorTestProviderSmallPoolDryRun.status ?? "missing")}，credential=${String(factorTestProviderSmallPoolCredential.status ?? "unknown")}，blocker=${factorTestProviderSmallPoolBlockers.join(" / ") || "provider_task_and_sample_rows_pending"}；本地 execution request 不能替代真实 provider task，下一步只能是用户授权后的 provider-backed 小池验收。`;
   const factorTestProviderSmallPoolForwardReturnDone =
     factorTestProviderSmallPoolForwardReturnAudit.multi_horizon_forward_returns_done === true;
@@ -1839,6 +1850,48 @@ export default function FactorQuantHub() {
     {
       label: "边界",
       value: "只读同 scope Parquet；不调用 provider/model，不生成买卖或加仓动作，仍不是 production complete",
+      tone: "good"
+    }
+  ];
+  const ordinaryFactorTestPitBiasSentence =
+    factorTestProviderSmallPoolPitBiasDone
+      ? `PIT/bias 控制已绑定同一 result_version=${String(factorTestProviderSmallPoolPitBias.result_version ?? "missing")}：signal-date fact rows=${String(factorTestProviderSmallPoolPitBias.fact_rows_same_trade_date === true)}，future-date label violations=${String(factorTestProviderSmallPoolPitBias.future_date_violation_count ?? 0)}，bounded scope survivorship=${String(factorTestProviderSmallPoolPitBias.bounded_scope_survivorship_done === true)}。`
+      : `PIT/bias 控制仍 degraded：${String(factorTestProviderSmallPoolPitBias.status ?? "missing_pit_bias_audit")}。`;
+  const ordinaryFactorTestPitBiasItems: MetricItem[] = [
+    {
+      label: "PIT 状态",
+      value: String(factorTestProviderSmallPoolPitBias.status ?? "missing_pit_bias_audit"),
+      tone: factorTestProviderSmallPoolPitBiasDone ? "good" : "warn"
+    },
+    {
+      label: "result_version",
+      value: String(factorTestProviderSmallPoolPitBias.result_version ?? "missing"),
+      tone: factorTestProviderSmallPoolPitBiasDone ? "good" : "warn"
+    },
+    {
+      label: "信号日事实",
+      value: factorTestProviderSmallPoolPitBias.fact_rows_same_trade_date === true
+        ? "daily_basic / moneyflow 均按 signal trade_date 对齐"
+        : "等待 fact rows 同日对齐证据",
+      tone: factorTestProviderSmallPoolPitBias.fact_rows_same_trade_date === true ? "good" : "warn"
+    },
+    {
+      label: "forward labels",
+      value: factorTestProviderSmallPoolPitBias.forward_labels_future_dated === true
+        ? `${String(factorTestProviderSmallPoolPitBias.forward_label_row_count_checked ?? 0)} 行 future-dated；违规 ${String(factorTestProviderSmallPoolPitBias.future_date_violation_count ?? 0)}`
+        : "等待 future-dated label 复核",
+      tone: factorTestProviderSmallPoolPitBias.forward_labels_future_dated === true ? "good" : "warn"
+    },
+    {
+      label: "幸存者边界",
+      value: factorTestProviderSmallPoolPitBias.bounded_scope_survivorship_done === true
+        ? "小池 bounded scope 已覆盖；全市场 survivorship 仍 pending"
+        : "等待 bounded scope 覆盖",
+      tone: factorTestProviderSmallPoolPitBias.bounded_scope_survivorship_done === true ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只读同 scope/result_version 本地包；不调用 provider/model，不把小池偏差控制当全市场生产完成",
       tone: "good"
     }
   ];
@@ -2076,7 +2129,8 @@ export default function FactorQuantHub() {
     factorTestProviderSmallPoolMetricValidation.market_cap_neutralization_done === true;
   const ordinaryFactorTestSmallPoolBiasDone =
     factorTestProviderSmallPoolAcceptance.pit_bias_review_done === true ||
-    factorTestProviderSmallPoolAcceptance.bias_review_done === true;
+    factorTestProviderSmallPoolAcceptance.bias_review_done === true ||
+    factorTestProviderSmallPoolPitBiasDone;
   const ordinaryFactorTestSmallPoolPromotionDone =
     factorTestProviderSmallPoolAcceptance.promotion_review_done === true ||
     factorTestProviderSmallPoolAcceptance.production_promotion_review_done === true;
@@ -2494,6 +2548,12 @@ export default function FactorQuantHub() {
           <MetricGrid items={ordinaryFactorTestMetricValidationItems} />
           <p className="risk-note">这张卡只读同一 scope 的本地 daily / daily_basic / moneyflow；市值中性化只是 proxy，行业中性化、PIT/bias 和 promotion review 仍待补齐。</p>
         </div>
+        <div aria-label="stock quant ordinary factor pit bias visible summary">
+          <h3>小池偏差控制</h3>
+          <p className="ordinary-status-note" aria-label="stock quant factor pit bias visible sentence" aria-live="polite">{ordinaryFactorTestPitBiasSentence}</p>
+          <MetricGrid items={ordinaryFactorTestPitBiasItems} />
+          <p className="risk-note">这张卡只读同一 task / scope / result_version 的本地事实包；只证明小池 signal-date、future-label 和 bounded-scope 控制，不代表 full-market 或 production complete。</p>
+        </div>
         <details id="stock-quant-ltg03-evidence-details" className="developer-audit-details" aria-label="stock quant factor provider evidence details">
           <summary>LTG-03 小池验收证据</summary>
           <p className="risk-note">小池验收、授权闸门和生产阶段清单默认收起；它们保留为后台路线图证据，不挡住普通用户的量化结果阅读。</p>
@@ -2526,6 +2586,17 @@ export default function FactorQuantHub() {
               <DataLineageTable rows={factorTestProviderSmallPoolMetricValidationCriterionRows} />
               <DataLineageTable rows={factorTestProviderSmallPoolMetricValidationSampleRows} />
               <DataLineageTable rows={factorTestProviderSmallPoolMetricValidationRows} />
+            </details>
+          </div>
+          <div aria-label="stock quant ordinary factor pit bias controls">
+            <h3>PIT / bias / survivorship 回放</h3>
+            <p className="ordinary-status-note" aria-label="stock quant factor pit bias sentence" aria-live="polite">{ordinaryFactorTestPitBiasSentence}</p>
+            <MetricGrid items={ordinaryFactorTestPitBiasItems} />
+            <details className="developer-audit-details" aria-label="stock quant factor pit bias rows">
+              <summary>查看 PIT/bias 检查项</summary>
+              <p className="risk-note">这些行只读同一 result_version 的本地事实包：factor inputs 必须来自 signal date，forward return 只能作为未来标签；全市场幸存者偏差和 promotion 仍待单独验收。</p>
+              <DataLineageTable rows={factorTestProviderSmallPoolPitBiasCriterionRows} />
+              <DataLineageTable rows={factorTestProviderSmallPoolPitBiasRows} />
             </details>
           </div>
           <div aria-label="stock quant ordinary factor small pool evidence checklist">

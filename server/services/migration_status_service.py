@@ -3546,6 +3546,7 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
     provider_acceptance = _dict_or_empty(factor_tests.get("provider_small_pool_acceptance_receipt"))
     forward_return_audit = _dict_or_empty(factor_tests.get("provider_small_pool_forward_return_label_audit"))
     metric_validation = _dict_or_empty(factor_tests.get("provider_small_pool_metric_validation_audit"))
+    pit_bias_audit = _dict_or_empty(factor_tests.get("provider_small_pool_pit_bias_audit"))
     items = factor_tests.get("items") if isinstance(factor_tests.get("items"), list) else []
 
     task_rows = _task_statuses_by_type()
@@ -3769,6 +3770,24 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
     )
     if neutralization_stability_done:
         direct_stage_keys.append("neutralization_stability_validation")
+    pit_bias_controls_done = bool(
+        packet_safe
+        and rolling_window_validation_done
+        and cost_assumption_validation_done
+        and pit_bias_audit.get("schema_version") == "factor_test_provider_small_pool_pit_bias_audit.v1"
+        and pit_bias_audit.get("pit_bias_controls_done") is True
+        and pit_bias_audit.get("result_version")
+        and pit_bias_audit.get("result_version") == metric_validation.get("result_version")
+        and pit_bias_audit.get("external_calls_triggered") is False
+        and pit_bias_audit.get("tushare_called") is False
+        and pit_bias_audit.get("deepseek_called") is False
+        and pit_bias_audit.get("github_called") is False
+        and pit_bias_audit.get("does_not_execute_trades") is True
+        and pit_bias_audit.get("does_not_modify_strategy_action") is True
+        and pit_bias_audit.get("contains_secret") is False
+    )
+    if pit_bias_controls_done:
+        direct_stage_keys.append("pit_bias_controls")
     scope_hash_short = (
         provider_acceptance.get("acceptance_scope_hash_short")
         or request.get("acceptance_scope_hash_short")
@@ -3801,6 +3820,15 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
         "neutralization_stability_done": neutralization_stability_done,
         "metric_validation_result_version": metric_validation.get("result_version") or "",
         "metric_observation_count": int(metric_validation.get("metric_observation_count") or 0),
+        "pit_bias_controls_done": pit_bias_controls_done,
+        "pit_bias_result_version": pit_bias_audit.get("result_version") or "",
+        "pit_bias_forward_label_row_count_checked": int(
+            pit_bias_audit.get("forward_label_row_count_checked") or 0
+        ),
+        "pit_bias_future_date_violation_count": int(
+            pit_bias_audit.get("future_date_violation_count") or 0
+        ),
+        "bounded_scope_survivorship_done": pit_bias_audit.get("bounded_scope_survivorship_done") is True,
         "provider_task_created": provider_acceptance.get("provider_task_created") is True,
         "provider_execution_implemented": provider_acceptance.get("provider_execution_implemented") is True,
         "provider_call_ledger_evidence_done": provider_acceptance.get("provider_call_ledger_evidence_done") is True,
@@ -3862,9 +3890,12 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
     cost_assumption_validation_done = direct_evidence.get("cost_assumption_validation_done") is True
     market_cap_neutralization_done = direct_evidence.get("market_cap_neutralization_done") is True
     neutralization_stability_done = direct_evidence.get("neutralization_stability_done") is True
+    pit_bias_controls_done = direct_evidence.get("pit_bias_controls_done") is True
     durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
     next_step = (
-        "add industry neutralization, PIT/bias, and promotion review evidence"
+        "add industry neutralization, full-market boundary, and promotion review evidence"
+        if rolling_window_validation_done and cost_assumption_validation_done and pit_bias_controls_done
+        else "add PIT/bias, industry neutralization, full-market boundary, and promotion review evidence"
         if rolling_window_validation_done and cost_assumption_validation_done
         else "add multi-horizon rolling/cost/neutralization validation evidence"
         if provider_sample_done
@@ -3877,7 +3908,10 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
     return {
         "schema_version": "ltg03_factor_test_provider_validation_handoff_summary.v1",
         "status": (
-            "factor_test_provider_small_pool_metric_validation_ready_industry_neutralization_pending"
+            "factor_test_provider_small_pool_pit_bias_ready_industry_neutralization_pending"
+            if rolling_window_validation_done and cost_assumption_validation_done and pit_bias_controls_done
+            else
+            "factor_test_provider_small_pool_metric_validation_ready_pit_bias_pending"
             if rolling_window_validation_done and cost_assumption_validation_done
             else
             "factor_test_provider_small_pool_sample_ready_metric_validation_pending"
@@ -3944,7 +3978,15 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
         "neutralization_stability_done": neutralization_stability_done,
         "metric_validation_result_version": direct_evidence.get("metric_validation_result_version") or "",
         "metric_observation_count": int(direct_evidence.get("metric_observation_count") or 0),
-        "pit_bias_controls_done": False,
+        "pit_bias_controls_done": pit_bias_controls_done,
+        "pit_bias_result_version": direct_evidence.get("pit_bias_result_version") or "",
+        "pit_bias_forward_label_row_count_checked": int(
+            direct_evidence.get("pit_bias_forward_label_row_count_checked") or 0
+        ),
+        "pit_bias_future_date_violation_count": int(
+            direct_evidence.get("pit_bias_future_date_violation_count") or 0
+        ),
+        "bounded_scope_survivorship_done": direct_evidence.get("bounded_scope_survivorship_done") is True,
         "provider_backed_small_pool_validation_done": provider_sample_done,
         "full_market_validation_done": False,
         "production_factor_test_validation_complete": False,
@@ -4000,6 +4042,7 @@ def _latest_factor_test_lab_production_validation_handoff_summary() -> dict[str,
     cost_assumption_validation_done = provider_handoff.get("cost_assumption_validation_done") is True
     market_cap_neutralization_done = provider_handoff.get("market_cap_neutralization_done") is True
     neutralization_stability_done = provider_handoff.get("neutralization_stability_done") is True
+    pit_bias_controls_done = provider_handoff.get("pit_bias_controls_done") is True
     scope_or_recipe_ready = (
         provider_handoff.get("provider_small_pool_dry_run_ready") is True
         or provider_handoff.get("provider_small_pool_execution_recipe_ready") is True
@@ -4055,13 +4098,21 @@ def _latest_factor_test_lab_production_validation_handoff_summary() -> dict[str,
             missing_evidence_items = [
                 item for item in missing_evidence_items if item != "neutralization stability validation"
             ]
+        if pit_bias_controls_done:
+            missing_evidence_items = [
+                item for item in missing_evidence_items if item != "point-in-time bias controls"
+            ]
         status = (
-            "factor_test_production_handoff_metric_validation_ready_industry_neutralization_pending"
+            "factor_test_production_handoff_pit_bias_ready_industry_neutralization_pending"
+            if rolling_window_validation_done and cost_assumption_validation_done and pit_bias_controls_done
+            else "factor_test_production_handoff_metric_validation_ready_pit_bias_pending"
             if rolling_window_validation_done and cost_assumption_validation_done
             else "factor_test_production_handoff_provider_sample_ready_metrics_pending"
         )
         next_step = (
-            "add industry neutralization, PIT/bias, full-market boundary, and promotion review evidence"
+            "add industry neutralization, full-market boundary, and promotion review evidence"
+            if rolling_window_validation_done and cost_assumption_validation_done and pit_bias_controls_done
+            else "add PIT/bias, industry neutralization, full-market boundary, and promotion review evidence"
             if rolling_window_validation_done and cost_assumption_validation_done
             else "add multi-horizon rolling/cost/neutralization validation evidence"
         )
@@ -4133,7 +4184,15 @@ def _latest_factor_test_lab_production_validation_handoff_summary() -> dict[str,
         "neutralization_stability_done": neutralization_stability_done,
         "metric_validation_result_version": provider_handoff.get("metric_validation_result_version") or "",
         "metric_observation_count": int(provider_handoff.get("metric_observation_count") or 0),
-        "pit_bias_controls_done": False,
+        "pit_bias_controls_done": pit_bias_controls_done,
+        "pit_bias_result_version": provider_handoff.get("pit_bias_result_version") or "",
+        "pit_bias_forward_label_row_count_checked": int(
+            provider_handoff.get("pit_bias_forward_label_row_count_checked") or 0
+        ),
+        "pit_bias_future_date_violation_count": int(
+            provider_handoff.get("pit_bias_future_date_violation_count") or 0
+        ),
+        "bounded_scope_survivorship_done": provider_handoff.get("bounded_scope_survivorship_done") is True,
         "provider_backed_small_pool_validation_done": provider_sample_done,
         "full_market_validation_done": False,
         "production_factor_test_validation_complete": False,
