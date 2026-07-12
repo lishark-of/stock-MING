@@ -30,6 +30,12 @@ DATASET_VERSION_MANIFEST_WRITE_PACKET_KEY = "command_center_3_storage_dataset_ve
 DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_validate_packet"
 STORAGE_PHYSICAL_EXECUTION_REQUEST_PACKET_KEY = "command_center_3_storage_physical_execution_request_packet"
 STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY = "command_center_3_storage_physical_execution_phase_a_packet"
+STORAGE_CURRENT_RESULT_ATOMIC_PROMOTION_PACKET_KEY = (
+    "command_center_3_storage_current_result_atomic_promotion_packet"
+)
+STORAGE_CURRENT_RESULT_RETENTION_CLEANUP_PACKET_KEY = (
+    "command_center_3_storage_current_result_retention_cleanup_packet"
+)
 STORAGE_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY = "command_center_3_storage_production_promotion_review_packet"
 DUCKDB_READ_VALIDATION_PACKET_KEY = "command_center_3_storage_duckdb_read_validation_packet"
 STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION = "command_center_3_storage_production_blocker_audit.v1"
@@ -53,6 +59,8 @@ CANONICAL_PARQUET_DATASETS = ["factor_values", "daily", "daily_basic", "moneyflo
 DUCKDB_QUERY_DEFAULT_LIMIT = 100
 DUCKDB_QUERY_MAX_LIMIT = 10000
 DUCKDB_QUERY_FILTER_PARAMS = ["limit", "cursor", "ts_code", "trade_date", "start_date", "end_date"]
+CURRENT_RESULT_TTL_SECONDS = 24 * 60 * 60
+CURRENT_RESULT_MAX_VERSIONS = 10
 DATASET_TTL_SECONDS = {
     "factor_values": 6 * 60 * 60,
     "daily": 24 * 60 * 60,
@@ -85,12 +93,33 @@ STORAGE_PHYSICAL_EXECUTION_PHASE_LABELS = {
     "duckdb_post_migration_validation": "DuckDB post-migration validation",
     "production_promotion_review": "Production promotion review",
 }
+CURRENT_RESULT_LINEAGE_PACKET_KEY = "command_center_3_candidate_radar_cache"
+CURRENT_RESULT_LINEAGE_DATASET = "research_result_lineage"
+CURRENT_RESULT_LINEAGE_REQUIRED_COLUMNS = [
+    "task_id",
+    "user_confirm_task_id",
+    "task_family_id",
+    "symbol",
+    "scope_hash",
+    "provider_call_ledger_ids_json",
+    "input_packet_keys_json",
+    "output_packet_keys_json",
+    "data_date",
+    "freshness_state",
+    "model_ledger_id",
+    "result_version",
+    "facts_packet_key",
+    "facts_package_hash",
+    "deepseek_status",
+    "promoted_at",
+]
 STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS = [
     "production_blocker_audit_visible",
     "readiness_receipt_visible",
     "activation_receipt_visible",
     "physical_execution_recipe_ready",
     "physical_execution_request_visible",
+    "current_result_atomic_parquet_promotion_required",
     "physical_schema_validation_evidence_required",
     "dataset_version_manifest_validation_required",
     "partition_migration_evidence_required",
@@ -107,6 +136,7 @@ STORAGE_PHYSICAL_DURABLE_EVIDENCE_LABELS = {
     "activation_receipt_visible": "Activation receipt visible",
     "physical_execution_recipe_ready": "Physical execution recipe ready",
     "physical_execution_request_visible": "Physical execution request visible",
+    "current_result_atomic_parquet_promotion_required": "Current result atomic Parquet promotion required",
     "physical_schema_validation_evidence_required": "Physical schema validation evidence required",
     "dataset_version_manifest_validation_required": "Dataset version manifest validation required",
     "partition_migration_evidence_required": "Partition migration evidence required",
@@ -4802,6 +4832,7 @@ def storage_physical_durable_evidence_recipe(
         or storage_physical_execution_recipe(readiness, blocker_audit, activation_receipt)
     )
     execution_request = dict(physical_execution_request or storage_physical_execution_request_evidence())
+    current_result_atomic_promotion = storage_current_result_atomic_promotion_evidence()
     production_promotion_review = storage_production_promotion_review_evidence()
     manifest_validation = storage_dataset_version_manifest_validate_evidence()
     schema_migration_execution = storage_schema_migration_execution_evidence()
@@ -4824,6 +4855,33 @@ def storage_physical_durable_evidence_recipe(
         and execution_request.get("requested_scope_hash_matches_latest") is True
         and execution_request.get("physical_task_created") is False
         and execution_request.get("physical_task_executed") is False
+    )
+    current_result_atomic_promotion_done = bool(
+        current_result_atomic_promotion.get("status")
+        == "storage_current_result_atomic_promotion_current"
+        and current_result_atomic_promotion.get("canonical_lineage_ready") is True
+        and current_result_atomic_promotion.get("atomic_promotion_current") is True
+        and current_result_atomic_promotion.get("physical_write_executed") is True
+        and bool(current_result_atomic_promotion.get("latest_receipt_task_id"))
+        and bool(current_result_atomic_promotion.get("expected_symbol"))
+        and bool(current_result_atomic_promotion.get("expected_result_version"))
+        and current_result_atomic_promotion.get("duckdb_readback_verified") is True
+        and current_result_atomic_promotion.get("manifest_current_version_ready") is True
+        and current_result_atomic_promotion.get("cache_get_writes_files") is False
+        and current_result_atomic_promotion.get("production_storage_complete") is False
+        and current_result_atomic_promotion.get("external_calls_triggered") is False
+        and current_result_atomic_promotion.get("tushare_called") is False
+        and current_result_atomic_promotion.get("deepseek_called") is False
+        and current_result_atomic_promotion.get("github_called") is False
+        and current_result_atomic_promotion.get("does_not_execute_trades") is True
+        and current_result_atomic_promotion.get("does_not_modify_strategy_action") is True
+        and current_result_atomic_promotion.get("contains_secret") is False
+    )
+    current_result_storage_acceptance_ready = bool(
+        current_result_atomic_promotion_done
+        and current_result_atomic_promotion.get("current_result_storage_acceptance_ready") is True
+        and current_result_atomic_promotion.get("last_good_pointer_ready") is True
+        and current_result_atomic_promotion.get("retention_protects_current_and_last_good") is True
     )
     no_external_boundary = (
         execution_recipe.get("external_calls_triggered") is False
@@ -5031,7 +5089,10 @@ def storage_physical_durable_evidence_recipe(
         production_promotion_review.get("schema_version")
         == "command_center_3_storage_production_promotion_review.v1"
         and production_promotion_review.get("status")
-        == "storage_production_promotion_review_ready_production_still_blocked"
+        in {
+            "storage_production_promotion_review_ready_production_still_blocked",
+            "storage_current_result_acceptance_ready_full_storage_pending",
+        }
         and production_promotion_review.get("explicit_production_promotion_review_done") is True
         and production_promotion_review.get("local_promotion_review_ready") is True
         and production_promotion_review.get("approved_by_user") is True
@@ -5095,6 +5156,28 @@ def storage_physical_durable_evidence_recipe(
             ),
             required_evidence="button-gated execution-request ticket bound to the current physical execution recipe scope hash",
             next_step="generate a request ticket from the current recipe before future physical storage tasks",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "current_result_atomic_parquet_promotion_required",
+            passed=current_result_atomic_promotion_done,
+            source_contract="storage_current_result_atomic_promotion_evidence",
+            status="passed_local_atomic_parquet_direct_evidence"
+            if current_result_atomic_promotion_done
+            else "blocked_atomic_parquet_promotion_missing",
+            evidence=(
+                f"status={current_result_atomic_promotion.get('status')}; "
+                f"task_id={current_result_atomic_promotion.get('latest_receipt_task_id')}; "
+                f"symbol={current_result_atomic_promotion.get('expected_symbol')}; "
+                f"result_version={current_result_atomic_promotion.get('expected_result_version')}; "
+                f"duckdb_readback_verified={current_result_atomic_promotion.get('duckdb_readback_verified')}; "
+                f"manifest_current_version_ready={current_result_atomic_promotion.get('manifest_current_version_ready')}"
+            ),
+            required_evidence="explicit canonical-result immutable Parquet write with atomic current and preserved last-good pointers",
+            next_step=(
+                "Keep this as one L3 physical-write stage; continue the remaining storage stages and release review."
+                if current_result_atomic_promotion_done
+                else "confirm a canonical result, then use the explicit atomic promotion button"
+            ),
         ),
         _storage_physical_durable_evidence_recipe_row(
             "physical_schema_validation_evidence_required",
@@ -5241,7 +5324,9 @@ def storage_physical_durable_evidence_recipe(
         "schema_version": STORAGE_PHYSICAL_DURABLE_EVIDENCE_SCHEMA_VERSION,
         "scope": "local_storage_physical_durable_evidence_recipe_no_write_no_delete_no_provider",
         "status": (
-            "storage_physical_durable_evidence_recipe_ready_production_pending"
+            "storage_current_result_direct_evidence_complete_full_migration_pending"
+            if current_result_storage_acceptance_ready and production_promotion_review_done
+            else "storage_physical_durable_evidence_recipe_ready_production_pending"
             if local_recipe_ready
             else "storage_physical_durable_evidence_recipe_blocked_local_contract"
         ),
@@ -5249,9 +5334,32 @@ def storage_physical_durable_evidence_recipe(
         "local_recipe_ready": local_recipe_ready,
         "durable_evidence_complete": False,
         "durable_promotion_ready": False,
+        "current_result_storage_acceptance_ready": bool(
+            current_result_storage_acceptance_ready and production_promotion_review_done
+        ),
+        "current_result_storage_direct_evidence_complete": current_result_storage_acceptance_ready,
+        "full_storage_migration_pending": True,
         "production_storage_complete": False,
         "physical_execution_request_ready": execution_request_visible,
         "physical_execution_request_status": execution_request.get("status"),
+        "current_result_atomic_parquet_promotion_done": current_result_atomic_promotion_done,
+        "current_result_atomic_parquet_promotion_status": current_result_atomic_promotion.get("status"),
+        "current_result_atomic_parquet_task_id": current_result_atomic_promotion.get(
+            "latest_receipt_task_id"
+        ),
+        "current_result_atomic_parquet_symbol": current_result_atomic_promotion.get("expected_symbol"),
+        "current_result_atomic_parquet_result_version": current_result_atomic_promotion.get(
+            "expected_result_version"
+        ),
+        "current_result_atomic_parquet_duckdb_readback_verified": (
+            current_result_atomic_promotion.get("duckdb_readback_verified") is True
+        ),
+        "current_result_atomic_parquet_manifest_version_ready": (
+            current_result_atomic_promotion.get("manifest_current_version_ready") is True
+        ),
+        "current_result_atomic_parquet_manifest_version_count": int(
+            current_result_atomic_promotion.get("manifest_version_count") or 0
+        ),
         "physical_schema_validation_done": schema_acceptance_done,
         "schema_validation_acceptance_evidence_status": schema_acceptance_status,
         "schema_migration_executed": schema_migration_done,
@@ -5318,6 +5426,7 @@ def storage_physical_durable_evidence_recipe(
         "missing_durable_evidence": blocked_rows,
         "required_evidence": [
             "physical schema validation acceptance packet",
+            "canonical current-result atomic Parquet promotion receipt and pointer readback",
             "dataset version manifest write and validation receipts",
             "schema migration before/after metadata",
             "partition migration artifact metadata",
@@ -6007,6 +6116,845 @@ def run_storage_physical_execution_phase_a_task(payload: Any = None) -> dict[str
     ) or task
 
 
+def _storage_current_result_lineage() -> tuple[dict[str, Any], str]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(CURRENT_RESULT_LINEAGE_PACKET_KEY)
+    except Exception:
+        return {}, "candidate_packet_read_failed"
+    if not isinstance(packet, Mapping):
+        return {}, "candidate_packet_missing"
+    lineage = packet.get("search_quant_canonical_result_lineage")
+    if not isinstance(lineage, Mapping):
+        return {}, "canonical_lineage_missing"
+    return dict(lineage), "canonical_lineage_present"
+
+
+def _storage_current_result_row(lineage: Mapping[str, Any], *, promoted_at: str) -> dict[str, Any]:
+    return {
+        "task_id": str(lineage.get("task_id") or ""),
+        "user_confirm_task_id": str(lineage.get("user_confirm_task_id") or ""),
+        "task_family_id": str(lineage.get("task_family_id") or ""),
+        "symbol": str(lineage.get("symbol") or ""),
+        "scope_hash": str(lineage.get("scope_hash") or ""),
+        "provider_call_ledger_ids_json": json.dumps(
+            [str(item) for item in list(lineage.get("provider_call_ledger_ids") or [])],
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        "input_packet_keys_json": json.dumps(
+            [str(item) for item in list(lineage.get("input_packet_keys") or [])],
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        "output_packet_keys_json": json.dumps(
+            [str(item) for item in list(lineage.get("output_packet_keys") or [])],
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        "data_date": str(lineage.get("data_date") or ""),
+        "freshness_state": str(lineage.get("freshness_state") or ""),
+        "model_ledger_id": str(lineage.get("model_ledger_id") or ""),
+        "result_version": str(lineage.get("result_version") or ""),
+        "facts_packet_key": str(lineage.get("facts_packet_key") or ""),
+        "facts_package_hash": str(lineage.get("facts_package_hash") or ""),
+        "deepseek_status": str(lineage.get("deepseek_status") or ""),
+        "promoted_at": promoted_at,
+    }
+
+
+def _storage_current_result_duckdb_readback(
+    current_pointer: Mapping[str, Any],
+    *,
+    symbol: str,
+    result_version: str,
+) -> dict[str, Any]:
+    artifact_path = str(current_pointer.get("artifact_path") or "")
+    if current_pointer.get("status") != "ready" or not artifact_path:
+        return {
+            "status": "current_pointer_missing",
+            "verified": False,
+            "row_count": 0,
+            "symbol": "",
+            "result_version": "",
+            "facts_package_hash": "",
+            "model_ledger_id": "",
+            "external_calls_triggered": False,
+        }
+    query = duckdb_store.query_parquet_dataset(
+        artifact_path,
+        limit=2,
+        projection_columns=[
+            "symbol",
+            "result_version",
+            "facts_package_hash",
+            "model_ledger_id",
+        ],
+    )
+    rows = list(query.get("rows") or [])
+    first = dict(rows[0]) if len(rows) == 1 and isinstance(rows[0], Mapping) else {}
+    verified = bool(
+        query.get("status") == "ready"
+        and query.get("query_wrapper") == "duckdb_filtered_parquet.v1"
+        and query.get("safe_parameter_binding") is True
+        and query.get("external_calls_triggered") is False
+        and int(query.get("row_count") or 0) == 1
+        and str(first.get("symbol") or "") == symbol
+        and str(first.get("result_version") or "") == result_version
+    )
+    return {
+        "status": "verified" if verified else str(query.get("status") or "readback_failed"),
+        "verified": verified,
+        "row_count": int(query.get("row_count") or 0),
+        "symbol": str(first.get("symbol") or ""),
+        "result_version": str(first.get("result_version") or ""),
+        "facts_package_hash": str(first.get("facts_package_hash") or ""),
+        "model_ledger_id": str(first.get("model_ledger_id") or ""),
+        "query_wrapper": str(query.get("query_wrapper") or ""),
+        "safe_parameter_binding": query.get("safe_parameter_binding") is True,
+        "projected_columns": list(query.get("projected_columns") or []),
+        "missing_projected_columns": list(query.get("missing_projected_columns") or []),
+        "external_calls_triggered": False,
+    }
+
+
+def storage_current_result_atomic_promotion_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload_safe = payload_safe or {}
+    approved_by_user = payload_safe.get("approved_by_user") is True
+    expected_symbol = str(payload_safe.get("expected_symbol") or "").strip().upper()
+    expected_result_version = str(payload_safe.get("expected_result_version") or "").strip()
+    lineage, lineage_read_status = _storage_current_result_lineage()
+    symbol = str(lineage.get("symbol") or "").strip().upper()
+    result_version = str(lineage.get("result_version") or "").strip()
+    lineage_ready = bool(
+        lineage.get("schema_version")
+        == "candidate_radar_search_quant_projection_canonical_result_lineage.v1"
+        and lineage.get("current_result_promoted") is True
+        and lineage.get("factor_next_same_result_ready") is True
+        and lineage.get("same_task_fact_model_result_version_ready") is True
+        and lineage.get("old_task_can_overwrite_current") is False
+        and lineage.get("facts_package_status") == "ready"
+        and lineage.get("does_not_execute_trades") is True
+        and lineage.get("does_not_modify_strategy_action") is True
+        and lineage.get("contains_secret") is False
+        and symbol
+        and result_version
+    )
+    symbol_matches = bool(expected_symbol and symbol == expected_symbol)
+    result_version_matches = bool(expected_result_version and result_version == expected_result_version)
+    if not approved_by_user:
+        status = "storage_current_result_atomic_promotion_blocked_user_confirmation_required"
+    elif not expected_symbol or not expected_result_version:
+        status = "storage_current_result_atomic_promotion_blocked_expected_lineage_required"
+    elif not lineage_ready:
+        status = "storage_current_result_atomic_promotion_blocked_canonical_lineage_not_ready"
+    elif not symbol_matches:
+        status = "storage_current_result_atomic_promotion_blocked_symbol_mismatch"
+    elif not result_version_matches:
+        status = "storage_current_result_atomic_promotion_blocked_result_version_mismatch"
+    else:
+        status = "storage_current_result_atomic_promotion_ready_to_write"
+
+    promoted_at = _now_iso()
+    write_result: dict[str, Any] = {
+        "status": "not_executed",
+        "atomic_promoted": False,
+        "writes_parquet": False,
+        "writes_pointer": False,
+        "external_calls_triggered": False,
+    }
+    current_before_write = parquet_store.versioned_dataset_pointer(
+        root=PARQUET_ROOT,
+        name=CURRENT_RESULT_LINEAGE_DATASET,
+        pointer="current",
+    )
+    current_already_matches = bool(
+        current_before_write.get("status") == "ready"
+        and current_before_write.get("version_id") == result_version
+        and (current_before_write.get("lineage") or {}).get("symbol") == symbol
+    )
+    if status == "storage_current_result_atomic_promotion_ready_to_write":
+        if current_already_matches:
+            manifest_result = parquet_store.ensure_versioned_dataset_manifest_entry(
+                root=PARQUET_ROOT,
+                name=CURRENT_RESULT_LINEAGE_DATASET,
+            )
+            write_result = {
+                "status": "atomic_current_reused_manifest_ready"
+                if manifest_result.get("manifest_entry_ready") is True
+                else str(manifest_result.get("status") or "manifest_entry_validation_failed"),
+                "atomic_promoted": manifest_result.get("manifest_entry_ready") is True,
+                "writes_parquet": False,
+                "writes_manifest": manifest_result.get("writes_manifest") is True,
+                "writes_pointer": False,
+                "artifact_reused": True,
+                "current_pointer_unchanged": True,
+                "last_good_preserved": parquet_store.versioned_dataset_pointer(
+                    root=PARQUET_ROOT,
+                    name=CURRENT_RESULT_LINEAGE_DATASET,
+                    pointer="last_good",
+                ).get("status")
+                == "ready",
+                "version_manifest": manifest_result.get("version_manifest") or {},
+                "external_calls_triggered": False,
+            }
+        else:
+            try:
+                import pandas as pd
+
+                row = _storage_current_result_row(lineage, promoted_at=promoted_at)
+                write_result = parquet_store.atomic_promote_versioned_dataset(
+                    pd.DataFrame([row], columns=CURRENT_RESULT_LINEAGE_REQUIRED_COLUMNS),
+                    root=PARQUET_ROOT,
+                    name=CURRENT_RESULT_LINEAGE_DATASET,
+                    version_id=result_version,
+                    required_columns=CURRENT_RESULT_LINEAGE_REQUIRED_COLUMNS,
+                    lineage={
+                        "task_id": str(lineage.get("task_id") or ""),
+                        "symbol": symbol,
+                        "scope_hash": str(lineage.get("scope_hash") or ""),
+                        "result_version": result_version,
+                        "facts_package_hash": str(lineage.get("facts_package_hash") or ""),
+                        "model_ledger_id": str(lineage.get("model_ledger_id") or ""),
+                        "source_packet_key": CURRENT_RESULT_LINEAGE_PACKET_KEY,
+                    },
+                )
+            except Exception as exc:
+                write_result = {
+                    "status": "atomic_promotion_failed",
+                    "atomic_promoted": False,
+                    "writes_parquet": False,
+                    "writes_manifest": False,
+                    "writes_pointer": False,
+                    "error_message_safe": type(exc).__name__,
+                    "external_calls_triggered": False,
+                }
+        status = (
+            "storage_current_result_atomic_promotion_success"
+            if write_result.get("atomic_promoted") is True
+            else "storage_current_result_atomic_promotion_write_failed"
+        )
+
+    promoted = status == "storage_current_result_atomic_promotion_success"
+    current_pointer = (
+        parquet_store.versioned_dataset_pointer(
+            root=PARQUET_ROOT,
+            name=CURRENT_RESULT_LINEAGE_DATASET,
+            pointer="current",
+        )
+        if promoted
+        else {}
+    )
+    last_good_pointer = (
+        parquet_store.versioned_dataset_pointer(
+            root=PARQUET_ROOT,
+            name=CURRENT_RESULT_LINEAGE_DATASET,
+            pointer="last_good",
+        )
+        if promoted
+        else {}
+    )
+    duckdb_readback = _storage_current_result_duckdb_readback(
+        current_pointer,
+        symbol=symbol,
+        result_version=result_version,
+    )
+    version_manifest = parquet_store.versioned_dataset_manifest(
+        root=PARQUET_ROOT,
+        name=CURRENT_RESULT_LINEAGE_DATASET,
+    )
+    manifest_current_version_ready = any(
+        item.get("version_id") == result_version and item.get("valid") is True
+        for item in list(version_manifest.get("versions") or [])
+        if isinstance(item, Mapping)
+    )
+    call_ledger = [
+        {
+            "api": "local_storage_current_result_atomic_promotion",
+            "endpoint": "POST /api/storage/current-result/atomic-promote",
+            "source_type": "local_storage_writer",
+            "external": False,
+            "call_status": status,
+            "dataset": CURRENT_RESULT_LINEAGE_DATASET,
+            "symbol": symbol,
+            "result_version": result_version,
+            "row_count": int(write_result.get("row_count") or 0),
+            "writes_parquet": write_result.get("writes_parquet") is True,
+            "writes_pointer": write_result.get("writes_pointer") is True,
+            "writes_manifest": write_result.get("writes_manifest") is True,
+            "atomic_promoted": promoted,
+            "last_good_preserved": write_result.get("last_good_preserved") is True,
+            "duckdb_readback_verified": duckdb_readback.get("verified") is True,
+            "manifest_current_version_ready": manifest_current_version_ready,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+    ]
+    return {
+        "schema_version": "command_center_3_storage_current_result_atomic_promotion.v1",
+        "packet_key": STORAGE_CURRENT_RESULT_ATOMIC_PROMOTION_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_atomic_parquet_promotion",
+        "scope": "canonical_search_result_lineage_to_versioned_parquet",
+        "ltg": "LTG-05",
+        "approved_by_user": approved_by_user,
+        "lineage_read_status": lineage_read_status,
+        "canonical_lineage_ready": lineage_ready,
+        "expected_symbol": expected_symbol,
+        "expected_result_version": expected_result_version,
+        "symbol": symbol,
+        "result_version": result_version,
+        "symbol_matches": symbol_matches,
+        "result_version_matches": result_version_matches,
+        "source_packet_key": CURRENT_RESULT_LINEAGE_PACKET_KEY,
+        "dataset": CURRENT_RESULT_LINEAGE_DATASET,
+        "physical_write_executed": promoted,
+        "atomic_current_promoted": promoted,
+        "last_good_preserved": write_result.get("last_good_preserved") is True,
+        "current_pointer": current_pointer,
+        "last_good_pointer": last_good_pointer,
+        "duckdb_readback": duckdb_readback,
+        "duckdb_readback_verified": duckdb_readback.get("verified") is True,
+        "version_manifest": version_manifest,
+        "manifest_current_version_ready": manifest_current_version_ready,
+        "manifest_version_count": int(version_manifest.get("version_count") or 0),
+        "write_result": write_result,
+        "production_storage_complete": False,
+        "provider_refresh_executed": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": call_ledger,
+        "warnings": [
+            "This explicit POST writes only canonical result lineage to ignored local versioned Parquet storage.",
+            "A successful atomic promotion is LTG-05 direct local physical evidence, not production storage completion.",
+        ],
+    }
+
+
+def run_storage_current_result_atomic_promotion_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_atomic_promotion",
+        "approved_by_user": payload_map.get("approved_by_user") is True,
+        "expected_symbol": str(payload_map.get("expected_symbol") or "").strip().upper(),
+        "expected_result_version": str(payload_map.get("expected_result_version") or "").strip(),
+        "external_sources_allowed": False,
+        "write_parquet_allowed": True,
+        "delete_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_current_result_atomic_promotion",
+        output_packet_key=STORAGE_CURRENT_RESULT_ATOMIC_PROMOTION_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_current_result_atomic_promotion_queued",
+        warnings=[
+            "This task may write ignored local Parquet and atomic current/last-good pointers after canonical-lineage validation.",
+            "It never refreshes providers, calls models, deletes artifacts, trades, or mutates strategy action.",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="validating_canonical_result_before_atomic_storage_promotion",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_current_result_atomic_promotion_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(STORAGE_CURRENT_RESULT_ATOMIC_PROMOTION_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_current_result_atomic_promotion_packet_persist_failed",
+            error_message_safe="storage_atomic_promotion_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="physical_write_may_have_completed_but_sqlite_receipt_failed",
+        ) or task
+    succeeded = packet.get("physical_write_executed") is True
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success" if succeeded else "failed",
+        progress=1.0,
+        current_step=str(packet.get("status") or "storage_current_result_atomic_promotion_finished"),
+        error_message_safe=None if succeeded else str(packet.get("status") or "storage_atomic_promotion_blocked"),
+        call_ledger=packet["call_ledger"],
+        warning=(
+            "canonical_result_lineage_atomically_promoted_to_local_parquet"
+            if succeeded
+            else "canonical_result_lineage_not_promoted_current_pointer_unchanged"
+        ),
+    ) or task
+
+
+def storage_current_result_retention_cleanup_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload_map = payload_safe if isinstance(payload_safe, Mapping) else {}
+    try:
+        max_versions = max(2, min(int(payload_map.get("max_versions") or CURRENT_RESULT_MAX_VERSIONS), 100))
+    except (TypeError, ValueError):
+        max_versions = CURRENT_RESULT_MAX_VERSIONS
+    expected_candidate_version_ids = [
+        str(value)
+        for value in list(payload_map.get("expected_candidate_version_ids") or [])
+        if str(value)
+    ]
+    result = parquet_store.execute_versioned_dataset_retention_cleanup(
+        root=PARQUET_ROOT,
+        name=CURRENT_RESULT_LINEAGE_DATASET,
+        max_versions=max_versions,
+        expected_plan_hash=str(payload_map.get("expected_plan_hash") or ""),
+        expected_candidate_version_ids=expected_candidate_version_ids,
+        approved_by_user=payload_map.get("approved_by_user") is True,
+    )
+    succeeded = result.get("delete_executed") is True
+    status = (
+        "storage_current_result_retention_cleanup_success"
+        if succeeded
+        else str(result.get("status") or "storage_current_result_retention_cleanup_blocked")
+    )
+    call_ledger = [
+        {
+            "api": "local_storage_current_result_retention_cleanup",
+            "endpoint": "POST /api/storage/current-result/retention-cleanup",
+            "source_type": "local_storage_retention_executor",
+            "external": False,
+            "call_status": status,
+            "dataset": CURRENT_RESULT_LINEAGE_DATASET,
+            "plan_hash": str(result.get("plan_hash") or ""),
+            "candidate_version_ids": list(result.get("candidate_version_ids") or []),
+            "protected_version_ids": list(result.get("protected_version_ids") or []),
+            "deleted_version_count": int(result.get("deleted_version_count") or 0),
+            "delete_executed": succeeded,
+            "recovery_execution": result.get("recovery_execution") is True,
+            "cleanup_journal_status": str(result.get("cleanup_journal_status") or ""),
+            "writes_manifest": result.get("writes_manifest") is True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+    ]
+    return {
+        "schema_version": "command_center_3_storage_current_result_retention_cleanup.v1",
+        "packet_key": STORAGE_CURRENT_RESULT_RETENTION_CLEANUP_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_version_retention_cleanup",
+        "scope": "current_result_versions_bound_to_plan_hash",
+        "ltg": "LTG-05",
+        "approved_by_user": payload_map.get("approved_by_user") is True,
+        "max_versions": max_versions,
+        "expected_plan_hash": str(payload_map.get("expected_plan_hash") or ""),
+        "expected_candidate_version_ids": expected_candidate_version_ids,
+        "cleanup_result": result,
+        "delete_executed": succeeded,
+        "deleted_version_count": int(result.get("deleted_version_count") or 0),
+        "deleted_version_ids": list(result.get("deleted_version_ids") or []),
+        "protected_version_ids": list(result.get("protected_version_ids") or []),
+        "recovery_execution": result.get("recovery_execution") is True,
+        "cleanup_journal_status": str(result.get("cleanup_journal_status") or ""),
+        "current_version_id": str(result.get("current_version_id") or ""),
+        "last_good_version_id": str(result.get("last_good_version_id") or ""),
+        "production_storage_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": call_ledger,
+        "warnings": [
+            "Retention cleanup deletes only immutable versions bound to the current plan hash.",
+            "Current and last-good pointers are protected; cleanup never refreshes providers or completes production storage.",
+        ],
+    }
+
+
+def run_storage_current_result_retention_cleanup_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_current_result_retention_cleanup",
+        "approved_by_user": payload_map.get("approved_by_user") is True,
+        "expected_plan_hash": str(payload_map.get("expected_plan_hash") or ""),
+        "expected_candidate_version_ids": [
+            str(value)
+            for value in list(payload_map.get("expected_candidate_version_ids") or [])
+            if str(value)
+        ],
+        "max_versions": payload_map.get("max_versions") or CURRENT_RESULT_MAX_VERSIONS,
+        "external_sources_allowed": False,
+        "delete_versioned_artifacts_allowed": payload_map.get("approved_by_user") is True,
+    }
+    task = task_service.create_task_record(
+        "run_storage_current_result_retention_cleanup",
+        output_packet_key=STORAGE_CURRENT_RESULT_RETENTION_CLEANUP_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_current_result_retention_cleanup_queued",
+        warnings=[
+            "This task requires explicit approval plus an exact current plan hash and candidate list.",
+            "It cannot delete current/last-good, call external sources, trade, or mutate strategy action.",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.4,
+        current_step="revalidating_retention_plan_and_protected_pointers",
+    )
+    payload_for_execution = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_current_result_retention_cleanup_packet(
+        task_id=task["task_id"],
+        payload_safe=payload_for_execution,
+    )
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+            STORAGE_CURRENT_RESULT_RETENTION_CLEANUP_PACKET_KEY,
+            packet,
+        )
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_current_result_retention_cleanup_receipt_persist_failed",
+            error_message_safe="storage_retention_cleanup_receipt_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="cleanup_result_recording_failed_review_local_manifest_before_retry",
+        ) or task
+    succeeded = packet.get("delete_executed") is True
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success" if succeeded else "failed",
+        progress=1.0,
+        current_step=str(packet.get("status") or "storage_current_result_retention_cleanup_finished"),
+        error_message_safe=None if succeeded else str(packet.get("status") or "retention_cleanup_blocked"),
+        call_ledger=packet["call_ledger"],
+        warning=(
+            "bound_retention_candidates_deleted_current_last_good_preserved"
+            if succeeded
+            else "retention_cleanup_not_executed_or_incomplete"
+        ),
+    ) or task
+
+
+def storage_current_result_atomic_promotion_evidence() -> dict[str, Any]:
+    lineage, lineage_read_status = _storage_current_result_lineage()
+    receipt, receipt_read_status = _read_storage_meta_packet_no_init(
+        STORAGE_CURRENT_RESULT_ATOMIC_PROMOTION_PACKET_KEY
+    )
+    receipt = dict(receipt) if isinstance(receipt, Mapping) else {}
+    cleanup_receipt, cleanup_receipt_read_status = _read_storage_meta_packet_no_init(
+        STORAGE_CURRENT_RESULT_RETENTION_CLEANUP_PACKET_KEY
+    )
+    cleanup_receipt = dict(cleanup_receipt) if isinstance(cleanup_receipt, Mapping) else {}
+    current_pointer = parquet_store.versioned_dataset_pointer(
+        root=PARQUET_ROOT,
+        name=CURRENT_RESULT_LINEAGE_DATASET,
+        pointer="current",
+    )
+    last_good_pointer = parquet_store.versioned_dataset_pointer(
+        root=PARQUET_ROOT,
+        name=CURRENT_RESULT_LINEAGE_DATASET,
+        pointer="last_good",
+    )
+    version_manifest = parquet_store.versioned_dataset_manifest(
+        root=PARQUET_ROOT,
+        name=CURRENT_RESULT_LINEAGE_DATASET,
+    )
+    resolved_current = parquet_store.resolve_versioned_dataset_current(
+        root=PARQUET_ROOT,
+        name=CURRENT_RESULT_LINEAGE_DATASET,
+    )
+    symbol = str(lineage.get("symbol") or "")
+    result_version = str(lineage.get("result_version") or "")
+    resolved_pointer = dict(resolved_current.get("selected_pointer") or {})
+    ttl_state = parquet_store.versioned_dataset_ttl_status(
+        resolved_pointer,
+        ttl_seconds=CURRENT_RESULT_TTL_SECONDS,
+    )
+    retention_plan = parquet_store.versioned_dataset_retention_plan(
+        root=PARQUET_ROOT,
+        name=CURRENT_RESULT_LINEAGE_DATASET,
+        max_versions=CURRENT_RESULT_MAX_VERSIONS,
+    )
+    cleanup_journal = parquet_store.versioned_dataset_retention_cleanup_journal(
+        root=PARQUET_ROOT,
+        name=CURRENT_RESULT_LINEAGE_DATASET,
+    )
+    cleanup_journal_summary = {
+        "status": str(cleanup_journal.get("status") or "missing"),
+        "plan_hash": str(cleanup_journal.get("plan_hash") or ""),
+        "max_versions": int(cleanup_journal.get("max_versions") or CURRENT_RESULT_MAX_VERSIONS),
+        "candidate_version_ids": list(cleanup_journal.get("candidate_version_ids") or []),
+        "protected_version_ids": list(cleanup_journal.get("protected_version_ids") or []),
+        "pending_artifact_count": int(cleanup_journal.get("pending_artifact_count") or 0),
+        "recovery_ready": cleanup_journal.get("recovery_ready") is True,
+        "cleanup_completed": cleanup_journal.get("cleanup_completed") is True,
+        "protected_version_conflict": cleanup_journal.get("protected_version_conflict") is True,
+        "writes_files": False,
+        "external_calls_triggered": False,
+    }
+    resolved_symbol = str((resolved_pointer.get("lineage") or {}).get("symbol") or symbol)
+    resolved_result_version = str(resolved_pointer.get("version_id") or result_version)
+    duckdb_readback = _storage_current_result_duckdb_readback(
+        resolved_pointer,
+        symbol=resolved_symbol,
+        result_version=resolved_result_version,
+    )
+    manifest_current_version_ready = any(
+        item.get("version_id") == result_version and item.get("valid") is True
+        for item in list(version_manifest.get("versions") or [])
+        if isinstance(item, Mapping)
+    )
+    current_version_id = str(current_pointer.get("version_id") or "")
+    last_good_version_id = str(last_good_pointer.get("version_id") or "")
+    last_good_pointer_ready = bool(
+        last_good_pointer.get("status") == "ready"
+        and last_good_version_id
+        and last_good_version_id != current_version_id
+    )
+    retention_protected_ids = set(retention_plan.get("protected_version_ids") or [])
+    retention_protects_current_and_last_good = bool(
+        current_version_id
+        and last_good_version_id
+        and {current_version_id, last_good_version_id}.issubset(retention_protected_ids)
+    )
+    canonical_ready = bool(
+        lineage.get("current_result_promoted") is True
+        and lineage.get("factor_next_same_result_ready") is True
+        and lineage.get("same_task_fact_model_result_version_ready") is True
+        and lineage.get("old_task_can_overwrite_current") is False
+        and lineage.get("facts_package_status") == "ready"
+        and lineage.get("does_not_execute_trades") is True
+        and lineage.get("does_not_modify_strategy_action") is True
+        and lineage.get("contains_secret") is False
+        and symbol
+        and result_version
+    )
+    current_matches = bool(
+        current_pointer.get("status") == "ready"
+        and current_pointer.get("version_id") == result_version
+        and (current_pointer.get("lineage") or {}).get("symbol") == symbol
+    )
+    current_result_storage_acceptance_ready = bool(
+        current_matches
+        and last_good_pointer_ready
+        and retention_protects_current_and_last_good
+        and duckdb_readback.get("verified") is True
+        and manifest_current_version_ready
+        and int(version_manifest.get("version_count") or 0) >= 2
+        and cleanup_journal_summary["protected_version_conflict"] is False
+        and cleanup_journal_summary["recovery_ready"] is False
+        and cleanup_journal_summary["pending_artifact_count"] == 0
+    )
+    degraded_recovery_active = resolved_current.get("degraded_recovery_active") is True
+    can_launch = bool(canonical_ready and not current_matches and not degraded_recovery_active)
+    if degraded_recovery_active:
+        status = "storage_current_result_atomic_promotion_degraded_last_good_active"
+    elif current_matches:
+        status = "storage_current_result_atomic_promotion_current"
+    elif canonical_ready:
+        status = "storage_current_result_atomic_promotion_ready_for_explicit_post"
+    else:
+        status = "storage_current_result_atomic_promotion_waiting_canonical_result"
+    return {
+        "schema_version": "command_center_3_storage_current_result_atomic_promotion_evidence.v1",
+        "status": status,
+        "lineage_read_status": lineage_read_status,
+        "receipt_read_status": receipt_read_status,
+        "canonical_lineage_ready": canonical_ready,
+        "can_launch_atomic_promotion": can_launch,
+        "atomic_promotion_current": current_matches,
+        "expected_symbol": symbol,
+        "expected_result_version": result_version,
+        "facts_package_hash": str(lineage.get("facts_package_hash") or ""),
+        "model_ledger_id": str(lineage.get("model_ledger_id") or ""),
+        "latest_receipt_status": receipt.get("status") or "missing",
+        "latest_receipt_task_id": receipt.get("task_id") or "",
+        "current_pointer": current_pointer,
+        "last_good_pointer": last_good_pointer,
+        "last_good_pointer_ready": last_good_pointer_ready,
+        "current_last_good_distinct": bool(
+            current_version_id and last_good_version_id and current_version_id != last_good_version_id
+        ),
+        "resolved_current": resolved_current,
+        "resolved_pointer_kind": str(resolved_current.get("selected_pointer_kind") or ""),
+        "resolved_symbol": resolved_symbol,
+        "resolved_result_version": resolved_result_version,
+        "degraded_recovery_active": degraded_recovery_active,
+        "no_valid_version_available": resolved_current.get("no_valid_version_available") is True,
+        "duckdb_readback": duckdb_readback,
+        "duckdb_readback_verified": duckdb_readback.get("verified") is True,
+        "version_manifest": version_manifest,
+        "manifest_current_version_ready": manifest_current_version_ready,
+        "manifest_version_count": int(version_manifest.get("version_count") or 0),
+        "retention_protects_current_and_last_good": retention_protects_current_and_last_good,
+        "current_result_storage_acceptance_ready": current_result_storage_acceptance_ready,
+        "current_result_storage_acceptance_status": (
+            "current_result_storage_acceptance_ready"
+            if current_result_storage_acceptance_ready
+            else "current_result_storage_acceptance_pending_second_valid_version_or_recovery_guard"
+        ),
+        "ttl_state": ttl_state,
+        "ttl_status": str(ttl_state.get("status") or "ttl_source_unavailable"),
+        "ttl_age_seconds": ttl_state.get("age_seconds"),
+        "ttl_seconds": int(ttl_state.get("ttl_seconds") or CURRENT_RESULT_TTL_SECONDS),
+        "ttl_refresh_recommended": ttl_state.get("refresh_recommended") is True,
+        "retention_plan": retention_plan,
+        "retention_status": str(retention_plan.get("status") or "retention_plan_unavailable"),
+        "retention_max_versions": int(
+            retention_plan.get("effective_max_versions") or CURRENT_RESULT_MAX_VERSIONS
+        ),
+        "retention_protected_version_ids": list(retention_plan.get("protected_version_ids") or []),
+        "retention_cleanup_candidate_count": int(
+            retention_plan.get("cleanup_candidate_count") or 0
+        ),
+        "retention_delete_executed": False,
+        "retention_cleanup_journal": cleanup_journal_summary,
+        "retention_cleanup_journal_status": cleanup_journal_summary["status"],
+        "retention_cleanup_recovery_ready": cleanup_journal_summary["recovery_ready"],
+        "retention_cleanup_pending_artifact_count": cleanup_journal_summary["pending_artifact_count"],
+        "retention_cleanup_completed": cleanup_journal_summary["cleanup_completed"],
+        "latest_retention_cleanup_receipt_status": cleanup_receipt.get("status") or "missing",
+        "latest_retention_cleanup_receipt_read_status": cleanup_receipt_read_status,
+        "latest_retention_cleanup_task_id": cleanup_receipt.get("task_id") or "",
+        "latest_retention_deleted_version_count": int(
+            cleanup_receipt.get("deleted_version_count") or 0
+        ),
+        "physical_write_executed": current_matches,
+        "production_storage_complete": False,
+        "cache_only": True,
+        "cache_get_writes_files": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def storage_current_result_cache() -> dict[str, Any]:
+    evidence = storage_current_result_atomic_promotion_evidence()
+    resolution = dict(evidence.get("resolved_current") or {})
+    selected = dict(resolution.get("selected_pointer") or {})
+    readback = dict(evidence.get("duckdb_readback") or {})
+    row = {
+        "symbol": str(readback.get("symbol") or ""),
+        "result_version": str(readback.get("result_version") or ""),
+        "facts_package_hash": str(readback.get("facts_package_hash") or ""),
+        "model_ledger_id": str(readback.get("model_ledger_id") or ""),
+    }
+    selected_lineage = dict(selected.get("lineage") or {})
+    readback_ready = bool(
+        evidence.get("duckdb_readback_verified") is True
+        and row["symbol"]
+        and row["result_version"]
+    )
+    if resolution.get("degraded_recovery_active") is True and readback_ready:
+        status = "storage_current_result_cache_degraded_last_good"
+    elif resolution.get("selected_pointer_kind") == "current" and readback_ready:
+        status = "storage_current_result_cache_ready_current"
+    elif resolution.get("no_valid_version_available") is True:
+        status = "storage_current_result_cache_missing"
+    else:
+        status = "storage_current_result_cache_waiting_validated_artifact"
+    packet = {
+        "schema_version": "command_center_3_storage_current_result_cache.v1",
+        "status": status,
+        "store": "versioned_parquet_duckdb",
+        "dataset": CURRENT_RESULT_LINEAGE_DATASET,
+        "selected_pointer_kind": str(resolution.get("selected_pointer_kind") or ""),
+        "selected_version_id": str(resolution.get("selected_version_id") or ""),
+        "selected_artifact_sha256": str(selected.get("artifact_sha256") or ""),
+        "degraded_recovery_active": resolution.get("degraded_recovery_active") is True,
+        "no_valid_version_available": resolution.get("no_valid_version_available") is True,
+        "result": row if readback_ready else {},
+        "result_row_count": 1 if readback_ready else 0,
+        "duckdb_readback_verified": readback_ready,
+        "manifest_status": str((evidence.get("version_manifest") or {}).get("status") or "missing"),
+        "manifest_version_count": int(evidence.get("manifest_version_count") or 0),
+        "ttl_status": str(evidence.get("ttl_status") or "ttl_source_unavailable"),
+        "ttl_age_seconds": evidence.get("ttl_age_seconds"),
+        "ttl_seconds": int(evidence.get("ttl_seconds") or CURRENT_RESULT_TTL_SECONDS),
+        "ttl_refresh_recommended": evidence.get("ttl_refresh_recommended") is True,
+        "retention_status": str(evidence.get("retention_status") or "retention_plan_unavailable"),
+        "retention_max_versions": int(
+            evidence.get("retention_max_versions") or CURRENT_RESULT_MAX_VERSIONS
+        ),
+        "retention_protected_version_ids": list(
+            evidence.get("retention_protected_version_ids") or []
+        ),
+        "retention_cleanup_candidate_count": int(
+            evidence.get("retention_cleanup_candidate_count") or 0
+        ),
+        "retention_delete_executed": False,
+        "retention_cleanup_journal_status": str(
+            evidence.get("retention_cleanup_journal_status") or "missing"
+        ),
+        "retention_cleanup_recovery_ready": evidence.get("retention_cleanup_recovery_ready") is True,
+        "retention_cleanup_pending_artifact_count": int(
+            evidence.get("retention_cleanup_pending_artifact_count") or 0
+        ),
+        "retention_cleanup_completed": evidence.get("retention_cleanup_completed") is True,
+        "source_atomic_task_id": str(evidence.get("latest_receipt_task_id") or ""),
+        "source_result_task_id": str(selected_lineage.get("task_id") or ""),
+        "source_scope_hash": str(selected_lineage.get("scope_hash") or ""),
+        "source_atomic_status": str(evidence.get("status") or ""),
+        "resolution_blockers": list(resolution.get("blockers") or []),
+        "cache_only": True,
+        "cache_get_creates_task": False,
+        "cache_get_writes_files": False,
+        "cache_get_refreshes_stale_result": False,
+        "cache_get_deletes_versions": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    return _attach_storage_lineage(
+        packet,
+        api="local_storage_current_result_cache",
+        endpoint="GET /api/storage/current-result",
+        dataset=CURRENT_RESULT_LINEAGE_DATASET,
+        row_count=packet["result_row_count"],
+        path=_path_label(Path(str(selected.get("artifact_path") or "")))
+        if selected.get("artifact_path")
+        else "",
+    )
+
+
 def _storage_production_promotion_review_row(
     criterion: str,
     *,
@@ -6065,6 +7013,22 @@ def storage_production_promotion_review_packet(
         execution_recipe,
         execution_request,
     )
+    current_result_atomic_promotion = storage_current_result_atomic_promotion_evidence()
+    current_result_atomic_promotion_done = bool(
+        durable_recipe.get("current_result_atomic_parquet_promotion_done") is True
+        and current_result_atomic_promotion.get("atomic_promotion_current") is True
+        and current_result_atomic_promotion.get("physical_write_executed") is True
+        and current_result_atomic_promotion.get("duckdb_readback_verified") is True
+        and current_result_atomic_promotion.get("manifest_current_version_ready") is True
+        and current_result_atomic_promotion.get("production_storage_complete") is False
+        and current_result_atomic_promotion.get("external_calls_triggered") is False
+    )
+    current_result_storage_acceptance_ready = bool(
+        current_result_atomic_promotion_done
+        and current_result_atomic_promotion.get("current_result_storage_acceptance_ready") is True
+        and current_result_atomic_promotion.get("last_good_pointer_ready") is True
+        and current_result_atomic_promotion.get("retention_protects_current_and_last_good") is True
+    )
     approved_by_user = payload_safe.get("approved_by_user") is True
     latest_scope_hash = str(
         execution_request.get("physical_execution_scope_hash")
@@ -6113,9 +7077,14 @@ def storage_production_promotion_review_packet(
         status = "storage_production_promotion_review_blocked_durable_evidence_recipe"
     elif not no_side_effect_boundary:
         status = "storage_production_promotion_review_blocked_boundary_regression"
+    elif current_result_storage_acceptance_ready:
+        status = "storage_current_result_acceptance_ready_full_storage_pending"
     else:
         status = "storage_production_promotion_review_ready_production_still_blocked"
-    local_review_ready = status == "storage_production_promotion_review_ready_production_still_blocked"
+    local_review_ready = status in {
+        "storage_production_promotion_review_ready_production_still_blocked",
+        "storage_current_result_acceptance_ready_full_storage_pending",
+    }
     rows = [
         _storage_production_promotion_review_row(
             "explicit_production_promotion_review_task",
@@ -6152,6 +7121,29 @@ def storage_production_promotion_review_packet(
             next_action="Keep durable evidence rows visible before any production claim.",
         ),
         _storage_production_promotion_review_row(
+            "current_result_atomic_parquet_evidence_reviewed",
+            passed=current_result_atomic_promotion_done,
+            status="passed_local_atomic_parquet_direct_evidence"
+            if current_result_atomic_promotion_done
+            else "pending_atomic_parquet_direct_evidence",
+            evidence=(
+                f"status={current_result_atomic_promotion.get('status')}; "
+                f"task_id={current_result_atomic_promotion.get('latest_receipt_task_id')}; "
+                f"symbol={current_result_atomic_promotion.get('expected_symbol')}; "
+                f"result_version={current_result_atomic_promotion.get('expected_result_version')}; "
+                f"duckdb_readback_verified={current_result_atomic_promotion.get('duckdb_readback_verified')}; "
+                f"manifest_current_version_ready={current_result_atomic_promotion.get('manifest_current_version_ready')}; "
+                f"last_good_pointer_ready={current_result_atomic_promotion.get('last_good_pointer_ready')}; "
+                f"current_result_storage_acceptance_ready={current_result_storage_acceptance_ready}"
+            ),
+            next_action=(
+                "Retain this pointer/receipt proof and continue the remaining storage stages."
+                if current_result_atomic_promotion_done
+                else "Run the explicit canonical-result atomic promotion before production review."
+            ),
+            production_blocker=not current_result_atomic_promotion_done,
+        ),
+        _storage_production_promotion_review_row(
             "remaining_direct_evidence_reviewed",
             passed=not remaining_durable_evidence,
             status="passed_all_current_direct_evidence_reviewed"
@@ -6185,6 +7177,22 @@ def storage_production_promotion_review_packet(
         "durable_evidence_schema_version": durable_recipe.get("schema_version"),
         "pre_review_missing_durable_evidence": pre_review_missing,
         "remaining_durable_evidence": remaining_durable_evidence,
+        "current_result_atomic_parquet_promotion_done": current_result_atomic_promotion_done,
+        "current_result_storage_acceptance_ready": current_result_storage_acceptance_ready,
+        "current_result_storage_direct_evidence_complete": current_result_storage_acceptance_ready,
+        "full_storage_migration_pending": True,
+        "current_result_atomic_parquet_task_id": str(
+            current_result_atomic_promotion.get("latest_receipt_task_id") or ""
+        ),
+        "current_result_atomic_parquet_result_version": str(
+            current_result_atomic_promotion.get("expected_result_version") or ""
+        ),
+        "current_result_atomic_parquet_duckdb_readback_verified": (
+            current_result_atomic_promotion.get("duckdb_readback_verified") is True
+        ),
+        "current_result_atomic_parquet_manifest_version_ready": (
+            current_result_atomic_promotion.get("manifest_current_version_ready") is True
+        ),
         "production_storage_complete": False,
     }
     call_ledger = _storage_cache_call_ledger(
@@ -6228,6 +7236,19 @@ def storage_production_promotion_review_packet(
         "promotion_review_scope_hash_input_includes_secret": False,
         "pre_review_missing_durable_evidence": pre_review_missing,
         "remaining_durable_evidence": remaining_durable_evidence,
+        "current_result_atomic_parquet_promotion_done": current_result_atomic_promotion_done,
+        "current_result_storage_acceptance_ready": current_result_storage_acceptance_ready,
+        "current_result_storage_direct_evidence_complete": current_result_storage_acceptance_ready,
+        "full_storage_migration_pending": True,
+        "current_result_atomic_parquet_task_id": str(
+            current_result_atomic_promotion.get("latest_receipt_task_id") or ""
+        ),
+        "current_result_atomic_parquet_symbol": str(
+            current_result_atomic_promotion.get("expected_symbol") or ""
+        ),
+        "current_result_atomic_parquet_result_version": str(
+            current_result_atomic_promotion.get("expected_result_version") or ""
+        ),
         "durable_evidence_blocker_count_before_review": int(durable_recipe.get("production_blocker_count") or 0),
         "local_blocker_count": len(local_blockers),
         "local_blockers": local_blockers,
@@ -6239,6 +7260,10 @@ def storage_production_promotion_review_packet(
         "durable_promotion_ready": False,
         "physical_task_created": False,
         "physical_task_executed": False,
+        "source_physical_task_created": bool(
+            current_result_atomic_promotion.get("latest_receipt_task_id")
+        ),
+        "source_physical_task_executed": current_result_atomic_promotion_done,
         "schema_migration_executed": False,
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
@@ -7097,6 +8122,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         physical_execution_request,
     )
     physical_execution_phase_a = storage_physical_execution_phase_a_evidence()
+    current_result_atomic_promotion = storage_current_result_atomic_promotion_evidence()
     production_promotion_review = storage_production_promotion_review_evidence()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
@@ -7208,6 +8234,14 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "storage_physical_execution_phase_a_status": physical_execution_phase_a.get("status"),
         "storage_physical_execution_phase_a_ready": physical_execution_phase_a.get(
             "local_phase_a_execution_ready"
+        ),
+        "storage_current_result_atomic_promotion": current_result_atomic_promotion,
+        "storage_current_result_atomic_promotion_status": current_result_atomic_promotion.get("status"),
+        "storage_current_result_atomic_promotion_can_launch": current_result_atomic_promotion.get(
+            "can_launch_atomic_promotion"
+        ),
+        "storage_current_result_atomic_promotion_current": current_result_atomic_promotion.get(
+            "atomic_promotion_current"
         ),
         "storage_production_promotion_review": production_promotion_review,
         "storage_production_promotion_review_rows": production_promotion_review.get("rows") or [],

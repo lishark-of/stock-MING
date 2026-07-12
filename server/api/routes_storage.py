@@ -50,6 +50,12 @@ def get_storage_dataset_catalog() -> dict:
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
 
 
+@router.get("/current-result")
+def get_storage_current_result() -> dict:
+    packet = storage_service.storage_current_result_cache()
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+
+
 @router.post("/artifact-hygiene/dry-run")
 def run_storage_artifact_cleanup_dry_run(payload: dict[str, Any] | None = None) -> dict:
     task = storage_service.run_storage_artifact_cleanup_dry_run_task(payload)
@@ -137,6 +143,18 @@ def run_storage_physical_execution_request(payload: dict[str, Any] | None = None
 @router.post("/physical-execution/phase-a")
 def run_storage_physical_execution_phase_a(payload: dict[str, Any] | None = None) -> dict:
     task = storage_service.run_storage_physical_execution_phase_a_task(payload)
+    return task_envelope(task)
+
+
+@router.post("/current-result/atomic-promote")
+def run_storage_current_result_atomic_promotion(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_current_result_atomic_promotion_task(payload)
+    return task_envelope(task)
+
+
+@router.post("/current-result/retention-cleanup")
+def run_storage_current_result_retention_cleanup(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_current_result_retention_cleanup_task(payload)
     return task_envelope(task)
 
 
