@@ -310,6 +310,18 @@ ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_ROUTE = (
 ALTERNATIVE_HARD_RISK_EVIDENCE_SCOPE_PACKET_KEY = (
     "command_center_tushare_alternative_hard_risk_evidence_scope_packet"
 )
+PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_SCHEMA_VERSION = (
+    "tushare_provider_target_sample_storage_promotion_review.v1"
+)
+PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_TASK_TYPE = (
+    "run_tushare_provider_target_sample_storage_promotion_review"
+)
+PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_ROUTE = (
+    "POST /api/tasks/tushare-provider-target-sample-storage-promotion-review"
+)
+PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_PACKET_KEY = (
+    "command_center_tushare_target_sample_storage_promotion_review_packet"
+)
 TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE = "run_trade_cal_provider_acceptance_execution_request"
 TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_READY_STATUS = (
     "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending"
@@ -3282,6 +3294,314 @@ def run_tushare_provider_target_sample_failure_window_review(payload: Any = None
         current_step="tushare_provider_target_sample_failure_window_review_visible"
         if receipt["provider_task_found"]
         else "tushare_provider_target_sample_failure_window_review_missing_provider_task",
+        error_message_safe="" if receipt["provider_task_found"] else "missing_target_sample_provider_task",
+        call_ledger=receipt["call_ledger"],
+    ) or task
+
+
+def _target_sample_storage_promotion_review_receipt(payload: Any = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    payload_safe = _safe_payload(payload)
+    provider_task = _latest_target_sample_provider_refresh_task(payload_safe)
+    provider_payload = (
+        provider_task.get("payload_safe") if isinstance(provider_task.get("payload_safe"), Mapping) else {}
+    )
+    provider_rows = [
+        dict(row)
+        for row in provider_task.get("call_ledger") or []
+        if isinstance(row, Mapping)
+        and (
+            row.get("tushare_called") is True
+            or row.get("external_calls_triggered") is True
+            or row.get("external") is True
+        )
+    ]
+    refresh_packet: dict[str, Any]
+    try:
+        refresh_raw = SQLiteMetaStore(SQLITE_META_PATH).read_packet("command_center_tushare_refresh_packet")
+        refresh_packet = dict(refresh_raw) if isinstance(refresh_raw, Mapping) else {}
+    except Exception:
+        refresh_packet = {}
+    target_contract = (
+        refresh_packet.get("provider_target_sample_acceptance_contract")
+        if isinstance(refresh_packet.get("provider_target_sample_acceptance_contract"), Mapping)
+        else {}
+    )
+    target_review_ready = target_contract.get("target_sample_acceptance_ready_for_review") is True
+    requested_targets = [
+        str(item)
+        for item in (
+            provider_payload.get("target_sample_acceptance_groups")
+            or target_contract.get("requested_targets")
+            or []
+        )
+        if str(item or "")
+    ]
+    selected_apis = [
+        str(item)
+        for item in (
+            provider_payload.get("apis")
+            or refresh_packet.get("selected_apis")
+            or [row.get("api") for row in provider_rows]
+        )
+        if str(item or "")
+    ]
+    provider_symbol = str(provider_payload.get("ts_code") or refresh_packet.get("ts_code") or "").strip()
+
+    storage_cache = storage_service.storage_current_result_cache()
+    storage_atomic = storage_service.storage_current_result_atomic_promotion_evidence()
+    storage_symbol = str(storage_cache.get("symbol") or storage_atomic.get("expected_symbol") or "").strip()
+    storage_result_version = str(
+        storage_cache.get("result_version") or storage_atomic.get("expected_result_version") or ""
+    ).strip()
+    symbol_matches = bool(provider_symbol and storage_symbol and provider_symbol == storage_symbol)
+    storage_readback_ready = bool(
+        storage_cache.get("status")
+        in {
+            "storage_current_result_cache_ready_current",
+            "storage_current_result_cache_degraded_last_good",
+        }
+        and storage_cache.get("duckdb_readback_verified") is True
+        and storage_cache.get("cache_get_writes_files") is False
+        and storage_cache.get("external_calls_triggered") is False
+        and storage_cache.get("tushare_called") is False
+        and storage_cache.get("deepseek_called") is False
+        and storage_cache.get("github_called") is False
+        and storage_cache.get("does_not_execute_trades") is True
+        and storage_cache.get("does_not_modify_strategy_action") is True
+        and storage_cache.get("contains_secret") is False
+    )
+    atomic_readback_ready = bool(
+        storage_atomic.get("status") == "storage_current_result_atomic_promotion_current"
+        and storage_atomic.get("atomic_promotion_current") is True
+        and storage_atomic.get("duckdb_readback_verified") is True
+        and storage_atomic.get("manifest_current_version_ready") is True
+        and storage_atomic.get("cache_get_writes_files") is False
+        and storage_atomic.get("external_calls_triggered") is False
+        and storage_atomic.get("tushare_called") is False
+        and storage_atomic.get("deepseek_called") is False
+        and storage_atomic.get("github_called") is False
+        and storage_atomic.get("does_not_execute_trades") is True
+        and storage_atomic.get("does_not_modify_strategy_action") is True
+        and storage_atomic.get("contains_secret") is False
+    )
+    checks = [
+        (
+            "provider_target_sample_visible",
+            bool(provider_task and provider_rows),
+            f"task_id={provider_task.get('task_id') or 'missing'}; call_ledger_count={len(provider_rows)}",
+        ),
+        (
+            "target_sample_review_ready",
+            target_review_ready,
+            f"target_contract_status={target_contract.get('status') or 'missing'}",
+        ),
+        (
+            "storage_current_result_readback",
+            storage_readback_ready,
+            (
+                f"status={storage_cache.get('status')}; symbol={storage_symbol or 'missing'}; "
+                f"result_version={storage_result_version or 'missing'}; "
+                f"duckdb_readback_verified={storage_cache.get('duckdb_readback_verified')}"
+            ),
+        ),
+        (
+            "storage_atomic_pointer_readback",
+            atomic_readback_ready,
+            (
+                f"status={storage_atomic.get('status')}; task_id={storage_atomic.get('latest_receipt_task_id')}; "
+                f"manifest_current_version_ready={storage_atomic.get('manifest_current_version_ready')}"
+            ),
+        ),
+        (
+            "provider_storage_symbol_lineage",
+            symbol_matches,
+            f"provider_symbol={provider_symbol or 'missing'}; storage_symbol={storage_symbol or 'missing'}",
+        ),
+        (
+            "no_storage_write_from_review",
+            True,
+            "review reads provider ledger and storage cache only; it does not write Parquet, manifests, or cache outputs.",
+        ),
+    ]
+    rows = [
+        {
+            "criterion": criterion,
+            "status": "passed" if passed else "blocked",
+            "passed": bool(passed),
+            "blocking": not bool(passed),
+            "evidence": evidence,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+        for criterion, passed, evidence in checks
+    ]
+    blocker_count = sum(1 for row in rows if row["blocking"])
+    if not provider_task or not provider_rows:
+        status = "target_sample_storage_promotion_review_blocked_missing_provider_sample"
+        allowed_next_step = "POST /api/tasks/refresh-tushare-facts"
+    elif not target_review_ready:
+        status = "target_sample_storage_promotion_review_blocked_target_sample_review_pending"
+        allowed_next_step = PROVIDER_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE
+    elif not storage_readback_ready or not atomic_readback_ready or not symbol_matches:
+        status = "target_sample_storage_promotion_review_recorded_storage_blockers_visible"
+        allowed_next_step = "POST /api/storage/current-result/atomic-promote"
+    else:
+        status = "target_sample_storage_promotion_review_ready_full_interface_still_pending"
+        allowed_next_step = "continue_full_interface_selection_and_release_review"
+    ready = status == "target_sample_storage_promotion_review_ready_full_interface_still_pending"
+    receipt = {
+        "schema_version": PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_tushare_target_sample_storage_promotion_review_no_provider_no_storage_write",
+        "route": PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_ROUTE,
+        "task_type": PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_TASK_TYPE,
+        "provider_task_found": bool(provider_task),
+        "provider_task_id": str(provider_task.get("task_id") or ""),
+        "provider_call_ledger_count": len(provider_rows),
+        "provider_symbol": provider_symbol,
+        "requested_targets": requested_targets,
+        "selected_apis": selected_apis,
+        "target_sample_acceptance_ready_for_review": target_review_ready,
+        "storage_current_result_status": storage_cache.get("status") or "missing",
+        "storage_current_result_symbol": storage_symbol,
+        "storage_current_result_version": storage_result_version,
+        "storage_current_result_data_date": storage_cache.get("data_date"),
+        "storage_current_result_freshness_state": storage_cache.get("freshness_state"),
+        "storage_current_result_duckdb_readback_verified": storage_cache.get("duckdb_readback_verified") is True,
+        "storage_atomic_promotion_status": storage_atomic.get("status") or "missing",
+        "storage_atomic_task_id": storage_atomic.get("latest_receipt_task_id") or "",
+        "storage_atomic_manifest_current_version_ready": storage_atomic.get("manifest_current_version_ready") is True,
+        "storage_readback_ready": storage_readback_ready,
+        "storage_atomic_readback_ready": atomic_readback_ready,
+        "provider_storage_symbol_matches": symbol_matches,
+        "storage_or_no_storage_promotion_review_done": ready,
+        "local_storage_promotion_review_ready": ready,
+        "blocking_criterion_count": blocker_count,
+        "row_count": len(rows),
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "ready_to_execute_from_cache": False,
+        "creates_provider_task": False,
+        "provider_execution_implemented": False,
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "writes_cache": False,
+        "deletes_artifacts": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "allowed_next_step": allowed_next_step,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_tushare_target_sample_storage_promotion_review",
+                "source": "existing target-sample provider ledger plus local storage current-result readback",
+                "request_params_safe": {
+                    "provider_task_id": str(provider_task.get("task_id") or ""),
+                    "provider_symbol": provider_symbol,
+                    "storage_symbol": storage_symbol,
+                    "storage_result_version": storage_result_version,
+                    "selected_apis": selected_apis,
+                    "requested_targets": requested_targets,
+                },
+                "row_count": len(rows),
+                "data_date": storage_cache.get("data_date"),
+                "local_fetched_at": _now_iso(),
+                "call_status": status,
+                "error_message_safe": "",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This local review links an existing provider target-sample ledger to storage current-result readback. It does not call Tushare, write Parquet, promote full-interface acceptance, trade, or mutate strategy action.",
+    }
+    return receipt, rows
+
+
+def run_tushare_provider_target_sample_storage_promotion_review(payload: Any = None) -> dict[str, Any]:
+    receipt, rows = _target_sample_storage_promotion_review_receipt(payload)
+    payload_safe = {
+        "provider_target_sample_storage_promotion_review_receipt": receipt,
+        "provider_target_sample_storage_promotion_review_rows": rows,
+    }
+    task = create_task_record(
+        PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_TASK_TYPE,
+        output_packet_key=PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_PACKET_KEY,
+        payload=payload_safe,
+        current_step="tushare_target_sample_storage_promotion_review_queued_local_only",
+        warnings=[
+            "该任务只读取已有 target-sample provider ledger 与本地 current-result storage readback，不调用 Tushare。",
+            "该任务不写 Parquet/manifest/cache，不证明 LTG-02 全接口生产完成。",
+            "该任务不调用 DeepSeek/GitHub，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="building_tushare_target_sample_storage_promotion_review",
+        call_ledger=receipt["call_ledger"],
+    )
+    packet = {
+        "packet_key": PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_PACKET_KEY,
+        "schema_version": "command_center_tushare_target_sample_storage_promotion_review_packet.v1",
+        "status": receipt["status"],
+        "task_type": PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_TASK_TYPE,
+        "receipt": receipt,
+        "rows": rows,
+        "provider_task_id": receipt["provider_task_id"],
+        "provider_call_ledger_count": receipt["provider_call_ledger_count"],
+        "storage_or_no_storage_promotion_review_done": receipt["storage_or_no_storage_promotion_review_done"],
+        "local_storage_promotion_review_ready": receipt["local_storage_promotion_review_ready"],
+        "blocking_criterion_count": receipt["blocking_criterion_count"],
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": receipt["call_ledger"],
+    }
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+            PROVIDER_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_PACKET_KEY,
+            packet,
+        )
+    except Exception:
+        pass
+    return update_task_status(
+        task["task_id"],
+        status="success" if receipt["provider_task_found"] else "failed",
+        progress=1.0,
+        current_step="tushare_target_sample_storage_promotion_review_ready"
+        if receipt["local_storage_promotion_review_ready"]
+        else "tushare_target_sample_storage_promotion_review_blocked",
         error_message_safe="" if receipt["provider_task_found"] else "missing_target_sample_provider_task",
         call_ledger=receipt["call_ledger"],
     ) or task

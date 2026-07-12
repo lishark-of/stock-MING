@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import config as app_config
 from server.services import audit_service, bootstrap_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, tushare_task_service, worker_service
@@ -15470,6 +15471,311 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(task["tushare_called"])
         self.assertTrue(task["does_not_execute_trades"])
         self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+    def test_tushare_target_sample_storage_promotion_review_links_provider_and_storage_without_calls(self):
+        db_path = self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self.addCleanup(clear_task_statuses_for_tests, clear_persisted=True)
+
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_tushare_refresh_packet",
+            {
+                "packet_key": "command_center_tushare_refresh_packet",
+                "schema_version": "command_center_tushare_refresh_task.v1",
+                "task_type": "refresh_tushare_facts",
+                "task_id": "local-target-storage",
+                "status": "success",
+                "payload_safe": {
+                    "acceptance_mode": "provider_target_sample_acceptance",
+                    "target_sample_acceptance_groups": ["margin_financing"],
+                    "apis": ["margin_detail"],
+                    "ts_code": "000001.SZ",
+                    "trade_date": "20260713",
+                },
+                "selected_apis": ["margin_detail"],
+                "call_ledger": [
+                    {
+                        "api": "margin_detail",
+                        "source": "tushare",
+                        "row_count": 1,
+                        "request_params_safe": {"ts_code": "000001.SZ", "trade_date": "20260713"},
+                        "data_date": "20260713",
+                        "local_fetched_at": "2026-07-13T10:00:00",
+                        "call_status": "success",
+                        "failure_mode": "none",
+                        "error_message_safe": "",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                ],
+                "provider_target_sample_acceptance_contract": {
+                    "schema_version": "tushare_provider_target_sample_acceptance_contract.v1",
+                    "status": "target_sample_acceptance_ready_for_review",
+                    "requested_targets": ["margin_financing"],
+                    "requested_target_count": 1,
+                    "ready_target_count": 1,
+                    "target_sample_acceptance_ready_for_review": True,
+                    "rows": [
+                        {
+                            "target": "margin_financing",
+                            "target_sample_acceptance_status": "target_sample_acceptance_ready_for_review",
+                            "target_sample_acceptance_ready_for_review": True,
+                            "failure_modes_observed": [],
+                            "target_sample_acceptance_blockers": [],
+                        }
+                    ],
+                },
+                "tushare_durable_evidence_recipe": {
+                    "schema_version": "tushare_durable_evidence_recipe.v1",
+                    "status": "tushare_durable_evidence_recipe_ready_provider_pending",
+                    "local_recipe_ready": True,
+                    "durable_evidence_complete": False,
+                },
+                "failure_mode_qa_contract": {
+                    "status": "failure_mode_qa_ready_provider_acceptance_pending",
+                    "unsafe_row_count": 0,
+                },
+                "request_parameter_qa_contract": {
+                    "status": "request_parameter_qa_ready_provider_acceptance_pending",
+                    "missing_required_count": 0,
+                    "unsafe_param_count": 0,
+                },
+                "provider_acceptance_promotion_audit": {"promotion_ready": False},
+                "external_calls_triggered": True,
+                "tushare_called": True,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            },
+        )
+        storage_cache = {
+            "status": "storage_current_result_cache_ready_current",
+            "symbol": "000001.SZ",
+            "result_version": "qrv_storage",
+            "data_date": "20260713",
+            "freshness_state": "fresh_provider",
+            "duckdb_readback_verified": True,
+            "cache_get_writes_files": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+        atomic_evidence = {
+            "status": "storage_current_result_atomic_promotion_current",
+            "expected_symbol": "000001.SZ",
+            "expected_result_version": "qrv_storage",
+            "latest_receipt_task_id": "local-storage-promote",
+            "atomic_promotion_current": True,
+            "duckdb_readback_verified": True,
+            "manifest_current_version_ready": True,
+            "cache_get_writes_files": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+        with patch.object(storage_service, "storage_current_result_cache", return_value=storage_cache), patch.object(
+            storage_service,
+            "storage_current_result_atomic_promotion_evidence",
+            return_value=atomic_evidence,
+        ):
+            task = tushare_task_service.run_tushare_provider_target_sample_storage_promotion_review(
+                {"operator_approved": True, "token": "SHOULD_DROP"}
+            )
+
+        receipt = task["payload_safe"]["provider_target_sample_storage_promotion_review_receipt"]
+        rows = {
+            row["criterion"]: row
+            for row in task["payload_safe"]["provider_target_sample_storage_promotion_review_rows"]
+        }
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(
+            receipt["status"],
+            "target_sample_storage_promotion_review_ready_full_interface_still_pending",
+        )
+        self.assertTrue(receipt["local_storage_promotion_review_ready"])
+        self.assertTrue(receipt["storage_or_no_storage_promotion_review_done"])
+        self.assertEqual(receipt["provider_task_id"], "local-target-storage")
+        self.assertEqual(receipt["provider_call_ledger_count"], 1)
+        self.assertEqual(receipt["provider_symbol"], "000001.SZ")
+        self.assertEqual(receipt["storage_current_result_symbol"], "000001.SZ")
+        self.assertEqual(receipt["storage_current_result_version"], "qrv_storage")
+        self.assertTrue(receipt["provider_storage_symbol_matches"])
+        self.assertTrue(rows["storage_current_result_readback"]["passed"])
+        self.assertTrue(rows["storage_atomic_pointer_readback"]["passed"])
+        self.assertFalse(receipt["writes_parquet"])
+        self.assertFalse(receipt["writes_manifest"])
+        self.assertFalse(receipt["writes_cache"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+    def test_tushare_target_sample_storage_review_advances_migration_queue(self):
+        db_path = self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self.addCleanup(clear_task_statuses_for_tests, clear_persisted=True)
+
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_tushare_refresh_packet",
+            {
+                "packet_key": "command_center_tushare_refresh_packet",
+                "schema_version": "command_center_tushare_refresh_task.v1",
+                "task_type": "refresh_tushare_facts",
+                "task_id": "local-target-storage",
+                "status": "success",
+                "payload_safe": {
+                    "acceptance_mode": "provider_target_sample_acceptance",
+                    "target_sample_acceptance_groups": ["margin_financing"],
+                    "apis": ["margin_detail"],
+                    "ts_code": "000001.SZ",
+                    "trade_date": "20260713",
+                },
+                "selected_apis": ["margin_detail"],
+                "call_ledger": [
+                    {
+                        "api": "margin_detail",
+                        "row_count": 1,
+                        "data_date": "20260713",
+                        "call_status": "success",
+                        "failure_mode": "none",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                ],
+                "provider_target_sample_acceptance_contract": {
+                    "schema_version": "tushare_provider_target_sample_acceptance_contract.v1",
+                    "status": "target_sample_acceptance_ready_for_review",
+                    "requested_targets": ["margin_financing"],
+                    "requested_target_count": 1,
+                    "ready_target_count": 1,
+                    "target_sample_acceptance_ready_for_review": True,
+                    "rows": [
+                        {
+                            "target": "margin_financing",
+                            "target_sample_acceptance_status": "target_sample_acceptance_ready_for_review",
+                            "target_sample_acceptance_ready_for_review": True,
+                            "failure_modes_observed": [],
+                            "target_sample_acceptance_blockers": [],
+                        }
+                    ],
+                },
+                "tushare_durable_evidence_recipe": {
+                    "schema_version": "tushare_durable_evidence_recipe.v1",
+                    "status": "tushare_durable_evidence_recipe_ready_provider_pending",
+                    "local_recipe_ready": True,
+                    "durable_evidence_complete": False,
+                },
+                "failure_mode_qa_contract": {
+                    "status": "failure_mode_qa_ready_provider_acceptance_pending",
+                    "unsafe_row_count": 0,
+                },
+                "request_parameter_qa_contract": {
+                    "status": "request_parameter_qa_ready_provider_acceptance_pending",
+                    "missing_required_count": 0,
+                    "unsafe_param_count": 0,
+                },
+                "provider_acceptance_promotion_audit": {"promotion_ready": False},
+                "external_calls_triggered": True,
+                "tushare_called": True,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            },
+        )
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_tushare_target_sample_storage_promotion_review_packet",
+            {
+                "packet_key": "command_center_tushare_target_sample_storage_promotion_review_packet",
+                "schema_version": "command_center_tushare_target_sample_storage_promotion_review_packet.v1",
+                "status": "target_sample_storage_promotion_review_ready_full_interface_still_pending",
+                "task_type": "run_tushare_provider_target_sample_storage_promotion_review",
+                "receipt": {
+                    "schema_version": "tushare_provider_target_sample_storage_promotion_review.v1",
+                    "status": "target_sample_storage_promotion_review_ready_full_interface_still_pending",
+                    "local_storage_promotion_review_ready": True,
+                    "storage_or_no_storage_promotion_review_done": True,
+                    "provider_task_id": "packet:command_center_tushare_refresh_packet",
+                    "provider_call_ledger_count": 1,
+                    "storage_current_result_status": "storage_current_result_cache_ready_current",
+                    "storage_current_result_symbol": "000001.SZ",
+                    "storage_current_result_version": "qrv_storage",
+                    "storage_current_result_duckdb_readback_verified": True,
+                    "storage_atomic_promotion_status": "storage_current_result_atomic_promotion_current",
+                    "storage_atomic_manifest_current_version_ready": True,
+                    "provider_storage_symbol_matches": True,
+                    "blocking_criterion_count": 0,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                },
+                "rows": [],
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            },
+        )
+
+        migration = migration_status_service.build_migration_status()
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        p2 = action_rows["p2_tushare_target_sample_acceptance"]
+        target_handoff = p2["supporting_tushare_target_sample_evidence_handoff"]
+        pipeline_handoff = p2["supporting_tushare_full_interface_pipeline_handoff"]
+
+        self.assertEqual(
+            target_handoff["status"],
+            "target_sample_storage_promotion_review_ready_full_interface_selection_pending",
+        )
+        self.assertFalse(target_handoff["requires_storage_or_no_storage_promotion_review"])
+        self.assertTrue(target_handoff["target_sample_storage_promotion_review_ready"])
+        self.assertEqual(
+            pipeline_handoff["status"],
+            "full_interface_pipeline_storage_promotion_review_ready_full_selection_pending",
+        )
+        self.assertFalse(pipeline_handoff["requires_storage_or_no_storage_promotion_review"])
+        self.assertEqual(
+            p2["local_receipt_status"],
+            "local_target_sample_storage_promotion_review_ready_full_selection_pending",
+        )
+        self.assertEqual(
+            p2["next_local_step"],
+            "continue_full_interface_selection_and_release_review",
+        )
+        self.assertFalse(p2["external_calls_triggered"])
+        self.assertFalse(p2["tushare_called"])
+        self.assertTrue(p2["does_not_execute_trades"])
 
     def test_tushare_target_sample_handoff_reads_failure_review_packet(self):
         db_path = self._with_meta_store()

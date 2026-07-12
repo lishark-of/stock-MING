@@ -48,6 +48,12 @@ def tushare_provider_target_sample_failure_window_review(payload: dict[str, Any]
     return task_envelope(task)
 
 
+@router.post("/tushare-provider-target-sample-storage-promotion-review")
+def tushare_provider_target_sample_storage_promotion_review(payload: dict[str, Any] | None = None) -> dict:
+    task = tushare_task_service.run_tushare_provider_target_sample_storage_promotion_review(payload)
+    return task_envelope(task)
+
+
 @router.post("/tushare-provider-target-sample-permission-followup-ticket")
 def tushare_provider_target_sample_permission_followup_ticket(payload: dict[str, Any] | None = None) -> dict:
     task = tushare_task_service.run_tushare_provider_target_sample_permission_followup_ticket(payload)

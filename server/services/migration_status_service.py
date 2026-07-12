@@ -24,6 +24,18 @@ TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY = (
 TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY = (
     "command_center_tushare_provider_target_sample_failure_window_review_packet"
 )
+TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_TASK_TYPE = (
+    "run_tushare_provider_target_sample_storage_promotion_review"
+)
+TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_ROUTE = (
+    "POST /api/tasks/tushare-provider-target-sample-storage-promotion-review"
+)
+TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_RECEIPT_KEY = (
+    "provider_target_sample_storage_promotion_review_receipt"
+)
+TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_PACKET_KEY = (
+    "command_center_tushare_target_sample_storage_promotion_review_packet"
+)
 TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_TASK_TYPE = (
     "run_tushare_provider_target_sample_permission_followup_ticket"
 )
@@ -846,6 +858,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_TASK_TYPE,
             "receipt_key": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY,
             "route": TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_ROUTE,
+        },
+        {
+            "phase_key": "target_sample_storage_promotion_review",
+            "task_type": TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_TASK_TYPE,
+            "receipt_key": TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_RECEIPT_KEY,
+            "route": TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_ROUTE,
         },
         {
             "phase_key": "target_sample_permission_followup_ticket",
@@ -5415,6 +5433,9 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
             TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_RECEIPT_KEY: (
                 TUSHARE_TARGET_SAMPLE_FAILURE_WINDOW_REVIEW_PACKET_KEY
             ),
+            TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_RECEIPT_KEY: (
+                TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_PACKET_KEY
+            ),
             TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_RECEIPT_KEY: (
                 TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_PACKET_KEY
             ),
@@ -5668,6 +5689,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_worker_fallback_ready",
         "local_runtime_qa_execution_done",
         "local_permission_followup_ticket_ready",
+        "local_storage_promotion_review_ready",
         "ready_for_manual_permission_resolution",
         "ready_for_manual_alternative_hard_risk_evidence_scope",
         "local_alternative_hard_risk_scope_ticket_ready",
@@ -9535,6 +9557,16 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "target_sample_execution_request_ticket",
             "required_prior_material": "latest_task_id",
         },
+        TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_ROUTE: {
+            "step_kind": "local_target_sample_storage_promotion_review",
+            "safe_payload_summary": (
+                "review existing target-sample provider ledger plus storage current-result readback; "
+                "no provider/model call and no Parquet/manifest/cache write"
+            ),
+            "expected_local_receipt": TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_RECEIPT_KEY,
+            "required_prior_phase_key": "target_sample_failure_window_review",
+            "required_prior_material": "receipt_local_ready",
+        },
         TUSHARE_TARGET_SAMPLE_PERMISSION_FOLLOWUP_ROUTE: {
             "step_kind": "local_target_sample_permission_followup_ticket",
             "safe_payload_summary": (
@@ -10914,6 +10946,112 @@ def _latest_trade_cal_provider_acceptance_evidence_handoff_summary() -> dict[str
     }
 
 
+def _latest_tushare_target_sample_storage_promotion_review_summary() -> dict[str, Any]:
+    latest_task = next(
+        (
+            task
+            for task in task_service.list_task_statuses()
+            if str(task.get("task_type") or "") == TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_TASK_TYPE
+        ),
+        None,
+    )
+    receipt_map: dict[str, Any] = {}
+    row_list: list[dict[str, Any]] = []
+    storage_source = ""
+    task_id = ""
+    task_status = ""
+    current_step = ""
+    if latest_task:
+        payload_safe = (
+            latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), Mapping) else {}
+        )
+        receipt = payload_safe.get(TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_RECEIPT_KEY)
+        rows = payload_safe.get("provider_target_sample_storage_promotion_review_rows")
+        receipt_map = _dict_or_empty(receipt)
+        row_list = [dict(row) for row in rows or [] if isinstance(row, Mapping)]
+        storage_source = str(latest_task.get("storage_source") or "")
+        task_id = str(latest_task.get("task_id") or "")
+        task_status = str(latest_task.get("status") or "")
+        current_step = str(latest_task.get("current_step") or "")
+    if not receipt_map:
+        try:
+            packet = packet_service.read_packet(TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_PACKET_KEY)
+        except Exception:
+            packet = {}
+        packet_map = _dict_or_empty(packet)
+        receipt_map = _dict_or_empty(packet_map.get("receipt"))
+        row_list = [dict(row) for row in packet_map.get("rows") or [] if isinstance(row, Mapping)]
+        if receipt_map:
+            storage_source = "sqlite_meta_packet"
+            task_id = f"packet:{TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_PACKET_KEY}"
+            task_status = str(packet_map.get("status") or "")
+            current_step = "packet_storage_promotion_review_readback"
+    if not receipt_map:
+        return {
+            "schema_version": "latest_tushare_target_sample_storage_promotion_review.v1",
+            "status": "target_sample_storage_promotion_review_missing",
+            "latest_task_found": False,
+            "latest_task_id": "",
+            "latest_task_status": "",
+            "latest_task_current_step": "",
+            "local_storage_promotion_review_ready": False,
+            "storage_or_no_storage_promotion_review_done": False,
+            "blocking_criterion_count": 0,
+            "row_count": 0,
+            "cache_get_external_calls": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+    return {
+        "schema_version": "latest_tushare_target_sample_storage_promotion_review.v1",
+        "status": receipt_map.get("status") or "missing_receipt_status",
+        "latest_task_found": True,
+        "latest_task_id": task_id,
+        "latest_task_status": task_status,
+        "latest_task_current_step": current_step,
+        "latest_task_storage_source": storage_source,
+        "receipt_visible": True,
+        "local_storage_promotion_review_ready": (
+            receipt_map.get("local_storage_promotion_review_ready") is True
+        ),
+        "storage_or_no_storage_promotion_review_done": (
+            receipt_map.get("storage_or_no_storage_promotion_review_done") is True
+        ),
+        "provider_task_id": receipt_map.get("provider_task_id") or "",
+        "provider_call_ledger_count": int(receipt_map.get("provider_call_ledger_count") or 0),
+        "storage_current_result_status": receipt_map.get("storage_current_result_status") or "",
+        "storage_current_result_symbol": receipt_map.get("storage_current_result_symbol") or "",
+        "storage_current_result_version": receipt_map.get("storage_current_result_version") or "",
+        "storage_current_result_duckdb_readback_verified": (
+            receipt_map.get("storage_current_result_duckdb_readback_verified") is True
+        ),
+        "storage_atomic_promotion_status": receipt_map.get("storage_atomic_promotion_status") or "",
+        "storage_atomic_manifest_current_version_ready": (
+            receipt_map.get("storage_atomic_manifest_current_version_ready") is True
+        ),
+        "provider_storage_symbol_matches": receipt_map.get("provider_storage_symbol_matches") is True,
+        "blocking_criterion_count": int(receipt_map.get("blocking_criterion_count") or 0),
+        "row_count": len(row_list),
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "receipt": receipt_map,
+    }
+
+
 def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
     try:
         from server.services import data_health_service
@@ -10937,6 +11075,7 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
     request_parameter_qa = _dict_or_empty(refresh_map.get("request_parameter_qa_contract"))
     provider_promotion = _dict_or_empty(refresh_map.get("provider_acceptance_promotion_audit"))
     provider_direct_evidence = _latest_tushare_direct_provider_evidence_summary()
+    storage_promotion_review = _latest_tushare_target_sample_storage_promotion_review_summary()
     task_provider_summary = _tushare_refresh_task_provider_ledger_summary()
     target_sample_provider_task_visible = (
         task_provider_summary.get("target_sample_provider_task_visible") is True
@@ -11003,8 +11142,13 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
     request_parameter_window_done = (
         request_parameter_qa.get("status") == "request_parameter_qa_ready_provider_acceptance_pending"
     )
+    storage_promotion_review_ready = (
+        storage_promotion_review.get("local_storage_promotion_review_ready") is True
+    )
     next_step = (
-        "full_interface_storage_promotion_review_after_provider_sample"
+        "continue_full_interface_selection_and_release_review"
+        if target_sample_review_ready and durable_recipe_ready and storage_promotion_review_ready
+        else TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_ROUTE
         if target_sample_review_ready and durable_recipe_ready
         else "resolve_provider_permission_or_collect_alternative_hard_risk_evidence"
         if target_sample_permission_blocker_recorded
@@ -11043,7 +11187,9 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
     return {
         "schema_version": "ltg02_tushare_target_sample_evidence_handoff_summary.v1",
         "status": (
-            "target_sample_provider_evidence_visible_promotion_review_needed"
+            "target_sample_storage_promotion_review_ready_full_interface_selection_pending"
+            if target_sample_review_ready and storage_promotion_review_ready
+            else "target_sample_provider_evidence_visible_storage_promotion_review_needed"
             if target_sample_review_ready
             else "target_sample_permission_blocker_recorded_provider_access_required"
             if target_sample_permission_blocker_recorded
@@ -11143,6 +11289,19 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
         "failure_mode_evidence_done": failure_mode_evidence_done,
         "request_parameter_provider_window_done": request_parameter_window_done,
         "provider_promotion_ready": provider_promotion_ready,
+        "target_sample_storage_promotion_review_found": (
+            storage_promotion_review.get("latest_task_found") is True
+        ),
+        "target_sample_storage_promotion_review_task_id": (
+            storage_promotion_review.get("latest_task_id") or ""
+        ),
+        "target_sample_storage_promotion_review_status": (
+            storage_promotion_review.get("status") or "missing"
+        ),
+        "target_sample_storage_promotion_review_ready": storage_promotion_review_ready,
+        "target_sample_storage_promotion_review_blocker_count": int(
+            storage_promotion_review.get("blocking_criterion_count") or 0
+        ),
         "durable_recipe_status": durable_recipe.get("status") or "missing",
         "durable_recipe_ready": durable_recipe_ready,
         "durable_evidence_complete": durable_recipe.get("durable_evidence_complete") is True,
@@ -11155,7 +11314,7 @@ def _latest_tushare_target_sample_evidence_handoff_summary() -> dict[str, Any]:
             target_sample_review_ready or target_sample_provider_task_visible or failure_window_review_found
         ),
         "requires_full_interface_selection": not full_interface_selection_done,
-        "requires_storage_or_no_storage_promotion_review": True,
+        "requires_storage_or_no_storage_promotion_review": not storage_promotion_review_ready,
         "requires_remote_ci_review_after_local_complete": True,
         "requires_release_review_after_remote_green": True,
         "cache_get_creates_task": False,
@@ -11396,6 +11555,7 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
     refresh_map = _dict_or_empty(refresh_packet)
     recipe_preview = _latest_tushare_target_sample_execution_recipe_preview()
     target_sample_handoff = _latest_tushare_target_sample_evidence_handoff_summary()
+    storage_promotion_review = _latest_tushare_target_sample_storage_promotion_review_summary()
     provider_direct_evidence = _latest_tushare_direct_provider_evidence_summary()
     durable_recipe = _dict_or_empty(refresh_map.get("tushare_durable_evidence_recipe"))
     target_contract = _dict_or_empty(refresh_map.get("provider_target_sample_acceptance_contract"))
@@ -11460,6 +11620,9 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
         and int(request_parameter_qa.get("unsafe_param_count") or 0) == 0
     )
     promotion_ready = promotion.get("promotion_ready") is True
+    storage_promotion_review_ready = (
+        storage_promotion_review.get("local_storage_promotion_review_ready") is True
+    )
     missing_evidence_items: list[str] = []
     if not full_interface_selection_done:
         missing_evidence_items.append("full-interface selected API set")
@@ -11473,16 +11636,20 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
         missing_evidence_items.append("request-parameter provider window evidence")
     if not promotion_ready:
         missing_evidence_items.append("provider acceptance promotion review")
+    if not storage_promotion_review_ready:
+        missing_evidence_items.append("storage or no-storage promotion review")
     missing_evidence_items.extend(
         [
-            "storage or no-storage promotion review",
             "matching remote CI review after local gate",
             "release review after matching remote CI green",
         ]
     )
-    if target_sample_review_ready and durable_recipe_ready:
-        status = "full_interface_pipeline_target_sample_review_ready_promotion_pending"
-        next_step = "full_interface_storage_promotion_review_after_provider_sample"
+    if target_sample_review_ready and durable_recipe_ready and storage_promotion_review_ready:
+        status = "full_interface_pipeline_storage_promotion_review_ready_full_selection_pending"
+        next_step = "continue_full_interface_selection_and_release_review"
+    elif target_sample_review_ready and durable_recipe_ready:
+        status = "full_interface_pipeline_target_sample_review_ready_storage_promotion_review_needed"
+        next_step = TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_ROUTE
     elif target_sample_permission_blocker_recorded:
         status = "full_interface_pipeline_target_sample_permission_blocker_recorded_provider_access_required"
         next_step = "resolve_provider_permission_or_collect_alternative_hard_risk_evidence"
@@ -11569,6 +11736,19 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
         "failure_mode_evidence_done": failure_mode_done,
         "request_parameter_provider_window_done": request_parameter_done,
         "provider_promotion_ready": promotion_ready,
+        "target_sample_storage_promotion_review_found": (
+            storage_promotion_review.get("latest_task_found") is True
+        ),
+        "target_sample_storage_promotion_review_task_id": (
+            storage_promotion_review.get("latest_task_id") or ""
+        ),
+        "target_sample_storage_promotion_review_status": (
+            storage_promotion_review.get("status") or "missing"
+        ),
+        "target_sample_storage_promotion_review_ready": storage_promotion_review_ready,
+        "target_sample_storage_promotion_review_blocker_count": int(
+            storage_promotion_review.get("blocking_criterion_count") or 0
+        ),
         "durable_recipe_ready": durable_recipe_ready,
         "durable_recipe_status": durable_recipe.get("status") or "missing",
         "durable_evidence_blocker_count": durable_blocker_count,
@@ -11581,7 +11761,7 @@ def _latest_tushare_full_interface_pipeline_handoff_summary() -> dict[str, Any]:
             target_sample_review_ready or target_sample_provider_task_visible or failure_window_review_found
         ),
         "requires_full_interface_selection": not full_interface_selection_done,
-        "requires_storage_or_no_storage_promotion_review": True,
+        "requires_storage_or_no_storage_promotion_review": not storage_promotion_review_ready,
         "requires_remote_ci_review_after_local_complete": True,
         "requires_release_review_after_remote_green": True,
         "cache_get_creates_task": False,
@@ -11809,12 +11989,19 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 )
                 is True
             ):
-                local_status = "local_provider_evidence_visible_promotion_review_needed"
-                next_local_step = str(
-                    supporting_tushare_full_interface_pipeline_handoff.get("next_local_step")
-                    or supporting_tushare_target_sample_evidence_handoff.get("next_local_step")
-                    or "full_interface_storage_promotion_review_after_provider_sample"
+                storage_step = _local_step_row_by_phase(
+                    local_step_rows, "target_sample_storage_promotion_review"
                 )
+                if storage_step.get("receipt_visible") is True and storage_step.get("local_ready") is True:
+                    local_status = "local_target_sample_storage_promotion_review_ready_full_selection_pending"
+                    next_local_step = str(
+                        supporting_tushare_full_interface_pipeline_handoff.get("next_local_step")
+                        or supporting_tushare_target_sample_evidence_handoff.get("next_local_step")
+                        or "continue_full_interface_selection_and_release_review"
+                    )
+                else:
+                    local_status = "local_provider_evidence_visible_storage_promotion_review_needed"
+                    next_local_step = TUSHARE_TARGET_SAMPLE_STORAGE_PROMOTION_REVIEW_ROUTE
         if action["queue_id"] == "p3_factor_small_pool_provider_validation":
             supporting_factor_test_lab_provider_validation_handoff = (
                 _latest_factor_test_lab_provider_validation_handoff_summary()
