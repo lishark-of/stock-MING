@@ -5721,9 +5721,10 @@ export default function CandidateRadar() {
           <div aria-label="candidate radar post confirm data capability card">
             <h3>确认后数据能力</h3>
             <p className="ordinary-status-note" aria-label="candidate radar post confirm data capability sentence" aria-live="polite">{candidateRadarPostConfirmDataCapabilitySentence}</p>
-            <MetricGrid items={ordinaryUserMetricItems(candidateRadarPostConfirmDataCapabilityItems)} />
             <details className="developer-audit-details" aria-label="candidate radar post confirm data capability audit details">
               <summary>研究辅助 / 数据能力明细</summary>
+              <p className="risk-note">数据能力四格和证据血缘默认收起；普通首屏先看最近结果、候选池、量化推演和次日图谱。</p>
+              <MetricGrid items={ordinaryUserMetricItems(candidateRadarPostConfirmDataCapabilityItems)} />
               <p className="risk-note">证据血缘：{dataCapabilityEvidenceLedgerLabel}。真实 Tushare 补证仍需授权 POST task + scope hash + payload + call_ledger + failure-mode evidence；普通首屏不创建第二个 task。</p>
             </details>
           </div>

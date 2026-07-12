@@ -192,7 +192,8 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn('label: "图谱下一步"', search_panel)
         self.assertIn("普通入口保留“确认并生成”作为 P1 主按钮", search_panel)
         self.assertIn("点击后在本卡显示任务接收和状态", search_panel)
-        self.assertIn("title={quantProjectionSubmitButtonLabel}", search_panel)
+        self.assertIn("renderQuantProjectionPrimaryAction(quantProjectionFactorSubmitHelpId)", search_panel)
+        self.assertIn("title={quantProjectionSubmitButtonLabel}", self.page)
         self.assertIn("ordinaryLiveLightEvidenceFactoryItems", self.page)
         self.assertIn("ordinaryPreviousCacheDeltaLabel", self.page)
         self.assertIn("ordinaryActiveDegradedLabel", self.page)
@@ -203,6 +204,21 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("ordinaryBrowserQaStatusLabel", operator_panel)
         self.assertIn("退旧雷达前还缺什么：{ordinaryRetirementReadinessMainGaps}", operator_panel)
         self.assertIn("候选不是买入指令；不交易", operator_panel)
+        data_capability_start = operator_panel.index('aria-label="candidate radar post confirm data capability card"')
+        data_capability_details_start = operator_panel.index(
+            'aria-label="candidate radar post confirm data capability audit details"',
+            data_capability_start,
+        )
+        data_capability_visible = operator_panel[data_capability_start:data_capability_details_start]
+        data_capability_details_end = operator_panel.index(
+            'aria-label="candidate radar operator post confirm one glance actions"',
+            data_capability_details_start,
+        )
+        data_capability_details = operator_panel[data_capability_details_start:data_capability_details_end]
+        self.assertIn("candidateRadarPostConfirmDataCapabilitySentence", data_capability_visible)
+        self.assertNotIn("candidateRadarPostConfirmDataCapabilityItems", data_capability_visible)
+        self.assertIn("MetricGrid items={ordinaryUserMetricItems(candidateRadarPostConfirmDataCapabilityItems)}", data_capability_details)
+        self.assertIn("数据能力四格和证据血缘默认收起", data_capability_details)
         self.assertIn('aria-label="candidate radar ordinary live light evidence factory"', summary_panel)
         self.assertIn("轻量实时证据速读", summary_panel)
         self.assertIn("previous-cache diff", summary_panel)
