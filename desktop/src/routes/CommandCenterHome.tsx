@@ -4153,6 +4153,7 @@ export default function CommandCenterHome() {
             <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from home visible now summary">ETF/融资风险</a>
             <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from home visible now summary">股票量化推演</a>
             <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next session from home visible now summary">次日图谱</a>
+            <a href="#storage" title="切换到存储层 current/last-good；只读本地回放，不创建 task" aria-label="open storage current result from home visible now summary">current/last-good</a>
           </div>
           <p className="risk-note">这个条带只回答普通用户打开首页能看到什么：本地是否接上、当前标的、最近结果、来源层、缺口和下一步入口；普通链接只切换本地页面或锚点，不启动确认流程、不调用外部服务、不交易、不改策略。</p>
         </div>
@@ -4165,6 +4166,11 @@ export default function CommandCenterHome() {
             <MetricGrid items={ordinaryHomeMetricItems(ordinaryHomePlainConclusionItems)} />
           </div>
           <MetricGrid items={ordinaryHomeMetricItems(ordinaryHomeRecentResultItems)} />
+          <div className="actions" aria-label="ordinary home recent result local readback actions">
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor result from ordinary home recent result">股票量化推演</a>
+            <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next result from ordinary home recent result">次日图谱</a>
+            <a href="#storage" title="切换到存储层 current/last-good；只读本地回放，不创建 task" aria-label="open storage current result from ordinary home recent result">current/last-good</a>
+          </div>
           <p className="risk-note">这张速读只读首页已拿到的本地记录、数据凭证、结果包和任务索引；没有结果时显示等待或待补，不把空结果当无风险，也不会重复创建确认任务。</p>
         </div>
         <div aria-label="ordinary home first screen tushare data card">
