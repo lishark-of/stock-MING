@@ -463,6 +463,24 @@ export default function NextSessionMap() {
       candidateRadarProviderModelAcceptance.symbol ??
       ""
   );
+  const candidateRadarDataDate = String(
+    candidateRadarResultVersionSummary.current_result_data_date ??
+      candidateRadarResultVersionSummary.latest_task_data_date ??
+      candidateRadarResultVersionSummary.data_date ??
+      candidateRadarResultLineage.data_date ??
+      candidateRadarProviderModelAcceptance.data_date ??
+      ""
+  );
+  const candidateRadarFreshnessState = String(
+    candidateRadarResultVersionSummary.current_result_freshness_state ??
+      candidateRadarResultVersionSummary.latest_task_freshness_state ??
+      candidateRadarResultVersionSummary.freshness_state ??
+      candidateRadarResultLineage.freshness_state ??
+      candidateRadarProviderModelAcceptance.freshness_state ??
+      ""
+  );
+  const candidateRadarFreshnessLabel =
+    `${candidateRadarDataDate || "等待 data_date"} / ${candidateRadarFreshnessState || "等待 freshness"}`;
   const candidateRadarLatestTaskSymbol = String(
     candidateRadarResultVersionSummary.latest_task_symbol ??
       candidateRadarResultLineage.symbol ??
@@ -490,7 +508,7 @@ export default function NextSessionMap() {
       "未降级"
   );
   const candidateRadarLastGoodLabel = candidateRadarCurrentResultVersion
-    ? `current/last-good ${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion}`
+    ? `current/last-good ${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion} / ${candidateRadarFreshnessLabel}`
     : "等待 current / last-good 结果";
   const candidateRadarDegradedLabel = candidateRadarDegradedVisible
     ? `本次 degraded ${candidateRadarDegradedSymbol || "本次标的"} / ${candidateRadarDegradedVersion || candidateRadarLatestResultVersion || "等待版本"}；task ${String(candidateRadarResultVersionSummary.latest_task_id ?? candidateRadarResultLineage.task_id ?? "等待任务")}：${candidateRadarDegradedReason}；不覆盖 current`
@@ -523,7 +541,7 @@ export default function NextSessionMap() {
       "等待下一票雷达确认 task"
   );
   const nextSessionLineageChipLabel = candidateRadarCurrentResultVersion
-    ? `${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion}；来源任务 ${candidateRadarSourceTaskLabel.includes("等待") ? (candidateRadarCanonicalTaskId || "等待任务") : candidateRadarSourceTaskLabel}；${candidateRadarLastGoodLabel}`
+    ? `${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion} / ${candidateRadarFreshnessLabel}；来源任务 ${candidateRadarSourceTaskLabel.includes("等待") ? (candidateRadarCanonicalTaskId || "等待任务") : candidateRadarSourceTaskLabel}；${candidateRadarLastGoodLabel}`
     : "等待同源 result_version / 来源任务 / current-result 回放";
   const candidateRadarSourceTaskStep = String(
     packet.latest_confirmed_task_current_step ||
@@ -672,6 +690,7 @@ export default function NextSessionMap() {
   });
   const nextSessionResultVersionGuardItems: MetricItem[] = [
     { label: "current/last-good", value: candidateRadarLastGoodLabel, tone: candidateRadarCurrentResultVersion ? "good" : "warn" },
+    { label: "日期/新鲜度", value: candidateRadarFreshnessLabel, tone: candidateRadarDataDate && candidateRadarFreshnessState ? "good" : "warn" },
     { label: "本次降级", value: candidateRadarDegradedLabel, tone: candidateRadarDegradedVisible ? "warn" : "good" },
     { label: "覆盖保护", value: candidateRadarOverwriteGuardLabel, tone: candidateRadarOverwriteGuardLabel.includes("旧任务不能覆盖") ? "good" : "warn" }
   ];
