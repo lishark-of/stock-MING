@@ -3544,6 +3544,8 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
     recipe = _dict_or_empty(factor_tests.get("provider_small_pool_execution_recipe"))
     request = _dict_or_empty(factor_tests.get("provider_small_pool_execution_request_receipt"))
     provider_acceptance = _dict_or_empty(factor_tests.get("provider_small_pool_acceptance_receipt"))
+    forward_return_audit = _dict_or_empty(factor_tests.get("provider_small_pool_forward_return_label_audit"))
+    metric_validation = _dict_or_empty(factor_tests.get("provider_small_pool_metric_validation_audit"))
     items = factor_tests.get("items") if isinstance(factor_tests.get("items"), list) else []
 
     task_rows = _task_statuses_by_type()
@@ -3722,6 +3724,51 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
     )
     if provider_backed_small_pool_sample:
         direct_stage_keys.append("provider_backed_small_pool_sample")
+    multi_horizon_forward_returns_done = bool(
+        packet_safe
+        and provider_backed_small_pool_sample
+        and forward_return_audit.get("schema_version") == "factor_test_provider_small_pool_forward_return_label_audit.v1"
+        and forward_return_audit.get("multi_horizon_forward_returns_done") is True
+        and forward_return_audit.get("external_calls_triggered") is False
+        and forward_return_audit.get("tushare_called") is False
+        and forward_return_audit.get("deepseek_called") is False
+        and forward_return_audit.get("github_called") is False
+        and forward_return_audit.get("does_not_execute_trades") is True
+        and forward_return_audit.get("does_not_modify_strategy_action") is True
+        and forward_return_audit.get("contains_secret") is False
+    )
+    if multi_horizon_forward_returns_done:
+        direct_stage_keys.append("multi_horizon_forward_returns")
+    rolling_window_validation_done = bool(
+        packet_safe
+        and multi_horizon_forward_returns_done
+        and metric_validation.get("schema_version") == "factor_test_provider_small_pool_metric_validation_audit.v1"
+        and metric_validation.get("rolling_window_validation_done") is True
+        and metric_validation.get("external_calls_triggered") is False
+        and metric_validation.get("tushare_called") is False
+        and metric_validation.get("deepseek_called") is False
+        and metric_validation.get("github_called") is False
+        and metric_validation.get("does_not_execute_trades") is True
+        and metric_validation.get("does_not_modify_strategy_action") is True
+        and metric_validation.get("contains_secret") is False
+    )
+    if rolling_window_validation_done:
+        direct_stage_keys.append("rolling_ic_icir_validation")
+    cost_assumption_validation_done = bool(
+        rolling_window_validation_done
+        and metric_validation.get("cost_assumption_validation_done") is True
+    )
+    if cost_assumption_validation_done:
+        direct_stage_keys.append("cost_turnover_validation")
+    market_cap_neutralization_done = bool(
+        rolling_window_validation_done
+        and metric_validation.get("market_cap_neutralization_done") is True
+    )
+    neutralization_stability_done = bool(
+        metric_validation.get("neutralization_stability_done") is True
+    )
+    if neutralization_stability_done:
+        direct_stage_keys.append("neutralization_stability_validation")
     scope_hash_short = (
         provider_acceptance.get("acceptance_scope_hash_short")
         or request.get("acceptance_scope_hash_short")
@@ -3746,6 +3793,14 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
         "provider_small_pool_scope_hash_short": scope_hash_short,
         "provider_backed_small_pool_sample_done": provider_backed_small_pool_sample,
         "provider_backed_small_pool_validation_done": provider_backed_small_pool_sample,
+        "multi_horizon_forward_returns_done": multi_horizon_forward_returns_done,
+        "forward_return_label_row_count": int(forward_return_audit.get("forward_return_label_row_count") or 0),
+        "rolling_window_validation_done": rolling_window_validation_done,
+        "cost_assumption_validation_done": cost_assumption_validation_done,
+        "market_cap_neutralization_done": market_cap_neutralization_done,
+        "neutralization_stability_done": neutralization_stability_done,
+        "metric_validation_result_version": metric_validation.get("result_version") or "",
+        "metric_observation_count": int(metric_validation.get("metric_observation_count") or 0),
         "provider_task_created": provider_acceptance.get("provider_task_created") is True,
         "provider_execution_implemented": provider_acceptance.get("provider_execution_implemented") is True,
         "provider_call_ledger_evidence_done": provider_acceptance.get("provider_call_ledger_evidence_done") is True,
@@ -3802,9 +3857,16 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
     )
     local_scope_evidence_visible = direct_evidence.get("provider_small_pool_scope_ticket_verified") is True
     provider_sample_done = direct_evidence.get("provider_backed_small_pool_sample_done") is True
+    multi_horizon_forward_returns_done = direct_evidence.get("multi_horizon_forward_returns_done") is True
+    rolling_window_validation_done = direct_evidence.get("rolling_window_validation_done") is True
+    cost_assumption_validation_done = direct_evidence.get("cost_assumption_validation_done") is True
+    market_cap_neutralization_done = direct_evidence.get("market_cap_neutralization_done") is True
+    neutralization_stability_done = direct_evidence.get("neutralization_stability_done") is True
     durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
     next_step = (
-        "add multi-horizon rolling/cost/neutralization validation evidence"
+        "add industry neutralization, PIT/bias, and promotion review evidence"
+        if rolling_window_validation_done and cost_assumption_validation_done
+        else "add multi-horizon rolling/cost/neutralization validation evidence"
         if provider_sample_done
         else "future explicit provider-backed factor validation task"
         if execution_request_ready
@@ -3815,6 +3877,9 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
     return {
         "schema_version": "ltg03_factor_test_provider_validation_handoff_summary.v1",
         "status": (
+            "factor_test_provider_small_pool_metric_validation_ready_industry_neutralization_pending"
+            if rolling_window_validation_done and cost_assumption_validation_done
+            else
             "factor_test_provider_small_pool_sample_ready_metric_validation_pending"
             if provider_sample_done
             else "factor_test_execution_request_ready_provider_task_pending"
@@ -3871,10 +3936,14 @@ def _latest_factor_test_lab_provider_validation_handoff_summary() -> dict[str, A
         "provider_total_row_count": int(direct_evidence.get("provider_total_row_count") or 0),
         "provider_latest_data_date": direct_evidence.get("provider_latest_data_date") or "",
         "provider_acceptance_status": provider_acceptance.get("status") or "missing",
-        "multi_horizon_forward_returns_done": False,
-        "rolling_window_validation_done": False,
-        "cost_assumption_validation_done": False,
-        "neutralization_stability_done": False,
+        "multi_horizon_forward_returns_done": multi_horizon_forward_returns_done,
+        "forward_return_label_row_count": int(direct_evidence.get("forward_return_label_row_count") or 0),
+        "rolling_window_validation_done": rolling_window_validation_done,
+        "cost_assumption_validation_done": cost_assumption_validation_done,
+        "market_cap_neutralization_done": market_cap_neutralization_done,
+        "neutralization_stability_done": neutralization_stability_done,
+        "metric_validation_result_version": direct_evidence.get("metric_validation_result_version") or "",
+        "metric_observation_count": int(direct_evidence.get("metric_observation_count") or 0),
         "pit_bias_controls_done": False,
         "provider_backed_small_pool_validation_done": provider_sample_done,
         "full_market_validation_done": False,
@@ -3926,6 +3995,11 @@ def _latest_factor_test_lab_production_validation_handoff_summary() -> dict[str,
         provider_handoff.get("provider_small_pool_execution_request_ready") is True
     )
     provider_sample_done = provider_handoff.get("provider_backed_small_pool_validation_done") is True
+    multi_horizon_forward_returns_done = provider_handoff.get("multi_horizon_forward_returns_done") is True
+    rolling_window_validation_done = provider_handoff.get("rolling_window_validation_done") is True
+    cost_assumption_validation_done = provider_handoff.get("cost_assumption_validation_done") is True
+    market_cap_neutralization_done = provider_handoff.get("market_cap_neutralization_done") is True
+    neutralization_stability_done = provider_handoff.get("neutralization_stability_done") is True
     scope_or_recipe_ready = (
         provider_handoff.get("provider_small_pool_dry_run_ready") is True
         or provider_handoff.get("provider_small_pool_execution_recipe_ready") is True
@@ -3965,8 +4039,32 @@ def _latest_factor_test_lab_production_validation_handoff_summary() -> dict[str,
                 "provider sample rows collected under bound scope",
             }
         ]
-        status = "factor_test_production_handoff_provider_sample_ready_metrics_pending"
-        next_step = "add multi-horizon rolling/cost/neutralization validation evidence"
+        if multi_horizon_forward_returns_done:
+            missing_evidence_items = [
+                item for item in missing_evidence_items if item != "multi-horizon forward returns"
+            ]
+        if rolling_window_validation_done:
+            missing_evidence_items = [
+                item for item in missing_evidence_items if item != "rolling IC/Rank IC/ICIR evidence"
+            ]
+        if cost_assumption_validation_done:
+            missing_evidence_items = [
+                item for item in missing_evidence_items if item != "cost and turnover validation"
+            ]
+        if neutralization_stability_done:
+            missing_evidence_items = [
+                item for item in missing_evidence_items if item != "neutralization stability validation"
+            ]
+        status = (
+            "factor_test_production_handoff_metric_validation_ready_industry_neutralization_pending"
+            if rolling_window_validation_done and cost_assumption_validation_done
+            else "factor_test_production_handoff_provider_sample_ready_metrics_pending"
+        )
+        next_step = (
+            "add industry neutralization, PIT/bias, full-market boundary, and promotion review evidence"
+            if rolling_window_validation_done and cost_assumption_validation_done
+            else "add multi-horizon rolling/cost/neutralization validation evidence"
+        )
     elif execution_request_ready:
         status = "factor_test_production_handoff_execution_request_ready_provider_task_pending"
         next_step = "future explicit provider-backed factor validation task"
@@ -4027,10 +4125,14 @@ def _latest_factor_test_lab_production_validation_handoff_summary() -> dict[str,
         "provider_failed_call_count": int(provider_handoff.get("provider_failed_call_count") or 0),
         "provider_total_row_count": int(provider_handoff.get("provider_total_row_count") or 0),
         "provider_latest_data_date": provider_handoff.get("provider_latest_data_date") or "",
-        "multi_horizon_forward_returns_done": False,
-        "rolling_window_validation_done": False,
-        "cost_assumption_validation_done": False,
-        "neutralization_stability_done": False,
+        "multi_horizon_forward_returns_done": multi_horizon_forward_returns_done,
+        "forward_return_label_row_count": int(provider_handoff.get("forward_return_label_row_count") or 0),
+        "rolling_window_validation_done": rolling_window_validation_done,
+        "cost_assumption_validation_done": cost_assumption_validation_done,
+        "market_cap_neutralization_done": market_cap_neutralization_done,
+        "neutralization_stability_done": neutralization_stability_done,
+        "metric_validation_result_version": provider_handoff.get("metric_validation_result_version") or "",
+        "metric_observation_count": int(provider_handoff.get("metric_observation_count") or 0),
         "pit_bias_controls_done": False,
         "provider_backed_small_pool_validation_done": provider_sample_done,
         "full_market_validation_done": False,

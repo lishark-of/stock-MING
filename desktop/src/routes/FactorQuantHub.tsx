@@ -546,6 +546,7 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolExecutionRequest = factorTests.provider_small_pool_execution_request_receipt ?? {};
   const factorTestProviderSmallPoolAcceptance = factorTests.provider_small_pool_acceptance_receipt ?? {};
   const factorTestProviderSmallPoolForwardReturnAudit = factorTests.provider_small_pool_forward_return_label_audit ?? {};
+  const factorTestProviderSmallPoolMetricValidation = factorTests.provider_small_pool_metric_validation_audit ?? {};
   const factorTestDurableEvidenceRecipe = factorTests.durable_evidence_recipe ?? {};
   const factorTestProductionStageScopeManifest = factorTests.production_stage_scope_manifest ?? {};
   const factorTestProviderSmallPoolSampleDone =
@@ -656,6 +657,9 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolForwardReturnRows = objectRows(factorTestProviderSmallPoolForwardReturnAudit as Record<string, unknown>, "provider_small_pool_forward_return_label_audit");
   const factorTestProviderSmallPoolForwardReturnCriterionRows = toRows(factorTests.provider_small_pool_forward_return_label_rows);
   const factorTestProviderSmallPoolForwardReturnSampleRows = toRows(factorTests.provider_small_pool_forward_return_label_sample_rows);
+  const factorTestProviderSmallPoolMetricValidationRows = objectRows(factorTestProviderSmallPoolMetricValidation as Record<string, unknown>, "provider_small_pool_metric_validation_audit");
+  const factorTestProviderSmallPoolMetricValidationCriterionRows = toRows(factorTests.provider_small_pool_metric_validation_rows);
+  const factorTestProviderSmallPoolMetricValidationSampleRows = toRows(factorTests.provider_small_pool_metric_validation_sample_rows);
   const factorTestDurableEvidenceRecipeRows = objectRows(factorTestDurableEvidenceRecipe as Record<string, unknown>, "factor_test_durable_evidence_recipe");
   const factorTestDurableEvidenceRows = toRows(factorTests.durable_evidence_rows);
   const factorTestProductionStageScopeManifestRows = objectRows(factorTestProductionStageScopeManifest as Record<string, unknown>, "factor_test_production_stage_scope_manifest");
@@ -1787,6 +1791,57 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
+  const factorTestProviderSmallPoolMetricValidationReady =
+    factorTestProviderSmallPoolMetricValidation.rolling_window_validation_done === true ||
+    factorTestProviderSmallPoolMetricValidation.cost_assumption_validation_done === true ||
+    factorTestProviderSmallPoolMetricValidation.market_cap_neutralization_done === true;
+  const factorTestProviderSmallPoolMetricHorizonSummaries =
+    (factorTestProviderSmallPoolMetricValidation.horizon_summaries as Record<string, Record<string, unknown>> | undefined) ?? {};
+  const factorTestProviderSmallPoolMetricHorizonLabels = Object.keys(factorTestProviderSmallPoolMetricHorizonSummaries);
+  const factorTestProviderSmallPoolMetricPrimarySummary =
+    factorTestProviderSmallPoolMetricHorizonSummaries[factorTestProviderSmallPoolMetricHorizonLabels[0] ?? ""] ?? {};
+  const ordinaryFactorTestMetricValidationSentence =
+    factorTestProviderSmallPoolMetricValidationReady
+      ? `同一 scope 已回放 rolling IC/Rank IC/ICIR：${factorTestProviderSmallPoolMetricHorizonLabels.join(", ") || "无 horizon"}；样本 ${String(factorTestProviderSmallPoolMetricValidation.metric_observation_count ?? 0)} 条；result_version=${String(factorTestProviderSmallPoolMetricValidation.result_version ?? "missing")}。`
+      : `rolling/cost/neutralization 指标仍 degraded：${String(factorTestProviderSmallPoolMetricValidation.status ?? "missing_metric_validation_audit")}。`;
+  const ordinaryFactorTestMetricValidationItems: MetricItem[] = [
+    {
+      label: "指标状态",
+      value: String(factorTestProviderSmallPoolMetricValidation.status ?? "missing_metric_validation_audit"),
+      tone: factorTestProviderSmallPoolMetricValidationReady ? "good" : "warn"
+    },
+    {
+      label: "rolling",
+      value: factorTestProviderSmallPoolMetricValidation.rolling_window_validation_done === true
+        ? `已回放；窗口 ${String(factorTestProviderSmallPoolMetricValidation.rolling_window_days ?? 0)}，horizons ${factorTestProviderSmallPoolMetricHorizonLabels.join(", ")}`
+        : "等待 rolling IC/Rank IC/ICIR",
+      tone: factorTestProviderSmallPoolMetricValidation.rolling_window_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "Rank ICIR",
+      value: String(factorTestProviderSmallPoolMetricPrimarySummary.rank_icir ?? "等待"),
+      tone: factorTestProviderSmallPoolMetricValidation.rolling_window_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "成本后",
+      value: factorTestProviderSmallPoolMetricValidation.cost_assumption_validation_done === true
+        ? `${String(factorTestProviderSmallPoolMetricPrimarySummary.cost_adjusted_top_bottom_return_mean ?? "--")} / cost ${String(factorTestProviderSmallPoolMetricValidation.cost_assumption_bps ?? 0)}bps`
+        : "等待 cost / turnover",
+      tone: factorTestProviderSmallPoolMetricValidation.cost_assumption_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "中性化",
+      value: factorTestProviderSmallPoolMetricValidation.market_cap_neutralization_done === true
+        ? `市值 proxy 已回放；行业中性化=${String(factorTestProviderSmallPoolMetricValidation.industry_neutralization_done === true)}`
+        : "等待市值/行业中性化",
+      tone: factorTestProviderSmallPoolMetricValidation.market_cap_neutralization_done === true ? "good" : "warn"
+    },
+    {
+      label: "边界",
+      value: "只读同 scope Parquet；不调用 provider/model，不生成买卖或加仓动作，仍不是 production complete",
+      tone: "good"
+    }
+  ];
   const ordinaryFactorTestProviderBoundary =
     "本卡只读 Factor cache；不触发 dry-run、execution request 或 provider task；真实小池验收只能在用户明确授权后走 POST task";
   const ordinaryFactorTestProviderQuickReadItems: MetricItem[] = [
@@ -1837,7 +1892,7 @@ export default function FactorQuantHub() {
     {
       label: "授权后产物",
       value: factorTestProviderSmallPoolSampleDone
-        ? "已产出 scope hash、payload、call_ledger、1006 行样本和 failure-mode evidence；生产指标仍待补"
+        ? `已产出 scope hash、payload、call_ledger、${String(factorTestProviderSmallPoolAcceptance.provider_total_row_count ?? 0)} 行样本和 failure-mode evidence；生产指标仍待补`
         : "scope hash、payload、call_ledger、样本行和 failure-mode evidence",
       tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
@@ -2008,13 +2063,17 @@ export default function FactorQuantHub() {
   const ordinaryFactorTestSmallPoolRollingDone =
     factorTestProviderSmallPoolAcceptance.rolling_validation_done === true ||
     factorTestProviderSmallPoolAcceptance.rolling_ic_done === true ||
-    factorTestProviderSmallPoolAcceptance.rolling_icir_done === true;
+    factorTestProviderSmallPoolAcceptance.rolling_icir_done === true ||
+    factorTestProviderSmallPoolMetricValidation.rolling_window_validation_done === true;
   const ordinaryFactorTestSmallPoolCostDone =
     factorTestProviderSmallPoolAcceptance.cost_validation_done === true ||
-    factorTestProviderSmallPoolAcceptance.cost_model_done === true;
+    factorTestProviderSmallPoolAcceptance.cost_model_done === true ||
+    factorTestProviderSmallPoolMetricValidation.cost_assumption_validation_done === true;
   const ordinaryFactorTestSmallPoolNeutralizationDone =
     factorTestProviderSmallPoolAcceptance.neutralization_done === true ||
-    factorTestProviderSmallPoolAcceptance.neutralized_metric_done === true;
+    factorTestProviderSmallPoolAcceptance.neutralized_metric_done === true ||
+    factorTestProviderSmallPoolMetricValidation.neutralization_stability_done === true ||
+    factorTestProviderSmallPoolMetricValidation.market_cap_neutralization_done === true;
   const ordinaryFactorTestSmallPoolBiasDone =
     factorTestProviderSmallPoolAcceptance.pit_bias_review_done === true ||
     factorTestProviderSmallPoolAcceptance.bias_review_done === true;
@@ -2429,6 +2488,12 @@ export default function FactorQuantHub() {
           <MetricGrid items={ordinaryFactorTestForwardReturnItems} />
           <p className="risk-note">这张卡只读本地 Parquet 回放；页面打开不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易，也不把标签覆盖当成生产级 rolling IC。</p>
         </div>
+        <div aria-label="stock quant ordinary factor metric validation visible summary">
+          <h3>小池滚动验证</h3>
+          <p className="ordinary-status-note" aria-label="stock quant factor metric validation visible sentence" aria-live="polite">{ordinaryFactorTestMetricValidationSentence}</p>
+          <MetricGrid items={ordinaryFactorTestMetricValidationItems} />
+          <p className="risk-note">这张卡只读同一 scope 的本地 daily / daily_basic / moneyflow；市值中性化只是 proxy，行业中性化、PIT/bias 和 promotion review 仍待补齐。</p>
+        </div>
         <details id="stock-quant-ltg03-evidence-details" className="developer-audit-details" aria-label="stock quant factor provider evidence details">
           <summary>LTG-03 小池验收证据</summary>
           <p className="risk-note">小池验收、授权闸门和生产阶段清单默认收起；它们保留为后台路线图证据，不挡住普通用户的量化结果阅读。</p>
@@ -2449,6 +2514,18 @@ export default function FactorQuantHub() {
               <DataLineageTable rows={factorTestProviderSmallPoolForwardReturnCriterionRows} />
               <DataLineageTable rows={factorTestProviderSmallPoolForwardReturnSampleRows} />
               <DataLineageTable rows={factorTestProviderSmallPoolForwardReturnRows} />
+            </details>
+          </div>
+          <div aria-label="stock quant ordinary factor metric validation">
+            <h3>rolling / cost / neutralization 回放</h3>
+            <p className="ordinary-status-note" aria-label="stock quant factor metric validation sentence" aria-live="polite">{ordinaryFactorTestMetricValidationSentence}</p>
+            <MetricGrid items={ordinaryFactorTestMetricValidationItems} />
+            <details className="developer-audit-details" aria-label="stock quant factor metric validation rows">
+              <summary>查看指标版本和样本窗口</summary>
+              <p className="risk-note">这些行是同一 task / scope / result_version 的本地研究验证；GET cache 不创建 task、不调用 Tushare/DeepSeek/GitHub，也不把局部小池结果升级成全市场或生产完成。</p>
+              <DataLineageTable rows={factorTestProviderSmallPoolMetricValidationCriterionRows} />
+              <DataLineageTable rows={factorTestProviderSmallPoolMetricValidationSampleRows} />
+              <DataLineageTable rows={factorTestProviderSmallPoolMetricValidationRows} />
             </details>
           </div>
           <div aria-label="stock quant ordinary factor small pool evidence checklist">

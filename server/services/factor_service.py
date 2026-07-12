@@ -256,6 +256,11 @@ FACTOR_TEST_DURABLE_EVIDENCE_LABELS = {
     "no_trade_action_secret_boundary": "No trade, action, or secret boundary",
 }
 FACTOR_TEST_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION = "factor_test_production_stage_scope_manifest.v1"
+FACTOR_TEST_PROVIDER_SMALL_POOL_METRIC_VALIDATION_SCHEMA_VERSION = (
+    "factor_test_provider_small_pool_metric_validation_audit.v1"
+)
+FACTOR_TEST_PROVIDER_SMALL_POOL_METRIC_ROLLING_WINDOW = 20
+FACTOR_TEST_PROVIDER_SMALL_POOL_ASSUMED_ROUND_TRIP_COST_BPS = 20.0
 FACTOR_TEST_PRODUCTION_STAGE_KEYS = (
     "local_light_metric_baseline",
     "provider_small_pool_scope_ticket",
@@ -494,6 +499,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, provider_small_pool_recipe_ledger = _attach_factor_test_provider_small_pool_execution_recipe(packet, now)
     packet, provider_small_pool_request_ledger = _attach_factor_test_provider_small_pool_execution_request(packet, now)
     packet, provider_small_pool_forward_return_ledger = _attach_factor_test_provider_small_pool_forward_return_label_audit(packet, now)
+    packet, provider_small_pool_metric_validation_ledger = _attach_factor_test_provider_small_pool_metric_validation_audit(packet, now)
     packet, factor_test_durable_recipe_ledger = _attach_factor_test_durable_evidence_recipe(packet, now)
     packet, factor_test_production_stage_ledger = _attach_factor_test_production_stage_scope_manifest(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
@@ -522,6 +528,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + provider_small_pool_recipe_ledger
         + provider_small_pool_request_ledger
         + provider_small_pool_forward_return_ledger
+        + provider_small_pool_metric_validation_ledger
         + factor_test_durable_recipe_ledger
         + factor_test_production_stage_ledger
         + candidate_handoff_ledger
@@ -547,6 +554,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     provider_small_pool_recipe_warning = "Factor Test provider small-pool execution recipe 只固定未来真实小股票池验收顺序；不会调用 Tushare、计算生产 IC 或标记生产完成。"
     provider_small_pool_request_warning = "Factor Test provider small-pool execution request ticket 只绑定 dry-run scope hash 和后续手工 provider task 请求；不会调用 Tushare、创建 provider task 或标记生产完成。"
     provider_small_pool_forward_return_warning = "Factor Test provider 小池 forward-return label audit 只读本地 Parquet 样本；部分覆盖会明确 degraded，不调用 Tushare/DeepSeek/GitHub，也不代表 rolling IC 或生产完成。"
+    provider_small_pool_metric_validation_warning = "Factor Test provider 小池 metric validation 只读同 scope 本地 Parquet，回放 rolling IC/Rank IC/ICIR、成本和市值中性化 proxy；不调用 provider/model、不代表生产完成。"
     factor_test_durable_recipe_warning = "Factor Test durable evidence recipe 只固定 LTG-03 生产验收直接证据清单；不会调用 Tushare/DeepSeek/GitHub、计算生产 IC 或标记生产完成。"
     factor_test_production_stage_warning = "Factor Test production stage manifest 只展示 LTG-03 生产阶段 direct evidence / pending 缺口；不会创建 provider task、调用 Tushare 或标记生产完成。"
     candidate_handoff_warning = "Factor Quant CandidateRadar handoff 只读本地搜票确认结果和 Tushare-first 回放摘要；不会创建 task、调用 Tushare/DeepSeek、修改 operation_zones 或标记生产完成。"
@@ -572,6 +580,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_small_pool_recipe_warning,
         provider_small_pool_request_warning,
         provider_small_pool_forward_return_warning,
+        provider_small_pool_metric_validation_warning,
         factor_test_durable_recipe_warning,
         factor_test_production_stage_warning,
         candidate_handoff_warning,
@@ -597,6 +606,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_small_pool_recipe_warning,
         provider_small_pool_request_warning,
         provider_small_pool_forward_return_warning,
+        provider_small_pool_metric_validation_warning,
         factor_test_durable_recipe_warning,
         factor_test_production_stage_warning,
         candidate_handoff_warning,
@@ -3812,6 +3822,81 @@ def _is_finite_number(value: Any) -> bool:
         return False
 
 
+def _finite_numbers(values: list[Any]) -> list[float]:
+    numbers: list[float] = []
+    for value in values:
+        try:
+            number = float(value)
+        except Exception:
+            continue
+        if math.isfinite(number):
+            numbers.append(number)
+    return numbers
+
+
+def _mean(values: list[Any]) -> float:
+    numbers = _finite_numbers(values)
+    if not numbers:
+        return math.nan
+    return sum(numbers) / len(numbers)
+
+
+def _sample_std(values: list[Any]) -> float:
+    numbers = _finite_numbers(values)
+    if len(numbers) < 2:
+        return math.nan
+    average = sum(numbers) / len(numbers)
+    variance = sum((item - average) ** 2 for item in numbers) / (len(numbers) - 1)
+    return math.sqrt(variance)
+
+
+def _rank_average(values: list[float]) -> list[float]:
+    ranked = sorted(enumerate(values), key=lambda item: item[1])
+    ranks = [0.0 for _ in values]
+    index = 0
+    while index < len(ranked):
+        end = index + 1
+        while end < len(ranked) and ranked[end][1] == ranked[index][1]:
+            end += 1
+        average_rank = (index + 1 + end) / 2.0
+        for original_index, _ in ranked[index:end]:
+            ranks[original_index] = average_rank
+        index = end
+    return ranks
+
+
+def _pearson_correlation(xs: list[Any], ys: list[Any]) -> float:
+    pairs: list[tuple[float, float]] = []
+    for x_value, y_value in zip(xs, ys):
+        try:
+            x_number = float(x_value)
+            y_number = float(y_value)
+        except Exception:
+            continue
+        if math.isfinite(x_number) and math.isfinite(y_number):
+            pairs.append((x_number, y_number))
+    if len(pairs) < 3:
+        return math.nan
+    x_average = sum(x for x, _ in pairs) / len(pairs)
+    y_average = sum(y for _, y in pairs) / len(pairs)
+    x_var = sum((x - x_average) ** 2 for x, _ in pairs)
+    y_var = sum((y - y_average) ** 2 for _, y in pairs)
+    if x_var <= 0 or y_var <= 0:
+        return math.nan
+    covariance = sum((x - x_average) * (y - y_average) for x, y in pairs)
+    return covariance / math.sqrt(x_var * y_var)
+
+
+def _round_or_none(value: Any, digits: int = 6) -> float | None:
+    try:
+        number = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(number):
+        return None
+    return round(number, digits)
+
+
 def _factor_test_production_validation_qa_contract(factor_tests: dict[str, Any], now: str) -> dict[str, Any]:
     acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
     small_pool = factor_tests.get("small_pool_acceptance") if isinstance(factor_tests.get("small_pool_acceptance"), dict) else {}
@@ -6606,6 +6691,561 @@ def _attach_factor_test_provider_small_pool_forward_return_label_audit(
     return packet, ledger
 
 
+def _factor_test_provider_small_pool_metric_validation_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    required: bool = True,
+    rolling_done: bool = False,
+    cost_done: bool = False,
+    neutralization_done: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_for_metric_validation": bool(required),
+        "blocks_metric_validation": bool(required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "rolling_window_validation_done": bool(rolling_done),
+        "cost_assumption_validation_done": bool(cost_done),
+        "neutralization_stability_done": bool(neutralization_done),
+        "production_factor_test_validation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _factor_test_provider_small_pool_dataset_rows(
+    dataset: str,
+    *,
+    source_scope_hash: str,
+    expected_symbols: set[str],
+    limit: int = 10000,
+) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
+    error_safe = ""
+    try:
+        packet = storage_service.parquet_dataset_status(dataset, limit=limit)
+    except Exception as exc:
+        packet = {"status": "read_failed", "query": {"rows": []}, "row_count": 0}
+        error_safe = _safe_text(str(exc))
+    rows = []
+    for row in _storage_query_rows(packet):
+        if not isinstance(row, dict):
+            continue
+        if source_scope_hash and str(row.get("provider_scope_hash") or "").strip() != source_scope_hash:
+            continue
+        symbol = str(row.get("ts_code") or "").strip()
+        if expected_symbols and symbol not in expected_symbols:
+            continue
+        rows.append(row)
+    return rows, packet, error_safe
+
+
+def _factor_test_provider_small_pool_metric_validation_audit(
+    factor_tests: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    acceptance = _dict(factor_tests.get("provider_small_pool_acceptance_receipt"))
+    forward_return_audit = _dict(factor_tests.get("provider_small_pool_forward_return_label_audit"))
+    provider_sample_done = bool(
+        acceptance.get("sample_rows_collected")
+        or acceptance.get("provider_backed_small_pool_sample_done")
+        or acceptance.get("provider_backed_small_pool_validation_done")
+    )
+    forward_returns_done = bool(forward_return_audit.get("multi_horizon_forward_returns_done"))
+    expected_symbols = [
+        str(item)
+        for item in (
+            acceptance.get("symbols_with_core_rows")
+            or forward_return_audit.get("expected_symbols")
+            or []
+        )
+        if str(item or "").strip()
+    ]
+    expected_symbol_set = set(expected_symbols)
+    source_scope_hash = str(
+        acceptance.get("acceptance_scope_hash")
+        or forward_return_audit.get("source_acceptance_scope_hash")
+        or ""
+    ).strip()
+    source_scope_hash_short = str(
+        acceptance.get("acceptance_scope_hash_short")
+        or forward_return_audit.get("source_acceptance_scope_hash_short")
+        or ""
+    )
+    requested_horizons = [
+        str(item)
+        for item in (
+            forward_return_audit.get("requested_horizons")
+            or acceptance.get("forward_return_horizons")
+            or ["1d", "5d"]
+        )
+        if str(item or "").strip()
+    ]
+    horizon_pairs: list[tuple[str, int]] = []
+    for item in requested_horizons:
+        days = _factor_test_provider_small_pool_horizon_days(item)
+        label = f"{days}d" if days is not None else ""
+        if days is not None and (label, days) not in horizon_pairs:
+            horizon_pairs.append((label, days))
+    if not horizon_pairs:
+        horizon_pairs = [("1d", 1), ("5d", 5)]
+
+    daily_rows, daily_packet, daily_error_safe = _factor_test_provider_small_pool_dataset_rows(
+        "daily",
+        source_scope_hash=source_scope_hash,
+        expected_symbols=expected_symbol_set,
+    )
+    basic_rows, basic_packet, basic_error_safe = _factor_test_provider_small_pool_dataset_rows(
+        "daily_basic",
+        source_scope_hash=source_scope_hash,
+        expected_symbols=expected_symbol_set,
+    )
+    moneyflow_rows, moneyflow_packet, moneyflow_error_safe = _factor_test_provider_small_pool_dataset_rows(
+        "moneyflow",
+        source_scope_hash=source_scope_hash,
+        expected_symbols=expected_symbol_set,
+    )
+
+    by_symbol: dict[str, list[dict[str, Any]]] = {}
+    for row in daily_rows:
+        symbol = str(row.get("ts_code") or "").strip()
+        trade_date = str(row.get("trade_date") or "").strip()
+        if not symbol or not trade_date or not _is_finite_number(row.get("close")):
+            continue
+        by_symbol.setdefault(symbol, []).append(row)
+    for rows_for_symbol in by_symbol.values():
+        rows_for_symbol.sort(key=lambda item: str(item.get("trade_date") or ""))
+
+    basic_by_key = {
+        (str(row.get("ts_code") or ""), str(row.get("trade_date") or "")): row
+        for row in basic_rows
+        if isinstance(row, dict)
+    }
+    moneyflow_by_key = {
+        (str(row.get("ts_code") or ""), str(row.get("trade_date") or "")): row
+        for row in moneyflow_rows
+        if isinstance(row, dict)
+    }
+
+    grouped_observations: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    missing_basic_count = 0
+    missing_moneyflow_count = 0
+    for symbol, rows_for_symbol in by_symbol.items():
+        for label, days in horizon_pairs:
+            for index, current_row in enumerate(rows_for_symbol):
+                future_index = index + days
+                if future_index >= len(rows_for_symbol):
+                    continue
+                trade_date = str(current_row.get("trade_date") or "")
+                key = (symbol, trade_date)
+                basic = basic_by_key.get(key)
+                moneyflow = moneyflow_by_key.get(key)
+                if not basic:
+                    missing_basic_count += 1
+                    continue
+                if not moneyflow:
+                    missing_moneyflow_count += 1
+                    continue
+                close = _safe_float(current_row.get("close"), default=math.nan)
+                future_close = _safe_float(rows_for_symbol[future_index].get("close"), default=math.nan)
+                if not math.isfinite(close) or not math.isfinite(future_close) or close == 0:
+                    continue
+                pe_ttm = _safe_float(basic.get("pe_ttm"), default=math.nan)
+                pb = _safe_float(basic.get("pb"), default=math.nan)
+                turnover_rate = _safe_float(basic.get("turnover_rate"), default=math.nan)
+                total_mv = _safe_float(basic.get("total_mv"), default=math.nan)
+                buy_lg = _safe_float(moneyflow.get("buy_lg_amount"), default=math.nan)
+                sell_lg = _safe_float(moneyflow.get("sell_lg_amount"), default=math.nan)
+                buy_sm = _safe_float(moneyflow.get("buy_sm_amount"), default=math.nan)
+                sell_sm = _safe_float(moneyflow.get("sell_sm_amount"), default=math.nan)
+                if not all(
+                    math.isfinite(value)
+                    for value in (pe_ttm, pb, turnover_rate, total_mv, buy_lg, sell_lg, buy_sm, sell_sm)
+                ):
+                    continue
+                grouped_observations.setdefault((trade_date, label), []).append(
+                    {
+                        "ts_code": symbol,
+                        "trade_date": trade_date,
+                        "horizon": label,
+                        "forward_return": future_close / close - 1.0,
+                        "pe_ttm": pe_ttm,
+                        "pb": pb,
+                        "turnover_rate": turnover_rate,
+                        "total_mv": total_mv,
+                        "log_total_mv": math.log(max(total_mv, 1.0)),
+                        "net_flow": (buy_lg - sell_lg) + 0.5 * (buy_sm - sell_sm),
+                    }
+                )
+
+    validation_rows: list[dict[str, Any]] = []
+    rolling_window = FACTOR_TEST_PROVIDER_SMALL_POOL_METRIC_ROLLING_WINDOW
+    cost_bps = FACTOR_TEST_PROVIDER_SMALL_POOL_ASSUMED_ROUND_TRIP_COST_BPS
+    horizon_summaries: dict[str, dict[str, Any]] = {}
+    metric_observation_count = 0
+    for label, _ in horizon_pairs:
+        period_rows: list[dict[str, Any]] = []
+        for (trade_date, horizon), observations in grouped_observations.items():
+            if horizon != label or len(observations) < 3:
+                continue
+            count = len(observations)
+            pe_ranks = _rank_average([item["pe_ttm"] for item in observations])
+            pb_ranks = _rank_average([item["pb"] for item in observations])
+            flow_ranks = _rank_average([item["net_flow"] for item in observations])
+            turnover_ranks = _rank_average([item["turnover_rate"] for item in observations])
+            scores = [
+                (count + 1 - pe_ranks[index])
+                + (count + 1 - pb_ranks[index])
+                + flow_ranks[index]
+                + turnover_ranks[index]
+                for index in range(count)
+            ]
+            returns = [item["forward_return"] for item in observations]
+            rank_ic = _pearson_correlation(_rank_average(scores), _rank_average(returns))
+            ic = _pearson_correlation(scores, returns)
+            sorted_pairs = sorted(zip(scores, returns), key=lambda item: item[0])
+            bottom_return = sorted_pairs[0][1]
+            top_return = sorted_pairs[-1][1]
+            top_bottom_return = top_return - bottom_return
+            avg_turnover_rate = _mean([item["turnover_rate"] for item in observations])
+            cost_adjusted_top_bottom = top_bottom_return - cost_bps / 10000.0
+            market_cap_neutral_rank_ic = math.nan
+            market_caps = [item["log_total_mv"] for item in observations]
+            cap_mean = _mean(market_caps)
+            score_mean = _mean(scores)
+            cap_variance = sum((item - cap_mean) ** 2 for item in market_caps)
+            if cap_variance > 0:
+                beta = sum((market_caps[index] - cap_mean) * (scores[index] - score_mean) for index in range(count)) / cap_variance
+                residual_scores = [
+                    scores[index] - (score_mean + beta * (market_caps[index] - cap_mean))
+                    for index in range(count)
+                ]
+                market_cap_neutral_rank_ic = _pearson_correlation(
+                    _rank_average(residual_scores),
+                    _rank_average(returns),
+                )
+            if math.isfinite(ic) and math.isfinite(rank_ic):
+                period_rows.append(
+                    {
+                        "trade_date": trade_date,
+                        "horizon": label,
+                        "observation_count": count,
+                        "ic": ic,
+                        "rank_ic": rank_ic,
+                        "top_bottom_return": top_bottom_return,
+                        "cost_adjusted_top_bottom_return": cost_adjusted_top_bottom,
+                        "avg_turnover_rate": avg_turnover_rate,
+                        "market_cap_neutral_rank_ic": market_cap_neutral_rank_ic,
+                    }
+                )
+                metric_observation_count += count
+        period_rows.sort(key=lambda item: str(item.get("trade_date") or ""))
+        ic_values = [row["ic"] for row in period_rows]
+        rank_ic_values = [row["rank_ic"] for row in period_rows]
+        neutral_rank_ic_values = [
+            row["market_cap_neutral_rank_ic"]
+            for row in period_rows
+            if math.isfinite(float(row.get("market_cap_neutral_rank_ic", math.nan)))
+        ]
+        rolling_ic_means: list[float] = []
+        rolling_rank_ic_means: list[float] = []
+        for index in range(0, max(0, len(period_rows) - rolling_window + 1)):
+            window_rows = period_rows[index : index + rolling_window]
+            rolling_ic_means.append(_mean([row["ic"] for row in window_rows]))
+            rolling_rank_ic_means.append(_mean([row["rank_ic"] for row in window_rows]))
+        ic_std = _sample_std(ic_values)
+        rank_ic_std = _sample_std(rank_ic_values)
+        horizon_summaries[label] = {
+            "horizon": label,
+            "period_count": len(period_rows),
+            "rolling_window_days": rolling_window,
+            "rolling_window_count": len(rolling_ic_means),
+            "ic_mean": _round_or_none(_mean(ic_values)),
+            "ic_std": _round_or_none(ic_std),
+            "icir": _round_or_none(_mean(ic_values) / ic_std if math.isfinite(ic_std) and ic_std else math.nan),
+            "rank_ic_mean": _round_or_none(_mean(rank_ic_values)),
+            "rank_ic_std": _round_or_none(rank_ic_std),
+            "rank_icir": _round_or_none(_mean(rank_ic_values) / rank_ic_std if math.isfinite(rank_ic_std) and rank_ic_std else math.nan),
+            "rolling_ic_mean": _round_or_none(_mean(rolling_ic_means)),
+            "rolling_rank_ic_mean": _round_or_none(_mean(rolling_rank_ic_means)),
+            "top_bottom_return_mean": _round_or_none(_mean([row["top_bottom_return"] for row in period_rows])),
+            "cost_adjusted_top_bottom_return_mean": _round_or_none(
+                _mean([row["cost_adjusted_top_bottom_return"] for row in period_rows])
+            ),
+            "avg_turnover_rate": _round_or_none(_mean([row["avg_turnover_rate"] for row in period_rows])),
+            "market_cap_neutral_rank_ic_mean": _round_or_none(_mean(neutral_rank_ic_values)),
+            "sample_rows": [
+                {
+                    "trade_date": row["trade_date"],
+                    "horizon": row["horizon"],
+                    "observation_count": row["observation_count"],
+                    "ic": _round_or_none(row["ic"]),
+                    "rank_ic": _round_or_none(row["rank_ic"]),
+                    "top_bottom_return": _round_or_none(row["top_bottom_return"]),
+                    "cost_adjusted_top_bottom_return": _round_or_none(row["cost_adjusted_top_bottom_return"]),
+                    "market_cap_neutral_rank_ic": _round_or_none(row["market_cap_neutral_rank_ic"]),
+                    "research_only": True,
+                }
+                for row in period_rows[:10]
+            ],
+        }
+
+    horizon_values = list(horizon_summaries.values())
+    rolling_done = bool(
+        provider_sample_done
+        and forward_returns_done
+        and horizon_values
+        and all(int(item.get("rolling_window_count") or 0) > 0 for item in horizon_values)
+    )
+    cost_done = bool(
+        rolling_done
+        and all(item.get("cost_adjusted_top_bottom_return_mean") is not None for item in horizon_values)
+    )
+    market_cap_neutralization_done = bool(
+        rolling_done
+        and all(item.get("market_cap_neutral_rank_ic_mean") is not None for item in horizon_values)
+    )
+    industry_neutralization_done = False
+    neutralization_stability_done = bool(market_cap_neutralization_done and industry_neutralization_done)
+    dataset_error_safe = "; ".join(
+        item for item in (daily_error_safe, basic_error_safe, moneyflow_error_safe) if item
+    )
+    if not provider_sample_done:
+        status = "provider_small_pool_metric_validation_blocked_missing_provider_sample"
+        allowed_next_step = "run_scope_bound_provider_small_pool_sample_first"
+    elif not forward_returns_done:
+        status = "provider_small_pool_metric_validation_blocked_missing_forward_returns"
+        allowed_next_step = "repair_forward_return_label_coverage_before_metric_validation"
+    elif not horizon_values:
+        status = "provider_small_pool_metric_validation_degraded_missing_joined_rows"
+        allowed_next_step = "review_scoped_daily_basic_moneyflow_persistence"
+    elif rolling_done and cost_done and market_cap_neutralization_done:
+        status = "provider_small_pool_metric_validation_ready_industry_neutralization_pending"
+        allowed_next_step = "add_industry_neutralization_pit_bias_and_promotion_review"
+    else:
+        status = "provider_small_pool_metric_validation_degraded_partial_metric_coverage"
+        allowed_next_step = "review_metric_join_coverage_before_promotion"
+
+    result_version_payload = {
+        "scope_hash": source_scope_hash,
+        "source_task_id": acceptance.get("task_id") or "",
+        "horizons": [item["horizon"] for item in horizon_values],
+        "metric_observation_count": metric_observation_count,
+        "period_counts": {item["horizon"]: item["period_count"] for item in horizon_values},
+        "data_date": acceptance.get("provider_latest_data_date") or "",
+    }
+    result_version = hashlib.sha256(
+        json.dumps(result_version_payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    rows = [
+        _factor_test_provider_small_pool_metric_validation_row(
+            "provider_sample_and_scope_visible",
+            "passed_provider_sample_scope_visible" if provider_sample_done and source_scope_hash else "blocked_missing_provider_sample_scope",
+            bool(provider_sample_done and source_scope_hash),
+            f"task_id={acceptance.get('task_id')}; scope={source_scope_hash_short}; provider_rows={acceptance.get('provider_total_row_count')}",
+            "Run the scope-bound provider sample before metric validation.",
+        ),
+        _factor_test_provider_small_pool_metric_validation_row(
+            "forward_return_labels_ready",
+            "passed_forward_return_labels_ready" if forward_returns_done else "blocked_missing_forward_return_labels",
+            forward_returns_done,
+            f"forward_rows={forward_return_audit.get('forward_return_label_row_count')}; labeled_symbols={forward_return_audit.get('labeled_symbol_count')}/{forward_return_audit.get('expected_symbol_count')}",
+            "Complete 1d/5d forward-return coverage before rolling validation.",
+        ),
+        _factor_test_provider_small_pool_metric_validation_row(
+            "scoped_fact_tables_joined",
+            "passed_scoped_daily_basic_moneyflow_joined" if bool(horizon_values) else "degraded_scoped_join_missing",
+            bool(horizon_values),
+            f"daily_rows={len(daily_rows)}; daily_basic_rows={len(basic_rows)}; moneyflow_rows={len(moneyflow_rows)}; missing_basic={missing_basic_count}; missing_moneyflow={missing_moneyflow_count}; errors={dataset_error_safe}",
+            "Join only same-scope local daily/daily_basic/moneyflow rows; do not call providers from GET cache.",
+        ),
+        _factor_test_provider_small_pool_metric_validation_row(
+            "rolling_ic_rank_ic_icir",
+            "passed_rolling_ic_rank_ic_icir" if rolling_done else "blocked_rolling_window_not_ready",
+            rolling_done,
+            f"horizons={list(horizon_summaries)}; rolling_window={rolling_window}; summaries={horizon_summaries}",
+            "Use rolling IC/Rank IC/ICIR as research validation only; do not emit strategy action.",
+            rolling_done=rolling_done,
+        ),
+        _factor_test_provider_small_pool_metric_validation_row(
+            "cost_turnover_assumption",
+            "passed_cost_adjusted_top_bottom_visible" if cost_done else "blocked_cost_turnover_missing",
+            cost_done,
+            f"assumed_round_trip_cost_bps={cost_bps}; cost_adjusted_top_bottom={ {key: value.get('cost_adjusted_top_bottom_return_mean') for key, value in horizon_summaries.items()} }",
+            "Keep cost assumptions visible and research-only until production promotion review.",
+            rolling_done=rolling_done,
+            cost_done=cost_done,
+        ),
+        _factor_test_provider_small_pool_metric_validation_row(
+            "market_cap_neutralization_proxy",
+            "passed_market_cap_neutral_rank_ic_visible" if market_cap_neutralization_done else "blocked_market_cap_neutral_rank_ic_missing",
+            market_cap_neutralization_done,
+            f"market_cap_neutral_rank_ic={ {key: value.get('market_cap_neutral_rank_ic_mean') for key, value in horizon_summaries.items()} }; industry_neutralization_done={industry_neutralization_done}",
+            "Add industry classification before marking full neutralization stability complete.",
+            rolling_done=rolling_done,
+            cost_done=cost_done,
+            neutralization_done=neutralization_stability_done,
+        ),
+        _factor_test_provider_small_pool_metric_validation_row(
+            "cache_render_external_boundary",
+            "passed_cache_read_only_no_external_calls",
+            True,
+            "Metric validation reads local Parquet only and does not call Tushare, DeepSeek, GitHub, workers, or trading paths.",
+            "Keep future provider/model work behind explicit POST tasks.",
+            required=False,
+            rolling_done=rolling_done,
+            cost_done=cost_done,
+            neutralization_done=neutralization_stability_done,
+        ),
+    ]
+    blocking_criteria = [row["criterion"] for row in rows if row["blocks_metric_validation"]]
+    receipt = {
+        "schema_version": FACTOR_TEST_PROVIDER_SMALL_POOL_METRIC_VALIDATION_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_factor_test_provider_small_pool_metric_validation_audit",
+        "created_at": now,
+        "ltg": "LTG-03/LTG-11/LTG-12",
+        "allowed_next_step": allowed_next_step,
+        "source_acceptance_task_id": acceptance.get("task_id") or "",
+        "source_acceptance_scope_hash": source_scope_hash,
+        "source_acceptance_scope_hash_short": source_scope_hash_short,
+        "provider_latest_data_date": acceptance.get("provider_latest_data_date") or "",
+        "data_date": acceptance.get("provider_latest_data_date") or "",
+        "freshness_state": "provider_sample_replay_current_for_scope" if acceptance.get("provider_latest_data_date") else "unknown",
+        "result_version": result_version[:16],
+        "result_version_hash": result_version,
+        "input_packet_keys": ["daily", "daily_basic", "moneyflow", "provider_small_pool_forward_return_label_audit"],
+        "output_packet_keys": ["provider_small_pool_metric_validation_audit", "provider_small_pool_metric_validation_rows"],
+        "provider_call_ledger_ids": acceptance.get("provider_task_ids") or [],
+        "provider_sample_done": provider_sample_done,
+        "multi_horizon_forward_returns_done": forward_returns_done,
+        "expected_symbols": expected_symbols,
+        "expected_symbol_count": len(expected_symbols),
+        "daily_row_count_read": len(daily_rows),
+        "daily_basic_row_count_read": len(basic_rows),
+        "moneyflow_row_count_read": len(moneyflow_rows),
+        "metric_observation_count": metric_observation_count,
+        "horizon_summaries": horizon_summaries,
+        "horizon_count": len(horizon_summaries),
+        "rolling_window_days": rolling_window,
+        "rolling_window_validation_done": rolling_done,
+        "cost_assumption_validation_done": cost_done,
+        "cost_assumption_bps": cost_bps,
+        "market_cap_neutralization_done": market_cap_neutralization_done,
+        "industry_neutralization_done": industry_neutralization_done,
+        "neutralization_stability_done": neutralization_stability_done,
+        "pit_bias_controls_done": False,
+        "provider_backed_small_pool_validation_done": bool(provider_sample_done),
+        "production_factor_test_validation_complete": False,
+        "row_count": len(rows),
+        "rows": rows,
+        "blocking_criterion_count": len(blocking_criteria),
+        "blocking_criteria": blocking_criteria,
+        "missing_evidence": [
+            item
+            for item, missing in (
+                ("rolling IC/Rank IC/ICIR evidence", not rolling_done),
+                ("cost and turnover validation evidence", not cost_done),
+                ("industry neutralization stability evidence", not industry_neutralization_done),
+                ("PIT/lookahead/survivorship controls evidence", True),
+                ("manual Factor Test production promotion review", True),
+            )
+            if missing
+        ],
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    ledger = [
+        {
+            "api": "local_factor_test_provider_small_pool_metric_validation_audit",
+            "request_params_safe": {
+                "scope": receipt["scope"],
+                "acceptance_scope_hash_short": source_scope_hash_short,
+                "source_acceptance_task_id": receipt["source_acceptance_task_id"],
+                "result_version": receipt["result_version"],
+                "metric_observation_count": metric_observation_count,
+                "rolling_window_validation_done": rolling_done,
+                "cost_assumption_validation_done": cost_done,
+                "neutralization_stability_done": neutralization_stability_done,
+                "production_factor_test_validation_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": receipt["data_date"],
+            "local_fetched_at": now,
+            "call_status": status,
+            "error_message_safe": dataset_error_safe,
+            **_local_ledger_boundary(),
+        }
+    ]
+    receipt["call_ledger"] = ledger
+    return receipt, rows, ledger
+
+
+def _attach_factor_test_provider_small_pool_metric_validation_audit(
+    packet: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    factor_tests = packet.get("factor_tests") if isinstance(packet.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    audit, rows, ledger = _factor_test_provider_small_pool_metric_validation_audit(factor_tests, now)
+    factor_tests["provider_small_pool_metric_validation_audit"] = audit
+    factor_tests["provider_small_pool_metric_validation_rows"] = rows
+    factor_tests["provider_small_pool_metric_validation_sample_rows"] = [
+        sample
+        for summary in audit.get("horizon_summaries", {}).values()
+        if isinstance(summary, dict)
+        for sample in summary.get("sample_rows", [])
+        if isinstance(sample, dict)
+    ][:20]
+    existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+    factor_tests["call_ledger"] = list(ledger) + list(existing_test_ledger)
+    packet["factor_tests"] = factor_tests
+    counts = _dict(packet.get("counts"))
+    counts.update(
+        {
+            "factor_test_provider_small_pool_metric_observation_count": audit["metric_observation_count"],
+            "factor_test_provider_small_pool_metric_horizon_count": audit["horizon_count"],
+            "factor_test_provider_small_pool_rolling_validation_done": audit["rolling_window_validation_done"],
+            "factor_test_provider_small_pool_cost_validation_done": audit["cost_assumption_validation_done"],
+            "factor_test_provider_small_pool_market_cap_neutralization_done": audit[
+                "market_cap_neutralization_done"
+            ],
+        }
+    )
+    packet["counts"] = counts
+    policy = _dict(packet.get("policy"))
+    policy.update(
+        {
+            "factor_test_provider_small_pool_metric_validation_is_cache_only": True,
+            "factor_test_provider_small_pool_metric_validation_calls_provider": False,
+            "factor_test_provider_small_pool_metric_validation_is_research_only": True,
+            "factor_test_provider_small_pool_metric_validation_is_not_production_completion": True,
+        }
+    )
+    packet["policy"] = policy
+    return packet, ledger
+
+
 def _factor_test_production_stage_scope_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for stage_key in FACTOR_TEST_PRODUCTION_STAGE_KEYS:
@@ -6666,12 +7306,17 @@ def _factor_test_production_stage_scope_manifest(
     rows = _factor_test_production_stage_scope_rows()
     acceptance_receipt = _dict(factor_tests.get("provider_small_pool_acceptance_receipt"))
     forward_return_audit = _dict(factor_tests.get("provider_small_pool_forward_return_label_audit"))
+    metric_validation = _dict(factor_tests.get("provider_small_pool_metric_validation_audit"))
     provider_sample_done = bool(acceptance_receipt.get("sample_rows_collected"))
     provider_execution_implemented = bool(acceptance_receipt.get("provider_execution_implemented"))
     provider_call_ledger_evidence_done = bool(acceptance_receipt.get("provider_call_ledger_evidence_done"))
     provider_task_created = bool(acceptance_receipt.get("provider_task_created"))
     forward_label_count = int(forward_return_audit.get("forward_return_label_row_count") or 0)
     forward_labels_done = bool(forward_return_audit.get("multi_horizon_forward_returns_done"))
+    rolling_done = bool(metric_validation.get("rolling_window_validation_done"))
+    cost_done = bool(metric_validation.get("cost_assumption_validation_done"))
+    neutralization_done = bool(metric_validation.get("neutralization_stability_done"))
+    market_cap_neutralization_done = bool(metric_validation.get("market_cap_neutralization_done"))
     if provider_sample_done:
         for row in rows:
             if row.get("stage_key") != "provider_backed_small_pool_sample":
@@ -6699,6 +7344,73 @@ def _factor_test_production_stage_scope_manifest(
                     ],
                 }
             )
+    if rolling_done or cost_done or market_cap_neutralization_done:
+        for row in rows:
+            stage_key = row.get("stage_key")
+            if stage_key == "rolling_ic_icir_validation":
+                row.update(
+                    {
+                        "current_status": (
+                            "provider_small_pool_rolling_ic_rank_ic_icir_ready_research_only"
+                            if rolling_done
+                            else "provider_small_pool_rolling_ic_rank_ic_icir_pending"
+                        ),
+                        "provider_direct_evidence_present": rolling_done,
+                        "rolling_window_validation_done": rolling_done,
+                        "metric_observation_count": metric_validation.get("metric_observation_count") or 0,
+                        "rolling_window_days": metric_validation.get("rolling_window_days") or 0,
+                        "result_version": metric_validation.get("result_version") or "",
+                        "horizon_summaries": metric_validation.get("horizon_summaries") or {},
+                        "missing_evidence": [
+                            "cost and turnover assumption review",
+                            "industry neutralization stability evidence",
+                            "PIT, lookahead, and survivorship evidence",
+                            "explicit promotion review before production completion",
+                        ],
+                    }
+                )
+            elif stage_key == "cost_turnover_validation":
+                row.update(
+                    {
+                        "current_status": (
+                            "provider_small_pool_cost_turnover_ready_research_only"
+                            if cost_done
+                            else "provider_small_pool_cost_turnover_pending"
+                        ),
+                        "provider_direct_evidence_present": cost_done,
+                        "cost_assumption_validation_done": cost_done,
+                        "cost_assumption_bps": metric_validation.get("cost_assumption_bps") or 0,
+                        "result_version": metric_validation.get("result_version") or "",
+                        "missing_evidence": [
+                            "industry neutralization stability evidence",
+                            "PIT, lookahead, and survivorship evidence",
+                            "explicit promotion review before production completion",
+                        ],
+                    }
+                )
+            elif stage_key == "neutralization_stability_validation":
+                row.update(
+                    {
+                        "current_status": (
+                            "provider_small_pool_market_cap_neutralization_ready_industry_pending"
+                            if market_cap_neutralization_done
+                            else "provider_small_pool_neutralization_pending"
+                        ),
+                        "provider_direct_evidence_present": neutralization_done,
+                        "partial_provider_direct_evidence_present": bool(
+                            market_cap_neutralization_done and not neutralization_done
+                        ),
+                        "market_cap_neutralization_done": market_cap_neutralization_done,
+                        "industry_neutralization_done": metric_validation.get("industry_neutralization_done") is True,
+                        "neutralization_stability_done": neutralization_done,
+                        "result_version": metric_validation.get("result_version") or "",
+                        "missing_evidence": [
+                            "industry neutralization stability evidence",
+                            "PIT, lookahead, and survivorship evidence",
+                            "explicit promotion review before production completion",
+                        ],
+                    }
+                )
     if forward_label_count:
         for row in rows:
             if row.get("stage_key") != "multi_horizon_forward_returns":
@@ -6781,9 +7493,13 @@ def _factor_test_production_stage_scope_manifest(
         "sample_rows_collected": provider_sample_done,
         "multi_horizon_forward_returns_done": forward_labels_done,
         "forward_return_label_row_count": forward_label_count,
-        "rolling_window_validation_done": False,
-        "cost_assumption_validation_done": False,
-        "neutralization_stability_done": False,
+        "rolling_window_validation_done": rolling_done,
+        "cost_assumption_validation_done": cost_done,
+        "market_cap_neutralization_done": market_cap_neutralization_done,
+        "industry_neutralization_done": metric_validation.get("industry_neutralization_done") is True,
+        "neutralization_stability_done": neutralization_done,
+        "metric_validation_result_version": metric_validation.get("result_version") or "",
+        "metric_observation_count": int(metric_validation.get("metric_observation_count") or 0),
         "pit_bias_controls_done": False,
         "provider_backed_small_pool_validation_done": provider_sample_done,
         "full_market_validation_done": False,
