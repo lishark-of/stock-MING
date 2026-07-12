@@ -41232,6 +41232,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIsInstance(p4_storage_handoff["storage_current_result_atomic_can_launch"], bool)
         self.assertIsInstance(p4_storage_handoff["storage_current_result_atomic_current"], bool)
         self.assertIsInstance(p4_storage_handoff["storage_current_result_acceptance_ready"], bool)
+        self.assertIsInstance(p4_storage_handoff["storage_current_result_last_good_ready"], bool)
+        self.assertIsInstance(
+            p4_storage_handoff["storage_current_result_current_last_good_distinct"], bool
+        )
+        self.assertIsInstance(p4_storage_handoff["storage_current_result_retention_protected"], bool)
         self.assertFalse(p4_storage_handoff["writes_parquet"])
         self.assertFalse(p4_storage_handoff["writes_manifest"])
         self.assertFalse(p4_storage_handoff["deletes_artifacts"])

@@ -851,6 +851,9 @@ export default function MigrationStatus() {
         storage_current_result_atomic_can_launch: handoff.storage_current_result_atomic_can_launch,
         storage_current_result_atomic_current: handoff.storage_current_result_atomic_current,
         storage_current_result_acceptance_ready: handoff.storage_current_result_acceptance_ready,
+        storage_current_result_last_good_ready: handoff.storage_current_result_last_good_ready,
+        storage_current_result_current_last_good_distinct: handoff.storage_current_result_current_last_good_distinct,
+        storage_current_result_retention_protected: handoff.storage_current_result_retention_protected,
         storage_current_result_expected_symbol: handoff.storage_current_result_expected_symbol,
         storage_current_result_expected_result_version: handoff.storage_current_result_expected_result_version,
         storage_current_result_latest_task_id: handoff.storage_current_result_latest_task_id,
@@ -916,6 +919,16 @@ export default function MigrationStatus() {
       label: "acceptance ready",
       value: ltgStorageCurrentResultAtomicSummary.storage_current_result_acceptance_ready === true,
       tone: ltgStorageCurrentResultAtomicSummary.storage_current_result_acceptance_ready === true ? "good" : "warn"
+    },
+    {
+      label: "last-good",
+      value: ltgStorageCurrentResultAtomicSummary.storage_current_result_last_good_ready === true,
+      tone: ltgStorageCurrentResultAtomicSummary.storage_current_result_last_good_ready === true ? "good" : "warn"
+    },
+    {
+      label: "retention",
+      value: ltgStorageCurrentResultAtomicSummary.storage_current_result_retention_protected === true,
+      tone: ltgStorageCurrentResultAtomicSummary.storage_current_result_retention_protected === true ? "good" : "warn"
     },
     {
       label: "symbol",
@@ -1337,8 +1350,13 @@ export default function MigrationStatus() {
     : ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_can_launch === true
       ? `${migrationStorageCurrentResultSymbol} / ${migrationStorageCurrentResultVersion} 可显式提升到 current-result`
       : "等待同一 task_id / scope_hash / result_version 的本地结果";
+  const migrationStorageCurrentResultAcceptanceGap = ltgStorageCurrentResultAtomicSummary.storage_current_result_acceptance_ready === true
+    ? "current/last-good 与 retention 验收已就绪"
+    : ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_current === true
+      ? "仍缺独立 last-good 指针和 retention 保护，不能把 current-result 当 LTG-05 生产验收完成"
+      : "先形成 current-result，再复核 last-good 与 retention";
   const migrationStorageCurrentResultSentence =
-    `本地数据存储：${migrationStorageCurrentResultStatus}；去存储层查看 current/last-good，GET 和链接都不写 Parquet、不创建任务、不外联。`;
+    `本地数据存储：${migrationStorageCurrentResultStatus}；${migrationStorageCurrentResultAcceptanceGap}；去存储层查看 current/last-good，GET 和链接都不写 Parquet、不创建任务、不外联。`;
   const migrationOrdinaryStatusItems: MetricItem[] = [
     {
       label: "当前状态",
@@ -1364,6 +1382,11 @@ export default function MigrationStatus() {
       label: "当前结果存储",
       value: migrationStorageCurrentResultStatus,
       tone: ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_current === true ? "good" : "warn"
+    },
+    {
+      label: "存储验收缺口",
+      value: migrationStorageCurrentResultAcceptanceGap,
+      tone: ltgStorageCurrentResultAtomicSummary.storage_current_result_acceptance_ready === true ? "good" : "warn"
     },
     {
       label: "阻断原因",

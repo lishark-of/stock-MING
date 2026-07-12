@@ -6742,6 +6742,15 @@ def _latest_storage_physical_execution_handoff_summary() -> dict[str, Any]:
         "storage_current_result_acceptance_ready": (
             current_result_atomic.get("current_result_storage_acceptance_ready") is True
         ),
+        "storage_current_result_last_good_ready": (
+            current_result_atomic.get("last_good_pointer_ready") is True
+        ),
+        "storage_current_result_current_last_good_distinct": (
+            current_result_atomic.get("current_last_good_distinct") is True
+        ),
+        "storage_current_result_retention_protected": (
+            current_result_atomic.get("retention_protects_current_and_last_good") is True
+        ),
         "storage_current_result_expected_symbol": str(
             current_result_atomic.get("expected_symbol") or ""
         ),

@@ -495,6 +495,11 @@ export default function StorageOverview() {
     : currentResult.duckdb_readback_verified === true
       ? "查看当前/last-good 回放和 retention 状态；不重复提升同一结果"
       : "先在 Candidate/Factor/Next 形成同次结果，再回到存储页提升";
+  const storageCurrentResultAcceptanceGap = storageCurrentResultAtomicPromotion.current_result_storage_acceptance_ready === true
+    ? "current/last-good 与 retention 验收已就绪；仍不等于 LTG-05 production complete"
+    : storageCurrentResultAtomicPromotion.atomic_promotion_current === true
+      ? "current 已可读；还缺独立 last-good 指针、current/last-good 区分和 retention 保护，不能当生产存储验收完成"
+      : "先提升 current-result，再复核 last-good 与 retention 保护";
   const storageDatasetReadinessLabel =
     `catalog=${String(overview.dataset_count ?? datasetCatalog?.length ?? 0)} / parquet ready=${String(datasetImplementation.parquet_ready_dataset_count ?? 0)} / missing=${String(datasetImplementation.parquet_missing_dataset_count ?? 0)}`;
   const storageOrdinaryFirstScreenSentence =
@@ -514,6 +519,11 @@ export default function StorageOverview() {
       label: "当前结果",
       value: storageCurrentResultState,
       tone: currentResult.duckdb_readback_verified === true || storageCurrentResultAtomicPromotion.can_launch_atomic_promotion === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "验收缺口",
+      value: storageCurrentResultAcceptanceGap,
+      tone: storageCurrentResultAtomicPromotion.current_result_storage_acceptance_ready === true ? "good" as const : "warn" as const
     },
     {
       label: "物理执行状态",
@@ -602,6 +612,11 @@ export default function StorageOverview() {
       label: "last-good",
       value: storageCurrentResultAtomicPromotion.last_good_pointer_ready === true ? "ready" : String(currentResult.selected_pointer_kind ?? "waiting"),
       tone: storageCurrentResultAtomicPromotion.last_good_pointer_ready === true || currentResult.degraded_recovery_active === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "验收缺口",
+      value: storageCurrentResultAcceptanceGap,
+      tone: storageCurrentResultAtomicPromotion.current_result_storage_acceptance_ready === true ? "good" as const : "warn" as const
     },
     {
       label: "现在可点",
@@ -757,7 +772,7 @@ export default function StorageOverview() {
         <div aria-label="storage ordinary current result atomic promotion">
           <h3>当前结果版本化</h3>
           <p className="ordinary-status-note" aria-label="storage ordinary current result sentence" aria-live="polite">
-            {storageCurrentResultState}；{storageCurrentResultNextStep}。
+            {storageCurrentResultState}；{storageCurrentResultAcceptanceGap}；{storageCurrentResultNextStep}。
           </p>
           <MetricGrid items={storageCurrentResultAtomicItems} />
           <div className="actions" aria-label="storage ordinary current result atomic actions">
