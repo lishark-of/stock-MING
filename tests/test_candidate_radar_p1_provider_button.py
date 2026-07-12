@@ -158,13 +158,13 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
             radar_summary_slice.index("renderQuantProjectionPrimaryAction(quantProjectionSummarySubmitHelpId)"),
             radar_summary_slice.index("{quantProjectionConnectionReadyLabel}"),
         )
-        self.assertIn('<a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>', radar_summary_slice)
-        self.assertIn('<a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>', radar_summary_slice)
+        self.assertIn('<a href="#factor/factor-score" aria-label="open stock quant projection result">查看量化推演结果</a>', radar_summary_slice)
+        self.assertIn('<a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>', radar_summary_slice)
         self.assertLess(
             radar_summary_slice.index('aria-label="open stock quant projection result"'),
             radar_summary_slice.index('aria-label="open next session map from candidate radar p1 replay"'),
         )
-        self.assertIn("回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache", source)
+        self.assertIn("回放入口区分本地模块路由和页内锚点：#factor/factor-score 和 #next/next-session-chart 切换到量化结果区和次日图谱结果区，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache", source)
         self.assertIn("renderQuantProjectionPrimaryAction(quantProjectionFactorSubmitHelpId)", ordinary_quant_slice)
         self.assertIn("查看最近结果", source)
         self.assertIn('{quantProjectionConnectionReadyLabel}', ordinary_quant_slice)
@@ -360,7 +360,8 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("setQuantProjectionSubmitting(false);", submit_slice)
         self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", submit_slice)
         self.assertNotIn("operator_approved", submit_slice)
-        self.assertIn("include_deepseek: true", submit_slice)
+        self.assertIn("include_deepseek: false", submit_slice)
+        self.assertIn('deepseek_policy: "separate_governed_executor_after_explicit_authorization"', submit_slice)
         self.assertIn("user_approved: true", submit_slice)
         self.assertIn("p0_confirm_gate_evidence", submit_slice)
         self.assertIn('schema_version: "candidate_radar_p0_confirm_gate.v1"', submit_slice)

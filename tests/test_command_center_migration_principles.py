@@ -546,12 +546,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("aria-label={quantProjectionSubmitAriaLabel}", text)
         submit_button_text = '>{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>'
         self.assertIn(submit_button_text, text)
+        primary_action_section = text.split("const renderQuantProjectionPrimaryAction", 1)[1].split("return (", 1)[0]
+        self.assertLess(primary_action_section.index("title={quantProjectionSubmitButtonLabel}"), primary_action_section.index(submit_button_text))
         search_projection_section = text.split('<PacketCard title="搜票量化推演"', 1)[1]
-        self.assertLess(search_projection_section.index("title={quantProjectionSubmitButtonLabel}"), search_projection_section.index(submit_button_text))
-        self.assertLess(
-            search_projection_section.index(submit_button_text),
-            search_projection_section.index("{quantProjectionDisabledReason}"),
-        )
+        self.assertIn("renderQuantProjectionPrimaryAction(quantProjectionFactorSubmitHelpId)", search_projection_section)
         self.assertLess(
             search_projection_section.index("{quantProjectionDisabledReason}"),
             search_projection_section.index("{quantProjectionSubmitHint}"),

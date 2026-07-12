@@ -6602,8 +6602,8 @@ export default function CandidateRadar() {
               title={quantProjectionInputBoundaryLabel}
             />
             {renderQuantProjectionPrimaryAction(quantProjectionSummarySubmitHelpId)}
-            <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
-            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
+            <a href="#factor/factor-score" aria-label="open stock quant projection result">查看量化推演结果</a>
+            <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
           </div>
         </details>
         <p className="risk-note">{ordinaryRadarResultLocation}</p>
