@@ -40,6 +40,7 @@ LOCAL_VITE_ORIGINS = [
     for port in LOCAL_VITE_DEV_PORTS
     for origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
 ]
+LOCAL_VITE_ORIGIN_REGEX = r"^http://(127\.0\.0\.1|localhost):51(7[3-9]|8[0-9]|9[0-9])$"
 TAURI_ORIGINS = [
     "tauri://localhost",
     "http://tauri.localhost",
@@ -54,6 +55,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[*LOCAL_VITE_ORIGINS, *TAURI_ORIGINS],
+    allow_origin_regex=LOCAL_VITE_ORIGIN_REGEX,
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],

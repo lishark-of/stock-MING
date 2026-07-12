@@ -143,7 +143,10 @@ export default function FactorQuantHub() {
     void postTask(path, payload).then((res) => {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
-      if (res.ok) refreshTaskIndex();
+      if (res.ok) {
+        refreshTaskIndex();
+        refreshCache();
+      }
     });
 
   useEffect(() => {
@@ -2239,6 +2242,55 @@ export default function FactorQuantHub() {
       边界: "不交易、不下单、不接 broker、不改 strategy action。"
     }
   ];
+  const ordinaryFactorUniverseDryRunReady = universeWorkerBatchDryRun.local_dry_run_ready === true;
+  const ordinaryFactorUniverseReadPlanReady = universeExecutionReadiness.read_plan_ready === true;
+  const ordinaryFactorUniverseReadPlanCanLaunch = !ordinaryFactorUniverseReadPlanReady;
+  const ordinaryFactorUniverseDryRunCanLaunch = Boolean(
+    !ordinaryFactorUniverseDryRunReady &&
+    (
+      universeExecutionActivationReceipt.ready_for_explicit_worker_batch_task === true ||
+      universeExecutionReadinessReceipt.ready_for_explicit_worker_batch_task === true ||
+      ordinaryFactorUniverseReadPlanReady
+    )
+  );
+  const ordinaryFactorUniverseWorkerBatchState = ordinaryFactorUniverseDryRunReady
+    ? `研究池预检已记录：scope=${String(universeWorkerBatchDryRun.worker_batch_scope_hash_short ?? universeWorkerBatchDryRun.worker_batch_scope_hash ?? "已绑定")}`
+    : ordinaryFactorUniverseDryRunCanLaunch
+      ? "研究池读取计划已可用；可生成本地 worker-batch 预检 scope ticket"
+      : "等待 universe read-plan / storage 查询合同可读后再生成预检";
+  const ordinaryFactorUniverseWorkerBatchItems: MetricItem[] = [
+    {
+      label: "研究池",
+      value: String(universeResearch.current_universe_type ?? "current_target"),
+      tone: Number(universeResearch.current_universe_size ?? 0) > 0 ? "good" : "warn"
+    },
+    {
+      label: "读取计划",
+      value: String(universeResearchTaskPlan.status ?? universeExecutionReadiness.status ?? "waiting_read_plan"),
+      tone: ordinaryFactorUniverseReadPlanReady ? "good" : "warn"
+    },
+    {
+      label: "预检状态",
+      value: ordinaryFactorUniverseWorkerBatchState,
+      tone: ordinaryFactorUniverseDryRunReady ? "good" : ordinaryFactorUniverseDryRunCanLaunch ? "warn" : "neutral"
+    },
+    {
+      label: "下一步",
+      value: ordinaryFactorUniverseDryRunReady
+        ? "去高级验收区生成执行请求，真实 worker runtime 仍需单独授权"
+        : ordinaryFactorUniverseDryRunCanLaunch
+          ? "生成研究池预检"
+          : ordinaryFactorUniverseReadPlanCanLaunch
+            ? "生成研究池读取计划"
+            : "回到本地缓存",
+      tone: ordinaryFactorUniverseDryRunCanLaunch ? "warn" : ordinaryFactorUniverseDryRunReady ? "good" : "neutral"
+    },
+    {
+      label: "边界",
+      value: "只创建本地 scope ticket；不启动 worker、不 ping Redis/Celery、不调用 provider/model、不交易",
+      tone: "good"
+    }
+  ];
   const ordinaryFactorTestProviderAcceptanceGateState =
     factorTestProviderSmallPoolAcceptance.status
       ? String(factorTestProviderSmallPoolAcceptance.status)
@@ -2834,6 +2886,31 @@ export default function FactorQuantHub() {
         <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })} title={ordinaryQuantRunLightButtonLabel} aria-label={ordinaryQuantRunLightButtonLabel}>运行轻量推演</button>
       </div>
       <p className="risk-note">普通路径只保留查看缓存、手动刷新和轻量推演；DeepSeek 解释入口下沉为高级开关，不阻塞 Tushare-first 和基础图谱。</p>
+      <div aria-label="stock quant ordinary factor universe worker batch preflight">
+        <h3>研究池扩展</h3>
+        <p className="ordinary-status-note" aria-label="stock quant ordinary factor universe sentence" aria-live="polite">
+          {ordinaryFactorUniverseWorkerBatchState}；本地预检只绑定 universe 范围和 scope hash，不代表全市场生产研究完成。
+        </p>
+        <MetricGrid items={ordinaryFactorUniverseWorkerBatchItems} />
+        <div className="actions" aria-label="stock quant ordinary factor universe actions">
+          <button
+            disabled={!ordinaryFactorUniverseReadPlanCanLaunch}
+            onClick={() => launchTask("/api/factor-quant/universe-research-plan", { universe_mode: "full_pool" })}
+            title="生成本地 Factor Universe 读取计划；只写本地计划回执，不扫描全市场、不启动 worker"
+            aria-label="create local factor universe read plan from ordinary stock quant"
+          >生成研究池读取计划</button>
+          <button
+            disabled={!ordinaryFactorUniverseDryRunCanLaunch}
+            onClick={() => launchTask("/api/factor-quant/universe-worker-batch-dry-run", { approved_by_user: true, universe_mode: "full_pool" })}
+            title="生成本地 Factor Universe worker-batch 预检 scope ticket；不启动 worker、不调用 provider/model、不交易"
+            aria-label="create local factor universe worker batch preflight from ordinary stock quant"
+          >生成研究池预检</button>
+          <a href="#factor-universe-audit" aria-label="open factor universe audit details from ordinary stock quant">查看研究池缺口</a>
+        </div>
+        <TaskLaunchReceipt receipt={taskReceipt} />
+        <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+        <p className="risk-note">这条普通入口只把 LTG-04 的下一步本地预检露出来：不启动 Celery/Redis，不读全市场 payload，不计算生产 rank/zscore/neutralization，不调用 Tushare/DeepSeek/GitHub，也不改 strategy action。</p>
+      </div>
       <details className="developer-audit-details">
         <summary>模型解释 / 高级开关</summary>
         <p className="risk-note">DeepSeek governed executor 单独补；这里的按钮只走受控任务，不在页面渲染中调用模型，也不覆盖价格、因子、持仓、操作区或交易策略。</p>
@@ -3164,7 +3241,7 @@ export default function FactorQuantHub() {
       <h3>DeepSeek durable evidence rows</h3>
       <DataLineageTable rows={deepseekDurableEvidenceRows} />
       </details>
-      <details className="developer-audit-details">
+      <details className="developer-audit-details" id="factor-universe-audit">
         <summary>工程审计详情</summary>
         <p>因子库、Universe、Provider、Tushare、cache ledger 和原始 packet 默认收起；普通用户先看上方量化摘要、评分图表、支持/压制、本地上下文和 DeepSeek 解释状态。</p>
       <h3>因子库</h3>
