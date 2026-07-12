@@ -5849,6 +5849,9 @@ export default function CandidateRadar() {
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from visible now app result">ETF/融资风险</a>
             </div>
           </div>
+          <details className="developer-audit-details" aria-label="candidate radar ordinary summary workflow details">
+            <summary>研究辅助 / 雷达读法详情</summary>
+            <p className="risk-note">输入链路、确认按钮、确认后结果、P1/P2/P3 路径、候选复核、页面 QA 和补证缺口默认收起；普通首屏先保留一屏确认和打开 app 能看到什么。</p>
           <div aria-label="candidate radar typed symbol immediate readback">
             <h3>输入股票后先看这里</h3>
             <p className="ordinary-status-note" aria-label="candidate radar typed symbol immediate sentence" aria-live="polite">{candidateRadarTypedSymbolSentence}</p>
@@ -6164,6 +6167,7 @@ export default function CandidateRadar() {
               <DataLineageTable rows={ordinaryBrowserQaReadbackRows} />
             </details>
           </div>
+          </details>
         </div>
         <div aria-label="candidate radar coarse fine screening ordinary summary">
           <h3>粗筛/细筛候选分组</h3>

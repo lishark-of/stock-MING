@@ -331,6 +331,15 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             visible_now_start,
             summary_primary_slice.index('aria-label="candidate radar ordinary vertical slice readback"'),
         )
+        self.assertIn('aria-label="candidate radar ordinary summary workflow details"', summary_primary_slice)
+        self.assertIn("<summary>研究辅助 / 雷达读法详情</summary>", summary_primary_slice)
+        workflow_details_start = summary_primary_slice.index('aria-label="candidate radar ordinary summary workflow details"')
+        self.assertLess(visible_now_start, workflow_details_start)
+        self.assertLess(
+            workflow_details_start,
+            summary_primary_slice.index('aria-label="candidate radar typed symbol immediate readback"'),
+        )
+        self.assertIn("输入链路、确认按钮、确认后结果、P1/P2/P3 路径", summary_primary_slice)
         self.assertIn("candidateRadarTypedSymbolSentence", self.page)
         self.assertIn("candidateRadarTypedSymbolItems", self.page)
         self.assertIn("candidateRadarTypedSymbolRows", self.page)
