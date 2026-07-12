@@ -33,7 +33,7 @@ export type RouteKey =
   | "legacy";
 
 const ORDINARY_NAVIGATION_BOUNDARY =
-  "普通用户先用三入口；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、排查、设置或回退。";
+  "普通用户先用五个入口完成本地投研；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、排查、设置或回退。";
 const LOCAL_FASTAPI_HEALTH_POLL_MS = 3000;
 type LocalFastapiStatus = "checking" | "online" | "offline";
 
@@ -44,18 +44,18 @@ const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; rout
     primary: true,
     routes: [
       { key: "home", label: "今日作战台" },
-      { key: "factor", label: "股票量化推演" },
       { key: "candidates", label: "下一票雷达" },
+      { key: "factor", label: "股票量化推演" },
+      { key: "next", label: "次日图谱" },
       { key: "marginEtf", label: "ETF / 融资" }
     ]
   },
   {
     title: "研究辅助",
-    hint: "补充上下文，只读查看研究状态，不替代三入口主流程。",
+    hint: "补充上下文，只读查看研究状态，不替代普通投研主流程。",
     routes: [
       { key: "market", label: "市场环境" },
       { key: "position", label: "持仓画像" },
-      { key: "next", label: "次日图谱" },
       { key: "risk", label: "风险护栏" },
       { key: "strategy", label: "策略 Trace" },
       { key: "chokepoint", label: "瓶颈扫描" },
@@ -214,7 +214,7 @@ export default function Layout({
             )
           ))}
         </nav>
-        <p className="sidebar-note">三入口先行：今日作战台、股票量化推演、下一票雷达；ETF / 融资作为补充普通入口。只做研究辅助，不下单；旧工作台仅作排查回退入口。</p>
+        <p className="sidebar-note">普通投研主线：今日作战台 → 下一票雷达 → 股票量化推演 → 次日图谱；ETF / 融资风险随时可查。只做研究辅助，不下单；旧工作台仅作排查回退入口。</p>
       </aside>
       <main className="content">{children}</main>
     </div>
