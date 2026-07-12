@@ -88,6 +88,7 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("quantProjectionTushareDataCardItems", self.page)
         self.assertIn("quantProjectionTushareDataCardRows", self.page)
         self.assertIn("quantProjectionTushareDataCardSummary", self.page)
+        self.assertIn("quantProjectionDeepSeekProtectionItems", self.page)
         self.assertIn("quantProjectionResultVersionLineageSummary", self.page)
         self.assertIn("quantProjectionResultVersionLineageRows", self.page)
         self.assertIn("searchQuantLineageSameVersionReady", self.page)
@@ -130,6 +131,13 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("不会从数据卡调用 Tushare/DeepSeek、创建第二个 task 或交易", self.page)
         self.assertIn("没有账本时显示等待或阻断，不从页面补调数据", search_panel_top)
         self.assertIn("不会调用 Tushare、DeepSeek、GitHub，不交易、不改交易策略", search_panel_top)
+        self.assertIn('aria-label="quant projection ordinary deepseek degraded protection"', search_panel_top)
+        self.assertIn("DeepSeek 解释降级保护", search_panel_top)
+        self.assertIn('aria-label="quant projection ordinary deepseek degraded status"', search_panel_top)
+        self.assertIn("MetricGrid items={quantProjectionDeepSeekProtectionItems}", search_panel_top)
+        self.assertIn("模型失败/超时/不可用只影响解释层", search_panel_top)
+        self.assertIn("Tushare 数据、Factor light 和 Next Session 本地回放继续显示", search_panel_top)
+        self.assertIn("DeepSeek 只解释，不作为数据源，不覆盖价格、factor、operation_zones 或 strategy action", self.page)
         for data_card_label in (
             'label: "Tushare 数据"',
             'label: "接口回放"',
@@ -142,7 +150,19 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
             'label: "边界"',
         ):
             self.assertIn(data_card_label, self.page)
+        for deepseek_protection_label in (
+            'label: "DeepSeek 状态"',
+            'label: "事实链"',
+            'label: "基础图谱"',
+            'label: "降级边界"',
+            'label: "安全边界"',
+        ):
+            self.assertIn(deepseek_protection_label, self.page)
         data_card_start = search_panel_top.index('aria-label="quant projection ordinary tushare data card"')
+        deepseek_protection_start = search_panel_top.index(
+            'aria-label="quant projection ordinary deepseek degraded protection"',
+            data_card_start,
+        )
         data_card_end = search_panel_top.index('aria-label="quant projection p1 visible progress summary"', data_card_start)
         data_card_slice = search_panel_top[data_card_start:data_card_end]
         self.assertLess(
@@ -151,6 +171,10 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         )
         self.assertLess(
             data_card_start,
+            deepseek_protection_start,
+        )
+        self.assertLess(
+            deepseek_protection_start,
             search_panel_top.index('aria-label="quant projection p1 visible progress summary"'),
         )
         self.assertNotIn("onClick=", data_card_slice)

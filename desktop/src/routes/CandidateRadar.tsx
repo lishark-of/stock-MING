@@ -2304,6 +2304,41 @@ export default function CandidateRadar() {
       : quantProjectionInterpretationPartialLedgerReady
         ? "可解释结果等待小数据三面 ready：call_ledger 已回放，但 cache / packet 未齐备"
       : "解释结果等待 Tushare-first 账本");
+  const quantProjectionDeepSeekProtectionItems: MetricItem[] = [
+    {
+      label: "DeepSeek 状态",
+      value: quantProjectionDeepSeekVisibleStatus,
+      tone: quantProjectionDeepSeekDegraded ? "warn" : quantProjectionDeepSeekOutputReady ? "good" : "neutral"
+    },
+    {
+      label: "事实链",
+      value: quantProjectionProviderLedgerReady
+        ? `Tushare 数据仍可回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}`
+        : "等待 Tushare facts；模型不会补事实",
+      tone: quantProjectionProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "基础图谱",
+      value: quantProjectionFactorNextReady || quantProjectionInterpretationReady
+        ? "Factor / Next 继续按本地 cache 显示"
+        : "等待本地 cache；不等模型",
+      tone: quantProjectionFactorNextReady || quantProjectionInterpretationReady ? "good" : "warn"
+    },
+    {
+      label: "降级边界",
+      value: quantProjectionDeepSeekSkippedMissingFacts
+        ? "Tushare 失败/空数据时 DeepSeek skipped_missing_facts，不编造事实"
+        : quantProjectionDeepSeekDegraded
+          ? "模型失败只降级，Tushare / Factor / Next 不阻塞"
+          : "解释成功也只读，不覆盖事实包",
+      tone: quantProjectionDeepSeekDegraded ? "warn" : "good"
+    },
+    {
+      label: "安全边界",
+      value: "DeepSeek 只解释，不作为数据源，不覆盖价格、factor、operation_zones 或 strategy action",
+      tone: "good"
+    }
+  ];
   const quantProjectionOrdinaryResultSummary =
     String(searchQuantProjectionInterpretation.ordinary_result_summary ?? "") ||
     quantProjectionInterpretationState;
@@ -6613,6 +6648,12 @@ export default function CandidateRadar() {
               <DataLineageTable rows={quantProjectionTushareDataCardRows} />
             </details>
             <p className="risk-note">数据卡只整理确认后已有的本地 cache / call_ledger / packet；不会调用 Tushare、DeepSeek、GitHub，不交易、不改交易策略。</p>
+          </div>
+          <div aria-label="quant projection ordinary deepseek degraded protection">
+            <h3>DeepSeek 解释降级保护</h3>
+            <p className="ordinary-status-note" aria-label="quant projection ordinary deepseek degraded status" aria-live="polite">{quantProjectionDeepSeekVisibleStatus}</p>
+            <MetricGrid items={quantProjectionDeepSeekProtectionItems} />
+            <p className="risk-note">模型失败/超时/不可用只影响解释层；Tushare 数据、Factor light 和 Next Session 本地回放继续显示，不下单、不改策略。</p>
           </div>
           <div aria-label="quant projection p1 visible progress summary">
             <h3>确认进度速读</h3>
