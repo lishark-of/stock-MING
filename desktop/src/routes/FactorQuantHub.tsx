@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { EChartsOption } from "echarts";
-import { getBootstrapStatus, getCandidateRadarCache, getFactorQuantCache, getNextSessionCache, postTask, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, getFactorQuantCache, getNextSessionCache, getStorageCurrentResult, postTask, type TaskCreationEnvelope } from "../api/client";
 import { getTasks, type TaskStatusIndex } from "../api/client";
 import ChartSafetyStrip from "../components/ChartSafetyStrip";
 import DataLineageTable from "../components/DataLineageTable";
@@ -154,6 +154,7 @@ export default function FactorQuantHub() {
   const [packet, setPacket] = useState<Record<string, any>>({});
   const [candidateRadarCache, setCandidateRadarCache] = useState<Record<string, unknown>>({});
   const [nextSessionCache, setNextSessionCache] = useState<Record<string, unknown>>({});
+  const [storageCurrentResult, setStorageCurrentResult] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
@@ -188,6 +189,10 @@ export default function FactorQuantHub() {
     void getNextSessionCache().then((res) => {
       if (res.ok !== false) setNextSessionCache(res.data ?? {});
     });
+  const refreshStorageCurrentResult = () =>
+    void getStorageCurrentResult().then((res) => {
+      if (res.ok !== false) setStorageCurrentResult(res.data ?? {});
+    });
   const refreshTaskIndex = () =>
     void getTasks().then((res) => setTaskIndex(res.data));
   const launchTask = (path: string, payload: Record<string, unknown> = {}) =>
@@ -205,6 +210,7 @@ export default function FactorQuantHub() {
     refreshBootstrapStatus();
     refreshCandidateRadarCache();
     refreshNextSessionCache();
+    refreshStorageCurrentResult();
     refreshTaskIndex();
   }, []);
 
@@ -239,6 +245,12 @@ export default function FactorQuantHub() {
     (candidateRadarReceiptCallLedger[0]?.request_params_safe as Record<string, unknown> | undefined) ?? {};
   const ordinaryQuantPostConfirmReplayContract =
     (candidateRadarReceiptRequestParams.ordinary_post_confirm_replay_contract as Record<string, unknown> | undefined) ?? {};
+  const storageCurrentResultSymbol = String(storageCurrentResult.symbol ?? "").trim();
+  const storageCurrentResultVersion = String(
+    storageCurrentResult.result_version ??
+      storageCurrentResult.selected_version_id ??
+      ""
+  ).trim();
   const candidateRadarConfirmedSymbol = String(
     packet.latest_confirmed_symbol ??
       candidateRadarCache.latest_confirmed_symbol ??
@@ -246,8 +258,13 @@ export default function FactorQuantHub() {
       candidateRadarReceipt.symbol ??
       candidateRadarSmallDataWriteback.symbol ??
       candidateRadarInterpretation.symbol ??
+      storageCurrentResultSymbol ??
       ""
   );
+  const storageCurrentResultCanBind =
+    Boolean(storageCurrentResultSymbol && storageCurrentResultVersion) &&
+    (!candidateRadarConfirmedSymbol ||
+      storageCurrentResultSymbol.toUpperCase() === candidateRadarConfirmedSymbol.toUpperCase());
   const candidateRadarLatestTaskId = String(
     candidateRadarResultVersionSummary.current_result_task_id ??
       candidateRadarResultVersionSummary.latest_task_id ??
@@ -425,24 +442,28 @@ export default function FactorQuantHub() {
     candidateRadarResultVersionSummary.current_result_version ??
       candidateRadarResultLineage.result_version ??
       candidateRadarProviderModelAcceptance.result_version ??
+      (storageCurrentResultCanBind ? storageCurrentResultVersion : "") ??
       ""
   );
   const candidateRadarLatestResultVersion = String(
     candidateRadarResultVersionSummary.latest_task_result_version ??
       candidateRadarResultVersionSummary.latest_result_version ??
       candidateRadarResultLineage.result_version ??
+      (storageCurrentResultCanBind ? storageCurrentResultVersion : "") ??
       ""
   );
   const candidateRadarCurrentResultSymbol = String(
     candidateRadarResultVersionSummary.current_result_symbol ??
       candidateRadarResultLineage.symbol ??
       candidateRadarProviderModelAcceptance.symbol ??
+      (storageCurrentResultCanBind ? storageCurrentResultSymbol : "") ??
       ""
   );
   const candidateRadarLatestTaskSymbol = String(
     candidateRadarResultVersionSummary.latest_task_symbol ??
       candidateRadarResultLineage.symbol ??
       candidateRadarProviderModelAcceptance.symbol ??
+      (storageCurrentResultCanBind ? storageCurrentResultSymbol : "") ??
       candidateRadarCurrentResultSymbol ??
       ""
   );
@@ -485,6 +506,7 @@ export default function FactorQuantHub() {
       candidateRadarResultLineage.canonical_result_task_id ??
       candidateRadarResultLineage.canonical_task_id ??
       candidateRadarResultLineage.task_id ??
+      (storageCurrentResultCanBind ? storageCurrentResult.source_result_task_id : "") ??
       candidateRadarLatestTaskId ??
       ""
   );
@@ -493,6 +515,7 @@ export default function FactorQuantHub() {
       candidateRadarResultVersionSummary.current_result_facts_package_hash ??
       candidateRadarResultLineage.facts_package_hash ??
       candidateRadarResultLineage.facts_package_id ??
+      (storageCurrentResultCanBind ? storageCurrentResult.facts_package_hash : "") ??
       ""
   );
   const candidateRadarModelLedgerId = String(
@@ -500,6 +523,7 @@ export default function FactorQuantHub() {
       candidateRadarResultLineage.model_ledger_id ??
       candidateRadarDeepSeekModelLedger.model_ledger_id ??
       candidateRadarProviderModelAcceptance.model_ledger_id ??
+      (storageCurrentResultCanBind ? storageCurrentResult.model_ledger_id : "") ??
       ""
   );
   const candidateRadarResultDataDate = String(
@@ -507,6 +531,7 @@ export default function FactorQuantHub() {
       candidateRadarResultVersionSummary.current_result_data_date ??
       candidateRadarResultLineage.data_date ??
       candidateRadarProviderModelAcceptance.data_date ??
+      (storageCurrentResultCanBind ? storageCurrentResult.data_date : "") ??
       ""
   );
   const candidateRadarResultFreshness = String(
@@ -514,6 +539,7 @@ export default function FactorQuantHub() {
       candidateRadarResultVersionSummary.current_result_freshness_state ??
       candidateRadarResultLineage.freshness_state ??
       candidateRadarProviderModelAcceptance.freshness_state ??
+      (storageCurrentResultCanBind ? storageCurrentResult.freshness_state : "") ??
       ""
   );
   const candidateRadarSameTaskFactModelReady =
