@@ -234,11 +234,53 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
 
         packet = next_session_service.read_next_session_cache()
 
+        self.assertEqual(packet["status"], "ready_cache_replay")
         self.assertEqual(packet["latest_confirmed_task_id"], "local-provider-model-task")
         self.assertEqual(packet["candidate_radar_p3_handoff"]["source_task_id"], "local-provider-model-task")
         summary = packet["ordinary_result_replay_summary"]
         self.assertEqual(summary["confirmed_source_task_id"], "local-provider-model-task")
         self.assertTrue(summary["chart_ready_for_confirmed_symbol"])
+
+    def test_next_session_handoff_uses_latest_confirmed_when_chart_is_already_bound(self):
+        self._write_candidate_packet()
+        store = SQLiteMetaStore(self.db_path)
+        candidate = store.read_packet("command_center_3_candidate_radar_cache")
+        candidate["search_quant_provider_model_acceptance_receipt"] = {
+            "task_id": "local-older-lineage-task",
+            "symbol": "002008.SZ",
+            "status": "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
+        }
+        candidate["search_quant_result_lineage"] = {
+            "task_id": "local-older-lineage-task",
+            "symbol": "002008.SZ",
+            "result_version": "qrv-current",
+            "current_result_promoted": True,
+        }
+        candidate["search_quant_canonical_result_lineage"] = {
+            "task_id": "local-older-lineage-task",
+            "symbol": "002008.SZ",
+            "result_version": "qrv-current",
+            "current_result_version": "qrv-current",
+            "same_task_fact_model_result_version_ready": True,
+            "current_result_promoted": True,
+        }
+        store.write_packet("command_center_3_candidate_radar_cache", candidate)
+        self._write_next_session_packet(ts_code="002008.SZ", source_task_id="local-next-handoff")
+
+        packet = next_session_service.read_next_session_cache()
+
+        self.assertEqual(packet["status"], "ready_cache_replay")
+        self.assertEqual(packet["latest_confirmed_task_id"], "local-next-handoff")
+        handoff = packet["candidate_radar_p3_handoff"]
+        self.assertEqual(handoff["source_task_id"], "local-next-handoff")
+        self.assertEqual(handoff["chart_source_task_id"], "local-next-handoff")
+        self.assertTrue(handoff["chart_is_bound_to_latest_confirmed"])
+        summary = packet["ordinary_result_replay_summary"]
+        self.assertEqual(summary["confirmed_source_task_id"], "local-next-handoff")
+        self.assertEqual(summary["chart_source_task_id"], "local-next-handoff")
+        self.assertTrue(summary["chart_source_task_matches_confirmed"])
+        self.assertTrue(summary["chart_ready_for_confirmed_symbol"])
+        self.assertFalse(summary["chart_stale_for_confirmed_symbol"])
 
     def test_next_session_marks_chart_ready_when_bound_to_confirmed_symbol(self):
         self._write_candidate_packet()
@@ -246,6 +288,7 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
 
         packet = next_session_service.read_next_session_cache()
 
+        self.assertEqual(packet["status"], "ready_cache_replay")
         summary = packet["ordinary_result_replay_summary"]
         self.assertEqual(summary["status"], "ready_cache_replay")
         self.assertTrue(summary["chart_has_drawable_data"])

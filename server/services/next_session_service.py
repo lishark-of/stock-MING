@@ -3000,7 +3000,28 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
 def read_next_session_cache() -> dict[str, Any]:
     _sync_packet_service_sqlite_path()
     packet = dict(packet_service.build_next_session_cache())
-    candidate_radar_p3_handoff = _read_candidate_radar_p3_handoff()
+    chart_payload_for_handoff = _as_dict(packet.get("chart_payload"))
+    chart_summary_for_handoff = _as_dict(packet.get("chart_summary")) or _as_dict(
+        chart_payload_for_handoff.get("chart_summary")
+    )
+    candidate_radar_p3_handoff = _read_candidate_radar_p3_handoff(
+        chart_source_task_id=_safe_text(
+            chart_payload_for_handoff.get("source_task_id") or packet.get("source_task_id") or "",
+            limit=128,
+        ),
+        chart_symbol=_safe_text(
+            chart_summary_for_handoff.get("symbol")
+            or chart_summary_for_handoff.get("ts_code")
+            or chart_summary_for_handoff.get("confirmed_symbol")
+            or chart_payload_for_handoff.get("symbol")
+            or chart_payload_for_handoff.get("ts_code")
+            or chart_payload_for_handoff.get("confirmed_symbol")
+            or packet.get("symbol")
+            or packet.get("ts_code")
+            or "",
+            limit=32,
+        ),
+    )
     candidate_radar_p3_ready = candidate_radar_p3_handoff.get("p3_readable_result_ready") is True
     candidate_radar_p2_ready = candidate_radar_p3_handoff.get("p2_small_data_ready") is True
     candidate_radar_handoff_ready = candidate_radar_p3_ready or candidate_radar_p2_ready
@@ -3140,7 +3161,13 @@ def read_next_session_cache() -> dict[str, Any]:
     ]
     packet["ordinary_result_replay_summary"] = ordinary_result_replay
     packet["ordinary_result_replay_status"] = ordinary_result_replay["status"]
-    if ordinary_result_replay["status"] == "candidate_readable_result_replay_chart_pending":
+    if ordinary_result_replay["chart_ready_for_confirmed_symbol"]:
+        packet["status"] = "ready_cache_replay"
+        packet["cache_source"] = packet.get("cache_source") or "next_session_cache_readonly"
+        packet["chart_payload_generated"] = True
+        packet["operation_zones_generated"] = True
+        packet["manual_next_session_generate_required"] = False
+    elif ordinary_result_replay["status"] == "candidate_readable_result_replay_chart_pending":
         packet["status"] = "candidate_readable_result_replay_chart_pending"
         packet["cache_source"] = "candidate_radar_p3_handoff_readonly"
         packet["summary"] = (
@@ -3574,7 +3601,11 @@ def _next_session_data_date(packet: dict[str, Any]) -> Any:
     return None
 
 
-def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
+def _read_candidate_radar_p3_handoff(
+    *,
+    chart_source_task_id: str = "",
+    chart_symbol: str = "",
+) -> dict[str, Any]:
     try:
         candidate_packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(CANDIDATE_RADAR_PACKET_KEY)
     except Exception:
@@ -3617,15 +3648,28 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
         or "",
         limit=32,
     )
+    latest_confirmed_task_id = _safe_text(candidate_packet.get("latest_confirmed_task_id") or "", limit=128)
+    chart_source_task_id_safe = _safe_text(chart_source_task_id or "", limit=128)
+    chart_symbol_safe = _safe_text(chart_symbol or "", limit=32).upper()
+    chart_is_bound_to_latest_confirmed = bool(
+        chart_source_task_id_safe
+        and latest_confirmed_task_id
+        and chart_source_task_id_safe == latest_confirmed_task_id
+        and (not chart_symbol_safe or not symbol or chart_symbol_safe == symbol.upper())
+    )
     source_task_id = _safe_text(
-        result_lineage.get("task_id")
-        or provider_receipt.get("task_id")
-        or candidate_packet.get("latest_confirmed_task_id")
-        or receipt.get("latest_task_id")
-        or receipt.get("task_id")
-        or small_data.get("latest_task_id")
-        or candidate_packet.get("task_id")
-        or "",
+        latest_confirmed_task_id
+        if chart_is_bound_to_latest_confirmed
+        else (
+            result_lineage.get("task_id")
+            or provider_receipt.get("task_id")
+            or latest_confirmed_task_id
+            or receipt.get("latest_task_id")
+            or receipt.get("task_id")
+            or small_data.get("latest_task_id")
+            or candidate_packet.get("task_id")
+            or ""
+        ),
         limit=128,
     )
     source_task_status = _safe_text(
@@ -3726,6 +3770,9 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
         "request_params_safe": {
             "source_packet_key": CANDIDATE_RADAR_PACKET_KEY,
             "source_task_id": source_task_id,
+            "latest_confirmed_task_id": latest_confirmed_task_id,
+            "chart_source_task_id": chart_source_task_id_safe,
+            "chart_is_bound_to_latest_confirmed": chart_is_bound_to_latest_confirmed,
             "symbol": symbol,
             "p2_small_data_ready": p2_ready,
             "p3_readable_result_ready": p3_ready,
@@ -3748,6 +3795,9 @@ def _read_candidate_radar_p3_handoff() -> dict[str, Any]:
         "status": status,
         "source_packet_key": CANDIDATE_RADAR_PACKET_KEY,
         "source_task_id": source_task_id,
+        "latest_confirmed_task_id": latest_confirmed_task_id,
+        "chart_source_task_id": chart_source_task_id_safe,
+        "chart_is_bound_to_latest_confirmed": chart_is_bound_to_latest_confirmed,
         "source_task_status": source_task_status,
         "source_task_current_step": source_task_current_step,
         "symbol": symbol,
