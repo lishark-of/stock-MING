@@ -3009,6 +3009,10 @@ def read_next_session_cache() -> dict[str, Any]:
             chart_payload_for_handoff.get("source_task_id") or packet.get("source_task_id") or "",
             limit=128,
         ),
+        chart_result_version=_safe_text(
+            chart_payload_for_handoff.get("result_version") or packet.get("result_version") or "",
+            limit=128,
+        ),
         chart_symbol=_safe_text(
             chart_summary_for_handoff.get("symbol")
             or chart_summary_for_handoff.get("ts_code")
@@ -3032,6 +3036,13 @@ def read_next_session_cache() -> dict[str, Any]:
         packet["latest_confirmed_task_id"] = candidate_radar_p3_handoff["source_task_id"]
         packet["latest_confirmed_task_status"] = candidate_radar_p3_handoff["source_task_status"]
         packet["latest_confirmed_task_current_step"] = candidate_radar_p3_handoff["source_task_current_step"]
+        packet["result_version"] = candidate_radar_p3_handoff.get("result_version") or packet.get("result_version") or ""
+        packet["current_result_task_id"] = (
+            candidate_radar_p3_handoff.get("current_result_task_id") or packet.get("current_result_task_id") or ""
+        )
+        packet["chart_is_bound_to_current_result"] = (
+            candidate_radar_p3_handoff.get("chart_is_bound_to_current_result") is True
+        )
         packet["latest_confirmed_symbol_readback_external_calls_triggered"] = False
         packet["latest_confirmed_symbol_creates_task_from_readback"] = False
     if packet.get("status") == "cache_missing" and candidate_radar_handoff_ready:
@@ -3604,6 +3615,7 @@ def _next_session_data_date(packet: dict[str, Any]) -> Any:
 def _read_candidate_radar_p3_handoff(
     *,
     chart_source_task_id: str = "",
+    chart_result_version: str = "",
     chart_symbol: str = "",
 ) -> dict[str, Any]:
     try:
@@ -3617,6 +3629,7 @@ def _read_candidate_radar_p3_handoff(
     receipt = _as_dict(candidate_packet.get("search_quant_projection_receipt"))
     provider_receipt = _as_dict(candidate_packet.get("search_quant_provider_model_acceptance_receipt"))
     result_lineage = _as_dict(candidate_packet.get("search_quant_result_lineage"))
+    result_version_summary = _as_dict(candidate_packet.get("search_quant_result_version_summary"))
     p2_ready = small_data.get("small_data_writeback_ready") is True
     interpretation_uses_model_output = any(
         interpretation.get(key) is True
@@ -3649,19 +3662,59 @@ def _read_candidate_radar_p3_handoff(
         limit=32,
     )
     latest_confirmed_task_id = _safe_text(candidate_packet.get("latest_confirmed_task_id") or "", limit=128)
+    current_result_task_id = _safe_text(
+        result_version_summary.get("current_result_task_id")
+        or result_version_summary.get("canonical_result_task_id")
+        or result_lineage.get("task_id")
+        or provider_receipt.get("task_id")
+        or "",
+        limit=128,
+    )
+    current_result_version = _safe_text(
+        result_version_summary.get("current_result_version")
+        or result_version_summary.get("canonical_result_version")
+        or result_lineage.get("result_version")
+        or provider_receipt.get("result_version")
+        or "",
+        limit=128,
+    )
     chart_source_task_id_safe = _safe_text(chart_source_task_id or "", limit=128)
+    chart_result_version_safe = _safe_text(chart_result_version or "", limit=128)
     chart_symbol_safe = _safe_text(chart_symbol or "", limit=32).upper()
-    chart_is_bound_to_latest_confirmed = bool(
+    symbol_matches_chart = bool(not chart_symbol_safe or not symbol or chart_symbol_safe == symbol.upper())
+    chart_matches_latest_confirmed_task = bool(
         chart_source_task_id_safe
         and latest_confirmed_task_id
         and chart_source_task_id_safe == latest_confirmed_task_id
-        and (not chart_symbol_safe or not symbol or chart_symbol_safe == symbol.upper())
+        and symbol_matches_chart
+    )
+    chart_matches_current_result_task = bool(
+        chart_source_task_id_safe
+        and current_result_task_id
+        and chart_source_task_id_safe == current_result_task_id
+        and symbol_matches_chart
+    )
+    chart_matches_current_result_version = bool(
+        chart_result_version_safe
+        and current_result_version
+        and chart_result_version_safe == current_result_version
+        and symbol_matches_chart
+    )
+    chart_is_bound_to_current_result = bool(
+        chart_matches_current_result_task or chart_matches_current_result_version
+    )
+    chart_is_bound_to_latest_confirmed = bool(
+        chart_matches_latest_confirmed_task or chart_is_bound_to_current_result
     )
     source_task_id = _safe_text(
-        latest_confirmed_task_id
-        if chart_is_bound_to_latest_confirmed
+        current_result_task_id
+        if chart_is_bound_to_current_result
+        else latest_confirmed_task_id
+        if chart_matches_latest_confirmed_task
         else (
-            result_lineage.get("task_id")
+            current_result_task_id
+            or result_version_summary.get("latest_task_id")
+            or result_lineage.get("task_id")
             or provider_receipt.get("task_id")
             or latest_confirmed_task_id
             or receipt.get("latest_task_id")
@@ -3771,8 +3824,12 @@ def _read_candidate_radar_p3_handoff(
             "source_packet_key": CANDIDATE_RADAR_PACKET_KEY,
             "source_task_id": source_task_id,
             "latest_confirmed_task_id": latest_confirmed_task_id,
+            "current_result_task_id": current_result_task_id,
             "chart_source_task_id": chart_source_task_id_safe,
+            "result_version": current_result_version,
+            "chart_result_version": chart_result_version_safe,
             "chart_is_bound_to_latest_confirmed": chart_is_bound_to_latest_confirmed,
+            "chart_is_bound_to_current_result": chart_is_bound_to_current_result,
             "symbol": symbol,
             "p2_small_data_ready": p2_ready,
             "p3_readable_result_ready": p3_ready,
@@ -3796,8 +3853,12 @@ def _read_candidate_radar_p3_handoff(
         "source_packet_key": CANDIDATE_RADAR_PACKET_KEY,
         "source_task_id": source_task_id,
         "latest_confirmed_task_id": latest_confirmed_task_id,
+        "current_result_task_id": current_result_task_id,
         "chart_source_task_id": chart_source_task_id_safe,
+        "result_version": current_result_version,
+        "chart_result_version": chart_result_version_safe,
         "chart_is_bound_to_latest_confirmed": chart_is_bound_to_latest_confirmed,
+        "chart_is_bound_to_current_result": chart_is_bound_to_current_result,
         "source_task_status": source_task_status,
         "source_task_current_step": source_task_current_step,
         "symbol": symbol,

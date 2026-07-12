@@ -27714,6 +27714,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                     "contains_secret": False,
                     "ordinary_result_quick_read_rows": [{"quick_read_item": "conclusion"}],
                 },
+                "search_quant_result_version_summary": {
+                    "schema_version": "candidate_radar_search_quant_projection_result_version_summary.v1",
+                    "current_result_version": "qrv_002008",
+                    "current_result_task_id": "candidate-task-002008",
+                    "canonical_result_version": "qrv_002008",
+                    "canonical_result_task_id": "candidate-task-002008",
+                    "current_result_symbol": "002008.SZ",
+                    "canonical_symbol": "002008.SZ",
+                    "current_result_promoted": True,
+                    "current_result_matches_latest_task": True,
+                },
                 "contains_secret": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
@@ -27734,6 +27745,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(handoff["schema_version"], "next_session_candidate_radar_p3_handoff.v1")
         self.assertEqual(handoff["source_packet_key"], candidate_service.PACKET_KEY)
         self.assertEqual(handoff["symbol"], "002008.SZ")
+        self.assertEqual(handoff["result_version"], "qrv_002008")
+        self.assertEqual(packet["result_version"], "qrv_002008")
         self.assertEqual(handoff["source_task_status"], "success")
         self.assertEqual(
             handoff["source_task_current_step"],
@@ -27830,6 +27843,165 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["does_not_execute_trades"])
         self.assertTrue(
             ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["does_not_modify_operation_zones"]
+        )
+
+    def test_next_session_cache_binds_chart_to_current_result_version_when_confirm_task_differs(self):
+        db_path = self._with_meta_store()
+        self._with_snapshot_cache({})
+        store = SQLiteMetaStore(db_path)
+        store.write_packet(
+            "command_center_next_session_projection_packet",
+            {
+                "packet_key": "command_center_next_session_projection_packet",
+                "schema_version": "next_session_projection.v1",
+                "status": "ready",
+                "cache_source": "candidate_radar_p3_handoff_readonly",
+                "symbol": "000001.SZ",
+                "confirmed_symbol": "000001.SZ",
+                "source_task_id": "provider-result-task",
+                "result_version": "qrv_current",
+                "chart_payload": {
+                    "status": "ready",
+                    "symbol": "000001.SZ",
+                    "confirmed_symbol": "000001.SZ",
+                    "source_task_id": "provider-result-task",
+                    "result_version": "qrv_current",
+                    "historical_points": [{"x": "2026-07-10", "price": 10.4}],
+                    "scenario_series": [
+                        {"scenario_key": "base", "points": [{"x": "T+1", "price": 10.6}]}
+                    ],
+                    "reference_lines": [{"label": "latest close", "value": 10.4}],
+                    "operation_zones": [{"zone": "observe", "low": 10.2, "high": 10.8}],
+                },
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_modify_operation_zones": True,
+                "contains_secret": False,
+            },
+        )
+        store.write_packet(
+            candidate_service.PACKET_KEY,
+            {
+                "packet_key": candidate_service.PACKET_KEY,
+                "status": "ready",
+                "task_id": "user-confirm-task",
+                "latest_confirmed_symbol": "000001.SZ",
+                "latest_confirmed_task_id": "user-confirm-task",
+                "latest_confirmed_task_status": "success",
+                "latest_confirmed_task_current_step": (
+                    "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_explained"
+                ),
+                "search_quant_projection_receipt": {
+                    "schema_version": "candidate_radar_search_quant_projection_receipt.v1",
+                    "latest_task_id": "user-confirm-task",
+                    "symbol": "000001.SZ",
+                },
+                "search_quant_projection_small_data_writeback_summary": {
+                    "schema_version": "candidate_radar_search_quant_projection_small_data_writeback.v1",
+                    "status": "small_data_writeback_ready_tushare_ledger_replayed",
+                    "symbol": "000001.SZ",
+                    "small_data_writeback_ready": True,
+                    "provider_call_source": "post_task_call_ledger",
+                    "provider_api_success_count": 4,
+                    "provider_api_call_count": 4,
+                    "source_task_external_calls_triggered": True,
+                    "source_task_tushare_called": True,
+                    "source_task_tushare_provider_ledger_ready": True,
+                    "readback_external_calls_triggered": False,
+                    "readback_tushare_called": False,
+                    "ordinary_readback_summary": "Tushare-first 账本已回放 4/4 个接口。",
+                    "ordinary_readback_next_step": "打开次日图谱读取同 result_version。",
+                    "contains_secret": False,
+                },
+                "search_quant_projection_interpretation_summary": {
+                    "schema_version": "candidate_radar_search_quant_projection_interpretation.v1",
+                    "status": "interpretation_ready_tushare_ledger_pending_local_map",
+                    "symbol": "000001.SZ",
+                    "interpretation_ready": True,
+                    "ordinary_result_summary": "可读结论：Tushare-first 账本已回放 4/4 个接口。",
+                    "ordinary_result_next_step": "完整次日图谱同 result_version 可回放。",
+                    "ordinary_result_boundary": "只读回放；不调用 DeepSeek、不交易、不改 operation_zones。",
+                    "deepseek_governed_executor_status": "model_ledger_ready_sanitized_explanation_replay",
+                    "uses_deepseek_output": False,
+                    "uses_model_output": False,
+                    "model_output_used": False,
+                    "contains_secret": False,
+                    "ordinary_result_quick_read_rows": [{"quick_read_item": "conclusion"}],
+                },
+                "search_quant_result_lineage": {
+                    "task_id": "provider-result-task",
+                    "symbol": "000001.SZ",
+                    "result_version": "qrv_current",
+                    "same_task_fact_model_result_version_ready": True,
+                },
+                "search_quant_result_version_summary": {
+                    "schema_version": "candidate_radar_search_quant_projection_result_version_summary.v1",
+                    "user_confirm_task_id": "user-confirm-task",
+                    "current_result_version": "qrv_current",
+                    "current_result_task_id": "provider-result-task",
+                    "current_result_symbol": "000001.SZ",
+                    "canonical_result_version": "qrv_current",
+                    "canonical_result_task_id": "provider-result-task",
+                    "canonical_symbol": "000001.SZ",
+                    "current_result_promoted": True,
+                    "current_result_matches_latest_task": True,
+                    "canonical_same_task_fact_model_result_version_ready": True,
+                },
+                "search_quant_provider_model_acceptance_receipt": {
+                    "task_id": "provider-result-task",
+                    "symbol": "000001.SZ",
+                    "result_version": "qrv_current",
+                },
+                "contains_secret": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+        )
+
+        response = self.client.get("/api/next-session/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        handoff = packet["candidate_radar_p3_handoff"]
+        self.assertEqual(packet["symbol"], "000001.SZ")
+        self.assertEqual(packet["result_version"], "qrv_current")
+        self.assertEqual(packet["current_result_task_id"], "provider-result-task")
+        self.assertTrue(packet["chart_is_bound_to_current_result"])
+        self.assertEqual(handoff["latest_confirmed_task_id"], "user-confirm-task")
+        self.assertEqual(handoff["source_task_id"], "provider-result-task")
+        self.assertEqual(handoff["current_result_task_id"], "provider-result-task")
+        self.assertEqual(handoff["result_version"], "qrv_current")
+        self.assertTrue(handoff["chart_is_bound_to_current_result"])
+        self.assertTrue(handoff["chart_is_bound_to_latest_confirmed"])
+        ordinary = packet["ordinary_result_replay_summary"]
+        self.assertEqual(ordinary["confirmed_symbol"], "000001.SZ")
+        self.assertEqual(ordinary["chart_symbol"], "000001.SZ")
+        self.assertTrue(ordinary["chart_ready_for_confirmed_symbol"])
+        self.assertFalse(ordinary["chart_stale_for_confirmed_symbol"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        ledger_by_api = {row["api"]: row for row in response["call_ledger"]}
+        self.assertTrue(
+            ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["request_params_safe"][
+                "chart_is_bound_to_current_result"
+            ]
+        )
+        self.assertEqual(
+            ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["request_params_safe"][
+                "result_version"
+            ],
+            "qrv_current",
         )
 
     def test_next_session_cache_marks_stale_chart_pending_for_latest_confirmed_symbol(self):
@@ -27966,7 +28138,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(task["deepseek_called"])
         self.assertTrue(task["does_not_execute_trades"])
         refreshed = self.client.get("/api/next-session/cache").json()["data"]
-        self.assertEqual(refreshed["status"], "ready")
+        self.assertIn(refreshed["status"], {"ready", "ready_cache_replay"})
         self.assertEqual(refreshed["chart_payload"]["symbol"], "600519.SH")
         self.assertEqual(refreshed["chart_payload"]["source_task_id"], "candidate-task-600519")
         self.assertTrue(refreshed["ordinary_result_replay_summary"]["chart_ready_for_confirmed_symbol"])
