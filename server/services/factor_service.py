@@ -6971,6 +6971,16 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         for row in moneyflow_rows
         if isinstance(row, dict)
     }
+    industry_classification_column_candidates = [
+        "industry",
+        "industry_name",
+        "industry_code",
+        "sector",
+        "sector_name",
+        "sw_industry",
+        "sw_l1",
+        "sw_l1_code",
+    ]
 
     grouped_observations: dict[tuple[str, str], list[dict[str, Any]]] = {}
     missing_basic_count = 0
@@ -7008,6 +7018,17 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                     for value in (pe_ttm, pb, turnover_rate, total_mv, buy_lg, sell_lg, buy_sm, sell_sm)
                 ):
                     continue
+                industry_value = ""
+                for source_row in (basic, current_row, moneyflow):
+                    if not isinstance(source_row, dict):
+                        continue
+                    for column in industry_classification_column_candidates:
+                        candidate = str(source_row.get(column) or "").strip()
+                        if candidate:
+                            industry_value = candidate
+                            break
+                    if industry_value:
+                        break
                 grouped_observations.setdefault((trade_date, label), []).append(
                     {
                         "ts_code": symbol,
@@ -7020,6 +7041,7 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                         "total_mv": total_mv,
                         "log_total_mv": math.log(max(total_mv, 1.0)),
                         "net_flow": (buy_lg - sell_lg) + 0.5 * (buy_sm - sell_sm),
+                        "industry": industry_value,
                     }
                 )
 
@@ -7069,6 +7091,29 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                     _rank_average(residual_scores),
                     _rank_average(returns),
                 )
+            industry_neutral_rank_ic = math.nan
+            industry_values = [str(item.get("industry") or "").strip() for item in observations]
+            industry_groups = sorted({item for item in industry_values if item})
+            if len(industry_groups) >= 2 and all(industry_values):
+                industry_score_means = {
+                    industry: _mean(
+                        [
+                            scores[index]
+                            for index, value in enumerate(industry_values)
+                            if value == industry
+                        ]
+                    )
+                    for industry in industry_groups
+                }
+                industry_residual_scores = [
+                    scores[index] - industry_score_means[industry_values[index]]
+                    for index in range(count)
+                ]
+                if len({round(item, 12) for item in industry_residual_scores}) > 1:
+                    industry_neutral_rank_ic = _pearson_correlation(
+                        _rank_average(industry_residual_scores),
+                        _rank_average(returns),
+                    )
             if math.isfinite(ic) and math.isfinite(rank_ic):
                 period_rows.append(
                     {
@@ -7081,6 +7126,8 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                         "cost_adjusted_top_bottom_return": cost_adjusted_top_bottom,
                         "avg_turnover_rate": avg_turnover_rate,
                         "market_cap_neutral_rank_ic": market_cap_neutral_rank_ic,
+                        "industry_neutral_rank_ic": industry_neutral_rank_ic,
+                        "industry_group_count": len(industry_groups),
                     }
                 )
                 metric_observation_count += count
@@ -7091,6 +7138,11 @@ def _factor_test_provider_small_pool_metric_validation_audit(
             row["market_cap_neutral_rank_ic"]
             for row in period_rows
             if math.isfinite(float(row.get("market_cap_neutral_rank_ic", math.nan)))
+        ]
+        industry_neutral_rank_ic_values = [
+            row["industry_neutral_rank_ic"]
+            for row in period_rows
+            if math.isfinite(float(row.get("industry_neutral_rank_ic", math.nan)))
         ]
         rolling_ic_means: list[float] = []
         rolling_rank_ic_means: list[float] = []
@@ -7119,6 +7171,9 @@ def _factor_test_provider_small_pool_metric_validation_audit(
             ),
             "avg_turnover_rate": _round_or_none(_mean([row["avg_turnover_rate"] for row in period_rows])),
             "market_cap_neutral_rank_ic_mean": _round_or_none(_mean(neutral_rank_ic_values)),
+            "industry_neutral_rank_ic_mean": _round_or_none(_mean(industry_neutral_rank_ic_values)),
+            "industry_neutral_period_count": len(industry_neutral_rank_ic_values),
+            "industry_group_count_max": max([int(row.get("industry_group_count") or 0) for row in period_rows] or [0]),
             "sample_rows": [
                 {
                     "trade_date": row["trade_date"],
@@ -7129,6 +7184,8 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                     "top_bottom_return": _round_or_none(row["top_bottom_return"]),
                     "cost_adjusted_top_bottom_return": _round_or_none(row["cost_adjusted_top_bottom_return"]),
                     "market_cap_neutral_rank_ic": _round_or_none(row["market_cap_neutral_rank_ic"]),
+                    "industry_neutral_rank_ic": _round_or_none(row["industry_neutral_rank_ic"]),
+                    "industry_group_count": row["industry_group_count"],
                     "research_only": True,
                 }
                 for row in period_rows[:10]
@@ -7150,16 +7207,6 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         rolling_done
         and all(item.get("market_cap_neutral_rank_ic_mean") is not None for item in horizon_values)
     )
-    industry_classification_column_candidates = [
-        "industry",
-        "industry_name",
-        "industry_code",
-        "sector",
-        "sector_name",
-        "sw_industry",
-        "sw_l1",
-        "sw_l1_code",
-    ]
     industry_source_rows = [*daily_rows, *basic_rows, *moneyflow_rows]
     industry_classification_columns_present = sorted(
         {
@@ -7183,17 +7230,37 @@ def _factor_test_provider_small_pool_metric_validation_audit(
             if str(row.get("ts_code") or "").strip()
         }
     )
-    industry_neutralization_done = False
-    industry_neutralization_status = (
-        "blocked_industry_neutralization_metric_not_implemented"
-        if industry_classification_rows
-        else "blocked_missing_industry_classification"
+    industry_classification_symbol_set = {
+        str(row.get("ts_code") or "").strip()
+        for row in industry_classification_rows
+        if str(row.get("ts_code") or "").strip()
+    }
+    industry_classification_coverage_complete = bool(
+        expected_symbol_set and expected_symbol_set.issubset(industry_classification_symbol_set)
     )
-    industry_neutralization_degraded_reason = (
-        "industry classification columns are present, but industry-neutral factor residual metrics are not implemented for this scope"
-        if industry_classification_rows
-        else "scoped provider fact tables only include daily/daily_basic/moneyflow rows; no industry or sector classification columns are available"
+    industry_neutral_period_count = sum(
+        int(item.get("industry_neutral_period_count") or 0) for item in horizon_values
     )
+    industry_neutralization_done = bool(
+        rolling_done
+        and industry_classification_coverage_complete
+        and horizon_values
+        and all(int(item.get("industry_neutral_period_count") or 0) > 0 for item in horizon_values)
+    )
+    if industry_neutralization_done:
+        industry_neutralization_status = "passed_industry_neutral_rank_ic_visible"
+        industry_neutralization_degraded_reason = ""
+    elif industry_classification_rows:
+        industry_neutralization_status = "blocked_industry_neutral_rank_ic_unavailable"
+        industry_neutralization_degraded_reason = (
+            "same-scope industry or sector columns are present, but joined observations did not produce finite "
+            "industry-neutral rank IC for every requested horizon"
+        )
+    else:
+        industry_neutralization_status = "blocked_missing_industry_classification"
+        industry_neutralization_degraded_reason = (
+            "scoped provider fact tables only include daily/daily_basic/moneyflow rows; no industry or sector classification columns are available"
+        )
     neutralization_stability_done = bool(market_cap_neutralization_done and industry_neutralization_done)
     dataset_error_safe = "; ".join(
         item for item in (daily_error_safe, basic_error_safe, moneyflow_error_safe) if item
@@ -7207,6 +7274,9 @@ def _factor_test_provider_small_pool_metric_validation_audit(
     elif not horizon_values:
         status = "provider_small_pool_metric_validation_degraded_missing_joined_rows"
         allowed_next_step = "review_scoped_daily_basic_moneyflow_persistence"
+    elif rolling_done and cost_done and neutralization_stability_done:
+        status = "provider_small_pool_metric_validation_ready_pit_bias_promotion_pending"
+        allowed_next_step = "add_pit_bias_and_promotion_review"
     elif rolling_done and cost_done and market_cap_neutralization_done:
         status = "provider_small_pool_metric_validation_ready_industry_neutralization_pending"
         allowed_next_step = "add_industry_neutralization_pit_bias_and_promotion_review"
@@ -7269,7 +7339,7 @@ def _factor_test_provider_small_pool_metric_validation_audit(
             "passed_market_cap_neutral_rank_ic_visible" if market_cap_neutralization_done else "blocked_market_cap_neutral_rank_ic_missing",
             market_cap_neutralization_done,
             f"market_cap_neutral_rank_ic={ {key: value.get('market_cap_neutral_rank_ic_mean') for key, value in horizon_summaries.items()} }; industry_neutralization_done={industry_neutralization_done}",
-            "Add industry classification before marking full neutralization stability complete.",
+            "Use market-cap residual IC together with industry residual IC before marking neutralization stability complete.",
             rolling_done=rolling_done,
             cost_done=cost_done,
             neutralization_done=neutralization_stability_done,
@@ -7278,7 +7348,7 @@ def _factor_test_provider_small_pool_metric_validation_audit(
             "industry_neutralization_classification",
             industry_neutralization_status,
             industry_neutralization_done,
-            f"industry_rows={len(industry_classification_rows)}; industry_symbols={industry_classification_symbol_count}; columns_present={industry_classification_columns_present}; candidate_columns={industry_classification_column_candidates}",
+            f"industry_rows={len(industry_classification_rows)}; industry_symbols={industry_classification_symbol_count}; columns_present={industry_classification_columns_present}; industry_neutral_rank_ic={ {key: value.get('industry_neutral_rank_ic_mean') for key, value in horizon_summaries.items()} }; industry_neutral_period_count={industry_neutral_period_count}; candidate_columns={industry_classification_column_candidates}",
             "Add same-scope industry or sector classification before marking neutralization stability complete.",
             rolling_done=rolling_done,
             cost_done=cost_done,
@@ -7337,6 +7407,8 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         "industry_classification_columns_present": industry_classification_columns_present,
         "industry_classification_row_count": len(industry_classification_rows),
         "industry_classification_symbol_count": industry_classification_symbol_count,
+        "industry_classification_coverage_complete": industry_classification_coverage_complete,
+        "industry_neutral_period_count": industry_neutral_period_count,
         "industry_classification_required_before_neutralization_stability": True,
         "neutralization_stability_done": neutralization_stability_done,
         "pit_bias_controls_done": False,
@@ -7620,7 +7692,11 @@ def _factor_test_provider_small_pool_pit_bias_audit(
         allowed_next_step = "compute_rolling_cost_metric_validation_first"
     elif pit_bias_done:
         status = "provider_small_pool_pit_bias_controls_ready_full_market_boundary_pending"
-        allowed_next_step = "add_industry_neutralization_full_market_boundary_and_promotion_review"
+        allowed_next_step = (
+            "add_full_market_boundary_and_promotion_review"
+            if metric_validation.get("neutralization_stability_done") is True
+            else "add_industry_neutralization_full_market_boundary_and_promotion_review"
+        )
     else:
         status = "provider_small_pool_pit_bias_controls_degraded_partial_controls"
         allowed_next_step = "review_pit_bias_control_failures_before_promotion"
@@ -7703,7 +7779,7 @@ def _factor_test_provider_small_pool_pit_bias_audit(
                 ("future-dated forward label separation", not forward_labels_future_dated),
                 ("bounded scope survivorship coverage", not bounded_scope_survivorship_done),
                 ("full-market survivorship and boundary review", True),
-                ("industry neutralization stability evidence", True),
+                ("industry neutralization stability evidence", not metric_validation.get("neutralization_stability_done")),
                 ("manual Factor Test production promotion review", True),
             )
             if missing
@@ -7928,7 +8004,9 @@ def _factor_test_production_stage_scope_manifest(
                 row.update(
                     {
                         "current_status": (
-                            "provider_small_pool_market_cap_neutralization_ready_industry_pending"
+                            "provider_small_pool_neutralization_stability_ready_research_only"
+                            if neutralization_done
+                            else "provider_small_pool_market_cap_neutralization_ready_industry_pending"
                             if market_cap_neutralization_done
                             else "provider_small_pool_neutralization_pending"
                         ),
@@ -7941,9 +8019,13 @@ def _factor_test_production_stage_scope_manifest(
                         "neutralization_stability_done": neutralization_done,
                         "result_version": metric_validation.get("result_version") or "",
                         "missing_evidence": [
-                            "industry neutralization stability evidence",
-                            "PIT, lookahead, and survivorship evidence",
-                            "explicit promotion review before production completion",
+                            item
+                            for item, missing in (
+                                ("industry neutralization stability evidence", not neutralization_done),
+                                ("PIT, lookahead, and survivorship evidence", True),
+                                ("explicit promotion review before production completion", True),
+                            )
+                            if missing
                         ],
                     }
                 )
@@ -7974,9 +8056,13 @@ def _factor_test_production_stage_scope_manifest(
                         "full_universe_survivorship_done": False,
                         "full_market_validation_done": False,
                         "missing_evidence": [
-                            "full-market survivorship and boundary review",
-                            "industry neutralization stability evidence",
-                            "explicit promotion review before production completion",
+                            item
+                            for item, missing in (
+                                ("full-market survivorship and boundary review", True),
+                                ("industry neutralization stability evidence", not neutralization_done),
+                                ("explicit promotion review before production completion", True),
+                            )
+                            if missing
                         ],
                     }
                 )

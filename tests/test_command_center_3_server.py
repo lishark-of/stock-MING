@@ -60885,6 +60885,142 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(stage_rows_by_key["neutralization_stability_validation"]["partial_provider_direct_evidence_present"])
         self.assertFalse(stage_rows_by_key["neutralization_stability_validation"]["provider_direct_evidence_present"])
 
+    def test_factor_test_provider_small_pool_metric_validation_computes_industry_neutral_rank_ic(self):
+        symbols = ["000001.SZ", "002008.SZ", "300750.SZ", "600000.SH", "600519.SH", "601318.SH"]
+        industries = {
+            "000001.SZ": "bank",
+            "002008.SZ": "machinery",
+            "300750.SZ": "battery",
+            "600000.SH": "bank",
+            "600519.SH": "consumer",
+            "601318.SH": "insurance",
+        }
+        scope_hash = "scope-industry"
+        daily_rows = []
+        daily_basic_rows = []
+        moneyflow_rows = []
+        market_caps = [1_000_000.0, 4_500_000.0, 1_800_000.0, 7_000_000.0, 2_700_000.0, 5_200_000.0]
+        for date_index in range(60):
+            trade_date = f"2025{date_index + 1:04d}"
+            for symbol_index, symbol in enumerate(symbols):
+                daily_rows.append(
+                    {
+                        "ts_code": symbol,
+                        "trade_date": trade_date,
+                        "close": 10.0 + symbol_index * 2.0 + date_index * (0.05 + symbol_index * 0.015),
+                        "provider_scope_hash": scope_hash,
+                    }
+                )
+                daily_basic_rows.append(
+                    {
+                        "ts_code": symbol,
+                        "trade_date": trade_date,
+                        "turnover_rate": 1.0 + symbol_index * 0.3,
+                        "pe_ttm": 28.0 - symbol_index * 1.7 + (date_index % 4) * 0.05,
+                        "pb": 3.0 - symbol_index * 0.15,
+                        "total_mv": market_caps[symbol_index],
+                        "industry": industries[symbol],
+                        "provider_scope_hash": scope_hash,
+                    }
+                )
+                moneyflow_rows.append(
+                    {
+                        "ts_code": symbol,
+                        "trade_date": trade_date,
+                        "buy_sm_amount": 100.0 + symbol_index * 5.0,
+                        "sell_sm_amount": 90.0,
+                        "buy_lg_amount": 500.0 + symbol_index * 35.0,
+                        "sell_lg_amount": 420.0,
+                        "provider_scope_hash": scope_hash,
+                    }
+                )
+        packets = {
+            "daily": {"status": "ready", "query": {"rows": daily_rows}, "row_count": len(daily_rows)},
+            "daily_basic": {
+                "status": "ready",
+                "query": {"rows": daily_basic_rows},
+                "row_count": len(daily_basic_rows),
+            },
+            "moneyflow": {"status": "ready", "query": {"rows": moneyflow_rows}, "row_count": len(moneyflow_rows)},
+        }
+        original_reader = factor_service.storage_service.parquet_dataset_status
+
+        def fake_parquet_dataset_status(dataset, **_kwargs):
+            return packets[dataset]
+
+        factor_tests = {
+            "provider_small_pool_acceptance_receipt": {
+                "task_id": "local-provider",
+                "acceptance_scope_hash": scope_hash,
+                "acceptance_scope_hash_short": "scope-industry",
+                "sample_rows_collected": True,
+                "provider_backed_small_pool_sample_done": True,
+                "provider_backed_small_pool_validation_done": True,
+                "provider_task_ids": ["local-provider-daily", "local-provider-basic", "local-provider-moneyflow"],
+                "provider_total_row_count": len(daily_rows) + len(daily_basic_rows) + len(moneyflow_rows),
+                "provider_latest_data_date": "20250201",
+                "symbols_with_core_rows": symbols,
+            },
+            "provider_small_pool_forward_return_label_audit": {
+                "multi_horizon_forward_returns_done": True,
+                "forward_return_label_row_count": 330,
+                "expected_symbols": symbols,
+                "expected_symbol_count": len(symbols),
+                "labeled_symbol_count": len(symbols),
+                "symbol_coverage_complete": True,
+                "requested_horizons": ["1d", "5d"],
+                "source_acceptance_scope_hash": scope_hash,
+                "source_acceptance_scope_hash_short": "scope-industry",
+            },
+        }
+        try:
+            factor_service.storage_service.parquet_dataset_status = fake_parquet_dataset_status
+            audit, rows, ledger = factor_service._factor_test_provider_small_pool_metric_validation_audit(
+                factor_tests,
+                "2026-07-12T11:10:00",
+            )
+        finally:
+            factor_service.storage_service.parquet_dataset_status = original_reader
+
+        self.assertEqual(audit["status"], "provider_small_pool_metric_validation_ready_pit_bias_promotion_pending")
+        self.assertTrue(audit["rolling_window_validation_done"])
+        self.assertTrue(audit["cost_assumption_validation_done"])
+        self.assertTrue(audit["market_cap_neutralization_done"])
+        self.assertTrue(audit["industry_neutralization_done"])
+        self.assertEqual(audit["industry_neutralization_status"], "passed_industry_neutral_rank_ic_visible")
+        self.assertEqual(audit["industry_neutralization_degraded_reason"], "")
+        self.assertEqual(audit["industry_classification_symbol_count"], len(symbols))
+        self.assertTrue(audit["industry_classification_coverage_complete"])
+        self.assertGreater(audit["industry_neutral_period_count"], 0)
+        self.assertTrue(audit["neutralization_stability_done"])
+        self.assertIsNotNone(audit["horizon_summaries"]["1d"]["industry_neutral_rank_ic_mean"])
+        self.assertIsNotNone(audit["horizon_summaries"]["5d"]["industry_neutral_rank_ic_mean"])
+        self.assertNotIn("industry neutralization stability evidence", audit["missing_evidence"])
+        self.assertFalse(audit["external_calls_triggered"])
+        self.assertFalse(audit["tushare_called"])
+        self.assertFalse(audit["deepseek_called"])
+        self.assertFalse(audit["github_called"])
+        self.assertTrue(audit["does_not_execute_trades"])
+        self.assertEqual(ledger[0]["request_params_safe"]["neutralization_stability_done"], True)
+        rows_by_criterion = {row["criterion"]: row for row in rows}
+        self.assertTrue(rows_by_criterion["industry_neutralization_classification"]["passed"])
+        self.assertFalse(rows_by_criterion["industry_neutralization_classification"]["blocks_metric_validation"])
+        self.assertIn("industry_neutral_period_count=", rows_by_criterion["industry_neutralization_classification"]["evidence"])
+
+        factor_tests["provider_small_pool_metric_validation_audit"] = audit
+        manifest, stage_rows, _manifest_ledger = factor_service._factor_test_production_stage_scope_manifest(
+            factor_tests,
+            "2026-07-12T11:10:01",
+        )
+        stage_rows_by_key = {row["stage_key"]: row for row in stage_rows}
+        self.assertTrue(manifest["industry_neutralization_done"])
+        self.assertTrue(manifest["neutralization_stability_done"])
+        self.assertIn("neutralization_stability_validation", manifest["provider_direct_evidence_stage_keys"])
+        self.assertTrue(stage_rows_by_key["neutralization_stability_validation"]["provider_direct_evidence_present"])
+        self.assertFalse(
+            stage_rows_by_key["neutralization_stability_validation"]["partial_provider_direct_evidence_present"]
+        )
+
     def test_factor_test_provider_small_pool_acceptance_executes_tushare_sample_when_authorized(self):
         self._with_meta_store()
         self._with_parquet_root()
