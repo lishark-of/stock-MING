@@ -253,8 +253,8 @@ export default function StorageOverview() {
     void postStorageCurrentResultAtomicPromote({
       source: "storage_overview_button",
       approved_by_user: true,
-      expected_symbol: String(storageCurrentResultAtomicPromotion.expected_symbol ?? ""),
-      expected_result_version: String(storageCurrentResultAtomicPromotion.expected_result_version ?? "")
+      expected_symbol: storageCurrentResultSymbol,
+      expected_result_version: storageCurrentResultVersion
     }).then((res) => {
       setCurrentResultAtomicReceipt(res);
       if (res.ok) setCurrentResultAtomicTaskId(res.data.task_id);
@@ -506,6 +506,19 @@ export default function StorageOverview() {
     )
   );
   const currentResultReadback = (currentResult.result as Record<string, unknown> | undefined) ?? {};
+  const currentResultReadbackReady = currentResult.duckdb_readback_verified === true;
+  const storageCurrentResultAtomicExpectedSymbol = String(
+    storageCurrentResultAtomicPromotion.expected_symbol ?? ""
+  ).trim();
+  const storageCurrentResultReadbackSymbol = String(currentResultReadback.symbol ?? "").trim();
+  const storageCurrentResultSymbol =
+    storageCurrentResultAtomicExpectedSymbol || storageCurrentResultReadbackSymbol || "等待 lineage";
+  const storageCurrentResultAtomicExpectedVersion = String(
+    storageCurrentResultAtomicPromotion.expected_result_version ?? ""
+  ).trim();
+  const storageCurrentResultReadbackVersion = String(currentResultReadback.result_version ?? "").trim();
+  const storageCurrentResultVersion =
+    storageCurrentResultAtomicExpectedVersion || storageCurrentResultReadbackVersion || "等待 result_version";
   const schemaValidationAcceptanceEvidence =
     (overview.schema_validation_acceptance_evidence as Record<string, unknown> | undefined) ??
     ((storageCatalog.schema_validation_acceptance_evidence as Record<string, unknown> | undefined) ?? {});
@@ -527,7 +540,7 @@ export default function StorageOverview() {
     : storagePhysicalExecutionRecipe.physical_execution_scope_hash
       ? "下方生成 physical execution request；它只绑定 scope，不执行物理迁移"
       : "先看 schema、manifest、partition、compaction、TTL 与 cleanup 缺口";
-  const storageCurrentResultState = currentResult.duckdb_readback_verified === true
+  const storageCurrentResultState = currentResultReadbackReady
     ? `${String(currentResultReadback.symbol ?? "当前标的")} / ${String(currentResultReadback.result_version ?? "current")} 已有可回放 current-result；pointer=${String(currentResult.selected_pointer_kind ?? "current")}`
     : storageCurrentResultAtomicPromotion.degraded_recovery_active === true
       ? "当前结果走 last-good 降级回放；不会用坏版本覆盖 current"
@@ -543,6 +556,8 @@ export default function StorageOverview() {
     ? "current/last-good 与 retention 验收已就绪；仍不等于 LTG-05 production complete"
     : storageCurrentResultAtomicPromotion.atomic_promotion_current === true
       ? "current 已可读；还缺独立 last-good 指针、current/last-good 区分和 retention 保护，不能当生产存储验收完成"
+      : currentResultReadbackReady
+        ? "current 已可读；继续复核 last-good 指针、current/last-good 区分和 retention 保护，不能当生产存储验收完成"
       : "先提升 current-result，再复核 last-good 与 retention 保护";
   const storageDatasetReadinessLabel =
     `catalog=${String(overview.dataset_count ?? datasetCatalog?.length ?? 0)} / parquet ready=${String(datasetImplementation.parquet_ready_dataset_count ?? 0)} / missing=${String(datasetImplementation.parquet_missing_dataset_count ?? 0)}`;
@@ -644,13 +659,13 @@ export default function StorageOverview() {
     },
     {
       label: "expected symbol",
-      value: String(storageCurrentResultAtomicPromotion.expected_symbol ?? currentResultReadback.symbol ?? "等待 lineage"),
-      tone: storageCurrentResultAtomicPromotion.canonical_lineage_ready === true ? "good" as const : "warn" as const
+      value: storageCurrentResultSymbol,
+      tone: storageCurrentResultAtomicPromotion.canonical_lineage_ready === true || currentResultReadbackReady ? "good" as const : "warn" as const
     },
     {
       label: "result version",
-      value: String(storageCurrentResultAtomicPromotion.expected_result_version ?? currentResultReadback.result_version ?? "等待 result_version"),
-      tone: storageCurrentResultAtomicPromotion.canonical_lineage_ready === true ? "good" as const : "warn" as const
+      value: storageCurrentResultVersion,
+      tone: storageCurrentResultAtomicPromotion.canonical_lineage_ready === true || currentResultReadbackReady ? "good" as const : "warn" as const
     },
     {
       label: "last-good",
