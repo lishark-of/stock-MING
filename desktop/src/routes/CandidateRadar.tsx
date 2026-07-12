@@ -1692,8 +1692,35 @@ export default function CandidateRadar() {
   );
   const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
   const quantProjectionSymbolReady = quantProjectionSymbolValidation.valid;
-  const quantProjectionPersistedTaskId = String(searchQuantProjectionReceipt.latest_task_id ?? searchQuantProjectionReceipt.task_id ?? cache.task_id ?? "");
-  const quantProjectionPersistedTaskStep = String(searchQuantProjectionReceipt.latest_task_current_step ?? searchQuantProjectionReceipt.status ?? "");
+  const quantProjectionResultVersionTaskId = String(
+    searchQuantResultVersionSummary.current_result_task_id ??
+      searchQuantResultVersionSummary.latest_task_id ??
+      ""
+  );
+  const quantProjectionProviderModelTaskId = String(
+    searchQuantProviderModelAcceptance.provider_task_id ??
+      searchQuantProviderModelAcceptance.task_id ??
+      quantProjectionResultVersionTaskId ??
+      ""
+  );
+  const quantProjectionProviderModelTaskStep = String(
+    searchQuantProviderModelAcceptance.status ??
+      searchQuantProviderModelAcceptance.current_step ??
+      ""
+  );
+  const quantProjectionProviderModelResultVersion = String(
+    searchQuantProviderModelAcceptance.result_version ??
+      searchQuantResultVersionSummary.current_result_version ??
+      searchQuantResultVersionSummary.latest_task_result_version ??
+      searchQuantResultVersionSummary.latest_result_version ??
+      ""
+  );
+  const quantProjectionPersistedTaskId =
+    quantProjectionProviderModelTaskId ||
+    String(searchQuantProjectionReceipt.latest_task_id ?? searchQuantProjectionReceipt.task_id ?? cache.task_id ?? "");
+  const quantProjectionPersistedTaskStep =
+    quantProjectionProviderModelTaskStep ||
+    String(searchQuantProjectionReceipt.latest_task_current_step ?? searchQuantProjectionReceipt.status ?? "");
   const quantProjectionTaskReceiptPayload = (taskReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
   const quantProjectionReceiptCallLedger = rows(searchQuantProjectionReceipt.call_ledger);
   const quantProjectionReceiptRequestParams =
@@ -1702,7 +1729,14 @@ export default function CandidateRadar() {
     (quantProjectionTaskReceiptPayload.ordinary_post_confirm_replay_contract as Record<string, unknown> | undefined) ??
     (quantProjectionReceiptRequestParams.ordinary_post_confirm_replay_contract as Record<string, unknown> | undefined) ??
     {};
-  const quantProjectionAcceptedTaskSymbol = String(quantProjectionTaskReceiptPayload.symbol ?? searchQuantProjectionReceipt.symbol ?? "");
+  const quantProjectionAcceptedTaskSymbol = String(
+    quantProjectionTaskReceiptPayload.symbol ??
+      searchQuantProviderModelAcceptance.symbol ??
+      searchQuantResultVersionSummary.current_result_symbol ??
+      searchQuantResultVersionSummary.latest_task_symbol ??
+      searchQuantProjectionReceipt.symbol ??
+      ""
+  );
   const quantProjectionTaskReceiptInputMismatch =
     quantProjectionSymbolReady &&
     Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
@@ -2992,21 +3026,28 @@ export default function CandidateRadar() {
   const quantProjectionTaskReadbackState = quantProjectionPersistedTaskId
     ? `任务回放：${quantProjectionPersistedTaskId} / ${String(searchQuantProjectionReceipt.latest_task_status ?? "cache")} / ${quantProjectionPersistedTaskStep || "等待状态"}`
     : "任务回放：暂无；确认任务完成后写入本地 cache / packet";
-  const quantProjectionLatestTaskState = taskReceipt
-    ? quantProjectionTaskReceiptInputMismatch
-      ? `最近结果属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认`
-      : `最近确认：${taskReceipt.ok ? "已接收" : "失败"} / ${String(taskReceipt.data?.task?.current_step ?? taskReceipt.error ?? "等待状态轮询")}`
+  const quantProjectionLatestProviderModelResultState = quantProjectionProviderModelResultVersion
+    ? `最近结果：同次回放 / ${quantProjectionPersistedTaskStep || "provider-model result"} / ${quantProjectionProviderModelResultVersion}`
+    : "";
+  const quantProjectionLatestTaskState = quantProjectionTaskReceiptInputMismatch
+    ? `最近结果属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认`
+    : taskReceipt
+    ? `最近确认：${taskReceipt.ok ? "已接收" : "失败"} / ${String(taskReceipt.data?.task?.current_step ?? taskReceipt.error ?? "等待状态轮询")}`
+    : quantProjectionLatestProviderModelResultState
+      ? quantProjectionLatestProviderModelResultState
     : quantProjectionPersistedTaskId
       ? `最近确认：本地回放 / ${quantProjectionPersistedTaskStep || "等待状态"}`
       : taskIndexLatestConfirmedTaskId
         ? `最近确认：${taskIndexLatestConfirmedStatus || "本地索引回放"} / ${taskIndexLatestConfirmedStep || "等待状态"}`
       : "最近确认：暂无；点击确认按钮后显示本地进度";
-  const quantProjectionLatestUserProgress = taskReceipt
-    ? quantProjectionTaskReceiptInputMismatch
-      ? `最近结果属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认`
-      : taskReceipt.ok
-        ? "最近确认：已接收；等待本地进度完成"
-        : "最近确认：失败；请查看本地进度提示"
+  const quantProjectionLatestUserProgress = quantProjectionTaskReceiptInputMismatch
+    ? `最近结果属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认`
+    : taskReceipt
+    ? taskReceipt.ok
+      ? "最近确认：已接收；等待本地进度完成"
+      : "最近确认：失败；请查看本地进度提示"
+    : quantProjectionLatestProviderModelResultState
+      ? "最近结果：同次事实包、result_version 和模型账本已回放；可继续看量化推演和次日图谱"
     : quantProjectionPersistedTaskId
       ? "最近确认：本地进度已回放；可刷新结果"
       : taskIndexLatestConfirmedTaskId
