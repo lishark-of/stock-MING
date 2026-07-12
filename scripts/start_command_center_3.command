@@ -141,6 +141,30 @@ else:
 PY
 }
 
+print_local_port_occupancy() {
+  echo "本机端口占用摘要（只读 lsof；不杀进程、不探测 URL）："
+  if ! command -v lsof >/dev/null 2>&1; then
+    echo "  - lsof 不可用：跳过 8710/5173 本机监听摘要；启动器仍会用 health/bootstrap/preflight/React 四段 readiness 判断。"
+    return 0
+  fi
+  local row
+  local label
+  local port
+  for row in "FastAPI:${API_BIND_PORT}" "React/Vite:${VITE_BIND_PORT}"; do
+    label="${row%%:*}"
+    port="${row##*:}"
+    echo "  - ${label} port ${port}:"
+    local output
+    output="$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR <= 6 {print}' || true)"
+    if [ -n "$output" ]; then
+      printf "%s\n" "$output" | sed "s/^/      /"
+    else
+      echo "      no local LISTEN process reported"
+    fi
+  done
+  echo "端口占用摘要只展示本机进程名/PID/端口；不创建 task、不调用 Tushare/DeepSeek/GitHub、不读取 token/key。"
+}
+
 url_ready() {
   local url="$1"
   "$PYTHON_BIN" - "$url" <<'PY' >/dev/null 2>&1
@@ -422,6 +446,7 @@ print_startup_diagnostics() {
   if [ "$VITE_READY" != "1" ]; then
     echo "  - React/Vite：${VITE_URL_DISPLAY} 未返回 Command Center 3.0 前端 HTML；可能 5173 被占用，或 npm run dev 启动失败。"
   fi
+  print_local_port_occupancy
   echo "下一步：先关闭占用 8710/5173 的本地进程，或查看上面的 FastAPI / React/Vite 日志。"
   echo "安全自检命令：scripts/check_command_center_3.command（check-only；不启动 FastAPI/Vite、不探测 URL、不打开浏览器）。"
   echo "普通恢复动作：打开今日作战台或桌面壳预检查看 P0 四段联通；P0 未 ready 时不要进入 P1 确认按钮。"
@@ -484,6 +509,7 @@ BOOTSTRAP_STATUS_DISPLAY="$(safe_display_url "${API_BASE%/}/api/bootstrap/status
 DESKTOP_PREFLIGHT_DISPLAY="$(safe_display_url "${API_BASE%/}/api/desktop/preflight-cache")"
 API_BIND_HOST="$(api_bind_host "$API_BASE")"
 API_BIND_PORT="$(api_bind_port "$API_BASE")"
+VITE_BIND_PORT="$(api_bind_port "$VITE_URL")"
 
 if ! url_is_local "$API_BASE"; then
   echo "Command Center 3.0 启动失败：FastAPI API base 必须是本机地址：${API_BASE_DISPLAY}"
@@ -529,9 +555,11 @@ echo "Boundary: one-click startup only links local frontend/backend; it does not
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
 echo "URL safety: displayed and opened launcher URLs are sanitized; simple local open routes like #home may be shown, while query/userinfo are stripped and non-local API/frontend/open URLs are blocked before any probe."
 echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards, not launcher config or live_light enablement."
+print_local_port_occupancy
 
 if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
   echo "Check-only mode: resolved launcher configuration without starting FastAPI, starting React/Vite, probing URLs, writing logs, opening a browser, creating tasks, calling providers/models, or touching trading paths."
+  echo "Check-only local port summary: printed current 8710/5173 local LISTEN processes without killing processes or probing URLs."
   echo "Check-only wrapper command: scripts/check_command_center_3.command"
   echo "Check-only dependency boundary: does not require desktop/node_modules or npm because it only prints sanitized local launcher configuration; if project .venv is absent it may use system python3 for local URL sanitization only."
   echo "Check-only endpoints: health=${API_HEALTH_DISPLAY}; bootstrap=${BOOTSTRAP_STATUS_DISPLAY}; desktop_preflight=${DESKTOP_PREFLIGHT_DISPLAY}; frontend=${VITE_URL_DISPLAY}; open_route=${APP_URL_DISPLAY}"
