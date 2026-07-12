@@ -1662,6 +1662,37 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
+  const ordinaryDeepSeekProviderBenchmarkScopeReady =
+    deepseekProviderBenchmarkScopeTicket.local_scope_ticket_ready === true ||
+    deepseekProviderBenchmarkScopeTicket.ready_for_explicit_provider_benchmark_task === true;
+  const ordinaryDeepSeekProviderBenchmarkScopeCanLaunch = !ordinaryDeepSeekProviderBenchmarkScopeReady;
+  const ordinaryDeepSeekProviderBenchmarkScopeState = ordinaryDeepSeekProviderBenchmarkScopeReady
+    ? `本地 benchmark scope ticket 已记录：scope=${String(deepseekProviderBenchmarkScopeTicket.benchmark_scope_hash_short ?? deepseekProviderBenchmarkScopeTicket.benchmark_scope_hash ?? "已绑定")}`
+    : "可生成本地 benchmark scope ticket；只绑定样本数、response_format 和 retry 计划，不调用模型";
+  const ordinaryDeepSeekProviderBenchmarkScopeItems: MetricItem[] = [
+    {
+      label: "scope ticket",
+      value: ordinaryDeepSeekProviderBenchmarkScopeState,
+      tone: ordinaryDeepSeekProviderBenchmarkScopeReady ? "good" : "warn"
+    },
+    {
+      label: "样本计划",
+      value: `sample_count=${String(deepseekProviderBenchmarkScopeTicket.requested_sample_count ?? 40)} / response_format=json_schema / retry=2`,
+      tone: "neutral"
+    },
+    {
+      label: "安全边界",
+      value: "按钮只创建本地 scope ticket；不调用 DeepSeek/provider/model，不读取 token/key，不写 prompt/output",
+      tone: "good"
+    },
+    {
+      label: "下一步",
+      value: ordinaryDeepSeekProviderBenchmarkScopeReady
+        ? "后续再单独进入执行请求和 governed executor 验收"
+        : "先生成本地范围票据，再复核治理前置条件",
+      tone: "warn"
+    }
+  ];
   const ordinaryQuantRuntimeModeLabel = `运行模式：${runtimeModeLabel(ordinaryQuantRuntimeMode)}`;
   const ordinaryQuantTaskBoundary =
     "本页 GET cache 只读；手动刷新、轻量推演、模型整理或 live_light 补证都必须走 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
@@ -2951,6 +2982,25 @@ export default function FactorQuantHub() {
         <TaskLaunchReceipt receipt={taskReceipt} />
         <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
         <p className="risk-note">这条普通入口只把 LTG-04 的本地预检、执行申请和 research receipt 露出来：不启动 Celery/Redis，不读全市场 payload，不计算生产 rank/zscore/neutralization，不调用 Tushare/DeepSeek/GitHub，也不改 strategy action。</p>
+      </div>
+      <div aria-label="stock quant ordinary deepseek benchmark scope ticket">
+        <h3>模型 benchmark 范围票据</h3>
+        <p className="ordinary-status-note" aria-label="stock quant ordinary deepseek benchmark scope sentence" aria-live="polite">
+          {ordinaryDeepSeekProviderBenchmarkScopeState}；这是 LTG-07 的本地治理前置票据，不是真实模型验收。
+        </p>
+        <MetricGrid items={ordinaryDeepSeekProviderBenchmarkScopeItems} />
+        <div className="actions" aria-label="stock quant ordinary deepseek benchmark scope actions">
+          <button
+            disabled={!ordinaryDeepSeekProviderBenchmarkScopeCanLaunch}
+            onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-scope-ticket", { approved_by_user: true, sample_count: 40, response_format: "json_schema", max_retry_per_sample: 2 })}
+            title="生成本地 DeepSeek provider benchmark scope ticket；只绑定样本计划，不调用模型、不读取 token/key、不写 raw prompt/output"
+            aria-label="create local deepseek provider benchmark scope ticket from ordinary stock quant"
+          >生成模型 benchmark 范围票据</button>
+          <a href="#factor-deepseek" aria-label="open model explanation status after benchmark scope ticket">查看模型解释状态</a>
+        </div>
+        <TaskLaunchReceipt receipt={taskReceipt} />
+        <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+        <p className="risk-note">这个按钮只走显式 POST local task：不调用 DeepSeek，不调用 Tushare/provider/model，不启动 worker，不读取或展示 token/key，不写 raw prompt/output，不下单、不改 strategy action；执行请求和 governed executor 验收仍是后续独立步骤。</p>
       </div>
       <details className="developer-audit-details">
         <summary>模型解释 / 高级开关</summary>
