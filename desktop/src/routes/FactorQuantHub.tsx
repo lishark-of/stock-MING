@@ -1892,9 +1892,14 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolMetricHorizonLabels = Object.keys(factorTestProviderSmallPoolMetricHorizonSummaries);
   const factorTestProviderSmallPoolMetricPrimarySummary =
     factorTestProviderSmallPoolMetricHorizonSummaries[factorTestProviderSmallPoolMetricHorizonLabels[0] ?? ""] ?? {};
+  const factorTestProviderSmallPoolIndustryNeutralizationReason = String(
+    factorTestProviderSmallPoolMetricValidation.industry_neutralization_degraded_reason ??
+    factorTestProviderSmallPoolMetricValidation.industry_neutralization_status ??
+    "等待同一 scope 行业分类字段"
+  );
   const ordinaryFactorTestMetricValidationSentence =
     factorTestProviderSmallPoolMetricValidationReady
-      ? `同一 scope 已回放 rolling IC/Rank IC/ICIR：${factorTestProviderSmallPoolMetricHorizonLabels.join(", ") || "无 horizon"}；样本 ${String(factorTestProviderSmallPoolMetricValidation.metric_observation_count ?? 0)} 条；result_version=${String(factorTestProviderSmallPoolMetricValidation.result_version ?? "missing")}。`
+      ? `同一 scope 已回放 rolling IC/Rank IC/ICIR：${factorTestProviderSmallPoolMetricHorizonLabels.join(", ") || "无 horizon"}；样本 ${String(factorTestProviderSmallPoolMetricValidation.metric_observation_count ?? 0)} 条；result_version=${String(factorTestProviderSmallPoolMetricValidation.result_version ?? "missing")}；行业中性化仍 degraded：${factorTestProviderSmallPoolIndustryNeutralizationReason}。`
       : `rolling/cost/neutralization 指标仍 degraded：${String(factorTestProviderSmallPoolMetricValidation.status ?? "missing_metric_validation_audit")}。`;
   const ordinaryFactorTestMetricValidationItems: MetricItem[] = [
     {
@@ -1924,9 +1929,9 @@ export default function FactorQuantHub() {
     {
       label: "中性化",
       value: factorTestProviderSmallPoolMetricValidation.market_cap_neutralization_done === true
-        ? `市值 proxy 已回放；行业中性化=${String(factorTestProviderSmallPoolMetricValidation.industry_neutralization_done === true)}`
+        ? `市值 proxy 已回放；行业中性化=${String(factorTestProviderSmallPoolMetricValidation.industry_neutralization_done === true)}；${factorTestProviderSmallPoolIndustryNeutralizationReason}`
         : "等待市值/行业中性化",
-      tone: factorTestProviderSmallPoolMetricValidation.market_cap_neutralization_done === true ? "good" : "warn"
+      tone: factorTestProviderSmallPoolMetricValidation.neutralization_stability_done === true ? "good" : "warn"
     },
     {
       label: "边界",

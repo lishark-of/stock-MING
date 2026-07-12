@@ -60594,6 +60594,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(audit["cost_assumption_validation_done"])
         self.assertTrue(audit["market_cap_neutralization_done"])
         self.assertFalse(audit["industry_neutralization_done"])
+        self.assertEqual(audit["industry_neutralization_status"], "blocked_missing_industry_classification")
+        self.assertIn("industry", audit["industry_neutralization_degraded_reason"])
+        self.assertEqual(audit["industry_classification_row_count"], 0)
+        self.assertEqual(audit["industry_classification_symbol_count"], 0)
+        self.assertIn("industry", audit["industry_classification_column_candidates"])
+        self.assertTrue(audit["industry_classification_required_before_neutralization_stability"])
         self.assertFalse(audit["neutralization_stability_done"])
         self.assertFalse(audit["production_factor_test_validation_complete"])
         self.assertEqual(
@@ -60616,6 +60622,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(rows_by_criterion["rolling_ic_rank_ic_icir"]["passed"])
         self.assertTrue(rows_by_criterion["cost_turnover_assumption"]["passed"])
         self.assertTrue(rows_by_criterion["market_cap_neutralization_proxy"]["passed"])
+        self.assertFalse(rows_by_criterion["industry_neutralization_classification"]["passed"])
+        self.assertTrue(rows_by_criterion["industry_neutralization_classification"]["blocks_metric_validation"])
+        self.assertIn("industry_rows=0", rows_by_criterion["industry_neutralization_classification"]["evidence"])
 
         factor_tests["provider_small_pool_metric_validation_audit"] = audit
         try:

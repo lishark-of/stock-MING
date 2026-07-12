@@ -7150,7 +7150,50 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         rolling_done
         and all(item.get("market_cap_neutral_rank_ic_mean") is not None for item in horizon_values)
     )
+    industry_classification_column_candidates = [
+        "industry",
+        "industry_name",
+        "industry_code",
+        "sector",
+        "sector_name",
+        "sw_industry",
+        "sw_l1",
+        "sw_l1_code",
+    ]
+    industry_source_rows = [*daily_rows, *basic_rows, *moneyflow_rows]
+    industry_classification_columns_present = sorted(
+        {
+            column
+            for row in industry_source_rows
+            if isinstance(row, dict)
+            for column in industry_classification_column_candidates
+            if str(row.get(column) or "").strip()
+        }
+    )
+    industry_classification_rows = [
+        row
+        for row in industry_source_rows
+        if isinstance(row, dict)
+        and any(str(row.get(column) or "").strip() for column in industry_classification_column_candidates)
+    ]
+    industry_classification_symbol_count = len(
+        {
+            str(row.get("ts_code") or "").strip()
+            for row in industry_classification_rows
+            if str(row.get("ts_code") or "").strip()
+        }
+    )
     industry_neutralization_done = False
+    industry_neutralization_status = (
+        "blocked_industry_neutralization_metric_not_implemented"
+        if industry_classification_rows
+        else "blocked_missing_industry_classification"
+    )
+    industry_neutralization_degraded_reason = (
+        "industry classification columns are present, but industry-neutral factor residual metrics are not implemented for this scope"
+        if industry_classification_rows
+        else "scoped provider fact tables only include daily/daily_basic/moneyflow rows; no industry or sector classification columns are available"
+    )
     neutralization_stability_done = bool(market_cap_neutralization_done and industry_neutralization_done)
     dataset_error_safe = "; ".join(
         item for item in (daily_error_safe, basic_error_safe, moneyflow_error_safe) if item
@@ -7232,6 +7275,16 @@ def _factor_test_provider_small_pool_metric_validation_audit(
             neutralization_done=neutralization_stability_done,
         ),
         _factor_test_provider_small_pool_metric_validation_row(
+            "industry_neutralization_classification",
+            industry_neutralization_status,
+            industry_neutralization_done,
+            f"industry_rows={len(industry_classification_rows)}; industry_symbols={industry_classification_symbol_count}; columns_present={industry_classification_columns_present}; candidate_columns={industry_classification_column_candidates}",
+            "Add same-scope industry or sector classification before marking neutralization stability complete.",
+            rolling_done=rolling_done,
+            cost_done=cost_done,
+            neutralization_done=neutralization_stability_done,
+        ),
+        _factor_test_provider_small_pool_metric_validation_row(
             "cache_render_external_boundary",
             "passed_cache_read_only_no_external_calls",
             True,
@@ -7278,6 +7331,13 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         "cost_assumption_bps": cost_bps,
         "market_cap_neutralization_done": market_cap_neutralization_done,
         "industry_neutralization_done": industry_neutralization_done,
+        "industry_neutralization_status": industry_neutralization_status,
+        "industry_neutralization_degraded_reason": industry_neutralization_degraded_reason,
+        "industry_classification_column_candidates": industry_classification_column_candidates,
+        "industry_classification_columns_present": industry_classification_columns_present,
+        "industry_classification_row_count": len(industry_classification_rows),
+        "industry_classification_symbol_count": industry_classification_symbol_count,
+        "industry_classification_required_before_neutralization_stability": True,
         "neutralization_stability_done": neutralization_stability_done,
         "pit_bias_controls_done": False,
         "provider_backed_small_pool_validation_done": bool(provider_sample_done),
