@@ -403,9 +403,12 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         readable_actions_slice = latest_candidate_slice[readable_actions_start:readable_actions_end]
         self.assertIn('href="#next-session-chart"', readable_actions_slice)
         self.assertIn('href="#factor"', readable_actions_slice)
+        self.assertIn('href="#storage"', readable_actions_slice)
+        self.assertIn('aria-label="open storage current last good from next session readable result"', readable_actions_slice)
         self.assertIn('href={CANDIDATE_CONFIRM_HREF}', readable_actions_slice)
         self.assertIn("查看图谱区域", readable_actions_slice)
         self.assertIn("查看支持/压制", readable_actions_slice)
+        self.assertIn("current/last-good", readable_actions_slice)
         self.assertIn("回下一票雷达", readable_actions_slice)
         self.assertNotIn("onClick=", readable_actions_slice)
         self.assertNotIn("launch" + "Task", readable_actions_slice)

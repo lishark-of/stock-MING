@@ -2446,6 +2446,7 @@ export default function FactorQuantHub() {
             <div className="actions" aria-label="stock quant app first evidence factory actions">
               <a href={ordinaryQuantPrimaryActionHref} title="只切换本地页面或锚点；不会自动调用外部数据或模型服务" aria-label="open primary action from app first evidence factory">{ordinaryQuantPrimaryActionLabel}</a>
               <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱；只读本地次日图谱数据" aria-label="open next chart from app first evidence factory">次日图谱</a>
+              <a href="#storage" title="切换到存储层；只读 current/last-good 版本化回放" aria-label="open storage current last good from stock quant app first">current/last-good</a>
               <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读查看数据可用、受限和待补原因" aria-label="open data capability from app first evidence factory">数据能力</a>
               <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认后才进入后台流程" aria-label="open candidate confirm from app first evidence factory">确认或换一只票</a>
             </div>
@@ -2481,6 +2482,7 @@ export default function FactorQuantHub() {
             <div className="actions" aria-label="stock quant visible now app result actions">
               <a href="#factor-score" title="跳到支持/压制摘要；只读 Factor cache" aria-label="open support suppress from stock quant visible now">支持/压制</a>
               <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱；只读本地次日图谱数据" aria-label="open next chart from stock quant visible now">次日图谱</a>
+              <a href="#storage" title="切换到存储层；只读 current/last-good 版本化回放" aria-label="open storage current last good from stock quant visible now">current/last-good</a>
               <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入静默，确认后才进入后台流程" aria-label="open candidate confirm from stock quant visible now">确认或换一只票</a>
               <a href="#stock-quant-provider-evidence-details" title="跳到真实验证证据区；只读本地范围和执行申请" aria-label="open provider evidence details from stock quant visible now">真实验证边界</a>
             </div>
@@ -2702,6 +2704,7 @@ export default function FactorQuantHub() {
           <div className="actions" aria-label="stock quant readable result local actions">
             <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="open factor support suppress from readable result">查看支持/压制</a>
             <a href={NEXT_SESSION_CHART_HREF} title="切换到完整次日图谱图表区域；只读本地次日图谱数据" aria-label="open full next session from readable result">打开完整次日图谱</a>
+            <a href="#storage" title="切换到存储层；只读 current/last-good 版本化回放" aria-label="open storage current last good from stock quant readable result">current/last-good</a>
             <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return candidate radar confirm input from readable result">回下一票雷达确认</a>
           </div>
           <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变 strategy action。</p>

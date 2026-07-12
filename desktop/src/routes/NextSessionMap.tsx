@@ -1716,6 +1716,7 @@ export default function NextSessionMap() {
           <a href={nextSessionOrdinaryProgressCheckpointAnchor} title="跳到当前最短可读位置；只切换本地锚点" aria-label="open current next session research read target">{nextSessionOrdinaryProgressCheckpointLabel}</a>
           <a href="#next-session-chart" title="跳到完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart from next session research read">图谱区域</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from next session research read">支持/压制</a>
+          <a href="#storage" title="切换到存储层；只读 current/last-good 版本化回放" aria-label="open storage current last good from next session research read">current/last-good</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from next session research read">确认或换一只票</a>
         </div>
         <p className="risk-note">这张首屏只回答用户打开次日图谱能先读什么：路径、参考线、操作区、缺口和下一步入口；链接只切换本地页面或锚点，不创建后台流程、不刷新外部数据或模型、不真实交易。</p>
@@ -1770,6 +1771,7 @@ export default function NextSessionMap() {
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from visible now summary">换标的</a>
           <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据凭证、权限、空窗口和本地结果包缺口" aria-label="open data capability from next session visible now summary">数据能力</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open factor from visible now summary">看支持/压制</a>
+          <a href="#storage" title="切换到存储层；只读 current/last-good 版本化回放" aria-label="open storage current last good from next session visible now">current/last-good</a>
         </div>
         <p className="risk-note">这个条带只回答普通用户打开页面能看到什么：股票、图谱状态、来源层、缺口原因和下一步入口；普通链接只切换本地页面或锚点，不创建后台流程、不刷新外部数据或模型、不交易、不改操作区。</p>
       </div>
@@ -1912,6 +1914,7 @@ export default function NextSessionMap() {
         <div className="actions" aria-label="next session readable result local actions">
           <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open local next session chart from readable result">查看图谱区域</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant replay from next session readable result">查看支持/压制</a>
+          <a href="#storage" title="切换到存储层；只读 current/last-good 版本化回放" aria-label="open storage current last good from next session readable result">current/last-good</a>
           <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需输入代码并确认" aria-label="return candidate radar confirm input from next session readable result">回下一票雷达确认</a>
         </div>
         <p className="risk-note">这组入口只切换本地页面或锚点；不创建 task、不调用 Tushare/DeepSeek/GitHub、不写 cache，也不改变操作区或 strategy action。</p>
