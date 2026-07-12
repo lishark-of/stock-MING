@@ -518,6 +518,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "结果归属"',
             'label: "当前票"',
             'label: "最近任务"',
+            'label: "最近真实任务"',
+            'label: "数据日期 / scope"',
             'label: "P2/P3 去向"',
             'label: "来源状态"',
             'label: "数据能力"',
@@ -1086,6 +1088,13 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("taskIndex?.latest_confirmed_task_id", self.page)
         self.assertIn("taskIndex?.latest_confirmed_task_status", self.page)
         self.assertIn("taskIndex?.latest_confirmed_task_current_step", self.page)
+        self.assertIn("latestCandidateTushareTaskSummary(taskIndex?.tasks ?? [])", self.page)
+        self.assertIn("latestCandidateTushareTaskLabel", self.page)
+        self.assertIn("latestCandidateTushareScopeLabel", self.page)
+        self.assertIn("scope ${latestCandidateTushareTask.scopeHashShort}", self.page)
+        self.assertIn('label: "最近真实任务"', self.page)
+        self.assertIn('label: "数据日期 / scope"', self.page)
+        self.assertIn('label: "最近真实数据"', self.page)
         self.assertIn("quantProjectionTaskIndexProgressItems", summary_primary_slice)
         self.assertIn('aria-label="candidate radar local task index progress watch"', summary_primary_slice)
         self.assertIn("本地任务进度", summary_primary_slice)

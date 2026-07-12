@@ -78,6 +78,57 @@ function ordinaryUserRows(rowSet: Array<Record<string, unknown>>) {
   );
 }
 
+type CandidateTaskLike = {
+  task_id?: string;
+  task_type?: string;
+  status?: string;
+  payload_safe?: Record<string, unknown>;
+  call_ledger?: Array<Record<string, unknown>>;
+};
+
+function latestCandidateTushareTaskSummary(tasks: CandidateTaskLike[]) {
+  const isTushareLedgerRow = (row: Record<string, unknown>) => {
+    const api = String(row.api ?? "").toLowerCase();
+    return row.tushare_called === true ||
+      ["trade_cal", "daily", "daily_basic", "moneyflow", "fund_daily", "margin_detail"].includes(api);
+  };
+  const task = tasks.find((item) => {
+    const taskType = String(item.task_type ?? "").toLowerCase();
+    return taskType.includes("tushare") || (item.call_ledger ?? []).some(isTushareLedgerRow);
+  });
+  if (!task) {
+    return {
+      ready: false,
+      taskId: "",
+      label: "等待确认后的真实数据任务",
+      dataDate: "",
+      rowCount: 0,
+      scopeHashShort: "",
+      failureMode: "waiting_confirm_task"
+    };
+  }
+  const ledgerRows = (task.call_ledger ?? []).filter(isTushareLedgerRow);
+  const payload = task.payload_safe ?? {};
+  const apis = Array.from(new Set(ledgerRows.map((row) => String(row.api ?? "")).filter(Boolean)));
+  const rowCount = ledgerRows.reduce((total, row) => total + Number(row.row_count ?? 0), 0);
+  const dataDate = ledgerRows.map((row) => String(row.data_date ?? "")).find(Boolean) ?? "";
+  const scopeHashShort = ledgerRows.map((row) => String(row.scope_hash_short ?? row.scope_hash ?? "")).find(Boolean)?.slice(0, 16) ?? "";
+  const failureModes = Array.from(new Set(ledgerRows
+    .map((row) => String(row.failure_mode ?? ""))
+    .filter((value) => value && value !== "none")));
+  const symbol = String(payload.symbol ?? payload.ts_code ?? ledgerRows[0]?.symbol ?? ledgerRows[0]?.ts_code ?? "");
+  const ready = task.status === "success" && rowCount > 0 && failureModes.length === 0;
+  return {
+    ready,
+    taskId: String(task.task_id ?? ""),
+    label: `${symbol || "当前标的"} / ${apis.join(" / ") || "Tushare"} / ${dataDate || "等待日期"} / ${String(rowCount)} 行`,
+    dataDate,
+    rowCount,
+    scopeHashShort,
+    failureMode: failureModes.join(" / ") || (rowCount > 0 ? "none" : "empty_or_missing_rows")
+  };
+}
+
 function readableSentencePart(label: string, value: string, stripPrefixes: string[] = []) {
   let cleaned = value.trim();
   for (const prefix of stripPrefixes) {
@@ -2095,6 +2146,13 @@ export default function CandidateRadar() {
     : quantProjectionCanSubmit
       ? "点击确认并生成 3.0 量化推演。"
       : "先让本地连接和股票代码校验通过。";
+  const latestCandidateTushareTask = latestCandidateTushareTaskSummary(taskIndex?.tasks ?? []);
+  const latestCandidateTushareTaskLabel = latestCandidateTushareTask.taskId
+    ? `${latestCandidateTushareTask.taskId} / ${latestCandidateTushareTask.label}`
+    : latestCandidateTushareTask.label;
+  const latestCandidateTushareScopeLabel = latestCandidateTushareTask.scopeHashShort
+    ? `scope ${latestCandidateTushareTask.scopeHashShort}；failure=${latestCandidateTushareTask.failureMode}`
+    : `scope 等待；failure=${latestCandidateTushareTask.failureMode}`;
   const quantProjectionTushareDataCardItems: MetricItem[] = [
     {
       label: "Tushare 数据",
@@ -2107,6 +2165,16 @@ export default function CandidateRadar() {
         ? `${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}`
         : "等待本地账本",
       tone: quantProjectionProviderLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "最近真实任务",
+      value: latestCandidateTushareTaskLabel,
+      tone: latestCandidateTushareTask.ready ? "good" : "warn"
+    },
+    {
+      label: "数据日期 / scope",
+      value: latestCandidateTushareScopeLabel,
+      tone: latestCandidateTushareTask.scopeHashShort ? "good" : "warn"
     },
     {
       label: "同次结果版本",
@@ -2988,6 +3056,16 @@ export default function CandidateRadar() {
       label: "最新任务",
       value: quantProjectionProgressWatchTaskId || "等待确认按钮",
       tone: quantProjectionProgressWatchTaskId ? "good" : "warn"
+    },
+    {
+      label: "最近真实任务",
+      value: latestCandidateTushareTaskLabel,
+      tone: latestCandidateTushareTask.ready ? "good" : "warn"
+    },
+    {
+      label: "数据日期 / scope",
+      value: latestCandidateTushareScopeLabel,
+      tone: latestCandidateTushareTask.scopeHashShort ? "good" : "warn"
     },
     {
       label: "当前步骤",
@@ -4291,8 +4369,13 @@ export default function CandidateRadar() {
     },
     {
       label: "来源层",
-      value: `${coarseFineSourceLabel}；${candidateRadarRuntimeModeLabel}`,
+      value: `${coarseFineSourceLabel}；${candidateRadarRuntimeModeLabel}；${latestCandidateTushareTaskLabel}`,
       tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn"
+    },
+    {
+      label: "最近真实数据",
+      value: latestCandidateTushareScopeLabel,
+      tone: latestCandidateTushareTask.scopeHashShort ? "good" : "warn"
     },
     {
       label: "数据能力",
@@ -4607,6 +4690,16 @@ export default function CandidateRadar() {
       label: "最近任务",
       value: quantProjectionLatestUserProgress,
       tone: taskReceipt?.ok || quantProjectionPersistedTaskId || taskIndexLatestConfirmedTaskId ? "good" : quantProjectionSubmitError ? "bad" : "neutral"
+    },
+    {
+      label: "最近真实任务",
+      value: latestCandidateTushareTaskLabel,
+      tone: latestCandidateTushareTask.ready ? "good" : "warn"
+    },
+    {
+      label: "数据日期 / scope",
+      value: latestCandidateTushareScopeLabel,
+      tone: latestCandidateTushareTask.scopeHashShort ? "good" : "warn"
     },
     {
       label: "P2/P3 去向",
