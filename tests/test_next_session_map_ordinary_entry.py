@@ -49,11 +49,15 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
             'label: "现在能看"',
             'label: "读图顺序"',
             'label: "证据来源"',
+            'label: "同源版本"',
             'label: "degraded 缺口"',
             'label: "下一步入口"',
             'label: "研究边界"',
         ):
             self.assertIn(app_first_label, source_before_audit)
+        self.assertIn("nextSessionLineageChipLabel", source_before_audit)
+        self.assertIn("来源任务 ${candidateRadarSourceTaskLabel.includes", source_before_audit)
+        self.assertIn("${candidateRadarLastGoodLabel}", source_before_audit)
         self.assertIn("路径 -> 参考线 -> 操作区 -> 缺口", source_before_audit)
         self.assertIn("图谱和操作区只做条件复核", source_before_audit)
         self.assertIn("链接只切换本地页面或锚点，不创建后台流程", app_first_slice)

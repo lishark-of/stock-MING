@@ -522,6 +522,9 @@ export default function NextSessionMap() {
       candidateRadarSmallDataWriteback.latest_task_id ||
       "等待下一票雷达确认 task"
   );
+  const nextSessionLineageChipLabel = candidateRadarCurrentResultVersion
+    ? `${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion}；来源任务 ${candidateRadarSourceTaskLabel.includes("等待") ? (candidateRadarCanonicalTaskId || "等待任务") : candidateRadarSourceTaskLabel}；${candidateRadarLastGoodLabel}`
+    : "等待同源 result_version / 来源任务 / current-result 回放";
   const candidateRadarSourceTaskStep = String(
     packet.latest_confirmed_task_current_step ||
       candidateRadarCache.latest_confirmed_task_current_step ||
@@ -1056,6 +1059,11 @@ export default function NextSessionMap() {
       label: "证据来源",
       value: `${nextSessionCacheSourceLabel} / ${nextSessionReplayOrigin}`,
       tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn"
+    },
+    {
+      label: "同源版本",
+      value: nextSessionLineageChipLabel,
+      tone: candidateRadarCurrentResultVersion ? "good" : "warn"
     },
     {
       label: "degraded 缺口",

@@ -99,10 +99,14 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
             'label: "现在能读"',
             'label: "下一步按钮"',
             'label: "数据证据"',
+            'label: "同源版本"',
             'label: "验证缺口"',
             'label: "安全边界"',
         ):
             self.assertIn(app_first_label, source)
+        self.assertIn("ordinaryQuantLineageChipLabel", source)
+        self.assertIn("来源任务 ${candidateRadarCanonicalTaskId || candidateRadarLatestTaskId", source)
+        self.assertIn("current-result/last-good 可回放", source)
         self.assertIn("degraded：真实小池验证未授权", source)
         self.assertIn("查看页面和本地跳转不外联、不创建 provider/model 任务、不交易、不改策略", source)
         self.assertIn("打开页面、查看结果和切换锚点都不会创建后台流程", summary_slice)
@@ -533,6 +537,7 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
             'label: "一句话结论"',
             'label: "先看"',
             'label: "再看"',
+            'label: "同源版本"',
             'label: "缺口"',
             'label: "非交易边界"',
         ):

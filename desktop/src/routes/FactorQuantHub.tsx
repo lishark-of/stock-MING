@@ -451,6 +451,9 @@ export default function FactorQuantHub() {
   const candidateRadarSameTaskFactModelLabel = candidateRadarSameTaskFactModelReady
     ? `同一 task ${candidateRadarCanonicalTaskId}；facts package ${candidateRadarFactsPackageHash}；result_version ${candidateRadarCurrentResultVersion}`
     : "等待同一 task + facts package + result_version + model ledger";
+  const ordinaryQuantLineageChipLabel = candidateRadarCurrentResultVersion
+    ? `${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion}；来源任务 ${candidateRadarCanonicalTaskId || candidateRadarLatestTaskId || "等待任务"}；current-result/last-good 可回放`
+    : "等待同源 result_version / 来源任务 / current-result 回放";
   const candidateRadarModelLedgerLabel = candidateRadarModelLedgerId
     ? `model_ledger_id ${candidateRadarModelLedgerId}；DeepSeek 只解释事实摘要`
     : "等待安全模型账本；不影响 Tushare-first、Factor 和 Next 回放";
@@ -1995,6 +1998,11 @@ export default function FactorQuantHub() {
       tone: ordinaryQuantTushareDataCardLedgerReady ? "good" : "warn"
     },
     {
+      label: "同源版本",
+      value: ordinaryQuantLineageChipLabel,
+      tone: candidateRadarCurrentResultVersion ? "good" : "warn"
+    },
+    {
       label: "验证缺口",
       value: factorTestProviderSmallPoolSampleDone
         ? "真实小池验证证据已回放"
@@ -2369,6 +2377,11 @@ export default function FactorQuantHub() {
       label: "再看",
       value: "完整次日图谱",
       tone: ordinaryQuantResultRouteReady ? "good" : "warn"
+    },
+    {
+      label: "同源版本",
+      value: ordinaryQuantLineageChipLabel,
+      tone: candidateRadarCurrentResultVersion ? "good" : "warn"
     },
     {
       label: "缺口",
