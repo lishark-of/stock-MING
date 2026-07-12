@@ -3412,9 +3412,9 @@ export default function CandidateRadar() {
   const quantProjectionPostConfirmWaitLabel = quantProjectionSubmitError
     ? "确认后未创建任务：先恢复本地 FastAPI，再重新点击确认按钮"
     : quantProjectionSmallDataReady || quantProjectionInterpretationReady
-      ? "确认后已进入回放：P2 cache / call_ledger / packet 可读；下一步打开 #factor/#next 只读复核"
+      ? "确认后已进入回放：P2 cache / call_ledger / packet 可读；下一步打开量化结果区和次日图谱结果区只读复核"
     : taskReceipt?.ok || quantProjectionPersistedTaskId
-        ? "确认后等待顺序：先看 task id，再看 TaskStatusPanel，等待 success 后刷新 cache，最后回放 #factor/#next"
+        ? "确认后等待顺序：先看 task id，再看 TaskStatusPanel，等待 success 后刷新 cache，最后回放量化结果区和次日图谱结果区"
         : "确认前准备：输入有效代码后点击确认按钮，才创建 Tushare-first POST task";
   const quantProjectionReplayBoundary =
     "回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek、不改 strategy action";
@@ -5744,8 +5744,8 @@ export default function CandidateRadar() {
           <div className="actions" aria-label="candidate radar operator input confirm first read links">
             <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from operator first read">确认输入</a>
             <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from operator first read">候选池</a>
-            <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from operator first read">量化推演</a>
-            <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from operator first read">次日图谱</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from operator first read">量化推演</a>
+            <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from operator first read">次日图谱</a>
             <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from operator first read">ETF/融资风险</a>
           </div>
           <p className="risk-note">操作台速读只读本地页面状态；输入、链接和刷新本地回放不会刷新外部数据或模型、不会启动后台执行、不会交易。</p>
@@ -5826,8 +5826,8 @@ export default function CandidateRadar() {
             <MetricGrid items={candidateRadarTypedSymbolItems} />
             <div className="actions" aria-label="candidate radar typed symbol immediate actions">
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才启动本地确认流程" aria-label="open confirm input from typed symbol readback">确认输入</a>
-              <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from typed symbol readback">量化推演</a>
-              <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from typed symbol readback">次日图谱</a>
+              <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from typed symbol readback">量化推演</a>
+              <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from typed symbol readback">次日图谱</a>
               <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from typed symbol readback">候选池</a>
             </div>
             <details className="developer-audit-details" aria-label="candidate radar typed symbol immediate rows">
