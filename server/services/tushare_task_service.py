@@ -49,6 +49,7 @@ HARD_RISK_REFRESH_APIS = (
     "stk_surv",
 )
 ALL_REFRESH_APIS = CORE_REFRESH_APIS + CALENDAR_REFRESH_APIS + EXTENDED_REFRESH_APIS
+FACTOR_TEST_PROVIDER_SMALL_POOL_MERGE_APIS = ("daily", "daily_basic", "moneyflow")
 VALIDATION_TARGET_GROUPS = (
     ("trade_calendar", "交易日历", CALENDAR_REFRESH_APIS),
     ("margin_financing", "融资融券", MARGIN_REFRESH_APIS),
@@ -4969,7 +4970,57 @@ def _dataframe_for_write(data: Any, *, api: str = "") -> Any:
         return None
 
 
-def _write_parquet_dataset(api: str, data: Any) -> dict[str, Any]:
+def _factor_test_small_pool_scope_hash(payload: Any) -> str:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    if payload_map.get("provider_acceptance_mode") != "factor_test_provider_small_pool_sample":
+        return ""
+    if payload_map.get("source_task_type") != "run_factor_test_provider_small_pool_acceptance":
+        return ""
+    scope_hash = str(payload_map.get("acceptance_scope_hash") or "").strip()
+    scope_hash_short = str(payload_map.get("acceptance_scope_hash_short") or "").strip()
+    return scope_hash or scope_hash_short
+
+
+def _factor_test_small_pool_merge_dataframe(api: str, df: Any, payload: Any) -> tuple[Any, dict[str, Any]]:
+    scope_hash = _factor_test_small_pool_scope_hash(payload)
+    if api not in FACTOR_TEST_PROVIDER_SMALL_POOL_MERGE_APIS or not scope_hash:
+        return df, {"merge_applied": False}
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    try:
+        import pandas as pd
+
+        current = df.copy()
+        current["provider_scope_hash"] = scope_hash
+        current["provider_scope_hash_short"] = str(payload_map.get("acceptance_scope_hash_short") or "")[:12]
+        current["provider_acceptance_mode"] = "factor_test_provider_small_pool_sample"
+        current["provider_source_task_type"] = "run_factor_test_provider_small_pool_acceptance"
+        path = parquet_store.dataset_path(root=storage_service.PARQUET_ROOT, name=PARQUET_DATASETS[api])
+        existing = pd.read_parquet(path) if path.exists() else None
+        existing_row_count = int(len(existing)) if existing is not None else 0
+        combined = pd.concat([existing, current], ignore_index=True) if existing is not None else current
+        dedupe_keys = [key for key in ("ts_code", "trade_date") if key in combined.columns]
+        if dedupe_keys:
+            combined = combined.drop_duplicates(subset=dedupe_keys, keep="last")
+        symbol_count = int(combined["ts_code"].astype(str).nunique()) if "ts_code" in combined.columns else 0
+        return combined, {
+            "merge_applied": True,
+            "merge_status": "merged_scope_rows",
+            "input_row_count": int(len(current)),
+            "existing_row_count": existing_row_count,
+            "merged_row_count": int(len(combined)),
+            "merged_symbol_count": symbol_count,
+            "provider_scope_hash_short": str(payload_map.get("acceptance_scope_hash_short") or "")[:12],
+        }
+    except Exception as exc:
+        return df, {
+            "merge_applied": True,
+            "merge_status": "merge_failed_fell_back_to_current_payload",
+            "input_row_count": int(len(df)) if hasattr(df, "__len__") else 0,
+            "error_message_safe": _safe_text(exc),
+        }
+
+
+def _write_parquet_dataset(api: str, data: Any, *, payload: Any = None) -> dict[str, Any]:
     dataset = PARQUET_DATASETS.get(api)
     if not dataset:
         return {"status": "not_enabled", "dataset": None, "row_count": 0, "path": ""}
@@ -4981,6 +5032,7 @@ def _write_parquet_dataset(api: str, data: Any) -> dict[str, Any]:
             "row_count": 0,
             "path": str(parquet_store.dataset_path(root=storage_service.PARQUET_ROOT, name=dataset)),
         }
+    df, merge_result = _factor_test_small_pool_merge_dataframe(api, df, payload)
     try:
         result = parquet_store.write_dataset(df, root=storage_service.PARQUET_ROOT, name=dataset)
     except Exception as exc:
@@ -4992,6 +5044,7 @@ def _write_parquet_dataset(api: str, data: Any) -> dict[str, Any]:
             "error_message_safe": _safe_text(exc),
         }
     result["dataset"] = dataset
+    result.update(merge_result)
     return result
 
 
@@ -5034,6 +5087,11 @@ def _call_ledger_row(
         "parquet_dataset": (parquet_result or {}).get("dataset"),
         "parquet_status": (parquet_result or {}).get("status", "not_enabled"),
         "parquet_row_count": int((parquet_result or {}).get("row_count") or 0),
+        "parquet_merge_applied": bool((parquet_result or {}).get("merge_applied")),
+        "parquet_merge_status": (parquet_result or {}).get("merge_status", ""),
+        "parquet_input_row_count": int((parquet_result or {}).get("input_row_count") or 0),
+        "parquet_merged_symbol_count": int((parquet_result or {}).get("merged_symbol_count") or 0),
+        "parquet_provider_scope_hash_short": (parquet_result or {}).get("provider_scope_hash_short", ""),
         "exchange_call_count": int(result.get("exchange_call_count") or (1 if api == "trade_cal" and params.get("exchange") else 0)),
         "exchange_success_count": int(result.get("exchange_success_count") or 0),
         "exchange_empty_count": int(result.get("exchange_empty_count") or 0),
@@ -5429,7 +5487,11 @@ def run_tushare_refresh_task(
             safe_params = params
         else:
             result, safe_params = _call_tushare_api(fn=fn, api=api, params=params)
-        parquet_result = _write_parquet_dataset(api, result.get("data")) if bool(result.get("ok")) else {"status": "not_written_failed_call"}
+        parquet_result = (
+            _write_parquet_dataset(api, result.get("data"), payload=payload)
+            if bool(result.get("ok"))
+            else {"status": "not_written_failed_call"}
+        )
         ledger_row = _call_ledger_row(
             api,
             params=safe_params,

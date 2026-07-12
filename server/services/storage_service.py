@@ -240,9 +240,17 @@ DATASET_SCHEMA_CONTRACTS = {
 }
 DATASET_QUERY_PROJECTION_COLUMNS = {
     "factor_values": ["ts_code", "trade_date", "factor_key", "category", "raw_value", "data_status", "calculated_at"],
-    "daily": ["ts_code", "trade_date", "open", "high", "low", "close", "vol", "amount"],
-    "daily_basic": ["ts_code", "trade_date", "turnover_rate", "pe_ttm", "pb", "total_mv", "circ_mv"],
-    "moneyflow": ["ts_code", "trade_date", "buy_sm_amount", "sell_sm_amount", "buy_lg_amount", "sell_lg_amount"],
+    "daily": ["ts_code", "trade_date", "open", "high", "low", "close", "vol", "amount", "provider_scope_hash"],
+    "daily_basic": ["ts_code", "trade_date", "turnover_rate", "pe_ttm", "pb", "total_mv", "circ_mv", "provider_scope_hash"],
+    "moneyflow": [
+        "ts_code",
+        "trade_date",
+        "buy_sm_amount",
+        "sell_sm_amount",
+        "buy_lg_amount",
+        "sell_lg_amount",
+        "provider_scope_hash",
+    ],
     "trade_cal": ["exchange", "cal_date", "is_open", "pretrade_date"],
     "backtest_results": ["strategy_key", "universe", "run_date", "status", "metrics"],
 }

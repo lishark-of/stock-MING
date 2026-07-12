@@ -6343,8 +6343,17 @@ def _factor_test_provider_small_pool_forward_return_label_audit(
         daily_packet = {"status": "read_failed", "query": {"rows": []}, "row_count": 0}
         daily_error_safe = str(exc).splitlines()[0][:240]
     daily_rows = _storage_query_rows(daily_packet)
+    source_scope_hash = str(acceptance.get("acceptance_scope_hash") or "").strip()
+    scoped_daily_rows = [
+        row
+        for row in daily_rows
+        if isinstance(row, dict)
+        and source_scope_hash
+        and str(row.get("provider_scope_hash") or "").strip() == source_scope_hash
+    ]
+    daily_rows_for_labels = scoped_daily_rows or daily_rows
     by_symbol: dict[str, list[dict[str, Any]]] = {}
-    for row in daily_rows:
+    for row in daily_rows_for_labels:
         if not isinstance(row, dict):
             continue
         ts_code = str(row.get("ts_code") or "").strip()
@@ -6428,7 +6437,7 @@ def _factor_test_provider_small_pool_forward_return_label_audit(
             "local_daily_parquet_readable",
             "passed_daily_rows_visible" if by_symbol else "degraded_daily_rows_missing",
             bool(by_symbol),
-            f"daily_status={daily_packet.get('status')}; returned_rows={len(daily_rows)}; error={daily_error_safe}",
+            f"daily_status={daily_packet.get('status')}; returned_rows={len(daily_rows)}; scoped_rows={len(scoped_daily_rows)}; error={daily_error_safe}",
             "Use only local persisted daily rows for cache readback; do not call providers from GET cache.",
         ),
         _factor_test_provider_small_pool_forward_return_label_row(
@@ -6473,6 +6482,9 @@ def _factor_test_provider_small_pool_forward_return_label_audit(
         "source_acceptance_task_id": acceptance.get("task_id") or "",
         "source_acceptance_scope_hash": acceptance.get("acceptance_scope_hash") or "",
         "source_acceptance_scope_hash_short": acceptance.get("acceptance_scope_hash_short") or "",
+        "scoped_daily_rows_used": bool(scoped_daily_rows),
+        "scoped_daily_row_count": len(scoped_daily_rows),
+        "daily_row_count_read": len(daily_rows),
         "source_provider_tushare_called": acceptance.get("tushare_called") is True,
         "provider_sample_done": provider_sample_done,
         "expected_symbols": expected_symbols,

@@ -1754,7 +1754,7 @@ export default function FactorQuantHub() {
     Number(factorTestProviderSmallPoolForwardReturnAudit.forward_return_label_row_count ?? 0) > 0;
   const ordinaryFactorTestForwardReturnSentence =
     factorTestProviderSmallPoolForwardReturnDone
-      ? `1d/5d forward-return 标签已覆盖 scope 内 ${String(factorTestProviderSmallPoolForwardReturnAudit.labeled_symbol_count ?? 0)} 只票；下一步才能进入 rolling IC/Rank IC/ICIR。`
+      ? `1d/5d forward-return 标签已覆盖 ${String(factorTestProviderSmallPoolForwardReturnAudit.labeled_symbol_count ?? 0)}/${String(factorTestProviderSmallPoolForwardReturnAudit.expected_symbol_count ?? 0)} 只 scope 股票，共 ${String(factorTestProviderSmallPoolForwardReturnAudit.forward_return_label_row_count ?? 0)} 行；下一步才能进入 rolling IC/Rank IC/ICIR。`
       : factorTestProviderSmallPoolForwardReturnPartial
         ? `forward-return 标签已部分生成：${String(factorTestProviderSmallPoolForwardReturnAudit.forward_return_label_row_count ?? 0)} 行，覆盖 ${String(factorTestProviderSmallPoolForwardReturnAudit.labeled_symbol_count ?? 0)}/${String(factorTestProviderSmallPoolForwardReturnAudit.expected_symbol_count ?? 0)} 只票；缺 ${String((factorTestProviderSmallPoolForwardReturnAudit.missing_symbols as unknown[] | undefined)?.join?.(", ") ?? "部分 scope 标的")}。`
         : "forward-return 标签还不可用；先完成真实小池样本和本地 daily 落盘回放。";
@@ -2420,6 +2420,12 @@ export default function FactorQuantHub() {
             <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入仍静默" aria-label="open candidate confirm from stock quant p2 p3 handoff">确认或换一只票</a>
           </div>
           <p className="risk-note">这条行动条只把下一票雷达确认、P2 三面和 P3 可读结果在量化页串成同一条本地回放；缺口只提示待回放，不补调数据源或模型。</p>
+        </div>
+        <div aria-label="stock quant ordinary factor forward return visible summary">
+          <h3>小池标签覆盖</h3>
+          <p className="ordinary-status-note" aria-label="stock quant factor forward return visible sentence" aria-live="polite">{ordinaryFactorTestForwardReturnSentence}</p>
+          <MetricGrid items={ordinaryFactorTestForwardReturnItems} />
+          <p className="risk-note">这张卡只读本地 Parquet 回放；页面打开不创建 task、不调用 Tushare/DeepSeek/GitHub、不交易，也不把标签覆盖当成生产级 rolling IC。</p>
         </div>
         <details id="stock-quant-ltg03-evidence-details" className="developer-audit-details" aria-label="stock quant factor provider evidence details">
           <summary>LTG-03 小池验收证据</summary>

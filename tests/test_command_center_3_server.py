@@ -60131,6 +60131,54 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(factor, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(factor, ensure_ascii=False))
 
+    def test_factor_test_provider_small_pool_parquet_merge_preserves_scope_symbols(self):
+        root = self._with_parquet_root()
+        import pandas as pd
+
+        payload = {
+            "provider_acceptance_mode": "factor_test_provider_small_pool_sample",
+            "source_task_type": "run_factor_test_provider_small_pool_acceptance",
+            "acceptance_scope_hash": "scope-hash-for-small-pool",
+            "acceptance_scope_hash_short": "scope-hash-f",
+        }
+
+        first = tushare_task_service._write_parquet_dataset(
+            "daily",
+            pd.DataFrame(
+                [
+                    {
+                        "ts_code": "002008.SZ",
+                        "trade_date": "20260611",
+                        "close": 10.8,
+                    }
+                ]
+            ),
+            payload=payload,
+        )
+        second = tushare_task_service._write_parquet_dataset(
+            "daily",
+            pd.DataFrame(
+                [
+                    {
+                        "ts_code": "000001.SZ",
+                        "trade_date": "20260611",
+                        "close": 12.3,
+                    }
+                ]
+            ),
+            payload=payload,
+        )
+
+        self.assertEqual(first["status"], "written")
+        self.assertEqual(second["status"], "written")
+        self.assertTrue(second["merge_applied"])
+        self.assertEqual(second["merge_status"], "merged_scope_rows")
+        self.assertEqual(second["merged_symbol_count"], 2)
+        df = pd.read_parquet(root / "daily.parquet")
+        self.assertEqual(sorted(df["ts_code"].astype(str).unique()), ["000001.SZ", "002008.SZ"])
+        self.assertEqual(set(df["provider_scope_hash"].astype(str)), {"scope-hash-for-small-pool"})
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(second, ensure_ascii=False))
+
     def test_factor_test_provider_small_pool_acceptance_executes_tushare_sample_when_authorized(self):
         self._with_meta_store()
         self._with_parquet_root()
