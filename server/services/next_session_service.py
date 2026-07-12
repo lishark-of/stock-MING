@@ -3140,6 +3140,18 @@ def read_next_session_cache() -> dict[str, Any]:
     ]
     packet["ordinary_result_replay_summary"] = ordinary_result_replay
     packet["ordinary_result_replay_status"] = ordinary_result_replay["status"]
+    if ordinary_result_replay["status"] == "candidate_readable_result_replay_chart_pending":
+        packet["status"] = "candidate_readable_result_replay_chart_pending"
+        packet["cache_source"] = "candidate_radar_p3_handoff_readonly"
+        packet["summary"] = (
+            "上游搜票量化推演已有 Tushare-first 可读结果；完整次日图谱仍需手动生成本地 cache。"
+        )
+        packet["manual_required_text"] = (
+            "可先读上游结论；点击本页生成任务才会写 next-session 图谱 cache，GET cache 不补调 provider/model。"
+        )
+        packet["chart_payload_generated"] = False
+        packet["operation_zones_generated"] = False
+        packet["manual_next_session_generate_required"] = True
     packet["ordinary_result_replay_rows"] = ordinary_result_replay["result_rows"]
     packet["ordinary_next_session_preview_rows"] = ordinary_next_session_preview_rows
     packet["ordinary_next_session_preview_row_count"] = len(ordinary_next_session_preview_rows)
