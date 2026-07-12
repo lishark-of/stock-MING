@@ -497,6 +497,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         recent_result_slice = summary_primary_slice[recent_result_start:recent_result_end]
         for recent_result_label in (
             'label: "最近结果"',
+            'label: "版本/日期"',
             'label: "结果归属"',
             'label: "当前票"',
             'label: "最近任务"',
@@ -509,6 +510,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         ):
             self.assertIn(recent_result_label, self.page)
         self.assertIn("真实数据、权限、空窗口和降级原因去数据能力页复核", self.page)
+        self.assertIn("MetricGrid items={candidateRadarRecentResearchResultItems}", recent_result_slice)
+        self.assertIn("${searchQuantLineageResultVersion} / ${searchQuantLineageDataDate} / ${searchQuantLineageFreshness}", self.page)
         for recent_result_row in (
             '读法: "1. 先看结论"',
             '读法: "2. 再看来源"',

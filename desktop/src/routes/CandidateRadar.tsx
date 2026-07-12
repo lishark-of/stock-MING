@@ -4577,6 +4577,11 @@ export default function CandidateRadar() {
       tone: searchQuantResultVersionSummary.old_task_can_overwrite_current === false || searchQuantResultLineage.old_task_can_overwrite_current === false ? "good" : "warn"
     },
     {
+      label: "版本/日期",
+      value: `${searchQuantLineageResultVersion} / ${searchQuantLineageDataDate} / ${searchQuantLineageFreshness}`,
+      tone: searchQuantLineageResultVersion !== "等待 result_version" && searchQuantLineageDataDate !== "等待 data_date" ? "good" : "warn"
+    },
+    {
       label: "结果归属",
       value: quantProjectionLastResult,
       tone: quantProjectionDisplaySymbol || quantProjectionPersistedTaskId || taskReceipt?.ok ? "good" : "neutral"
