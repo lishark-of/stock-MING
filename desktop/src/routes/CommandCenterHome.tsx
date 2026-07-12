@@ -2222,6 +2222,28 @@ export default function CommandCenterHome() {
   ).trim();
   const ordinaryHomeStorageCurrentFreshnessLabel =
     `${ordinaryHomeStorageCurrentDataDate || "等待 data_date"} / ${ordinaryHomeStorageCurrentFreshness || "等待 freshness"}`;
+  const ordinaryHomeCanonicalResultDataDate = homeText(
+    candidateQuantResultVersionSummary.canonical_data_date ??
+      candidateQuantResultVersionSummary.current_result_data_date ??
+      candidateQuantResultLineage.data_date,
+    ""
+  );
+  const ordinaryHomeCanonicalResultFreshness = homeText(
+    candidateQuantResultVersionSummary.canonical_freshness_state ??
+      candidateQuantResultVersionSummary.current_result_freshness_state ??
+      candidateQuantResultLineage.freshness_state,
+    ""
+  );
+  const ordinaryHomeCanonicalModelLedgerId = homeText(
+    candidateQuantResultVersionSummary.canonical_model_ledger_id ??
+      candidateQuantResultVersionSummary.current_result_model_ledger_id ??
+      candidateQuantResultLineage.model_ledger_id,
+    ""
+  );
+  const ordinaryHomeCanonicalResultInline =
+    dailyCommandP3OneGlanceReadable && dailyCommandCurrentResultVersion
+      ? `；结果版本 ${dailyCommandCurrentResultVersion} / ${ordinaryHomeCanonicalResultDataDate || "等待 data_date"} / ${ordinaryHomeCanonicalResultFreshness || "等待 freshness"}；模型解释 ${ordinaryHomeCanonicalModelLedgerId || dailyCommandP3OneGlanceModelState}`
+      : "";
   const ordinaryHomeStorageCurrentReadable = Boolean(
     ordinaryHomeStorageCurrentStatus === "storage_current_result_cache_ready_current" &&
     ordinaryHomeStorageCurrentSymbol &&
@@ -2245,8 +2267,14 @@ export default function CommandCenterHome() {
   const ordinaryHomeStorageCurrentGap = ordinaryHomeStorageCurrentReadable
     ? "Storage current-result 已可读；仍不等于 LTG-05 production complete"
     : "缺 current-result 本地提升或可读 last-good";
-  const ordinaryHomeStorageCurrentInline = ordinaryHomeStorageCurrentReadable
+  const ordinaryHomeStorageCurrentMatchesCanonical =
+    !dailyCommandCurrentResultVersion ||
+    !ordinaryHomeStorageCurrentVersion ||
+    ordinaryHomeStorageCurrentVersion === dailyCommandCurrentResultVersion;
+  const ordinaryHomeStorageCurrentInline = ordinaryHomeStorageCurrentReadable && ordinaryHomeStorageCurrentMatchesCanonical
     ? `；current-result ${ordinaryHomeStorageCurrentVersion} / ${ordinaryHomeStorageCurrentFreshnessLabel} / DuckDB 已回读`
+    : ordinaryHomeStorageCurrentReadable && dailyCommandP3OneGlanceReadable
+      ? "；Storage current-result 待同步最新 result_version，首页最近结果以 Candidate canonical 为准"
     : "";
   const ordinaryHomeReadableResultReady = dailyCommandP3OneGlanceReadable || ordinaryHomeStorageCurrentReadable;
   const dailyCommandCurrentResearchSnapshotReadableSentence = homeQuantP1P2P3CheckpointReady
@@ -2309,7 +2337,7 @@ export default function CommandCenterHome() {
     ? `；覆盖保护：${dailyCommandResultVersionGuardLabel}`
     : "";
   const ordinaryHomeRecentResult = dailyCommandP3OneGlanceReadable
-    ? `${ordinaryHomeExplainableResult}${ordinaryHomeStorageCurrentInline}${ordinaryHomeStoragePromotionInline}${ordinaryHomeResultVersionGuardInline}`
+    ? `${ordinaryHomeExplainableResult}${ordinaryHomeCanonicalResultInline}${ordinaryHomeStorageCurrentInline}${ordinaryHomeStoragePromotionInline}${ordinaryHomeResultVersionGuardInline}`
     : ordinaryHomeStorageCurrentReadable
       ? `${ordinaryHomeStorageCurrentText}${ordinaryHomeStoragePromotionInline}${ordinaryHomeResultVersionGuardInline}`
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
@@ -2554,7 +2582,7 @@ export default function CommandCenterHome() {
     }
   ];
   const ordinaryHomeAppVisibleNowSentence = dailyCommandP3OneGlanceReadable
-      ? `打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果：${ordinaryHomeExplainableResultLabel}；下一步看股票量化推演和次日图谱。`
+      ? `打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果：${ordinaryHomeExplainableResultLabel}；结果版本 ${dailyCommandCurrentResultVersion || "等待 result_version"}；下一步看股票量化推演和次日图谱。`
     : ordinaryHomeStorageCurrentReadable
       ? `打开 app 能看到 ${ordinaryHomeStorageCurrentSymbol} 的本地 current-result：${ordinaryHomeStorageCurrentVersion} / ${ordinaryHomeStorageCurrentFreshnessLabel}；下一步看股票量化推演和次日图谱。`
     : dailyCommandP0LocalReadinessReady
