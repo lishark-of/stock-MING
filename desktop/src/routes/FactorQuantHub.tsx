@@ -1735,7 +1735,7 @@ export default function FactorQuantHub() {
     factorTestProviderSmallPoolSampleDone
       ? `真实小池验收已有直接证据；来源=Tushare；数据日期=${String(factorTestProviderSmallPoolAcceptance.provider_latest_data_date ?? "待回放")}；scope=${String(factorTestProviderSmallPoolAcceptance.acceptance_scope_hash_short ?? "已绑定")}；真实小池样本已回放：${String(factorTestProviderSmallPoolAcceptance.provider_total_row_count ?? 0)} 行`
       : factorTestProviderSmallPoolDirectEvidenceDone
-        ? "真实小池 call_ledger 已回放；样本行仍待确认"
+        ? `真实小池 call_ledger 已回放；样本行仍待确认；empty=${String(factorTestProviderSmallPoolAcceptance.provider_empty_call_count ?? 0)}，degraded=${String(factorTestProviderSmallPoolAcceptance.provider_degraded_call_count ?? 0)}，failure_mode=${String((factorTestProviderSmallPoolAcceptance.safe_provider_failure_modes as unknown[] | undefined)?.join?.(", ") ?? "待确认")}`
       : "真实小池验收未运行；等待授权";
   const ordinaryFactorTestProviderScopeState =
     factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true
@@ -1754,7 +1754,9 @@ export default function FactorQuantHub() {
       ? factorTestProviderSmallPoolPitBiasDone
         ? "真实小池样本、rolling/cost 和 PIT/bias 已回放；industry neutralization/full-market/promotion 待补"
         : "真实小池样本、scope hash 和 call_ledger 已回放；rolling/cost/neutralization/PIT/promotion 待补"
-      : "还缺真实 provider task、样本行、rolling IC/ICIR、成本、中性化、PIT/bias 和 promotion review";
+      : factorTestProviderSmallPoolDirectEvidenceDone
+        ? `provider task 和 call_ledger 已回放，但样本行 degraded；empty=${String(factorTestProviderSmallPoolAcceptance.provider_empty_call_count ?? 0)}，failure_mode=${String((factorTestProviderSmallPoolAcceptance.safe_provider_failure_modes as unknown[] | undefined)?.join?.(", ") ?? "待确认")}；还缺样本行、rolling IC/ICIR、成本、中性化、PIT/bias 和 promotion review`
+        : "还缺真实 provider task、样本行、rolling IC/ICIR、成本、中性化、PIT/bias 和 promotion review";
   const factorTestProviderSmallPoolCredential = (factorTestProviderSmallPoolDryRun.credential_presence_summary as Record<string, unknown> | undefined) ?? {};
   const factorTestProviderSmallPoolBlockers = Array.isArray(factorTestProviderSmallPoolDryRun.blocking_criteria)
     ? factorTestProviderSmallPoolDryRun.blocking_criteria.map((item: unknown) => String(item)).filter(Boolean)
@@ -1764,7 +1766,9 @@ export default function FactorQuantHub() {
       ? factorTestProviderSmallPoolPitBiasDone
         ? "真实小池 Tushare 样本、scope hash、rolling/cost 和 PIT/bias 安全回放已可见；行业中性化、全市场边界和 promotion/release 仍待补齐，不能当生产完成。"
         : "真实小池 Tushare 样本、scope hash 和安全 call_ledger 已回放；rolling、成本、中性化、PIT/bias 和 promotion/release 仍待补齐，不能当生产完成。"
-      : `LTG-03 当前 degraded：dry-run=${String(factorTestProviderSmallPoolDryRun.status ?? "missing")}，credential=${String(factorTestProviderSmallPoolCredential.status ?? "unknown")}，blocker=${factorTestProviderSmallPoolBlockers.join(" / ") || "provider_task_and_sample_rows_pending"}；本地 execution request 不能替代真实 provider task，下一步只能是用户授权后的 provider-backed 小池验收。`;
+      : factorTestProviderSmallPoolDirectEvidenceDone
+        ? `LTG-03 当前 degraded：provider task 已执行但样本行为空；empty=${String(factorTestProviderSmallPoolAcceptance.provider_empty_call_count ?? 0)}，failure_mode=${String((factorTestProviderSmallPoolAcceptance.safe_provider_failure_modes as unknown[] | undefined)?.join?.(", ") ?? "待确认")}；不把空样本提升为 provider-backed validation。`
+        : `LTG-03 当前 degraded：dry-run=${String(factorTestProviderSmallPoolDryRun.status ?? "missing")}，credential=${String(factorTestProviderSmallPoolCredential.status ?? "unknown")}，blocker=${factorTestProviderSmallPoolBlockers.join(" / ") || "provider_task_and_sample_rows_pending"}；本地 execution request 不能替代真实 provider task，下一步只能是用户授权后的 provider-backed 小池验收。`;
   const factorTestProviderSmallPoolForwardReturnDone =
     factorTestProviderSmallPoolForwardReturnAudit.multi_horizon_forward_returns_done === true;
   const factorTestProviderSmallPoolForwardReturnPartial =

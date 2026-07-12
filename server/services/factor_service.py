@@ -6184,11 +6184,17 @@ def _factor_test_provider_small_pool_acceptance_provider_run(
     provider_success_rows = [
         row for row in provider_ledgers if row.get("call_status") == "success" and int(row.get("row_count") or 0) > 0
     ]
+    provider_empty_rows = [
+        row
+        for row in provider_ledgers
+        if row.get("call_status") == "empty" or row.get("failure_mode") == "empty_result_or_no_record"
+    ]
     provider_failed_rows = [
         row
         for row in provider_ledgers
         if row.get("call_status") == "failed" or str(row.get("call_status") or "").startswith("blocked_")
     ]
+    provider_degraded_rows = provider_empty_rows + provider_failed_rows
     provider_total_row_count = sum(int(row.get("row_count") or 0) for row in provider_ledgers)
     provider_data_dates = sorted({str(row.get("data_date") or "") for row in provider_ledgers if row.get("data_date")})
     symbol_api_success: dict[str, set[str]] = {symbol: set() for symbol in symbols}
@@ -6209,10 +6215,23 @@ def _factor_test_provider_small_pool_acceptance_provider_run(
     safe_failure_modes = sorted(
         {
             str(row.get("failure_mode") or row.get("call_status") or "unknown")
-            for row in provider_failed_rows
+            for row in provider_degraded_rows
             if str(row.get("failure_mode") or row.get("call_status") or "")
         }
     )
+    provider_degraded_call_summary = []
+    for row in provider_degraded_rows:
+        params = row.get("request_params_safe") if isinstance(row.get("request_params_safe"), dict) else {}
+        provider_degraded_call_summary.append(
+            {
+                "api": row.get("api"),
+                "ts_code": params.get("ts_code") or params.get("symbol") or "",
+                "call_status": row.get("call_status"),
+                "failure_mode": row.get("failure_mode") or "",
+                "row_count": int(row.get("row_count") or 0),
+                "data_date": row.get("data_date"),
+            }
+        )
     if sample_rows_collected:
         status = "factor_test_provider_small_pool_acceptance_provider_sample_ready_metric_validation_pending"
         allowed_next_step = "add_multi_horizon_rolling_cost_neutralization_validation"
@@ -6264,7 +6283,11 @@ def _factor_test_provider_small_pool_acceptance_provider_run(
             "provider_call_ledger_evidence",
             "passed_safe_provider_call_ledger_visible" if provider_call_ledger_evidence_done else "degraded_provider_call_ledger_missing",
             provider_call_ledger_evidence_done,
-            f"provider_api_call_count={provider_call_count}; success_call_count={len(provider_success_rows)}; failed_call_count={len(provider_failed_rows)}",
+            (
+                f"provider_api_call_count={provider_call_count}; success_call_count={len(provider_success_rows)}; "
+                f"empty_call_count={len(provider_empty_rows)}; failed_call_count={len(provider_failed_rows)}; "
+                f"degraded_call_count={len(provider_degraded_rows)}; failure_modes={safe_failure_modes}"
+            ),
             "Review safe call_ledger rows before treating the sample as usable.",
             provider_task_created=bool(provider_task_ids),
             provider_execution_implemented=True,
@@ -6276,7 +6299,11 @@ def _factor_test_provider_small_pool_acceptance_provider_run(
             "provider_sample_rows_collected",
             "passed_provider_sample_rows_collected" if sample_rows_collected else "degraded_provider_sample_rows_missing",
             sample_rows_collected,
-            f"symbols_with_core_rows={len(symbols_with_core_rows)}; total_row_count={provider_total_row_count}; latest_data_date={provider_data_dates[-1] if provider_data_dates else ''}",
+            (
+                f"symbols_with_core_rows={len(symbols_with_core_rows)}; total_row_count={provider_total_row_count}; "
+                f"latest_data_date={provider_data_dates[-1] if provider_data_dates else ''}; "
+                f"empty_call_count={len(provider_empty_rows)}; safe_failure_modes={safe_failure_modes}"
+            ),
             "Add rolling and cost validation only after sample rows are visible.",
             provider_task_created=bool(provider_task_ids),
             provider_execution_implemented=True,
@@ -6326,6 +6353,8 @@ def _factor_test_provider_small_pool_acceptance_provider_run(
             "provider_api_call_count": provider_call_count,
             "provider_success_call_count": len(provider_success_rows),
             "provider_failed_call_count": len(provider_failed_rows),
+            "provider_empty_call_count": len(provider_empty_rows),
+            "provider_degraded_call_count": len(provider_degraded_rows),
             "provider_total_row_count": provider_total_row_count,
             "provider_data_dates": provider_data_dates,
             "provider_latest_data_date": provider_data_dates[-1] if provider_data_dates else "",
@@ -6333,6 +6362,7 @@ def _factor_test_provider_small_pool_acceptance_provider_run(
             "symbols_with_core_rows": symbols_with_core_rows,
             "symbols_with_core_row_count": len(symbols_with_core_rows),
             "safe_provider_failure_modes": safe_failure_modes,
+            "provider_degraded_call_summary": provider_degraded_call_summary[:50],
             "blocking_criterion_count": len([row for row in rows + provider_rows if row["blocks_provider_backed_acceptance"]]),
             "blocking_criteria": [
                 row["criterion"] for row in rows + provider_rows if row["blocks_provider_backed_acceptance"]
