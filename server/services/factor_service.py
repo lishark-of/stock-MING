@@ -15,7 +15,7 @@ from config import get_deepseek_auto_explain_enabled, get_deepseek_factor_explai
 from storage.sqlite_meta import SQLiteMetaStore
 
 from . import model_strategy_service, packet_service, storage_service, tushare_task_service
-from .task_service import create_task_record, create_task_stub, update_task_status
+from .task_service import create_task_record, create_task_stub, list_task_statuses, update_task_status
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
 CANDIDATE_RADAR_PACKET_KEY = "command_center_3_candidate_radar_cache"
@@ -354,6 +354,99 @@ def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+def _latest_factor_test_small_pool_task_state() -> dict[str, Any]:
+    state: dict[str, Any] = {}
+    task_receipt_keys = {
+        "run_factor_test_provider_small_pool_acceptance_dry_run": (
+            "provider_small_pool_acceptance_dry_run_receipt",
+            "provider_small_pool_acceptance_dry_run_rows",
+        ),
+        "run_factor_test_provider_small_pool_execution_request": (
+            "provider_small_pool_execution_request_receipt",
+            "provider_small_pool_execution_request_rows",
+        ),
+        "run_factor_test_provider_small_pool_acceptance": (
+            "provider_small_pool_acceptance_receipt",
+            "provider_small_pool_acceptance_rows",
+        ),
+    }
+    try:
+        tasks = list_task_statuses()
+    except Exception:
+        return state
+    for task in tasks:
+        if task.get("status") != "success":
+            continue
+        receipt_key, rows_key = task_receipt_keys.get(str(task.get("task_type") or ""), ("", ""))
+        if not receipt_key or receipt_key in state:
+            continue
+        payload = _dict(task.get("payload_safe"))
+        receipt = _dict(payload.get(receipt_key))
+        if not receipt:
+            continue
+        receipt = dict(receipt)
+        receipt.setdefault("source_task_id", task.get("task_id"))
+        receipt.setdefault("source_task_status", task.get("status"))
+        receipt.setdefault("source_task_current_step", task.get("current_step"))
+        state[receipt_key] = receipt
+        rows = payload.get(rows_key)
+        if isinstance(rows, list):
+            state[rows_key] = rows
+        elif isinstance(receipt.get("rows"), list):
+            state[rows_key] = receipt["rows"]
+    return state
+
+
+def _factor_test_small_pool_receipt_strength(receipt: dict[str, Any]) -> int:
+    if (
+        receipt.get("provider_call_ledger_evidence_done") is True
+        or receipt.get("tushare_called") is True
+        or int(receipt.get("provider_api_call_count") or 0) > 0
+        or int(receipt.get("provider_task_count") or 0) > 0
+    ):
+        return 3
+    if (
+        receipt.get("local_execution_request_ready") is True
+        or receipt.get("ready_for_manual_provider_task_submission") is True
+        or receipt.get("ready_for_live_provider_execution") is True
+    ):
+        return 2
+    if str(receipt.get("acceptance_scope_hash") or "").strip():
+        return 1
+    return 0
+
+
+def _should_replace_factor_test_small_pool_receipt(existing: Any, incoming: Any) -> bool:
+    if not isinstance(incoming, dict) or not incoming:
+        return False
+    if not isinstance(existing, dict) or not existing:
+        return True
+    return _factor_test_small_pool_receipt_strength(incoming) >= _factor_test_small_pool_receipt_strength(existing)
+
+
+def _merge_factor_test_small_pool_task_state(packet: dict[str, Any]) -> dict[str, Any]:
+    task_state = _latest_factor_test_small_pool_task_state()
+    if not task_state:
+        return packet
+    merged = dict(packet)
+    factor_tests = _dict(merged.get("factor_tests"))
+    receipt_to_rows = {
+        "provider_small_pool_acceptance_dry_run_receipt": "provider_small_pool_acceptance_dry_run_rows",
+        "provider_small_pool_execution_request_receipt": "provider_small_pool_execution_request_rows",
+        "provider_small_pool_acceptance_receipt": "provider_small_pool_acceptance_rows",
+    }
+    for receipt_key, rows_key in receipt_to_rows.items():
+        incoming = task_state.get(receipt_key)
+        if _should_replace_factor_test_small_pool_receipt(factor_tests.get(receipt_key), incoming):
+            factor_tests[receipt_key] = incoming
+            if isinstance(task_state.get(rows_key), list):
+                factor_tests[rows_key] = task_state[rows_key]
+        elif rows_key not in factor_tests and isinstance(task_state.get(rows_key), list):
+            factor_tests[rows_key] = task_state[rows_key]
+    merged["factor_tests"] = factor_tests
+    return merged
+
+
 def _safe_text(value: Any, *, limit: int = 240) -> str:
     text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
     return text[:limit]
@@ -403,6 +496,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet["status_is_cache_only_readback"] = True
     packet["status_is_not_production_evidence"] = True
     packet["deepseek_explain_governance"] = _deepseek_explain_governance()
+    packet = _merge_factor_test_small_pool_task_state(packet)
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
     candidate_handoff = _read_candidate_radar_quant_projection_handoff(now)
     candidate_handoff_ledger: list[dict[str, Any]] = []

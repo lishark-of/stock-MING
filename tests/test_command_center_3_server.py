@@ -59984,6 +59984,57 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(production_handoff["can_close_goal"])
         self.assertFalse(production_handoff["production_complete"])
 
+    def test_factor_test_provider_small_pool_scope_survives_cache_overwrite_from_task_status(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        dry_run_response = self.client.post(
+            "/api/factor-quant/provider-small-pool-dry-run",
+            json={
+                "approved_by_user": True,
+                "symbols": ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"],
+                "start_date": "20260401",
+                "end_date": "20260614",
+                "forward_return_horizons": ["1d", "5d"],
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run_task = dry_run_response["data"]["task"]
+        dry_run_receipt = dry_run_task["payload_safe"]["provider_small_pool_acceptance_dry_run_receipt"]
+
+        SQLiteMetaStore(factor_service.SQLITE_META_PATH).write_packet(
+            "command_center_factor_quant_hub_packet",
+            {"packet_key": "command_center_factor_quant_hub_packet", "factor_tests": {}},
+        )
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        self.assertTrue(factor["ok"])
+        cached_dry_run = factor["data"]["factor_tests"]["provider_small_pool_acceptance_dry_run_receipt"]
+        self.assertEqual(cached_dry_run["acceptance_scope_hash"], dry_run_receipt["acceptance_scope_hash"])
+        self.assertEqual(cached_dry_run["source_task_id"], dry_run_task["task_id"])
+        self.assertFalse(factor["data"]["external_calls_triggered"])
+        self.assertFalse(factor["data"]["tushare_called"])
+        self.assertFalse(factor["data"]["deepseek_called"])
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(factor, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(factor, ensure_ascii=False))
+
+        execution_response = self.client.post(
+            "/api/factor-quant/provider-small-pool-execution-request",
+            json={
+                "approved_by_user": True,
+                "acceptance_scope_hash": cached_dry_run["acceptance_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(execution_response["ok"])
+        execution_receipt = execution_response["data"]["task"]["payload_safe"][
+            "provider_small_pool_execution_request_receipt"
+        ]
+        self.assertTrue(execution_receipt["local_execution_request_ready"])
+        self.assertEqual(execution_receipt["acceptance_scope_hash"], dry_run_receipt["acceptance_scope_hash"])
+        self.assertFalse(execution_response["data"]["task"]["tushare_called"])
+
     def test_factor_test_provider_small_pool_execution_request_rejects_scope_mismatch(self):
         self._with_meta_store()
         self._with_parquet_root()
