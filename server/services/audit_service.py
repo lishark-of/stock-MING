@@ -4503,6 +4503,8 @@ def _user_route_qa_evidence_row(report: Mapping[str, Any], row: Mapping[str, Any
     typing_covered = row.get("typing_covered") is not False
     typing_silent = row.get("typing_silence_verified") is True and typing_covered and not task_created
     route_specific_passed = row.get("route_specific_check_passed") is not False
+    candidate_result_chain = row.get("candidate_result_chain")
+    candidate_result_chain = candidate_result_chain if isinstance(candidate_result_chain, Mapping) else {}
     route_specific_missing = [
         _safe_text(item, limit=160)
         for item in _as_list(row.get("route_specific_missing"))
@@ -4538,6 +4540,16 @@ def _user_route_qa_evidence_row(report: Mapping[str, Any], row: Mapping[str, Any
         "typing_covered": typing_covered,
         "typing_reason": _safe_text(row.get("typing_reason"), limit=120),
         "route_observed_ms": int(row.get("route_observed_ms") or 0),
+        "candidate_result_scenario": _safe_text(
+            row.get("candidate_result_scenario") or report.get("candidate_result_scenario") or "live",
+            limit=80,
+        ),
+        "candidate_result_status": _safe_text(candidate_result_chain.get("status"), limit=120),
+        "degraded_result_visible": candidate_result_chain.get("degraded_result_visible") is True,
+        "degraded_reason": _safe_text(candidate_result_chain.get("degraded_reason"), limit=120),
+        "old_task_can_overwrite_current": candidate_result_chain.get("old_task_can_overwrite_current") is True,
+        "old_task_overwrite_guard_ready": candidate_result_chain.get("old_task_overwrite_guard_ready") is True,
+        "current_result_matches_latest_task": candidate_result_chain.get("current_result_matches_latest_task") is True,
         "artifact_report_path": _relative_artifact_path(report_path),
         "screenshot_artifact_omitted": True,
         "artifact_root_should_stay_ignored": True,
@@ -4594,6 +4606,18 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
         report_rows = [row for row in _as_list(report.get("rows")) if isinstance(row, dict)]
         evidence_rows = [_user_route_qa_evidence_row(report, row, path) for row in report_rows]
         passed_evidence_rows = [row for row in evidence_rows if row.get("passed") is True]
+        degraded_last_good_replay_passed = bool(
+            report.get("candidate_result_scenario") == "degraded-last-good"
+            and _user_route_qa_report_passed(report)
+            and any(
+                row.get("degraded_result_visible") is True
+                and row.get("old_task_overwrite_guard_ready") is True
+                and row.get("old_task_can_overwrite_current") is False
+                and str(row.get("candidate_result_status") or "")
+                == "degraded_result_recorded_last_good_retained"
+                for row in evidence_rows
+            )
+        )
         report_records.append(
             {
                 "run_id": report.get("run_id") or path.parent.name,
@@ -4609,6 +4633,10 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
                 "console_error_count": int(report.get("console_error_count") or 0),
                 "visual_qa_complete": report.get("visual_qa_complete") is True,
                 "typing_silence_verified": report.get("typing_silence_verified") is True,
+                "candidate_result_scenario": report.get("candidate_result_scenario") or "live",
+                "candidate_result_scenario_replay": report.get("candidate_result_scenario_replay") is True,
+                "candidate_result_scenario_writes_cache": report.get("candidate_result_scenario_writes_cache") is True,
+                "degraded_last_good_replay_passed": degraded_last_good_replay_passed,
                 "task_silence_failed_count": sum(
                     1 for row in evidence_rows if row.get("task_created_by_render_or_typing") is True
                 ),
@@ -4691,6 +4719,16 @@ def _user_route_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, A
         "latest_report_console_error_count": int(latest_report.get("console_error_count") or 0),
         "latest_report_visual_qa_complete": latest_report.get("visual_qa_complete") is True,
         "latest_report_typing_silence_verified": latest_report.get("typing_silence_verified") is True,
+        "latest_report_candidate_result_scenario": latest_report.get("candidate_result_scenario") or "missing",
+        "latest_report_candidate_result_scenario_replay": latest_report.get("candidate_result_scenario_replay") is True,
+        "latest_report_candidate_result_scenario_writes_cache": latest_report.get(
+            "candidate_result_scenario_writes_cache"
+        )
+        is True,
+        "latest_report_degraded_last_good_replay_passed": latest_report.get(
+            "degraded_last_good_replay_passed"
+        )
+        is True,
         "latest_report_task_silence_failed_count": int(latest_report.get("task_silence_failed_count") or 0),
         "latest_report_route_specific_failed_count": int(latest_report.get("route_specific_failed_count") or 0),
         "latest_report_candidate_route_row_count": latest_report_candidate_route_row_count,

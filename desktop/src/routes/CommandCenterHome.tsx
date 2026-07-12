@@ -261,6 +261,7 @@ export default function CommandCenterHome() {
         setTaskIndex(res.data);
         setTasks(res.data.tasks ?? []);
       }),
+      trackP0("audit_user_route_qa", getAuditUserRouteQa(), (res) => setAuditUserRouteQa(res.data)),
     ];
     void Promise.allSettled(p0Jobs).then(() => {
       if (cancelled) return;
@@ -363,10 +364,13 @@ export default function CommandCenterHome() {
   const userRouteQaVisualComplete = userRouteQaEvidence.ordinary_route_visual_qa_complete === true;
   const userRouteQaTypingSilenceVerified = userRouteQaEvidence.typing_silence_verified === true;
   const userRouteQaLatestPassed = userRouteQaEvidence.latest_report_passed === true;
+  const userRouteQaLatestScenario = homeText(userRouteQaEvidence.latest_report_candidate_result_scenario, "live");
+  const userRouteQaDegradedLastGoodPassed = userRouteQaEvidence.latest_report_degraded_last_good_replay_passed === true;
+  const userRouteQaScenarioWritesCache = userRouteQaEvidence.latest_report_candidate_result_scenario_writes_cache === true;
   const userRouteQaCandidatePassed = userRouteQaEvidence.candidate_route_visual_qa_passed === true ||
     userRouteQaEvidence.latest_report_candidate_route_passed === true;
   const ordinaryHomeUserRouteQaSummary = userRouteQaLatestPassed
-    ? `最新普通路线 QA 已通过：${userRouteQaCoveredRoutes.join(" / ") || "等待路线列表"}；${userRouteQaCoveredViewports.join(" / ") || "等待视口"}。`
+    ? `最新普通路线 QA 已通过：${userRouteQaCoveredRoutes.join(" / ") || "等待路线列表"}；${userRouteQaCoveredViewports.join(" / ") || "等待视口"}；${userRouteQaDegradedLastGoodPassed ? "降级 last-good 回放也通过" : `场景 ${userRouteQaLatestScenario}`}。`
     : userRouteQaEvidence.latest_report_is_current_evidence === true
       ? `已有本地普通路线 QA 报告，但仍需复核：${homeText(userRouteQaEvidence.latest_report_status, "pending")}。`
       : "等待显式本地普通路线 QA；不影响当前首页使用。";
@@ -399,6 +403,13 @@ export default function CommandCenterHome() {
       tone: userRouteQaCandidatePassed ? "good" : "warn"
     },
     {
+      label: "降级回放",
+      value: userRouteQaDegradedLastGoodPassed
+        ? "last-good 保留；旧任务不能覆盖 current"
+        : `场景 ${userRouteQaLatestScenario}`,
+      tone: userRouteQaDegradedLastGoodPassed || userRouteQaLatestScenario === "live" ? "good" : "warn"
+    },
+    {
       label: "最新报告",
       value: `${homeText(userRouteQaEvidence.latest_report_status, "missing")} / matrix ${userRouteQaLatestMatrixCount} / review ${userRouteQaLatestReviewRequiredCount} / console ${userRouteQaLatestConsoleErrorCount}`,
       tone: userRouteQaLatestPassed ? "good" : "warn"
@@ -424,6 +435,17 @@ export default function CommandCenterHome() {
     视口: userRouteQaCoveredViewports.length ? userRouteQaCoveredViewports.join(" / ") : "waiting desktop/mobile",
     边界: "只读本地 QA 摘要；不创建任务、不调用外部数据或模型、不交易"
   }));
+  ordinaryHomeUserRouteQaRows.push({
+    路线: "degraded-last-good",
+    当前状态: userRouteQaDegradedLastGoodPassed
+      ? "latest QA replay retained last-good and blocked stale overwrite"
+      : `latest scenario ${userRouteQaLatestScenario}`,
+    用户看法: "失败/缺事实场景下旧 current 结果是否继续可读，旧任务是否不会覆盖新标的",
+    视口: userRouteQaCoveredViewports.length ? userRouteQaCoveredViewports.join(" / ") : "waiting desktop/mobile",
+    边界: userRouteQaScenarioWritesCache
+      ? "需要复核：QA replay 不应写 cache"
+      : "只读本地 QA replay；不写 cache、不创建任务、不调用外部数据或模型、不交易"
+  });
   const snapshotAvailable = Boolean(packets.snapshot_available);
   const sqliteMeta = packets.sqlite_meta as Record<string, unknown> | undefined;
   const sqlitePackets = sqliteMeta?.packet_metadata as unknown[] | undefined;

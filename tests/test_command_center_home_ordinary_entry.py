@@ -1132,6 +1132,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("userRouteQaCoveredRoutes", source)
         self.assertIn("userRouteQaCoveredViewports", source)
         self.assertIn("getAuditUserRouteQa", source)
+        self.assertIn('trackP0("audit_user_route_qa", getAuditUserRouteQa()', source)
         self.assertIn('trackAudit("audit_user_route_qa", getAuditUserRouteQa()', source)
         self.assertIn("userRouteQaEvidenceSource", source)
         self.assertIn("Object.keys(auditUserRouteQa).length ? auditUserRouteQa : audit", source)
@@ -1147,6 +1148,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
             'label: "输入静默"',
             'label: "任务静默"',
             'label: "候选页"',
+            'label: "降级回放"',
             'label: "最新报告"',
             'label: "边界"',
         ):
@@ -1154,11 +1156,18 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         for route in ('"#home"', '"#candidates"', '"#marginEtf"', '"#factor"', '"#next"'):
             self.assertIn(route, source)
         self.assertIn("最新普通路线 QA 已通过", source)
+        self.assertIn("降级 last-good 回放也通过", source)
+        self.assertIn("userRouteQaLatestScenario", source)
+        self.assertIn("userRouteQaDegradedLastGoodPassed", source)
+        self.assertIn("userRouteQaScenarioWritesCache", source)
         self.assertIn("已有本地普通路线 QA 报告，但仍需复核", source)
         self.assertIn("等待显式本地普通路线 QA", source)
         self.assertIn("已验证：可见输入不会创建任务", source)
         self.assertIn("渲染/输入未创建任务", source)
         self.assertIn("下一票雷达 desktop/mobile 已在本地 QA 覆盖", source)
+        self.assertIn("last-good 保留；旧任务不能覆盖 current", source)
+        self.assertIn("latest QA replay retained last-good and blocked stale overwrite", source)
+        self.assertIn("只读本地 QA replay；不写 cache、不创建任务、不调用外部数据或模型、不交易", source)
         self.assertIn("首页只读 ignored 本地 QA 摘要；不打开浏览器、不提交截图、不调用外部服务", source)
         self.assertIn('aria-label="ordinary home user route qa local actions"', qa)
         self.assertIn('href="#audit"', qa)

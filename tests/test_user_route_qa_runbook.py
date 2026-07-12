@@ -164,6 +164,17 @@ class UserRouteQaRunbookTests(unittest.TestCase):
                 else "generic_route_heading_visible",
                 "route_specific_check_passed": True,
                 "route_specific_missing": [],
+                "candidate_result_scenario": "degraded-last-good",
+                "candidate_result_chain": {
+                    "status": "degraded_result_recorded_last_good_retained",
+                    "degraded_result_visible": True,
+                    "degraded_reason": "skipped_missing_facts",
+                    "old_task_can_overwrite_current": False,
+                    "old_task_overwrite_guard_ready": True,
+                    "current_result_matches_latest_task": False,
+                }
+                if route in {"#candidates", "#factor", "#next"}
+                else {},
                 "route_observed_ms": 320,
             }
             for route in routes
@@ -185,6 +196,9 @@ class UserRouteQaRunbookTests(unittest.TestCase):
             "console_error_count": 0,
             "visual_qa_complete": True,
             "typing_silence_verified": True,
+            "candidate_result_scenario": "degraded-last-good",
+            "candidate_result_scenario_replay": True,
+            "candidate_result_scenario_writes_cache": False,
             "production_replacement_complete": False,
             "streamlit_fallback_retirement_ready": False,
             "rows": report_rows,
@@ -226,6 +240,10 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertEqual(evidence["latest_report_console_error_count"], 0)
         self.assertTrue(evidence["latest_report_visual_qa_complete"])
         self.assertTrue(evidence["latest_report_typing_silence_verified"])
+        self.assertEqual(evidence["latest_report_candidate_result_scenario"], "degraded-last-good")
+        self.assertTrue(evidence["latest_report_candidate_result_scenario_replay"])
+        self.assertFalse(evidence["latest_report_candidate_result_scenario_writes_cache"])
+        self.assertTrue(evidence["latest_report_degraded_last_good_replay_passed"])
         self.assertEqual(evidence["latest_report_task_silence_failed_count"], 0)
         self.assertEqual(evidence["latest_report_route_specific_failed_count"], 0)
         self.assertEqual(evidence["latest_report_candidate_route_row_count"], 2)
@@ -252,6 +270,16 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertEqual(sum(1 for row in rows if row["route"] == "#candidates"), 2)
         self.assertEqual(sum(1 for row in rows if row["route_specific_check"] == "margin_etf_confirmed_data_bridge_visible"), 2)
         self.assertTrue(all(row["route_specific_check_passed"] for row in rows))
+        self.assertEqual(
+            sum(
+                1
+                for row in rows
+                if row["candidate_result_scenario"] == "degraded-last-good"
+                and row["old_task_overwrite_guard_ready"]
+                and not row["old_task_can_overwrite_current"]
+            ),
+            6,
+        )
 
         packet_evidence = packet["user_route_qa_evidence_contract"]
         self.assertEqual(packet_evidence["status"], evidence["status"])
