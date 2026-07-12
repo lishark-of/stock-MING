@@ -35,6 +35,7 @@ function ordinaryFactorText(value: unknown, fallback = "--"): string {
   if (value === null || value === undefined || value === "") return fallback;
   const raw = typeof value === "boolean" ? (value ? "是" : "否") : String(value);
   return raw
+    .replace(/来源=Tushare/g, "来源=__TUSHARE_SOURCE__")
     .replace(/GET cache/g, "本地缓存读取")
     .replace(/POST task/g, "手动后台流程")
     .replace(/provider\/model/g, "数据接口或模型")
@@ -73,7 +74,8 @@ function ordinaryFactorText(value: unknown, fallback = "--"): string {
     .replace(/本地 本地缓存/g, "本地缓存")
     .replace(/数据接口或模型 任务/g, "数据接口或模型流程")
     .replace(/真实数据链 账本/g, "真实数据记录")
-    .replace(/真实数据链 数据卡/g, "数据链状态");
+    .replace(/真实数据链 数据卡/g, "数据链状态")
+    .replace(/__TUSHARE_SOURCE__/g, "Tushare");
 }
 
 function ordinaryFactorMetricItems(items: MetricItem[]): MetricItem[] {
@@ -1722,7 +1724,7 @@ export default function FactorQuantHub() {
   ];
   const ordinaryFactorTestProviderSmallPoolState =
     factorTestProviderSmallPoolSampleDone
-      ? `真实小池验收已有直接证据；真实小池样本已回放：${String(factorTestProviderSmallPoolAcceptance.provider_total_row_count ?? 0)} 行`
+      ? `真实小池验收已有直接证据；来源=Tushare；数据日期=${String(factorTestProviderSmallPoolAcceptance.provider_latest_data_date ?? "待回放")}；scope=${String(factorTestProviderSmallPoolAcceptance.acceptance_scope_hash_short ?? "已绑定")}；真实小池样本已回放：${String(factorTestProviderSmallPoolAcceptance.provider_total_row_count ?? 0)} 行`
       : factorTestProviderSmallPoolDirectEvidenceDone
         ? "真实小池 call_ledger 已回放；样本行仍待确认"
       : "真实小池验收未运行；等待授权";
