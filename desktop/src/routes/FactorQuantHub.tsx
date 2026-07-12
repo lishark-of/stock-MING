@@ -1693,6 +1693,38 @@ export default function FactorQuantHub() {
       tone: "warn"
     }
   ];
+  const ordinaryDeepSeekProviderBenchmarkExecutionRequestReady =
+    deepseekProviderBenchmarkExecutionRequest.local_execution_request_ready === true ||
+    deepseekProviderBenchmarkExecutionRequest.ready_for_manual_model_task_submission === true;
+  const ordinaryDeepSeekProviderBenchmarkExecutionRequestCanLaunch =
+    ordinaryDeepSeekProviderBenchmarkScopeReady && !ordinaryDeepSeekProviderBenchmarkExecutionRequestReady;
+  const ordinaryDeepSeekProviderBenchmarkExecutionRequestState = ordinaryDeepSeekProviderBenchmarkExecutionRequestReady
+    ? `本地 benchmark execution request 已绑定：scope=${String(deepseekProviderBenchmarkExecutionRequest.benchmark_scope_hash_short ?? deepseekProviderBenchmarkExecutionRequest.benchmark_scope_hash ?? "已绑定")}`
+    : ordinaryDeepSeekProviderBenchmarkScopeReady
+      ? "scope ticket 已就绪；可生成本地 execution request，但仍不创建模型任务"
+      : "先生成 scope ticket，再绑定 execution request";
+  const ordinaryDeepSeekProviderBenchmarkExecutionRequestItems: MetricItem[] = [
+    {
+      label: "execution request",
+      value: ordinaryDeepSeekProviderBenchmarkExecutionRequestState,
+      tone: ordinaryDeepSeekProviderBenchmarkExecutionRequestReady ? "good" : ordinaryDeepSeekProviderBenchmarkExecutionRequestCanLaunch ? "warn" : "neutral"
+    },
+    {
+      label: "绑定 scope",
+      value: String(deepseekProviderBenchmarkScopeTicket.benchmark_scope_hash_short ?? deepseekProviderBenchmarkExecutionRequest.benchmark_scope_hash_short ?? "等待 scope"),
+      tone: ordinaryDeepSeekProviderBenchmarkScopeReady ? "good" : "warn"
+    },
+    {
+      label: "目标任务",
+      value: String(deepseekProviderBenchmarkExecutionRequest.target_model_task_route ?? "future POST /api/factor-quant/deepseek-provider-benchmark"),
+      tone: "neutral"
+    },
+    {
+      label: "边界",
+      value: "execution request 只绑定 scope 和人工确认；不创建 model task、不调用 DeepSeek、不写 raw prompt/output",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantRuntimeModeLabel = `运行模式：${runtimeModeLabel(ordinaryQuantRuntimeMode)}`;
   const ordinaryQuantTaskBoundary =
     "本页 GET cache 只读；手动刷新、轻量推演、模型整理或 live_light 补证都必须走 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
@@ -2989,6 +3021,7 @@ export default function FactorQuantHub() {
           {ordinaryDeepSeekProviderBenchmarkScopeState}；这是 LTG-07 的本地治理前置票据，不是真实模型验收。
         </p>
         <MetricGrid items={ordinaryDeepSeekProviderBenchmarkScopeItems} />
+        <MetricGrid items={ordinaryDeepSeekProviderBenchmarkExecutionRequestItems} />
         <div className="actions" aria-label="stock quant ordinary deepseek benchmark scope actions">
           <button
             disabled={!ordinaryDeepSeekProviderBenchmarkScopeCanLaunch}
@@ -2996,11 +3029,17 @@ export default function FactorQuantHub() {
             title="生成本地 DeepSeek provider benchmark scope ticket；只绑定样本计划，不调用模型、不读取 token/key、不写 raw prompt/output"
             aria-label="create local deepseek provider benchmark scope ticket from ordinary stock quant"
           >生成模型 benchmark 范围票据</button>
+          <button
+            disabled={!ordinaryDeepSeekProviderBenchmarkExecutionRequestCanLaunch}
+            onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-execution-request", { approved_by_user: true, benchmark_scope_hash: String(deepseekProviderBenchmarkScopeTicket.benchmark_scope_hash ?? "") })}
+            title="生成本地 DeepSeek provider benchmark execution request；只绑定 scope hash 和人工确认，不创建模型任务"
+            aria-label="create local deepseek provider benchmark execution request from ordinary stock quant"
+          >生成模型 benchmark 执行申请</button>
           <a href="#factor-deepseek" aria-label="open model explanation status after benchmark scope ticket">查看模型解释状态</a>
         </div>
         <TaskLaunchReceipt receipt={taskReceipt} />
         <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
-        <p className="risk-note">这个按钮只走显式 POST local task：不调用 DeepSeek，不调用 Tushare/provider/model，不启动 worker，不读取或展示 token/key，不写 raw prompt/output，不下单、不改 strategy action；执行请求和 governed executor 验收仍是后续独立步骤。</p>
+        <p className="risk-note">这两个按钮只走显式 POST local task：scope ticket 绑定样本计划，execution request 绑定最新 scope hash 和人工确认；它们都不创建 model task、不调用 DeepSeek，不调用 Tushare/provider/model，不启动 worker，不读取或展示 token/key，不写 raw prompt/output，不下单、不改 strategy action；governed executor 验收仍是后续独立步骤。</p>
       </div>
       <details className="developer-audit-details">
         <summary>模型解释 / 高级开关</summary>
