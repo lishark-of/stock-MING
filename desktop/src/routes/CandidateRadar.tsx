@@ -5709,8 +5709,8 @@ export default function CandidateRadar() {
           >刷新本地回放</button>
           <a href={candidateRadarP0Blocked ? "#desktop" : "#candidate-radar-search-quant-projection"} aria-label="open candidate radar compact primary action">更多搜票状态</a>
           <a href="#candidate-pool" title="跳到候选池；只读本地缓存" aria-label="open candidate pool from compact radar panel">候选池</a>
-          <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from compact radar panel">量化推演</a>
-          <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from compact radar panel">次日图谱</a>
+          <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from compact radar panel">量化推演</a>
+          <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from compact radar panel">次日图谱</a>
         </div>
         <p id={candidateRadarOperatorInputHelpId} className="risk-note" aria-live="polite">{ordinaryUserText(quantProjectionInputSessionState)}</p>
         <p id={candidateRadarOperatorSubmitHelpId} className="risk-note" aria-live="polite">{ordinaryUserText(quantProjectionSummaryGuidance)}</p>

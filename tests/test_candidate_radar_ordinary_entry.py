@@ -61,6 +61,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("renderQuantProjectionPrimaryAction(candidateRadarOperatorSubmitHelpId)", operator_slice)
         self.assertIn("查看最近结果", self.page)
         self.assertIn("刷新本地回放", operator_slice)
+        compact_actions_start = operator_slice.index('aria-label="candidate radar compact operator actions"')
+        compact_actions_end = operator_slice.index("</div>", compact_actions_start)
+        compact_actions_slice = operator_slice[compact_actions_start:compact_actions_end]
+        self.assertIn('href="#factor/factor-score"', compact_actions_slice)
+        self.assertIn('href="#next/next-session-chart"', compact_actions_slice)
         self.assertIn("candidateRadarOperatorPostConfirmOneGlanceItems", self.page)
         self.assertIn('aria-label="candidate radar operator post confirm one glance result"', operator_slice)
         self.assertIn("确认后马上看这里", operator_slice)
