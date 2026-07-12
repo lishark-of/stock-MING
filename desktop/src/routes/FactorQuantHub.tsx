@@ -2416,7 +2416,14 @@ export default function FactorQuantHub() {
   ];
 
   return (
-    <PacketCard title="股票量化推演" subtitle="因子、次日图谱和模型解释状态一屏看清；只做研究预览，不修改交易动作" status={ordinaryQuantStatusLabel}>
+    <>
+      <div className="page-head">
+        <div>
+          <h1>股票量化推演</h1>
+          <p>因子、次日图谱和模型解释状态一屏看清；只做研究预览，不修改交易动作。</p>
+        </div>
+      </div>
+      <PacketCard title="量化推演操作台" subtitle="因子、次日图谱和模型解释状态一屏看清；只做研究预览，不修改交易动作" status={ordinaryQuantStatusLabel}>
       <PacketCard title="普通用户量化推演摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={ordinaryQuantStatusLabel}>
         <div aria-label="stock quant ordinary user first summary">
           <div aria-label="stock quant app first evidence factory">
@@ -3325,6 +3332,7 @@ export default function FactorQuantHub() {
       <DataLineageTable rows={toRows(cacheWarnings, "warning")} />
       <JsonDetails title="Factor Quant Hub packet" data={packet} />
       </details>
-    </PacketCard>
+      </PacketCard>
+    </>
   );
 }
