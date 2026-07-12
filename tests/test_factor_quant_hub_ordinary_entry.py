@@ -6,6 +6,24 @@ ROOT = Path(__file__).resolve().parents[1] / "desktop"
 
 
 class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
+    def test_ready_scaffold_without_confirmed_symbol_returns_to_candidate_confirm(self):
+        source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "const ordinaryQuantNeedsCandidateConfirm = empty || (!candidateRadarConfirmedSymbol && !ordinaryQuantCandidateRadarP3Ready);",
+            source,
+        )
+        self.assertIn("Boolean(candidateRadarConfirmedSymbol) &&", source)
+        self.assertIn('const ordinaryQuantResultRouteReady = !ordinaryQuantNeedsCandidateConfirm;', source)
+        self.assertIn('"去下一票雷达确认股票"', source)
+        self.assertIn('"等待确认股票"', source)
+        self.assertIn(
+            '"尚未确认股票；先去下一票雷达确认一只股票，确认后再看支持/压制和次日图谱。"',
+            source,
+        )
+        self.assertIn('"量化结构缓存可用；等待确认股票结果"', source)
+        self.assertIn('const ordinaryQuantPrimaryActionHref = ordinaryQuantNeedsCandidateConfirm', source)
+
     def test_stock_quant_projection_summary_shows_user_decision_fields_first(self):
         source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
 

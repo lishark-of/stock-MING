@@ -482,12 +482,15 @@ export default function FactorQuantHub() {
         ? "DeepSeek 待治理：不阻塞 Tushare-first、支持/压制和次日图谱"
         : "DeepSeek governed executor 单独补；普通结果只读本地 cache / ledger / packet";
   const ordinaryQuantCandidateRadarP3Ready =
-    factorPacketP3OneScreenSummary.p3_readable_result_ready === true ||
-    candidateRadarResultQuickRows.length > 0 ||
-    factorPacketCandidateHandoff.p3_readable_result_ready === true ||
+    Boolean(candidateRadarConfirmedSymbol) &&
     (
-      candidateRadarInterpretation.interpretation_ready === true &&
-      Boolean(String(candidateRadarInterpretation.ordinary_result_summary ?? "").trim())
+      factorPacketP3OneScreenSummary.p3_readable_result_ready === true ||
+      candidateRadarResultQuickRows.length > 0 ||
+      factorPacketCandidateHandoff.p3_readable_result_ready === true ||
+      (
+        candidateRadarInterpretation.interpretation_ready === true &&
+        Boolean(String(candidateRadarInterpretation.ordinary_result_summary ?? "").trim())
+      )
     );
   const runtime = packet.runtime ?? {};
   const governance = packet.governance ?? {};
@@ -708,27 +711,32 @@ export default function FactorQuantHub() {
     series: Array.isArray(scoreChart.series) ? scoreChart.series : [{ type: "bar", data: [] }]
   };
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
-  const ordinaryQuantNextClick = empty
+  const ordinaryQuantNeedsCandidateConfirm = empty || (!candidateRadarConfirmedSymbol && !ordinaryQuantCandidateRadarP3Ready);
+  const ordinaryQuantNextClick = ordinaryQuantNeedsCandidateConfirm
     ? ordinaryQuantCandidateRadarP3Ready
       ? "先读最近搜票可读结论；支持/压制缓存待刷新，必要时再手动运行轻量推演"
       : "先从下一票雷达确认输入区输入股票代码并生成 3.0 量化推演；本页查看本地缓存，不自动刷新外部数据或模型解释"
     : "先看支持/压制与次日图谱预览；换标的从下一票雷达确认输入区点生成 3.0 量化推演；需要更新时再手动刷新数据、运行轻量推演或整理模型解释";
-  const ordinaryQuantPrimaryActionLabel = empty
+  const ordinaryQuantPrimaryActionLabel = ordinaryQuantNeedsCandidateConfirm
     ? ordinaryQuantCandidateRadarP3Ready
       ? "查看最近搜票结论"
-      : "去下一票雷达生成推演"
+      : "去下一票雷达确认股票"
     : "查看支持/压制";
-  const ordinaryQuantPrimaryActionHref = empty
+  const ordinaryQuantPrimaryActionHref = ordinaryQuantNeedsCandidateConfirm
     ? ordinaryQuantCandidateRadarP3Ready
       ? "#stock-quant-readable-result"
       : CANDIDATE_CONFIRM_HREF
     : "#factor-score";
-  const ordinaryQuantPrimaryActionBoundary = empty
+  const ordinaryQuantPrimaryActionBoundary = ordinaryQuantNeedsCandidateConfirm
     ? "主下一步直达下一票雷达确认输入区；输入代码和生成推演仍需按钮确认"
     : "主下一步只跳转本地支持/压制摘要；不刷新 provider/model、不写 cache";
   const ordinaryQuantSymbolEntryBoundary =
     "本页不提供股票代码输入；换标的必须回下一票雷达确认输入区点击确认生成，输入本身不创建 task";
-  const ordinaryQuantCacheSourceLabel = empty ? "等待本地量化缓存" : "本地量化缓存可用";
+  const ordinaryQuantCacheSourceLabel = empty
+    ? "等待本地量化缓存"
+    : ordinaryQuantNeedsCandidateConfirm
+      ? "量化结构缓存可用；等待确认股票结果"
+      : "本地量化结果缓存可用";
   const ordinaryQuantGlobalTushareSourceLabel =
     Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "Tushare 数据有本地记录" : "等待手动补充 Tushare 数据";
   const ordinaryQuantTushareFirstProviderSuccessCount = Number(
@@ -1088,7 +1096,7 @@ export default function FactorQuantHub() {
       ];
   const ordinaryQuantP3ExplainableSourceLine = ordinaryQuantCandidateRadarP3Ready
     ? `来源已接上：最近确认结果已回放；${ordinaryQuantTushareFirstDataChainLabel}；P2 三面 ${ordinaryQuantP2ReadySurfaceCount}/3`
-    : empty
+    : ordinaryQuantNeedsCandidateConfirm
       ? "来源待确认：先回下一票雷达确认代码，等待本地缓存、数据凭证和结果包回放"
       : `来源回放：Factor cache / Next Session preview；${ordinaryQuantTushareFirstDataChainLabel}`;
   const ordinaryQuantP3ExplainableGapLine = ordinaryQuantP2ReadySurfaceCount < 3
@@ -1098,7 +1106,7 @@ export default function FactorQuantHub() {
       : ordinaryQuantMissingEvidence;
   const ordinaryQuantP3ExplainableNextStep = ordinaryQuantCandidateRadarP3Ready
     ? candidateRadarReadableNextStep
-    : empty
+    : ordinaryQuantNeedsCandidateConfirm
       ? "回下一票雷达确认输入区输入代码并点击确认"
       : "先看支持/压制，再看次日图谱预览；DeepSeek 状态只作 P5 治理提示";
   const ordinaryQuantP3ExplainableSentence = ordinaryQuantCandidateRadarP3Ready
@@ -1136,7 +1144,7 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
-  const ordinaryQuantResultRouteReady = ordinaryQuantCandidateRadarP3Ready || !empty;
+  const ordinaryQuantResultRouteReady = !ordinaryQuantNeedsCandidateConfirm;
   const ordinaryQuantResultRouteSentence = ordinaryQuantResultRouteReady
     ? `${candidateRadarConfirmedSymbol || "当前标的"} 量化结果路标：先看支持/压制，再打开完整次日图谱；换标的回下一票雷达确认。`
     : "量化结果路标：先回下一票雷达确认代码；确认完成后再看支持/压制和完整次日图谱。";
@@ -1654,10 +1662,10 @@ export default function FactorQuantHub() {
   const ordinaryQuantCacheButtonLabel = "查看本地缓存只读取 GET cache；不会创建 task、不会调用 Tushare 或 DeepSeek";
   const ordinaryQuantRefreshButtonLabel = "手动刷新数据会创建按钮门控 POST task；不从 React render 直连 provider/model";
   const ordinaryQuantRunLightButtonLabel = "运行轻量推演会创建按钮门控 POST task；DeepSeek 整理仍在高级开关";
-  const ordinaryQuantStatusLabel = empty
+  const ordinaryQuantStatusLabel = ordinaryQuantNeedsCandidateConfirm
     ? ordinaryQuantCandidateRadarP3Ready
       ? "已回放搜票结论，量化缓存待刷新"
-      : "等待量化缓存"
+      : "等待确认股票"
     : "量化缓存可用";
   const ordinaryQuantUserFirstItems: MetricItem[] = [
     {
@@ -1667,8 +1675,8 @@ export default function FactorQuantHub() {
     },
     {
       label: "现在看什么",
-      value: ordinaryQuantCandidateRadarP3Ready || !empty ? candidateRadarReadableResult : ordinaryQuantNextClick,
-      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+      value: ordinaryQuantNeedsCandidateConfirm ? ordinaryQuantNextClick : candidateRadarReadableResult,
+      tone: ordinaryQuantNeedsCandidateConfirm ? "warn" : "good"
     },
     {
       label: "下一步",
@@ -1693,18 +1701,18 @@ export default function FactorQuantHub() {
   ];
   const ordinaryQuantPlainResultSentence = ordinaryQuantCandidateRadarP3Ready
     ? `${candidateRadarConfirmedSymbol || "当前标的"} 当前结论：${candidateRadarReadableResult}`
-    : empty
+    : ordinaryQuantNeedsCandidateConfirm
       ? "还没有可读的本地量化结果；先去下一票雷达确认一只股票。"
       : `${candidateRadarConfirmedSymbol || "当前标的"} 已有本地量化结果；先看支持 ${String(score.support_factors?.length ?? 0)} / 压制 ${String(score.suppress_factors?.length ?? 0)}，再看次日图谱。`;
-  const ordinaryQuantPlainGap = empty
+  const ordinaryQuantPlainGap = ordinaryQuantNeedsCandidateConfirm
     ? "缺少确认后的本地结果；输入股票代码本身保持静默，确认按钮后再回放结果。"
     : ordinaryQuantP2ReadySurfaceCount < 3
       ? `结果链还缺 ${ordinaryQuantP2MissingSurfaceLabel}；先看任务进度或回下一票雷达确认。`
       : ordinaryQuantMissingEvidence.includes("待")
         ? "真实数据质量、小池研究或模型解释证据还没补齐；当前结果先按本地回放阅读。"
         : "暂无页面阻断；当前结果仍只作为研究线索。";
-  const ordinaryQuantPlainNow = empty
-    ? "去下一票雷达确认股票代码"
+  const ordinaryQuantPlainNow = ordinaryQuantNeedsCandidateConfirm
+    ? "去下一票雷达确认一只股票"
     : ordinaryQuantCandidateRadarP3Ready
       ? "先看支持/压制和完整次日图谱；需要补新结果或换标的，再回下一票雷达确认。"
       : "先看支持/压制，再打开完整次日图谱；需要换标的再回下一票雷达确认。";
@@ -1713,7 +1721,7 @@ export default function FactorQuantHub() {
     {
       label: "一句话",
       value: ordinaryQuantPlainResultSentence,
-      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+      tone: ordinaryQuantNeedsCandidateConfirm ? "warn" : "good"
     },
     {
       label: "缺口",
@@ -1723,7 +1731,7 @@ export default function FactorQuantHub() {
     {
       label: "现在做什么",
       value: ordinaryQuantPlainNow,
-      tone: empty ? "warn" : "good"
+      tone: ordinaryQuantNeedsCandidateConfirm ? "warn" : "good"
     },
     {
       label: "安全说明",
@@ -1965,14 +1973,14 @@ export default function FactorQuantHub() {
     }
   ];
   const ordinaryQuantAppFirstEvidenceFactorySentence =
-    ordinaryQuantCandidateRadarP3Ready || !empty
-      ? `${candidateRadarConfirmedSymbol || "当前标的"} 已有可读研究回放：${ordinaryQuantPlainResultSentence}`
-      : "先从下一票雷达确认一只股票；确认前本页只显示本地缓存等待状态。";
+    ordinaryQuantNeedsCandidateConfirm
+      ? "尚未确认股票；先去下一票雷达确认一只股票，确认后再看支持/压制和次日图谱。"
+      : `${candidateRadarConfirmedSymbol} 已有可读研究回放：${ordinaryQuantPlainResultSentence}`;
   const ordinaryQuantAppFirstEvidenceFactoryItems: MetricItem[] = [
     {
       label: "现在能读",
       value: ordinaryQuantAppFirstEvidenceFactorySentence,
-      tone: ordinaryQuantCandidateRadarP3Ready || !empty ? "good" : "warn"
+      tone: ordinaryQuantNeedsCandidateConfirm ? "warn" : "good"
     },
     {
       label: "下一步按钮",

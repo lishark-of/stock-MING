@@ -11,9 +11,12 @@ production replacement.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
+import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +78,9 @@ REQUIRED_DURABLE_EVIDENCE_KEYS = {
     "production_replacement_review_required",
     "no_provider_trade_action_secret_boundary",
 }
+
+_EXACT_PACKETS_CACHE: tuple[dict[str, Any], dict[str, Any]] | None = None
+_EXACT_PACKETS_CACHE_LOCK = threading.Lock()
 NEXT_SESSION_PRODUCTION_STAGE_LABELS = {
     "exact_cache_payload_contract": "exact cache payload and chart contract",
     "interaction_hover_click_contract": "hover and click interaction contract",
@@ -234,6 +240,32 @@ def _build_exact_service_packet() -> dict[str, Any]:
             next_session_service.SQLITE_META_PATH = original_next_meta
 
 
+def _build_exact_packets_isolated() -> tuple[dict[str, Any], dict[str, Any]]:
+    global _EXACT_PACKETS_CACHE
+
+    with _EXACT_PACKETS_CACHE_LOCK:
+        if _EXACT_PACKETS_CACHE is None:
+            completed = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve()), "--emit-exact-packets"],
+                cwd=PROJECT_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if completed.returncode != 0:
+                error = completed.stderr.strip() or completed.stdout.strip() or "isolated exact packet build failed"
+                raise RuntimeError(error)
+            payload = json.loads(completed.stdout)
+            exact_packet = payload.get("exact_packet")
+            exact_service_packet = payload.get("exact_service_packet")
+            if not isinstance(exact_packet, dict) or not isinstance(exact_service_packet, dict):
+                raise RuntimeError("isolated exact packet build returned an invalid payload")
+            _EXACT_PACKETS_CACHE = (exact_packet, exact_service_packet)
+
+        return copy.deepcopy(_EXACT_PACKETS_CACHE)
+
+
 def _next_session_production_stage_scope_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for stage_key in sorted(REQUIRED_NEXT_SESSION_PRODUCTION_STAGES):
@@ -281,8 +313,7 @@ def _next_session_production_stage_scope_rows() -> list[dict[str, Any]]:
 
 
 def build_contract() -> dict[str, Any]:
-    exact_packet = _build_exact_sample_packet()
-    exact_service_packet = _build_exact_service_packet()
+    exact_packet, exact_service_packet = _build_exact_packets_isolated()
     exact_chart = _dict(exact_packet.get("chart_payload"))
     chart_contract = _dict(exact_chart.get("chart_contract"))
     interaction_contract = _dict(chart_contract.get("interaction_contract"))
@@ -1189,7 +1220,20 @@ def build_contract() -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate local LTG-08 Next-session ECharts map contracts.")
     parser.add_argument("--json", action="store_true", help="Print the full contract as JSON.")
+    parser.add_argument("--emit-exact-packets", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.emit_exact_packets:
+        print(
+            json.dumps(
+                {
+                    "exact_packet": _build_exact_sample_packet(),
+                    "exact_service_packet": _build_exact_service_packet(),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
 
     contract = build_contract()
     if args.json:
