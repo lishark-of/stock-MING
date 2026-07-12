@@ -284,11 +284,6 @@ export default function CommandCenterHome() {
         setTaskCatalog(res.data);
       });
       track("worker", getWorkerRuntimeCache(), (res) => setWorkerRuntime(res.data));
-      track("tasks", getTasks(), (res) => {
-        setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
-        setTaskIndex(res.data);
-        setTasks(res.data.tasks ?? []);
-      });
     };
 
     setLoading(true);
@@ -305,6 +300,11 @@ export default function CommandCenterHome() {
         setBootstrapEnvelopeWarnings(res.warnings ?? []);
       }),
       trackP0("desktop_preflight", getDesktopPreflightCache(), (res) => setDesktopPreflight(res.data)),
+      trackP0("tasks", getTasks(), (res) => {
+        setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
+        setTaskIndex(res.data);
+        setTasks(res.data.tasks ?? []);
+      }),
     ];
     void Promise.allSettled(p0Jobs).then(() => {
       if (cancelled) return;
@@ -946,13 +946,21 @@ export default function CommandCenterHome() {
       candidateQuantInterpretation.ordinary_result_boundary ??
       "可解释结果只从本地 cache / ledger / packet 回放；不会从结果回放卡创建 task、调用模型或生成交易动作。"
   );
-  const dailyCommandConfirmedSymbol = String(
-    candidates.search_quant_projection_latest_confirmed_symbol ??
-      candidateQuantReceipt.symbol ??
-      candidateQuantSmallDataWriteback.symbol ??
-      candidateQuantInterpretation.symbol ??
-      ""
-  );
+  const taskIndexLatestConfirmedSymbol =
+    taskIndex?.latest_confirmed_symbol_readback_external_calls_triggered === true ||
+    taskIndex?.latest_confirmed_symbol_creates_task_from_readback === true
+      ? ""
+      : homeText(taskIndex?.latest_confirmed_symbol, "");
+  const dailyCommandConfirmedSymbol =
+    [
+      candidates.search_quant_projection_latest_confirmed_symbol,
+      candidateQuantReceipt.symbol,
+      candidateQuantSmallDataWriteback.symbol,
+      candidateQuantInterpretation.symbol,
+      taskIndexLatestConfirmedSymbol
+    ]
+      .map((value) => homeText(value, ""))
+      .find(Boolean) ?? "";
   useEffect(() => {
     if (homeQuantSymbolTouched) return;
     if (homeQuantSymbol.trim()) return;
@@ -1672,13 +1680,19 @@ export default function CommandCenterHome() {
   const chokepointPayloadLedger = (chokepoint.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskCatalogPayloadLedger = (taskCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const taskIndexPayloadLedger = taskIndex?.call_ledger ?? [];
-  const dailyCommandCandidateLatestTaskId = String(
-    candidateQuantSmallDataWriteback.latest_task_id ??
-      candidateQuantReceipt.latest_task_id ??
-      candidateQuantReceipt.task_id ??
-      candidates.task_id ??
-      ""
-  );
+  const dailyCommandCandidateLatestTaskId =
+    [
+      candidateQuantResultVersionSummary.latest_task_id,
+      candidateQuantResultLineage.task_id,
+      candidateQuantProviderModelAcceptance.task_id,
+      candidateQuantSmallDataWriteback.latest_task_id,
+      candidateQuantReceipt.latest_task_id,
+      candidateQuantReceipt.task_id,
+      candidates.task_id,
+      taskIndex?.latest_task_id
+    ]
+      .map((value) => homeText(value, ""))
+      .find(Boolean) ?? "";
   const dailyCommandCandidateLatestTask = dailyCommandCandidateLatestTaskId
     ? tasks.find((task) => String(task.task_id ?? "") === dailyCommandCandidateLatestTaskId) ?? {}
     : {};
@@ -2081,7 +2095,7 @@ export default function CommandCenterHome() {
   const homeQuantVisibleTaskSource = homeQuantTaskPanelTaskId
     ? "本次首页确认按钮"
     : homeQuantRecoveredTaskId
-      ? "CandidateRadar cache 最近确认 task"
+      ? "CandidateRadar cache / GET /api/tasks 最近确认 task"
       : "等待确认按钮";
   const homeQuantVisibleTaskCanPoll = Boolean(homeQuantTaskPanelTaskId || (homeQuantRecoveredTaskId && !dailyCommandLatestTaskIsReplay));
   const homeQuantReadbackStatus = homeQuantVisibleTaskId
@@ -2193,7 +2207,9 @@ export default function CommandCenterHome() {
   const ordinaryHomeLocalData = dailyCommandP2ThreeSurfaceReady
     ? ordinaryHomeLocalDataSourceContract.label_when_ready
     : homeQuantVisibleTaskId
-      ? ordinaryHomeLocalDataSourceContract.label_when_writing
+      ? dailyCommandLatestTaskIsReplay
+        ? "最近确认已回放"
+        : ordinaryHomeLocalDataSourceContract.label_when_writing
       : dailyCommandHealthOk
         ? ordinaryHomeLocalDataSourceContract.label_before_confirm
         : "等待连接";
@@ -4310,7 +4326,7 @@ export default function CommandCenterHome() {
             <p className="risk-note">浏览器网络证据：{homeP1BrowserEvidenceLabel}；它不阻塞手动确认使用，也不作为生产验收完成声明。</p>
             <DataLineageTable rows={homeQuantConfirmButtonChainRows} />
           </details>
-          <p className="risk-note" aria-label="daily command home p1 symbol autofill boundary">当前标的自动填入只来自 CandidateRadar cache；不会自动点击确认、不创建 task、不调用 Tushare/DeepSeek，手动修改后不再覆盖输入。</p>
+          <p className="risk-note" aria-label="daily command home p1 symbol autofill boundary">当前标的自动填入只来自 CandidateRadar cache / GET /api/tasks；不会自动点击确认、不创建 task、不调用 Tushare/DeepSeek，手动修改后不再覆盖输入。</p>
           <p className="ordinary-status-note" aria-label="daily command home post confirm readback state" aria-live="polite">{homeQuantPostConfirmReadbackState}</p>
           <div aria-label="daily command home p1 immediate receipt">
             <p className="ordinary-status-note" aria-label="daily command home p1 immediate receipt sentence" aria-live="polite">{homeQuantImmediateReceiptSentence}</p>
