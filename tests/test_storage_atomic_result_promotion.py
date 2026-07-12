@@ -583,6 +583,54 @@ class StorageAtomicResultPromotionTests(unittest.TestCase):
         self.assertTrue(durable["current_result_storage_direct_evidence_complete"])
         self.assertTrue(durable["full_storage_migration_pending"])
         self.assertFalse(durable["production_storage_complete"])
+
+    def test_atomic_evidence_uses_current_pointer_when_canonical_packet_is_missing(self):
+        if not parquet_store.dependency_status()["available"]:
+            self.skipTest("parquet dependency missing")
+
+        for symbol, version in (("601318.SH", "qrv_first"), ("600519.SH", "qrv_second")):
+            self._write_candidate_packet(self._lineage(symbol=symbol, result_version=version))
+            task = storage_service.run_storage_current_result_atomic_promotion_task(
+                {
+                    "source": "focused_current_result_pointer_replay",
+                    "approved_by_user": True,
+                    "expected_symbol": symbol,
+                    "expected_result_version": version,
+                }
+            )
+            self.assertEqual(task["status"], "success")
+
+        SQLiteMetaStore(storage_service.SQLITE_META_PATH).write_packet(
+            storage_service.CURRENT_RESULT_LINEAGE_PACKET_KEY,
+            {"search_quant_canonical_result_lineage_archived": True},
+        )
+
+        evidence = storage_service.storage_current_result_atomic_promotion_evidence()
+
+        self.assertEqual(
+            evidence["status"],
+            "storage_current_result_atomic_promotion_current",
+        )
+        self.assertFalse(evidence["canonical_lineage_ready"])
+        self.assertFalse(evidence["can_launch_atomic_promotion"])
+        self.assertTrue(evidence["atomic_promotion_current"])
+        self.assertTrue(evidence["physical_write_executed"])
+        self.assertTrue(evidence["duckdb_readback_verified"])
+        self.assertTrue(evidence["manifest_current_version_ready"])
+        self.assertEqual(evidence["expected_symbol"], "600519.SH")
+        self.assertEqual(evidence["expected_result_version"], "qrv_second")
+        self.assertEqual(evidence["resolved_symbol"], "600519.SH")
+        self.assertEqual(evidence["resolved_result_version"], "qrv_second")
+        self.assertTrue(evidence["last_good_pointer_ready"])
+        self.assertTrue(evidence["retention_protects_current_and_last_good"])
+        self.assertTrue(evidence["current_result_storage_acceptance_ready"])
+
+        durable = storage_service.storage_physical_durable_evidence_recipe()
+        self.assertTrue(durable["current_result_atomic_parquet_promotion_done"])
+        self.assertTrue(durable["current_result_storage_direct_evidence_complete"])
+        self.assertFalse(durable["current_result_storage_acceptance_ready"])
+        self.assertFalse(durable["production_storage_complete"])
+
     def test_task_catalog_exposes_physical_writer_without_external_sources(self):
         catalog = task_service.build_task_catalog()
         row = next(

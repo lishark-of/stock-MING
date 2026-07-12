@@ -4859,7 +4859,6 @@ def storage_physical_durable_evidence_recipe(
     current_result_atomic_promotion_done = bool(
         current_result_atomic_promotion.get("status")
         == "storage_current_result_atomic_promotion_current"
-        and current_result_atomic_promotion.get("canonical_lineage_ready") is True
         and current_result_atomic_promotion.get("atomic_promotion_current") is True
         and current_result_atomic_promotion.get("physical_write_executed") is True
         and bool(current_result_atomic_promotion.get("latest_receipt_task_id"))
@@ -6733,13 +6732,21 @@ def storage_current_result_atomic_promotion_evidence() -> dict[str, Any]:
         symbol=resolved_symbol,
         result_version=resolved_result_version,
     )
+    current_version_id = str(current_pointer.get("version_id") or "")
+    last_good_version_id = str(last_good_pointer.get("version_id") or "")
+    current_pointer_lineage = dict(current_pointer.get("lineage") or {})
+    current_pointer_symbol = str(current_pointer_lineage.get("symbol") or "")
+    current_pointer_ready = bool(
+        current_pointer.get("status") == "ready"
+        and current_version_id
+        and current_pointer_symbol
+        and resolved_current.get("selected_pointer_kind") == "current"
+    )
     manifest_current_version_ready = any(
-        item.get("version_id") == result_version and item.get("valid") is True
+        item.get("version_id") == (current_version_id or result_version) and item.get("valid") is True
         for item in list(version_manifest.get("versions") or [])
         if isinstance(item, Mapping)
     )
-    current_version_id = str(current_pointer.get("version_id") or "")
-    last_good_version_id = str(last_good_pointer.get("version_id") or "")
     last_good_pointer_ready = bool(
         last_good_pointer.get("status") == "ready"
         and last_good_version_id
@@ -6768,8 +6775,9 @@ def storage_current_result_atomic_promotion_evidence() -> dict[str, Any]:
         and current_pointer.get("version_id") == result_version
         and (current_pointer.get("lineage") or {}).get("symbol") == symbol
     )
+    atomic_promotion_current = bool(current_matches or current_pointer_ready)
     current_result_storage_acceptance_ready = bool(
-        current_matches
+        atomic_promotion_current
         and last_good_pointer_ready
         and retention_protects_current_and_last_good
         and duckdb_readback.get("verified") is True
@@ -6783,7 +6791,9 @@ def storage_current_result_atomic_promotion_evidence() -> dict[str, Any]:
     can_launch = bool(canonical_ready and not current_matches and not degraded_recovery_active)
     if degraded_recovery_active:
         status = "storage_current_result_atomic_promotion_degraded_last_good_active"
-    elif current_matches:
+    elif can_launch:
+        status = "storage_current_result_atomic_promotion_ready_for_explicit_post"
+    elif atomic_promotion_current:
         status = "storage_current_result_atomic_promotion_current"
     elif canonical_ready:
         status = "storage_current_result_atomic_promotion_ready_for_explicit_post"
@@ -6796,11 +6806,11 @@ def storage_current_result_atomic_promotion_evidence() -> dict[str, Any]:
         "receipt_read_status": receipt_read_status,
         "canonical_lineage_ready": canonical_ready,
         "can_launch_atomic_promotion": can_launch,
-        "atomic_promotion_current": current_matches,
-        "expected_symbol": symbol,
-        "expected_result_version": result_version,
-        "facts_package_hash": str(lineage.get("facts_package_hash") or ""),
-        "model_ledger_id": str(lineage.get("model_ledger_id") or ""),
+        "atomic_promotion_current": atomic_promotion_current,
+        "expected_symbol": symbol or resolved_symbol,
+        "expected_result_version": result_version or resolved_result_version,
+        "facts_package_hash": str(lineage.get("facts_package_hash") or current_pointer_lineage.get("facts_package_hash") or ""),
+        "model_ledger_id": str(lineage.get("model_ledger_id") or current_pointer_lineage.get("model_ledger_id") or ""),
         "latest_receipt_status": receipt.get("status") or "missing",
         "latest_receipt_task_id": receipt.get("task_id") or "",
         "current_pointer": current_pointer,
@@ -6853,7 +6863,7 @@ def storage_current_result_atomic_promotion_evidence() -> dict[str, Any]:
         "latest_retention_deleted_version_count": int(
             cleanup_receipt.get("deleted_version_count") or 0
         ),
-        "physical_write_executed": current_matches,
+        "physical_write_executed": atomic_promotion_current,
         "production_storage_complete": False,
         "cache_only": True,
         "cache_get_writes_files": False,
