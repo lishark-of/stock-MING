@@ -4252,6 +4252,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration_goals["LTG-05"]["stage_scope_manifest"], "storage_physical_migration_stage_scope_manifest")
         self.assertIn("physical stage-scope manifest", migration_goals["LTG-05"]["current_state"])
         self.assertIn("physical execution recipe", migration_goals["LTG-05"]["current_state"])
+        self.assertIn("current-result atomic promotion", migration_goals["LTG-05"]["current_state"])
+        self.assertIn("retention POST readback", migration_goals["LTG-05"]["current_state"])
         self.assertIn("physical schema validation", migration_goals["LTG-05"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-05"]["production_complete"])
         self.assertEqual(
