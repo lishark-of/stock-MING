@@ -104,6 +104,57 @@ function ordinaryNextMetricItems(items: MetricItem[]): MetricItem[] {
   }));
 }
 
+type NextTaskLike = {
+  task_id?: string;
+  task_type?: string;
+  status?: string;
+  payload_safe?: Record<string, unknown>;
+  call_ledger?: Array<Record<string, unknown>>;
+};
+
+function latestNextTushareTaskSummary(tasks: NextTaskLike[]) {
+  const isTushareLedgerRow = (row: Record<string, unknown>) => {
+    const api = String(row.api ?? "").toLowerCase();
+    return row.tushare_called === true ||
+      ["trade_cal", "daily", "daily_basic", "moneyflow", "fund_daily", "margin_detail"].includes(api);
+  };
+  const task = tasks.find((item) => {
+    const taskType = String(item.task_type ?? "").toLowerCase();
+    return taskType.includes("tushare") || (item.call_ledger ?? []).some(isTushareLedgerRow);
+  });
+  if (!task) {
+    return {
+      ready: false,
+      taskId: "",
+      label: "等待确认后的真实数据任务",
+      dataDate: "",
+      rowCount: 0,
+      scopeHashShort: "",
+      failureMode: "waiting_confirm_task"
+    };
+  }
+  const ledgerRows = (task.call_ledger ?? []).filter(isTushareLedgerRow);
+  const payload = task.payload_safe ?? {};
+  const apis = Array.from(new Set(ledgerRows.map((row) => String(row.api ?? "")).filter(Boolean)));
+  const rowCount = ledgerRows.reduce((total, row) => total + Number(row.row_count ?? 0), 0);
+  const dataDate = ledgerRows.map((row) => String(row.data_date ?? "")).find(Boolean) ?? "";
+  const scopeHashShort = ledgerRows.map((row) => String(row.scope_hash_short ?? row.scope_hash ?? "")).find(Boolean)?.slice(0, 16) ?? "";
+  const failureModes = Array.from(new Set(ledgerRows
+    .map((row) => String(row.failure_mode ?? ""))
+    .filter((value) => value && value !== "none")));
+  const symbol = String(payload.symbol ?? payload.ts_code ?? ledgerRows[0]?.symbol ?? ledgerRows[0]?.ts_code ?? "");
+  const ready = task.status === "success" && rowCount > 0 && failureModes.length === 0;
+  return {
+    ready,
+    taskId: String(task.task_id ?? ""),
+    label: `${symbol || "当前标的"} / ${apis.join(" / ") || "Tushare"} / ${dataDate || "等待日期"} / ${String(rowCount)} 行`,
+    dataDate,
+    rowCount,
+    scopeHashShort,
+    failureMode: failureModes.join(" / ") || (rowCount > 0 ? "none" : "empty_or_missing_rows")
+  };
+}
+
 export default function NextSessionMap() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
   const [candidateRadarCache, setCandidateRadarCache] = useState<Record<string, unknown>>({});
@@ -581,6 +632,13 @@ export default function NextSessionMap() {
     taskIndex.readback_external_calls_triggered !== true &&
     taskIndex.latest_confirmed_symbol_readback_external_calls_triggered !== true &&
     taskIndex.latest_confirmed_symbol_creates_task_from_readback !== true;
+  const latestNextTushareTask = latestNextTushareTaskSummary(taskIndex?.tasks ?? []);
+  const latestNextTushareTaskLabel = latestNextTushareTask.taskId
+    ? `${latestNextTushareTask.taskId} / ${latestNextTushareTask.label}`
+    : latestNextTushareTask.label;
+  const latestNextTushareScopeLabel = latestNextTushareTask.scopeHashShort
+    ? `scope ${latestNextTushareTask.scopeHashShort}；failure=${latestNextTushareTask.failureMode}`
+    : `scope 等待；failure=${latestNextTushareTask.failureMode}`;
   const nextSessionProgressWatchTaskId = taskIndexLatestConfirmedTaskId || (candidateRadarSourceTaskLabel.includes("等待") ? "" : candidateRadarSourceTaskLabel);
   const nextSessionProgressWatchSymbol = taskIndexLatestConfirmedSymbol || candidateRadarConfirmedSymbol;
   const nextSessionProgressWatchStatus =
@@ -778,7 +836,8 @@ export default function NextSessionMap() {
     packetCandidateRadarProviderSuccessCount > 0 ||
     candidateRadarWritebackSurfaceReady ||
     packetCandidateRadarP2HandoffReady ||
-    packetCandidateRadarP3HandoffReady;
+    packetCandidateRadarP3HandoffReady ||
+    latestNextTushareTask.ready;
   const nextSessionTushareDataCardSummary = nextSessionTushareDataCardReady
     ? `${candidateRadarConfirmedSymbol || "当前标的"} 确认后 Tushare 数据卡可读：${packetCandidateRadarProviderLedgerLabel}；${candidateRadarWritebackSurfaceReady ? "P2 三面已回放" : "P2 三面待完整回放"}。`
     : "确认后 Tushare 数据卡等待回写：先回下一票雷达输入股票代码并点击确认按钮。";
@@ -805,6 +864,16 @@ export default function NextSessionMap() {
       label: "接口回放",
       value: nextSessionTushareDataCardReady ? packetCandidateRadarProviderLedgerLabel : "等待本地 call_ledger",
       tone: nextSessionTushareDataCardReady ? "good" : "warn"
+    },
+    {
+      label: "最近真实任务",
+      value: latestNextTushareTaskLabel,
+      tone: latestNextTushareTask.ready ? "good" : "warn"
+    },
+    {
+      label: "数据日期 / scope",
+      value: latestNextTushareScopeLabel,
+      tone: latestNextTushareTask.scopeHashShort ? "good" : "warn"
     },
     {
       label: "P2 三面",
@@ -1030,8 +1099,13 @@ export default function NextSessionMap() {
     },
     {
       label: "来源层",
-      value: `${nextSessionCacheSourceLabel} / CandidateRadar cache / 本地任务索引`,
+      value: `${nextSessionCacheSourceLabel} / CandidateRadar cache / 本地任务索引 / ${latestNextTushareTaskLabel}`,
       tone: "good"
+    },
+    {
+      label: "最近真实数据",
+      value: latestNextTushareScopeLabel,
+      tone: latestNextTushareTask.scopeHashShort ? "good" : "warn"
     },
     {
       label: "明确降级",
@@ -1078,6 +1152,11 @@ export default function NextSessionMap() {
       label: "证据来源",
       value: `${nextSessionCacheSourceLabel} / ${nextSessionReplayOrigin}`,
       tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn"
+    },
+    {
+      label: "真实数据 task",
+      value: latestNextTushareTaskLabel,
+      tone: latestNextTushareTask.ready ? "good" : "warn"
     },
     {
       label: "同源版本",
