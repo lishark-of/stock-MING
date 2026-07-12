@@ -117,6 +117,7 @@ function textRows(value: unknown, source: string) {
 }
 
 const DATA_CAPABILITY_HREF = "#dataCapability";
+const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
 
 export default function MarginEtf() {
   const [etfPacket, setEtfPacket] = useState<Record<string, unknown>>({});
@@ -1047,7 +1048,7 @@ export default function MarginEtf() {
           <p className="ordinary-status-note" aria-label="margin etf app visible now sentence" aria-live="polite">{marginEtfAppVisibleNowSentence}</p>
           <MetricGrid items={marginEtfAppVisibleNowItems} />
           <div className="actions" aria-label="margin etf app visible now local actions">
-            <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf visible now">换标的</a>
+            <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from margin etf visible now">换标的</a>
             <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf visible now">看风险护栏</a>
             <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf visible now">看数据能力</a>
             <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf visible now">今日作战台</a>
@@ -1060,7 +1061,7 @@ export default function MarginEtf() {
           <p className="ordinary-status-note" aria-label="margin etf candidate radar confirmed data bridge sentence" aria-live="polite">{marginEtfConfirmedDataBridgeSentence}</p>
           <MetricGrid items={marginEtfConfirmedDataBridgeItems} />
           <div className="actions" aria-label="margin etf candidate radar confirmed data bridge actions">
-            <a href="#candidates/candidate-radar-search-quant-projection" title="回下一票雷达确认输入区；输入和读取不外联" aria-label="return candidate radar confirm input from margin etf data bridge">回确认输入</a>
+            <a href={CANDIDATE_CONFIRM_HREF} title="回下一票雷达确认输入区；输入和读取不外联" aria-label="return candidate radar confirm input from margin etf data bridge">回确认输入</a>
             <a href="#factor/factor-score" title="切换到股票量化推演；只读本地回放" aria-label="open factor from margin etf data bridge">看量化推演</a>
             <a href="#next/next-session-chart" title="切换到次日图谱；只读本地回放" aria-label="open next session from margin etf data bridge">看次日图谱</a>
             <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf data bridge">数据能力</a>
@@ -1083,7 +1084,7 @@ export default function MarginEtf() {
             <a href="#margin-etf-candidate-rows" title="跳到 ETF 候选行；只读本地快照" aria-label="open etf candidate rows from first viewport">看 ETF 候选</a>
             <a href="#margin-etf-cash-line" title="跳到融资现金线；只读本地快照" aria-label="open cash line from first viewport">看现金线</a>
             <a href="#margin-etf-local-refresh-actions" title="跳到下方本地回放按钮；不会自动点击或创建任务" aria-label="jump local refresh actions from first viewport">本地回放按钮</a>
-            <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from first viewport action strip">换标的</a>
+            <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from first viewport action strip">换标的</a>
             <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from first viewport action strip">数据能力</a>
           </div>
           <p className="risk-note">首屏操作条只做本地锚点跳转；不会自动刷新 ETF、不会调用外部数据、模型或远端检查、不会创建后台流程、不会交易或改写策略。</p>
@@ -1094,7 +1095,7 @@ export default function MarginEtf() {
           <p className="ordinary-status-note" aria-label="margin etf cash line sentence" aria-live="polite">{marginEtfCashLineSentence}</p>
           <MetricGrid items={marginEtfCashLineItems} />
           <div className="actions" aria-label="margin etf cash line local actions">
-            <a href="#candidates" title="切换到下一票雷达；候选不是买入指令" aria-label="return candidate radar from margin etf cash line">换标的</a>
+            <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；候选不是买入指令" aria-label="return candidate radar from margin etf cash line">换标的</a>
             <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf cash line">数据能力</a>
             <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf cash line">风险护栏</a>
           </div>
@@ -1122,7 +1123,7 @@ export default function MarginEtf() {
             aria-label="start margin etf local refresh flow"
           >{taskSubmitting ? "生成中" : "生成本地回放"}</button>
           <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf">今日作战台</a>
-          <a href="#candidates" title="切换到下一票雷达；候选不是买入指令" aria-label="open candidate radar from margin etf">下一票雷达</a>
+          <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；候选不是买入指令" aria-label="open candidate radar from margin etf">下一票雷达</a>
           <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf">风险护栏</a>
         </div>
         {taskDisabledReason && <p className="risk-note">刷新暂不可用：{ordinaryText(taskDisabledReason)}</p>}
@@ -1170,7 +1171,7 @@ export default function MarginEtf() {
               <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from margin etf post research path">看量化推演</a>
               <a href="#next/next-session-chart" title="切换到次日图谱；只读本地结果" aria-label="open next from margin etf post research path">看次日图谱</a>
               <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和本地结果状态" aria-label="open data capability from margin etf post research path">数据能力</a>
-              <a href="#candidates" title="切换到下一票雷达；换标的仍需确认按钮" aria-label="return candidate radar from margin etf post research path">换标的</a>
+              <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；换标的仍需确认按钮" aria-label="return candidate radar from margin etf post research path">换标的</a>
               <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf post research path">风险护栏</a>
             </div>
             <details className="developer-audit-details" aria-label="margin etf post research risk path rows">
@@ -1185,7 +1186,7 @@ export default function MarginEtf() {
             <p className="ordinary-status-note" aria-label="margin etf candidate bridge sentence" aria-live="polite">{marginEtfCandidateBridgeSentence}</p>
             <MetricGrid items={marginEtfCandidateBridgeItems} />
             <div className="actions" aria-label="margin etf candidate bridge local actions">
-              <a href="#candidates" title="切换到下一票雷达；候选不是买入指令" aria-label="return candidate radar from margin etf bridge">回下一票雷达</a>
+              <a href={CANDIDATE_CONFIRM_HREF} title="切换到下一票雷达确认输入区；候选不是买入指令" aria-label="return candidate radar from margin etf bridge">回下一票雷达</a>
               <a href="#risk" title="切换到风险护栏；只读本地缓存" aria-label="open risk guardrails from margin etf bridge">看风险护栏</a>
               <a href="#home" title="回今日作战台；只切换本地页面" aria-label="open home from margin etf bridge">今日作战台</a>
             </div>

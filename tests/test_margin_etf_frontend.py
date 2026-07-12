@@ -100,6 +100,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
         mode_start = self.page.index('aria-label="margin etf mode layered live light boundary"', card_start)
         audit_start = self.page.index('aria-label="margin etf audit details"')
         plain_slice = self.page[plain_start:viewport_action_start]
+        primary_actions = self.page[actions_start:supporting_details_start]
         quick_read_slice = self.page[quick_read_start:post_research_start]
 
         self.assertLess(card_start, page_state_start)
@@ -139,6 +140,8 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertNotIn("fetch(", plain_slice)
         self.assertNotIn("packet", plain_slice)
         self.assertNotIn("task", plain_slice)
+        self.assertIn('aria-label="open candidate radar from margin etf"', primary_actions)
+        self.assertIn("href={CANDIDATE_CONFIRM_HREF}", primary_actions)
         self.assertIn("ordinaryQuickReadSummary", self.page)
         self.assertIn("ordinaryMissingEvidence", self.page)
         self.assertIn("ordinaryQuickReadItems", self.page)
@@ -222,6 +225,8 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertIn("marginEtfAppVisibleNowSentence", source_before_audit)
         self.assertIn("marginEtfAppVisibleNowItems", source_before_audit)
         self.assertIn("DATA_CAPABILITY_HREF", source_before_audit)
+        self.assertIn('const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";', self.page)
+        self.assertNotIn('href="#candidates"', self.page)
         self.assertIn("打开 app 能看到 ETF/融资的待补风险快照", source_before_audit)
         self.assertIn("打开 app 能看到 ${allVisibleEtfRows.length} 行 ETF 候选", source_before_audit)
         for label in (
@@ -241,7 +246,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertIn("{marginEtfAppVisibleNowSentence}", visible_slice)
         self.assertIn("MetricGrid items={marginEtfAppVisibleNowItems}", visible_slice)
         self.assertIn('aria-label="margin etf app visible now local actions"', visible_slice)
-        self.assertIn('href="#candidates"', visible_slice)
+        self.assertIn("href={CANDIDATE_CONFIRM_HREF}", visible_slice)
         self.assertIn('href="#risk"', visible_slice)
         self.assertIn('href={DATA_CAPABILITY_HREF}', visible_slice)
         self.assertIn('href="#home"', visible_slice)
@@ -294,7 +299,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertIn('href="#margin-etf-candidate-rows"', action_slice)
         self.assertIn('href="#margin-etf-cash-line"', action_slice)
         self.assertIn('href="#margin-etf-local-refresh-actions"', action_slice)
-        self.assertIn('href="#candidates"', action_slice)
+        self.assertIn("href={CANDIDATE_CONFIRM_HREF}", action_slice)
         self.assertIn('href={DATA_CAPABILITY_HREF}', action_slice)
         self.assertIn('id="margin-etf-candidate-rows"', self.page)
         self.assertIn('id="margin-etf-cash-line"', self.page)
@@ -342,7 +347,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertIn('href="#factor/factor-score"', post_research)
         self.assertIn('href="#next/next-session-chart"', post_research)
         self.assertIn('href={DATA_CAPABILITY_HREF}', post_research)
-        self.assertIn('href="#candidates"', post_research)
+        self.assertIn("href={CANDIDATE_CONFIRM_HREF}", post_research)
         self.assertIn('href="#risk"', post_research)
         self.assertIn('aria-label="margin etf post research risk path rows"', post_research)
         self.assertIn("<summary>查看结果到风险预算路径</summary>", post_research)
@@ -404,7 +409,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
         self.assertIn('aria-label="return candidate radar from margin etf bridge"', bridge)
         self.assertIn('aria-label="open risk guardrails from margin etf bridge"', bridge)
         self.assertIn('aria-label="open home from margin etf bridge"', bridge)
-        self.assertIn('href="#candidates"', bridge)
+        self.assertIn("href={CANDIDATE_CONFIRM_HREF}", bridge)
         self.assertIn('href="#risk"', bridge)
         self.assertIn('href="#home"', bridge)
         self.assertIn('aria-label="margin etf candidate bridge rows"', bridge)
@@ -456,7 +461,7 @@ class MarginEtfFrontendTests(unittest.TestCase):
         ):
             self.assertIn(label, self.page)
         self.assertIn('aria-label="margin etf cash line local actions"', cash_line)
-        self.assertIn('href="#candidates"', cash_line)
+        self.assertIn("href={CANDIDATE_CONFIRM_HREF}", cash_line)
         self.assertIn('href={DATA_CAPABILITY_HREF}', cash_line)
         self.assertIn('href="#risk"', cash_line)
         self.assertIn('aria-label="margin etf cash line rows"', cash_line)
