@@ -3016,6 +3016,7 @@ export default function FactorQuantHub() {
           >生成研究池研究回执</button>
           <a href="#factor-universe-audit" aria-label="open factor universe audit details from ordinary stock quant">查看研究池缺口</a>
         </div>
+        <h3>最近任务回执</h3>
         <TaskLaunchReceipt receipt={taskReceipt} />
         <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
         <p className="risk-note">这条普通入口只把 LTG-04 的本地预检、执行申请和 research receipt 露出来：不启动 Celery/Redis，不读全市场 payload，不计算生产 rank/zscore/neutralization，不调用 Tushare/DeepSeek/GitHub，也不改 strategy action。</p>
