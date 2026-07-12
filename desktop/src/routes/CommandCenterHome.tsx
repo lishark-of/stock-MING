@@ -2210,6 +2210,18 @@ export default function CommandCenterHome() {
       ordinaryHomeStorageCurrentResult.result_version ??
       ""
   ).trim();
+  const ordinaryHomeStorageCurrentDataDate = String(
+    storageCurrentResult.data_date ??
+      ordinaryHomeStorageCurrentResult.data_date ??
+      ""
+  ).trim();
+  const ordinaryHomeStorageCurrentFreshness = String(
+    storageCurrentResult.freshness_state ??
+      ordinaryHomeStorageCurrentResult.freshness_state ??
+      ""
+  ).trim();
+  const ordinaryHomeStorageCurrentFreshnessLabel =
+    `${ordinaryHomeStorageCurrentDataDate || "等待 data_date"} / ${ordinaryHomeStorageCurrentFreshness || "等待 freshness"}`;
   const ordinaryHomeStorageCurrentReadable = Boolean(
     ordinaryHomeStorageCurrentStatus === "storage_current_result_cache_ready_current" &&
     ordinaryHomeStorageCurrentSymbol &&
@@ -2225,7 +2237,7 @@ export default function CommandCenterHome() {
     storageCurrentResult.does_not_modify_strategy_action === true
   );
   const ordinaryHomeStorageCurrentText = ordinaryHomeStorageCurrentReadable
-    ? `${ordinaryHomeStorageCurrentSymbol} 本地 current-result 可读；版本 ${ordinaryHomeStorageCurrentVersion}；DuckDB 回读已通过。`
+    ? `${ordinaryHomeStorageCurrentSymbol} 本地 current-result 可读；版本 ${ordinaryHomeStorageCurrentVersion}；日期/新鲜度 ${ordinaryHomeStorageCurrentFreshnessLabel}；DuckDB 回读已通过。`
     : "Storage current-result 仍待生成或降级回放。";
   const ordinaryHomeStorageCurrentSource = ordinaryHomeStorageCurrentReadable
     ? `Storage current-result / ${String(storageCurrentResult.source_atomic_task_id ?? "本地原子提升记录")}`
@@ -2234,13 +2246,13 @@ export default function CommandCenterHome() {
     ? "Storage current-result 已可读；仍不等于 LTG-05 production complete"
     : "缺 current-result 本地提升或可读 last-good";
   const ordinaryHomeStorageCurrentInline = ordinaryHomeStorageCurrentReadable
-    ? `；current-result ${ordinaryHomeStorageCurrentVersion} / DuckDB 已回读`
+    ? `；current-result ${ordinaryHomeStorageCurrentVersion} / ${ordinaryHomeStorageCurrentFreshnessLabel} / DuckDB 已回读`
     : "";
   const ordinaryHomeReadableResultReady = dailyCommandP3OneGlanceReadable || ordinaryHomeStorageCurrentReadable;
   const dailyCommandCurrentResearchSnapshotReadableSentence = homeQuantP1P2P3CheckpointReady
     ? `${dailyCommandConfirmedSymbolLabel} 已有最近确认结果：${ordinaryHomeExplainableResultLabel}；P2 ${dailyCommandP2SurfaceCompletionLabel}；${dailyCommandNextSessionReadableStatus}；下一步看股票量化推演和次日图谱。`
     : ordinaryHomeStorageCurrentReadable
-      ? `${ordinaryHomeStorageCurrentSymbol} 已有本地 current-result：${ordinaryHomeStorageCurrentVersion}；下一步看股票量化推演和次日图谱。`
+      ? `${ordinaryHomeStorageCurrentSymbol} 已有本地 current-result：${ordinaryHomeStorageCurrentVersion} / ${ordinaryHomeStorageCurrentFreshnessLabel}；下一步看股票量化推演和次日图谱。`
     : dailyCommandP0LocalReadinessReady
       ? dailyCommandConfirmedSymbol
         ? `${dailyCommandConfirmedSymbolLabel} 已有本地回放线索；${homeQuantP1P2P3CheckpointLabel}；需要更新时再手动点击确认按钮。`
@@ -2353,7 +2365,7 @@ export default function CommandCenterHome() {
   const ordinaryHomePlainConclusionText = dailyCommandP3OneGlanceReadable
     ? `${ordinaryHomeRecentResultSymbol || "当前标的 "}已有可读投研结果，先看来源和缺口，再看量化推演与次日图谱。`
     : ordinaryHomeStorageCurrentReadable
-      ? `${ordinaryHomeStorageCurrentSymbol} 已有本地 current-result，版本 ${ordinaryHomeStorageCurrentVersion}；先看股票量化推演和次日图谱。`
+      ? `${ordinaryHomeStorageCurrentSymbol} 已有本地 current-result，版本 ${ordinaryHomeStorageCurrentVersion}，日期/新鲜度 ${ordinaryHomeStorageCurrentFreshnessLabel}；先看股票量化推演和次日图谱。`
     : dailyCommandLatestTaskStepLower.includes("blocked_")
       ? `最近确认被阻断或降级：${dailyCommandLatestConfirmReadableStatus}。`
       : homeQuantVisibleTaskId || dailyCommandLatestTaskId
@@ -2544,7 +2556,7 @@ export default function CommandCenterHome() {
   const ordinaryHomeAppVisibleNowSentence = dailyCommandP3OneGlanceReadable
       ? `打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果：${ordinaryHomeExplainableResultLabel}；下一步看股票量化推演和次日图谱。`
     : ordinaryHomeStorageCurrentReadable
-      ? `打开 app 能看到 ${ordinaryHomeStorageCurrentSymbol} 的本地 current-result：${ordinaryHomeStorageCurrentVersion}；下一步看股票量化推演和次日图谱。`
+      ? `打开 app 能看到 ${ordinaryHomeStorageCurrentSymbol} 的本地 current-result：${ordinaryHomeStorageCurrentVersion} / ${ordinaryHomeStorageCurrentFreshnessLabel}；下一步看股票量化推演和次日图谱。`
     : dailyCommandP0LocalReadinessReady
       ? "打开 app 能看到本地已接上、股票确认入口和等待结果状态；先输入股票代码并点击确认。"
       : dailyCommandHealthOk
@@ -2586,6 +2598,11 @@ export default function CommandCenterHome() {
       label: "本地 current-result",
       value: ordinaryHomeStorageCurrentText,
       tone: ordinaryHomeStorageCurrentReadable ? "good" : "warn"
+    },
+    {
+      label: "日期/新鲜度",
+      value: ordinaryHomeStorageCurrentFreshnessLabel,
+      tone: ordinaryHomeStorageCurrentDataDate && ordinaryHomeStorageCurrentFreshness ? "good" : "warn"
     },
     {
       label: "来源层",
@@ -2647,6 +2664,11 @@ export default function CommandCenterHome() {
       label: "本地 current-result",
       value: ordinaryHomeStorageCurrentText,
       tone: ordinaryHomeStorageCurrentReadable ? "good" : "warn"
+    },
+    {
+      label: "日期/新鲜度",
+      value: ordinaryHomeStorageCurrentFreshnessLabel,
+      tone: ordinaryHomeStorageCurrentDataDate && ordinaryHomeStorageCurrentFreshness ? "good" : "warn"
     },
     {
       label: "Storage 提升任务",
