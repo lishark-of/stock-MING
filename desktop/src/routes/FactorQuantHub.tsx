@@ -2244,6 +2244,7 @@ export default function FactorQuantHub() {
   ];
   const ordinaryFactorUniverseDryRunReady = universeWorkerBatchDryRun.local_dry_run_ready === true;
   const ordinaryFactorUniverseExecutionRequestReady = universeWorkerBatchExecutionRequest.local_execution_request_ready === true;
+  const ordinaryFactorUniverseResearchReceiptReady = universeWorkerBatchResearchReceipt.local_worker_research_receipt_ready === true;
   const ordinaryFactorUniverseReadPlanReady = universeExecutionReadiness.read_plan_ready === true;
   const ordinaryFactorUniverseReadPlanCanLaunch = !ordinaryFactorUniverseReadPlanReady;
   const ordinaryFactorUniverseDryRunCanLaunch = Boolean(
@@ -2259,7 +2260,17 @@ export default function FactorQuantHub() {
       !ordinaryFactorUniverseExecutionRequestReady &&
       universeWorkerBatchDryRun.worker_batch_scope_hash
   );
-  const ordinaryFactorUniverseWorkerBatchState = ordinaryFactorUniverseExecutionRequestReady
+  const ordinaryFactorUniverseResearchReceiptCanLaunch = Boolean(
+    ordinaryFactorUniverseExecutionRequestReady &&
+      !ordinaryFactorUniverseResearchReceiptReady &&
+      (
+        universeWorkerBatchExecutionRequest.worker_batch_scope_hash ||
+        universeWorkerBatchDryRun.worker_batch_scope_hash
+      )
+  );
+  const ordinaryFactorUniverseWorkerBatchState = ordinaryFactorUniverseResearchReceiptReady
+    ? `研究池本地回执已记录：scope=${String(universeWorkerBatchResearchReceipt.worker_batch_scope_hash_short ?? universeWorkerBatchResearchReceipt.worker_batch_scope_hash ?? "已绑定")}`
+    : ordinaryFactorUniverseExecutionRequestReady
     ? `研究池执行申请已绑定：scope=${String(universeWorkerBatchExecutionRequest.worker_batch_scope_hash_short ?? universeWorkerBatchExecutionRequest.worker_batch_scope_hash ?? "已绑定")}`
     : ordinaryFactorUniverseDryRunReady
     ? `研究池预检已记录：scope=${String(universeWorkerBatchDryRun.worker_batch_scope_hash_short ?? universeWorkerBatchDryRun.worker_batch_scope_hash ?? "已绑定")}`
@@ -2280,12 +2291,16 @@ export default function FactorQuantHub() {
     {
       label: "预检状态",
       value: ordinaryFactorUniverseWorkerBatchState,
-      tone: ordinaryFactorUniverseDryRunReady || ordinaryFactorUniverseExecutionRequestReady ? "good" : ordinaryFactorUniverseDryRunCanLaunch ? "warn" : "neutral"
+      tone: ordinaryFactorUniverseDryRunReady || ordinaryFactorUniverseExecutionRequestReady || ordinaryFactorUniverseResearchReceiptReady ? "good" : ordinaryFactorUniverseDryRunCanLaunch ? "warn" : "neutral"
     },
     {
       label: "下一步",
-      value: ordinaryFactorUniverseExecutionRequestReady
-        ? "只读复核 execution request；真实 worker runtime 仍需单独授权"
+      value: ordinaryFactorUniverseResearchReceiptReady
+        ? "下一步转入真实 worker runtime / storage / metric evidence，仍需单独授权"
+        : ordinaryFactorUniverseResearchReceiptCanLaunch
+          ? "生成研究池研究回执"
+        : ordinaryFactorUniverseExecutionRequestReady
+          ? "生成研究池研究回执前复核 execution request"
         : ordinaryFactorUniverseExecutionRequestCanLaunch
           ? "生成研究池执行申请"
         : ordinaryFactorUniverseDryRunCanLaunch
@@ -2293,11 +2308,11 @@ export default function FactorQuantHub() {
           : ordinaryFactorUniverseReadPlanCanLaunch
             ? "生成研究池读取计划"
             : "回到本地缓存",
-      tone: ordinaryFactorUniverseExecutionRequestReady ? "good" : ordinaryFactorUniverseExecutionRequestCanLaunch || ordinaryFactorUniverseDryRunCanLaunch ? "warn" : "neutral"
+      tone: ordinaryFactorUniverseResearchReceiptReady ? "good" : ordinaryFactorUniverseResearchReceiptCanLaunch || ordinaryFactorUniverseExecutionRequestCanLaunch || ordinaryFactorUniverseDryRunCanLaunch ? "warn" : "neutral"
     },
     {
       label: "边界",
-      value: "只创建本地 scope / execution request ticket；不启动 worker、不 ping Redis/Celery、不调用 provider/model、不交易",
+      value: "只创建本地 scope / execution request / research receipt；不启动 worker、不 ping Redis/Celery、不调用 provider/model、不交易",
       tone: "good"
     }
   ];
@@ -2921,11 +2936,21 @@ export default function FactorQuantHub() {
             title="生成本地 Factor Universe worker-batch 执行申请；只绑定 dry-run scope，不启动 worker、不读 storage、不调用 provider/model"
             aria-label="create local factor universe worker batch execution request from ordinary stock quant"
           >生成研究池执行申请</button>
+          <button
+            disabled={!ordinaryFactorUniverseResearchReceiptCanLaunch}
+            onClick={() => launchTask("/api/factor-quant/universe-worker-batch-research", {
+              approved_by_user: true,
+              worker_batch_scope_hash: String(universeWorkerBatchExecutionRequest.worker_batch_scope_hash ?? universeWorkerBatchDryRun.worker_batch_scope_hash ?? ""),
+              execution_request_task_id: String(universeWorkerBatchExecutionRequest.task_id ?? "")
+            })}
+            title="记录本地 Factor Universe worker-batch research receipt；不传 execute_local_worker_evidence，不启动 worker、不读 storage、不调用 provider/model"
+            aria-label="record local factor universe worker batch research receipt from ordinary stock quant"
+          >生成研究池研究回执</button>
           <a href="#factor-universe-audit" aria-label="open factor universe audit details from ordinary stock quant">查看研究池缺口</a>
         </div>
         <TaskLaunchReceipt receipt={taskReceipt} />
         <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
-        <p className="risk-note">这条普通入口只把 LTG-04 的本地预检和执行申请露出来：不启动 Celery/Redis，不读全市场 payload，不计算生产 rank/zscore/neutralization，不调用 Tushare/DeepSeek/GitHub，也不改 strategy action。</p>
+        <p className="risk-note">这条普通入口只把 LTG-04 的本地预检、执行申请和 research receipt 露出来：不启动 Celery/Redis，不读全市场 payload，不计算生产 rank/zscore/neutralization，不调用 Tushare/DeepSeek/GitHub，也不改 strategy action。</p>
       </div>
       <details className="developer-audit-details">
         <summary>模型解释 / 高级开关</summary>
