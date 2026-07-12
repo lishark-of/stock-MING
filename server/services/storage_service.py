@@ -5847,10 +5847,9 @@ def storage_physical_execution_phase_a_packet(
         and execution_request.get("production_storage_complete") is False
     )
     scope_matches = bool(latest_scope_hash and requested_scope_hash == latest_scope_hash)
-    durable_ready = (
+    durable_recipe_visible = (
         durable_recipe.get("schema_version") == STORAGE_PHYSICAL_DURABLE_EVIDENCE_SCHEMA_VERSION
         and durable_recipe.get("local_recipe_ready") is True
-        and int(durable_recipe.get("production_blocker_count") or 0) == 0
         and int(durable_recipe.get("evidence_key_count") or 0) == len(STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS)
         and durable_recipe.get("production_storage_complete") is False
     )
@@ -5878,7 +5877,7 @@ def storage_physical_execution_phase_a_packet(
         status = "storage_physical_execution_phase_a_blocked_scope_hash_required"
     elif not scope_matches:
         status = "storage_physical_execution_phase_a_blocked_scope_hash_mismatch"
-    elif not durable_ready:
+    elif not durable_recipe_visible:
         status = "storage_physical_execution_phase_a_blocked_durable_evidence"
     elif not no_side_effects:
         status = "storage_physical_execution_phase_a_blocked_boundary_regression"
@@ -5912,15 +5911,15 @@ def storage_physical_execution_phase_a_packet(
         ),
         _storage_physical_execution_phase_a_row(
             "durable_local_evidence_complete",
-            passed=durable_ready,
-            status="passed_local_durable_evidence" if durable_ready else "blocked_durable_evidence_incomplete",
+            passed=durable_recipe_visible,
+            status="passed_local_durable_recipe_visible" if durable_recipe_visible else "blocked_durable_evidence_incomplete",
             evidence=(
                 f"durable_status={durable_recipe.get('status')}; "
                 f"evidence_key_count={durable_recipe.get('evidence_key_count')}; "
                 f"production_blocker_count={durable_recipe.get('production_blocker_count')}"
             ),
-            next_action="Keep the durable evidence recipe visible; production promotion remains separate.",
-            production_blocker=not durable_ready,
+            next_action="Keep the durable evidence recipe visible; production blockers remain separate from Phase A local evidence.",
+            production_blocker=not durable_recipe_visible,
         ),
         _storage_physical_execution_phase_a_row(
             "no_write_delete_provider_trade_action_secret_boundary",

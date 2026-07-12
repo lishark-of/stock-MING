@@ -264,6 +264,7 @@ def _cache_endpoint_specs() -> list[tuple[str, str, Callable[[], dict[str, Any]]
         ("GET /api/chokepoint/cache", "chokepoint", packet_service.build_chokepoint_cache),
         ("GET /api/storage", "storage_overview", storage_service.storage_overview),
         ("GET /api/storage/catalog", "storage_dataset_catalog", storage_service.storage_dataset_catalog),
+        ("GET /api/storage/current-result", "storage_current_result", storage_service.storage_current_result_cache),
         ("GET /api/storage/factor-values", "storage_factor_values", storage_service.factor_values_status),
         ("GET /api/storage/sqlite-meta", "storage_sqlite_meta", storage_service.sqlite_meta_status),
         ("GET /api/strategy/cache", "strategy_trace", strategy_service.read_strategy_trace_cache),

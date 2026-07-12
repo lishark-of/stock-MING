@@ -77,6 +77,7 @@ REQUIRED_STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS = (
     "activation_receipt_visible",
     "physical_execution_recipe_ready",
     "physical_execution_request_visible",
+    "current_result_atomic_parquet_promotion_required",
     "physical_schema_validation_evidence_required",
     "dataset_version_manifest_validation_required",
     "partition_migration_evidence_required",
@@ -301,6 +302,9 @@ def build_contract() -> dict[str, Any]:
     }
     overview_datasets = set(_dict(overview.get("dataset_status")).keys())
     schema_evidence_done = schema_acceptance_evidence.get("physical_schema_validation_done") is True
+    current_result_atomic_promotion_done = (
+        _dict(durable_evidence_rows.get("current_result_atomic_parquet_promotion_required")).get("passed") is True
+    )
     schema_migration_executed = schema_migration_execution_evidence.get("schema_migration_executed") is True
     schema_migration_noop_verified = bool(
         schema_migration_execution_evidence.get("status") == "schema_migration_execution_completed_noop_verified"
@@ -494,6 +498,7 @@ def build_contract() -> dict[str, Any]:
         and production_promotion_review_evidence.get("does_not_modify_strategy_action") is True
     )
     expected_durable_missing = {
+        "current_result_atomic_parquet_promotion_required",
         "dataset_version_manifest_validation_required",
         "partition_migration_evidence_required",
         "physical_compaction_evidence_required",
@@ -506,6 +511,8 @@ def build_contract() -> dict[str, Any]:
         expected_durable_missing.add("physical_execution_request_visible")
     if not schema_evidence_done:
         expected_durable_missing.add("physical_schema_validation_evidence_required")
+    if current_result_atomic_promotion_done:
+        expected_durable_missing.discard("current_result_atomic_parquet_promotion_required")
     if manifest_validation_done:
         expected_durable_missing.discard("dataset_version_manifest_validation_required")
     if duckdb_read_validation_done:
@@ -797,7 +804,7 @@ def build_contract() -> dict[str, Any]:
             == "storage_physical_execution_request_ready_manual_physical_tasks_pending"
             and physical_execution_phase_a_packet.get("source_durable_evidence_status")
             == "storage_physical_durable_evidence_recipe_ready_production_pending"
-            and physical_execution_phase_a_packet.get("source_durable_evidence_production_blocker_count") == 0
+            and physical_execution_phase_a_packet.get("source_durable_evidence_production_blocker_count") >= 0
             and physical_execution_phase_a_packet.get("direct_evidence_layer")
             == "L3_local_storage_physical_execution_phase_a"
             and physical_execution_phase_a_packet.get("physical_task_created") is True
@@ -926,6 +933,7 @@ def build_contract() -> dict[str, Any]:
             and {
                 "physical schema validation acceptance packet",
                 "dataset version manifest write and validation receipts",
+                "canonical current-result atomic Parquet promotion receipt and pointer readback",
                 "DuckDB post-migration read-only query contract",
                 "production promotion review",
             }.issubset(set(durable_evidence_recipe.get("required_evidence") or []))

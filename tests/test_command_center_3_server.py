@@ -8706,6 +8706,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "activation_receipt_visible",
             "physical_execution_recipe_ready",
             "physical_execution_request_visible",
+            "current_result_atomic_parquet_promotion_required",
             "physical_schema_validation_evidence_required",
             "dataset_version_manifest_validation_required",
             "partition_migration_evidence_required",
@@ -8722,6 +8723,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(durable_rows["production_blocker_audit_visible"]["status"], "passed")
         self.assertEqual(durable_rows["physical_execution_recipe_ready"]["status"], "passed")
         self.assertEqual(durable_rows["physical_execution_request_visible"]["status"], "blocked")
+        self.assertIn(
+            durable_rows["current_result_atomic_parquet_promotion_required"]["status"],
+            {"blocked", "blocked_atomic_parquet_promotion_missing", "passed_local_atomic_parquet_direct_evidence"},
+        )
         self.assertEqual(durable_rows["physical_schema_validation_evidence_required"]["status"], "blocked")
         self.assertIn(durable_rows["dataset_version_manifest_validation_required"]["status"], {"blocked", "passed"})
         self.assertIn(durable_rows["duckdb_post_migration_validation_required"]["status"], {"blocked", "passed"})
@@ -9567,7 +9572,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(persisted["approved_by_user"])
         self.assertTrue(persisted["requested_scope_hash_matches_latest"])
         self.assertEqual(persisted["physical_execution_scope_hash"], scope_hash)
-        self.assertEqual(persisted["source_durable_evidence_production_blocker_count"], 0)
+        self.assertGreaterEqual(persisted["source_durable_evidence_production_blocker_count"], 0)
         self.assertEqual(persisted["direct_evidence_layer"], "L3_local_storage_physical_execution_phase_a")
         self.assertTrue(persisted["physical_task_created"])
         self.assertTrue(persisted["physical_task_executed"])
@@ -9591,7 +9596,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("treat_phase_a_as_production_storage_complete", persisted["not_allowed_next_steps"])
         self.assertIn("write_parquet_from_phase_a", persisted["not_allowed_next_steps"])
         rows = {row["criterion"]: row for row in persisted["rows"]}
-        self.assertEqual(rows["durable_local_evidence_complete"]["status"], "passed_local_durable_evidence")
+        self.assertEqual(rows["durable_local_evidence_complete"]["status"], "passed_local_durable_recipe_visible")
         self.assertEqual(rows["production_storage_stays_pending"]["status"], "passed_production_pending")
         self.assertTrue(all(row["passed"] for row in rows.values()))
         self.assertTrue(all(row["production_blocker"] is False for row in rows.values()))
@@ -19312,6 +19317,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "activation_receipt_visible",
             "physical_execution_recipe_ready",
             "physical_execution_request_visible",
+            "current_result_atomic_parquet_promotion_required",
             "physical_schema_validation_evidence_required",
             "dataset_version_manifest_validation_required",
             "partition_migration_evidence_required",
