@@ -5739,6 +5739,9 @@ export default function CandidateRadar() {
         </div>
         <p id={candidateRadarOperatorInputHelpId} className="risk-note" aria-live="polite">{ordinaryUserText(quantProjectionInputSessionState)}</p>
         <p id={candidateRadarOperatorSubmitHelpId} className="risk-note" aria-live="polite">{ordinaryUserText(quantProjectionSummaryGuidance)}</p>
+        <details className="developer-audit-details" aria-label="candidate radar compact operator research assist details">
+          <summary>研究辅助 / 操作台详情</summary>
+          <p className="risk-note">默认先保留输入框、最近结果和主入口；确认后读法、单票闭环、分组理由和纵切状态放在这里，需要时再展开。</p>
         <div aria-label="candidate radar operator post confirm one glance result">
           <h3>确认后马上看这里</h3>
           <p className="ordinary-status-note" aria-label="candidate radar operator post confirm one glance sentence" aria-live="polite">{ordinaryUserText(quantProjectionPostConfirmWaitLabel)}</p>
@@ -5823,6 +5826,7 @@ export default function CandidateRadar() {
           <p className="ordinary-status-note">输入、确认、最近结果、候选池和缺口先给结论；降级或待补会直接显示，不进入买卖动作。</p>
           <MetricGrid items={candidateRadarCompactVerticalSliceItems} />
         </div>
+        </details>
         <p className="risk-note">退旧雷达前还缺什么：{ordinaryRetirementReadinessMainGaps}；页面检查：{ordinaryBrowserQaStatusLabel}。</p>
         <p className="risk-note">{ordinaryCandidateGroupBoundary} 页面打开、输入、GET cache 和 React render 都不会自动外联。</p>
       </PacketCard>
