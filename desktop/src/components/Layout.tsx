@@ -222,10 +222,11 @@ export default function Layout({
               </details>
             )
           ))}
-          <label className="mobile-nav-select-wrap">
-            <span>更多页面</span>
+          <div className="mobile-nav-select-wrap">
+            <span id="mobile-secondary-route-select-label">更多页面</span>
             <select
-              aria-label="研究辅助、数据治理和系统迁移页面"
+              id="mobile-secondary-route-select"
+              aria-labelledby="mobile-secondary-route-select-label"
               value={ROUTE_GROUPS[0].routes.some((route) => route.key === active) ? "" : active}
               onChange={(event) => {
                 if (event.target.value) onNavigate(event.target.value as RouteKey);
@@ -240,7 +241,7 @@ export default function Layout({
                 </optgroup>
               ))}
             </select>
-          </label>
+          </div>
         </nav>
         {mobilePrimaryJump ? (
           <a

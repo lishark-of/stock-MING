@@ -1712,6 +1712,11 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('marginEtf: { href: "#marginEtf/margin-etf-cash-line", label: "跳到 ETF/融资风险" }', layout)
         self.assertIn('className="mobile-primary-jump"', layout)
         self.assertIn("只做本地页面滚动", layout)
+        self.assertIn('<div className="mobile-nav-select-wrap">', layout)
+        self.assertIn('id="mobile-secondary-route-select-label"', layout)
+        self.assertIn('id="mobile-secondary-route-select"', layout)
+        self.assertIn('aria-labelledby="mobile-secondary-route-select-label"', layout)
+        self.assertNotIn('<label className="mobile-nav-select-wrap">', layout)
         mobile_styles = styles[styles.index("@media (max-width: 760px)") : styles.index("@media (prefers-reduced-motion: reduce)")]
         self.assertIn("max-height: 217px", mobile_styles)
         self.assertIn("overflow-x: auto", mobile_styles)
