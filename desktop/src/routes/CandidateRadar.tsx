@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getAuditCache, getBootstrapStatus, getCandidateRadarCache, getDataCapabilityCache, getDesktopPreflightCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getAuditUserRouteQa, getBootstrapStatus, getCandidateRadarCache, getDataCapabilityCache, getDesktopPreflightCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import { getTasks, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
@@ -165,7 +165,7 @@ export default function CandidateRadar() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
-  const [auditCache, setAuditCache] = useState<Record<string, unknown>>({});
+  const [auditUserRouteQa, setAuditUserRouteQa] = useState<Record<string, unknown>>({});
   const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
   const [bootstrapEnvelopeLedger, setBootstrapEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [bootstrapEnvelopeWarnings, setBootstrapEnvelopeWarnings] = useState<Array<string>>([]);
@@ -250,8 +250,8 @@ export default function CandidateRadar() {
   const refreshTaskIndex = () => {
     void getTasks().then((res) => setTaskIndex(res.data));
   };
-  const refreshAuditCache = () => {
-    void getAuditCache().then((res) => setAuditCache(res.data));
+  const refreshUserRouteQaEvidence = () => {
+    void getAuditUserRouteQa().then((res) => setAuditUserRouteQa(res.data));
   };
   const refreshDataCapabilityCache = () => {
     void getDataCapabilityCache().then((res) => {
@@ -263,7 +263,7 @@ export default function CandidateRadar() {
     refreshCache();
     refreshBootstrapStatus();
     refreshTaskIndex();
-    refreshAuditCache();
+    refreshUserRouteQaEvidence();
     refreshDataCapabilityCache();
   };
   const refreshDesktopPreflight = () => {
@@ -412,7 +412,7 @@ export default function CandidateRadar() {
     refreshBootstrapStatus();
     refreshDesktopPreflight();
     refreshTaskIndex();
-    refreshAuditCache();
+    refreshUserRouteQaEvidence();
     refreshDataCapabilityCache();
   }, []);
   useEffect(() => {
@@ -422,7 +422,7 @@ export default function CandidateRadar() {
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
-  const userRouteQaEvidence = (auditCache.user_route_qa_evidence_contract as Record<string, unknown> | undefined) ?? {};
+  const userRouteQaEvidence = (auditUserRouteQa.user_route_qa_evidence_contract as Record<string, unknown> | undefined) ?? {};
   const userRouteQaCoveredRoutes = Array.isArray(userRouteQaEvidence.covered_routes)
     ? (userRouteQaEvidence.covered_routes as unknown[]).map((route) => String(route))
     : [];
@@ -5906,7 +5906,7 @@ export default function CandidateRadar() {
             </div>
             <details className="developer-audit-details" aria-label="candidate radar user route qa evidence rows">
               <summary>查看 QA 明细</summary>
-              <p className="risk-note">QA 明细只读 `/api/audit/cache` 汇总的 ignored 本地报告；本页不会打开浏览器、不会写截图、不会创建任务。</p>
+              <p className="risk-note">QA 明细只读 `/api/audit/user-route-qa` 的 ignored 本地报告摘要；本页不会打开浏览器、不会写截图、不会创建任务。</p>
               <DataLineageTable rows={candidateRadarUserRouteQaRows} />
             </details>
             <p className="risk-note">这张 QA 速读证明普通路线在本机可打开和可输入；它不是 provider/model 证据、不是远端 CI，也不代表旧雷达可以退场。</p>
