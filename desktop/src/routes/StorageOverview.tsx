@@ -3,12 +3,14 @@ import {
   getFactorValuesStorage,
   getSQLiteMetaStorage,
   getStorageCatalog,
+  getStorageCurrentResult,
   getStorageDataset,
   getStorageOverview,
   postStorageArtifactCleanupDryRun,
   postStorageCacheTtlDryRun,
   postStorageCompactionDryRun,
   postStorageBacktestResultsSchemaSeed,
+  postStorageCurrentResultAtomicPromote,
   postStorageDatasetVersionManifestDryRun,
   postStorageDatasetVersionManifestReview,
   postStorageDatasetVersionManifestValidate,
@@ -78,6 +80,9 @@ export default function StorageOverview() {
   const [storageCatalog, setStorageCatalog] = useState<Record<string, unknown>>({});
   const [catalogEnvelopeLedger, setCatalogEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [catalogEnvelopeWarnings, setCatalogEnvelopeWarnings] = useState<Array<string>>([]);
+  const [currentResult, setCurrentResult] = useState<Record<string, unknown>>({});
+  const [currentResultEnvelopeLedger, setCurrentResultEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [currentResultEnvelopeWarnings, setCurrentResultEnvelopeWarnings] = useState<Array<string>>([]);
   const [datasetCursors, setDatasetCursors] = useState<Record<string, string>>({});
   const [datasetFilters, setDatasetFilters] = useState<Record<string, StorageFilterDraft>>({});
   const [factorValues, setFactorValues] = useState<Record<string, unknown>>({});
@@ -109,6 +114,8 @@ export default function StorageOverview() {
   const [physicalExecutionRequestReceipt, setPhysicalExecutionRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [physicalExecutionPhaseATaskId, setPhysicalExecutionPhaseATaskId] = useState("");
   const [physicalExecutionPhaseAReceipt, setPhysicalExecutionPhaseAReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [currentResultAtomicTaskId, setCurrentResultAtomicTaskId] = useState("");
+  const [currentResultAtomicReceipt, setCurrentResultAtomicReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshStorage = () => {
     void getStorageOverview().then((res) => {
@@ -120,6 +127,11 @@ export default function StorageOverview() {
       setStorageCatalog(res.data);
       setCatalogEnvelopeLedger(res.call_ledger ?? []);
       setCatalogEnvelopeWarnings(res.warnings ?? []);
+    });
+    void getStorageCurrentResult().then((res) => {
+      setCurrentResult(res.data);
+      setCurrentResultEnvelopeLedger(res.call_ledger ?? []);
+      setCurrentResultEnvelopeWarnings(res.warnings ?? []);
     });
     void getFactorValuesStorage(storageQueryParamsFromDraft(datasetFilters.factor_values, datasetCursors.factor_values)).then((res) => setFactorValues(res.data));
     void getSQLiteMetaStorage().then((res) => setSqliteMeta(res.data));
@@ -234,6 +246,16 @@ export default function StorageOverview() {
       setPhysicalExecutionPhaseAReceipt(res);
       if (res.ok) setPhysicalExecutionPhaseATaskId(res.data.task_id);
     });
+  const launchCurrentResultAtomicPromotion = () =>
+    void postStorageCurrentResultAtomicPromote({
+      source: "storage_overview_button",
+      approved_by_user: true,
+      expected_symbol: String(storageCurrentResultAtomicPromotion.expected_symbol ?? ""),
+      expected_result_version: String(storageCurrentResultAtomicPromotion.expected_result_version ?? "")
+    }).then((res) => {
+      setCurrentResultAtomicReceipt(res);
+      if (res.ok) setCurrentResultAtomicTaskId(res.data.task_id);
+    });
 
   useEffect(() => {
     refreshStorage();
@@ -318,8 +340,12 @@ export default function StorageOverview() {
   const catalogPayloadCallLedger = (storageCatalog.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const catalogCallLedger = catalogEnvelopeLedger.length ? catalogEnvelopeLedger : catalogPayloadCallLedger;
   const catalogWarnings = catalogEnvelopeWarnings.length ? catalogEnvelopeWarnings : ((storageCatalog.warnings as Array<string> | undefined) ?? []);
+  const currentResultPayloadCallLedger = (currentResult.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
+  const currentResultCallLedger = currentResultEnvelopeLedger.length ? currentResultEnvelopeLedger : currentResultPayloadCallLedger;
+  const currentResultWarnings = currentResultEnvelopeWarnings.length ? currentResultEnvelopeWarnings : ((currentResult.warnings as Array<string> | undefined) ?? []);
   const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
   const catalogWarningRows = catalogWarnings.map((warning, index) => ({ index: index + 1, warning }));
+  const currentResultWarningRows = currentResultWarnings.map((warning, index) => ({ index: index + 1, warning }));
   const previewRows = datasetCards.flatMap((item) => {
     const query = item.packet.query as Record<string, unknown> | undefined;
     const rows = (query?.rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -432,6 +458,10 @@ export default function StorageOverview() {
   const storagePhysicalDurableEvidenceRows =
     (overview.storage_physical_durable_evidence_rows as Array<Record<string, unknown>> | undefined) ??
     ((storageCatalog.storage_physical_durable_evidence_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const storageCurrentResultAtomicPromotion =
+    (overview.storage_current_result_atomic_promotion as Record<string, unknown> | undefined) ??
+    ((storageCatalog.storage_current_result_atomic_promotion as Record<string, unknown> | undefined) ?? {});
+  const currentResultReadback = (currentResult.result as Record<string, unknown> | undefined) ?? {};
   const schemaValidationAcceptanceEvidence =
     (overview.schema_validation_acceptance_evidence as Record<string, unknown> | undefined) ??
     ((storageCatalog.schema_validation_acceptance_evidence as Record<string, unknown> | undefined) ?? {});
@@ -453,10 +483,22 @@ export default function StorageOverview() {
     : storagePhysicalExecutionRecipe.physical_execution_scope_hash
       ? "下方生成 physical execution request；它只绑定 scope，不执行物理迁移"
       : "先看 schema、manifest、partition、compaction、TTL 与 cleanup 缺口";
+  const storageCurrentResultState = currentResult.duckdb_readback_verified === true
+    ? `${String(currentResultReadback.symbol ?? "当前标的")} / ${String(currentResultReadback.result_version ?? "current")} 已有可回放 current-result；pointer=${String(currentResult.selected_pointer_kind ?? "current")}`
+    : storageCurrentResultAtomicPromotion.degraded_recovery_active === true
+      ? "当前结果走 last-good 降级回放；不会用坏版本覆盖 current"
+      : storageCurrentResultAtomicPromotion.can_launch_atomic_promotion === true
+        ? `${String(storageCurrentResultAtomicPromotion.expected_symbol ?? "当前标的")} canonical lineage ready；可点按钮写入本地 versioned Parquet current/last-good`
+        : "等待同一 task_id / scope_hash / result_version 的 canonical lineage；GET 只读不写文件";
+  const storageCurrentResultNextStep = storageCurrentResultAtomicPromotion.can_launch_atomic_promotion === true
+    ? "点击原子提升 current-result；只写本地 ignored Parquet 和指针，不外联"
+    : currentResult.duckdb_readback_verified === true
+      ? "查看当前/last-good 回放和 retention 状态；不重复提升同一结果"
+      : "先在 Candidate/Factor/Next 形成同次结果，再回到存储页提升";
   const storageDatasetReadinessLabel =
     `catalog=${String(overview.dataset_count ?? datasetCatalog?.length ?? 0)} / parquet ready=${String(datasetImplementation.parquet_ready_dataset_count ?? 0)} / missing=${String(datasetImplementation.parquet_missing_dataset_count ?? 0)}`;
   const storageOrdinaryFirstScreenSentence =
-    `本地数据底座：${storageDatasetReadinessLabel}；物理执行：${storagePhysicalStatus}；下一步：${storagePhysicalNextStep}。`;
+    `本地数据底座：${storageDatasetReadinessLabel}；当前结果：${storageCurrentResultState}；物理执行：${storagePhysicalStatus}；下一步：${storageCurrentResultNextStep}。`;
   const storageOrdinaryFirstScreenItems = [
     {
       label: "本地数据底座",
@@ -467,6 +509,11 @@ export default function StorageOverview() {
       label: "SQLite meta",
       value: String(overview.metadata_status ?? sqliteMeta.status ?? "missing"),
       tone: String(overview.metadata_status ?? sqliteMeta.status ?? "").includes("ready") ? "good" as const : "warn" as const
+    },
+    {
+      label: "当前结果",
+      value: storageCurrentResultState,
+      tone: currentResult.duckdb_readback_verified === true || storageCurrentResultAtomicPromotion.can_launch_atomic_promotion === true ? "good" as const : "warn" as const
     },
     {
       label: "物理执行状态",
@@ -490,7 +537,7 @@ export default function StorageOverview() {
     }
   ];
   const storageAppVisibleNowSentence =
-    `打开 app 能看到本地数据底座 ${storageDatasetReadinessLabel}；物理执行状态是：${storagePhysicalStatus}；下一步：${storagePhysicalNextStep}。`;
+    `打开 app 能看到本地数据底座 ${storageDatasetReadinessLabel}；当前结果状态是：${storageCurrentResultState}；下一步：${storageCurrentResultNextStep}。`;
   const storageAppVisibleNowItems = [
     {
       label: "数据底座",
@@ -501,6 +548,11 @@ export default function StorageOverview() {
       label: "元数据",
       value: String(overview.metadata_status ?? sqliteMeta.status ?? "missing"),
       tone: String(overview.metadata_status ?? sqliteMeta.status ?? "").includes("ready") ? "good" as const : "warn" as const
+    },
+    {
+      label: "当前结果",
+      value: storageCurrentResultState,
+      tone: currentResult.duckdb_readback_verified === true || storageCurrentResultAtomicPromotion.can_launch_atomic_promotion === true ? "good" as const : "warn" as const
     },
     {
       label: "物理证据",
@@ -529,6 +581,39 @@ export default function StorageOverview() {
   ];
   const storagePhysicalExecutionRequestCanLaunch = Boolean(storagePhysicalExecutionRecipe.physical_execution_scope_hash);
   const storagePhysicalExecutionPhaseACanLaunch = storagePhysicalExecutionRequest.local_execution_request_ready === true;
+  const storageCurrentResultAtomicPromotionCanLaunch = storageCurrentResultAtomicPromotion.can_launch_atomic_promotion === true;
+  const storageCurrentResultAtomicItems = [
+    {
+      label: "current-result",
+      value: storageCurrentResultState,
+      tone: currentResult.duckdb_readback_verified === true || storageCurrentResultAtomicPromotionCanLaunch ? "good" as const : "warn" as const
+    },
+    {
+      label: "expected symbol",
+      value: String(storageCurrentResultAtomicPromotion.expected_symbol ?? currentResultReadback.symbol ?? "等待 lineage"),
+      tone: storageCurrentResultAtomicPromotion.canonical_lineage_ready === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "result version",
+      value: String(storageCurrentResultAtomicPromotion.expected_result_version ?? currentResultReadback.result_version ?? "等待 result_version"),
+      tone: storageCurrentResultAtomicPromotion.canonical_lineage_ready === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "last-good",
+      value: storageCurrentResultAtomicPromotion.last_good_pointer_ready === true ? "ready" : String(currentResult.selected_pointer_kind ?? "waiting"),
+      tone: storageCurrentResultAtomicPromotion.last_good_pointer_ready === true || currentResult.degraded_recovery_active === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "现在可点",
+      value: storageCurrentResultAtomicPromotionCanLaunch ? "原子提升 current-result" : storageCurrentResultNextStep,
+      tone: storageCurrentResultAtomicPromotionCanLaunch ? "good" as const : "warn" as const
+    },
+    {
+      label: "边界",
+      value: "按钮只写本地 ignored Parquet current/last-good；GET 不写文件、不外联、不交易",
+      tone: "good" as const
+    }
+  ];
   const storagePhysicalEvidenceActionItems = [
     {
       label: "request ticket",
@@ -669,6 +754,33 @@ export default function StorageOverview() {
           <TaskStatusPanel taskId={physicalExecutionPhaseATaskId} onSuccess={refreshStorage} />
           <p className="risk-note">首屏按钮是显式 POST local task：不调用 Tushare/DeepSeek/GitHub，不启动 worker，不下单，不改 strategy action；Phase A 仍不是 production storage complete。</p>
         </div>
+        <div aria-label="storage ordinary current result atomic promotion">
+          <h3>当前结果版本化</h3>
+          <p className="ordinary-status-note" aria-label="storage ordinary current result sentence" aria-live="polite">
+            {storageCurrentResultState}；{storageCurrentResultNextStep}。
+          </p>
+          <MetricGrid items={storageCurrentResultAtomicItems} />
+          <div className="actions" aria-label="storage ordinary current result atomic actions">
+            <button
+              disabled={!storageCurrentResultAtomicPromotionCanLaunch}
+              onClick={launchCurrentResultAtomicPromotion}
+              title="把同一 task_id / scope_hash / result_version 的 canonical lineage 原子提升为本地 current-result；不刷新 provider/model，不交易"
+              aria-label="atomic promote current research result from storage first screen"
+            >原子提升 current-result</button>
+            <button onClick={refreshStorage} aria-label="refresh current result storage readback">查看 current/last-good</button>
+            <a href="#candidates/candidate-radar-search-quant-projection" aria-label="open candidate confirm from current result storage">回确认股票</a>
+          </div>
+          <TaskLaunchReceipt receipt={currentResultAtomicReceipt} />
+          <TaskStatusPanel taskId={currentResultAtomicTaskId} onSuccess={refreshStorage} />
+          <details className="developer-audit-details" aria-label="storage current result atomic audit details">
+            <summary>研究辅助 / current-result 读回详情</summary>
+            <DataLineageTable rows={[storageCurrentResultAtomicPromotion]} />
+            <DataLineageTable rows={[currentResult]} />
+            <DataLineageTable rows={currentResultCallLedger} />
+            <DataLineageTable rows={currentResultWarningRows} />
+          </details>
+          <p className="risk-note">当前结果版本化只接受同一 symbol + result_version 的 canonical lineage；旧任务迟到不能覆盖 current。按钮不调用 Tushare/DeepSeek/GitHub/worker，不创建交易动作，不改 strategy action；GET current-result 只读 current/last-good/degraded 状态。</p>
+        </div>
         <p className="risk-note">首屏只汇总本地 dataset、SQLite meta、物理执行 ticket 状态和 Worker 支撑边界；刷新只读取本地 GET cache，链接只切换本地页面，不创建 task、不写文件、不调用 Tushare/DeepSeek/GitHub、不下单。</p>
       </div>
 
@@ -702,6 +814,10 @@ export default function StorageOverview() {
           { label: "cache warnings", value: cacheWarnings.length },
           { label: "catalog envelope ledger", value: catalogCallLedger.length },
           { label: "catalog warnings", value: catalogWarnings.length },
+          { label: "current-result", value: String(currentResult.status ?? storageCurrentResultAtomicPromotion.status ?? "missing"), tone: currentResult.duckdb_readback_verified === true || storageCurrentResultAtomicPromotionCanLaunch ? "good" : "warn" },
+          { label: "current-result ledger", value: currentResultCallLedger.length },
+          { label: "current-result warnings", value: currentResultWarningRows.length },
+          { label: "atomic promote", value: String(storageCurrentResultAtomicPromotion.status ?? "missing"), tone: storageCurrentResultAtomicPromotion.atomic_promotion_current === true ? "good" : "warn" },
           { label: "factor_values", value: String(datasetStatus?.factor_values ?? "missing") },
           { label: "daily", value: String(datasetStatus?.daily ?? "missing") },
           { label: "daily_basic", value: String(datasetStatus?.daily_basic ?? "missing") },

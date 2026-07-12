@@ -783,6 +783,10 @@ export function getStorageOverview() {
   return request<Record<string, unknown>>("/api/storage");
 }
 
+export function getStorageCurrentResult() {
+  return request<Record<string, unknown>>("/api/storage/current-result");
+}
+
 export function postStorageArtifactCleanupDryRun(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/storage/artifact-hygiene/dry-run", {
     method: "POST",
@@ -869,6 +873,13 @@ export function postStoragePhysicalExecutionRequest(payload: Record<string, unkn
 
 export function postStoragePhysicalExecutionPhaseA(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/storage/physical-execution/phase-a", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function postStorageCurrentResultAtomicPromote(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/storage/current-result/atomic-promote", {
     method: "POST",
     body: JSON.stringify(payload)
   });
