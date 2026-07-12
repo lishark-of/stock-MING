@@ -469,7 +469,11 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("candidateQuantResultLineage.model_ledger_id", source_before_audit)
         self.assertIn("ordinaryHomeStorageCurrentMatchesCanonical", source_before_audit)
         self.assertIn("首页最近结果以 Candidate canonical 为准", source_before_audit)
-        self.assertIn("ordinaryHomeCanonicalResultInline}${ordinaryHomeStorageCurrentInline}", source_before_audit)
+        self.assertIn("ordinaryHomeLatestTushareTaskInline", source_before_audit)
+        self.assertIn("真实数据任务 ${latestTushareTaskSummary.taskId}", source_before_audit)
+        self.assertIn("${latestTushareTaskSummary.dataDate || \"等待日期\"}", source_before_audit)
+        self.assertIn("scope ${latestTushareTaskSummary.scopeHashShort || \"等待\"}", source_before_audit)
+        self.assertIn("ordinaryHomeCanonicalResultInline}${ordinaryHomeStorageCurrentInline}${ordinaryHomeStoragePromotionInline}${ordinaryHomeLatestTushareTaskInline}", source_before_audit)
         self.assertIn("打开 app 能看到本地已接上、股票确认入口和等待结果状态", source_before_audit)
         self.assertIn("打开 app 能看到只读入口已接上", source_before_audit)
         self.assertIn("确认按钮仍等待 P0 四段证据", source_before_audit)
@@ -479,6 +483,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
             'label: "本地联通"',
             'label: "当前标的"',
             'label: "最近结果"',
+            'label: "最近真实数据任务"',
+            'label: "真实数据 scope"',
             'label: "来源层"',
             'label: "明确缺口"',
             'label: "数据能力"',
@@ -491,6 +497,9 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         ):
             self.assertIn(label, source_before_audit)
         self.assertIn("ordinaryHomeRouteHealthLabel", source_before_audit)
+        self.assertIn("dailyCommandTushareLatestTaskLabel", source_before_audit)
+        self.assertIn("dailyCommandTushareLatestScopeLabel", source_before_audit)
+        self.assertIn("latestTushareTaskSummary.ready", source_before_audit)
         self.assertIn("路线健康：${userRouteQaCoveredRoutes.length}/5 条普通入口已通过", source_before_audit)
         self.assertIn("路线健康待复核", source_before_audit)
         self.assertIn("路线健康等待本地 QA", source_before_audit)
@@ -801,6 +810,13 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("dataCapabilityEvidenceLedgerLabel", source)
         self.assertIn("dailyCommandDataCapabilityReviewLabel", source)
         self.assertIn("dailyCommandTushareDataCardReviewSentence", source)
+        self.assertIn("latestHomeTushareTaskSummary(tasks)", source)
+        self.assertIn("latestTushareTaskSummary.taskId", source)
+        self.assertIn("latestTushareTaskSummary.scopeHashShort", source)
+        self.assertIn('label: "最近真实任务"', source)
+        self.assertIn('label: "数据日期 / scope"', source)
+        self.assertIn("最新真实数据任务 ${latestTushareTaskSummary.taskId} 已完成", source)
+        self.assertIn("failure=${latestTushareTaskSummary.failureMode}", source)
         self.assertIn("首页不探测接口", source)
         self.assertIn("degraded：存在权限/配置受限，不能当作无数据", source)
         self.assertIn("degraded：存在空窗口、缓存或待补接口，先按保守处理", source)
@@ -822,6 +838,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('href={DATA_CAPABILITY_HREF}', ordinary_tushare_card)
         self.assertIn('aria-label="open data capability from ordinary home tushare data card"', ordinary_tushare_card)
         self.assertIn('aria-label="ordinary home first screen tushare degraded review"', ordinary_tushare_card)
+        self.assertIn("MetricGrid items={ordinaryHomeMetricItems(dailyCommandTushareDataCardItems)}", ordinary_tushare_card)
         self.assertIn('label: "数据能力"', source)
         self.assertIn("value: dailyCommandDataCapabilityReviewLabel", source)
         self.assertIn('href={DATA_CAPABILITY_HREF}', p1_card)
@@ -969,7 +986,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "日期/新鲜度"', source)
         self.assertIn('label: "覆盖保护"', source)
         self.assertIn("日期/新鲜度 ${ordinaryHomeStorageCurrentFreshnessLabel}", source)
-        self.assertIn("${ordinaryHomeStorageCurrentText}${ordinaryHomeStoragePromotionInline}${ordinaryHomeResultVersionGuardInline}", source)
+        self.assertIn("${ordinaryHomeStorageCurrentText}${ordinaryHomeStoragePromotionInline}${ordinaryHomeLatestTushareTaskInline}${ordinaryHomeResultVersionGuardInline}", source)
         self.assertIn("current-result ${ordinaryHomeStorageCurrentVersion} / ${ordinaryHomeStorageCurrentFreshnessLabel} / DuckDB 已回读", source)
         self.assertIn("storageCurrentResult.data_date", source)
         self.assertIn("ordinaryHomeStorageCurrentResult.data_date", source)

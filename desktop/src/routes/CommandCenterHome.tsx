@@ -117,6 +117,57 @@ function ordinaryHomeMetricItems(items: MetricItem[]) {
   }));
 }
 
+function latestHomeTushareTaskSummary(tasks: Array<Record<string, unknown>>) {
+  const safeLedger = (task: Record<string, unknown>) => homeRows(task.call_ledger);
+  const isTushareLedgerRow = (row: Record<string, unknown>) => {
+    const api = homeText(row.api, "").toLowerCase();
+    return row.tushare_called === true ||
+      ["trade_cal", "daily", "daily_basic", "moneyflow", "fund_daily", "margin_detail"].includes(api);
+  };
+  const task = tasks.find((item) => {
+    const taskType = homeText(item.task_type, "").toLowerCase();
+    return taskType.includes("tushare") || safeLedger(item).some(isTushareLedgerRow);
+  });
+  if (!task) {
+    return {
+      ready: false,
+      status: "waiting_tushare_task",
+      taskId: "",
+      symbol: "",
+      apis: "",
+      dataDate: "",
+      rowCount: 0,
+      scopeHashShort: "",
+      failureMode: "waiting_confirm_task",
+      label: "等待确认后的真实数据任务"
+    };
+  }
+  const payload = (task.payload_safe && typeof task.payload_safe === "object" ? task.payload_safe : {}) as Record<string, unknown>;
+  const ledgerRows = safeLedger(task).filter(isTushareLedgerRow);
+  const apis = Array.from(new Set(ledgerRows.map((row) => homeText(row.api, "")).filter(Boolean)));
+  const rowCount = ledgerRows.reduce((total, row) => total + Number(row.row_count ?? 0), 0);
+  const firstDataDate = ledgerRows.map((row) => homeText(row.data_date, "")).find(Boolean) ?? "";
+  const firstScopeHashShort = ledgerRows.map((row) => homeText(row.scope_hash_short ?? row.scope_hash, "")).find(Boolean) ?? "";
+  const failureModes = Array.from(new Set(ledgerRows
+    .map((row) => homeText(row.failure_mode, ""))
+    .filter((value) => value && value !== "none")));
+  const symbol = homeText(payload.symbol ?? payload.ts_code ?? ledgerRows[0]?.symbol ?? ledgerRows[0]?.ts_code, "");
+  const status = homeText(task.status, "unknown");
+  const ready = status === "success" && rowCount > 0 && failureModes.length === 0;
+  return {
+    ready,
+    status,
+    taskId: homeText(task.task_id, ""),
+    symbol,
+    apis: apis.join(" / "),
+    dataDate: firstDataDate,
+    rowCount,
+    scopeHashShort: firstScopeHashShort.slice(0, 16),
+    failureMode: failureModes.join(" / ") || (rowCount > 0 ? "none" : "empty_or_missing_rows"),
+    label: `${symbol || "当前标的"} · ${apis.join(" / ") || "Tushare"} · ${firstDataDate || "等待日期"} · ${rowCount} 行`
+  };
+}
+
 export default function CommandCenterHome() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
   const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -1041,6 +1092,15 @@ export default function CommandCenterHome() {
   const dataCapabilityEvidenceLedgerLabel = dataCapabilityEvidenceLedgerCount
     ? `已有 ${String(dataCapabilityEvidenceLedgerCount)} 条本地数据记录可查`
     : "等待本地数据记录回读";
+  const latestTushareTaskSummary = latestHomeTushareTaskSummary(tasks);
+  const dailyCommandTushareLatestTaskLabel = latestTushareTaskSummary.ready
+    ? `最新真实数据任务 ${latestTushareTaskSummary.taskId} 已完成：${latestTushareTaskSummary.label}`
+    : latestTushareTaskSummary.taskId
+      ? `最新真实数据任务 ${latestTushareTaskSummary.taskId} 状态 ${latestTushareTaskSummary.status}：${latestTushareTaskSummary.failureMode}`
+      : latestTushareTaskSummary.label;
+  const dailyCommandTushareLatestScopeLabel = latestTushareTaskSummary.scopeHashShort
+    ? `scope ${latestTushareTaskSummary.scopeHashShort}；failure=${latestTushareTaskSummary.failureMode}`
+    : `scope 等待；failure=${latestTushareTaskSummary.failureMode}`;
   const dailyCommandTushareDataCardSummary =
     dailyCommandDegradedResultVisible &&
     dailyCommandCurrentResultSymbol &&
@@ -1082,6 +1142,16 @@ export default function CommandCenterHome() {
       label: "接口明细",
       value: dailyCommandTushareDataCardApiDetailLabel,
       tone: candidateQuantProviderApiRows.length ? "good" : "warn"
+    },
+    {
+      label: "最近真实任务",
+      value: dailyCommandTushareLatestTaskLabel,
+      tone: latestTushareTaskSummary.ready ? "good" : "warn"
+    },
+    {
+      label: "数据日期 / scope",
+      value: dailyCommandTushareLatestScopeLabel,
+      tone: latestTushareTaskSummary.scopeHashShort ? "good" : "warn"
     },
     {
       label: "当前可用结果",
@@ -2358,10 +2428,13 @@ export default function CommandCenterHome() {
   const ordinaryHomeResultVersionGuardInline = ordinaryHomeReadableResultReady
     ? `；覆盖保护：${dailyCommandResultVersionGuardLabel}`
     : "";
+  const ordinaryHomeLatestTushareTaskInline = latestTushareTaskSummary.taskId
+    ? `；真实数据任务 ${latestTushareTaskSummary.taskId} / ${latestTushareTaskSummary.dataDate || "等待日期"} / ${String(latestTushareTaskSummary.rowCount)} 行 / scope ${latestTushareTaskSummary.scopeHashShort || "等待"}`
+    : "";
   const ordinaryHomeRecentResult = dailyCommandP3OneGlanceReadable
-    ? `${ordinaryHomeExplainableResult}${ordinaryHomeCanonicalResultInline}${ordinaryHomeStorageCurrentInline}${ordinaryHomeStoragePromotionInline}${ordinaryHomeResultVersionGuardInline}`
+    ? `${ordinaryHomeExplainableResult}${ordinaryHomeCanonicalResultInline}${ordinaryHomeStorageCurrentInline}${ordinaryHomeStoragePromotionInline}${ordinaryHomeLatestTushareTaskInline}${ordinaryHomeResultVersionGuardInline}`
     : ordinaryHomeStorageCurrentReadable
-      ? `${ordinaryHomeStorageCurrentText}${ordinaryHomeStoragePromotionInline}${ordinaryHomeResultVersionGuardInline}`
+      ? `${ordinaryHomeStorageCurrentText}${ordinaryHomeStoragePromotionInline}${ordinaryHomeLatestTushareTaskInline}${ordinaryHomeResultVersionGuardInline}`
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
       ? `${ordinaryHomeLocalData}，等待结论`
       : "暂无最近结果";
@@ -2653,6 +2726,16 @@ export default function CommandCenterHome() {
       label: "日期/新鲜度",
       value: ordinaryHomeStorageCurrentFreshnessLabel,
       tone: ordinaryHomeStorageCurrentDataDate && ordinaryHomeStorageCurrentFreshness ? "good" : "warn"
+    },
+    {
+      label: "最近真实数据任务",
+      value: dailyCommandTushareLatestTaskLabel,
+      tone: latestTushareTaskSummary.ready ? "good" : "warn"
+    },
+    {
+      label: "真实数据 scope",
+      value: dailyCommandTushareLatestScopeLabel,
+      tone: latestTushareTaskSummary.scopeHashShort ? "good" : "warn"
     },
     {
       label: "来源层",
