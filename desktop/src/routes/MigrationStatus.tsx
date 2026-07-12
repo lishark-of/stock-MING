@@ -1330,6 +1330,15 @@ export default function MigrationStatus() {
       ? `长期主线还缺本地门禁、发布和同版本远端查收；${migrationAheadLabel}`
       : "外部数据验收、远端自动检查、发布复核和生产证据未完全收口，不能称为长期目标全部完成"
   );
+  const migrationStorageCurrentResultSymbol = String(ltgStorageCurrentResultAtomicSummary.storage_current_result_expected_symbol ?? "--");
+  const migrationStorageCurrentResultVersion = String(ltgStorageCurrentResultAtomicSummary.storage_current_result_expected_result_version ?? "--");
+  const migrationStorageCurrentResultStatus = ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_current === true
+    ? `${migrationStorageCurrentResultSymbol} / ${migrationStorageCurrentResultVersion} 已挂上 current-result`
+    : ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_can_launch === true
+      ? `${migrationStorageCurrentResultSymbol} / ${migrationStorageCurrentResultVersion} 可显式提升到 current-result`
+      : "等待同一 task_id / scope_hash / result_version 的本地结果";
+  const migrationStorageCurrentResultSentence =
+    `本地数据存储：${migrationStorageCurrentResultStatus}；去存储层查看 current/last-good，GET 和链接都不写 Parquet、不创建任务、不外联。`;
   const migrationOrdinaryStatusItems: MetricItem[] = [
     {
       label: "当前状态",
@@ -1350,6 +1359,11 @@ export default function MigrationStatus() {
     {
       label: "下一步",
       value: String(migrationOrdinaryNextStep)
+    },
+    {
+      label: "当前结果存储",
+      value: migrationStorageCurrentResultStatus,
+      tone: ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_current === true ? "good" : "warn"
     },
     {
       label: "阻断原因",
@@ -1373,6 +1387,7 @@ export default function MigrationStatus() {
     <>
       <PacketCard title="迁移状态摘要" subtitle="普通用户只看当前进度、主攻方向、下一步和阻断原因" status={migrationLocalConnected ? "本地已接上" : undefined}>
         <p className="ordinary-status-note">这张卡只回答现在迁移到哪、下一步去哪、为什么不能说长期目标全部完成；工程表和开发按钮默认下沉。</p>
+        <p className="ordinary-status-note" aria-label="migration storage current result ordinary readback">{migrationStorageCurrentResultSentence}</p>
         <MetricGrid items={migrationOrdinaryStatusItems} />
         <div className="actions" aria-label="migration ordinary summary actions">
           <button onClick={refreshMigrationStatus} title="只刷新本地迁移摘要；不创建任务、不外联">刷新本地摘要</button>
@@ -1380,6 +1395,7 @@ export default function MigrationStatus() {
           <a href="#candidates/candidate-radar-search-quant-projection" title="去下一票雷达确认输入区；输入静默">下一票雷达</a>
           <a href="#factor" title="打开股票量化推演；只读本地结果">股票量化推演</a>
           <a href="#next" title="打开次日图谱；只读本地缓存">次日图谱</a>
+          <a href="#storage" title="打开存储层 current/last-good；只读本地回放" aria-label="open storage current last good from migration ordinary summary">current/last-good</a>
         </div>
         <p className="risk-note">页面打开和刷新摘要只读本地结果；不调用外部数据、模型、远端检查、后台执行或交易路径。</p>
       </PacketCard>
