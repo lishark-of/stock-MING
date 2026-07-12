@@ -2284,10 +2284,22 @@ export default function CommandCenterHome() {
     ? `仍有 ${String(dailyCommandP3ExplainableMissingEvidenceCount)} 项待补`
     : "暂无额外缺口";
   const ordinaryHomeExplainableResult = `${ordinaryHomeRecentResultSymbol}可解释：${ordinaryHomeExplainableSource}，${ordinaryHomeExplainableGap}；${ordinaryHomeLocalData}`;
+  const ordinaryHomeStoragePromotionInline = ordinaryHomeReadableResultReady
+    ? `；Storage 提升任务 ${String(
+        storageCurrentResult.source_atomic_task_id ??
+          candidateQuantResultVersionSummary.current_result_task_id ??
+          candidateQuantResultVersionSummary.latest_task_id ??
+          candidateQuantResultLineage.task_id ??
+          "等待任务"
+      )}`
+    : "";
+  const ordinaryHomeResultVersionGuardInline = ordinaryHomeReadableResultReady
+    ? `；覆盖保护：${dailyCommandResultVersionGuardLabel}`
+    : "";
   const ordinaryHomeRecentResult = dailyCommandP3OneGlanceReadable
-    ? `${ordinaryHomeExplainableResult}${ordinaryHomeStorageCurrentInline}`
+    ? `${ordinaryHomeExplainableResult}${ordinaryHomeStorageCurrentInline}${ordinaryHomeStoragePromotionInline}${ordinaryHomeResultVersionGuardInline}`
     : ordinaryHomeStorageCurrentReadable
-      ? ordinaryHomeStorageCurrentText
+      ? `${ordinaryHomeStorageCurrentText}${ordinaryHomeStoragePromotionInline}${ordinaryHomeResultVersionGuardInline}`
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
       ? `${ordinaryHomeLocalData}，等待结论`
       : "暂无最近结果";
@@ -2635,6 +2647,16 @@ export default function CommandCenterHome() {
       label: "本地 current-result",
       value: ordinaryHomeStorageCurrentText,
       tone: ordinaryHomeStorageCurrentReadable ? "good" : "warn"
+    },
+    {
+      label: "Storage 提升任务",
+      value: ordinaryHomeStoragePromotionInline || "等待 Storage 提升任务",
+      tone: ordinaryHomeReadableResultReady ? "good" : "warn"
+    },
+    {
+      label: "覆盖保护",
+      value: dailyCommandResultVersionGuardLabel,
+      tone: dailyCommandResultVersionGuardReady ? "good" : "warn"
     },
     {
       label: "状态",
