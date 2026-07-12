@@ -2560,7 +2560,13 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         submit_start = self.page.index("const launchQuantProjection = () =>")
         submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
         submit_slice = self.page[submit_start:submit_end]
-        self.assertIn("if (!quantProjectionCanSubmit || quantProjectionSubmitting) return;", submit_slice)
+        self.assertIn("const quantProjectionSubmittingRef = useRef(false);", self.page)
+        self.assertIn(
+            "if (!quantProjectionCanSubmit || quantProjectionSubmitting || quantProjectionSubmittingRef.current) return;",
+            submit_slice,
+        )
+        self.assertIn("quantProjectionSubmittingRef.current = true;", submit_slice)
+        self.assertIn("quantProjectionSubmittingRef.current = false;", submit_slice)
         self.assertIn("void postCandidateRadarQuantProjection({", submit_slice)
         self.assertNotIn("updateSearchSymbolInput(event.target.value);", submit_slice)
 

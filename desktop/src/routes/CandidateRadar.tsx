@@ -177,6 +177,7 @@ export default function CandidateRadar() {
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [quantProjectionSubmitting, setQuantProjectionSubmitting] = useState(false);
+  const quantProjectionSubmittingRef = useRef(false);
   const [quantProjectionSubmitError, setQuantProjectionSubmitError] = useState("");
   const [customPoolText, setCustomPoolText] = useState("");
   const [searchSymbol, setSearchSymbol] = useState("");
@@ -277,7 +278,8 @@ export default function CandidateRadar() {
       if (res.ok) setTaskId(res.data.task_id);
     });
   const launchQuantProjection = () => {
-    if (!quantProjectionCanSubmit || quantProjectionSubmitting) return;
+    if (!quantProjectionCanSubmit || quantProjectionSubmitting || quantProjectionSubmittingRef.current) return;
+    quantProjectionSubmittingRef.current = true;
     setQuantProjectionSubmitting(true);
     setQuantProjectionSubmitError("");
     void postCandidateRadarQuantProjection({
@@ -335,7 +337,10 @@ export default function CandidateRadar() {
       setTaskId("");
       setTaskReceipt(null);
       setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage("frontend_submit_exception"));
-    }).finally(() => setQuantProjectionSubmitting(false));
+    }).finally(() => {
+      quantProjectionSubmittingRef.current = false;
+      setQuantProjectionSubmitting(false);
+    });
   };
   const launchQuantProjectionAcceptanceDryRun = () =>
     void postCandidateRadarQuantProjectionAcceptanceDryRun({

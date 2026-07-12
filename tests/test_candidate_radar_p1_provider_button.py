@@ -346,12 +346,18 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("DeepSeek 只读解释可安全降级", ordinary_quant_slice)
         self.assertIn("确认后创建 Tushare-first 按钮门控 POST task / worker", ordinary_quant_slice)
         self.assertIn("不交易、不改 strategy action", ordinary_quant_slice)
-        self.assertIn("if (!quantProjectionCanSubmit || quantProjectionSubmitting) return;", submit_slice)
+        self.assertIn("const quantProjectionSubmittingRef = useRef(false);", source)
+        self.assertIn(
+            "if (!quantProjectionCanSubmit || quantProjectionSubmitting || quantProjectionSubmittingRef.current) return;",
+            submit_slice,
+        )
+        self.assertIn("quantProjectionSubmittingRef.current = true;", submit_slice)
         self.assertIn("setQuantProjectionSubmitting(true);", submit_slice)
         self.assertIn('setQuantProjectionSubmitError("");', submit_slice)
         self.assertIn("setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage(res.error));", submit_slice)
         self.assertIn('setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage("missing_task_id"));', submit_slice)
-        self.assertIn("}).finally(() => setQuantProjectionSubmitting(false));", submit_slice)
+        self.assertIn("quantProjectionSubmittingRef.current = false;", submit_slice)
+        self.assertIn("setQuantProjectionSubmitting(false);", submit_slice)
         self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", submit_slice)
         self.assertNotIn("operator_approved", submit_slice)
         self.assertIn("include_deepseek: true", submit_slice)
