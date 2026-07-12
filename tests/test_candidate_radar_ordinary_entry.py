@@ -2111,6 +2111,19 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("searchQuantResultVersionSummary.ordinary_next_step", one_screen_items_definition)
         self.assertIn("degraded_result_visible", one_screen_items_definition)
         self.assertNotIn("search_quant_projection_post_confirm_one_glance_items", ordinary_one_screen_intro_slice)
+        self.assertIn('aria-label="candidate radar same task result version card"', one_screen_result_slice)
+        self.assertIn("同次结果版本", one_screen_result_slice)
+        self.assertIn("ordinaryUserText(searchQuantSameTaskResultVersionLabel)", one_screen_result_slice)
+        self.assertIn("MetricGrid items={quantProjectionSameTaskResultVersionItems}", one_screen_result_slice)
+        self.assertIn("同一 task、同一事实包、同一结果版本才提升 current", one_screen_result_slice)
+        self.assertIn("DeepSeek 只作为解释层，失败时不覆盖事实包", one_screen_result_slice)
+        self.assertIn("const quantProjectionSameTaskResultVersionItems", self.page)
+        self.assertIn("searchQuantSameTaskResultVersionLabel", self.page)
+        self.assertIn('label: "task / symbol / version"', self.page)
+        self.assertIn('label: "scope / facts / freshness"', self.page)
+        self.assertIn('label: "provider ledger"', self.page)
+        self.assertIn('label: "DeepSeek overlay"', self.page)
+        self.assertIn('label: "last-good / degraded"', self.page)
         self.assertIn(
             '<details className="developer-audit-details" aria-label="candidate radar backend post confirm one glance">',
             one_screen_result_slice,

@@ -3393,6 +3393,48 @@ export default function CandidateRadar() {
   const searchQuantDegradedResultLabel = searchQuantDegradedResultVisible
     ? `${searchQuantDegradedResultSymbol || "本次任务"} / ${searchQuantDegradedResultVersion || "等待版本"}：${searchQuantDegradedReason}；不覆盖 current`
     : displayText(searchQuantResultVersionSummary.status, "未降级");
+  const searchQuantSameTaskResultVersionLabel = searchQuantCanonicalReady
+    ? `已同源：${searchQuantResultSymbolLabel} / ${searchQuantCanonicalTaskLabel} / ${searchQuantCurrentResultVersion || searchQuantLatestTaskResultVersion || "等待 result_version"}`
+    : `等待同一 task + facts package + result_version；本次任务 ${searchQuantLatestTaskResultLabel}`;
+  const searchQuantSameTaskFactsLabel =
+    `${searchQuantResultScopeLabel} / facts ${searchQuantCanonicalFactsLabel} / ${displayText(searchQuantResultLineage.data_date ?? searchQuantProviderModelAcceptance.data_date, "等待数据日期")} / ${displayText(searchQuantResultLineage.freshness_state ?? searchQuantProviderModelAcceptance.freshness_state, "waiting_confirm")}`;
+  const searchQuantSameTaskOverlayLabel = displayText(
+    searchQuantResultLineage.model_ledger_id ?? searchQuantProviderModelAcceptance.model_ledger_id,
+    quantProjectionDeepSeekSkipped || quantProjectionDeepSeekDegraded ? "DeepSeek skipped/degraded; facts retained" : "等待 model ledger"
+  );
+  const searchQuantSameTaskPromotionGuardLabel =
+    searchQuantDegradedResultVisible
+      ? `本次 degraded：${searchQuantDegradedResultLabel}；last-good 保持 ${searchQuantLastGoodResultLabel}`
+      : `last-good ${searchQuantLastGoodResultLabel}；旧任务迟到不能覆盖当前结果`;
+  const quantProjectionSameTaskResultVersionItems: MetricItem[] = [
+    {
+      label: "task / symbol / version",
+      value: searchQuantSameTaskResultVersionLabel,
+      tone: searchQuantCanonicalReady ? "good" : "warn"
+    },
+    {
+      label: "scope / facts / freshness",
+      value: searchQuantSameTaskFactsLabel,
+      tone: searchQuantCanonicalFactsLabel !== "等待 facts hash" && searchQuantResultScopeLabel !== "等待确认范围" ? "good" : "warn"
+    },
+    {
+      label: "provider ledger",
+      value: searchQuantResultProviderLedgerLabel,
+      tone: searchQuantResultProviderLedgerIds.length ? "good" : "warn"
+    },
+    {
+      label: "DeepSeek overlay",
+      value: searchQuantSameTaskOverlayLabel,
+      tone: searchQuantResultLineage.model_ledger_id || searchQuantProviderModelAcceptance.model_ledger_id
+        ? "good"
+        : quantProjectionDeepSeekSkipped || quantProjectionDeepSeekDegraded ? "warn" : "neutral"
+    },
+    {
+      label: "last-good / degraded",
+      value: searchQuantSameTaskPromotionGuardLabel,
+      tone: searchQuantDegradedResultVisible ? "warn" : "good"
+    }
+  ];
   const quantProjectionResultLineageItems: MetricItem[] = [
     {
       label: "当前结果版本",
@@ -6038,6 +6080,12 @@ export default function CandidateRadar() {
               </details>
             ) : null}
             <MetricGrid items={quantProjectionPostConfirmOneScreenItems} />
+            <div aria-label="candidate radar same task result version card">
+              <h3>同次结果版本</h3>
+              <p className="ordinary-status-note" aria-live="polite">{ordinaryUserText(searchQuantSameTaskResultVersionLabel)}</p>
+              <MetricGrid items={quantProjectionSameTaskResultVersionItems} />
+              <p className="risk-note">同一 task、同一事实包、同一结果版本才提升 current；Tushare facts 成功后 Factor / Next 可回放，DeepSeek 只作为解释层，失败时不覆盖事实包。</p>
+            </div>
             <MetricGrid items={quantProjectionResultLineageItems} />
             <p className="risk-note">结果版本把本次 task、Tushare 事实包、provider 账本、输出包和模型账本绑在一起；旧任务迟到只能保留为历史回放，不能覆盖当前标的。</p>
             <details className="developer-audit-details" aria-label="candidate radar post confirm backend replay contract">
