@@ -99,6 +99,8 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
             'label: "现在能读"',
             'label: "下一步按钮"',
             'label: "数据证据"',
+            'label: "最近真实数据"',
+            'label: "真实数据 scope"',
             'label: "同源版本"',
             'label: "验证缺口"',
             'label: "安全边界"',
@@ -221,6 +223,8 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         for tushare_data_card_label in (
             'label: "Tushare 数据卡"',
             'label: "接口回放"',
+            'label: "最近真实任务"',
+            'label: "数据日期 / scope"',
             'label: "P2 三面"',
             'label: "P3 结论"',
             'label: "模型解释"',
@@ -469,6 +473,10 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("taskIndex?.latest_confirmed_task_id", source)
         self.assertIn("taskIndex?.latest_confirmed_task_status", source)
         self.assertIn("taskIndex?.latest_confirmed_task_current_step", source)
+        self.assertIn("latestFactorTushareTaskSummary(taskIndex?.tasks ?? [])", source)
+        self.assertIn("latestFactorTushareTaskLabel", source)
+        self.assertIn("latestFactorTushareScopeLabel", source)
+        self.assertIn("scope ${latestFactorTushareTask.scopeHashShort}", source)
         self.assertIn("ordinaryQuantTaskIndexProgressItems", source)
         self.assertIn('aria-label="stock quant local task index progress watch"', source)
         self.assertIn("本地任务进度", source)

@@ -87,6 +87,57 @@ function ordinaryFactorMetricItems(items: MetricItem[]): MetricItem[] {
   }));
 }
 
+type FactorTaskLike = {
+  task_id?: string;
+  task_type?: string;
+  status?: string;
+  payload_safe?: Record<string, unknown>;
+  call_ledger?: Array<Record<string, unknown>>;
+};
+
+function latestFactorTushareTaskSummary(tasks: FactorTaskLike[]) {
+  const isTushareLedgerRow = (row: Record<string, unknown>) => {
+    const api = String(row.api ?? "").toLowerCase();
+    return row.tushare_called === true ||
+      ["trade_cal", "daily", "daily_basic", "moneyflow", "fund_daily", "margin_detail"].includes(api);
+  };
+  const task = tasks.find((item) => {
+    const taskType = String(item.task_type ?? "").toLowerCase();
+    return taskType.includes("tushare") || (item.call_ledger ?? []).some(isTushareLedgerRow);
+  });
+  if (!task) {
+    return {
+      ready: false,
+      taskId: "",
+      label: "等待确认后的真实数据任务",
+      dataDate: "",
+      rowCount: 0,
+      scopeHashShort: "",
+      failureMode: "waiting_confirm_task"
+    };
+  }
+  const ledgerRows = (task.call_ledger ?? []).filter(isTushareLedgerRow);
+  const payload = task.payload_safe ?? {};
+  const apis = Array.from(new Set(ledgerRows.map((row) => String(row.api ?? "")).filter(Boolean)));
+  const rowCount = ledgerRows.reduce((total, row) => total + Number(row.row_count ?? 0), 0);
+  const dataDate = ledgerRows.map((row) => String(row.data_date ?? "")).find(Boolean) ?? "";
+  const scopeHashShort = ledgerRows.map((row) => String(row.scope_hash_short ?? row.scope_hash ?? "")).find(Boolean)?.slice(0, 16) ?? "";
+  const failureModes = Array.from(new Set(ledgerRows
+    .map((row) => String(row.failure_mode ?? ""))
+    .filter((value) => value && value !== "none")));
+  const symbol = String(payload.symbol ?? payload.ts_code ?? ledgerRows[0]?.symbol ?? ledgerRows[0]?.ts_code ?? "");
+  const ready = task.status === "success" && rowCount > 0 && failureModes.length === 0;
+  return {
+    ready,
+    taskId: String(task.task_id ?? ""),
+    label: `${symbol || "当前标的"} / ${apis.join(" / ") || "Tushare"} / ${dataDate || "等待日期"} / ${String(rowCount)} 行`,
+    dataDate,
+    rowCount,
+    scopeHashShort,
+    failureMode: failureModes.join(" / ") || (rowCount > 0 ? "none" : "empty_or_missing_rows")
+  };
+}
+
 const runtimeModeLabels: Record<string, string> = {
   cache_only: "cache_only（只读缓存，不外联）",
   manual: "manual（仅手动按钮任务）",
@@ -259,6 +310,13 @@ export default function FactorQuantHub() {
     taskIndex.readback_external_calls_triggered !== true &&
     taskIndex.latest_confirmed_symbol_readback_external_calls_triggered !== true &&
     taskIndex.latest_confirmed_symbol_creates_task_from_readback !== true;
+  const latestFactorTushareTask = latestFactorTushareTaskSummary(taskIndex?.tasks ?? []);
+  const latestFactorTushareTaskLabel = latestFactorTushareTask.taskId
+    ? `${latestFactorTushareTask.taskId} / ${latestFactorTushareTask.label}`
+    : latestFactorTushareTask.label;
+  const latestFactorTushareScopeLabel = latestFactorTushareTask.scopeHashShort
+    ? `scope ${latestFactorTushareTask.scopeHashShort}；failure=${latestFactorTushareTask.failureMode}`
+    : `scope 等待；failure=${latestFactorTushareTask.failureMode}`;
   const ordinaryQuantProgressWatchTaskId = taskIndexLatestConfirmedTaskId || candidateRadarLatestTaskId;
   const ordinaryQuantProgressWatchSymbol = taskIndexLatestConfirmedSymbol || candidateRadarConfirmedSymbol;
   const ordinaryQuantProgressWatchStatus =
@@ -1058,6 +1116,16 @@ export default function FactorQuantHub() {
       label: "接口回放",
       value: ordinaryQuantTushareDataCardLedgerReady ? ordinaryQuantTushareFirstProviderLedgerRatio : "等待本地账本",
       tone: ordinaryQuantTushareDataCardLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "最近真实任务",
+      value: latestFactorTushareTaskLabel,
+      tone: latestFactorTushareTask.ready ? "good" : "warn"
+    },
+    {
+      label: "数据日期 / scope",
+      value: latestFactorTushareScopeLabel,
+      tone: latestFactorTushareTask.scopeHashShort ? "good" : "warn"
     },
     {
       label: "P2 三面",
@@ -2043,6 +2111,16 @@ export default function FactorQuantHub() {
       tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
     },
     {
+      label: "真实数据任务",
+      value: latestFactorTushareTaskLabel,
+      tone: latestFactorTushareTask.ready ? "good" : "warn"
+    },
+    {
+      label: "真实数据 scope",
+      value: latestFactorTushareScopeLabel,
+      tone: latestFactorTushareTask.scopeHashShort ? "good" : "warn"
+    },
+    {
       label: "授权后产物",
       value: factorTestProviderSmallPoolSampleDone
         ? `已产出 scope hash、payload、call_ledger、${String(factorTestProviderSmallPoolAcceptance.provider_total_row_count ?? 0)} 行样本和 failure-mode evidence；生产指标仍待补`
@@ -2081,6 +2159,16 @@ export default function FactorQuantHub() {
         ? `确认后数据账本已回放 ${ordinaryQuantTushareFirstProviderLedgerRatio}`
         : "等待确认后的本地账本；页面查看不会补调数据",
       tone: ordinaryQuantTushareDataCardLedgerReady ? "good" : "warn"
+    },
+    {
+      label: "最近真实数据",
+      value: latestFactorTushareTaskLabel,
+      tone: latestFactorTushareTask.ready ? "good" : "warn"
+    },
+    {
+      label: "真实数据 scope",
+      value: latestFactorTushareScopeLabel,
+      tone: latestFactorTushareTask.scopeHashShort ? "good" : "warn"
     },
     {
       label: "同源版本",
