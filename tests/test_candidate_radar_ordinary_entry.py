@@ -2840,6 +2840,25 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", panel)
         self.assertNotIn("launchQuantProjectionProviderModelAcceptance", panel)
 
+    def test_provider_model_acceptance_keeps_user_confirm_task_id(self):
+        lineage_start = self.page.index("const searchQuantProviderAcceptanceUserConfirmTaskId =")
+        lineage_end = self.page.index("const searchQuantLineageProviderTaskId =", lineage_start)
+        lineage_slice = self.page[lineage_start:lineage_end]
+        provider_start = self.page.index("const launchQuantProjectionProviderModelAcceptance = () =>")
+        failure_start = self.page.index("const launchQuantProjectionDeepSeekFailureAcceptance = () =>", provider_start)
+        provider_slice = self.page[provider_start:failure_start]
+        failure_end = self.page.index("const launchWorkerExecutionRequest = () =>", failure_start)
+        failure_slice = self.page[failure_start:failure_end]
+
+        self.assertIn("searchQuantProviderModelAcceptance.user_confirm_task_id", lineage_slice)
+        self.assertIn("searchQuantResultLineage.user_confirm_task_id", lineage_slice)
+        self.assertIn("searchQuantResultVersionSummary.user_confirm_task_id", lineage_slice)
+        self.assertIn("searchQuantProjectionReceipt.latest_task_id", lineage_slice)
+        self.assertIn('.find((value) => value.startsWith("local-"))', lineage_slice)
+        self.assertIn("user_confirm_task_id: searchQuantProviderAcceptanceUserConfirmTaskId", provider_slice)
+        self.assertIn("user_confirm_task_id: searchQuantProviderAcceptanceUserConfirmTaskId", failure_slice)
+        self.assertIn('deepseek_failure_mode_for_acceptance: "missing_server_key"', failure_slice)
+
     def test_candidate_radar_restores_persisted_task_panel_without_creating_new_task(self):
         self.assertIn(
             "TaskStatusPanel 可恢复本地状态轮询，不创建新 task、不补调 Tushare/DeepSeek",

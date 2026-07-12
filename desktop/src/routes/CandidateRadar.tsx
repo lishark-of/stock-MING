@@ -505,6 +505,16 @@ export default function CandidateRadar() {
     searchQuantProviderModelAcceptance.user_confirm_task_id ?? searchQuantProjectionReceipt.latest_task_id,
     "等待确认 task"
   );
+  const searchQuantProviderAcceptanceUserConfirmTaskId =
+    [
+      searchQuantProviderModelAcceptance.user_confirm_task_id,
+      searchQuantResultLineage.user_confirm_task_id,
+      searchQuantResultVersionSummary.user_confirm_task_id,
+      searchQuantProjectionReceipt.latest_task_id,
+      searchQuantProjectionReceipt.task_id
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find((value) => value.startsWith("local-")) ?? "";
   const searchQuantLineageProviderTaskId = displayText(
     searchQuantProviderModelAcceptance.provider_task_id ?? searchQuantResultLineage.provider_task_id,
     "等待 provider task"
@@ -649,6 +659,7 @@ export default function CandidateRadar() {
       scan_mode: "quant_projection_provider_model_acceptance",
       operator_approved: true,
       acceptance_scope_hash: String(searchQuantProjectionExecutionRequest.acceptance_scope_hash ?? ""),
+      user_confirm_task_id: searchQuantProviderAcceptanceUserConfirmTaskId,
       include_deepseek: true,
       requested_by: "candidate_radar_page"
     }).then((res) => {
@@ -660,6 +671,7 @@ export default function CandidateRadar() {
       scan_mode: "quant_projection_provider_model_acceptance",
       operator_approved: true,
       acceptance_scope_hash: String(searchQuantProjectionExecutionRequest.acceptance_scope_hash ?? ""),
+      user_confirm_task_id: searchQuantProviderAcceptanceUserConfirmTaskId,
       include_deepseek: true,
       deepseek_failure_mode_for_acceptance: "missing_server_key",
       requested_by: "candidate_radar_page_deepseek_failure_acceptance"
