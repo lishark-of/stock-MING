@@ -490,8 +490,8 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         search_panel = self.page[search_panel_start:search_panel_end]
 
         self.assertIn("include_tushare: true", submit_slice)
-        self.assertIn("include_deepseek: true", submit_slice)
-        self.assertIn('deepseek_policy: "governed_explanation_only_safe_degraded"', submit_slice)
+        self.assertIn("include_deepseek: false", submit_slice)
+        self.assertIn('deepseek_policy: "separate_governed_executor_after_explicit_authorization"', submit_slice)
         self.assertIn("user_approved: true", submit_slice)
         self.assertNotIn("run_provider_model_now", submit_slice)
         self.assertNotIn("operator_approved", submit_slice)

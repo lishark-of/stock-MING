@@ -196,8 +196,8 @@ export default function CandidateRadar() {
     react_render_external_calls: false,
     get_cache_external_calls: false,
     include_tushare_first: true,
-    include_deepseek: true,
-    deepseek_policy: "governed_explanation_only_safe_degraded",
+    include_deepseek: false,
+    deepseek_policy: "separate_governed_executor_after_explicit_authorization",
     requires_p0_gate_ready: true,
     p0_gate_surfaces: ["fastapi_cache_get", "bootstrap_runtime_mode", "desktop_preflight_one_click_packet", "p0_stability_or_local_link_evidence", "candidate_cache_get_readable"],
     writeback_surfaces: ["cache", "call_ledger", "packet"],
@@ -291,8 +291,8 @@ export default function CandidateRadar() {
       scan_mode: "search_quant_projection",
       symbol: normalizeAshareSymbolInput(searchSymbol).normalized,
       include_tushare: true,
-      include_deepseek: true,
-      deepseek_policy: "governed_explanation_only_safe_degraded",
+      include_deepseek: false,
+      deepseek_policy: "separate_governed_executor_after_explicit_authorization",
       user_approved: true,
       requested_by: "candidate_radar_page",
       p0_confirm_gate_evidence: {
@@ -1685,7 +1685,7 @@ export default function CandidateRadar() {
     {
       交接项: "2. P1 确认按钮",
       当前状态: quantProjectionP0Ready ? "可进入搜票确认" : "暂不进入 P1",
-      用户下一步: "代码通过本地校验后点击确认按钮，确认后生成本地投研结果；DeepSeek 解释随确认任务治理执行或安全降级。",
+      用户下一步: "代码通过本地校验后点击确认按钮，确认后生成本地投研结果；DeepSeek 解释留给明确授权的单独治理验收。",
       入口: "下一票雷达确认按钮",
       证据: "fallback from candidateRadarP0AutoLinkRows",
       边界: "页面打开、搜索输入和本表回读都不外联；只有确认按钮可进入 P1 task / worker"
@@ -1880,7 +1880,7 @@ export default function CandidateRadar() {
     ? quantProjectionP0Ready
       ? quantProjectionUseRecentResultInsteadOfSubmit
         ? `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；已有最近结果，普通主动作先查看本地结果，不重复创建同票任务。`
-        : `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，只由确认按钮启动本地投研流程；DeepSeek 解释随任务写入安全模型账本或安全降级。`
+        : `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，只由确认按钮启动本地投研流程；DeepSeek 解释留给明确授权的单独治理验收。`
       : `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；确认按钮在等本地联通闸门变绿，输入和页面打开不会创建后台流程。`
     : searchSymbol.trim()
       ? `摘要搜票格式未通过：${quantProjectionValidationReasonLabel}；不会创建后台流程。`
@@ -2721,7 +2721,7 @@ export default function CandidateRadar() {
       ? "Tushare-first 已回放；DeepSeek 解释按安全模型账本回放或安全降级；Factor/Next/完整推演继续补齐"
     : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
       ? "可创建按钮门控补证请求；页面显示仍不自动外联"
-      : "等待确认按钮启动本地投研数据链；DeepSeek 解释随确认任务治理执行或安全降级";
+      : "等待确认按钮启动本地投研数据链；DeepSeek 解释留给明确授权的单独治理验收";
   const candidateRadarLtg13DataLedgerState = quantProjectionProviderLedgerReady
     ? `真实数据账本已回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}`
     : searchQuantProjectionExecutionRequest.local_execution_request_ready === true
@@ -3417,7 +3417,7 @@ export default function CandidateRadar() {
         ? "确认后等待顺序：先看 task id，再看 TaskStatusPanel，等待 success 后刷新 cache，最后回放量化结果区和次日图谱结果区"
         : "确认前准备：输入有效代码后点击确认按钮，才创建 Tushare-first POST task";
   const quantProjectionReplayBoundary =
-    "回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek、不改 strategy action";
+    "回放入口区分本地模块路由和页内锚点：#factor/factor-score 和 #next/next-session-chart 切换到量化结果区和次日图谱结果区，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache；链接只切换本地页面或锚点，不创建 task、不调用 Tushare/DeepSeek、不改 strategy action";
   const quantProjectionReplayDestinationState = quantProjectionSubmitError
     ? "结果入口暂停：确认任务未创建；先恢复本地后端连接，再重新点击确认"
     : quantProjectionFactorNextReady
@@ -3873,7 +3873,7 @@ export default function CandidateRadar() {
     },
     {
       label: "安全边界",
-      value: "输入不外联；确认按钮才启动本地数据链；DeepSeek 解释随任务治理执行或安全降级；不交易、不改交易策略",
+      value: "输入不外联；确认按钮才启动本地数据链；DeepSeek 解释留给明确授权的单独治理验收；不交易、不改交易策略",
       tone: "good"
     }
   ];
@@ -6892,8 +6892,8 @@ export default function CandidateRadar() {
             <DataLineageTable rows={quantProjectionOrdinaryResultActionRows} />
           </div>
           <div className="actions" aria-label="quant projection replay destinations">
-            <a href="#factor" title="切换到股票量化推演模块；只读 cache / ledger / packet，不创建 task" aria-label="replay generated stock quant projection">回放股票量化推演</a>
-            <a href="#next" title="切换到次日图谱模块；只读本地 next-session cache，不创建 task" aria-label="replay generated next session map">回放次日图谱</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演结果区；只读 cache / ledger / packet，不创建 task" aria-label="replay generated stock quant projection">回放股票量化推演</a>
+            <a href="#next/next-session-chart" title="切换到次日图谱结果区；只读本地 next-session cache，不创建 task" aria-label="replay generated next session map">回放次日图谱</a>
             <a href="#candidate-pool" title="跳回本页候选池锚点；不重新扫描、不创建 task" aria-label="return to candidate pool after quant projection">回到候选池</a>
           </div>
           <div aria-label="quant projection replay destination readiness">
