@@ -10,6 +10,32 @@ class BackendOfflineNoticeGuidanceTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("本地后端未连接", notice)
+        visible_start = notice.index('data-backend-offline="true"')
+        details_start = notice.index("<summary>联通排障详情</summary>", visible_start)
+        ordinary_steps_start = notice.index("const ordinaryRecoverySteps")
+        technical_steps_start = notice.index("const technicalRecoverySteps", ordinary_steps_start)
+        ordinary_steps = notice[ordinary_steps_start:technical_steps_start]
+        visible_notice = notice[visible_start:details_start]
+        technical_notice = notice[technical_steps_start:visible_start] + notice[details_start:]
+        self.assertIn("先重新打开本地软件", visible_notice)
+        self.assertIn("恢复之前不会自动取数，也不会执行交易", visible_notice)
+        self.assertIn("重新打开 ${COMMAND_CENTER_3_DESKTOP_SHORTCUT}", ordinary_steps)
+        self.assertIn("连接恢复后页面会自动刷新", ordinary_steps)
+        self.assertIn("打开一键启动预检", visible_notice)
+        self.assertIn("查看系统健康", visible_notice)
+        for engineering_term in [
+            "P0 恢复闸门",
+            "Tushare",
+            "DeepSeek",
+            "GitHub",
+            "cache / ledger / packet",
+            "API/Vite/open route",
+            "strategy action",
+        ]:
+            self.assertNotIn(engineering_term, visible_notice)
+            self.assertIn(engineering_term, technical_notice)
+        self.assertIn('aria-label="backend offline technical recovery checklist"', technical_notice)
+        self.assertIn('aria-label="backend offline advanced recovery links"', technical_notice)
         self.assertIn('const COMMAND_CENTER_3_LAUNCHER_PATH = "scripts/start_command_center_3.command"', notice)
         self.assertIn('const COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER_PATH = "scripts/check_command_center_3.command"', notice)
         self.assertIn('const COMMAND_CENTER_3_DESKTOP_SHORTCUT = "stock-MING Command Center 3.command"', notice)

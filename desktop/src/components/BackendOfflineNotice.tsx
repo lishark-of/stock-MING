@@ -26,6 +26,11 @@ export default function BackendOfflineNotice({
     ? API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")
     : apiBase;
   const ordinaryRecoverySteps = [
+    `重新打开 ${COMMAND_CENTER_3_DESKTOP_SHORTCUT}，等待本地服务和页面准备完成。`,
+    "返回本页；连接恢复后页面会自动刷新，再继续确认股票。",
+    "如果仍然离线，展开下方排障详情查看本机检查步骤。"
+  ];
+  const technicalRecoverySteps = [
     `先安全自检：运行 ${COMMAND_CENTER_3_CHECK_ONLY_COMMAND}；它只打印本机 API/Vite/open route，不启动 FastAPI/Vite、不探测 URL、不打开浏览器、不创建 task。`,
     `下一步：请双击桌面快捷方式 ${COMMAND_CENTER_3_DESKTOP_SHORTCUT}，或运行 ${COMMAND_CENTER_3_LAUNCHER_PATH}。`,
     "启动器会等待 FastAPI 和页面都 ready 后才打开入口；等启动器显示 FastAPI / bootstrap status / desktop preflight cache / React/Vite 四段 ready 后，再刷新本页。",
@@ -41,34 +46,43 @@ export default function BackendOfflineNotice({
   return (
     <div className="backend-offline-notice motion-surface" data-backend-offline="true" role="status">
       <strong>本地后端未连接</strong>
-      <p>先按这四步恢复本地联通；当前画面只显示离线保护状态。</p>
+      <p>先重新打开本地软件；恢复之前不会自动取数，也不会执行交易。</p>
       <ol aria-label="backend offline ordinary recovery checklist">
         {ordinaryRecoverySteps.map((step) => (
-          <li key={step}>{step}</li>
-        ))}
-      </ol>
-      <strong>P0 恢复闸门</strong>
-      <ol aria-label="backend offline p0 recovery gate checklist">
-        {ordinaryRecoveryGateSteps.map((step) => (
           <li key={step}>{step}</li>
         ))}
       </ol>
       <div className="actions" aria-label="backend offline local recovery links">
         <a href="#desktop" aria-label="open one click startup preflight">打开一键启动预检</a>
         <a href="#health" aria-label="open system health after local backend recovery">查看系统健康</a>
-        <a href="#candidates" aria-label="open candidate radar after backend recovery">联通变绿后去下一票雷达</a>
-        <a href="#recovery" aria-label="open local recovery center">查看恢复中心</a>
       </div>
-      <p>这些入口只切换本地页面；不会启动 FastAPI/Vite、不会创建 task、不会调用外部数据源或模型。</p>
-      <ul>
-        <li>不会调用 Tushare、DeepSeek 或 GitHub。</li>
-        <li>不会执行真实交易，也不会修改 strategy action。</li>
-        {warnings.slice(0, 2).map((warning) => (
-          <li key={warning}>{warning}</li>
-        ))}
-      </ul>
+      <p>这两个入口只切换本地页面；恢复完成前不启动研究流程，不读取密钥，不执行交易。</p>
       <details className="developer-audit-details">
         <summary>联通排障详情</summary>
+        <p>先按这四步恢复本地联通；当前画面只显示离线保护状态。</p>
+        <ol aria-label="backend offline technical recovery checklist">
+          {technicalRecoverySteps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <strong>P0 恢复闸门</strong>
+        <ol aria-label="backend offline p0 recovery gate checklist">
+          {ordinaryRecoveryGateSteps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <div className="actions" aria-label="backend offline advanced recovery links">
+          <a href="#candidates" aria-label="open candidate radar after backend recovery">联通变绿后去下一票雷达</a>
+          <a href="#recovery" aria-label="open local recovery center">查看恢复中心</a>
+        </div>
+        <p>这些入口只切换本地页面；不会启动 FastAPI/Vite、不会创建 task、不会调用外部数据源或模型。</p>
+        <ul>
+          <li>不会调用 Tushare、DeepSeek 或 GitHub。</li>
+          <li>不会执行真实交易，也不会修改 strategy action。</li>
+          {warnings.slice(0, 2).map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
         <p>前端已自动尝试本机 FastAPI 地址：{attemptedApiBases}；配置地址显示为 {CONFIGURED_API_BASE_DISPLAY_URL}。</p>
         <p>启动器会等待 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite 页面都 ready 后才打开入口。</p>
         <p>只想先自检入口配置时，运行 {COMMAND_CENTER_3_CHECK_ONLY_COMMAND}；它会进入 check-only 安全自检，不会启动 FastAPI/Vite、不会打开浏览器、不会创建 task。</p>
