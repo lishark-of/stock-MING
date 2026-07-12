@@ -4859,6 +4859,7 @@ def storage_physical_durable_evidence_recipe(
     current_result_atomic_promotion_done = bool(
         current_result_atomic_promotion.get("status")
         == "storage_current_result_atomic_promotion_current"
+        and current_result_atomic_promotion.get("canonical_lineage_ready") is True
         and current_result_atomic_promotion.get("atomic_promotion_current") is True
         and current_result_atomic_promotion.get("physical_write_executed") is True
         and bool(current_result_atomic_promotion.get("latest_receipt_task_id"))

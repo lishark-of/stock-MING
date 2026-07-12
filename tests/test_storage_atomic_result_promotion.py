@@ -626,8 +626,8 @@ class StorageAtomicResultPromotionTests(unittest.TestCase):
         self.assertTrue(evidence["current_result_storage_acceptance_ready"])
 
         durable = storage_service.storage_physical_durable_evidence_recipe()
-        self.assertTrue(durable["current_result_atomic_parquet_promotion_done"])
-        self.assertTrue(durable["current_result_storage_direct_evidence_complete"])
+        self.assertFalse(durable["current_result_atomic_parquet_promotion_done"])
+        self.assertFalse(durable["current_result_storage_direct_evidence_complete"])
         self.assertFalse(durable["current_result_storage_acceptance_ready"])
         self.assertFalse(durable["production_storage_complete"])
 
