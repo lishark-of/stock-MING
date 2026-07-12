@@ -60177,7 +60177,100 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         df = pd.read_parquet(root / "daily.parquet")
         self.assertEqual(sorted(df["ts_code"].astype(str).unique()), ["000001.SZ", "002008.SZ"])
         self.assertEqual(set(df["provider_scope_hash"].astype(str)), {"scope-hash-for-small-pool"})
+        normal = tushare_task_service._write_parquet_dataset(
+            "daily",
+            pd.DataFrame(
+                [
+                    {
+                        "ts_code": "000001.SZ",
+                        "trade_date": "20260612",
+                        "close": 12.8,
+                    }
+                ]
+            ),
+            payload={"source_task_type": "candidate_quant_projection"},
+        )
+        self.assertEqual(normal["status"], "written")
+        self.assertTrue(normal["merge_applied"])
+        self.assertEqual(normal["merge_status"], "preserved_scope_rows")
+        self.assertEqual(normal["preserved_scope_row_count"], 2)
+        df = pd.read_parquet(root / "daily.parquet")
+        scope_hashes = df["provider_scope_hash"].fillna("").astype(str)
+        scoped = df[scope_hashes == "scope-hash-for-small-pool"]
+        self.assertEqual(sorted(scoped["ts_code"].astype(str).unique()), ["000001.SZ", "002008.SZ"])
+        self.assertIn("20260612", set(df["trade_date"].astype(str)))
+        another_normal = tushare_task_service._write_parquet_dataset(
+            "daily",
+            pd.DataFrame(
+                [
+                    {
+                        "ts_code": "600000.SH",
+                        "trade_date": "20260612",
+                        "close": 9.8,
+                    }
+                ]
+            ),
+            payload={"source_task_type": "candidate_quant_projection"},
+        )
+        self.assertEqual(another_normal["preserved_scope_row_count"], 2)
+        df = pd.read_parquet(root / "daily.parquet")
+        scope_hashes = df["provider_scope_hash"].fillna("").astype(str)
+        scoped = df[scope_hashes == "scope-hash-for-small-pool"]
+        self.assertEqual(sorted(scoped["ts_code"].astype(str).unique()), ["000001.SZ", "002008.SZ"])
+        self.assertIn("600000.SH", set(df["ts_code"].astype(str)))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(second, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(normal, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(another_normal, ensure_ascii=False))
+
+    def test_factor_test_production_stage_manifest_reflects_forward_return_direct_evidence(self):
+        factor_tests = {
+            "provider_small_pool_acceptance_dry_run_receipt": {
+                "status": "provider_small_pool_dry_run_ready_real_execution_blocked",
+                "acceptance_scope_hash_short": "scope-hash-f",
+            },
+            "provider_small_pool_execution_request_receipt": {
+                "status": "factor_test_provider_small_pool_execution_request_ready_manual_provider_task_pending",
+            },
+            "provider_small_pool_acceptance_receipt": {
+                "sample_rows_collected": True,
+                "provider_execution_implemented": True,
+                "provider_call_ledger_evidence_done": True,
+                "provider_task_created": True,
+                "provider_task_ids": ["local-provider"],
+                "provider_total_row_count": 944,
+                "provider_latest_data_date": "20250331",
+            },
+            "provider_small_pool_forward_return_label_audit": {
+                "multi_horizon_forward_returns_done": True,
+                "forward_return_label_row_count": 540,
+                "labeled_symbols": ["000001.SZ", "002008.SZ"],
+                "missing_symbols": [],
+                "requested_horizons": ["1d", "5d"],
+                "label_count_by_horizon": {"1d": 280, "5d": 260},
+            },
+        }
+
+        manifest, rows, ledger = factor_service._factor_test_production_stage_scope_manifest(
+            factor_tests,
+            "2026-07-12T10:00:00",
+        )
+        rows_by_stage = {row["stage_key"]: row for row in rows}
+
+        self.assertTrue(manifest["sample_rows_collected"])
+        self.assertTrue(manifest["multi_horizon_forward_returns_done"])
+        self.assertEqual(manifest["forward_return_label_row_count"], 540)
+        self.assertIn("provider_backed_small_pool_sample", manifest["provider_direct_evidence_stage_keys"])
+        self.assertIn("multi_horizon_forward_returns", manifest["provider_direct_evidence_stage_keys"])
+        self.assertTrue(rows_by_stage["multi_horizon_forward_returns"]["provider_direct_evidence_present"])
+        self.assertTrue(rows_by_stage["multi_horizon_forward_returns"]["multi_horizon_forward_returns_done"])
+        self.assertEqual(rows_by_stage["multi_horizon_forward_returns"]["forward_return_label_row_count"], 540)
+        self.assertFalse(manifest["production_factor_test_validation_complete"])
+        self.assertFalse(manifest["external_calls_triggered"])
+        self.assertFalse(manifest["tushare_called"])
+        self.assertFalse(manifest["deepseek_called"])
+        self.assertFalse(manifest["github_called"])
+        self.assertTrue(manifest["does_not_execute_trades"])
+        self.assertEqual(ledger[0]["api"], "local_factor_test_production_stage_scope_manifest")
 
     def test_factor_test_provider_small_pool_acceptance_executes_tushare_sample_when_authorized(self):
         self._with_meta_store()

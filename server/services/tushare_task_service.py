@@ -4983,22 +4983,61 @@ def _factor_test_small_pool_scope_hash(payload: Any) -> str:
 
 def _factor_test_small_pool_merge_dataframe(api: str, df: Any, payload: Any) -> tuple[Any, dict[str, Any]]:
     scope_hash = _factor_test_small_pool_scope_hash(payload)
-    if api not in FACTOR_TEST_PROVIDER_SMALL_POOL_MERGE_APIS or not scope_hash:
+    if api not in FACTOR_TEST_PROVIDER_SMALL_POOL_MERGE_APIS:
         return df, {"merge_applied": False}
     payload_map = payload if isinstance(payload, Mapping) else {}
     try:
         import pandas as pd
 
         current = df.copy()
+        path = parquet_store.dataset_path(root=storage_service.PARQUET_ROOT, name=PARQUET_DATASETS[api])
+        existing = pd.read_parquet(path) if path.exists() else None
+        existing_row_count = int(len(existing)) if existing is not None else 0
+        if not scope_hash:
+            if existing is None:
+                return df, {"merge_applied": False}
+            scoped_existing = existing.iloc[0:0].copy()
+            if "provider_scope_hash" in existing.columns:
+                scope_text = existing["provider_scope_hash"].fillna("").astype(str).str.strip()
+                scoped_existing = existing[(scope_text != "") & (scope_text.str.lower() != "nan")]
+            if "provider_acceptance_mode" in existing.columns:
+                mode_rows = existing[
+                    existing["provider_acceptance_mode"].astype(str)
+                    == "factor_test_provider_small_pool_sample"
+                ]
+                scoped_existing = pd.concat([scoped_existing, mode_rows], ignore_index=True)
+            scoped_dedupe_keys = [
+                key for key in ("ts_code", "trade_date", "provider_scope_hash") if key in scoped_existing.columns
+            ]
+            if scoped_dedupe_keys:
+                scoped_existing = scoped_existing.drop_duplicates(subset=scoped_dedupe_keys, keep="last")
+            if scoped_existing.empty:
+                return df, {"merge_applied": False}
+            combined = pd.concat([scoped_existing, current], ignore_index=True)
+            dedupe_keys = [key for key in ("ts_code", "trade_date", "provider_scope_hash") if key in combined.columns]
+            if not dedupe_keys:
+                dedupe_keys = [key for key in ("ts_code", "trade_date") if key in combined.columns]
+            if dedupe_keys:
+                combined = combined.drop_duplicates(subset=dedupe_keys, keep="last")
+            symbol_count = int(combined["ts_code"].astype(str).nunique()) if "ts_code" in combined.columns else 0
+            return combined, {
+                "merge_applied": True,
+                "merge_status": "preserved_scope_rows",
+                "input_row_count": int(len(current)),
+                "existing_row_count": existing_row_count,
+                "preserved_scope_row_count": int(len(scoped_existing)),
+                "merged_row_count": int(len(combined)),
+                "merged_symbol_count": symbol_count,
+                "provider_scope_hash_short": "",
+            }
         current["provider_scope_hash"] = scope_hash
         current["provider_scope_hash_short"] = str(payload_map.get("acceptance_scope_hash_short") or "")[:12]
         current["provider_acceptance_mode"] = "factor_test_provider_small_pool_sample"
         current["provider_source_task_type"] = "run_factor_test_provider_small_pool_acceptance"
-        path = parquet_store.dataset_path(root=storage_service.PARQUET_ROOT, name=PARQUET_DATASETS[api])
-        existing = pd.read_parquet(path) if path.exists() else None
-        existing_row_count = int(len(existing)) if existing is not None else 0
         combined = pd.concat([existing, current], ignore_index=True) if existing is not None else current
-        dedupe_keys = [key for key in ("ts_code", "trade_date") if key in combined.columns]
+        dedupe_keys = [key for key in ("ts_code", "trade_date", "provider_scope_hash") if key in combined.columns]
+        if not dedupe_keys:
+            dedupe_keys = [key for key in ("ts_code", "trade_date") if key in combined.columns]
         if dedupe_keys:
             combined = combined.drop_duplicates(subset=dedupe_keys, keep="last")
         symbol_count = int(combined["ts_code"].astype(str).nunique()) if "ts_code" in combined.columns else 0
