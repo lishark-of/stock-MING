@@ -278,7 +278,12 @@ export default function CandidateRadar() {
       if (res.ok) setTaskId(res.data.task_id);
     });
   const launchQuantProjection = () => {
-    if (!quantProjectionCanSubmit || quantProjectionSubmitting || quantProjectionSubmittingRef.current) return;
+    if (
+      !quantProjectionCanSubmit ||
+      quantProjectionUseRecentResultInsteadOfSubmit ||
+      quantProjectionSubmitting ||
+      quantProjectionSubmittingRef.current
+    ) return;
     quantProjectionSubmittingRef.current = true;
     setQuantProjectionSubmitting(true);
     setQuantProjectionSubmitError("");
@@ -1742,8 +1747,18 @@ export default function CandidateRadar() {
     Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
     Boolean(quantProjectionAcceptedTaskSymbol) &&
     quantProjectionAcceptedTaskSymbol !== quantProjectionSymbolValidation.normalized;
+  const quantProjectionHistoricalTaskMatchesInput =
+    quantProjectionSymbolReady &&
+    Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
+    quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized;
+  const quantProjectionUseRecentResultInsteadOfSubmit =
+    quantProjectionHistoricalTaskMatchesInput &&
+    !searchSymbolTouched &&
+    Boolean(quantProjectionPersistedTaskId || searchQuantProviderModelAcceptance.result_version);
   const quantProjectionInputSessionState = quantProjectionTaskReceiptInputMismatch
     ? `已切换输入：最近结果属于 ${quantProjectionAcceptedTaskSymbol}；最近任务属于 ${quantProjectionAcceptedTaskSymbol}；旧 task 属于 ${quantProjectionAcceptedTaskSymbol}；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新点击确认；页面不会把旧回执归属到新代码；不会取消已创建后台 task、不创建新 task、不调用 Tushare/DeepSeek；当前输入 ${quantProjectionSymbolValidation.normalized} 需重新确认。`
+    : quantProjectionUseRecentResultInsteadOfSubmit
+    ? `当前输入已有最近结果：${quantProjectionAcceptedTaskSymbol}；普通主动作先查看最近结果，不创建第二个后台流程；手动修改输入后再确认才会生成新版本。`
     : quantProjectionSymbolReady &&
       Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
       quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized
@@ -1751,18 +1766,16 @@ export default function CandidateRadar() {
     : "修改输入只切换本地输入会话；不会自动确认，也不会自动取数。";
   const quantProjectionInputOwnershipGuard = quantProjectionTaskReceiptInputMismatch
     ? `当前输入 ${quantProjectionSymbolValidation.normalized} 还未确认；最近结果属于 ${quantProjectionAcceptedTaskSymbol}，旧任务只作历史回放，不会覆盖新输入。`
+    : quantProjectionUseRecentResultInsteadOfSubmit
+    ? `当前输入 ${quantProjectionAcceptedTaskSymbol} 已有最近结果；普通主动作先查看最近结果，不创建第二个同票任务。`
     : quantProjectionSymbolReady &&
       Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
       quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized
     ? `当前输入 ${quantProjectionAcceptedTaskSymbol} 已有最近结果；再次确认才会生成新版本。`
     : "输入只改变本地会话；不会自动确认、不会创建任务、不会取数。";
-  const quantProjectionHistoricalTaskMatchesInput =
-    quantProjectionSymbolReady &&
-    Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
-    quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized;
   const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionConfirmGateReady;
   const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;
-  const quantProjectionCanLaunch = !quantProjectionSubmitDisabled;
+  const quantProjectionCanLaunch = !quantProjectionSubmitDisabled && !quantProjectionUseRecentResultInsteadOfSubmit;
   const quantProjectionConnectionReadyLabel = quantProjectionP0Ready
     ? "本地 FastAPI 已接上：可以输入股票代码；只有确认按钮会启动本地投研数据链。"
     : "本地 FastAPI/cache 尚未接上：先刷新本地回放或回一键启动预检；输入保持静默，确认按钮不可用。";
@@ -1771,7 +1784,9 @@ export default function CandidateRadar() {
     : !quantProjectionP0Ready
     ? "按钮不可用原因：本地 FastAPI/cache 还没接上；先刷新本地回放或回一键启动预检。"
     : quantProjectionCanSubmit
-    ? quantProjectionHistoricalTaskMatchesInput
+    ? quantProjectionUseRecentResultInsteadOfSubmit
+      ? `普通主动作会查看 ${quantProjectionSymbolValidation.normalized} 最近结果；不会重复创建同一标的后台流程。`
+      : quantProjectionHistoricalTaskMatchesInput
       ? `按钮已启用：${quantProjectionSymbolValidation.normalized} 已有历史结果；再次确认会重新生成本地结果。`
       : `按钮已启用：确认后生成 ${quantProjectionSymbolValidation.normalized} 的本地投研结果。`
     : !quantProjectionConfirmGateReady
@@ -1788,6 +1803,8 @@ export default function CandidateRadar() {
   const quantProjectionFactorSubmitHelpId = "candidate-radar-factor-confirm-help";
   const quantProjectionSubmitButtonLabel = quantProjectionSubmitting
     ? "正在确认；请等待本地结果开始回写"
+    : quantProjectionUseRecentResultInsteadOfSubmit
+    ? `查看 ${quantProjectionSymbolValidation.normalized} 最近结果，不创建新任务`
     : quantProjectionCanSubmit
     ? `确认 ${quantProjectionSymbolValidation.normalized} 并生成本地投研结果`
     : quantProjectionDisabledReason;
@@ -1811,7 +1828,9 @@ export default function CandidateRadar() {
     ? `已确认输入：${quantProjectionSymbolValidation.normalized}`
     : "未确认；输入框不会创建任务；输入框不会启动数据链";
   const quantProjectionNextClick = quantProjectionDisplaySymbol
-    ? "确认代码后点击生成 3.0 量化推演；结果会从本地回写后展示"
+    ? quantProjectionUseRecentResultInsteadOfSubmit
+      ? "查看最近结果；不创建第二个同票任务"
+      : "确认代码后点击生成 3.0 量化推演；结果会从本地回写后展示"
     : "先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演";
   const quantProjectionSubmitHint = !quantProjectionP0Ready
     ? "本地未联通：先用一键启动预检恢复 FastAPI、bootstrap status、desktop preflight 和候选缓存；本页不会因为输入或渲染自动取数。"
@@ -1819,6 +1838,8 @@ export default function CandidateRadar() {
       ? "正在提交确认请求；请等待本地结果开始回写，页面不会重复提交。"
       : quantProjectionTaskReceiptInputMismatch
         ? "当前输入与最近结果不一致：请重新确认当前代码，旧结果只作为历史参考。"
+        : quantProjectionUseRecentResultInsteadOfSubmit
+          ? "当前预填代码已有最近结果；普通主动作只跳转查看结果，不创建第二个同票任务。手动修改输入后再确认才会生成新版本。"
         : quantProjectionCanSubmit
           ? quantProjectionHistoricalTaskMatchesInput
             ? "当前代码已有历史结果；再次点击确认会重新生成本地结果，旧结果保留为参考。"
@@ -1857,7 +1878,9 @@ export default function CandidateRadar() {
           : ordinaryUserText(quantProjectionSymbolValidation.reason);
   const quantProjectionSummaryGuidance = quantProjectionSymbolReady
     ? quantProjectionP0Ready
-      ? `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，只由确认按钮启动本地投研流程；DeepSeek 解释随任务写入安全模型账本或安全降级。`
+      ? quantProjectionUseRecentResultInsteadOfSubmit
+        ? `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；已有最近结果，普通主动作先查看本地结果，不重复创建同票任务。`
+        : `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，只由确认按钮启动本地投研流程；DeepSeek 解释随任务写入安全模型账本或安全降级。`
       : `摘要搜票已识别 ${quantProjectionSymbolValidation.normalized}；确认按钮在等本地联通闸门变绿，输入和页面打开不会创建后台流程。`
     : searchSymbol.trim()
       ? `摘要搜票格式未通过：${quantProjectionValidationReasonLabel}；不会创建后台流程。`
@@ -1952,8 +1975,12 @@ export default function CandidateRadar() {
   const quantProjectionConfirmRouteRows = [
     {
       链路项: "普通确认按钮",
-      当前状态: quantProjectionCanSubmit ? "ready：点击后创建按钮门控 POST task" : quantProjectionDisabledReason,
-      用户下一步: quantProjectionCanSubmit ? "点击确认并生成 3.0 量化推演" : "先让输入和 P0 联通闸门通过",
+      当前状态: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "ready：已有同票最近结果，普通主动作改为本地查看"
+        : quantProjectionCanSubmit ? "ready：点击后创建按钮门控 POST task" : quantProjectionDisabledReason,
+      用户下一步: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "查看最近结果"
+        : quantProjectionCanSubmit ? "点击确认并生成 3.0 量化推演" : "先让输入和 P0 联通闸门通过",
       证据: "POST /api/candidate-radar/quant-projection",
       边界: "只有按钮点击会 POST；页面打开、输入和 GET cache 不创建 task"
     },
@@ -3807,13 +3834,17 @@ export default function CandidateRadar() {
     {
       label: "本地 FastAPI",
       value: quantProjectionP0Ready
-        ? "已接上：可以输入代码并用确认按钮创建后台任务"
+        ? quantProjectionUseRecentResultInsteadOfSubmit
+          ? "已接上：已有同票最近结果，普通主动作查看本地回放"
+          : "已接上：可以输入代码并用确认按钮创建后台任务"
         : "未完全接上：先回 P0 一键启动预检",
       tone: quantProjectionP0Ready ? "good" : "warn"
     },
     {
       label: "确认按钮",
-      value: quantProjectionCanSubmit
+      value: quantProjectionUseRecentResultInsteadOfSubmit
+        ? `已有最近结果：${quantProjectionSymbolValidation.normalized}，主动作查看本地回放`
+        : quantProjectionCanSubmit
         ? `可点击：${quantProjectionSymbolValidation.normalized} 将启动本地投研流程`
         : quantProjectionDisabledReason,
       tone: quantProjectionCanSubmit ? "good" : "warn"
@@ -3849,7 +3880,9 @@ export default function CandidateRadar() {
   const candidateRadarUserFirstItems: MetricItem[] = [
     {
       label: "现在做什么",
-      value: quantProjectionCanSubmit
+      value: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "查看最近结果"
+        : quantProjectionCanSubmit
         ? "点击确认并生成 3.0 量化推演"
         : quantProjectionP0Ready
           ? "先输入 6 位 A 股代码"
@@ -3863,7 +3896,9 @@ export default function CandidateRadar() {
     },
     {
       label: "确认按钮",
-      value: quantProjectionCanSubmit ? "可用：点击后才启动本地确认流程" : quantProjectionDisabledReason,
+      value: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "已有最近结果：普通主动作查看本地回放"
+        : quantProjectionCanSubmit ? "可用：点击后才启动本地确认流程" : quantProjectionDisabledReason,
       tone: quantProjectionCanSubmit ? "good" : "warn"
     },
     {
@@ -3888,7 +3923,9 @@ export default function CandidateRadar() {
     {
       步骤: "1. 搜票输入",
       当前状态: quantProjectionInputValidation,
-      用户下一步: quantProjectionCanSubmit
+      用户下一步: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "查看最近结果"
+        : quantProjectionCanSubmit
         ? `点击确认 ${quantProjectionSymbolValidation.normalized} 并生成本地投研结果`
         : quantProjectionP0Ready
           ? "输入 6 位 A 股代码，等按钮启用后再确认"
@@ -4216,7 +4253,9 @@ export default function CandidateRadar() {
     },
     {
       label: "现在能操作",
-      value: quantProjectionCanSubmit
+      value: quantProjectionUseRecentResultInsteadOfSubmit
+        ? `查看 ${quantProjectionSymbolValidation.normalized} 最近结果`
+        : quantProjectionCanSubmit
         ? `确认 ${quantProjectionSymbolValidation.normalized} 并生成本地投研回放`
         : quantProjectionP0Ready
           ? "输入 6 位 A 股代码，等确认按钮启用"
@@ -4230,7 +4269,7 @@ export default function CandidateRadar() {
     },
     {
       label: "现在做什么",
-      value: ordinaryPrimaryActionLabel,
+      value: quantProjectionUseRecentResultInsteadOfSubmit ? "查看最近结果" : ordinaryPrimaryActionLabel,
       tone: candidateRadarP0Blocked ? "warn" : "good"
     },
     {
@@ -4693,8 +4732,12 @@ export default function CandidateRadar() {
     },
     {
       读法: "2. 主动作",
-      当前状态: quantProjectionCanSubmit ? `确认按钮可用于 ${quantProjectionSymbolValidation.normalized}` : quantProjectionDisabledReason,
-      用户下一步: quantProjectionCanSubmit ? "点击确认按钮，等待 TaskStatusPanel 或本地 cache 回写。" : "先处理输入格式或本地联通阻断。",
+      当前状态: quantProjectionUseRecentResultInsteadOfSubmit
+        ? `${quantProjectionSymbolValidation.normalized} 已有最近结果，普通主动作查看本地回放`
+        : quantProjectionCanSubmit ? `确认按钮可用于 ${quantProjectionSymbolValidation.normalized}` : quantProjectionDisabledReason,
+      用户下一步: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "查看最近结果，不创建第二个同票任务。"
+        : quantProjectionCanSubmit ? "点击确认按钮，等待 TaskStatusPanel 或本地 cache 回写。" : "先处理输入格式或本地联通阻断。",
       证据: "quantProjectionCanSubmit / normalizeAshareSymbolInput",
       边界: "只有确认按钮才创建本地投研 task；本卡片链接不创建 task。"
     },
@@ -5181,8 +5224,10 @@ export default function CandidateRadar() {
     {
       行动: "1. 确认",
       当前状态: quantProjectionConfirmChainState,
-      用户下一步: quantProjectionCanSubmit ? "点击确认并生成 3.0 量化推演" : "先输入有效股票代码并确认本地后端联通",
-      入口: "确认并生成 3.0 量化推演",
+      用户下一步: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "查看最近结果"
+        : quantProjectionCanSubmit ? "点击确认并生成 3.0 量化推演" : "先输入有效股票代码并确认本地后端联通",
+      入口: quantProjectionUseRecentResultInsteadOfSubmit ? "查看最近结果" : "确认并生成 3.0 量化推演",
       边界: "只有确认按钮可创建 Tushare-first POST task；输入、搜索、GET cache 和 React render 不外联"
     },
     {
@@ -5210,7 +5255,9 @@ export default function CandidateRadar() {
     }
   ];
   const ordinaryP1ConfirmPathLabel = quantProjectionCanSubmit
-    ? `P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；点击确认后提交 Tushare-first 后台链`
+    ? quantProjectionUseRecentResultInsteadOfSubmit
+      ? `P1 主路径：${quantProjectionSymbolValidation.normalized} 已有最近结果，普通主动作先查看本地回放`
+      : `P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；点击确认后提交 Tushare-first 后台链`
     : "P1 主路径：先输入股票代码；输入只做本地校验，确认按钮才创建 Tushare-first task";
   const ordinaryP1ConfirmPathBoundary =
     `P1 主路径只允许确认按钮创建 Tushare-first task；点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；本页不会从输入或渲染创建 Tushare-first task；搜索输入、页面打开、React render、GET cache 和结果链接都不外联。`;
@@ -5218,13 +5265,17 @@ export default function CandidateRadar() {
     {
       阶段: "1. 输入股票代码",
       当前状态: quantProjectionInputValidation,
-      用户下一步: quantProjectionCanSubmit ? "确认按钮已可用，点击一次即可创建后台链" : "输入 6 位 A 股代码或带 .SZ/.SH/.BJ 后缀",
+      用户下一步: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "已有最近结果，先查看本地回放"
+        : quantProjectionCanSubmit ? "确认按钮已可用，点击一次即可创建后台链" : "输入 6 位 A 股代码或带 .SZ/.SH/.BJ 后缀",
       边界: "输入只做本地校验；不创建 task、不调用 Tushare/DeepSeek/GitHub"
     },
     {
       阶段: "2. 点击确认按钮",
       当前状态: quantProjectionDisabledReason,
-      用户下一步: quantProjectionCanLaunch ? "点击确认并生成 3.0 量化推演" : "等待有效代码和本地后端联通",
+      用户下一步: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "查看最近结果"
+        : quantProjectionCanLaunch ? "点击确认并生成 3.0 量化推演" : "等待有效代码和本地后端联通",
       边界: "只有确认按钮创建本地 POST task；DeepSeek 只读解释可安全降级；不交易；只有确认按钮会 POST /api/candidate-radar/quant-projection"
     },
     {
@@ -5451,7 +5502,9 @@ export default function CandidateRadar() {
     {
       门控项: "2. 确认按钮",
       当前状态: quantProjectionDisabledReason,
-      用户下一步: quantProjectionCanLaunch ? "点击一次确认并生成 3.0 量化推演" : "等待按钮启用，或先恢复本地 FastAPI 连接",
+      用户下一步: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "查看最近结果"
+        : quantProjectionCanLaunch ? "点击一次确认并生成 3.0 量化推演" : "等待按钮启用，或先恢复本地 FastAPI 连接",
       允许动作: "按钮门控 POST /api/candidate-radar/quant-projection",
       边界: "只有确认按钮可创建 Tushare-first task；DeepSeek 只读解释可安全降级，不交易"
     },
@@ -5522,7 +5575,9 @@ export default function CandidateRadar() {
       步骤: "2. 输入代码",
       用户动作: "输入 002008.SZ 或 002008",
       当前状态: quantProjectionInputValidation,
-      下一步: quantProjectionCanSubmit ? "点击确认并生成 3.0 量化推演" : "修正代码后再确认",
+      下一步: quantProjectionUseRecentResultInsteadOfSubmit
+        ? "查看最近结果"
+        : quantProjectionCanSubmit ? "点击确认并生成 3.0 量化推演" : "修正代码后再确认",
       边界: quantProjectionInputBoundaryLabel
     },
     {
@@ -5602,6 +5657,24 @@ export default function CandidateRadar() {
   const candidatePoolDeepResearchDetail =
     deepScanPlan.status === "deep_scan_plan_ready" ? "深研清单已准备" : "等待整理深研清单";
   const empty = !loading && !error && !Object.keys(cache).length;
+  const quantProjectionRecentResultActionTitle = `查看 ${quantProjectionSymbolValidation.normalized || "当前标的"} 最近结果；不创建新任务、不调用 Tushare/DeepSeek、不交易`;
+  const renderQuantProjectionPrimaryAction = (describedBy: string) =>
+    quantProjectionUseRecentResultInsteadOfSubmit ? (
+      <a
+        href="#factor"
+        title={quantProjectionRecentResultActionTitle}
+        aria-label={quantProjectionRecentResultActionTitle}
+        aria-describedby={describedBy}
+      >查看最近结果</a>
+    ) : (
+      <button
+        disabled={quantProjectionSubmitDisabled}
+        onClick={launchQuantProjection}
+        title={quantProjectionSubmitButtonLabel}
+        aria-label={quantProjectionSubmitAriaLabel}
+        aria-describedby={describedBy}
+      >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+    );
 
   return (
     <>
@@ -5627,13 +5700,7 @@ export default function CandidateRadar() {
             aria-describedby={candidateRadarOperatorInputHelpId}
             title={quantProjectionInputBoundaryLabel}
           />
-          <button
-            disabled={quantProjectionSubmitDisabled}
-            onClick={launchQuantProjection}
-            title={quantProjectionSubmitButtonLabel}
-            aria-label={quantProjectionSubmitAriaLabel}
-            aria-describedby={candidateRadarOperatorSubmitHelpId}
-          >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+          {renderQuantProjectionPrimaryAction(candidateRadarOperatorSubmitHelpId)}
           <button
             onClick={refreshQuantProjectionReadback}
             disabled={loading}
@@ -6214,13 +6281,7 @@ export default function CandidateRadar() {
               aria-describedby={quantProjectionSummaryInputHelpId}
               title={quantProjectionInputBoundaryLabel}
             />
-            <button
-              disabled={quantProjectionSubmitDisabled}
-              onClick={launchQuantProjection}
-              title={quantProjectionSubmitButtonLabel}
-              aria-label={quantProjectionSubmitAriaLabel}
-              aria-describedby={quantProjectionSummarySubmitHelpId}
-            >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+            {renderQuantProjectionPrimaryAction(quantProjectionSummarySubmitHelpId)}
             <a href="#factor" title="切换到股票量化推演；只读回放本地结果" aria-label="open factor replay from candidate radar first screen confirmation">股票量化推演</a>
             <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session replay from candidate radar first screen confirmation">次日图谱</a>
           </div>
@@ -6530,13 +6591,7 @@ export default function CandidateRadar() {
               aria-describedby={quantProjectionSummaryInputHelpId}
               title={quantProjectionInputBoundaryLabel}
             />
-            <button
-              disabled={quantProjectionSubmitDisabled}
-              onClick={launchQuantProjection}
-              title={quantProjectionSubmitButtonLabel}
-              aria-label={quantProjectionSubmitAriaLabel}
-              aria-describedby={quantProjectionSummarySubmitHelpId}
-            >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+            {renderQuantProjectionPrimaryAction(quantProjectionSummarySubmitHelpId)}
             <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
             <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
           </div>
@@ -6638,13 +6693,7 @@ export default function CandidateRadar() {
               aria-describedby={quantProjectionFactorInputHelpId}
               title={quantProjectionInputBoundaryLabel}
             />
-            <button
-              disabled={quantProjectionSubmitDisabled}
-              onClick={launchQuantProjection}
-              title={quantProjectionSubmitButtonLabel}
-              aria-label={quantProjectionSubmitAriaLabel}
-              aria-describedby={quantProjectionFactorSubmitHelpId}
-            >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
+            {renderQuantProjectionPrimaryAction(quantProjectionFactorSubmitHelpId)}
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
           <p className="ordinary-status-note" aria-live="polite">{quantProjectionConnectionReadyLabel}</p>

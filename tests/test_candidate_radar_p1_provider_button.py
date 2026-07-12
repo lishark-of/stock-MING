@@ -54,7 +54,7 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", execution_request_slice)
         self.assertIn("manualTaskPanelEmptyNotice", execution_request_slice)
         self.assertIn("quantProjectionTushareFirstState", ordinary_quant_slice)
-        self.assertIn("quantProjectionSubmitting", ordinary_quant_slice)
+        self.assertIn("quantProjectionSubmitting", source)
         self.assertIn("quantProjectionSubmitError", ordinary_quant_slice)
         self.assertIn("quantProjectionSubmitErrorLabel", ordinary_quant_slice)
         self.assertIn("quantProjectionSubmitFailureMessage", source)
@@ -148,13 +148,14 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("模型失败只按降级展示", source)
         self.assertIn("Radar candidate 和量化推演都不是买入、卖出或加仓指令", source)
         self.assertIn("title={quantProjectionInputBoundaryLabel}", ordinary_quant_slice)
-        self.assertIn("title={quantProjectionSubmitButtonLabel}", ordinary_quant_slice)
-        self.assertIn("aria-label={quantProjectionSubmitAriaLabel}", ordinary_quant_slice)
-        self.assertIn("disabled={quantProjectionSubmitDisabled}", radar_summary_slice)
-        self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', radar_summary_slice)
+        self.assertIn("title={quantProjectionSubmitButtonLabel}", source)
+        self.assertIn("aria-label={quantProjectionSubmitAriaLabel}", source)
+        self.assertIn("renderQuantProjectionPrimaryAction(quantProjectionSummarySubmitHelpId)", radar_summary_slice)
+        self.assertIn("disabled={quantProjectionSubmitDisabled}", source)
+        self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', source)
         self.assertIn('{quantProjectionConnectionReadyLabel}', radar_summary_slice)
         self.assertLess(
-            radar_summary_slice.index("aria-label={quantProjectionSubmitAriaLabel}"),
+            radar_summary_slice.index("renderQuantProjectionPrimaryAction(quantProjectionSummarySubmitHelpId)"),
             radar_summary_slice.index("{quantProjectionConnectionReadyLabel}"),
         )
         self.assertIn('<a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>', radar_summary_slice)
@@ -164,8 +165,8 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
             radar_summary_slice.index('aria-label="open next session map from candidate radar p1 replay"'),
         )
         self.assertIn("回放入口区分本地模块路由和页内锚点：#factor/#next 切换到量化推演和次日图谱模块，#candidate-pool 留在候选池；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache", source)
-        self.assertIn("disabled={quantProjectionSubmitDisabled}", ordinary_quant_slice)
-        self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', ordinary_quant_slice)
+        self.assertIn("renderQuantProjectionPrimaryAction(quantProjectionFactorSubmitHelpId)", ordinary_quant_slice)
+        self.assertIn("查看最近结果", source)
         self.assertIn('{quantProjectionConnectionReadyLabel}', ordinary_quant_slice)
         self.assertIn("点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；本页不会从输入或渲染创建 Tushare-first task", source)
         self.assertIn("按钮不可用原因：先输入股票代码；输入本身不会启动数据链", source)
@@ -347,10 +348,9 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("确认后创建 Tushare-first 按钮门控 POST task / worker", ordinary_quant_slice)
         self.assertIn("不交易、不改 strategy action", ordinary_quant_slice)
         self.assertIn("const quantProjectionSubmittingRef = useRef(false);", source)
-        self.assertIn(
-            "if (!quantProjectionCanSubmit || quantProjectionSubmitting || quantProjectionSubmittingRef.current) return;",
-            submit_slice,
-        )
+        self.assertIn("!quantProjectionCanSubmit ||", submit_slice)
+        self.assertIn("quantProjectionUseRecentResultInsteadOfSubmit ||", submit_slice)
+        self.assertIn("quantProjectionSubmittingRef.current", submit_slice)
         self.assertIn("quantProjectionSubmittingRef.current = true;", submit_slice)
         self.assertIn("setQuantProjectionSubmitting(true);", submit_slice)
         self.assertIn('setQuantProjectionSubmitError("");', submit_slice)

@@ -58,7 +58,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             operator_slice.index('aria-label="candidate radar compact operator actions"'),
         )
         self.assertIn('aria-label="candidate radar operator symbol input"', operator_slice)
-        self.assertIn("确认并生成 3.0 量化推演", operator_slice)
+        self.assertIn("renderQuantProjectionPrimaryAction(candidateRadarOperatorSubmitHelpId)", operator_slice)
+        self.assertIn("查看最近结果", self.page)
         self.assertIn("刷新本地回放", operator_slice)
         self.assertIn("candidateRadarOperatorPostConfirmOneGlanceItems", self.page)
         self.assertIn('aria-label="candidate radar operator post confirm one glance result"', operator_slice)
@@ -1203,8 +1204,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(action_slice_end, self.page.index('id="audit" className="developer-audit-details"'))
         self.assertLess(p5_detail_index, p6_detail_index)
         self.assertIn('aria-label="radar summary quant projection symbol"', action_slice)
-        self.assertIn('onClick={launchQuantProjection}', action_slice)
-        self.assertIn("确认并生成 3.0 量化推演", action_slice)
+        self.assertIn("renderQuantProjectionPrimaryAction(quantProjectionSummarySubmitHelpId)", action_slice)
+        self.assertIn("renderQuantProjectionPrimaryAction", self.page)
         self.assertIn('href="#factor"', action_slice)
         self.assertIn('href="#next"', action_slice)
         self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", action_slice)
@@ -2550,7 +2551,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertEqual(self.page.count("updateSearchSymbolInput(event.target.value);"), 4)
         self.assertIn("searchSymbolTouchedRef.current = true;", self.page)
         self.assertEqual(self.page.count("setSearchSymbolTouched(true);"), 1)
-        self.assertEqual(self.page.count("onClick={launchQuantProjection}"), 4)
+        self.assertEqual(self.page.count("renderQuantProjectionPrimaryAction("), 4)
+        self.assertEqual(self.page.count("onClick={launchQuantProjection}"), 1)
         self.assertIn('aria-label="candidate radar operator symbol input"', self.page)
         self.assertIn('aria-label="candidate radar first screen quant projection symbol"', self.page)
         self.assertIn('aria-label="radar summary quant projection symbol"', self.page)
@@ -2563,10 +2565,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
         submit_slice = self.page[submit_start:submit_end]
         self.assertIn("const quantProjectionSubmittingRef = useRef(false);", self.page)
-        self.assertIn(
-            "if (!quantProjectionCanSubmit || quantProjectionSubmitting || quantProjectionSubmittingRef.current) return;",
-            submit_slice,
-        )
+        self.assertIn("!quantProjectionCanSubmit ||", submit_slice)
+        self.assertIn("quantProjectionUseRecentResultInsteadOfSubmit ||", submit_slice)
+        self.assertIn("quantProjectionSubmittingRef.current", submit_slice)
         self.assertIn("quantProjectionSubmittingRef.current = true;", submit_slice)
         self.assertIn("quantProjectionSubmittingRef.current = false;", submit_slice)
         self.assertIn("void postCandidateRadarQuantProjection({", submit_slice)
@@ -2637,9 +2638,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
 
         self.assertIn("查看本地缓存", summary_slice)
         self.assertIn("运行本地快扫", summary_slice)
-        self.assertIn("确认并生成 3.0 量化推演", summary_slice)
-        self.assertIn("disabled={quantProjectionSubmitDisabled}", summary_slice)
-        self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', summary_slice)
+        self.assertIn("renderQuantProjectionPrimaryAction(quantProjectionSummarySubmitHelpId)", summary_slice)
+        self.assertIn("disabled={quantProjectionSubmitDisabled}", self.page)
+        self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', self.page)
         self.assertIn("quantProjectionSubmitErrorLabel", summary_slice)
         self.assertIn('aria-label="candidate radar p0 submit failure recovery"', summary_slice)
         self.assertIn("优先读取 POST 失败 envelope 里的 frontend_backend_auto_link ledger", summary_slice)
