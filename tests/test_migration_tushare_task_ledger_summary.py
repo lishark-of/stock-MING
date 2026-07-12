@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from server.services import (
@@ -16,6 +19,9 @@ def _provider_row(api: str, *, row_count: int, data_date: str | None, status: st
     failure_mode = "none" if status == "success" else "empty_result_or_no_record"
     return {
         "api": api,
+        "scope_hash": "provider-scope-hash",
+        "scope_hash_short": "provider-scope",
+        "payload_hash": "provider-scope-hash",
         "request_params_safe": {"ts_code": "002008.SZ"},
         "row_count": row_count,
         "data_date": data_date,
@@ -36,6 +42,58 @@ def _provider_row(api: str, *, row_count: int, data_date: str | None, status: st
 
 
 class MigrationTushareTaskLedgerSummaryTests(unittest.TestCase):
+    def test_refresh_task_call_ledger_rows_include_safe_scope_hash(self):
+        class FakeAdapter:
+            @staticmethod
+            def get_daily(**_params):
+                return {
+                    "ok": True,
+                    "data": [{"ts_code": "002008.SZ", "trade_date": "20260710", "close": 12.3}],
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original_tushare_meta = tushare_task_service.SQLITE_META_PATH
+            original_storage_meta = tushare_task_service.storage_service.SQLITE_META_PATH
+            original_storage_parquet = tushare_task_service.storage_service.PARQUET_ROOT
+            original_task_meta = task_service.SQLITE_META_PATH
+            original_tasks = dict(task_service._TASKS)
+            tushare_task_service.SQLITE_META_PATH = root / "meta.sqlite"
+            tushare_task_service.storage_service.SQLITE_META_PATH = root / "meta.sqlite"
+            tushare_task_service.storage_service.PARQUET_ROOT = root / "parquet"
+            task_service.SQLITE_META_PATH = root / "meta.sqlite"
+            task_service._TASKS.clear()
+            self.addCleanup(setattr, tushare_task_service, "SQLITE_META_PATH", original_tushare_meta)
+            self.addCleanup(setattr, tushare_task_service.storage_service, "SQLITE_META_PATH", original_storage_meta)
+            self.addCleanup(setattr, tushare_task_service.storage_service, "PARQUET_ROOT", original_storage_parquet)
+            self.addCleanup(setattr, task_service, "SQLITE_META_PATH", original_task_meta)
+            self.addCleanup(task_service._TASKS.clear)
+            self.addCleanup(task_service._TASKS.update, original_tasks)
+
+            task = tushare_task_service.run_tushare_refresh_task(
+                {
+                    "approved_by_user": True,
+                    "ts_code": "002008.SZ",
+                    "start_date": "20260710",
+                    "end_date": "20260710",
+                    "apis": ["daily"],
+                    "token": "SHOULD_DROP",
+                },
+                adapter=FakeAdapter,
+            )
+
+        ledger = task["call_ledger"]
+        self.assertEqual(len(ledger), 1)
+        row = ledger[0]
+        self.assertEqual(row["api"], "daily")
+        self.assertEqual(row["call_status"], "success")
+        self.assertRegex(row["scope_hash"], r"^[0-9a-f]{64}$")
+        self.assertEqual(row["scope_hash_short"], row["scope_hash"][:16])
+        self.assertEqual(row["payload_hash"], row["scope_hash"])
+        for field in tushare_task_service.CALL_LEDGER_REQUIRED_FIELDS:
+            self.assertIn(field, row)
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
     def test_trade_cal_provider_summary_uses_task_ledger_when_packet_was_overwritten(self):
         task_rows = [
             {

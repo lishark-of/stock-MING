@@ -224,6 +224,9 @@ DATE_CONTEXT_PARAMS = ("trade_date", "start_date", "end_date", "ann_date", "peri
 PAYLOAD_CONTROL_KEYS = ("apis", "include_extended", "include_calendar", "ticker", "symbol")
 CALL_LEDGER_REQUIRED_FIELDS = (
     "api",
+    "scope_hash",
+    "scope_hash_short",
+    "payload_hash",
     "request_params_safe",
     "row_count",
     "data_date",
@@ -374,6 +377,21 @@ def _safe_payload(payload: Any = None) -> dict[str, Any]:
         elif isinstance(value, list):
             result[str(key)] = [_safe_text(item) for item in value if isinstance(item, (str, int, float, bool))][:20]
     return result
+
+
+def _provider_call_scope(payload: Any, selected_apis: Iterable[str]) -> dict[str, str]:
+    material = {
+        "schema_version": "tushare_provider_call_scope.v1",
+        "selected_apis": list(selected_apis),
+        "payload_safe": _safe_payload(payload),
+    }
+    serialized = json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return {
+        "scope_hash": digest,
+        "scope_hash_short": digest[:16],
+        "payload_hash": digest,
+    }
 
 
 def _safe_bool(value: Any, default: bool = False) -> bool:
@@ -5095,6 +5113,7 @@ def _call_ledger_row(
     parquet_result: dict[str, Any] | None,
     now: str,
     payload: Any = None,
+    scope: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     data = result.get("data") if isinstance(result, Mapping) else None
     rows = _rows_from_data(data)
@@ -5114,6 +5133,9 @@ def _call_ledger_row(
         failure_mode = _failure_mode_from_error(raw_error)
     row = {
         "api": api,
+        "scope_hash": str((scope or {}).get("scope_hash") or ""),
+        "scope_hash_short": str((scope or {}).get("scope_hash_short") or ""),
+        "payload_hash": str((scope or {}).get("payload_hash") or ""),
         "request_params_safe": params,
         "row_count": row_count,
         "data_date": _data_date(rows),
@@ -5235,10 +5257,20 @@ def _call_tushare_api(
     )
 
 
-def _blocked_missing_param_ledger_row(api: str, *, params: dict[str, Any], missing_param: str, now: str) -> dict[str, Any]:
+def _blocked_missing_param_ledger_row(
+    api: str,
+    *,
+    params: dict[str, Any],
+    missing_param: str,
+    now: str,
+    scope: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     failure_mode = "missing_required_parameter"
     return {
         "api": api,
+        "scope_hash": str((scope or {}).get("scope_hash") or ""),
+        "scope_hash_short": str((scope or {}).get("scope_hash_short") or ""),
+        "payload_hash": str((scope or {}).get("payload_hash") or ""),
         "request_params_safe": params,
         "row_count": 0,
         "data_date": None,
@@ -5403,7 +5435,14 @@ def _trade_cal_provider_execution_gate(payload: Any, *, selected_apis: list[str]
     }
 
 
-def _trade_cal_provider_execution_gate_ledger_row(gate: Mapping[str, Any], *, selected_apis: list[str], payload: Any, now: str) -> dict[str, Any]:
+def _trade_cal_provider_execution_gate_ledger_row(
+    gate: Mapping[str, Any],
+    *,
+    selected_apis: list[str],
+    payload: Any,
+    now: str,
+    scope: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     params = {
         "selected_apis": list(selected_apis),
         "acceptance_mode": _safe_text(_payload_field(payload, "acceptance_mode", "")),
@@ -5423,6 +5462,9 @@ def _trade_cal_provider_execution_gate_ledger_row(gate: Mapping[str, Any], *, se
     }
     return {
         "api": "local_trade_cal_provider_acceptance_execution_gate",
+        "scope_hash": str((scope or {}).get("scope_hash") or ""),
+        "scope_hash_short": str((scope or {}).get("scope_hash_short") or ""),
+        "payload_hash": str((scope or {}).get("payload_hash") or ""),
         "endpoint": "POST /api/tasks/refresh-tushare-facts",
         "request_params_safe": params,
         "row_count": 1,
@@ -5456,6 +5498,7 @@ def run_tushare_refresh_task(
     adapter: Any = None,
 ) -> dict[str, Any]:
     selected_apis = _selected_apis(payload, default_apis)
+    provider_call_scope = _provider_call_scope(payload, selected_apis)
     try:
         previous_packet_raw = SQLiteMetaStore(SQLITE_META_PATH).read_packet(output_packet_key)
     except Exception:
@@ -5482,6 +5525,7 @@ def run_tushare_refresh_task(
                 selected_apis=selected_apis,
                 payload=payload,
                 now=_now_iso(),
+                scope=provider_call_scope,
             )
         ]
         return update_task_status(
@@ -5508,7 +5552,15 @@ def run_tushare_refresh_task(
         )
         now = _now_iso()
         if "ts_code" in REFRESH_API_SPECS[api]["params"] and not params.get("ts_code"):
-            call_ledger.append(_blocked_missing_param_ledger_row(api, params=params, missing_param="ts_code", now=now))
+            call_ledger.append(
+                _blocked_missing_param_ledger_row(
+                    api,
+                    params=params,
+                    missing_param="ts_code",
+                    now=now,
+                    scope=provider_call_scope,
+                )
+            )
             continue
         if adapter_module is None:
             update_task_status(
@@ -5538,6 +5590,7 @@ def run_tushare_refresh_task(
             parquet_result=parquet_result,
             now=now,
             payload=payload,
+            scope=provider_call_scope,
         )
         if execution_gate.get("applies") is True and execution_gate.get("ready") is True and api == "trade_cal":
             ledger_row.update(
