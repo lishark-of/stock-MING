@@ -6599,6 +6599,7 @@ def _latest_storage_physical_execution_handoff_summary() -> dict[str, Any]:
     request = _dict_or_empty(overview_map.get("storage_physical_execution_request"))
     durable_recipe = _dict_or_empty(overview_map.get("storage_physical_durable_evidence_recipe"))
     phase_a = _dict_or_empty(overview_map.get("storage_physical_execution_phase_a"))
+    current_result_atomic = _dict_or_empty(overview_map.get("storage_current_result_atomic_promotion"))
     direct_evidence = _latest_storage_direct_execution_evidence_summary()
 
     readiness_ready = bool(readiness and readiness.get("production_storage_complete") is False)
@@ -6663,6 +6664,17 @@ def _latest_storage_physical_execution_handoff_summary() -> dict[str, Any]:
         and phase_a.get("does_not_modify_strategy_action") is True
         and phase_a.get("contains_secret") is False
     )
+    current_result_atomic_visible = bool(
+        current_result_atomic
+        and current_result_atomic.get("production_storage_complete") is False
+        and current_result_atomic.get("external_calls_triggered") is False
+        and current_result_atomic.get("tushare_called") is False
+        and current_result_atomic.get("deepseek_called") is False
+        and current_result_atomic.get("github_called") is False
+        and current_result_atomic.get("does_not_execute_trades") is True
+        and current_result_atomic.get("does_not_modify_strategy_action") is True
+        and current_result_atomic.get("contains_secret") is False
+    )
     production_storage_complete = bool(
         direct_evidence.get("production_storage_complete") is True
         or durable_recipe.get("production_storage_complete") is True
@@ -6701,6 +6713,9 @@ def _latest_storage_physical_execution_handoff_summary() -> dict[str, Any]:
         "source_packet_key": "command_center_3_storage_overview",
         "source_execution_request_packet_key": "command_center_3_storage_physical_execution_request_packet",
         "source_phase_a_packet_key": "command_center_3_storage_physical_execution_phase_a_packet",
+        "source_current_result_atomic_packet_key": (
+            "command_center_3_storage_current_result_atomic_promotion_packet"
+        ),
         "status": status,
         "readiness_status": str(readiness.get("status") or "missing"),
         "activation_status": str(activation.get("status") or "missing"),
@@ -6708,6 +6723,7 @@ def _latest_storage_physical_execution_handoff_summary() -> dict[str, Any]:
         "execution_request_status": str(request.get("status") or "missing"),
         "durable_recipe_status": str(durable_recipe.get("status") or "missing"),
         "phase_a_status": str(phase_a.get("status") or "missing"),
+        "current_result_atomic_status": str(current_result_atomic.get("status") or "missing"),
         "direct_evidence_status": str(direct_evidence.get("status") or ""),
         "direct_evidence_layer": str(direct_evidence.get("direct_evidence_layer") or ""),
         "direct_evidence_stage_count": int(direct_evidence.get("direct_evidence_stage_count") or 0),
@@ -6716,6 +6732,25 @@ def _latest_storage_physical_execution_handoff_summary() -> dict[str, Any]:
         "storage_physical_execution_recipe_ready": recipe_ready,
         "storage_physical_execution_request_ready": request_ready,
         "storage_physical_execution_phase_a_visible": phase_a_visible,
+        "storage_current_result_atomic_visible": current_result_atomic_visible,
+        "storage_current_result_atomic_can_launch": (
+            current_result_atomic.get("can_launch_atomic_promotion") is True
+        ),
+        "storage_current_result_atomic_current": (
+            current_result_atomic.get("atomic_promotion_current") is True
+        ),
+        "storage_current_result_acceptance_ready": (
+            current_result_atomic.get("current_result_storage_acceptance_ready") is True
+        ),
+        "storage_current_result_expected_symbol": str(
+            current_result_atomic.get("expected_symbol") or ""
+        ),
+        "storage_current_result_expected_result_version": str(
+            current_result_atomic.get("expected_result_version") or ""
+        ),
+        "storage_current_result_latest_task_id": str(
+            current_result_atomic.get("latest_receipt_task_id") or ""
+        ),
         "phase_a_local_evidence_done": phase_a.get("phase_a_local_evidence_done") is True,
         "phase_a_local_evidence_stage_count": int(phase_a.get("phase_a_local_evidence_stage_count") or 0),
         "durable_recipe_ready": durable_recipe_ready,
@@ -6732,6 +6767,7 @@ def _latest_storage_physical_execution_handoff_summary() -> dict[str, Any]:
         "target_storage_task_route": str(
             request.get("target_storage_task_route") or "future POST /api/storage/physical-execution"
         ),
+        "target_current_result_atomic_route": "POST /api/storage/current-result/atomic-promote",
         "target_storage_task_type": str(request.get("target_storage_task_type") or "run_storage_physical_execution"),
         "target_acceptance_mode": "storage_physical_execution_and_promotion",
         "next_local_step": next_local_step,

@@ -41214,6 +41214,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(p4_storage_handoff["requires_remote_ci_review_after_local_complete"])
         self.assertTrue(p4_storage_handoff["requires_release_review_after_remote_green"])
         self.assertFalse(p4_storage_handoff["physical_execution_complete"])
+        self.assertEqual(
+            p4_storage_handoff["target_current_result_atomic_route"],
+            "POST /api/storage/current-result/atomic-promote",
+        )
+        self.assertIn(
+            p4_storage_handoff["current_result_atomic_status"],
+            {
+                "missing",
+                "storage_current_result_atomic_promotion_waiting_canonical_result",
+                "storage_current_result_atomic_promotion_ready_for_explicit_post",
+                "storage_current_result_atomic_promotion_current",
+                "storage_current_result_atomic_promotion_degraded_last_good_active",
+            },
+        )
+        self.assertIsInstance(p4_storage_handoff["storage_current_result_atomic_visible"], bool)
+        self.assertIsInstance(p4_storage_handoff["storage_current_result_atomic_can_launch"], bool)
+        self.assertIsInstance(p4_storage_handoff["storage_current_result_atomic_current"], bool)
+        self.assertIsInstance(p4_storage_handoff["storage_current_result_acceptance_ready"], bool)
         self.assertFalse(p4_storage_handoff["writes_parquet"])
         self.assertFalse(p4_storage_handoff["writes_manifest"])
         self.assertFalse(p4_storage_handoff["deletes_artifacts"])
@@ -42601,7 +42619,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 92)
+        self.assertEqual(task_catalog["data"]["task_count"], 94)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -42735,6 +42753,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("POST /api/storage/compaction/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/storage/cache-ttl/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/storage/duckdb-read/validate", task_catalog["data"]["route_coverage"]["known_post_routes"])
+        self.assertIn(
+            "POST /api/storage/current-result/atomic-promote",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/storage/current-result/retention-cleanup",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
         self.assertIn("POST /api/worker/synthetic-healthcheck", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/worker/activation-review", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/worker/production-evidence-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])

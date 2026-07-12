@@ -844,14 +844,23 @@ export default function MigrationStatus() {
         execution_request_status: handoff.execution_request_status,
         durable_recipe_status: handoff.durable_recipe_status,
         phase_a_status: handoff.phase_a_status,
+        current_result_atomic_status: handoff.current_result_atomic_status,
         storage_physical_execution_request_ready: handoff.storage_physical_execution_request_ready,
         storage_physical_execution_phase_a_visible: handoff.storage_physical_execution_phase_a_visible,
+        storage_current_result_atomic_visible: handoff.storage_current_result_atomic_visible,
+        storage_current_result_atomic_can_launch: handoff.storage_current_result_atomic_can_launch,
+        storage_current_result_atomic_current: handoff.storage_current_result_atomic_current,
+        storage_current_result_acceptance_ready: handoff.storage_current_result_acceptance_ready,
+        storage_current_result_expected_symbol: handoff.storage_current_result_expected_symbol,
+        storage_current_result_expected_result_version: handoff.storage_current_result_expected_result_version,
+        storage_current_result_latest_task_id: handoff.storage_current_result_latest_task_id,
         phase_a_local_evidence_done: handoff.phase_a_local_evidence_done,
         production_promotion_review_done: handoff.production_promotion_review_done,
         production_promotion_review_status: handoff.production_promotion_review_status,
         production_promotion_review_production_blocker_count: handoff.production_promotion_review_production_blocker_count,
         physical_execution_scope_hash_short: handoff.physical_execution_scope_hash_short,
         target_storage_task_route: handoff.target_storage_task_route,
+        target_current_result_atomic_route: handoff.target_current_result_atomic_route,
         target_storage_task_type: handoff.target_storage_task_type,
         target_acceptance_mode: handoff.target_acceptance_mode,
         next_local_step: handoff.next_local_step,
@@ -886,6 +895,45 @@ export default function MigrationStatus() {
         evidence_boundary: handoff.evidence_boundary
       }];
     });
+  const ltgStorageCurrentResultAtomicSummary = ltgStoragePhysicalExecutionHandoffRows[0] ?? {};
+  const ltgStorageCurrentResultAtomicItems: MetricItem[] = [
+    {
+      label: "atomic status",
+      value: String(ltgStorageCurrentResultAtomicSummary.current_result_atomic_status ?? "missing"),
+      tone: ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_visible === true ? "good" : "warn"
+    },
+    {
+      label: "can launch",
+      value: ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_can_launch === true,
+      tone: ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_can_launch === true ? "warn" : "neutral"
+    },
+    {
+      label: "current",
+      value: ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_current === true,
+      tone: ltgStorageCurrentResultAtomicSummary.storage_current_result_atomic_current === true ? "good" : "warn"
+    },
+    {
+      label: "acceptance ready",
+      value: ltgStorageCurrentResultAtomicSummary.storage_current_result_acceptance_ready === true,
+      tone: ltgStorageCurrentResultAtomicSummary.storage_current_result_acceptance_ready === true ? "good" : "warn"
+    },
+    {
+      label: "symbol",
+      value: String(ltgStorageCurrentResultAtomicSummary.storage_current_result_expected_symbol ?? "--")
+    },
+    {
+      label: "result version",
+      value: String(ltgStorageCurrentResultAtomicSummary.storage_current_result_expected_result_version ?? "--")
+    },
+    {
+      label: "task",
+      value: String(ltgStorageCurrentResultAtomicSummary.storage_current_result_latest_task_id ?? "--")
+    },
+    {
+      label: "route",
+      value: String(ltgStorageCurrentResultAtomicSummary.target_current_result_atomic_route ?? "--")
+    }
+  ];
   const ltgWorkerRuntimeQaHandoffRows = ltgNextAcceptanceActionRows
     .flatMap((row) => {
       const handoff = (row.supporting_worker_runtime_qa_handoff as Record<string, unknown> | undefined) ?? {};
@@ -1693,7 +1741,8 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgFactorTestProviderValidationHandoffRows} />
       <p className="risk-note">LTG-04 Factor Universe handoff 只显示本地 worker-batch scope ticket、execution-request、local research receipt、worker dependency preflight 和仍缺的 worker runtime / storage-read / rank-zscore-neutralization / full-pool / promotion review；它不从 GET cache 创建任务、不启动 Celery/Redis，也不能关闭 Factor Universe 生产验证。</p>
       <DataLineageTable rows={ltgFactorUniverseWorkerBatchHandoffRows} />
-      <p className="risk-note">LTG-05 Storage handoff 只显示本地 readiness / activation / execution recipe / execution-request / phase-A evidence / durable recipe 和仍缺的 production promotion closeout / remote CI review；它不从 GET cache 创建任务、不写 Parquet/manifest、不删除 artifacts，也不能关闭 Storage 生产验证。</p>
+      <p className="risk-note">LTG-05 Storage handoff 只显示本地 readiness / activation / execution recipe / execution-request / phase-A evidence / durable recipe / current-result atomic 状态和仍缺的 production promotion closeout / remote CI review；`POST /api/storage/current-result/atomic-promote` 只能显式按钮触发，GET cache 不创建任务、不写 Parquet/manifest、不删除 artifacts，也不能关闭 Storage 生产验证。</p>
+      <MetricGrid items={ltgStorageCurrentResultAtomicItems} />
       <DataLineageTable rows={ltgStoragePhysicalExecutionHandoffRows} />
       <p className="risk-note">LTG-06 Worker handoff 只显示本地 dependency preflight / runtime QA request / dry-run / local fallback execution / durable recipe / promotion review 和仍缺的 production worker closeout / remote CI review；它不从 GET cache 创建任务、不启动 Celery/Redis、不派发 provider/model task，也不能关闭 Worker 生产验证。</p>
       <DataLineageTable rows={ltgWorkerRuntimeQaHandoffRows} />
