@@ -1329,9 +1329,9 @@ pre {
 
   .sidebar nav {
     align-items: start;
-    display: flex;
+    display: grid;
     gap: 6px;
-    overflow-x: auto;
+    overflow: visible;
     padding-bottom: 4px;
   }
 
@@ -1340,11 +1340,11 @@ pre {
   }
 
   .nav-group[data-nav-priority="ordinary"] {
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
+    display: grid;
+    gap: 4px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    overflow: visible;
     padding: 6px;
-    scrollbar-width: thin;
   }
 
   .nav-group[data-nav-priority="ordinary"] .nav-group-title {
@@ -1360,12 +1360,14 @@ pre {
   }
 
   .mobile-nav-select-wrap {
+    align-items: center;
     color: #cbd5e1;
     display: grid;
     font-size: 12px;
     gap: 4px;
+    grid-template-columns: auto minmax(0, 1fr);
     margin-top: 2px;
-    min-width: 150px;
+    min-width: 0;
   }
 
   .mobile-nav-select-wrap select {
@@ -1397,9 +1399,24 @@ pre {
   .sidebar .local-link-action {
     flex: 0 0 auto;
     min-height: 36px;
-    min-width: 96px;
+    min-width: 0;
     padding: 8px 10px;
     width: auto;
+  }
+
+  .nav-group[data-nav-priority="ordinary"] button {
+    justify-content: center;
+    padding: 7px 4px;
+    text-align: center;
+    width: 100%;
+  }
+
+  .nav-group[data-nav-priority="ordinary"] .nav-label {
+    font-size: 11px;
+    line-height: 1.15;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
   }
 
   .local-link-status {

@@ -1796,9 +1796,11 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn('<label className="mobile-nav-select-wrap">', layout)
         mobile_styles = styles[styles.index("@media (max-width: 760px)") : styles.index("@media (prefers-reduced-motion: reduce)")]
         self.assertIn("max-height: 217px", mobile_styles)
-        self.assertIn("overflow-x: auto", mobile_styles)
+        self.assertIn("grid-template-columns: repeat(5, minmax(0, 1fr))", mobile_styles)
+        self.assertIn("overflow: visible", mobile_styles)
         self.assertIn("flex: 0 0 auto", mobile_styles)
-        self.assertIn("min-width: 96px", mobile_styles)
+        self.assertIn("min-width: 0", mobile_styles)
+        self.assertIn('white-space: normal', mobile_styles)
         self.assertIn(".local-link-copy small", mobile_styles)
         self.assertIn(".page-head h1", mobile_styles)
         self.assertIn(".packet-card {", mobile_styles)
