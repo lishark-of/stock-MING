@@ -12258,6 +12258,13 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "supporting_worker_runtime_qa_next_local_step": (
                     supporting_worker_runtime_qa_handoff.get("next_local_step", "")
                 ),
+                "supporting_worker_runtime_qa_execution_request_ready": (
+                    supporting_worker_runtime_qa_handoff.get("runtime_qa_execution_request_ready")
+                    is True
+                ),
+                "supporting_worker_runtime_qa_dry_run_ready": (
+                    supporting_worker_runtime_qa_handoff.get("runtime_qa_dry_run_ready") is True
+                ),
                 "supporting_worker_runtime_qa_execution_done": (
                     supporting_worker_runtime_qa_handoff.get("runtime_qa_execution_done") is True
                 ),

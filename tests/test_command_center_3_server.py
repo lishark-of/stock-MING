@@ -56387,6 +56387,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(handoff["production_promotion_review_ready"])
         self.assertTrue(handoff["durable_recipe_ready"])
         self.assertFalse(handoff["durable_evidence_complete"])
+        self.assertTrue(worker_action["supporting_worker_runtime_qa_execution_request_ready"])
+        self.assertTrue(worker_action["supporting_worker_runtime_qa_dry_run_ready"])
         durable_missing = set(durable_recipe["missing_durable_evidence"])
         self.assertEqual(handoff["durable_evidence_blocker_count"], len(durable_missing))
         self.assertEqual(handoff["missing_durable_evidence_count"], len(durable_missing))
