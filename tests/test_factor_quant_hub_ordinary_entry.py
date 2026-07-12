@@ -10,7 +10,7 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
 
         self.assertIn(
-            "const ordinaryQuantNeedsCandidateConfirm = empty || (!candidateRadarConfirmedSymbol && !ordinaryQuantCandidateRadarP3Ready);",
+            "const ordinaryQuantNeedsCandidateConfirm = !candidateRadarConfirmedSymbol && (empty || !ordinaryQuantCandidateRadarP3Ready);",
             source,
         )
         self.assertIn("Boolean(candidateRadarConfirmedSymbol) &&", source)

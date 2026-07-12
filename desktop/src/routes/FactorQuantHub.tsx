@@ -711,7 +711,7 @@ export default function FactorQuantHub() {
     series: Array.isArray(scoreChart.series) ? scoreChart.series : [{ type: "bar", data: [] }]
   };
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
-  const ordinaryQuantNeedsCandidateConfirm = empty || (!candidateRadarConfirmedSymbol && !ordinaryQuantCandidateRadarP3Ready);
+  const ordinaryQuantNeedsCandidateConfirm = !candidateRadarConfirmedSymbol && (empty || !ordinaryQuantCandidateRadarP3Ready);
   const ordinaryQuantNextClick = ordinaryQuantNeedsCandidateConfirm
     ? ordinaryQuantCandidateRadarP3Ready
       ? "先读最近搜票可读结论；支持/压制缓存待刷新，必要时再手动运行轻量推演"
