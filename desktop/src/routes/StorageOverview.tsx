@@ -519,6 +519,22 @@ export default function StorageOverview() {
   const storageCurrentResultReadbackVersion = String(currentResultReadback.result_version ?? "").trim();
   const storageCurrentResultVersion =
     storageCurrentResultAtomicExpectedVersion || storageCurrentResultReadbackVersion || "等待 result_version";
+  const storageCurrentResultDataDate = String(
+    currentResult.data_date ??
+      currentResultReadback.data_date ??
+      storageCurrentResultAtomicPromotion.data_date ??
+      storageCurrentResultAtomicPromotion.expected_data_date ??
+      ""
+  ).trim();
+  const storageCurrentResultFreshnessState = String(
+    currentResult.freshness_state ??
+      currentResultReadback.freshness_state ??
+      storageCurrentResultAtomicPromotion.freshness_state ??
+      storageCurrentResultAtomicPromotion.expected_freshness_state ??
+      ""
+  ).trim();
+  const storageCurrentResultFreshnessLabel =
+    `${storageCurrentResultDataDate || "等待 data_date"} / ${storageCurrentResultFreshnessState || "等待 freshness"}`;
   const schemaValidationAcceptanceEvidence =
     (overview.schema_validation_acceptance_evidence as Record<string, unknown> | undefined) ??
     ((storageCatalog.schema_validation_acceptance_evidence as Record<string, unknown> | undefined) ?? {});
@@ -541,11 +557,11 @@ export default function StorageOverview() {
       ? "下方生成 physical execution request；它只绑定 scope，不执行物理迁移"
       : "先看 schema、manifest、partition、compaction、TTL 与 cleanup 缺口";
   const storageCurrentResultState = currentResultReadbackReady
-    ? `${String(currentResultReadback.symbol ?? "当前标的")} / ${String(currentResultReadback.result_version ?? "current")} 已有可回放 current-result；pointer=${String(currentResult.selected_pointer_kind ?? "current")}`
+    ? `${String(currentResultReadback.symbol ?? "当前标的")} / ${String(currentResultReadback.result_version ?? "current")} / ${storageCurrentResultFreshnessLabel} 已有可回放 current-result；pointer=${String(currentResult.selected_pointer_kind ?? "current")}`
     : storageCurrentResultAtomicPromotion.degraded_recovery_active === true
-      ? "当前结果走 last-good 降级回放；不会用坏版本覆盖 current"
+      ? `当前结果走 last-good 降级回放；${storageCurrentResultFreshnessLabel}；不会用坏版本覆盖 current`
       : storageCurrentResultAtomicPromotion.can_launch_atomic_promotion === true
-        ? `${String(storageCurrentResultAtomicPromotion.expected_symbol ?? "当前标的")} canonical lineage ready；可点按钮写入本地 versioned Parquet current/last-good`
+        ? `${String(storageCurrentResultAtomicPromotion.expected_symbol ?? "当前标的")} canonical lineage ready；${storageCurrentResultFreshnessLabel}；可点按钮写入本地 versioned Parquet current/last-good`
         : "等待同一 task_id / scope_hash / result_version 的 canonical lineage；GET 只读不写文件";
   const storageCurrentResultNextStep = storageCurrentResultAtomicPromotion.can_launch_atomic_promotion === true
     ? "点击原子提升 current-result；只写本地 ignored Parquet 和指针，不外联"
@@ -578,6 +594,11 @@ export default function StorageOverview() {
       label: "当前结果",
       value: storageCurrentResultState,
       tone: currentResult.duckdb_readback_verified === true || storageCurrentResultAtomicPromotion.can_launch_atomic_promotion === true ? "good" as const : "warn" as const
+    },
+    {
+      label: "日期/新鲜度",
+      value: storageCurrentResultFreshnessLabel,
+      tone: storageCurrentResultDataDate && storageCurrentResultFreshnessState ? "good" as const : "warn" as const
     },
     {
       label: "验收缺口",
@@ -624,6 +645,11 @@ export default function StorageOverview() {
       tone: currentResult.duckdb_readback_verified === true || storageCurrentResultAtomicPromotion.can_launch_atomic_promotion === true ? "good" as const : "warn" as const
     },
     {
+      label: "日期/新鲜度",
+      value: storageCurrentResultFreshnessLabel,
+      tone: storageCurrentResultDataDate && storageCurrentResultFreshnessState ? "good" as const : "warn" as const
+    },
+    {
       label: "物理证据",
       value: storagePhysicalStatus,
       tone: storagePhysicalExecutionPhaseA.local_phase_a_execution_ready === true || storagePhysicalExecutionRequest.local_execution_request_ready === true ? "good" as const : "warn" as const
@@ -666,6 +692,11 @@ export default function StorageOverview() {
       label: "result version",
       value: storageCurrentResultVersion,
       tone: storageCurrentResultAtomicPromotion.canonical_lineage_ready === true || currentResultReadbackReady ? "good" as const : "warn" as const
+    },
+    {
+      label: "data_date / freshness",
+      value: storageCurrentResultFreshnessLabel,
+      tone: storageCurrentResultDataDate && storageCurrentResultFreshnessState ? "good" as const : "warn" as const
     },
     {
       label: "last-good",
