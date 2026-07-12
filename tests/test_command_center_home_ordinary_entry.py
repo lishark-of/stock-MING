@@ -449,6 +449,17 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('aria-label="run ordinary home next action"', controls_slice)
         self.assertIn('aria-label="open ordinary home next action"', controls_slice)
         self.assertIn('aria-label="ordinary home confirm status"', source[controls_start:visible_start])
+        quick_actions_start = source.index('aria-label="ordinary home visible result quick actions"')
+        quick_actions_end = source.index("</div>", quick_actions_start)
+        quick_actions = source[quick_actions_start:quick_actions_end]
+        self.assertLess(quick_actions_start, audit_start)
+        self.assertIn('href="#factor/factor-score"', quick_actions)
+        self.assertIn('href="#next/next-session-chart"', quick_actions)
+        self.assertIn('href="#storage"', quick_actions)
+        self.assertIn('href={dailyCommandCandidateConfirmHref}', quick_actions)
+        self.assertIn('aria-label="open storage current result from visible home quick actions"', quick_actions)
+        self.assertNotIn("onClick=", quick_actions)
+        self.assertNotIn("postCandidateRadarQuantProjection", quick_actions)
         self.assertIn("ordinaryHomeAppVisibleNowSentence", source_before_audit)
         self.assertIn("ordinaryHomeAppVisibleNowItems", source_before_audit)
         self.assertIn("打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果", source_before_audit)
@@ -777,7 +788,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("getDataCapabilityCache", source)
         self.assertIn("dataCapabilityCache", source)
         self.assertIn("dataCapabilityEnvelopeLedger", source)
-        self.assertIn('track("data_capability", getDataCapabilityCache()', source)
+        self.assertIn('trackAudit("data_capability", getDataCapabilityCache()', source)
         self.assertIn("dataCapabilityDegradedState", source)
         self.assertIn("dataCapabilityModeLabel", source)
         self.assertIn("dataCapabilityEvidenceLedgerLabel", source)
@@ -1104,7 +1115,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("userRouteQaCoveredRoutes", source)
         self.assertIn("userRouteQaCoveredViewports", source)
         self.assertIn("getAuditUserRouteQa", source)
-        self.assertIn('track("audit_user_route_qa", getAuditUserRouteQa()', source)
+        self.assertIn('trackAudit("audit_user_route_qa", getAuditUserRouteQa()', source)
         self.assertIn("userRouteQaEvidenceSource", source)
         self.assertIn("Object.keys(auditUserRouteQa).length ? auditUserRouteQa : audit", source)
         self.assertIn("ordinaryHomeUserRouteQaSummary", source)
@@ -1478,7 +1489,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
     def test_home_secondary_readback_does_not_block_p0_confirm(self):
         source = self.source
 
-        secondary_start = source.index("const startSecondaryReadback = () => {")
+        secondary_start = source.index("const startOrdinaryReadback = () => {")
         secondary_end = source.index("\n\n    setLoading(true);", secondary_start)
         secondary_slice = source[secondary_start:secondary_end]
         p0_start = source.index("const p0Jobs = [", secondary_end)
@@ -1486,7 +1497,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         p0_slice = source[p0_start:p0_end]
 
         self.assertIn("secondaryStarted = true;", secondary_slice)
-        self.assertIn('track("data_capability", getDataCapabilityCache()', secondary_slice)
+        self.assertIn('track("storage_current_result", getStorageCurrentResult()', secondary_slice)
+        self.assertNotIn('trackAudit("data_capability", getDataCapabilityCache()', secondary_slice)
         self.assertNotIn('track("tasks", getTasks()', secondary_slice)
         self.assertNotIn("setLoading(true);", secondary_slice)
         self.assertIn('trackP0("health", getHealth()', p0_slice)
@@ -1496,7 +1508,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("setTaskIndex(res.data)", p0_slice)
         self.assertIn("setTasks(res.data.tasks ?? [])", p0_slice)
         self.assertIn("setLoading(false);", source[p0_end:source.index("return () => {", p0_end)])
-        self.assertIn("secondaryTimer = window.setTimeout(startSecondaryReadback, 150);", source)
+        self.assertIn("secondaryTimer = window.setTimeout(startOrdinaryReadback, 150);", source)
         self.assertIn("/api/bootstrap/status 必须返回 runtime-mode packet", source)
         self.assertIn("/api/desktop/preflight-cache 必须返回一键启动 packet", source)
         self.assertIn("React/Vite 必须返回 Command Center 3.0 前端 HTML", source)

@@ -4133,6 +4133,12 @@ export default function CommandCenterHome() {
         </div>
         {homeQuantSubmitError ? <p className="ordinary-status-note" aria-live="polite">确认失败：请检查本地连接后重试。</p> : null}
         <p className="ordinary-status-note" aria-label="ordinary home confirm status" aria-live="polite">{ordinaryHomeConfirmStatusLine}</p>
+        <div className="actions" aria-label="ordinary home visible result quick actions">
+          <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor result from visible home quick actions">股票量化推演</a>
+          <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next result from visible home quick actions">次日图谱</a>
+          <a href="#storage" title="切换到存储层 current/last-good；只读本地回放，不创建 task" aria-label="open storage current result from visible home quick actions">current/last-good</a>
+          <a href={dailyCommandCandidateConfirmHref} title="切换到下一票雷达确认输入区；输入仍保持静默" aria-label="open candidate confirm from visible home quick actions">换一只票</a>
+        </div>
         <details
           className="developer-audit-details"
           aria-label="ordinary home supporting research details"
