@@ -5660,12 +5660,20 @@ export default function CandidateRadar() {
   const quantProjectionRecentResultActionTitle = `查看 ${quantProjectionSymbolValidation.normalized || "当前标的"} 最近结果；不创建新任务、不调用 Tushare/DeepSeek、不交易`;
   const renderQuantProjectionPrimaryAction = (describedBy: string) =>
     quantProjectionUseRecentResultInsteadOfSubmit ? (
-      <a
-        href="#factor/factor-score"
-        title={quantProjectionRecentResultActionTitle}
-        aria-label={quantProjectionRecentResultActionTitle}
-        aria-describedby={describedBy}
-      >查看最近结果</a>
+      <>
+        <a
+          href="#factor/factor-score"
+          title={quantProjectionRecentResultActionTitle}
+          aria-label={quantProjectionRecentResultActionTitle}
+          aria-describedby={describedBy}
+        >查看最近结果</a>
+        <a
+          href="#storage"
+          title="查看本地 current/last-good 版本化回放；只读 storage current-result，不创建新任务"
+          aria-label="open storage current last good from candidate recent result primary action"
+          aria-describedby={describedBy}
+        >current/last-good</a>
+      </>
     ) : (
       <button
         disabled={quantProjectionSubmitDisabled}
@@ -5892,6 +5900,7 @@ export default function CandidateRadar() {
             <div className="actions" aria-label="candidate radar recent research result actions">
               <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from recent research result card">量化推演</a>
               <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from recent research result card">次日图谱</a>
+              <a href="#storage" title="切换到存储层；只读 current/last-good 版本化回放" aria-label="open storage current last good from recent research result card">current/last-good</a>
               <a href={DATA_CAPABILITY_HREF} title="切换到数据能力；只读复核真实数据、权限、空窗口和降级原因" aria-label="open data capability from recent research result card">数据能力</a>
               <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from recent research result card">ETF/融资风险</a>
               <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；换标的仍需确认按钮" aria-label="return confirm input from recent research result card">换一只票</a>
@@ -6636,6 +6645,7 @@ export default function CandidateRadar() {
                   <a href="#candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="explain lead candidate from current result card">解释单票</a>
                   <a href="#factor" title="切换到股票量化推演；只读本地结果" aria-label="open factor from current result card">量化推演</a>
                   <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session from current result card">次日图谱</a>
+                  <a href="#storage" title="切换到存储层；只读 current/last-good 版本化回放" aria-label="open storage current last good from current result card">current/last-good</a>
                   <a href="#marginEtf" title="切换到 ETF / 融资风险预算；只读本地快照" aria-label="open margin etf from current result card">ETF/融资风险</a>
                 </div>
                 <p className="risk-note">这张结果卡只读候选池当前缓存和本地来源状态；链接只切换本地页面，不刷新外部数据、不创建新任务、不交易、不改策略。</p>
