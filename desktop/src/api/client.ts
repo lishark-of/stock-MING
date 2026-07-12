@@ -105,7 +105,17 @@ export const API_BASE_URL = API_BASE;
 export const DEFAULT_LOCAL_API_BASE_URL = DEFAULT_LOCAL_API_BASE;
 export const BACKEND_OFFLINE_ERROR = "backend_offline_or_unreachable";
 const RESPONSE_PARSE_ERROR = "response_parse_failed";
+const TAURI_GET_STARTUP_RETRY_ATTEMPTS = 40;
+const TAURI_GET_STARTUP_RETRY_DELAY_MS = 500;
 const inFlightReadOnlyRequests = new Map<string, Promise<ApiEnvelope<unknown>>>();
+
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function waitForLocalBackend(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+}
 
 function safeApiBaseDisplay(value: string): string {
   try {
@@ -270,44 +280,55 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
     let lastError: unknown = "local FastAPI backend unavailable";
     let lastCallStatus = BACKEND_OFFLINE_ERROR;
     const triedApiBases: string[] = [];
-    for (const apiBase of API_BASE_CANDIDATES) {
-      triedApiBases.push(apiBase);
-      try {
-        const res = await fetch(`${apiBase}${path}`, {
-          ...init,
-          headers: {
-            "Content-Type": "application/json",
-            ...(init?.headers ?? {})
-          }
-        });
-        if (!res.ok) {
-          if (res.status === 404 && API_BASE_CANDIDATES.length > 1) {
-            lastError = `HTTP ${res.status} from ${safeApiBaseDisplay(apiBase)}`;
-            lastCallStatus = BACKEND_OFFLINE_ERROR;
-            continue;
-          }
-          return { ok: false, data: {} as T, error: `HTTP ${res.status}`, call_ledger: [], warnings: [] };
+    const startupAttemptCount = method === "GET" && isTauriRuntime()
+      ? TAURI_GET_STARTUP_RETRY_ATTEMPTS
+      : 1;
+    for (let attempt = 0; attempt < startupAttemptCount; attempt += 1) {
+      let connectionFailed = false;
+      for (const apiBase of API_BASE_CANDIDATES) {
+        if (!triedApiBases.some((candidate) => sameApiBase(candidate, apiBase))) {
+          triedApiBases.push(apiBase);
         }
         try {
-          const payload = await res.json();
-          return {
-            ...payload,
-            data: payload.data === null ? ({} as T) : payload.data,
-            error: errorToMessage(payload.error),
-            call_ledger: [
-              frontendBackendAutoLinkLedger(path, apiBase, triedApiBases),
-              ...envelopeCallLedger(payload),
-            ],
-            warnings: payload.warnings ?? [],
-          } as ApiEnvelope<T>;
+          const res = await fetch(`${apiBase}${path}`, {
+            ...init,
+            headers: {
+              "Content-Type": "application/json",
+              ...(init?.headers ?? {})
+            }
+          });
+          if (!res.ok) {
+            if (res.status === 404 && API_BASE_CANDIDATES.length > 1) {
+              lastError = `HTTP ${res.status} from ${safeApiBaseDisplay(apiBase)}`;
+              lastCallStatus = BACKEND_OFFLINE_ERROR;
+              continue;
+            }
+            return { ok: false, data: {} as T, error: `HTTP ${res.status}`, call_ledger: [], warnings: [] };
+          }
+          try {
+            const payload = await res.json();
+            return {
+              ...payload,
+              data: payload.data === null ? ({} as T) : payload.data,
+              error: errorToMessage(payload.error),
+              call_ledger: [
+                frontendBackendAutoLinkLedger(path, apiBase, triedApiBases),
+                ...envelopeCallLedger(payload),
+              ],
+              warnings: payload.warnings ?? [],
+            } as ApiEnvelope<T>;
+          } catch (error) {
+            lastError = error;
+            lastCallStatus = RESPONSE_PARSE_ERROR;
+          }
         } catch (error) {
           lastError = error;
-          lastCallStatus = RESPONSE_PARSE_ERROR;
+          lastCallStatus = BACKEND_OFFLINE_ERROR;
+          connectionFailed = true;
         }
-      } catch (error) {
-        lastError = error;
-        lastCallStatus = BACKEND_OFFLINE_ERROR;
       }
+      if (!connectionFailed || attempt + 1 >= startupAttemptCount) break;
+      await waitForLocalBackend(TAURI_GET_STARTUP_RETRY_DELAY_MS);
     }
     return failedRequestEnvelope<T>(path, lastCallStatus, lastError, triedApiBases.length ? triedApiBases : API_BASE_CANDIDATES);
   };
