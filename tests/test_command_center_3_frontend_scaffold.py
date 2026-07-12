@@ -146,8 +146,11 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
         self.assertIn("function routeAnchorFromHash()", app)
         self.assertIn("parts.length > 1 ? parts.slice(1).join(\"/\").split(\"?\")[0] : \"\"", app)
+        self.assertIn("ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS", app)
         self.assertIn("target.scrollIntoView({ block: \"start\" })", app)
         self.assertIn("new MutationObserver", app)
+        self.assertIn("window.setTimeout(scrollToAnchor, delayMs)", app)
+        self.assertIn("retryTimers.forEach((timer) => window.clearTimeout(timer));", app)
         self.assertIn("const [hashScrollVersion, setHashScrollVersion] = useState(0);", app)
         self.assertIn("setHashScrollVersion((value) => value + 1);", app)
         self.assertIn("}, [route, localFastapiRefreshNonce, hashScrollVersion]);", app)

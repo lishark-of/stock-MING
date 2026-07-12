@@ -32,6 +32,7 @@ const TradeReviewLab = lazy(() => import("./routes/TradeReviewLab"));
 const WorkerRuntime = lazy(() => import("./routes/WorkerRuntime"));
 
 const ROUTE_STORAGE_KEY = "stock_ming_command_center_3_route";
+const ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS = [0, 80, 240, 600, 1200, 2000];
 const ROUTE_KEYS: RouteKey[] = [
   "home",
   "health",
@@ -163,6 +164,7 @@ export default function App() {
     const anchor = routeAnchorFromHash();
     if (!anchor) return;
     let cancelled = false;
+    let observer: MutationObserver | null = null;
     const scrollToAnchor = () => {
       if (cancelled) return false;
       const target = document.getElementById(anchor);
@@ -170,15 +172,16 @@ export default function App() {
       target.scrollIntoView({ block: "start" });
       return true;
     };
-    if (scrollToAnchor()) return;
-    const observer = new MutationObserver(() => {
-      if (scrollToAnchor()) observer.disconnect();
-    });
+    observer = new MutationObserver(scrollToAnchor);
     observer.observe(document.body, { childList: true, subtree: true });
     queueMicrotask(scrollToAnchor);
+    const retryTimers = ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS.map((delayMs) => window.setTimeout(scrollToAnchor, delayMs));
+    const observerTimer = window.setTimeout(() => observer?.disconnect(), Math.max(...ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS) + 200);
     return () => {
       cancelled = true;
-      observer.disconnect();
+      observer?.disconnect();
+      retryTimers.forEach((timer) => window.clearTimeout(timer));
+      window.clearTimeout(observerTimer);
     };
   }, [route, localFastapiRefreshNonce, hashScrollVersion]);
 
