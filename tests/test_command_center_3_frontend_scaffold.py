@@ -1857,6 +1857,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "getFactorQuantCache()",
             "getNextSessionCache()",
             "getPositionCache()",
+            "getStorageCurrentResult()",
             'getPacket("command_center_etf_packet")',
             'getPacket("command_center_margin_packet")',
             'getPacket("command_center_margin_etf_refresh_receipt")',
@@ -1889,6 +1890,12 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("three_surface_ready: dailyCommandP2ThreeSurfaceReady", home_source)
         self.assertIn("ordinary_home_renders_engineering_terms: false", home_source)
         self.assertIn("ordinaryHomeRecentResultSymbol", home_source)
+        self.assertIn("storageCurrentResult", home_source)
+        self.assertIn("ordinaryHomeStorageCurrentReadable", home_source)
+        self.assertIn("ordinaryHomeStorageCurrentText", home_source)
+        self.assertIn("ordinaryHomeReadableResultReady", home_source)
+        self.assertIn("storage_current_result_cache_ready_current", home_source)
+        self.assertIn("Storage current-result 已可读", home_source)
         self.assertIn("ordinaryHomeExplainableSource", home_source)
         self.assertIn("ordinaryHomeExplainableGap", home_source)
         self.assertIn("ordinaryHomeExplainableResult", home_source)
@@ -1903,7 +1910,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"来源待确认"', home_source)
         self.assertIn('"暂无额外缺口"', home_source)
         self.assertIn('`${ordinaryHomeRecentResultSymbol}可解释：${ordinaryHomeExplainableSource}，${ordinaryHomeExplainableGap}；${ordinaryHomeLocalData}`', home_source)
-        self.assertIn("? ordinaryHomeExplainableResult", home_source)
+        self.assertIn("? `${ordinaryHomeExplainableResult}${ordinaryHomeStorageCurrentInline}`", home_source)
         self.assertIn('? `${ordinaryHomeLocalData}，等待结论`', home_source)
         self.assertIn("ordinaryHomeResultHint", home_source)
         self.assertIn('"点击确认新标的"', home_source)
@@ -1936,8 +1943,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         primary_action_title_start = home_source.index("const ordinaryHomePrimaryActionTitle")
         primary_action_title_end = home_source.index("const ordinaryHomePrimaryActionText", primary_action_title_start)
         primary_action_title_definition = home_source[primary_action_title_start:primary_action_title_end]
-        self.assertLess(primary_action_definition.index("ordinaryHomeUserEditedNewSymbol"), primary_action_definition.index("dailyCommandP3OneGlanceReadable"))
-        self.assertLess(primary_action_definition.index("homeQuantTaskId"), primary_action_definition.index("dailyCommandP3OneGlanceReadable"))
+        self.assertLess(primary_action_definition.index("ordinaryHomeUserEditedNewSymbol"), primary_action_definition.index("ordinaryHomeReadableResultReady"))
+        self.assertLess(primary_action_definition.index("homeQuantTaskId"), primary_action_definition.index("ordinaryHomeReadableResultReady"))
         self.assertIn('? "confirm"', primary_action_definition)
         self.assertIn('? "refresh"', primary_action_definition)
         for noisy_title_text in ["Tushare/DeepSeek", "scripts/check_command_center_3.command", "check-only", "task"]:

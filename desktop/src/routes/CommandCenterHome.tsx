@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getAuditUserRouteQa, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataCapabilityCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPacket, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, postCandidateRadarQuantProjection, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getAuditUserRouteQa, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataCapabilityCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPacket, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageCurrentResult, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, postCandidateRadarQuantProjection, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
@@ -169,6 +169,7 @@ export default function CommandCenterHome() {
   const [chokepointEnvelopeLedger, setChokepointEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [chokepointEnvelopeWarnings, setChokepointEnvelopeWarnings] = useState<Array<string>>([]);
   const [storageOverview, setStorageOverview] = useState<Record<string, unknown>>({});
+  const [storageCurrentResult, setStorageCurrentResult] = useState<Record<string, unknown>>({});
   const [storageCatalog, setStorageCatalog] = useState<Record<string, unknown>>({});
   const [storageCatalogEnvelopeLedger, setStorageCatalogEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [storageCatalogEnvelopeWarnings, setStorageCatalogEnvelopeWarnings] = useState<Array<string>>([]);
@@ -238,6 +239,7 @@ export default function CommandCenterHome() {
       });
       track("position", getPositionCache(), (res) => setPosition(res.data));
       track("candidates", getCandidateRadarCache(), (res) => setCandidates(res.data));
+      track("storage_current_result", getStorageCurrentResult(), (res) => setStorageCurrentResult(res.data));
     };
 
     setLoading(true);
@@ -2200,8 +2202,45 @@ export default function CommandCenterHome() {
     { label: "下一步", value: dailyCommandP3OneGlanceReadable ? "看股票量化推演和次日图谱" : "先确认股票代码，等待本地回放", tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
     { label: "边界", value: "首屏快照只读已有 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek；不会读取 token/key、不会交易或修改 strategy action", tone: "good" }
   ];
+  const ordinaryHomeStorageCurrentResult = (storageCurrentResult.result as Record<string, unknown> | undefined) ?? {};
+  const ordinaryHomeStorageCurrentStatus = String(storageCurrentResult.status ?? "");
+  const ordinaryHomeStorageCurrentSymbol = String(ordinaryHomeStorageCurrentResult.symbol ?? "").trim().toUpperCase();
+  const ordinaryHomeStorageCurrentVersion = String(
+    storageCurrentResult.selected_version_id ??
+      ordinaryHomeStorageCurrentResult.result_version ??
+      ""
+  ).trim();
+  const ordinaryHomeStorageCurrentReadable = Boolean(
+    ordinaryHomeStorageCurrentStatus === "storage_current_result_cache_ready_current" &&
+    ordinaryHomeStorageCurrentSymbol &&
+    ordinaryHomeStorageCurrentVersion &&
+    storageCurrentResult.duckdb_readback_verified === true &&
+    storageCurrentResult.cache_get_creates_task === false &&
+    storageCurrentResult.cache_get_writes_files === false &&
+    storageCurrentResult.external_calls_triggered === false &&
+    storageCurrentResult.tushare_called === false &&
+    storageCurrentResult.deepseek_called === false &&
+    storageCurrentResult.github_called === false &&
+    storageCurrentResult.does_not_execute_trades === true &&
+    storageCurrentResult.does_not_modify_strategy_action === true
+  );
+  const ordinaryHomeStorageCurrentText = ordinaryHomeStorageCurrentReadable
+    ? `${ordinaryHomeStorageCurrentSymbol} 本地 current-result 可读；版本 ${ordinaryHomeStorageCurrentVersion}；DuckDB 回读已通过。`
+    : "Storage current-result 仍待生成或降级回放。";
+  const ordinaryHomeStorageCurrentSource = ordinaryHomeStorageCurrentReadable
+    ? `Storage current-result / ${String(storageCurrentResult.source_atomic_task_id ?? "本地原子提升记录")}`
+    : "等待 Storage current-result 本地回放";
+  const ordinaryHomeStorageCurrentGap = ordinaryHomeStorageCurrentReadable
+    ? "Storage current-result 已可读；仍不等于 LTG-05 production complete"
+    : "缺 current-result 本地提升或可读 last-good";
+  const ordinaryHomeStorageCurrentInline = ordinaryHomeStorageCurrentReadable
+    ? `；current-result ${ordinaryHomeStorageCurrentVersion} / DuckDB 已回读`
+    : "";
+  const ordinaryHomeReadableResultReady = dailyCommandP3OneGlanceReadable || ordinaryHomeStorageCurrentReadable;
   const dailyCommandCurrentResearchSnapshotReadableSentence = homeQuantP1P2P3CheckpointReady
     ? `${dailyCommandConfirmedSymbolLabel} 已有最近确认结果：${ordinaryHomeExplainableResultLabel}；P2 ${dailyCommandP2SurfaceCompletionLabel}；${dailyCommandNextSessionReadableStatus}；下一步看股票量化推演和次日图谱。`
+    : ordinaryHomeStorageCurrentReadable
+      ? `${ordinaryHomeStorageCurrentSymbol} 已有本地 current-result：${ordinaryHomeStorageCurrentVersion}；下一步看股票量化推演和次日图谱。`
     : dailyCommandP0LocalReadinessReady
       ? dailyCommandConfirmedSymbol
         ? `${dailyCommandConfirmedSymbolLabel} 已有本地回放线索；${homeQuantP1P2P3CheckpointLabel}；需要更新时再手动点击确认按钮。`
@@ -2209,8 +2248,8 @@ export default function CommandCenterHome() {
       : "P0 本地联通还没全部 ready；先看一键启动预检，等 FastAPI、bootstrap、desktop preflight 和 React 变绿。";
   const ordinaryHomeCurrentSymbol = homeQuantSymbolValidation.valid
     ? homeQuantSymbolValidation.normalized
-    : dailyCommandConfirmedSymbol || "待输入";
-  const ordinaryHomeConfirmedSymbolNormalized = dailyCommandConfirmedSymbol.trim().toUpperCase();
+    : dailyCommandConfirmedSymbol || ordinaryHomeStorageCurrentSymbol || "待输入";
+  const ordinaryHomeConfirmedSymbolNormalized = (dailyCommandConfirmedSymbol || ordinaryHomeStorageCurrentSymbol).trim().toUpperCase();
   const ordinaryHomeUserEditedNewSymbol =
     homeQuantSymbolTouched &&
     homeQuantSymbolValidation.valid &&
@@ -2230,6 +2269,8 @@ export default function CommandCenterHome() {
   };
   const ordinaryHomeLocalData = dailyCommandP2ThreeSurfaceReady
     ? ordinaryHomeLocalDataSourceContract.label_when_ready
+    : ordinaryHomeStorageCurrentReadable
+      ? "本地结果已可读"
     : homeQuantVisibleTaskId
       ? dailyCommandLatestTaskIsReplay
         ? "最近确认已回放"
@@ -2244,12 +2285,16 @@ export default function CommandCenterHome() {
     : "暂无额外缺口";
   const ordinaryHomeExplainableResult = `${ordinaryHomeRecentResultSymbol}可解释：${ordinaryHomeExplainableSource}，${ordinaryHomeExplainableGap}；${ordinaryHomeLocalData}`;
   const ordinaryHomeRecentResult = dailyCommandP3OneGlanceReadable
-    ? ordinaryHomeExplainableResult
+    ? `${ordinaryHomeExplainableResult}${ordinaryHomeStorageCurrentInline}`
+    : ordinaryHomeStorageCurrentReadable
+      ? ordinaryHomeStorageCurrentText
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
       ? `${ordinaryHomeLocalData}，等待结论`
       : "暂无最近结果";
   const ordinaryHomeRecentResultState = dailyCommandP3OneGlanceReadable
     ? "结果可读"
+    : ordinaryHomeStorageCurrentReadable
+      ? "本地 current-result 可读"
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
       ? "写入中或待补"
       : dailyCommandHealthOk
@@ -2257,6 +2302,8 @@ export default function CommandCenterHome() {
         : "等待本地联通";
   const ordinaryHomeRecentResultSummary = dailyCommandP3OneGlanceReadable
     ? `${ordinaryHomeRecentResultSymbol || "当前标的 "}已有最近结果；先看来源、缺口和结果入口。`
+    : ordinaryHomeStorageCurrentReadable
+      ? `${ordinaryHomeStorageCurrentSymbol} 已有本地 current-result；先看来源、版本和结果入口。`
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
       ? "最近结果还在本地写入或降级回放中；先看任务进度、缺口和只读刷新。"
       : dailyCommandHealthOk
@@ -2264,6 +2311,8 @@ export default function CommandCenterHome() {
         : "暂无最近结果；先恢复本地 FastAPI / bootstrap / desktop preflight / React 四段联通。";
   const ordinaryHomeRecentResultSource = dailyCommandP3OneGlanceReadable
     ? "CandidateRadar cache / Factor / Next 本地回放"
+    : ordinaryHomeStorageCurrentReadable
+      ? ordinaryHomeStorageCurrentSource
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
       ? "本地 task 回执 / cache 写入中"
       : dailyCommandHealthOk
@@ -2271,6 +2320,8 @@ export default function CommandCenterHome() {
         : "等待本地联通";
   const ordinaryHomeRecentResultGap = dailyCommandP3OneGlanceReadable
     ? ordinaryHomeExplainableGap
+    : ordinaryHomeStorageCurrentReadable
+      ? ordinaryHomeStorageCurrentGap
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
       ? "结论未完整回放；pending/degraded 仍要显示"
       : dailyCommandHealthOk
@@ -2278,6 +2329,8 @@ export default function CommandCenterHome() {
         : "缺本地联通";
   const ordinaryHomePlainConclusionStatus = dailyCommandP3OneGlanceReadable
     ? "结果可读"
+    : ordinaryHomeStorageCurrentReadable
+      ? "本地结果可读"
     : dailyCommandLatestTaskStepLower.includes("blocked_")
       ? "被阻断或待补"
     : homeQuantVisibleTaskId || dailyCommandLatestTaskId || dailyCommandP2ThreeSurfaceReady
@@ -2287,6 +2340,8 @@ export default function CommandCenterHome() {
         : "等待本地联通";
   const ordinaryHomePlainConclusionText = dailyCommandP3OneGlanceReadable
     ? `${ordinaryHomeRecentResultSymbol || "当前标的 "}已有可读投研结果，先看来源和缺口，再看量化推演与次日图谱。`
+    : ordinaryHomeStorageCurrentReadable
+      ? `${ordinaryHomeStorageCurrentSymbol} 已有本地 current-result，版本 ${ordinaryHomeStorageCurrentVersion}；先看股票量化推演和次日图谱。`
     : dailyCommandLatestTaskStepLower.includes("blocked_")
       ? `最近确认被阻断或降级：${dailyCommandLatestConfirmReadableStatus}。`
       : homeQuantVisibleTaskId || dailyCommandLatestTaskId
@@ -2300,6 +2355,8 @@ export default function CommandCenterHome() {
             : "本地连接未 ready；先恢复 FastAPI / bootstrap / desktop preflight / React。";
   const ordinaryHomePlainConclusionMissing = dailyCommandP3OneGlanceReadable
     ? ordinaryHomeExplainableGap
+    : ordinaryHomeStorageCurrentReadable
+      ? ordinaryHomeStorageCurrentGap
     : dailyCommandLatestTaskStepLower.includes("blocked_")
       ? dailyCommandLatestConfirmReadableStatus
       : homeQuantVisibleTaskId || dailyCommandLatestTaskId || dailyCommandP2ThreeSurfaceReady
@@ -2309,6 +2366,8 @@ export default function CommandCenterHome() {
           : "缺本地联通";
   const ordinaryHomePlainConclusionNext = dailyCommandP3OneGlanceReadable
     ? "看股票量化推演，再看次日图谱"
+    : ordinaryHomeStorageCurrentReadable
+      ? "看股票量化推演，再看次日图谱"
     : dailyCommandLatestTaskStepLower.includes("blocked_")
       ? dailyCommandLatestConfirmNextAction
       : homeQuantVisibleTaskId || dailyCommandLatestTaskId || dailyCommandP2ThreeSurfaceReady
@@ -2320,10 +2379,12 @@ export default function CommandCenterHome() {
           : "打开桌面壳预检恢复本地连接";
   const ordinaryHomePlainConclusionTone: MetricItem["tone"] = dailyCommandP3OneGlanceReadable
     ? "good"
+    : ordinaryHomeStorageCurrentReadable
+      ? "good"
     : dailyCommandHealthOk || homeQuantVisibleTaskId || dailyCommandLatestTaskId || dailyCommandP2ThreeSurfaceReady
       ? "warn"
       : "neutral";
-  const ordinaryHomeResultHint = dailyCommandP3OneGlanceReadable
+  const ordinaryHomeResultHint = ordinaryHomeReadableResultReady
     ? ordinaryHomeUserEditedNewSymbol ? "点击确认新标的" : homeQuantTaskId ? "刷新刚确认的结果" : "下一步看结果"
     : homeQuantTaskId || homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
       ? ordinaryHomeUserEditedNewSymbol ? "点击确认新标的" : "稍后刷新本地回放，或先看股票量化推演"
@@ -2338,14 +2399,14 @@ export default function CommandCenterHome() {
       ? "确认股票"
     : homeQuantTaskId
       ? "刷新结果"
-    : dailyCommandP3OneGlanceReadable
+    : ordinaryHomeReadableResultReady
       ? "查看结果"
       : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
         ? "刷新结果"
       : "确认股票";
   const ordinaryHomeNextHref = dailyCommandNeedsStartupRecovery
     ? "#desktop"
-    : dailyCommandP3OneGlanceReadable
+    : ordinaryHomeReadableResultReady
       ? "#factor/factor-score"
       : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
         ? "#home"
@@ -2366,7 +2427,7 @@ export default function CommandCenterHome() {
       ? "confirm"
     : homeQuantTaskId
       ? "refresh"
-    : dailyCommandP3OneGlanceReadable
+    : ordinaryHomeReadableResultReady
       ? "link"
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
       ? "refresh"
@@ -2382,7 +2443,7 @@ export default function CommandCenterHome() {
       ? ordinaryHomeConfirmTitle
       : dailyCommandNeedsStartupRecovery
         ? ordinaryHomeRecoveryTitle
-      : dailyCommandP3OneGlanceReadable
+      : ordinaryHomeReadableResultReady
         ? "只切换到结果入口：先看股票量化推演，再打开次日图谱；不会重新确认、不会刷新外部数据"
         : ordinaryHomeResultHint;
   const ordinaryHomePrimaryActionText = ordinaryHomePrimaryActionKind === "refresh" && homeQuantReadbackRefreshing
@@ -2396,7 +2457,7 @@ export default function CommandCenterHome() {
     ? "确认中：正在启动本地数据链，稍后自动回读结果。"
     : homeQuantSubmitError
       ? "确认失败：请先检查本地连接，再重新确认。"
-    : dailyCommandP3OneGlanceReadable
+    : ordinaryHomeReadableResultReady
       ? "已有结果：可以直接查看股票量化推演和次日图谱。"
     : homeQuantTaskId || homeQuantVisibleTaskId
       ? "已确认：本地数据正在回读，稍后刷新结果。"
@@ -2429,6 +2490,8 @@ export default function CommandCenterHome() {
       : "health、bootstrap、desktop preflight、React 四段 ready 后再确认股票代码";
   const ordinaryHomeResultRouteSummary = dailyCommandP3OneGlanceReadable
     ? "结果已可读：先看股票量化推演，再看次日图谱；需要换标的再回下一票雷达详情。"
+    : ordinaryHomeStorageCurrentReadable
+      ? "Storage current-result 已可读：先看股票量化推演，再看次日图谱；需要换标的再回下一票雷达详情。"
     : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady
       ? "结果写入中：先看任务进度或只读刷新本地回放；缺口会继续显示，不把空结果当无风险。"
       : dailyCommandP0LocalReadinessReady
@@ -2458,16 +2521,18 @@ export default function CommandCenterHome() {
     {
       label: "最近结果",
       value: ordinaryHomeRecentResult,
-      tone: dailyCommandP3OneGlanceReadable ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
+      tone: ordinaryHomeReadableResultReady ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
     },
     {
       label: "下一步",
       value: ordinaryHomePlainConclusionNext,
-      tone: dailyCommandP0LocalReadinessReady || dailyCommandP3OneGlanceReadable ? "good" : "warn"
+      tone: dailyCommandP0LocalReadinessReady || ordinaryHomeReadableResultReady ? "good" : "warn"
     }
   ];
   const ordinaryHomeAppVisibleNowSentence = dailyCommandP3OneGlanceReadable
       ? `打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果：${ordinaryHomeExplainableResultLabel}；下一步看股票量化推演和次日图谱。`
+    : ordinaryHomeStorageCurrentReadable
+      ? `打开 app 能看到 ${ordinaryHomeStorageCurrentSymbol} 的本地 current-result：${ordinaryHomeStorageCurrentVersion}；下一步看股票量化推演和次日图谱。`
     : dailyCommandP0LocalReadinessReady
       ? "打开 app 能看到本地已接上、股票确认入口和等待结果状态；先输入股票代码并点击确认。"
       : dailyCommandHealthOk
@@ -2484,7 +2549,7 @@ export default function CommandCenterHome() {
     {
       label: "打开可见",
       value: ordinaryHomeAppVisibleNowSentence,
-      tone: dailyCommandP3OneGlanceReadable || dailyCommandP0LocalReadinessReady ? "good" : "warn"
+      tone: ordinaryHomeReadableResultReady || dailyCommandP0LocalReadinessReady ? "good" : "warn"
     },
     {
       label: "本地联通",
@@ -2503,12 +2568,17 @@ export default function CommandCenterHome() {
     {
       label: "最近结果",
       value: ordinaryHomeRecentResult,
-      tone: dailyCommandP3OneGlanceReadable ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
+      tone: ordinaryHomeReadableResultReady ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
+    },
+    {
+      label: "本地 current-result",
+      value: ordinaryHomeStorageCurrentText,
+      tone: ordinaryHomeStorageCurrentReadable ? "good" : "warn"
     },
     {
       label: "来源层",
       value: ordinaryHomeRecentResultSource,
-      tone: dailyCommandP3OneGlanceReadable || homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "good" : "warn"
+      tone: ordinaryHomeReadableResultReady || homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "good" : "warn"
     },
     {
       label: "明确缺口",
@@ -2547,7 +2617,7 @@ export default function CommandCenterHome() {
     {
       label: "下一步入口",
       value: ordinaryHomePlainConclusionNext,
-      tone: dailyCommandP3OneGlanceReadable || dailyCommandP0LocalReadinessReady ? "good" : "warn"
+      tone: ordinaryHomeReadableResultReady || dailyCommandP0LocalReadinessReady ? "good" : "warn"
     },
     {
       label: "安全说明",
@@ -2559,17 +2629,22 @@ export default function CommandCenterHome() {
     {
       label: "最近结果",
       value: ordinaryHomeRecentResult,
-      tone: dailyCommandP3OneGlanceReadable ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
+      tone: ordinaryHomeReadableResultReady ? "good" : homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "warn" : "neutral"
+    },
+    {
+      label: "本地 current-result",
+      value: ordinaryHomeStorageCurrentText,
+      tone: ordinaryHomeStorageCurrentReadable ? "good" : "warn"
     },
     {
       label: "状态",
       value: ordinaryHomeRecentResultState,
-      tone: dailyCommandP3OneGlanceReadable ? "good" : dailyCommandP0LocalReadinessReady ? "warn" : "neutral"
+      tone: ordinaryHomeReadableResultReady ? "good" : dailyCommandP0LocalReadinessReady ? "warn" : "neutral"
     },
     {
       label: "来源",
       value: ordinaryHomeRecentResultSource,
-      tone: dailyCommandP3OneGlanceReadable || homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "good" : "warn"
+      tone: ordinaryHomeReadableResultReady || homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady ? "good" : "warn"
     },
     {
       label: "缺口/degraded",
@@ -2579,7 +2654,7 @@ export default function CommandCenterHome() {
     {
       label: "现在做什么",
       value: ordinaryHomeResultHint,
-      tone: dailyCommandP0LocalReadinessReady ? "good" : "warn"
+      tone: dailyCommandP0LocalReadinessReady || ordinaryHomeReadableResultReady ? "good" : "warn"
     },
     {
       label: "边界",
@@ -2606,7 +2681,7 @@ export default function CommandCenterHome() {
     {
       label: "现在做什么",
       value: ordinaryHomePlainConclusionNext,
-      tone: dailyCommandP0LocalReadinessReady || dailyCommandP3OneGlanceReadable ? "good" : "warn"
+      tone: dailyCommandP0LocalReadinessReady || ordinaryHomeReadableResultReady ? "good" : "warn"
     },
     {
       label: "边界",
