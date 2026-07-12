@@ -444,6 +444,20 @@ export default function FactorQuantHub() {
       candidateRadarProviderModelAcceptance.model_ledger_id ??
       ""
   );
+  const candidateRadarResultDataDate = String(
+    candidateRadarResultVersionSummary.canonical_data_date ??
+      candidateRadarResultVersionSummary.current_result_data_date ??
+      candidateRadarResultLineage.data_date ??
+      candidateRadarProviderModelAcceptance.data_date ??
+      ""
+  );
+  const candidateRadarResultFreshness = String(
+    candidateRadarResultVersionSummary.canonical_freshness_state ??
+      candidateRadarResultVersionSummary.current_result_freshness_state ??
+      candidateRadarResultLineage.freshness_state ??
+      candidateRadarProviderModelAcceptance.freshness_state ??
+      ""
+  );
   const candidateRadarSameTaskFactModelReady =
     candidateRadarResultVersionSummary.canonical_same_task_fact_model_result_version_ready === true ||
     candidateRadarResultLineage.same_task_fact_model_result_version_ready === true ||
@@ -455,7 +469,7 @@ export default function FactorQuantHub() {
     ? `同一 task ${candidateRadarCanonicalTaskId}；facts package ${candidateRadarFactsPackageHash}；result_version ${candidateRadarCurrentResultVersion}`
     : "等待同一 task + facts package + result_version + model ledger";
   const ordinaryQuantLineageChipLabel = candidateRadarCurrentResultVersion
-    ? `${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion}；来源任务 ${candidateRadarCanonicalTaskId || candidateRadarLatestTaskId || "等待任务"}；current-result/last-good 可回放`
+    ? `${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion} / ${candidateRadarResultDataDate || "等待 data_date"} / ${candidateRadarResultFreshness || "等待 freshness"}；来源任务 ${candidateRadarCanonicalTaskId || candidateRadarLatestTaskId || "等待任务"}；current-result/last-good 可回放`
     : "等待同源 result_version / 来源任务 / current-result 回放";
   const candidateRadarModelLedgerLabel = candidateRadarModelLedgerId
     ? `model_ledger_id ${candidateRadarModelLedgerId}；DeepSeek 只解释事实摘要`
