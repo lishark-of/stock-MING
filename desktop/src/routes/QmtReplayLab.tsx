@@ -113,16 +113,20 @@ export default function QmtReplayLab() {
   const qmtLineageValidation = asObject(qmtCache.lineage_validation);
   const safetyBoundary = asObject(qmtCache.safety_boundary);
   const replaySummary = asObject(qmtCache.replay);
-  const currentResult = asObject(qmtCache.current_result);
-  const lastGoodResult = asObject(qmtCache.last_good_result);
+  const currentResult = Object.keys(asObject(qmtCache.current_result)).length
+    ? asObject(qmtCache.current_result)
+    : asObject(qmtCache.current_result_summary);
+  const lastGoodResult = Object.keys(asObject(qmtCache.last_good_result)).length
+    ? asObject(qmtCache.last_good_result)
+    : asObject(qmtCache.last_good_result_summary);
 
   const candidateSymbol = firstText(
-    candidateCache.latest_confirmed_symbol,
     candidateV05Lineage.symbol,
+    candidateCache.latest_confirmed_symbol,
     candidateTopRows[0]?.symbol,
     candidateTopRows[0]?.ticker
   ).toUpperCase();
-  const candidateTaskId = firstText(candidateCache.latest_confirmed_task_id, candidateV05Lineage.candidate_task_id);
+  const candidateTaskId = firstText(candidateV05Lineage.candidate_task_id, candidateCache.latest_confirmed_task_id);
   const candidateResultVersion = firstText(
     candidateCache.candidate_radar_v05_result_version,
     candidateV05Lineage.candidate_result_version

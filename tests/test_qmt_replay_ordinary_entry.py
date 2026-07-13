@@ -93,6 +93,12 @@ class QmtReplayOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("标的、任务、结果版本和范围全部同源", self.page)
         self.assertIn("缺口不会被解释成安全", self.page)
         self.assertIn("失败不得覆盖 last-good", self.page)
+        self.assertIn(
+            "firstText(candidateV05Lineage.candidate_task_id, candidateCache.latest_confirmed_task_id)",
+            self.page,
+        )
+        self.assertIn("qmtCache.current_result_summary", self.page)
+        self.assertIn("qmtCache.last_good_result_summary", self.page)
 
     def test_virtual_events_use_research_only_states_and_accessible_fallback(self):
         self.assertIn('type ResearchState = "observe" | "watch" | "excluded";', self.page)
