@@ -1366,6 +1366,9 @@ export default function MigrationStatus() {
   const migrationPacketLoaded = Object.keys(packet).length > 0;
   const migrationLocalConnected = migrationPacketLoaded || healthReady;
   const commandCenterV1LocalRc = (packet.command_center_3_v1_local_rc as Record<string, unknown> | undefined) ?? {};
+  const v1TushareProductionVersion = (
+    commandCenterV1LocalRc.tushare_production_version as Record<string, unknown> | undefined
+  ) ?? {};
   const migrationStrictCloseoutLabel = String(
     commandCenterV1LocalRc.strict_closeout ?? longTermGoalSummary.strict_closeout ?? "0/14"
   );
@@ -1576,6 +1579,11 @@ export default function MigrationStatus() {
                 label: "外部 blocker groups",
                 value: v1ExternalBlockerContractPresent ? v1ExternalBlockerGroups.length : "快照未提供",
                 tone: v1ExternalBlockerGroups.length ? "bad" : "warn"
+              },
+              {
+                label: "近 90 会话新上市排除",
+                value: `${String(v1TushareProductionVersion.excluded_recent_count ?? 0)} 只（不进入评分池） · digest ${String(v1TushareProductionVersion.excluded_recent_digest ?? "未提供").slice(0, 12)}`,
+                tone: Number(v1TushareProductionVersion.excluded_recent_count ?? 0) > 0 ? "warn" : "good"
               }
             ]}
           />

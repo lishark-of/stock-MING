@@ -65,6 +65,13 @@ class MigrationStatusV1CloseoutUiTests(unittest.TestCase):
         self.assertIn("真实交易仍是另立项目、未授权", self.panel)
         self.assertIn("没有 broker / order 路径", self.panel)
 
+    def test_tushare_recent_listing_exclusion_count_and_digest_are_visible(self):
+        self.assertIn("commandCenterV1LocalRc.tushare_production_version", self.page)
+        self.assertIn('label: "近 90 会话新上市排除"', self.panel)
+        self.assertIn("不进入评分池", self.panel)
+        self.assertIn("excluded_recent_count", self.page)
+        self.assertIn("excluded_recent_digest", self.page)
+
     def test_v1_panel_is_read_only_keyboard_focusable_and_mobile_readable(self):
         self.assertIn('aria-label="Command Center 3.0 v1.0 local release candidate closeout"', self.panel)
         self.assertIn("tabIndex={0}", self.panel)

@@ -191,6 +191,9 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
         self.assertIn("all_interfaces_representative_or_audited_valid_empty", contract["blockers"])
         self.assertTrue(all(row["provider_transport_verified"] is False for row in task["call_ledger"]))
         self.assertIsNone(SQLiteMetaStore(self.db_path).read_packet(tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_PACKET_KEY))
+        production_root = storage_service.PARQUET_ROOT / "full_market_universe"
+        self.assertFalse((production_root / "pointer.json").exists())
+        self.assertFalse((production_root / "execution_runs").exists())
 
     def test_newer_ready_seed_is_authoritative_over_stale_refresh_recipe(self):
         stale = tushare_task_service._provider_target_sample_execution_recipe_seed(self._seed_payload())
@@ -248,6 +251,9 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
             task = tushare_task_service.run_tushare_full_interface_provider_production_acceptance(payload)
         self.assertTrue(all(row["runtime_adapter_module_identity_verified"] for row in task["call_ledger"]))
         self.assertTrue(all(row["provider_transport_verified"] is False for row in task["call_ledger"]))
+        production_root = storage_service.PARQUET_ROOT / "full_market_universe"
+        self.assertFalse((production_root / "pointer.json").exists())
+        self.assertFalse((production_root / "execution_runs").exists())
 
         task_service._TASKS.clear()
         with ExitStack() as stack:

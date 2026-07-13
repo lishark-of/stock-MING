@@ -1,4 +1,3 @@
-import copy
 import json
 import tempfile
 import unittest
@@ -6,29 +5,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from server.services import tushare_production_store as store
-from server.services import storage_service, tushare_task_service
+from server.services import tushare_task_service
 
 
-class _PacketStore:
-    def __init__(self, *, fail=False):
-        self.fail = fail
-        self.packet = None
-
-    def promote_packet_atomic(self, _key, packet):
-        if self.fail:
-            raise RuntimeError("forced packet failure")
-        self.packet = copy.deepcopy(packet)
-        return {"transaction_committed": True}
-
-    def read_packet(self, _key):
-        return copy.deepcopy(self.packet)
-
-
-def _datasets(marker=0):
+def _datasets(*, recent_listing=False):
     symbols = (
-        ("600000.SH", "SSE"),
-        ("000001.SZ", "SZSE"),
-        ("430001.BJ", "BSE"),
+        ("600000.SH", "SSE", "19910101"),
+        ("000001.SZ", "SZSE", "19910101"),
+        ("430001.BJ", "BSE", "20260709" if recent_listing else "19910101"),
     )
     dates = ("20260708", "20260709", "20260710")
     stock = [
@@ -36,15 +20,16 @@ def _datasets(marker=0):
             "ts_code": code,
             "exchange": exchange,
             "list_status": "L",
-            "list_date": "19910101",
-            "name": f"sample-{marker}",
+            "list_date": list_date,
+            "name": "sample",
         }
-        for code, exchange in symbols
+        for code, exchange, list_date in symbols
     ]
     daily = [
-        {"ts_code": code, "trade_date": date, "close": 10 + marker, "amount": 1}
-        for code, _exchange in symbols
+        {"ts_code": code, "trade_date": date, "close": 10, "amount": 1}
+        for code, _exchange, list_date in symbols
         for date in dates
+        if date >= list_date
     ]
     daily_basic = [
         {
@@ -54,7 +39,7 @@ def _datasets(marker=0):
             "total_mv": 1,
             "circ_mv": 1,
         }
-        for code, _exchange in symbols
+        for code, _exchange, _list_date in symbols
     ]
     moneyflow = [
         {
@@ -63,8 +48,9 @@ def _datasets(marker=0):
             "buy_lg_amount": 1,
             "sell_lg_amount": 1,
         }
-        for code, _exchange in symbols
+        for code, _exchange, list_date in symbols
         for date in dates
+        if date >= list_date
     ]
     return {
         "stock_basic": stock,
@@ -78,205 +64,241 @@ def _datasets(marker=0):
     }
 
 
-def _seal(scope_hash):
-    ledger = [
-        {"api": api, "provider_transport_verified": True, "provider_call_count": 1}
-        for api in store.DATASETS
-    ]
-    return store._seal_official_run(
-        call_ledger=ledger,
-        scope_hash=scope_hash,
-        approval_scope_hash="a" * 64,
-        execution_recipe_scope_hash="b" * 64,
-        required_interface_apis=list(store.DATASETS),
-        public_executor_completed=True,
-    )
-
-
 class TushareProductionVersionStoreTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name) / "full_market_universe"
-        self.constants = patch.multiple(
-            store,
-            MIN_UNIVERSE_ROWS=3,
-            REQUIRED_SESSIONS=3,
-            MIN_FULL_INTERFACE_APIS=5,
-        )
+        self.constants = patch.multiple(store, MIN_UNIVERSE_ROWS=2, REQUIRED_SESSIONS=3)
         self.constants.start()
 
     def tearDown(self):
         self.constants.stop()
         self.tmp.cleanup()
 
-    def _promote(self, datasets, *, scope="c" * 64, packet_store=None):
-        return store.promote_version(
-            datasets,
-            root=self.root,
-            scope_hash=scope,
+    def test_no_caller_constructible_seal_or_public_promotion_api_exists(self):
+        self.assertFalse(hasattr(store, "_seal_official_run"))
+        self.assertFalse(hasattr(store, "promote_version"))
+        self.assertEqual(store.__all__, ("validate_tushare_full_market_production_version",))
+        self.assertFalse(store.validate_tushare_full_market_production_version(self.root)["ready"])
+
+    def test_wrong_exchange_code_families_are_rejected(self):
+        for code, exchange in (
+            ("000001.SH", "SSE"),
+            ("600000.SZ", "SZSE"),
+            ("100000.BJ", "BSE"),
+        ):
+            datasets = _datasets()
+            datasets["stock_basic"][0].update({"ts_code": code, "exchange": exchange})
+            result = store.validate_datasets(
+                datasets,
+                start_date="20260708",
+                end_date="20260710",
+            )
+            self.assertIn("stock_basic_exchange_suffix_or_membership_invalid", result["blockers"])
+
+    def test_recent_listings_are_visible_exclusions_not_silent_coverage_reduction(self):
+        result = store.validate_datasets(
+            _datasets(recent_listing=True),
             start_date="20260708",
             end_date="20260710",
-            approval_scope_hash="a" * 64,
-            execution_recipe_scope_hash="b" * 64,
-            as_of="20260710",
-            seal=_seal(scope),
-            packet_store=packet_store or _PacketStore(),
-            packet_key="production",
         )
+        self.assertTrue(result["ready"], result["blockers"])
+        self.assertEqual(result["symbols"], ["000001.SZ", "600000.SH"])
+        self.assertEqual(result["excluded_recent_symbols"], ["430001.BJ"])
+        self.assertEqual(result["excluded_recent_count"], 1)
+        self.assertEqual(len(result["excluded_recent_digest"]), 64)
+        self.assertEqual(result["scored_universe_policy"], "listed_L_on_or_before_selected_90_session_start")
+        for api in ("daily", "daily_basic", "moneyflow"):
+            self.assertNotIn("430001.BJ", {row["ts_code"] for row in result["datasets"][api]})
 
-    def test_forged_one_row_and_row_scope_counterexamples_fail_closed(self):
-        one = {name: rows[:1] for name, rows in _datasets().items()}
-        self.assertFalse(store.validate_datasets(one, start_date="20260708", end_date="20260710")["ready"])
-
-        wrong_suffix = _datasets()
-        wrong_suffix["stock_basic"][0]["ts_code"] = "600000.SZ"
-        result = store.validate_datasets(wrong_suffix, start_date="20260708", end_date="20260710")
-        self.assertIn("stock_basic_exchange_suffix_or_membership_invalid", result["blockers"])
-
+    def test_stale_rows_and_incomplete_eligible_coverage_fail_closed(self):
         stale = _datasets()
         stale["daily"][0]["trade_date"] = "20200101"
         result = store.validate_datasets(stale, start_date="20260708", end_date="20260710")
         self.assertIn("daily_date_outside_calendar_scope", result["blockers"])
 
-        missing_latest = _datasets()
-        missing_latest["daily_basic"] = missing_latest["daily_basic"][:-1]
-        result = store.validate_datasets(missing_latest, start_date="20260708", end_date="20260710")
+        incomplete = _datasets()
+        incomplete["daily_basic"] = incomplete["daily_basic"][:-1]
+        result = store.validate_datasets(incomplete, start_date="20260708", end_date="20260710")
         self.assertIn("daily_basic_latest_trade_date_coverage_incomplete", result["blockers"])
 
-    def test_second_promotion_keeps_previous_immutable_last_good(self):
-        first = self._promote(_datasets(1), scope="c" * 64)
-        self.assertTrue(first["promotion_verified"])
-        first_version = first["version_id"]
-        second = self._promote(_datasets(2), scope="d" * 64)
-        self.assertTrue(second["promotion_verified"])
-        pointer = json.loads((self.root / "pointer.json").read_text())
-        self.assertEqual(pointer["current_version"], second["version_id"])
-        self.assertEqual(pointer["last_good_version"], first_version)
-        verified = store.validate_tushare_full_market_production_version(self.root, include_frames=True)
-        self.assertTrue(verified["ready"], verified["blockers"])
-        self.assertEqual(set(verified["frames"]), set(store.DATASETS))
+    def test_self_signed_checkpoint_without_transport_event_is_not_resumed(self):
+        checkpoint_root = Path(self.tmp.name) / "checkpoints"
+        params = {"start_date": "20260710", "end_date": "20260710"}
+        query_hash = tushare_task_service._canonical_sha256(
+            {"api": "daily", "params": params, "limit": 2}
+        )
+        checkpoint = checkpoint_root / "daily" / query_hash / "000000000.json"
+        page = {
+            "schema_version": "tushare_provider_page_checkpoint.v1",
+            "query_hash": query_hash,
+            "api": "daily",
+            "offset": 0,
+            "limit": 2,
+            "rows": [{"ts_code": "000001.SZ", "trade_date": "20260710"}],
+            "row_count": 1,
+            "page_fingerprint": "f" * 64,
+            "terminal": True,
+            "provider_transport_verified": True,
+            "original_function_call_count": 1,
+            "transport_event": {
+                "relative_path": "execution_runs/fake/transport_events/daily/fake.json",
+                "transport_event_digest": "e" * 64,
+                "api": "daily",
+            },
+        }
+        page["checkpoint_digest"] = tushare_task_service._canonical_sha256(page)
+        tushare_task_service._atomic_json_write(checkpoint, page)
 
-    def test_packet_failure_and_double_rollback_restore_exact_pointer(self):
-        first = self._promote(_datasets(1))
-        before = (self.root / "pointer.json").read_bytes()
-        last_failure = None
-        for marker in (2, 3):
-            result = self._promote(_datasets(marker), scope=str(marker) * 64, packet_store=_PacketStore(fail=True))
-            last_failure = result
-            self.assertFalse(result["promotion_verified"])
-            self.assertTrue(result["rollback_succeeded"])
-            self.assertEqual((self.root / "pointer.json").read_bytes(), before)
-        self.assertTrue(store.rollback_promotion(last_failure))
-        self.assertTrue(store.rollback_promotion(last_failure))
-        self.assertEqual((self.root / "pointer.json").read_bytes(), before)
-
-    def test_digest_and_partial_move_failure_never_switch_pointer(self):
-        first = self._promote(_datasets(1))
-        before = (self.root / "pointer.json").read_bytes()
-        with patch.object(store, "_sha256_file", side_effect=RuntimeError("digest failure")):
-            failed = self._promote(_datasets(2), scope="e" * 64)
-        self.assertFalse(failed["promotion_verified"])
-        self.assertEqual((self.root / "pointer.json").read_bytes(), before)
-
-        real_digest = store._sha256_file
-        digest_calls = 0
-
-        def fail_during_pointer_readback(path):
-            nonlocal digest_calls
-            digest_calls += 1
-            if digest_calls > len(store.DATASETS):
-                raise RuntimeError("post-pointer digest failure")
-            return real_digest(path)
-
-        with patch.object(store, "_sha256_file", side_effect=fail_during_pointer_readback):
-            failed = self._promote(_datasets(2), scope="e" * 64)
-        self.assertFalse(failed["promotion_verified"])
-        self.assertTrue(failed["rollback_succeeded"])
-        self.assertEqual((self.root / "pointer.json").read_bytes(), before)
-
-    def test_ordinary_refresh_write_leaves_production_version_untouched(self):
-        promoted = self._promote(_datasets(1))
-        self.assertTrue(promoted["promotion_verified"])
-        before = (self.root / "pointer.json").read_bytes()
-        with patch.object(storage_service, "PARQUET_ROOT", self.root.parent):
-            result = tushare_task_service._write_parquet_dataset(
-                "daily",
-                _datasets(9)["daily"],
-                payload={"acceptance_mode": "ordinary_refresh"},
-                scope={"scope_hash": "ordinary"},
-            )
-        self.assertEqual(result["status"], "written")
-        self.assertEqual((self.root / "pointer.json").read_bytes(), before)
-        self.assertTrue(store.validate_tushare_full_market_production_version(self.root)["ready"])
-
-        real_replace = store.os.replace
-
-        def fail_version_move(source, destination):
-            if Path(destination).parent.name == "versions":
-                raise RuntimeError("partial move failure")
-            return real_replace(source, destination)
-
-        with patch.object(store.os, "replace", side_effect=fail_version_move):
-            failed = self._promote(_datasets(3), scope="f" * 64)
-        self.assertFalse(failed["promotion_verified"])
-        self.assertEqual((self.root / "pointer.json").read_bytes(), before)
-
-    def test_repeated_page_is_detected_as_truncation_and_checkpoint_resumes(self):
-        class Adapter:
-            def get_daily(self, **_params):
-                return {"ok": True, "data": [{"ts_code": "000001.SZ", "trade_date": "20260710"}]}
-
-        with patch.object(
-            tushare_task_service,
-            "_consume_runtime_transport_evidence",
-            return_value={"provider_transport_verified": True},
-        ):
-            rows, ledger = tushare_task_service._paginated_provider_rows(
-                Adapter(),
-                api="daily",
-                params={"start_date": "20260710", "end_date": "20260710"},
-                max_rows_per_call=1,
-                call_budget={"used": 0},
-                checkpoint_root=Path(self.tmp.name) / "checkpoints",
-            )
-        self.assertEqual(rows, [])
-        self.assertFalse(ledger["pagination_complete"])
-        self.assertTrue(ledger["truncation_detected"])
-
-        class OnePageAdapter:
+        class FailingAdapter:
             calls = 0
 
             def get_daily(self, **_params):
                 self.calls += 1
-                return {"ok": True, "data": [{"ts_code": "000001.SZ", "trade_date": "20260710"}]}
+                return {"ok": False, "data": None, "error": "offline"}
 
+        adapter = FailingAdapter()
+        rows, ledger = tushare_task_service._paginated_provider_rows(
+            adapter,
+            api="daily",
+            params=params,
+            max_rows_per_call=2,
+            call_budget={"used": 0, "historical": 0, "limit": 3},
+            checkpoint_root=checkpoint_root,
+            production_root=self.root,
+            run_id="a" * 64,
+            scope_hash="a" * 64,
+        )
+        self.assertEqual(rows, [])
+        self.assertEqual(ledger["resumed_page_count"], 0)
+        self.assertEqual(adapter.calls, 3)
+        self.assertFalse(ledger["provider_transport_verified"])
+
+    def test_checkpoint_resume_uses_prior_event_without_claiming_new_call(self):
+        scope_hash = "a" * 64
+        params = {"start_date": "20260710", "end_date": "20260710"}
+        query_hash = tushare_task_service._canonical_sha256(
+            {"api": "daily", "params": params, "limit": 2}
+        )
+        rows = [{"ts_code": "000001.SZ", "trade_date": "20260710"}]
+        fingerprint = tushare_task_service._canonical_sha256(rows)
+        ref = tushare_task_service._official_transport_event(
+            self.root,
+            run_id=scope_hash,
+            scope_hash=scope_hash,
+            api="daily",
+            event_key=f"{query_hash}-000000000",
+            function_call_count=1,
+            transport_receipt_digest="b" * 64,
+            response_digest=fingerprint,
+        )
         checkpoint_root = Path(self.tmp.name) / "resume-checkpoints"
-        adapter = OnePageAdapter()
-        with patch.object(
-            tushare_task_service,
-            "_consume_runtime_transport_evidence",
-            return_value={"provider_transport_verified": True},
-        ):
-            first_rows, first_ledger = tushare_task_service._paginated_provider_rows(
-                adapter,
-                api="daily",
-                params={"start_date": "20260710", "end_date": "20260710"},
-                max_rows_per_call=2,
-                call_budget={"used": 0},
-                checkpoint_root=checkpoint_root,
-            )
-            second_rows, second_ledger = tushare_task_service._paginated_provider_rows(
-                adapter,
-                api="daily",
-                params={"start_date": "20260710", "end_date": "20260710"},
-                max_rows_per_call=2,
-                call_budget={"used": 0},
-                checkpoint_root=checkpoint_root,
-            )
-        self.assertEqual(first_rows, second_rows)
-        self.assertEqual(adapter.calls, 1)
-        self.assertTrue(first_ledger["pagination_complete"])
-        self.assertEqual(second_ledger["resumed_page_count"], 1)
+        checkpoint = checkpoint_root / "daily" / query_hash / "000000000.json"
+        page = {
+            "schema_version": "tushare_provider_page_checkpoint.v1",
+            "query_hash": query_hash,
+            "api": "daily",
+            "offset": 0,
+            "limit": 2,
+            "rows": rows,
+            "row_count": 1,
+            "page_fingerprint": fingerprint,
+            "terminal": True,
+            "provider_transport_verified": True,
+            "original_function_call_count": 1,
+            "transport_event": ref,
+        }
+        page["checkpoint_digest"] = tushare_task_service._canonical_sha256(page)
+        tushare_task_service._atomic_json_write(checkpoint, page)
+
+        class MustNotCallAdapter:
+            def get_daily(self, **_params):
+                raise AssertionError("checkpoint resume must not call provider")
+
+        result_rows, ledger = tushare_task_service._paginated_provider_rows(
+            MustNotCallAdapter(),
+            api="daily",
+            params=params,
+            max_rows_per_call=2,
+            call_budget={"used": 0, "historical": 0, "limit": 3},
+            checkpoint_root=checkpoint_root,
+            production_root=self.root,
+            run_id=scope_hash,
+            scope_hash=scope_hash,
+        )
+        self.assertEqual(result_rows, rows)
+        self.assertEqual(ledger["provider_call_count"], 0)
+        self.assertEqual(ledger["historical_provider_call_count"], 1)
+        self.assertFalse(ledger["tushare_called"])
+        self.assertFalse(ledger["external_calls_triggered"])
+        self.assertTrue(ledger["checkpoint_data_reused"])
+
+    def test_execution_event_requires_exact_twenty_apis_and_seven_targets(self):
+        self.assertEqual(
+            store.EXACT_REFRESH_APIS,
+            (
+                "daily", "daily_basic", "moneyflow", "trade_cal", "margin_detail",
+                "top_list", "top_inst", "stk_limit", "limit_list_d", "limit_cpt_list",
+                "cyq_perf", "cyq_chips", "anns_d", "forecast", "fina_indicator",
+                "stk_holdertrade", "share_float", "pledge_stat", "pledge_detail", "stk_surv",
+            ),
+        )
+        self.assertEqual(
+            store.EXACT_TARGET_GROUPS,
+            (
+                "trade_calendar", "margin_financing", "dragon_tiger", "limit_emotion",
+                "chip_distribution", "financial_disclosure", "hard_risk",
+            ),
+        )
+        missing = tushare_task_service._persist_official_execution_event(
+            self.root,
+            run_id="a" * 64,
+            scope_hash="a" * 64,
+            approval_scope_hash="b" * 64,
+            execution_recipe_scope_hash="c" * 64,
+            selected_apis=list(store.EXACT_REFRESH_APIS[:-1]),
+            target_groups=list(store.EXACT_TARGET_GROUPS),
+            transport_events=[],
+            current_attempt_actual_function_call_count=0,
+            call_ledger=[],
+        )
+        self.assertIsNone(missing)
+        fake_api = list(store.EXACT_REFRESH_APIS)
+        fake_api[-1] = "fake_api"
+        fake = tushare_task_service._persist_official_execution_event(
+            self.root,
+            run_id="a" * 64,
+            scope_hash="a" * 64,
+            approval_scope_hash="b" * 64,
+            execution_recipe_scope_hash="c" * 64,
+            selected_apis=fake_api,
+            target_groups=list(store.EXACT_TARGET_GROUPS),
+            transport_events=[],
+            current_attempt_actual_function_call_count=0,
+            call_ledger=[],
+        )
+        self.assertIsNone(fake)
+        wrong_targets = tushare_task_service._persist_official_execution_event(
+            self.root,
+            run_id="a" * 64,
+            scope_hash="a" * 64,
+            approval_scope_hash="b" * 64,
+            execution_recipe_scope_hash="c" * 64,
+            selected_apis=list(store.EXACT_REFRESH_APIS),
+            target_groups=[*store.EXACT_TARGET_GROUPS[:-1], "fake_target"],
+            transport_events=[],
+            current_attempt_actual_function_call_count=0,
+            call_ledger=[],
+        )
+        self.assertIsNone(wrong_targets)
+
+    def test_double_pointer_restore_is_idempotent_without_production_promotion(self):
+        pointer = self.root / "pointer.json"
+        original = json.dumps({"current_version": "old"}, sort_keys=True).encode()
+        tushare_task_service._atomic_json_write(pointer, {"current_version": "new"})
+        self.assertTrue(store._restore_pointer(pointer, original))
+        self.assertTrue(store._restore_pointer(pointer, original))
+        self.assertEqual(pointer.read_bytes(), original)
 
 
 if __name__ == "__main__":

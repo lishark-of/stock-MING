@@ -13,7 +13,6 @@ import json
 import os
 import shutil
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -22,10 +21,21 @@ DATASETS = ("stock_basic", "trade_cal", "daily", "daily_basic", "moneyflow")
 MIN_UNIVERSE_ROWS = 3000
 REQUIRED_SESSIONS = 90
 MAX_PROVIDER_CALLS = 300
-MIN_FULL_INTERFACE_APIS = 20
 POINTER_SCHEMA = "tushare_production_pointer.v2"
 MANIFEST_SCHEMA = "tushare_production_version_manifest.v2"
-RECEIPT_SCHEMA = "tushare_official_provider_run_receipt.v1"
+EXECUTION_EVENT_SCHEMA = "tushare_official_execution_event.v1"
+TRANSPORT_EVENT_SCHEMA = "tushare_official_transport_event.v1"
+EXACT_REFRESH_APIS = (
+    "daily", "daily_basic", "moneyflow", "trade_cal", "margin_detail", "top_list",
+    "top_inst", "stk_limit", "limit_list_d", "limit_cpt_list", "cyq_perf", "cyq_chips",
+    "anns_d", "forecast", "fina_indicator", "stk_holdertrade", "share_float", "pledge_stat",
+    "pledge_detail", "stk_surv",
+)
+EXACT_TARGET_GROUPS = (
+    "trade_calendar", "margin_financing", "dragon_tiger", "limit_emotion",
+    "chip_distribution", "financial_disclosure", "hard_risk",
+)
+EXACT_SUPPORT_APIS = ("stock_basic",)
 REQUIRED_COLUMNS = {
     "stock_basic": ("ts_code", "exchange", "list_status", "list_date"),
     "trade_cal": ("cal_date", "is_open"),
@@ -84,6 +94,15 @@ def _atomic_json(path: Path, value: Mapping[str, Any]) -> None:
 
 def _date(value: Any) -> str:
     return str(value or "").strip().replace("-", "")
+
+
+def _code_family_valid(code: str, suffix: str) -> bool:
+    prefix = code.split(".", 1)[0]
+    return bool(
+        (suffix == "SH" and prefix.startswith("6"))
+        or (suffix == "SZ" and prefix.startswith(("0", "3")))
+        or (suffix == "BJ" and prefix.startswith(("4", "8", "9")))
+    )
 
 
 def _rows(value: Any) -> list[dict[str, Any]]:
@@ -156,6 +175,7 @@ def validate_datasets(
             or suffix != EXCHANGE_SUFFIX.get(exchange)
             or len(prefix) != 6
             or not prefix.isdigit()
+            or not _code_family_valid(code, suffix)
             or list_status != "L"
             or len(list_date) != 8
             or not list_date.isdigit()
@@ -194,6 +214,18 @@ def validate_datasets(
         blockers.append("trade_cal_required_sessions_incomplete")
     selected_set = set(selected_dates)
     latest = selected_dates[-1] if selected_dates else ""
+    eligible = (
+        {
+            code
+            for code in universe
+            if list_dates.get(code, "") <= selected_dates[0]
+        }
+        if selected_dates
+        else set()
+    )
+    excluded_recent = universe - eligible
+    if len(eligible) < MIN_UNIVERSE_ROWS:
+        blockers.append("eligible_scored_universe_too_small")
 
     dataset_validation: dict[str, Any] = {}
     for name in ("daily", "daily_basic", "moneyflow"):
@@ -215,44 +247,53 @@ def validate_datasets(
                 blockers.append(f"{name}_duplicate_symbol_date")
             keys.add(key)
             counts[code] = counts.get(code, 0) + 1
-            if trade_date == latest:
+            if trade_date == latest and code in eligible:
                 latest_symbols.add(code)
         minimum = REQUIRED_SESSIONS if name == "daily" else 1 if name == "daily_basic" else min(5, REQUIRED_SESSIONS)
-        required_symbols = (
-            {code for code in universe if list_dates.get(code, "") <= selected_dates[0]}
-            if name == "daily"
-            else universe
-            if name == "daily_basic"
-            else {
-                code
-                for code in universe
-                if len(selected_dates) >= minimum
-                and list_dates.get(code, "") <= selected_dates[-minimum]
-            }
-        ) if selected_dates else set()
+        required_symbols = eligible
         covered = {code for code, count in counts.items() if count >= minimum}
         complete = bool(required_symbols and required_symbols.issubset(covered))
         if not complete:
             blockers.append(f"{name}_coverage_incomplete")
-        if name == "daily_basic" and latest_symbols != universe:
+        if name == "daily_basic" and latest_symbols != eligible:
             blockers.append("daily_basic_latest_trade_date_coverage_incomplete")
         dataset_validation[name] = {
             "rows": len(rows),
-            "covered_symbol_count": len(covered & universe),
+            "covered_symbol_count": len(covered & eligible),
             "required_symbol_count": len(required_symbols),
             "minimum_sessions_per_symbol": minimum,
             "latest_trade_date_symbol_count": len(latest_symbols),
             "coverage_complete": complete,
         }
+    production_datasets = {
+        "stock_basic": material["stock_basic"],
+        "trade_cal": material["trade_cal"],
+        **{
+            name: [
+                row
+                for row in material[name]
+                if str(row.get("ts_code") or "").upper() in eligible
+            ]
+            for name in ("daily", "daily_basic", "moneyflow")
+        },
+    }
     blockers = sorted(set(blockers))
     return {
         "ready": not blockers,
         "blockers": blockers,
-        "datasets": material,
+        "datasets": production_datasets,
         "dataset_validation": dataset_validation,
-        "universe_count": len(universe),
-        "symbols": sorted(universe),
-        "universe_digest": _digest_value(sorted(universe)),
+        "universe_count": len(eligible),
+        "symbols": sorted(eligible),
+        "universe_digest": _digest_value(sorted(eligible)),
+        "eligible_universe_count": len(eligible),
+        "eligible_universe_digest": _digest_value(sorted(eligible)),
+        "excluded_recent_symbols": sorted(excluded_recent),
+        "excluded_recent_count": len(excluded_recent),
+        "excluded_recent_digest": _digest_value(sorted(excluded_recent)),
+        "current_listed_count": len(universe),
+        "current_listed_digest": _digest_value(sorted(universe)),
+        "scored_universe_policy": "listed_L_on_or_before_selected_90_session_start",
         "exchanges": sorted(exchanges),
         "selected_trade_dates": selected_dates,
         "latest_trade_date": latest,
@@ -261,92 +302,72 @@ def validate_datasets(
     }
 
 
-_SEAL_TOKEN = object()
-
-
-@dataclass(frozen=True)
-class _OfficialRunSeal:
-    receipt: dict[str, Any]
-    token: object
-
-
-def _seal_official_run(
-    *,
-    call_ledger: list[Mapping[str, Any]],
-    scope_hash: str,
-    approval_scope_hash: str,
-    execution_recipe_scope_hash: str,
-    required_interface_apis: list[str] | tuple[str, ...],
-    public_executor_completed: bool,
-) -> _OfficialRunSeal | None:
-    """Create a receipt only after the non-injected public executor completed."""
-
-    rows = [dict(row) for row in call_ledger if isinstance(row, Mapping)]
-    call_count = sum(
-        max(
-            int(row.get("provider_call_count") or 0),
-            int(row.get("provider_transport_receipt_count") or 0),
-        )
-        for row in rows
-    )
-    required = set(DATASETS)
-    required_interfaces = {str(api) for api in required_interface_apis if str(api or "")}
-    provider_rows = [row for row in rows if str(row.get("api") or "") in required]
-    observed_interfaces = {
-        str(row.get("api") or "")
-        for row in rows
-        if row.get("provider_transport_verified") is True and row.get("api")
-    }
-    ready = bool(
-        public_executor_completed
-        and len(scope_hash) == len(approval_scope_hash) == len(execution_recipe_scope_hash) == 64
-        and 0 < call_count <= MAX_PROVIDER_CALLS
-        and len(required_interfaces) == MIN_FULL_INTERFACE_APIS
-        and required_interfaces.issubset(observed_interfaces)
-        and {str(row.get("api") or "") for row in provider_rows} == required
-        and all(row.get("provider_transport_verified") is True for row in provider_rows)
-    )
-    if not ready:
-        return None
-    receipt = {
-        "schema_version": RECEIPT_SCHEMA,
-        "source": "public_non_injected_tushare_executor",
-        "official_provider_path_completed": True,
-        "scope_hash": scope_hash,
-        "approval_scope_hash": approval_scope_hash,
-        "execution_recipe_scope_hash": execution_recipe_scope_hash,
-        "provider_call_count": call_count,
-        "provider_apis": sorted(required),
-        "required_interface_apis": sorted(required_interfaces),
-        "observed_provider_apis": sorted(observed_interfaces),
-        "sanitized_call_ledger_digest": _digest_value(rows),
-        "contains_secret": False,
-        "external_calls_triggered": True,
-        "tushare_called": True,
-        "does_not_execute_trades": True,
-    }
-    receipt["receipt_digest"] = _digest_value(receipt)
-    return _OfficialRunSeal(receipt=receipt, token=_SEAL_TOKEN)
-
-
-def _receipt_ready(receipt: Any, *, scope_hash: str) -> bool:
+def _receipt_ready(receipt: Any, *, scope_hash: str, root: Path) -> bool:
     if not isinstance(receipt, Mapping):
         return False
     material = dict(receipt)
-    digest = str(material.pop("receipt_digest", "") or "")
+    digest = str(material.pop("execution_event_digest", "") or "")
+    transport_refs = [
+        dict(row)
+        for row in receipt.get("transport_events", [])
+        if isinstance(row, Mapping)
+    ]
+    transport_events: list[dict[str, Any]] = []
+    for ref in transport_refs:
+        relative = str(ref.get("relative_path") or "")
+        if not relative or relative.startswith("/") or ".." in Path(relative).parts:
+            return False
+        try:
+            event = json.loads((root / relative).read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        event_material = dict(event)
+        event_digest = str(event_material.pop("transport_event_digest", "") or "")
+        if not (
+            event.get("schema_version") == TRANSPORT_EVENT_SCHEMA
+            and event.get("run_id") == receipt.get("run_id")
+            and event.get("scope_hash") == scope_hash
+            and event.get("api") == ref.get("api")
+            and event.get("actual_function_call") is True
+            and int(event.get("function_call_count") or 0) > 0
+            and len(str(event.get("transport_receipt_digest") or "")) == 64
+            and len(str(event.get("response_digest") or "")) == 64
+            and event_digest == ref.get("transport_event_digest")
+            and event_digest == _digest_value(event_material)
+        ):
+            return False
+        transport_events.append(event)
+    observed_apis = {str(event.get("api") or "") for event in transport_events}
+    total_calls = sum(int(event.get("function_call_count") or 0) for event in transport_events)
+    current_calls = int(receipt.get("current_attempt_actual_function_call_count") or 0)
+    exact_apis = list(EXACT_REFRESH_APIS)
+    exact_targets = list(EXACT_TARGET_GROUPS)
     return bool(
-        receipt.get("schema_version") == RECEIPT_SCHEMA
+        receipt.get("schema_version") == EXECUTION_EVENT_SCHEMA
         and receipt.get("source") == "public_non_injected_tushare_executor"
+        and receipt.get("status") == "official_provider_execution_complete"
         and receipt.get("official_provider_path_completed") is True
+        and receipt.get("run_id") == scope_hash
         and receipt.get("scope_hash") == scope_hash
-        and 0 < int(receipt.get("provider_call_count") or 0) <= MAX_PROVIDER_CALLS
-        and set(receipt.get("provider_apis") or []) == set(DATASETS)
-        and len(set(receipt.get("required_interface_apis") or [])) == MIN_FULL_INTERFACE_APIS
-        and set(receipt.get("required_interface_apis") or []).issubset(
-            set(receipt.get("observed_provider_apis") or [])
-        )
+        and len(str(receipt.get("approval_scope_hash") or "")) == 64
+        and len(str(receipt.get("execution_recipe_scope_hash") or "")) == 64
+        and receipt.get("required_interface_apis") == exact_apis
+        and receipt.get("required_interface_api_digest") == _digest_value(exact_apis)
+        and receipt.get("required_target_groups") == exact_targets
+        and receipt.get("required_target_group_digest") == _digest_value(exact_targets)
+        and receipt.get("required_support_apis") == list(EXACT_SUPPORT_APIS)
+        and receipt.get("required_support_api_digest") == _digest_value(list(EXACT_SUPPORT_APIS))
+        and observed_apis == set(EXACT_REFRESH_APIS) | set(EXACT_SUPPORT_APIS)
+        and 0 < total_calls <= MAX_PROVIDER_CALLS
+        and int(receipt.get("original_actual_function_call_count") or 0) == total_calls
+        and 0 <= current_calls <= total_calls
+        and len(transport_refs) == len(transport_events)
+        and len({str(ref.get("transport_event_digest") or "") for ref in transport_refs})
+        == len(transport_refs)
         and receipt.get("contains_secret") is False
         and receipt.get("tushare_called") is True
+        and receipt.get("tushare_called_this_attempt") is (current_calls > 0)
+        and receipt.get("external_calls_triggered") is (current_calls > 0)
         and receipt.get("does_not_execute_trades") is True
         and digest == _digest_value(material)
     )
@@ -419,7 +440,7 @@ def verify_current_version(root: Path) -> dict[str, Any]:
         blockers.append("pointer_manifest_binding_invalid")
     scope = manifest.get("scope") if isinstance(manifest.get("scope"), Mapping) else {}
     receipt = manifest.get("official_run_receipt") if isinstance(manifest.get("official_run_receipt"), Mapping) else {}
-    if not _receipt_ready(receipt, scope_hash=str(scope.get("scope_hash") or "")):
+    if not _receipt_ready(receipt, scope_hash=str(scope.get("scope_hash") or ""), root=root):
         blockers.append("official_provider_receipt_invalid")
 
     artifacts = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), Mapping) else {}
@@ -456,6 +477,18 @@ def verify_current_version(root: Path) -> dict[str, Any]:
             blockers.append("exchange_coverage_readback_mismatch")
         if validation.get("selected_trade_dates") != scope.get("selected_trade_dates"):
             blockers.append("trade_session_scope_readback_mismatch")
+        for field in (
+            "current_listed_count",
+            "current_listed_digest",
+            "eligible_universe_count",
+            "eligible_universe_digest",
+            "excluded_recent_symbols",
+            "excluded_recent_count",
+            "excluded_recent_digest",
+            "scored_universe_policy",
+        ):
+            if validation.get(field) != scope.get(field):
+                blockers.append(f"{field}_readback_mismatch")
     lineage = manifest.get("lineage") if isinstance(manifest.get("lineage"), Mapping) else {}
     if not (
         len(str(lineage.get("approval_scope_hash") or "")) == 64
@@ -521,7 +554,11 @@ def verify_current_version(root: Path) -> dict[str, Any]:
                 not last_validation["ready"]
                 or last_validation.get("universe_digest") != last_scope.get("universe_digest")
                 or last_validation.get("selected_trade_dates") != last_scope.get("selected_trade_dates")
-                or not _receipt_ready(last_receipt, scope_hash=str(last_scope.get("scope_hash") or ""))
+                or not _receipt_ready(
+                    last_receipt,
+                    scope_hash=str(last_scope.get("scope_hash") or ""),
+                    root=root,
+                )
                 or last_manifest.get("version_digest") != _digest_value(last_version_material)
                 or last_receipt.get("approval_scope_hash") != last_lineage.get("approval_scope_hash")
                 or last_receipt.get("execution_recipe_scope_hash")
@@ -550,6 +587,12 @@ def verify_current_version(root: Path) -> dict[str, Any]:
         "universe_count": int(scope.get("universe_count") or 0),
         "validated_trade_date": str(scope.get("latest_trade_date") or ""),
         "symbols": list(validation.get("symbols") or []) if "validation" in locals() else [],
+        "excluded_recent_symbols": list(scope.get("excluded_recent_symbols") or []),
+        "excluded_recent_count": int(scope.get("excluded_recent_count") or 0),
+        "excluded_recent_digest": str(scope.get("excluded_recent_digest") or ""),
+        "current_listed_count": int(scope.get("current_listed_count") or 0),
+        "current_listed_digest": str(scope.get("current_listed_digest") or ""),
+        "scored_universe_policy": str(scope.get("scored_universe_policy") or ""),
     }
 
 
@@ -583,6 +626,12 @@ def validate_tushare_full_market_production_version(
         "validated_trade_date": str(result.get("validated_trade_date") or ""),
         "as_of": str(result.get("as_of") or ""),
         "symbols": list(result.get("symbols") or []),
+        "excluded_recent_symbols": list(result.get("excluded_recent_symbols") or []),
+        "excluded_recent_count": int(result.get("excluded_recent_count") or 0),
+        "excluded_recent_digest": str(result.get("excluded_recent_digest") or ""),
+        "current_listed_count": int(result.get("current_listed_count") or 0),
+        "current_listed_digest": str(result.get("current_listed_digest") or ""),
+        "scored_universe_policy": str(result.get("scored_universe_policy") or ""),
         "artifact_manifest_digest": str(result.get("manifest_digest") or ""),
         "version_digest": str(result.get("version_digest") or ""),
     }
@@ -597,7 +646,7 @@ def validate_tushare_full_market_production_version(
     return shared
 
 
-def promote_version(
+def _promote_version_from_official_execution_event(
     datasets: Mapping[str, Any],
     *,
     root: Path,
@@ -607,26 +656,39 @@ def promote_version(
     approval_scope_hash: str,
     execution_recipe_scope_hash: str,
     as_of: str,
-    seal: _OfficialRunSeal | None,
+    execution_event_path: Path,
     packet_store: Any,
     packet_key: str,
 ) -> dict[str, Any]:
     """Append an immutable version, switch one pointer, then persist its index."""
 
     validation = validate_datasets(datasets, start_date=start_date, end_date=end_date)
-    if (
-        not validation["ready"]
-        or not isinstance(seal, _OfficialRunSeal)
-        or seal.token is not _SEAL_TOKEN
-        or not _receipt_ready(seal.receipt, scope_hash=scope_hash)
+    expected_event_path = root / "execution_runs" / scope_hash / "execution_event.json"
+    execution_event: dict[str, Any] = {}
+    try:
+        if execution_event_path.resolve() != expected_event_path.resolve():
+            raise RuntimeError("execution_event_path_not_authoritative")
+        execution_event = json.loads(execution_event_path.read_text(encoding="utf-8"))
+    except Exception:
+        execution_event = {}
+    if not validation["ready"] or not _receipt_ready(
+        execution_event,
+        scope_hash=scope_hash,
+        root=root,
     ):
         blockers = list(validation["blockers"])
-        if seal is None or not _receipt_ready(getattr(seal, "receipt", None), scope_hash=scope_hash):
-            blockers.append("official_provider_receipt_missing")
-        return {"promotion_verified": False, "status": "production_version_blocked", "blockers": sorted(set(blockers))}
+        if not execution_event:
+            blockers.append("official_execution_event_missing")
+        else:
+            blockers.append("official_execution_event_invalid")
+        return {
+            "promotion_verified": False,
+            "status": "production_version_blocked",
+            "blockers": sorted(set(blockers)),
+        }
     if not (
-        seal.receipt.get("approval_scope_hash") == approval_scope_hash
-        and seal.receipt.get("execution_recipe_scope_hash") == execution_recipe_scope_hash
+        execution_event.get("approval_scope_hash") == approval_scope_hash
+        and execution_event.get("execution_recipe_scope_hash") == execution_recipe_scope_hash
         and len(approval_scope_hash) == len(execution_recipe_scope_hash) == 64
         and len(_date(as_of)) == 8
     ):
@@ -661,12 +723,20 @@ def promote_version(
             "universe_count": validation["universe_count"],
             "universe_digest": validation["universe_digest"],
             "exchanges": validation["exchanges"],
+            "current_listed_count": validation["current_listed_count"],
+            "current_listed_digest": validation["current_listed_digest"],
+            "eligible_universe_count": validation["eligible_universe_count"],
+            "eligible_universe_digest": validation["eligible_universe_digest"],
+            "excluded_recent_symbols": validation["excluded_recent_symbols"],
+            "excluded_recent_count": validation["excluded_recent_count"],
+            "excluded_recent_digest": validation["excluded_recent_digest"],
+            "scored_universe_policy": validation["scored_universe_policy"],
         }
         version_material = {
             "scope": scope,
             "artifacts": artifacts,
             "dataset_validation": validation["dataset_validation"],
-            "official_run_receipt": dict(seal.receipt),
+            "official_run_receipt": dict(execution_event),
             "lineage": {
                 "approval_scope_hash": approval_scope_hash,
                 "execution_recipe_scope_hash": execution_recipe_scope_hash,
