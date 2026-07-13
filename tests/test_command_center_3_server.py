@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import config as app_config
-from server.services import audit_service, bootstrap_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, tushare_task_service, worker_service
+from server.services import audit_service, bootstrap_service, candidate_service, data_capability_service, data_health_service, deepseek_benchmark_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, tushare_task_service, v1_closeout_service, worker_service
 from server.services import migration_status_service
 from server.services.task_service import (
     clear_task_statuses_for_tests,
@@ -21662,7 +21662,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 96)
+        self.assertEqual(catalog["task_count"], 97)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -21681,7 +21681,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 96)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 97)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -21715,8 +21715,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 98)
-        self.assertEqual(route_coverage["task_creation_route_count"], 96)
+        self.assertEqual(route_coverage["known_post_route_count"], 99)
+        self.assertEqual(route_coverage["task_creation_route_count"], 97)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -21725,12 +21725,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 96)
+        self.assertEqual(implementation_status["task_count"], 97)
         self.assertEqual(implementation_status["stub_task_count"], 2)
         self.assertEqual(implementation_status["local_pipeline_task_count"], 91)
-        self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 92)
-        self.assertEqual(implementation_status["external_capable_task_count"], 9)
+        self.assertEqual(implementation_status["guarded_local_task_count"], 2)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 93)
+        self.assertEqual(implementation_status["external_capable_task_count"], 10)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
             {"run_chokepoint_scan", "probe_serenity_github"},
@@ -21831,7 +21831,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_deepseek_provider_benchmark_execution_request",
             },
         )
-        self.assertEqual(implementation_status["guarded_local_task_types"], ["run_deepseek_factor_explanation"])
+        self.assertEqual(
+            implementation_status["guarded_local_task_types"],
+            ["run_deepseek_factor_explanation", "run_deepseek_provider_benchmark"],
+        )
         self.assertEqual(
             set(implementation_status["implemented_local_task_types"]),
             {
@@ -21927,6 +21930,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_deepseek_factor_explanation",
                 "run_deepseek_provider_benchmark_scope_ticket",
                 "run_deepseek_provider_benchmark_execution_request",
+                "run_deepseek_provider_benchmark",
             },
         )
         self.assertTrue(implementation_status["all_external_capable_tasks_are_button_gated"])
@@ -63700,6 +63704,244 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(factor["data"]["deepseek_explain_governance"]["response_format_retry_repair_ready"])
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
         self.assertTrue(factor["data"]["next_session_bridge"]["does_not_modify_action"])
+
+
+class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
+    @staticmethod
+    def _scope(scope_hash: str = "approved-scope-hash") -> dict:
+        return {
+            "benchmark_scope_hash": scope_hash,
+            "sample_set_hash": deepseek_benchmark_service.FIXED_SCOPE_HASH,
+            "sample_count": 40,
+            "required_json_success_rate": 0.9,
+            "response_format": "json_schema",
+            "max_retry_per_sample": 2,
+            "allowed_output_fields": list(deepseek_benchmark_service.ALLOWED_OUTPUT_FIELDS),
+        }
+
+    @staticmethod
+    def _valid_model_result(*_args) -> dict:
+        return {
+            "text": json.dumps(
+                {
+                    "summary": "仅解释合成研究状态，不构成交易指令。",
+                    "support_notes": ["支持证据有限"],
+                    "suppress_notes": [],
+                    "conflict_notes": [],
+                    "missing_data_notes": [],
+                    "discipline_notes": ["保持只读研究边界"],
+                },
+                ensure_ascii=False,
+            ),
+            "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18},
+            "provider_response_format_requested": True,
+        }
+
+    @staticmethod
+    def _hub(scope_hash: str = "approved-scope-hash") -> dict:
+        return {
+            "schema_version": "factor_quant_hub.v1",
+            "deepseek_provider_benchmark_execution_request_receipt": {
+                "schema_version": "factor_deepseek_provider_benchmark_execution_request.v1",
+                "status": "deepseek_provider_benchmark_execution_request_ready_manual_model_task_pending",
+                "local_execution_request_ready": True,
+                "requested_scope_hash_matches_latest": True,
+                "benchmark_scope_hash": scope_hash,
+                "required_sample_count": 40,
+                "requested_sample_count": 40,
+                "required_json_success_rate": 0.9,
+                "response_format": "json_schema",
+                "max_retry_per_sample": 2,
+                "allowed_output_fields": list(deepseek_benchmark_service.ALLOWED_OUTPUT_FIELDS),
+            },
+        }
+
+    def test_synthetic_benchmark_exercises_bounded_repair_but_never_closes_ltg07(self):
+        calls: list[tuple[str, int, bool]] = []
+
+        def repair_once(sample, attempt, repair):
+            calls.append((sample["sample_id"], attempt, repair))
+            if attempt == 1:
+                return {"text": "not-json", "provider_response_format_requested": True}
+            return self._valid_model_result()
+
+        packet = deepseek_benchmark_service._execute_benchmark(
+            self._scope(),
+            repair_once,
+            evidence_source="synthetic_test",
+            model_used="synthetic-model",
+        )
+
+        self.assertEqual(packet["success_count"], 40)
+        self.assertEqual(packet["retry_count"], 40)
+        self.assertEqual(packet["model_ledger_count"], 80)
+        self.assertTrue(all(attempt <= 2 for _, attempt, _ in calls))
+        self.assertFalse(packet["provider_response_format_enforced"])
+        self.assertFalse(packet["provider_benchmark_done"])
+        self.assertFalse(packet["production_fact_ready"])
+        self.assertFalse(packet["governed_model_runtime"])
+        self.assertFalse(packet["deepseek_called"])
+        serialized = json.dumps(packet, ensure_ascii=False)
+        self.assertNotIn("not-json", serialized)
+        self.assertNotIn("仅解释合成研究状态", serialized)
+
+    def test_missing_credential_fails_closed_and_preserves_last_good(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "meta.sqlite"
+            store = SQLiteMetaStore(db_path)
+            store.write_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY, self._hub())
+            prior = {"schema_version": "prior.last_good.v1", "marker": "keep-me"}
+            store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, prior)
+            clear_task_statuses_for_tests()
+            with (
+                patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path),
+                patch.object(task_service, "SQLITE_META_PATH", db_path),
+                patch.object(app_config, "get_deepseek_keys", return_value=[]),
+            ):
+                task = deepseek_benchmark_service.run_deepseek_provider_benchmark_task(
+                    {
+                        "approved_by_user": True,
+                        "provider_run_approved_by_user": True,
+                        "benchmark_scope_hash": "approved-scope-hash",
+                    }
+                )
+
+            self.assertEqual(task["status"], "failed")
+            current = store.read_packet(deepseek_benchmark_service.CURRENT_PACKET_KEY)
+            self.assertEqual(current["safe_failure_code"], "model_credential_unavailable")
+            self.assertFalse(current["deepseek_called"])
+            self.assertFalse(current["external_calls_triggered"])
+            self.assertEqual(store.read_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY), prior)
+
+    def test_unapproved_scope_blocks_before_credential_lookup(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "meta.sqlite"
+            store = SQLiteMetaStore(db_path)
+            store.write_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY, self._hub())
+            clear_task_statuses_for_tests()
+            with (
+                patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path),
+                patch.object(task_service, "SQLITE_META_PATH", db_path),
+                patch.object(app_config, "get_deepseek_keys", return_value=["must-not-be-read"]) as key_lookup,
+            ):
+                task = deepseek_benchmark_service.run_deepseek_provider_benchmark_task(
+                    {
+                        "approved_by_user": True,
+                        "provider_run_approved_by_user": False,
+                        "benchmark_scope_hash": "approved-scope-hash",
+                    }
+                )
+
+            key_lookup.assert_not_called()
+            self.assertEqual(task["status"], "failed")
+            current = store.read_packet(deepseek_benchmark_service.CURRENT_PACKET_KEY)
+            self.assertEqual(current["safe_failure_code"], "explicit_provider_run_approval_required")
+            self.assertFalse(current["deepseek_called"])
+
+    def test_explicit_post_route_declares_dispatcher_and_get_remains_read_only(self):
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "meta.sqlite"
+            store = SQLiteMetaStore(db_path)
+            store.write_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY, self._hub())
+            clear_task_statuses_for_tests()
+            fake_call = self._valid_model_result
+            with (
+                patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path),
+                patch.object(task_service, "SQLITE_META_PATH", db_path),
+                patch.object(factor_service, "SQLITE_META_PATH", db_path),
+                patch.object(app_config, "get_deepseek_keys", return_value=["test-only-secret"]),
+                patch.object(app_config, "get_deepseek_model", return_value="test-model"),
+                patch.object(deepseek_benchmark_service, "_build_real_model_call", return_value=fake_call) as builder,
+            ):
+                client = TestClient(app)
+                response = client.post(
+                    "/api/factor-quant/deepseek-provider-benchmark",
+                    json={
+                        "approved_by_user": True,
+                        "provider_run_approved_by_user": True,
+                        "benchmark_scope_hash": "approved-scope-hash",
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["data"]["task"]["status"], "success")
+                self.assertEqual(client.get("/api/factor-quant/cache").status_code, 200)
+
+            builder.assert_called_once()
+            route_source = (Path(__file__).parents[1] / "server" / "api" / "routes_factor_quant.py").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn('@router.post("/deepseek-provider-benchmark")', route_source)
+            get_body = route_source.split("def get_factor_quant_cache", 1)[1].split("@router.post", 1)[0]
+            self.assertNotIn("deepseek_benchmark_service", get_body)
+            current = store.read_packet(deepseek_benchmark_service.CURRENT_PACKET_KEY)
+            last_good = store.read_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY)
+            self.assertTrue(current["production_fact_ready"])
+            self.assertTrue(current["deepseek_called"])
+            self.assertEqual(current["sample_count"], 40)
+            self.assertEqual(current["model_ledger_count"], 40)
+            self.assertEqual(last_good["status"], "deepseek_provider_benchmark_passed")
+            self.assertNotIn("test-only-secret", json.dumps(current, ensure_ascii=False))
+
+    def test_v1_closeout_accepts_only_real_provider_quality_safety_packet(self):
+        packet = {
+            "schema_version": "factor_deepseek_provider_benchmark_result.v1",
+            "status": "deepseek_provider_benchmark_passed",
+            "evidence_source": "real_provider",
+            "sample_count": 40,
+            "success_count": 40,
+            "json_success_rate": 1.0,
+            "required_json_success_rate": 0.9,
+            "response_format": "json_schema",
+            "provider_response_format_enforced": True,
+            "response_schema_validated": True,
+            "safety_review_passed": True,
+            "unsafe_output_accepted_count": 0,
+            "model_ledger_count": 40,
+            "model_ledger_complete": True,
+            "provider_benchmark_done": True,
+            "production_fact_ready": True,
+            "governed_model_runtime": True,
+            "raw_prompt_stored": False,
+            "raw_output_stored": False,
+            "contains_secret": False,
+            "external_calls_triggered": True,
+            "deepseek_called": True,
+            "tushare_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            evidence_root = Path(temp_dir)
+            store = SQLiteMetaStore(evidence_root / "meta.sqlite")
+            store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, packet)
+            evaluation = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=evidence_root)
+            fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
+            ltg07 = next(row for row in evaluation["ltg_closure_rows"] if row["id"] == "LTG-07")
+            self.assertTrue(fact_rows["governed_model_runtime"])
+            self.assertFalse(ltg07["can_close"])
+
+            synthetic = dict(packet)
+            synthetic["evidence_source"] = "synthetic_test"
+            store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, synthetic)
+            evaluation = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=evidence_root)
+            fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
+            self.assertFalse(fact_rows["governed_model_runtime"])
+
+    def test_task_catalog_declares_governed_executor_boundaries(self):
+        row = next(item for item in task_service.TASK_CATALOG if item["task_type"] == "run_deepseek_provider_benchmark")
+        self.assertEqual(row["route"], "POST /api/factor-quant/deepseek-provider-benchmark")
+        self.assertEqual(row["fixed_sample_count"], 40)
+        self.assertEqual(row["required_response_format"], "json_schema")
+        self.assertTrue(row["last_good_preserved_on_failure"])
+        self.assertFalse(row["synthetic_evidence_closes_ltg07"])
+        self.assertFalse(row["cache_get_external_calls"])
+        self.assertFalse(row["startup_model_calls"])
+        self.assertFalse(row["typing_model_calls"])
+        self.assertTrue(row["does_not_execute_trades"])
 
 
 if __name__ == "__main__":

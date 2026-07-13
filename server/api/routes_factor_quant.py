@@ -6,7 +6,7 @@ from fastapi import APIRouter
 
 from server.api.task_response import task_envelope
 from server.schemas.packets import cache_envelope
-from server.services import factor_service
+from server.services import deepseek_benchmark_service, factor_service
 
 
 router = APIRouter(prefix="/api/factor-quant")
@@ -91,4 +91,10 @@ def create_deepseek_provider_benchmark_scope_ticket(payload: dict[str, Any] | No
 @router.post("/deepseek-provider-benchmark-execution-request")
 def create_deepseek_provider_benchmark_execution_request(payload: dict[str, Any] | None = None) -> dict:
     task = factor_service.create_factor_task("run_deepseek_provider_benchmark_execution_request", payload)
+    return task_envelope(task)
+
+
+@router.post("/deepseek-provider-benchmark")
+def run_deepseek_provider_benchmark(payload: dict[str, Any] | None = None) -> dict:
+    task = deepseek_benchmark_service.create_deepseek_benchmark_task("run_deepseek_provider_benchmark", payload)
     return task_envelope(task)

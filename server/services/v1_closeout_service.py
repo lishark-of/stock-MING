@@ -26,6 +26,8 @@ ROOT_PACKET_KEYS = (
     "command_center_factor_test_provider_small_pool_tushare_packet",
     "command_center_3_qmt_replay_current",
     "command_center_3_qmt_replay_last_good",
+    "command_center_deepseek_provider_benchmark_current",
+    "command_center_deepseek_provider_benchmark_last_good",
     "command_center_tushare_full_interface_production_packet",
     "command_center_tushare_full_market_universe_production_current",
 )
@@ -86,6 +88,22 @@ _SAFE_PACKET_FIELDS = (
     "deepseek_called",
     "github_called",
     "worker_dispatched",
+    "evidence_source",
+    "sample_count",
+    "json_success_rate",
+    "required_json_success_rate",
+    "response_format",
+    "provider_response_format_enforced",
+    "response_schema_validated",
+    "safety_review_passed",
+    "unsafe_output_accepted_count",
+    "model_ledger_count",
+    "model_ledger_complete",
+    "provider_benchmark_done",
+    "production_fact_ready",
+    "governed_model_runtime",
+    "raw_prompt_stored",
+    "raw_output_stored",
     "does_not_execute_trades",
     "does_not_modify_strategy_action",
     "does_not_modify_holdings",
@@ -553,6 +571,39 @@ def _legacy_full_market_packet_internally_consistent(packet: Any) -> bool:
         and packet_digest == _canonical_digest(digest_material)
         and _boundary_safe(source, external_expected=True)
         and not _contains_sensitive_key(source)
+def _governed_model_runtime_ready(packet: Any) -> bool:
+    source = packet if isinstance(packet, Mapping) else {}
+    sample_count = int(source.get("sample_count") or 0)
+    success_count = int(source.get("success_count") or 0)
+    threshold = float(source.get("required_json_success_rate") or 0.0)
+    success_rate = float(source.get("json_success_rate") or 0.0)
+    return bool(
+        source.get("schema_version") == "factor_deepseek_provider_benchmark_result.v1"
+        and source.get("status") == "deepseek_provider_benchmark_passed"
+        and source.get("evidence_source") == "real_provider"
+        and sample_count == 40
+        and success_count >= 36
+        and threshold >= 0.9
+        and success_rate >= threshold
+        and source.get("response_format") == "json_schema"
+        and source.get("provider_response_format_enforced") is True
+        and source.get("response_schema_validated") is True
+        and source.get("safety_review_passed") is True
+        and int(source.get("unsafe_output_accepted_count") or 0) == 0
+        and int(source.get("model_ledger_count") or 0) >= sample_count
+        and source.get("model_ledger_complete") is True
+        and source.get("provider_benchmark_done") is True
+        and source.get("production_fact_ready") is True
+        and source.get("governed_model_runtime") is True
+        and source.get("raw_prompt_stored") is False
+        and source.get("raw_output_stored") is False
+        and source.get("contains_secret") is False
+        and source.get("external_calls_triggered") is True
+        and source.get("deepseek_called") is True
+        and source.get("tushare_called") is False
+        and source.get("github_called") is False
+        and source.get("does_not_execute_trades") is True
+        and source.get("does_not_modify_strategy_action") is True
     )
 
 
@@ -686,6 +737,9 @@ def _build_version_rows(
     qmt_last_good = root_packets.get(ROOT_PACKET_KEYS[3])
     production_version = validate_tushare_full_market_production_version(evidence_root)
     qmt = qmt_current if _qmt_isolation_ready(qmt_current) else qmt_last_good
+    model_current = root_packets.get(ROOT_PACKET_KEYS[4])
+    model_last_good = root_packets.get(ROOT_PACKET_KEYS[5])
+    governed_model = model_current if _governed_model_runtime_ready(model_current) else model_last_good
 
     user_qa_ready = lambda value: bool(
         isinstance(value, Mapping)
@@ -795,7 +849,7 @@ def _build_version_rows(
         ),
         "full_market_worker_runtime": False,
         "celery_redis_runtime": False,
-        "governed_model_runtime": False,
+        "governed_model_runtime": _governed_model_runtime_ready(governed_model),
         "next_session_production_replacement": bool(
             isinstance(next_session, Mapping)
             and next_session.get("production_replacement_complete") is True
@@ -835,6 +889,11 @@ def _build_version_rows(
     }
     context = {
         "qmt_summary": _safe_summary(qmt, _SAFE_PACKET_FIELDS, observed=isinstance(qmt, Mapping)),
+        "governed_model_summary": _safe_summary(
+            governed_model,
+            _SAFE_PACKET_FIELDS,
+            observed=isinstance(governed_model, Mapping),
+        ),
         "release_receipt_summary": _safe_summary(
             release_receipt,
             _SAFE_FILE_FIELDS,
@@ -972,6 +1031,7 @@ def build_v1_closeout_evaluation(
             for key, value in sorted(facts.items())
         ],
         "qmt_research_isolation_summary": context["qmt_summary"],
+        "governed_model_runtime_summary": context["governed_model_summary"],
         "release_review_summary": context["release_receipt_summary"],
         "remote_ci_review_summary": context["remote_receipt_summary"],
         "tushare_production_version": context["tushare_production_version"],
