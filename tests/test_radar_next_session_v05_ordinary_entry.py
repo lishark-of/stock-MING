@@ -40,13 +40,19 @@ class RadarNextSessionV05OrdinaryEntryTests(unittest.TestCase):
         self.assertIn("nextSessionSamePacketSentence", readback)
         self.assertIn("MetricGrid items={ordinaryNextMetricItems(nextSessionSamePacketItems)}", readback)
         for field in (
-            "candidateRadarSameTaskFactModelReady",
+            "candidateRadarV05Lineage",
+            "candidateRadarV05ChartLineageStatus",
+            "candidateRadarV05LineageReady",
+            "candidateRadarSamePacketReady",
             "candidateRadarSourceTaskLabel",
             "candidateRadarFreshnessLabel",
             "candidateRadarLastGoodLabel",
             "chartSummary.is_exact_next_session_packet",
         ):
             self.assertIn(field, self.next_map)
+        self.assertIn("同包图谱血缘已回放", self.next_map)
+        self.assertIn("provider/model 仍待补", self.next_map)
+        self.assertIn("完整可绘制图谱待补", self.next_map)
         self.assertIn('tabIndex={0}', chart_region)
         self.assertIn('aria-describedby="next-session-chart-keyboard-hint"', chart_region)
         self.assertIn("图表支持 hover", chart_region)

@@ -439,6 +439,21 @@ export default function NextSessionMap() {
   const candidateRadarReceipt = (candidateRadarCache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const candidateRadarProviderModelAcceptance =
     (candidateRadarCache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarV05Lineage =
+    (packet.candidate_radar_v05_lineage as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarV05Freshness =
+    (candidateRadarV05Lineage.freshness_state as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarV05ChartLineageStatus = String(
+    rawChartPayload?.candidate_radar_v05_lineage_status ?? ""
+  );
+  const candidateRadarV05LineageReady =
+    candidateRadarV05Lineage.status === "same_packet_lineage_ready" &&
+    candidateRadarV05ChartLineageStatus === "same_packet_lineage_ready" &&
+    Boolean(candidateRadarV05Lineage.candidate_task_id) &&
+    Boolean(candidateRadarV05Lineage.candidate_scope_hash) &&
+    Boolean(candidateRadarV05Lineage.candidate_result_version) &&
+    Boolean(candidateRadarV05Lineage.symbol) &&
+    Boolean(candidateRadarV05Lineage.data_date);
   const candidateRadarResultLineage =
     (candidateRadarCache.search_quant_canonical_result_lineage as Record<string, unknown> | undefined) ??
     (candidateRadarCache.search_quant_current_result_lineage as Record<string, unknown> | undefined) ??
@@ -450,12 +465,14 @@ export default function NextSessionMap() {
     candidateRadarResultVersionSummary.current_result_version ??
       candidateRadarResultLineage.result_version ??
       candidateRadarProviderModelAcceptance.result_version ??
+      candidateRadarV05Lineage.candidate_result_version ??
       ""
   );
   const candidateRadarLatestResultVersion = String(
     candidateRadarResultVersionSummary.latest_task_result_version ??
       candidateRadarResultVersionSummary.latest_result_version ??
       candidateRadarResultLineage.result_version ??
+      candidateRadarV05Lineage.candidate_result_version ??
       ""
   );
   const candidateRadarResultVersionLabel = candidateRadarCurrentResultVersion
@@ -468,6 +485,7 @@ export default function NextSessionMap() {
       candidateRadarResultLineage.canonical_task_id ??
       candidateRadarResultLineage.task_id ??
       candidateRadarProviderModelAcceptance.task_id ??
+      candidateRadarV05Lineage.candidate_task_id ??
       ""
   );
   const candidateRadarFactsPackageHash = String(
@@ -490,7 +508,10 @@ export default function NextSessionMap() {
       Boolean(candidateRadarFactsPackageHash) &&
       Boolean(candidateRadarCurrentResultVersion) &&
       Boolean(candidateRadarModelLedgerId));
-  const candidateRadarSameTaskFactModelLabel = candidateRadarSameTaskFactModelReady
+  const candidateRadarSamePacketReady = candidateRadarV05LineageReady || candidateRadarSameTaskFactModelReady;
+  const candidateRadarSameTaskFactModelLabel = candidateRadarV05LineageReady
+    ? `同一 task ${String(candidateRadarV05Lineage.candidate_task_id)}；scope ${String(candidateRadarV05Lineage.candidate_scope_hash).slice(0, 12)}；result_version ${String(candidateRadarV05Lineage.candidate_result_version)}；本地 lineage 已就绪，provider/model 仍待补`
+    : candidateRadarSameTaskFactModelReady
     ? `同一 task ${candidateRadarCanonicalTaskId}；facts package ${candidateRadarFactsPackageHash}；result_version ${candidateRadarCurrentResultVersion}`
     : "等待同一 task + facts package + result_version + model ledger";
   const candidateRadarModelLedgerLabel = candidateRadarModelLedgerId
@@ -503,6 +524,7 @@ export default function NextSessionMap() {
       candidateRadarReceipt.symbol ||
       candidateRadarSmallDataWriteback.symbol ||
       candidateRadarInterpretation.symbol ||
+      candidateRadarV05Lineage.symbol ||
       ""
   );
   const candidateRadarConfirmedSymbolLabel = candidateRadarConfirmedSymbol
@@ -512,6 +534,7 @@ export default function NextSessionMap() {
     candidateRadarResultVersionSummary.current_result_symbol ??
       candidateRadarResultLineage.symbol ??
       candidateRadarProviderModelAcceptance.symbol ??
+      candidateRadarV05Lineage.symbol ??
       ""
   );
   const candidateRadarDataDate = String(
@@ -520,6 +543,7 @@ export default function NextSessionMap() {
       candidateRadarResultVersionSummary.data_date ??
       candidateRadarResultLineage.data_date ??
       candidateRadarProviderModelAcceptance.data_date ??
+      candidateRadarV05Lineage.data_date ??
       ""
   );
   const candidateRadarFreshnessState = String(
@@ -528,6 +552,8 @@ export default function NextSessionMap() {
       candidateRadarResultVersionSummary.freshness_state ??
       candidateRadarResultLineage.freshness_state ??
       candidateRadarProviderModelAcceptance.freshness_state ??
+      candidateRadarV05Freshness.freshness_state ??
+      candidateRadarV05Freshness.state ??
       ""
   );
   const candidateRadarFreshnessLabel =
@@ -581,6 +607,7 @@ export default function NextSessionMap() {
       candidateRadarResultVersionSummary.latest_task_id ||
       candidateRadarResultLineage.task_id ||
       candidateRadarProviderModelAcceptance.task_id ||
+      candidateRadarV05Lineage.candidate_task_id ||
       packet.latest_confirmed_task_id ||
       candidateRadarCache.latest_confirmed_task_id ||
       packetCandidateRadarP3HandoffSourceTask ||
@@ -594,15 +621,18 @@ export default function NextSessionMap() {
   const nextSessionLineageChipLabel = candidateRadarCurrentResultVersion
     ? `${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion} / ${candidateRadarFreshnessLabel}；来源任务 ${candidateRadarSourceTaskLabel.includes("等待") ? (candidateRadarCanonicalTaskId || "等待任务") : candidateRadarSourceTaskLabel}；${candidateRadarLastGoodLabel}`
     : "等待同源 result_version / 来源任务 / current-result 回放";
-  const nextSessionSamePacketSentence = candidateRadarSameTaskFactModelReady && chartSummary.is_exact_next_session_packet === true
+  const nextSessionSamePacketSentence = candidateRadarV05LineageReady
+    ? `同包图谱血缘已回放：${candidateRadarConfirmedSymbol || candidateRadarCurrentResultSymbol || "当前标的"}；${nextSessionLineageChipLabel}；完整可绘制图谱、provider 和 model 仍按实际状态展示。`
+    : candidateRadarSameTaskFactModelReady && chartSummary.is_exact_next_session_packet === true
     ? `同包图谱已回放：${candidateRadarConfirmedSymbol || candidateRadarCurrentResultSymbol || "当前标的"}；${nextSessionLineageChipLabel}。`
     : `同包图谱待补：${nextSessionLineageChipLabel}；缺少同源字段时只显示 pending，不拼接不同任务的结果。`;
   const nextSessionSamePacketItems: MetricItem[] = [
     { label: "标的 / 来源任务", value: `${candidateRadarConfirmedSymbolLabel} / ${candidateRadarSourceTaskLabel}`, tone: candidateRadarConfirmedSymbol ? "good" : "warn" },
-    { label: "范围 / 结果版本", value: candidateRadarSameTaskFactModelLabel, tone: candidateRadarSameTaskFactModelReady ? "good" : "warn" },
+    { label: "范围 / 结果版本", value: candidateRadarSameTaskFactModelLabel, tone: candidateRadarSamePacketReady ? "good" : "warn" },
     { label: "数据日期 / 新鲜度", value: candidateRadarFreshnessLabel, tone: candidateRadarDataDate && candidateRadarFreshnessState ? "good" : "warn" },
     { label: "current / last-good", value: candidateRadarLastGoodLabel, tone: candidateRadarCurrentResultVersion ? "good" : "warn" },
-    { label: "图谱对象", value: chartSummary.has_drawable_data === true ? `路径 ${String(chartSummary.scenario_series_count ?? 0)} / 参考线 ${String(chartSummary.reference_line_count ?? 0)} / 操作区 ${String(chartSummary.operation_zone_count ?? 0)}` : "等待同包图谱数据", tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
+    { label: "图谱对象", value: chartSummary.has_drawable_data === true ? `路径 ${String(chartSummary.scenario_series_count ?? 0)} / 参考线 ${String(chartSummary.reference_line_count ?? 0)} / 操作区 ${String(chartSummary.operation_zone_count ?? 0)}` : candidateRadarV05LineageReady ? "同包 lineage ready；完整可绘制图谱待补" : "等待同包图谱数据", tone: chartSummary.has_drawable_data === true || candidateRadarV05LineageReady ? "good" : "warn" },
+    { label: "数据源 / 模型", value: candidateRadarV05LineageReady ? "v0.5 本地运行未调用 provider/model；两项保持 pending" : candidateRadarModelLedgerLabel, tone: candidateRadarModelLedgerId ? "good" : "warn" },
     { label: "查看交互", value: "鼠标 hover 看来源/条件；Tab 聚焦图谱后读取图例和边界；交互不写操作区", tone: "good" },
     { label: "研究边界", value: "同包不足时保持 pending；不创建 task、不改价格、持仓或交易动作", tone: "good" }
   ];
