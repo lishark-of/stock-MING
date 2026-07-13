@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import command_center_data_health_ledger as ledger
+from server.services import data_health_service
 
 
 FORBIDDEN_IMPORTS = {
@@ -21,6 +22,71 @@ FORBIDDEN_IMPORTS = {
 
 
 class CommandCenterDataHealthLedgerTests(unittest.TestCase):
+    def test_data_freshness_downgrades_cross_day_cache_when_calendar_unvalidated(self):
+        original_now = data_health_service._now_iso
+        data_health_service._now_iso = lambda: "2026-07-13T09:30:00"
+        try:
+            normalized = data_health_service._canonical_data_freshness_context(
+                {
+                    "data_date": "2026-07-07",
+                    "expected_trade_date": "2026-07-07",
+                    "expected_trade_date_calendar_validated": False,
+                    "freshness_state": "fresh",
+                    "state": "today",
+                    "label": "今日已刷新",
+                },
+                allow_expected_date_fallback=False,
+                allow_timestamp_as_data_date=False,
+            )
+        finally:
+            data_health_service._now_iso = original_now
+
+        self.assertEqual(normalized["freshness_state"], "stale_unvalidated_calendar")
+        self.assertEqual(normalized["state"], "stale_unvalidated_calendar")
+        self.assertEqual(normalized["label"], "旧缓存需复核")
+        self.assertEqual(normalized["as_of_date"], "2026-07-13")
+        self.assertEqual(normalized["age_calendar_days"], 6)
+        self.assertFalse(normalized["expected_trade_date_calendar_validated"])
+        self.assertEqual(normalized["calendar_validation_status"], "unvalidated_stale_cache")
+        self.assertTrue(normalized["date_matches_expected_trade_date"])
+        self.assertEqual(
+            normalized["freshness_state_reason"],
+            "cross_day_cache_without_validated_trade_calendar",
+        )
+        self.assertFalse(normalized["canonical_context_external_calls_triggered"])
+        self.assertTrue(normalized["canonical_context_does_not_execute_trades"])
+
+    def test_data_freshness_keeps_same_day_cache_fresh_without_guessing_calendar(self):
+        original_now = data_health_service._now_iso
+        data_health_service._now_iso = lambda: "2026-07-13T09:30:00"
+        try:
+            normalized = data_health_service._canonical_data_freshness_context(
+                {
+                    "data_date": "2026-07-13",
+                    "expected_trade_date": "2026-07-13",
+                    "expected_trade_date_calendar_validated": False,
+                    "freshness_state": "fresh",
+                    "state": "today",
+                    "label": "今日已刷新",
+                },
+                allow_expected_date_fallback=False,
+                allow_timestamp_as_data_date=False,
+            )
+        finally:
+            data_health_service._now_iso = original_now
+
+        self.assertEqual(normalized["freshness_state"], "fresh")
+        self.assertEqual(normalized["state"], "today")
+        self.assertEqual(normalized["label"], "今日已刷新")
+        self.assertEqual(normalized["as_of_date"], "2026-07-13")
+        self.assertEqual(normalized["age_calendar_days"], 0)
+        self.assertFalse(normalized["expected_trade_date_calendar_validated"])
+        self.assertEqual(normalized["calendar_validation_status"], "unvalidated_current_day")
+        self.assertTrue(normalized["date_matches_expected_trade_date"])
+        self.assertTrue(normalized["as_of_calendar_is_not_trade_calendar_validation"])
+        self.assertFalse(normalized["canonical_context_external_calls_triggered"])
+        self.assertTrue(normalized["canonical_context_does_not_modify_strategy_action"])
+
     def test_empty_ledger_is_safe_and_manual(self):
         packet = ledger.build_data_health_ledger()
 

@@ -495,6 +495,83 @@ def _date_text_from_mapping(mapping: Mapping[str, Any], *keys: str) -> str:
     return ""
 
 
+def _freshness_calendar_validated(mapping: Mapping[str, Any]) -> bool:
+    if any(
+        _safe_bool(mapping.get(key), False)
+        for key in (
+            "expected_trade_date_calendar_validated",
+            "calendar_validated",
+            "trade_calendar_validated",
+            "trade_cal_validated",
+        )
+    ):
+        return True
+    return _safe_text(mapping.get("calendar_coverage_status"), limit=80) in {
+        "validated",
+        "validated_no_next_open",
+    }
+
+
+def _normalize_data_freshness_as_of(
+    item: dict[str, Any],
+    *,
+    expected_trade_date: str,
+    data_date: str,
+    canonical_state: str,
+) -> str:
+    as_of_date = _date_text_from_mapping({"as_of": _now_iso()}, "as_of")
+    expected_parsed = _parse_cal_date(expected_trade_date)
+    data_parsed = _parse_cal_date(data_date)
+    as_of_parsed = _parse_cal_date(as_of_date)
+    age_calendar_days = (
+        (as_of_parsed - data_parsed).days
+        if as_of_parsed is not None and data_parsed is not None
+        else None
+    )
+    calendar_validated = _freshness_calendar_validated(item)
+    date_matches_expected = bool(expected_trade_date and data_date and expected_trade_date == data_date)
+    stale_as_of_date = bool(age_calendar_days is not None and age_calendar_days > 0)
+    normalized_state = canonical_state
+
+    if (
+        canonical_state in {"fresh", "today"}
+        and stale_as_of_date
+        and not calendar_validated
+    ):
+        normalized_state = "stale_unvalidated_calendar"
+
+    item["as_of_date"] = as_of_date or None
+    item["age_calendar_days"] = age_calendar_days
+    item["expected_trade_date_calendar_validated"] = calendar_validated
+    item["calendar_validation_status"] = (
+        "validated"
+        if calendar_validated
+        else "unvalidated_stale_cache"
+        if stale_as_of_date
+        else "unvalidated_current_day"
+    )
+    item["date_matches_expected_trade_date"] = date_matches_expected
+    item["stale_as_of_date"] = stale_as_of_date
+    item["current_date_is_after_data_date"] = stale_as_of_date
+    item["expected_trade_date_known"] = expected_parsed is not None
+    item["data_date_known"] = data_parsed is not None
+    item["as_of_calendar_is_not_trade_calendar_validation"] = True
+    item["freshness_state_reason"] = (
+        "cross_day_cache_without_validated_trade_calendar"
+        if normalized_state == "stale_unvalidated_calendar"
+        else "same_day_or_calendar_validated_current_context"
+        if canonical_state in {"fresh", "today"}
+        else "existing_non_fresh_state_preserved"
+    )
+    if normalized_state == "stale_unvalidated_calendar":
+        item["state"] = normalized_state
+        for label_key in ("label", "status_label", "freshness_label", "ordinary_label"):
+            if label_key in item:
+                item[label_key] = "旧缓存需复核"
+        item.setdefault("freshness_label", "旧缓存需复核")
+    return normalized_state
+
+
 def _current_evidence_freshness_qa_contract(
     data_freshness: Mapping[str, Any],
     freshness_sample: Mapping[str, Any],
@@ -722,6 +799,13 @@ def _canonical_data_freshness_context(
         canonical_state = "fresh"
     elif not canonical_state and raw_state:
         canonical_state = raw_state
+    if expected_trade_date or data_date or canonical_state:
+        canonical_state = _normalize_data_freshness_as_of(
+            item,
+            expected_trade_date=expected_trade_date,
+            data_date=data_date,
+            canonical_state=canonical_state,
+        )
     if expected_trade_date:
         item.setdefault("expected_trade_date", expected_trade_date)
         item.setdefault("expected_data_date", expected_trade_date)
