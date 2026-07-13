@@ -27406,7 +27406,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload={
                 "approved_by_user": True,
                 "sample_count": 40,
-                "response_format": "json_schema",
+                "response_format": "json_object",
                 "max_retry_per_sample": 2,
                 "api_key": "SHOULD_DROP",
             },
@@ -27443,7 +27443,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(receipt["local_scope_ticket_ready"])
         self.assertEqual(receipt["requested_sample_count"], 40)
         self.assertEqual(receipt["required_sample_count"], 40)
-        self.assertEqual(receipt["response_format"], "json_schema")
+        self.assertEqual(receipt["response_format"], "json_object")
         self.assertEqual(receipt["max_retry_per_sample"], 2)
         self.assertTrue(receipt["benchmark_scope_hash_short"])
         self.assertEqual(len(receipt["benchmark_scope_hash_short"]), 16)
@@ -27470,7 +27470,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("scope ticket as provider benchmark evidence", receipt["not_allowed_next_steps"])
         self.assertIn("call DeepSeek from scope ticket", receipt["not_allowed_next_steps"])
         self.assertIn("provider benchmark model ledger", receipt["missing_evidence"])
-        self.assertIn("provider response_format/json_schema execution evidence", receipt["missing_evidence"])
+        self.assertIn("provider response_format/json_object execution evidence", receipt["missing_evidence"])
         self.assertEqual(receipt["call_ledger"][0]["api"], "local_deepseek_provider_benchmark_scope_ticket")
         self.assertEqual(receipt["call_ledger"][0]["call_status"], receipt["status"])
         self.assert_local_ledger_boundary(receipt["call_ledger"][0])
@@ -63082,7 +63082,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             json={
                 "approved_by_user": True,
                 "sample_count": 40,
-                "response_format": "json_schema",
+                "response_format": "json_object",
                 "max_retry_per_sample": 2,
                 "token": "SHOULD_DROP",
             },
@@ -63209,7 +63209,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             json={
                 "approved_by_user": True,
                 "sample_count": 40,
-                "response_format": "json_schema",
+                "response_format": "json_object",
                 "max_retry_per_sample": 2,
             },
         ).json()
@@ -63222,6 +63222,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "/api/factor-quant/deepseek-provider-benchmark-execution-request",
             json={
                 "approved_by_user": True,
+                "provider_run_approved_by_user": True,
                 "benchmark_scope_hash": scope_hash,
                 "token": "SHOULD_DROP",
             },
@@ -63318,7 +63319,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(request_step["receipt_ready_for_manual_provider_model_task_submission"])
         self.assertEqual(
             request_step["receipt_target_post_task_route"],
-            "future POST /api/factor-quant/deepseek-provider-benchmark",
+            "POST /api/factor-quant/deepseek-provider-benchmark",
         )
         self.assertEqual(request_step["receipt_target_task_type"], "run_deepseek_provider_benchmark")
         self.assertFalse(request_step["receipt_model_task_created"])
@@ -63328,7 +63329,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(handoff["status"], "future_model_handoff_preview_ready")
         self.assertEqual(
             handoff["future_route"],
-            "future POST /api/factor-quant/deepseek-provider-benchmark",
+            "POST /api/factor-quant/deepseek-provider-benchmark",
         )
         self.assertEqual(handoff["future_task_type"], "run_deepseek_provider_benchmark")
         self.assertTrue(handoff["requires_separate_user_approved_model_task"])
@@ -63646,7 +63647,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(durable_recipe["production_blocker_count"], len(missing_durable_keys))
         self.assertEqual(durable_recipe["durable_evidence_blocker_count"], len(missing_durable_keys))
         self.assertIn("provider benchmark report with at least 40 samples", durable_recipe["required_evidence"])
-        self.assertIn("provider response_format/json_schema execution evidence", durable_recipe["required_evidence"])
+        self.assertIn("provider response_format/json_object execution evidence", durable_recipe["required_evidence"])
         self.assertIn("bounded retry/repair execution ledger", durable_recipe["required_evidence"])
         self.assertIn("redacted model ledger with token usage and hashes", durable_recipe["required_evidence"])
         self.assertIn("production promotion review", durable_recipe["required_evidence"])
@@ -63708,15 +63709,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
 class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
     @staticmethod
-    def _scope(scope_hash: str = "approved-scope-hash") -> dict:
+    def _scope(model: str = "test-model") -> dict:
+        contract = deepseek_benchmark_service.build_benchmark_scope_contract(model)
         return {
-            "benchmark_scope_hash": scope_hash,
-            "sample_set_hash": deepseek_benchmark_service.FIXED_SCOPE_HASH,
-            "sample_count": 40,
-            "required_json_success_rate": 0.9,
-            "response_format": "json_schema",
-            "max_retry_per_sample": 2,
-            "allowed_output_fields": list(deepseek_benchmark_service.ALLOWED_OUTPUT_FIELDS),
+            **contract,
+            "benchmark_scope_hash": deepseek_benchmark_service.benchmark_scope_hash(contract),
+            "scope_binding_valid": True,
+            "approval_nonce_enforced": False,
+            "approval_replay_boundary": "exact_current_scope_and_execution_receipt_hash_no_one_time_nonce",
         }
 
     @staticmethod
@@ -63735,22 +63735,41 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             ),
             "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18},
             "provider_response_format_requested": True,
+            "network_attempted": True,
+            "provider_call_dispatched": True,
+            "provider_response_observed": True,
         }
 
     @staticmethod
-    def _hub(scope_hash: str = "approved-scope-hash") -> dict:
+    def _hub(model: str = "test-model") -> dict:
+        contract = deepseek_benchmark_service.build_benchmark_scope_contract(model)
+        scope_hash = deepseek_benchmark_service.benchmark_scope_hash(contract)
         return {
             "schema_version": "factor_quant_hub.v1",
+            "deepseek_provider_benchmark_scope_ticket_receipt": {
+                "schema_version": "factor_deepseek_provider_benchmark_scope_ticket_receipt.v1",
+                "status": "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+                "scope_ticket_user_approved": True,
+                "approved_scope_contract": contract,
+                "approved_scope_contract_hash": scope_hash,
+                "benchmark_scope_hash": scope_hash,
+            },
             "deepseek_provider_benchmark_execution_request_receipt": {
                 "schema_version": "factor_deepseek_provider_benchmark_execution_request.v1",
                 "status": "deepseek_provider_benchmark_execution_request_ready_manual_model_task_pending",
                 "local_execution_request_ready": True,
                 "requested_scope_hash_matches_latest": True,
+                "current_scope_receipt_hash_matches": True,
+                "scope_ticket_user_approved": True,
+                "execution_request_user_approved": True,
+                "provider_run_approved_by_user": True,
                 "benchmark_scope_hash": scope_hash,
+                "approved_scope_contract": contract,
+                "approved_scope_contract_hash": scope_hash,
                 "required_sample_count": 40,
                 "requested_sample_count": 40,
                 "required_json_success_rate": 0.9,
-                "response_format": "json_schema",
+                "response_format": "json_object",
                 "max_retry_per_sample": 2,
                 "allowed_output_fields": list(deepseek_benchmark_service.ALLOWED_OUTPUT_FIELDS),
             },
@@ -63766,7 +63785,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             return self._valid_model_result()
 
         packet = deepseek_benchmark_service._execute_benchmark(
-            self._scope(),
+            self._scope("synthetic-model"),
             repair_once,
             evidence_source="synthetic_test",
             model_used="synthetic-model",
@@ -63796,13 +63815,14 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             with (
                 patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path),
                 patch.object(task_service, "SQLITE_META_PATH", db_path),
+                patch.object(app_config, "get_deepseek_model", return_value="test-model"),
                 patch.object(app_config, "get_deepseek_keys", return_value=[]),
             ):
                 task = deepseek_benchmark_service.run_deepseek_provider_benchmark_task(
                     {
                         "approved_by_user": True,
                         "provider_run_approved_by_user": True,
-                        "benchmark_scope_hash": "approved-scope-hash",
+                        "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
                     }
                 )
 
@@ -63828,7 +63848,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                     {
                         "approved_by_user": True,
                         "provider_run_approved_by_user": False,
-                        "benchmark_scope_hash": "approved-scope-hash",
+                        "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
                     }
                 )
 
@@ -63862,7 +63882,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                     json={
                         "approved_by_user": True,
                         "provider_run_approved_by_user": True,
-                        "benchmark_scope_hash": "approved-scope-hash",
+                        "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
                     },
                 )
                 self.assertEqual(response.status_code, 200)
@@ -63885,35 +63905,169 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             self.assertEqual(last_good["status"], "deepseek_provider_benchmark_passed")
             self.assertNotIn("test-only-secret", json.dumps(current, ensure_ascii=False))
 
+    def test_action_leakage_is_discarded_and_every_output_is_safety_reviewed(self):
+        def unsafe_result(*_args):
+            result = self._valid_model_result()
+            result["text"] = json.dumps(
+                {
+                    "summary": "建议买入并逐步加仓",
+                    "support_notes": [],
+                    "suppress_notes": [],
+                    "conflict_notes": [],
+                    "missing_data_notes": [],
+                    "discipline_notes": [],
+                },
+                ensure_ascii=False,
+            )
+            return result
+
+        packet = deepseek_benchmark_service._execute_benchmark(
+            self._scope(),
+            unsafe_result,
+            evidence_source="real_provider",
+            model_used="test-model",
+        )
+
+        self.assertEqual(packet["success_count"], 0)
+        self.assertEqual(packet["model_ledger_count"], 120)
+        self.assertEqual(packet["safety_reviewed_sample_count"], 40)
+        self.assertEqual(packet["safety_reviewed_ledger_count"], 120)
+        self.assertFalse(packet["safety_review_passed"])
+        self.assertFalse(packet["production_deepseek_explanation_complete"])
+        self.assertNotIn("建议买入并逐步加仓", json.dumps(packet, ensure_ascii=False))
+
+    def test_network_attempts_are_capped_at_three_per_sample(self):
+        def always_timeout(*_args):
+            raise deepseek_benchmark_service.GovernedModelCallError(
+                "model_timeout",
+                network_attempted=True,
+                provider_call_dispatched=True,
+            )
+
+        packet = deepseek_benchmark_service._execute_benchmark(
+            self._scope(),
+            always_timeout,
+            evidence_source="real_provider",
+            model_used="test-model",
+        )
+        self.assertEqual(packet["model_ledger_count"], 120)
+        self.assertEqual(packet["actual_max_attempts_per_sample"], 3)
+        self.assertTrue(all(int(row["attempt"]) <= 3 for row in packet["model_ledger"]))
+        self.assertFalse(packet["production_fact_ready"])
+
+    def test_exact_scope_tamper_blocks_before_credential_lookup(self):
+        hub = self._hub()
+        hub["deepseek_provider_benchmark_execution_request_receipt"]["approved_scope_contract"][
+            "timeout_seconds"
+        ] = 99
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "meta.sqlite"
+            store = SQLiteMetaStore(db_path)
+            store.write_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY, hub)
+            clear_task_statuses_for_tests()
+            with (
+                patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path),
+                patch.object(task_service, "SQLITE_META_PATH", db_path),
+                patch.object(app_config, "get_deepseek_keys", return_value=["must-not-be-read"]) as key_lookup,
+            ):
+                task = deepseek_benchmark_service.run_deepseek_provider_benchmark_task(
+                    {
+                        "approved_by_user": True,
+                        "provider_run_approved_by_user": True,
+                        "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
+                    }
+                )
+        key_lookup.assert_not_called()
+        self.assertEqual(task["status"], "failed")
+
+    def test_sdk_request_uses_json_object_and_disables_internal_retries(self):
+        import httpx
+
+        request_bodies: list[dict] = []
+
+        def handler(request):
+            request_bodies.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                request=request,
+                json={
+                    "id": "test",
+                    "object": "chat.completion",
+                    "created": 1,
+                    "model": "test-model",
+                    "choices": [
+                        {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": self._valid_model_result()["text"]}}
+                    ],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18},
+                },
+            )
+
+        http_client = httpx.Client(transport=httpx.MockTransport(handler))
+        caller = deepseek_benchmark_service._build_real_model_call(
+            "test-only",
+            "test-model",
+            http_client=http_client,
+        )
+        result = caller(deepseek_benchmark_service.FIXED_SAMPLES[0], 1, False)
+        caller.close()
+        self.assertEqual(len(request_bodies), 1)
+        self.assertEqual(request_bodies[0]["response_format"], {"type": "json_object"})
+        self.assertIn("JSON object", request_bodies[0]["messages"][0]["content"])
+        self.assertTrue(result["provider_call_dispatched"])
+        self.assertTrue(result["provider_response_observed"])
+        self.assertTrue(http_client.is_closed)
+
+    def test_sdk_timeout_is_one_attempt_and_classified_as_provider_timeout(self):
+        import httpx
+
+        calls = 0
+
+        def timeout_handler(request):
+            nonlocal calls
+            calls += 1
+            raise httpx.ReadTimeout("timeout", request=request)
+
+        caller = deepseek_benchmark_service._build_real_model_call(
+            "test-only",
+            "test-model",
+            http_client=httpx.Client(transport=httpx.MockTransport(timeout_handler)),
+        )
+        with self.assertRaises(deepseek_benchmark_service.GovernedModelCallError) as raised:
+            caller(deepseek_benchmark_service.FIXED_SAMPLES[0], 1, False)
+        caller.close()
+        self.assertEqual(calls, 1)
+        self.assertEqual(raised.exception.safe_code, "model_timeout")
+        self.assertTrue(raised.exception.network_attempted)
+        self.assertTrue(raised.exception.provider_call_dispatched)
+
+    def test_locally_rejected_sdk_params_do_not_claim_provider_call(self):
+        class RejectingCompletions:
+            @staticmethod
+            def create(**_kwargs):
+                raise TypeError("local validation")
+
+        class StubClient:
+            chat = type("Chat", (), {"completions": RejectingCompletions()})()
+
+            @staticmethod
+            def close():
+                return None
+
+        caller = deepseek_benchmark_service._OpenAIModelCaller(StubClient(), "test-model")
+        with self.assertRaises(deepseek_benchmark_service.GovernedModelCallError) as raised:
+            caller(deepseek_benchmark_service.FIXED_SAMPLES[0], 1, False)
+        self.assertEqual(raised.exception.safe_code, "model_request_locally_rejected")
+        self.assertFalse(raised.exception.network_attempted)
+        self.assertFalse(raised.exception.provider_call_dispatched)
+
     def test_v1_closeout_accepts_only_real_provider_quality_safety_packet(self):
-        packet = {
-            "schema_version": "factor_deepseek_provider_benchmark_result.v1",
-            "status": "deepseek_provider_benchmark_passed",
-            "evidence_source": "real_provider",
-            "sample_count": 40,
-            "success_count": 40,
-            "json_success_rate": 1.0,
-            "required_json_success_rate": 0.9,
-            "response_format": "json_schema",
-            "provider_response_format_enforced": True,
-            "response_schema_validated": True,
-            "safety_review_passed": True,
-            "unsafe_output_accepted_count": 0,
-            "model_ledger_count": 40,
-            "model_ledger_complete": True,
-            "provider_benchmark_done": True,
-            "production_fact_ready": True,
-            "governed_model_runtime": True,
-            "raw_prompt_stored": False,
-            "raw_output_stored": False,
-            "contains_secret": False,
-            "external_calls_triggered": True,
-            "deepseek_called": True,
-            "tushare_called": False,
-            "github_called": False,
-            "does_not_execute_trades": True,
-            "does_not_modify_strategy_action": True,
-        }
+        packet = deepseek_benchmark_service._execute_benchmark(
+            self._scope(),
+            self._valid_model_result,
+            evidence_source="real_provider",
+            model_used="test-model",
+        )
+        self.assertTrue(packet["production_fact_ready"])
         with tempfile.TemporaryDirectory() as temp_dir:
             evidence_root = Path(temp_dir)
             store = SQLiteMetaStore(evidence_root / "meta.sqlite")
@@ -63931,11 +64085,37 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
             self.assertFalse(fact_rows["governed_model_runtime"])
 
+            for field, replacement in (
+                ("model_ledger", []),
+                ("total_tokens", 0),
+                ("production_deepseek_explanation_complete", False),
+                ("scope_binding_valid", False),
+            ):
+                falsified = dict(packet)
+                falsified[field] = replacement
+                if field == "model_ledger":
+                    falsified["model_ledger_count"] = 0
+                store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, falsified)
+                evaluation = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=evidence_root)
+                fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
+                self.assertFalse(fact_rows["governed_model_runtime"], field)
+
+            for ledger_field, replacement in (("input_hash", "0" * 64), ("attempt", 4)):
+                falsified = json.loads(json.dumps(packet))
+                falsified["model_ledger"][0][ledger_field] = replacement
+                store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, falsified)
+                evaluation = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=evidence_root)
+                fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
+                self.assertFalse(fact_rows["governed_model_runtime"], ledger_field)
+
     def test_task_catalog_declares_governed_executor_boundaries(self):
         row = next(item for item in task_service.TASK_CATALOG if item["task_type"] == "run_deepseek_provider_benchmark")
         self.assertEqual(row["route"], "POST /api/factor-quant/deepseek-provider-benchmark")
         self.assertEqual(row["fixed_sample_count"], 40)
-        self.assertEqual(row["required_response_format"], "json_schema")
+        self.assertEqual(row["required_response_format"], "json_object")
+        self.assertEqual(row["sdk_max_retries"], 0)
+        self.assertEqual(row["max_network_attempts_per_sample"], 3)
+        self.assertTrue(row["scope_contract_exact_binding_required"])
         self.assertTrue(row["last_good_preserved_on_failure"])
         self.assertFalse(row["synthetic_evidence_closes_ltg07"])
         self.assertFalse(row["cache_get_external_calls"])

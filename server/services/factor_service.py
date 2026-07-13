@@ -14,7 +14,7 @@ import command_center_serenity_method_radar as serenity_radar
 from config import get_deepseek_auto_explain_enabled, get_deepseek_factor_explain_mode
 from storage.sqlite_meta import SQLiteMetaStore
 
-from . import model_strategy_service, packet_service, storage_service, tushare_task_service
+from . import deepseek_benchmark_service, model_strategy_service, packet_service, storage_service, tushare_task_service
 from .task_service import create_task_record, create_task_stub, list_task_statuses, update_task_status
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
@@ -2027,7 +2027,7 @@ def _deepseek_provider_benchmark_execution_recipe(
         _deepseek_benchmark_recipe_row(
             "provider_response_format",
             "recipe_ready_response_format_required",
-            ["provider-level response_format/json_schema request", "six allowed top-level fields only"],
+            ["provider-level response_format/json_object request", "six allowed top-level fields only"],
             "Execute with provider response-format enforcement, not prompt-only JSON wording.",
         ),
         _deepseek_benchmark_recipe_row(
@@ -2114,7 +2114,7 @@ def _deepseek_provider_benchmark_execution_recipe(
         ],
         "missing_evidence": [
             f"provider benchmark report with at least {required_sample_count} samples",
-            "provider response_format/json_schema execution evidence",
+            "provider response_format/json_object execution evidence",
             "per-sample model ledger with token usage and hashes",
             "bounded retry/repair execution ledger",
             "sanitizer and parse-failed discard review",
@@ -2183,29 +2183,10 @@ def _deepseek_provider_secret_present() -> bool:
 
 
 def _deepseek_provider_benchmark_scope_ticket(payload_safe: dict[str, Any]) -> dict[str, Any]:
-    scope = {
-        "required_sample_count": payload_safe.get("required_sample_count"),
-        "requested_sample_count": payload_safe.get("requested_sample_count"),
-        "required_json_success_rate": payload_safe.get("required_json_success_rate"),
-        "response_format": payload_safe.get("response_format"),
-        "allowed_output_fields": payload_safe.get("allowed_output_fields"),
-        "max_retry_per_sample": payload_safe.get("max_retry_per_sample"),
-        "required_model_ledger_fields": payload_safe.get("required_model_ledger_fields"),
-        "phase_keys": payload_safe.get("phase_keys"),
-        "prompt_version": payload_safe.get("prompt_version"),
-        "model_purpose": "factor_explain",
-        "production_flags": {
-            "provider_benchmark_done": False,
-            "provider_response_format_enforced": False,
-            "bounded_retry_repair_executed": False,
-            "token_budget_cost_evidence_complete": False,
-            "auto_after_task_production_ready": False,
-            "production_deepseek_explanation_complete": False,
-        },
-    }
-    digest = hashlib.sha256(json.dumps(scope, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    scope = _dict(payload_safe.get("approved_scope_contract"))
+    digest = deepseek_benchmark_service.benchmark_scope_hash(scope)
     return {
-        "schema_version": "factor_deepseek_provider_benchmark_scope_ticket.v1",
+        "schema_version": "factor_deepseek_provider_benchmark_scope_ticket.v2",
         "scope_hash_algorithm": "sha256",
         "scope_hash": digest,
         "scope_hash_short": digest[:16],
@@ -2257,7 +2238,6 @@ def _deepseek_provider_benchmark_scope_payload(payload: Any, hub: dict[str, Any]
             default=float(recipe.get("required_sample_count") or 40),
         )
     )
-    required_sample_count = int(recipe.get("required_sample_count") or 40)
     max_retry = int(
         _safe_float(
             _dict(payload).get("max_retry_per_sample")
@@ -2270,27 +2250,22 @@ def _deepseek_provider_benchmark_scope_payload(payload: Any, hub: dict[str, Any]
         isinstance(payload, dict)
         and (payload.get("approved_by_user") is True or payload.get("operator_approved") is True)
     )
-    response_format = str(_dict(payload).get("response_format") or "json_schema") if isinstance(payload, dict) else "json_schema"
-    if response_format not in {"json_schema", "json_object"}:
-        response_format = "json_schema"
+    response_format = str(_dict(payload).get("response_format") or deepseek_benchmark_service.RESPONSE_FORMAT)
+    model = str(_deepseek_model_strategy("factor_explain").get("model") or "")
+    approved_scope_contract = deepseek_benchmark_service.build_benchmark_scope_contract(model)
     payload_safe = {
         "approved_by_user": approved,
         "requested_sample_count": max(0, min(requested_sample_count, 500)),
-        "required_sample_count": required_sample_count,
-        "required_json_success_rate": float(recipe.get("required_json_success_rate") or 0.9),
+        "required_sample_count": deepseek_benchmark_service.SAMPLE_COUNT,
+        "required_json_success_rate": deepseek_benchmark_service.SUCCESS_RATE_THRESHOLD,
         "response_format": response_format,
-        "allowed_output_fields": list(recipe.get("allowed_output_fields") or [
-            "summary",
-            "support_notes",
-            "suppress_notes",
-            "conflict_notes",
-            "missing_data_notes",
-            "discipline_notes",
-        ]),
+        "allowed_output_fields": list(deepseek_benchmark_service.ALLOWED_OUTPUT_FIELDS),
         "max_retry_per_sample": max(0, min(max_retry, 5)),
-        "required_model_ledger_fields": list(recipe.get("required_model_ledger_fields") or DEEPSEEK_PROVIDER_BENCHMARK_LEDGER_FIELDS),
+        "required_model_ledger_fields": list(deepseek_benchmark_service.LEDGER_CONTRACT_FIELDS),
         "phase_keys": list(recipe.get("phase_keys") or DEEPSEEK_PROVIDER_BENCHMARK_SCOPE_PHASES),
-        "prompt_version": DEEPSEEK_FACTOR_PROMPT_VERSION,
+        "prompt_version": deepseek_benchmark_service.PROMPT_VERSION,
+        "approved_scope_contract": approved_scope_contract,
+        "approved_scope_contract_hash": deepseek_benchmark_service.benchmark_scope_hash(approved_scope_contract),
         "server_secret_presence_checked": True,
         "server_secret_present": _deepseek_provider_secret_present(),
         "server_secret_values_read": False,
@@ -2309,17 +2284,39 @@ def _deepseek_provider_benchmark_scope_receipt(
     now: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     approved = payload_safe.get("approved_by_user") is True
-    sample_count_ok = int(payload_safe.get("requested_sample_count") or 0) >= int(payload_safe.get("required_sample_count") or 40)
-    response_format_ok = payload_safe.get("response_format") in {"json_schema", "json_object"}
-    retry_budget_ok = int(payload_safe.get("max_retry_per_sample") or 99) <= 2
-    ledger_fields_ok = set(DEEPSEEK_PROVIDER_BENCHMARK_LEDGER_FIELDS).issubset(
-        set(payload_safe.get("required_model_ledger_fields") or [])
+    sample_count_ok = int(payload_safe.get("requested_sample_count") or 0) == deepseek_benchmark_service.SAMPLE_COUNT
+    response_format_ok = payload_safe.get("response_format") == deepseek_benchmark_service.RESPONSE_FORMAT
+    retry_budget_ok = int(payload_safe.get("max_retry_per_sample") or 99) == deepseek_benchmark_service.MAX_RETRIES_PER_SAMPLE
+    ledger_fields_ok = list(payload_safe.get("required_model_ledger_fields") or []) == list(
+        deepseek_benchmark_service.LEDGER_CONTRACT_FIELDS
     )
     phase_scope_ok = set(DEEPSEEK_PROVIDER_BENCHMARK_SCOPE_PHASES) == set(payload_safe.get("phase_keys") or [])
     secret_present = payload_safe.get("server_secret_present") is True
     scope_ticket = _dict(payload_safe.get("benchmark_scope_ticket"))
+    approved_scope_contract = _dict(payload_safe.get("approved_scope_contract"))
+    approved_scope_contract_hash = str(payload_safe.get("approved_scope_contract_hash") or "")
+    exact_scope_contract_ok = bool(
+        approved_scope_contract
+        and approved_scope_contract_hash == deepseek_benchmark_service.benchmark_scope_hash(approved_scope_contract)
+        and approved_scope_contract == deepseek_benchmark_service.build_benchmark_scope_contract(
+            str(approved_scope_contract.get("model") or "")
+        )
+        and scope_ticket.get("scope") == approved_scope_contract
+        and scope_ticket.get("scope_hash") == approved_scope_contract_hash
+    )
     scope_hash_short = str(scope_ticket.get("scope_hash_short") or "")
-    local_scope_ready = all([approved, sample_count_ok, response_format_ok, retry_budget_ok, ledger_fields_ok, phase_scope_ok, bool(scope_hash_short)])
+    local_scope_ready = all(
+        [
+            approved,
+            sample_count_ok,
+            response_format_ok,
+            retry_budget_ok,
+            ledger_fields_ok,
+            phase_scope_ok,
+            exact_scope_contract_ok,
+            bool(scope_hash_short),
+        ]
+    )
     rows = [
         _deepseek_provider_benchmark_scope_row(
             "explicit_user_approval",
@@ -2340,7 +2337,7 @@ def _deepseek_provider_benchmark_scope_receipt(
             "passed_response_format_scope" if response_format_ok else "blocked_response_format_scope",
             response_format_ok,
             f"response_format={payload_safe.get('response_format')}",
-            "Bind the future provider run to json_schema/json_object response-format enforcement.",
+            "Bind the provider run to the approved json_object response-format contract.",
         ),
         _deepseek_provider_benchmark_scope_row(
             "bounded_retry_budget_scope",
@@ -2362,6 +2359,13 @@ def _deepseek_provider_benchmark_scope_receipt(
             phase_scope_ok,
             f"phase_count={len(payload_safe.get('phase_keys') or [])}",
             "Keep the future benchmark bound to approval, secret preflight, samples, response_format, retry, ledger, sanitizer, cost, mode gate, and promotion.",
+        ),
+        _deepseek_provider_benchmark_scope_row(
+            "exact_scope_contract_bound",
+            "passed_exact_scope_contract" if exact_scope_contract_ok else "blocked_scope_contract_mismatch",
+            exact_scope_contract_ok,
+            f"contract_version={approved_scope_contract.get('contract_version')}; contract_hash_short={approved_scope_contract_hash[:16]}",
+            "Bind model, fixed sample IDs and hashes, retries, timeout, schema, prompt, ledger, and cost policy to one exact contract hash.",
         ),
         _deepseek_provider_benchmark_scope_row(
             "server_secret_presence_boolean",
@@ -2434,8 +2438,23 @@ def _deepseek_provider_benchmark_scope_receipt(
         "env_key_names_exposed": False,
         "credential_values_exposed": False,
         "benchmark_scope_ticket": scope_ticket,
-        "benchmark_scope_hash": scope_ticket.get("scope_hash") or "",
+        "scope_ticket_user_approved": approved,
+        "approved_scope_contract": approved_scope_contract,
+        "approved_scope_contract_hash": approved_scope_contract_hash,
+        "benchmark_scope_hash": approved_scope_contract_hash,
         "benchmark_scope_hash_short": scope_hash_short,
+        "bound_model": approved_scope_contract.get("model") or "",
+        "fixed_sample_ids": approved_scope_contract.get("sample_ids") or [],
+        "fixed_sample_ids_hash": approved_scope_contract.get("sample_ids_hash") or "",
+        "fixed_sample_set_hash": approved_scope_contract.get("sample_set_hash") or "",
+        "fixed_sample_input_hashes": approved_scope_contract.get("sample_input_hashes") or {},
+        "output_schema_version": approved_scope_contract.get("output_schema_version") or "",
+        "output_schema_hash": approved_scope_contract.get("output_schema_hash") or "",
+        "prompt_version": approved_scope_contract.get("prompt_version") or "",
+        "timeout_seconds": approved_scope_contract.get("timeout_seconds"),
+        "max_network_attempts_per_sample": approved_scope_contract.get("max_network_attempts_per_sample"),
+        "ledger_schema_version": approved_scope_contract.get("ledger_schema_version") or "",
+        "ledger_contract_hash": approved_scope_contract.get("ledger_contract_hash") or "",
         "required_sample_count": payload_safe.get("required_sample_count"),
         "requested_sample_count": payload_safe.get("requested_sample_count"),
         "required_json_success_rate": payload_safe.get("required_json_success_rate"),
@@ -2457,7 +2476,7 @@ def _deepseek_provider_benchmark_scope_receipt(
         ],
         "missing_evidence": [
             "provider benchmark model ledger",
-            "provider response_format/json_schema execution evidence",
+            "provider response_format/json_object execution evidence",
             "bounded retry/repair provider execution ledger",
             "token budget and cost evidence",
             "redaction review",
@@ -2509,7 +2528,7 @@ def _missing_deepseek_provider_benchmark_scope_ticket(now: str) -> tuple[dict[st
             "approved_by_user": False,
             "sample_count": 40,
             "max_retry_per_sample": 2,
-            "response_format": "json_schema",
+            "response_format": "json_object",
         },
         {"deepseek_provider_benchmark_execution_recipe": {}},
     )
@@ -2608,6 +2627,7 @@ def _deepseek_provider_benchmark_execution_request_payload(
             payload_dict.get("approved_by_user") is True
             or payload_dict.get("confirm_execution_request") is True
         ),
+        "provider_run_approved_by_user": payload_dict.get("provider_run_approved_by_user") is True,
         "requested_scope_hash": requested_scope_hash,
         "latest_scope_ticket_status": str(scope_receipt.get("status") or ""),
         "latest_scope_ticket_ready": scope_receipt.get("local_scope_ticket_ready") is True,
@@ -2621,7 +2641,7 @@ def _deepseek_provider_benchmark_execution_request_payload(
         "required_sample_count": int(scope_receipt.get("required_sample_count") or recipe.get("required_sample_count") or 40),
         "requested_sample_count": int(scope_receipt.get("requested_sample_count") or 0),
         "required_json_success_rate": float(scope_receipt.get("required_json_success_rate") or recipe.get("required_json_success_rate") or 0.9),
-        "response_format": str(scope_receipt.get("response_format") or "json_schema"),
+        "response_format": str(scope_receipt.get("response_format") or "json_object"),
         "max_retry_per_sample": int(scope_receipt.get("max_retry_per_sample") or recipe.get("max_retry_per_sample") or 2),
         "required_model_ledger_fields": list(
             scope_receipt.get("required_model_ledger_fields")
@@ -2641,7 +2661,10 @@ def _deepseek_provider_benchmark_execution_request_payload(
             ]
         ),
         "phase_keys": list(scope_receipt.get("phase_keys") or recipe.get("phase_keys") or DEEPSEEK_PROVIDER_BENCHMARK_SCOPE_PHASES),
-        "target_model_task_route": "future POST /api/factor-quant/deepseek-provider-benchmark",
+        "scope_ticket_user_approved": scope_receipt.get("scope_ticket_user_approved") is True,
+        "approved_scope_contract": _dict(scope_receipt.get("approved_scope_contract")),
+        "approved_scope_contract_hash": str(scope_receipt.get("approved_scope_contract_hash") or ""),
+        "target_model_task_route": "POST /api/factor-quant/deepseek-provider-benchmark",
         "target_model_task_type": "run_deepseek_provider_benchmark",
         "target_acceptance_mode": "provider_backed_deepseek_json_stability_benchmark",
         "created_at": now,
@@ -2664,8 +2687,23 @@ def _deepseek_provider_benchmark_execution_request_receipt(
         and payload_safe.get("latest_scope_ticket_status") != "deepseek_provider_benchmark_scope_ticket_missing"
     )
     user_confirmed = payload_safe.get("approved_by_user") is True
+    provider_run_confirmed = payload_safe.get("provider_run_approved_by_user") is True
+    scope_ticket_user_approved = payload_safe.get("scope_ticket_user_approved") is True
+    approved_scope_contract = _dict(payload_safe.get("approved_scope_contract"))
+    approved_scope_contract_hash = str(payload_safe.get("approved_scope_contract_hash") or "")
+    exact_contract_valid = bool(
+        approved_scope_contract
+        and approved_scope_contract == deepseek_benchmark_service.build_benchmark_scope_contract(
+            str(approved_scope_contract.get("model") or "")
+        )
+        and approved_scope_contract_hash == deepseek_benchmark_service.benchmark_scope_hash(approved_scope_contract)
+        and approved_scope_contract_hash == latest_scope_hash
+    )
+    current_scope_receipt_hash_matches = bool(
+        exact_contract_valid and requested_hash_matches_latest
+    )
     recipe_ready = bool(payload_safe.get("execution_recipe_status"))
-    target_route_ok = payload_safe.get("target_model_task_route") == "future POST /api/factor-quant/deepseek-provider-benchmark"
+    target_route_ok = payload_safe.get("target_model_task_route") == "POST /api/factor-quant/deepseek-provider-benchmark"
     rows = [
         _deepseek_provider_benchmark_execution_request_row(
             "latest_scope_ticket_visible",
@@ -2689,6 +2727,27 @@ def _deepseek_provider_benchmark_execution_request_receipt(
             "Require explicit user confirmation before a future model benchmark task can be submitted.",
         ),
         _deepseek_provider_benchmark_execution_request_row(
+            "scope_ticket_user_approval_bound",
+            "passed_scope_ticket_approval_bound" if scope_ticket_user_approved else "blocked_scope_ticket_approval_missing",
+            scope_ticket_user_approved,
+            f"scope_ticket_user_approved={scope_ticket_user_approved}",
+            "Preserve the explicit scope-ticket approval in the execution receipt.",
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
+            "provider_run_explicit_confirmation",
+            "passed_provider_run_confirmed" if provider_run_confirmed else "blocked_provider_run_confirmation_required",
+            provider_run_confirmed,
+            f"provider_run_approved_by_user={provider_run_confirmed}",
+            "Require a separate explicit approval for the real provider run.",
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
+            "exact_scope_contract_bound",
+            "passed_exact_scope_contract" if current_scope_receipt_hash_matches else "blocked_exact_scope_contract_mismatch",
+            current_scope_receipt_hash_matches,
+            f"contract_hash_short={approved_scope_contract_hash[:16]}; current_scope_hash_matches={current_scope_receipt_hash_matches}",
+            "Bind the execution receipt to the exact current model/sample/retry/timeout/schema/prompt/ledger/cost contract.",
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
             "execution_recipe_visible",
             "passed_execution_recipe_visible" if recipe_ready else "blocked_execution_recipe_missing",
             recipe_ready,
@@ -2700,7 +2759,7 @@ def _deepseek_provider_benchmark_execution_request_receipt(
             "passed_target_route_declared" if target_route_ok else "blocked_target_route_mismatch",
             target_route_ok,
             f"target_model_task_route={payload_safe.get('target_model_task_route')}",
-            "Use a future explicit provider benchmark route; never create it from GET cache.",
+            "Use the explicit provider benchmark route; never create it from GET cache.",
         ),
         _deepseek_provider_benchmark_execution_request_row(
             "model_task_not_created_by_request",
@@ -2737,6 +2796,12 @@ def _deepseek_provider_benchmark_execution_request_receipt(
     elif not user_confirmed:
         status = "deepseek_provider_benchmark_execution_request_blocked_user_confirmation_required"
         allowed_next_step = "confirm_deepseek_provider_benchmark_execution_request"
+    elif not scope_ticket_user_approved or not provider_run_confirmed:
+        status = "deepseek_provider_benchmark_execution_request_blocked_provider_run_confirmation_required"
+        allowed_next_step = "confirm_deepseek_provider_benchmark_provider_run"
+    elif not current_scope_receipt_hash_matches:
+        status = "deepseek_provider_benchmark_execution_request_blocked_scope_contract_mismatch"
+        allowed_next_step = "regenerate_scope_and_execution_receipts"
     elif not recipe_ready:
         status = "deepseek_provider_benchmark_execution_request_blocked_local_recipe"
         allowed_next_step = "repair_deepseek_provider_benchmark_execution_recipe"
@@ -2759,9 +2824,17 @@ def _deepseek_provider_benchmark_execution_request_receipt(
         "latest_scope_ticket_status": payload_safe.get("latest_scope_ticket_status"),
         "execution_recipe_status": payload_safe.get("execution_recipe_status"),
         "requested_scope_hash_matches_latest": requested_hash_matches_latest,
+        "current_scope_receipt_hash_matches": current_scope_receipt_hash_matches,
         "benchmark_scope_hash": latest_scope_hash if requested_hash_matches_latest else "",
         "benchmark_scope_hash_short": str(payload_safe.get("latest_scope_hash_short") or ""),
         "requested_scope_hash_short": requested_scope_hash[:16],
+        "scope_ticket_user_approved": scope_ticket_user_approved,
+        "execution_request_user_approved": user_confirmed,
+        "provider_run_approved_by_user": provider_run_confirmed,
+        "approved_scope_contract": approved_scope_contract,
+        "approved_scope_contract_hash": approved_scope_contract_hash,
+        "approval_nonce_enforced": False,
+        "approval_replay_boundary": "exact_current_scope_and_execution_receipt_hash_no_one_time_nonce",
         "required_sample_count": payload_safe.get("required_sample_count"),
         "requested_sample_count": payload_safe.get("requested_sample_count"),
         "required_json_success_rate": payload_safe.get("required_json_success_rate"),
@@ -2809,7 +2882,7 @@ def _deepseek_provider_benchmark_execution_request_receipt(
         "missing_evidence": [
             "separate governed provider benchmark task implementation",
             "provider model ledger rows bound to scope hash",
-            "response_format/json_schema execution evidence",
+            "response_format/json_object execution evidence",
             "bounded retry/repair execution ledger",
             "token budget and cost evidence",
             "redaction review",
@@ -2846,13 +2919,14 @@ def _missing_deepseek_provider_benchmark_execution_request(now: str) -> tuple[di
     receipt, rows = _deepseek_provider_benchmark_execution_request_receipt(
         {
             "approved_by_user": False,
+            "provider_run_approved_by_user": False,
             "requested_scope_hash": "",
             "latest_scope_ticket_status": "deepseek_provider_benchmark_scope_ticket_missing",
             "latest_scope_ticket_ready": False,
             "latest_scope_hash": "",
             "latest_scope_hash_short": "",
             "execution_recipe_status": "",
-            "target_model_task_route": "future POST /api/factor-quant/deepseek-provider-benchmark",
+            "target_model_task_route": "POST /api/factor-quant/deepseek-provider-benchmark",
             "target_model_task_type": "run_deepseek_provider_benchmark",
             "target_acceptance_mode": "provider_backed_deepseek_json_stability_benchmark",
             "phase_keys": list(DEEPSEEK_PROVIDER_BENCHMARK_SCOPE_PHASES),
@@ -3038,7 +3112,7 @@ def _deepseek_durable_evidence_recipe(
             source_contract="deepseek_response_format_review_contract",
             evidence=f"status={response_review.get('status')}; provider_response_format_enforced={response_review.get('provider_response_format_enforced')}",
             required_evidence="response-format review visible while provider enforcement remains pending",
-            next_action="prove provider response_format/json_schema enforcement in the explicit benchmark task",
+            next_action="prove provider response_format/json_object enforcement in the explicit benchmark task",
         ),
         _deepseek_durable_evidence_recipe_row(
             "retry_repair_dry_run_visible",
@@ -3076,8 +3150,8 @@ def _deepseek_durable_evidence_recipe(
             "provider_response_format_execution_required",
             passed=False,
             source_contract="explicit_provider_benchmark_task",
-            evidence="Provider response_format/json_schema enforcement has not been proven with real DeepSeek responses.",
-            required_evidence="provider-level response_format/json_schema request and response evidence for six whitelisted fields",
+            evidence="Provider response_format/json_object enforcement has not been proven with real DeepSeek responses.",
+            required_evidence="provider-level response_format/json_object request and response evidence for six whitelisted fields",
             next_action="execute benchmark with provider response_format enforcement, not prompt-only JSON wording",
         ),
         _deepseek_durable_evidence_recipe_row(
@@ -3186,7 +3260,7 @@ def _deepseek_durable_evidence_recipe(
         "missing_durable_evidence": blocked_rows,
         "required_evidence": [
             "provider benchmark report with at least 40 samples",
-            "provider response_format/json_schema execution evidence",
+            "provider response_format/json_object execution evidence",
             "bounded retry/repair execution ledger",
             "redacted model ledger with token usage and hashes",
             "sanitizer and parse-failed provider response review",
@@ -3317,7 +3391,7 @@ def _attach_deepseek_production_activation_receipt(
             "provider_response_format_enforcement_required",
             "pending_provider_response_format",
             False,
-            "Provider response_format/json_schema enforcement must be proven with real responses before production promotion.",
+            "Provider response_format/json_object enforcement must be proven with real responses before production promotion.",
         ),
         _deepseek_activation_row(
             "bounded_retry_repair_required",
@@ -3380,7 +3454,7 @@ def _attach_deepseek_production_activation_receipt(
         ],
         "missing_evidence": [
             "provider benchmark JSON success rate > 90%",
-            "provider response_format/json_schema enforcement evidence",
+            "provider response_format/json_object enforcement evidence",
             "bounded retry/repair evaluation",
             "token budget and cost evidence",
             "durable provider call ledger evidence",

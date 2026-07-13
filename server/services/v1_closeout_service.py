@@ -102,6 +102,33 @@ _SAFE_PACKET_FIELDS = (
     "provider_benchmark_done",
     "production_fact_ready",
     "governed_model_runtime",
+    "production_deepseek_explanation_complete",
+    "benchmark_scope_hash",
+    "approved_scope_contract_hash",
+    "scope_binding_valid",
+    "fixed_sample_ids_hash",
+    "fixed_sample_set_hash",
+    "output_schema_version",
+    "output_schema_hash",
+    "prompt_version",
+    "max_retry_per_sample",
+    "max_network_attempts_per_sample",
+    "actual_max_attempts_per_sample",
+    "timeout_seconds",
+    "safety_reviewed_sample_count",
+    "safety_reviewed_ledger_count",
+    "ledger_schema_version",
+    "ledger_contract_hash",
+    "total_tokens",
+    "retry_tokens",
+    "token_usage_complete",
+    "model_cost_estimate_usd",
+    "cost_estimate_version",
+    "cost_budget_usd",
+    "cost_budget_status",
+    "token_budget_cost_evidence_complete",
+    "provider_call_count",
+    "provider_response_count",
     "raw_prompt_stored",
     "raw_output_stored",
     "does_not_execute_trades",
@@ -572,39 +599,153 @@ def _legacy_full_market_packet_internally_consistent(packet: Any) -> bool:
         and _boundary_safe(source, external_expected=True)
         and not _contains_sensitive_key(source)
 def _governed_model_runtime_ready(packet: Any) -> bool:
+    from . import deepseek_benchmark_service as benchmark
+
     source = packet if isinstance(packet, Mapping) else {}
-    sample_count = int(source.get("sample_count") or 0)
-    success_count = int(source.get("success_count") or 0)
-    threshold = float(source.get("required_json_success_rate") or 0.0)
-    success_rate = float(source.get("json_success_rate") or 0.0)
-    return bool(
-        source.get("schema_version") == "factor_deepseek_provider_benchmark_result.v1"
-        and source.get("status") == "deepseek_provider_benchmark_passed"
-        and source.get("evidence_source") == "real_provider"
-        and sample_count == 40
-        and success_count >= 36
-        and threshold >= 0.9
-        and success_rate >= threshold
-        and source.get("response_format") == "json_schema"
-        and source.get("provider_response_format_enforced") is True
-        and source.get("response_schema_validated") is True
-        and source.get("safety_review_passed") is True
-        and int(source.get("unsafe_output_accepted_count") or 0) == 0
-        and int(source.get("model_ledger_count") or 0) >= sample_count
-        and source.get("model_ledger_complete") is True
-        and source.get("provider_benchmark_done") is True
-        and source.get("production_fact_ready") is True
-        and source.get("governed_model_runtime") is True
-        and source.get("raw_prompt_stored") is False
-        and source.get("raw_output_stored") is False
-        and source.get("contains_secret") is False
-        and source.get("external_calls_triggered") is True
-        and source.get("deepseek_called") is True
-        and source.get("tushare_called") is False
-        and source.get("github_called") is False
-        and source.get("does_not_execute_trades") is True
-        and source.get("does_not_modify_strategy_action") is True
-    )
+    try:
+        model = str(source.get("model_used") or "")
+        expected_contract = benchmark.build_benchmark_scope_contract(model)
+        expected_scope_hash = benchmark.benchmark_scope_hash(expected_contract)
+        approved_contract = source.get("approved_scope_contract")
+        ledger = source.get("model_ledger")
+        if not isinstance(approved_contract, Mapping) or dict(approved_contract) != expected_contract:
+            return False
+        if not isinstance(ledger, list) or not ledger:
+            return False
+        sample_ids = list(benchmark.FIXED_SAMPLE_IDS)
+        rows_by_sample: dict[str, list[Mapping[str, Any]]] = {sample_id: [] for sample_id in sample_ids}
+        total_tokens = 0
+        retry_tokens = 0
+        provider_call_count = 0
+        provider_response_count = 0
+        for raw_row in ledger:
+            if not isinstance(raw_row, Mapping):
+                return False
+            row = raw_row
+            if not set(benchmark.LEDGER_CONTRACT_FIELDS).issubset(row):
+                return False
+            sample_id = str(row.get("sample_id") or "")
+            if sample_id not in rows_by_sample:
+                return False
+            rows_by_sample[sample_id].append(row)
+            usage = row.get("token_usage")
+            if not isinstance(usage, Mapping):
+                return False
+            row_tokens = int(usage.get("total_tokens") or 0)
+            if min(
+                int(usage.get("prompt_tokens") or 0),
+                int(usage.get("completion_tokens") or 0),
+                row_tokens,
+            ) < 0:
+                return False
+            total_tokens += row_tokens
+            if int(row.get("attempt") or 0) > 1:
+                retry_tokens += row_tokens
+            provider_call_count += int(row.get("provider_call_dispatched") is True)
+            provider_response_count += int(row.get("provider_response_observed") is True)
+            if not (
+                row.get("schema_version") == benchmark.LEDGER_SCHEMA_VERSION
+                and row.get("model_used") == model
+                and row.get("response_format") == benchmark.RESPONSE_FORMAT
+                and row.get("input_hash") == benchmark.FIXED_SAMPLE_INPUT_HASHES[sample_id]
+                and row.get("safety_checked") is True
+                and row.get("safety_passed") is True
+                and row.get("raw_prompt_stored") is False
+                and row.get("raw_output_stored") is False
+                and row.get("contains_secret") is False
+                and row.get("tushare_called") is False
+                and row.get("github_called") is False
+                and row.get("does_not_execute_trades") is True
+                and row.get("does_not_modify_strategy_action") is True
+                and row.get("does_not_override_numeric_values") is True
+            ):
+                return False
+        for sample_id, rows in rows_by_sample.items():
+            attempts = [int(row.get("attempt") or 0) for row in rows]
+            accepted = [row for row in rows if row.get("status") == "accepted"]
+            if attempts != list(range(1, len(rows) + 1)) or not 1 <= len(rows) <= 3:
+                return False
+            if len(accepted) != 1 or rows[-1].get("status") != "accepted":
+                return False
+            accepted_row = accepted[0]
+            output_hash = str(accepted_row.get("output_hash") or "")
+            if not (
+                accepted_row.get("parse_status") == "schema_safe"
+                and accepted_row.get("provider_response_format_requested") is True
+                and accepted_row.get("provider_call_dispatched") is True
+                and accepted_row.get("provider_response_observed") is True
+                and accepted_row.get("deepseek_called") is True
+                and accepted_row.get("external_calls_triggered") is True
+                and int((accepted_row.get("token_usage") or {}).get("total_tokens") or 0) > 0
+                and len(output_hash) == 64
+                and all(char in "0123456789abcdef" for char in output_hash)
+            ):
+                return False
+        expected_cost = round(
+            total_tokens * benchmark.MODEL_COST_CEILING_USD_PER_MILLION_TOKENS / 1_000_000,
+            8,
+        )
+        return bool(
+            source.get("schema_version") == "factor_deepseek_provider_benchmark_result.v1"
+            and source.get("status") == "deepseek_provider_benchmark_passed"
+            and source.get("evidence_source") == "real_provider"
+            and int(source.get("sample_count") or 0) == benchmark.SAMPLE_COUNT
+            and int(source.get("success_count") or 0) == benchmark.SAMPLE_COUNT
+            and int(source.get("failed_count") or 0) == 0
+            and float(source.get("required_json_success_rate") or 0.0) == benchmark.SUCCESS_RATE_THRESHOLD
+            and float(source.get("json_success_rate") or 0.0) == 1.0
+            and source.get("response_format") == benchmark.RESPONSE_FORMAT
+            and source.get("provider_response_format_enforced") is True
+            and source.get("response_schema_validated") is True
+            and source.get("safety_review_passed") is True
+            and int(source.get("safety_reviewed_sample_count") or 0) == benchmark.SAMPLE_COUNT
+            and int(source.get("safety_reviewed_ledger_count") or 0) == len(ledger)
+            and int(source.get("unsafe_output_accepted_count") or 0) == 0
+            and int(source.get("model_ledger_count") or 0) == len(ledger)
+            and source.get("model_ledger_complete") is True
+            and source.get("ledger_schema_version") == benchmark.LEDGER_SCHEMA_VERSION
+            and source.get("ledger_contract_hash") == benchmark.LEDGER_CONTRACT_HASH
+            and source.get("approved_scope_contract_hash") == expected_scope_hash
+            and source.get("benchmark_scope_hash") == expected_scope_hash
+            and source.get("scope_binding_valid") is True
+            and source.get("fixed_sample_ids") == sample_ids
+            and source.get("fixed_sample_ids_hash") == benchmark.FIXED_SAMPLE_IDS_HASH
+            and source.get("fixed_sample_set_hash") == benchmark.FIXED_SCOPE_HASH
+            and source.get("output_schema_version") == benchmark.OUTPUT_SCHEMA_VERSION
+            and source.get("output_schema_hash") == benchmark.OUTPUT_SCHEMA_HASH
+            and source.get("prompt_version") == benchmark.PROMPT_VERSION
+            and int(source.get("max_retry_per_sample") or -1) == benchmark.MAX_RETRIES_PER_SAMPLE
+            and int(source.get("max_network_attempts_per_sample") or 0) == 3
+            and int(source.get("actual_max_attempts_per_sample") or 0) <= 3
+            and float(source.get("timeout_seconds") or 0.0) == benchmark.MODEL_TIMEOUT_SECONDS
+            and int(source.get("total_tokens") or 0) == total_tokens
+            and total_tokens > 0
+            and int(source.get("retry_tokens") or 0) == retry_tokens
+            and source.get("token_usage_complete") is True
+            and float(source.get("model_cost_estimate_usd") or 0.0) == expected_cost
+            and expected_cost > 0
+            and source.get("cost_estimate_version") == benchmark.MODEL_COST_ESTIMATE_VERSION
+            and float(source.get("cost_budget_usd") or 0.0) == benchmark.MODEL_COST_BUDGET_USD
+            and source.get("cost_budget_status") == "within_bound"
+            and source.get("token_budget_cost_evidence_complete") is True
+            and int(source.get("provider_call_count") or 0) == provider_call_count
+            and int(source.get("provider_response_count") or 0) == provider_response_count
+            and source.get("provider_benchmark_done") is True
+            and source.get("production_fact_ready") is True
+            and source.get("governed_model_runtime") is True
+            and source.get("production_deepseek_explanation_complete") is True
+            and source.get("raw_prompt_stored") is False
+            and source.get("raw_output_stored") is False
+            and source.get("contains_secret") is False
+            and source.get("external_calls_triggered") is True
+            and source.get("deepseek_called") is True
+            and source.get("tushare_called") is False
+            and source.get("github_called") is False
+            and source.get("does_not_execute_trades") is True
+            and source.get("does_not_modify_strategy_action") is True
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 def _qmt_isolation_ready(packet: Any) -> bool:
