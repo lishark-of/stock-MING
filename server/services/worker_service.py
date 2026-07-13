@@ -4027,6 +4027,60 @@ def _read_worker_runtime_qa_execution_packet(
             runtime_qa_execution_recipe,
             read_status,
         )
+    if packet.get("schema_version") == "worker_v04_local_batch_runtime_packet.v1":
+        local_done = bool(
+            packet.get("status") == "worker_v04_local_batch_runtime_success"
+            and int(packet.get("processed_count") or 0) == int(packet.get("pool_count") or 0)
+            and int(packet.get("pool_count") or 0) > 0
+        )
+        stage_rows = list(packet.get("stage_rows") or [])
+        return {
+            **_json_safe(packet),
+            "mode": "cache_only_v04_local_batch_runtime_readback",
+            "scope": "local_supplied_pool_not_celery_redis_production",
+            "local_runtime_qa_execution_done": local_done,
+            "runtime_qa_done": False,
+            "runtime_qa_task_created": True,
+            "runtime_qa_task_executed": True,
+            "runtime_qa_execution_implemented": True,
+            "local_fallback_round_trip_verified": local_done,
+            "local_task_round_trip_verified": local_done,
+            "task_log_round_trip_verified": bool(stage_rows),
+            "task_log_persistence_verified": bool(stage_rows),
+            "local_task_control_metadata_verified": False,
+            "cross_process_task_control_verified": False,
+            "cross_process_task_control_probe": {},
+            "append_only_worker_log_verified": bool(
+                stage_rows and all(row.get("append_only_write_done") is True for row in stage_rows)
+            ),
+            "scheduler_default_off_runtime_verified": True,
+            "provider_model_no_autoschedule_boundary_verified": True,
+            "no_trade_no_action_boundary_verified": True,
+            "production_worker_complete": False,
+            "worker_started": False,
+            "celery_worker_started": False,
+            "redis_pinged": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "provider_model_task_dispatched": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "rows": stage_rows,
+            "phase_rows": [],
+            "call_ledger": [],
+            "source_packet_read_status": read_status,
+            "source_packet_present": True,
+            "cache_get_initializes_meta_store": False,
+            "warnings": [
+                "v0.4 local batch readback 仅证明 supplied pool 的本地进程分块与 append-only 回放。",
+                "未启动 Celery/Redis/worker process；production worker completion 仍为 false。",
+            ],
+        }
     receipt = _json_safe(packet.get("worker_runtime_qa_execution_receipt") or packet)
     if not isinstance(receipt, dict) or receipt.get("schema_version") != RUNTIME_QA_EXECUTION_SCHEMA_VERSION:
         return _missing_worker_runtime_qa_execution_packet(

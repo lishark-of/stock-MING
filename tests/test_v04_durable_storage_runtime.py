@@ -215,6 +215,18 @@ class V04DurableStorageRuntimeTests(unittest.TestCase):
         self.assertFalse(second_result["external_calls_triggered"])
         self.assertTrue(second_result["does_not_execute_trades"])
 
+        cache = worker_service.read_worker_runtime_cache()
+        cached_execution = cache["worker_runtime_qa_execution_receipt"]
+        self.assertEqual(cached_execution["status"], "worker_v04_local_batch_runtime_success")
+        self.assertEqual(cached_execution["pool_count"], 25)
+        self.assertEqual(cached_execution["processed_count"], 25)
+        self.assertTrue(cached_execution["local_runtime_qa_execution_done"])
+        self.assertFalse(cached_execution["runtime_qa_done"])
+        self.assertTrue(cached_execution["append_only_worker_log_verified"])
+        self.assertFalse(cached_execution["worker_started"])
+        self.assertFalse(cached_execution["redis_pinged"])
+        self.assertFalse(cached_execution["external_calls_triggered"])
+
         failed = worker_service.run_worker_runtime_qa_execution(
             self._worker_payload(scope_hash, fail_on_symbol="000010.SZ")
         )
