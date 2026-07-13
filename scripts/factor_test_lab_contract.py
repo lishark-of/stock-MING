@@ -641,7 +641,7 @@ def build_contract() -> dict[str, Any]:
             and _dict(dry_run_receipt.get("acceptance_scope_ticket")).get("contains_secret") is False
             and len(str(dry_run_receipt.get("acceptance_scope_hash") or "")) == 64
             and _dict(dry_run_rows_by_criterion.get("real_task_implementation_boundary")).get("status")
-            == "pending_real_task_not_implemented"
+            == "passed_explicit_provider_task_route_available"
             and _dict(dry_run_rows_by_criterion.get("secret_redaction_boundary")).get("passed") is True
             and _dict(dry_run_rows_by_criterion.get("trade_action_boundary")).get("passed") is True,
             "Provider small-pool dry-run may issue a local scope ticket only; it must not call providers, expose credentials, or prove production validation.",

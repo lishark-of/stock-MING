@@ -60262,7 +60262,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(receipt["acceptance_scope_ticket"]["contains_secret"])
         self.assertFalse(receipt["acceptance_scope_ticket"]["env_key_name_exposed"])
         self.assertFalse(receipt["acceptance_scope_ticket"]["credential_value_exposed"])
-        self.assertEqual(rows["real_task_implementation_boundary"]["status"], "pending_real_task_not_implemented")
+        self.assertEqual(
+            rows["real_task_implementation_boundary"]["status"],
+            "passed_explicit_provider_task_route_available",
+        )
         self.assertTrue(rows["secret_redaction_boundary"]["passed"])
         self.assertTrue(rows["trade_action_boundary"]["passed"])
         self.assertEqual(task["call_ledger"][0]["api"], "local_factor_test_provider_small_pool_acceptance_dry_run")
@@ -61638,7 +61641,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["does_not_modify_strategy_action"])
         self.assertFalse(receipt["contains_secret"])
         self.assertEqual(receipt["provider_task_count"], 6)
-        self.assertEqual(receipt["provider_api_call_count"], 16)
+        self.assertEqual(receipt["provider_api_call_count"], 11)
         self.assertEqual(receipt["provider_failed_call_count"], 0)
         self.assertEqual(receipt["provider_latest_data_date"], "20260614")
         self.assertEqual(receipt["symbols_with_core_row_count"], 5)
@@ -61736,7 +61739,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             json={
                 "approved_by_user": True,
                 "symbols": ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"],
-                "start_date": "20240102",
+                "start_date": "20240201",
                 "end_date": "20240430",
                 "forward_return_horizons": ["1d", "5d"],
             },
@@ -61782,14 +61785,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["provider_call_ledger_evidence_done"])
         self.assertFalse(receipt["sample_rows_collected"])
         self.assertFalse(receipt["provider_backed_small_pool_validation_done"])
-        self.assertEqual(receipt["provider_api_call_count"], 16)
+        self.assertEqual(receipt["provider_api_call_count"], 11)
         self.assertEqual(receipt["provider_success_call_count"], 1)
-        self.assertEqual(receipt["provider_empty_call_count"], 15)
+        self.assertEqual(receipt["provider_empty_call_count"], 10)
         self.assertEqual(receipt["provider_failed_call_count"], 0)
-        self.assertEqual(receipt["provider_degraded_call_count"], 15)
+        self.assertEqual(receipt["provider_degraded_call_count"], 10)
         self.assertEqual(receipt["safe_provider_failure_modes"], ["empty_result_or_no_record"])
-        self.assertEqual(len(receipt["provider_degraded_call_summary"]), 15)
-        self.assertIn("empty_call_count=15", rows["provider_call_ledger_evidence"]["evidence"])
+        self.assertEqual(len(receipt["provider_degraded_call_summary"]), 10)
+        self.assertIn("empty_call_count=10", rows["provider_call_ledger_evidence"]["evidence"])
         self.assertIn("empty_result_or_no_record", rows["provider_sample_rows_collected"]["evidence"])
         self.assertFalse(receipt["contains_secret"])
         self.assertTrue(receipt["does_not_execute_trades"])
@@ -61797,7 +61800,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         factor = self.client.get("/api/factor-quant/cache").json()
         cached = factor["data"]["factor_tests"]["provider_small_pool_acceptance_receipt"]
-        self.assertEqual(cached["provider_empty_call_count"], 15)
+        self.assertEqual(cached["provider_empty_call_count"], 10)
         self.assertEqual(cached["safe_provider_failure_modes"], ["empty_result_or_no_record"])
         self.assertFalse(
             factor["data"]["factor_tests"]["acceptance_contract"]["provider_backed_small_pool_validation_done"]
