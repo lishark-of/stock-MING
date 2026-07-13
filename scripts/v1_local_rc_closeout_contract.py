@@ -99,6 +99,10 @@ _ALLOWED_AUDIT_KEYS = {
     "raw_account_or_config_exposed",
     "raw_packet_payloads_exposed",
     "raw_payload_exposed",
+    "total_tokens",
+    "retry_tokens",
+    "token_usage_complete",
+    "token_budget_cost_evidence_complete",
 }
 _FORBIDDEN_KEY_PARTS = (
     "api_key",

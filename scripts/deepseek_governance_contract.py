@@ -571,7 +571,7 @@ def build_contract() -> dict[str, Any]:
         ),
         _row(
             "provider_benchmark_scope_ticket_is_button_gated_preflight",
-            benchmark_scope_ticket.get("schema_version") == "factor_deepseek_provider_benchmark_scope_ticket_receipt.v2"
+            benchmark_scope_ticket.get("schema_version") == "factor_deepseek_provider_benchmark_scope_ticket_receipt.v3"
             and benchmark_scope_ticket.get("scope") == "local_deepseek_provider_benchmark_scope_ticket_no_model_call"
             and benchmark_scope_ticket.get("status")
             in {
@@ -798,7 +798,7 @@ def build_contract() -> dict[str, Any]:
             and "deepseek_production_activation_receipt.v1" in this_script
             and "factor_deepseek_retry_repair_dry_run_contract.v1" in this_script
             and "factor_deepseek_provider_benchmark_execution_recipe.v1" in this_script
-            and "factor_deepseek_provider_benchmark_scope_ticket_receipt.v2" in this_script
+            and "factor_deepseek_provider_benchmark_scope_ticket_receipt.v3" in this_script
             and "factor_deepseek_durable_evidence_recipe.v1" in this_script
             and "provider_benchmark_done" in this_script
             and "production_deepseek_explanation_complete" in this_script

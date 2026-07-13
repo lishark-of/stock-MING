@@ -145,6 +145,8 @@ _SAFE_PACKET_FIELDS = (
     "token_budget_cost_evidence_complete",
     "provider_call_count",
     "provider_response_count",
+    "provider_request_ids_unique",
+    "deterministic_summary_template_id",
     "raw_prompt_stored",
     "raw_output_stored",
     "does_not_execute_trades",
@@ -316,6 +318,22 @@ def _read_packets(db_path: Path, packet_keys: tuple[str, ...]) -> dict[str, Any]
         if isinstance(payload, Mapping):
             packets[str(packet_key)] = payload
     return packets
+
+
+def _read_model_nonce_receipt(db_path: Path, packet: Any) -> Any:
+    from . import deepseek_benchmark_service as benchmark
+
+    source = packet if isinstance(packet, Mapping) else {}
+    key = str(source.get("nonce_consumption_receipt_key") or "")
+    suffix = key.removeprefix(benchmark.NONCE_CONSUMPTION_RECEIPT_PREFIX)
+    if (
+        not key.startswith(benchmark.NONCE_CONSUMPTION_RECEIPT_PREFIX)
+        or len(suffix) != 64
+        or any(character not in "0123456789abcdef" for character in suffix)
+        or suffix != str(source.get("authorization_nonce_digest") or "")
+    ):
+        return None
+    return _read_packets(db_path, (key,)).get(key)
 
 
 def _read_task_history(db_path: Path) -> list[dict[str, Any]]:
@@ -614,10 +632,14 @@ def _legacy_full_market_packet_internally_consistent(packet: Any) -> bool:
         and packet_digest == _canonical_digest(digest_material)
         and _boundary_safe(source, external_expected=True)
         and not _contains_sensitive_key(source)
-def _governed_model_runtime_ready(packet: Any) -> bool:
+    )
+
+
+def _governed_model_runtime_ready(packet: Any, nonce_receipt: Any = None) -> bool:
     from . import deepseek_benchmark_service as benchmark
 
     source = packet if isinstance(packet, Mapping) else {}
+    consumed = nonce_receipt if isinstance(nonce_receipt, Mapping) else {}
     try:
         model = str(source.get("model_used") or "")
         expected_contract = benchmark.build_benchmark_scope_contract(model)
@@ -634,6 +656,7 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
         retry_tokens = 0
         provider_call_count = 0
         provider_response_count = 0
+        accepted_request_ids: list[str] = []
         for raw_row in ledger:
             if not isinstance(raw_row, Mapping):
                 return False
@@ -690,6 +713,8 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
                 and row.get("request_temperature") == benchmark.MODEL_TEMPERATURE
                 and row.get("sdk_max_retries") == benchmark.SDK_MAX_RETRIES
                 and row.get("system_prompt_sha256") == benchmark.SYSTEM_PROMPT_SHA256
+                and isinstance(row.get("system_fingerprint_present"), bool)
+                and row.get("deterministic_summary_template_id") == benchmark.DETERMINISTIC_SUMMARY_TEMPLATE_ID
                 and row.get("authorization_nonce_digest") == source.get("authorization_nonce_digest")
                 and row.get("authorization_nonce_present") is True
                 and row.get("authorization_nonce_consumed") is True
@@ -703,6 +728,7 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
             if len(accepted) != 1 or rows[-1].get("status") != "accepted":
                 return False
             accepted_row = accepted[0]
+            accepted_request_ids.append(str(accepted_row.get("provider_request_id_hash") or ""))
             output_hash = str(accepted_row.get("output_hash") or "")
             if not (
                 accepted_row.get("parse_status") == "schema_safe"
@@ -721,10 +747,23 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
             total_tokens * benchmark.MODEL_COST_CEILING_USD_PER_MILLION_TOKENS / 1_000_000,
             8,
         )
+        nonce_digest = str(source.get("authorization_nonce_digest") or "")
+        nonce_receipt_ready = bool(
+            consumed.get("schema_version") == benchmark.NONCE_CONSUMPTION_RECEIPT_SCHEMA_VERSION
+            and consumed.get("status") == "authorization_nonce_consumed"
+            and consumed.get("packet_key") == source.get("nonce_consumption_receipt_key")
+            and consumed.get("benchmark_scope_hash") == source.get("benchmark_scope_hash")
+            and consumed.get("task_id") == source.get("nonce_consumption_task_id")
+            and consumed.get("authorization_nonce_digest") == nonce_digest
+            and consumed.get("consumed_at") == source.get("nonce_consumed_at")
+            and consumed.get("raw_nonce_stored") is False
+            and consumed.get("contains_secret") is False
+            and "authorization_nonce" not in consumed
+        )
         return bool(
             source.get("schema_version") == "factor_deepseek_provider_benchmark_result.v1"
             and source.get("status") == "deepseek_provider_benchmark_passed"
-            and source.get("evidence_source") == "real_provider"
+            and source.get("evidence_source") == "official_sdk_provider"
             and int(source.get("sample_count") or 0) == benchmark.SAMPLE_COUNT
             and int(source.get("success_count") or 0) == benchmark.SAMPLE_COUNT
             and int(source.get("failed_count") or 0) == 0
@@ -733,6 +772,9 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
             and source.get("response_format") == benchmark.RESPONSE_FORMAT
             and source.get("provider_response_format_enforced") is True
             and source.get("provider_response_metadata_complete") is True
+            and source.get("provider_request_ids_unique") is True
+            and len(accepted_request_ids) == benchmark.SAMPLE_COUNT
+            and len(set(accepted_request_ids)) == benchmark.SAMPLE_COUNT
             and source.get("response_schema_validated") is True
             and source.get("safety_review_passed") is True
             and int(source.get("safety_reviewed_sample_count") or 0) == benchmark.SAMPLE_COUNT
@@ -749,6 +791,8 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
             and source.get("authorization_nonce_present") is True
             and source.get("authorization_nonce_consumed") is True
             and len(str(source.get("authorization_nonce_digest") or "")) == 64
+            and nonce_receipt_ready
+            and "authorization_nonce" not in source
             and source.get("fixed_sample_ids") == sample_ids
             and source.get("fixed_sample_ids_hash") == benchmark.FIXED_SAMPLE_IDS_HASH
             and source.get("fixed_sample_set_hash") == benchmark.FIXED_SCOPE_HASH
@@ -768,6 +812,7 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
             and source.get("request_temperature") == benchmark.MODEL_TEMPERATURE
             and source.get("sdk_max_retries") == benchmark.SDK_MAX_RETRIES
             and source.get("system_prompt_sha256") == benchmark.SYSTEM_PROMPT_SHA256
+            and source.get("deterministic_summary_template_id") == benchmark.DETERMINISTIC_SUMMARY_TEMPLATE_ID
             and int(source.get("total_tokens") or 0) == total_tokens
             and total_tokens > 0
             and int(source.get("retry_tokens") or 0) == retry_tokens
@@ -931,7 +976,15 @@ def _build_version_rows(
     qmt = qmt_current if _qmt_isolation_ready(qmt_current) else qmt_last_good
     model_current = root_packets.get(ROOT_PACKET_KEYS[4])
     model_last_good = root_packets.get(ROOT_PACKET_KEYS[5])
-    governed_model = model_current if _governed_model_runtime_ready(model_current) else model_last_good
+    root_db = evidence_root / "meta.sqlite"
+    model_current_nonce_receipt = _read_model_nonce_receipt(root_db, model_current)
+    model_last_good_nonce_receipt = _read_model_nonce_receipt(root_db, model_last_good)
+    if _governed_model_runtime_ready(model_current, model_current_nonce_receipt):
+        governed_model = model_current
+        governed_model_nonce_receipt = model_current_nonce_receipt
+    else:
+        governed_model = model_last_good
+        governed_model_nonce_receipt = model_last_good_nonce_receipt
 
     user_qa_ready = lambda value: bool(
         isinstance(value, Mapping)
@@ -1041,7 +1094,10 @@ def _build_version_rows(
         ),
         "full_market_worker_runtime": False,
         "celery_redis_runtime": False,
-        "governed_model_runtime": _governed_model_runtime_ready(governed_model),
+        "governed_model_runtime": _governed_model_runtime_ready(
+            governed_model,
+            governed_model_nonce_receipt,
+        ),
         "next_session_production_replacement": bool(
             isinstance(next_session, Mapping)
             and next_session.get("production_replacement_complete") is True

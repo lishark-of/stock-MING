@@ -5,7 +5,6 @@ import hashlib
 import json
 import math
 import os
-import secrets
 from pathlib import Path
 from typing import Any
 
@@ -2259,7 +2258,8 @@ def _deepseek_provider_benchmark_scope_payload(
     response_format = str(_dict(payload).get("response_format") or deepseek_benchmark_service.RESPONSE_FORMAT)
     model = str(_deepseek_model_strategy("factor_explain").get("model") or "")
     approved_scope_contract = deepseek_benchmark_service.build_benchmark_scope_contract(model)
-    authorization_nonce = secrets.token_urlsafe(32) if issue_authorization_nonce else ""
+    authorization_nonce = str(_dict(payload).get("authorization_nonce") or "") if issue_authorization_nonce else ""
+    authorization_nonce_strong = deepseek_benchmark_service.authorization_nonce_is_strong(authorization_nonce)
     payload_safe = {
         "approved_by_user": approved,
         "requested_sample_count": max(0, min(requested_sample_count, 500)),
@@ -2281,10 +2281,10 @@ def _deepseek_provider_benchmark_scope_payload(
         "external_sources_allowed": False,
         "provider_model_called": False,
         "production_deepseek_explanation_complete": False,
-        "authorization_nonce": authorization_nonce,
         "authorization_nonce_present": bool(authorization_nonce),
+        "authorization_nonce_strong": authorization_nonce_strong,
         "authorization_nonce_digest": deepseek_benchmark_service.authorization_nonce_digest(authorization_nonce),
-        "authorization_nonce_status": "issued" if authorization_nonce else "not_issued",
+        "authorization_nonce_status": "issued" if authorization_nonce_strong else "not_issued",
     }
     payload_safe["benchmark_scope_ticket"] = _deepseek_provider_benchmark_scope_ticket(payload_safe)
     return payload_safe
@@ -2303,11 +2303,11 @@ def _deepseek_provider_benchmark_scope_receipt(
     )
     phase_scope_ok = set(DEEPSEEK_PROVIDER_BENCHMARK_SCOPE_PHASES) == set(payload_safe.get("phase_keys") or [])
     secret_present = payload_safe.get("server_secret_present") is True
-    nonce = str(payload_safe.get("authorization_nonce") or "")
     nonce_digest = str(payload_safe.get("authorization_nonce_digest") or "")
     nonce_ready = bool(
-        nonce
-        and nonce_digest == deepseek_benchmark_service.authorization_nonce_digest(nonce)
+        payload_safe.get("authorization_nonce_present") is True
+        and payload_safe.get("authorization_nonce_strong") is True
+        and len(nonce_digest) == 64
         and payload_safe.get("authorization_nonce_status") == "issued"
     )
     scope_ticket = _dict(payload_safe.get("benchmark_scope_ticket"))
@@ -2406,7 +2406,7 @@ def _deepseek_provider_benchmark_scope_receipt(
             "passed_nonce_issued" if nonce_ready else "blocked_nonce_not_issued",
             nonce_ready,
             f"authorization_nonce_present={nonce_ready}; nonce_digest_present={bool(nonce_digest)}",
-            "Issue one random single-use nonce bound to the exact scope; consume it atomically before HTTP.",
+            "Require a caller-generated strong single-use nonce; retain only its digest and consume it atomically before HTTP.",
         ),
         _deepseek_provider_benchmark_scope_row(
             "no_model_call_boundary",
@@ -2469,8 +2469,8 @@ def _deepseek_provider_benchmark_scope_receipt(
         "approved_scope_contract_hash": approved_scope_contract_hash,
         "benchmark_scope_hash": approved_scope_contract_hash,
         "benchmark_scope_hash_short": scope_hash_short,
-        "authorization_nonce": nonce,
         "authorization_nonce_present": nonce_ready,
+        "authorization_nonce_strong": nonce_ready,
         "authorization_nonce_digest": nonce_digest,
         "authorization_nonce_status": "issued" if nonce_ready else "not_issued",
         "approval_nonce_enforced": True,
@@ -2658,6 +2658,7 @@ def _deepseek_provider_benchmark_execution_request_payload(
         or ""
     ).strip()
     authorization_nonce = str(payload_dict.get("authorization_nonce") or "")
+    authorization_nonce_strong = deepseek_benchmark_service.authorization_nonce_is_strong(authorization_nonce)
     authorization_nonce_digest = deepseek_benchmark_service.authorization_nonce_digest(authorization_nonce)
     latest_nonce_digest = str(scope_receipt.get("authorization_nonce_digest") or "")
     return {
@@ -2673,12 +2674,13 @@ def _deepseek_provider_benchmark_execution_request_payload(
         "latest_scope_hash_short": str(scope_receipt.get("benchmark_scope_hash_short") or ""),
         "latest_ready_for_explicit_provider_benchmark_task": scope_receipt.get("ready_for_explicit_provider_benchmark_task") is True,
         "authorization_nonce_present": bool(authorization_nonce),
+        "authorization_nonce_strong": authorization_nonce_strong,
         "authorization_nonce_digest": authorization_nonce_digest,
         "latest_authorization_nonce_present": scope_receipt.get("authorization_nonce_present") is True,
         "latest_authorization_nonce_digest": latest_nonce_digest,
         "latest_authorization_nonce_status": str(scope_receipt.get("authorization_nonce_status") or ""),
         "authorization_nonce_matches_latest": bool(
-            authorization_nonce
+            authorization_nonce_strong
             and latest_nonce_digest
             and authorization_nonce_digest == latest_nonce_digest
             and scope_receipt.get("authorization_nonce_status") == "issued"
@@ -2700,14 +2702,7 @@ def _deepseek_provider_benchmark_execution_request_payload(
         "allowed_output_fields": list(
             scope_receipt.get("allowed_output_fields")
             or recipe.get("allowed_output_fields")
-            or [
-                "summary",
-                "support_notes",
-                "suppress_notes",
-                "conflict_notes",
-                "missing_data_notes",
-                "discipline_notes",
-            ]
+            or deepseek_benchmark_service.ALLOWED_OUTPUT_FIELDS
         ),
         "phase_keys": list(scope_receipt.get("phase_keys") or recipe.get("phase_keys") or DEEPSEEK_PROVIDER_BENCHMARK_SCOPE_PHASES),
         "scope_ticket_user_approved": scope_receipt.get("scope_ticket_user_approved") is True,

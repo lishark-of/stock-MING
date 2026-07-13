@@ -18712,7 +18712,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", script)
         self.assertIn("factor_deepseek_retry_repair_dry_run_contract.v1", script)
         self.assertIn("factor_deepseek_provider_benchmark_execution_recipe.v1", script)
-        self.assertIn("factor_deepseek_provider_benchmark_scope_ticket_receipt.v2", script)
+        self.assertIn("factor_deepseek_provider_benchmark_scope_ticket_receipt.v3", script)
         self.assertIn("factor_deepseek_durable_evidence_recipe.v1", script)
         self.assertIn("production_activation_receipt_guides_next_safe_step", script)
         self.assertIn("provider_benchmark_execution_recipe_is_local_pending", script)
@@ -27400,6 +27400,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
     def test_deepseek_provider_benchmark_scope_ticket_task_creates_local_preflight_only(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
+        authorization_nonce = "caller-generated-task-nonce-1234567890abcdef"
 
         task = factor_service.create_factor_task(
             "run_deepseek_provider_benchmark_scope_ticket",
@@ -27408,6 +27409,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "sample_count": 40,
                 "response_format": "json_object",
                 "max_retry_per_sample": 2,
+                "authorization_nonce": authorization_nonce,
                 "api_key": "SHOULD_DROP",
             },
         )
@@ -27434,8 +27436,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(task["external_calls_triggered"])
         self.assertNotIn("api_key", task["payload_safe"])
         self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+        self.assertNotIn(authorization_nonce, json.dumps(task, ensure_ascii=False))
 
-        self.assertEqual(receipt["schema_version"], "factor_deepseek_provider_benchmark_scope_ticket_receipt.v2")
+        self.assertEqual(receipt["schema_version"], "factor_deepseek_provider_benchmark_scope_ticket_receipt.v3")
         self.assertEqual(receipt["scope"], "local_deepseek_provider_benchmark_scope_ticket_no_model_call")
         self.assertEqual(receipt["status"], task["current_step"])
         self.assertTrue(receipt["source_packet_present"])
@@ -27448,6 +27451,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(receipt["benchmark_scope_hash_short"])
         self.assertTrue(receipt["approval_nonce_enforced"])
         self.assertTrue(receipt["authorization_nonce_present"])
+        self.assertNotIn("authorization_nonce", receipt)
         self.assertEqual(receipt["authorization_nonce_status"], "issued")
         self.assertEqual(len(receipt["benchmark_scope_hash_short"]), 16)
         self.assertTrue(receipt["server_secret_presence_checked"])
@@ -63079,6 +63083,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
     def test_deepseek_provider_benchmark_scope_ticket_endpoint_is_button_gated_local_only(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
+        authorization_nonce = "caller-generated-scope-nonce-1234567890abcdef"
 
         created = self.client.post(
             "/api/factor-quant/deepseek-provider-benchmark-scope-ticket",
@@ -63087,6 +63092,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "sample_count": 40,
                 "response_format": "json_object",
                 "max_retry_per_sample": 2,
+                "authorization_nonce": authorization_nonce,
                 "token": "SHOULD_DROP",
             },
         ).json()
@@ -63111,6 +63117,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(task["does_not_execute_trades"])
         self.assertTrue(task["does_not_modify_strategy_action"])
         self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn(authorization_nonce, json.dumps(created, ensure_ascii=False))
         self.assertNotIn("SHOULD_DROP", json.dumps(created, ensure_ascii=False))
 
         factor = self.client.get("/api/factor-quant/cache").json()
@@ -63127,6 +63134,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(receipt["external_calls_triggered"])
         self.assertIn("scope ticket as provider benchmark evidence", receipt["not_allowed_next_steps"])
         self.assertNotIn("SHOULD_DROP", json.dumps(factor, ensure_ascii=False))
+        self.assertNotIn(authorization_nonce, json.dumps(factor, ensure_ascii=False))
 
         model_strategy = self.client.get("/api/model-strategy/cache").json()
         self.assertTrue(model_strategy["ok"])
@@ -63206,6 +63214,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
     def test_deepseek_provider_benchmark_execution_request_endpoint_is_scope_bound_local_only(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
+        authorization_nonce = "caller-generated-execution-nonce-1234567890abcdef"
 
         scope_created = self.client.post(
             "/api/factor-quant/deepseek-provider-benchmark-scope-ticket",
@@ -63214,13 +63223,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "sample_count": 40,
                 "response_format": "json_object",
                 "max_retry_per_sample": 2,
+                "authorization_nonce": authorization_nonce,
             },
         ).json()
         self.assertTrue(scope_created["ok"])
         factor_before = self.client.get("/api/factor-quant/cache").json()
         scope_receipt = factor_before["data"]["deepseek_provider_benchmark_scope_ticket_receipt"]
         scope_hash = scope_receipt["benchmark_scope_hash"]
-        authorization_nonce = scope_receipt["authorization_nonce"]
+        self.assertNotIn("authorization_nonce", scope_receipt)
 
         created = self.client.post(
             "/api/factor-quant/deepseek-provider-benchmark-execution-request",
@@ -63251,6 +63261,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(task["does_not_modify_strategy_action"])
         self.assertNotIn("token", task["payload_safe"])
         self.assertNotIn("SHOULD_DROP", json.dumps(created, ensure_ascii=False))
+        self.assertNotIn(authorization_nonce, json.dumps(created, ensure_ascii=False))
 
         factor = self.client.get("/api/factor-quant/cache").json()
         self.assertTrue(factor["ok"])
@@ -63275,6 +63286,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(receipt["external_calls_triggered"])
         self.assertIn("treat_execution_request_as_provider_benchmark", receipt["not_allowed_next_steps"])
         self.assertNotIn("SHOULD_DROP", json.dumps(factor, ensure_ascii=False))
+        self.assertNotIn(authorization_nonce, json.dumps(factor, ensure_ascii=False))
 
         model_strategy = self.client.get("/api/model-strategy/cache").json()
         self.assertTrue(model_strategy["ok"])
@@ -63743,12 +63755,11 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         return {
             "text": json.dumps(
                 {
-                    "summary": "仅解释合成研究状态并保持研究边界",
-                    "support_notes": ["FACTOR_DIRECTION_EVIDENCE"],
-                    "suppress_notes": [],
-                    "conflict_notes": [],
-                    "missing_data_notes": [],
-                    "discipline_notes": ["RESEARCH_BOUNDARY_EVIDENCE"],
+                    "interpretation": "support_context",
+                    "data_quality": "complete",
+                    "conflict_state": "aligned",
+                    "discipline_state": "research_boundary",
+                    "evidence_ids": ["FACTOR_DIRECTION_EVIDENCE", "RESEARCH_BOUNDARY_EVIDENCE"],
                 },
                 ensure_ascii=False,
             ),
@@ -63764,46 +63775,6 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             "provider_call_dispatched": True,
             "provider_response_observed": True,
         }
-
-    @classmethod
-    def _production_caller(cls, model: str = "test-model"):
-        from types import SimpleNamespace
-
-        class Completions:
-            def __init__(self):
-                self.calls = 0
-
-            def create(self, **kwargs):
-                self.calls += 1
-                request = json.loads(kwargs["messages"][-1]["content"])
-                result = cls._valid_model_result(request, self.calls)
-                return SimpleNamespace(
-                    id=f"provider-request-{self.calls}",
-                    model=model,
-                    system_fingerprint="safe-presence-only",
-                    choices=[
-                        SimpleNamespace(
-                            finish_reason="stop",
-                            message=SimpleNamespace(content=result["text"]),
-                        )
-                    ],
-                    usage=SimpleNamespace(prompt_tokens=10, completion_tokens=8, total_tokens=18),
-                )
-
-        class Client:
-            def __init__(self):
-                self.completions = Completions()
-                self.chat = SimpleNamespace(completions=self.completions)
-
-            def close(self):
-                return None
-
-        return deepseek_benchmark_service._OpenAIModelCaller(
-            Client(),
-            model,
-            production_capability=deepseek_benchmark_service._PRODUCTION_TRANSPORT_CAPABILITY,
-            explicit_http_client=False,
-        )
 
     @staticmethod
     def _hub(model: str = "test-model") -> dict:
@@ -63825,8 +63796,8 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                 "approved_scope_contract": contract,
                 "approved_scope_contract_hash": scope_hash,
                 "benchmark_scope_hash": scope_hash,
-                "authorization_nonce": nonce,
                 "authorization_nonce_present": True,
+                "authorization_nonce_strong": True,
                 "authorization_nonce_digest": nonce_digest,
                 "authorization_nonce_status": "issued",
             },
@@ -63938,6 +63909,14 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             current = store.read_packet(deepseek_benchmark_service.CURRENT_PACKET_KEY)
             self.assertEqual(current["safe_failure_code"], "explicit_provider_run_approval_required")
             self.assertFalse(current["deepseek_called"])
+            self.assertTrue(current["authorization_nonce_consumed"])
+            consumption = store.read_packet(current["nonce_consumption_receipt_key"])
+            self.assertEqual(consumption["task_id"], task["task_id"])
+            serialized = json.dumps(task, ensure_ascii=False)
+            serialized += json.dumps(store.read_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY))
+            serialized += json.dumps(current)
+            serialized += json.dumps(consumption)
+            self.assertNotIn(self.NONCE, serialized)
 
     def test_explicit_post_route_declares_dispatcher_and_get_remains_read_only(self):
         from fastapi.testclient import TestClient
@@ -63948,14 +63927,12 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             store = SQLiteMetaStore(db_path)
             store.write_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY, self._hub())
             clear_task_statuses_for_tests()
-            fake_call = self._production_caller()
             with (
                 patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path),
                 patch.object(task_service, "SQLITE_META_PATH", db_path),
                 patch.object(factor_service, "SQLITE_META_PATH", db_path),
-                patch.object(app_config, "get_deepseek_keys", return_value=["test-only-secret"]),
+                patch.object(app_config, "get_deepseek_keys", return_value=[]),
                 patch.object(app_config, "get_deepseek_model", return_value="test-model"),
-                patch.object(deepseek_benchmark_service, "_build_real_model_call", return_value=fake_call) as builder,
             ):
                 client = TestClient(app)
                 response = client.post(
@@ -63968,10 +63945,9 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json()["data"]["task"]["status"], "success")
+                self.assertEqual(response.json()["data"]["task"]["status"], "failed")
                 self.assertEqual(client.get("/api/factor-quant/cache").status_code, 200)
 
-            builder.assert_called_once()
             route_source = (Path(__file__).parents[1] / "server" / "api" / "routes_factor_quant.py").read_text(
                 encoding="utf-8"
             )
@@ -63980,43 +63956,26 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             self.assertNotIn("deepseek_benchmark_service", get_body)
             current = store.read_packet(deepseek_benchmark_service.CURRENT_PACKET_KEY)
             last_good = store.read_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY)
-            self.assertTrue(current["production_fact_ready"])
-            self.assertTrue(current["deepseek_called"])
-            self.assertEqual(current["sample_count"], 40)
-            self.assertEqual(current["model_ledger_count"], 40)
-            self.assertEqual(last_good["status"], "deepseek_provider_benchmark_passed")
-            self.assertNotIn("test-only-secret", json.dumps(current, ensure_ascii=False))
+            self.assertFalse(current["production_fact_ready"])
+            self.assertFalse(current["deepseek_called"])
+            self.assertIsNone(last_good)
+            self.assertTrue(current["authorization_nonce_consumed"])
 
-    def test_action_leakage_is_discarded_and_every_output_is_safety_reviewed(self):
-        def unsafe_result(sample, attempt, *_args):
-            result = self._valid_model_result(sample, attempt)
-            result["text"] = json.dumps(
-                {
-                    "summary": "建议买入并逐步加仓",
-                    "support_notes": [],
-                    "suppress_notes": [],
-                    "conflict_notes": [],
-                    "missing_data_notes": [],
-                    "discipline_notes": [],
-                },
-                ensure_ascii=False,
-            )
-            return result
+    def test_free_text_action_and_generated_number_counterexamples_are_schema_rejected(self):
+        examples = ("十二", "申购", "吸纳", "持有配置", "overweight accumulate allocate")
+        sample = deepseek_benchmark_service.FIXED_SAMPLES[0]
+        for free_text in examples:
+            with self.subTest(free_text=free_text):
+                parsed = json.loads(self._valid_model_result(sample)["text"])
+                parsed["interpretation"] = free_text
+                valid, code, *_ = deepseek_benchmark_service._validate_output(parsed, sample)
+                self.assertFalse(valid)
+                self.assertEqual(code, "response_interpretation_enum_invalid")
 
-        packet = deepseek_benchmark_service._execute_benchmark(
-            self._scope(),
-            unsafe_result,
-            evidence_source="real_provider",
-            model_used="test-model",
+        summary = deepseek_benchmark_service.render_deterministic_summary(
+            json.loads(self._valid_model_result(sample)["text"])
         )
-
-        self.assertEqual(packet["success_count"], 0)
-        self.assertEqual(packet["model_ledger_count"], 120)
-        self.assertEqual(packet["safety_reviewed_sample_count"], 40)
-        self.assertEqual(packet["safety_reviewed_ledger_count"], 120)
-        self.assertFalse(packet["safety_review_passed"])
-        self.assertFalse(packet["production_deepseek_explanation_complete"])
-        self.assertNotIn("建议买入并逐步加仓", json.dumps(packet, ensure_ascii=False))
+        self.assertEqual(summary, "支持证据语境；数据完整；证据一致；保持研究边界")
 
     def test_network_attempts_are_capped_at_three_per_sample(self):
         def always_timeout(*_args):
@@ -64111,8 +64070,11 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertEqual(result["returned_model"], "test-model")
         self.assertEqual(result["finish_reason"], "stop")
         self.assertTrue(result["provider_request_id_present"])
-        self.assertFalse(caller.production_eligible)
-        self.assertEqual(caller.transport_provenance, "explicit_http_client_or_injected_transport_test_only")
+        self.assertFalse(hasattr(caller, "production_eligible"))
+        self.assertEqual(
+            caller.transport_provenance,
+            "constructed_caller_test_only_until_internal_wrapper_finalizes",
+        )
         self.assertTrue(http_client.is_closed)
 
     def test_mock_transport_can_validate_outputs_but_never_promotes_production(self):
@@ -64160,6 +64122,38 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertFalse(packet["production_fact_ready"])
         self.assertFalse(packet["deepseek_called"])
 
+    def test_directly_constructed_caller_cannot_acquire_production_origin(self):
+        from types import SimpleNamespace
+
+        class Completions:
+            calls = 0
+
+            def create(self, **kwargs):
+                self.calls += 1
+                sample = json.loads(kwargs["messages"][-1]["content"])
+                text = DeepSeekGovernedBenchmarkExecutorTests._valid_model_result(sample, self.calls)["text"]
+                return SimpleNamespace(
+                    id=f"direct-{self.calls}",
+                    model="test-model",
+                    system_fingerprint=None,
+                    choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(content=text))],
+                    usage=SimpleNamespace(prompt_tokens=10, completion_tokens=8, total_tokens=18),
+                )
+
+        completions = Completions()
+        client = SimpleNamespace(
+            chat=SimpleNamespace(completions=completions),
+            close=lambda: None,
+        )
+        caller = deepseek_benchmark_service._OpenAIModelCaller(client, "test-model")
+        packet = deepseek_benchmark_service._execute_benchmark(
+            self._scope(), caller, evidence_source="real_provider", model_used="test-model"
+        )
+        self.assertEqual(packet["success_count"], 40)
+        self.assertEqual(completions.calls, 40)
+        self.assertFalse(packet["transport_production_eligible"])
+        self.assertFalse(packet["production_fact_ready"])
+
     def test_provider_metadata_mismatch_length_and_missing_id_are_rejected(self):
         mutations = (
             ({"returned_model": "unexpected-model"}, "provider_returned_model_mismatch"),
@@ -64180,29 +64174,41 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                 self.assertEqual({row["failure_code"] for row in packet["model_ledger"]}, {expected_code})
                 self.assertFalse(packet["production_fact_ready"])
 
-    def test_cn_en_action_position_target_and_numeric_leakage_are_rejected(self):
-        examples = (
-            ("建议买入并逐步加仓", "strategy_action_language_detected"),
-            ("控制仓位后介入并择机退出", "strategy_action_language_detected"),
-            ("increase position allocation and set target price", "strategy_action_language_detected"),
-            ("目标价为十二点五元并预计上涨百分之十", "strategy_action_language_detected"),
-            ("保持研究边界但置信度为30%", "numeric_output_detected"),
+    def test_forty_duplicate_provider_request_ids_cannot_promote(self):
+        def duplicate_request_id(sample, attempt, *_args):
+            result = self._valid_model_result(sample, attempt)
+            result["provider_request_id_hash"] = "a" * 64
+            return result
+
+        packet = deepseek_benchmark_service._execute_benchmark(
+            self._scope(), duplicate_request_id, evidence_source="real_provider", model_used="test-model"
         )
+        finalized = deepseek_benchmark_service._finalize_official_sdk_packet(packet)
+        self.assertEqual(finalized["success_count"], 40)
+        self.assertFalse(finalized["provider_request_ids_unique"])
+        self.assertFalse(finalized["production_fact_ready"])
+
+    def test_closed_output_rejects_extra_summary_unknown_evidence_and_generated_values(self):
         sample = deepseek_benchmark_service.FIXED_SAMPLES[0]
-        for summary, expected_code in examples:
-            with self.subTest(summary=summary):
-                payload = self._valid_model_result(sample)["text"]
-                parsed = json.loads(payload)
-                parsed["summary"] = summary
-                valid, code, _, safety, action_safe, numeric_safe = deepseek_benchmark_service._validate_output(
-                    parsed, sample
-                )
-                self.assertFalse(valid)
-                self.assertEqual(code, expected_code)
-                self.assertFalse(safety)
-                self.assertFalse(action_safe if expected_code == "strategy_action_language_detected" else numeric_safe)
+        parsed = json.loads(self._valid_model_result(sample)["text"])
+        parsed["summary"] = "free text"
+        self.assertEqual(deepseek_benchmark_service._validate_output(parsed, sample)[1], "response_schema_keys_invalid")
+        parsed = json.loads(self._valid_model_result(sample)["text"])
+        parsed["evidence_ids"] = ["MODEL_GENERATED_EVIDENCE"]
+        self.assertEqual(
+            deepseek_benchmark_service._validate_output(parsed, sample)[1],
+            "response_evidence_id_not_input_allowlist",
+        )
+        parsed = json.loads(self._valid_model_result(sample)["text"])
+        parsed["evidence_ids"] = ["FACTOR_DIRECTION_EVIDENCE", "FACTOR_DIRECTION_EVIDENCE"]
+        self.assertEqual(
+            deepseek_benchmark_service._validate_output(parsed, sample)[1],
+            "response_evidence_ids_not_unique",
+        )
 
     def test_scope_binds_prompt_base_url_temperature_and_strict_receipt_state(self):
+        self.assertFalse(deepseek_benchmark_service.authorization_nonce_is_strong("short"))
+        self.assertTrue(deepseek_benchmark_service.authorization_nonce_is_strong(self.NONCE))
         for field, replacement in (
             ("system_prompt_sha256", "0" * 64),
             ("base_url", "https://example.invalid"),
@@ -64241,7 +64247,6 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             store = SQLiteMetaStore(db_path)
             store.write_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY, self._hub())
             clear_task_statuses_for_tests()
-            caller = self._production_caller()
             request = {
                 "approved_by_user": True,
                 "provider_run_approved_by_user": True,
@@ -64252,19 +64257,23 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                 patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path),
                 patch.object(task_service, "SQLITE_META_PATH", db_path),
                 patch.object(app_config, "get_deepseek_model", return_value="test-model"),
-                patch.object(app_config, "get_deepseek_keys", return_value=["test-only-secret"]) as key_lookup,
-                patch.object(deepseek_benchmark_service, "_build_real_model_call", return_value=caller) as builder,
+                patch.object(app_config, "get_deepseek_keys", return_value=[]) as key_lookup,
             ):
                 first = deepseek_benchmark_service.run_deepseek_provider_benchmark_task(request)
                 second = deepseek_benchmark_service.run_deepseek_provider_benchmark_task(request)
 
-            self.assertEqual(first["status"], "success")
+            self.assertEqual(first["status"], "failed")
             self.assertEqual(second["status"], "failed")
-            self.assertEqual(builder.call_count, 1)
             self.assertEqual(key_lookup.call_count, 1)
             serialized = json.dumps(store.read_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY))
             serialized += json.dumps(store.read_packet(deepseek_benchmark_service.CURRENT_PACKET_KEY))
             self.assertNotIn(self.NONCE, serialized)
+            receipt = store.read_packet(
+                deepseek_benchmark_service.nonce_consumption_receipt_key(
+                    deepseek_benchmark_service.authorization_nonce_digest(self.NONCE)
+                )
+            )
+            self.assertEqual(receipt["status"], "authorization_nonce_consumed")
 
     def test_single_use_nonce_atomic_concurrency_has_one_winner(self):
         import threading
@@ -64284,7 +64293,9 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
 
             def consume():
                 results.append(deepseek_benchmark_service._consume_authorization_nonce(
-                    raw_nonce=self.NONCE, payload_safe=payload_safe
+                    raw_nonce=self.NONCE,
+                    payload_safe=payload_safe,
+                    task_id="concurrent-task",
                 ))
 
             with patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path):
@@ -64294,7 +64305,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                 for thread in threads:
                     thread.join()
 
-            self.assertEqual(sum(int(success) for success, _ in results), 1)
+            self.assertEqual(sum(int(success) for success, _, _ in results), 1)
             self.assertEqual(len(results), 2)
 
     def test_global_deadline_stops_remaining_samples(self):
@@ -64368,65 +64379,39 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertFalse(raised.exception.network_attempted)
         self.assertFalse(raised.exception.provider_call_dispatched)
 
-    def test_v1_closeout_accepts_only_real_provider_quality_safety_packet(self):
+    def test_v1_closeout_rejects_forged_packet_without_exact_nonce_receipt(self):
         packet = deepseek_benchmark_service._execute_benchmark(
-            self._scope(),
-            self._production_caller(),
-            evidence_source="real_provider",
-            model_used="test-model",
+            self._scope(), self._valid_model_result, evidence_source="real_provider", model_used="test-model"
         )
-        self.assertTrue(packet["production_fact_ready"])
+        packet = deepseek_benchmark_service._finalize_official_sdk_packet(packet)
+        packet["nonce_consumption_receipt_key"] = deepseek_benchmark_service.nonce_consumption_receipt_key(
+            packet["authorization_nonce_digest"]
+        )
+        packet["nonce_consumption_task_id"] = "forged-task"
+        packet["nonce_consumed_at"] = "2026-07-13T00:00:00"
         with tempfile.TemporaryDirectory() as temp_dir:
             evidence_root = Path(temp_dir)
             store = SQLiteMetaStore(evidence_root / "meta.sqlite")
             store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, packet)
             evaluation = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=evidence_root)
             fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
-            ltg07 = next(row for row in evaluation["ltg_closure_rows"] if row["id"] == "LTG-07")
-            self.assertTrue(fact_rows["governed_model_runtime"])
-            self.assertFalse(ltg07["can_close"])
+            self.assertFalse(fact_rows["governed_model_runtime"])
 
-            synthetic = dict(packet)
-            synthetic["evidence_source"] = "synthetic_test"
-            store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, synthetic)
+            mismatched_receipt = {
+                "packet_key": packet["nonce_consumption_receipt_key"],
+                "schema_version": deepseek_benchmark_service.NONCE_CONSUMPTION_RECEIPT_SCHEMA_VERSION,
+                "status": "authorization_nonce_consumed",
+                "benchmark_scope_hash": packet["benchmark_scope_hash"],
+                "task_id": "different-task",
+                "authorization_nonce_digest": packet["authorization_nonce_digest"],
+                "consumed_at": packet["nonce_consumed_at"],
+                "raw_nonce_stored": False,
+                "contains_secret": False,
+            }
+            store.write_packet(packet["nonce_consumption_receipt_key"], mismatched_receipt)
             evaluation = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=evidence_root)
             fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
             self.assertFalse(fact_rows["governed_model_runtime"])
-
-            for field, replacement in (
-                ("model_ledger", []),
-                ("total_tokens", 0),
-                ("production_deepseek_explanation_complete", False),
-                ("scope_binding_valid", False),
-                ("authorization_nonce_consumed", False),
-                ("transport_production_eligible", False),
-                ("global_deadline_exceeded", True),
-                ("provider_response_metadata_complete", False),
-            ):
-                falsified = dict(packet)
-                falsified[field] = replacement
-                if field == "model_ledger":
-                    falsified["model_ledger_count"] = 0
-                store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, falsified)
-                evaluation = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=evidence_root)
-                fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
-                self.assertFalse(fact_rows["governed_model_runtime"], field)
-
-            for ledger_field, replacement in (
-                ("input_hash", "0" * 64),
-                ("attempt", 4),
-                ("returned_model", "unexpected-model"),
-                ("finish_reason", "length"),
-                ("provider_request_id_hash", ""),
-                ("authorization_nonce_consumed", False),
-                ("does_not_modify_strategy_action", False),
-            ):
-                falsified = json.loads(json.dumps(packet))
-                falsified["model_ledger"][0][ledger_field] = replacement
-                store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, falsified)
-                evaluation = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=evidence_root)
-                fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
-                self.assertFalse(fact_rows["governed_model_runtime"], ledger_field)
 
     def test_task_catalog_declares_governed_executor_boundaries(self):
         row = next(item for item in task_service.TASK_CATALOG if item["task_type"] == "run_deepseek_provider_benchmark")
@@ -64438,7 +64423,14 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertEqual(row["global_deadline_seconds"], 180)
         self.assertTrue(row["scope_contract_exact_binding_required"])
         self.assertTrue(row["approval_nonce_enforced"])
+        self.assertTrue(row["authorization_nonce_caller_generated"])
+        self.assertFalse(row["authorization_nonce_raw_persisted"])
+        self.assertTrue(row["preflight_failure_consumes_nonce"])
         self.assertTrue(row["explicit_http_client_transport_is_test_only"])
+        self.assertTrue(row["injected_model_call_transport_is_test_only"])
+        self.assertTrue(row["official_sdk_internal_construction_required_for_production"])
+        self.assertTrue(row["model_output_closed_enums_only"])
+        self.assertTrue(row["deterministic_local_summary_only"])
         self.assertTrue(row["last_good_preserved_on_failure"])
         self.assertFalse(row["synthetic_evidence_closes_ltg07"])
         self.assertFalse(row["cache_get_external_calls"])
