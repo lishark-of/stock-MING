@@ -101,6 +101,21 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         self.assertFalse(list(self.root.rglob("*.sqlite")))
         self.assertFalse(list(self.root.rglob("*.jsonl")))
 
+    def test_scope_hash_binds_result_affecting_candidate_fields(self) -> None:
+        pool = self._pool()
+        baseline = candidate_service._candidate_v05_scope_hash(pool, {"data_date": "2026-07-13"})
+        changed_score = [{**row, "score": 999} if index == 0 else row for index, row in enumerate(pool)]
+        changed_gaps = [{**row, "data_gaps": ["different_gap"]} if index == 0 else row for index, row in enumerate(pool)]
+
+        self.assertNotEqual(
+            baseline,
+            candidate_service._candidate_v05_scope_hash(changed_score, {"data_date": "2026-07-13"}),
+        )
+        self.assertNotEqual(
+            baseline,
+            candidate_service._candidate_v05_scope_hash(changed_gaps, {"data_date": "2026-07-13"}),
+        )
+
     def test_v05_post_processes_supplied_pool_updates_next_session_and_preserves_last_good(self) -> None:
         task = candidate_service.run_candidate_full_pool_worker_fallback_task(self._payload())
 

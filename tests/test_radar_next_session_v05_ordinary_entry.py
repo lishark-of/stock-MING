@@ -17,12 +17,12 @@ class RadarNextSessionV05OrdinaryEntryTests(unittest.TestCase):
         self.assertIn("suppliedPoolOrdinarySentence", supplied_pool)
         self.assertIn("MetricGrid items={suppliedPoolOrdinaryItems}", supplied_pool)
         for field in (
-            "supplied_pool_input_count",
-            "processed_candidate_count",
-            "chunk_count",
-            "fullPoolStageRows",
-            "mapped_signal_group_count",
-            "searchQuantLastGoodResultLineage",
+            "candidate_radar_v05_runtime",
+            "candidate_radar_v05_bucket_counts",
+            "candidate_radar_v05_coverage",
+            "candidate_radar_v05_result_version",
+            "candidateV05StageRows",
+            "Candidate current/last-good",
         ):
             self.assertIn(field, self.radar)
         self.assertIn("不把本地 batch 说成全市场或 Celery production", supplied_pool)

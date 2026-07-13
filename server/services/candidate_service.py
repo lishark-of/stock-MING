@@ -4828,8 +4828,15 @@ def _candidate_v05_scope_hash(candidates: list[dict[str, Any]], payload_safe: Ma
         "pool": [
             {
                 "ticker": _safe_text(row.get("ticker") or "", limit=32).upper(),
+                "name": _safe_text(row.get("name") or "", limit=120),
                 "rank": row.get("rank"),
+                "score": row.get("score"),
                 "source": _safe_text(row.get("source") or "", limit=120),
+                "data_gaps": sorted(
+                    _safe_text(item, limit=120)
+                    for item in _as_list(row.get("data_gaps"))
+                    if _safe_text(item, limit=120)
+                ),
             }
             for row in candidates
         ],

@@ -809,6 +809,12 @@ export default function CandidateRadar() {
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
   const fullPoolLocalExecutionReceipt = (cache.full_pool_local_execution_receipt as Record<string, unknown> | undefined) ?? {};
+  const candidateV05Runtime = (cache.candidate_radar_v05_runtime as Record<string, unknown> | undefined) ?? {};
+  const candidateV05BucketCounts = (cache.candidate_radar_v05_bucket_counts as Record<string, unknown> | undefined) ?? {};
+  const candidateV05Coverage = (cache.candidate_radar_v05_coverage as Record<string, unknown> | undefined) ?? {};
+  const candidateV05Freshness = (candidateV05Coverage.freshness_state as Record<string, unknown> | undefined) ?? {};
+  const candidateV05StageRows = rows(candidateV05Runtime.stage_rows);
+  const candidateV05ResultVersion = displayText(cache.candidate_radar_v05_result_version, "");
   const deepScanPlan = (cache.deep_scan_plan as Record<string, unknown> | undefined) ?? {};
   const deepScanLocalReviewReceipt = (cache.deep_scan_local_review_receipt as Record<string, unknown> | undefined) ?? {};
   const legacyParityInventory = (cache.legacy_parity_inventory as Record<string, unknown> | undefined) ?? {};
@@ -1274,9 +1280,9 @@ export default function CandidateRadar() {
   const coarseFineGapLabel = Number(coarseFineScreening.gap_visible_count ?? 0)
     ? `可见缺口 ${String(coarseFineScreening.gap_visible_count)} 项；先复核来源和缺口`
     : "未标记粗筛/细筛缺口";
-  const ordinaryCandidateTopCount = Number(coarseFineScreening.top_count ?? 0) || rows(cache.candidate_rows).length || Number(counts.candidate_count ?? 0);
-  const ordinaryCandidateWatchCount = Number(coarseFineScreening.watch_count ?? 0) || rows(radarPacket.watch_candidates).length;
-  const ordinaryCandidateExcludedCount = Number(coarseFineScreening.excluded_count ?? 0) || rows(cache.excluded_candidates).length || rows(radarPacket.excluded_candidates).length;
+  const ordinaryCandidateTopCount = Number(candidateV05BucketCounts.top_count ?? coarseFineScreening.top_count ?? 0) || rows(cache.candidate_rows).length || Number(counts.candidate_count ?? 0);
+  const ordinaryCandidateWatchCount = Number(candidateV05BucketCounts.watch_count ?? coarseFineScreening.watch_count ?? 0) || rows(radarPacket.watch_candidates).length;
+  const ordinaryCandidateExcludedCount = Number(candidateV05BucketCounts.excluded_count ?? coarseFineScreening.excluded_count ?? 0) || rows(cache.excluded_candidates).length || rows(radarPacket.excluded_candidates).length;
   const ordinaryCandidateGroupLabel =
     `Top ${ordinaryCandidateTopCount} / Watch ${ordinaryCandidateWatchCount} / Excluded ${ordinaryCandidateExcludedCount}`;
   const ordinaryCandidateReviewOrder =
@@ -1284,46 +1290,58 @@ export default function CandidateRadar() {
   const ordinaryCandidateGroupBoundary =
     "Top 是优先复核，Watch 是观察，Excluded 是排除或等待；三者都不是买入、卖出或加仓指令";
   const suppliedPoolInputCount = Number(
-    fullPoolLocalExecutionReceipt.supplied_pool_input_count ??
+    candidateV05BucketCounts.input_count ??
+      fullPoolLocalExecutionReceipt.supplied_pool_input_count ??
       fullPoolPlan.supplied_pool_input_count ??
       coverageDetail.candidate_input_count ??
       localPoolAudit.normalized_candidate_count ??
       0
   );
   const suppliedPoolProcessedCount = Number(
-    fullPoolLocalExecutionReceipt.processed_candidate_count ??
+    candidateV05BucketCounts.processed_count ??
+      fullPoolLocalExecutionReceipt.processed_candidate_count ??
       fullPoolLocalExecutionReceipt.processed_count ??
       scanExecutionSummary.processed_candidate_count ??
       0
   );
   const suppliedPoolChunkCount = Number(
-    fullPoolLocalExecutionReceipt.chunk_count ??
+    candidateV05BucketCounts.chunk_count ??
+      fullPoolLocalExecutionReceipt.chunk_count ??
       fullPoolLocalExecutionReceipt.chunk_total ??
       fullPoolPlan.chunk_count ??
       0
   );
-  const suppliedPoolStageLabel = fullPoolStageRows.length
-    ? `${fullPoolStageRows.length} 个本地阶段已回放`
+  const suppliedPoolStageCount = Number(candidateV05BucketCounts.stage_count ?? 0) || candidateV05StageRows.length || fullPoolStageRows.length;
+  const suppliedPoolStageLabel = suppliedPoolStageCount
+    ? `${suppliedPoolStageCount} 个本地阶段已回放`
     : "等待 supplied-pool stage 回放";
-  const suppliedPoolRuntimeLabel = fullPoolLocalExecutionReceipt.local_full_pool_execution_done === true
+  const suppliedPoolRuntimeLabel = candidateV05Runtime.status === "worker_v04_local_batch_runtime_success"
+    ? "v0.5 本地 batch readback 已可读；不等同于全市场或 Celery production"
+    : fullPoolLocalExecutionReceipt.local_full_pool_execution_done === true
     ? "本地 batch readback 已可读；不等同于全市场或 Celery production"
-    : String(fullPoolLocalExecutionReceipt.status ?? fullPoolPlan.status ?? "等待本地 supplied-pool readback");
-  const suppliedPoolFreshnessLabel = `${String(freshnessState.data_date ?? freshnessState.expected_trade_date ?? "等待 data_date")} / ${String(freshnessState.freshness_state ?? freshnessState.state ?? "等待 freshness")}`;
-  const suppliedPoolCoverageLabel = `保留信号 ${String(scanCoverage.mapped_signal_group_count ?? 0)} 组 / 缺口 ${String(scanCoverage.missing_signal_group_count ?? 0)} 组`;
-  const suppliedPoolProviderModelLabel = coarseFineScreening.tushare_backed === true
+    : String(candidateV05Runtime.status ?? fullPoolLocalExecutionReceipt.status ?? fullPoolPlan.status ?? "等待本地 supplied-pool readback");
+  const suppliedPoolFreshnessLabel = `${String(candidateV05Freshness.data_date ?? freshnessState.data_date ?? freshnessState.expected_trade_date ?? "等待 data_date")} / ${String(candidateV05Freshness.freshness_state ?? candidateV05Freshness.state ?? freshnessState.freshness_state ?? freshnessState.state ?? "等待 freshness")}`;
+  const suppliedPoolCoverageLabel = candidateV05Coverage.signal_retained_coverage
+    ? `${String(candidateV05Coverage.signal_retained_coverage)} / ${String(candidateV05Coverage.gap_status ?? "缺口待复核")}`
+    : `保留信号 ${String(scanCoverage.mapped_signal_group_count ?? 0)} 组 / 缺口 ${String(scanCoverage.missing_signal_group_count ?? 0)} 组`;
+  const suppliedPoolProviderModelLabel = candidateV05Coverage.gap_status
+    ? `本地 supplied-pool；数据源/模型/Celery-Redis 仍待补（${String(candidateV05Coverage.deepseek_status ?? "pending")})`
+    : coarseFineScreening.tushare_backed === true
     ? `数据源已有本地回放；模型 ${String(coarseFineScreening.deepseek_status ?? "待补")}`
     : `数据源/模型待补：${String(coarseFineScreening.deepseek_status ?? "pending")}`;
-  const suppliedPoolReadbackLabel = searchQuantLastGoodResultLineage.result_version || searchQuantResultVersionSummary.last_good_result_version
+  const suppliedPoolReadbackLabel = candidateV05ResultVersion
+    ? `Candidate current/last-good ${candidateV05ResultVersion}；runtime current ${displayText((candidateV05Runtime.current_after as Record<string, unknown> | undefined)?.status, "等待")} / last-good ${displayText((candidateV05Runtime.last_good_after as Record<string, unknown> | undefined)?.status, "首次运行待形成")}`
+    : searchQuantLastGoodResultLineage.result_version || searchQuantResultVersionSummary.last_good_result_version
     ? `current/last-good ${displayText(searchQuantLastGoodResultLineage.symbol ?? searchQuantResultVersionSummary.last_good_result_symbol, "当前结果")} / ${displayText(searchQuantLastGoodResultLineage.result_version ?? searchQuantResultVersionSummary.last_good_result_version, "等待版本")}`
     : "等待 runtime readback / last-good";
   const suppliedPoolOrdinarySentence =
     `supplied pool：输入 ${suppliedPoolInputCount}，已处理 ${suppliedPoolProcessedCount || "待回放"}，chunks ${suppliedPoolChunkCount || "待回放"}；${ordinaryCandidateGroupLabel}。${suppliedPoolRuntimeLabel}。`;
   const suppliedPoolOrdinaryItems: MetricItem[] = [
     { label: "输入 / 已处理", value: `${suppliedPoolInputCount || "待回放"} / ${suppliedPoolProcessedCount || "待回放"}`, tone: suppliedPoolInputCount ? "good" : "warn" },
-    { label: "chunks / stages", value: `${suppliedPoolChunkCount || "待回放"} / ${suppliedPoolStageLabel}`, tone: suppliedPoolChunkCount || fullPoolStageRows.length ? "good" : "warn" },
+    { label: "chunks / stages", value: `${suppliedPoolChunkCount || "待回放"} / ${suppliedPoolStageLabel}`, tone: suppliedPoolChunkCount || suppliedPoolStageCount ? "good" : "warn" },
     { label: "Top / Watch / Excluded", value: ordinaryCandidateGroupLabel, tone: ordinaryCandidateTopCount ? "good" : "warn" },
-    { label: "信号 / 覆盖", value: suppliedPoolCoverageLabel, tone: Number(scanCoverage.missing_signal_group_count ?? 0) ? "warn" : "good" },
-    { label: "来源 / 日期", value: `${coarseFineSourceLabel} / ${suppliedPoolFreshnessLabel}`, tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn" },
+    { label: "信号 / 覆盖", value: suppliedPoolCoverageLabel, tone: candidateV05Coverage.gap_status || Number(scanCoverage.missing_signal_group_count ?? 0) ? "warn" : "good" },
+    { label: "来源 / 日期", value: `${displayText(candidateV05Coverage.source, coarseFineSourceLabel)} / ${suppliedPoolFreshnessLabel}`, tone: candidateV05Coverage.source || coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn" },
     { label: "本地 readback", value: suppliedPoolReadbackLabel, tone: suppliedPoolReadbackLabel.startsWith("等待") ? "warn" : "good" },
     { label: "数据源 / 模型", value: suppliedPoolProviderModelLabel, tone: coarseFineScreening.tushare_backed === true ? "good" : "warn" },
     { label: "研究边界", value: "本地 batch 不等同全市场或 Celery production；候选不是买入指令", tone: "good" }
