@@ -564,8 +564,8 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "mode_layer": "button_task_then_physical_storage_execution",
         "current_phase": "physical_execution_request_required",
         "first_allowed_route": "POST /api/storage/physical-execution-request",
-        "second_allowed_route": "",
-        "future_provider_route": "future explicit physical storage execution tasks",
+        "second_allowed_route": "POST /api/storage/physical-execution/phase-a",
+        "future_provider_route": "future storage production promotion closeout review",
         "target_acceptance_mode": "storage_physical_execution_and_promotion",
         "required_evidence": [
             "scope-bound physical execution request",
@@ -1028,6 +1028,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_storage_physical_execution_request",
             "receipt_key": "storage_physical_execution_request",
             "route": "POST /api/storage/physical-execution-request",
+        },
+        {
+            "phase_key": "storage_physical_execution_phase_a_receipt",
+            "task_type": "run_storage_physical_execution_phase_a",
+            "receipt_key": "storage_physical_execution_phase_a",
+            "route": "POST /api/storage/physical-execution/phase-a",
         },
     ],
     "p4_worker_runtime_qa": [
@@ -5636,6 +5642,10 @@ def _receipt_target_payload_safe_summary(receipt: dict[str, Any]) -> dict[str, A
         or receipt.get("target_storage_task_type")
         or ""
     )
+    if target_route == "future POST /api/storage/physical-execution":
+        target_route = "POST /api/storage/physical-execution/phase-a"
+    if target_task_type == "run_storage_physical_execution":
+        target_task_type = "run_storage_physical_execution_phase_a"
     target_acceptance_mode = str(payload_map.get("acceptance_mode") or receipt.get("target_acceptance_mode") or "")
     if not target_acceptance_mode and (
         receipt.get("target_storage_task_route") or receipt.get("target_storage_task_type")
@@ -6710,7 +6720,7 @@ def _latest_storage_physical_execution_handoff_summary() -> dict[str, Any]:
         next_local_step = "future storage production promotion closeout review after remote CI and safety evidence"
     elif request_ready:
         status = "storage_physical_execution_request_ready_physical_task_pending"
-        next_local_step = "future explicit physical storage execution tasks"
+        next_local_step = "POST /api/storage/physical-execution/phase-a"
     elif recipe_ready:
         status = "storage_physical_execution_recipe_ready_execution_request_needed"
         next_local_step = "POST /api/storage/physical-execution-request"
@@ -6795,11 +6805,23 @@ def _latest_storage_physical_execution_handoff_summary() -> dict[str, Any]:
             durable_recipe.get("production_promotion_review_production_blocker_count") or 0
         ),
         "physical_execution_scope_hash_short": scope_hash_short,
-        "target_storage_task_route": str(
-            request.get("target_storage_task_route") or "future POST /api/storage/physical-execution"
+        "target_storage_task_route": (
+            "POST /api/storage/physical-execution/phase-a"
+            if str(request.get("target_storage_task_route") or "")
+            == "future POST /api/storage/physical-execution"
+            else str(
+                request.get("target_storage_task_route")
+                or "POST /api/storage/physical-execution/phase-a"
+            )
         ),
         "target_current_result_atomic_route": "POST /api/storage/current-result/atomic-promote",
-        "target_storage_task_type": str(request.get("target_storage_task_type") or "run_storage_physical_execution"),
+        "target_storage_task_type": (
+            "run_storage_physical_execution_phase_a"
+            if str(request.get("target_storage_task_type") or "") == "run_storage_physical_execution"
+            else str(
+                request.get("target_storage_task_type") or "run_storage_physical_execution_phase_a"
+            )
+        ),
         "target_acceptance_mode": "storage_physical_execution_and_promotion",
         "next_local_step": next_local_step,
         "requires_schema_migration_execution": direct_evidence.get("schema_migration_executed") is not True,
@@ -9745,6 +9767,15 @@ def _build_ltg_next_action_submission_preview_rows(
             "safe_payload_summary": "approved_by_user plus latest storage physical execution recipe scope hash",
             "expected_local_receipt": "storage_physical_execution_request",
             "required_prior_phase_key": "storage_dataset_version_manifest_validate_receipt",
+            "required_prior_material": "physical_execution_scope_hash",
+            "manual_scope_hash_required": True,
+            "context_key": "storage_physical_execution_recipe_preview",
+        },
+        "POST /api/storage/physical-execution/phase-a": {
+            "step_kind": "local_storage_physical_execution_phase_a",
+            "safe_payload_summary": "approved_by_user plus latest physical execution request scope hash; consolidates local evidence only",
+            "expected_local_receipt": "storage_physical_execution_phase_a",
+            "required_prior_phase_key": "storage_physical_execution_request_ticket",
             "required_prior_material": "physical_execution_scope_hash",
             "manual_scope_hash_required": True,
             "context_key": "storage_physical_execution_recipe_preview",

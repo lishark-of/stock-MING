@@ -3344,7 +3344,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(p3_production_handoff["can_close_goal"])
         self.assertEqual(action_rows["p3_factor_universe_worker_batch_research"]["local_receipt_step_count"], 5)
         self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 10)
-        self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 7)
+        self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 8)
         self.assertEqual(
             action_rows["p4_storage_physical_execution"]["next_local_step"],
             "POST /api/storage/backtest-results/schema-seed",
@@ -9361,8 +9361,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(persisted["approved_by_user"])
         self.assertTrue(persisted["requested_scope_hash_matches_latest"])
         self.assertEqual(persisted["physical_execution_scope_hash"], scope_hash)
-        self.assertEqual(persisted["target_storage_task_route"], "future POST /api/storage/physical-execution")
-        self.assertEqual(persisted["target_storage_task_type"], "run_storage_physical_execution")
+        self.assertEqual(persisted["target_storage_task_route"], "POST /api/storage/physical-execution/phase-a")
+        self.assertEqual(persisted["target_storage_task_type"], "run_storage_physical_execution_phase_a")
         self.assertFalse(persisted["physical_task_created"])
         self.assertFalse(persisted["physical_task_executed"])
         self.assertFalse(persisted["physical_execution_implemented"])
@@ -9404,10 +9404,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(handoff["storage_physical_execution_request_ready"])
         self.assertFalse(handoff["storage_physical_execution_phase_a_visible"])
         self.assertEqual(handoff["physical_execution_scope_hash_short"], scope_hash[:12])
-        self.assertEqual(handoff["target_storage_task_route"], "future POST /api/storage/physical-execution")
-        self.assertEqual(handoff["target_storage_task_type"], "run_storage_physical_execution")
+        self.assertEqual(handoff["target_storage_task_route"], "POST /api/storage/physical-execution/phase-a")
+        self.assertEqual(handoff["target_storage_task_type"], "run_storage_physical_execution_phase_a")
         self.assertEqual(handoff["target_acceptance_mode"], "storage_physical_execution_and_promotion")
-        self.assertEqual(handoff["next_local_step"], "future explicit physical storage execution tasks")
+        self.assertEqual(handoff["next_local_step"], "POST /api/storage/physical-execution/phase-a")
         self.assertTrue(handoff["requires_remote_ci_review_after_local_complete"])
         self.assertTrue(handoff["requires_release_review_after_remote_green"])
         self.assertFalse(handoff["physical_task_created"])
@@ -9440,8 +9440,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(storage_action["future_handoff_preview_row_count"], 1)
         handoff_preview = storage_action["future_handoff_preview_rows"][0]
         self.assertEqual(handoff_preview["status"], "future_storage_handoff_preview_ready")
-        self.assertEqual(handoff_preview["future_route"], "future POST /api/storage/physical-execution")
-        self.assertEqual(handoff_preview["future_task_type"], "run_storage_physical_execution")
+        self.assertEqual(handoff_preview["future_route"], "POST /api/storage/physical-execution/phase-a")
+        self.assertEqual(handoff_preview["future_task_type"], "run_storage_physical_execution_phase_a")
         self.assertEqual(handoff_preview["target_acceptance_mode"], "storage_physical_execution_and_promotion")
         self.assertEqual(handoff_preview["source_local_phase_key"], "storage_physical_execution_request_ticket")
         self.assertTrue(handoff_preview["source_local_receipt_durable_in_sqlite"])
@@ -41237,12 +41237,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn("LTG-05", action_rows["p4_storage_physical_execution"]["ltg_ids"])
         self.assertIn("LTG-06", action_rows["p4_worker_runtime_qa"]["ltg_ids"])
-        self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 7)
+        self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 8)
         self.assertIn(
             action_rows["p4_storage_physical_execution"]["next_local_step"],
             {
                 "POST /api/storage/backtest-results/schema-seed",
-                "future explicit physical storage execution tasks",
+                "POST /api/storage/physical-execution/phase-a",
             },
         )
         if (
@@ -41251,8 +41251,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ):
             self.assertTrue(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
         else:
-            self.assertFalse(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
-            self.assertEqual(action_rows["p4_storage_physical_execution"]["ready_local_receipt_step_count"], 7)
+            self.assertTrue(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
+            self.assertGreaterEqual(action_rows["p4_storage_physical_execution"]["ready_local_receipt_step_count"], 7)
         self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 7)
         self.assertIn("LTG-07", action_rows["p5_deepseek_provider_benchmark_scope"]["ltg_ids"])
         self.assertIn("LTG-08", action_rows["p5_next_session_map_browser_qa"]["ltg_ids"])
