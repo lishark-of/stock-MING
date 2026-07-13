@@ -558,7 +558,10 @@ export default function CommandCenterHome() {
     ""
   ).toLowerCase() || ordinaryHomeFreshnessSourceLabel;
   const ordinaryHomeFreshnessAgeDays = homeText(
-    ordinaryHomeDataFreshness.age_days ?? dataHealth.age_days,
+    ordinaryHomeDataFreshness.age_calendar_days ??
+      ordinaryHomeDataFreshness.age_days ??
+      dataHealth.age_calendar_days ??
+      dataHealth.age_days,
     ""
   );
   const ordinaryHomeDataDateMatchesExpected = Boolean(

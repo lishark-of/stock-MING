@@ -54,6 +54,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinaryHomeDataFreshness.expected_trade_date", source)
         self.assertIn("expected_trade_date_calendar_validated", source)
         self.assertIn("ordinaryHomeDataFreshness.label", source)
+        self.assertIn("ordinaryHomeDataFreshness.age_calendar_days", source)
         self.assertIn("ordinaryHomeDataFreshness.age_days", source)
         self.assertIn('"fresh", "fresh_provider", "current", "today"', source)
         self.assertIn('? "fresh"', source)
