@@ -889,6 +889,8 @@ def _safe_persisted_browser_qa_review(packet: Mapping[str, Any]) -> dict[str, An
 
 
 def _read_next_session_browser_qa_review_packet() -> dict[str, Any]:
+    if not SQLITE_META_PATH.exists():
+        return {}
     try:
         packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY)
     except Exception:
@@ -1165,6 +1167,8 @@ def _safe_persisted_streamlit_parity_review(packet: Mapping[str, Any]) -> dict[s
 
 
 def _read_next_session_streamlit_parity_review_packet() -> dict[str, Any]:
+    if not SQLITE_META_PATH.exists():
+        return {}
     try:
         packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(NEXT_SESSION_STREAMLIT_PARITY_REVIEW_PACKET_KEY)
     except Exception:
@@ -1479,6 +1483,8 @@ def _safe_persisted_production_promotion_review(packet: Mapping[str, Any]) -> di
 
 
 def _read_next_session_production_promotion_review_packet() -> dict[str, Any]:
+    if not SQLITE_META_PATH.exists():
+        return {}
     try:
         packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(NEXT_SESSION_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY)
     except Exception:
@@ -3618,6 +3624,8 @@ def _read_candidate_radar_p3_handoff(
     chart_result_version: str = "",
     chart_symbol: str = "",
 ) -> dict[str, Any]:
+    if not SQLITE_META_PATH.exists():
+        return {}
     try:
         candidate_packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(CANDIDATE_RADAR_PACKET_KEY)
     except Exception:

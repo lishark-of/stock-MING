@@ -17,12 +17,13 @@ from config import (
     get_deepseek_model,
 )
 from storage.sqlite_meta import SQLiteMetaStore
-from server.services import packet_service, task_service, tushare_task_service
+from server.services import next_session_service, packet_service, task_service, tushare_task_service, worker_service
 
 
 PACKET_KEY = "command_center_3_candidate_radar_cache"
 FACTOR_QUANT_HUB_PACKET_KEY = "command_center_factor_quant_hub_packet"
 NEXT_SESSION_PACKET_KEY = "command_center_next_session_projection_packet"
+CANDIDATE_V05_LAST_GOOD_PACKET_KEY = "command_center_3_candidate_radar_v05_last_good_packet"
 SCHEMA_VERSION = "candidate_radar_cache.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
@@ -290,6 +291,7 @@ PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {
     "provider_parity_execution_request",
     "worker_execution_request",
     "full_pool_worker_fallback",
+    "v05_candidate_local_batch",
     "deep_scan_worker_fallback",
     "quant_projection_execution_request",
     "quant_projection_provider_model_acceptance",
@@ -1519,6 +1521,8 @@ def _quant_projection_p0_confirm_gate_ready(p0_gate: Mapping[str, Any]) -> bool:
 
 def _next_session_local_map_readback(symbol: str) -> dict[str, Any]:
     symbol_safe = _safe_text(symbol, limit=32).upper()
+    if not SQLITE_META_PATH.exists():
+        return {}
     try:
         packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(NEXT_SESSION_PACKET_KEY)
     except Exception:
@@ -1590,6 +1594,8 @@ def _search_quant_projection_cross_module_alignment_readback(
     source_task_id_safe = _safe_text(source_task_id, limit=128)
 
     def _safe_packet(packet_key: str) -> tuple[dict[str, Any], str]:
+        if not SQLITE_META_PATH.exists():
+            return {}, "missing"
         try:
             packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(packet_key)
         except Exception:
@@ -4811,6 +4817,494 @@ def _candidate_call_ledger_row(
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
     }
+
+
+def _candidate_v05_scope_hash(candidates: list[dict[str, Any]], payload_safe: Mapping[str, Any]) -> str:
+    data_date = _safe_text(payload_safe.get("data_date") or payload_safe.get("trade_date") or "", limit=32)
+    payload = {
+        "schema_version": "candidate_radar_v05_scope.v1",
+        "runtime_mode": "v05_candidate_local_batch",
+        "data_date": data_date,
+        "pool": [
+            {
+                "ticker": _safe_text(row.get("ticker") or "", limit=32).upper(),
+                "rank": row.get("rank"),
+                "source": _safe_text(row.get("source") or "", limit=120),
+            }
+            for row in candidates
+        ],
+    }
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+def _candidate_v05_bucket_rows(
+    candidates: list[dict[str, Any]],
+    processed_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    runtime_scores = {
+        _safe_text(row.get("symbol") or "", limit=32).upper(): row.get("score")
+        for row in processed_rows
+        if isinstance(row, dict)
+    }
+    enriched: list[dict[str, Any]] = []
+    for index, row in enumerate(candidates):
+        symbol = _safe_text(row.get("ticker") or "", limit=32).upper()
+        try:
+            runtime_score = float(runtime_scores.get(symbol))
+        except Exception:
+            try:
+                runtime_score = float(row.get("score"))
+            except Exception:
+                runtime_score = float(len(candidates) - index)
+        gap_count = _candidate_data_gap_count(row)
+        enriched.append(
+            {
+                **row,
+                "symbol": symbol,
+                "runtime_score": round(runtime_score, 6),
+                "gap_count": gap_count,
+                "scoring_reason": (
+                    f"local_runtime_score={round(runtime_score, 4)}; "
+                    f"rank={row.get('rank') or index + 1}; gap_count={gap_count}"
+                ),
+                "research_only": True,
+                "no_buy": True,
+                "no_action": True,
+                "no_trade": True,
+            }
+        )
+    enriched.sort(key=lambda item: (float(item.get("runtime_score") or 0), -int(item.get("rank") or 0)), reverse=True)
+    if not enriched:
+        return [], [], []
+    top_count = max(1, min(5, len(enriched) // 4 or 1))
+    watch_count = max(1, min(10, len(enriched) // 3 or 1)) if len(enriched) > top_count else 0
+    top_rows = [{**row, "candidate_bucket": "Top"} for row in enriched[:top_count]]
+    watch_rows = [{**row, "candidate_bucket": "Watch"} for row in enriched[top_count : top_count + watch_count]]
+    excluded_rows = [{**row, "candidate_bucket": "Excluded"} for row in enriched[top_count + watch_count :]]
+    if not excluded_rows and len(enriched) >= 3 and watch_rows:
+        excluded_rows = [{**watch_rows.pop(), "candidate_bucket": "Excluded"}]
+    return top_rows, watch_rows, excluded_rows
+
+
+def _candidate_v05_next_session_payload(
+    *,
+    symbol: str,
+    task_id: str,
+    scope_hash: str,
+    result_version: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "next_session_confirmed_symbol_generate_payload.v1",
+        "source": "candidate_radar_v05_local_batch_post",
+        "symbol": symbol,
+        "source_task_id": task_id,
+        "candidate_scope_hash": scope_hash,
+        "result_version": result_version,
+        "p2_small_data_ready": False,
+        "p3_readable_result_ready": True,
+        "manual_button_required": True,
+        "cache_get_external_calls_triggered": False,
+        "react_render_external_calls_triggered": False,
+        "deepseek_execution_requested": False,
+        "does_not_include_token_or_raw_log": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_operation_zones": True,
+    }
+
+
+def _candidate_v05_attach_next_session_lineage(
+    packet: Mapping[str, Any],
+    *,
+    symbol: str,
+    task_id: str,
+    scope_hash: str,
+    result_version: str,
+    data_date: str,
+    freshness_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    try:
+        next_packet = SQLiteMetaStore(next_session_service.SQLITE_META_PATH).read_packet(NEXT_SESSION_PACKET_KEY)
+    except Exception:
+        return {"status": "next_session_v05_read_failed_safe"}
+    if not isinstance(next_packet, dict):
+        return {"status": "next_session_v05_missing_after_task"}
+    lineage = {
+        "schema_version": "candidate_radar_v05_next_session_lineage.v1",
+        "status": "same_packet_lineage_ready",
+        "candidate_packet_key": PACKET_KEY,
+        "candidate_task_id": task_id,
+        "candidate_scope_hash": scope_hash,
+        "candidate_scope_hash_short": scope_hash[:12],
+        "candidate_result_version": result_version,
+        "symbol": symbol,
+        "data_date": data_date,
+        "freshness_state": dict(freshness_state),
+        "research_only": True,
+        "no_buy": True,
+        "no_action": True,
+        "no_trade": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "contains_secret": False,
+    }
+    next_packet = dict(next_packet)
+    next_packet["candidate_radar_v05_lineage"] = lineage
+    next_packet["source_task_id"] = task_id
+    next_packet["result_version"] = result_version
+    next_packet["trade_date"] = data_date
+    next_packet["latest_confirmed_symbol"] = symbol
+    next_packet["candidate_scope_hash"] = scope_hash
+    chart_payload = _as_dict(next_packet.get("chart_payload"))
+    if chart_payload:
+        chart_payload["source_task_id"] = task_id
+        chart_payload["result_version"] = result_version
+        chart_payload["data_date"] = data_date
+        chart_payload["candidate_scope_hash"] = scope_hash
+        chart_payload["candidate_radar_v05_lineage_status"] = "same_packet_lineage_ready"
+        next_packet["chart_payload"] = chart_payload
+    next_packet["external_calls_triggered"] = False
+    next_packet["tushare_called"] = False
+    next_packet["deepseek_called"] = False
+    next_packet["github_called"] = False
+    next_packet["does_not_execute_trades"] = True
+    next_packet["does_not_modify_strategy_action"] = True
+    next_packet["does_not_modify_operation_zones"] = True
+    next_packet["contains_secret"] = False
+    SQLiteMetaStore(next_session_service.SQLITE_META_PATH).write_packet(NEXT_SESSION_PACKET_KEY, next_packet)
+    return lineage
+
+
+def _run_candidate_v05_local_batch_task(
+    task: dict[str, Any],
+    payload_safe: Mapping[str, Any],
+) -> dict[str, Any]:
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.2,
+        current_step="candidate_radar_v05_local_batch_reading_supplied_pool",
+    )
+    current_packet = read_candidate_radar_cache()
+    snapshot = packet_service.load_snapshot_cache()
+    previous_packet = _read_persisted_packet()
+    safe_snapshot = _safe_value(snapshot)
+    snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
+    if not _as_list(snapshot_map.get("next_ticket_candidates")) and _as_list(current_packet.get("next_ticket_candidates")):
+        snapshot_map["next_ticket_candidates"] = _as_list(current_packet.get("next_ticket_candidates"))
+    if not _as_dict(snapshot_map.get("radar_packet")) and _as_dict(current_packet.get("radar_packet")):
+        snapshot_map["radar_packet"] = _as_dict(current_packet.get("radar_packet"))
+    scan_snapshot, local_pool_audit, local_pool_skipped_rows = _snapshot_with_local_candidate_pool(
+        snapshot_map,
+        payload_safe,
+        "full_pool_local_scan",
+    )
+    normalized_candidates = _as_list(scan_snapshot.get("next_ticket_candidates"))
+    expected_scope_hash = _candidate_v05_scope_hash(
+        [row for row in normalized_candidates if isinstance(row, dict)],
+        payload_safe,
+    )
+    requested_scope_hash = _safe_text(
+        payload_safe.get("candidate_scope_hash") or payload_safe.get("scope_hash") or "",
+        limit=128,
+    )
+    confirm_scope_hash = _safe_text(payload_safe.get("confirm_scope_hash") or "", limit=128)
+    operator_approved = _coerce_bool(
+        payload_safe.get("operator_approved") or payload_safe.get("user_approved") or payload_safe.get("approved"),
+        False,
+    )
+    confirmation_ready = bool(
+        operator_approved
+        and normalized_candidates
+        and requested_scope_hash == expected_scope_hash
+        and confirm_scope_hash == expected_scope_hash
+    )
+    now = _now_iso()
+    if not confirmation_ready:
+        ledger = _candidate_call_ledger_row(
+            api="local_candidate_radar_v05_local_batch",
+            source_snapshot=str(local_pool_audit.get("input_source") or "local_universe_payload_or_cache"),
+            row_count=0,
+            call_status="candidate_radar_v05_local_batch_blocked_scope_or_approval",
+            request_params_safe={
+                "runtime_mode": "v05_candidate_local_batch",
+                "operator_approved": operator_approved,
+                "expected_scope_hash_short": expected_scope_hash[:12],
+                "requested_scope_hash_short": requested_scope_hash[:12],
+                "confirm_scope_hash_short": confirm_scope_hash[:12],
+                "scope_hash_matches": requested_scope_hash == expected_scope_hash,
+                "confirm_scope_hash_matches": confirm_scope_hash == expected_scope_hash,
+                "normalized_candidate_count": len(normalized_candidates),
+                "external_sources_allowed": False,
+            },
+        )
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_v05_local_batch_blocked_scope_or_approval",
+            error_message_safe="candidate_radar_v05_local_batch_blocked_scope_or_approval",
+            call_ledger=[ledger],
+            warning="candidate_radar_v05_local_batch_did_not_overwrite_current_or_last_good",
+        ) or task
+
+    runtime_payload = {
+        "runtime_mode": "v04_local_batch",
+        "operator_approved": True,
+        "confirm_local_in_process_runtime": True,
+        "runtime_scope_hash": expected_scope_hash,
+        "confirm_scope_hash": expected_scope_hash,
+        "chunk_size": payload_safe.get("chunk_size") or 10,
+        "fail_on_symbol": payload_safe.get("fail_on_symbol") or "",
+        "pool": [
+            {
+                "symbol": _safe_text(row.get("ticker") or row.get("symbol") or "", limit=32).upper(),
+                "weight": row.get("score") or row.get("rank") or index + 1,
+            }
+            for index, row in enumerate(normalized_candidates)
+            if isinstance(row, dict)
+        ],
+    }
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="candidate_radar_v05_local_batch_running_v04_runtime",
+    )
+    runtime_task = worker_service.run_worker_runtime_qa_execution(runtime_payload)
+    runtime_result = _as_dict(runtime_task.get("worker_v04_runtime"))
+    runtime_success = bool(
+        runtime_result.get("status") == "worker_v04_local_batch_runtime_success"
+        and runtime_result.get("processed_count") == len(normalized_candidates)
+    )
+    processed_rows = _as_list(_as_dict(runtime_result.get("manifest")).get("processed"))
+    if not runtime_success:
+        ledger = _candidate_call_ledger_row(
+            api="local_candidate_radar_v05_local_batch",
+            source_snapshot=str(local_pool_audit.get("input_source") or "local_universe_payload_or_cache"),
+            row_count=int(runtime_result.get("processed_count") or 0),
+            call_status=str(runtime_result.get("status") or "candidate_radar_v05_runtime_failed"),
+            request_params_safe={
+                "runtime_mode": "v05_candidate_local_batch",
+                "expected_scope_hash_short": expected_scope_hash[:12],
+                "pool_count": len(normalized_candidates),
+                "processed_count": runtime_result.get("processed_count") or 0,
+                "last_good_preserved": runtime_result.get("last_good_preserved") is True,
+                "external_sources_allowed": False,
+            },
+        )
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_v05_local_batch_runtime_failed_last_good_preserved",
+            error_message_safe="candidate_radar_v05_local_batch_runtime_failed_last_good_preserved",
+            call_ledger=[ledger],
+            warning="candidate_radar_v05_local_batch_failure_did_not_overwrite_current_or_last_good",
+        ) or task
+
+    plan = _build_full_pool_scan_plan(scan_snapshot, payload_safe, now=now)
+    request_params_safe = {
+        "scan_mode": "v05_candidate_local_batch",
+        "runtime_mode": "v05_candidate_local_batch",
+        "local_worker_fallback_only": True,
+        "operator_approved": True,
+        "candidate_scope_hash_short": expected_scope_hash[:12],
+        "scope_hash_matches": True,
+        "input_candidate_count": local_pool_audit.get("input_candidate_count"),
+        "normalized_candidate_count": local_pool_audit.get("normalized_candidate_count"),
+        "processed_candidate_count": runtime_result.get("processed_count"),
+        "chunk_count": runtime_result.get("chunk_count"),
+        "stage_count": len(_as_list(runtime_result.get("stage_rows"))),
+        "external_sources_allowed": False,
+        "provider_backed_acceptance_done": False,
+        "deepseek_model_execution_done": False,
+        "production_full_pool_scan_done": False,
+    }
+    packet = _build_candidate_radar_packet(
+        scan_snapshot,
+        mode="v05_candidate_local_batch",
+        cache_source="v05_candidate_local_batch_task",
+        scan_mode="v05_candidate_local_batch",
+        request_params_safe=request_params_safe,
+        local_pool_audit=local_pool_audit,
+        local_pool_skipped_rows=local_pool_skipped_rows,
+        full_pool_scan_plan=plan,
+        previous_packet=previous_packet,
+    )
+    candidate_rows_all = _candidate_rows(normalized_candidates, max_rows=max(len(normalized_candidates), 1))
+    top_rows, watch_rows, excluded_rows = _candidate_v05_bucket_rows(
+        candidate_rows_all,
+        [row for row in processed_rows if isinstance(row, dict)],
+    )
+    top_symbol = _safe_text((top_rows[0] if top_rows else {}).get("symbol") or "", limit=32).upper()
+    data_date = _safe_text(
+        payload_safe.get("data_date")
+        or payload_safe.get("trade_date")
+        or _as_dict(packet.get("freshness_state")).get("data_date")
+        or "",
+        limit=32,
+    )
+    freshness_state = _as_dict(packet.get("freshness_state"))
+    if data_date:
+        freshness_state["data_date"] = data_date
+    result_version = "candidate-v05-" + hashlib.sha256(
+        json.dumps(
+            {"scope_hash": expected_scope_hash, "task_id": task["task_id"], "processed": runtime_result.get("processed_count")},
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_v05_local_batch",
+        source_snapshot=str(local_pool_audit.get("input_source") or "local_universe_payload_or_cache"),
+        row_count=int(runtime_result.get("processed_count") or 0),
+        call_status="candidate_radar_v05_local_batch_success",
+        request_params_safe=request_params_safe,
+    )
+    ledger["runtime_manifest_path"] = runtime_result.get("manifest_path")
+    ledger["runtime_event_log_path"] = runtime_result.get("event_log_path")
+    ledger["runtime_manifest_sha256"] = _as_dict(runtime_result.get("manifest")).get("manifest_sha256")
+    packet["task_id"] = task["task_id"]
+    packet["scan_mode"] = "v05_candidate_local_batch"
+    packet["status"] = "candidate_radar_v05_local_batch_ready"
+    packet["latest_confirmed_symbol"] = top_symbol
+    packet["latest_confirmed_task_id"] = task["task_id"]
+    packet["latest_confirmed_task_status"] = "success"
+    packet["latest_confirmed_task_current_step"] = "candidate_radar_v05_local_batch_ready"
+    packet["trade_date"] = data_date
+    packet["freshness_state"] = freshness_state
+    packet["candidate_radar_v05_scope_hash"] = expected_scope_hash
+    packet["candidate_radar_v05_result_version"] = result_version
+    packet["candidate_radar_v05_runtime"] = runtime_result
+    packet["candidate_radar_v05_top_rows"] = top_rows
+    packet["candidate_radar_v05_watch_rows"] = watch_rows
+    packet["candidate_radar_v05_excluded_rows"] = excluded_rows
+    packet["candidate_radar_v05_bucket_counts"] = {
+        "top_count": len(top_rows),
+        "watch_count": len(watch_rows),
+        "excluded_count": len(excluded_rows),
+        "input_count": len(normalized_candidates),
+        "processed_count": runtime_result.get("processed_count"),
+        "chunk_count": runtime_result.get("chunk_count"),
+        "stage_count": len(_as_list(runtime_result.get("stage_rows"))),
+    }
+    packet["candidate_radar_v05_coverage"] = {
+        "signal_retained_coverage": "local_supplied_pool_rows_scored_and_bucketed",
+        "capability_retained_coverage": [
+            "top_watch_excluded_split",
+            "scoring_reason",
+            "source_freshness_gap",
+            "runtime_append_only_log",
+            "same_packet_next_session_lineage",
+        ],
+        "source": str(local_pool_audit.get("input_source") or "local_universe_payload_or_cache"),
+        "freshness_state": freshness_state,
+        "gap_status": "provider_deepseek_celery_redis_browser_release_evidence_pending",
+        "deepseek_status": "pending_disabled_not_called",
+    }
+    packet["search_quant_projection_interpretation_summary"] = {
+        "schema_version": "candidate_radar_v05_interpretation_summary.v1",
+        "interpretation_ready": True,
+        "symbol": top_symbol,
+        "ordinary_result_summary": f"Candidate Radar v0.5 local batch processed {runtime_result.get('processed_count')} supplied-pool items.",
+        "ordinary_result_next_step": "Read same-packet Next Session preview; provider/DeepSeek/Celery/Redis/browser evidence remains pending.",
+        "ordinary_result_boundary": "Research-only local runtime output; no provider/model/trade/action mutation.",
+        "deepseek_governed_executor_status": "pending_disabled_not_called",
+        "ordinary_result_quick_read_rows": top_rows[:5],
+        "uses_model_output": False,
+        "uses_deepseek_output": False,
+        "contains_secret": False,
+    }
+    packet["search_quant_projection_small_data_writeback_summary"] = {
+        "schema_version": "candidate_radar_v05_local_runtime_writeback.v1",
+        "small_data_writeback_ready": False,
+        "symbol": top_symbol,
+        "data_date": data_date,
+        "provider_api_success_count": 0,
+        "provider_api_call_count": 0,
+        "provider_call_source": "local_runtime_no_provider",
+        "source_task_external_calls_triggered": False,
+        "source_task_tushare_called": False,
+        "source_task_tushare_provider_ledger_ready": False,
+        "contains_secret": False,
+    }
+    counts = _as_dict(packet.get("counts"))
+    counts.update(packet["candidate_radar_v05_bucket_counts"])
+    packet["counts"] = counts
+    policy = _as_dict(packet.get("policy"))
+    policy["candidate_radar_v05_is_button_gated"] = True
+    policy["candidate_radar_v05_uses_local_in_process_runtime"] = True
+    policy["candidate_radar_v05_processes_full_supplied_pool"] = True
+    policy["candidate_radar_v05_is_not_full_market"] = True
+    policy["candidate_radar_v05_is_not_celery_redis_production"] = True
+    policy["candidate_radar_v05_get_cache_starts_runtime"] = False
+    policy["candidate_radar_v05_research_only_no_trade"] = True
+    packet["policy"] = policy
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "Candidate Radar v0.5 processed the full supplied pool through the local in-process runtime; this is not full-market, provider-backed, DeepSeek, Celery/Redis, browser, or release evidence."
+    ] + [warning for warning in _as_list(packet.get("warnings")) if "v0.5" not in str(warning)]
+    packet["external_calls_triggered"] = False
+    packet["tushare_called"] = False
+    packet["deepseek_called"] = False
+    packet["github_called"] = False
+    packet["does_not_execute_trades"] = True
+    packet["does_not_modify_strategy_action"] = True
+    packet["candidate_is_not_buy_instruction"] = True
+    packet["contains_secret"] = False
+
+    try:
+        store = SQLiteMetaStore(SQLITE_META_PATH)
+        store.write_packet(PACKET_KEY, packet)
+        store.write_packet(CANDIDATE_V05_LAST_GOOD_PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "candidate_radar_v05_storage_write_failed"
+        ledger["error_message_safe"] = "candidate_radar_v05_storage_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_v05_storage_write_failed",
+            error_message_safe="candidate_radar_v05_storage_write_failed",
+            call_ledger=[ledger],
+            warning="candidate_radar_v05_storage_write_failed_no_external_call",
+        ) or task
+
+    next_task = next_session_service.create_next_session_task(
+        _candidate_v05_next_session_payload(
+            symbol=top_symbol,
+            task_id=str(task["task_id"]),
+            scope_hash=expected_scope_hash,
+            result_version=result_version,
+        )
+    )
+    lineage = _candidate_v05_attach_next_session_lineage(
+        packet,
+        symbol=top_symbol,
+        task_id=str(task["task_id"]),
+        scope_hash=expected_scope_hash,
+        result_version=result_version,
+        data_date=data_date,
+        freshness_state=freshness_state,
+    )
+    packet["candidate_radar_v05_next_session_task_id"] = next_task.get("task_id")
+    packet["candidate_radar_v05_next_session_lineage"] = lineage
+    SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    SQLiteMetaStore(SQLITE_META_PATH).write_packet(CANDIDATE_V05_LAST_GOOD_PACKET_KEY, packet)
+    ledger["request_params_safe"]["next_session_task_status"] = next_task.get("status")
+    ledger["request_params_safe"]["next_session_lineage_status"] = lineage.get("status")
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="candidate_radar_v05_local_batch_ready",
+        call_ledger=[ledger],
+        warning="candidate_radar_v05_local_batch_ready_no_external_call",
+    ) or task
 
 
 def _candidate_freshness_state(snapshot_map: Mapping[str, Any]) -> dict[str, Any]:
@@ -9093,6 +9587,8 @@ def _attach_candidate_radar_deep_scan_worker_fallback(packet: Mapping[str, Any])
 
 
 def _read_candidate_worker_runtime_qa_execution_receipt() -> tuple[dict[str, Any], str]:
+    if not SQLITE_META_PATH.exists():
+        return {}, "packet_missing"
     try:
         packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(WORKER_RUNTIME_QA_EXECUTION_PACKET_KEY)
     except Exception:
@@ -14925,6 +15421,8 @@ def _build_candidate_radar_packet(
 
 
 def _read_persisted_packet() -> dict[str, Any] | None:
+    if not SQLITE_META_PATH.exists():
+        return None
     try:
         packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(PACKET_KEY)
     except Exception:
@@ -22542,6 +23040,9 @@ def run_candidate_full_pool_worker_fallback_task(payload: Any = None) -> dict[st
     )
     if task.get("dedupe_reused_existing"):
         return task
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    if str(payload_safe.get("runtime_mode") or "") == "v05_candidate_local_batch":
+        return _run_candidate_v05_local_batch_task(task, payload_safe)
 
     task_service.update_task_status(
         task["task_id"],
@@ -22549,7 +23050,6 @@ def run_candidate_full_pool_worker_fallback_task(payload: Any = None) -> dict[st
         progress=0.25,
         current_step="reading_candidate_radar_worker_fallback_inputs",
     )
-    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
     current_packet = read_candidate_radar_cache()
     snapshot = packet_service.load_snapshot_cache()
     previous_packet = _read_persisted_packet()
