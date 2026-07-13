@@ -21,6 +21,7 @@ const NextSessionMap = lazy(() => import("./routes/NextSessionMap"));
 const PacketRegistry = lazy(() => import("./routes/PacketRegistry"));
 const PositionContext = lazy(() => import("./routes/PositionContext"));
 const QuantBacktestLab = lazy(() => import("./routes/QuantBacktestLab"));
+const QmtReplayLab = lazy(() => import("./routes/QmtReplayLab"));
 const RecoveryCenter = lazy(() => import("./routes/RecoveryCenter"));
 const RiskGuardrails = lazy(() => import("./routes/RiskGuardrails"));
 const SerenityMethodRadar = lazy(() => import("./routes/SerenityMethodRadar"));
@@ -61,6 +62,7 @@ const ROUTE_KEYS: RouteKey[] = [
   "worker",
   "strategy",
   "quant",
+  "qmt-replay",
   "tradeReview",
   "legacy"
 ];
@@ -93,6 +95,7 @@ const ROUTE_COMPONENTS = {
   worker: WorkerRuntime,
   strategy: StrategyTrace,
   quant: QuantBacktestLab,
+  "qmt-replay": QmtReplayLab,
   tradeReview: TradeReviewLab,
   legacy: LegacyTools
 } satisfies Record<RouteKey, LazyExoticComponent<ComponentType>>;

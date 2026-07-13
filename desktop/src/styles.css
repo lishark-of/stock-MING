@@ -49,6 +49,8 @@ button:hover:not(:disabled) {
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
+select:focus-visible,
+a:focus-visible,
 summary:focus-visible {
   outline: 3px solid rgba(37, 99, 235, 0.26);
   outline-offset: 2px;
@@ -1305,6 +1307,151 @@ pre {
   padding-left: 10px;
 }
 
+.qmt-safety-boundary {
+  background: #fff7ed;
+  border: 2px solid #f97316;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: #7c2d12;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+}
+
+.qmt-safety-boundary strong {
+  display: block;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.qmt-safety-boundary p {
+  color: #9a3412;
+  margin: 6px 0 0;
+}
+
+.qmt-replay-first-grid {
+  align-items: stretch;
+  margin-top: 16px;
+}
+
+.qmt-replay-controls {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.qmt-replay-controls label {
+  color: #334155;
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 6px;
+  min-width: 0;
+}
+
+.qmt-replay-controls select {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: #17202a;
+  font: inherit;
+  min-height: 38px;
+  min-width: 0;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.qmt-replay-confirm {
+  align-items: start;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #334155;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: auto minmax(0, 1fr);
+  line-height: 1.45;
+  margin: 12px 0;
+  padding: 10px 12px;
+}
+
+.qmt-replay-confirm input {
+  margin-top: 3px;
+}
+
+.qmt-replay-launch {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #ffffff;
+  font-weight: 700;
+  min-height: 42px;
+  width: 100%;
+}
+
+.qmt-local-links a {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1d4ed8;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 10px;
+  text-decoration: none;
+}
+
+.qmt-replay-track {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-sizing: border-box;
+  min-height: 112px;
+  overflow-x: auto;
+  padding: 14px;
+}
+
+.qmt-replay-track ol {
+  display: grid;
+  gap: 10px;
+  grid-auto-columns: minmax(104px, 1fr);
+  grid-auto-flow: column;
+  list-style: none;
+  margin: 0;
+  min-width: max-content;
+  padding: 0;
+}
+
+.qmt-replay-track li {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-width: 104px;
+  padding: 10px;
+}
+
+.qmt-replay-track li[data-research-state="observe"] {
+  border-color: #93c5fd;
+}
+
+.qmt-replay-track li[data-research-state="watch"] {
+  border-color: #fbbf24;
+}
+
+.qmt-replay-track li[data-research-state="excluded"] {
+  border-color: #fca5a5;
+}
+
+.qmt-replay-track li span,
+.qmt-replay-track li small {
+  color: #64748b;
+}
+
+.qmt-replay-track li strong {
+  color: #0f172a;
+}
+
 .ordinary-status-note {
   border-left: 3px solid #2563eb;
   padding-left: 10px;
@@ -1322,6 +1469,10 @@ pre {
     position: sticky;
     top: 0;
     z-index: 20;
+  }
+
+  body:has(.qmt-safety-boundary) .sidebar {
+    position: relative;
   }
 
   .brand {
@@ -1344,7 +1495,7 @@ pre {
   .nav-group[data-nav-priority="ordinary"] {
     display: grid;
     gap: 4px;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     overflow: visible;
     padding: 6px;
   }
@@ -1419,6 +1570,10 @@ pre {
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
+  }
+
+  .qmt-replay-controls {
+    grid-template-columns: 1fr;
   }
 
   .local-link-status {

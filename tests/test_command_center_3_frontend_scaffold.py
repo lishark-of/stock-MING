@@ -40,6 +40,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             ROOT / "src" / "routes" / "PacketRegistry.tsx",
             ROOT / "src" / "routes" / "PositionContext.tsx",
             ROOT / "src" / "routes" / "QuantBacktestLab.tsx",
+            ROOT / "src" / "routes" / "QmtReplayLab.tsx",
             ROOT / "src" / "routes" / "RecoveryCenter.tsx",
             ROOT / "src" / "routes" / "RiskGuardrails.tsx",
             ROOT / "src" / "routes" / "SettingsConfigHealth.tsx",
@@ -1773,7 +1774,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('data-nav-priority="ordinary"', layout)
         self.assertIn('aria-label="ordinary user entrances"', layout)
         self.assertIn("ORDINARY_NAVIGATION_BOUNDARY", layout)
-        self.assertIn("普通用户先用五个入口完成本地投研；研究辅助、数据治理、系统迁移默认收起", layout)
+        self.assertIn("普通用户先用六个入口完成本地投研与安全回放；研究辅助、数据治理、系统迁移默认收起", layout)
         self.assertIn("nav-ordinary-boundary", layout)
         self.assertLess(layout.index("nav-ordinary-boundary"), layout.index("nav-group-details"))
         self.assertIn('<details className="nav-group nav-group-details"', layout)
@@ -1802,7 +1803,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn('<label className="mobile-nav-select-wrap">', layout)
         mobile_styles = styles[styles.index("@media (max-width: 760px)") : styles.index("@media (prefers-reduced-motion: reduce)")]
         self.assertIn("max-height: 217px", mobile_styles)
-        self.assertIn("grid-template-columns: repeat(5, minmax(0, 1fr))", mobile_styles)
+        self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr))", mobile_styles)
         self.assertIn("overflow: visible", mobile_styles)
         self.assertIn("flex: 0 0 auto", mobile_styles)
         self.assertIn("min-width: 0", mobile_styles)
@@ -3729,7 +3730,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("股票量化推演", layout_source)
         self.assertIn("下一票雷达", layout_source)
         self.assertIn("nav-ordinary-boundary", layout_source)
-        self.assertIn("普通用户先用五个入口完成本地投研；研究辅助、数据治理、系统迁移默认收起", layout_source)
+        self.assertIn("普通用户先用六个入口完成本地投研与安全回放；研究辅助、数据治理、系统迁移默认收起", layout_source)
         self.assertLess(layout_source.index("nav-ordinary-boundary"), layout_source.index("nav-group-details"))
         self.assertIn("LOCAL_FASTAPI_HEALTH_POLL_MS", layout_source)
         self.assertIn("getHealth()", layout_source)

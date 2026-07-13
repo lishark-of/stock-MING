@@ -86,6 +86,20 @@ export type TaskCreationData = {
 
 export type TaskCreationEnvelope = ApiEnvelope<TaskCreationData>;
 
+export type QmtReplayScenario = "baseline" | "stress" | "recovery";
+
+export type QmtLocalReplayRequest = {
+  approved_by_user: true;
+  mode: "local_research_replay";
+  scenario: QmtReplayScenario;
+  max_frames: 12 | 24 | 48;
+  source_symbol: string;
+  source_task_id: string;
+  source_result_version: string;
+  source_scope_hash: string;
+  demo_label?: string;
+};
+
 export type StorageQueryParams = {
   limit?: number;
   cursor?: string;
@@ -530,6 +544,17 @@ export function getChokepointCache() {
 
 export function getTradeReviewCache() {
   return request<Record<string, unknown>>("/api/trade-review/cache");
+}
+
+export function getQmtReplayCache() {
+  return request<Record<string, unknown>>("/api/qmt-replay/cache");
+}
+
+export function postQmtLocalReplay(payload: QmtLocalReplayRequest) {
+  return request<TaskCreationData>("/api/qmt-replay/local-simulate", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }
 
 export function getQuantCache() {

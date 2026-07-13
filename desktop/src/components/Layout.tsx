@@ -29,11 +29,12 @@ export type RouteKey =
   | "worker"
   | "strategy"
   | "quant"
+  | "qmt-replay"
   | "tradeReview"
   | "legacy";
 
 const ORDINARY_NAVIGATION_BOUNDARY =
-  "普通用户先用五个入口完成本地投研；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、排查、设置或回退。";
+  "普通用户先用六个入口完成本地投研与安全回放；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、排查、设置或回退。";
 const LOCAL_FASTAPI_HEALTH_POLL_MS = 3000;
 type LocalFastapiStatus = "checking" | "online" | "offline";
 type ResearchActivityStatus = TaskRecord["status"] | "idle" | "offline" | "checking";
@@ -43,7 +44,8 @@ const MOBILE_PRIMARY_JUMPS: Partial<Record<RouteKey, { href: string; label: stri
   candidates: { href: "#candidates/candidate-radar-search-quant-projection", label: "跳到雷达确认" },
   factor: { href: "#factor/factor-score", label: "跳到量化结果" },
   next: { href: "#next/next-session-chart", label: "跳到次日图谱" },
-  marginEtf: { href: "#marginEtf/margin-etf-cash-line", label: "跳到 ETF/融资风险" }
+  marginEtf: { href: "#marginEtf/margin-etf-cash-line", label: "跳到 ETF/融资风险" },
+  "qmt-replay": { href: "#qmt-replay/qmt-replay-operator", label: "跳到本地回放" }
 };
 
 const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; routes: Array<{ key: RouteKey; label: string }> }> = [
@@ -56,7 +58,8 @@ const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; rout
       { key: "candidates", label: "下一票雷达" },
       { key: "factor", label: "股票量化推演" },
       { key: "next", label: "次日图谱" },
-      { key: "marginEtf", label: "ETF / 融资" }
+      { key: "marginEtf", label: "ETF / 融资" },
+      { key: "qmt-replay", label: "QMT 回放" }
     ]
   },
   {
@@ -317,7 +320,7 @@ export default function Layout({
             aria-label={`${mobilePrimaryJump.label}；只做本地页面滚动`}
           >{mobilePrimaryJump.label}</a>
         ) : null}
-        <p className="sidebar-note">普通投研主线：今日作战台 → 下一票雷达 → 股票量化推演 → 次日图谱；ETF / 融资风险随时可查。只做研究辅助，不下单；旧工作台仅作排查回退入口。</p>
+        <p className="sidebar-note">普通投研主线：今日作战台 → 下一票雷达 → 股票量化推演 → 次日图谱 → QMT 本地回放；ETF / 融资风险随时可查。只做研究辅助，不下单；QMT、券商、账户与订单路径保持隔离；旧工作台仅作排查回退入口。</p>
       </aside>
       <main className="content">{children}</main>
     </div>
