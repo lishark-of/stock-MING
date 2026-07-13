@@ -202,7 +202,7 @@ def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
             and not actions_failed
             and not artifact_digest_verified
         ),
-        "remote_ci_run_observed_for_current_head": actions_incomplete,
+        "remote_ci_run_observed_for_current_head": not no_matching_run_found,
         "remote_ci_run_in_progress_for_current_head": actions_incomplete,
         "remote_ci_no_matching_run_found_for_current_head": no_matching_run_found,
         "remote_ci_run_lookup_attempted": no_matching_run_found,

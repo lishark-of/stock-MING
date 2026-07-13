@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -165,6 +166,34 @@ _PRODUCTION_REQUIREMENTS = {
 def _canonical_digest(value: Mapping[str, Any]) -> str:
     encoded = json.dumps(dict(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _normalize_head_full(value: object) -> str:
+    candidate = str(value or "").strip().lower()
+    if len(candidate) not in {40, 64}:
+        return ""
+    if any(character not in "0123456789abcdef" for character in candidate):
+        return ""
+    return candidate
+
+
+def _read_current_head_full(project_root: Path | None = None) -> str:
+    root = project_root if project_root is not None else PROJECT_ROOT
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return _normalize_head_full(result.stdout)
 
 
 def _safe_projection(value: Any, fields: tuple[str, ...]) -> dict[str, Any]:
@@ -364,7 +393,11 @@ def _version_row(
     }
 
 
-def _build_version_rows(evidence_root: Path) -> tuple[list[dict[str, Any]], dict[str, bool], dict[str, Any]]:
+def _build_version_rows(
+    evidence_root: Path,
+    *,
+    expected_head_full: str,
+) -> tuple[list[dict[str, Any]], dict[str, bool], dict[str, Any]]:
     root_packets = _read_packets(evidence_root / "meta.sqlite", ROOT_PACKET_KEYS)
     v04_db = evidence_root / "v04_acceptance_runtime" / "runtime_meta.sqlite"
     v05_db = evidence_root / "v05_acceptance_runtime" / "meta.sqlite"
@@ -558,6 +591,8 @@ def _build_version_rows(evidence_root: Path) -> tuple[list[dict[str, Any]], dict
         ),
         "remote_ci_current_head": bool(
             isinstance(remote_receipt, Mapping)
+            and expected_head_full
+            and _normalize_head_full(remote_receipt.get("head_full")) == expected_head_full
             and remote_receipt.get("latest_remote_run_verified_green") is True
             and remote_receipt.get("remote_ci_run_observed_for_current_head") is True
             and remote_receipt.get("artifact_digest_verified") is True
@@ -634,9 +669,21 @@ def _build_ltg_rows(version_rows: list[dict[str, Any]], facts: Mapping[str, bool
     return rows
 
 
-def build_v1_closeout_evaluation(*, evidence_root: Path | None = None) -> dict[str, Any]:
+def build_v1_closeout_evaluation(
+    *,
+    evidence_root: Path | None = None,
+    expected_head_full: str | None = None,
+) -> dict[str, Any]:
     root = evidence_root if evidence_root is not None else EVIDENCE_ROOT
-    version_rows, facts, context = _build_version_rows(root)
+    authoritative_head_full = (
+        _normalize_head_full(expected_head_full)
+        if expected_head_full is not None
+        else _read_current_head_full()
+    )
+    version_rows, facts, context = _build_version_rows(
+        root,
+        expected_head_full=authoritative_head_full,
+    )
     ltg_rows = _build_ltg_rows(version_rows, facts)
     version_ready_count = sum(1 for row in version_rows if row.get("local_direct_evidence_ready") is True)
     closeout_count = sum(1 for row in ltg_rows if row.get("can_close") is True)
