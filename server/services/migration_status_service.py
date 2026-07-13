@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 import config
-from server.services import packet_service, task_service
+from server.services import packet_service, task_service, v1_closeout_service
 
 
 TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE = "run_tushare_deepseek_linkage_review"
@@ -16870,6 +16870,7 @@ def _now_iso() -> str:
 
 def build_migration_status() -> dict[str, Any]:
     loaded_at = _now_iso()
+    command_center_3_v1_local_rc = v1_closeout_service.build_v1_closeout_evaluation()
     ltg_stage_scope_observed_rows = _build_ltg_stage_scope_observed_rows()
     long_term_goal_rows = _merge_ltg_stage_scope_observations(
         _enrich_long_term_goal_rows([dict(item) for item in LONG_TERM_GOAL_PROGRESS]),
@@ -17051,6 +17052,9 @@ def build_migration_status() -> dict[str, Any]:
         "progress_baseline": [dict(item) for item in MIGRATION_PROGRESS_BASELINE],
         "long_term_goal_summary": long_term_goal_summary,
         "long_term_goal_rows": long_term_goal_rows,
+        "command_center_3_v1_local_rc": command_center_3_v1_local_rc,
+        "v1_version_evidence_rows": command_center_3_v1_local_rc["version_evidence_rows"],
+        "v1_ltg_closure_rows": command_center_3_v1_local_rc["ltg_closure_rows"],
         "ltg_acceptance_runway_rows": ltg_acceptance_runway_rows,
         "ltg_next_acceptance_action_rows": ltg_next_acceptance_action_rows,
         "ltg_rebase_cycle_1_summary": ltg_rebase_cycle_1_summary,
@@ -17192,7 +17196,19 @@ def build_migration_status() -> dict[str, Any]:
                 + len(ltg_stage_scope_observed_rows)
                 + len(tushare_deepseek_linkage_rows)
                 + len(tushare_deepseek_mode_layer_rows)
-                + len(legacy_audit_latest_observation_rows),
+                + len(legacy_audit_latest_observation_rows)
+                + len(command_center_3_v1_local_rc["version_evidence_rows"])
+                + len(command_center_3_v1_local_rc["ltg_closure_rows"]),
+                "v1_local_direct_evidence_ready": (
+                    command_center_3_v1_local_rc["local_direct_evidence_ready"] is True
+                ),
+                "v1_version_evidence_row_count": len(
+                    command_center_3_v1_local_rc["version_evidence_rows"]
+                ),
+                "v1_ltg_closure_row_count": len(
+                    command_center_3_v1_local_rc["ltg_closure_rows"]
+                ),
+                "v1_strict_closeout": command_center_3_v1_local_rc["strict_closeout"],
                 "legacy_audit_first_round_intake_row_count": len(
                     legacy_audit_first_round_intake_rows
                 ),
