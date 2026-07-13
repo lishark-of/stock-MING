@@ -64,6 +64,125 @@ def _datasets(*, recent_listing=False):
     }
 
 
+def _write_valid_immutable_version(root: Path, *, version_id="version-1"):
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    version_dir = root / "versions" / version_id
+    version_dir.mkdir(parents=True)
+    for name, rows in _datasets().items():
+        pd.DataFrame(rows).to_parquet(version_dir / f"{name}.parquet", index=False)
+    frames = {
+        name: pq.read_table(version_dir / f"{name}.parquet").to_pandas()
+        for name in store.DATASETS
+    }
+    validation = store.validate_datasets(
+        frames,
+        start_date="20260708",
+        end_date="20260710",
+    )
+    if not validation["ready"]:
+        raise AssertionError(validation["blockers"])
+    scope_hash = "a" * 64
+    attempt_id = "1" * 32
+    events = []
+    for api in (*store.EXACT_REFRESH_APIS, *store.EXACT_SUPPORT_APIS):
+        event = {
+            "schema_version": store.TRANSPORT_EVENT_SCHEMA,
+            "run_id": scope_hash,
+            "attempt_id": attempt_id,
+            "scope_hash": scope_hash,
+            "api": api,
+            "actual_function_call": True,
+            "function_call_count": 1,
+            "request_scope_digest": store._digest_value({"api": api}),
+            "transport_receipt_digest": store._digest_value({"receipt": api}),
+            "response_digest": store._digest_value({"response": api}),
+        }
+        event["transport_event_digest"] = store._digest_value(event)
+        events.append(event)
+    receipt = {
+        "schema_version": store.EXECUTION_EVENT_SCHEMA,
+        "source": "public_non_injected_tushare_executor",
+        "status": "official_provider_execution_complete",
+        "official_provider_path_completed": True,
+        "run_id": scope_hash,
+        "attempt_id": attempt_id,
+        "scope_hash": scope_hash,
+        "approval_scope_hash": "b" * 64,
+        "execution_recipe_scope_hash": "c" * 64,
+        "required_interface_apis": list(store.EXACT_REFRESH_APIS),
+        "required_interface_api_digest": store._digest_value(list(store.EXACT_REFRESH_APIS)),
+        "required_target_groups": list(store.EXACT_TARGET_GROUPS),
+        "required_target_group_digest": store._digest_value(list(store.EXACT_TARGET_GROUPS)),
+        "required_support_apis": list(store.EXACT_SUPPORT_APIS),
+        "required_support_api_digest": store._digest_value(list(store.EXACT_SUPPORT_APIS)),
+        "transport_evidence": events,
+        "original_actual_function_call_count": len(events),
+        "current_attempt_actual_function_call_count": len(events),
+        "checkpoint_reused_function_call_count": 0,
+        "production_dataset_digest": store._digest_value(validation["datasets"]),
+        "production_dataset_validation_digest": store._digest_value(
+            validation["dataset_validation"]
+        ),
+        "production_universe_digest": validation["universe_digest"],
+        "selected_trade_dates_digest": store._digest_value(validation["selected_trade_dates"]),
+        "sanitized_call_ledger_digest": store._digest_value([]),
+        "contains_secret": False,
+        "external_calls_triggered": True,
+        "tushare_called_this_attempt": True,
+        "tushare_called": True,
+        "does_not_execute_trades": True,
+    }
+    receipt["execution_event_digest"] = store._digest_value(receipt)
+    artifacts = {
+        name: store._artifact_summary(version_dir / f"{name}.parquet", name=name)
+        for name in store.DATASETS
+    }
+    scope = {
+        "scope_hash": scope_hash,
+        "start_date": validation["start_date"],
+        "end_date": validation["end_date"],
+        "selected_trade_dates": validation["selected_trade_dates"],
+        "latest_trade_date": validation["latest_trade_date"],
+        "universe_count": validation["universe_count"],
+        "universe_digest": validation["universe_digest"],
+        "exchanges": validation["exchanges"],
+        "current_listed_count": validation["current_listed_count"],
+        "current_listed_digest": validation["current_listed_digest"],
+        "eligible_universe_count": validation["eligible_universe_count"],
+        "eligible_universe_digest": validation["eligible_universe_digest"],
+        "excluded_recent_symbols": validation["excluded_recent_symbols"],
+        "excluded_recent_count": validation["excluded_recent_count"],
+        "excluded_recent_digest": validation["excluded_recent_digest"],
+        "scored_universe_policy": validation["scored_universe_policy"],
+    }
+    lineage = {
+        "approval_scope_hash": receipt["approval_scope_hash"],
+        "execution_recipe_scope_hash": receipt["execution_recipe_scope_hash"],
+        "as_of": validation["end_date"],
+    }
+    version_material = {
+        "scope": scope,
+        "artifacts": artifacts,
+        "dataset_validation": validation["dataset_validation"],
+        "official_run_receipt": receipt,
+        "lineage": lineage,
+    }
+    manifest = {
+        "schema_version": store.MANIFEST_SCHEMA,
+        "version_id": version_id,
+        **version_material,
+        "version_digest": store._digest_value(version_material),
+        "contains_secret": False,
+    }
+    manifest["manifest_digest"] = store._digest_value(manifest)
+    store._atomic_json(version_dir / "manifest.json", manifest)
+    pointer = store._pointer_payload(version_id, manifest["manifest_digest"], {})
+    store._atomic_json(root / "pointer.json", pointer)
+    return manifest, pointer
+
+
 class TushareProductionVersionStoreTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -86,6 +205,9 @@ class TushareProductionVersionStoreTests(unittest.TestCase):
             ("000001.SH", "SSE"),
             ("600000.SZ", "SZSE"),
             ("100000.BJ", "BSE"),
+            ("610000.SH", "SSE"),
+            ("390000.SZ", "SZSE"),
+            ("999999.BJ", "BSE"),
         ):
             datasets = _datasets()
             datasets["stock_basic"][0].update({"ts_code": code, "exchange": exchange})
@@ -165,73 +287,14 @@ class TushareProductionVersionStoreTests(unittest.TestCase):
             max_rows_per_call=2,
             call_budget={"used": 0, "historical": 0, "limit": 3},
             checkpoint_root=checkpoint_root,
-            production_root=self.root,
-            run_id="a" * 64,
-            scope_hash="a" * 64,
+            runtime_event_recorder=lambda **_kwargs: self.fail(
+                "a failed provider response must not create runtime evidence"
+            ),
         )
         self.assertEqual(rows, [])
         self.assertEqual(ledger["resumed_page_count"], 0)
         self.assertEqual(adapter.calls, 3)
         self.assertFalse(ledger["provider_transport_verified"])
-
-    def test_checkpoint_resume_uses_prior_event_without_claiming_new_call(self):
-        scope_hash = "a" * 64
-        params = {"start_date": "20260710", "end_date": "20260710"}
-        query_hash = tushare_task_service._canonical_sha256(
-            {"api": "daily", "params": params, "limit": 2}
-        )
-        rows = [{"ts_code": "000001.SZ", "trade_date": "20260710"}]
-        fingerprint = tushare_task_service._canonical_sha256(rows)
-        ref = tushare_task_service._official_transport_event(
-            self.root,
-            run_id=scope_hash,
-            scope_hash=scope_hash,
-            api="daily",
-            event_key=f"{query_hash}-000000000",
-            function_call_count=1,
-            transport_receipt_digest="b" * 64,
-            response_digest=fingerprint,
-        )
-        checkpoint_root = Path(self.tmp.name) / "resume-checkpoints"
-        checkpoint = checkpoint_root / "daily" / query_hash / "000000000.json"
-        page = {
-            "schema_version": "tushare_provider_page_checkpoint.v1",
-            "query_hash": query_hash,
-            "api": "daily",
-            "offset": 0,
-            "limit": 2,
-            "rows": rows,
-            "row_count": 1,
-            "page_fingerprint": fingerprint,
-            "terminal": True,
-            "provider_transport_verified": True,
-            "original_function_call_count": 1,
-            "transport_event": ref,
-        }
-        page["checkpoint_digest"] = tushare_task_service._canonical_sha256(page)
-        tushare_task_service._atomic_json_write(checkpoint, page)
-
-        class MustNotCallAdapter:
-            def get_daily(self, **_params):
-                raise AssertionError("checkpoint resume must not call provider")
-
-        result_rows, ledger = tushare_task_service._paginated_provider_rows(
-            MustNotCallAdapter(),
-            api="daily",
-            params=params,
-            max_rows_per_call=2,
-            call_budget={"used": 0, "historical": 0, "limit": 3},
-            checkpoint_root=checkpoint_root,
-            production_root=self.root,
-            run_id=scope_hash,
-            scope_hash=scope_hash,
-        )
-        self.assertEqual(result_rows, rows)
-        self.assertEqual(ledger["provider_call_count"], 0)
-        self.assertEqual(ledger["historical_provider_call_count"], 1)
-        self.assertFalse(ledger["tushare_called"])
-        self.assertFalse(ledger["external_calls_triggered"])
-        self.assertTrue(ledger["checkpoint_data_reused"])
 
     def test_execution_event_requires_exact_twenty_apis_and_seven_targets(self):
         self.assertEqual(
@@ -250,47 +313,44 @@ class TushareProductionVersionStoreTests(unittest.TestCase):
                 "chip_distribution", "financial_disclosure", "hard_risk",
             ),
         )
-        missing = tushare_task_service._persist_official_execution_event(
-            self.root,
-            run_id="a" * 64,
+        self.assertFalse(hasattr(tushare_task_service, "_official_transport_event"))
+        self.assertFalse(hasattr(tushare_task_service, "_persist_official_execution_event"))
+        self.assertFalse(hasattr(store, "_promote_version_from_official_execution_event"))
+        result = store._review_external_promotion_request(
+            _datasets(),
+            root=self.root,
             scope_hash="a" * 64,
-            approval_scope_hash="b" * 64,
-            execution_recipe_scope_hash="c" * 64,
-            selected_apis=list(store.EXACT_REFRESH_APIS[:-1]),
-            target_groups=list(store.EXACT_TARGET_GROUPS),
-            transport_events=[],
-            current_attempt_actual_function_call_count=0,
-            call_ledger=[],
         )
-        self.assertIsNone(missing)
-        fake_api = list(store.EXACT_REFRESH_APIS)
-        fake_api[-1] = "fake_api"
-        fake = tushare_task_service._persist_official_execution_event(
-            self.root,
-            run_id="a" * 64,
-            scope_hash="a" * 64,
-            approval_scope_hash="b" * 64,
-            execution_recipe_scope_hash="c" * 64,
-            selected_apis=fake_api,
-            target_groups=list(store.EXACT_TARGET_GROUPS),
-            transport_events=[],
-            current_attempt_actual_function_call_count=0,
-            call_ledger=[],
-        )
-        self.assertIsNone(fake)
-        wrong_targets = tushare_task_service._persist_official_execution_event(
-            self.root,
-            run_id="a" * 64,
-            scope_hash="a" * 64,
-            approval_scope_hash="b" * 64,
-            execution_recipe_scope_hash="c" * 64,
-            selected_apis=list(store.EXACT_REFRESH_APIS),
-            target_groups=[*store.EXACT_TARGET_GROUPS[:-1], "fake_target"],
-            transport_events=[],
-            current_attempt_actual_function_call_count=0,
-            call_ledger=[],
-        )
-        self.assertIsNone(wrong_targets)
+        self.assertFalse(result["promotion_verified"])
+        self.assertEqual(result["blockers"], ["module_level_promotion_disabled"])
+
+    def test_inline_manifest_evidence_cannot_be_overwritten_by_attempt_files(self):
+        manifest, _pointer = _write_valid_immutable_version(self.root)
+        first = store.verify_current_version(self.root)
+        self.assertTrue(first["ready"], first["blockers"])
+        manifest_text = json.dumps(manifest, sort_keys=True)
+        self.assertNotIn("execution_runs/", manifest_text)
+        self.assertNotIn("transport_event_ref", manifest_text)
+
+        mutable = self.root / ".attempts" / ("a" * 64) / ("1" * 32) / "event.json"
+        mutable.parent.mkdir(parents=True)
+        mutable.write_text('{"forged":true}', encoding="utf-8")
+        mutable.write_text('{"forged":false}', encoding="utf-8")
+        second = store.verify_current_version(self.root)
+        self.assertTrue(second["ready"], second["blockers"])
+        self.assertEqual(first["manifest_digest"], second["manifest_digest"])
+
+    def test_first_version_last_good_manifest_digest_is_always_validated(self):
+        _manifest, pointer = _write_valid_immutable_version(self.root)
+        self.assertTrue(store.verify_current_version(self.root)["ready"])
+        pointer["last_good_manifest_digest"] = "f" * 64
+        pointer_material = dict(pointer)
+        pointer_material.pop("pointer_digest", None)
+        pointer["pointer_digest"] = store._digest_value(pointer_material)
+        store._atomic_json(self.root / "pointer.json", pointer)
+        result = store.verify_current_version(self.root)
+        self.assertFalse(result["ready"])
+        self.assertIn("last_good_manifest_binding_invalid", result["blockers"])
 
     def test_double_pointer_restore_is_idempotent_without_production_promotion(self):
         pointer = self.root / "pointer.json"

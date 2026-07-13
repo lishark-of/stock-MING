@@ -6792,195 +6792,6 @@ def _atomic_json_write(path: Path, payload: Mapping[str, Any]) -> None:
         os.close(directory)
 
 
-def _official_transport_event(
-    production_root: Path,
-    *,
-    run_id: str,
-    scope_hash: str,
-    api: str,
-    event_key: str,
-    function_call_count: int,
-    transport_receipt_digest: str,
-    response_digest: str,
-) -> dict[str, Any]:
-    if (
-        function_call_count <= 0
-        or len(transport_receipt_digest) != 64
-        or len(response_digest) != 64
-    ):
-        return {}
-    relative = Path("execution_runs") / run_id / "transport_events" / api / f"{event_key}.json"
-    path = production_root / relative
-    event = {
-        "schema_version": tushare_production_store.TRANSPORT_EVENT_SCHEMA,
-        "run_id": run_id,
-        "scope_hash": scope_hash,
-        "api": api,
-        "event_key": event_key,
-        "actual_function_call": True,
-        "function_call_count": function_call_count,
-        "transport_receipt_digest": transport_receipt_digest,
-        "response_digest": response_digest,
-        "contains_secret": False,
-        "does_not_execute_trades": True,
-    }
-    event["transport_event_digest"] = _canonical_sha256(event)
-    _atomic_json_write(path, event)
-    try:
-        readback = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    if _canonical_sha256(readback) != _canonical_sha256(event):
-        return {}
-    return {
-        "relative_path": str(relative),
-        "transport_event_digest": event["transport_event_digest"],
-        "api": api,
-    }
-
-
-def _read_checkpoint_transport_event(
-    production_root: Path,
-    *,
-    saved: Mapping[str, Any],
-    run_id: str,
-    scope_hash: str,
-    api: str,
-) -> dict[str, Any]:
-    ref = saved.get("transport_event") if isinstance(saved.get("transport_event"), Mapping) else {}
-    relative = str(ref.get("relative_path") or "")
-    if not relative or relative.startswith("/") or ".." in Path(relative).parts:
-        return {}
-    try:
-        event = json.loads((production_root / relative).read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    material = dict(event)
-    digest = str(material.pop("transport_event_digest", "") or "")
-    if not (
-        event.get("schema_version") == tushare_production_store.TRANSPORT_EVENT_SCHEMA
-        and event.get("run_id") == run_id
-        and event.get("scope_hash") == scope_hash
-        and event.get("api") == api
-        and event.get("actual_function_call") is True
-        and digest == ref.get("transport_event_digest")
-        and digest == _canonical_sha256(material)
-        and event.get("response_digest") == saved.get("page_fingerprint")
-    ):
-        return {}
-    return dict(ref)
-
-
-def _persist_official_execution_event(
-    production_root: Path,
-    *,
-    run_id: str,
-    scope_hash: str,
-    approval_scope_hash: str,
-    execution_recipe_scope_hash: str,
-    selected_apis: list[str],
-    target_groups: list[str],
-    transport_events: list[Mapping[str, Any]],
-    current_attempt_actual_function_call_count: int,
-    call_ledger: list[Mapping[str, Any]],
-) -> Path | None:
-    """Persist the official event only at the end of the non-injected executor."""
-
-    if (
-        selected_apis != list(tushare_production_store.EXACT_REFRESH_APIS)
-        or target_groups != list(tushare_production_store.EXACT_TARGET_GROUPS)
-        or len(scope_hash) != 64
-        or len(approval_scope_hash) != 64
-        or len(execution_recipe_scope_hash) != 64
-    ):
-        return None
-    unique_refs: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    original_calls = 0
-    observed_apis: set[str] = set()
-    for raw_ref in transport_events:
-        ref = dict(raw_ref)
-        digest = str(ref.get("transport_event_digest") or "")
-        if not digest or digest in seen:
-            continue
-        relative = str(ref.get("relative_path") or "")
-        try:
-            transport = json.loads((production_root / relative).read_text(encoding="utf-8"))
-        except Exception:
-            return None
-        material = dict(transport)
-        stored_digest = str(material.pop("transport_event_digest", "") or "")
-        if not (
-            stored_digest == digest
-            and stored_digest == _canonical_sha256(material)
-            and transport.get("run_id") == run_id
-            and transport.get("scope_hash") == scope_hash
-            and transport.get("actual_function_call") is True
-        ):
-            return None
-        seen.add(digest)
-        unique_refs.append(ref)
-        original_calls += int(transport.get("function_call_count") or 0)
-        observed_apis.add(str(transport.get("api") or ""))
-    if (
-        observed_apis
-        != set(tushare_production_store.EXACT_REFRESH_APIS)
-        | set(tushare_production_store.EXACT_SUPPORT_APIS)
-        or not 0 < original_calls <= tushare_production_store.MAX_PROVIDER_CALLS
-        or not 0 <= current_attempt_actual_function_call_count <= original_calls
-    ):
-        return None
-    event = {
-        "schema_version": tushare_production_store.EXECUTION_EVENT_SCHEMA,
-        "source": "public_non_injected_tushare_executor",
-        "status": "official_provider_execution_complete",
-        "official_provider_path_completed": True,
-        "run_id": run_id,
-        "scope_hash": scope_hash,
-        "approval_scope_hash": approval_scope_hash,
-        "execution_recipe_scope_hash": execution_recipe_scope_hash,
-        "required_interface_apis": list(tushare_production_store.EXACT_REFRESH_APIS),
-        "required_interface_api_digest": _canonical_sha256(
-            list(tushare_production_store.EXACT_REFRESH_APIS)
-        ),
-        "required_target_groups": list(tushare_production_store.EXACT_TARGET_GROUPS),
-        "required_target_group_digest": _canonical_sha256(
-            list(tushare_production_store.EXACT_TARGET_GROUPS)
-        ),
-        "required_support_apis": list(tushare_production_store.EXACT_SUPPORT_APIS),
-        "required_support_api_digest": _canonical_sha256(
-            list(tushare_production_store.EXACT_SUPPORT_APIS)
-        ),
-        "transport_events": unique_refs,
-        "original_actual_function_call_count": original_calls,
-        "current_attempt_actual_function_call_count": current_attempt_actual_function_call_count,
-        "checkpoint_reused_function_call_count": original_calls
-        - current_attempt_actual_function_call_count,
-        "sanitized_call_ledger_digest": _canonical_sha256(
-            [dict(row) for row in call_ledger]
-        ),
-        "contains_secret": False,
-        "external_calls_triggered": current_attempt_actual_function_call_count > 0,
-        "tushare_called_this_attempt": current_attempt_actual_function_call_count > 0,
-        "tushare_called": True,
-        "does_not_execute_trades": True,
-    }
-    event["execution_event_digest"] = _canonical_sha256(event)
-    path = production_root / "execution_runs" / run_id / "execution_event.json"
-    _atomic_json_write(path, event)
-    try:
-        readback = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    if not tushare_production_store._receipt_ready(
-        readback,
-        scope_hash=scope_hash,
-        root=production_root,
-    ):
-        return None
-    return path
-
-
 def _paginated_provider_rows(
     adapter_module: Any,
     *,
@@ -6989,11 +6800,9 @@ def _paginated_provider_rows(
     max_rows_per_call: int,
     call_budget: dict[str, Any],
     checkpoint_root: Path,
-    production_root: Path,
-    run_id: str,
-    scope_hash: str,
+    runtime_event_recorder: Any,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Fetch one endpoint with bounded retries and digest-bound resume pages."""
+    """Fetch one endpoint; checkpoints are diagnostics, never transport proof."""
 
     limit = max(1, min(int(max_rows_per_call or 0), 6000))
     params_safe = {key: value for key, value in params.items() if value is not None}
@@ -7002,8 +6811,6 @@ def _paginated_provider_rows(
     rows: list[dict[str, Any]] = []
     fingerprints: set[str] = set()
     actual_calls = 0
-    resumed_pages = 0
-    transport_events: list[dict[str, Any]] = []
     offset = 0
     terminal = False
     error = ""
@@ -7014,38 +6821,6 @@ def _paginated_provider_rows(
     while not terminal:
         checkpoint = page_root / f"{offset:09d}.json"
         page: dict[str, Any] | None = None
-        if checkpoint.is_file():
-            try:
-                saved = json.loads(checkpoint.read_text(encoding="utf-8"))
-                material = dict(saved)
-                digest = str(material.pop("checkpoint_digest", "") or "")
-                if (
-                    saved.get("query_hash") == query_hash
-                    and int(saved.get("offset") or 0) == offset
-                    and digest == _canonical_sha256(material)
-                ):
-                    transport_ref = _read_checkpoint_transport_event(
-                        production_root,
-                        saved=saved,
-                        run_id=run_id,
-                        scope_hash=scope_hash,
-                        api=api,
-                    )
-                    if not transport_ref:
-                        error = "checkpoint_transport_event_missing_or_invalid"
-                    elif call_budget.get("used", 0) + call_budget.get("historical", 0) >= call_budget.get(
-                        "limit", tushare_production_store.MAX_PROVIDER_CALLS
-                    ):
-                        error = "provider_call_budget_exhausted"
-                    else:
-                        page = saved
-                        resumed_pages += 1
-                        call_budget["historical"] = call_budget.get("historical", 0) + int(
-                            saved.get("original_function_call_count") or 0
-                        )
-                        transport_events.append(transport_ref)
-            except Exception:
-                page = None
         if page is None:
             for _attempt in range(3):
                 if call_budget.get("used", 0) + call_budget.get("historical", 0) >= call_budget.get(
@@ -7071,20 +6846,17 @@ def _paginated_provider_rows(
                     if page_rows and fingerprint in fingerprints:
                         error = "provider_pagination_repeated_page_truncation_detected"
                         break
-                    transport_ref = _official_transport_event(
-                        production_root,
-                        run_id=run_id,
-                        scope_hash=scope_hash,
+                    transport_event = runtime_event_recorder(
                         api=api,
-                        event_key=f"{query_hash}-{offset:09d}",
-                        function_call_count=1,
+                        request_scope={**params_safe, "limit": limit, "offset": offset},
+                        response_rows=page_rows,
+                        function_call_count=int(transport.get("transport_call_count") or 0),
                         transport_receipt_digest=str(
                             transport.get("transport_receipt_digest") or ""
                         ),
-                        response_digest=fingerprint,
                     )
-                    if not transport_ref:
-                        error = "official_transport_event_persist_failed"
+                    if not transport_event:
+                        error = "official_runtime_transport_accumulator_rejected"
                         break
                     page = {
                         "schema_version": "tushare_provider_page_checkpoint.v1",
@@ -7096,13 +6868,13 @@ def _paginated_provider_rows(
                         "row_count": len(page_rows),
                         "page_fingerprint": fingerprint,
                         "terminal": len(page_rows) < limit,
-                        "provider_transport_verified": True,
+                        "provider_transport_verified": False,
+                        "checkpoint_transport_promotable": False,
                         "original_function_call_count": 1,
-                        "transport_event": transport_ref,
+                        "runtime_event_digest": transport_event.get("transport_event_digest"),
                     }
                     page["checkpoint_digest"] = _canonical_sha256(page)
                     _atomic_json_write(checkpoint, page)
-                    transport_events.append(transport_ref)
                     break
                 error = _safe_text(result.get("error") or "provider_page_failed")
             if page is None:
@@ -7122,19 +6894,19 @@ def _paginated_provider_rows(
         "api": api,
         "call_status": "success" if ready else "failed",
         "provider_call_count": actual_calls,
-        "historical_provider_call_count": resumed_pages,
-        "resumed_page_count": resumed_pages,
+        "historical_provider_call_count": 0,
+        "resumed_page_count": 0,
         "page_count": len(fingerprints),
         "row_count": len(rows) if ready else 0,
         "pagination_complete": ready,
         "truncation_detected": "truncation" in error,
-        "checkpoint_resume_supported": True,
+        "checkpoint_resume_supported": False,
         "provider_transport_verified": ready,
-        "transport_events": transport_events,
+        "checkpoint_transport_promotable": False,
         "error_message_safe": error,
         "external_calls_triggered": actual_calls > 0,
         "tushare_called": actual_calls > 0,
-        "checkpoint_data_reused": resumed_pages > 0,
+        "checkpoint_data_reused": False,
         "deepseek_called": False,
         "github_called": False,
         "does_not_execute_trades": True,
@@ -7151,9 +6923,7 @@ def _full_market_dataset_batch(
     max_rows_per_call: int,
     call_budget: dict[str, Any],
     checkpoint_root: Path,
-    production_root: Path,
-    run_id: str,
-    scope_hash: str,
+    runtime_event_recorder: Any,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     return _paginated_provider_rows(
         adapter_module,
@@ -7162,9 +6932,7 @@ def _full_market_dataset_batch(
         max_rows_per_call=max_rows_per_call,
         call_budget=call_budget,
         checkpoint_root=checkpoint_root,
-        production_root=production_root,
-        run_id=run_id,
-        scope_hash=scope_hash,
+        runtime_event_recorder=runtime_event_recorder,
     )
 
 
@@ -7177,10 +6945,19 @@ def _run_full_market_universe_acceptance(
     trade_cal_data: Any,
     trade_cal_ledger: Mapping[str, Any],
     outer_call_ledger: list[Mapping[str, Any]],
-    public_executor_completed: bool,
+    official_runtime: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     context = _production_universe_context(payload)
-    if not public_executor_completed:
+    runtime = dict(official_runtime) if isinstance(official_runtime, Mapping) else {}
+    record_runtime_event = runtime.get("record_runtime_event")
+    promote_runtime_version = runtime.get("promote_runtime_version")
+    attempt_root = Path(str(runtime.get("attempt_root") or ""))
+    if not (
+        runtime.get("public_non_injected_executor") is True
+        and callable(record_runtime_event)
+        and callable(promote_runtime_version)
+        and attempt_root.name == str(runtime.get("attempt_id") or "")
+    ):
         return {
             "schema_version": FULL_MARKET_UNIVERSE_SCHEMA_VERSION,
             "status": "full_market_universe_production_blocked",
@@ -7192,41 +6969,16 @@ def _run_full_market_universe_acceptance(
     del trade_cal_data, trade_cal_ledger
     ledger: list[dict[str, Any]] = []
     production_root = storage_service.PARQUET_ROOT / "full_market_universe"
-    run_id = str(scope.get("scope_hash") or "missing_scope")
     start = str(context.get("feature_start_date") or "")
     end = str(context.get("feature_end_date") or "")
-    checkpoint_root = (
-        production_root
-        / ".checkpoints"
-        / str(scope.get("scope_hash") or "missing_scope")
-    )
-    outer_transport_events: list[dict[str, Any]] = []
+    checkpoint_root = attempt_root / "checkpoints"
     outer_actual_calls = 0
     for row in outer_call_ledger:
         api = str(row.get("api") or "")
         function_calls = _safe_int(row.get("provider_transport_receipt_count"))
         if row.get("provider_transport_verified") is not True or api not in set(ALL_REFRESH_APIS):
             continue
-        ref = _official_transport_event(
-            production_root,
-            run_id=run_id,
-            scope_hash=run_id,
-            api=api,
-            event_key=f"interface-{api}",
-            function_call_count=function_calls,
-            transport_receipt_digest=str(row.get("provider_transport_receipt_digest") or ""),
-            response_digest=_canonical_sha256(
-                {
-                    "api": api,
-                    "row_count": row.get("row_count"),
-                    "data_date": row.get("data_date"),
-                    "call_status": row.get("call_status"),
-                }
-            ),
-        )
-        if ref:
-            outer_transport_events.append(ref)
-            outer_actual_calls += function_calls
+        outer_actual_calls += function_calls
     call_budget = {
         "used": outer_actual_calls,
         "historical": 0,
@@ -7246,9 +6998,7 @@ def _run_full_market_universe_acceptance(
             max_rows_per_call=_safe_int(context.get("max_rows_per_call")),
             call_budget=call_budget,
             checkpoint_root=checkpoint_root,
-            production_root=production_root,
-            run_id=run_id,
-            scope_hash=run_id,
+            runtime_event_recorder=record_runtime_event,
         )
         stock_rows.extend(exchange_rows)
         stock_pages.append(page_ledger)
@@ -7264,12 +7014,7 @@ def _run_full_market_universe_acceptance(
         "historical_provider_call_count": sum(
             _safe_int(row.get("historical_provider_call_count")) for row in stock_pages
         ),
-        "transport_events": [
-            event
-            for page in stock_pages
-            for event in page.get("transport_events", [])
-            if isinstance(event, Mapping)
-        ],
+        "checkpoint_transport_promotable": False,
         "pagination_complete": all(row.get("pagination_complete") is True for row in stock_pages),
         "truncation_detected": any(row.get("truncation_detected") is True for row in stock_pages),
         "external_calls_triggered": any(row.get("external_calls_triggered") is True for row in stock_pages),
@@ -7287,9 +7032,7 @@ def _run_full_market_universe_acceptance(
         max_rows_per_call=_safe_int(context.get("max_rows_per_call")),
         call_budget=call_budget,
         checkpoint_root=checkpoint_root,
-        production_root=production_root,
-        run_id=run_id,
-        scope_hash=run_id,
+        runtime_event_recorder=record_runtime_event,
     )
     ledger.append(trade_page_ledger)
     normalized_stock = [
@@ -7352,9 +7095,7 @@ def _run_full_market_universe_acceptance(
                 max_rows_per_call=max_rows,
                 call_budget=call_budget,
                 checkpoint_root=checkpoint_root,
-                production_root=production_root,
-                run_id=run_id,
-                scope_hash=run_id,
+                runtime_event_recorder=record_runtime_event,
             )
             datasets[api] = rows
             ledger.append(batch_ledger)
@@ -7415,39 +7156,29 @@ def _run_full_market_universe_acceptance(
     )
     promotion: dict[str, Any] = {"promotion_verified": False, "artifacts": {}}
     if datasets_ready:
-        page_transport_events = [
-            event
-            for row in ledger
-            for event in row.get("transport_events", [])
-            if isinstance(event, Mapping)
-        ]
-        execution_event_path = _persist_official_execution_event(
-            production_root,
-            run_id=run_id,
-            scope_hash=run_id,
+        promotion = promote_runtime_version(
+            datasets=datasets,
+            production_root=production_root,
+            scope_hash=str(scope.get("scope_hash") or ""),
+            start_date=start,
+            end_date=end,
             approval_scope_hash=str(execution_gate.get("approval_scope_hash") or ""),
             execution_recipe_scope_hash=str(execution_gate.get("authoritative_recipe_scope_hash") or ""),
             selected_apis=list(ALL_REFRESH_APIS),
             target_groups=list(FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS),
-            transport_events=[*outer_transport_events, *page_transport_events],
-            current_attempt_actual_function_call_count=call_budget.get("used", 0),
+            as_of=str(context.get("as_of_date") or ""),
             call_ledger=[*outer_call_ledger, *ledger],
         )
-        if execution_event_path is not None:
-            promotion = tushare_production_store._promote_version_from_official_execution_event(
-                datasets,
-                root=production_root,
-                scope_hash=run_id,
-                start_date=start,
-                end_date=end,
-                approval_scope_hash=str(execution_gate.get("approval_scope_hash") or ""),
-                execution_recipe_scope_hash=str(execution_gate.get("authoritative_recipe_scope_hash") or ""),
-                as_of=str(context.get("as_of_date") or ""),
-                execution_event_path=execution_event_path,
-                packet_store=SQLiteMetaStore(SQLITE_META_PATH),
-                packet_key=FULL_MARKET_UNIVERSE_CURRENT_PACKET_KEY,
-            )
-    complete = promotion.get("promotion_verified") is True
+    disk_production = tushare_production_store.validate_tushare_full_market_production_version(
+        production_root
+    )
+    complete = bool(
+        promotion.get("promotion_verified") is True
+        and disk_production.get("ready") is True
+        and disk_production.get("scope_hash") == scope.get("scope_hash")
+        and disk_production.get("version_digest")
+        == promotion.get("disk_verification", {}).get("version_digest")
+    )
     packet = {
         "packet_key": FULL_MARKET_UNIVERSE_CURRENT_PACKET_KEY,
         "schema_version": FULL_MARKET_UNIVERSE_SCHEMA_VERSION,
@@ -7745,6 +7476,290 @@ def run_tushare_refresh_task(
     public_production_executor = bool(production_acceptance and adapter is None)
     selected_apis = _selected_apis(payload, default_apis)
     provider_call_scope = _provider_call_scope(payload, selected_apis)
+    official_runtime: dict[str, Any] | None = None
+    if public_production_executor:
+        attempt_id = uuid.uuid4().hex
+        production_root = storage_service.PARQUET_ROOT / "full_market_universe"
+        attempt_root = (
+            production_root
+            / ".attempts"
+            / str(provider_call_scope.get("scope_hash") or "missing_scope")
+            / attempt_id
+        )
+        runtime_events: list[dict[str, Any]] = []
+
+        def _record_official_runtime_event(
+            *,
+            api: str,
+            request_scope: Mapping[str, Any],
+            response_rows: Any,
+            function_call_count: int,
+            transport_receipt_digest: str,
+        ) -> dict[str, Any]:
+            rows = _all_provider_rows(response_rows)
+            if not (
+                api in set(tushare_production_store.EXACT_REFRESH_APIS)
+                | set(tushare_production_store.EXACT_SUPPORT_APIS)
+                and function_call_count > 0
+                and len(str(transport_receipt_digest or "")) == 64
+            ):
+                return {}
+            event = {
+                "schema_version": tushare_production_store.TRANSPORT_EVENT_SCHEMA,
+                "run_id": str(provider_call_scope.get("scope_hash") or ""),
+                "attempt_id": attempt_id,
+                "scope_hash": str(provider_call_scope.get("scope_hash") or ""),
+                "api": api,
+                "request_scope_digest": _canonical_sha256(
+                    {"api": api, "request_scope": dict(request_scope)}
+                ),
+                "response_digest": _canonical_sha256(rows),
+                "response_row_count": len(rows),
+                "actual_function_call": True,
+                "function_call_count": function_call_count,
+                "transport_receipt_digest": str(transport_receipt_digest),
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+            }
+            event["transport_event_digest"] = _canonical_sha256(event)
+            runtime_events.append(event)
+            return dict(event)
+
+        def _promote_official_runtime_version(
+            *,
+            datasets: Mapping[str, Any],
+            production_root: Path,
+            scope_hash: str,
+            start_date: str,
+            end_date: str,
+            approval_scope_hash: str,
+            execution_recipe_scope_hash: str,
+            selected_apis: list[str],
+            target_groups: list[str],
+            as_of: str,
+            call_ledger: list[Mapping[str, Any]],
+        ) -> dict[str, Any]:
+            validation = tushare_production_store.validate_datasets(
+                datasets,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            observed_apis = {str(event.get("api") or "") for event in runtime_events}
+            actual_calls = sum(int(event.get("function_call_count") or 0) for event in runtime_events)
+            if not (
+                validation.get("ready") is True
+                and production_root == storage_service.PARQUET_ROOT / "full_market_universe"
+                and scope_hash == provider_call_scope.get("scope_hash")
+                and selected_apis == list(tushare_production_store.EXACT_REFRESH_APIS)
+                and target_groups == list(tushare_production_store.EXACT_TARGET_GROUPS)
+                and observed_apis
+                == set(tushare_production_store.EXACT_REFRESH_APIS)
+                | set(tushare_production_store.EXACT_SUPPORT_APIS)
+                and 0 < actual_calls <= tushare_production_store.MAX_PROVIDER_CALLS
+                and len(approval_scope_hash) == len(execution_recipe_scope_hash) == 64
+                and str(as_of or "").replace("-", "") == validation.get("end_date")
+            ):
+                return {
+                    "promotion_verified": False,
+                    "status": "official_runtime_accumulator_incomplete",
+                    "blockers": list(validation.get("blockers") or [])
+                    + ["official_runtime_accumulator_incomplete"],
+                    "artifacts": {},
+                }
+            receipt = {
+                "schema_version": tushare_production_store.EXECUTION_EVENT_SCHEMA,
+                "source": "public_non_injected_tushare_executor",
+                "status": "official_provider_execution_complete",
+                "official_provider_path_completed": True,
+                "run_id": scope_hash,
+                "attempt_id": attempt_id,
+                "scope_hash": scope_hash,
+                "approval_scope_hash": approval_scope_hash,
+                "execution_recipe_scope_hash": execution_recipe_scope_hash,
+                "required_interface_apis": list(tushare_production_store.EXACT_REFRESH_APIS),
+                "required_interface_api_digest": _canonical_sha256(
+                    list(tushare_production_store.EXACT_REFRESH_APIS)
+                ),
+                "required_target_groups": list(tushare_production_store.EXACT_TARGET_GROUPS),
+                "required_target_group_digest": _canonical_sha256(
+                    list(tushare_production_store.EXACT_TARGET_GROUPS)
+                ),
+                "required_support_apis": list(tushare_production_store.EXACT_SUPPORT_APIS),
+                "required_support_api_digest": _canonical_sha256(
+                    list(tushare_production_store.EXACT_SUPPORT_APIS)
+                ),
+                "transport_evidence": [dict(event) for event in runtime_events],
+                "original_actual_function_call_count": actual_calls,
+                "current_attempt_actual_function_call_count": actual_calls,
+                "checkpoint_reused_function_call_count": 0,
+                "production_dataset_digest": _canonical_sha256(validation.get("datasets")),
+                "production_dataset_validation_digest": _canonical_sha256(
+                    validation.get("dataset_validation")
+                ),
+                "production_universe_digest": validation.get("universe_digest"),
+                "selected_trade_dates_digest": _canonical_sha256(
+                    validation.get("selected_trade_dates")
+                ),
+                "sanitized_call_ledger_digest": _canonical_sha256(
+                    [dict(row) for row in call_ledger]
+                ),
+                "contains_secret": False,
+                "external_calls_triggered": True,
+                "tushare_called_this_attempt": True,
+                "tushare_called": True,
+                "does_not_execute_trades": True,
+            }
+            receipt["execution_event_digest"] = _canonical_sha256(receipt)
+            if not tushare_production_store._receipt_ready(receipt, scope_hash=scope_hash):
+                return {
+                    "promotion_verified": False,
+                    "status": "official_runtime_receipt_invalid",
+                    "blockers": ["official_runtime_receipt_invalid"],
+                    "artifacts": {},
+                }
+
+            pointer_path = production_root / "pointer.json"
+            pointer_before = pointer_path.read_bytes() if pointer_path.is_file() else None
+            version_id = f"{scope_hash[:16]}-{attempt_id}"
+            staging = attempt_root / "staging" / version_id
+            version_dir = production_root / "versions" / version_id
+            pointer_switched = False
+            previous_current_packet: Mapping[str, Any] | None = None
+            packet_store = SQLiteMetaStore(SQLITE_META_PATH)
+            try:
+                import pandas as pd
+
+                staging.mkdir(parents=True, exist_ok=False)
+                artifacts: dict[str, Any] = {}
+                for name in tushare_production_store.DATASETS:
+                    path = staging / f"{name}.parquet"
+                    pd.DataFrame(validation["datasets"][name]).to_parquet(path, index=False)
+                    artifacts[name] = tushare_production_store._artifact_summary(path, name=name)
+                scope = {
+                    "scope_hash": scope_hash,
+                    "start_date": validation["start_date"],
+                    "end_date": validation["end_date"],
+                    "selected_trade_dates": validation["selected_trade_dates"],
+                    "latest_trade_date": validation["latest_trade_date"],
+                    "universe_count": validation["universe_count"],
+                    "universe_digest": validation["universe_digest"],
+                    "exchanges": validation["exchanges"],
+                    "current_listed_count": validation["current_listed_count"],
+                    "current_listed_digest": validation["current_listed_digest"],
+                    "eligible_universe_count": validation["eligible_universe_count"],
+                    "eligible_universe_digest": validation["eligible_universe_digest"],
+                    "excluded_recent_symbols": validation["excluded_recent_symbols"],
+                    "excluded_recent_count": validation["excluded_recent_count"],
+                    "excluded_recent_digest": validation["excluded_recent_digest"],
+                    "scored_universe_policy": validation["scored_universe_policy"],
+                }
+                version_material = {
+                    "scope": scope,
+                    "artifacts": artifacts,
+                    "dataset_validation": validation["dataset_validation"],
+                    "official_run_receipt": receipt,
+                    "lineage": {
+                        "approval_scope_hash": approval_scope_hash,
+                        "execution_recipe_scope_hash": execution_recipe_scope_hash,
+                        "as_of": str(as_of).replace("-", ""),
+                    },
+                }
+                manifest = {
+                    "schema_version": tushare_production_store.MANIFEST_SCHEMA,
+                    "version_id": version_id,
+                    **version_material,
+                    "version_digest": _canonical_sha256(version_material),
+                    "contains_secret": False,
+                }
+                manifest["manifest_digest"] = _canonical_sha256(manifest)
+                _atomic_json_write(staging / "manifest.json", manifest)
+                version_dir.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(staging, version_dir)
+                previous_pointer = (
+                    json.loads(pointer_before.decode("utf-8")) if pointer_before is not None else {}
+                )
+                pointer = tushare_production_store._pointer_payload(
+                    version_id,
+                    manifest["manifest_digest"],
+                    previous_pointer,
+                )
+                _atomic_json_write(pointer_path, pointer)
+                pointer_switched = True
+                disk = tushare_production_store.verify_current_version(production_root)
+                if not disk.get("ready"):
+                    raise RuntimeError("production_disk_readback_failed")
+
+                current_packet = {
+                    "schema_version": "tushare_production_version_index.v2",
+                    "status": "full_interface_provider_production_complete",
+                    "production_tushare_pipeline_complete": True,
+                    "full_interface_provider_production": True,
+                    "production_root": str(production_root),
+                    "current_version": version_id,
+                    "last_good_version": pointer["last_good_version"],
+                    "manifest_digest": manifest["manifest_digest"],
+                    "pointer_digest": pointer["pointer_digest"],
+                    "contains_secret": False,
+                    "external_calls_triggered": True,
+                    "tushare_called": True,
+                    "does_not_execute_trades": True,
+                }
+                current_packet["packet_digest"] = _canonical_sha256(current_packet)
+                previous_current_packet = packet_store.read_packet(
+                    FULL_MARKET_UNIVERSE_CURRENT_PACKET_KEY
+                )
+                last_good_packet = (
+                    dict(previous_current_packet)
+                    if isinstance(previous_current_packet, Mapping)
+                    else dict(current_packet)
+                )
+                atomic = packet_store.promote_packet_pair_atomic(
+                    FULL_MARKET_UNIVERSE_CURRENT_PACKET_KEY,
+                    current_packet,
+                    FULL_MARKET_UNIVERSE_LAST_GOOD_PACKET_KEY,
+                    last_good_packet,
+                )
+                if not (
+                    atomic.get("transaction_committed") is True
+                    and packet_store.read_packet(FULL_MARKET_UNIVERSE_CURRENT_PACKET_KEY)
+                    == current_packet
+                    and packet_store.read_packet(FULL_MARKET_UNIVERSE_LAST_GOOD_PACKET_KEY)
+                    == last_good_packet
+                ):
+                    raise RuntimeError("production_packet_pair_readback_failed")
+                return {
+                    "promotion_verified": True,
+                    "status": "production_version_promoted",
+                    "version_id": version_id,
+                    "pointer": pointer,
+                    "manifest": manifest,
+                    "artifacts": artifacts,
+                    "disk_verification": disk,
+                }
+            except Exception as exc:
+                rollback_succeeded = (
+                    tushare_production_store._restore_pointer(pointer_path, pointer_before)
+                    if pointer_switched
+                    else True
+                )
+                return {
+                    "promotion_verified": False,
+                    "status": "production_version_failed_pointer_rolled_back",
+                    "error_message_safe": _safe_text(exc),
+                    "rollback_succeeded": rollback_succeeded,
+                    "orphan_version": str(version_dir) if version_dir.is_dir() else "",
+                    "artifacts": {},
+                }
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
+
+        official_runtime = {
+            "public_non_injected_executor": True,
+            "attempt_id": attempt_id,
+            "attempt_root": str(attempt_root),
+            "record_runtime_event": _record_official_runtime_event,
+            "promote_runtime_version": _promote_official_runtime_version,
+        }
     try:
         previous_packet_raw = SQLiteMetaStore(SQLITE_META_PATH).read_packet(output_packet_key)
     except Exception:
@@ -7844,6 +7859,27 @@ def run_tushare_refresh_task(
                 result,
                 api,
             )
+        runtime_transport = (
+            result.get("runtime_transport_evidence") if isinstance(result, Mapping) else {}
+        )
+        if (
+            public_production_executor
+            and isinstance(official_runtime, Mapping)
+            and result.get("ok") is True
+            and isinstance(runtime_transport, Mapping)
+            and runtime_transport.get("provider_transport_verified") is True
+        ):
+            recorder = official_runtime.get("record_runtime_event")
+            if callable(recorder):
+                recorder(
+                    api=api,
+                    request_scope=safe_params,
+                    response_rows=result.get("data"),
+                    function_call_count=int(runtime_transport.get("transport_call_count") or 0),
+                    transport_receipt_digest=str(
+                        runtime_transport.get("transport_receipt_digest") or ""
+                    ),
+                )
         if api == "trade_cal" and isinstance(result, Mapping):
             trade_cal_provider_data = result.get("data")
         parquet_result = (
@@ -8035,7 +8071,7 @@ def run_tushare_refresh_task(
             trade_cal_data=trade_cal_provider_data,
             trade_cal_ledger=trade_cal_ledger,
             outer_call_ledger=call_ledger,
-            public_executor_completed=public_production_executor,
+            official_runtime=official_runtime,
         )
         if production_acceptance and adapter_module is not None
         else {

@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import uuid
 from pathlib import Path
 from typing import Any, Mapping
@@ -23,8 +22,8 @@ REQUIRED_SESSIONS = 90
 MAX_PROVIDER_CALLS = 300
 POINTER_SCHEMA = "tushare_production_pointer.v2"
 MANIFEST_SCHEMA = "tushare_production_version_manifest.v2"
-EXECUTION_EVENT_SCHEMA = "tushare_official_execution_event.v1"
-TRANSPORT_EVENT_SCHEMA = "tushare_official_transport_event.v1"
+EXECUTION_EVENT_SCHEMA = "tushare_official_execution_event.v2"
+TRANSPORT_EVENT_SCHEMA = "tushare_inline_transport_evidence.v2"
 EXACT_REFRESH_APIS = (
     "daily", "daily_basic", "moneyflow", "trade_cal", "margin_detail", "top_list",
     "top_inst", "stk_limit", "limit_list_d", "limit_cpt_list", "cyq_perf", "cyq_chips",
@@ -44,6 +43,9 @@ REQUIRED_COLUMNS = {
     "moneyflow": ("ts_code", "trade_date", "buy_lg_amount", "sell_lg_amount"),
 }
 EXCHANGE_SUFFIX = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
+SH_PREFIXES = ("600", "601", "603", "605", "688", "689")
+SZ_PREFIXES = ("000", "001", "002", "003", "300", "301")
+BJ_PREFIXES = ("4", "8", "920")
 __all__ = ("validate_tushare_full_market_production_version",)
 
 
@@ -99,9 +101,9 @@ def _date(value: Any) -> str:
 def _code_family_valid(code: str, suffix: str) -> bool:
     prefix = code.split(".", 1)[0]
     return bool(
-        (suffix == "SH" and prefix.startswith("6"))
-        or (suffix == "SZ" and prefix.startswith(("0", "3")))
-        or (suffix == "BJ" and prefix.startswith(("4", "8", "9")))
+        (suffix == "SH" and prefix.startswith(SH_PREFIXES))
+        or (suffix == "SZ" and prefix.startswith(SZ_PREFIXES))
+        or (suffix == "BJ" and prefix.startswith(BJ_PREFIXES))
     )
 
 
@@ -302,41 +304,40 @@ def validate_datasets(
     }
 
 
-def _receipt_ready(receipt: Any, *, scope_hash: str, root: Path) -> bool:
+def _sha256_text(value: Any) -> bool:
+    text = str(value or "").lower()
+    return len(text) == 64 and all(character in "0123456789abcdef" for character in text)
+
+
+def _receipt_ready(receipt: Any, *, scope_hash: str) -> bool:
     if not isinstance(receipt, Mapping):
         return False
     material = dict(receipt)
     digest = str(material.pop("execution_event_digest", "") or "")
-    transport_refs = [
+    raw_transport_events = receipt.get("transport_evidence", [])
+    transport_events = [
         dict(row)
-        for row in receipt.get("transport_events", [])
+        for row in raw_transport_events
         if isinstance(row, Mapping)
     ]
-    transport_events: list[dict[str, Any]] = []
-    for ref in transport_refs:
-        relative = str(ref.get("relative_path") or "")
-        if not relative or relative.startswith("/") or ".." in Path(relative).parts:
-            return False
-        try:
-            event = json.loads((root / relative).read_text(encoding="utf-8"))
-        except Exception:
-            return False
+    if len(transport_events) != len(raw_transport_events):
+        return False
+    for event in transport_events:
         event_material = dict(event)
         event_digest = str(event_material.pop("transport_event_digest", "") or "")
         if not (
             event.get("schema_version") == TRANSPORT_EVENT_SCHEMA
             and event.get("run_id") == receipt.get("run_id")
+            and event.get("attempt_id") == receipt.get("attempt_id")
             and event.get("scope_hash") == scope_hash
-            and event.get("api") == ref.get("api")
             and event.get("actual_function_call") is True
             and int(event.get("function_call_count") or 0) > 0
-            and len(str(event.get("transport_receipt_digest") or "")) == 64
-            and len(str(event.get("response_digest") or "")) == 64
-            and event_digest == ref.get("transport_event_digest")
+            and _sha256_text(event.get("request_scope_digest"))
+            and _sha256_text(event.get("transport_receipt_digest"))
+            and _sha256_text(event.get("response_digest"))
             and event_digest == _digest_value(event_material)
         ):
             return False
-        transport_events.append(event)
     observed_apis = {str(event.get("api") or "") for event in transport_events}
     total_calls = sum(int(event.get("function_call_count") or 0) for event in transport_events)
     current_calls = int(receipt.get("current_attempt_actual_function_call_count") or 0)
@@ -349,8 +350,10 @@ def _receipt_ready(receipt: Any, *, scope_hash: str, root: Path) -> bool:
         and receipt.get("official_provider_path_completed") is True
         and receipt.get("run_id") == scope_hash
         and receipt.get("scope_hash") == scope_hash
-        and len(str(receipt.get("approval_scope_hash") or "")) == 64
-        and len(str(receipt.get("execution_recipe_scope_hash") or "")) == 64
+        and len(str(receipt.get("attempt_id") or "")) == 32
+        and all(character in "0123456789abcdef" for character in str(receipt.get("attempt_id") or ""))
+        and _sha256_text(receipt.get("approval_scope_hash"))
+        and _sha256_text(receipt.get("execution_recipe_scope_hash"))
         and receipt.get("required_interface_apis") == exact_apis
         and receipt.get("required_interface_api_digest") == _digest_value(exact_apis)
         and receipt.get("required_target_groups") == exact_targets
@@ -360,16 +363,31 @@ def _receipt_ready(receipt: Any, *, scope_hash: str, root: Path) -> bool:
         and observed_apis == set(EXACT_REFRESH_APIS) | set(EXACT_SUPPORT_APIS)
         and 0 < total_calls <= MAX_PROVIDER_CALLS
         and int(receipt.get("original_actual_function_call_count") or 0) == total_calls
-        and 0 <= current_calls <= total_calls
-        and len(transport_refs) == len(transport_events)
-        and len({str(ref.get("transport_event_digest") or "") for ref in transport_refs})
-        == len(transport_refs)
+        and current_calls == total_calls
+        and int(receipt.get("checkpoint_reused_function_call_count") or 0) == 0
+        and len({str(event.get("transport_event_digest") or "") for event in transport_events})
+        == len(transport_events)
+        and _sha256_text(receipt.get("production_dataset_digest"))
+        and _sha256_text(receipt.get("production_dataset_validation_digest"))
+        and _sha256_text(receipt.get("production_universe_digest"))
+        and _sha256_text(receipt.get("selected_trade_dates_digest"))
         and receipt.get("contains_secret") is False
         and receipt.get("tushare_called") is True
-        and receipt.get("tushare_called_this_attempt") is (current_calls > 0)
-        and receipt.get("external_calls_triggered") is (current_calls > 0)
+        and receipt.get("tushare_called_this_attempt") is True
+        and receipt.get("external_calls_triggered") is True
         and receipt.get("does_not_execute_trades") is True
         and digest == _digest_value(material)
+    )
+
+
+def _receipt_dataset_binding_ready(receipt: Mapping[str, Any], validation: Mapping[str, Any]) -> bool:
+    return bool(
+        receipt.get("production_dataset_digest") == _digest_value(validation.get("datasets"))
+        and receipt.get("production_dataset_validation_digest")
+        == _digest_value(validation.get("dataset_validation"))
+        and receipt.get("production_universe_digest") == validation.get("universe_digest")
+        and receipt.get("selected_trade_dates_digest")
+        == _digest_value(validation.get("selected_trade_dates"))
     )
 
 
@@ -440,7 +458,7 @@ def verify_current_version(root: Path) -> dict[str, Any]:
         blockers.append("pointer_manifest_binding_invalid")
     scope = manifest.get("scope") if isinstance(manifest.get("scope"), Mapping) else {}
     receipt = manifest.get("official_run_receipt") if isinstance(manifest.get("official_run_receipt"), Mapping) else {}
-    if not _receipt_ready(receipt, scope_hash=str(scope.get("scope_hash") or ""), root=root):
+    if not _receipt_ready(receipt, scope_hash=str(scope.get("scope_hash") or "")):
         blockers.append("official_provider_receipt_invalid")
 
     artifacts = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), Mapping) else {}
@@ -465,6 +483,8 @@ def verify_current_version(root: Path) -> dict[str, Any]:
         )
         if not validation["ready"]:
             blockers.extend(f"disk_{item}" for item in validation["blockers"])
+        if not _receipt_dataset_binding_ready(receipt, validation):
+            blockers.append("official_provider_receipt_dataset_binding_invalid")
         if validation.get("dataset_validation") != manifest.get("dataset_validation"):
             blockers.append("dataset_validation_readback_mismatch")
         if validation.get("latest_trade_date") != scope.get("latest_trade_date"):
@@ -509,6 +529,8 @@ def verify_current_version(root: Path) -> dict[str, Any]:
     version_digest = _digest_value(version_material)
     if manifest.get("version_digest") != version_digest:
         blockers.append("version_digest_readback_mismatch")
+    if last_good == current and pointer.get("last_good_manifest_digest") != manifest_digest:
+        blockers.append("last_good_manifest_binding_invalid")
     if last_good != current:
         last_dir = root / "versions" / last_good
         try:
@@ -557,8 +579,8 @@ def verify_current_version(root: Path) -> dict[str, Any]:
                 or not _receipt_ready(
                     last_receipt,
                     scope_hash=str(last_scope.get("scope_hash") or ""),
-                    root=root,
                 )
+                or not _receipt_dataset_binding_ready(last_receipt, last_validation)
                 or last_manifest.get("version_digest") != _digest_value(last_version_material)
                 or last_receipt.get("approval_scope_hash") != last_lineage.get("approval_scope_hash")
                 or last_receipt.get("execution_recipe_scope_hash")
@@ -646,177 +668,11 @@ def validate_tushare_full_market_production_version(
     return shared
 
 
-def _promote_version_from_official_execution_event(
-    datasets: Mapping[str, Any],
-    *,
-    root: Path,
-    scope_hash: str,
-    start_date: str,
-    end_date: str,
-    approval_scope_hash: str,
-    execution_recipe_scope_hash: str,
-    as_of: str,
-    execution_event_path: Path,
-    packet_store: Any,
-    packet_key: str,
-) -> dict[str, Any]:
-    """Append an immutable version, switch one pointer, then persist its index."""
+def _review_external_promotion_request(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    """External/module-level callers can only receive a non-production review."""
 
-    validation = validate_datasets(datasets, start_date=start_date, end_date=end_date)
-    expected_event_path = root / "execution_runs" / scope_hash / "execution_event.json"
-    execution_event: dict[str, Any] = {}
-    try:
-        if execution_event_path.resolve() != expected_event_path.resolve():
-            raise RuntimeError("execution_event_path_not_authoritative")
-        execution_event = json.loads(execution_event_path.read_text(encoding="utf-8"))
-    except Exception:
-        execution_event = {}
-    if not validation["ready"] or not _receipt_ready(
-        execution_event,
-        scope_hash=scope_hash,
-        root=root,
-    ):
-        blockers = list(validation["blockers"])
-        if not execution_event:
-            blockers.append("official_execution_event_missing")
-        else:
-            blockers.append("official_execution_event_invalid")
-        return {
-            "promotion_verified": False,
-            "status": "production_version_blocked",
-            "blockers": sorted(set(blockers)),
-        }
-    if not (
-        execution_event.get("approval_scope_hash") == approval_scope_hash
-        and execution_event.get("execution_recipe_scope_hash") == execution_recipe_scope_hash
-        and len(approval_scope_hash) == len(execution_recipe_scope_hash) == 64
-        and len(_date(as_of)) == 8
-    ):
-        return {
-            "promotion_verified": False,
-            "status": "production_version_blocked",
-            "blockers": ["approval_recipe_as_of_lineage_invalid"],
-        }
-
-    root.mkdir(parents=True, exist_ok=True)
-    pointer_path = root / "pointer.json"
-    pointer_before = pointer_path.read_bytes() if pointer_path.is_file() else None
-    staging = root / ".staging" / uuid.uuid4().hex
-    version_id = f"{scope_hash[:16]}-{uuid.uuid4().hex}"
-    version_dir = root / "versions" / version_id
-    pointer_switched = False
-    try:
-        import pandas as pd
-
-        staging.mkdir(parents=True, exist_ok=False)
-        artifacts: dict[str, Any] = {}
-        for name in DATASETS:
-            path = staging / f"{name}.parquet"
-            pd.DataFrame(validation["datasets"][name]).to_parquet(path, index=False)
-            artifacts[name] = _artifact_summary(path, name=name)
-        scope = {
-            "scope_hash": scope_hash,
-            "start_date": validation["start_date"],
-            "end_date": validation["end_date"],
-            "selected_trade_dates": validation["selected_trade_dates"],
-            "latest_trade_date": validation["latest_trade_date"],
-            "universe_count": validation["universe_count"],
-            "universe_digest": validation["universe_digest"],
-            "exchanges": validation["exchanges"],
-            "current_listed_count": validation["current_listed_count"],
-            "current_listed_digest": validation["current_listed_digest"],
-            "eligible_universe_count": validation["eligible_universe_count"],
-            "eligible_universe_digest": validation["eligible_universe_digest"],
-            "excluded_recent_symbols": validation["excluded_recent_symbols"],
-            "excluded_recent_count": validation["excluded_recent_count"],
-            "excluded_recent_digest": validation["excluded_recent_digest"],
-            "scored_universe_policy": validation["scored_universe_policy"],
-        }
-        version_material = {
-            "scope": scope,
-            "artifacts": artifacts,
-            "dataset_validation": validation["dataset_validation"],
-            "official_run_receipt": dict(execution_event),
-            "lineage": {
-                "approval_scope_hash": approval_scope_hash,
-                "execution_recipe_scope_hash": execution_recipe_scope_hash,
-                "as_of": _date(as_of),
-            },
-        }
-        manifest = {
-            "schema_version": MANIFEST_SCHEMA,
-            "version_id": version_id,
-            **version_material,
-            "version_digest": _digest_value(version_material),
-            "contains_secret": False,
-        }
-        manifest["manifest_digest"] = _digest_value(manifest)
-        _atomic_json(staging / "manifest.json", manifest)
-        version_dir.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(staging, version_dir)
-        try:
-            previous_pointer = json.loads(pointer_before.decode("utf-8")) if pointer_before else {}
-        except Exception:
-            raise RuntimeError("existing_pointer_invalid")
-        pointer = _pointer_payload(version_id, manifest["manifest_digest"], previous_pointer)
-        _atomic_json(pointer_path, pointer)
-        pointer_switched = True
-        disk = verify_current_version(root)
-        if not disk["ready"]:
-            raise RuntimeError(f"production_disk_readback_failed:{disk['blockers'][0]}")
-        packet = {
-            "schema_version": "tushare_production_version_index.v2",
-            "status": "full_interface_provider_production_complete",
-            "production_tushare_pipeline_complete": True,
-            "full_interface_provider_production": True,
-            "production_root": str(root),
-            "current_version": version_id,
-            "last_good_version": pointer["last_good_version"],
-            "manifest_digest": manifest["manifest_digest"],
-            "pointer_digest": pointer["pointer_digest"],
-            "contains_secret": False,
-            "external_calls_triggered": True,
-            "tushare_called": True,
-            "does_not_execute_trades": True,
-        }
-        packet["packet_digest"] = _digest_value(packet)
-        result = packet_store.promote_packet_atomic(packet_key, packet)
-        readback = packet_store.read_packet(packet_key)
-        if not (
-            result.get("transaction_committed") is True
-            and isinstance(readback, Mapping)
-            and _canonical_bytes(readback) == _canonical_bytes(packet)
-        ):
-            raise RuntimeError("production_packet_readback_failed")
-        final_disk = verify_current_version(root)
-        if not final_disk["ready"]:
-            raise RuntimeError("production_final_disk_readback_failed")
-        return {
-            "promotion_verified": True,
-            "status": "production_version_promoted",
-            "version_id": version_id,
-            "pointer": pointer,
-            "manifest": manifest,
-            "artifacts": artifacts,
-            "disk_verification": final_disk,
-            "rollback_state": {"pointer_path": str(pointer_path), "pointer_before": pointer_before},
-        }
-    except Exception as exc:
-        rollback_succeeded = _restore_pointer(pointer_path, pointer_before) if pointer_switched else True
-        return {
-            "promotion_verified": False,
-            "status": "production_version_failed_pointer_rolled_back",
-            "error_message_safe": str(exc).splitlines()[0][:240],
-            "rollback_succeeded": rollback_succeeded,
-            "orphan_version": str(version_dir) if version_dir.is_dir() else "",
-            "rollback_state": {"pointer_path": str(pointer_path), "pointer_before": pointer_before},
-        }
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-
-
-def rollback_promotion(result: Mapping[str, Any]) -> bool:
-    state = result.get("rollback_state") if isinstance(result.get("rollback_state"), Mapping) else {}
-    path = Path(str(state.get("pointer_path") or ""))
-    previous = state.get("pointer_before")
-    return _restore_pointer(path, previous if isinstance(previous, bytes) else None)
+    return {
+        "promotion_verified": False,
+        "status": "module_level_promotion_disabled_use_public_non_injected_executor",
+        "blockers": ["module_level_promotion_disabled"],
+    }
