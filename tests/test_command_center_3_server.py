@@ -29573,7 +29573,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(packet["data_freshness"]["expected_trade_date"], "2026-06-15")
         self.assertEqual(packet["data_freshness"]["data_date"], "2026-06-15")
-        self.assertEqual(packet["data_freshness"]["freshness_state"], "fresh")
+        self.assertEqual(
+            packet["data_freshness"]["freshness_state"],
+            "stale_unvalidated_calendar",
+        )
+        self.assertEqual(
+            packet["data_freshness"]["calendar_validation_status"],
+            "unvalidated_stale_cache",
+        )
         self.assertFalse(packet["data_freshness"]["external_calls_triggered"])
         self.assertFalse(packet["data_freshness"]["tushare_called"])
         self.assertFalse(packet["data_freshness"]["deepseek_called"])
@@ -29638,7 +29645,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         producer_row = durable_rows["current_evidence_producer_coverage"]
         self.assertEqual(
             producer_row["current_status"],
-            "local_clear",
+            "producer_cache_refresh_local_coverage_provider_pending",
         )
         self.assertTrue(producer_row["producer_cache_refresh_direct_evidence_done"])
         self.assertTrue(producer_row["producer_cache_refresh_current_packet_context_done"])
@@ -29739,7 +29746,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg01["current_evidence_producer_coverage_complete"])
         self.assertEqual(
             ltg01["current_evidence_producer_coverage_status"],
-            "local_clear",
+            "producer_cache_refresh_local_coverage_provider_pending",
         )
         self.assertEqual(
             ltg01["current_evidence_producer_coverage_source"],
@@ -53047,7 +53054,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         data_freshness = packet["data_freshness"]
         current_evidence = packet["current_evidence_freshness_qa_contract"]
         rows = {row["producer"]: row for row in packet["current_evidence_producer_coverage_rows"]}
-        self.assertEqual(data_freshness["freshness_state"], "fresh")
+        self.assertEqual(data_freshness["freshness_state"], "stale_unvalidated_calendar")
+        self.assertEqual(data_freshness["calendar_validation_status"], "unvalidated_stale_cache")
         self.assertEqual(data_freshness["data_date"], "2026-06-12")
         self.assertEqual(data_freshness["expected_trade_date"], "2026-06-12")
         self.assertEqual(
@@ -53059,7 +53067,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(data_freshness["canonical_context_external_calls_triggered"])
         self.assertTrue(data_freshness["canonical_context_does_not_modify_strategy_action"])
         self.assertTrue(data_freshness["canonical_context_does_not_execute_trades"])
-        self.assertEqual(current_evidence["current_evidence_candidate_status"], "current_evidence_ready")
+        self.assertEqual(current_evidence["current_evidence_candidate_status"], "research_only")
         self.assertEqual(rows["global_data_freshness"]["status"], "passed_read_only_contract")
         self.assertEqual(rows["market_context"]["status"], "blocked_expected_trade_date_missing")
         self.assertEqual(rows["market_context"]["data_date"], "2026-06-08")
