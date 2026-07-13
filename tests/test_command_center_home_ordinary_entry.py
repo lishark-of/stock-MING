@@ -37,6 +37,33 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(supporting_end, card_end)
         self.assertIn("研究辅助 / 审计详情", source[supporting_start:first_supporting_row])
 
+    def test_home_market_session_freshness_is_visible_and_conservative(self):
+        source = self.source
+        session_start = source.index('aria-label="ordinary home market session freshness"')
+        input_start = source.index('aria-label="ordinary home input confirm first sentence"', session_start)
+        session_slice = source[session_start:input_start]
+
+        self.assertLess(source.index("MetricGrid items={ordinaryHomeMetricItems(ordinaryHomeStatusItems)}"), session_start)
+        self.assertLess(session_start, input_start)
+        self.assertIn("市场会话与数据新鲜度", session_slice)
+        self.assertIn("ordinaryHomeMarketSessionItems", session_slice)
+        self.assertIn("ordinaryHomeFreshnessExplanation", session_slice)
+        self.assertIn('href="#dataHealth"', session_slice)
+        self.assertIn("ordinaryHomeDataFreshness.data_date", source)
+        self.assertIn("ordinaryHomeDataFreshness.as_of_date", source)
+        self.assertIn("ordinaryHomeDataFreshness.expected_trade_date", source)
+        self.assertIn("expected_trade_date_calendar_validated", source)
+        self.assertIn("ordinaryHomeDataFreshness.label", source)
+        self.assertIn("ordinaryHomeDataFreshness.age_days", source)
+        self.assertIn('"fresh", "fresh_provider", "current", "today"', source)
+        self.assertIn('? "fresh"', source)
+        self.assertIn('? "stale"', source)
+        self.assertIn(': "unknown"', source)
+        self.assertIn("不按今日数据展示", source)
+        self.assertNotIn("<button", session_slice)
+        self.assertNotIn("onClick=", session_slice)
+        self.assertNotIn("postTask", session_slice)
+
     def test_daily_command_center_summary_shows_user_decision_fields_first(self):
         source = self.source
 

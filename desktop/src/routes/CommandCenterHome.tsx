@@ -529,6 +529,69 @@ export default function CommandCenterHome() {
   const migrationTushareDeepseekLinkageRows = migration.tushare_deepseek_linkage_rows as Array<Record<string, unknown>> | undefined;
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
   const dataHealthCounts = dataHealth.counts as Record<string, unknown> | undefined;
+  const ordinaryHomeDataFreshness = (dataHealth.data_freshness as Record<string, unknown> | undefined) ?? {};
+  const ordinaryHomeDataDate = homeText(
+    ordinaryHomeDataFreshness.data_date ?? dataHealth.data_date,
+    ""
+  );
+  const ordinaryHomeAsOfDate = homeText(
+    ordinaryHomeDataFreshness.as_of_date ?? dataHealth.as_of_date,
+    ""
+  );
+  const ordinaryHomeExpectedTradeDate = homeText(
+    ordinaryHomeDataFreshness.expected_trade_date ?? dataHealth.expected_trade_date,
+    ""
+  );
+  const ordinaryHomeCalendarValidated =
+    ordinaryHomeDataFreshness.expected_trade_date_calendar_validated === true ||
+    dataHealth.expected_trade_date_calendar_validated === true;
+  const ordinaryHomeFreshnessSourceLabel = homeText(
+    ordinaryHomeDataFreshness.label ?? dataHealth.label,
+    ""
+  ).toLowerCase();
+  const ordinaryHomeFreshnessState = homeText(
+    ordinaryHomeDataFreshness.freshness_state ??
+      ordinaryHomeDataFreshness.state ??
+      ordinaryHomeDataFreshness.status ??
+      dataHealth.freshness_state ??
+      dataHealth.state,
+    ""
+  ).toLowerCase() || ordinaryHomeFreshnessSourceLabel;
+  const ordinaryHomeFreshnessAgeDays = homeText(
+    ordinaryHomeDataFreshness.age_days ?? dataHealth.age_days,
+    ""
+  );
+  const ordinaryHomeDataDateMatchesExpected = Boolean(
+    ordinaryHomeDataDate &&
+      ordinaryHomeExpectedTradeDate &&
+      ordinaryHomeDataDate === ordinaryHomeExpectedTradeDate
+  );
+  const ordinaryHomeFreshnessIsFresh =
+    ordinaryHomeCalendarValidated &&
+    ordinaryHomeDataDateMatchesExpected &&
+    ["fresh", "fresh_provider", "current", "today"].includes(ordinaryHomeFreshnessState);
+  const ordinaryHomeFreshnessIsStale =
+    ordinaryHomeFreshnessState.includes("stale") ||
+    ordinaryHomeFreshnessState.includes("cache") ||
+    ordinaryHomeFreshnessState.includes("缓存") ||
+    Boolean(
+      ordinaryHomeDataDate &&
+        ordinaryHomeExpectedTradeDate &&
+        !ordinaryHomeDataDateMatchesExpected
+    );
+  const ordinaryHomeFreshnessLabel = ordinaryHomeFreshnessIsFresh
+    ? "fresh"
+    : ordinaryHomeFreshnessIsStale
+      ? "stale"
+      : "unknown";
+  const ordinaryHomeFreshnessExplanation = ordinaryHomeFreshnessIsFresh
+    ? "交易日历已验证，数据日期与当前交易日一致。"
+    : ordinaryHomeFreshnessIsStale
+      ? "缓存日期未满足当前交易日；不按今日数据展示。"
+      : ordinaryHomeCalendarValidated
+        ? "数据日期或新鲜度状态待确认；不按今日数据展示。"
+        : "交易日历尚未验证；不按今日数据展示。";
+  const ordinaryHomeFreshnessNeedsAttention = !ordinaryHomeFreshnessIsFresh;
   const desktopRuntime = desktopPreflight.runtime as Record<string, unknown> | undefined;
   const desktopCounts = desktopPreflight.counts as Record<string, unknown> | undefined;
   const oneClickStartupSummary = (desktopPreflight.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
@@ -2676,6 +2739,33 @@ export default function CommandCenterHome() {
       tone: dailyCommandP0LocalReadinessReady || ordinaryHomeReadableResultReady ? "good" : "warn"
     }
   ];
+  const ordinaryHomeMarketSessionItems: MetricItem[] = [
+    {
+      label: "数据日期",
+      value: ordinaryHomeDataDate || "待确认",
+      tone: ordinaryHomeDataDate ? "good" : "warn"
+    },
+    {
+      label: "当前 as-of",
+      value: ordinaryHomeAsOfDate || ordinaryHomeExpectedTradeDate || "待确认",
+      tone: ordinaryHomeAsOfDate || ordinaryHomeExpectedTradeDate ? "good" : "warn"
+    },
+    {
+      label: "交易日历",
+      value: ordinaryHomeCalendarValidated ? "已验证" : "未验证",
+      tone: ordinaryHomeCalendarValidated ? "good" : "warn"
+    },
+    {
+      label: "数据新鲜度",
+      value: ordinaryHomeFreshnessLabel,
+      tone: ordinaryHomeFreshnessIsFresh ? "good" : "warn"
+    },
+    {
+      label: "缓存年龄",
+      value: ordinaryHomeFreshnessAgeDays ? `${ordinaryHomeFreshnessAgeDays} 天` : "待确认",
+      tone: ordinaryHomeFreshnessAgeDays ? "neutral" : "warn"
+    }
+  ];
   const ordinaryHomeAppVisibleNowSentence = dailyCommandP3OneGlanceReadable
       ? `打开 app 能看到 ${dailyCommandConfirmedSymbolLabel} 的最近投研结果：${ordinaryHomeExplainableResultLabel}；结果版本 ${dailyCommandCurrentResultVersion || "等待 result_version"}；下一步看股票量化推演和次日图谱。`
     : ordinaryHomeStorageCurrentReadable
@@ -4262,6 +4352,16 @@ export default function CommandCenterHome() {
       </div>
       <PacketCard title="今日可用" subtitle="普通首页只看能不能用、看哪只票、有没有结果、下一步点哪里" status={ordinaryHomeStatusBadge}>
         <MetricGrid items={ordinaryHomeMetricItems(ordinaryHomeStatusItems)} />
+        <div aria-label="ordinary home market session freshness">
+          <h3>市场会话与数据新鲜度</h3>
+          <p className="ordinary-status-note" aria-live="polite">{ordinaryHomeFreshnessExplanation}</p>
+          <MetricGrid items={ordinaryHomeMarketSessionItems} />
+          {ordinaryHomeFreshnessNeedsAttention ? (
+            <div className="actions" aria-label="ordinary home market session freshness actions">
+              <a href="#dataHealth" title="查看数据健康；只读本地缓存，不刷新外部数据源" aria-label="open data health from home market session freshness">查看数据健康</a>
+            </div>
+          ) : null}
+        </div>
         <p className="ordinary-status-note" aria-label="ordinary home input confirm first sentence">输入确认速读：输入只做本地校验；确认后看最近结果、候选池、ETF/融资、股票量化推演和次日图谱。</p>
         <div id="home-p1-symbol-confirm" className="actions" aria-label="daily command ordinary home primary controls">
           <input
