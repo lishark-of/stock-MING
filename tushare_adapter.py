@@ -1,4 +1,5 @@
 import datetime
+import uuid
 
 try:
     from config import get_tushare_token
@@ -26,14 +27,16 @@ CAPITAL_EVIDENCE_POLICY = {
 
 _PRO_CLIENT = None
 _INIT_ERROR = None
+_TRANSPORT_RECEIPTS = {}
+TRANSPORT_RECEIPT_VERSION = "tushare_runtime_transport_receipt.v1"
 
 
 def _now():
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
-def _result(api, ok=False, data=None, error=None):
-    return {
+def _result(api, ok=False, data=None, error=None, transport_call_id=""):
+    result = {
         "ok": bool(ok),
         "data": data if ok else None,
         "source": SOURCE_NAME,
@@ -41,6 +44,22 @@ def _result(api, ok=False, data=None, error=None):
         "updated_at": _now(),
         "error": None if ok else str(error or "unknown error"),
     }
+    if transport_call_id:
+        result.update(
+            {
+                "transport_receipt_version": TRANSPORT_RECEIPT_VERSION,
+                "transport_call_id": transport_call_id,
+                "transport_call_ids": [transport_call_id],
+            }
+        )
+    return result
+
+
+def consume_transport_receipt(call_id, api):
+    receipt = _TRANSPORT_RECEIPTS.pop(str(call_id or ""), None)
+    if not isinstance(receipt, dict) or receipt.get("api") != str(api or ""):
+        return None
+    return dict(receipt)
 
 
 def _normalize_date(value):
@@ -110,25 +129,39 @@ def _call_pro(api, **params):
         data = method(**cleaned)
         if pd is not None and not isinstance(data, pd.DataFrame):
             return _result(api, error=f"{api} 返回类型异常：{type(data).__name__}")
-        return _result(api, ok=True, data=data)
+        call_id = uuid.uuid4().hex
+        _TRANSPORT_RECEIPTS[call_id] = {
+            "schema_version": TRANSPORT_RECEIPT_VERSION,
+            "call_id": call_id,
+            "api": api,
+            "provider": SOURCE_NAME,
+            "sdk_method_invoked": True,
+            "provider_response_received": True,
+            "issued_at": _now(),
+        }
+        return _result(api, ok=True, data=data, transport_call_id=call_id)
     except Exception as exc:
         return _result(api, error=f"{api} 调用失败，可能是接口权限不足、网络失败或参数错误：{exc}")
 
 
-def get_trade_cal(start_date, end_date, exchange=""):
+def get_trade_cal(start_date, end_date, exchange="", limit=None, offset=None):
     return _call_pro(
         "trade_cal",
         exchange=exchange or "",
         start_date=_normalize_date(start_date),
         end_date=_normalize_date(end_date),
+        limit=limit,
+        offset=offset,
     )
 
 
-def get_stock_basic(exchange="", list_status="L"):
+def get_stock_basic(exchange="", list_status="L", limit=None, offset=None):
     return _call_pro(
         "stock_basic",
         exchange=exchange or "",
         list_status=list_status or "L",
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -142,21 +175,27 @@ def get_index_weight(index_code=None, trade_date=None, start_date=None, end_date
     )
 
 
-def get_daily(ts_code, start_date=None, end_date=None):
+def get_daily(ts_code=None, start_date=None, end_date=None, trade_date=None, limit=None, offset=None):
     return _call_pro(
         "daily",
         ts_code=_normalize_ts_code(ts_code),
+        trade_date=_normalize_date(trade_date),
         start_date=_normalize_date(start_date),
         end_date=_normalize_date(end_date),
+        limit=limit,
+        offset=offset,
     )
 
 
-def get_daily_basic(ts_code, start_date=None, end_date=None):
+def get_daily_basic(ts_code=None, start_date=None, end_date=None, trade_date=None, limit=None, offset=None):
     return _call_pro(
         "daily_basic",
         ts_code=_normalize_ts_code(ts_code),
+        trade_date=_normalize_date(trade_date),
         start_date=_normalize_date(start_date),
         end_date=_normalize_date(end_date),
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -286,13 +325,15 @@ def get_margin_detail(trade_date=None, ts_code=None, start_date=None, end_date=N
     )
 
 
-def get_moneyflow(ts_code=None, trade_date=None, start_date=None, end_date=None):
+def get_moneyflow(ts_code=None, trade_date=None, start_date=None, end_date=None, limit=None, offset=None):
     return _call_pro(
         "moneyflow",
         ts_code=_normalize_ts_code(ts_code),
         trade_date=_normalize_date(trade_date),
         start_date=_normalize_date(start_date),
         end_date=_normalize_date(end_date),
+        limit=limit,
+        offset=offset,
     )
 
 

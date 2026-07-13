@@ -26,7 +26,13 @@ def get_task_catalog() -> dict:
 
 @router.post("/refresh-tushare-facts")
 def refresh_tushare_facts(payload: dict[str, Any] | None = None) -> dict:
-    task = tushare_task_service.run_tushare_refresh_task(payload)
+    if (
+        isinstance(payload, dict)
+        and payload.get("acceptance_mode") == tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_MODE
+    ):
+        task = tushare_task_service.run_tushare_full_interface_provider_production_acceptance(payload)
+    else:
+        task = tushare_task_service.run_tushare_refresh_task(payload)
     return task_envelope(task)
 
 

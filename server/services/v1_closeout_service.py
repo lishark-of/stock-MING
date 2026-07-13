@@ -15,6 +15,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from .tushare_production_store import validate_tushare_full_market_production_version
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = PROJECT_ROOT / ".stock_ming_3"
@@ -24,6 +26,8 @@ ROOT_PACKET_KEYS = (
     "command_center_factor_test_provider_small_pool_tushare_packet",
     "command_center_3_qmt_replay_current",
     "command_center_3_qmt_replay_last_good",
+    "command_center_tushare_full_interface_production_packet",
+    "command_center_tushare_full_market_universe_production_current",
 )
 V04_PACKET_KEYS = (
     "command_center_3_storage_physical_execution_phase_a_packet",
@@ -196,6 +200,11 @@ def _read_current_head_full(project_root: Path | None = None) -> str:
     return _normalize_head_full(result.stdout)
 
 
+def _canonical_value_digest(value: Any) -> str:
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _safe_projection(value: Any, fields: tuple[str, ...]) -> dict[str, Any]:
     source = value if isinstance(value, Mapping) else {}
     projection: dict[str, Any] = {}
@@ -323,6 +332,227 @@ def _provider_ready(packet: Any, required_apis: set[str]) -> bool:
         and source.get("tushare_called") is True
         and source.get("external_calls_triggered") is True
         and _boundary_safe(source, external_expected=True)
+    )
+
+
+_FULL_INTERFACE_APIS = {
+    "daily", "daily_basic", "moneyflow", "trade_cal", "margin_detail", "top_list",
+    "top_inst", "stk_limit", "limit_list_d", "limit_cpt_list", "cyq_perf", "cyq_chips",
+    "anns_d", "forecast", "fina_indicator", "stk_holdertrade", "share_float", "pledge_stat",
+    "pledge_detail", "stk_surv",
+}
+_FULL_INTERFACE_TARGETS = {
+    "chip_distribution", "margin_financing", "dragon_tiger", "limit_emotion",
+    "trade_calendar", "financial_disclosure", "hard_risk",
+}
+_PARQUET_APIS = {"daily", "daily_basic", "moneyflow", "trade_cal"}
+
+
+def _contains_sensitive_key(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normalized = str(key).lower().replace("-", "_")
+            if normalized in {"token", "api_key", "apikey", "secret", "password", "credential"}:
+                return True
+            if _contains_sensitive_key(item):
+                return True
+    elif isinstance(value, list):
+        return any(_contains_sensitive_key(item) for item in value)
+    return False
+
+
+def _parquet_artifact_readback_matches(record: Any) -> bool:
+    if not isinstance(record, Mapping):
+        return False
+    path = Path(str(record.get("versioned_path") or record.get("canonical_path") or ""))
+    digest = str(record.get("sha256") or record.get("canonical_digest") or "")
+    required_columns = [str(column) for column in record.get("required_columns") or []]
+    if not path.is_file() or len(digest) != 64:
+        return False
+    try:
+        import pyarrow.parquet as pq
+
+        parquet = pq.ParquetFile(path)
+        row_count = int(parquet.metadata.num_rows) if parquet.metadata is not None else 0
+        columns = {str(column) for column in parquet.schema_arrow.names}
+    except Exception:
+        return False
+    expected_rows = int(record.get("rows") or record.get("row_count") or 0)
+    return bool(
+        hashlib.sha256(path.read_bytes()).hexdigest() == digest
+        and row_count == expected_rows > 0
+        and set(required_columns).issubset(columns)
+    )
+
+
+def _legacy_full_interface_packet_internally_consistent(packet: Any) -> bool:
+    """Compatibility audit only; never used as production closeout truth."""
+    source = packet if isinstance(packet, Mapping) else {}
+    contract = source.get("production_contract") if isinstance(source.get("production_contract"), Mapping) else {}
+    ledger = [row for row in source.get("call_ledger", []) if isinstance(row, Mapping)]
+    selected = [str(api) for api in source.get("selected_apis") or []]
+    targets = [str(target) for target in source.get("required_target_groups") or []]
+    provider_scope = source.get("provider_scope") if isinstance(source.get("provider_scope"), Mapping) else {}
+    scope_hash = str(provider_scope.get("scope_hash") or "")
+    recipe_hash = str(source.get("execution_recipe_scope_hash") or "")
+    recipe_version = str(source.get("execution_recipe_version") or "")
+    api_contexts = source.get("api_contexts") if isinstance(source.get("api_contexts"), Mapping) else {}
+    target_contexts = source.get("target_contexts") if isinstance(source.get("target_contexts"), Mapping) else {}
+    universe_context = source.get("universe_context") if isinstance(source.get("universe_context"), Mapping) else {}
+    approval_material = {
+        "schema_version": "tushare_full_interface_provider_approval_scope.v1",
+        "recipe_scope_hash": recipe_hash,
+        "recipe_version": recipe_version,
+        "selected_apis": sorted(selected),
+        "requested_targets": sorted(targets),
+        "api_contexts": dict(api_contexts),
+        "target_contexts": dict(target_contexts),
+        "universe_context": dict(universe_context),
+    }
+    approval_hash = _canonical_digest(approval_material)
+    provider_rows = [row for row in ledger if str(row.get("api") or "") in _FULL_INTERFACE_APIS]
+    ledger_ready = bool(
+        len(provider_rows) == len(_FULL_INTERFACE_APIS)
+        and {str(row.get("api") or "") for row in provider_rows} == _FULL_INTERFACE_APIS
+        and all(
+            row.get("runtime_adapter_module_identity_verified") is True
+            and row.get("provider_transport_verified") is True
+            and int(row.get("provider_transport_receipt_count") or 0) > 0
+            and (
+                row.get("representative_sample_verified") is True
+                or row.get("valid_empty_semantics_verified") is True
+            )
+            and row.get("scope_hash") == scope_hash
+            and row.get("authoritative_recipe_scope_hash") == recipe_hash
+            and row.get("approval_scope_hash") == approval_hash
+            and row.get("approval_scope_matches") is True
+            and not _contains_sensitive_key(row.get("request_params_safe"))
+            for row in provider_rows
+        )
+    )
+    parquet = source.get("parquet_promotion") if isinstance(source.get("parquet_promotion"), Mapping) else {}
+    parquet_rows = [row for row in parquet.get("rows", []) if isinstance(row, Mapping)]
+    parquet_ready = bool(
+        parquet.get("promotion_verified") is True
+        and int(parquet.get("promoted_dataset_count") or 0) == len(_PARQUET_APIS)
+        and {str(row.get("api") or "") for row in parquet_rows} == _PARQUET_APIS
+        and all(
+            _parquet_artifact_readback_matches(
+                {
+                    **dict(row),
+                    "row_count": row.get("parquet_row_count") or row.get("row_count"),
+                    "required_columns": row.get("required_columns") or [],
+                }
+            )
+            for row in parquet_rows
+        )
+    )
+    digest_material = dict(source)
+    immutable_digest = str(digest_material.pop("immutable_packet_digest", "") or "")
+    return bool(
+        source.get("schema_version") == "command_center_tushare_full_interface_production_packet.v1"
+        and source.get("status") == "full_interface_provider_production_complete"
+        and source.get("full_interface_provider_production") is True
+        and source.get("production_tushare_pipeline_complete") is True
+        and len(selected) == len(_FULL_INTERFACE_APIS)
+        and set(selected) == _FULL_INTERFACE_APIS
+        and len(targets) == len(_FULL_INTERFACE_TARGETS)
+        and set(targets) == _FULL_INTERFACE_TARGETS
+        and len(scope_hash) == 64
+        and len(recipe_hash) == 64
+        and recipe_version == "tushare_full_interface_provider_recipe.v2"
+        and source.get("approval_scope_matches") is True
+        and str(source.get("approval_scope_hash") or "") == approval_hash
+        and contract.get("schema_version") == "tushare_full_interface_provider_production_acceptance.v2"
+        and contract.get("status") == "full_interface_provider_production_complete"
+        and contract.get("scope_hash") == scope_hash
+        and contract.get("full_interface_provider_production") is True
+        and contract.get("production_tushare_pipeline_complete") is True
+        and contract.get("parquet_promotion_verified") is True
+        and contract.get("sqlite_stage_readback_verified") is True
+        and contract.get("sqlite_atomic_promotion_verified") is True
+        and int(contract.get("blocking_criterion_count") or 0) == 0
+        and not contract.get("blockers")
+        and ledger_ready
+        and parquet_ready
+        and source.get("sqlite_stage_readback_verified") is True
+        and source.get("sqlite_atomic_promotion_verified") is True
+        and len(immutable_digest) == 64
+        and immutable_digest == _canonical_digest(digest_material)
+        and _boundary_safe(source, external_expected=True)
+        and source.get("tushare_called") is True
+        and source.get("external_calls_triggered") is True
+        and not _contains_sensitive_key(source)
+    )
+
+
+def _legacy_full_market_packet_internally_consistent(packet: Any) -> bool:
+    """Compatibility audit only; never used as production closeout truth."""
+    source = packet if isinstance(packet, Mapping) else {}
+    artifacts = source.get("artifacts") if isinstance(source.get("artifacts"), Mapping) else {}
+    ledger = [row for row in source.get("direct_ledger", []) if isinstance(row, Mapping)]
+    digest_material = dict(source)
+    packet_digest = str(digest_material.pop("packet_digest", "") or "")
+    required = {"stock_basic", "trade_cal", "daily", "daily_basic", "moneyflow"}
+    pointer = source.get("current_pointer") if isinstance(source.get("current_pointer"), Mapping) else {}
+    lineage = pointer.get("lineage") if isinstance(pointer.get("lineage"), Mapping) else {}
+    files_ready = bool(
+        set(artifacts) == required
+        and all(isinstance(record, Mapping) for record in artifacts.values())
+        and all(
+            record.get("required_columns")
+            and _parquet_artifact_readback_matches(record)
+            for record in artifacts.values()
+        )
+    )
+    validation = source.get("dataset_validation") if isinstance(source.get("dataset_validation"), Mapping) else {}
+    return bool(
+        source.get("schema_version") == "tushare_full_market_universe_production.v1"
+        and source.get("status") == "full_market_universe_production_complete"
+        and source.get("production_complete") is True
+        and len(str(source.get("scope_hash") or "")) == 64
+        and len(str(source.get("approval_scope_hash") or "")) == 64
+        and len(str(source.get("execution_recipe_scope_hash") or "")) == 64
+        and source.get("list_status") == "L"
+        and int(source.get("row_count") or 0) >= 3000
+        and int(source.get("scored_symbol_count") or 0) >= 3000
+        and int(source.get("duplicate_count") or 0) == 0
+        and int(source.get("invalid_symbol_count") or 0) == 0
+        and set(source.get("markets") or []) == {"SH", "SZ", "BJ"}
+        and int(source.get("feature_session_count") or 0) == 90
+        and source.get("validated_trade_date")
+        and source.get("as_of")
+        and source.get("freshness") == "current_trade_calendar_validated"
+        and source.get("provider_provenance_verified") is True
+        and pointer.get("status") == "ready"
+        and pointer.get("scope_hash") == source.get("scope_hash")
+        and lineage.get("approval_scope_hash") == source.get("approval_scope_hash")
+        and lineage.get("execution_recipe_scope_hash") == source.get("execution_recipe_scope_hash")
+        and lineage.get("validated_trade_date") == source.get("validated_trade_date")
+        and lineage.get("as_of") == source.get("as_of")
+        and lineage.get("provider_provenance_verified") is True
+        and lineage.get("direct_ledger_digest") == _canonical_value_digest(ledger)
+        and {str(row.get("api") or "") for row in ledger} == required
+        and all(
+            row.get("provider_transport_verified") is True
+            and row.get("scope_hash") == source.get("scope_hash")
+            and row.get("approval_scope_hash") == source.get("approval_scope_hash")
+            and row.get("execution_recipe_scope_hash") == source.get("execution_recipe_scope_hash")
+            and row.get("as_of") == source.get("as_of")
+            for row in ledger
+        )
+        and all(
+            isinstance(validation.get(api), Mapping)
+            and validation[api].get("coverage_complete") is True
+            and int(validation[api].get("duplicate_count") or 0) == 0
+            and not validation[api].get("missing_required_columns")
+            for api in ("daily", "daily_basic", "moneyflow")
+        )
+        and files_ready
+        and len(packet_digest) == 64
+        and packet_digest == _canonical_digest(digest_material)
+        and _boundary_safe(source, external_expected=True)
+        and not _contains_sensitive_key(source)
     )
 
 
@@ -454,6 +684,7 @@ def _build_version_rows(
 
     qmt_current = root_packets.get(ROOT_PACKET_KEYS[2])
     qmt_last_good = root_packets.get(ROOT_PACKET_KEYS[3])
+    production_version = validate_tushare_full_market_production_version(evidence_root)
     qmt = qmt_current if _qmt_isolation_ready(qmt_current) else qmt_last_good
 
     user_qa_ready = lambda value: bool(
@@ -554,10 +785,7 @@ def _build_version_rows(
     facts = {
         "trade_cal_provider_direct": _provider_ready(trade_cal, {"trade_cal"}),
         "factor_small_pool_provider_direct": _provider_ready(factor, {"daily", "daily_basic"}),
-        "full_interface_provider_production": bool(
-            isinstance(trade_cal, Mapping)
-            and trade_cal.get("production_tushare_pipeline_complete") is True
-        ),
+        "full_interface_provider_production": production_version.get("ready") is True,
         "factor_production_promotion": bool(
             isinstance(factor, Mapping)
             and factor.get("production_tushare_pipeline_complete") is True
@@ -617,6 +845,23 @@ def _build_version_rows(
             _SAFE_FILE_FIELDS,
             observed=isinstance(remote_receipt, Mapping),
         ),
+        "tushare_production_version": {
+            key: production_version.get(key)
+            for key in (
+                "ready",
+                "status",
+                "scope_hash",
+                "approval_scope_hash",
+                "execution_recipe_scope_hash",
+                "validated_trade_date",
+                "as_of",
+                "universe_digest",
+                "universe_count",
+                "artifact_manifest_digest",
+                "version_digest",
+                "blockers",
+            )
+        },
     }
     return rows, facts, context
 

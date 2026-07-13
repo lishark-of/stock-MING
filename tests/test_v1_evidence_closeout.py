@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 import tempfile
 import unittest
@@ -219,6 +220,103 @@ def _seed_complete_local_versions(root: Path) -> None:
 
 
 class V1EvidenceCloseoutTests(unittest.TestCase):
+    def test_full_interface_closeout_validator_accepts_only_consistent_independent_packet(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            scope_hash = "a" * 64
+            recipe_hash = "b" * 64
+            selected = sorted(v1_closeout_service._FULL_INTERFACE_APIS)
+            targets = sorted(v1_closeout_service._FULL_INTERFACE_TARGETS)
+            approval_material = {
+                "schema_version": "tushare_full_interface_provider_approval_scope.v1",
+                "recipe_scope_hash": recipe_hash,
+                "recipe_version": "tushare_full_interface_provider_recipe.v2",
+                "selected_apis": selected,
+                "requested_targets": targets,
+                "api_contexts": {},
+                "target_contexts": {},
+                "universe_context": {},
+            }
+            approval_hash = v1_closeout_service._canonical_digest(approval_material)
+            ledger = [
+                {
+                    "api": api,
+                    "runtime_adapter_module_identity_verified": True,
+                    "provider_transport_verified": True,
+                    "provider_transport_receipt_count": 1,
+                    "representative_sample_verified": True,
+                    "valid_empty_semantics_verified": False,
+                    "scope_hash": scope_hash,
+                    "authoritative_recipe_scope_hash": recipe_hash,
+                    "approval_scope_hash": approval_hash,
+                    "approval_scope_matches": True,
+                    "request_params_safe": {},
+                }
+                for api in selected
+            ]
+            parquet_rows = []
+            import pandas as pd
+
+            parquet_payloads = {
+                "daily": {"ts_code": "000001.SZ", "trade_date": "20260710", "close": 10.0},
+                "daily_basic": {"ts_code": "000001.SZ", "trade_date": "20260710", "turnover_rate": 1.0},
+                "moneyflow": {"ts_code": "000001.SZ", "trade_date": "20260710", "buy_sm_amount": 1.0},
+                "trade_cal": {"cal_date": "20260710", "is_open": 1},
+            }
+            for api in sorted(v1_closeout_service._PARQUET_APIS):
+                path = root / f"{api}.parquet"
+                pd.DataFrame([parquet_payloads[api]]).to_parquet(path, index=False)
+                parquet_rows.append(
+                    {
+                        "api": api,
+                        "canonical_path": str(path),
+                        "canonical_digest": hashlib.sha256(path.read_bytes()).hexdigest(),
+                        "row_count": 1,
+                        "required_columns": list(parquet_payloads[api]),
+                    }
+                )
+            packet = {
+                "schema_version": "command_center_tushare_full_interface_production_packet.v1",
+                "status": "full_interface_provider_production_complete",
+                "full_interface_provider_production": True,
+                "production_tushare_pipeline_complete": True,
+                "selected_apis": selected,
+                "required_target_groups": targets,
+                "provider_scope": {"scope_hash": scope_hash},
+                "execution_recipe_scope_hash": recipe_hash,
+                "execution_recipe_version": "tushare_full_interface_provider_recipe.v2",
+                "approval_scope_matches": True,
+                "approval_scope_hash": approval_hash,
+                "api_contexts": {},
+                "target_contexts": {},
+                "universe_context": {},
+                "production_contract": {
+                    "schema_version": "tushare_full_interface_provider_production_acceptance.v2",
+                    "status": "full_interface_provider_production_complete",
+                    "scope_hash": scope_hash,
+                    "full_interface_provider_production": True,
+                    "production_tushare_pipeline_complete": True,
+                    "parquet_promotion_verified": True,
+                    "sqlite_stage_readback_verified": True,
+                    "sqlite_atomic_promotion_verified": True,
+                    "blocking_criterion_count": 0,
+                    "blockers": [],
+                },
+                "call_ledger": ledger,
+                "parquet_promotion": {
+                    "promotion_verified": True,
+                    "promoted_dataset_count": 4,
+                    "rows": parquet_rows,
+                },
+                "sqlite_stage_readback_verified": True,
+                "sqlite_atomic_promotion_verified": True,
+                **_safe_boundary(external=True, tushare=True),
+            }
+            packet["immutable_packet_digest"] = v1_closeout_service._canonical_digest(packet)
+            self.assertTrue(v1_closeout_service._legacy_full_interface_packet_internally_consistent(packet))
+            packet["call_ledger"][0]["provider_transport_verified"] = False
+            self.assertFalse(v1_closeout_service._legacy_full_interface_packet_internally_consistent(packet))
+
     def test_missing_evidence_stays_false_without_creating_storage(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "missing"
@@ -257,6 +355,46 @@ class V1EvidenceCloseoutTests(unittest.TestCase):
             rendered = json.dumps(packet)
             self.assertNotIn("account_id", rendered)
             self.assertNotIn("api_key", rendered)
+
+    def test_forged_production_booleans_do_not_close_ltg02(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "evidence"
+            _seed_complete_local_versions(root)
+            forged_provider = {
+                "schema_version": "command_center_tushare_full_interface_production_packet.v1",
+                "status": "full_interface_provider_production_complete",
+                "full_interface_provider_production": True,
+                "production_tushare_pipeline_complete": True,
+                **_safe_boundary(external=True, tushare=True),
+            }
+            forged_universe = {
+                "schema_version": "tushare_full_market_universe_production.v1",
+                "status": "full_market_universe_production_complete",
+                "production_complete": True,
+                "row_count": 5000,
+                **_safe_boundary(external=True, tushare=True),
+            }
+            with sqlite3.connect(root / "meta.sqlite") as connection:
+                connection.executemany(
+                    "INSERT OR REPLACE INTO packets(packet_key, payload_json, updated_at) VALUES (?, ?, ?)",
+                    [
+                        (
+                            "command_center_tushare_full_interface_production_packet",
+                            json.dumps(forged_provider),
+                            "2026-07-13T00:00:00+00:00",
+                        ),
+                        (
+                            "command_center_tushare_full_market_universe_production_current",
+                            json.dumps(forged_universe),
+                            "2026-07-13T00:00:00+00:00",
+                        ),
+                    ],
+                )
+
+            packet = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=root)
+            ltg02 = next(row for row in packet["ltg_closure_rows"] if row["id"] == "LTG-02")
+            self.assertFalse(ltg02["production_complete"])
+            self.assertFalse(ltg02["can_close"])
 
     def test_migration_get_is_zero_write_and_no_external_call(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import sqlite3
 from contextlib import closing
@@ -50,12 +51,97 @@ class SQLiteMetaStore:
             conn.commit()
         return {"packet_key": packet_key, "updated_at": now, "status": "written"}
 
+    def promote_packet_atomic(self, packet_key: str, packet: Any) -> dict[str, Any]:
+        """Atomically replace a packet and verify the exact payload before commit."""
+
+        now = _dt.datetime.now().isoformat(timespec="microseconds")
+        payload = json.dumps(packet, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+        payload_digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        with closing(self._connect()) as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    "INSERT OR REPLACE INTO packets(packet_key, payload_json, updated_at) VALUES (?, ?, ?)",
+                    (packet_key, payload, now),
+                )
+                row = conn.execute(
+                    "SELECT payload_json FROM packets WHERE packet_key = ?",
+                    (packet_key,),
+                ).fetchone()
+                if row is None or str(row[0]) != payload:
+                    raise RuntimeError("atomic_packet_readback_mismatch")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return {
+            "packet_key": packet_key,
+            "updated_at": now,
+            "status": "atomic_promoted",
+            "payload_digest": payload_digest,
+            "transaction_committed": True,
+            "readback_verified_before_commit": True,
+        }
+
+    def promote_packet_pair_atomic(
+        self,
+        current_key: str,
+        current_packet: Any,
+        last_good_key: str,
+        last_good_packet: Any,
+    ) -> dict[str, Any]:
+        """Atomically replace current and last-good packets with exact readback."""
+
+        now = _dt.datetime.now().isoformat(timespec="microseconds")
+        pairs = (
+            (current_key, json.dumps(current_packet, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)),
+            (last_good_key, json.dumps(last_good_packet, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)),
+        )
+        with closing(self._connect()) as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                for packet_key, payload in pairs:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO packets(packet_key, payload_json, updated_at) VALUES (?, ?, ?)",
+                        (packet_key, payload, now),
+                    )
+                    row = conn.execute(
+                        "SELECT payload_json FROM packets WHERE packet_key = ?",
+                        (packet_key,),
+                    ).fetchone()
+                    if row is None or str(row[0]) != payload:
+                        raise RuntimeError("atomic_packet_pair_readback_mismatch")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return {
+            "status": "atomic_pair_promoted",
+            "current_key": current_key,
+            "last_good_key": last_good_key,
+            "updated_at": now,
+            "transaction_committed": True,
+            "readback_verified_before_commit": True,
+            "current_payload_digest": hashlib.sha256(pairs[0][1].encode("utf-8")).hexdigest(),
+            "last_good_payload_digest": hashlib.sha256(pairs[1][1].encode("utf-8")).hexdigest(),
+        }
+
     def read_packet(self, packet_key: str) -> Any:
         with closing(self._connect()) as conn:
             row = conn.execute("SELECT payload_json FROM packets WHERE packet_key = ?", (packet_key,)).fetchone()
         if row is None:
             return None
         return json.loads(row[0])
+
+    def read_packet_with_metadata(self, packet_key: str) -> dict[str, Any] | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT payload_json, updated_at FROM packets WHERE packet_key = ?",
+                (packet_key,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {"payload": json.loads(row[0]), "updated_at": str(row[1])}
 
     def list_packet_metadata(self) -> list[dict[str, Any]]:
         with closing(self._connect()) as conn:
