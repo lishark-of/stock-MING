@@ -102,6 +102,7 @@ function normalizeRouteKey(value: string | null): RouteKey | null {
     .trim()
     .replace(/^#\/?/, "")
     .split(/[/?]/)[0];
+  if (cleaned === "next-session-chart") return "next";
   return ROUTE_KEYS.includes(cleaned as RouteKey) ? (cleaned as RouteKey) : null;
 }
 
@@ -113,6 +114,7 @@ function routeFromHash(): RouteKey | null {
 function routeAnchorFromHash(): string {
   if (typeof window === "undefined") return "";
   const cleaned = window.location.hash.trim().replace(/^#\/?/, "");
+  if (cleaned === "next-session-chart") return cleaned;
   const parts = cleaned.split("/");
   return parts.length > 1 ? parts.slice(1).join("/").split("?")[0] : "";
 }

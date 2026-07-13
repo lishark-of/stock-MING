@@ -20,7 +20,7 @@ const DEFAULT_ARTIFACT_ROOT = ".stock_ming_3/motion_qa";
 
 const QA_ROUTES = [
   { route: "#home", label: "Command Center", risk_focus: "page staging and status summary clarity" },
-  { route: "#next", label: "Next Session Map", risk_focus: "chart update clarity and reduced-motion chart updates" },
+  { route: "#next-session-chart", label: "Next Session Map", risk_focus: "chart update clarity and reduced-motion chart updates" },
   { route: "#candidates", label: "Candidate Radar", risk_focus: "radar result cluster and runtime-budget visibility" },
   { route: "#worker", label: "Worker Runtime", risk_focus: "runtime evidence visibility and production-blocker readability" },
   { route: "#tasks", label: "Task Monitor", risk_focus: "task phase confirmation and progress readability" },
@@ -130,8 +130,8 @@ function makePlan(args) {
   };
 }
 
-async function inspectPage(page) {
-  return page.evaluate(() => {
+async function inspectPage(page, route) {
+  return page.evaluate((expectedRoute) => {
     const selectors = [
       "h1",
       "h2",
@@ -213,6 +213,73 @@ async function inspectPage(page) {
       radar_cluster: document.querySelectorAll(".radar-result-cluster").length,
       task_panel: document.querySelectorAll(".task-panel").length
     };
+    const isHitTestVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= window.innerWidth || rect.top >= window.innerHeight) return false;
+      const inset = 2;
+      const points = [
+        [rect.left + rect.width / 2, rect.top + rect.height / 2],
+        [rect.left + inset, rect.top + inset],
+        [rect.right - inset, rect.top + inset],
+        [rect.left + inset, rect.bottom - inset],
+        [rect.right - inset, rect.bottom - inset]
+      ];
+      return points.some(([rawX, rawY]) => {
+        const x = Math.max(0, Math.min(window.innerWidth - 1, rawX));
+        const y = Math.max(0, Math.min(window.innerHeight - 1, rawY));
+        const hit = document.elementFromPoint(x, y);
+        return Boolean(hit && (hit === element || element.contains(hit)));
+      });
+    };
+    const interactiveElements = Array.from(document.querySelectorAll("button, a[href], input, select, textarea, [tabindex]"))
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && isHitTestVisible(element);
+      });
+    const unnamedInteractiveRows = interactiveElements
+      .filter((element) => {
+        const name = [
+          element.getAttribute("aria-label"),
+          element.getAttribute("title"),
+          element.getAttribute("placeholder"),
+          element.textContent
+        ].map((value) => String(value || "").trim()).find(Boolean);
+        return !name;
+      })
+      .slice(0, 20)
+      .map(toRow);
+    const overlapRows = [];
+    for (let leftIndex = 0; leftIndex < interactiveElements.length; leftIndex += 1) {
+      const left = interactiveElements[leftIndex];
+      const leftRect = left.getBoundingClientRect();
+      if (leftRect.bottom <= 0 || leftRect.top >= window.innerHeight) continue;
+      for (let rightIndex = leftIndex + 1; rightIndex < interactiveElements.length; rightIndex += 1) {
+        const right = interactiveElements[rightIndex];
+        if (left.contains(right) || right.contains(left)) continue;
+        const rightRect = right.getBoundingClientRect();
+        if (rightRect.bottom <= 0 || rightRect.top >= window.innerHeight) continue;
+        const overlapWidth = Math.min(leftRect.right, rightRect.right) - Math.max(leftRect.left, rightRect.left);
+        const overlapHeight = Math.min(leftRect.bottom, rightRect.bottom) - Math.max(leftRect.top, rightRect.top);
+        if (overlapWidth > 1 && overlapHeight > 1) {
+          overlapRows.push({ left: toRow(left), right: toRow(right) });
+          if (overlapRows.length >= 20) break;
+        }
+      }
+      if (overlapRows.length >= 20) break;
+    }
+    const concealedContentRows = Array.from(document.querySelectorAll(".motion-surface, .route-stage, .page-head, .chart-refresh-frame, .radar-result-cluster"))
+      .map(toRow)
+      .filter((item) => item.width > 0 && item.height > 0 && !item.offscreen && item.text.length > 0 && item.opacity < 0.94)
+      .slice(0, 20);
+    const documentElement = document.documentElement;
+    const horizontalOverflowPx = Math.max(0, documentElement.scrollWidth - documentElement.clientWidth);
+    const expectedAnchor = expectedRoute === "#next-session-chart" ? "next-session-chart" : "";
+    const anchorElement = expectedAnchor ? document.getElementById(expectedAnchor) : null;
+    const anchorRect = anchorElement?.getBoundingClientRect();
+    const anchorReady = !expectedAnchor || Boolean(
+      anchorElement && anchorRect && anchorRect.width > 0 && anchorRect.height > 0 && anchorRect.top < window.innerHeight && anchorRect.bottom > 0
+    );
     const longTasks = performance.getEntriesByType("longtask");
     return {
       title: document.title,
@@ -223,11 +290,20 @@ async function inspectPage(page) {
       offscreen_count: offscreenRows.length,
       clipped_rows: clippedRows,
       offscreen_rows: offscreenRows,
+      horizontal_overflow_px: horizontalOverflowPx,
+      overlap_count: overlapRows.length,
+      overlap_rows: overlapRows,
+      unnamed_interactive_count: unnamedInteractiveRows.length,
+      unnamed_interactive_rows: unnamedInteractiveRows,
+      concealed_motion_content_count: concealedContentRows.length,
+      concealed_motion_content_rows: concealedContentRows,
+      expected_anchor: expectedAnchor || null,
+      expected_anchor_ready: anchorReady,
       motion_markers: motionMarkers,
       long_task_over_50ms_count: longTasks.filter((entry) => entry.duration > 50).length,
       largest_motion_layout_shift: 0
     };
-  });
+  }, route);
 }
 
 async function runQa(args) {
@@ -246,6 +322,10 @@ async function runQa(args) {
         reducedMotion: args.reducedMotion ? "reduce" : "no-preference"
       });
       const page = await context.newPage();
+      let postRequests = [];
+      page.on("request", (request) => {
+        if (request.method() === "POST") postRequests.push(request.url());
+      });
       page.on("console", (message) => {
         if (message.type() === "error") errors.push({ viewport: viewport.name, console_error: message.text() });
       });
@@ -256,13 +336,14 @@ async function runQa(args) {
       await page.goto(`${args.baseUrl}/${warmupRoute}`, { waitUntil: "networkidle", timeout: 20000 });
       await page.waitForTimeout(args.reducedMotion ? 80 : 500);
       for (const route of routes) {
+        postRequests = [];
         const startedAt = Date.now();
         const url = `${args.baseUrl}/${route.route}`;
         await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
         const loadedAt = Date.now();
         const visualSettleWaitMs = args.reducedMotion ? 80 : 500;
         await page.waitForTimeout(visualSettleWaitMs);
-        const inspected = await inspectPage(page);
+        const inspected = await inspectPage(page, route.route);
         const routeMs = loadedAt - startedAt;
         const screenshotPath = resolve(outputDir, viewport.name, `${route.route.replace("#", "") || "home"}.png`);
         if (args.screenshots) {
@@ -271,6 +352,12 @@ async function runQa(args) {
         }
         const passed =
           inspected.clipped_count === 0 &&
+          inspected.horizontal_overflow_px === 0 &&
+          inspected.overlap_count === 0 &&
+          inspected.unnamed_interactive_count === 0 &&
+          inspected.concealed_motion_content_count === 0 &&
+          inspected.expected_anchor_ready === true &&
+          postRequests.length === 0 &&
           inspected.long_task_over_50ms_count <= PERFORMANCE_BUDGETS.long_task_over_50ms_count &&
           routeMs <= (route.route === "#candidates" ? PERFORMANCE_BUDGETS.candidate_radar_first_stable_ms : PERFORMANCE_BUDGETS.route_transition_observed_ms);
         rows.push({
@@ -295,6 +382,17 @@ async function runQa(args) {
           offscreen_count: inspected.offscreen_count,
           clipped_rows: inspected.clipped_rows,
           offscreen_rows: inspected.offscreen_rows,
+          horizontal_overflow_px: inspected.horizontal_overflow_px,
+          overlap_count: inspected.overlap_count,
+          overlap_rows: inspected.overlap_rows,
+          unnamed_interactive_count: inspected.unnamed_interactive_count,
+          unnamed_interactive_rows: inspected.unnamed_interactive_rows,
+          concealed_motion_content_count: inspected.concealed_motion_content_count,
+          concealed_motion_content_rows: inspected.concealed_motion_content_rows,
+          expected_anchor: inspected.expected_anchor,
+          expected_anchor_ready: inspected.expected_anchor_ready,
+          post_request_count: postRequests.length,
+          post_request_urls: postRequests.map((url) => url.replace(/[?#].*$/, "")),
           motion_markers: inspected.motion_markers,
           screenshot_path: args.screenshots ? screenshotPath : null
         });
