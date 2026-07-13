@@ -2120,6 +2120,92 @@ export default function FactorQuantHub() {
       tone: "good"
     }
   ];
+  const ordinaryFactorSmallPoolSymbols = [
+    factorTestProviderSmallPoolAcceptance.symbols,
+    factorTestProviderSmallPoolDryRun.symbols,
+    factorTestProviderSmallPoolExecutionRequest.symbols
+  ].find(Array.isArray) as unknown[] | undefined;
+  const ordinaryFactorSmallPoolScope = ordinaryFactorSmallPoolSymbols?.length
+    ? ordinaryFactorSmallPoolSymbols.map((symbol) => String(symbol)).join("、")
+    : candidateRadarConfirmedSymbol || "等待确认标的";
+  const ordinaryFactorSmallPoolWindowStart = String(
+    factorTestProviderSmallPoolAcceptance.window_start ??
+      factorTestProviderSmallPoolDryRun.window_start ??
+      factorTestProviderSmallPoolAcceptance.start_date ??
+      factorTestProviderSmallPoolDryRun.start_date ??
+      "待回放"
+  );
+  const ordinaryFactorSmallPoolWindowEnd = String(
+    factorTestProviderSmallPoolAcceptance.window_end ??
+      factorTestProviderSmallPoolDryRun.window_end ??
+      factorTestProviderSmallPoolAcceptance.end_date ??
+      factorTestProviderSmallPoolDryRun.end_date ??
+      "待回放"
+  );
+  const ordinaryFactorSmallPoolProviderState = factorTestProviderSmallPoolSampleDone
+    ? "真实数据样本已从本地缓存回放"
+    : factorTestProviderSmallPoolDirectEvidenceDone
+      ? "已有调用记录，但样本为空或处于降级状态"
+      : factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true
+        ? "已准备执行申请，仍待用户明确授权"
+        : "等待真实数据验收；当前只读本地缓存";
+  const ordinaryFactorSmallPoolPermissionState = factorTestProviderSmallPoolAcceptance.tushare_called === true
+    ? "本次已获授权并执行"
+    : factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true
+      ? "已有执行申请，尚未授权执行"
+      : "尚未授权执行";
+  const ordinaryFactorSmallPoolCallSummary = `成功 ${String(
+    factorTestProviderSmallPoolAcceptance.provider_success_call_count ??
+      factorTestProviderSmallPoolAcceptance.provider_api_call_count ??
+      0
+  )} / 无数据 ${String(factorTestProviderSmallPoolAcceptance.provider_empty_call_count ?? 0)} / 降级 ${String(
+    factorTestProviderSmallPoolAcceptance.provider_degraded_call_count ?? 0
+  )}；${ordinaryFactorSmallPoolPermissionState}`;
+  const ordinaryFactorSmallPoolEvidenceSentence = `${ordinaryFactorSmallPoolScope} 小池：${ordinaryFactorSmallPoolProviderState}；窗口 ${ordinaryFactorSmallPoolWindowStart} 至 ${ordinaryFactorSmallPoolWindowEnd}。`;
+  const ordinaryFactorSmallPoolEvidenceItems: MetricItem[] = [
+    {
+      label: "标的 / 范围",
+      value: ordinaryFactorSmallPoolScope,
+      tone: ordinaryFactorSmallPoolSymbols?.length || candidateRadarConfirmedSymbol ? "good" : "warn"
+    },
+    {
+      label: "数据窗口",
+      value: `${ordinaryFactorSmallPoolWindowStart} 至 ${ordinaryFactorSmallPoolWindowEnd}`,
+      tone: ordinaryFactorSmallPoolWindowStart === "待回放" ? "warn" : "good"
+    },
+    {
+      label: "数据状态",
+      value: ordinaryFactorSmallPoolProviderState,
+      tone: factorTestProviderSmallPoolSampleDone ? "good" : "warn"
+    },
+    {
+      label: "调用摘要",
+      value: ordinaryFactorSmallPoolCallSummary,
+      tone: factorTestProviderSmallPoolDirectEvidenceDone ? "good" : "warn"
+    },
+    {
+      label: "样本 / IC",
+      value: `${String(factorTestProviderSmallPoolAcceptance.provider_total_row_count ?? 0)} 行；IC ${String(factorTestProviderSmallPoolMetricPrimarySummary.ic ?? "待补")}；Rank IC ${String(factorTestProviderSmallPoolMetricPrimarySummary.rank_ic ?? "待补")}`,
+      tone: factorTestProviderSmallPoolSampleDone && factorTestProviderSmallPoolMetricValidation.rolling_window_validation_done === true ? "good" : "warn"
+    },
+    {
+      label: "成本 / 中性化 / PIT",
+      value: `成本 ${factorTestProviderSmallPoolMetricValidation.cost_assumption_validation_done === true ? `${String(factorTestProviderSmallPoolMetricValidation.cost_assumption_bps ?? 0)}bps 已回放` : "待补"}；中性化 ${factorTestProviderSmallPoolMetricValidation.neutralization_stability_done === true || factorTestProviderSmallPoolMetricValidation.market_cap_neutralization_done === true ? "已回放" : "待补"}；PIT ${factorTestProviderSmallPoolPitBiasDone ? "已复核" : "待补"}`,
+      tone: factorTestProviderSmallPoolMetricValidation.cost_assumption_validation_done === true &&
+        (factorTestProviderSmallPoolMetricValidation.neutralization_stability_done === true || factorTestProviderSmallPoolMetricValidation.market_cap_neutralization_done === true) &&
+        factorTestProviderSmallPoolPitBiasDone ? "good" : "warn"
+    },
+    {
+      label: "仍缺证据",
+      value: ordinaryFactorTestProviderEvidenceGap,
+      tone: factorTestProviderSmallPoolSampleDone ? "warn" : "bad"
+    },
+    {
+      label: "研究边界",
+      value: "仅供研究复核，不是买入、卖出、加仓或减仓指令",
+      tone: "good"
+    }
+  ];
   const ordinaryQuantVisibleNowItems: MetricItem[] = [
     {
       label: "现在能看到",
@@ -2733,6 +2819,12 @@ export default function FactorQuantHub() {
               <a href={ordinaryQuantPrimaryActionHref} title="只切换本地页面或锚点；不会自动调用外部数据或模型服务" aria-label="open stock quant plain conclusion next action">{ordinaryQuantPrimaryActionLabel}</a>
             </div>
             <p className="risk-note">普通结论只读本地结果、数据凭证和次日图谱预览；页面打开、查看结果和切换入口都不会自动创建后台流程或调用外部服务，也不会改写操作区。</p>
+          </div>
+          <div aria-label="stock quant small pool evidence card">
+            <h3>因子小池证据</h3>
+            <p className="ordinary-status-note" aria-label="stock quant small pool evidence sentence" aria-live="polite">{ordinaryFactorSmallPoolEvidenceSentence}</p>
+            <MetricGrid items={ordinaryFactorMetricItems(ordinaryFactorSmallPoolEvidenceItems)} />
+            <p className="risk-note">这张卡只读取已有的 Factor 缓存和结果；页面打开、查看结果、输入股票代码都不会创建任务、调用数据接口或模型，也不会交易。</p>
           </div>
           <h3>一屏速读</h3>
           <p className="risk-note">默认先看当前标的、结论、下一步、数据链、图谱/解释和边界；后台记录、数据凭证、合同和回放细节继续收起在下方。</p>

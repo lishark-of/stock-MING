@@ -6,6 +6,34 @@ ROOT = Path(__file__).resolve().parents[1] / "desktop"
 
 
 class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
+    def test_small_pool_evidence_is_a_read_only_ordinary_result_card(self):
+        source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("ordinaryFactorSmallPoolEvidenceItems", source)
+        self.assertIn("ordinaryFactorSmallPoolEvidenceSentence", source)
+        self.assertIn('aria-label="stock quant small pool evidence card"', source)
+        self.assertIn("因子小池证据", source)
+        for label in (
+            'label: "标的 / 范围"',
+            'label: "数据窗口"',
+            'label: "数据状态"',
+            'label: "调用摘要"',
+            'label: "样本 / IC"',
+            'label: "成本 / 中性化 / PIT"',
+            'label: "仍缺证据"',
+            'label: "研究边界"',
+        ):
+            self.assertIn(label, source)
+        self.assertIn("仅供研究复核，不是买入、卖出、加仓或减仓指令", source)
+
+        card_start = source.index('aria-label="stock quant small pool evidence card"')
+        card_end = source.index("<h3>一屏速读</h3>", card_start)
+        card = source[card_start:card_end]
+        self.assertIn("MetricGrid items={ordinaryFactorMetricItems(ordinaryFactorSmallPoolEvidenceItems)}", card)
+        self.assertNotIn("onClick=", card)
+        self.assertNotIn("post" + "Task(", card)
+        self.assertNotIn("launch" + "Task", card)
+
     def test_ready_scaffold_without_confirmed_symbol_returns_to_candidate_confirm(self):
         source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
 
