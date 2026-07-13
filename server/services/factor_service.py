@@ -169,10 +169,11 @@ FACTOR_UNIVERSE_DURABLE_EVIDENCE_LABELS = {
     "promotion_review_required": "Promotion review required",
     "no_render_worker_provider_trade_secret_boundary": "No render, worker, provider, trade, or secret boundary",
 }
-FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT = 20
+FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT = 5
 FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS = 5
 FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS = 60
-FACTOR_TEST_PROVIDER_SMALL_POOL_ALLOWED_DATASETS = ("factor_values", "daily", "daily_basic", "moneyflow", "trade_cal")
+FACTOR_TEST_PROVIDER_SMALL_POOL_MAX_WINDOW_DAYS = 90
+FACTOR_TEST_PROVIDER_SMALL_POOL_ALLOWED_DATASETS = ("factor_values", "daily", "daily_basic", "trade_cal")
 FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS = (
     "ic",
     "rank_ic",
@@ -326,7 +327,8 @@ FACTOR_TEST_PRODUCTION_STAGE_MISSING_EVIDENCE = (
     "explicit promotion review before production completion",
 )
 FACTOR_TEST_PROVIDER_SMALL_POOL_SAMPLE_SIZE = 5
-FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS = ("daily", "daily_basic", "moneyflow")
+FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS = ("daily", "daily_basic")
+FACTOR_TEST_PROVIDER_SMALL_POOL_CALENDAR_APIS = ("trade_cal",)
 FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY = "command_center_factor_test_provider_small_pool_tushare_packet"
 
 
@@ -4924,7 +4926,7 @@ def _factor_test_date(value: Any) -> _dt.date | None:
 def _factor_test_window(payload: Any, now: str) -> tuple[str, str, int]:
     now_date = _dt.datetime.fromisoformat(now).date()
     default_end = now_date
-    default_start = default_end - _dt.timedelta(days=90)
+    default_start = default_end - _dt.timedelta(days=FACTOR_TEST_PROVIDER_SMALL_POOL_MAX_WINDOW_DAYS - 1)
     if isinstance(payload, dict):
         start = _factor_test_date(payload.get("start_date")) or default_start
         end = _factor_test_date(payload.get("end_date")) or default_end
@@ -5059,6 +5061,7 @@ def _factor_test_provider_small_pool_dry_run_payload(payload: Any, now: str) -> 
         "window_days": window_days,
         "minimum_symbol_count": FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS,
         "minimum_window_days": FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS,
+        "maximum_window_days": FACTOR_TEST_PROVIDER_SMALL_POOL_MAX_WINDOW_DAYS,
         "metrics": metrics,
         "ignored_metrics": ignored_metrics,
         "required_metrics": list(FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS),
@@ -5100,10 +5103,15 @@ def _factor_test_provider_small_pool_dry_run_receipt(payload_safe: dict[str, Any
         ),
         _factor_test_provider_small_pool_dry_run_row(
             "window_scope_bounded",
-            "passed_window_scope" if window_days >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS else "blocked_window_too_short",
-            window_days >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS,
-            f"window_days={window_days}; minimum={FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS}",
-            "Use a long enough sample window before validating rolling IC, decay, and out-of-sample behavior.",
+            "passed_window_scope"
+            if FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS <= window_days <= FACTOR_TEST_PROVIDER_SMALL_POOL_MAX_WINDOW_DAYS
+            else "blocked_window_out_of_bounds",
+            FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS <= window_days <= FACTOR_TEST_PROVIDER_SMALL_POOL_MAX_WINDOW_DAYS,
+            (
+                f"window_days={window_days}; minimum={FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS}; "
+                f"maximum={FACTOR_TEST_PROVIDER_SMALL_POOL_MAX_WINDOW_DAYS}"
+            ),
+            "Use a bounded sample window before validating rolling IC, decay, and out-of-sample behavior.",
         ),
         _factor_test_provider_small_pool_dry_run_row(
             "metric_scope_complete",
@@ -5124,15 +5132,15 @@ def _factor_test_provider_small_pool_dry_run_receipt(payload_safe: dict[str, Any
             "passed_dataset_scope",
             True,
             f"required_datasets={payload_safe.get('required_datasets')}",
-            "Real validation must refresh or read factor_values, daily, daily_basic, moneyflow, and trade_cal through audited task/storage paths.",
+            "Real validation must refresh or read factor_values, daily, daily_basic, and trade_cal through audited task/storage paths.",
             required=False,
         ),
         _factor_test_provider_small_pool_dry_run_row(
             "real_task_implementation_boundary",
-            "pending_real_task_not_implemented",
-            False,
-            "This dry-run records a scope ticket only; it does not implement or execute the real provider-backed small-pool task.",
-            "Implement a separate user-approved provider-backed validation task bound to this scope ticket.",
+            "passed_explicit_provider_task_route_available",
+            True,
+            "The explicit provider-small-pool POST task is available; this dry-run still does not execute the provider.",
+            "Submit the separate user-approved provider-backed validation task bound to this scope ticket.",
         ),
         _factor_test_provider_small_pool_dry_run_row(
             "secret_redaction_boundary",
@@ -5152,7 +5160,13 @@ def _factor_test_provider_small_pool_dry_run_receipt(payload_safe: dict[str, Any
         ),
     ]
     blockers = [row["criterion"] for row in rows if row["blocks_real_execution"]]
-    preflight_ready = approved_by_user and len(symbols) >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS and window_days >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS and not missing_metrics and credential_present
+    preflight_ready = (
+        approved_by_user
+        and len(symbols) >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS
+        and FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS <= window_days <= FACTOR_TEST_PROVIDER_SMALL_POOL_MAX_WINDOW_DAYS
+        and not missing_metrics
+        and credential_present
+    )
     return {
         "schema_version": "factor_test_provider_small_pool_acceptance_dry_run.v1",
         "status": "provider_small_pool_dry_run_ready_real_execution_blocked" if preflight_ready else "provider_small_pool_dry_run_blocked_preflight",
@@ -5883,6 +5897,76 @@ def _factor_test_provider_small_pool_acceptance_row(
     }
 
 
+def _factor_test_provider_small_pool_fixture_status(fixture: dict[str, Any], api: str) -> str:
+    status = str(fixture.get(f"{api}_status") or "").strip().lower()
+    if status in {"permission_denied", "no_data", "parse_error", "stale"}:
+        return status
+    return ""
+
+
+def _factor_test_provider_small_pool_fixture_rows(
+    fixture: dict[str, Any],
+    api: str,
+    *,
+    symbol: str = "",
+) -> tuple[list[dict[str, Any]], str]:
+    forced_status = _factor_test_provider_small_pool_fixture_status(fixture, api)
+    if forced_status:
+        return [], forced_status
+    raw = fixture.get(api)
+    if symbol and isinstance(raw, dict):
+        raw = raw.get(symbol) or raw.get(symbol.replace(".", "_")) or []
+    if raw is None:
+        raw = []
+    if not isinstance(raw, list):
+        return [], "parse_error"
+    rows: list[dict[str, Any]] = []
+    allowed = {
+        "trade_cal": {"cal_date", "is_open", "exchange"},
+        "daily": {"ts_code", "trade_date", "open", "high", "low", "close", "pct_chg", "vol", "amount"},
+        "daily_basic": {"ts_code", "trade_date", "turnover_rate", "pe_ttm", "pb", "ps_ttm", "total_mv", "circ_mv"},
+    }.get(api, set())
+    for row in raw:
+        if not isinstance(row, dict):
+            return rows, "parse_error"
+        clean = {key: row.get(key) for key in allowed if key in row}
+        if symbol and api != "trade_cal":
+            clean["ts_code"] = symbol
+        rows.append(clean)
+    return rows, "success" if rows else "no_data"
+
+
+def _factor_test_provider_small_pool_fixture_payload(
+    payload: dict[str, Any],
+    symbols: list[str],
+) -> dict[str, Any]:
+    fixture = payload.get("provider_fixture")
+    mode = str(payload.get("provider_mode") or payload.get("provider_fixture_mode") or "").strip().lower()
+    approved = bool(
+        payload.get("fake_provider_approved_by_user") is True
+        or payload.get("stub_provider_approved_by_user") is True
+    )
+    if not isinstance(fixture, dict) or (mode not in {"fake", "stub", "fixture"} and not approved):
+        return {}
+    rows_by_api: dict[str, Any] = {}
+    trade_cal_rows, trade_cal_status = _factor_test_provider_small_pool_fixture_rows(fixture, "trade_cal")
+    rows_by_api["trade_cal"] = {"rows": trade_cal_rows, "status": trade_cal_status}
+    for api in FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS:
+        symbol_rows: dict[str, Any] = {}
+        for symbol in symbols:
+            rows, status = _factor_test_provider_small_pool_fixture_rows(fixture, api, symbol=symbol)
+            symbol_rows[symbol] = {"rows": rows, "status": status}
+        rows_by_api[api] = symbol_rows
+    return {
+        "mode": mode or "fake",
+        "approved": approved,
+        "rows_by_api": rows_by_api,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+
+
 def _factor_test_provider_small_pool_acceptance_payload(
     payload: Any,
     factor_tests: dict[str, Any],
@@ -5901,6 +5985,9 @@ def _factor_test_provider_small_pool_acceptance_payload(
         payload_dict.get("authorize_live_provider_call") is True
         and payload_dict.get("provider_run_approved_by_user") is True
     )
+    symbols = [str(item) for item in execution_request.get("symbols", []) if item][:FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT]
+    provider_fixture = _factor_test_provider_small_pool_fixture_payload(payload_dict, symbols)
+    fixture_provider_authorized = bool(provider_fixture.get("approved") is True)
     return {
         "approved_by_user": bool(payload_dict.get("approved_by_user") is True),
         "requested_scope_hash": requested_scope_hash,
@@ -5909,7 +5996,7 @@ def _factor_test_provider_small_pool_acceptance_payload(
         "execution_request_scope_hash": str(execution_request.get("acceptance_scope_hash") or ""),
         "execution_request_scope_hash_short": str(execution_request.get("acceptance_scope_hash_short") or ""),
         "dry_run_scope_hash_short": str(dry_run.get("acceptance_scope_hash_short") or ""),
-        "symbols": [str(item) for item in execution_request.get("symbols", []) if item][:FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT],
+        "symbols": symbols,
         "symbol_count": int(execution_request.get("symbol_count") or 0),
         "start_date": execution_request.get("start_date"),
         "end_date": execution_request.get("end_date"),
@@ -5919,7 +6006,9 @@ def _factor_test_provider_small_pool_acceptance_payload(
         "required_datasets": list(FACTOR_TEST_PROVIDER_SMALL_POOL_ALLOWED_DATASETS),
         "target_acceptance_mode": "provider_backed_factor_test_small_pool_validation",
         "live_provider_authorized": live_provider_authorized,
-        "provider_execution_implemented": live_provider_authorized,
+        "fixture_provider_authorized": fixture_provider_authorized,
+        "provider_fixture": provider_fixture,
+        "provider_execution_implemented": bool(live_provider_authorized or fixture_provider_authorized),
         "created_at": now,
         "server_secret_values_read": False,
         "env_key_names_exposed": False,
@@ -5943,6 +6032,8 @@ def _factor_test_provider_small_pool_acceptance_receipt(
     )
     user_confirmed = payload_safe.get("approved_by_user") is True
     live_provider_authorized = payload_safe.get("live_provider_authorized") is True
+    fixture_provider_authorized = payload_safe.get("fixture_provider_authorized") is True
+    provider_authorized = bool(live_provider_authorized or fixture_provider_authorized)
     provider_execution_implemented = payload_safe.get("provider_execution_implemented") is True
     rows = [
         _factor_test_provider_small_pool_acceptance_row(
@@ -5968,17 +6059,24 @@ def _factor_test_provider_small_pool_acceptance_receipt(
         ),
         _factor_test_provider_small_pool_acceptance_row(
             "live_provider_authorization_required",
-            "passed_live_provider_authorized" if live_provider_authorized else "blocked_live_provider_authorization_required",
-            live_provider_authorized,
-            "live provider authorization requires authorize_live_provider_call=true and provider_run_approved_by_user=true",
-            "Request a separate live-provider run authorization before any Tushare call is allowed.",
+            "passed_live_provider_authorized"
+            if live_provider_authorized
+            else "passed_fake_provider_fixture_authorized"
+            if fixture_provider_authorized
+            else "blocked_live_provider_authorization_required",
+            provider_authorized,
+            (
+                "live provider authorization requires authorize_live_provider_call=true and provider_run_approved_by_user=true; "
+                "focused tests may use fake_provider_approved_by_user=true with a sanitized provider_fixture"
+            ),
+            "Request a separate provider run authorization before any Tushare call is allowed.",
         ),
         _factor_test_provider_small_pool_acceptance_row(
             "provider_execution_implementation_boundary",
             "passed_provider_execution_implemented" if provider_execution_implemented else "blocked_provider_execution_not_implemented",
             provider_execution_implemented,
-            "Provider-backed sample collection is implemented only behind explicit live-provider authorization; production IC/Rank IC/ICIR remains a later gate.",
-            "Execute the scope-bound Tushare sample and keep production metrics pending until rolling/cost/neutralization evidence exists.",
+            "Provider-backed sample collection is implemented only behind explicit provider authorization or sanitized fake-provider fixture; production completion remains blocked.",
+            "Execute the scope-bound sample and keep production completion pending until PIT, survivorship, industry, and promotion evidence exists.",
             provider_execution_implemented=provider_execution_implemented,
         ),
         _factor_test_provider_small_pool_acceptance_row(
@@ -6008,7 +6106,7 @@ def _factor_test_provider_small_pool_acceptance_receipt(
     elif not user_confirmed:
         status = "factor_test_provider_small_pool_acceptance_blocked_user_confirmation_required"
         allowed_next_step = "confirm_provider_small_pool_acceptance_gate"
-    elif not live_provider_authorized:
+    elif not provider_authorized:
         status = "factor_test_provider_small_pool_acceptance_blocked_live_provider_authorization_required"
         allowed_next_step = "request_separate_user_authorized_tushare_provider_run"
     elif not provider_execution_implemented:
@@ -6029,6 +6127,7 @@ def _factor_test_provider_small_pool_acceptance_receipt(
         "ltg": "LTG-03/LTG-02/LTG-11/LTG-12",
         "local_acceptance_gate_task_record_created": True,
         "ready_for_live_provider_execution": bool(not blockers and provider_execution_implemented),
+        "ready_for_provider_execution": bool(not blockers and provider_execution_implemented),
         "allowed_next_step": allowed_next_step,
         "execution_request_status": payload_safe.get("execution_request_status"),
         "execution_request_ready": execution_request_ready,
@@ -6047,6 +6146,8 @@ def _factor_test_provider_small_pool_acceptance_receipt(
         "required_datasets": payload_safe.get("required_datasets") or [],
         "requires_separate_user_authorized_provider_execution": not live_provider_authorized,
         "live_provider_authorized": live_provider_authorized,
+        "fixture_provider_authorized": fixture_provider_authorized,
+        "provider_authorized": provider_authorized,
         "provider_task_created": False,
         "provider_execution_implemented": provider_execution_implemented,
         "provider_call_ledger_evidence_done": False,
@@ -6106,6 +6207,7 @@ def _factor_test_provider_small_pool_acceptance_receipt(
                 "symbol_count": receipt["symbol_count"],
                 "scope_hash_short": receipt["acceptance_scope_hash_short"],
                 "live_provider_authorized": live_provider_authorized,
+                "fixture_provider_authorized": fixture_provider_authorized,
                 "provider_execution_implemented": provider_execution_implemented,
                 "provider_backed_small_pool_validation_done": False,
                 "production_factor_test_validation_complete": False,
@@ -6177,6 +6279,305 @@ def _factor_test_provider_small_pool_provider_ledgers(
     return ledgers
 
 
+def _factor_test_provider_small_pool_corr(pairs: list[tuple[float, float]], *, rank: bool = False) -> float | None:
+    if len(pairs) < 2:
+        return None
+    xs = [item[0] for item in pairs]
+    ys = [item[1] for item in pairs]
+    if rank:
+        xs = _factor_test_provider_small_pool_ranks(xs)
+        ys = _factor_test_provider_small_pool_ranks(ys)
+    mean_x = sum(xs) / len(xs)
+    mean_y = sum(ys) / len(ys)
+    numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    denom_x = math.sqrt(sum((x - mean_x) ** 2 for x in xs))
+    denom_y = math.sqrt(sum((y - mean_y) ** 2 for y in ys))
+    if denom_x == 0 or denom_y == 0:
+        return None
+    return numerator / (denom_x * denom_y)
+
+
+def _factor_test_provider_small_pool_ranks(values: list[float]) -> list[float]:
+    ordered = sorted((value, index) for index, value in enumerate(values))
+    ranks = [0.0] * len(values)
+    cursor = 0
+    while cursor < len(ordered):
+        end = cursor
+        while end + 1 < len(ordered) and ordered[end + 1][0] == ordered[cursor][0]:
+            end += 1
+        rank_value = (cursor + end + 2) / 2.0
+        for _, index in ordered[cursor : end + 1]:
+            ranks[index] = rank_value
+        cursor = end + 1
+    return ranks
+
+
+def _factor_test_provider_small_pool_drawdown(returns: list[float]) -> float | None:
+    if not returns:
+        return None
+    equity = 1.0
+    peak = 1.0
+    max_drawdown = 0.0
+    for value in returns:
+        equity *= 1.0 + value
+        peak = max(peak, equity)
+        max_drawdown = min(max_drawdown, equity / peak - 1.0)
+    return max_drawdown
+
+
+def _factor_test_provider_small_pool_research_metrics(
+    sample_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    by_symbol: dict[str, list[dict[str, Any]]] = {}
+    factor_by_symbol_date: dict[tuple[str, str], float] = {}
+    for row in sample_rows:
+        if not isinstance(row, dict):
+            continue
+        api = str(row.get("api") or "")
+        ts_code = str(row.get("ts_code") or "")
+        trade_date = str(row.get("trade_date") or row.get("cal_date") or "")
+        if api == "daily" and ts_code and trade_date and _is_finite_number(row.get("close")):
+            by_symbol.setdefault(ts_code, []).append(row)
+        if api == "daily_basic" and ts_code and trade_date:
+            factor = _safe_float(row.get("turnover_rate"), default=math.nan)
+            if not math.isfinite(factor):
+                factor = _safe_float(row.get("total_mv"), default=math.nan)
+            if math.isfinite(factor):
+                factor_by_symbol_date[(ts_code, trade_date)] = factor
+    observations: list[dict[str, Any]] = []
+    for symbol, rows_for_symbol in by_symbol.items():
+        rows_for_symbol.sort(key=lambda item: str(item.get("trade_date") or ""))
+        for index, row in enumerate(rows_for_symbol[:-1]):
+            next_row = rows_for_symbol[index + 1]
+            close = _safe_float(row.get("close"), default=math.nan)
+            next_close = _safe_float(next_row.get("close"), default=math.nan)
+            trade_date = str(row.get("trade_date") or "")
+            factor_value = factor_by_symbol_date.get((symbol, trade_date))
+            if factor_value is None:
+                factor_value = _safe_float(row.get("pct_chg"), default=math.nan)
+            if not math.isfinite(close) or not math.isfinite(next_close) or close == 0 or not math.isfinite(factor_value):
+                continue
+            observations.append(
+                {
+                    "ts_code": symbol,
+                    "trade_date": trade_date,
+                    "next_trade_date": str(next_row.get("trade_date") or ""),
+                    "factor_value": round(float(factor_value), 8),
+                    "forward_return": round(next_close / close - 1.0, 8),
+                    "research_only": True,
+                    "decision_usage": "no-buy/no-action/no-trade",
+                }
+            )
+    ic_by_date: list[dict[str, Any]] = []
+    top_bottom_returns: list[float] = []
+    for trade_date in sorted({row["trade_date"] for row in observations}):
+        rows_for_date = [row for row in observations if row["trade_date"] == trade_date]
+        pairs = [(float(row["factor_value"]), float(row["forward_return"])) for row in rows_for_date]
+        ic = _factor_test_provider_small_pool_corr(pairs)
+        rank_ic = _factor_test_provider_small_pool_corr(pairs, rank=True)
+        if ic is not None or rank_ic is not None:
+            ic_by_date.append(
+                {
+                    "trade_date": trade_date,
+                    "ic": round(ic, 8) if ic is not None else None,
+                    "rank_ic": round(rank_ic, 8) if rank_ic is not None else None,
+                    "sample_size": len(rows_for_date),
+                }
+            )
+        if len(rows_for_date) >= 2:
+            ordered = sorted(rows_for_date, key=lambda item: float(item["factor_value"]))
+            top_bottom_returns.append(float(ordered[-1]["forward_return"]) - float(ordered[0]["forward_return"]))
+    ic_values = [float(row["ic"]) for row in ic_by_date if row.get("ic") is not None]
+    rank_ic_values = [float(row["rank_ic"]) for row in ic_by_date if row.get("rank_ic") is not None]
+    ic_mean = sum(ic_values) / len(ic_values) if ic_values else None
+    ic_std = math.sqrt(sum((value - ic_mean) ** 2 for value in ic_values) / len(ic_values)) if ic_values and ic_mean is not None else None
+    rank_ic_mean = sum(rank_ic_values) / len(rank_ic_values) if rank_ic_values else None
+    top_bottom_mean = sum(top_bottom_returns) / len(top_bottom_returns) if top_bottom_returns else None
+    return {
+        "schema_version": "factor_test_provider_small_pool_research_metrics.v1",
+        "status": "computed_research_only" if observations and ic_by_date else "pending_insufficient_sample",
+        "research_only": True,
+        "decision_usage": "no-buy/no-action/no-trade",
+        "sample_observation_count": len(observations),
+        "sample_rows": observations[:20],
+        "rolling_ic": ic_by_date[:20],
+        "ic_mean": round(ic_mean, 8) if ic_mean is not None else None,
+        "rank_ic_mean": round(rank_ic_mean, 8) if rank_ic_mean is not None else None,
+        "icir": round(ic_mean / ic_std, 8) if ic_mean is not None and ic_std not in (None, 0) else None,
+        "group_return_top_bottom_mean": round(top_bottom_mean, 8) if top_bottom_mean is not None else None,
+        "cost_model": {
+            "status": "computed_with_assumed_round_trip_cost" if top_bottom_mean is not None else "pending_insufficient_sample",
+            "assumed_round_trip_cost_bps": FACTOR_TEST_PROVIDER_SMALL_POOL_ASSUMED_ROUND_TRIP_COST_BPS,
+            "top_bottom_after_cost_mean": round(top_bottom_mean - FACTOR_TEST_PROVIDER_SMALL_POOL_ASSUMED_ROUND_TRIP_COST_BPS / 10000.0, 8)
+            if top_bottom_mean is not None
+            else None,
+        },
+        "max_drawdown": round(_factor_test_provider_small_pool_drawdown(top_bottom_returns), 8)
+        if _factor_test_provider_small_pool_drawdown(top_bottom_returns) is not None
+        else None,
+        "decay": {
+            "status": "pending_insufficient_multi_horizon_sample",
+            "reason": "fixture computes one-step forward returns only unless separate horizons are persisted",
+        },
+        "pit": {"status": "pending_provider_lineage_review", "production_complete": False},
+        "survivorship_bias": {"status": "pending_universe_membership_evidence", "production_complete": False},
+        "industry_neutralization": {"status": "pending_industry_classification_evidence", "production_complete": False},
+        "production_factor_test_validation_complete": False,
+    }
+
+
+def _factor_test_provider_small_pool_acceptance_fixture_run(
+    payload_safe: dict[str, Any],
+    receipt: dict[str, Any],
+    rows: list[dict[str, Any]],
+    now: str,
+    *,
+    acceptance_task_id: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    fixture = _dict(payload_safe.get("provider_fixture"))
+    rows_by_api = _dict(fixture.get("rows_by_api"))
+    symbols = [str(item) for item in payload_safe.get("symbols", []) if item][:FACTOR_TEST_PROVIDER_SMALL_POOL_SAMPLE_SIZE]
+    provider_ledgers: list[dict[str, Any]] = []
+    sample_rows: list[dict[str, Any]] = []
+    trade_cal = _dict(rows_by_api.get("trade_cal"))
+    trade_cal_rows = _list(trade_cal.get("rows"))
+    trade_cal_status = str(trade_cal.get("status") or ("success" if trade_cal_rows else "no_data"))
+    provider_ledgers.append(
+        {
+            "api": "trade_cal",
+            "symbol": "",
+            "request_params_safe": {"api": "trade_cal", "symbol_count": len(symbols)},
+            "row_count": len(trade_cal_rows),
+            "data_date": max([str(row.get("cal_date") or "") for row in trade_cal_rows] or [""]),
+            "local_fetched_at": now,
+            "call_status": trade_cal_status,
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    )
+    for row in trade_cal_rows:
+        sample_rows.append({"api": "trade_cal", **row})
+    for symbol in symbols:
+        for api in FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS:
+            api_rows_by_symbol = _dict(rows_by_api.get(api))
+            packet = _dict(api_rows_by_symbol.get(symbol))
+            api_rows = _list(packet.get("rows"))
+            status = str(packet.get("status") or ("success" if api_rows else "no_data"))
+            provider_ledgers.append(
+                {
+                    "api": api,
+                    "symbol": symbol,
+                    "request_params_safe": {"api": api, "ts_code": symbol},
+                    "row_count": len(api_rows),
+                    "data_date": max([str(row.get("trade_date") or "") for row in api_rows] or [""]),
+                    "local_fetched_at": now,
+                    "call_status": status,
+                    "error_message_safe": "",
+                    **_local_ledger_boundary(),
+                }
+            )
+            for row in api_rows:
+                sample_rows.append({"api": api, **row})
+    success_rows = [row for row in provider_ledgers if row.get("call_status") == "success" and int(row.get("row_count") or 0) > 0]
+    degraded_rows = [row for row in provider_ledgers if row.get("call_status") != "success"]
+    symbol_api_success: dict[str, set[str]] = {symbol: set() for symbol in symbols}
+    for row in success_rows:
+        symbol = str(row.get("symbol") or "")
+        api = str(row.get("api") or "")
+        if symbol in symbol_api_success and api in FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS:
+            symbol_api_success[symbol].add(api)
+    symbols_with_core_rows = [
+        symbol for symbol, apis in symbol_api_success.items() if set(FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS).issubset(apis)
+    ]
+    calendar_success = any(row.get("api") == "trade_cal" and row.get("call_status") == "success" for row in provider_ledgers)
+    sample_rows_collected = bool(calendar_success and len(symbols_with_core_rows) >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS)
+    research_metrics = _factor_test_provider_small_pool_research_metrics(sample_rows)
+    provider_rows = [
+        _factor_test_provider_small_pool_acceptance_row(
+            "provider_call_ledger_evidence",
+            "passed_safe_provider_call_ledger_visible" if provider_ledgers else "degraded_provider_call_ledger_missing",
+            bool(provider_ledgers),
+            f"fixture_provider_api_call_count={len(provider_ledgers)}; degraded_call_count={len(degraded_rows)}",
+            "Review safe call_ledger rows before treating the sample as usable.",
+            provider_execution_implemented=True,
+            provider_call_ledger_evidence_done=bool(provider_ledgers),
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "provider_sample_rows_collected",
+            "passed_provider_sample_rows_collected" if sample_rows_collected else "degraded_provider_sample_rows_missing",
+            sample_rows_collected,
+            f"symbols_with_core_rows={len(symbols_with_core_rows)}; sample_row_count={len(sample_rows)}",
+            "Add production promotion review only after sample rows and research metrics are visible.",
+            provider_execution_implemented=True,
+            provider_call_ledger_evidence_done=bool(provider_ledgers),
+            sample_rows_collected=sample_rows_collected,
+            provider_backed_small_pool_validation_done=sample_rows_collected,
+        ),
+        _factor_test_provider_small_pool_acceptance_row(
+            "research_metric_evidence",
+            "passed_research_metrics_visible" if research_metrics.get("status") == "computed_research_only" else "degraded_research_metrics_pending",
+            research_metrics.get("status") == "computed_research_only",
+            f"sample_observation_count={research_metrics.get('sample_observation_count')}; ic_mean={research_metrics.get('ic_mean')}; rank_ic_mean={research_metrics.get('rank_ic_mean')}",
+            "Keep PIT, survivorship, industry neutralization, and production promotion pending until separately proven.",
+            provider_execution_implemented=True,
+            provider_call_ledger_evidence_done=bool(provider_ledgers),
+            sample_rows_collected=sample_rows_collected,
+            provider_backed_small_pool_validation_done=sample_rows_collected,
+        ),
+    ]
+    status = (
+        "factor_test_provider_small_pool_acceptance_provider_sample_ready_research_metrics_pending_controls"
+        if sample_rows_collected
+        else "factor_test_provider_small_pool_acceptance_provider_degraded_sample_rows_missing"
+    )
+    receipt.update(
+        {
+            "status": status,
+            "scope": "factor_test_provider_small_pool_acceptance_fake_provider_sample_execution",
+            "ready_for_live_provider_execution": False,
+            "ready_for_provider_execution": False,
+            "allowed_next_step": "review_pit_survivorship_industry_controls_before_promotion",
+            "requires_separate_user_authorized_provider_execution": False,
+            "provider_task_created": True,
+            "provider_execution_implemented": True,
+            "provider_execution_mode": "fake_provider_fixture",
+            "provider_call_ledger_evidence_done": bool(provider_ledgers),
+            "sample_rows_collected": sample_rows_collected,
+            "provider_backed_small_pool_sample_done": sample_rows_collected,
+            "provider_backed_small_pool_validation_done": sample_rows_collected,
+            "production_factor_test_validation_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "provider_task_ids": [acceptance_task_id],
+            "provider_api_call_count": len(provider_ledgers),
+            "provider_success_call_count": len(success_rows),
+            "provider_degraded_call_count": len(degraded_rows),
+            "provider_total_row_count": sum(int(row.get("row_count") or 0) for row in provider_ledgers),
+            "sample_symbol_count": len(symbols),
+            "symbols_with_core_rows": symbols_with_core_rows,
+            "symbols_with_core_row_count": len(symbols_with_core_rows),
+            "provider_sample_rows": sample_rows[:50],
+            "research_metrics": research_metrics,
+            "missing_evidence": [
+                "PIT/lookahead provider lineage review",
+                "survivorship/universe membership evidence",
+                "industry neutralization evidence",
+                "manual Factor Test production promotion review",
+            ],
+            "blocking_criterion_count": len([row for row in rows + provider_rows if row["blocks_provider_backed_acceptance"]]),
+            "blocking_criteria": [
+                row["criterion"] for row in rows + provider_rows if row["blocks_provider_backed_acceptance"]
+            ],
+            "row_count": len(rows) + len(provider_rows),
+            "rows": rows + provider_rows,
+            "call_ledger": list(receipt.get("call_ledger") or []) + provider_ledgers,
+        }
+    )
+    return receipt, rows + provider_rows
+
+
 def _factor_test_provider_small_pool_acceptance_provider_run(
     payload_safe: dict[str, Any],
     receipt: dict[str, Any],
@@ -6185,6 +6586,14 @@ def _factor_test_provider_small_pool_acceptance_provider_run(
     *,
     acceptance_task_id: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if _dict(payload_safe.get("provider_fixture")).get("approved") is True:
+        return _factor_test_provider_small_pool_acceptance_fixture_run(
+            payload_safe,
+            receipt,
+            rows,
+            now,
+            acceptance_task_id=acceptance_task_id,
+        )
     scope_hash_short = str(receipt.get("acceptance_scope_hash_short") or "")
     symbols = [str(item) for item in payload_safe.get("symbols", []) if item][:FACTOR_TEST_PROVIDER_SMALL_POOL_SAMPLE_SIZE]
     start_date = str(payload_safe.get("start_date") or "")
@@ -8917,6 +9326,8 @@ def run_factor_test_provider_small_pool_acceptance_task(payload: Any = None) -> 
         warning = (
             "Factor Test provider 小股票池已记录真实 Tushare 样本；仍不是生产 Factor Test 完成。"
             if receipt.get("tushare_called") is True
+            else "Factor Test provider 小股票池已记录 fake-provider focused 样本与 research-only 指标；仍不是生产 Factor Test 完成。"
+            if receipt.get("provider_execution_mode") == "fake_provider_fixture"
             else "Factor Test provider 小股票池 acceptance gate 已记录：本地授权闸门，不调用 provider，不代表生产验收完成。"
         )
         existing_warnings = hub.get("warnings") if isinstance(hub.get("warnings"), list) else []
