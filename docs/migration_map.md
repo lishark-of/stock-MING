@@ -4,7 +4,31 @@
 [`docs/command_center_3_long_term_goals.md`](command_center_3_long_term_goals.md)。
 本文件只描述现有模块到 3.0 API/UI 的迁移映射，不把 scaffold / preflight / mock / sanitizer 误写为 production complete。
 
-## Current Usable-Path Scope
+## v1.0 Local RC Current Baseline
+
+Current snapshot date: 2026-07-13. The sealed functional/package release-candidate base is
+`7562dd2acf2f4ab161448dba4a5a97b6e136ab0e`; later snapshot/documentation-only commits do
+not change that packaged App binary. The evidence-driven closeout packet reports
+v0.1-v0.7 local version evidence `7/7`, local LTG direct-evidence accounting `14/14`, and
+production strict closeout `1/14`. Only LTG-12 closes because its positive scope is the
+research-client isolation invariant; QMT external connectivity, broker sessions, order
+routes, and real trading remain absent and unapproved.
+
+The v1.0 local RC passed the final local full suite, smoke/safety, desktop build, browser
+review, Tauri build, and online/offline packaged-runtime checks. This does not make the
+production package complete: the package remains ad-hoc signed and lacks Developer ID,
+notarization, matching remote CI, and release review. Provider/model/real-worker promotion
+also remains separately gated. `command_center_3_v1_local_rc` and
+`scripts/ltg_progress_snapshot.py` are the current closeout authorities; the older
+`long_term_goal_summary` and the historical checkpoints below remain compatibility and
+planning context only.
+
+## Historical Usable-Path Scope (pre-v1.0)
+
+The following usable-path and rebase sections describe how the project reached v1.0.
+When their fixed `0/14`, old ahead count, package-pending, browser-pending, or local-receipt
+wording conflicts with the current baseline above, treat it as historical rather than as
+the current execution state.
 
 当前执行目标是 `Command Center 3.0 使用者可用化最短路径`，不是 `14 LTG strict closeout`。14 个 LTG 继续作为长期路线图和验收背板保留，但日常切片优先让普通用户能可靠打开 3.0、确认股票代码、看到 Tushare-first / cache / ledger / packet / pending 状态，并把工程审计噪音下沉。任何 P0-P5 进展都不能被报告为 14 个 LTG 全部完成，也不能绕过 Legacy Bug / UX Audit；当前 API/UI 的 P0-P6 checkpoint 只表示 P0-P5 可用化路径加上 P6 strict-closeout 回归门已可见，同样不能关闭任何 LTG。
 
@@ -37,7 +61,7 @@
 
 三个中目标的查收 checkpoint 由 `usable_path_medium_goal_checkpoint_summary` 和 `usable_path_medium_goal_checkpoint_rows` 输出：MG-01 使用者可用化基线、MG-02 Tushare-first 候选雷达粗筛/细筛切片、MG-03 生产硬化与 LTG direct-evidence 工单准备都可标为短期中目标完成；该 checkpoint 的边界固定为 `not_14_ltg_closeout=true`、`strict_closeout=0/14`、GET/cache/render 不创建任务、不外联、不交易、不改 strategy action。后续 active plan 不再重复推进这些短期可用化项，也不再把 LTG-01/LTG-02/LTG-03 已完成的本地 dry-run / execution-request / promotion-review 票据链、或 LTG-13 已完成的 searched-symbol acceptance dry-run / execution-request / provider-parity dry-run 票据链当成下一轮新目标；它们只作为历史 checkpoint、回归边界和未来 provider/model/remote 授权前置证据。
 
-### Active Remaining Goal Plan
+### Historical Active Remaining Goal Plan (2026-06-30)
 
 当前执行模式改为 `Remaining LTG Unfinished-Only Closeout Queue with Remote Review Split` / `剩余 LTG 未完成项收口队列 + 远端查收分离模式`。已完成的使用者可用化中目标、首页降噪、本地 FastAPI 接线、候选雷达粗筛/细筛、生产硬化工单准备、runtime-mode 文档口径、本地 receipt 链和 remote-review split 本地提交不再进入 active plan。它们只作为历史 checkpoint 和后续回归边界保留。
 
@@ -236,7 +260,7 @@ LTG-13 的 no-feature-loss 只表示有用信号、候选分组、扫描范围�
 
 迁移状态页现在把 `ltg_next_acceptance_action_rows` 拆成 observed/missing 本地回执摘要、local step rows、`next_local_step_preview_rows` 和 `future_handoff_preview_rows` 展示，帮助 P0-P10 / 14 个 LTG 验收按下一条安全本地/显式执行路径推进；页面按钮只允许执行白名单内的本地 dry-run / execution-request / promotion-review / scope-ticket / artifact-review 路由，并会在缺前置本地回执、scope hash、review hash 或 execution-request task id 时禁用明显会 blocked 的本地提交。LTG-02 target-sample execution request 可从本地 `command_center_tushare_refresh_packet.provider_target_sample_execution_recipe` 预绑定短 scope hash、target groups 和 selected APIs，以生成干净的本地 execution-request ticket；LTG-04 Factor universe worker-batch 可从迁移队列生成本地 dry-run scope ticket、execution-request ticket 与 local research receipt，但不启动 worker、不 ping Redis/Celery、不读 storage、不计算 full-pool rank/zscore/neutralization、不证明生产全市场研究；LTG-13 Candidate Radar promotion dry-run 可从本地 `command_center_3_candidate_radar_cache.candidate_radar_production_replacement_review_receipt` 预绑定 review scope hash，以避免按钮提交缺 review hash 的 blocked 票据；LTG-05 Storage physical execution request 和 LTG-06 Worker runtime QA receipts 也会从本地 SQLite packet 只读回放，展示 storage/worker 已有 scope tickets、runtime QA dry-run 和仍需后续真实 physical/worker execution 的 handoff 边界；LTG-07 DeepSeek provider benchmark scope ticket 只绑定本地 benchmark scope、样本数、response_format 和 retry 计划，不调用模型；LTG-08 next-session browser QA review 只读取本地 ignored QA 报告，不打开浏览器、不写 artifacts；LTG-09 Tauri package readiness 和 durable evidence recipe 只从 `GET /api/desktop/preflight-cache` 回放，不运行 npm/cargo/Tauri、不打开 packaged app、不证明生产包；LTG-10 Streamlit retirement readiness 和 durable evidence recipe 只从 `GET /api/legacy/cache` 回放，不打开 Streamlit、不运行旧工具、不删除 fallback；LTG-11 release gate row 只读回放本地 gate/CI mirror/push-readiness receipts，不运行 push gate、不调用 GitHub API、不 push、不证明远端 CI 已绿；LTG-12 trade-isolation row 只读回放 research-client release receipt 和 current-slice no-broker/no-order/no-action recheck，不连接券商、不创建订单端点、不批准 paper trading、不把 recheck 当成真实交易批准；LTG-14 motion browser QA review / promotion dry-run / durable evidence recipe 只读本地 artifact 或生成按钮门控本地收据，不打开浏览器、不调用 GitHub API、不推广 artifact、不证明生产动效。本地 execution-request receipt ready 且具备 SQLite durable visibility 后，future handoff preview 只读展示未来 provider/worker/storage route、target task type、target acceptance mode、API/target/date/source task 摘要，仍需另一次用户明确批准的 provider/worker/storage POST task；memory-only receipt 只算临时可见，不作为跨进程验收证据。这仍不创建 provider/worker/storage/model/browser/package/legacy-retirement/CI/trading execution task、不调用 Tushare/DeepSeek、不证明 target-sample acceptance、factor-universe production research、radar production replacement、storage productionization、worker productionization、DeepSeek production explanation、ECharts production replacement、Tauri production package、Streamlit retirement、release gate complete、real-trading integration 或 production motion。所有视图和按钮都不调用 provider/model/GitHub、不执行交易，也不能关闭任何 LTG。
 
-本地推进加速入口是 `scripts/ltg_progress_snapshot.py`：它直接读取 `build_migration_status()`，输出 14 个 LTG 的严格关闭数、完成区间、evidence spine / work-order 覆盖、当前远端查收 blocker 摘要、下一步队列、clean local button readiness、durable handoff readiness 和 cache-only 安全旗标。它不启动服务、不创建任务、不调用 Tushare/DeepSeek/GitHub、不打开浏览器、不执行交易、不读 secret，也不能关闭 LTG；后续开发应先用它定位下一条小切片，再进入对应服务、前端或测试文件。
+本地推进加速入口是 `scripts/ltg_progress_snapshot.py`：它直接读取 `build_migration_status()`，先校验并采用 `command_center_3_v1_local_rc` 的动态关闭结论，再把旧 `long_term_goal_summary` 作为兼容历史单独保留。当前输出必须是 local version evidence `7/7`、production strict `1/14`、closed LTG `LTG-12`，并继续展示 evidence spine / work-order、远端查收 blocker、未关闭队列、local button/handoff readiness 和 cache-only 安全旗标。已由 v1 evidence closeout 封板的队列必须标为 sealed，不得再次当作下一步。本脚本不启动服务、不创建任务、不调用 Tushare/DeepSeek/GitHub、不打开浏览器、不执行交易、不读 secret；后续开发应先用它定位真正未关闭的证据，再进入对应服务、前端或测试文件。
 
 队列状态现在区分 `local_queue_required=true` 的本地票据链和 durable evidence recipe 这类生产缺口清单。以 LTG-04 为例，worker-batch dry-run scope ticket、execution recipe、execution-request ticket 与 local research receipt 都 ready 后，`next_local_step` 才进入未来 worker runtime / storage / metric / promotion evidence；`future_handoff_preview_rows` 只读显示可提交的 worker route，`universe_durable_evidence_recipe` 仍继续展示生产 blocker，但不再把本地链路误判为 blocked。
 

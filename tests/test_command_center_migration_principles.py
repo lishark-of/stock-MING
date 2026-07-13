@@ -681,7 +681,9 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
 
-        self.assertIn("## Current Usable-Path Scope", text)
+        self.assertIn("## v1.0 Local RC Current Baseline", text)
+        self.assertIn("## Historical Usable-Path Scope (pre-v1.0)", text)
+        self.assertIn("production strict closeout `1/14`", text)
         self.assertIn("Command Center 3.0 使用者可用化最短路径", text)
         self.assertIn("不是 `14 LTG strict closeout`", text)
         self.assertIn("任何 P0-P5 进展都不能被报告为 14 个 LTG 全部完成", text)

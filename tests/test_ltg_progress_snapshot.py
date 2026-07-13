@@ -22,6 +22,97 @@ def _load_snapshot_module():
 
 
 class LtgProgressSnapshotTests(unittest.TestCase):
+    def test_v1_evidence_closeout_overrides_legacy_compatibility_count(self):
+        module = _load_snapshot_module()
+        closure_rows = []
+        for index in range(1, 15):
+            goal_id = f"LTG-{index:02d}"
+            closed = goal_id == "LTG-12"
+            closure_rows.append(
+                {
+                    "id": goal_id,
+                    "local_direct_evidence_ready": True,
+                    "production_complete": closed,
+                    "can_close": closed,
+                    "missing_production_evidence": [] if closed else ["external_evidence_pending"],
+                    "closeout_decision": (
+                        "strict_closeout_allowed" if closed else "strict_closeout_blocked"
+                    ),
+                }
+            )
+        fake_status = {
+            "packet_key": "fake_packet",
+            "mode": "cache_only",
+            "loaded_at": "2026-07-13T12:00:00Z",
+            "long_term_goal_summary": {
+                "strict_closeout": "0/14",
+                "strict_closeout_done_count": 0,
+                "strict_closeout_total_count": 14,
+                "strict_closeout_remaining_count": 14,
+            },
+            "command_center_3_v1_local_rc": {
+                "schema_version": "command_center_3_v1_local_rc.v1",
+                "status": "v1_local_evidence_ready_production_closeout_pending",
+                "local_direct_evidence_ready": True,
+                "local_version_ready_count": 7,
+                "local_version_total_count": 7,
+                "production_strict_closeout_complete": False,
+                "strict_closeout": "1/14",
+                "strict_closeout_done_count": 1,
+                "strict_closeout_total_count": 14,
+                "strict_closeout_remaining_count": 13,
+                "ltg_closure_rows": closure_rows,
+                "cache_only": True,
+                "read_only": True,
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+            "api_policy": {
+                "cache_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+            "long_term_goal_rows": [
+                {"id": f"LTG-{index:02d}", "goal": f"goal-{index}", "production_complete": False}
+                for index in range(1, 15)
+            ],
+            "ltg_acceptance_runway_rows": [],
+            "ltg_next_acceptance_action_rows": [
+                {"queue_id": "ltg12_queue", "ltg_ids": ["LTG-12"]}
+            ],
+            "ltg_strict_closeout_evidence_spine_rows": [],
+            "ltg_strict_closeout_evidence_spine_summary": {},
+        }
+
+        with patch.object(module.migration_status_service, "build_migration_status", return_value=fake_status):
+            snapshot = module.build_snapshot()
+
+        self.assertEqual(snapshot["closeout_source"], "v1_evidence_closeout")
+        self.assertEqual(snapshot["strict_closeout"], "1/14")
+        self.assertEqual(snapshot["strict_closeout_done_count"], 1)
+        self.assertEqual(snapshot["strict_closeout_remaining_count"], 13)
+        self.assertEqual(snapshot["legacy_compatibility_strict_closeout"], "0/14")
+        self.assertTrue(snapshot["v1_local_rc"]["evidence_closeout_valid"])
+        self.assertEqual(snapshot["v1_local_rc"]["closed_ltg_ids"], ["LTG-12"])
+        goals = {row["id"]: row for row in snapshot["goal_rows"]}
+        self.assertTrue(goals["LTG-12"]["production_complete"])
+        self.assertTrue(goals["LTG-12"]["production_can_close"])
+        self.assertFalse(goals["LTG-11"]["production_complete"])
+        self.assertTrue(snapshot["queue_rows"][0]["all_linked_ltgs_closed"])
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            module._print_text(snapshot)
+        text = buffer.getvalue()
+        self.assertIn("strict_closeout=1/14 source=v1_evidence_closeout", text)
+        self.assertIn("v1 local RC: local_versions=7/7 strict=1/14 closed=LTG-12", text)
+        self.assertIn("sealed_by_v1_closeout", text)
+
     def test_release_gate_remote_review_split_is_visible_in_snapshot_text(self):
         module = _load_snapshot_module()
         fake_status = {

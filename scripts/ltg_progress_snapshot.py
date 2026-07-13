@@ -51,6 +51,24 @@ def _as_int(value: Any) -> int:
         return 0
 
 
+def _valid_v1_closeout(packet: dict[str, Any]) -> bool:
+    rows = [row for row in _list(packet.get("ltg_closure_rows")) if isinstance(row, dict)]
+    ids = [str(row.get("id") or "") for row in rows]
+    done_count = sum(row.get("can_close") is True for row in rows)
+    total_count = len(rows)
+    return bool(
+        packet.get("schema_version") == "command_center_3_v1_local_rc.v1"
+        and total_count == 14
+        and ids == [f"LTG-{index:02d}" for index in range(1, 15)]
+        and len(set(ids)) == 14
+        and _as_int(packet.get("strict_closeout_done_count")) == done_count
+        and _as_int(packet.get("strict_closeout_total_count")) == total_count
+        and _as_int(packet.get("strict_closeout_remaining_count")) == total_count - done_count
+        and packet.get("strict_closeout") == f"{done_count}/{total_count}"
+        and packet.get("production_strict_closeout_complete") is (done_count == total_count)
+    )
+
+
 def _compact_handoff_rows(rows: list[Any]) -> list[dict[str, Any]]:
     compact: list[dict[str, Any]] = []
     for row in rows:
@@ -153,6 +171,17 @@ def _compact_handoff_rows(rows: list[Any]) -> list[dict[str, Any]]:
 
 def build_snapshot() -> dict[str, Any]:
     status = migration_status_service.build_migration_status()
+    legacy_summary = dict(status.get("long_term_goal_summary") or {})
+    v1_packet = dict(status.get("command_center_3_v1_local_rc") or {})
+    v1_closeout_valid = _valid_v1_closeout(v1_packet)
+    v1_closure_rows = (
+        [row for row in _list(v1_packet.get("ltg_closure_rows")) if isinstance(row, dict)]
+        if v1_closeout_valid
+        else []
+    )
+    v1_closure_by_id = _row_by_id(v1_closure_rows)
+    closeout_summary = v1_packet if v1_closeout_valid else legacy_summary
+    closeout_source = "v1_evidence_closeout" if v1_closeout_valid else "legacy_compatibility_summary"
     goal_rows = _list(status.get("long_term_goal_rows"))
     runway_rows = _list(status.get("ltg_acceptance_runway_rows"))
     action_rows = _list(status.get("ltg_next_acceptance_action_rows"))
@@ -171,6 +200,9 @@ def build_snapshot() -> dict[str, Any]:
         ltg_ids = [str(item) for item in _list(action.get("ltg_ids"))]
         linked = [runway_by_id.get(item, {}) for item in ltg_ids]
         linked_goals = [goal_by_id.get(item, {}) for item in ltg_ids]
+        linked_closed_ltg_ids = [
+            item for item in ltg_ids if v1_closure_by_id.get(item, {}).get("can_close") is True
+        ]
         ready_for_clean_receipt = action.get("next_local_step_ready_for_clean_receipt") is True
         future_handoff_ready = action.get("future_handoff_ready_from_local_receipt") is True
         if ready_for_clean_receipt:
@@ -192,6 +224,8 @@ def build_snapshot() -> dict[str, Any]:
             {
                 "queue_id": action.get("queue_id"),
                 "ltg_ids": ltg_ids,
+                "linked_closed_ltg_ids": linked_closed_ltg_ids,
+                "all_linked_ltgs_closed": bool(ltg_ids) and len(linked_closed_ltg_ids) == len(ltg_ids),
                 "priority": action.get("priority") or " / ".join(
                     str(row.get("priority") or "") for row in linked if row
                 ),
@@ -237,7 +271,30 @@ def build_snapshot() -> dict[str, Any]:
             "goal": row.get("goal"),
             "bucket": row.get("completion_bucket"),
             "completion_estimate": row.get("completion_estimate"),
-            "production_complete": row.get("production_complete") is True,
+            "production_complete": (
+                v1_closure_by_id.get(str(row.get("id") or ""), {}).get("production_complete")
+                is True
+                if v1_closeout_valid
+                else row.get("production_complete") is True
+            ),
+            "production_can_close": (
+                v1_closure_by_id.get(str(row.get("id") or ""), {}).get("can_close") is True
+            ),
+            "local_direct_evidence_ready": (
+                v1_closure_by_id.get(str(row.get("id") or ""), {}).get(
+                    "local_direct_evidence_ready"
+                )
+                is True
+            ),
+            "missing_production_evidence": _list(
+                v1_closure_by_id.get(str(row.get("id") or ""), {}).get(
+                    "missing_production_evidence"
+                )
+            ),
+            "closeout_decision": v1_closure_by_id.get(
+                str(row.get("id") or ""), {}
+            ).get("closeout_decision")
+            or "legacy_closeout_pending",
             "can_close_from_local_contracts": row.get("can_close_from_local_contracts") is True,
             "stage_scope_manifest_status": row.get("stage_scope_manifest_status"),
             "observed_stage_scope_manifest_status": row.get("observed_stage_scope_manifest_status"),
@@ -279,7 +336,6 @@ def build_snapshot() -> dict[str, Any]:
         if isinstance(row, dict)
     ]
 
-    summary = dict(status.get("long_term_goal_summary") or {})
     safety = dict(status.get("api_policy") or {})
     raw_action_by_queue_id = {
         str(row.get("queue_id") or ""): row for row in action_rows if isinstance(row, dict)
@@ -323,10 +379,37 @@ def build_snapshot() -> dict[str, Any]:
         "source_packet_key": status.get("packet_key"),
         "mode": status.get("mode"),
         "loaded_at": status.get("loaded_at"),
-        "strict_closeout": summary.get("strict_closeout"),
-        "strict_closeout_done_count": summary.get("strict_closeout_done_count"),
-        "strict_closeout_total_count": summary.get("strict_closeout_total_count"),
-        "strict_closeout_remaining_count": summary.get("strict_closeout_remaining_count"),
+        "closeout_source": closeout_source,
+        "strict_closeout": closeout_summary.get("strict_closeout"),
+        "strict_closeout_done_count": closeout_summary.get("strict_closeout_done_count"),
+        "strict_closeout_total_count": closeout_summary.get("strict_closeout_total_count"),
+        "strict_closeout_remaining_count": closeout_summary.get("strict_closeout_remaining_count"),
+        "legacy_compatibility_strict_closeout": legacy_summary.get("strict_closeout"),
+        "v1_local_rc": {
+            "schema_version": v1_packet.get("schema_version") or "",
+            "status": v1_packet.get("status") or "",
+            "evidence_closeout_valid": v1_closeout_valid,
+            "local_direct_evidence_ready": v1_packet.get("local_direct_evidence_ready") is True,
+            "local_version_ready_count": _as_int(v1_packet.get("local_version_ready_count")),
+            "local_version_total_count": _as_int(v1_packet.get("local_version_total_count")),
+            "production_strict_closeout_complete": (
+                v1_packet.get("production_strict_closeout_complete") is True
+            ),
+            "strict_closeout": v1_packet.get("strict_closeout") or "",
+            "strict_closeout_done_count": _as_int(v1_packet.get("strict_closeout_done_count")),
+            "strict_closeout_total_count": _as_int(v1_packet.get("strict_closeout_total_count")),
+            "strict_closeout_remaining_count": _as_int(
+                v1_packet.get("strict_closeout_remaining_count")
+            ),
+            "closed_ltg_ids": [
+                str(row.get("id") or "") for row in v1_closure_rows if row.get("can_close") is True
+            ],
+            "cache_only": v1_packet.get("cache_only") is True,
+            "read_only": v1_packet.get("read_only") is True,
+            "external_calls_triggered": v1_packet.get("external_calls_triggered") is True,
+            "does_not_execute_trades": v1_packet.get("does_not_execute_trades") is True,
+            "contains_secret": v1_packet.get("contains_secret") is True,
+        },
         "ready_local_button_count": ready_button_count,
         "durable_handoff_ready_count": durable_handoff_ready_count,
         "evidence_spine": {
@@ -953,9 +1036,20 @@ def _print_text(snapshot: dict[str, Any]) -> None:
     print(
         "LTG snapshot:"
         f" strict_closeout={snapshot['strict_closeout']}"
+        f" source={snapshot['closeout_source']}"
         f" ready_local_buttons={snapshot['ready_local_button_count']}"
         f" durable_handoffs={snapshot['durable_handoff_ready_count']}"
     )
+    v1_local_rc = snapshot["v1_local_rc"]
+    if v1_local_rc["evidence_closeout_valid"]:
+        print(
+            "v1 local RC:"
+            f" local_versions={v1_local_rc['local_version_ready_count']}/"
+            f"{v1_local_rc['local_version_total_count']}"
+            f" strict={v1_local_rc['strict_closeout']}"
+            f" closed={','.join(v1_local_rc['closed_ltg_ids']) or 'none'}"
+            f" production_complete={v1_local_rc['production_strict_closeout_complete']}"
+        )
     focus_ltg_ids = snapshot.get("focus_ltg_ids") or []
     if focus_ltg_ids:
         print(f"Focus: {','.join(str(item) for item in focus_ltg_ids)}")
@@ -1069,6 +1163,9 @@ def _print_text(snapshot: dict[str, Any]) -> None:
     print()
     print("Next local queue:")
     for row in snapshot["queue_rows"]:
+        if row.get("all_linked_ltgs_closed") is True:
+            print(f"- {row['queue_id']} [{','.join(row['ltg_ids'])}] sealed_by_v1_closeout")
+            continue
         ready = "ready" if row["next_local_step_ready_for_clean_receipt"] else "blocked"
         reason = f" ({row['disabled_reason']})" if row["disabled_reason"] else ""
         ltg_ids = ",".join(row["ltg_ids"])

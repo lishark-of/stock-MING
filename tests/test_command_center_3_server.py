@@ -17220,10 +17220,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         snapshot = json.loads(result.stdout)
         self.assertEqual(snapshot["schema_version"], "ltg_progress_snapshot.v1")
-        self.assertEqual(snapshot["strict_closeout"], "0/14")
-        self.assertEqual(snapshot["strict_closeout_done_count"], 0)
+        self.assertEqual(snapshot["closeout_source"], "v1_evidence_closeout")
+        self.assertEqual(snapshot["strict_closeout"], "1/14")
+        self.assertEqual(snapshot["strict_closeout_done_count"], 1)
         self.assertEqual(snapshot["strict_closeout_total_count"], 14)
-        self.assertEqual(snapshot["strict_closeout_remaining_count"], 14)
+        self.assertEqual(snapshot["strict_closeout_remaining_count"], 13)
+        self.assertEqual(snapshot["legacy_compatibility_strict_closeout"], "0/14")
+        self.assertTrue(snapshot["v1_local_rc"]["evidence_closeout_valid"])
+        self.assertTrue(snapshot["v1_local_rc"]["local_direct_evidence_ready"])
+        self.assertEqual(snapshot["v1_local_rc"]["local_version_ready_count"], 7)
+        self.assertEqual(snapshot["v1_local_rc"]["local_version_total_count"], 7)
+        self.assertEqual(snapshot["v1_local_rc"]["closed_ltg_ids"], ["LTG-12"])
         self.assertEqual(len(snapshot["goal_rows"]), 14)
         self.assertEqual(len(snapshot["queue_rows"]), 14)
         self.assertEqual(snapshot["evidence_spine"]["spine_visible_count"], 14)
@@ -17252,7 +17259,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(snapshot["safety"]["github_called"])
         self.assertTrue(snapshot["safety"]["does_not_execute_trades"])
         self.assertFalse(snapshot["safety"]["contains_secret"])
-        self.assertTrue(all(row["production_complete"] is False for row in snapshot["goal_rows"]))
+        self.assertEqual(
+            [row["id"] for row in snapshot["goal_rows"] if row["production_complete"]],
+            ["LTG-12"],
+        )
         self.assertTrue(all(row["can_close_from_local_contracts"] is False for row in snapshot["goal_rows"]))
         goals = {row["id"]: row for row in snapshot["goal_rows"]}
         self.assertGreaterEqual(goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 2)
