@@ -336,6 +336,44 @@ def _read_model_nonce_receipt(db_path: Path, packet: Any) -> Any:
     return _read_packets(db_path, (key,)).get(key)
 
 
+def _read_model_execution_event(db_path: Path, packet: Any) -> Any:
+    from . import deepseek_benchmark_service as benchmark
+
+    source = packet if isinstance(packet, Mapping) else {}
+    task_id = str(source.get("execution_task_id") or "")
+    key = str(source.get("execution_event_key") or "")
+    expected_key = (
+        f"{benchmark.EXECUTION_EVENT_PREFIX}{hashlib.sha256(task_id.encode('utf-8')).hexdigest()}"
+        if task_id
+        else ""
+    )
+    if not task_id or key != expected_key:
+        return None
+    return _read_packets(db_path, (key,)).get(key)
+
+
+def _read_model_task_status(db_path: Path, packet: Any) -> Any:
+    source = packet if isinstance(packet, Mapping) else {}
+    task_id = str(source.get("execution_task_id") or "")
+    if not db_path.is_file() or not task_id:
+        return None
+    connection: sqlite3.Connection | None = None
+    try:
+        uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
+        connection = sqlite3.connect(uri, uri=True)
+        row = connection.execute(
+            "SELECT payload_json FROM task_status WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        payload = json.loads(row[0]) if row else None
+        return payload if isinstance(payload, Mapping) else None
+    except Exception:
+        return None
+    finally:
+        if connection is not None:
+            connection.close()
+
+
 def _read_task_history(db_path: Path) -> list[dict[str, Any]]:
     if not db_path.is_file():
         return []
@@ -635,11 +673,18 @@ def _legacy_full_market_packet_internally_consistent(packet: Any) -> bool:
     )
 
 
-def _governed_model_runtime_ready(packet: Any, nonce_receipt: Any = None) -> bool:
+def _governed_model_runtime_ready(
+    packet: Any,
+    nonce_receipt: Any = None,
+    execution_event: Any = None,
+    task_status: Any = None,
+) -> bool:
     from . import deepseek_benchmark_service as benchmark
 
     source = packet if isinstance(packet, Mapping) else {}
     consumed = nonce_receipt if isinstance(nonce_receipt, Mapping) else {}
+    event = execution_event if isinstance(execution_event, Mapping) else {}
+    task = task_status if isinstance(task_status, Mapping) else {}
     try:
         model = str(source.get("model_used") or "")
         expected_contract = benchmark.build_benchmark_scope_contract(model)
@@ -760,6 +805,107 @@ def _governed_model_runtime_ready(packet: Any, nonce_receipt: Any = None) -> boo
             and consumed.get("contains_secret") is False
             and "authorization_nonce" not in consumed
         )
+        task_projection = {
+            field: task.get(field)
+            for field in (
+                "task_id",
+                "task_type",
+                "status",
+                "progress",
+                "current_step",
+                "output_packet_key",
+                "input_hash",
+                "idempotency_key",
+                "started_at",
+                "finished_at",
+            )
+        }
+        task_success_digest = _canonical_digest(task_projection)
+        nonce_receipt_digest = _canonical_digest(dict(consumed)) if consumed else ""
+        request_id_set_digest = hashlib.sha256(
+            json.dumps(
+                sorted(accepted_request_ids),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        scope_binding_digest = _canonical_digest(
+            {
+                "benchmark_scope_hash": source.get("benchmark_scope_hash"),
+                "approved_scope_contract_hash": source.get("approved_scope_contract_hash"),
+                "authorization_nonce_digest": source.get("authorization_nonce_digest"),
+            }
+        )
+        benchmark_contract_digest = _canonical_digest(
+            {
+                "fixed_sample_ids_hash": benchmark.FIXED_SAMPLE_IDS_HASH,
+                "fixed_sample_set_hash": benchmark.FIXED_SCOPE_HASH,
+                "output_schema_hash": benchmark.OUTPUT_SCHEMA_HASH,
+                "prompt_version": benchmark.PROMPT_VERSION,
+                "system_prompt_sha256": benchmark.SYSTEM_PROMPT_SHA256,
+                "ledger_contract_hash": benchmark.LEDGER_CONTRACT_HASH,
+            }
+        )
+        sdk_origin_digest = _canonical_digest(
+            {
+                "transport_provenance": "sdk_managed_allowlisted_https",
+                "base_url": benchmark.DEEPSEEK_BASE_URL,
+                "sdk_max_retries": benchmark.SDK_MAX_RETRIES,
+                "response_format": benchmark.RESPONSE_FORMAT,
+                "request_temperature": benchmark.MODEL_TEMPERATURE,
+            }
+        )
+        result_projection = dict(source)
+        for field in (
+            "packet_key",
+            "result_evidence_digest",
+            "execution_event_key",
+            "execution_event_digest",
+        ):
+            result_projection.pop(field, None)
+        result_evidence_digest = _canonical_digest(result_projection)
+        expected_event_key = (
+            f"{benchmark.EXECUTION_EVENT_PREFIX}"
+            f"{hashlib.sha256(str(task.get('task_id') or '').encode('utf-8')).hexdigest()}"
+        )
+        four_way_evidence_ready = bool(
+            task.get("task_id") == source.get("execution_task_id")
+            and task.get("task_id") == source.get("nonce_consumption_task_id")
+            and task.get("task_type") == benchmark.TASK_TYPE
+            and task.get("status") == "success"
+            and float(task.get("progress") or 0.0) == 1.0
+            and task.get("current_step") == "deepseek_provider_benchmark_quality_safety_passed"
+            and task.get("output_packet_key") == benchmark.CURRENT_PACKET_KEY
+            and source.get("task_success_digest") == task_success_digest
+            and source.get("nonce_consumption_receipt_digest") == nonce_receipt_digest
+            and source.get("provider_request_id_set_digest") == request_id_set_digest
+            and source.get("scope_binding_digest") == scope_binding_digest
+            and source.get("benchmark_contract_digest") == benchmark_contract_digest
+            and source.get("sdk_origin_digest") == sdk_origin_digest
+            and source.get("result_evidence_digest") == result_evidence_digest
+            and source.get("execution_event_key") == expected_event_key
+            and source.get("execution_event_digest") == _canonical_digest(dict(event))
+            and event.get("packet_key") == expected_event_key
+            and event.get("schema_version") == benchmark.EXECUTION_EVENT_SCHEMA_VERSION
+            and event.get("status") == "deepseek_provider_benchmark_execution_succeeded"
+            and event.get("task_id") == task.get("task_id")
+            and event.get("task_type") == benchmark.TASK_TYPE
+            and event.get("task_status") == "success"
+            and event.get("task_success_digest") == task_success_digest
+            and event.get("nonce_consumption_receipt_digest") == nonce_receipt_digest
+            and event.get("scope_binding_digest") == scope_binding_digest
+            and event.get("benchmark_contract_digest") == benchmark_contract_digest
+            and event.get("result_evidence_digest") == result_evidence_digest
+            and event.get("provider_request_id_set_digest") == request_id_set_digest
+            and event.get("sdk_origin_digest") == sdk_origin_digest
+            and event.get("raw_nonce_stored") is False
+            and event.get("raw_prompt_stored") is False
+            and event.get("raw_output_stored") is False
+            and event.get("contains_secret") is False
+            and event.get("does_not_execute_trades") is True
+            and "authorization_nonce" not in event
+        )
         return bool(
             source.get("schema_version") == "factor_deepseek_provider_benchmark_result.v1"
             and source.get("status") == "deepseek_provider_benchmark_passed"
@@ -792,6 +938,7 @@ def _governed_model_runtime_ready(packet: Any, nonce_receipt: Any = None) -> boo
             and source.get("authorization_nonce_consumed") is True
             and len(str(source.get("authorization_nonce_digest") or "")) == 64
             and nonce_receipt_ready
+            and four_way_evidence_ready
             and "authorization_nonce" not in source
             and source.get("fixed_sample_ids") == sample_ids
             and source.get("fixed_sample_ids_hash") == benchmark.FIXED_SAMPLE_IDS_HASH
@@ -979,12 +1126,25 @@ def _build_version_rows(
     root_db = evidence_root / "meta.sqlite"
     model_current_nonce_receipt = _read_model_nonce_receipt(root_db, model_current)
     model_last_good_nonce_receipt = _read_model_nonce_receipt(root_db, model_last_good)
-    if _governed_model_runtime_ready(model_current, model_current_nonce_receipt):
+    model_current_execution_event = _read_model_execution_event(root_db, model_current)
+    model_last_good_execution_event = _read_model_execution_event(root_db, model_last_good)
+    model_current_task_status = _read_model_task_status(root_db, model_current)
+    model_last_good_task_status = _read_model_task_status(root_db, model_last_good)
+    if _governed_model_runtime_ready(
+        model_current,
+        model_current_nonce_receipt,
+        model_current_execution_event,
+        model_current_task_status,
+    ):
         governed_model = model_current
         governed_model_nonce_receipt = model_current_nonce_receipt
+        governed_model_execution_event = model_current_execution_event
+        governed_model_task_status = model_current_task_status
     else:
         governed_model = model_last_good
         governed_model_nonce_receipt = model_last_good_nonce_receipt
+        governed_model_execution_event = model_last_good_execution_event
+        governed_model_task_status = model_last_good_task_status
 
     user_qa_ready = lambda value: bool(
         isinstance(value, Mapping)
@@ -1097,6 +1257,8 @@ def _build_version_rows(
         "governed_model_runtime": _governed_model_runtime_ready(
             governed_model,
             governed_model_nonce_receipt,
+            governed_model_execution_event,
+            governed_model_task_status,
         ),
         "next_session_production_replacement": bool(
             isinstance(next_session, Mapping)

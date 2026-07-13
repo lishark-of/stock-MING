@@ -55,6 +55,8 @@ MODEL_COST_CEILING_USD_PER_MILLION_TOKENS = 10.0
 MODEL_COST_BUDGET_USD = 1.0
 NONCE_CONSUMPTION_RECEIPT_PREFIX = "command_center_deepseek_provider_benchmark_nonce_consumption_"
 NONCE_CONSUMPTION_RECEIPT_SCHEMA_VERSION = "deepseek_benchmark_nonce_consumption_receipt.v1"
+EXECUTION_EVENT_PREFIX = "command_center_deepseek_provider_benchmark_execution_event_"
+EXECUTION_EVENT_SCHEMA_VERSION = "deepseek_benchmark_execution_event.v1"
 MIN_AUTHORIZATION_NONCE_LENGTH = 32
 MAX_AUTHORIZATION_NONCE_LENGTH = 256
 ALLOWED_OUTPUT_FIELDS = (
@@ -194,6 +196,10 @@ def authorization_nonce_is_strong(value: Any) -> bool:
 def nonce_consumption_receipt_key(nonce_digest: str) -> str:
     digest = str(nonce_digest or "")
     return f"{NONCE_CONSUMPTION_RECEIPT_PREFIX}{digest}"
+
+
+def _execution_event_key(task_id: str) -> str:
+    return f"{EXECUTION_EVENT_PREFIX}{hashlib.sha256(str(task_id).encode('utf-8')).hexdigest()}"
 
 
 def _fixed_samples() -> list[dict[str, Any]]:
@@ -682,8 +688,8 @@ def _execute_benchmark(
     deadline = started_all + float(scope.get("global_deadline_seconds") or GLOBAL_DEADLINE_SECONDS)
     deadline_exceeded = False
     # A callable supplied to this core runner is always test-only.  Production
-    # provenance is assigned only by the public executor's internal SDK wrapper
-    # after all provider response metadata has been observed.
+    # provenance is assigned only inside the public executor after its own SDK
+    # client has returned all provider response metadata.
     transport_provenance = "injected_callable_test_only"
     transport_production_eligible = False
     base_url_allowlisted = False
@@ -710,6 +716,8 @@ def _execute_benchmark(
                 output_repair_count += 1
                 sample_output_repair_count += 1
             started = clock()
+            response_finished = started
+            response_deadline_exceeded = False
             result: Mapping[str, Any]
             non_retryable = False
             try:
@@ -719,6 +727,11 @@ def _execute_benchmark(
                     attempt_kind == "output_repair",
                     min(MODEL_TIMEOUT_SECONDS, remaining),
                 )
+                # Re-read the global deadline immediately after every model
+                # response.  A valid final response that arrives too late is
+                # still discarded and can never complete the benchmark.
+                response_finished = clock()
+                response_deadline_exceeded = response_finished > deadline
                 result = candidate if isinstance(candidate, Mapping) else {}
                 valid, failure_code, output_hash, safety_passed, action_safe, numeric_safe = _validate_output(
                     result.get("text"), sample
@@ -744,6 +757,8 @@ def _execute_benchmark(
                         failure_code = "provider_response_not_observed"
                 previous_failure_kind = "output" if not valid else ""
             except GovernedModelCallError as exc:
+                response_finished = clock()
+                response_deadline_exceeded = response_finished > deadline
                 result = {
                     "network_attempted": exc.network_attempted,
                     "provider_call_dispatched": exc.provider_call_dispatched,
@@ -755,6 +770,8 @@ def _execute_benchmark(
                 non_retryable = exc.safe_code == "model_request_locally_rejected"
                 previous_failure_kind = "local" if non_retryable else "network"
             except TimeoutError:
+                response_finished = clock()
+                response_deadline_exceeded = response_finished > deadline
                 result = {
                     "network_attempted": False,
                     "provider_call_dispatched": False,
@@ -764,6 +781,8 @@ def _execute_benchmark(
                 safety_passed = action_safe = numeric_safe = True
                 previous_failure_kind = "network"
             except Exception:
+                response_finished = clock()
+                response_deadline_exceeded = response_finished > deadline
                 result = {
                     "network_attempted": False,
                     "provider_call_dispatched": False,
@@ -772,7 +791,14 @@ def _execute_benchmark(
                 valid, failure_code, output_hash = False, "model_call_failed", ""
                 safety_passed = action_safe = numeric_safe = True
                 previous_failure_kind = "network"
-            latency_ms = int(max(0.0, clock() - started) * 1000)
+            if response_deadline_exceeded:
+                deadline_exceeded = True
+                valid = False
+                failure_code = "global_deadline_exceeded_after_response"
+                output_hash = ""
+                non_retryable = True
+                previous_failure_kind = "deadline"
+            latency_ms = int(max(0.0, response_finished - started) * 1000)
             row = _ledger_row(
                 sample=sample,
                 attempt=attempt,
@@ -1017,106 +1043,6 @@ def _execute_benchmark(
     return packet
 
 
-def _finalize_official_sdk_packet(packet: Mapping[str, Any]) -> dict[str, Any]:
-    """Assign production origin after an internally-created SDK run completes."""
-
-    source = json.loads(json.dumps(dict(packet), ensure_ascii=False, default=str))
-    ledger = [row for row in source.get("model_ledger", []) if isinstance(row, dict)]
-    accepted = [row for row in ledger if row.get("status") == "accepted"]
-    request_id_hashes = [str(row.get("provider_request_id_hash") or "") for row in accepted]
-    request_ids_unique = bool(
-        len(request_id_hashes) == SAMPLE_COUNT
-        and len(set(request_id_hashes)) == SAMPLE_COUNT
-        and all(len(value) == 64 and all(char in "0123456789abcdef" for char in value) for value in request_id_hashes)
-    )
-    for row in ledger:
-        row["transport_provenance"] = "sdk_managed_allowlisted_https"
-        row["transport_production_eligible"] = True
-        row["base_url_allowlisted"] = True
-        row["external_calls_triggered"] = row.get("provider_call_dispatched") is True
-        row["deepseek_called"] = row.get("provider_call_dispatched") is True
-    provider_call_count = sum(int(row.get("provider_call_dispatched") is True) for row in ledger)
-    provider_response_count = sum(int(row.get("provider_response_observed") is True) for row in ledger)
-    response_format_enforced = bool(
-        len(accepted) == SAMPLE_COUNT
-        and all(row.get("provider_response_format_requested") is True for row in accepted)
-        and all(row.get("provider_response_observed") is True for row in accepted)
-    )
-    provider_metadata_complete = bool(
-        request_ids_unique
-        and all(
-            row.get("requested_model") == source.get("model_used")
-            and row.get("returned_model") == source.get("model_used")
-            and row.get("returned_model_matches_requested") is True
-            and row.get("finish_reason") == "stop"
-            and isinstance(row.get("system_fingerprint_present"), bool)
-            for row in accepted
-        )
-    )
-    ready = bool(
-        source.get("success_count") == SAMPLE_COUNT
-        and source.get("json_success_rate") == 1.0
-        and source.get("scope_binding_valid") is True
-        and source.get("response_schema_validated") is True
-        and source.get("safety_review_passed") is True
-        and source.get("model_ledger_complete") is True
-        and source.get("token_budget_cost_evidence_complete") is True
-        and source.get("does_not_modify_strategy_action") is True
-        and source.get("does_not_override_numeric_values") is True
-        and source.get("global_deadline_exceeded") is False
-        and response_format_enforced
-        and provider_metadata_complete
-        and provider_call_count >= SAMPLE_COUNT
-        and provider_response_count >= SAMPLE_COUNT
-    )
-    source.update(
-        {
-            "status": "deepseek_provider_benchmark_passed" if ready else "deepseek_provider_benchmark_not_promoted",
-            "evidence_source": "official_sdk_provider",
-            "transport_provenance": "sdk_managed_allowlisted_https",
-            "transport_production_eligible": True,
-            "base_url_allowlisted": True,
-            "provider_response_format_enforced": response_format_enforced,
-            "provider_response_metadata_complete": provider_metadata_complete,
-            "provider_request_ids_unique": request_ids_unique,
-            "provider_call_count": provider_call_count,
-            "provider_response_count": provider_response_count,
-            "provider_benchmark_done": ready,
-            "production_fact_ready": ready,
-            "governed_model_runtime": ready,
-            "production_deepseek_explanation_complete": ready,
-            "external_calls_triggered": provider_call_count > 0,
-            "deepseek_called": provider_call_count > 0,
-            "model_ledger": ledger,
-        }
-    )
-    return source
-
-
-def _execute_official_sdk_benchmark(
-    scope: Mapping[str, Any],
-    *,
-    credential: str,
-    model: str,
-) -> dict[str, Any]:
-    """Create the official SDK transport internally; no injected caller can enter."""
-
-    caller = _build_real_model_call(credential, model)
-    try:
-        packet = _execute_benchmark(
-            scope,
-            caller,
-            evidence_source="official_sdk_candidate",
-            model_used=model,
-        )
-    finally:
-        try:
-            caller.close()
-        except Exception:
-            pass
-    return _finalize_official_sdk_packet(packet)
-
-
 def _failure_packet(scope: Mapping[str, Any], failure_code: str) -> dict[str, Any]:
     return {
         "packet_key": CURRENT_PACKET_KEY,
@@ -1194,7 +1120,7 @@ class _OpenAIModelCaller:
         self._model = model
         self._base_url = base_url
         self.base_url_allowlisted = base_url in ALLOWED_DEEPSEEK_BASE_URLS
-        self.transport_provenance = "constructed_caller_test_only_until_internal_wrapper_finalizes"
+        self.transport_provenance = "constructed_caller_test_only_no_production_path"
 
     def __call__(
         self,
@@ -1283,13 +1209,14 @@ class _OpenAIModelCaller:
         self._client.close()
 
 
-def _build_real_model_call(
+def _build_test_only_model_call(
     credential: str,
     model: str,
     *,
     http_client: Any | None = None,
     base_url: str = DEEPSEEK_BASE_URL,
 ) -> _OpenAIModelCaller:
+    """Build an SDK-shaped caller for transport tests; never production eligible."""
     from openai import OpenAI
 
     if base_url not in ALLOWED_DEEPSEEK_BASE_URLS:
@@ -1402,30 +1329,284 @@ def run_deepseek_provider_benchmark_task(payload: Any = None) -> dict[str, Any]:
 
     update_task_status(task["task_id"], status="running", progress=0.15, current_step="running_fixed_scope_provider_benchmark")
     try:
-        packet = _execute_official_sdk_benchmark(
-            scope,
-            credential=credentials[0],
-            model=model,
+        # Production has exactly one construction path: this public executor
+        # creates the official SDK client itself.  No caller, client, HTTP
+        # transport, packet, seal, or capability can be supplied by a caller.
+        from openai import OpenAI
+
+        if DEEPSEEK_BASE_URL not in ALLOWED_DEEPSEEK_BASE_URLS:
+            raise ValueError("deepseek_base_url_not_allowlisted")
+        client = OpenAI(
+            api_key=credentials[0],
+            base_url=DEEPSEEK_BASE_URL,
+            timeout=MODEL_TIMEOUT_SECONDS,
+            max_retries=SDK_MAX_RETRIES,
+        )
+        caller = _OpenAIModelCaller(client, model, base_url=DEEPSEEK_BASE_URL)
+        try:
+            packet = _execute_benchmark(
+                scope,
+                caller,
+                evidence_source="official_sdk_candidate",
+                model_used=model,
+            )
+        finally:
+            try:
+                caller.close()
+            except Exception:
+                pass
+
+        # The promotion transform intentionally lives inside this executor.
+        # `_execute_benchmark` and every externally constructed caller remain
+        # test-only and have no callable promotion entry point.
+        packet = json.loads(json.dumps(packet, ensure_ascii=False, default=str))
+        ledger = [row for row in packet.get("model_ledger", []) if isinstance(row, dict)]
+        accepted = [row for row in ledger if row.get("status") == "accepted"]
+        request_id_hashes = [str(row.get("provider_request_id_hash") or "") for row in accepted]
+        request_ids_unique = bool(
+            len(request_id_hashes) == SAMPLE_COUNT
+            and len(set(request_id_hashes)) == SAMPLE_COUNT
+            and all(
+                len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+                for value in request_id_hashes
+            )
+        )
+        provider_call_count = sum(int(row.get("provider_call_dispatched") is True) for row in ledger)
+        provider_response_count = sum(int(row.get("provider_response_observed") is True) for row in ledger)
+        response_format_enforced = bool(
+            len(accepted) == SAMPLE_COUNT
+            and all(row.get("provider_response_format_requested") is True for row in accepted)
+            and all(row.get("provider_response_observed") is True for row in accepted)
+        )
+        provider_metadata_complete = bool(
+            request_ids_unique
+            and all(
+                row.get("requested_model") == model
+                and row.get("returned_model") == model
+                and row.get("returned_model_matches_requested") is True
+                and row.get("finish_reason") == "stop"
+                and isinstance(row.get("system_fingerprint_present"), bool)
+                for row in accepted
+            )
+        )
+        passed = bool(
+            packet.get("success_count") == SAMPLE_COUNT
+            and packet.get("json_success_rate") == 1.0
+            and packet.get("scope_binding_valid") is True
+            and packet.get("response_schema_validated") is True
+            and packet.get("safety_review_passed") is True
+            and packet.get("model_ledger_complete") is True
+            and packet.get("token_budget_cost_evidence_complete") is True
+            and packet.get("does_not_modify_strategy_action") is True
+            and packet.get("does_not_override_numeric_values") is True
+            and packet.get("global_deadline_exceeded") is False
+            and float(packet.get("global_elapsed_seconds") or 0.0) <= GLOBAL_DEADLINE_SECONDS
+            and response_format_enforced
+            and provider_metadata_complete
+            and provider_call_count >= SAMPLE_COUNT
+            and provider_response_count >= SAMPLE_COUNT
+        )
+        for row in ledger:
+            row["transport_provenance"] = "sdk_managed_allowlisted_https"
+            row["transport_production_eligible"] = passed
+            row["base_url_allowlisted"] = True
+            row["external_calls_triggered"] = row.get("provider_call_dispatched") is True
+            row["deepseek_called"] = row.get("provider_call_dispatched") is True
+        packet.update(
+            {
+                "status": (
+                    "deepseek_provider_benchmark_passed"
+                    if passed
+                    else "deepseek_provider_benchmark_not_promoted"
+                ),
+                "evidence_source": "official_sdk_provider",
+                "transport_provenance": "sdk_managed_allowlisted_https",
+                "transport_production_eligible": passed,
+                "base_url_allowlisted": True,
+                "provider_response_format_enforced": response_format_enforced,
+                "provider_response_metadata_complete": provider_metadata_complete,
+                "provider_request_ids_unique": request_ids_unique,
+                "provider_call_count": provider_call_count,
+                "provider_response_count": provider_response_count,
+                "provider_benchmark_done": passed,
+                "production_fact_ready": passed,
+                "governed_model_runtime": passed,
+                "production_deepseek_explanation_complete": passed,
+                "external_calls_triggered": provider_call_count > 0,
+                "deepseek_called": provider_call_count > 0,
+                "model_ledger": ledger,
+            }
         )
     except Exception:
         packet = _failure_packet(scope, "model_client_or_configuration_unavailable")
     packet["nonce_consumption_receipt_key"] = consumption_receipt.get("packet_key") or ""
     packet["nonce_consumption_task_id"] = consumption_receipt.get("task_id") or ""
     packet["nonce_consumed_at"] = consumption_receipt.get("consumed_at") or ""
-    _write_current(packet)
     passed = packet.get("production_fact_ready") is True
-    return update_task_status(
+    if not passed:
+        _write_current(packet)
+        return update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="deepseek_provider_benchmark_quality_safety_not_promoted",
+            error_message_safe="provider_benchmark_quality_or_safety_gate_failed",
+            call_ledger=list(packet.get("model_ledger") or []),
+        ) or task
+
+    completed_task = update_task_status(
         task["task_id"],
-        status="success" if passed else "failed",
+        status="success",
         progress=1.0,
-        current_step=(
-            "deepseek_provider_benchmark_quality_safety_passed"
-            if passed
-            else "deepseek_provider_benchmark_quality_safety_not_promoted"
-        ),
-        error_message_safe=None if passed else "provider_benchmark_quality_or_safety_gate_failed",
+        current_step="deepseek_provider_benchmark_quality_safety_passed",
+        error_message_safe=None,
         call_ledger=list(packet.get("model_ledger") or []),
-    ) or task
+    )
+    if not isinstance(completed_task, Mapping) or completed_task.get("status") != "success":
+        packet = _failure_packet(scope, "task_success_persistence_unavailable")
+        _write_current(packet)
+        return update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="deepseek_provider_benchmark_task_success_persistence_failed",
+            error_message_safe="task_success_persistence_unavailable",
+            call_ledger=[],
+        ) or task
+
+    task_success_projection = {
+        field: completed_task.get(field)
+        for field in (
+            "task_id",
+            "task_type",
+            "status",
+            "progress",
+            "current_step",
+            "output_packet_key",
+            "input_hash",
+            "idempotency_key",
+            "started_at",
+            "finished_at",
+        )
+    }
+    nonce_receipt_digest = _digest(consumption_receipt)
+    request_id_set_digest = _digest(sorted(request_id_hashes))
+    scope_binding_digest = _digest(
+        {
+            "benchmark_scope_hash": packet.get("benchmark_scope_hash"),
+            "approved_scope_contract_hash": packet.get("approved_scope_contract_hash"),
+            "authorization_nonce_digest": packet.get("authorization_nonce_digest"),
+        }
+    )
+    benchmark_contract_digest = _digest(
+        {
+            "fixed_sample_ids_hash": FIXED_SAMPLE_IDS_HASH,
+            "fixed_sample_set_hash": FIXED_SCOPE_HASH,
+            "output_schema_hash": OUTPUT_SCHEMA_HASH,
+            "prompt_version": PROMPT_VERSION,
+            "system_prompt_sha256": SYSTEM_PROMPT_SHA256,
+            "ledger_contract_hash": LEDGER_CONTRACT_HASH,
+        }
+    )
+    sdk_origin_digest = _digest(
+        {
+            "transport_provenance": "sdk_managed_allowlisted_https",
+            "base_url": DEEPSEEK_BASE_URL,
+            "sdk_max_retries": SDK_MAX_RETRIES,
+            "response_format": RESPONSE_FORMAT,
+            "request_temperature": MODEL_TEMPERATURE,
+        }
+    )
+    task_success_digest = _digest(task_success_projection)
+    packet.update(
+        {
+            "execution_task_id": str(completed_task.get("task_id") or ""),
+            "task_success_digest": task_success_digest,
+            "nonce_consumption_receipt_digest": nonce_receipt_digest,
+            "scope_binding_digest": scope_binding_digest,
+            "benchmark_contract_digest": benchmark_contract_digest,
+            "provider_request_id_set_digest": request_id_set_digest,
+            "sdk_origin_digest": sdk_origin_digest,
+        }
+    )
+    result_projection = dict(packet)
+    result_projection.pop("packet_key", None)
+    result_evidence_digest = _digest(result_projection)
+    event_key = _execution_event_key(str(completed_task.get("task_id") or ""))
+    execution_event = {
+        "packet_key": event_key,
+        "schema_version": EXECUTION_EVENT_SCHEMA_VERSION,
+        "status": "deepseek_provider_benchmark_execution_succeeded",
+        "created_at": _now_iso(),
+        "task_id": str(completed_task.get("task_id") or ""),
+        "task_type": TASK_TYPE,
+        "task_status": "success",
+        "task_success_digest": task_success_digest,
+        "nonce_consumption_receipt_digest": nonce_receipt_digest,
+        "scope_binding_digest": scope_binding_digest,
+        "benchmark_contract_digest": benchmark_contract_digest,
+        "result_evidence_digest": result_evidence_digest,
+        "provider_request_id_set_digest": request_id_set_digest,
+        "sdk_origin_digest": sdk_origin_digest,
+        "raw_nonce_stored": False,
+        "raw_prompt_stored": False,
+        "raw_output_stored": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+    }
+    packet.update(
+        {
+            "result_evidence_digest": result_evidence_digest,
+            "execution_event_key": event_key,
+            "execution_event_digest": _digest(execution_event),
+        }
+    )
+    last_good = dict(packet)
+    last_good["packet_key"] = LAST_GOOD_PACKET_KEY
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = sqlite3.connect(SQLITE_META_PATH, timeout=5, isolation_level=None)
+        connection.execute("BEGIN IMMEDIATE")
+        updated_at = _now_iso()
+        for packet_key, payload_value in (
+            (CURRENT_PACKET_KEY, packet),
+            (LAST_GOOD_PACKET_KEY, last_good),
+            (event_key, execution_event),
+        ):
+            connection.execute(
+                "INSERT OR REPLACE INTO packets(packet_key, payload_json, updated_at) VALUES (?, ?, ?)",
+                (
+                    packet_key,
+                    json.dumps(payload_value, ensure_ascii=False, default=str),
+                    updated_at,
+                ),
+            )
+        connection.execute(
+            "INSERT OR REPLACE INTO task_status(task_id, payload_json, updated_at) VALUES (?, ?, ?)",
+            (
+                str(completed_task.get("task_id") or ""),
+                json.dumps(dict(completed_task), ensure_ascii=False, default=str),
+                updated_at,
+            ),
+        )
+        connection.commit()
+    except Exception:
+        if connection is not None:
+            connection.rollback()
+        packet = _failure_packet(scope, "production_execution_event_atomic_write_failed")
+        _write_current(packet)
+        return update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="deepseek_provider_benchmark_execution_event_write_failed",
+            error_message_safe="production_execution_event_atomic_write_failed",
+            call_ledger=[],
+        ) or task
+    finally:
+        if connection is not None:
+            connection.close()
+    return dict(completed_task)
 
 
 def create_deepseek_benchmark_task(task_type: str, payload: Any = None) -> dict[str, Any]:

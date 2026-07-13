@@ -2689,7 +2689,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         serenity = packet_service.build_serenity_cache()
         next_session = packet_service.build_next_session_cache()
         migration = migration_status_service.build_migration_status()
-        desktop = desktop_service.read_desktop_shell_preflight_cache()
+        node_modules_path = desktop_service.DESKTOP_ROOT / "node_modules"
+        path_exists = Path.exists
+        with patch.object(
+            Path,
+            "exists",
+            lambda path: True if path == node_modules_path else path_exists(path),
+        ):
+            desktop = desktop_service.read_desktop_shell_preflight_cache()
         model_strategy = model_strategy_service.read_deepseek_model_strategy_cache()
 
         self.assertEqual(factor["packet_key"], "command_center_factor_quant_hub_packet")
@@ -24313,21 +24320,29 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["runtime"]["scheduler_started"])
         self.assertFalse(packet["runtime"]["redis_pinged"])
         self.assertFalse(packet["runtime"]["redis_url_exposed"])
-        self.assertEqual(packet["task_catalog_summary"]["task_count"], task_service.build_task_catalog()["task_count"])
+        catalog = task_service.build_task_catalog()
+        implementation = catalog["implementation_status"]
+        self.assertEqual(packet["task_catalog_summary"]["task_count"], catalog["task_count"])
         self.assertTrue(packet["task_catalog_summary"]["all_tasks_button_gated"])
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
-        self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 91)
-        self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 92)
+        self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], implementation["stub_task_count"])
+        self.assertEqual(
+            packet["task_catalog_summary"]["local_pipeline_task_count"],
+            implementation["local_pipeline_task_count"],
+        )
+        self.assertEqual(
+            packet["task_catalog_summary"]["guarded_local_task_count"],
+            implementation["guarded_local_task_count"],
+        )
+        self.assertEqual(
+            packet["task_catalog_summary"]["implemented_local_task_count"],
+            implementation["implemented_local_task_count"],
+        )
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
-        self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 91)
-        self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 92)
+        self.assertEqual(packet["task_implementation_status"], implementation)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -25201,10 +25216,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_count", packet["counts"])
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
-        self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 91)
-        self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 92)
+        self.assertEqual(packet["counts"]["stub_task_count"], implementation["stub_task_count"])
+        self.assertEqual(
+            packet["counts"]["local_pipeline_task_count"],
+            implementation["local_pipeline_task_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["guarded_local_task_count"],
+            implementation["guarded_local_task_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["implemented_local_task_count"],
+            implementation["implemented_local_task_count"],
+        )
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -25427,11 +25451,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreaterEqual(packet["counts"]["call_ledger_count"], 1)
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
-        self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 91)
-        self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 92)
-        self.assertEqual(packet["counts"]["external_capable_task_count"], 9)
+        implementation = packet["task_implementation_status"]
+        self.assertEqual(packet["counts"]["stub_task_count"], implementation["stub_task_count"])
+        self.assertEqual(
+            packet["counts"]["local_pipeline_task_count"],
+            implementation["local_pipeline_task_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["guarded_local_task_count"],
+            implementation["guarded_local_task_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["implemented_local_task_count"],
+            implementation["implemented_local_task_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["external_capable_task_count"],
+            implementation["external_capable_task_count"],
+        )
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
         self.assertFalse(packet["counts"]["local_push_gate_run_observed"])
@@ -25461,11 +25498,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("local_factor_quant_cache", {row.get("api") for row in packet["endpoint_call_ledger_rows"]})
         self.assertIn("task_persistence", packet)
         self.assertIn("task_persistence_source_rows", packet)
-        self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
-        self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 91)
-        self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 92)
+        self.assertEqual(packet["task_implementation_status"], implementation)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -43192,7 +43225,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 96)
+        self.assertEqual(
+            task_catalog["data"]["task_count"],
+            len(task_catalog["data"]["tasks"]),
+        )
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -64054,7 +64090,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             )
 
         http_client = httpx.Client(transport=httpx.MockTransport(handler))
-        caller = deepseek_benchmark_service._build_real_model_call(
+        caller = deepseek_benchmark_service._build_test_only_model_call(
             "test-only",
             "test-model",
             http_client=http_client,
@@ -64073,7 +64109,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertFalse(hasattr(caller, "production_eligible"))
         self.assertEqual(
             caller.transport_provenance,
-            "constructed_caller_test_only_until_internal_wrapper_finalizes",
+            "constructed_caller_test_only_no_production_path",
         )
         self.assertTrue(http_client.is_closed)
 
@@ -64107,7 +64143,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                 },
             )
 
-        caller = deepseek_benchmark_service._build_real_model_call(
+        caller = deepseek_benchmark_service._build_test_only_model_call(
             "test-only",
             "test-model",
             http_client=httpx.Client(transport=httpx.MockTransport(handler)),
@@ -64153,6 +64189,8 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertEqual(completions.calls, 40)
         self.assertFalse(packet["transport_production_eligible"])
         self.assertFalse(packet["production_fact_ready"])
+        self.assertFalse(hasattr(deepseek_benchmark_service, "_finalize_official_sdk_packet"))
+        self.assertFalse(hasattr(deepseek_benchmark_service, "_execute_official_sdk_benchmark"))
 
     def test_provider_metadata_mismatch_length_and_missing_id_are_rejected(self):
         mutations = (
@@ -64183,10 +64221,9 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         packet = deepseek_benchmark_service._execute_benchmark(
             self._scope(), duplicate_request_id, evidence_source="real_provider", model_used="test-model"
         )
-        finalized = deepseek_benchmark_service._finalize_official_sdk_packet(packet)
-        self.assertEqual(finalized["success_count"], 40)
-        self.assertFalse(finalized["provider_request_ids_unique"])
-        self.assertFalse(finalized["production_fact_ready"])
+        self.assertEqual(packet["success_count"], 40)
+        self.assertFalse(packet["provider_request_ids_unique"])
+        self.assertFalse(packet["production_fact_ready"])
 
     def test_closed_output_rejects_extra_summary_unknown_evidence_and_generated_values(self):
         sample = deepseek_benchmark_service.FIXED_SAMPLES[0]
@@ -64237,7 +64274,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                 _, blockers = deepseek_benchmark_service._execution_scope(hub, payload_safe)
                 self.assertIn(expected, blockers)
         with self.assertRaisesRegex(ValueError, "deepseek_base_url_not_allowlisted"):
-            deepseek_benchmark_service._build_real_model_call(
+            deepseek_benchmark_service._build_test_only_model_call(
                 "test-only", "test-model", base_url="https://example.invalid"
             )
 
@@ -64336,6 +64373,47 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertGreater(packet["global_elapsed_seconds"], packet["global_deadline_seconds"])
         self.assertFalse(packet["production_fact_ready"])
 
+    def test_fortieth_response_at_181_seconds_fails_entire_run_and_cannot_write_last_good(self):
+        class Clock:
+            value = 0.0
+
+            def __call__(self):
+                return self.value
+
+        clock = Clock()
+        calls = 0
+
+        def last_call_crosses_deadline(sample, attempt, _repair, _timeout):
+            nonlocal calls
+            calls += 1
+            if calls == deepseek_benchmark_service.SAMPLE_COUNT:
+                clock.value = deepseek_benchmark_service.GLOBAL_DEADLINE_SECONDS + 1
+            return self._valid_model_result(sample, attempt)
+
+        packet = deepseek_benchmark_service._execute_benchmark(
+            self._scope(),
+            last_call_crosses_deadline,
+            evidence_source="official_sdk_candidate",
+            model_used="test-model",
+            clock=clock,
+        )
+
+        self.assertEqual(calls, 40)
+        self.assertEqual(packet["success_count"], 39)
+        self.assertTrue(packet["global_deadline_exceeded"])
+        self.assertEqual(
+            packet["model_ledger"][-1]["failure_code"],
+            "global_deadline_exceeded_after_response",
+        )
+        self.assertFalse(packet["production_fact_ready"])
+        self.assertNotIn("execution_event_key", packet)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "meta.sqlite"
+            with patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path):
+                deepseek_benchmark_service._write_current(packet)
+            store = SQLiteMetaStore(db_path)
+            self.assertIsNone(store.read_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY))
+
     def test_sdk_timeout_is_one_attempt_and_classified_as_provider_timeout(self):
         import httpx
 
@@ -64346,7 +64424,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             calls += 1
             raise httpx.ReadTimeout("timeout", request=request)
 
-        caller = deepseek_benchmark_service._build_real_model_call(
+        caller = deepseek_benchmark_service._build_test_only_model_call(
             "test-only",
             "test-model",
             http_client=httpx.Client(transport=httpx.MockTransport(timeout_handler)),
@@ -64379,11 +64457,40 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertFalse(raised.exception.network_attempted)
         self.assertFalse(raised.exception.provider_call_dispatched)
 
-    def test_v1_closeout_rejects_forged_packet_without_exact_nonce_receipt(self):
+    def test_v1_closeout_rejects_handwritten_packet_and_receipt_without_task_event(self):
         packet = deepseek_benchmark_service._execute_benchmark(
             self._scope(), self._valid_model_result, evidence_source="real_provider", model_used="test-model"
         )
-        packet = deepseek_benchmark_service._finalize_official_sdk_packet(packet)
+        for row in packet["model_ledger"]:
+            row.update(
+                {
+                    "transport_provenance": "sdk_managed_allowlisted_https",
+                    "transport_production_eligible": True,
+                    "base_url_allowlisted": True,
+                    "external_calls_triggered": True,
+                    "deepseek_called": True,
+                }
+            )
+        packet.update(
+            {
+                "status": "deepseek_provider_benchmark_passed",
+                "evidence_source": "official_sdk_provider",
+                "transport_provenance": "sdk_managed_allowlisted_https",
+                "transport_production_eligible": True,
+                "base_url_allowlisted": True,
+                "provider_response_format_enforced": True,
+                "provider_response_metadata_complete": True,
+                "provider_request_ids_unique": True,
+                "provider_call_count": 40,
+                "provider_response_count": 40,
+                "provider_benchmark_done": True,
+                "production_fact_ready": True,
+                "governed_model_runtime": True,
+                "production_deepseek_explanation_complete": True,
+                "external_calls_triggered": True,
+                "deepseek_called": True,
+            }
+        )
         packet["nonce_consumption_receipt_key"] = deepseek_benchmark_service.nonce_consumption_receipt_key(
             packet["authorization_nonce_digest"]
         )
@@ -64393,22 +64500,18 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             evidence_root = Path(temp_dir)
             store = SQLiteMetaStore(evidence_root / "meta.sqlite")
             store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, packet)
-            evaluation = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=evidence_root)
-            fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
-            self.assertFalse(fact_rows["governed_model_runtime"])
-
-            mismatched_receipt = {
+            exact_receipt = {
                 "packet_key": packet["nonce_consumption_receipt_key"],
                 "schema_version": deepseek_benchmark_service.NONCE_CONSUMPTION_RECEIPT_SCHEMA_VERSION,
                 "status": "authorization_nonce_consumed",
                 "benchmark_scope_hash": packet["benchmark_scope_hash"],
-                "task_id": "different-task",
+                "task_id": "forged-task",
                 "authorization_nonce_digest": packet["authorization_nonce_digest"],
                 "consumed_at": packet["nonce_consumed_at"],
                 "raw_nonce_stored": False,
                 "contains_secret": False,
             }
-            store.write_packet(packet["nonce_consumption_receipt_key"], mismatched_receipt)
+            store.write_packet(packet["nonce_consumption_receipt_key"], exact_receipt)
             evaluation = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=evidence_root)
             fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
             self.assertFalse(fact_rows["governed_model_runtime"])
@@ -64421,6 +64524,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertEqual(row["sdk_max_retries"], 0)
         self.assertEqual(row["max_network_attempts_per_sample"], 3)
         self.assertEqual(row["global_deadline_seconds"], 180)
+        self.assertTrue(row["post_response_global_deadline_enforced"])
         self.assertTrue(row["scope_contract_exact_binding_required"])
         self.assertTrue(row["approval_nonce_enforced"])
         self.assertTrue(row["authorization_nonce_caller_generated"])
@@ -64429,6 +64533,9 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertTrue(row["explicit_http_client_transport_is_test_only"])
         self.assertTrue(row["injected_model_call_transport_is_test_only"])
         self.assertTrue(row["official_sdk_internal_construction_required_for_production"])
+        self.assertFalse(row["production_packet_external_finalizer_available"])
+        self.assertTrue(row["atomic_execution_event_required"])
+        self.assertTrue(row["v1_task_event_nonce_packet_four_way_binding_required"])
         self.assertTrue(row["model_output_closed_enums_only"])
         self.assertTrue(row["deterministic_local_summary_only"])
         self.assertTrue(row["last_good_preserved_on_failure"])

@@ -189,6 +189,13 @@ def _deepseek_scope_ticket_task(catalog: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _deepseek_benchmark_task(catalog: dict[str, Any]) -> dict[str, Any]:
+    for task in _list(catalog.get("tasks")):
+        if isinstance(task, dict) and task.get("task_type") == "run_deepseek_provider_benchmark":
+            return task
+    return {}
+
+
 def _local_prompt_preview() -> dict[str, Any]:
     return {
         "input_hash": "local-deepseek-governance-contract",
@@ -308,6 +315,7 @@ def build_contract() -> dict[str, Any]:
     ]
     task = _deepseek_task(catalog)
     scope_ticket_task = _deepseek_scope_ticket_task(catalog)
+    benchmark_task = _deepseek_benchmark_task(catalog)
     task_strategy = _dict(task.get("deepseek_model_strategy"))
 
     sample_payload = {
@@ -353,6 +361,15 @@ def build_contract() -> dict[str, Any]:
     deepseek_production_stage_scope_rows = _deepseek_production_stage_scope_rows()
 
     rows = [
+        _row(
+            "production_executor_is_internal_sdk_deadline_and_four_way_bound",
+            benchmark_task.get("official_sdk_internal_construction_required_for_production") is True
+            and benchmark_task.get("production_packet_external_finalizer_available") is False
+            and benchmark_task.get("post_response_global_deadline_enforced") is True
+            and benchmark_task.get("atomic_execution_event_required") is True
+            and benchmark_task.get("v1_task_event_nonce_packet_four_way_binding_required") is True,
+            "Production evidence requires the public executor's internal SDK path, post-response deadline check, atomic event, and task/event/nonce/packet closeout binding.",
+        ),
         _row(
             "cache_get_governance_is_manual_default_no_model_call",
             governance.get("mode") in {"manual_only", "disabled"}

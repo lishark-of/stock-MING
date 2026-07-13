@@ -588,7 +588,10 @@ def _queue_for_task_type(task_type: str) -> str:
         "run_candidate_radar_provider_parity_acceptance",
     }:
         return "provider_refresh"
-    if task_type == "run_deepseek_factor_explanation":
+    if task_type in {
+        "run_deepseek_factor_explanation",
+        "run_deepseek_provider_benchmark",
+    }:
         return "model_explain"
     if task_type in {"run_chokepoint_scan", "probe_serenity_github"}:
         return "external_probe"
