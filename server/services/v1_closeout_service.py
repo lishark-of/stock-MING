@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from server.services import full_market_worker_service
 from .tushare_production_store import validate_tushare_full_market_production_version
 
 
@@ -1241,6 +1242,9 @@ def _build_version_rows(
 
     release_receipt = _read_json(evidence_root / "release_gate" / "release_gate_review_receipt.json")
     remote_receipt = _read_json(evidence_root / "release_gate" / "remote_ci_review_receipt.json")
+    full_market_worker_fact = full_market_worker_service.validate_full_market_worker_production_fact(
+        evidence_root
+    )
     facts = {
         "trade_cal_provider_direct": _provider_ready(trade_cal, {"trade_cal"}),
         "factor_small_pool_provider_direct": _provider_ready(factor, {"daily", "daily_basic"}),
@@ -1252,8 +1256,8 @@ def _build_version_rows(
         "production_storage": bool(
             isinstance(storage, Mapping) and storage.get("production_storage_complete") is True
         ),
-        "full_market_worker_runtime": False,
-        "celery_redis_runtime": False,
+        "full_market_worker_runtime": full_market_worker_fact.get("full_market_worker_runtime") is True,
+        "celery_redis_runtime": full_market_worker_fact.get("celery_redis_runtime") is True,
         "governed_model_runtime": _governed_model_runtime_ready(
             governed_model,
             governed_model_nonce_receipt,
@@ -1264,7 +1268,9 @@ def _build_version_rows(
             isinstance(next_session, Mapping)
             and next_session.get("production_replacement_complete") is True
         ),
-        "candidate_radar_production_replacement": False,
+        "candidate_radar_production_replacement": (
+            full_market_worker_fact.get("candidate_radar_production_replacement") is True
+        ),
         "streamlit_primary_retired": False,
         "desktop_production_package": bool(
             isinstance(online_desktop, Mapping)

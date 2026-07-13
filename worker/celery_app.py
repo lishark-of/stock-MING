@@ -20,6 +20,7 @@ try:
         "stock_ming_command_center_3",
         broker=broker_url,
         backend=result_backend,
+        include=["worker.tasks_candidate"],
     )
     celery_app.conf.task_track_started = True
 except Exception:
@@ -27,10 +28,10 @@ except Exception:
     celery_app = None
 
 
-def task(name: str):
+def task(name: str, **options):
     def decorator(fn):
         if celery_app is None:
             return fn
-        return celery_app.task(name=name)(fn)
+        return celery_app.task(name=name, **options)(fn)
 
     return decorator

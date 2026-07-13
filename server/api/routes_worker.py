@@ -57,3 +57,11 @@ def run_worker_runtime_qa_execution(payload: dict[str, Any] | None = None) -> di
 def run_worker_production_promotion_review(payload: dict[str, Any] | None = None) -> dict:
     packet = worker_service.run_worker_production_promotion_review(payload or {})
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+
+
+@router.post("/full-market-production-acceptance")
+def run_full_market_production_acceptance(payload: dict[str, Any] | None = None) -> dict:
+    from server.services import full_market_worker_service
+
+    packet = full_market_worker_service.run_full_market_worker_production_acceptance(payload or {})
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
