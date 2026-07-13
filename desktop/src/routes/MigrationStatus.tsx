@@ -50,6 +50,18 @@ function stringArray(value: unknown, fallback: Array<string>): Array<string> {
     : fallback;
 }
 
+function recordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    : [];
+}
+
+function boundedCount(value: unknown, fallback: number, total = 14): number {
+  if (value === null || value === undefined || value === "") return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(total, Math.trunc(parsed))) : fallback;
+}
+
 function ordinaryMigrationText(value: unknown, fallback = "--"): string {
   let result = String(value ?? fallback);
   const replacements: Array<[RegExp, string]> = [
@@ -1327,6 +1339,81 @@ export default function MigrationStatus() {
   const migrationLocalConnected = migrationPacketLoaded || healthReady;
   const migrationStrictCloseoutLabel = String(longTermGoalSummary.strict_closeout ?? "0/14");
   const migrationGoalCountLabel = String(longTermGoalSummary.goal_count ?? 14);
+  const commandCenterV1LocalRc = (packet.command_center_3_v1_local_rc as Record<string, unknown> | undefined) ?? {};
+  const ltgEvidenceCloseoutRows = recordArray(packet.ltg_evidence_closeout_rows);
+  const v1VersionEvidenceSourceRows = recordArray(commandCenterV1LocalRc.version_evidence_rows);
+  const v1VersionEvidenceRows = ["v0.1", "v0.2", "v0.3", "v0.4", "v0.5", "v0.6", "v0.7"].map((version) => {
+    const row = v1VersionEvidenceSourceRows.find((candidate) => {
+      const candidateVersion = String(candidate.version ?? "").toLowerCase();
+      return candidateVersion === version || `v${candidateVersion}` === version;
+    }) ?? {};
+    const localEvidenceReady = row.local_direct_evidence_ready === true
+      || row.local_evidence_ready === true
+      || row.evidence_ready === true
+      || row.evidence_complete === true;
+    return {
+      version,
+      localEvidenceReady,
+      status: localEvidenceReady
+        ? String(row.status ?? "本地直接证据已记录")
+        : String(row.status ?? "后端快照尚未提供该版本证据")
+    };
+  });
+  const v1ExternalBlockerGroupsValue = commandCenterV1LocalRc.external_blocker_groups;
+  const v1ExternalBlockerRowSource = recordArray(commandCenterV1LocalRc.external_blocker_rows);
+  const v1LtgExternalBlockerSource = ltgEvidenceCloseoutRows.flatMap((row) => {
+    const blockers = row.external_or_environment_blockers;
+    if (Array.isArray(blockers)) {
+      return blockers.map((blocker) => ({
+        group: row.id ?? row.goal ?? "LTG",
+        blocker
+      }));
+    }
+    return blockers ? [{ group: row.id ?? row.goal ?? "LTG", blocker: blockers }] : [];
+  });
+  const v1ExternalBlockerSource: Array<unknown> = v1ExternalBlockerRowSource.length
+    ? v1ExternalBlockerRowSource
+    : Array.isArray(v1ExternalBlockerGroupsValue)
+      ? v1ExternalBlockerGroupsValue
+      : v1LtgExternalBlockerSource;
+  const v1ExternalBlockerGroups = v1ExternalBlockerSource.map((item, index) => {
+    const row = typeof item === "object" && item !== null ? item as Record<string, unknown> : {};
+    return {
+      label: typeof item === "string"
+        ? item
+        : String(row.group ?? row.id ?? row.label ?? row.name ?? `外部阻断组 ${index + 1}`),
+      status: typeof item === "string"
+        ? "仍需外部或环境证据"
+        : String(row.status ?? row.blocker ?? row.missing_evidence ?? row.reason ?? "仍需外部或环境证据")
+    };
+  });
+  const v1ExternalBlockerContractPresent = Array.isArray(v1ExternalBlockerGroupsValue)
+    || Array.isArray(commandCenterV1LocalRc.external_blocker_rows)
+    || ltgEvidenceCloseoutRows.some((row) => Object.prototype.hasOwnProperty.call(row, "external_or_environment_blockers"));
+  const v1LocalDirectEvidenceDone = boundedCount(
+    commandCenterV1LocalRc.local_direct_evidence_done_count,
+    ltgEvidenceCloseoutRows.filter((row) => row.local_direct_evidence_ready === true).length
+  );
+  const v1StrictCloseoutDone = boundedCount(
+    commandCenterV1LocalRc.strict_closeout_done_count,
+    ltgEvidenceCloseoutRows.filter((row) => row.production_complete === true).length
+  );
+  const v1StrictCloseoutRemaining = boundedCount(
+    commandCenterV1LocalRc.strict_closeout_remaining_count,
+    14 - v1StrictCloseoutDone
+  );
+  const v1LocalRcVersion = String(commandCenterV1LocalRc.version ?? "v1.0");
+  const v1LocalRcStatus = String(commandCenterV1LocalRc.status ?? "后端快照未提供状态");
+  const v1LocalReleaseCandidateReady = commandCenterV1LocalRc.local_release_candidate_ready === true;
+  const v1ProductionStrictCloseoutReady = commandCenterV1LocalRc.strict_closeout_claim_allowed === true
+    && v1StrictCloseoutDone === 14
+    && v1ExternalBlockerContractPresent
+    && v1ExternalBlockerGroups.length === 0;
+  const v1StrictCloseoutLabel = String(commandCenterV1LocalRc.strict_closeout ?? `${v1StrictCloseoutDone}/14`);
+  const v1Ltg12Row = ltgEvidenceCloseoutRows.find((row) => (
+    String(row.id ?? row.goal ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "") === "LTG12"
+  )) ?? {};
+  const v1Ltg12IsolationReady = v1Ltg12Row.local_direct_evidence_ready === true;
   const migrationCurrentMainFocus = ordinaryMigrationText(
     longTermNextPriority[0] ?? "普通用户可用化并行修补；长期主线继续收证据"
   );
@@ -1408,6 +1495,88 @@ export default function MigrationStatus() {
 
   return (
     <>
+      <PacketCard
+        title="Command Center 3.0 · v1.0 本地发布候选"
+        subtitle="本地 RC 与生产 strict closeout 分开查收；缺字段和外部证据不会自动变绿"
+        status={v1LocalReleaseCandidateReady ? "local RC ready" : "local RC 待证据"}
+      >
+        <div
+          className="v1-closeout-panel"
+          aria-label="Command Center 3.0 v1.0 local release candidate closeout"
+          tabIndex={0}
+        >
+          <MetricGrid
+            items={[
+              {
+                label: "本地 RC",
+                value: v1LocalReleaseCandidateReady
+                  ? `${v1LocalRcVersion} · ready（本地门禁通过）`
+                  : `${v1LocalRcVersion} · ${v1LocalRcStatus}`,
+                tone: v1LocalReleaseCandidateReady ? "good" : "warn"
+              },
+              {
+                label: "本地直接证据",
+                value: `${v1LocalDirectEvidenceDone}/14`,
+                tone: v1LocalDirectEvidenceDone === 14 ? "good" : "warn"
+              },
+              {
+                label: "生产 strict closeout",
+                value: v1ProductionStrictCloseoutReady
+                  ? `${v1StrictCloseoutLabel} · allowed`
+                  : `${v1StrictCloseoutLabel} · blocked · remaining ${v1StrictCloseoutRemaining}`,
+                tone: v1ProductionStrictCloseoutReady ? "good" : "bad"
+              },
+              {
+                label: "外部 blocker groups",
+                value: v1ExternalBlockerContractPresent ? v1ExternalBlockerGroups.length : "快照未提供",
+                tone: v1ExternalBlockerGroups.length ? "bad" : "warn"
+              }
+            ]}
+          />
+
+          <div className="v1-closeout-columns">
+            <section className="v1-closeout-section" aria-labelledby="v1-version-evidence-title">
+              <h4 id="v1-version-evidence-title">v0.1-v0.7 本地版本证据</h4>
+              <ol className="v1-version-evidence-list">
+                {v1VersionEvidenceRows.map((row) => (
+                  <li data-evidence-ready={row.localEvidenceReady} key={row.version}>
+                    <strong>{row.version}</strong>
+                    <span>{row.status}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+
+            <section className="v1-closeout-section" aria-labelledby="v1-external-blockers-title">
+              <h4 id="v1-external-blockers-title">生产外部阻断组</h4>
+              {v1ExternalBlockerGroups.length ? (
+                <ul className="v1-external-blocker-list">
+                  {v1ExternalBlockerGroups.map((row, index) => (
+                    <li key={`${row.label}-${index}`}>
+                      <strong>{row.label}</strong>
+                      <span>{row.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="risk-note">
+                  {v1ExternalBlockerContractPresent
+                    ? "当前快照没有列出外部阻断组；仍需同时满足 14/14 与 strict closeout claim 才能称为生产收口。"
+                    : "后端快照尚未提供 external blocker groups，按未查收处理。"}
+                </p>
+              )}
+              <p className="risk-note">provider / model / 真实 worker / signing / notarization / remote CI 任一缺口都保持阻断色，不会因本地 RC ready 而涂绿。</p>
+            </section>
+          </div>
+
+          <div className="v1-trade-isolation-boundary" data-isolation-ready={v1Ltg12IsolationReady}>
+            <strong>{v1Ltg12IsolationReady ? "研究客户端隔离目标完成" : "研究客户端隔离证据待查收"}</strong>
+            <span>真实交易仍是另立项目、未授权；当前没有 broker / order 路径。</span>
+          </div>
+          <p className="risk-note">本面板只读后端本地快照，没有新增按钮或 POST；local RC ready 只代表本地发布候选，不代表生产 strict closeout。</p>
+        </div>
+      </PacketCard>
+
       <PacketCard title="迁移状态摘要" subtitle="普通用户只看当前进度、主攻方向、下一步和阻断原因" status={migrationLocalConnected ? "本地已接上" : undefined}>
         <p className="ordinary-status-note">这张卡只回答现在迁移到哪、下一步去哪、为什么不能说长期目标全部完成；工程表和开发按钮默认下沉。</p>
         <p className="ordinary-status-note" aria-label="migration storage current result ordinary readback">{migrationStorageCurrentResultSentence}</p>

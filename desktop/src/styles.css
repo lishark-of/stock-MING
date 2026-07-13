@@ -947,6 +947,93 @@ textarea:focus {
   min-width: 0;
 }
 
+.v1-closeout-panel {
+  border-radius: 8px;
+  outline: none;
+}
+
+.v1-closeout-panel:focus-visible {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+}
+
+.v1-closeout-columns {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 12px 0;
+}
+
+.v1-closeout-section {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.v1-closeout-section h4 {
+  margin: 0 0 10px;
+}
+
+.v1-version-evidence-list,
+.v1-external-blocker-list {
+  display: grid;
+  gap: 7px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.v1-version-evidence-list li,
+.v1-external-blocker-list li {
+  align-items: start;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-left-width: 4px;
+  border-radius: 6px;
+  display: grid;
+  gap: 3px;
+  grid-template-columns: minmax(54px, auto) minmax(0, 1fr);
+  padding: 8px;
+}
+
+.v1-version-evidence-list li[data-evidence-ready="true"] {
+  border-left-color: #16a34a;
+}
+
+.v1-version-evidence-list li[data-evidence-ready="false"] {
+  border-left-color: #d97706;
+}
+
+.v1-external-blocker-list li {
+  border-left-color: #dc2626;
+}
+
+.v1-version-evidence-list span,
+.v1-external-blocker-list span,
+.v1-trade-isolation-boundary span {
+  color: #475569;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.v1-trade-isolation-boundary {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-left: 4px solid #d97706;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+  padding: 11px 12px;
+}
+
+.v1-trade-isolation-boundary[data-isolation-ready="true"] {
+  background: #f0fdf4;
+  border-color: #86efac;
+  border-left-color: #16a34a;
+}
+
 .chart-panel {
   height: 380px;
   width: 100%;
@@ -1640,6 +1727,15 @@ pre {
 
   .grid,
   .compact-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .v1-closeout-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .v1-version-evidence-list li,
+  .v1-external-blocker-list li {
     grid-template-columns: minmax(0, 1fr);
   }
 
