@@ -5700,6 +5700,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_runtime_qa_execution_done",
         "local_phase_a_execution_ready",
         "phase_a_local_evidence_done",
+        "release_review_recorded",
         "local_permission_followup_ticket_ready",
         "local_storage_promotion_review_ready",
         "ready_for_manual_permission_resolution",
@@ -11924,6 +11925,14 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                     is True
                     else "local_trade_cal_handoff_next_step_visible"
                 )
+            elif (
+                supporting_trade_cal_provider_acceptance_evidence_handoff.get("status")
+                == "provider_acceptance_release_review_recorded_blockers_visible"
+            ):
+                next_local_step = handoff_next_step or (
+                    "refresh_local_push_gate_or_remote_ci_review_before_release_review"
+                )
+                local_status = "provider_acceptance_release_review_recorded_blockers_visible"
             elif (
                 supporting_trade_cal_provider_acceptance_evidence_handoff.get(
                     "prior_provider_call_ledger_visible_not_acceptance"

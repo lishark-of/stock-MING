@@ -53907,6 +53907,140 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["does_not_modify_strategy_action"])
         self.assertNotIn("SHOULD_DROP", json.dumps(receipt, ensure_ascii=False))
 
+    def test_trade_cal_release_review_recorded_advances_action_queue_to_gate_blocker(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        receipt = {
+            "schema_version": "data_health_trade_cal_provider_acceptance_release_review.v1",
+            "status": "trade_cal_provider_acceptance_release_review_blocked_release_gate_or_remote_ci",
+            "scope": "local_trade_cal_provider_acceptance_release_review_no_provider_execution",
+            "route": "POST /api/data-health/trade-cal-provider-acceptance-release-review",
+            "task_type": "run_trade_cal_provider_acceptance_release_review",
+            "ltg": "LTG-01/LTG-11",
+            "user_confirmed": True,
+            "release_review_recorded": True,
+            "release_review_complete": False,
+            "ready_for_production_freshness_promotion": False,
+            "latest_promotion_review_task_id": "local-promotion-review",
+            "latest_promotion_review_status": (
+                "trade_cal_provider_acceptance_promotion_review_ready_for_release_review"
+            ),
+            "latest_promotion_review_found": True,
+            "latest_promotion_review_ready_for_release": True,
+            "durable_recipe_status": "freshness_durable_evidence_recipe_ready_provider_pending",
+            "durable_local_complete": False,
+            "durable_local_evidence_missing_items": ["fresh current-head local push-gate output"],
+            "durable_missing_evidence_items": ["matching remote CI review after local gate"],
+            "durable_blocking_evidence_keys": ["production_promotion_review"],
+            "local_release_gate_complete": False,
+            "latest_remote_run_verified_green": False,
+            "remote_review_status": "remote_review_waiting_for_local_complete",
+            "row_count": 1,
+            "blocking_row_count": 1,
+            "blocking_phases": ["fresh_local_gate_current_head"],
+            "production_freshness_gate_complete": False,
+            "strict_closeout_ready": False,
+            "can_close_goal": False,
+            "ready_to_execute_from_cache": False,
+            "creates_provider_task": False,
+            "provider_execution_implemented": False,
+            "provider_task_executed_by_review": False,
+            "provider_backed_long_window_acceptance_done": False,
+            "allowed_next_step": "refresh_local_push_gate_or_remote_ci_review_before_release_review",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        task = task_service.create_task_record(
+            "run_trade_cal_provider_acceptance_release_review",
+            output_packet_key="command_center_3_data_health_timeline_cache",
+            payload={
+                "trade_cal_provider_acceptance_release_review_receipt": receipt,
+                "trade_cal_provider_acceptance_release_review_rows": [
+                    {
+                        "phase": "fresh_local_gate_current_head",
+                        "status": "blocked_local_gate_recheck_required",
+                        "passed": False,
+                        "blocks_production": True,
+                        "local_release_review_only": True,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                ],
+                "release_review_only": True,
+                "creates_provider_task": False,
+                "production_freshness_gate_complete": False,
+                "strict_closeout_ready": False,
+            },
+            current_step="trade_cal_provider_acceptance_release_review_local_only",
+        )
+        task_service.update_task_status(
+            str(task["task_id"]),
+            status="success",
+            progress=1.0,
+            current_step="trade_cal_release_review_blocked_release_gate_or_remote_ci_no_provider_call",
+            output_packet_key="command_center_3_data_health_timeline_cache",
+            call_ledger=[
+                {
+                    "api": "local_trade_cal_provider_acceptance_release_review",
+                    "external": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                }
+            ],
+        )
+
+        migration = migration_status_service.build_migration_status()
+        p1_row = {
+            row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]
+        }["p1_trade_cal_provider_acceptance"]
+        release_step = {
+            row["phase_key"]: row for row in p1_row["local_step_rows"]
+        }["trade_cal_release_review_receipt"]
+        handoff = p1_row["supporting_trade_cal_provider_acceptance_evidence_handoff"]
+
+        self.assertEqual(handoff["status"], "provider_acceptance_release_review_recorded_blockers_visible")
+        self.assertTrue(handoff["latest_release_review_found"])
+        self.assertTrue(handoff["latest_release_review_recorded"])
+        self.assertFalse(handoff["latest_release_review_complete"])
+        self.assertTrue(release_step["receipt_visible"])
+        self.assertTrue(release_step["local_ready"])
+        self.assertFalse(release_step["local_blocked"])
+        self.assertEqual(
+            p1_row["local_receipt_status"],
+            "provider_acceptance_release_review_recorded_blockers_visible",
+        )
+        self.assertEqual(
+            p1_row["next_local_step"],
+            "refresh_local_push_gate_or_remote_ci_review_before_release_review",
+        )
+        self.assertFalse(p1_row["next_local_step_ready_for_clean_receipt"])
+        self.assertEqual(
+            p1_row["next_local_step_disabled_reason"],
+            "route_is_not_an_allowlisted_local_receipt_step",
+        )
+        self.assertFalse(p1_row["creates_task_from_get"])
+        self.assertFalse(p1_row["external_calls_triggered"])
+        self.assertFalse(p1_row["tushare_called"])
+        self.assertFalse(p1_row["deepseek_called"])
+        self.assertFalse(p1_row["github_called"])
+        self.assertTrue(p1_row["does_not_execute_trades"])
+        self.assertTrue(p1_row["does_not_modify_strategy_action"])
+
     def test_trade_cal_production_promotion_review_completes_local_gate_without_external_calls(self):
         latest_release_review = {
             "latest_task_found": True,
