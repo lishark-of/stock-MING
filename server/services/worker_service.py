@@ -138,6 +138,7 @@ WORKER_REDIS_ROUNDTRIP_EVIDENCE_PATH = (
     / "worker_runtime"
     / "worker_redis_roundtrip_smoke.json"
 )
+WORKER_V04_RUNTIME_ROOT = PROJECT_ROOT / ".stock_ming_3" / "v04_acceptance"
 LOCAL_REDIS_SERVER_CANDIDATE_PATHS = (
     "/opt/homebrew/bin/redis-server",
     "/usr/local/bin/redis-server",
@@ -3206,6 +3207,296 @@ def _append_worker_runtime_qa_event(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _worker_v04_scope_component(scope_hash: str) -> str:
+    text = str(scope_hash or "").strip()
+    if text and all(char.isalnum() or char in {"_", "-"} for char in text) and len(text) <= 96:
+        return text
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+
+
+def _worker_v04_write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f".{path.name}.{hashlib.sha256(str(path).encode('utf-8')).hexdigest()[:12]}.tmp")
+    temp_path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, default=str), encoding="utf-8")
+    temp_path.replace(path)
+
+
+def _worker_v04_pool_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_pool = payload.get("pool") or payload.get("symbols") or []
+    if not isinstance(raw_pool, list):
+        return []
+    items: list[dict[str, Any]] = []
+    for index, item in enumerate(raw_pool):
+        if isinstance(item, dict):
+            symbol = str(item.get("symbol") or item.get("ts_code") or f"LOCAL{index:04d}.SZ").strip().upper()
+            weight = item.get("weight", index + 1)
+        else:
+            symbol = str(item or f"LOCAL{index:04d}.SZ").strip().upper()
+            weight = index + 1
+        try:
+            safe_weight = float(weight)
+        except Exception:
+            safe_weight = float(index + 1)
+        items.append({"symbol": symbol, "pool_index": index, "weight": safe_weight})
+    return items
+
+
+def _worker_v04_append_event(path: Path, event: dict[str, Any]) -> dict[str, Any]:
+    safe_event = _json_safe(event)
+    event_sha = _json_sha256(safe_event)
+    safe_event["event_sha256"] = event_sha
+    before_size = path.stat().st_size if path.exists() else 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(safe_event, ensure_ascii=False, sort_keys=True, default=str))
+        handle.write("\n")
+    after_size = path.stat().st_size if path.exists() else 0
+    return {
+        "event_sha256": event_sha,
+        "bytes_appended": max(after_size - before_size, 0),
+        "append_only_write_done": after_size > before_size,
+    }
+
+
+def _worker_v04_current_pointer(runtime_dir: Path, pointer: str = "current") -> dict[str, Any]:
+    path = runtime_dir / f"{pointer}.json"
+    if not path.exists():
+        return {"status": "missing", "pointer": pointer}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"status": "read_failed", "pointer": pointer}
+    checksum = str(payload.get("manifest_sha256") or "")
+    check_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"manifest_sha256", "pointer_kind", "pointer", "status"}
+    }
+    return {
+        **payload,
+        "status": "ready" if checksum and _json_sha256(check_payload) == checksum else "checksum_mismatch",
+        "pointer": pointer,
+    }
+
+
+def _worker_v04_local_batch_runtime(payload_safe: dict[str, Any], *, task_id: str, executed_at: str) -> dict[str, Any]:
+    scope_hash = str(payload_safe.get("runtime_scope_hash") or payload_safe.get("scope_hash") or "")
+    scope_component = _worker_v04_scope_component(scope_hash)
+    runtime_dir = WORKER_V04_RUNTIME_ROOT / scope_component / "worker_runtime"
+    if not runtime_dir.resolve().is_relative_to(WORKER_V04_RUNTIME_ROOT.resolve()):
+        raise ValueError("invalid_worker_v04_scope")
+    pool = _worker_v04_pool_items(payload_safe)
+    chunk_size = max(1, min(int(payload_safe.get("chunk_size") or 10), 100))
+    fail_on_symbol = str(payload_safe.get("fail_on_symbol") or "").strip().upper()
+    event_log_path = runtime_dir / "events.jsonl"
+    current_before = _worker_v04_current_pointer(runtime_dir, "current")
+    last_good_before = _worker_v04_current_pointer(runtime_dir, "last_good")
+    chunks = [pool[index : index + chunk_size] for index in range(0, len(pool), chunk_size)]
+    processed: list[dict[str, Any]] = []
+    failed_symbol = ""
+    stage_rows: list[dict[str, Any]] = []
+    for chunk_index, chunk in enumerate(chunks):
+        stage_status = "success"
+        chunk_outputs = []
+        for item in chunk:
+            if fail_on_symbol and item["symbol"] == fail_on_symbol:
+                stage_status = "failed"
+                failed_symbol = item["symbol"]
+                break
+            output = {
+                "symbol": item["symbol"],
+                "pool_index": item["pool_index"],
+                "score": round((item["pool_index"] + 1) * item["weight"], 6),
+            }
+            processed.append(output)
+            chunk_outputs.append(output)
+        event_result = _worker_v04_append_event(
+            event_log_path,
+            {
+                "schema_version": "worker_v04_local_batch_event.v1",
+                "task_id": task_id,
+                "chunk_index": chunk_index,
+                "chunk_size": len(chunk),
+                "processed_count": len(chunk_outputs),
+                "stage_status": stage_status,
+                "failed_symbol": failed_symbol,
+                "runtime_scope_hash_short": scope_hash[:12],
+                "contains_secret": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "redis_pinged": False,
+                "celery_started": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+        )
+        stage_rows.append(
+            {
+                "chunk_index": chunk_index,
+                "status": stage_status,
+                "chunk_size": len(chunk),
+                "processed_count": len(chunk_outputs),
+                "event_sha256": event_result["event_sha256"],
+                "append_only_write_done": event_result["append_only_write_done"],
+            }
+        )
+        if stage_status == "failed":
+            break
+    status = "worker_v04_local_batch_runtime_success" if len(processed) == len(pool) and pool else "worker_v04_local_batch_runtime_failed_partial"
+    manifest = {
+        "schema_version": "worker_v04_local_batch_runtime_manifest.v1",
+        "status": status,
+        "task_id": task_id,
+        "runtime_scope_hash_short": scope_hash[:12],
+        "pool_count": len(pool),
+        "processed_count": len(processed),
+        "chunk_size": chunk_size,
+        "chunk_count": len(chunks),
+        "stage_count": len(stage_rows),
+        "failed_symbol": failed_symbol,
+        "result_checksum": _json_sha256({"processed": processed}),
+        "append_only_event_count": len(stage_rows),
+        "local_runtime_not_full_market_claim": True,
+        "local_runtime_is_not_celery_redis_production": True,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+    }
+    manifest["manifest_sha256"] = _json_sha256({key: value for key, value in manifest.items() if key != "status"})
+    manifest_path = runtime_dir / f"manifest_{task_id}.json"
+    _worker_v04_write_json_atomic(manifest_path, manifest)
+    if status == "worker_v04_local_batch_runtime_success":
+        if current_before.get("status") == "ready":
+            last_good_payload = {
+                key: value
+                for key, value in current_before.items()
+                if key not in {"status", "pointer"}
+            }
+            _worker_v04_write_json_atomic(runtime_dir / "last_good.json", {**last_good_payload, "pointer_kind": "last_good"})
+        _worker_v04_write_json_atomic(runtime_dir / "current.json", {**manifest, "pointer_kind": "current"})
+    current_after = _worker_v04_current_pointer(runtime_dir, "current")
+    last_good_after = _worker_v04_current_pointer(runtime_dir, "last_good")
+    SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+        RUNTIME_QA_EXECUTION_PACKET_KEY,
+        {
+            "schema_version": "worker_v04_local_batch_runtime_packet.v1",
+            "status": status,
+            "task_id": task_id,
+            "runtime_scope_hash_short": scope_hash[:12],
+            "pool_count": len(pool),
+            "processed_count": len(processed),
+            "stage_rows": stage_rows,
+            "manifest_sha256": manifest["manifest_sha256"],
+            "contains_secret": False,
+        },
+    )
+    return {
+        "status": status,
+        "runtime_dir": str(runtime_dir),
+        "event_log_path": str(event_log_path),
+        "manifest_path": str(manifest_path),
+        "manifest": manifest,
+        "pool_count": len(pool),
+        "processed_count": len(processed),
+        "chunk_size": chunk_size,
+        "chunk_count": len(chunks),
+        "stage_rows": stage_rows,
+        "append_only_event_count": len(stage_rows),
+        "current_before": current_before,
+        "last_good_before": last_good_before,
+        "current_after": current_after,
+        "last_good_after": last_good_after,
+        "last_good_preserved": bool(status != "worker_v04_local_batch_runtime_success" and last_good_after.get("status") == "ready"),
+        "local_runtime_not_full_market_claim": True,
+        "local_runtime_is_not_celery_redis_production": True,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _run_worker_v04_local_batch_runtime(payload: dict[str, Any]) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_worker_v04_local_batch_runtime",
+        output_packet_key=RUNTIME_QA_EXECUTION_PACKET_KEY,
+        payload=payload,
+        current_step="worker_v04_local_batch_runtime_queued",
+        warnings=[
+            "Worker v0.4 local batch runtime 只在当前 Python 进程处理调用方 pool；不启动 Celery/Redis，不声称 full-market。",
+        ],
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    approved = bool(
+        payload_safe.get("operator_approved") is True
+        and payload_safe.get("confirm_local_in_process_runtime") is True
+        and payload_safe.get("confirm_scope_hash") == str(payload_safe.get("runtime_scope_hash") or payload_safe.get("scope_hash") or "")
+    )
+    if not approved:
+        return task_service.update_task_status(
+            str(task["task_id"]),
+            status="failed",
+            progress=1.0,
+            current_step="worker_v04_local_batch_runtime_blocked_confirmation_required",
+            error_message_safe="worker_v04_local_batch_runtime_blocked_confirmation_required",
+            call_ledger=[],
+        ) or task
+    executed_at = _now_iso()
+    task_service.update_task_status(
+        str(task["task_id"]),
+        status="running",
+        progress=0.4,
+        current_step="worker_v04_local_batch_runtime_processing_pool",
+    )
+    result = _worker_v04_local_batch_runtime(payload_safe, task_id=str(task["task_id"]), executed_at=executed_at)
+    succeeded = result["status"] == "worker_v04_local_batch_runtime_success"
+    ledger = [
+        {
+            "api": "local_worker_v04_in_process_batch_runtime",
+            "source": "explicit_post_payload_pool",
+            "row_count": result["processed_count"],
+            "pool_count": result["pool_count"],
+            "chunk_count": result["chunk_count"],
+            "call_status": result["status"],
+            "event_log_path": result["event_log_path"],
+            "manifest_sha256": result["manifest"]["manifest_sha256"],
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "scheduler_started": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+    updated = task_service.update_task_status(
+        str(task["task_id"]),
+        status="success" if succeeded else "failed",
+        progress=1.0,
+        current_step=result["status"],
+        error_message_safe=None if succeeded else result["status"],
+        call_ledger=ledger,
+        warning=(
+            "worker_v04_local_batch_runtime_success_current_promoted"
+            if succeeded
+            else "worker_v04_local_batch_runtime_partial_failure_last_good_preserved"
+        ),
+    ) or task
+    updated["worker_v04_runtime"] = result
+    return updated
+
+
 def _local_task_control_metadata_evidence(task_map: dict[str, Any], readback_map: dict[str, Any]) -> dict[str, Any]:
     retry_policy = task_map.get("retry_policy") if isinstance(task_map.get("retry_policy"), dict) else {}
     readback_retry = readback_map.get("retry_policy") if isinstance(readback_map.get("retry_policy"), dict) else {}
@@ -5845,6 +6136,8 @@ def run_worker_runtime_qa_dry_run(payload: Any = None) -> dict[str, Any]:
 
 
 def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
+    if isinstance(payload, dict) and str(payload.get("runtime_mode") or "") == "v04_local_batch":
+        return _run_worker_v04_local_batch_runtime(payload)
     task = task_service.create_task_record(
         "run_worker_runtime_qa_execution",
         output_packet_key=RUNTIME_QA_EXECUTION_PACKET_KEY,
