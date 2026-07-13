@@ -5698,6 +5698,8 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_promotion_review_ready",
         "local_worker_fallback_ready",
         "local_runtime_qa_execution_done",
+        "local_phase_a_execution_ready",
+        "phase_a_local_evidence_done",
         "local_permission_followup_ticket_ready",
         "local_storage_promotion_review_ready",
         "ready_for_manual_permission_resolution",
@@ -12067,6 +12069,15 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             supporting_storage_physical_execution_handoff = (
                 _latest_storage_physical_execution_handoff_summary()
             )
+            if supporting_storage_physical_execution_handoff.get("storage_physical_execution_phase_a_visible") is True:
+                local_status = str(
+                    supporting_storage_physical_execution_handoff.get("status")
+                    or "storage_physical_execution_phase_a_visible_production_closeout_pending"
+                )
+                next_local_step = str(
+                    supporting_storage_physical_execution_handoff.get("next_local_step")
+                    or "future storage production promotion closeout review after remote CI and safety evidence"
+                )
         if action["queue_id"] == "p4_worker_runtime_qa":
             safe_context["worker_runtime_qa_context_preview"] = _latest_worker_runtime_qa_context_preview()
             safe_context["worker_runtime_dependency_preflight_preview"] = (

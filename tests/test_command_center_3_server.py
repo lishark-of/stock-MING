@@ -9610,6 +9610,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(phase_a["production_storage_complete"])
         self.assertEqual(refreshed["storage_physical_execution_phase_a_status"], persisted["status"])
 
+        migration = migration_status_service.build_migration_status()
+        storage_action = {
+            row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]
+        }["p4_storage_physical_execution"]
+        handoff = storage_action["supporting_storage_physical_execution_handoff"]
+        self.assertEqual(
+            handoff["status"],
+            "storage_physical_execution_phase_a_visible_production_closeout_pending",
+        )
+        self.assertTrue(handoff["storage_physical_execution_phase_a_visible"])
+        self.assertTrue(storage_action["supporting_storage_physical_execution_phase_a_visible"])
+        self.assertEqual(
+            storage_action["local_receipt_status"],
+            "storage_physical_execution_phase_a_visible_production_closeout_pending",
+        )
+        self.assertEqual(
+            storage_action["next_local_step"],
+            "future storage production promotion closeout review after remote CI and safety evidence",
+        )
+        phase_a_row = next(
+            row
+            for row in storage_action["local_step_rows"]
+            if row["phase_key"] == "storage_physical_execution_phase_a_receipt"
+        )
+        self.assertTrue(phase_a_row["receipt_visible"])
+        self.assertTrue(phase_a_row["local_ready"])
+        self.assertEqual(storage_action["blocked_local_receipt_step_count"], 0)
+        self.assertFalse(storage_action["next_local_step_ready_for_clean_receipt"])
+
     def test_storage_physical_execution_request_rejects_scope_mismatch(self):
         self._with_meta_store()
         self._with_parquet_root()
