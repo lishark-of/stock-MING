@@ -62,6 +62,34 @@ function boundedCount(value: unknown, fallback: number, total = 14): number {
   return Number.isFinite(parsed) ? Math.max(0, Math.min(total, Math.trunc(parsed))) : fallback;
 }
 
+const v1BlockerLabels: Record<string, string> = {
+  release_promotion_current_head: "当前版本发布门禁与远端查收",
+  full_interface_provider_production: "全接口生产数据验收",
+  factor_production_promotion: "因子生产推广",
+  full_market_worker_runtime: "全市场真实 worker 运行",
+  production_storage: "生产存储落地",
+  celery_redis_runtime: "Celery / Redis 真实 worker",
+  governed_model_runtime: "受治理模型真实运行",
+  next_session_production_replacement: "次日图谱生产替换",
+  candidate_radar_production_replacement: "候选雷达生产替换",
+  streamlit_primary_retired: "Streamlit 主入口退役",
+  desktop_production_package: "桌面生产包",
+  developer_signing_notarization: "Developer ID 签名与公证",
+  remote_ci_current_head: "当前版本远端 CI",
+  motion_production_promoted: "动效生产推广"
+};
+
+function v1BlockerText(value: unknown): string {
+  const raw = String(value ?? "");
+  if (raw.startsWith("local_direct_evidence_missing:")) {
+    return `本地版本证据 ${raw.split(":").slice(-1)[0] ?? "待补"}`;
+  }
+  const key = raw.startsWith("external_or_environment_evidence_missing:")
+    ? raw.split(":").slice(-1)[0] ?? raw
+    : raw;
+  return (v1BlockerLabels[key] ?? key.replace(/_/g, " ")) || "仍需外部或环境证据";
+}
+
 function ordinaryMigrationText(value: unknown, fallback = "--"): string {
   let result = String(value ?? fallback);
   const replacements: Array<[RegExp, string]> = [
@@ -1383,17 +1411,24 @@ export default function MigrationStatus() {
     : Array.isArray(v1ExternalBlockerGroupsValue)
       ? v1ExternalBlockerGroupsValue
       : v1LtgExternalBlockerSource;
-  const v1ExternalBlockerGroups = v1ExternalBlockerSource.map((item, index) => {
+  const v1ExternalBlockerMap = new Map<string, Array<string>>();
+  v1ExternalBlockerSource.forEach((item, index) => {
     const row = typeof item === "object" && item !== null ? item as Record<string, unknown> : {};
-    return {
-      label: typeof item === "string"
-        ? item
-        : String(row.group ?? row.id ?? row.label ?? row.name ?? `外部阻断组 ${index + 1}`),
-      status: typeof item === "string"
-        ? "仍需外部或环境证据"
-        : String(row.status ?? row.blocker ?? row.missing_evidence ?? row.reason ?? "仍需外部或环境证据")
-    };
+    const label = typeof item === "string"
+      ? `外部阻断组 ${index + 1}`
+      : String(row.group ?? row.id ?? row.label ?? row.name ?? `外部阻断组 ${index + 1}`);
+    const blocker = typeof item === "string"
+      ? item
+      : row.status ?? row.blocker ?? row.missing_evidence ?? row.reason;
+    const values = v1ExternalBlockerMap.get(label) ?? [];
+    const readable = v1BlockerText(blocker);
+    if (!values.includes(readable)) values.push(readable);
+    v1ExternalBlockerMap.set(label, values);
   });
+  const v1ExternalBlockerGroups = Array.from(v1ExternalBlockerMap, ([label, statuses]) => ({
+    label,
+    status: statuses.join("；")
+  }));
   const v1ExternalBlockerContractPresent = Array.isArray(v1ExternalBlockerGroupsValue)
     || Array.isArray(commandCenterV1LocalRc.external_blocker_rows)
     || v1LtgClosureRows.some((row) => Object.prototype.hasOwnProperty.call(row, "external_or_environment_blockers"));
