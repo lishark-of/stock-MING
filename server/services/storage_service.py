@@ -5882,6 +5882,24 @@ def _storage_v04_write_json_atomic(path: Path, payload: Mapping[str, Any]) -> No
     temp_path.replace(path)
 
 
+def _storage_v04_path_label(path: Path) -> str:
+    try:
+        relative = path.resolve().relative_to(V04_ACCEPTANCE_ROOT.resolve())
+    except (OSError, ValueError):
+        return path.name
+    return f"v04_acceptance/{relative.as_posix()}"
+
+
+def _storage_v04_sanitize_paths(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _storage_v04_sanitize_paths(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_storage_v04_sanitize_paths(item) for item in value]
+    if isinstance(value, str) and Path(value).is_absolute():
+        return _storage_v04_path_label(Path(value))
+    return value
+
+
 def _storage_v04_physical_execution(
     *,
     task_id: str,
@@ -5973,28 +5991,34 @@ def _storage_v04_physical_execution(
         return {
             "status": "storage_v04_physical_execution_injected_failure_current_unchanged",
             "scope_component": scope_component,
-            "acceptance_dir": str(acceptance_dir),
-            "parquet_path": str(parquet_path),
+            "acceptance_dir": _storage_v04_path_label(acceptance_dir),
+            "parquet_path": _storage_v04_path_label(parquet_path),
             "row_count": len(rows),
             "columns": list(V04_STORAGE_ACCEPTANCE_COLUMNS),
-            "schema": schema,
-            "duckdb_readback": duckdb_readback,
+            "schema": _storage_v04_sanitize_paths(schema),
+            "duckdb_readback": _storage_v04_sanitize_paths(duckdb_readback),
             "duckdb_query_parity": duckdb_query_parity,
             "sqlite_readback_verified": sqlite_readback_verified,
             "atomic_promoted": False,
-            "current_before": current_before,
-            "current_after": parquet_store.versioned_dataset_pointer(
-                root=acceptance_dir / "current_result",
-                name="storage_v04_current_result",
-                pointer="current",
+            "current_before": _storage_v04_sanitize_paths(current_before),
+            "current_after": _storage_v04_sanitize_paths(
+                parquet_store.versioned_dataset_pointer(
+                    root=acceptance_dir / "current_result",
+                    name="storage_v04_current_result",
+                    pointer="current",
+                )
             ),
-            "last_good_after": parquet_store.versioned_dataset_pointer(
-                root=acceptance_dir / "current_result",
-                name="storage_v04_current_result",
-                pointer="last_good",
+            "last_good_after": _storage_v04_sanitize_paths(
+                parquet_store.versioned_dataset_pointer(
+                    root=acceptance_dir / "current_result",
+                    name="storage_v04_current_result",
+                    pointer="last_good",
+                )
             ),
-            "temporary_failure_marker": str(failure_marker),
+            "temporary_failure_marker": _storage_v04_path_label(failure_marker),
             "temporary_files_identified": failure_marker.exists(),
+            "writes_parquet": True,
+            "writes_manifest": False,
             "contains_secret": False,
             "external_calls_triggered": False,
         }
@@ -6043,23 +6067,25 @@ def _storage_v04_physical_execution(
         if promote_result.get("atomic_promoted") is True and duckdb_query_parity and sqlite_readback_verified
         else "storage_v04_physical_execution_degraded",
         "scope_component": scope_component,
-        "acceptance_dir": str(acceptance_dir),
-        "parquet_path": str(parquet_path),
+        "acceptance_dir": _storage_v04_path_label(acceptance_dir),
+        "parquet_path": _storage_v04_path_label(parquet_path),
         "row_count": len(rows),
         "columns": list(V04_STORAGE_ACCEPTANCE_COLUMNS),
-        "schema": schema,
-        "duckdb_readback": duckdb_readback,
+        "schema": _storage_v04_sanitize_paths(schema),
+        "duckdb_readback": _storage_v04_sanitize_paths(duckdb_readback),
         "duckdb_query_parity": duckdb_query_parity,
         "sqlite_readback_verified": sqlite_readback_verified,
-        "durable_sqlite_path": str(durable_sqlite_path),
+        "durable_sqlite_path": _storage_v04_path_label(durable_sqlite_path),
         "manifest": manifest,
-        "manifest_path": str(acceptance_dir / "manifest.json"),
-        "promote_result": promote_result,
+        "manifest_path": _storage_v04_path_label(acceptance_dir / "manifest.json"),
+        "promote_result": _storage_v04_sanitize_paths(promote_result),
         "atomic_promoted": promote_result.get("atomic_promoted") is True,
-        "current_before": current_before,
-        "current_after": current_after,
-        "last_good_after": last_good_after,
+        "current_before": _storage_v04_sanitize_paths(current_before),
+        "current_after": _storage_v04_sanitize_paths(current_after),
+        "last_good_after": _storage_v04_sanitize_paths(last_good_after),
         "last_good_preserved": promote_result.get("last_good_preserved") is True,
+        "writes_parquet": True,
+        "writes_manifest": True,
         "contains_secret": False,
         "external_calls_triggered": False,
     }
@@ -6130,7 +6156,8 @@ def storage_physical_execution_phase_a_packet(
         and payload_safe.get("confirm_scope_hash") == requested_scope_hash
     )
     v04_result: dict[str, Any] = {"status": "not_requested", "atomic_promoted": False}
-    if ready and v04_physical_confirmation:
+    v04_execution_attempted = ready and v04_physical_confirmation
+    if v04_execution_attempted:
         try:
             v04_result = _storage_v04_physical_execution(
                 task_id=str(task_id or ""),
@@ -6151,9 +6178,6 @@ def storage_physical_execution_phase_a_packet(
             else str(v04_result.get("status") or "storage_physical_execution_phase_a_v04_durable_execution_failed")
         )
         ready = v04_result.get("status") == "storage_v04_physical_execution_success"
-    elif ready:
-        status = "storage_physical_execution_phase_a_blocked_v04_durable_write_confirmation_required"
-        ready = False
     rows = [
         _storage_physical_execution_phase_a_row(
             "user_confirmation_bound",
@@ -6214,7 +6238,11 @@ def storage_physical_execution_phase_a_packet(
         "task_id": str(task_id or ""),
         "status": status,
         "mode": "button_gated_local_physical_execution_phase_a",
-        "scope": "local_storage_physical_execution_phase_a_no_write_no_delete_no_provider",
+        "scope": (
+            "local_storage_v04_durable_execution_no_delete_no_provider"
+            if v04_execution_attempted
+            else "local_storage_physical_execution_phase_a_no_write_no_delete_no_provider"
+        ),
         "ltg": "LTG-05",
         "local_phase_a_execution_ready": ready,
         "phase_a_local_evidence_done": ready,
@@ -6244,7 +6272,7 @@ def storage_physical_execution_phase_a_packet(
         ],
         "physical_task_created": ready,
         "physical_task_executed": ready,
-        "physical_execution_implemented": v04_result.get("status") == "storage_v04_physical_execution_success",
+        "physical_execution_implemented": ready,
         "v04_physical_execution": v04_result,
         "v04_durable_storage_executed": v04_result.get("status") == "storage_v04_physical_execution_success",
         "v04_duckdb_query_parity": v04_result.get("duckdb_query_parity") is True,
@@ -6253,8 +6281,8 @@ def storage_physical_execution_phase_a_packet(
         "v04_last_good_preserved": v04_result.get("last_good_preserved") is True,
         "physical_execution_complete": False,
         "production_storage_complete": False,
-        "writes_parquet": v04_result.get("status") == "storage_v04_physical_execution_success",
-        "writes_manifest": v04_result.get("status") == "storage_v04_physical_execution_success",
+        "writes_parquet": v04_result.get("writes_parquet") is True,
+        "writes_manifest": v04_result.get("writes_manifest") is True,
         "deletes_artifacts": False,
         "refreshes_providers": False,
         "runs_commands": False,
@@ -6284,7 +6312,13 @@ def storage_physical_execution_phase_a_packet(
             row_count=int(v04_result.get("row_count") or len(rows)),
         ),
         "warnings": [
-            "POST /api/storage/physical-execution/phase-a 只整合本地 SQLite evidence；不会写 Parquet、写 manifest 或删除文件。",
+            (
+                "v0.4 双确认已执行 gitignored 本地 Parquet、SQLite 与 manifest 验收写入；未删除文件或调用外部源。"
+                if v04_result.get("status") == "storage_v04_physical_execution_success"
+                else "未完成 v0.4 durable current 提升；现有 current/last-good 保持可回放。"
+                if v04_execution_attempted
+                else "未提供 v0.4 双确认；Phase A 仅记录既有本地 evidence，不写 durable acceptance artifacts。"
+            ),
             "Phase A 不是 production storage complete；真实生产提升仍需后续独立 gate。",
         ],
     }
@@ -6360,7 +6394,7 @@ def run_storage_physical_execution_phase_a_task(payload: Any = None) -> dict[str
         payload=task_payload,
         current_step="storage_physical_execution_phase_a_queued",
         warnings=[
-            "storage physical execution Phase A 只整合本地 SQLite evidence；不会写 Parquet、manifest、删除文件或调用外部源。",
+            "v0.4 durable 写入仅在 scope 匹配且双确认时执行；否则 Phase A 只记录既有本地 evidence。",
             "Phase A 不修改 strategy action、不执行真实交易，也不代表 production storage 完成。",
         ],
     )
@@ -6387,7 +6421,7 @@ def run_storage_physical_execution_phase_a_task(payload: Any = None) -> dict[str
             call_ledger=packet["call_ledger"],
             warning="storage_physical_execution_phase_a_failed_no_external_call",
         ) or task
-    succeeded = packet.get("v04_durable_storage_executed") is True
+    succeeded = packet.get("local_phase_a_execution_ready") is True
     return task_service.update_task_status(
         task["task_id"],
         status="success" if succeeded else "failed",

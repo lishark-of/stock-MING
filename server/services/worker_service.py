@@ -3221,6 +3221,14 @@ def _worker_v04_write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     temp_path.replace(path)
 
 
+def _worker_v04_path_label(path: Path) -> str:
+    try:
+        relative = path.resolve().relative_to(WORKER_V04_RUNTIME_ROOT.resolve())
+    except (OSError, ValueError):
+        return path.name
+    return f"v04_acceptance/{relative.as_posix()}"
+
+
 def _worker_v04_pool_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     raw_pool = payload.get("pool") or payload.get("symbols") or []
     if not isinstance(raw_pool, list):
@@ -3393,9 +3401,9 @@ def _worker_v04_local_batch_runtime(payload_safe: dict[str, Any], *, task_id: st
     )
     return {
         "status": status,
-        "runtime_dir": str(runtime_dir),
-        "event_log_path": str(event_log_path),
-        "manifest_path": str(manifest_path),
+        "runtime_dir": _worker_v04_path_label(runtime_dir),
+        "event_log_path": _worker_v04_path_label(event_log_path),
+        "manifest_path": _worker_v04_path_label(manifest_path),
         "manifest": manifest,
         "pool_count": len(pool),
         "processed_count": len(processed),

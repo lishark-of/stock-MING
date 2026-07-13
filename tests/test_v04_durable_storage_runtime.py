@@ -69,6 +69,20 @@ class V04DurableStorageRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(request_task["status"], "success")
 
+        legacy = storage_service.run_storage_physical_execution_phase_a_task(
+            {
+                "source": "v04_focused_test",
+                "approved_by_user": True,
+                "physical_execution_scope_hash": scope_hash,
+            }
+        )
+        self.assertEqual(legacy["status"], "success")
+        legacy_receipt = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
+            storage_service.STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY
+        )
+        self.assertFalse(legacy_receipt["v04_durable_storage_executed"])
+        self.assertFalse(storage_service.V04_ACCEPTANCE_ROOT.exists())
+
         first = storage_service.run_storage_physical_execution_phase_a_task(
             self._storage_payload(scope_hash, "v04_first")
         )
@@ -83,9 +97,16 @@ class V04DurableStorageRuntimeTests(unittest.TestCase):
         )
         result = receipt["v04_physical_execution"]
         manifest = result["manifest"]
+        acceptance_dir = storage_service.V04_ACCEPTANCE_ROOT / storage_service._storage_v04_scope_component(scope_hash)
+        parquet_path = parquet_store.dataset_path(
+            root=acceptance_dir / "parquet",
+            name="storage_phase_a_sample",
+        )
         self.assertEqual(receipt["status"], "storage_physical_execution_phase_a_v04_durable_execution_success")
-        self.assertTrue(Path(result["parquet_path"]).exists())
-        self.assertTrue(Path(result["manifest_path"]).exists())
+        self.assertTrue(parquet_path.exists())
+        self.assertTrue((acceptance_dir / "manifest.json").exists())
+        self.assertTrue(result["parquet_path"].startswith("v04_acceptance/"))
+        self.assertNotIn(str(self.root), json.dumps(receipt, ensure_ascii=False))
         self.assertEqual(result["row_count"], 3)
         self.assertEqual(result["schema"]["status"], "ready")
         self.assertTrue(result["duckdb_query_parity"])
@@ -114,7 +135,7 @@ class V04DurableStorageRuntimeTests(unittest.TestCase):
 
         self.assertEqual(failed["status"], "failed")
         self.assertEqual(failed_result["status"], "storage_v04_physical_execution_injected_failure_current_unchanged")
-        self.assertTrue(Path(failed_result["temporary_failure_marker"]).exists())
+        self.assertTrue((acceptance_dir / "failed_tmp_marker.json").exists())
         self.assertEqual(failed_result["current_after"]["version_id"], "v04_second")
         self.assertEqual(failed_result["last_good_after"]["version_id"], "v04_first")
         self.assertFalse(failed_result["atomic_promoted"])
@@ -141,6 +162,18 @@ class V04DurableStorageRuntimeTests(unittest.TestCase):
     def test_worker_v04_local_batch_runtime_processes_full_pool_logs_and_preserves_last_good(self):
         scope_hash = "worker-v04-scope"
 
+        blocked = worker_service.run_worker_runtime_qa_execution(
+            {
+                "runtime_mode": "v04_local_batch",
+                "operator_approved": True,
+                "runtime_scope_hash": scope_hash,
+                "confirm_scope_hash": scope_hash,
+                "pool": ["000001.SZ"],
+            }
+        )
+        self.assertEqual(blocked["status"], "failed")
+        self.assertFalse(worker_service.WORKER_V04_RUNTIME_ROOT.exists())
+
         first = worker_service.run_worker_runtime_qa_execution(self._worker_payload(scope_hash))
         second = worker_service.run_worker_runtime_qa_execution(self._worker_payload(scope_hash))
         self.assertEqual(first["status"], "success")
@@ -151,8 +184,12 @@ class V04DurableStorageRuntimeTests(unittest.TestCase):
         self.assertEqual(second_result["chunk_size"], 7)
         self.assertEqual(second_result["chunk_count"], 4)
         self.assertEqual(second_result["append_only_event_count"], 4)
-        self.assertTrue(Path(second_result["event_log_path"]).exists())
-        self.assertEqual(len(Path(second_result["event_log_path"]).read_text(encoding="utf-8").strip().splitlines()), 8)
+        runtime_dir = worker_service.WORKER_V04_RUNTIME_ROOT / scope_hash / "worker_runtime"
+        event_log_path = runtime_dir / "events.jsonl"
+        self.assertTrue(event_log_path.exists())
+        self.assertEqual(len(event_log_path.read_text(encoding="utf-8").strip().splitlines()), 8)
+        self.assertTrue(second_result["event_log_path"].startswith("v04_acceptance/"))
+        self.assertNotIn(str(self.root), json.dumps(second_result, ensure_ascii=False))
         self.assertEqual(second_result["current_after"]["status"], "ready")
         self.assertEqual(second_result["last_good_after"]["status"], "ready")
         self.assertTrue(second_result["local_runtime_not_full_market_claim"])
@@ -172,7 +209,7 @@ class V04DurableStorageRuntimeTests(unittest.TestCase):
         self.assertEqual(failed_result["current_after"]["manifest_sha256"], second_result["current_after"]["manifest_sha256"])
         self.assertEqual(failed_result["last_good_after"]["manifest_sha256"], second_result["last_good_after"]["manifest_sha256"])
         self.assertTrue(failed_result["last_good_preserved"])
-        self.assertEqual(len(Path(failed_result["event_log_path"]).read_text(encoding="utf-8").strip().splitlines()), 10)
+        self.assertEqual(len(event_log_path.read_text(encoding="utf-8").strip().splitlines()), 10)
 
 
 if __name__ == "__main__":
