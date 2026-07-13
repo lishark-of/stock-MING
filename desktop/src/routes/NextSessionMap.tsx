@@ -594,6 +594,18 @@ export default function NextSessionMap() {
   const nextSessionLineageChipLabel = candidateRadarCurrentResultVersion
     ? `${candidateRadarCurrentResultSymbol || candidateRadarConfirmedSymbol || "当前标的"} / ${candidateRadarCurrentResultVersion} / ${candidateRadarFreshnessLabel}；来源任务 ${candidateRadarSourceTaskLabel.includes("等待") ? (candidateRadarCanonicalTaskId || "等待任务") : candidateRadarSourceTaskLabel}；${candidateRadarLastGoodLabel}`
     : "等待同源 result_version / 来源任务 / current-result 回放";
+  const nextSessionSamePacketSentence = candidateRadarSameTaskFactModelReady && chartSummary.is_exact_next_session_packet === true
+    ? `同包图谱已回放：${candidateRadarConfirmedSymbol || candidateRadarCurrentResultSymbol || "当前标的"}；${nextSessionLineageChipLabel}。`
+    : `同包图谱待补：${nextSessionLineageChipLabel}；缺少同源字段时只显示 pending，不拼接不同任务的结果。`;
+  const nextSessionSamePacketItems: MetricItem[] = [
+    { label: "标的 / 来源任务", value: `${candidateRadarConfirmedSymbolLabel} / ${candidateRadarSourceTaskLabel}`, tone: candidateRadarConfirmedSymbol ? "good" : "warn" },
+    { label: "范围 / 结果版本", value: candidateRadarSameTaskFactModelLabel, tone: candidateRadarSameTaskFactModelReady ? "good" : "warn" },
+    { label: "数据日期 / 新鲜度", value: candidateRadarFreshnessLabel, tone: candidateRadarDataDate && candidateRadarFreshnessState ? "good" : "warn" },
+    { label: "current / last-good", value: candidateRadarLastGoodLabel, tone: candidateRadarCurrentResultVersion ? "good" : "warn" },
+    { label: "图谱对象", value: chartSummary.has_drawable_data === true ? `路径 ${String(chartSummary.scenario_series_count ?? 0)} / 参考线 ${String(chartSummary.reference_line_count ?? 0)} / 操作区 ${String(chartSummary.operation_zone_count ?? 0)}` : "等待同包图谱数据", tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
+    { label: "查看交互", value: "鼠标 hover 看来源/条件；Tab 聚焦图谱后读取图例和边界；交互不写操作区", tone: "good" },
+    { label: "研究边界", value: "同包不足时保持 pending；不创建 task、不改价格、持仓或交易动作", tone: "good" }
+  ];
   const candidateRadarSourceTaskStep = String(
     packet.latest_confirmed_task_current_step ||
       candidateRadarCache.latest_confirmed_task_current_step ||
@@ -1849,6 +1861,12 @@ export default function NextSessionMap() {
         </div>
         <p className="risk-note">首屏只汇总当前股票、最近结果、下一步、缺口原因和操作区边界；查看缓存只读本地缓存，链接只切换本地锚点，不创建后台流程、不刷新外部数据或模型、不下单。</p>
       </div>
+      <div aria-label="next session same packet ordinary readback">
+        <h3>同包图谱交接</h3>
+        <p className="ordinary-status-note" aria-label="next session same packet ordinary sentence" aria-live="polite">{ordinaryNextText(nextSessionSamePacketSentence)}</p>
+        <MetricGrid items={ordinaryNextMetricItems(nextSessionSamePacketItems)} />
+        <p className="risk-note">同包交接只读取下一票雷达与图谱的现有本地结果；没有同源 lineage 时诚实保持待补，不组合不同任务、范围或版本。</p>
+      </div>
       <div aria-label="next session post confirm one minute chart read">
         <h3>确认后一眼读图</h3>
         <p className="ordinary-status-note" aria-label="next session post confirm one minute sentence" aria-live="polite">{ordinaryNextText(nextSessionPostConfirmOneMinuteSentence)}</p>
@@ -2134,9 +2152,10 @@ export default function NextSessionMap() {
         ]}
       />
       <p className="risk-note">{String(packet.summary ?? "当前只读取 cache；无缓存时不会触发 Tushare。")}</p>
-      <div id="next-session-chart" className="next-session-chart-review" role="region" aria-label={nextSessionChartReviewRegionLabel} title={nextSessionChartReviewRegionLabel}>
+      <div id="next-session-chart" className="next-session-chart-review" role="region" tabIndex={0} aria-describedby="next-session-chart-keyboard-hint" aria-label={nextSessionChartReviewRegionLabel} title={nextSessionChartReviewRegionLabel}>
         <NextSessionChart payload={chartPayload} />
       </div>
+      <p id="next-session-chart-keyboard-hint" className="risk-note">图表支持 hover 查看路径来源、条件和纪律说明；键盘可聚焦此区域并读取下方参考线、操作区图例和只读边界。图表查看不会创建 task、修改价格、持仓或操作区。</p>
       <details id="next-session-audit" className="developer-audit-details" aria-label="next session developer audit details">
         <summary>开发 / 审计指标</summary>
         <p className="risk-note">普通用户先看上方次日图谱摘要和图表；QA、coverage、promotion、cache ledger 和原始 packet 默认收起。</p>

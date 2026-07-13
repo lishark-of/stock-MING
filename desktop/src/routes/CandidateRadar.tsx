@@ -1283,6 +1283,51 @@ export default function CandidateRadar() {
     "先看 Top / Watch / Excluded 分组，再看候选来源、评分说明和缺少证据；不要从 provider 审计表开始";
   const ordinaryCandidateGroupBoundary =
     "Top 是优先复核，Watch 是观察，Excluded 是排除或等待；三者都不是买入、卖出或加仓指令";
+  const suppliedPoolInputCount = Number(
+    fullPoolLocalExecutionReceipt.supplied_pool_input_count ??
+      fullPoolPlan.supplied_pool_input_count ??
+      coverageDetail.candidate_input_count ??
+      localPoolAudit.normalized_candidate_count ??
+      0
+  );
+  const suppliedPoolProcessedCount = Number(
+    fullPoolLocalExecutionReceipt.processed_candidate_count ??
+      fullPoolLocalExecutionReceipt.processed_count ??
+      scanExecutionSummary.processed_candidate_count ??
+      0
+  );
+  const suppliedPoolChunkCount = Number(
+    fullPoolLocalExecutionReceipt.chunk_count ??
+      fullPoolLocalExecutionReceipt.chunk_total ??
+      fullPoolPlan.chunk_count ??
+      0
+  );
+  const suppliedPoolStageLabel = fullPoolStageRows.length
+    ? `${fullPoolStageRows.length} 个本地阶段已回放`
+    : "等待 supplied-pool stage 回放";
+  const suppliedPoolRuntimeLabel = fullPoolLocalExecutionReceipt.local_full_pool_execution_done === true
+    ? "本地 batch readback 已可读；不等同于全市场或 Celery production"
+    : String(fullPoolLocalExecutionReceipt.status ?? fullPoolPlan.status ?? "等待本地 supplied-pool readback");
+  const suppliedPoolFreshnessLabel = `${String(freshnessState.data_date ?? freshnessState.expected_trade_date ?? "等待 data_date")} / ${String(freshnessState.freshness_state ?? freshnessState.state ?? "等待 freshness")}`;
+  const suppliedPoolCoverageLabel = `保留信号 ${String(scanCoverage.mapped_signal_group_count ?? 0)} 组 / 缺口 ${String(scanCoverage.missing_signal_group_count ?? 0)} 组`;
+  const suppliedPoolProviderModelLabel = coarseFineScreening.tushare_backed === true
+    ? `数据源已有本地回放；模型 ${String(coarseFineScreening.deepseek_status ?? "待补")}`
+    : `数据源/模型待补：${String(coarseFineScreening.deepseek_status ?? "pending")}`;
+  const suppliedPoolReadbackLabel = searchQuantLastGoodResultLineage.result_version || searchQuantResultVersionSummary.last_good_result_version
+    ? `current/last-good ${displayText(searchQuantLastGoodResultLineage.symbol ?? searchQuantResultVersionSummary.last_good_result_symbol, "当前结果")} / ${displayText(searchQuantLastGoodResultLineage.result_version ?? searchQuantResultVersionSummary.last_good_result_version, "等待版本")}`
+    : "等待 runtime readback / last-good";
+  const suppliedPoolOrdinarySentence =
+    `supplied pool：输入 ${suppliedPoolInputCount}，已处理 ${suppliedPoolProcessedCount || "待回放"}，chunks ${suppliedPoolChunkCount || "待回放"}；${ordinaryCandidateGroupLabel}。${suppliedPoolRuntimeLabel}。`;
+  const suppliedPoolOrdinaryItems: MetricItem[] = [
+    { label: "输入 / 已处理", value: `${suppliedPoolInputCount || "待回放"} / ${suppliedPoolProcessedCount || "待回放"}`, tone: suppliedPoolInputCount ? "good" : "warn" },
+    { label: "chunks / stages", value: `${suppliedPoolChunkCount || "待回放"} / ${suppliedPoolStageLabel}`, tone: suppliedPoolChunkCount || fullPoolStageRows.length ? "good" : "warn" },
+    { label: "Top / Watch / Excluded", value: ordinaryCandidateGroupLabel, tone: ordinaryCandidateTopCount ? "good" : "warn" },
+    { label: "信号 / 覆盖", value: suppliedPoolCoverageLabel, tone: Number(scanCoverage.missing_signal_group_count ?? 0) ? "warn" : "good" },
+    { label: "来源 / 日期", value: `${coarseFineSourceLabel} / ${suppliedPoolFreshnessLabel}`, tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn" },
+    { label: "本地 readback", value: suppliedPoolReadbackLabel, tone: suppliedPoolReadbackLabel.startsWith("等待") ? "warn" : "good" },
+    { label: "数据源 / 模型", value: suppliedPoolProviderModelLabel, tone: coarseFineScreening.tushare_backed === true ? "good" : "warn" },
+    { label: "研究边界", value: "本地 batch 不等同全市场或 Celery production；候选不是买入指令", tone: "good" }
+  ];
   const ordinaryCoarseFineItems: MetricItem[] = [
     { label: "候选分组", value: ordinaryCandidateGroupLabel },
     { label: "数据来源", value: coarseFineSourceLabel, tone: coarseFineSourceMode === "tushare_backed_sample" ? "good" : "warn" },
@@ -6202,6 +6247,12 @@ export default function CandidateRadar() {
                 { label: "边界", value: "候选不是买入指令；不交易、不改交易策略", tone: "good" }
               ]}
             />
+          </div>
+          <div aria-label="candidate radar supplied pool ordinary readback">
+            <h3>本地候选池处理结果</h3>
+            <p className="ordinary-status-note" aria-label="candidate radar supplied pool ordinary sentence" aria-live="polite">{suppliedPoolOrdinarySentence}</p>
+            <MetricGrid items={suppliedPoolOrdinaryItems} />
+            <p className="risk-note">这张卡只回放已有 supplied-pool、分组和结果版本字段；不把本地 batch 说成全市场或 Celery production。候选不是买入指令：不补调数据源/模型，不创建 task，也不生成买卖、仓位或融资动作。</p>
           </div>
           <div aria-label="candidate radar ordinary candidate review compass">
             <h3>候选复核顺序</h3>
