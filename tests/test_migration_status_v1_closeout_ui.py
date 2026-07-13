@@ -16,32 +16,36 @@ class MigrationStatusV1CloseoutUiTests(unittest.TestCase):
     def test_v1_local_rc_panel_is_first_and_separates_production_closeout(self):
         self.assertLess(self.panel_start, self.summary_start)
         self.assertIn("command_center_3_v1_local_rc", self.page)
-        self.assertIn("ltg_evidence_closeout_rows", self.page)
+        self.assertIn("packet.v1_ltg_closure_rows", self.page)
+        self.assertIn("commandCenterV1LocalRc.ltg_closure_rows", self.page)
+        self.assertNotIn("ltg_evidence_closeout_rows", self.page)
         self.assertIn('label: "本地 RC"', self.panel)
-        self.assertIn('label: "本地直接证据"', self.panel)
-        self.assertIn('value: `${v1LocalDirectEvidenceDone}/14`', self.panel)
+        self.assertIn('label: "本地直接证据（版本）"', self.panel)
+        self.assertIn('value: `${v1LocalVersionReadyCount}/${v1LocalVersionTotalCount}`', self.panel)
         self.assertIn('label: "生产 strict closeout"', self.panel)
         self.assertIn("v1ProductionStrictCloseoutReady", self.panel)
         self.assertIn("local RC ready 只代表本地发布候选，不代表生产 strict closeout", self.panel)
 
-    def test_v1_contract_uses_backend_summary_and_fourteen_closeout_rows(self):
+    def test_v1_contract_uses_real_backend_summary_and_fourteen_closure_rows(self):
         for field in (
-            "local_release_candidate_ready",
-            "strict_closeout_claim_allowed",
+            "local_direct_evidence_ready",
+            "local_version_ready_count",
+            "local_version_total_count",
+            "production_strict_closeout_complete",
             "strict_closeout_done_count",
             "strict_closeout_remaining_count",
             "strict_closeout",
             "version_evidence_rows",
-            "external_blocker_groups",
-            "external_blocker_rows",
-            "local_direct_evidence_ready",
+            "ltg_closure_rows",
             "production_complete",
+            "can_close",
             "external_or_environment_blockers",
         ):
             self.assertIn(field, self.page)
+        self.assertIn("commandCenterV1LocalRc.local_direct_evidence_ready === true", self.page)
+        self.assertIn("commandCenterV1LocalRc.production_strict_closeout_complete === true", self.page)
         self.assertIn("v1StrictCloseoutDone === 14", self.page)
-        self.assertIn("v1ExternalBlockerContractPresent", self.page)
-        self.assertIn("v1ExternalBlockerGroups.length === 0", self.page)
+        self.assertIn("v1VersionEvidenceSourceRows.length || 7", self.page)
 
     def test_v01_to_v07_evidence_and_external_blockers_are_visible_without_greenwashing(self):
         for version in ("v0.1", "v0.2", "v0.3", "v0.4", "v0.5", "v0.6", "v0.7"):
@@ -55,7 +59,7 @@ class MigrationStatusV1CloseoutUiTests(unittest.TestCase):
 
     def test_ltg12_isolation_is_completed_only_from_direct_evidence_and_keeps_trade_boundary(self):
         self.assertIn('String(row.id ?? row.goal ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "") === "LTG12"', self.page)
-        self.assertIn("v1Ltg12Row.local_direct_evidence_ready === true", self.page)
+        self.assertIn("v1Ltg12Row.production_complete === true && v1Ltg12Row.can_close === true", self.page)
         self.assertIn("研究客户端隔离目标完成", self.panel)
         self.assertIn("研究客户端隔离证据待查收", self.panel)
         self.assertIn("真实交易仍是另立项目、未授权", self.panel)

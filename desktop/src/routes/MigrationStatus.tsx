@@ -1340,7 +1340,10 @@ export default function MigrationStatus() {
   const migrationStrictCloseoutLabel = String(longTermGoalSummary.strict_closeout ?? "0/14");
   const migrationGoalCountLabel = String(longTermGoalSummary.goal_count ?? 14);
   const commandCenterV1LocalRc = (packet.command_center_3_v1_local_rc as Record<string, unknown> | undefined) ?? {};
-  const ltgEvidenceCloseoutRows = recordArray(packet.ltg_evidence_closeout_rows);
+  const v1TopLevelLtgClosureRows = recordArray(packet.v1_ltg_closure_rows);
+  const v1LtgClosureRows = v1TopLevelLtgClosureRows.length
+    ? v1TopLevelLtgClosureRows
+    : recordArray(commandCenterV1LocalRc.ltg_closure_rows);
   const v1VersionEvidenceSourceRows = recordArray(commandCenterV1LocalRc.version_evidence_rows);
   const v1VersionEvidenceRows = ["v0.1", "v0.2", "v0.3", "v0.4", "v0.5", "v0.6", "v0.7"].map((version) => {
     const row = v1VersionEvidenceSourceRows.find((candidate) => {
@@ -1361,7 +1364,7 @@ export default function MigrationStatus() {
   });
   const v1ExternalBlockerGroupsValue = commandCenterV1LocalRc.external_blocker_groups;
   const v1ExternalBlockerRowSource = recordArray(commandCenterV1LocalRc.external_blocker_rows);
-  const v1LtgExternalBlockerSource = ltgEvidenceCloseoutRows.flatMap((row) => {
+  const v1LtgExternalBlockerSource = v1LtgClosureRows.flatMap((row) => {
     const blockers = row.external_or_environment_blockers;
     if (Array.isArray(blockers)) {
       return blockers.map((blocker) => ({
@@ -1389,14 +1392,20 @@ export default function MigrationStatus() {
   });
   const v1ExternalBlockerContractPresent = Array.isArray(v1ExternalBlockerGroupsValue)
     || Array.isArray(commandCenterV1LocalRc.external_blocker_rows)
-    || ltgEvidenceCloseoutRows.some((row) => Object.prototype.hasOwnProperty.call(row, "external_or_environment_blockers"));
-  const v1LocalDirectEvidenceDone = boundedCount(
-    commandCenterV1LocalRc.local_direct_evidence_done_count,
-    ltgEvidenceCloseoutRows.filter((row) => row.local_direct_evidence_ready === true).length
+    || v1LtgClosureRows.some((row) => Object.prototype.hasOwnProperty.call(row, "external_or_environment_blockers"));
+  const v1LocalVersionTotalCount = boundedCount(
+    commandCenterV1LocalRc.local_version_total_count,
+    v1VersionEvidenceSourceRows.length || 7,
+    7
+  );
+  const v1LocalVersionReadyCount = boundedCount(
+    commandCenterV1LocalRc.local_version_ready_count,
+    v1VersionEvidenceSourceRows.filter((row) => row.local_direct_evidence_ready === true).length,
+    v1LocalVersionTotalCount
   );
   const v1StrictCloseoutDone = boundedCount(
     commandCenterV1LocalRc.strict_closeout_done_count,
-    ltgEvidenceCloseoutRows.filter((row) => row.production_complete === true).length
+    v1LtgClosureRows.filter((row) => row.production_complete === true).length
   );
   const v1StrictCloseoutRemaining = boundedCount(
     commandCenterV1LocalRc.strict_closeout_remaining_count,
@@ -1404,16 +1413,14 @@ export default function MigrationStatus() {
   );
   const v1LocalRcVersion = String(commandCenterV1LocalRc.version ?? "v1.0");
   const v1LocalRcStatus = String(commandCenterV1LocalRc.status ?? "后端快照未提供状态");
-  const v1LocalReleaseCandidateReady = commandCenterV1LocalRc.local_release_candidate_ready === true;
-  const v1ProductionStrictCloseoutReady = commandCenterV1LocalRc.strict_closeout_claim_allowed === true
-    && v1StrictCloseoutDone === 14
-    && v1ExternalBlockerContractPresent
-    && v1ExternalBlockerGroups.length === 0;
+  const v1LocalReleaseCandidateReady = commandCenterV1LocalRc.local_direct_evidence_ready === true;
+  const v1ProductionStrictCloseoutReady = commandCenterV1LocalRc.production_strict_closeout_complete === true
+    && v1StrictCloseoutDone === 14;
   const v1StrictCloseoutLabel = String(commandCenterV1LocalRc.strict_closeout ?? `${v1StrictCloseoutDone}/14`);
-  const v1Ltg12Row = ltgEvidenceCloseoutRows.find((row) => (
+  const v1Ltg12Row = v1LtgClosureRows.find((row) => (
     String(row.id ?? row.goal ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "") === "LTG12"
   )) ?? {};
-  const v1Ltg12IsolationReady = v1Ltg12Row.local_direct_evidence_ready === true;
+  const v1Ltg12IsolationReady = v1Ltg12Row.production_complete === true && v1Ltg12Row.can_close === true;
   const migrationCurrentMainFocus = ordinaryMigrationText(
     longTermNextPriority[0] ?? "普通用户可用化并行修补；长期主线继续收证据"
   );
@@ -1515,9 +1522,9 @@ export default function MigrationStatus() {
                 tone: v1LocalReleaseCandidateReady ? "good" : "warn"
               },
               {
-                label: "本地直接证据",
-                value: `${v1LocalDirectEvidenceDone}/14`,
-                tone: v1LocalDirectEvidenceDone === 14 ? "good" : "warn"
+                label: "本地直接证据（版本）",
+                value: `${v1LocalVersionReadyCount}/${v1LocalVersionTotalCount}`,
+                tone: v1LocalVersionReadyCount === v1LocalVersionTotalCount ? "good" : "warn"
               },
               {
                 label: "生产 strict closeout",
