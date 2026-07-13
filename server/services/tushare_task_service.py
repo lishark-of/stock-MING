@@ -6756,18 +6756,15 @@ def _all_provider_rows(data: Any) -> list[dict[str, Any]]:
 
 
 def _listed_a_share_code(value: Any) -> bool:
-    text = str(value or "").strip().upper()
-    prefix, separator, suffix = text.partition(".")
-    return bool(
-        separator
-        and len(prefix) == 6
-        and prefix.isdigit()
-        and (
-            (suffix == "SH" and prefix.startswith("6"))
-            or (suffix == "SZ" and prefix.startswith(("0", "3")))
-            or (suffix == "BJ" and prefix.startswith(("4", "8", "9")))
-        )
-    )
+    return tushare_production_store.is_listed_a_share_code(value)
+
+
+def _full_market_minimum_sessions(api: str) -> int:
+    if api == "daily":
+        return tushare_production_store.REQUIRED_SESSIONS
+    if api == "moneyflow":
+        return min(5, tushare_production_store.REQUIRED_SESSIONS)
+    return 1
 
 
 def _atomic_json_write(path: Path, payload: Mapping[str, Any]) -> None:
@@ -7128,7 +7125,7 @@ def _run_full_market_universe_acceptance(
         counts: dict[str, int] = {}
         for code, _date in set(keys):
             counts[code] = counts.get(code, 0) + 1
-        minimum = 60 if api == "daily" else 5 if api == "moneyflow" else 1
+        minimum = _full_market_minimum_sessions(api)
         covered = {code for code, count in counts.items() if count >= minimum}
         validation[api] = {
             "row_count": len(rows),

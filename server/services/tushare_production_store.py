@@ -46,7 +46,10 @@ EXCHANGE_SUFFIX = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
 SH_PREFIXES = ("600", "601", "603", "605", "688", "689")
 SZ_PREFIXES = ("000", "001", "002", "003", "300", "301")
 BJ_PREFIXES = ("4", "8", "920")
-__all__ = ("validate_tushare_full_market_production_version",)
+__all__ = (
+    "is_listed_a_share_code",
+    "validate_tushare_full_market_production_version",
+)
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -104,6 +107,19 @@ def _code_family_valid(code: str, suffix: str) -> bool:
         (suffix == "SH" and prefix.startswith(SH_PREFIXES))
         or (suffix == "SZ" and prefix.startswith(SZ_PREFIXES))
         or (suffix == "BJ" and prefix.startswith(BJ_PREFIXES))
+    )
+
+
+def is_listed_a_share_code(value: Any) -> bool:
+    """Return whether a Tushare code belongs to a supported listed A-share family."""
+
+    text = str(value or "").strip().upper()
+    prefix, separator, suffix = text.partition(".")
+    return bool(
+        separator
+        and len(prefix) == 6
+        and prefix.isdigit()
+        and _code_family_valid(text, suffix)
     )
 
 
@@ -171,13 +187,10 @@ def validate_datasets(
         list_status = str(row.get("list_status") or "").upper()
         list_date = _date(row.get("list_date"))
         suffix = code.rsplit(".", 1)[-1] if "." in code else ""
-        prefix = code.split(".", 1)[0]
         if (
             exchange not in EXCHANGE_SUFFIX
             or suffix != EXCHANGE_SUFFIX.get(exchange)
-            or len(prefix) != 6
-            or not prefix.isdigit()
-            or not _code_family_valid(code, suffix)
+            or not is_listed_a_share_code(code)
             or list_status != "L"
             or len(list_date) != 8
             or not list_date.isdigit()

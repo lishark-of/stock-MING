@@ -197,7 +197,13 @@ class TushareProductionVersionStoreTests(unittest.TestCase):
     def test_no_caller_constructible_seal_or_public_promotion_api_exists(self):
         self.assertFalse(hasattr(store, "_seal_official_run"))
         self.assertFalse(hasattr(store, "promote_version"))
-        self.assertEqual(store.__all__, ("validate_tushare_full_market_production_version",))
+        self.assertEqual(
+            store.__all__,
+            (
+                "is_listed_a_share_code",
+                "validate_tushare_full_market_production_version",
+            ),
+        )
         self.assertFalse(store.validate_tushare_full_market_production_version(self.root)["ready"])
 
     def test_wrong_exchange_code_families_are_rejected(self):
@@ -209,6 +215,8 @@ class TushareProductionVersionStoreTests(unittest.TestCase):
             ("390000.SZ", "SZSE"),
             ("999999.BJ", "BSE"),
         ):
+            self.assertFalse(store.is_listed_a_share_code(code))
+            self.assertFalse(tushare_task_service._listed_a_share_code(code))
             datasets = _datasets()
             datasets["stock_basic"][0].update({"ts_code": code, "exchange": exchange})
             result = store.validate_datasets(
@@ -217,6 +225,17 @@ class TushareProductionVersionStoreTests(unittest.TestCase):
                 end_date="20260710",
             )
             self.assertIn("stock_basic_exchange_suffix_or_membership_invalid", result["blockers"])
+
+    def test_task_coverage_minimums_share_the_production_store_session_policy(self):
+        self.assertEqual(
+            tushare_task_service._full_market_minimum_sessions("daily"),
+            store.REQUIRED_SESSIONS,
+        )
+        self.assertEqual(tushare_task_service._full_market_minimum_sessions("daily_basic"), 1)
+        self.assertEqual(
+            tushare_task_service._full_market_minimum_sessions("moneyflow"),
+            min(5, store.REQUIRED_SESSIONS),
+        )
 
     def test_recent_listings_are_visible_exclusions_not_silent_coverage_reduction(self):
         result = store.validate_datasets(
