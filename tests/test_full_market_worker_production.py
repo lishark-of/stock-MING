@@ -208,6 +208,7 @@ def _worker_batch_fixture(
     hostname: str = "worker@host",
 ):
     task_id = f"fmw-{run_id}-{batch_index:04d}-{uuid.uuid4().hex}"
+    challenge_id = uuid.uuid4().hex
     batch = {
         "acceptance_run_id": run_id,
         "batch_index": batch_index,
@@ -216,6 +217,7 @@ def _worker_batch_fixture(
         "batch_symbol_hash": service._canonical_digest(symbols),
         "batch_input_hash": service._batch_input_hash(universe, symbols),
         "celery_task_id": task_id,
+        "worker_challenge_id": challenge_id,
     }
     runtime = {
         "bound_task_request": True,
@@ -224,6 +226,9 @@ def _worker_batch_fixture(
         "worker_hostname": hostname,
         "worker_pid": 4242,
         "worker_queue": service.CANDIDATE_QUEUE,
+        "worker_challenge_id": challenge_id,
+        "worker_challenge_consumed": True,
+        "worker_execution_proof": "e" * 64,
     }
     rows = service._score_candidate_rows(universe, symbols)
     task = {
@@ -245,6 +250,7 @@ def _worker_batch_fixture(
             "universe_digest": universe["universe_digest"],
             "provider_scope_hash": universe["scope_hash"],
             "provider_version_digest": universe["version_digest"],
+            "worker_challenge_id": challenge_id,
         },
         "candidate_rows": rows,
         "candidate_output_hash": service._canonical_digest(rows),
@@ -281,6 +287,9 @@ def _worker_batch_fixture(
         "persisted_task_digest": service._canonical_digest(task),
         "candidate_output_hash": task["candidate_output_hash"],
         "worker_runtime_digest": task["worker_runtime_digest"],
+        "worker_challenge_id": challenge_id,
+        "worker_challenge_consumed": True,
+        "worker_execution_proof_verified": True,
         "transport_attestation_digest": service._canonical_digest(transport),
         "transport_attestation": dict(transport),
         "eligible_worker_names": [hostname],
@@ -761,6 +770,7 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     batches=[symbols],
                     transport=transport,
                     execution_event=_transport_event_fixture(transport),
+                    resume_proof_verifier=lambda _success, _task: True,
                 )
                 app = _PartialDispatchApp()
                 service._revoke_and_quarantine(
@@ -776,9 +786,92 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     batches=[symbols],
                     transport=transport,
                     execution_event=_transport_event_fixture(transport),
+                    resume_proof_verifier=lambda _success, _task: True,
                 )
         self.assertEqual(len(before), 1)
         self.assertEqual(after, [])
+
+    def test_shape_valid_forged_resume_without_redis_receipt_is_rejected(self) -> None:
+        symbols = _valid_symbols(service.MIN_BATCH_SIZE)
+        run_id = uuid.uuid4().hex
+        universe, _batch, task, transport, success = _worker_fixture(symbols, run_id=run_id)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2]:
+                store = SQLiteMetaStore(root / "meta.sqlite")
+                store.write_task_status(task)
+                checkpoint = service._write_checkpoint(
+                    run_id=run_id,
+                    universe=universe,
+                    batches=[symbols],
+                    successes=[success],
+                    status="partial_failure_resume_available",
+                    transport=transport,
+                )
+                verifier = MagicMock(return_value=False)
+                resumed = service._validated_resume_successes(
+                    checkpoint,
+                    run_id=run_id,
+                    universe=universe,
+                    batches=[symbols],
+                    transport=transport,
+                    execution_event=_transport_event_fixture(transport),
+                    resume_proof_verifier=verifier,
+                )
+        self.assertEqual(resumed, [])
+        verifier.assert_called_once()
+
+    def test_public_resume_without_external_receipt_never_promotes(self) -> None:
+        symbols = _valid_symbols(service.MIN_BATCH_SIZE)
+        run_id = uuid.uuid4().hex
+        universe, _batch, task, transport, success = _worker_fixture(symbols, run_id=run_id)
+        client = MagicMock()
+        client.get.return_value = None
+        fake_app = types.SimpleNamespace(
+            backend=types.SimpleNamespace(client=client),
+            close=MagicMock(),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2]:
+                store = SQLiteMetaStore(root / "meta.sqlite")
+                sentinel = {"status": "existing-production", "marker": "preserve"}
+                store.write_packet(service.PACKET_KEY, sentinel)
+                store.write_packet(service.LAST_GOOD_PACKET_KEY, sentinel)
+                store.write_packet(service._transport_key(run_id), transport)
+                store.write_packet(
+                    service._execution_event_key(run_id),
+                    _transport_event_fixture(transport),
+                )
+                store.write_task_status(task)
+                service._write_checkpoint(
+                    run_id=run_id,
+                    universe=universe,
+                    batches=[symbols],
+                    successes=[success],
+                    status="partial_failure_resume_available",
+                    transport=transport,
+                )
+                with patch.object(
+                    service,
+                    "_authoritative_provider_universe",
+                    return_value=universe,
+                ), patch.object(
+                    service,
+                    "_build_and_probe_official_transport",
+                    return_value=(fake_app, transport),
+                ):
+                    result = service.run_full_market_worker_production_acceptance(
+                        {"operator_approved": True, "resume_run_id": run_id}
+                    )
+                self.assertEqual(
+                    result["status"],
+                    "full_market_worker_resume_checkpoint_invalid",
+                )
+                self.assertEqual(result["dispatch_count"], 0)
+                self.assertEqual(store.read_packet(service.PACKET_KEY), sentinel)
+                self.assertEqual(store.read_packet(service.LAST_GOOD_PACKET_KEY), sentinel)
+        client.get.assert_called()
 
     def test_partition_keeps_every_batch_within_real_worker_bounds(self) -> None:
         batches = service._partition_symbols(_valid_symbols(3001), 100)
@@ -789,17 +882,24 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         value = "123456781234423481234567890abcde"
         self.assertEqual(service._normalize_uuid4(value), value)
         self.assertEqual(service._normalize_uuid4("not-a-uuid"), "")
+        snapshots = {
+            name: service._promotion_snapshot_entry(name, {})
+            for name in service._promotion_snapshot_targets()
+        }
         journal = {
             "schema_version": service.PROMOTION_JOURNAL_SCHEMA_VERSION,
             "status": "current_pointer_promoted",
             "acceptance_run_id": value,
-            "snapshots": {
-                "current_pointer": {},
-                "last_good_pointer": {},
-                "current_packet": {},
-                "last_good_packet": {},
-            },
+            "snapshots": snapshots,
+            "contains_secret": False,
         }
+        journal["journal_binding_digest"] = service._canonical_digest(
+            {
+                "schema_version": service.PROMOTION_JOURNAL_SCHEMA_VERSION,
+                "acceptance_run_id": value,
+                "snapshots": snapshots,
+            }
+        )
         with patch.object(
             service,
             "_restore_pointer",
@@ -827,6 +927,78 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             },
         )
 
+    def test_invalid_or_unknown_journal_recovers_with_zero_mutations(self) -> None:
+        run_id = uuid.uuid4().hex
+        pointer_values = {
+            "current": {"marker": "current-pointer"},
+            "last_good": {"marker": "last-good-pointer"},
+        }
+        packet_values = {
+            service.PACKET_KEY: {"marker": "current-packet"},
+            service.LAST_GOOD_PACKET_KEY: {"marker": "last-good-packet"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2]:
+                store = SQLiteMetaStore(root / "meta.sqlite")
+                for key, value in packet_values.items():
+                    store.write_packet(key, value)
+                for pointer, value in pointer_values.items():
+                    service._atomic_write_json(
+                        root / "parquet" / service.RESULT_DATASET / f"{pointer}.json",
+                        value,
+                    )
+                snapshots = {
+                    name: service._promotion_snapshot_entry(name, {})
+                    for name in service._promotion_snapshot_targets()
+                }
+                binding = service._canonical_digest(
+                    {
+                        "schema_version": service.PROMOTION_JOURNAL_SCHEMA_VERSION,
+                        "acceptance_run_id": run_id,
+                        "snapshots": snapshots,
+                    }
+                )
+                invalid_journals = {
+                    "missing_snapshot_digests": {
+                        "schema_version": service.PROMOTION_JOURNAL_SCHEMA_VERSION,
+                        "status": "current_pointer_promoted",
+                        "acceptance_run_id": run_id,
+                        "snapshots": {name: {} for name in snapshots},
+                        "journal_binding_digest": binding,
+                        "contains_secret": False,
+                    },
+                    "unknown_status": {
+                        "schema_version": service.PROMOTION_JOURNAL_SCHEMA_VERSION,
+                        "status": "forged",
+                        "acceptance_run_id": run_id,
+                        "snapshots": snapshots,
+                        "journal_binding_digest": binding,
+                        "contains_secret": False,
+                    },
+                }
+                for name, journal in invalid_journals.items():
+                    with self.subTest(name=name):
+                        service._atomic_write_json(service._promotion_journal_path(), journal)
+                        with patch.object(service, "_restore_pointer") as restore_pointer, patch.object(
+                            service,
+                            "_restore_packet",
+                        ) as restore_packet:
+                            recovery = service._recover_interrupted_promotion()
+                        self.assertFalse(recovery["ready"])
+                        self.assertEqual(recovery["status"], "promotion_journal_invalid")
+                        restore_pointer.assert_not_called()
+                        restore_packet.assert_not_called()
+                        for key, value in packet_values.items():
+                            self.assertEqual(store.read_packet(key), value)
+                        for pointer, value in pointer_values.items():
+                            self.assertEqual(
+                                service._read_json(
+                                    root / "parquet" / service.RESULT_DATASET / f"{pointer}.json"
+                                ),
+                                value,
+                            )
+
     def test_partial_dispatch_revokes_and_quarantines_accepted_task(self) -> None:
         batches = [
             _valid_symbols(service.MIN_BATCH_SIZE),
@@ -851,6 +1023,9 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     universe=universe,
                     transport=transport,
                     timeout_seconds=60,
+                    challenge_issuer=lambda _spec: uuid.uuid4().hex,
+                    challenge_verifier=lambda _task, _spec: True,
+                    challenge_cleanup=lambda _ids: None,
                 )
                 quarantine = SQLiteMetaStore(root / "meta.sqlite").read_packet(
                     f"{service.ATTEMPT_PACKET_KEY}:quarantine:partialdispatch123"
@@ -884,6 +1059,9 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     universe=universe,
                     transport=transport,
                     timeout_seconds=60,
+                    challenge_issuer=lambda _spec: uuid.uuid4().hex,
+                    challenge_verifier=lambda _task, _spec: True,
+                    challenge_cleanup=lambda _ids: None,
                 )
                 second_success, second_ids = service._dispatch_batches(
                     app,
@@ -892,6 +1070,9 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     universe=universe,
                     transport=transport,
                     timeout_seconds=60,
+                    challenge_issuer=lambda _spec: uuid.uuid4().hex,
+                    challenge_verifier=lambda _task, _spec: True,
+                    challenge_cleanup=lambda _ids: None,
                 )
                 quarantine = SQLiteMetaStore(root / "meta.sqlite").read_packet(
                     service._quarantine_key("timeoutlate123")
@@ -940,14 +1121,10 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                 ],
             }
             transport = {"status": "fixture-not-direct"}
-            with (
-                _patch_root(root)[0],
-                _patch_root(root)[1],
-                _patch_root(root)[2],
-                patch.object(service, "validate_full_market_worker_production_fact", return_value={"ready": False}),
-                patch.object(service, "_restore_pointer", return_value=False),
-                patch.object(service, "_restore_packet", return_value=False),
-            ):
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2], patch.object(
+                service,
+                "_restore_pointer",
+            ) as restore_pointer, patch.object(service, "_restore_packet") as restore_packet:
                 result = service._promote_candidate_results(
                     run_id="doublefail123",
                     universe=universe,
@@ -956,106 +1133,63 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     result_rows=rows,
                 )
             self.assertFalse(result["production_worker_complete"])
-            self.assertFalse(result["pointer_rollback_verified"])
-            self.assertFalse(result["packet_rollback_verified"])
+            self.assertEqual(result["status"], "full_market_worker_module_level_promotion_disabled")
+            restore_pointer.assert_not_called()
+            restore_packet.assert_not_called()
             fact = service.validate_full_market_worker_production_fact(root)
             self.assertFalse(fact["ready"])
             self.assertEqual(store.read_packet(service.LAST_GOOD_PACKET_KEY), old_good)
 
-    def test_repeat_promotion_and_failed_followup_restore_valid_last_good(self) -> None:
+    def test_module_level_self_seal_cannot_create_production_truth(self) -> None:
+        run_id = uuid.uuid4().hex
         symbols = _valid_symbols(service.MIN_BATCH_SIZE)
-        universe = {
-            "scope_hash": SCOPE_HASH,
-            "version_digest": "b" * 64,
-            "universe_digest": service._canonical_digest(symbols),
-            "universe_count": len(symbols),
-            "minimum_universe_size": service.DEFAULT_MINIMUM_UNIVERSE_SIZE,
-            "validated_trade_date": "20260710",
-        }
-
-        def rows(run_id: str) -> list[dict]:
-            return [
-                {
-                    "ts_code": symbol,
-                    "score": 50,
-                    "rough_score": 50,
-                    "full_market_rank": index,
-                    "batch_index": 0,
-                    "celery_task_id": f"fmw-{run_id}-0000",
-                    "worker_task_id": f"worker-{run_id}",
-                    "candidate_is_not_buy_instruction": True,
-                    "does_not_execute_trades": True,
-                }
-                for index, symbol in enumerate(symbols, start=1)
-            ]
-
-        def checkpoint(run_id: str) -> dict:
-            return {
-                "batch_count": 1,
-                "checkpoint_binding_digest": "c" * 64,
-                "successful_batches": [
-                    {
-                        "celery_task_id": f"fmw-{run_id}-0000",
-                        "worker_task_id": f"worker-{run_id}",
-                        "dispatch_chain_digest": "d" * 64,
-                    }
-                ],
-            }
-
-        transport = {"status": "test-transport"}
+        universe, batch, _task, transport, success = _worker_fixture(symbols, run_id=run_id)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2], patch.object(
-                service,
-                "validate_full_market_worker_production_fact",
-                return_value={"ready": True},
-            ):
-                first = service._promote_candidate_results(
-                    run_id="repeatgood123",
-                    universe=universe,
-                    transport=transport,
-                    checkpoint=checkpoint("repeatgood123"),
-                    result_rows=rows("repeatgood123"),
-                )
-                second = service._promote_candidate_results(
-                    run_id="repeatgood456",
-                    universe=universe,
-                    transport=transport,
-                    checkpoint=checkpoint("repeatgood456"),
-                    result_rows=rows("repeatgood456"),
-                )
             store = SQLiteMetaStore(root / "meta.sqlite")
-            current_before = store.read_packet(service.PACKET_KEY)
-            last_good_before = store.read_packet(service.LAST_GOOD_PACKET_KEY)
-            pointer_before = service._read_json(root / "parquet" / service.RESULT_DATASET / "current.json")
-            last_pointer_before = service._read_json(root / "parquet" / service.RESULT_DATASET / "last_good.json")
-            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2], patch.object(
-                service,
-                "validate_full_market_worker_production_fact",
-                side_effect=[{"ready": True}, {"ready": False}],
-            ):
-                failed = service._promote_candidate_results(
-                    run_id="repeatfail789",
+            sentinel = {"status": "existing-last-good", "marker": "preserve"}
+            store.write_packet(service.PACKET_KEY, sentinel)
+            store.write_packet(service.LAST_GOOD_PACKET_KEY, sentinel)
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2]:
+                persisted_transport, persisted_event = service._persist_transport_execution_event_atomic(
+                    run_id,
+                    transport,
+                )
+                worker_result = service.execute_candidate_radar_batch_worker(
+                    {
+                        **batch,
+                        "celery_dispatch_id": batch["celery_task_id"],
+                        "full_market_worker_acceptance": True,
+                        "feature_contract_digest": service.FEATURE_CONTRACT_DIGEST,
+                        "universe_digest": universe["universe_digest"],
+                        "provider_scope_hash": universe["scope_hash"],
+                        "provider_version_digest": universe["version_digest"],
+                    },
+                    runtime={
+                        "bound_task_request": True,
+                        "synthetic_fixture": False,
+                        "celery_request_id": batch["celery_task_id"],
+                        "worker_hostname": "worker@host",
+                        "worker_pid": 999,
+                        "worker_queue": service.CANDIDATE_QUEUE,
+                        "worker_challenge_consumed": True,
+                        "worker_execution_proof": "f" * 64,
+                    },
+                )
+                promoted = service._promote_candidate_results(
+                    run_id=run_id,
                     universe=universe,
                     transport=transport,
-                    checkpoint=checkpoint("repeatfail789"),
-                    result_rows=rows("repeatfail789"),
+                    checkpoint={"batch_count": 1, "successful_batches": [success]},
+                    result_rows=service._score_candidate_rows(universe, symbols),
                 )
-            self.assertEqual(store.read_packet(service.PACKET_KEY), current_before)
-            self.assertEqual(store.read_packet(service.LAST_GOOD_PACKET_KEY), last_good_before)
-            self.assertEqual(
-                service._read_json(root / "parquet" / service.RESULT_DATASET / "current.json"),
-                pointer_before,
-            )
-            self.assertEqual(
-                service._read_json(root / "parquet" / service.RESULT_DATASET / "last_good.json"),
-                last_pointer_before,
-            )
-        self.assertEqual(first["status"], "full_market_worker_production_complete")
-        self.assertEqual(second["status"], "full_market_worker_production_complete")
-        self.assertEqual(failed["status"], "full_market_worker_final_readback_failed_rolled_back")
-        self.assertTrue(failed["pointer_rollback_verified"])
-        self.assertTrue(failed["packet_rollback_verified"])
+                fact = service.validate_full_market_worker_production_fact(root)
+            self.assertEqual((persisted_transport, persisted_event), ({}, {}))
+            self.assertEqual(worker_result["status"], "failed")
+            self.assertEqual(promoted["status"], "full_market_worker_module_level_promotion_disabled")
+            self.assertFalse(fact["ready"])
+            self.assertEqual(store.read_packet(service.PACKET_KEY), sentinel)
+            self.assertEqual(store.read_packet(service.LAST_GOOD_PACKET_KEY), sentinel)
 
     def test_task_catalog_and_route_cover_explicit_post(self) -> None:
         from server.services import worker_service

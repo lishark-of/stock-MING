@@ -34,7 +34,7 @@ def run_candidate_radar_full_pool_local_scan(self, payload: dict[str, Any] | Non
                 or delivery_info.get("routing_key") != "command_center_candidate_production"
             ),
         }
-        return full_market_worker_service.execute_candidate_radar_batch_worker(
+        return full_market_worker_service.execute_candidate_radar_batch_from_bound_celery(
             payload_map,
             runtime=runtime,
         )

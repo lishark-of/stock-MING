@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import hmac
 import inspect
 import json
 import os
@@ -54,6 +55,8 @@ MIN_MONEYFLOW_SESSIONS = 5
 DEFAULT_RESULT_TIMEOUT_SECONDS = 900
 MAX_RESULT_TIMEOUT_SECONDS = 3600
 LOCK_TTL_SECONDS = 3600
+WORKER_CHALLENGE_TTL_SECONDS = 900
+WORKER_RECEIPT_TTL_SECONDS = 86400
 PROMOTION_JOURNAL_NAME = "promotion_journal.json"
 
 REQUIRED_PROVIDER_FRAMES = ("stock_basic", "trade_cal", "daily", "daily_basic", "moneyflow")
@@ -91,6 +94,34 @@ _SENSITIVE_MARKERS = (
     "rediss://",
     "bearer ",
 )
+
+
+def _make_public_acceptance_runner(implementation: Any) -> tuple[Any, Any]:
+    active: dict[int, dict[str, Any]] = {}
+
+    def register(run_id: str) -> tuple[Any, dict[str, Any]]:
+        capability = object()
+        state = {
+            "capability": capability,
+            "run_id": run_id,
+            "official_transport_probed": True,
+            "transport_event_persisted": False,
+            "verified_worker_task_ids": set(),
+        }
+        active[id(capability)] = state
+        return capability, state
+
+    def resolve(capability: Any, run_id: str) -> dict[str, Any]:
+        state = active.get(id(capability), {})
+        return state if state.get("capability") is capability and state.get("run_id") == run_id else {}
+
+    def revoke(capability: Any) -> None:
+        active.pop(id(capability), None)
+
+    def public_runner(payload: Any = None) -> dict[str, Any]:
+        return implementation(payload, register, revoke)
+
+    return public_runner, resolve
 
 
 def _now_iso() -> str:
@@ -162,11 +193,29 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    temporary.write_text(
-        json.dumps(dict(value), ensure_ascii=False, sort_keys=True, indent=2),
-        encoding="utf-8",
-    )
-    os.replace(temporary, path)
+    encoded = json.dumps(
+        dict(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        indent=2,
+    ).encode("utf-8")
+    try:
+        with temporary.open("wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        _fsync_directory(path.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _valid_a_share_symbol(value: Any) -> bool:
@@ -462,7 +511,94 @@ def _persist_task(task: Mapping[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def execute_candidate_radar_batch_worker(
+def _worker_challenge_key(run_id: str, challenge_id: str) -> str:
+    return f"cc3:full-market:{run_id}:worker-challenge:{challenge_id}"
+
+
+def _worker_challenge_receipt_key(run_id: str, challenge_id: str) -> str:
+    return f"cc3:full-market:{run_id}:worker-receipt:{challenge_id}"
+
+
+def _worker_execution_proof_material(
+    payload: Mapping[str, Any],
+    runtime: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "acceptance_run_id": str(payload.get("acceptance_run_id") or ""),
+        "challenge_id": str(payload.get("worker_challenge_id") or ""),
+        "celery_request_id": str(runtime.get("celery_request_id") or ""),
+        "worker_hostname": str(runtime.get("worker_hostname") or ""),
+        "worker_pid": _integer(runtime.get("worker_pid")),
+        "worker_queue": str(runtime.get("worker_queue") or ""),
+        "provider_version_digest": str(payload.get("provider_version_digest") or ""),
+        "universe_digest": str(payload.get("universe_digest") or ""),
+        "batch_symbol_hash": str(payload.get("batch_symbol_hash") or ""),
+        "batch_input_hash": str(payload.get("batch_input_hash") or ""),
+    }
+
+
+def _worker_execution_receipt_value(
+    task: Mapping[str, Any],
+    specification: Mapping[str, Any],
+    transport: Mapping[str, Any],
+) -> str:
+    runtime = task.get("runtime_provenance") if isinstance(task.get("runtime_provenance"), Mapping) else {}
+    return _canonical_digest(
+        {
+            "acceptance_run_id": specification.get("acceptance_run_id"),
+            "worker_challenge_id": specification.get("worker_challenge_id"),
+            "celery_task_id": specification.get("celery_task_id"),
+            "worker_task_id": task.get("task_id"),
+            "worker_execution_proof": runtime.get("worker_execution_proof"),
+            "persisted_task_digest": _canonical_digest(task),
+            "transport_attestation_digest": _canonical_digest(transport),
+            "transport_execution_event_digest": transport.get("execution_event_digest"),
+        }
+    )
+
+
+def _consume_official_worker_challenge(
+    payload: Mapping[str, Any],
+    runtime: Mapping[str, Any],
+) -> dict[str, Any]:
+    run_id = _normalize_uuid4(payload.get("acceptance_run_id"))
+    challenge_id = _normalize_uuid4(payload.get("worker_challenge_id"))
+    if not run_id or not challenge_id:
+        return {}
+    try:
+        from redis import Redis
+
+        redis_url = os.getenv(
+            "COMMAND_CENTER_CELERY_RESULT_BACKEND",
+            os.getenv("COMMAND_CENTER_REDIS_URL", "redis://localhost:6379/0"),
+        )
+        if not _redis_endpoint_binding(redis_url):
+            return {}
+        client = Redis.from_url(redis_url)
+        if not (
+            type(client) is Redis
+            and _method_has_official_owner(client, "getdel", module_prefixes=("redis.",))
+        ):
+            return {}
+        try:
+            secret = client.getdel(_worker_challenge_key(run_id, challenge_id))
+        finally:
+            client.close()
+    except Exception:
+        return {}
+    if not isinstance(secret, (bytes, bytearray)) or len(secret) < 32:
+        return {}
+    material = _worker_execution_proof_material(payload, runtime)
+    encoded = json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    proof = hmac.new(bytes(secret), encoded, hashlib.sha256).hexdigest()
+    return {
+        "worker_challenge_id": challenge_id,
+        "worker_challenge_consumed": True,
+        "worker_execution_proof": proof,
+    }
+
+
+def _execute_candidate_radar_batch_after_challenge(
     payload: Any,
     *,
     runtime: Mapping[str, Any],
@@ -488,6 +624,7 @@ def execute_candidate_radar_batch_worker(
             "universe_digest": str(payload_map.get("universe_digest") or ""),
             "provider_scope_hash": str(payload_map.get("provider_scope_hash") or ""),
             "provider_version_digest": str(payload_map.get("provider_version_digest") or ""),
+            "worker_challenge_id": str(payload_map.get("worker_challenge_id") or ""),
         },
         "runtime_provenance": runtime_map,
         "candidate_rows": [],
@@ -509,6 +646,10 @@ def execute_candidate_radar_batch_worker(
         and runtime_map.get("worker_hostname")
         and _integer(runtime_map.get("worker_pid")) > 0
         and runtime_map.get("worker_queue") == CANDIDATE_QUEUE
+        and runtime_map.get("worker_challenge_consumed") is True
+        and runtime_map.get("worker_challenge_id") == payload_map.get("worker_challenge_id")
+        and _normalize_uuid4(runtime_map.get("worker_challenge_id"))
+        and _HEX_64_RE.fullmatch(str(runtime_map.get("worker_execution_proof") or ""))
     )
     payload_ready = bool(
         payload_map.get("full_market_worker_acceptance") is True
@@ -517,6 +658,7 @@ def execute_candidate_radar_batch_worker(
         and not invalid
         and MIN_BATCH_SIZE <= len(symbols) <= MAX_BATCH_SIZE
         and payload_map.get("batch_symbol_hash") == _canonical_digest(symbols)
+        and _normalize_uuid4(payload_map.get("worker_challenge_id"))
     )
     if not runtime_ready or not payload_ready:
         base["failure_reason_safe"] = "bound_celery_runtime_or_batch_contract_invalid"
@@ -600,6 +742,47 @@ def execute_candidate_radar_batch_worker(
         }
     )
     return _persist_task(base)
+
+
+def execute_candidate_radar_batch_worker(
+    payload: Any,
+    *,
+    runtime: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Caller-supplied runtime mappings are never production worker proof."""
+
+    rejected_runtime = {
+        **(dict(runtime) if isinstance(runtime, Mapping) else {}),
+        "bound_task_request": False,
+        "synthetic_fixture": True,
+        "worker_challenge_consumed": False,
+        "worker_execution_proof": "",
+    }
+    return _execute_candidate_radar_batch_after_challenge(payload, runtime=rejected_runtime)
+
+
+def execute_candidate_radar_batch_from_bound_celery(
+    payload: Any,
+    *,
+    runtime: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Consume the one-time Redis challenge before entering worker execution."""
+
+    payload_map = dict(payload) if isinstance(payload, Mapping) else {}
+    runtime_map = dict(runtime) if isinstance(runtime, Mapping) else {}
+    proof = _consume_official_worker_challenge(payload_map, runtime_map)
+    if not proof:
+        runtime_map.update(
+            {
+                "bound_task_request": False,
+                "synthetic_fixture": True,
+                "worker_challenge_consumed": False,
+                "worker_execution_proof": "",
+            }
+        )
+    else:
+        runtime_map.update(proof)
+    return _execute_candidate_radar_batch_after_challenge(payload_map, runtime=runtime_map)
 
 
 def _load_celery_app() -> Any:
@@ -1012,6 +1195,10 @@ def _validate_worker_task(
         and payload.get("universe_digest") == universe.get("universe_digest")
         and payload.get("provider_scope_hash") == universe.get("scope_hash")
         and payload.get("provider_version_digest") == universe.get("version_digest")
+        and _normalize_uuid4(payload.get("worker_challenge_id"))
+        and payload.get("worker_challenge_id") == runtime.get("worker_challenge_id")
+        and runtime.get("worker_challenge_consumed") is True
+        and _HEX_64_RE.fullmatch(str(runtime.get("worker_execution_proof") or ""))
         and symbols == expected_symbols
         and not duplicates
         and not invalid
@@ -1073,6 +1260,10 @@ def _dispatch_chain_ready(
         and chain.get("persisted_task_digest") == task_digest
         and chain.get("candidate_output_hash") == task.get("candidate_output_hash")
         and chain.get("worker_runtime_digest") == task.get("worker_runtime_digest")
+        and _normalize_uuid4(chain.get("worker_challenge_id"))
+        and chain.get("worker_challenge_id") == runtime.get("worker_challenge_id")
+        and chain.get("worker_challenge_consumed") is True
+        and chain.get("worker_execution_proof_verified") is True
         and attestation == transport_map
         and chain.get("transport_attestation_digest") == _canonical_digest(transport_map)
         and _transport_attestation_ready(attestation, run_id=run_id)
@@ -1139,6 +1330,23 @@ def _persist_transport_execution_event_atomic(
     run_id: str,
     attestation: Mapping[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Module callers cannot turn a mapping into production transport truth."""
+
+    del run_id, attestation
+    return {}, {}
+
+
+def _persist_official_transport_execution_event_atomic(
+    run_id: str,
+    attestation: Mapping[str, Any],
+    *,
+    capability: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    state = _official_orchestrator_state(capability, run_id)
+    if not state or state.get("official_transport_probed") is not True:
+        return {}, {}
+    if not _transport_attestation_ready(attestation, run_id=run_id):
+        return {}, {}
     core = _transport_core(attestation)
     core_digest = _canonical_digest(core)
     worker_names = sorted(str(item) for item in core.get("eligible_worker_names") or [] if str(item))
@@ -1188,6 +1396,7 @@ def _persist_transport_execution_event_atomic(
         if transport_readback != final or event_readback != event:
             raise RuntimeError("transport_execution_event_readback_mismatch")
         connection.commit()
+        state["transport_event_persisted"] = True
         return final, event
     except Exception:
         connection.rollback()
@@ -1264,12 +1473,17 @@ def _dispatch_batches(
     transport: Mapping[str, Any],
     timeout_seconds: int,
     prior_successes: list[dict[str, Any]] | None = None,
+    challenge_issuer: Any = None,
+    challenge_verifier: Any = None,
+    challenge_cleanup: Any = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     try:
         from celery.result import AsyncResult as OfficialAsyncResult
     except Exception:
         return list(prior_successes or []), []
     successes = list(prior_successes or [])
+    if not callable(challenge_issuer) or not callable(challenge_verifier):
+        return successes, []
     completed_indexes = {_integer(row.get("batch_index"), default=-1) for row in successes}
     quarantined_ids = _quarantined_task_ids(run_id)
     allocated_ids = quarantined_ids | {
@@ -1293,6 +1507,13 @@ def _dispatch_batches(
             "batch_input_hash": _batch_input_hash(universe, symbols),
             "celery_task_id": celery_task_id,
         }
+        challenge_id = str(challenge_issuer(specification) or "")
+        if not _normalize_uuid4(challenge_id):
+            if callable(challenge_cleanup):
+                challenge_cleanup([challenge_id])
+            _revoke_and_quarantine(app, all_dispatched_ids, run_id, "worker_challenge_issue_failed")
+            return successes, all_dispatched_ids
+        specification["worker_challenge_id"] = challenge_id
         payload = {
             **specification,
             "celery_dispatch_id": celery_task_id,
@@ -1302,6 +1523,7 @@ def _dispatch_batches(
             "provider_scope_hash": universe["scope_hash"],
             "provider_version_digest": universe["version_digest"],
             "minimum_universe_size": universe["minimum_universe_size"],
+            "worker_challenge_id": challenge_id,
         }
         try:
             result = app.send_task(
@@ -1312,6 +1534,11 @@ def _dispatch_batches(
                 routing_key=CANDIDATE_QUEUE,
             )
         except Exception:
+            if callable(challenge_cleanup):
+                challenge_cleanup(
+                    [str(item[1].get("worker_challenge_id") or "") for item in sent]
+                    + [challenge_id]
+                )
             _revoke_and_quarantine(app, all_dispatched_ids, run_id, "dispatch_exception")
             return successes, all_dispatched_ids
         if not (
@@ -1321,6 +1548,8 @@ def _dispatch_batches(
             and _method_has_official_owner(result, "get", module_prefixes=("celery.",))
             and str(result.id or "") == celery_task_id
         ):
+            if callable(challenge_cleanup):
+                challenge_cleanup([challenge_id])
             _revoke_and_quarantine(app, all_dispatched_ids + [celery_task_id], run_id, "async_result_id_mismatch")
             return successes, all_dispatched_ids + [celery_task_id]
         sent.append((result, specification))
@@ -1349,6 +1578,14 @@ def _dispatch_batches(
                 if row[1]["celery_task_id"] not in completed_ids
             ]
             _revoke_and_quarantine(app, outstanding, run_id, "result_timeout_or_failure")
+            if callable(challenge_cleanup):
+                challenge_cleanup(
+                    [
+                        str(row[1].get("worker_challenge_id") or "")
+                        for row in sent
+                        if row[1]["celery_task_id"] in outstanding
+                    ]
+                )
             return successes, all_dispatched_ids
         result_task = dict(returned) if isinstance(returned, Mapping) else {}
         worker_task_id = str(result_task.get("task_id") or "")
@@ -1361,7 +1598,10 @@ def _dispatch_batches(
         )
         returned_digest = _canonical_digest(result_task) if result_task else ""
         persisted_digest = _canonical_digest(persisted) if persisted else ""
-        if not valid or returned_digest != persisted_digest:
+        proof_verified = bool(valid and challenge_verifier(persisted, specification))
+        if not proof_verified or returned_digest != persisted_digest:
+            if callable(challenge_cleanup):
+                challenge_cleanup([str(specification.get("worker_challenge_id") or "")])
             _revoke_and_quarantine(app, [celery_task_id], run_id, "worker_result_direct_readback_invalid")
             return successes, all_dispatched_ids
         chain = {
@@ -1375,6 +1615,9 @@ def _dispatch_batches(
             "persisted_task_digest": persisted_digest,
             "candidate_output_hash": persisted["candidate_output_hash"],
             "worker_runtime_digest": persisted["worker_runtime_digest"],
+            "worker_challenge_id": specification["worker_challenge_id"],
+            "worker_challenge_consumed": True,
+            "worker_execution_proof_verified": True,
             "transport_attestation_digest": _canonical_digest(transport),
             "transport_attestation": dict(transport),
             "eligible_worker_names": sorted(
@@ -1466,6 +1709,7 @@ def _validated_resume_successes(
     batches: list[list[str]],
     transport: Mapping[str, Any],
     execution_event: Mapping[str, Any],
+    resume_proof_verifier: Any = None,
 ) -> list[dict[str, Any]]:
     if not (
         checkpoint.get("schema_version") == CHECKPOINT_SCHEMA_VERSION
@@ -1514,6 +1758,8 @@ def _validated_resume_successes(
             not task_ready
             or str(row.get("celery_task_id") or "") in quarantined
             or not _dispatch_chain_ready(row, task, run_id=run_id, transport=transport)
+            or not callable(resume_proof_verifier)
+            or resume_proof_verifier(row, task) is not True
         ):
             return []
         seen.add(batch_index)
@@ -1595,6 +1841,7 @@ def _restore_pointer(
             _atomic_write_json(path, previous)
         else:
             path.unlink(missing_ok=True)
+            _fsync_directory(path.parent)
         return True
     except Exception:
         return False
@@ -1623,6 +1870,91 @@ def _write_promotion_journal(value: Mapping[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _promotion_snapshot_targets() -> dict[str, dict[str, str]]:
+    dataset_root = (PARQUET_ROOT / RESULT_DATASET).resolve()
+    database_path = str(SQLITE_META_PATH.resolve())
+    return {
+        "current_packet": {
+            "kind": "sqlite_packet",
+            "database_path": database_path,
+            "packet_key": PACKET_KEY,
+        },
+        "last_good_packet": {
+            "kind": "sqlite_packet",
+            "database_path": database_path,
+            "packet_key": LAST_GOOD_PACKET_KEY,
+        },
+        "current_pointer": {
+            "kind": "json_pointer",
+            "path": str((dataset_root / "current.json").resolve()),
+        },
+        "last_good_pointer": {
+            "kind": "json_pointer",
+            "path": str((dataset_root / "last_good.json").resolve()),
+        },
+    }
+
+
+def _promotion_snapshot_entry(name: str, value: Mapping[str, Any]) -> dict[str, Any]:
+    target = _promotion_snapshot_targets()[name]
+    snapshot = dict(value)
+    return {
+        "target": target,
+        "value": snapshot,
+        "value_digest": _canonical_digest(snapshot),
+    }
+
+
+def _promotion_journal_ready(journal: Mapping[str, Any]) -> bool:
+    run_id = str(journal.get("acceptance_run_id") or "")
+    snapshots = journal.get("snapshots")
+    targets = _promotion_snapshot_targets()
+    if not (
+        journal.get("schema_version") == PROMOTION_JOURNAL_SCHEMA_VERSION
+        and journal.get("status")
+        in {
+            "prepared",
+            "stage_written",
+            "current_pointer_promoted",
+            "pending_packet_written",
+            "last_good_pointer_promoted",
+            "completed",
+            "rolled_back",
+            "rollback_incomplete",
+        }
+        and run_id == _normalize_uuid4(run_id)
+        and journal.get("contains_secret") is False
+        and isinstance(snapshots, Mapping)
+        and set(snapshots) == set(targets)
+        and _HEX_64_RE.fullmatch(str(journal.get("journal_binding_digest") or ""))
+    ):
+        return False
+    normalized_snapshots: dict[str, dict[str, Any]] = {}
+    for name, expected_target in targets.items():
+        entry = snapshots.get(name)
+        if not (
+            isinstance(entry, Mapping)
+            and set(entry) == {"target", "value", "value_digest"}
+            and entry.get("target") == expected_target
+            and isinstance(entry.get("value"), Mapping)
+            and _HEX_64_RE.fullmatch(str(entry.get("value_digest") or ""))
+            and entry.get("value_digest") == _canonical_digest(entry.get("value"))
+        ):
+            return False
+        normalized_snapshots[name] = dict(entry)
+    expected_binding = _canonical_digest(
+        {
+            "schema_version": PROMOTION_JOURNAL_SCHEMA_VERSION,
+            "acceptance_run_id": run_id,
+            "snapshots": normalized_snapshots,
+        }
+    )
+    return hmac.compare_digest(
+        str(journal.get("journal_binding_digest") or ""),
+        expected_binding,
+    )
+
+
 def _begin_promotion_journal(
     run_id: str,
     *,
@@ -1631,11 +1963,17 @@ def _begin_promotion_journal(
     previous_pointer: Mapping[str, Any],
     previous_last_good_pointer: Mapping[str, Any],
 ) -> dict[str, Any]:
+    normalized_run_id = _normalize_uuid4(run_id)
+    if not normalized_run_id or normalized_run_id != run_id:
+        raise ValueError("promotion_journal_run_id_must_be_canonical_uuid4")
     snapshots = {
-        "current_packet": dict(previous_current),
-        "last_good_packet": dict(previous_last_good),
-        "current_pointer": dict(previous_pointer),
-        "last_good_pointer": dict(previous_last_good_pointer),
+        "current_packet": _promotion_snapshot_entry("current_packet", previous_current),
+        "last_good_packet": _promotion_snapshot_entry("last_good_packet", previous_last_good),
+        "current_pointer": _promotion_snapshot_entry("current_pointer", previous_pointer),
+        "last_good_pointer": _promotion_snapshot_entry(
+            "last_good_pointer",
+            previous_last_good_pointer,
+        ),
     }
     journal = {
         "schema_version": PROMOTION_JOURNAL_SCHEMA_VERSION,
@@ -1653,6 +1991,8 @@ def _begin_promotion_journal(
             "snapshots": snapshots,
         }
     )
+    if not _promotion_journal_ready(journal):
+        raise ValueError("promotion_journal_self_validation_failed")
     return _write_promotion_journal(journal)
 
 
@@ -1661,6 +2001,15 @@ def _update_promotion_journal(journal: Mapping[str, Any], status: str, **fields:
 
 
 def _rollback_from_promotion_journal(journal: Mapping[str, Any], *, reason: str) -> dict[str, Any]:
+    if not _promotion_journal_ready(journal):
+        return {
+            "complete": False,
+            "pointer_complete": False,
+            "packet_complete": False,
+            "results": {},
+            "journal": dict(journal),
+            "invalid": True,
+        }
     snapshots = journal.get("snapshots") if isinstance(journal.get("snapshots"), Mapping) else {}
     operations = (
         (
@@ -1668,7 +2017,7 @@ def _rollback_from_promotion_journal(journal: Mapping[str, Any], *, reason: str)
             lambda: _restore_pointer(
                 PARQUET_ROOT,
                 RESULT_DATASET,
-                snapshots.get("current_pointer") if isinstance(snapshots.get("current_pointer"), Mapping) else {},
+                snapshots.get("current_pointer", {}).get("value"),
             ),
         ),
         (
@@ -1676,9 +2025,7 @@ def _rollback_from_promotion_journal(journal: Mapping[str, Any], *, reason: str)
             lambda: _restore_pointer(
                 PARQUET_ROOT,
                 RESULT_DATASET,
-                snapshots.get("last_good_pointer")
-                if isinstance(snapshots.get("last_good_pointer"), Mapping)
-                else {},
+                snapshots.get("last_good_pointer", {}).get("value"),
                 pointer="last_good",
             ),
         ),
@@ -1686,16 +2033,14 @@ def _rollback_from_promotion_journal(journal: Mapping[str, Any], *, reason: str)
             "current_packet",
             lambda: _restore_packet(
                 PACKET_KEY,
-                snapshots.get("current_packet") if isinstance(snapshots.get("current_packet"), Mapping) else {},
+                snapshots.get("current_packet", {}).get("value"),
             ),
         ),
         (
             "last_good_packet",
             lambda: _restore_packet(
                 LAST_GOOD_PACKET_KEY,
-                snapshots.get("last_good_packet")
-                if isinstance(snapshots.get("last_good_packet"), Mapping)
-                else {},
+                snapshots.get("last_good_packet", {}).get("value"),
             ),
         ),
     )
@@ -1730,7 +2075,7 @@ def _recover_interrupted_promotion() -> dict[str, Any]:
     if not path.exists():
         return {"ready": True, "status": "promotion_journal_missing_no_recovery_needed"}
     journal = _read_json(path)
-    if journal.get("schema_version") != PROMOTION_JOURNAL_SCHEMA_VERSION:
+    if not _promotion_journal_ready(journal):
         return {"ready": False, "status": "promotion_journal_invalid"}
     if journal.get("status") in {"completed", "rolled_back"}:
         return {"ready": True, "status": "promotion_journal_terminal"}
@@ -1810,8 +2155,43 @@ def _promote_candidate_results(
     checkpoint: Mapping[str, Any],
     result_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    """Module callers may review inputs but cannot promote production truth."""
+
+    del universe, transport, checkpoint, result_rows
+    return _blocked_attempt(
+        "full_market_worker_module_level_promotion_disabled",
+        run_id=run_id,
+        module_level_promotion_disabled=True,
+    )
+
+
+def _promote_official_candidate_results(
+    *,
+    run_id: str,
+    universe: Mapping[str, Any],
+    transport: Mapping[str, Any],
+    checkpoint: Mapping[str, Any],
+    result_rows: list[dict[str, Any]],
+    capability: Any,
+) -> dict[str, Any]:
     import pandas as pd
 
+    state = _official_orchestrator_state(capability, run_id)
+    expected_task_ids = {
+        str(row.get("celery_task_id") or "")
+        for row in checkpoint.get("successful_batches") or []
+        if isinstance(row, Mapping) and str(row.get("celery_task_id") or "")
+    }
+    if not (
+        state
+        and state.get("transport_event_persisted") is True
+        and expected_task_ids
+        and set(state.get("verified_worker_task_ids") or set()) == expected_task_ids
+    ):
+        return _blocked_attempt(
+            "full_market_worker_official_challenge_proof_incomplete",
+            run_id=run_id,
+        )
     store = SQLiteMetaStore(SQLITE_META_PATH)
     previous_current = _read_packet_no_init(SQLITE_META_PATH, PACKET_KEY)
     previous_last_good = _read_packet_no_init(SQLITE_META_PATH, LAST_GOOD_PACKET_KEY)
@@ -2169,7 +2549,8 @@ def validate_full_market_worker_production_fact(
         }
     )
     journal_ready = bool(
-        promotion_journal.get("schema_version") == PROMOTION_JOURNAL_SCHEMA_VERSION
+        _promotion_journal_ready(promotion_journal)
+        and promotion_journal.get("schema_version") == PROMOTION_JOURNAL_SCHEMA_VERSION
         and promotion_journal.get("acceptance_run_id") == run_id
         and promotion_journal.get("journal_binding_digest")
         == packet.get("promotion_journal_binding_digest")
@@ -2407,7 +2788,11 @@ def validate_full_market_worker_production_fact(
     }
 
 
-def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[str, Any]:
+def _run_full_market_worker_production_acceptance_impl(
+    payload: Any,
+    _register_official_orchestrator: Any,
+    _revoke_official_orchestrator: Any,
+) -> dict[str, Any]:
     payload_map = dict(payload) if isinstance(payload, Mapping) else {}
     if payload_map.get("operator_approved") is not True:
         return _blocked_attempt(
@@ -2454,6 +2839,10 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
             dispatch_count=0,
         )
     app: Any = None
+    capability: Any = None
+    state: dict[str, Any] = {}
+    challenge_secrets: dict[str, bytes] = {}
+    challenge_client: Any = None
     try:
         app, probed_transport = _build_and_probe_official_transport(acceptance_run_id=run_id)
         if probed_transport.get("ready") is not True:
@@ -2464,6 +2853,116 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
                 transport_status=probed_transport.get("status"),
                 call_ledger=probed_transport.get("call_ledger", []),
             )
+        capability, state = _register_official_orchestrator(run_id)
+        challenge_client = app.backend.client
+
+        def _issue_worker_challenge(specification: Mapping[str, Any]) -> str:
+            challenge_id = uuid.uuid4().hex
+            secret = os.urandom(32)
+            key = _worker_challenge_key(run_id, challenge_id)
+            try:
+                written = challenge_client.set(
+                    key,
+                    secret,
+                    ex=WORKER_CHALLENGE_TTL_SECONDS,
+                    nx=True,
+                )
+            except Exception:
+                return ""
+            if written is not True:
+                return ""
+            challenge_secrets[challenge_id] = secret
+            return challenge_id
+
+        def _verify_consumed_worker_challenge(
+            task: Mapping[str, Any],
+            specification: Mapping[str, Any],
+        ) -> bool:
+            challenge_id = str(specification.get("worker_challenge_id") or "")
+            secret = challenge_secrets.get(challenge_id)
+            runtime = task.get("runtime_provenance") if isinstance(task.get("runtime_provenance"), Mapping) else {}
+            payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), Mapping) else {}
+            if not secret or not _normalize_uuid4(challenge_id):
+                return False
+            try:
+                consumed = challenge_client.get(_worker_challenge_key(run_id, challenge_id)) is None
+            except Exception:
+                return False
+            material = _worker_execution_proof_material(payload_safe, runtime)
+            encoded = json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            expected = hmac.new(secret, encoded, hashlib.sha256).hexdigest()
+            verified = bool(
+                consumed
+                and runtime.get("worker_challenge_consumed") is True
+                and runtime.get("worker_challenge_id") == challenge_id
+                and hmac.compare_digest(
+                    str(runtime.get("worker_execution_proof") or ""),
+                    expected,
+                )
+            )
+            if verified:
+                receipt_value = _worker_execution_receipt_value(task, specification, transport)
+                try:
+                    written = challenge_client.set(
+                        _worker_challenge_receipt_key(run_id, challenge_id),
+                        receipt_value,
+                        ex=WORKER_RECEIPT_TTL_SECONDS,
+                        nx=True,
+                    )
+                    receipt_readback = challenge_client.get(
+                        _worker_challenge_receipt_key(run_id, challenge_id)
+                    )
+                    if isinstance(receipt_readback, bytes):
+                        receipt_readback = receipt_readback.decode("ascii", errors="strict")
+                    verified = bool(written is True and receipt_readback == receipt_value)
+                except Exception:
+                    verified = False
+            if verified:
+                challenge_secrets.pop(challenge_id, None)
+                state["verified_worker_task_ids"].add(str(specification.get("celery_task_id") or ""))
+            return verified
+
+        def _verify_resume_worker_receipt(
+            success: Mapping[str, Any],
+            task: Mapping[str, Any],
+        ) -> bool:
+            challenge_id = str(success.get("worker_challenge_id") or "")
+            if not _normalize_uuid4(challenge_id):
+                return False
+            expected = _worker_execution_receipt_value(task, success, transport)
+            try:
+                receipt = challenge_client.get(
+                    _worker_challenge_receipt_key(run_id, challenge_id)
+                )
+                challenge_absent = challenge_client.get(
+                    _worker_challenge_key(run_id, challenge_id)
+                ) is None
+            except Exception:
+                return False
+            if isinstance(receipt, bytes):
+                try:
+                    receipt = receipt.decode("ascii", errors="strict")
+                except UnicodeDecodeError:
+                    return False
+            verified = bool(
+                challenge_absent
+                and _HEX_64_RE.fullmatch(str(receipt or ""))
+                and hmac.compare_digest(str(receipt or ""), expected)
+            )
+            if verified:
+                state["verified_worker_task_ids"].add(str(success.get("celery_task_id") or ""))
+            return verified
+
+        def _cleanup_worker_challenges(challenge_ids: list[str]) -> None:
+            for challenge_id in challenge_ids:
+                if not challenge_id:
+                    continue
+                challenge_secrets.pop(challenge_id, None)
+                try:
+                    challenge_client.delete(_worker_challenge_key(run_id, challenge_id))
+                except Exception:
+                    pass
+
         if requested_resume:
             transport = _read_packet_no_init(SQLITE_META_PATH, _transport_key(run_id))
             execution_event = _read_packet_no_init(SQLITE_META_PATH, _execution_event_key(run_id))
@@ -2483,8 +2982,13 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
                     dispatch_count=0,
                     call_ledger=probed_transport.get("call_ledger", []),
                 )
+            state["transport_event_persisted"] = True
         else:
-            transport, execution_event = _persist_transport_execution_event_atomic(run_id, probed_transport)
+            transport, execution_event = _persist_official_transport_execution_event_atomic(
+                run_id,
+                probed_transport,
+                capability=capability,
+            )
         if not _transport_execution_event_ready(transport, execution_event, run_id=run_id):
             return _blocked_attempt(
                 "full_market_worker_transport_attestation_readback_failed",
@@ -2516,6 +3020,7 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
                 batches=batches,
                 transport=transport,
                 execution_event=execution_event,
+                resume_proof_verifier=_verify_resume_worker_receipt,
             )
             if checkpoint and not prior_successes:
                 return _blocked_attempt(
@@ -2543,6 +3048,9 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
             transport=transport,
             timeout_seconds=timeout,
             prior_successes=prior_successes,
+            challenge_issuer=_issue_worker_challenge,
+            challenge_verifier=_verify_consumed_worker_challenge,
+            challenge_cleanup=_cleanup_worker_challenges,
         )
         if len(successes) != len(batches):
             _write_checkpoint(
@@ -2599,17 +3107,33 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
             step="full_market_worker_production_completed",
             checkpoint_key=_checkpoint_key(run_id),
         )
-        return _promote_candidate_results(
+        return _promote_official_candidate_results(
             run_id=run_id,
             universe=universe,
             transport=transport,
             checkpoint=checkpoint,
             result_rows=result_rows,
+            capability=capability,
         )
     finally:
+        if challenge_client is not None:
+            for challenge_id in list(challenge_secrets):
+                try:
+                    challenge_client.delete(_worker_challenge_key(run_id, challenge_id))
+                except Exception:
+                    pass
+            challenge_secrets.clear()
+        if capability is not None:
+            _revoke_official_orchestrator(capability)
         _release_lock(run_id)
         if app is not None:
             try:
                 app.close()
             except Exception:
                 pass
+
+
+run_full_market_worker_production_acceptance, _official_orchestrator_state = (
+    _make_public_acceptance_runner(_run_full_market_worker_production_acceptance_impl)
+)
+del _run_full_market_worker_production_acceptance_impl
