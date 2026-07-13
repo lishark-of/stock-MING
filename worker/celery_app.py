@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from functools import wraps
 
 
 CELERY_AVAILABLE = False
@@ -31,6 +32,23 @@ except Exception:
 def task(name: str, **options):
     def decorator(fn):
         if celery_app is None:
+            if options.get("bind") is True:
+                @wraps(fn)
+                def bound_fallback(payload=None, *args, **kwargs):
+                    request = type(
+                        "LocalFallbackRequest",
+                        (),
+                        {
+                            "id": "",
+                            "hostname": "",
+                            "delivery_info": {},
+                            "synthetic_fixture": True,
+                        },
+                    )()
+                    bound = type("LocalFallbackTask", (), {"request": request})()
+                    return fn(bound, payload, *args, **kwargs)
+
+                return bound_fallback
             return fn
         return celery_app.task(name=name, **options)(fn)
 

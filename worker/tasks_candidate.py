@@ -27,7 +27,12 @@ def run_candidate_radar_full_pool_local_scan(self, payload: dict[str, Any] | Non
             "worker_queue": str(delivery_info.get("routing_key") or ""),
             "delivery_redelivered": delivery_info.get("redelivered") is True,
             "bound_task_request": True,
-            "synthetic_fixture": False,
+            "synthetic_fixture": bool(
+                getattr(self.request, "synthetic_fixture", False)
+                or not self.request.id
+                or not getattr(self.request, "hostname", "")
+                or delivery_info.get("routing_key") != "command_center_candidate_production"
+            ),
         }
         return full_market_worker_service.execute_candidate_radar_batch_worker(
             payload_map,

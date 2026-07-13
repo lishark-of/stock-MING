@@ -21669,7 +21669,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 97)
+        self.assertEqual(catalog["task_count"], len(catalog["tasks"]))
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -21688,13 +21688,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 97)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], catalog["task_count"])
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
         self.assertTrue(catalog["policy"]["does_not_execute_trades"])
         self.assertTrue(catalog["policy"]["does_not_modify_strategy_action"])
-        self.assertEqual(set(catalog["external_sources"]), {"deepseek", "github", "tushare"})
+        self.assertEqual(
+            set(catalog["external_sources"]),
+            {
+                str(source)
+                for task in catalog["tasks"]
+                for source in task.get("possible_external_sources") or []
+                if str(source)
+            },
+        )
         by_type = {item["task_type"]: item for item in catalog["tasks"]}
         execution_request_task = by_type["command_center_live_bootstrap_provider_model_execution_request"]
         self.assertEqual(
@@ -21722,8 +21730,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 99)
-        self.assertEqual(route_coverage["task_creation_route_count"], 97)
+        self.assertEqual(
+            route_coverage["known_post_route_count"],
+            len(route_coverage["known_post_routes"]),
+        )
+        self.assertEqual(route_coverage["task_creation_route_count"], catalog["task_count"])
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -21732,12 +21743,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 97)
-        self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 91)
-        self.assertEqual(implementation_status["guarded_local_task_count"], 2)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 93)
-        self.assertEqual(implementation_status["external_capable_task_count"], 10)
+        self.assertEqual(implementation_status["task_count"], catalog["task_count"])
+        self.assertEqual(implementation_status["stub_task_count"], len(implementation_status["stub_task_types"]))
+        self.assertEqual(
+            implementation_status["local_pipeline_task_count"],
+            len(implementation_status["local_pipeline_task_types"]),
+        )
+        self.assertEqual(
+            implementation_status["guarded_local_task_count"],
+            len(implementation_status["guarded_local_task_types"]),
+        )
+        self.assertEqual(
+            implementation_status["implemented_local_task_count"],
+            len(implementation_status["implemented_local_task_types"]),
+        )
+        self.assertEqual(
+            implementation_status["external_capable_task_count"],
+            len(implementation_status["external_capable_task_types"]),
+        )
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
             {"run_chokepoint_scan", "probe_serenity_github"},

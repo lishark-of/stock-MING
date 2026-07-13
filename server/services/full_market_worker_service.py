@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -29,10 +30,13 @@ LOCK_PACKET_KEY = f"{PACKET_KEY}_lock"
 STAGE_PACKET_PREFIX = f"{PACKET_KEY}_stage"
 CHECKPOINT_PACKET_PREFIX = f"{PACKET_KEY}_checkpoint"
 TRANSPORT_PACKET_PREFIX = f"{PACKET_KEY}_transport"
+EXECUTION_EVENT_PACKET_PREFIX = f"{PACKET_KEY}_execution_event"
 SCHEMA_VERSION = "full_market_worker_production_acceptance.v2"
 STAGE_SCHEMA_VERSION = "full_market_worker_production_stage.v2"
 CHECKPOINT_SCHEMA_VERSION = "full_market_worker_checkpoint.v1"
 TRANSPORT_SCHEMA_VERSION = "redis_celery_direct_attestation.v1"
+EXECUTION_EVENT_SCHEMA_VERSION = "full_market_worker_execution_event.v1"
+PROMOTION_JOURNAL_SCHEMA_VERSION = "full_market_worker_promotion_journal.v1"
 
 CANDIDATE_TASK_NAME = "run_candidate_radar_full_pool_local_scan"
 CANDIDATE_TASK_TYPE = CANDIDATE_TASK_NAME
@@ -50,6 +54,7 @@ MIN_MONEYFLOW_SESSIONS = 5
 DEFAULT_RESULT_TIMEOUT_SECONDS = 900
 MAX_RESULT_TIMEOUT_SECONDS = 3600
 LOCK_TTL_SECONDS = 3600
+PROMOTION_JOURNAL_NAME = "promotion_journal.json"
 
 REQUIRED_PROVIDER_FRAMES = ("stock_basic", "trade_cal", "daily", "daily_basic", "moneyflow")
 FEATURE_CONTRACT = {
@@ -174,6 +179,17 @@ def _valid_a_share_symbol(value: Any) -> bool:
     if exchange == "SZ":
         return code.startswith(_SZ_PREFIXES)
     return code.startswith(_BJ_PREFIXES)
+
+
+def _normalize_uuid4(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = uuid.UUID(text)
+    except (ValueError, AttributeError, TypeError):
+        return ""
+    return parsed.hex if parsed.version == 4 else ""
 
 
 def _normalize_symbols(values: Any) -> tuple[list[str], int, int]:
@@ -455,7 +471,7 @@ def execute_candidate_radar_batch_worker(
     runtime_map = dict(runtime) if isinstance(runtime, Mapping) else {}
     request_id = str(runtime_map.get("celery_request_id") or "")
     symbols, duplicates, invalid = _normalize_symbols(payload_map.get("symbols"))
-    worker_task_id = f"candidate-worker-{request_id or uuid.uuid4().hex[:20]}"
+    worker_task_id = f"candidate-worker-{request_id or uuid.uuid4().hex}"
     base = {
         "task_id": worker_task_id,
         "task_type": CANDIDATE_TASK_TYPE,
@@ -587,34 +603,106 @@ def execute_candidate_radar_batch_worker(
 
 
 def _load_celery_app() -> Any:
-    try:
-        from worker.celery_app import celery_app
-    except Exception:
-        return None
-    return celery_app
+    """Legacy test seam; production does not consume this value."""
+
+    return None
 
 
 def _mock_like(value: Any) -> bool:
     return type(value).__module__.startswith("unittest.mock")
 
 
+def _method_has_official_owner(value: Any, name: str, *, module_prefixes: tuple[str, ...]) -> bool:
+    if name in getattr(value, "__dict__", {}):
+        return False
+    owner = next((item for item in type(value).__mro__ if name in item.__dict__), None)
+    if owner is None or not owner.__module__.startswith(module_prefixes):
+        return False
+    method = inspect.getattr_static(type(value), name, None)
+    module = str(getattr(method, "__module__", owner.__module__) or "")
+    return module.startswith((*module_prefixes, "kombu."))
+
+
+def _redis_endpoint_binding(value: Any) -> dict[str, Any]:
+    try:
+        parsed = urlsplit(str(value or ""))
+        port = parsed.port
+    except Exception:
+        return {}
+    if parsed.scheme.lower() not in {"redis", "rediss"} or not parsed.hostname or port is None:
+        return {}
+    material = {
+        "scheme": parsed.scheme.lower(),
+        "hostname": parsed.hostname.lower(),
+        "port": port,
+        "database_path": parsed.path or "/0",
+    }
+    return {
+        "scheme": material["scheme"],
+        "explicit_host": True,
+        "explicit_port": True,
+        "endpoint_digest": _canonical_digest(material),
+    }
+
+
 def _transport_probe(app: Any, *, acceptance_run_id: str) -> dict[str, Any]:
+    """Test/injected probes can exercise shape checks but never produce truth."""
+
+    return {
+        "ready": False,
+        "status": "injected_or_caller_supplied_transport_non_production",
+        "acceptance_run_id": acceptance_run_id,
+        "dispatch_count": 0,
+        "synthetic_fixture": True,
+        "production_eligible": False,
+        "contains_secret": False,
+    }
+
+
+def _build_and_probe_official_transport(*, acceptance_run_id: str) -> tuple[Any, dict[str, Any]]:
     try:
         from celery import Celery
-        from celery.app.control import Inspect
+        from celery.app.control import Control, Inspect
         from celery.backends.redis import RedisBackend
         from kombu import Connection
         from kombu.transport.redis import Channel as RedisChannel
         from redis import Redis
     except Exception:
-        Celery = ()  # type: ignore[assignment]
-    if not Celery or not isinstance(app, Celery) or _mock_like(app):
-        return {"ready": False, "status": "real_celery_app_required", "dispatch_count": 0}
+        return None, {"ready": False, "status": "official_celery_dependencies_unavailable", "dispatch_count": 0}
+
+    redis_url = os.getenv("COMMAND_CENTER_REDIS_URL", "redis://localhost:6379/0")
+    broker_url = os.getenv("COMMAND_CENTER_CELERY_BROKER_URL", redis_url)
+    result_backend = os.getenv("COMMAND_CENTER_CELERY_RESULT_BACKEND", redis_url)
+    broker_binding = _redis_endpoint_binding(broker_url)
+    backend_binding = _redis_endpoint_binding(result_backend)
+    if not broker_binding or not backend_binding:
+        return None, {
+            "ready": False,
+            "status": "explicit_redis_host_and_port_required",
+            "dispatch_count": 0,
+            "synthetic_fixture": False,
+            "production_eligible": False,
+        }
+    try:
+        app = Celery(
+            "stock_ming_command_center_3_full_market_production",
+            broker=broker_url,
+            backend=result_backend,
+            include=["worker.tasks_candidate"],
+        )
+        app.conf.task_track_started = True
+    except Exception:
+        return None, {"ready": False, "status": "official_celery_app_construction_failed", "dispatch_count": 0}
+    if not (
+        type(app) is Celery
+        and _method_has_official_owner(app, "connection_for_write", module_prefixes=("celery.",))
+        and _method_has_official_owner(app, "send_task", module_prefixes=("celery.",))
+        and _method_has_official_owner(app, "AsyncResult", module_prefixes=("celery.",))
+    ):
+        return None, {"ready": False, "status": "official_celery_app_identity_required", "dispatch_count": 0}
     eager = bool(app.conf.task_always_eager)
-    broker_scheme = urlsplit(str(app.conf.broker_url or "")).scheme.lower()
-    backend_scheme = urlsplit(str(app.conf.result_backend or "")).scheme.lower()
-    if eager or broker_scheme not in {"redis", "rediss"} or backend_scheme not in {"redis", "rediss"}:
-        return {"ready": False, "status": "eager_inproc_or_non_redis_transport_rejected", "dispatch_count": 0}
+    if eager:
+        return None, {"ready": False, "status": "eager_inproc_transport_rejected", "dispatch_count": 0}
 
     broker_direct = False
     backend_direct = False
@@ -624,16 +712,20 @@ def _transport_probe(app: Any, *, acceptance_run_id: str) -> dict[str, Any]:
     probe_key = f"cc3:full-market:{acceptance_run_id}:probe"
     try:
         connection = app.connection_for_write()
-        if _mock_like(connection) or not isinstance(connection, Connection):
+        if not (
+            type(connection) is Connection
+            and _method_has_official_owner(connection, "ensure_connection", module_prefixes=("kombu.",))
+            and _method_has_official_owner(connection, "channel", module_prefixes=("kombu.",))
+            and _method_has_official_owner(connection, "release", module_prefixes=("kombu.",))
+        ):
             raise RuntimeError("real_kombu_connection_required")
         connection.ensure_connection(max_retries=0)
         channel = connection.channel()
         broker_client = channel.client
         if (
-            _mock_like(channel)
-            or _mock_like(broker_client)
-            or not isinstance(channel, RedisChannel)
-            or not isinstance(broker_client, Redis)
+            type(channel) is not RedisChannel
+            or type(broker_client) is not Redis
+            or not _method_has_official_owner(broker_client, "ping", module_prefixes=("redis.",))
         ):
             raise RuntimeError("real_kombu_redis_channel_required")
         broker_direct = bool(connection.connected and broker_client.ping() is True)
@@ -642,10 +734,16 @@ def _transport_probe(app: Any, *, acceptance_run_id: str) -> dict[str, Any]:
     except Exception:
         broker_direct = False
     try:
-        if not isinstance(app.backend, RedisBackend):
+        if type(app.backend) is not RedisBackend:
             raise RuntimeError("real_celery_redis_backend_required")
         client = app.backend.client
-        if _mock_like(client) or not isinstance(client, Redis):
+        if not (
+            type(client) is Redis
+            and all(
+                _method_has_official_owner(client, name, module_prefixes=("redis.",))
+                for name in ("ping", "set", "get", "delete")
+            )
+        ):
             raise RuntimeError("real_redis_backend_client_required")
         ping = client.ping()
         client.set(probe_key, probe_digest, ex=30)
@@ -664,17 +762,27 @@ def _transport_probe(app: Any, *, acceptance_run_id: str) -> dict[str, Any]:
     except Exception:
         backend_direct = False
     if not broker_direct or not backend_direct:
-        return {"ready": False, "status": "redis_broker_or_backend_direct_probe_failed", "dispatch_count": 0}
+        return None, {"ready": False, "status": "redis_broker_or_backend_direct_probe_failed", "dispatch_count": 0}
 
     try:
-        inspector = app.control.inspect(timeout=3)
-        if not isinstance(inspector, Inspect):
+        control = app.control
+        if not (
+            type(control) is Control
+            and _method_has_official_owner(control, "inspect", module_prefixes=("celery.",))
+        ):
+            raise RuntimeError("real_celery_control_required")
+        inspector = control.inspect(timeout=3)
+        if not (
+            type(inspector) is Inspect
+            and all(
+                _method_has_official_owner(inspector, name, module_prefixes=("celery.",))
+                for name in ("ping", "registered", "active_queues")
+            )
+        ):
             raise RuntimeError("real_celery_inspector_required")
         pings = inspector.ping() or {}
         registered = inspector.registered() or {}
         queues = inspector.active_queues() or {}
-        if any(_mock_like(value) for value in (inspector, pings, registered, queues)):
-            raise RuntimeError("mock_inspector")
     except Exception:
         pings, registered, queues = {}, {}, {}
     workers = sorted(set(pings).intersection(registered).intersection(queues))
@@ -688,7 +796,17 @@ def _transport_probe(app: Any, *, acceptance_run_id: str) -> dict[str, Any]:
         if CANDIDATE_TASK_NAME in task_names and CANDIDATE_QUEUE in queue_names:
             eligible_workers.append(worker)
     ready = bool(eligible_workers)
-    return {
+    official_origin = {
+        "celery_app_type": f"{type(app).__module__}.{type(app).__qualname__}",
+        "broker_connection_type": "kombu.connection.Connection",
+        "broker_channel_type": "kombu.transport.redis.Channel",
+        "redis_client_type": "redis.client.Redis",
+        "redis_backend_type": "celery.backends.redis.RedisBackend",
+        "inspector_type": "celery.app.control.Inspect",
+        "broker_endpoint_digest": broker_binding["endpoint_digest"],
+        "backend_endpoint_digest": backend_binding["endpoint_digest"],
+    }
+    return app if ready else None, {
         "ready": ready,
         "status": "external_redis_celery_direct_attested" if ready else "registered_task_or_queue_missing",
         "schema_version": TRANSPORT_SCHEMA_VERSION,
@@ -703,6 +821,28 @@ def _transport_probe(app: Any, *, acceptance_run_id: str) -> dict[str, Any]:
         "eligible_worker_names": eligible_workers,
         "task_always_eager": eager,
         "probe_digest": probe_digest,
+        "broker_endpoint_digest": broker_binding["endpoint_digest"],
+        "backend_endpoint_digest": backend_binding["endpoint_digest"],
+        "broker_explicit_host_port": True,
+        "backend_explicit_host_port": True,
+        "official_runtime_origin_digest": _canonical_digest(official_origin),
+        "production_eligible": ready,
+        "call_ledger": [
+            {
+                "api": "redis_celery_direct_transport_probe",
+                "call_status": "success" if ready else "blocked",
+                "broker_ping": broker_direct,
+                "backend_roundtrip": backend_direct,
+                "backend_delete_verified": backend_delete_verified,
+                "backend_post_delete_missing": backend_post_delete_missing,
+                "eligible_worker_count": len(eligible_workers),
+                "external_calls_triggered": True,
+                "redis_called": True,
+                "celery_called": True,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            }
+        ],
         "synthetic_fixture": False,
         "contains_secret": False,
     }
@@ -736,6 +876,14 @@ def _stage_key(run_id: str) -> str:
 
 def _transport_key(run_id: str) -> str:
     return f"{TRANSPORT_PACKET_PREFIX}:{run_id}"
+
+
+def _execution_event_key(run_id: str) -> str:
+    return f"{EXECUTION_EVENT_PACKET_PREFIX}:{run_id}"
+
+
+def _promotion_journal_path() -> Path:
+    return PARQUET_ROOT / RESULT_DATASET / PROMOTION_JOURNAL_NAME
 
 
 def _quarantine_key(run_id: str) -> str:
@@ -833,6 +981,11 @@ def _validate_worker_task(
     expected_rows = _score_candidate_rows(universe, expected_symbols)
     expected_output_hash = _canonical_digest(expected_rows) if expected_rows else ""
     transport_map = dict(transport) if isinstance(transport, Mapping) else {}
+    call_ledger = [
+        dict(item)
+        for item in task.get("call_ledger") or []
+        if isinstance(item, Mapping)
+    ]
     eligible_workers = {
         str(item) for item in transport_map.get("eligible_worker_names") or [] if str(item)
     }
@@ -867,6 +1020,13 @@ def _validate_worker_task(
         and task.get("candidate_output_hash") == expected_output_hash == _canonical_digest(rows)
         and task.get("worker_runtime_digest") == _canonical_digest(runtime)
         and task.get("feature_contract_digest") == FEATURE_CONTRACT_DIGEST
+        and len(call_ledger) == 1
+        and call_ledger[0].get("api") == "local_candidate_radar_full_market_scoring"
+        and call_ledger[0].get("call_status") == "success"
+        and _integer(call_ledger[0].get("row_count")) == len(rows)
+        and call_ledger[0].get("external_calls_triggered") is False
+        and call_ledger[0].get("contains_secret") is False
+        and _ledger_sanitized(call_ledger)
         and all(row.get("feature_contract_digest") == FEATURE_CONTRACT_DIGEST for row in rows)
         and all(row.get("does_not_execute_trades") is True for row in rows)
     )
@@ -878,11 +1038,12 @@ def _dispatch_chain_ready(
     task: Mapping[str, Any],
     *,
     run_id: str,
+    transport: Mapping[str, Any],
 ) -> bool:
     chain = success.get("dispatch_chain") if isinstance(success.get("dispatch_chain"), Mapping) else {}
     task_digest = _canonical_digest(task) if task else ""
     runtime = task.get("runtime_provenance") if isinstance(task.get("runtime_provenance"), Mapping) else {}
-    eligible_workers = {
+    chain_workers = {
         str(item) for item in chain.get("eligible_worker_names") or [] if str(item)
     }
     attestation = (
@@ -890,6 +1051,14 @@ def _dispatch_chain_ready(
         if isinstance(chain.get("transport_attestation"), Mapping)
         else {}
     )
+    transport_map = dict(transport) if isinstance(transport, Mapping) else {}
+    attestation_workers = {
+        str(item) for item in attestation.get("eligible_worker_names") or [] if str(item)
+    }
+    persisted_workers = {
+        str(item) for item in transport_map.get("eligible_worker_names") or [] if str(item)
+    }
+    hostname = str(runtime.get("worker_hostname") or "")
     return bool(
         chain
         and success.get("dispatch_chain_digest") == _canonical_digest(chain)
@@ -904,14 +1073,24 @@ def _dispatch_chain_ready(
         and chain.get("persisted_task_digest") == task_digest
         and chain.get("candidate_output_hash") == task.get("candidate_output_hash")
         and chain.get("worker_runtime_digest") == task.get("worker_runtime_digest")
-        and chain.get("transport_attestation_digest") == _canonical_digest(attestation)
+        and attestation == transport_map
+        and chain.get("transport_attestation_digest") == _canonical_digest(transport_map)
         and _transport_attestation_ready(attestation, run_id=run_id)
-        and str(runtime.get("worker_hostname") or "") in eligible_workers
+        and chain_workers == attestation_workers == persisted_workers
+        and hostname in persisted_workers
+        and success.get("worker_hostname") == hostname
+        and _integer(success.get("worker_pid")) == _integer(runtime.get("worker_pid")) > 0
+        and success.get("worker_queue") == runtime.get("worker_queue") == CANDIDATE_QUEUE
     )
 
 
 def _transport_attestation_ready(attestation: Mapping[str, Any], *, run_id: str) -> bool:
     workers = [str(item) for item in attestation.get("eligible_worker_names") or [] if str(item)]
+    call_ledger = [
+        dict(item)
+        for item in attestation.get("call_ledger") or []
+        if isinstance(item, Mapping)
+    ]
     return bool(
         attestation.get("ready") is True
         and attestation.get("schema_version") == TRANSPORT_SCHEMA_VERSION
@@ -924,9 +1103,125 @@ def _transport_attestation_ready(attestation: Mapping[str, Any], *, run_id: str)
         and attestation.get("registered_task_verified") is True
         and attestation.get("registered_queue_verified") is True
         and _integer(attestation.get("eligible_worker_count")) == len(workers) > 0
+        and workers == sorted(set(workers))
         and attestation.get("task_always_eager") is False
+        and attestation.get("broker_explicit_host_port") is True
+        and attestation.get("backend_explicit_host_port") is True
+        and _HEX_64_RE.fullmatch(str(attestation.get("broker_endpoint_digest") or ""))
+        and _HEX_64_RE.fullmatch(str(attestation.get("backend_endpoint_digest") or ""))
+        and _HEX_64_RE.fullmatch(str(attestation.get("official_runtime_origin_digest") or ""))
+        and attestation.get("production_eligible") is True
         and attestation.get("synthetic_fixture") is False
+        and len(call_ledger) == 1
+        and call_ledger[0].get("api") == "redis_celery_direct_transport_probe"
+        and call_ledger[0].get("call_status") == "success"
+        and call_ledger[0].get("contains_secret") is False
         and _ledger_sanitized(attestation)
+    )
+
+
+_TRANSPORT_EVENT_FIELDS = {
+    "transport_core_digest",
+    "execution_event_key",
+    "execution_event_digest",
+}
+
+
+def _transport_core(attestation: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in dict(attestation).items()
+        if key not in _TRANSPORT_EVENT_FIELDS
+    }
+
+
+def _persist_transport_execution_event_atomic(
+    run_id: str,
+    attestation: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    core = _transport_core(attestation)
+    core_digest = _canonical_digest(core)
+    worker_names = sorted(str(item) for item in core.get("eligible_worker_names") or [] if str(item))
+    event_key = _execution_event_key(run_id)
+    event = {
+        "packet_key": event_key,
+        "schema_version": EXECUTION_EVENT_SCHEMA_VERSION,
+        "status": "official_redis_celery_transport_execution_succeeded",
+        "created_at": _now_iso(),
+        "acceptance_run_id": run_id,
+        "transport_core_digest": core_digest,
+        "official_runtime_origin_digest": core.get("official_runtime_origin_digest"),
+        "probe_digest": core.get("probe_digest"),
+        "eligible_worker_set_digest": _canonical_digest(worker_names),
+        "broker_endpoint_digest": core.get("broker_endpoint_digest"),
+        "backend_endpoint_digest": core.get("backend_endpoint_digest"),
+        "ping_set_get_delete_post_delete_verified": True,
+        "synthetic_fixture": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+    }
+    final = {
+        **core,
+        "transport_core_digest": core_digest,
+        "execution_event_key": event_key,
+        "execution_event_digest": _canonical_digest(event),
+    }
+    SQLiteMetaStore(SQLITE_META_PATH)
+    connection = sqlite3.connect(SQLITE_META_PATH, timeout=5)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        now = _now_iso()
+        for key, value in ((_transport_key(run_id), final), (event_key, event)):
+            connection.execute(
+                "INSERT INTO packets(packet_key, payload_json, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(packet_key) DO UPDATE SET payload_json=excluded.payload_json, updated_at=excluded.updated_at",
+                (key, json.dumps(value, ensure_ascii=False, sort_keys=True), now),
+            )
+        rows = dict(
+            connection.execute(
+                "SELECT packet_key, payload_json FROM packets WHERE packet_key IN (?, ?)",
+                (_transport_key(run_id), event_key),
+            ).fetchall()
+        )
+        transport_readback = json.loads(rows.get(_transport_key(run_id), "{}"))
+        event_readback = json.loads(rows.get(event_key, "{}"))
+        if transport_readback != final or event_readback != event:
+            raise RuntimeError("transport_execution_event_readback_mismatch")
+        connection.commit()
+        return final, event
+    except Exception:
+        connection.rollback()
+        return {}, {}
+    finally:
+        connection.close()
+
+
+def _transport_execution_event_ready(
+    attestation: Mapping[str, Any],
+    event: Mapping[str, Any],
+    *,
+    run_id: str,
+) -> bool:
+    core = _transport_core(attestation)
+    workers = sorted(str(item) for item in core.get("eligible_worker_names") or [] if str(item))
+    return bool(
+        _transport_attestation_ready(attestation, run_id=run_id)
+        and attestation.get("transport_core_digest") == _canonical_digest(core)
+        and attestation.get("execution_event_key") == _execution_event_key(run_id)
+        and attestation.get("execution_event_digest") == _canonical_digest(event)
+        and event.get("packet_key") == _execution_event_key(run_id)
+        and event.get("schema_version") == EXECUTION_EVENT_SCHEMA_VERSION
+        and event.get("status") == "official_redis_celery_transport_execution_succeeded"
+        and event.get("acceptance_run_id") == run_id
+        and event.get("transport_core_digest") == _canonical_digest(core)
+        and event.get("official_runtime_origin_digest") == core.get("official_runtime_origin_digest")
+        and event.get("probe_digest") == core.get("probe_digest")
+        and event.get("eligible_worker_set_digest") == _canonical_digest(workers)
+        and event.get("broker_endpoint_digest") == core.get("broker_endpoint_digest")
+        and event.get("backend_endpoint_digest") == core.get("backend_endpoint_digest")
+        and event.get("ping_set_get_delete_post_delete_verified") is True
+        and event.get("synthetic_fixture") is False
+        and event.get("contains_secret") is False
     )
 
 
@@ -970,17 +1265,25 @@ def _dispatch_batches(
     timeout_seconds: int,
     prior_successes: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
+    try:
+        from celery.result import AsyncResult as OfficialAsyncResult
+    except Exception:
+        return list(prior_successes or []), []
     successes = list(prior_successes or [])
     completed_indexes = {_integer(row.get("batch_index"), default=-1) for row in successes}
     quarantined_ids = _quarantined_task_ids(run_id)
+    allocated_ids = quarantined_ids | {
+        str(row.get("celery_task_id") or "") for row in successes if str(row.get("celery_task_id") or "")
+    }
     sent: list[tuple[Any, dict[str, Any]]] = []
     all_dispatched_ids: list[str] = []
     for batch_index, symbols in enumerate(batches):
         if batch_index in completed_indexes:
             continue
-        celery_task_id = f"fmw-{run_id}-{batch_index:04d}-{uuid.uuid4().hex[:8]}"
-        while celery_task_id in quarantined_ids:
-            celery_task_id = f"fmw-{run_id}-{batch_index:04d}-{uuid.uuid4().hex[:8]}"
+        celery_task_id = f"fmw-{run_id}-{batch_index:04d}-{uuid.uuid4().hex}"
+        while celery_task_id in allocated_ids:
+            celery_task_id = f"fmw-{run_id}-{batch_index:04d}-{uuid.uuid4().hex}"
+        allocated_ids.add(celery_task_id)
         specification = {
             "acceptance_run_id": run_id,
             "batch_index": batch_index,
@@ -1011,7 +1314,13 @@ def _dispatch_batches(
         except Exception:
             _revoke_and_quarantine(app, all_dispatched_ids, run_id, "dispatch_exception")
             return successes, all_dispatched_ids
-        if _mock_like(result) or str(result.id or "") != celery_task_id:
+        if not (
+            isinstance(result, OfficialAsyncResult)
+            and type(result).__module__ == "celery.result"
+            and type(result).__qualname__ == "AsyncResult"
+            and _method_has_official_owner(result, "get", module_prefixes=("celery.",))
+            and str(result.id or "") == celery_task_id
+        ):
             _revoke_and_quarantine(app, all_dispatched_ids + [celery_task_id], run_id, "async_result_id_mismatch")
             return successes, all_dispatched_ids + [celery_task_id]
         sent.append((result, specification))
@@ -1021,9 +1330,16 @@ def _dispatch_batches(
     for result, specification in sent:
         celery_task_id = specification["celery_task_id"]
         try:
-            returned = result.get(timeout=max(0.1, deadline - time.monotonic()))
+            returned = _get_result_before_deadline(result, deadline=deadline)
             async_result = app.AsyncResult(celery_task_id)
-            if _mock_like(async_result) or async_result.id != celery_task_id or async_result.state != "SUCCESS":
+            if not (
+                isinstance(async_result, OfficialAsyncResult)
+                and type(async_result).__module__ == "celery.result"
+                and type(async_result).__qualname__ == "AsyncResult"
+                and _method_has_official_owner(async_result, "get", module_prefixes=("celery.",))
+                and async_result.id == celery_task_id
+                and async_result.state == "SUCCESS"
+            ):
                 raise RuntimeError("async_result_state_or_id_mismatch")
         except Exception:
             completed_ids = {item.get("celery_task_id") for item in successes}
@@ -1082,6 +1398,22 @@ def _dispatch_batches(
     return sorted(successes, key=lambda row: _integer(row.get("batch_index"))), all_dispatched_ids
 
 
+def _get_result_before_deadline(
+    result: Any,
+    *,
+    deadline: float,
+    clock: Any = None,
+) -> Any:
+    current_time = clock or time.monotonic
+    remaining = deadline - float(current_time())
+    if remaining <= 0:
+        raise TimeoutError("global_result_deadline_exceeded_before_wait")
+    returned = result.get(timeout=remaining)
+    if float(current_time()) > deadline:
+        raise TimeoutError("global_result_deadline_exceeded_after_response")
+    return returned
+
+
 def _write_checkpoint(
     *,
     run_id: str,
@@ -1099,6 +1431,8 @@ def _write_checkpoint(
         "provider_version_digest": universe.get("version_digest"),
         "universe_digest": universe.get("universe_digest"),
         "transport_attestation_digest": _canonical_digest(transport),
+        "transport_execution_event_key": transport.get("execution_event_key"),
+        "transport_execution_event_digest": transport.get("execution_event_digest"),
         "feature_contract_digest": FEATURE_CONTRACT_DIGEST,
         "batch_count": len(batches),
         "batch_specifications": [
@@ -1131,6 +1465,7 @@ def _validated_resume_successes(
     universe: Mapping[str, Any],
     batches: list[list[str]],
     transport: Mapping[str, Any],
+    execution_event: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     if not (
         checkpoint.get("schema_version") == CHECKPOINT_SCHEMA_VERSION
@@ -1143,7 +1478,10 @@ def _validated_resume_successes(
         and checkpoint.get("universe_digest") == universe.get("universe_digest")
         and checkpoint.get("feature_contract_digest") == FEATURE_CONTRACT_DIGEST
         and _integer(checkpoint.get("batch_count")) == len(batches)
-        and _transport_attestation_ready(transport, run_id=run_id)
+        and checkpoint.get("transport_attestation_digest") == _canonical_digest(transport)
+        and checkpoint.get("transport_execution_event_key") == transport.get("execution_event_key")
+        and checkpoint.get("transport_execution_event_digest") == transport.get("execution_event_digest")
+        and _transport_execution_event_ready(transport, execution_event, run_id=run_id)
         and checkpoint.get("checkpoint_binding_digest")
         == _canonical_digest(
             {key: value for key, value in checkpoint.items() if key != "checkpoint_binding_digest"}
@@ -1175,7 +1513,7 @@ def _validated_resume_successes(
         if (
             not task_ready
             or str(row.get("celery_task_id") or "") in quarantined
-            or not _dispatch_chain_ready(row, task, run_id=run_id)
+            or not _dispatch_chain_ready(row, task, run_id=run_id, transport=transport)
         ):
             return []
         seen.add(batch_index)
@@ -1188,13 +1526,18 @@ def _result_rows_from_batches(
     *,
     universe: Mapping[str, Any],
     transport: Mapping[str, Any],
+    execution_event: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     run_ids = {
         str(batch.get("acceptance_run_id") or "")
         for batch in successes
         if str(batch.get("acceptance_run_id") or "")
     }
-    if len(run_ids) != 1 or not _transport_attestation_ready(transport, run_id=next(iter(run_ids), "")):
+    if len(run_ids) != 1 or not _transport_execution_event_ready(
+        transport,
+        execution_event,
+        run_id=next(iter(run_ids), ""),
+    ):
         return []
     rows: list[dict[str, Any]] = []
     for batch in sorted(successes, key=lambda row: _integer(row.get("batch_index"))):
@@ -1209,6 +1552,7 @@ def _result_rows_from_batches(
             batch,
             task,
             run_id=str(batch.get("acceptance_run_id") or ""),
+            transport=transport,
         ):
             return []
         for row in task_rows:
@@ -1272,6 +1616,132 @@ def _restore_packet(packet_key: str, previous: Mapping[str, Any]) -> bool:
         return False
 
 
+def _write_promotion_journal(value: Mapping[str, Any]) -> dict[str, Any]:
+    payload = dict(value)
+    payload["updated_at"] = _now_iso()
+    _atomic_write_json(_promotion_journal_path(), payload)
+    return payload
+
+
+def _begin_promotion_journal(
+    run_id: str,
+    *,
+    previous_current: Mapping[str, Any],
+    previous_last_good: Mapping[str, Any],
+    previous_pointer: Mapping[str, Any],
+    previous_last_good_pointer: Mapping[str, Any],
+) -> dict[str, Any]:
+    snapshots = {
+        "current_packet": dict(previous_current),
+        "last_good_packet": dict(previous_last_good),
+        "current_pointer": dict(previous_pointer),
+        "last_good_pointer": dict(previous_last_good_pointer),
+    }
+    journal = {
+        "schema_version": PROMOTION_JOURNAL_SCHEMA_VERSION,
+        "status": "prepared",
+        "acceptance_run_id": run_id,
+        "created_at": _now_iso(),
+        "snapshots": snapshots,
+        "rollback_results": {},
+        "contains_secret": False,
+    }
+    journal["journal_binding_digest"] = _canonical_digest(
+        {
+            "schema_version": PROMOTION_JOURNAL_SCHEMA_VERSION,
+            "acceptance_run_id": run_id,
+            "snapshots": snapshots,
+        }
+    )
+    return _write_promotion_journal(journal)
+
+
+def _update_promotion_journal(journal: Mapping[str, Any], status: str, **fields: Any) -> dict[str, Any]:
+    return _write_promotion_journal({**dict(journal), "status": status, **fields})
+
+
+def _rollback_from_promotion_journal(journal: Mapping[str, Any], *, reason: str) -> dict[str, Any]:
+    snapshots = journal.get("snapshots") if isinstance(journal.get("snapshots"), Mapping) else {}
+    operations = (
+        (
+            "current_pointer",
+            lambda: _restore_pointer(
+                PARQUET_ROOT,
+                RESULT_DATASET,
+                snapshots.get("current_pointer") if isinstance(snapshots.get("current_pointer"), Mapping) else {},
+            ),
+        ),
+        (
+            "last_good_pointer",
+            lambda: _restore_pointer(
+                PARQUET_ROOT,
+                RESULT_DATASET,
+                snapshots.get("last_good_pointer")
+                if isinstance(snapshots.get("last_good_pointer"), Mapping)
+                else {},
+                pointer="last_good",
+            ),
+        ),
+        (
+            "current_packet",
+            lambda: _restore_packet(
+                PACKET_KEY,
+                snapshots.get("current_packet") if isinstance(snapshots.get("current_packet"), Mapping) else {},
+            ),
+        ),
+        (
+            "last_good_packet",
+            lambda: _restore_packet(
+                LAST_GOOD_PACKET_KEY,
+                snapshots.get("last_good_packet")
+                if isinstance(snapshots.get("last_good_packet"), Mapping)
+                else {},
+            ),
+        ),
+    )
+    results: dict[str, bool] = {}
+    for name, operation in operations:
+        try:
+            results[name] = operation() is True
+        except Exception:
+            results[name] = False
+    complete = all(results.values())
+    try:
+        updated = _update_promotion_journal(
+            journal,
+            "rolled_back" if complete else "rollback_incomplete",
+            rollback_reason=reason,
+            rollback_results=results,
+            recovery_required=not complete,
+        )
+    except Exception:
+        updated = {**dict(journal), "status": "rollback_journal_write_failed", "rollback_results": results}
+    return {
+        "complete": complete,
+        "pointer_complete": results.get("current_pointer") is True and results.get("last_good_pointer") is True,
+        "packet_complete": results.get("current_packet") is True and results.get("last_good_packet") is True,
+        "results": results,
+        "journal": updated,
+    }
+
+
+def _recover_interrupted_promotion() -> dict[str, Any]:
+    path = _promotion_journal_path()
+    if not path.exists():
+        return {"ready": True, "status": "promotion_journal_missing_no_recovery_needed"}
+    journal = _read_json(path)
+    if journal.get("schema_version") != PROMOTION_JOURNAL_SCHEMA_VERSION:
+        return {"ready": False, "status": "promotion_journal_invalid"}
+    if journal.get("status") in {"completed", "rolled_back"}:
+        return {"ready": True, "status": "promotion_journal_terminal"}
+    rollback = _rollback_from_promotion_journal(journal, reason="restart_recovery")
+    return {
+        "ready": rollback["complete"] is True,
+        "status": "promotion_recovery_completed" if rollback["complete"] else "promotion_recovery_incomplete",
+        "rollback_results": rollback["results"],
+    }
+
+
 def _promote_packet_pair_atomic(packet: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     SQLiteMetaStore(SQLITE_META_PATH)
     connection = sqlite3.connect(SQLITE_META_PATH, timeout=5)
@@ -1306,6 +1776,10 @@ def _promote_packet_pair_atomic(packet: Mapping[str, Any]) -> tuple[dict[str, An
 
 
 def _blocked_attempt(status: str, *, run_id: str = "", **fields: Any) -> dict[str, Any]:
+    call_ledger = fields.pop("call_ledger", [])
+    safe_ledger = [dict(row) for row in call_ledger if isinstance(row, Mapping)]
+    if not _ledger_sanitized(safe_ledger):
+        safe_ledger = []
     packet = {
         "schema_version": SCHEMA_VERSION,
         "status": status,
@@ -1318,6 +1792,7 @@ def _blocked_attempt(status: str, *, run_id: str = "", **fields: Any) -> dict[st
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
+        "call_ledger": safe_ledger,
         **fields,
     }
     try:
@@ -1342,6 +1817,28 @@ def _promote_candidate_results(
     previous_last_good = _read_packet_no_init(SQLITE_META_PATH, LAST_GOOD_PACKET_KEY)
     previous_pointer = _pointer_snapshot(PARQUET_ROOT, RESULT_DATASET, "current")
     previous_last_good_pointer = _pointer_snapshot(PARQUET_ROOT, RESULT_DATASET, "last_good")
+    try:
+        journal = _begin_promotion_journal(
+            run_id,
+            previous_current=previous_current,
+            previous_last_good=previous_last_good,
+            previous_pointer=previous_pointer,
+            previous_last_good_pointer=previous_last_good_pointer,
+        )
+    except Exception:
+        return _blocked_attempt("full_market_worker_promotion_journal_prepare_failed", run_id=run_id)
+
+    def _rollback_response(status: str) -> dict[str, Any]:
+        rollback = _rollback_from_promotion_journal(journal, reason=status)
+        return _blocked_attempt(
+            status,
+            run_id=run_id,
+            pointer_rollback_verified=rollback["pointer_complete"],
+            packet_rollback_verified=rollback["packet_complete"],
+            rollback_results=rollback["results"],
+            recovery_required=not rollback["complete"],
+        )
+
     output_hash = _canonical_digest(result_rows)
     dispatch_chain_digest = _canonical_digest(
         [row.get("dispatch_chain_digest") for row in checkpoint.get("successful_batches") or []]
@@ -1376,7 +1873,11 @@ def _promote_candidate_results(
     except Exception:
         stage_readback = {}
     if stage_readback.get("stage_binding_digest") != stage.get("stage_binding_digest"):
-        return _blocked_attempt("full_market_worker_stage_sqlite_readback_failed", run_id=run_id)
+        return _rollback_response("full_market_worker_stage_sqlite_readback_failed_rolled_back")
+    try:
+        journal = _update_promotion_journal(journal, "stage_written")
+    except Exception:
+        return _rollback_response("full_market_worker_stage_journal_update_failed_rolled_back")
 
     promotion = parquet_store.atomic_promote_versioned_dataset(
         pd.DataFrame(result_rows),
@@ -1408,7 +1909,11 @@ def _promote_candidate_results(
         },
     )
     if promotion.get("atomic_promoted") is not True:
-        return _blocked_attempt("full_market_worker_parquet_stage_or_pointer_failed", run_id=run_id)
+        return _rollback_response("full_market_worker_parquet_stage_or_pointer_failed_rolled_back")
+    try:
+        journal = _update_promotion_journal(journal, "current_pointer_promoted")
+    except Exception:
+        return _rollback_response("full_market_worker_current_pointer_journal_update_failed_rolled_back")
     current_pointer_payload = _pointer_snapshot(PARQUET_ROOT, RESULT_DATASET, "current")
     if not previous_pointer and not previous_last_good_pointer:
         try:
@@ -1417,8 +1922,7 @@ def _promote_candidate_results(
             first_last_good["preserved_at"] = _now_iso()
             _atomic_write_json(PARQUET_ROOT / RESULT_DATASET / "last_good.json", first_last_good)
         except Exception:
-            _restore_pointer(PARQUET_ROOT, RESULT_DATASET, previous_pointer)
-            return _blocked_attempt("full_market_worker_first_last_good_pointer_failed", run_id=run_id)
+            return _rollback_response("full_market_worker_first_last_good_pointer_failed_rolled_back")
     packet = {
         "schema_version": SCHEMA_VERSION,
         "status": "full_market_worker_production_complete",
@@ -1450,6 +1954,9 @@ def _promote_candidate_results(
         "checkpoint_binding_digest": checkpoint.get("checkpoint_binding_digest"),
         "result_row_count": len(result_rows),
         "transport_attestation_digest": _canonical_digest(transport),
+        "transport_execution_event_key": transport.get("execution_event_key"),
+        "transport_execution_event_digest": transport.get("execution_event_digest"),
+        "promotion_journal_binding_digest": journal.get("journal_binding_digest"),
         "direct_provenance_complete": True,
         "production_worker_complete": True,
         "full_market_worker_runtime": True,
@@ -1460,6 +1967,25 @@ def _promote_candidate_results(
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
+        "call_ledger": [
+            *[
+                dict(row)
+                for row in transport.get("call_ledger") or []
+                if isinstance(row, Mapping)
+            ],
+            {
+                "api": "celery_full_market_candidate_batches",
+                "call_status": "success",
+                "batch_count": checkpoint.get("batch_count"),
+                "row_count": len(result_rows),
+                "external_calls_triggered": True,
+                "redis_called": True,
+                "celery_called": True,
+                "provider_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            },
+        ],
     }
     final_packet = dict(packet)
     final_packet["production_binding_digest"] = _canonical_digest(final_packet)
@@ -1479,6 +2005,10 @@ def _promote_candidate_results(
         pending_readback = store.read_packet(PACKET_KEY) or {}
     except Exception:
         pending_readback = {}
+    try:
+        journal = _update_promotion_journal(journal, "pending_packet_written")
+    except Exception:
+        return _rollback_response("full_market_worker_pending_packet_journal_update_failed_rolled_back")
     candidate_fact = validate_full_market_worker_production_fact(
         EVIDENCE_ROOT,
         _candidate_packet=pending_packet,
@@ -1487,22 +2017,7 @@ def _promote_candidate_results(
         pending_readback.get("production_binding_digest") == pending_packet["production_binding_digest"]
         and candidate_fact.get("ready") is True
     ):
-        rollback_pointer = bool(
-            _restore_pointer(PARQUET_ROOT, RESULT_DATASET, previous_pointer)
-            and _restore_pointer(
-                PARQUET_ROOT,
-                RESULT_DATASET,
-                previous_last_good_pointer,
-                pointer="last_good",
-            )
-        )
-        rollback_packets = _restore_packet(PACKET_KEY, previous_current)
-        return _blocked_attempt(
-            "full_market_worker_direct_candidate_validation_failed_rolled_back",
-            run_id=run_id,
-            pointer_rollback_verified=rollback_pointer,
-            packet_rollback_verified=rollback_packets,
-        )
+        return _rollback_response("full_market_worker_direct_candidate_validation_failed_rolled_back")
     latest_last_good_pointer = dict(current_pointer_payload)
     latest_last_good_pointer["pointer_kind"] = "last_good"
     latest_last_good_pointer["preserved_at"] = _now_iso()
@@ -1523,48 +2038,23 @@ def _promote_candidate_results(
         and last_good_pointer_readback.get("artifact_sha256")
         == current_pointer_payload.get("artifact_sha256")
     ):
-        rollback_pointer = bool(
-            _restore_pointer(PARQUET_ROOT, RESULT_DATASET, previous_pointer)
-            and _restore_pointer(
-                PARQUET_ROOT,
-                RESULT_DATASET,
-                previous_last_good_pointer,
-                pointer="last_good",
-            )
-        )
-        rollback_packets = _restore_packet(PACKET_KEY, previous_current)
-        return _blocked_attempt(
-            "full_market_worker_last_good_pointer_promotion_failed_rolled_back",
-            run_id=run_id,
-            pointer_rollback_verified=rollback_pointer,
-            packet_rollback_verified=rollback_packets,
-        )
+        return _rollback_response("full_market_worker_last_good_pointer_promotion_failed_rolled_back")
+    try:
+        journal = _update_promotion_journal(journal, "last_good_pointer_promoted")
+    except Exception:
+        return _rollback_response("full_market_worker_last_good_journal_update_failed_rolled_back")
     persisted, persisted_good = _promote_packet_pair_atomic(final_packet)
+    try:
+        journal = _update_promotion_journal(journal, "completed")
+    except Exception:
+        return _rollback_response("full_market_worker_promotion_journal_finalize_failed_rolled_back")
     fact = validate_full_market_worker_production_fact(EVIDENCE_ROOT)
     if not (
         persisted.get("production_binding_digest") == final_packet["production_binding_digest"]
         and persisted_good.get("production_binding_digest") == final_packet["production_binding_digest"]
         and fact.get("ready") is True
     ):
-        rollback_pointer = bool(
-            _restore_pointer(PARQUET_ROOT, RESULT_DATASET, previous_pointer)
-            and _restore_pointer(
-                PARQUET_ROOT,
-                RESULT_DATASET,
-                previous_last_good_pointer,
-                pointer="last_good",
-            )
-        )
-        rollback_packets = bool(
-            _restore_packet(PACKET_KEY, previous_current)
-            and _restore_packet(LAST_GOOD_PACKET_KEY, previous_last_good)
-        )
-        return _blocked_attempt(
-            "full_market_worker_final_readback_failed_rolled_back",
-            run_id=run_id,
-            pointer_rollback_verified=rollback_pointer,
-            packet_rollback_verified=rollback_packets,
-        )
+        return _rollback_response("full_market_worker_final_readback_failed_rolled_back")
     return dict(persisted)
 
 
@@ -1609,6 +2099,12 @@ def validate_full_market_worker_production_fact(
     production_binding = _canonical_digest(
         {key: value for key, value in packet.items() if key != "production_binding_digest"}
     ) if packet else ""
+    packet_call_ledger = [
+        dict(item)
+        for item in packet.get("call_ledger") or []
+        if isinstance(item, Mapping)
+    ]
+    packet_call_apis = {str(item.get("api") or "") for item in packet_call_ledger}
     packet_status_ready = bool(
         packet.get("status") == "full_market_worker_promotion_pending_direct_validation"
         and packet.get("production_worker_complete") is False
@@ -1641,12 +2137,52 @@ def validate_full_market_worker_production_fact(
         and packet.get("does_not_execute_trades") is True
         and packet.get("does_not_modify_strategy_action") is True
         and packet.get("contains_secret") is False
+        and packet_call_apis
+        == {
+            "redis_celery_direct_transport_probe",
+            "celery_full_market_candidate_batches",
+        }
+        and all(item.get("contains_secret") is False for item in packet_call_ledger)
+        and _ledger_sanitized(packet_call_ledger)
     )
 
     transport = _read_packet_no_init(db_path, str(packet.get("transport_key") or ""))
+    transport_event = _read_packet_no_init(
+        db_path,
+        str(packet.get("transport_execution_event_key") or ""),
+    )
     transport_ready = bool(
-        _transport_attestation_ready(transport, run_id=run_id)
+        _transport_execution_event_ready(transport, transport_event, run_id=run_id)
         and _canonical_digest(transport) == packet.get("transport_attestation_digest")
+        and transport.get("execution_event_key") == packet.get("transport_execution_event_key")
+        and transport.get("execution_event_digest") == packet.get("transport_execution_event_digest")
+    )
+
+    promotion_journal = _read_json(
+        evidence_root / "parquet" / RESULT_DATASET / PROMOTION_JOURNAL_NAME
+    )
+    journal_binding = _canonical_digest(
+        {
+            "schema_version": PROMOTION_JOURNAL_SCHEMA_VERSION,
+            "acceptance_run_id": run_id,
+            "snapshots": promotion_journal.get("snapshots"),
+        }
+    )
+    journal_ready = bool(
+        promotion_journal.get("schema_version") == PROMOTION_JOURNAL_SCHEMA_VERSION
+        and promotion_journal.get("acceptance_run_id") == run_id
+        and promotion_journal.get("journal_binding_digest")
+        == packet.get("promotion_journal_binding_digest")
+        and promotion_journal.get("journal_binding_digest") == journal_binding
+        and (
+            promotion_journal.get("status") == "completed"
+            or (
+                candidate_mode
+                and promotion_journal.get("status")
+                in {"pending_packet_written", "last_good_pointer_promoted"}
+            )
+        )
+        and promotion_journal.get("contains_secret") is False
     )
 
     checkpoint = _read_packet_no_init(db_path, str(packet.get("checkpoint_key") or ""))
@@ -1712,7 +2248,7 @@ def validate_full_market_worker_production_fact(
                 or not (MIN_BATCH_SIZE <= len(symbols) <= MAX_BATCH_SIZE)
                 or spec.get("batch_symbol_hash") != _canonical_digest(symbols)
                 or spec.get("batch_input_hash") != _batch_input_hash(universe, symbols)
-                or not _dispatch_chain_ready(success, task, run_id=run_id)
+                or not _dispatch_chain_ready(success, task, run_id=run_id, transport=transport)
                 or str(success.get("celery_task_id") or "") in _quarantined_task_ids_for_db(
                     db_path,
                     run_id,
@@ -1840,6 +2376,7 @@ def validate_full_market_worker_production_fact(
         "upstream_provider_current_last_good_and_artifacts": universe.get("ready") is True,
         "production_packets_direct_binding": packets_ready,
         "redis_celery_direct_transport_attestation": transport_ready,
+        "durable_promotion_journal": journal_ready,
         "durable_coordinator_checkpoint_resume_state": checkpoint_ready,
         "bound_worker_task_outputs": tasks_ready,
         "sqlite_stage_manifest": stage_ready,
@@ -1877,6 +2414,14 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
             "full_market_worker_production_blocked_operator_approval_required",
             dispatch_count=0,
         )
+    recovery = _recover_interrupted_promotion()
+    if recovery.get("ready") is not True:
+        return _blocked_attempt(
+            "full_market_worker_interrupted_promotion_recovery_required",
+            dispatch_count=0,
+            recovery_status=recovery.get("status"),
+            rollback_results=recovery.get("rollback_results", {}),
+        )
     minimum = _bounded_integer(
         payload_map.get("minimum_universe_size"),
         default=DEFAULT_MINIMUM_UNIVERSE_SIZE,
@@ -1897,9 +2442,10 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
             blockers=universe.get("blockers", []),
         )
 
-    requested_resume = str(payload_map.get("resume_run_id") or "").strip()
-    run_id = requested_resume or uuid.uuid4().hex[:20]
-    if not re.fullmatch(r"[0-9a-zA-Z-]{8,64}", run_id):
+    raw_resume = str(payload_map.get("resume_run_id") or "").strip()
+    requested_resume = _normalize_uuid4(raw_resume) if raw_resume else ""
+    run_id = requested_resume or uuid.uuid4().hex
+    if raw_resume and not requested_resume:
         return _blocked_attempt("full_market_worker_resume_run_id_invalid", dispatch_count=0)
     if not _acquire_lock(run_id):
         return _blocked_attempt(
@@ -1907,24 +2453,44 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
             run_id=run_id,
             dispatch_count=0,
         )
+    app: Any = None
     try:
-        app = _load_celery_app()
-        transport = _transport_probe(app, acceptance_run_id=run_id)
-        if transport.get("ready") is not True:
+        app, probed_transport = _build_and_probe_official_transport(acceptance_run_id=run_id)
+        if probed_transport.get("ready") is not True:
             return _blocked_attempt(
                 "full_market_worker_production_blocked_real_transport_required",
                 run_id=run_id,
                 dispatch_count=0,
-                transport_status=transport.get("status"),
+                transport_status=probed_transport.get("status"),
+                call_ledger=probed_transport.get("call_ledger", []),
             )
-        store = SQLiteMetaStore(SQLITE_META_PATH)
-        store.write_packet(_transport_key(run_id), transport)
-        transport_readback = store.read_packet(_transport_key(run_id)) or {}
-        if _canonical_digest(transport_readback) != _canonical_digest(transport):
+        if requested_resume:
+            transport = _read_packet_no_init(SQLITE_META_PATH, _transport_key(run_id))
+            execution_event = _read_packet_no_init(SQLITE_META_PATH, _execution_event_key(run_id))
+            persisted_workers = sorted(transport.get("eligible_worker_names") or [])
+            probed_workers = sorted(probed_transport.get("eligible_worker_names") or [])
+            if not (
+                _transport_execution_event_ready(transport, execution_event, run_id=run_id)
+                and transport.get("broker_endpoint_digest") == probed_transport.get("broker_endpoint_digest")
+                and transport.get("backend_endpoint_digest") == probed_transport.get("backend_endpoint_digest")
+                and transport.get("official_runtime_origin_digest")
+                == probed_transport.get("official_runtime_origin_digest")
+                and persisted_workers == probed_workers
+            ):
+                return _blocked_attempt(
+                    "full_market_worker_resume_transport_binding_invalid",
+                    run_id=run_id,
+                    dispatch_count=0,
+                    call_ledger=probed_transport.get("call_ledger", []),
+                )
+        else:
+            transport, execution_event = _persist_transport_execution_event_atomic(run_id, probed_transport)
+        if not _transport_execution_event_ready(transport, execution_event, run_id=run_id):
             return _blocked_attempt(
                 "full_market_worker_transport_attestation_readback_failed",
                 run_id=run_id,
                 dispatch_count=0,
+                call_ledger=transport.get("call_ledger", []),
             )
 
         requested_batch = _bounded_integer(
@@ -1949,6 +2515,7 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
                 universe=universe,
                 batches=batches,
                 transport=transport,
+                execution_event=execution_event,
             )
             if checkpoint and not prior_successes:
                 return _blocked_attempt(
@@ -2012,6 +2579,7 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
             successes,
             universe=universe,
             transport=transport,
+            execution_event=execution_event,
         )
         if len(result_rows) != universe.get("universe_count"):
             _write_coordinator_task(
@@ -2040,3 +2608,8 @@ def run_full_market_worker_production_acceptance(payload: Any = None) -> dict[st
         )
     finally:
         _release_lock(run_id)
+        if app is not None:
+            try:
+                app.close()
+            except Exception:
+                pass

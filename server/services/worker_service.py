@@ -579,6 +579,8 @@ def _worker_module_rows() -> list[dict[str, Any]]:
 
 
 def _queue_for_task_type(task_type: str) -> str:
+    if task_type == "run_candidate_radar_full_market_production_acceptance":
+        return "worker_production"
     if task_type in {
         "refresh_tushare_facts",
         "refresh_factor_data",
@@ -691,6 +693,11 @@ def _worker_queue_routing_contract(
         "external_probe": {
             "queue_role": "explicit external probe tasks",
             "allowed_external_sources": ["GitHub"],
+            "allows_provider_or_model": True,
+        },
+        "worker_production": {
+            "queue_role": "explicit Redis/Celery production acceptance tasks",
+            "allowed_external_sources": ["redis", "celery_worker"],
             "allows_provider_or_model": True,
         },
         "local_maintenance": {

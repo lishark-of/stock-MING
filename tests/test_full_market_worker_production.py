@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import sys
 import types
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -134,7 +136,7 @@ def _score_universe(symbol: str = "000001.SZ") -> dict:
 
 
 def _transport_fixture(run_id: str, hostname: str = "worker@host") -> dict:
-    return {
+    core = {
         "ready": True,
         "schema_version": service.TRANSPORT_SCHEMA_VERSION,
         "status": "external_redis_celery_direct_attested",
@@ -148,8 +150,51 @@ def _transport_fixture(run_id: str, hostname: str = "worker@host") -> dict:
         "eligible_worker_count": 1,
         "eligible_worker_names": [hostname],
         "task_always_eager": False,
+        "broker_endpoint_digest": "1" * 64,
+        "backend_endpoint_digest": "2" * 64,
+        "broker_explicit_host_port": True,
+        "backend_explicit_host_port": True,
+        "official_runtime_origin_digest": "3" * 64,
+        "production_eligible": True,
+        "probe_digest": "4" * 64,
         "synthetic_fixture": False,
         "contains_secret": False,
+        "call_ledger": [
+            {
+                "api": "redis_celery_direct_transport_probe",
+                "call_status": "success",
+                "contains_secret": False,
+            }
+        ],
+    }
+    event = _transport_event_fixture(core)
+    return {
+        **core,
+        "transport_core_digest": service._canonical_digest(core),
+        "execution_event_key": service._execution_event_key(run_id),
+        "execution_event_digest": service._canonical_digest(event),
+    }
+
+
+def _transport_event_fixture(transport: dict) -> dict:
+    core = service._transport_core(transport)
+    workers = sorted(core.get("eligible_worker_names") or [])
+    return {
+        "packet_key": service._execution_event_key(str(core.get("acceptance_run_id") or "")),
+        "schema_version": service.EXECUTION_EVENT_SCHEMA_VERSION,
+        "status": "official_redis_celery_transport_execution_succeeded",
+        "created_at": "2026-07-13T00:00:00+00:00",
+        "acceptance_run_id": core.get("acceptance_run_id"),
+        "transport_core_digest": service._canonical_digest(core),
+        "official_runtime_origin_digest": core.get("official_runtime_origin_digest"),
+        "probe_digest": core.get("probe_digest"),
+        "eligible_worker_set_digest": service._canonical_digest(workers),
+        "broker_endpoint_digest": core.get("broker_endpoint_digest"),
+        "backend_endpoint_digest": core.get("backend_endpoint_digest"),
+        "ping_set_get_delete_post_delete_verified": True,
+        "synthetic_fixture": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
     }
 
 
@@ -162,7 +207,7 @@ def _worker_batch_fixture(
     batch_count: int,
     hostname: str = "worker@host",
 ):
-    task_id = f"fmw-{run_id}-{batch_index:04d}-abcdef12"
+    task_id = f"fmw-{run_id}-{batch_index:04d}-{uuid.uuid4().hex}"
     batch = {
         "acceptance_run_id": run_id,
         "batch_index": batch_index,
@@ -205,6 +250,15 @@ def _worker_batch_fixture(
         "candidate_output_hash": service._canonical_digest(rows),
         "batch_input_hash": batch["batch_input_hash"],
         "feature_contract_digest": service.FEATURE_CONTRACT_DIGEST,
+        "call_ledger": [
+            {
+                "api": "local_candidate_radar_full_market_scoring",
+                "call_status": "success",
+                "row_count": len(rows),
+                "external_calls_triggered": False,
+                "contains_secret": False,
+            }
+        ],
     }
     transport = _transport_fixture(run_id, hostname)
     success = {
@@ -314,14 +368,17 @@ class _DispatchControl:
 
 class _PartialDispatchApp:
     def __init__(self):
+        from celery import Celery
+
         self.control = _DispatchControl()
         self.sent: list[str] = []
+        self.app = Celery("partial-dispatch-test", broker="memory://", backend="cache+memory://")
 
     def send_task(self, name, args, task_id, queue, routing_key):
         self.sent.append(task_id)
         if len(self.sent) == 2:
             raise ConnectionError("broker stopped after first accepted task")
-        return _DispatchResult(task_id)
+        return self.app.AsyncResult(task_id)
 
 
 class _TimeoutApp:
@@ -443,7 +500,40 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         patched.control.inspect = MagicMock(return_value=MagicMock())
         attestation = service._transport_probe(patched, acceptance_run_id="runtime123")
         self.assertFalse(attestation["ready"])
-        self.assertEqual(attestation["status"], "redis_broker_or_backend_direct_probe_failed")
+        self.assertEqual(attestation["status"], "injected_or_caller_supplied_transport_non_production")
+
+    def test_missing_explicit_redis_port_blocks_before_official_app_construction(self) -> None:
+        with patch.dict(
+            service.os.environ,
+            {
+                "COMMAND_CENTER_REDIS_URL": "redis://127.0.0.1/15",
+                "COMMAND_CENTER_CELERY_BROKER_URL": "redis://127.0.0.1/15",
+                "COMMAND_CENTER_CELERY_RESULT_BACKEND": "redis://127.0.0.1/15",
+            },
+        ), patch("celery.Celery") as constructor:
+            app_value, attestation = service._build_and_probe_official_transport(
+                acceptance_run_id="0" * 32,
+            )
+        self.assertIsNone(app_value)
+        self.assertEqual(attestation["status"], "explicit_redis_host_and_port_required")
+        constructor.assert_not_called()
+
+    def test_result_returned_after_global_deadline_is_rejected(self) -> None:
+        class Clock:
+            value = 0.0
+
+            def __call__(self):
+                return self.value
+
+        clock = Clock()
+
+        class LateResult:
+            def get(self, timeout=None):
+                clock.value = 181.0
+                return {"status": "success"}
+
+        with self.assertRaisesRegex(TimeoutError, "global_result_deadline_exceeded_after_response"):
+            service._get_result_before_deadline(LateResult(), deadline=180.0, clock=clock)
 
     def test_bound_worker_rejects_synthetic_runtime_before_provider_read(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -520,6 +610,31 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         )
         self.assertFalse(ready)
 
+        _universe, batch, task, transport, success = _worker_fixture(symbols)
+        forged = json.loads(json.dumps(success))
+        forged_attestation = forged["dispatch_chain"]["transport_attestation"]
+        forged_attestation["eligible_worker_names"] = ["different@host"]
+        forged_attestation["eligible_worker_count"] = 1
+        forged["dispatch_chain"]["transport_attestation_digest"] = service._canonical_digest(
+            forged_attestation
+        )
+        forged["dispatch_chain_digest"] = service._canonical_digest(forged["dispatch_chain"])
+        self.assertFalse(
+            service._dispatch_chain_ready(
+                forged,
+                task,
+                run_id=batch["acceptance_run_id"],
+                transport=transport,
+            )
+        )
+        self.assertFalse(
+            service._transport_execution_event_ready(
+                transport,
+                {},
+                run_id=batch["acceptance_run_id"],
+            )
+        )
+
     def test_missing_or_duplicate_batch_results_never_cover_the_universe(self) -> None:
         all_symbols = _valid_symbols(service.MIN_BATCH_SIZE * 2)
         batches = [
@@ -557,16 +672,19 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     successes,
                     universe=universe,
                     transport=transport,
+                    execution_event=_transport_event_fixture(transport),
                 )
                 missing = service._result_rows_from_batches(
                     successes[:1],
                     universe=universe,
                     transport=transport,
+                    execution_event=_transport_event_fixture(transport),
                 )
                 duplicate = service._result_rows_from_batches(
                     [successes[0], successes[0], successes[1]],
                     universe=universe,
                     transport=transport,
+                    execution_event=_transport_event_fixture(transport),
                 )
         self.assertEqual(len(complete), len(all_symbols))
         self.assertEqual(missing, [])
@@ -612,6 +730,7 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                         universe=universe,
                         batches=[symbols],
                         transport=transport,
+                        execution_event={},
                     ),
                     [],
                 )
@@ -641,6 +760,7 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     universe=universe,
                     batches=[symbols],
                     transport=transport,
+                    execution_event=_transport_event_fixture(transport),
                 )
                 app = _PartialDispatchApp()
                 service._revoke_and_quarantine(
@@ -655,6 +775,7 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     universe=universe,
                     batches=[symbols],
                     transport=transport,
+                    execution_event=_transport_event_fixture(transport),
                 )
         self.assertEqual(len(before), 1)
         self.assertEqual(after, [])
@@ -663,6 +784,48 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         batches = service._partition_symbols(_valid_symbols(3001), 100)
         self.assertEqual(sum(len(batch) for batch in batches), 3001)
         self.assertTrue(all(service.MIN_BATCH_SIZE <= len(batch) <= service.MAX_BATCH_SIZE for batch in batches))
+
+    def test_uuid4_identity_and_independent_rollback_steps(self) -> None:
+        value = "123456781234423481234567890abcde"
+        self.assertEqual(service._normalize_uuid4(value), value)
+        self.assertEqual(service._normalize_uuid4("not-a-uuid"), "")
+        journal = {
+            "schema_version": service.PROMOTION_JOURNAL_SCHEMA_VERSION,
+            "status": "current_pointer_promoted",
+            "acceptance_run_id": value,
+            "snapshots": {
+                "current_pointer": {},
+                "last_good_pointer": {},
+                "current_packet": {},
+                "last_good_packet": {},
+            },
+        }
+        with patch.object(
+            service,
+            "_restore_pointer",
+            side_effect=[False, True],
+        ) as restore_pointer, patch.object(
+            service,
+            "_restore_packet",
+            side_effect=[False, True],
+        ) as restore_packet, patch.object(
+            service,
+            "_update_promotion_journal",
+            side_effect=lambda packet, status, **fields: {**packet, "status": status, **fields},
+        ):
+            rollback = service._rollback_from_promotion_journal(journal, reason="counterexample")
+        self.assertEqual(restore_pointer.call_count, 2)
+        self.assertEqual(restore_packet.call_count, 2)
+        self.assertFalse(rollback["complete"])
+        self.assertEqual(
+            rollback["results"],
+            {
+                "current_pointer": False,
+                "last_good_pointer": True,
+                "current_packet": False,
+                "last_good_packet": True,
+            },
+        )
 
     def test_partial_dispatch_revokes_and_quarantines_accepted_task(self) -> None:
         batches = [
@@ -695,6 +858,7 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         self.assertEqual(successes, [])
         self.assertEqual(len(dispatched), 1)
         self.assertTrue(dispatched[0].startswith("fmw-partialdispatch123-0000-"))
+        self.assertRegex(dispatched[0].rsplit("-", 1)[-1], r"^[0-9a-f]{32}$")
         self.assertEqual(app.control.revoked, [(dispatched[0], False)])
         self.assertEqual(quarantine["status"], "late_results_quarantined")
         self.assertEqual(quarantine["reason"], "dispatch_exception")
@@ -894,10 +1058,19 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         self.assertTrue(failed["packet_rollback_verified"])
 
     def test_task_catalog_and_route_cover_explicit_post(self) -> None:
+        from server.services import worker_service
+
         catalog = {row["task_type"]: row for row in task_service.TASK_CATALOG}
         item = catalog["run_candidate_radar_full_market_production_acceptance"]
         self.assertEqual(item["route"], "POST /api/worker/full-market-production-acceptance")
         self.assertTrue(item["requires_provider_current_and_last_good"])
+        self.assertTrue(item["call_ledger_required"])
+        self.assertEqual(
+            worker_service._queue_for_task_type(
+                "run_candidate_radar_full_market_production_acceptance"
+            ),
+            "worker_production",
+        )
         methods = {route.path: route.methods for route in app.routes}
         self.assertEqual(methods["/api/worker/full-market-production-acceptance"], {"POST"})
         response = TestClient(app).get("/api/tasks/catalog")
@@ -907,6 +1080,17 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         }
         self.assertIn("run_candidate_radar_full_market_production_acceptance", routed_catalog)
         self.assertFalse(response.json()["data"]["external_calls_triggered"])
+
+    def test_bound_task_fallback_preserves_legacy_payload_signature(self) -> None:
+        from worker import celery_app as celery_module
+
+        with patch.object(celery_module, "celery_app", None):
+            @celery_module.task("legacy-signature-proof", bind=True)
+            def bound(_self, payload=None):
+                return payload
+
+            payload = {"symbols": ["000001.SZ"]}
+            self.assertEqual(bound(payload), payload)
 
 
 if __name__ == "__main__":
