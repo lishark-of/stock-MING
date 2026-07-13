@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import socket
 from typing import Any
 
 from server.services import candidate_service
@@ -23,7 +22,7 @@ def run_candidate_radar_full_pool_local_scan(self, payload: dict[str, Any] | Non
         delivery_info = self.request.delivery_info if isinstance(self.request.delivery_info, dict) else {}
         runtime = {
             "celery_request_id": str(self.request.id or ""),
-            "worker_hostname": socket.gethostname(),
+            "worker_hostname": str(getattr(self.request, "hostname", "") or ""),
             "worker_pid": os.getpid(),
             "worker_queue": str(delivery_info.get("routing_key") or ""),
             "delivery_redelivered": delivery_info.get("redelivered") is True,

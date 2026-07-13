@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import tempfile
+import sys
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -32,141 +34,229 @@ def _patch_root(root: Path):
     )
 
 
-def _provider_ledger(api: str) -> dict:
+def _verified_frames(symbols: list[str]) -> dict:
+    dates = pd.bdate_range(end="2026-07-10", periods=90)
+    date_values = [date.strftime("%Y%m%d") for date in dates]
     return {
-        "api": api,
-        "call_status": "success",
-        "row_count": 1,
-        "external_calls_triggered": True,
-        "tushare_called": True,
-        "real_provider_adapter_used": True,
-        "provider_provenance_validator": True,
-        "scope_hash": SCOPE_HASH,
-        "does_not_execute_trades": True,
-        "does_not_modify_strategy_action": True,
+        "stock_basic": pd.DataFrame(
+            [
+                {
+                    "ts_code": symbol,
+                    "symbol": symbol.split(".")[0],
+                    "name": f"fixture-{index}",
+                    "market": "主板",
+                    "exchange": symbol.split(".")[-1],
+                    "list_status": "L",
+                    "list_date": "20000101",
+                }
+                for index, symbol in enumerate(symbols)
+            ]
+        ),
+        "trade_cal": pd.DataFrame({"cal_date": date_values, "is_open": [1] * len(date_values)}),
+        "daily": pd.DataFrame(
+            [
+                {
+                    "ts_code": symbol,
+                    "trade_date": date,
+                    "close": 10 + index * 0.01,
+                    "amount": 200000.0,
+                }
+                for symbol in symbols
+                for index, date in enumerate(date_values)
+            ]
+        ),
+        "daily_basic": pd.DataFrame(
+            [
+                {
+                    "ts_code": symbol,
+                    "trade_date": date_values[-1],
+                    "turnover_rate": 2.0,
+                    "volume_ratio": 1.2,
+                    "total_mv": 100000.0,
+                    "circ_mv": 80000.0,
+                    "pe_ttm": 20.0,
+                    "pb": 2.0,
+                }
+                for symbol in symbols
+            ]
+        ),
+        "moneyflow": pd.DataFrame(
+            [
+                {
+                    "ts_code": symbol,
+                    "trade_date": date,
+                    "buy_lg_amount": 20.0,
+                    "sell_lg_amount": 10.0,
+                    "buy_elg_amount": 10.0,
+                    "sell_elg_amount": 5.0,
+                }
+                for symbol in symbols
+                for date in date_values[-5:]
+            ]
+        ),
     }
 
 
-def _write_synthetic_provider(root: Path, symbols: list[str]) -> None:
-    artifact = root / "parquet" / service.PROVIDER_DATASET / "versions" / SCOPE_HASH / "stock_basic.parquet"
-    artifact.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(
-        [
-            {
-                "ts_code": symbol,
-                "symbol": symbol.split(".")[0],
-                "name": f"fixture-{index}",
-                "market": "主板",
-                "exchange": symbol.split(".")[-1],
-                "list_status": "L",
-                "delist_date": "",
-                "provider_scope_hash": SCOPE_HASH,
-            }
-            for index, symbol in enumerate(symbols)
-        ]
-    ).to_parquet(artifact, index=False)
-    digest = service._sha256_file(artifact)
-    relpath = str(artifact.relative_to(root))
-    packet = {
-        "schema_version": service.PROVIDER_SCHEMA_VERSION,
-        "status": service.PROVIDER_COMPLETE_STATUS,
+def _shared_provider_result(symbols: list[str], *, ready: bool = True) -> dict:
+    symbols = sorted(symbols)
+    return {
+        "ready": ready,
+        "status": "verified" if ready else "blocked",
         "scope_hash": SCOPE_HASH,
-        "universe_digest": service._canonical_digest(sorted(set(symbols))),
-        "universe_count": len(set(symbols)),
+        "version_digest": "b" * 64,
         "validated_trade_date": "20260710",
-        "as_of_date": "20260713",
-        "artifact_manifest_digest": "b" * 64,
-        "stock_basic_artifact_sha256": digest,
-        "stock_basic_row_count": len(symbols),
-        "trade_calendar_validated": True,
-        "provider_provenance_validator": True,
-        "real_provider_adapter_used": True,
-        "durable_stage_readback_verified": True,
-        "durable_final_promotion_verified": True,
-        "synthetic_fixture": True,
-        "does_not_execute_trades": True,
-        "does_not_modify_strategy_action": True,
-        "call_ledger": [
-            _provider_ledger(api)
-            for api in ("stock_basic", "trade_cal", "daily", "daily_basic", "moneyflow")
-        ],
-        "artifacts": {
-            "stock_basic": {
-                "path": relpath,
-                "sha256": digest,
-                "row_count": len(symbols),
-                "date_start": "20260710",
-                "date_end": "20260710",
-                "symbol_count": len(set(symbols)),
-            }
-        },
+        "as_of": "20260713",
+        "symbols": symbols,
+        "universe_count": len(symbols),
+        "universe_digest": service._canonical_digest(symbols),
+        "frames": _verified_frames(symbols),
+        "blockers": [] if ready else ["fixture_blocked"],
     }
-    store = SQLiteMetaStore(root / "meta.sqlite")
-    store.write_packet(service.PROVIDER_CURRENT_KEY, packet)
-    store.write_packet(service.PROVIDER_LAST_GOOD_KEY, packet)
-    service._atomic_write_json(
-        root / "parquet" / service.PROVIDER_DATASET / "current.json",
-        {
-            "schema_version": "tushare_full_market_universe_pointer.v1",
-            "status": service.PROVIDER_COMPLETE_STATUS,
-            "scope_hash": SCOPE_HASH,
-            "artifact_relpath": relpath,
-            "artifact_sha256": digest,
-            "row_count": len(symbols),
-            "validated_trade_date": "20260710",
-        },
-    )
+
+
+def _provider_module(result: dict) -> types.ModuleType:
+    module = types.ModuleType("server.services.tushare_production_store")
+    module.validate_tushare_full_market_production_version = MagicMock(return_value=result)
+    return module
 
 
 def _score_universe(symbol: str = "000001.SZ") -> dict:
-    dates = pd.bdate_range("2026-04-20", periods=service.MIN_DAILY_SESSIONS)
-    date_values = [date.strftime("%Y%m%d") for date in dates]
-    daily = pd.DataFrame(
-        {
-            "ts_code": [symbol] * len(dates),
-            "trade_date": date_values,
-            "close": [10 + index * 0.05 for index in range(len(dates))],
-            "amount": [200000.0] * len(dates),
-            "provider_scope_hash": [SCOPE_HASH] * len(dates),
-        }
-    )
-    basic = pd.DataFrame(
-        [
-            {
-                "ts_code": symbol,
-                "trade_date": date_values[-1],
-                "turnover_rate": 2.0,
-                "volume_ratio": 1.2,
-                "total_mv": 100000.0,
-                "circ_mv": 80000.0,
-                "pe_ttm": 20.0,
-                "pb": 2.0,
-                "provider_scope_hash": SCOPE_HASH,
-            }
-        ]
-    )
-    flow = pd.DataFrame(
-        [
-            {
-                "ts_code": symbol,
-                "trade_date": date,
-                "buy_lg_amount": 20.0,
-                "sell_lg_amount": 10.0,
-                "buy_elg_amount": 10.0,
-                "sell_elg_amount": 5.0,
-                "provider_scope_hash": SCOPE_HASH,
-            }
-            for date in date_values[-service.MIN_MONEYFLOW_SESSIONS :]
-        ]
-    )
+    frames = _verified_frames([symbol])
     return {
         "ready": True,
         "symbols": [symbol],
         "scope_hash": SCOPE_HASH,
+        "version_digest": "b" * 64,
         "universe_digest": service._canonical_digest([symbol]),
-        "validated_trade_date": date_values[-1],
-        "_frames": {"daily": daily, "daily_basic": basic, "moneyflow": flow},
+        "validated_trade_date": "20260710",
+        "_frames": frames,
     }
+
+
+def _transport_fixture(run_id: str, hostname: str = "worker@host") -> dict:
+    return {
+        "ready": True,
+        "schema_version": service.TRANSPORT_SCHEMA_VERSION,
+        "status": "external_redis_celery_direct_attested",
+        "acceptance_run_id": run_id,
+        "broker_direct_ping": True,
+        "backend_roundtrip_verified": True,
+        "backend_delete_verified": True,
+        "backend_post_delete_missing": True,
+        "registered_task_verified": True,
+        "registered_queue_verified": True,
+        "eligible_worker_count": 1,
+        "eligible_worker_names": [hostname],
+        "task_always_eager": False,
+        "synthetic_fixture": False,
+        "contains_secret": False,
+    }
+
+
+def _worker_batch_fixture(
+    universe: dict,
+    symbols: list[str],
+    *,
+    run_id: str,
+    batch_index: int,
+    batch_count: int,
+    hostname: str = "worker@host",
+):
+    task_id = f"fmw-{run_id}-{batch_index:04d}-abcdef12"
+    batch = {
+        "acceptance_run_id": run_id,
+        "batch_index": batch_index,
+        "batch_count": batch_count,
+        "symbols": list(symbols),
+        "batch_symbol_hash": service._canonical_digest(symbols),
+        "batch_input_hash": service._batch_input_hash(universe, symbols),
+        "celery_task_id": task_id,
+    }
+    runtime = {
+        "bound_task_request": True,
+        "synthetic_fixture": False,
+        "celery_request_id": task_id,
+        "worker_hostname": hostname,
+        "worker_pid": 4242,
+        "worker_queue": service.CANDIDATE_QUEUE,
+    }
+    rows = service._score_candidate_rows(universe, symbols)
+    task = {
+        "task_id": f"candidate-worker-{task_id}",
+        "task_type": service.CANDIDATE_TASK_TYPE,
+        "status": "success",
+        "current_step": "candidate_radar_full_market_batch_completed",
+        "synthetic_fixture": False,
+        "runtime_provenance": runtime,
+        "worker_runtime_digest": service._canonical_digest(runtime),
+        "payload_safe": {
+            "acceptance_run_id": run_id,
+            "celery_dispatch_id": task_id,
+            "batch_index": batch_index,
+            "batch_count": batch_count,
+            "batch_symbol_count": len(symbols),
+            "batch_symbol_hash": batch["batch_symbol_hash"],
+            "batch_input_hash": batch["batch_input_hash"],
+            "universe_digest": universe["universe_digest"],
+            "provider_scope_hash": universe["scope_hash"],
+            "provider_version_digest": universe["version_digest"],
+        },
+        "candidate_rows": rows,
+        "candidate_output_hash": service._canonical_digest(rows),
+        "batch_input_hash": batch["batch_input_hash"],
+        "feature_contract_digest": service.FEATURE_CONTRACT_DIGEST,
+    }
+    transport = _transport_fixture(run_id, hostname)
+    success = {
+        **batch,
+        "worker_task_id": task["task_id"],
+        "candidate_output_hash": task["candidate_output_hash"],
+        "candidate_row_count": len(rows),
+        "worker_hostname": hostname,
+        "worker_pid": 4242,
+        "worker_queue": service.CANDIDATE_QUEUE,
+    }
+    chain = {
+        "acceptance_run_id": run_id,
+        "batch_index": batch_index,
+        "batch_input_hash": batch["batch_input_hash"],
+        "celery_task_id": task_id,
+        "dispatch_result_id": task_id,
+        "async_result_id": task_id,
+        "async_result_state": "SUCCESS",
+        "persisted_task_digest": service._canonical_digest(task),
+        "candidate_output_hash": task["candidate_output_hash"],
+        "worker_runtime_digest": task["worker_runtime_digest"],
+        "transport_attestation_digest": service._canonical_digest(transport),
+        "transport_attestation": dict(transport),
+        "eligible_worker_names": [hostname],
+    }
+    success["dispatch_chain"] = chain
+    success["dispatch_chain_digest"] = service._canonical_digest(chain)
+    return batch, task, transport, success
+
+
+def _worker_fixture(
+    symbols: list[str],
+    *,
+    run_id: str = "workerfixture123",
+    hostname: str = "worker@host",
+):
+    shared = _shared_provider_result(symbols)
+    universe = {
+        **shared,
+        "_frames": shared["frames"],
+        "minimum_universe_size": service.DEFAULT_MINIMUM_UNIVERSE_SIZE,
+    }
+    batch, task, transport, success = _worker_batch_fixture(
+        universe,
+        symbols,
+        run_id=run_id,
+        batch_index=0,
+        batch_count=1,
+        hostname=hostname,
+    )
+    return universe, batch, task, transport, success
 
 
 class _DirectConnection:
@@ -234,6 +324,16 @@ class _PartialDispatchApp:
         return _DispatchResult(task_id)
 
 
+class _TimeoutApp:
+    def __init__(self):
+        self.control = _DispatchControl()
+        self.sent: list[str] = []
+
+    def send_task(self, name, args, task_id, queue, routing_key):
+        self.sent.append(task_id)
+        return _DispatchResult(task_id)
+
+
 class FullMarketWorkerProductionTests(unittest.TestCase):
     def test_route_missing_or_seven_symbol_universe_is_zero_dispatch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -248,10 +348,11 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             self.assertEqual(response.json()["data"]["dispatch_count"], 0)
             loader.assert_not_called()
 
-            _write_synthetic_provider(root, _valid_symbols(7))
-            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2], patch.object(
-                service, "_load_celery_app"
-            ) as loader:
+            provider_module = _provider_module(_shared_provider_result(_valid_symbols(7)))
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2], patch.dict(
+                sys.modules,
+                {"server.services.tushare_production_store": provider_module},
+            ), patch.object(service, "_load_celery_app") as loader:
                 response = TestClient(app).post(
                     "/api/worker/full-market-production-acceptance",
                     json={
@@ -268,14 +369,37 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
     def test_synthetic_provider_and_invalid_exchange_prefix_never_promote(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            _write_synthetic_provider(root, ["000001.SH", "600000.SZ", "200001.SZ", "900001.SH"])
-            universe = service._authoritative_provider_universe(
-                root,
-                minimum_universe_size=service.DEFAULT_MINIMUM_UNIVERSE_SIZE,
-            )
+            symbols = ["000001.SH", "600000.SZ", "200001.SZ", "900001.SH"]
+            provider_module = _provider_module(_shared_provider_result(symbols))
+            with patch.dict(
+                sys.modules,
+                {"server.services.tushare_production_store": provider_module},
+            ):
+                universe = service._authoritative_provider_universe(
+                    root,
+                    minimum_universe_size=service.DEFAULT_MINIMUM_UNIVERSE_SIZE,
+                )
             self.assertFalse(universe["ready"])
-            self.assertIn("provider_current_strict_validation_failed", universe["blockers"])
-            self.assertIn("provider_stock_basic_contains_invalid_a_share_codes", universe["blockers"])
+            self.assertIn("shared_provider_universe_identity_invalid", universe["blockers"])
+
+    def test_provider_contract_is_consumed_only_through_shared_verifier(self) -> None:
+        symbols = _valid_symbols(service.MIN_BATCH_SIZE)
+        shared = _shared_provider_result(symbols)
+        provider_module = _provider_module(shared)
+        verifier = provider_module.validate_tushare_full_market_production_version
+        with patch.dict(
+            sys.modules,
+            {"server.services.tushare_production_store": provider_module},
+        ):
+            universe = service._authoritative_provider_universe(
+                Path("/not/read/by/worker"),
+                minimum_universe_size=service.MIN_BATCH_SIZE,
+                include_frames=True,
+            )
+        verifier.assert_called_once_with(Path("/not/read/by/worker"), include_frames=True)
+        self.assertTrue(universe["ready"])
+        self.assertEqual(universe["version_digest"], shared["version_digest"])
+        self.assertEqual(set(universe["_frames"]), set(service.REQUIRED_PROVIDER_FRAMES))
 
     def test_boolean_only_and_missing_candidate_packets_never_promote(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -319,7 +443,7 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         patched.control.inspect = MagicMock(return_value=MagicMock())
         attestation = service._transport_probe(patched, acceptance_run_id="runtime123")
         self.assertFalse(attestation["ready"])
-        self.assertEqual(attestation["status"], "registered_task_or_queue_missing")
+        self.assertEqual(attestation["status"], "redis_broker_or_backend_direct_probe_failed")
 
     def test_bound_worker_rejects_synthetic_runtime_before_provider_read(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -356,20 +480,117 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         self.assertEqual(row["feature_contract_digest"], service.FEATURE_CONTRACT_DIGEST)
         self.assertIn("ma60", row)
         self.assertIn("five_day_main_net_amount", row)
+        self.assertEqual(row["radar_scoring_contract"], "next_stock_radar.score_candidate")
+        self.assertTrue(row["battle_state"])
         self.assertNotEqual(set(row), {"ts_code"})
+
+    def test_worker_task_recomputes_radar_rows_and_rejects_forged_score(self) -> None:
+        symbols = _valid_symbols(service.MIN_BATCH_SIZE)
+        universe, batch, task, transport, _success = _worker_fixture(symbols)
+        ready, rows = service._validate_worker_task(
+            task,
+            batch=batch,
+            universe=universe,
+            transport=transport,
+        )
+        self.assertTrue(ready)
+        self.assertEqual(rows, service._score_candidate_rows(universe, symbols))
+
+        forged = dict(task)
+        forged_rows = [dict(row) for row in task["candidate_rows"]]
+        forged_rows[0]["score"] = 99 if forged_rows[0]["score"] != 99 else 1
+        forged["candidate_rows"] = forged_rows
+        forged["candidate_output_hash"] = service._canonical_digest(forged_rows)
+        ready, _ = service._validate_worker_task(
+            forged,
+            batch=batch,
+            universe=universe,
+            transport=transport,
+        )
+        self.assertFalse(ready)
+
+    def test_worker_hostname_must_match_inspected_eligible_worker(self) -> None:
+        symbols = _valid_symbols(service.MIN_BATCH_SIZE)
+        universe, batch, task, _transport, _success = _worker_fixture(symbols)
+        ready, _ = service._validate_worker_task(
+            task,
+            batch=batch,
+            universe=universe,
+            transport={"eligible_worker_names": ["different@host"]},
+        )
+        self.assertFalse(ready)
+
+    def test_missing_or_duplicate_batch_results_never_cover_the_universe(self) -> None:
+        all_symbols = _valid_symbols(service.MIN_BATCH_SIZE * 2)
+        batches = [
+            all_symbols[: service.MIN_BATCH_SIZE],
+            all_symbols[service.MIN_BATCH_SIZE :],
+        ]
+        shared = _shared_provider_result(all_symbols)
+        universe = {
+            **shared,
+            "_frames": shared["frames"],
+            "minimum_universe_size": service.DEFAULT_MINIMUM_UNIVERSE_SIZE,
+        }
+        run_id = "batchcoverage123"
+        transport = _transport_fixture(run_id)
+        tasks: list[dict] = []
+        successes: list[dict] = []
+        for batch_index, symbols in enumerate(batches):
+            _batch, task, _transport, success = _worker_batch_fixture(
+                universe,
+                symbols,
+                run_id=run_id,
+                batch_index=batch_index,
+                batch_count=len(batches),
+            )
+            tasks.append(task)
+            successes.append(success)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2]:
+                store = SQLiteMetaStore(root / "meta.sqlite")
+                for task in tasks:
+                    store.write_task_status(task)
+                complete = service._result_rows_from_batches(
+                    successes,
+                    universe=universe,
+                    transport=transport,
+                )
+                missing = service._result_rows_from_batches(
+                    successes[:1],
+                    universe=universe,
+                    transport=transport,
+                )
+                duplicate = service._result_rows_from_batches(
+                    [successes[0], successes[0], successes[1]],
+                    universe=universe,
+                    transport=transport,
+                )
+        self.assertEqual(len(complete), len(all_symbols))
+        self.assertEqual(missing, [])
+        self.assertEqual(duplicate, [])
 
     def test_partial_resume_without_worker_task_is_rejected(self) -> None:
         symbols = _valid_symbols(service.MIN_BATCH_SIZE)
+        shared = _shared_provider_result(symbols)
         universe = {
-            "scope_hash": SCOPE_HASH,
-            "universe_digest": service._canonical_digest(symbols),
+            **shared,
+            "_frames": shared["frames"],
+            "minimum_universe_size": service.DEFAULT_MINIMUM_UNIVERSE_SIZE,
         }
+        transport = {"eligible_worker_names": ["worker@host"]}
         checkpoint = {
             "schema_version": service.CHECKPOINT_SCHEMA_VERSION,
+            "status": "partial_failure_resume_available",
+            "resume_available": True,
             "synthetic_fixture": False,
             "acceptance_run_id": "resume123",
             "provider_scope_hash": SCOPE_HASH,
+            "provider_version_digest": universe["version_digest"],
             "universe_digest": universe["universe_digest"],
+            "transport_attestation_digest": service._canonical_digest(transport),
             "feature_contract_digest": service.FEATURE_CONTRACT_DIGEST,
             "batch_count": 1,
             "successful_batches": [
@@ -380,13 +601,63 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                 }
             ],
         }
+        checkpoint["checkpoint_binding_digest"] = service._canonical_digest(checkpoint)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2]:
                 self.assertEqual(
-                    service._validated_resume_successes(checkpoint, universe=universe, batches=[symbols]),
+                    service._validated_resume_successes(
+                        checkpoint,
+                        run_id="resume123",
+                        universe=universe,
+                        batches=[symbols],
+                        transport=transport,
+                    ),
                     [],
                 )
+
+    def test_quarantined_late_task_is_never_reused_by_resume(self) -> None:
+        symbols = _valid_symbols(service.MIN_BATCH_SIZE)
+        universe, _batch, task, transport, success = _worker_fixture(
+            symbols,
+            run_id="quarantineresume123",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2]:
+                store = SQLiteMetaStore(root / "meta.sqlite")
+                store.write_task_status(task)
+                checkpoint = service._write_checkpoint(
+                    run_id="quarantineresume123",
+                    universe=universe,
+                    batches=[symbols],
+                    successes=[success],
+                    status="partial_failure_resume_available",
+                    transport=transport,
+                )
+                before = service._validated_resume_successes(
+                    checkpoint,
+                    run_id="quarantineresume123",
+                    universe=universe,
+                    batches=[symbols],
+                    transport=transport,
+                )
+                app = _PartialDispatchApp()
+                service._revoke_and_quarantine(
+                    app,
+                    [success["celery_task_id"]],
+                    "quarantineresume123",
+                    "late_result",
+                )
+                after = service._validated_resume_successes(
+                    checkpoint,
+                    run_id="quarantineresume123",
+                    universe=universe,
+                    batches=[symbols],
+                    transport=transport,
+                )
+        self.assertEqual(len(before), 1)
+        self.assertEqual(after, [])
 
     def test_partition_keeps_every_batch_within_real_worker_bounds(self) -> None:
         batches = service._partition_symbols(_valid_symbols(3001), 100)
@@ -400,9 +671,12 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         ]
         universe = {
             "scope_hash": SCOPE_HASH,
+            "version_digest": "b" * 64,
             "universe_digest": service._canonical_digest(sorted(set(sum(batches, [])))),
             "minimum_universe_size": service.DEFAULT_MINIMUM_UNIVERSE_SIZE,
+            "_frames": _verified_frames(sorted(set(sum(batches, [])))),
         }
+        transport = {"eligible_worker_names": ["worker@host"]}
         app = _PartialDispatchApp()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -412,17 +686,56 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     batches=batches,
                     run_id="partialdispatch123",
                     universe=universe,
+                    transport=transport,
                     timeout_seconds=60,
                 )
                 quarantine = SQLiteMetaStore(root / "meta.sqlite").read_packet(
                     f"{service.ATTEMPT_PACKET_KEY}:quarantine:partialdispatch123"
                 )
         self.assertEqual(successes, [])
-        self.assertEqual(dispatched, ["fmw-partialdispatch123-0000"])
-        self.assertEqual(app.control.revoked, [("fmw-partialdispatch123-0000", False)])
+        self.assertEqual(len(dispatched), 1)
+        self.assertTrue(dispatched[0].startswith("fmw-partialdispatch123-0000-"))
+        self.assertEqual(app.control.revoked, [(dispatched[0], False)])
         self.assertEqual(quarantine["status"], "late_results_quarantined")
         self.assertEqual(quarantine["reason"], "dispatch_exception")
         self.assertFalse(quarantine["global_candidate_cache_overwritten"])
+
+    def test_timeout_late_task_id_is_quarantined_and_not_reused(self) -> None:
+        symbols = _valid_symbols(service.MIN_BATCH_SIZE)
+        shared = _shared_provider_result(symbols)
+        universe = {
+            **shared,
+            "_frames": shared["frames"],
+            "minimum_universe_size": service.DEFAULT_MINIMUM_UNIVERSE_SIZE,
+        }
+        transport = {"eligible_worker_names": ["worker@host"]}
+        app = _TimeoutApp()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2]:
+                first_success, first_ids = service._dispatch_batches(
+                    app,
+                    batches=[symbols],
+                    run_id="timeoutlate123",
+                    universe=universe,
+                    transport=transport,
+                    timeout_seconds=60,
+                )
+                second_success, second_ids = service._dispatch_batches(
+                    app,
+                    batches=[symbols],
+                    run_id="timeoutlate123",
+                    universe=universe,
+                    transport=transport,
+                    timeout_seconds=60,
+                )
+                quarantine = SQLiteMetaStore(root / "meta.sqlite").read_packet(
+                    service._quarantine_key("timeoutlate123")
+                )
+        self.assertEqual(first_success, [])
+        self.assertEqual(second_success, [])
+        self.assertNotEqual(first_ids, second_ids)
+        self.assertEqual(set(quarantine["celery_task_ids"]), {first_ids[0], second_ids[0]})
 
     def test_blocked_after_good_and_double_rollback_failure_do_not_promote(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -484,6 +797,101 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             fact = service.validate_full_market_worker_production_fact(root)
             self.assertFalse(fact["ready"])
             self.assertEqual(store.read_packet(service.LAST_GOOD_PACKET_KEY), old_good)
+
+    def test_repeat_promotion_and_failed_followup_restore_valid_last_good(self) -> None:
+        symbols = _valid_symbols(service.MIN_BATCH_SIZE)
+        universe = {
+            "scope_hash": SCOPE_HASH,
+            "version_digest": "b" * 64,
+            "universe_digest": service._canonical_digest(symbols),
+            "universe_count": len(symbols),
+            "minimum_universe_size": service.DEFAULT_MINIMUM_UNIVERSE_SIZE,
+            "validated_trade_date": "20260710",
+        }
+
+        def rows(run_id: str) -> list[dict]:
+            return [
+                {
+                    "ts_code": symbol,
+                    "score": 50,
+                    "rough_score": 50,
+                    "full_market_rank": index,
+                    "batch_index": 0,
+                    "celery_task_id": f"fmw-{run_id}-0000",
+                    "worker_task_id": f"worker-{run_id}",
+                    "candidate_is_not_buy_instruction": True,
+                    "does_not_execute_trades": True,
+                }
+                for index, symbol in enumerate(symbols, start=1)
+            ]
+
+        def checkpoint(run_id: str) -> dict:
+            return {
+                "batch_count": 1,
+                "checkpoint_binding_digest": "c" * 64,
+                "successful_batches": [
+                    {
+                        "celery_task_id": f"fmw-{run_id}-0000",
+                        "worker_task_id": f"worker-{run_id}",
+                        "dispatch_chain_digest": "d" * 64,
+                    }
+                ],
+            }
+
+        transport = {"status": "test-transport"}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2], patch.object(
+                service,
+                "validate_full_market_worker_production_fact",
+                return_value={"ready": True},
+            ):
+                first = service._promote_candidate_results(
+                    run_id="repeatgood123",
+                    universe=universe,
+                    transport=transport,
+                    checkpoint=checkpoint("repeatgood123"),
+                    result_rows=rows("repeatgood123"),
+                )
+                second = service._promote_candidate_results(
+                    run_id="repeatgood456",
+                    universe=universe,
+                    transport=transport,
+                    checkpoint=checkpoint("repeatgood456"),
+                    result_rows=rows("repeatgood456"),
+                )
+            store = SQLiteMetaStore(root / "meta.sqlite")
+            current_before = store.read_packet(service.PACKET_KEY)
+            last_good_before = store.read_packet(service.LAST_GOOD_PACKET_KEY)
+            pointer_before = service._read_json(root / "parquet" / service.RESULT_DATASET / "current.json")
+            last_pointer_before = service._read_json(root / "parquet" / service.RESULT_DATASET / "last_good.json")
+            with _patch_root(root)[0], _patch_root(root)[1], _patch_root(root)[2], patch.object(
+                service,
+                "validate_full_market_worker_production_fact",
+                side_effect=[{"ready": True}, {"ready": False}],
+            ):
+                failed = service._promote_candidate_results(
+                    run_id="repeatfail789",
+                    universe=universe,
+                    transport=transport,
+                    checkpoint=checkpoint("repeatfail789"),
+                    result_rows=rows("repeatfail789"),
+                )
+            self.assertEqual(store.read_packet(service.PACKET_KEY), current_before)
+            self.assertEqual(store.read_packet(service.LAST_GOOD_PACKET_KEY), last_good_before)
+            self.assertEqual(
+                service._read_json(root / "parquet" / service.RESULT_DATASET / "current.json"),
+                pointer_before,
+            )
+            self.assertEqual(
+                service._read_json(root / "parquet" / service.RESULT_DATASET / "last_good.json"),
+                last_pointer_before,
+            )
+        self.assertEqual(first["status"], "full_market_worker_production_complete")
+        self.assertEqual(second["status"], "full_market_worker_production_complete")
+        self.assertEqual(failed["status"], "full_market_worker_final_readback_failed_rolled_back")
+        self.assertTrue(failed["pointer_rollback_verified"])
+        self.assertTrue(failed["packet_rollback_verified"])
 
     def test_task_catalog_and_route_cover_explicit_post(self) -> None:
         catalog = {row["task_type"]: row for row in task_service.TASK_CATALOG}
