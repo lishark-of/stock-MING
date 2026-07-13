@@ -4275,6 +4275,15 @@ def _local_tushare_refresh_packet_summary(packet: Mapping[str, Any]) -> dict[str
         target_contract.get("target_sample_acceptance_ready_for_review") is True
         and target_ready_count > 0
     )
+    target_selected_apis: list[str] = []
+    seen_target_selected_apis: set[str] = set()
+    for row in target_rows:
+        for api in _as_list(row.get("selected_apis")):
+            api_name = str(api or "")
+            if not api_name or api_name in seen_target_selected_apis:
+                continue
+            seen_target_selected_apis.add(api_name)
+            target_selected_apis.append(api_name)
     return {
         "schema_version": "data_health_local_tushare_refresh_packet_summary.v1",
         "available": bool(packet),
@@ -4306,12 +4315,7 @@ def _local_tushare_refresh_packet_summary(packet: Mapping[str, Any]) -> dict[str
         "provider_target_sample_acceptance_ready_targets": [
             str(row.get("target") or "") for row in target_ready_rows if str(row.get("target") or "")
         ],
-        "provider_target_sample_acceptance_selected_apis": [
-            str(api)
-            for row in target_rows
-            for api in _as_list(row.get("selected_apis"))
-            if str(api or "")
-        ],
+        "provider_target_sample_acceptance_selected_apis": target_selected_apis,
         "provider_target_sample_acceptance_is_full_interface_acceptance": False,
         "provider_backed_acceptance_done": False,
         "production_tushare_pipeline_complete": False,

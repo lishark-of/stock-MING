@@ -112,7 +112,7 @@ class MigrationTushareTaskLedgerSummaryTests(unittest.TestCase):
                     "target": "margin_financing",
                     "requested_for_acceptance": True,
                     "target_sample_acceptance_status": "target_sample_acceptance_ready_for_review",
-                    "selected_apis": ["margin_detail"],
+                    "selected_apis": ["margin_detail", "margin_detail"],
                     "non_empty_success_apis": ["margin_detail"],
                     "target_sample_acceptance_blocker_count": 0,
                     "provider_backed_acceptance_done": False,
