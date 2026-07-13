@@ -1923,6 +1923,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "getNextSessionCache()",
             "getPositionCache()",
             "getStorageCurrentResult()",
+            "getDataHealthCache()",
             'getPacket("command_center_etf_packet")',
             'getPacket("command_center_margin_packet")',
             'getPacket("command_center_margin_etf_refresh_receipt")',
@@ -1930,7 +1931,6 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             self.assertIn(ordinary_getter, ordinary_readback)
         for audit_getter in (
             "getAuditCache()",
-            "getDataHealthCache()",
             "getMigrationStatus()",
             "getStorageOverview()",
             "getModelStrategyCache()",

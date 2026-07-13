@@ -291,6 +291,7 @@ export default function CommandCenterHome() {
       track("position", getPositionCache(), (res) => setPosition(res.data));
       track("candidates", getCandidateRadarCache(), (res) => setCandidates(res.data));
       track("storage_current_result", getStorageCurrentResult(), (res) => setStorageCurrentResult(res.data));
+      track("data_health", getDataHealthCache(), (res) => setDataHealth(res.data));
     };
 
     setLoading(true);
@@ -363,7 +364,6 @@ export default function CommandCenterHome() {
       setDataCapabilityEnvelopeLedger(res.call_ledger ?? []);
       setDataCapabilityCache(res.data);
     });
-    trackAudit("data_health", getDataHealthCache(), (res) => setDataHealth(res.data));
     trackAudit("recovery", getRecoveryCenterCache(), (res) => setRecovery(res.data));
     trackAudit("risk", getRiskGuardrailsCache(), (res) => setRisk(res.data));
     trackAudit("serenity", getSerenityCache(), (res) => {
