@@ -21640,7 +21640,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 95)
+        self.assertEqual(catalog["task_count"], 96)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -21659,7 +21659,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 95)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 96)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -21693,8 +21693,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 97)
-        self.assertEqual(route_coverage["task_creation_route_count"], 95)
+        self.assertEqual(route_coverage["known_post_route_count"], 98)
+        self.assertEqual(route_coverage["task_creation_route_count"], 96)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -21703,11 +21703,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 95)
+        self.assertEqual(implementation_status["task_count"], 96)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 90)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 91)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 91)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 92)
         self.assertEqual(implementation_status["external_capable_task_count"], 9)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -21804,6 +21804,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_worker_runtime_qa_dry_run",
                 "run_worker_runtime_qa_execution",
                 "run_worker_production_promotion_review",
+                "run_qmt_readonly_local_replay",
                 "run_deepseek_provider_benchmark_scope_ticket",
                 "run_deepseek_provider_benchmark_execution_request",
             },
@@ -21900,6 +21901,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_worker_runtime_qa_dry_run",
                 "run_worker_runtime_qa_execution",
                 "run_worker_production_promotion_review",
+                "run_qmt_readonly_local_replay",
                 "run_deepseek_factor_explanation",
                 "run_deepseek_provider_benchmark_scope_ticket",
                 "run_deepseek_provider_benchmark_execution_request",
@@ -21919,6 +21921,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(set(retry_policy_summary["task_policies"]), set(by_type))
         self.assertIn("POST /api/tasks/{task_id}/cancel", route_coverage["known_post_routes"])
         self.assertIn("POST /api/tasks/{task_id}/retry", route_coverage["known_post_routes"])
+        self.assertIn("POST /api/qmt-replay/local-simulate", route_coverage["known_post_routes"])
         self.assertIn(
             "POST /api/data-health/trade-cal-provider-acceptance-execution-request",
             route_coverage["known_post_routes"],
@@ -24289,16 +24292,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 90)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 91)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 91)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 92)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 90)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 91)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 91)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 92)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -25173,9 +25176,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 90)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 91)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 91)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 92)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -25399,9 +25402,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 90)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 91)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 91)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 92)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 9)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -25434,9 +25437,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 90)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 91)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 91)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 92)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -43156,7 +43159,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 95)
+        self.assertEqual(task_catalog["data"]["task_count"], 96)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],

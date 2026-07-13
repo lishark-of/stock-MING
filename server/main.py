@@ -23,6 +23,7 @@ from server.api import (
     routes_packets,
     routes_position,
     routes_quant,
+    routes_qmt_readonly,
     routes_recovery,
     routes_risk,
     routes_serenity,
@@ -78,6 +79,7 @@ app.include_router(routes_evidence.router)
 app.include_router(routes_next_session.router)
 app.include_router(routes_position.router)
 app.include_router(routes_quant.router)
+app.include_router(routes_qmt_readonly.router)
 app.include_router(routes_recovery.router)
 app.include_router(routes_risk.router)
 app.include_router(routes_factor_quant.router)
