@@ -1337,9 +1337,13 @@ export default function MigrationStatus() {
   };
   const migrationPacketLoaded = Object.keys(packet).length > 0;
   const migrationLocalConnected = migrationPacketLoaded || healthReady;
-  const migrationStrictCloseoutLabel = String(longTermGoalSummary.strict_closeout ?? "0/14");
-  const migrationGoalCountLabel = String(longTermGoalSummary.goal_count ?? 14);
   const commandCenterV1LocalRc = (packet.command_center_3_v1_local_rc as Record<string, unknown> | undefined) ?? {};
+  const migrationStrictCloseoutLabel = String(
+    commandCenterV1LocalRc.strict_closeout ?? longTermGoalSummary.strict_closeout ?? "0/14"
+  );
+  const migrationGoalCountLabel = String(
+    commandCenterV1LocalRc.strict_closeout_total_count ?? longTermGoalSummary.goal_count ?? 14
+  );
   const v1TopLevelLtgClosureRows = recordArray(packet.v1_ltg_closure_rows);
   const v1LtgClosureRows = v1TopLevelLtgClosureRows.length
     ? v1TopLevelLtgClosureRows
