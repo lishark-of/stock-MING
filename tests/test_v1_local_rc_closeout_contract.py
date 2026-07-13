@@ -139,6 +139,34 @@ class V1LocalRcCloseoutContractTests(unittest.TestCase):
             list(contract.EXPECTED_VERSION_IDS),
         )
 
+    def test_future_complete_production_evidence_does_not_invalidate_local_contract(self):
+        evaluation = _valid_evaluation()
+        facts = {key: True for key in contract.EXPECTED_PRODUCTION_FACT_KEYS}
+        evaluation["production_fact_rows"] = [
+            {"evidence_key": key, "observed": value}
+            for key, value in sorted(facts.items())
+        ]
+        evaluation["ltg_closure_rows"] = v1_closeout_service._build_ltg_rows(
+            evaluation["version_evidence_rows"],
+            facts,
+        )
+        evaluation.update(
+            {
+                "status": "v1_local_evidence_ready_production_closeout_complete",
+                "production_strict_closeout_complete": True,
+                "strict_closeout": "14/14",
+                "strict_closeout_done_count": 14,
+                "strict_closeout_remaining_count": 0,
+            }
+        )
+
+        result = contract.build_contract(evaluation=evaluation)
+
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["local_rc"]["ready"])
+        self.assertTrue(result["production_strict"]["complete"])
+        self.assertEqual(len(result["production_strict"]["closed_ltg_ids"]), 14)
+
     def test_sealed_chain_digest_is_deterministic_and_uses_exact_allowlist(self):
         first = contract.build_contract(evaluation=_valid_evaluation())
         second = contract.build_contract(evaluation=_valid_evaluation())

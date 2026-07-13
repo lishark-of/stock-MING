@@ -493,17 +493,22 @@ def build_contract(
         if row.get("can_close") is True
     ]
     local_and_production_are_separate = bool(
-        packet.get("local_direct_evidence_ready") is True
-        and packet.get("production_strict_closeout_complete") is False
-        and closed_ltg_ids == ["LTG-12"]
+        packet.get("local_direct_evidence_ready") is all_versions_locally_ready
+        and packet.get("production_strict_closeout_complete") is production_strict_complete
         and packet.get("evidence_boundary")
         == "v1_local_rc_is_local_direct_evidence_summary_production_strict_closeout_is_separate"
     )
-
+    expected_packet_status = (
+        "v1_local_evidence_ready_production_closeout_complete"
+        if all_versions_locally_ready and production_strict_complete
+        else "v1_local_evidence_ready_production_closeout_pending"
+        if all_versions_locally_ready
+        else "v1_local_evidence_incomplete_production_closeout_pending"
+    )
     packet_status_valid = bool(
         packet.get("packet_key") == "command_center_3_v1_local_rc"
         and packet.get("schema_version") == "command_center_3_v1_local_rc.v1"
-        and packet.get("status") == "v1_local_evidence_ready_production_closeout_pending"
+        and packet.get("status") == expected_packet_status
     )
     boundary_valid = _boundary_is_read_only_and_offline(packet)
     sanitized_input = not _has_sensitive_material(packet)
@@ -581,7 +586,7 @@ def build_contract(
         _criterion(
             "local_rc_separate_from_production_strict",
             local_and_production_are_separate,
-            "local RC ready; production strict remains separately blocked",
+            "local RC and production strict are independently derived",
         ),
         _criterion(
             "ltg12_research_isolation_positive_closeout",
