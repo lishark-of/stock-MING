@@ -3592,6 +3592,21 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
             candidate_radar,
         ]
     )
+    motion_loop_text = "\n".join(
+        [
+            styles,
+            layout,
+            packet_card,
+            metric_grid,
+            status_badge,
+            state_rail,
+            page_state,
+            task_panel,
+            task_receipt,
+            next_chart,
+            candidate_radar,
+        ]
+    )
     token_markers = (
         "--motion-duration-fast",
         "--motion-duration-panel",
@@ -3700,9 +3715,9 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         and ".content" in styles
         and "grid-template-columns: minmax(0, 1fr);" in styles
         and "repeat(auto-fit, minmax(118px, 1fr))" in styles,
-        "no_timer_or_raf_motion_loop": "setTimeout" not in audited_text
-        and "requestAnimationFrame" not in audited_text
-        and ("setInterval" not in audited_text or task_polling_interval_is_bounded),
+        "no_timer_or_raf_motion_loop": "setTimeout" not in motion_loop_text
+        and "requestAnimationFrame" not in motion_loop_text
+        and ("setInterval" not in motion_loop_text or task_polling_interval_is_bounded),
         "no_provider_call_markers": not _script_contains_any(
             audited_text,
             ("tushare_adapter", "deepseek.chat", "gh api", "api.github.com", "curl "),

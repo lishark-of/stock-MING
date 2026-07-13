@@ -386,7 +386,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("交易边界", candidate_radar)
         self.assertNotIn("candidate radar visual state", candidate_radar)
         self.assertNotIn("trade guard", candidate_radar)
-        self.assertNotIn("setTimeout", app + packet_card + metric_grid + state_rail + page_state + task_panel + task_receipt + next_chart + candidate_radar)
+        self.assertNotIn("setTimeout", packet_card + metric_grid + state_rail + page_state + task_panel + task_receipt + next_chart + candidate_radar)
+        self.assertIn("ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS", app)
         self.assertNotIn("requestAnimationFrame", app + packet_card + metric_grid + state_rail + page_state + task_panel + task_receipt + next_chart + candidate_radar)
 
         audit_page = (ROOT / "src" / "routes" / "CallLedgerAudit.tsx").read_text(encoding="utf-8")
@@ -752,7 +753,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("live_light（轻量后台 task 口径，仍不在渲染中外联）", source)
         self.assertIn("live_full（预留，默认关闭）", source)
         self.assertNotIn("postBootstrapLiveStartup", source)
-        self.assertIn('title="股票量化推演"', source)
+        self.assertIn('title="量化推演操作台"', source)
         self.assertIn("ordinaryQuantStatusLabel", source)
         self.assertIn("等待确认股票", source)
         self.assertIn("量化缓存可用", source)
@@ -1321,7 +1322,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertLess(source.index("DeepSeek 解释治理审计"), source.index("DeepSeek response format review"))
         self.assertLess(source.index("DeepSeek 解释治理审计"), source.index("DeepSeek retry/repair dry-run"))
         self.assertLess(source.index("DeepSeek 解释治理审计"), source.index("DeepSeek production activation receipt"))
-        self.assertLess(source.index("DeepSeek 解释治理审计"), source.index("DeepSeek provider benchmark scope ticket"))
+        self.assertLess(
+            source.index("DeepSeek 解释治理审计"),
+            source.index('title="DeepSeek provider benchmark scope ticket"'),
+        )
         self.assertLess(source.index("DeepSeek 解释治理审计"), source.index("DeepSeek durable evidence recipe"))
         self.assertLess(source.index("DeepSeek durable evidence rows"), source.index("因子库"))
         self.assertIn("DeepSeek 解释校验", source)
@@ -1971,7 +1975,10 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('"来源待确认"', home_source)
         self.assertIn('"暂无额外缺口"', home_source)
         self.assertIn('`${ordinaryHomeRecentResultSymbol}可解释：${ordinaryHomeExplainableSource}，${ordinaryHomeExplainableGap}；${ordinaryHomeLocalData}`', home_source)
-        self.assertIn("? `${ordinaryHomeExplainableResult}${ordinaryHomeStorageCurrentInline}", home_source)
+        self.assertIn(
+            "`${ordinaryHomeExplainableResult}${ordinaryHomeCanonicalResultInline}${ordinaryHomeStorageCurrentInline}",
+            home_source,
+        )
         self.assertIn("ordinaryHomeStoragePromotionInline", home_source)
         self.assertIn("ordinaryHomeResultVersionGuardInline", home_source)
         self.assertIn('? `${ordinaryHomeLocalData}，等待结论`', home_source)
@@ -6290,8 +6297,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('aria-label="open stock quant projection result"', page)
         self.assertIn('aria-label="open next session map from candidate radar p1 replay"', page)
         self.assertIn('aria-label="open generated quant projection result"', page)
-        self.assertIn('<a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>', page)
-        self.assertIn('<a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>', page)
+        self.assertIn('<a href="#factor/factor-score" aria-label="open stock quant projection result">查看量化推演结果</a>', page)
+        self.assertIn('<a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>', page)
         self.assertIn('<a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>', page)
         self.assertLess(
             page.index('aria-label="candidate radar next user actions"', summary_start),

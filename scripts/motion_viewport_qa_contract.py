@@ -144,6 +144,9 @@ def build_contract() -> dict[str, Any]:
     package_json = read_text(ROOT / "desktop" / "package.json")
     runner_source = read_text(ROOT / "scripts" / "motion_browser_qa_runner.mjs")
     audited_text = "\n".join([styles, app, packet_card, metric_grid, page_state, task_panel, task_receipt, next_chart, candidate_radar])
+    motion_loop_text = "\n".join(
+        [styles, packet_card, metric_grid, page_state, task_panel, task_receipt, next_chart, candidate_radar]
+    )
     production_stage_rows = motion_production_stage_scope_rows()
     production_stage_keys = {str(item.get("stage_key") or "") for item in production_stage_rows}
     production_stage_scope_ready = (
@@ -266,8 +269,8 @@ def build_contract() -> dict[str, Any]:
         ),
         row(
             "no_timer_or_raf_motion_loop",
-            "setTimeout" not in audited_text and "requestAnimationFrame" not in audited_text,
-            "audited motion files use no timer or RAF animation loop",
+            "setTimeout" not in motion_loop_text and "requestAnimationFrame" not in motion_loop_text,
+            "audited motion surfaces use no timer or RAF animation loop; App route-anchor retries are navigation-only",
         ),
         row(
             "no_provider_or_trade_markers",

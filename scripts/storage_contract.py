@@ -737,8 +737,9 @@ def build_contract() -> dict[str, Any]:
             and physical_execution_request_packet.get("requested_scope_hash_matches_latest") is True
             and _is_sha256(physical_execution_request_packet.get("physical_execution_scope_hash"))
             and physical_execution_request_packet.get("target_storage_task_route")
-            == "future POST /api/storage/physical-execution"
-            and physical_execution_request_packet.get("target_storage_task_type") == "run_storage_physical_execution"
+            == "POST /api/storage/physical-execution/phase-a"
+            and physical_execution_request_packet.get("target_storage_task_type")
+            == "run_storage_physical_execution_phase_a"
             and tuple(physical_execution_request_packet.get("target_phases") or ())
             == REQUIRED_STORAGE_PHYSICAL_EXECUTION_PHASES
             and physical_execution_request_packet.get("physical_task_created") is False
@@ -803,7 +804,10 @@ def build_contract() -> dict[str, Any]:
             and physical_execution_phase_a_packet.get("source_physical_execution_request_status")
             == "storage_physical_execution_request_ready_manual_physical_tasks_pending"
             and physical_execution_phase_a_packet.get("source_durable_evidence_status")
-            == "storage_physical_durable_evidence_recipe_ready_production_pending"
+            in {
+                "storage_physical_durable_evidence_recipe_ready_production_pending",
+                "storage_current_result_direct_evidence_complete_full_migration_pending",
+            }
             and physical_execution_phase_a_packet.get("source_durable_evidence_production_blocker_count") >= 0
             and physical_execution_phase_a_packet.get("direct_evidence_layer")
             == "L3_local_storage_physical_execution_phase_a"
@@ -892,7 +896,10 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("scope")
             == "local_storage_physical_durable_evidence_recipe_no_write_no_delete_no_provider"
             and durable_evidence_recipe.get("status")
-            == "storage_physical_durable_evidence_recipe_ready_production_pending"
+            in {
+                "storage_physical_durable_evidence_recipe_ready_production_pending",
+                "storage_current_result_direct_evidence_complete_full_migration_pending",
+            }
             and durable_evidence_recipe.get("local_recipe_ready") is True
             and durable_evidence_recipe.get("durable_evidence_complete") is False
             and durable_evidence_recipe.get("durable_promotion_ready") is False
