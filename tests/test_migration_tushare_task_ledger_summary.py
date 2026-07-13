@@ -94,6 +94,56 @@ class MigrationTushareTaskLedgerSummaryTests(unittest.TestCase):
             self.assertIn(field, row)
         self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
 
+    def test_data_health_summary_surfaces_target_sample_ready_contract(self):
+        packet = {
+            "status": "success",
+            "selected_apis": ["margin_detail"],
+            "call_ledger": [_provider_row("margin_detail", row_count=1, data_date="20260710")],
+            "provider_target_sample_acceptance_contract": {
+                "status": "target_sample_acceptance_ready_for_review",
+                "target_sample_acceptance_ready_for_review": True,
+                "requested_targets": ["margin_financing"],
+                "requested_target_count": 1,
+                "ready_target_count": 1,
+                "blocking_criterion_count": 0,
+            },
+            "provider_target_sample_acceptance_rows": [
+                {
+                    "target": "margin_financing",
+                    "requested_for_acceptance": True,
+                    "target_sample_acceptance_status": "target_sample_acceptance_ready_for_review",
+                    "selected_apis": ["margin_detail"],
+                    "non_empty_success_apis": ["margin_detail"],
+                    "target_sample_acceptance_blocker_count": 0,
+                    "provider_backed_acceptance_done": False,
+                    "full_interface_acceptance_done": False,
+                    "production_tushare_pipeline_complete": False,
+                }
+            ],
+        }
+
+        summary = data_health_service._local_tushare_refresh_packet_summary(packet)
+
+        self.assertEqual(
+            summary["provider_target_sample_acceptance_status"],
+            "target_sample_acceptance_ready_for_review",
+        )
+        self.assertTrue(summary["provider_target_sample_acceptance_ready_for_review"])
+        self.assertEqual(summary["provider_target_sample_acceptance_requested_targets"], ["margin_financing"])
+        self.assertEqual(summary["provider_target_sample_acceptance_requested_count"], 1)
+        self.assertEqual(summary["provider_target_sample_acceptance_ready_count"], 1)
+        self.assertEqual(summary["provider_target_sample_acceptance_blocker_count"], 0)
+        self.assertEqual(summary["provider_target_sample_acceptance_ready_targets"], ["margin_financing"])
+        self.assertEqual(summary["provider_target_sample_acceptance_selected_apis"], ["margin_detail"])
+        self.assertFalse(summary["provider_target_sample_acceptance_is_full_interface_acceptance"])
+        self.assertFalse(summary["provider_backed_acceptance_done"])
+        self.assertFalse(summary["production_tushare_pipeline_complete"])
+        self.assertFalse(summary["cache_get_external_calls"])
+        self.assertFalse(summary["external_calls_triggered"])
+        self.assertFalse(summary["tushare_called"])
+        self.assertTrue(summary["does_not_execute_trades"])
+        self.assertTrue(summary["does_not_modify_strategy_action"])
+
     def test_trade_cal_provider_summary_uses_task_ledger_when_packet_was_overwritten(self):
         task_rows = [
             {

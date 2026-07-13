@@ -4258,6 +4258,23 @@ def _local_tushare_refresh_packet_summary(packet: Mapping[str, Any]) -> dict[str
     ]
     accepted_rows = [row for row in trade_cal_rows if row.get("provider_backed_long_window_acceptance_done") is True]
     max_trade_cal_row_count = _max_int([dict(row) for row in trade_cal_rows if isinstance(row, Mapping)], "row_count")
+    target_contract = _as_dict(packet.get("provider_target_sample_acceptance_contract"))
+    target_rows = [
+        row for row in _as_list(packet.get("provider_target_sample_acceptance_rows")) if isinstance(row, Mapping)
+    ]
+    target_ready_rows = [
+        row
+        for row in target_rows
+        if row.get("target_sample_acceptance_ready_for_review") is True
+        or row.get("target_sample_acceptance_status") == "target_sample_acceptance_ready_for_review"
+    ]
+    target_requested_rows = [row for row in target_rows if row.get("requested_for_acceptance") is True]
+    target_ready_count = int(target_contract.get("ready_target_count") or len(target_ready_rows))
+    target_requested_count = int(target_contract.get("requested_target_count") or len(target_requested_rows))
+    target_sample_ready = bool(
+        target_contract.get("target_sample_acceptance_ready_for_review") is True
+        and target_ready_count > 0
+    )
     return {
         "schema_version": "data_health_local_tushare_refresh_packet_summary.v1",
         "available": bool(packet),
@@ -4275,6 +4292,27 @@ def _local_tushare_refresh_packet_summary(packet: Mapping[str, Any]) -> dict[str
         "trade_cal_provider_observed_row_count": max_trade_cal_row_count,
         "trade_cal_provider_acceptance_evidence_row_count": len(accepted_rows),
         "provider_backed_long_window_acceptance_done": bool(accepted_rows),
+        "provider_target_sample_acceptance_status": target_contract.get("status")
+        or "target_sample_acceptance_not_requested",
+        "provider_target_sample_acceptance_ready_for_review": target_sample_ready,
+        "provider_target_sample_acceptance_requested_targets": [
+            str(item) for item in _as_list(target_contract.get("requested_targets")) if str(item or "")
+        ],
+        "provider_target_sample_acceptance_requested_count": target_requested_count,
+        "provider_target_sample_acceptance_ready_count": target_ready_count,
+        "provider_target_sample_acceptance_blocker_count": int(
+            target_contract.get("blocking_criterion_count") or 0
+        ),
+        "provider_target_sample_acceptance_ready_targets": [
+            str(row.get("target") or "") for row in target_ready_rows if str(row.get("target") or "")
+        ],
+        "provider_target_sample_acceptance_selected_apis": [
+            str(api)
+            for row in target_rows
+            for api in _as_list(row.get("selected_apis"))
+            if str(api or "")
+        ],
+        "provider_target_sample_acceptance_is_full_interface_acceptance": False,
         "provider_backed_acceptance_done": False,
         "production_tushare_pipeline_complete": False,
         "long_window_acceptance_still_pending": not bool(accepted_rows),
