@@ -5267,7 +5267,7 @@ def _tauri_signing_notarization_review_contract(
     spctl_message_trimmed = spctl_message_safe.strip().replace("\n", " ")[:240]
     codesign_observed = bool(
         explicit_codesign_inspection_completed
-        and signature_type_safe in {"adhoc", "developer_id", "apple_development", "unknown"}
+        and signature_type_safe in {"adhoc", "developer_id", "apple_development", "other_identity", "unknown"}
         and team_status_safe in {"not_set", "set", "unknown"}
         and bool(cdhash_safe)
     )

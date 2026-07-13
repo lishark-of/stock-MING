@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
+import plistlib
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -20,11 +23,154 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 DEFAULT_APP = ROOT / "desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app"
 DEFAULT_DMG = ROOT / "desktop/src-tauri/target/release/bundle/dmg/stock-MING Command Center_3.0.0_aarch64.dmg"
-DEFAULT_EVIDENCE = ROOT / ".stock_ming_3/desktop_runtime/tauri_packaged_runtime_smoke.json"
+TAURI_CONFIG = ROOT / "desktop/src-tauri/tauri.conf.json"
+DEFAULT_EVIDENCE_ROOT = ROOT / ".stock_ming_3/desktop_runtime"
 SECRET_PATTERNS = (
     re.compile(rb"sk-[A-Za-z0-9_-]{20,}"),
     re.compile(rb"-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----"),
 )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _bundle_fingerprint(app_path: Path) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    file_count = 0
+    size_bytes = 0
+    for path in sorted(app_path.rglob("*"), key=lambda item: item.relative_to(app_path).as_posix()):
+        relative = path.relative_to(app_path).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        if path.is_symlink():
+            digest.update(b"L")
+            digest.update(os.readlink(path).encode("utf-8", errors="replace"))
+            continue
+        if not path.is_file():
+            digest.update(b"D")
+            continue
+        digest.update(b"F")
+        file_count += 1
+        size_bytes += path.stat().st_size
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return {
+        "sha256": digest.hexdigest() if file_count else "",
+        "file_count": file_count,
+        "size_bytes": size_bytes,
+    }
+
+
+def _read_bundle_identity(app_path: Path) -> dict[str, str]:
+    info_plist = app_path / "Contents/Info.plist"
+    if not info_plist.is_file():
+        raise ValueError("packaged_app_info_plist_missing")
+    try:
+        with info_plist.open("rb") as handle:
+            payload = plistlib.load(handle)
+    except Exception as error:
+        raise ValueError("packaged_app_info_plist_invalid") from error
+    if not isinstance(payload, dict):
+        raise ValueError("packaged_app_info_plist_invalid")
+    executable_name = str(payload.get("CFBundleExecutable") or "").strip()
+    if not executable_name or Path(executable_name).name != executable_name:
+        raise ValueError("packaged_app_executable_name_invalid")
+    return {
+        "bundle_id": str(payload.get("CFBundleIdentifier") or "").strip(),
+        "version": str(payload.get("CFBundleShortVersionString") or "").strip(),
+        "build_version": str(payload.get("CFBundleVersion") or "").strip(),
+        "executable_name": executable_name,
+    }
+
+
+def _expected_bundle_identity() -> dict[str, str]:
+    try:
+        payload = json.loads(TAURI_CONFIG.read_text(encoding="utf-8"))
+    except Exception as error:
+        raise ValueError("tauri_config_identity_unreadable") from error
+    return {
+        "bundle_id": str(payload.get("identifier") or "").strip(),
+        "version": str(payload.get("version") or "").strip(),
+        "product_name": str(payload.get("productName") or "").strip(),
+    }
+
+
+def _relative_project_label(path: Path) -> str:
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return "outside_project_root"
+
+
+def _safe_output_text(value: str, *, limit: int = 240) -> str:
+    text = " ".join(line.strip() for line in str(value or "").splitlines() if line.strip())
+    replacements = (
+        (str(ROOT), "<project_root>"),
+        (str(Path.home()), "<home>"),
+        (tempfile.gettempdir(), "<temp>"),
+    )
+    for raw, label in replacements:
+        if raw:
+            text = text.replace(raw, label)
+    text = re.sub(r"(?<![A-Za-z0-9_:])/(?:[^\s:;]+)", "<absolute_path>", text)
+    return text[:limit]
+
+
+def _secret_hit_count_bytes(value: bytes) -> int:
+    return sum(len(pattern.findall(value)) for pattern in SECRET_PATTERNS)
+
+
+def _bundle_secret_hit_count(app_path: Path) -> int:
+    hit_count = 0
+    for path in app_path.rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            hit_count += _secret_hit_count_bytes(path.read_bytes())
+    return hit_count
+
+
+def _gitignored(path: Path) -> bool:
+    return _run(["git", "check-ignore", "-q", str(path)], timeout=15).returncode == 0
+
+
+def _spawned_backend_pid(log_delta: str) -> int | None:
+    match = re.search(r"spawned local FastAPI process pid=(\d+)", log_delta)
+    if not match:
+        return None
+    pid = int(match.group(1))
+    return pid if pid > 1 and pid != os.getpid() else None
+
+
+def _terminate_spawned_backend(pid: int | None) -> bool:
+    if pid is None:
+        return True
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        time.sleep(0.1)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    return True
 
 
 def _run(command: list[str], *, cwd: Path = ROOT, timeout: int = 120) -> subprocess.CompletedProcess[str]:
@@ -75,15 +221,12 @@ def _health_ready(api_base: str) -> tuple[bool, dict[str, Any]]:
 
 
 def _safe_first_line(value: str) -> str:
-    return str(value or "").strip().splitlines()[0][:240] if str(value or "").strip() else ""
+    first_line = str(value or "").strip().splitlines()[0] if str(value or "").strip() else ""
+    return _safe_output_text(first_line)
 
 
 def _safe_command_output(result: subprocess.CompletedProcess[str]) -> str:
-    return " ".join(
-        line.strip()
-        for line in f"{result.stdout or ''}\n{result.stderr or ''}".splitlines()
-        if line.strip()
-    )[:240]
+    return _safe_output_text(f"{result.stdout or ''}\n{result.stderr or ''}")
 
 
 def _parse_codesign_observation(output: str) -> dict[str, Any]:
@@ -94,12 +237,19 @@ def _parse_codesign_observation(output: str) -> dict[str, Any]:
     flags = flags_match.group(1) if flags_match else ""
     signature = signature_match.group(1).strip() if signature_match else ""
     team_identifier = team_match.group(1).strip() if team_match else ""
+    authorities = [value.strip() for value in re.findall(r"^Authority=(.+)$", output, re.MULTILINE)]
     signature_lower = f"{signature} {flags}".lower()
+    developer_id = any(value.startswith("Developer ID Application:") for value in authorities)
+    apple_development = any(value.startswith("Apple Development:") for value in authorities)
     signature_type = (
         "adhoc"
         if "adhoc" in signature_lower
         else "developer_id"
-        if "developer id" in output.lower() or (team_identifier and team_identifier.lower() != "not set")
+        if developer_id
+        else "apple_development"
+        if apple_development
+        else "other_identity"
+        if signature or authorities or (team_identifier and team_identifier.lower() != "not set")
         else "unknown"
     )
     return {
@@ -118,18 +268,30 @@ def _parse_spctl_observation(returncode: int, output: str) -> dict[str, Any]:
     status = "unknown" if security_disabled else "accepted" if returncode == 0 else "rejected"
     return {
         "spctl_assessment_status": status,
-        "spctl_message_safe": " ".join(line.strip() for line in output.splitlines() if line.strip())[:240],
+        "spctl_message_safe": _safe_output_text(output),
         "spctl_security_assessment_effective": not security_disabled,
     }
 
 
-def _dmg_mounted_app_observation(dmg_path: Path, *, expected_bundle_id: str) -> dict[str, Any]:
+def _dmg_mounted_app_observation(
+    dmg_path: Path,
+    *,
+    expected_bundle_id: str,
+    expected_version: str,
+    expected_executable_sha256: str,
+) -> dict[str, Any]:
     result: dict[str, Any] = {
         "dmg_attached_readonly": False,
+        "dmg_mount_readonly_observed": False,
         "dmg_mounted_app_detected": False,
+        "dmg_mounted_app_count": 0,
         "dmg_mounted_app_codesign_verified": False,
         "dmg_mounted_bundle_id": "",
         "dmg_mounted_bundle_id_matches": False,
+        "dmg_mounted_version": "",
+        "dmg_mounted_version_matches": False,
+        "dmg_mounted_executable_sha256": "",
+        "dmg_mounted_executable_matches": False,
         "dmg_detached": False,
         "error_message_safe": "",
     }
@@ -145,8 +307,22 @@ def _dmg_mounted_app_observation(dmg_path: Path, *, expected_bundle_id: str) -> 
             return result
         result["dmg_attached_readonly"] = True
         try:
+            mount_table = _run(["mount"], timeout=15)
+            mountpoint_labels = {str(mountpoint), str(mountpoint.resolve())}
+            mount_line = next(
+                (
+                    line
+                    for line in mount_table.stdout.splitlines()
+                    if any(f" on {label} " in line for label in mountpoint_labels)
+                ),
+                "",
+            )
+            result["dmg_mount_readonly_observed"] = bool(
+                mount_line and ("read-only" in mount_line.lower() or "read only" in mount_line.lower())
+            )
             app_candidates = sorted(mountpoint.glob("*.app"))
-            if not app_candidates:
+            result["dmg_mounted_app_count"] = len(app_candidates)
+            if len(app_candidates) != 1:
                 result["error_message_safe"] = "mounted_dmg_app_missing"
                 return result
             mounted_app = app_candidates[0]
@@ -156,13 +332,19 @@ def _dmg_mounted_app_observation(dmg_path: Path, *, expected_bundle_id: str) -> 
                 timeout=30,
             )
             result["dmg_mounted_app_codesign_verified"] = verify.returncode == 0
-            bundle_id = _run(
-                ["plutil", "-extract", "CFBundleIdentifier", "raw", str(mounted_app / "Contents/Info.plist")],
-                timeout=15,
-            )
-            if bundle_id.returncode == 0:
-                result["dmg_mounted_bundle_id"] = bundle_id.stdout.strip()[:160]
-                result["dmg_mounted_bundle_id_matches"] = bundle_id.stdout.strip() == expected_bundle_id
+            try:
+                identity = _read_bundle_identity(mounted_app)
+                mounted_executable = mounted_app / "Contents/MacOS" / identity["executable_name"]
+                result["dmg_mounted_bundle_id"] = identity["bundle_id"][:160]
+                result["dmg_mounted_bundle_id_matches"] = identity["bundle_id"] == expected_bundle_id
+                result["dmg_mounted_version"] = identity["version"][:80]
+                result["dmg_mounted_version_matches"] = identity["version"] == expected_version
+                if mounted_executable.is_file() and mounted_executable.stat().st_size > 0:
+                    mounted_sha256 = _sha256_file(mounted_executable)
+                    result["dmg_mounted_executable_sha256"] = mounted_sha256
+                    result["dmg_mounted_executable_matches"] = mounted_sha256 == expected_executable_sha256
+            except ValueError as error:
+                result["error_message_safe"] = str(error)
             if verify.returncode != 0:
                 result["error_message_safe"] = _safe_command_output(verify)
         finally:
@@ -247,7 +429,6 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     api_base = _local_api_base(args.api_base)
     app_path = Path(args.app_path).expanduser().resolve()
     dmg_path = Path(args.dmg_path).expanduser().resolve()
-    executable = app_path / "Contents/MacOS/stock_ming_command_center"
     log_path = ROOT / ".stock_ming_3/logs/tauri_fastapi_autostart.log"
 
     if args.build:
@@ -261,12 +442,25 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 "production_package_complete": False,
             }
 
-    app_exists = app_path.is_dir() and executable.is_file() and os.access(executable, os.X_OK)
+    if not app_path.is_dir():
+        raise FileNotFoundError("packaged_app_executable_missing")
+    expected_identity = _expected_bundle_identity()
+    app_identity = _read_bundle_identity(app_path)
+    executable = app_path / "Contents/MacOS" / app_identity["executable_name"]
+    app_exists = (
+        executable.is_file()
+        and executable.stat().st_size > 0
+        and os.access(executable, os.X_OK)
+    )
     dmg_exists = dmg_path.is_file() and dmg_path.stat().st_size > 0
     if not app_exists:
         raise FileNotFoundError("packaged_app_executable_missing")
 
-    ignore_check = _run(["git", "check-ignore", str(app_path), str(dmg_path)], timeout=15)
+    app_fingerprint = _bundle_fingerprint(app_path)
+    executable_sha256 = _sha256_file(executable)
+    dmg_sha256 = _sha256_file(dmg_path) if dmg_exists else ""
+    app_gitignored = _gitignored(app_path)
+    dmg_gitignored = _gitignored(dmg_path)
     codesign = _run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app_path)], timeout=30)
     codesign_detail = _run(["codesign", "-dv", "--verbose=4", str(app_path)], timeout=30)
     codesign_observation = _parse_codesign_observation(f"{codesign_detail.stdout}\n{codesign_detail.stderr}")
@@ -277,20 +471,29 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     codesign_observation["notarization_ticket_detected"] = stapler.returncode == 0
     dmg_verify = _run(["hdiutil", "verify", str(dmg_path)], timeout=60) if dmg_exists else None
     dmg_mount = (
-        _dmg_mounted_app_observation(dmg_path, expected_bundle_id="com.stockming.commandcenter")
+        _dmg_mounted_app_observation(
+            dmg_path,
+            expected_bundle_id=expected_identity["bundle_id"],
+            expected_version=expected_identity["version"],
+            expected_executable_sha256=executable_sha256,
+        )
         if dmg_exists
         else {}
     )
-    bundle_bytes = executable.read_bytes()
-    secret_hit_count = sum(len(pattern.findall(bundle_bytes)) for pattern in SECRET_PATTERNS)
+    secret_hit_count = _bundle_secret_hit_count(app_path)
     health_before, health_before_data = _health_ready(api_base)
+    if args.expect_backend_offline and health_before:
+        raise RuntimeError("offline_qa_requires_local_fastapi_stopped")
     if not health_before and not args.allow_backend_autostart and not args.expect_backend_offline:
         raise RuntimeError("existing_local_fastapi_required")
 
     log_before = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
     env = dict(os.environ)
     env["COMMAND_CENTER_3_PROJECT_ROOT"] = str(ROOT)
-    env["STOCK_MING_PYTHON"] = _python_executable_path(args.python)
+    python_path = _python_executable_path(args.python)
+    if args.expect_backend_offline:
+        python_path = str(DEFAULT_EVIDENCE_ROOT / ".offline-backend-intentionally-unavailable")
+    env["STOCK_MING_PYTHON"] = python_path
     env["COMMAND_CENTER_3_FASTAPI_PORT"] = str(urlparse(api_base).port)
     process = subprocess.Popen(
         [str(executable)],
@@ -302,13 +505,14 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     )
     process_observed = False
     health_after = False
+    health_after_data: dict[str, Any] = {}
     try:
         deadline = time.monotonic() + max(1.0, args.observe_seconds)
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 break
             process_observed = True
-            health_after, _ = _health_ready(api_base)
+            health_after, health_after_data = _health_ready(api_base)
             time.sleep(0.25)
     finally:
         if process.poll() is None:
@@ -323,6 +527,32 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     log_delta = log_after[len(log_before) :] if log_after.startswith(log_before) else log_after
     reused_existing_backend = "local FastAPI already ready; no backend process spawned" in log_delta
     autostart_ready = "local FastAPI health ready after Tauri autostart" in log_delta
+    offline_backend_unavailable_observed = "failed to spawn local FastAPI safely" in log_delta
+    spawned_backend_pid = _spawned_backend_pid(log_delta)
+    spawned_backend_cleaned_up = _terminate_spawned_backend(spawned_backend_pid)
+    runtime_log_gitignored = _gitignored(log_path)
+    runtime_log_secret_hit_count = _secret_hit_count_bytes(log_delta.encode("utf-8", errors="replace"))
+    identity_matches = bool(
+        expected_identity["bundle_id"]
+        and expected_identity["version"]
+        and app_identity["bundle_id"] == expected_identity["bundle_id"]
+        and app_identity["version"] == expected_identity["version"]
+    )
+    config_log_safe = bool(
+        runtime_log_gitignored
+        and len(log_delta.encode("utf-8", errors="replace")) > 0
+        and runtime_log_secret_hit_count == 0
+    )
+    artifact_identity = hashlib.sha256(
+        "|".join(
+            (
+                app_fingerprint["sha256"],
+                dmg_sha256,
+                app_identity["bundle_id"],
+                app_identity["version"],
+            )
+        ).encode("utf-8")
+    ).hexdigest()
 
     screenshot_hash_safe = bool(
         len(args.offline_screenshot_sha256) == 64
@@ -331,34 +561,58 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     online_passed = bool(
         app_exists
         and dmg_exists
-        and ignore_check.returncode == 0
+        and app_gitignored
+        and dmg_gitignored
+        and bool(app_fingerprint["sha256"])
+        and int(app_fingerprint["size_bytes"]) > 0
+        and bool(dmg_sha256)
+        and identity_matches
         and codesign.returncode == 0
         and dmg_verify is not None
         and dmg_verify.returncode == 0
         and dmg_mount.get("dmg_attached_readonly") is True
+        and dmg_mount.get("dmg_mount_readonly_observed") is True
         and dmg_mount.get("dmg_mounted_app_detected") is True
         and dmg_mount.get("dmg_mounted_app_codesign_verified") is True
         and dmg_mount.get("dmg_mounted_bundle_id_matches") is True
+        and dmg_mount.get("dmg_mounted_version_matches") is True
+        and dmg_mount.get("dmg_mounted_executable_matches") is True
         and dmg_mount.get("dmg_detached") is True
         and secret_hit_count == 0
+        and config_log_safe
         and process_observed
         and health_after
         and clean_exit
+        and spawned_backend_cleaned_up
         and (reused_existing_backend or autostart_ready)
     )
     offline_passed = bool(
         app_exists
         and dmg_exists
-        and ignore_check.returncode == 0
+        and app_gitignored
+        and dmg_gitignored
+        and bool(app_fingerprint["sha256"])
+        and int(app_fingerprint["size_bytes"]) > 0
+        and bool(dmg_sha256)
+        and identity_matches
         and codesign.returncode == 0
+        and dmg_verify is not None
+        and dmg_verify.returncode == 0
+        and dmg_mount.get("dmg_attached_readonly") is True
+        and dmg_mount.get("dmg_mount_readonly_observed") is True
         and dmg_mount.get("dmg_mounted_app_codesign_verified") is True
         and dmg_mount.get("dmg_mounted_bundle_id_matches") is True
+        and dmg_mount.get("dmg_mounted_version_matches") is True
+        and dmg_mount.get("dmg_mounted_executable_matches") is True
         and dmg_mount.get("dmg_detached") is True
         and secret_hit_count == 0
+        and config_log_safe
         and process_observed
         and not health_before
         and not health_after
         and clean_exit
+        and spawned_backend_cleaned_up
+        and offline_backend_unavailable_observed
         and args.offline_ui_observed
         and screenshot_hash_safe
     )
@@ -371,11 +625,25 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             if args.expect_backend_offline
             else "L3_local_packaged_app_online_runtime_smoke"
         ),
-        "app_path": str(app_path.relative_to(ROOT)),
-        "dmg_path": str(dmg_path.relative_to(ROOT)),
+        "local_packaged_runtime_evidence_ready": passed,
+        "app_path": _relative_project_label(app_path),
+        "dmg_path": _relative_project_label(dmg_path),
         "app_bundle_detected": app_exists,
+        "app_bundle_size_bytes": app_fingerprint["size_bytes"],
+        "app_bundle_file_count": app_fingerprint["file_count"],
+        "app_bundle_sha256": app_fingerprint["sha256"],
+        "app_executable_size_bytes": executable.stat().st_size,
+        "app_executable_sha256": executable_sha256,
         "dmg_distribution_detected": dmg_exists,
-        "artifacts_gitignored": ignore_check.returncode == 0,
+        "dmg_size_bytes": dmg_path.stat().st_size if dmg_exists else 0,
+        "dmg_sha256": dmg_sha256,
+        "artifact_set_sha256": artifact_identity,
+        "artifacts_gitignored": app_gitignored and dmg_gitignored,
+        "bundle_identifier": app_identity["bundle_id"],
+        "bundle_version": app_identity["version"],
+        "bundle_build_version": app_identity["build_version"],
+        "bundle_identifier_matches_tauri_config": app_identity["bundle_id"] == expected_identity["bundle_id"],
+        "bundle_version_matches_tauri_config": app_identity["version"] == expected_identity["version"],
         "codesign_verified": codesign.returncode == 0,
         "codesign_signature_type": codesign_observation.get("codesign_signature_type"),
         "codesign_flags_observed": codesign_observation.get("codesign_flags_observed"),
@@ -388,16 +656,28 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         "dmg_checksum_verified": bool(dmg_verify and dmg_verify.returncode == 0),
         "bundle_secret_hit_count": secret_hit_count,
         "health_ready_before_launch": health_before,
-        "health_service": health_before_data.get("service"),
+        "health_service": health_after_data.get("service") or health_before_data.get("service"),
         "app_process_observed_after_launch": process_observed,
         "health_ready_during_launch": health_after,
+        "health_status_during_launch": health_after_data.get("status"),
         "existing_backend_reused": reused_existing_backend,
         "backend_autostart_observed_ready": autostart_ready,
+        "backend_process_spawned_by_app": spawned_backend_pid is not None,
+        "backend_process_spawned_by_app_cleaned_up": spawned_backend_cleaned_up,
         "app_process_cleaned_up": clean_exit,
         "backend_offline_expected": args.expect_backend_offline,
         "backend_offline_packaged_ux_verified": bool(offline_passed),
         "offline_notice_observed": bool(args.offline_ui_observed),
         "offline_screenshot_sha256": args.offline_screenshot_sha256 if screenshot_hash_safe else "",
+        "backend_autostart_intentionally_blocked_for_offline_qa": bool(args.expect_backend_offline),
+        "offline_backend_unavailable_observed": offline_backend_unavailable_observed,
+        "runtime_log_path": _relative_project_label(log_path),
+        "runtime_log_gitignored": runtime_log_gitignored,
+        "runtime_log_delta_bytes": len(log_delta.encode("utf-8", errors="replace")),
+        "runtime_log_secret_hit_count": runtime_log_secret_hit_count,
+        "config_values_exposed_in_evidence": False,
+        "environment_variable_names_exposed_in_evidence": False,
+        "safe_config_log_evidence": config_log_safe,
         "developer_id_signing_verified": codesign_observation.get("apple_developer_identity_used") is True,
         "notarization_ticket_detected": codesign_observation.get("notarization_ticket_detected") is True,
         "production_package_complete": False,
@@ -432,6 +712,7 @@ def main() -> int:
     parser.add_argument("--offline-screenshot-sha256", default="")
     parser.add_argument("--record-reviews", action="store_true")
     parser.add_argument("--write-evidence", action="store_true")
+    parser.add_argument("--evidence-path", default="")
     args = parser.parse_args()
     try:
         result = run_smoke(args)
@@ -439,15 +720,55 @@ def main() -> int:
         result = {
             "schema_version": "tauri_packaged_runtime_smoke.v1",
             "status": "tauri_packaged_runtime_smoke_failed_safe",
-            "error_message_safe": str(error)[:160],
+            "error_message_safe": _safe_output_text(str(error), limit=160),
+            "local_packaged_runtime_evidence_ready": False,
             "production_package_complete": False,
             "external_calls_triggered": False,
             "does_not_execute_trades": True,
             "contains_secret": False,
         }
     if args.write_evidence:
-        DEFAULT_EVIDENCE.parent.mkdir(parents=True, exist_ok=True)
-        DEFAULT_EVIDENCE.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        default_name = (
+            "tauri_packaged_runtime_offline_smoke.json"
+            if args.expect_backend_offline
+            else "tauri_packaged_runtime_online_smoke.json"
+        )
+        evidence_path = Path(args.evidence_path).expanduser().resolve() if args.evidence_path else DEFAULT_EVIDENCE_ROOT / default_name
+        try:
+            evidence_path.relative_to(DEFAULT_EVIDENCE_ROOT)
+        except ValueError:
+            result = {
+                "schema_version": "tauri_packaged_runtime_smoke.v1",
+                "status": "tauri_packaged_runtime_smoke_failed_safe",
+                "error_message_safe": "evidence_path_must_be_under_gitignored_runtime_root",
+                "local_packaged_runtime_evidence_ready": False,
+                "production_package_complete": False,
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            }
+        else:
+            evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            result["evidence_path"] = _relative_project_label(evidence_path)
+            result["evidence_gitignored"] = _gitignored(evidence_path)
+            if result["evidence_gitignored"] is not True:
+                result = {
+                    "schema_version": "tauri_packaged_runtime_smoke.v1",
+                    "status": "tauri_packaged_runtime_smoke_failed_safe",
+                    "error_message_safe": "evidence_path_must_be_gitignored",
+                    "local_packaged_runtime_evidence_ready": False,
+                    "production_package_complete": False,
+                    "external_calls_triggered": False,
+                    "does_not_execute_trades": True,
+                    "contains_secret": False,
+                }
+            else:
+                temporary_path = evidence_path.with_suffix(evidence_path.suffix + ".tmp")
+                temporary_path.write_text(
+                    json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                os.replace(temporary_path, evidence_path)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("status") == "tauri_packaged_runtime_smoke_passed" else 1
 
