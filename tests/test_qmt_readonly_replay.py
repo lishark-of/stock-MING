@@ -26,6 +26,8 @@ def _payload(*, scenario: str = "baseline") -> dict:
         "max_frames": 12,
         "source_result_version": "candidate-next.v1",
         "source_scope_hash": SOURCE_HASH,
+        "source_symbol": "600519.SH",
+        "source_task_id": "local-source-task-123",
         "snapshot": {
             "as_of": "2026-07-13T15:00:00+08:00",
             "cash": "100000.00",
@@ -97,6 +99,19 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         self.assertFalse(first["qmt_external_connection_attempted"])
         self.assertFalse(first["broker_session_opened"])
         self.assertFalse(first["real_trade_executed"])
+        self.assertEqual(
+            first["source_lineage"],
+            {
+                "source_symbol": "600519.SH",
+                "source_task_id": "local-source-task-123",
+                "source_result_version": "candidate-next.v1",
+                "source_scope_hash": SOURCE_HASH,
+            },
+        )
+        self.assertEqual(first["safety_boundary"]["real_order_count"], 0)
+        self.assertFalse(first["safety_boundary"]["qmt_external_connection_attempted"])
+        self.assertEqual(first["virtual_research_events"], first["replay"]["research_events"])
+        self.assertEqual(first["replay"]["virtual_research_events"], first["replay"]["research_events"])
 
         task = task_service.read_task_status(str(first["task_id"]))
         safe_payload = task.get("payload_safe") or {}
@@ -208,6 +223,21 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         self.assertEqual(cached["scope_hash"], written["scope_hash"])
         self.assertEqual(cached["current_result_summary"]["result_hash"], written["result_hash"])
         self.assertEqual(cached["last_good_result_summary"]["result_hash"], written["result_hash"])
+        self.assertEqual(cached["source_lineage"], written["source_lineage"])
+        self.assertEqual(cached["safety_boundary"], written["safety_boundary"])
+        self.assertEqual(cached["virtual_research_events"], written["virtual_research_events"])
+
+    def test_optional_source_lineage_rejects_unsafe_symbol_and_task_id(self):
+        invalid_symbol = _payload()
+        invalid_symbol["source_symbol"] = "600519"
+        blocked_symbol = service.run_qmt_readonly_local_replay(invalid_symbol)
+        self.assertEqual(blocked_symbol["error_message_safe"], "invalid_a_share_symbol")
+
+        invalid_task = _payload()
+        invalid_task["source_task_id"] = "unsafe task id with spaces"
+        blocked_task = service.run_qmt_readonly_local_replay(invalid_task)
+        self.assertEqual(blocked_task["error_message_safe"], "invalid_source_task_id")
+        self.assertNotIn("unsafe task id", json.dumps(blocked_task, ensure_ascii=False))
 
     def test_persistence_failure_keeps_last_good_and_surfaces_degraded_cache(self):
         good = service.run_qmt_readonly_local_replay(_payload())

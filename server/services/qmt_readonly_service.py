@@ -41,6 +41,7 @@ ALLOWED_SIDES = {"BUY", "SELL"}
 SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(SH|SZ|BJ)$")
 SOURCE_HASH_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 SOURCE_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
+SOURCE_TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
 MONEY_QUANTUM = Decimal("0.01")
 PRICE_QUANTUM = Decimal("0.0001")
 BPS_DENOMINATOR = Decimal("10000")
@@ -326,6 +327,12 @@ def _normalize_request(payload: Any) -> dict[str, Any]:
     )
     if not SOURCE_HASH_PATTERN.fullmatch(source_scope_hash):
         raise ReplayValidationError("invalid_source_scope_hash")
+    source_symbol = None
+    if payload.get("source_symbol") not in (None, ""):
+        source_symbol = _normalize_symbol(payload.get("source_symbol"))
+    source_task_id = str(payload.get("source_task_id") or "").strip()
+    if source_task_id and not SOURCE_TASK_ID_PATTERN.fullmatch(source_task_id):
+        raise ReplayValidationError("invalid_source_task_id")
 
     snapshot_raw = payload.get("snapshot")
     snapshot_present = snapshot_raw is not None
@@ -359,6 +366,8 @@ def _normalize_request(payload: Any) -> dict[str, Any]:
         "max_frames": max_frames,
         "source_result_version": source_result_version,
         "source_scope_hash": source_scope_hash,
+        "source_symbol": source_symbol,
+        "source_task_id": source_task_id or None,
         "snapshot": snapshot,
         "events": events,
         "simulation": {
@@ -603,6 +612,8 @@ def _scope_payload(normalized: Mapping[str, Any]) -> dict[str, Any]:
         "max_frames": normalized.get("max_frames"),
         "source_result_version": normalized.get("source_result_version"),
         "source_scope_hash": normalized.get("source_scope_hash"),
+        "source_symbol": normalized.get("source_symbol"),
+        "source_task_id": normalized.get("source_task_id"),
         "snapshot": normalized.get("snapshot"),
         "events": normalized.get("events"),
         "simulation": normalized.get("simulation"),
@@ -613,6 +624,15 @@ def _deterministic_core(normalized: Mapping[str, Any]) -> dict[str, Any]:
     scope_payload = _scope_payload(normalized)
     scope_hash = _sha256(scope_payload)
     replay = _decimal_replay(normalized)
+    virtual_research_events = list(replay.get("research_events") or [])
+    replay["virtual_research_events"] = virtual_research_events
+    source_lineage = {
+        "source_symbol": normalized.get("source_symbol"),
+        "source_task_id": normalized.get("source_task_id"),
+        "source_result_version": normalized.get("source_result_version"),
+        "source_scope_hash": normalized.get("source_scope_hash"),
+    }
+    safety_boundary = _boundary_flags()
     core = {
         "schema_version": RESULT_SCHEMA_VERSION,
         "status": "local_export_contract_and_replay_verified"
@@ -623,14 +643,17 @@ def _deterministic_core(normalized: Mapping[str, Any]) -> dict[str, Any]:
         "max_frames": normalized.get("max_frames"),
         "source_result_version": normalized.get("source_result_version"),
         "source_scope_hash": normalized.get("source_scope_hash"),
+        "source_lineage": source_lineage,
         "scope_hash": scope_hash,
         "replay": replay,
         "virtual_fill_count": int(replay.get("virtual_fill_count") or 0),
         "research_event_count": len(replay.get("research_events") or []),
+        "virtual_research_events": virtual_research_events,
         "allowed_research_events": ["observe", "watch", "excluded"],
         "caller_supplied_export_compatibility_verified": normalized.get("snapshot") is not None,
         "external_qmt_integration_verified": False,
         "paper_trading_sandbox_ready": False,
+        "safety_boundary": safety_boundary,
         **_boundary_flags(),
     }
     core["result_hash"] = _sha256(core)
@@ -717,8 +740,16 @@ def _failed_packet(
         "result_hash": "",
         "virtual_fill_count": 0,
         "research_event_count": 0,
+        "source_lineage": {
+            "source_symbol": None,
+            "source_task_id": None,
+            "source_result_version": None,
+            "source_scope_hash": None,
+        },
+        "virtual_research_events": [],
         "external_qmt_integration_verified": False,
         "paper_trading_sandbox_ready": False,
+        "safety_boundary": _boundary_flags(),
         **_boundary_flags(),
         "call_ledger": ledger,
         "warnings": [
@@ -784,6 +815,8 @@ def run_qmt_readonly_local_replay(payload: Any = None) -> dict[str, Any]:
         "max_frames": normalized["max_frames"],
         "source_result_version": normalized["source_result_version"],
         "source_scope_hash": normalized["source_scope_hash"],
+        "source_symbol": normalized["source_symbol"],
+        "source_task_id": normalized["source_task_id"],
         "scope_hash": scope_hash,
         "position_count": len((normalized.get("snapshot") or {}).get("positions") or []),
         "event_count": len(normalized.get("events") or []),
@@ -891,8 +924,16 @@ def read_qmt_replay_cache() -> dict[str, Any]:
             "result_hash": "",
             "virtual_fill_count": 0,
             "research_event_count": 0,
+            "source_lineage": {
+                "source_symbol": None,
+                "source_task_id": None,
+                "source_result_version": None,
+                "source_scope_hash": None,
+            },
+            "virtual_research_events": [],
             "external_qmt_integration_verified": False,
             "paper_trading_sandbox_ready": False,
+            "safety_boundary": _boundary_flags(),
             **_boundary_flags(),
             "call_ledger": ledger,
             "warnings": ["尚无本地 QMT replay 缓存；GET 未创建目录、数据库、任务或外部连接。"],
