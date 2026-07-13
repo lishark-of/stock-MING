@@ -3789,6 +3789,8 @@ def _persist_task(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def _read_persisted_task(task_id: str) -> dict[str, Any] | None:
+    if not SQLITE_META_PATH.exists():
+        return None
     try:
         task = SQLiteMetaStore(SQLITE_META_PATH).read_task_status(str(task_id))
     except Exception:
@@ -3797,6 +3799,8 @@ def _read_persisted_task(task_id: str) -> dict[str, Any] | None:
 
 
 def _list_persisted_tasks() -> list[dict[str, Any]]:
+    if not SQLITE_META_PATH.exists():
+        return []
     try:
         store = SQLiteMetaStore(SQLITE_META_PATH)
         tasks = [task for item in store.list_task_metadata() if (task := store.read_task_status(str(item.get("task_id") or "")))]
@@ -4115,10 +4119,12 @@ def _same_path(left: Path, right: Path) -> bool:
 
 
 def _candidate_cache_replay_packet() -> dict[str, Any] | None:
-    try:
-        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet("command_center_3_candidate_radar_cache")
-    except Exception:
-        packet = None
+    packet = None
+    if SQLITE_META_PATH.exists():
+        try:
+            packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet("command_center_3_candidate_radar_cache")
+        except Exception:
+            packet = None
     if isinstance(packet, dict):
         return packet
 

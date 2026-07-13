@@ -55,6 +55,22 @@ class V04DurableStorageRuntimeTests(unittest.TestCase):
             payload["inject_failure_after_stage"] = inject
         return payload
 
+    def test_storage_and_worker_get_caches_do_not_initialize_empty_sqlite(self):
+        storage_service.SQLITE_META_PATH.unlink(missing_ok=True)
+        self.assertFalse(storage_service.SQLITE_META_PATH.exists())
+
+        storage_packet = storage_service.storage_overview()
+        worker_packet = worker_service.read_worker_runtime_cache()
+        task_packet = task_service.build_task_status_index()
+
+        self.assertEqual(storage_packet["metadata_status"], "missing")
+        self.assertEqual(worker_packet["task_status_summary"]["task_count"], 0)
+        self.assertEqual(task_packet["task_count"], 0)
+        self.assertFalse(storage_service.SQLITE_META_PATH.exists())
+        self.assertFalse(storage_packet["external_calls_triggered"])
+        self.assertFalse(worker_packet["external_calls_triggered"])
+        self.assertFalse(task_packet["external_calls_triggered"])
+
     def test_storage_phase_a_executes_physical_parquet_duckdb_sqlite_and_preserves_last_good_on_failure(self):
         if not parquet_store.dependency_status()["available"]:
             self.skipTest("parquet dependency missing")

@@ -6438,9 +6438,8 @@ def run_storage_physical_execution_phase_a_task(payload: Any = None) -> dict[str
 
 
 def _storage_current_result_lineage() -> tuple[dict[str, Any], str]:
-    try:
-        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(CURRENT_RESULT_LINEAGE_PACKET_KEY)
-    except Exception:
+    packet, read_status = _read_storage_meta_packet_no_init(CURRENT_RESULT_LINEAGE_PACKET_KEY)
+    if read_status not in {"packet_present", "packet_missing"}:
         return {}, "candidate_packet_read_failed"
     if not isinstance(packet, Mapping):
         return {}, "candidate_packet_missing"
