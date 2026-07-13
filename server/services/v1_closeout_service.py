@@ -94,6 +94,7 @@ _SAFE_PACKET_FIELDS = (
     "required_json_success_rate",
     "response_format",
     "provider_response_format_enforced",
+    "provider_response_metadata_complete",
     "response_schema_validated",
     "safety_review_passed",
     "unsafe_output_accepted_count",
@@ -106,6 +107,10 @@ _SAFE_PACKET_FIELDS = (
     "benchmark_scope_hash",
     "approved_scope_contract_hash",
     "scope_binding_valid",
+    "approval_nonce_enforced",
+    "authorization_nonce_digest",
+    "authorization_nonce_present",
+    "authorization_nonce_consumed",
     "fixed_sample_ids_hash",
     "fixed_sample_set_hash",
     "output_schema_version",
@@ -115,6 +120,17 @@ _SAFE_PACKET_FIELDS = (
     "max_network_attempts_per_sample",
     "actual_max_attempts_per_sample",
     "timeout_seconds",
+    "global_deadline_seconds",
+    "global_elapsed_seconds",
+    "global_deadline_exceeded",
+    "network_retry_count",
+    "output_repair_count",
+    "transport_provenance",
+    "transport_production_eligible",
+    "base_url_allowlisted",
+    "request_temperature",
+    "sdk_max_retries",
+    "system_prompt_sha256",
     "safety_reviewed_sample_count",
     "safety_reviewed_ledger_count",
     "ledger_schema_version",
@@ -658,6 +674,25 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
                 and row.get("does_not_execute_trades") is True
                 and row.get("does_not_modify_strategy_action") is True
                 and row.get("does_not_override_numeric_values") is True
+                and row.get("requested_model") == model
+                and row.get("returned_model") == model
+                and row.get("returned_model_matches_requested") is True
+                and row.get("finish_reason") == "stop"
+                and row.get("provider_request_id_present") is True
+                and len(str(row.get("provider_request_id_hash") or "")) == 64
+                and all(
+                    char in "0123456789abcdef"
+                    for char in str(row.get("provider_request_id_hash") or "")
+                )
+                and row.get("transport_provenance") == "sdk_managed_allowlisted_https"
+                and row.get("transport_production_eligible") is True
+                and row.get("base_url_allowlisted") is True
+                and row.get("request_temperature") == benchmark.MODEL_TEMPERATURE
+                and row.get("sdk_max_retries") == benchmark.SDK_MAX_RETRIES
+                and row.get("system_prompt_sha256") == benchmark.SYSTEM_PROMPT_SHA256
+                and row.get("authorization_nonce_digest") == source.get("authorization_nonce_digest")
+                and row.get("authorization_nonce_present") is True
+                and row.get("authorization_nonce_consumed") is True
             ):
                 return False
         for sample_id, rows in rows_by_sample.items():
@@ -679,6 +714,7 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
                 and int((accepted_row.get("token_usage") or {}).get("total_tokens") or 0) > 0
                 and len(output_hash) == 64
                 and all(char in "0123456789abcdef" for char in output_hash)
+                and accepted_row.get("attempt_kind") in {"initial", "network_retry", "output_repair"}
             ):
                 return False
         expected_cost = round(
@@ -696,6 +732,7 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
             and float(source.get("json_success_rate") or 0.0) == 1.0
             and source.get("response_format") == benchmark.RESPONSE_FORMAT
             and source.get("provider_response_format_enforced") is True
+            and source.get("provider_response_metadata_complete") is True
             and source.get("response_schema_validated") is True
             and source.get("safety_review_passed") is True
             and int(source.get("safety_reviewed_sample_count") or 0) == benchmark.SAMPLE_COUNT
@@ -708,6 +745,10 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
             and source.get("approved_scope_contract_hash") == expected_scope_hash
             and source.get("benchmark_scope_hash") == expected_scope_hash
             and source.get("scope_binding_valid") is True
+            and source.get("approval_nonce_enforced") is True
+            and source.get("authorization_nonce_present") is True
+            and source.get("authorization_nonce_consumed") is True
+            and len(str(source.get("authorization_nonce_digest") or "")) == 64
             and source.get("fixed_sample_ids") == sample_ids
             and source.get("fixed_sample_ids_hash") == benchmark.FIXED_SAMPLE_IDS_HASH
             and source.get("fixed_sample_set_hash") == benchmark.FIXED_SCOPE_HASH
@@ -718,6 +759,15 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
             and int(source.get("max_network_attempts_per_sample") or 0) == 3
             and int(source.get("actual_max_attempts_per_sample") or 0) <= 3
             and float(source.get("timeout_seconds") or 0.0) == benchmark.MODEL_TIMEOUT_SECONDS
+            and float(source.get("global_deadline_seconds") or 0.0) == benchmark.GLOBAL_DEADLINE_SECONDS
+            and source.get("global_deadline_exceeded") is False
+            and 0.0 <= float(source.get("global_elapsed_seconds") or 0.0) <= benchmark.GLOBAL_DEADLINE_SECONDS
+            and source.get("transport_provenance") == "sdk_managed_allowlisted_https"
+            and source.get("transport_production_eligible") is True
+            and source.get("base_url_allowlisted") is True
+            and source.get("request_temperature") == benchmark.MODEL_TEMPERATURE
+            and source.get("sdk_max_retries") == benchmark.SDK_MAX_RETRIES
+            and source.get("system_prompt_sha256") == benchmark.SYSTEM_PROMPT_SHA256
             and int(source.get("total_tokens") or 0) == total_tokens
             and total_tokens > 0
             and int(source.get("retry_tokens") or 0) == retry_tokens
@@ -743,6 +793,7 @@ def _governed_model_runtime_ready(packet: Any) -> bool:
             and source.get("github_called") is False
             and source.get("does_not_execute_trades") is True
             and source.get("does_not_modify_strategy_action") is True
+            and source.get("does_not_override_numeric_values") is True
         )
     except (TypeError, ValueError):
         return False

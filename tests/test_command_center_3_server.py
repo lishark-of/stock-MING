@@ -18712,7 +18712,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", script)
         self.assertIn("factor_deepseek_retry_repair_dry_run_contract.v1", script)
         self.assertIn("factor_deepseek_provider_benchmark_execution_recipe.v1", script)
-        self.assertIn("factor_deepseek_provider_benchmark_scope_ticket_receipt.v1", script)
+        self.assertIn("factor_deepseek_provider_benchmark_scope_ticket_receipt.v2", script)
         self.assertIn("factor_deepseek_durable_evidence_recipe.v1", script)
         self.assertIn("production_activation_receipt_guides_next_safe_step", script)
         self.assertIn("provider_benchmark_execution_recipe_is_local_pending", script)
@@ -27435,7 +27435,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("api_key", task["payload_safe"])
         self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
 
-        self.assertEqual(receipt["schema_version"], "factor_deepseek_provider_benchmark_scope_ticket_receipt.v1")
+        self.assertEqual(receipt["schema_version"], "factor_deepseek_provider_benchmark_scope_ticket_receipt.v2")
         self.assertEqual(receipt["scope"], "local_deepseek_provider_benchmark_scope_ticket_no_model_call")
         self.assertEqual(receipt["status"], task["current_step"])
         self.assertTrue(receipt["source_packet_present"])
@@ -27446,6 +27446,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(receipt["response_format"], "json_object")
         self.assertEqual(receipt["max_retry_per_sample"], 2)
         self.assertTrue(receipt["benchmark_scope_hash_short"])
+        self.assertTrue(receipt["approval_nonce_enforced"])
+        self.assertTrue(receipt["authorization_nonce_present"])
+        self.assertEqual(receipt["authorization_nonce_status"], "issued")
         self.assertEqual(len(receipt["benchmark_scope_hash_short"]), 16)
         self.assertTrue(receipt["server_secret_presence_checked"])
         self.assertIsInstance(receipt["server_secret_present"], bool)
@@ -63217,6 +63220,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         factor_before = self.client.get("/api/factor-quant/cache").json()
         scope_receipt = factor_before["data"]["deepseek_provider_benchmark_scope_ticket_receipt"]
         scope_hash = scope_receipt["benchmark_scope_hash"]
+        authorization_nonce = scope_receipt["authorization_nonce"]
 
         created = self.client.post(
             "/api/factor-quant/deepseek-provider-benchmark-execution-request",
@@ -63224,6 +63228,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "approved_by_user": True,
                 "provider_run_approved_by_user": True,
                 "benchmark_scope_hash": scope_hash,
+                "authorization_nonce": authorization_nonce,
                 "token": "SHOULD_DROP",
             },
         ).json()
@@ -63256,6 +63261,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["local_execution_request_ready"])
         self.assertTrue(receipt["ready_for_manual_model_task_submission"])
         self.assertTrue(receipt["requested_scope_hash_matches_latest"])
+        self.assertTrue(receipt["approval_nonce_enforced"])
+        self.assertTrue(receipt["authorization_nonce_present"])
+        self.assertEqual(
+            receipt["authorization_nonce_digest"],
+            deepseek_benchmark_service.authorization_nonce_digest(authorization_nonce),
+        )
         self.assertFalse(receipt["model_task_created"])
         self.assertFalse(receipt["model_execution_implemented"])
         self.assertFalse(receipt["provider_benchmark_done"])
@@ -63708,6 +63719,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
 
 class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
+    NONCE = "single-use-test-authorization-nonce"
+
     @staticmethod
     def _scope(model: str = "test-model") -> dict:
         contract = deepseek_benchmark_service.build_benchmark_scope_contract(model)
@@ -63715,48 +63728,111 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             **contract,
             "benchmark_scope_hash": deepseek_benchmark_service.benchmark_scope_hash(contract),
             "scope_binding_valid": True,
-            "approval_nonce_enforced": False,
-            "approval_replay_boundary": "exact_current_scope_and_execution_receipt_hash_no_one_time_nonce",
+            "approval_nonce_enforced": True,
+            "authorization_nonce_digest": deepseek_benchmark_service.authorization_nonce_digest(
+                DeepSeekGovernedBenchmarkExecutorTests.NONCE
+            ),
+            "authorization_nonce_present": True,
+            "authorization_nonce_consumed": True,
+            "approval_replay_boundary": "single_use_sqlite_compare_and_consume_before_http",
         }
 
     @staticmethod
-    def _valid_model_result(*_args) -> dict:
+    def _valid_model_result(sample, attempt=1, *_args) -> dict:
+        sample_id = str(sample.get("sample_id") or "sample")
         return {
             "text": json.dumps(
                 {
-                    "summary": "仅解释合成研究状态，不构成交易指令。",
-                    "support_notes": ["支持证据有限"],
+                    "summary": "仅解释合成研究状态并保持研究边界",
+                    "support_notes": ["FACTOR_DIRECTION_EVIDENCE"],
                     "suppress_notes": [],
                     "conflict_notes": [],
                     "missing_data_notes": [],
-                    "discipline_notes": ["保持只读研究边界"],
+                    "discipline_notes": ["RESEARCH_BOUNDARY_EVIDENCE"],
                 },
                 ensure_ascii=False,
             ),
             "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18},
             "provider_response_format_requested": True,
+            "requested_model": "test-model",
+            "returned_model": "test-model",
+            "finish_reason": "stop",
+            "provider_request_id_present": True,
+            "provider_request_id_hash": hashlib.sha256(f"{sample_id}:{attempt}".encode()).hexdigest(),
+            "system_fingerprint_present": True,
             "network_attempted": True,
             "provider_call_dispatched": True,
             "provider_response_observed": True,
         }
 
+    @classmethod
+    def _production_caller(cls, model: str = "test-model"):
+        from types import SimpleNamespace
+
+        class Completions:
+            def __init__(self):
+                self.calls = 0
+
+            def create(self, **kwargs):
+                self.calls += 1
+                request = json.loads(kwargs["messages"][-1]["content"])
+                result = cls._valid_model_result(request, self.calls)
+                return SimpleNamespace(
+                    id=f"provider-request-{self.calls}",
+                    model=model,
+                    system_fingerprint="safe-presence-only",
+                    choices=[
+                        SimpleNamespace(
+                            finish_reason="stop",
+                            message=SimpleNamespace(content=result["text"]),
+                        )
+                    ],
+                    usage=SimpleNamespace(prompt_tokens=10, completion_tokens=8, total_tokens=18),
+                )
+
+        class Client:
+            def __init__(self):
+                self.completions = Completions()
+                self.chat = SimpleNamespace(completions=self.completions)
+
+            def close(self):
+                return None
+
+        return deepseek_benchmark_service._OpenAIModelCaller(
+            Client(),
+            model,
+            production_capability=deepseek_benchmark_service._PRODUCTION_TRANSPORT_CAPABILITY,
+            explicit_http_client=False,
+        )
+
     @staticmethod
     def _hub(model: str = "test-model") -> dict:
         contract = deepseek_benchmark_service.build_benchmark_scope_contract(model)
         scope_hash = deepseek_benchmark_service.benchmark_scope_hash(contract)
+        nonce = DeepSeekGovernedBenchmarkExecutorTests.NONCE
+        nonce_digest = deepseek_benchmark_service.authorization_nonce_digest(nonce)
         return {
             "schema_version": "factor_quant_hub.v1",
             "deepseek_provider_benchmark_scope_ticket_receipt": {
-                "schema_version": "factor_deepseek_provider_benchmark_scope_ticket_receipt.v1",
-                "status": "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+                "schema_version": deepseek_benchmark_service.SCOPE_RECEIPT_SCHEMA_VERSION,
+                "status": deepseek_benchmark_service.SCOPE_READY_STATUS,
+                "local_scope_ticket_ready": True,
+                "ready_for_explicit_provider_benchmark_task": True,
+                "benchmark_scope_ticket": {
+                    "schema_version": deepseek_benchmark_service.SCOPE_TICKET_SCHEMA_VERSION,
+                },
                 "scope_ticket_user_approved": True,
                 "approved_scope_contract": contract,
                 "approved_scope_contract_hash": scope_hash,
                 "benchmark_scope_hash": scope_hash,
+                "authorization_nonce": nonce,
+                "authorization_nonce_present": True,
+                "authorization_nonce_digest": nonce_digest,
+                "authorization_nonce_status": "issued",
             },
             "deepseek_provider_benchmark_execution_request_receipt": {
-                "schema_version": "factor_deepseek_provider_benchmark_execution_request.v1",
-                "status": "deepseek_provider_benchmark_execution_request_ready_manual_model_task_pending",
+                "schema_version": deepseek_benchmark_service.EXECUTION_RECEIPT_SCHEMA_VERSION,
+                "status": deepseek_benchmark_service.EXECUTION_READY_STATUS,
                 "local_execution_request_ready": True,
                 "requested_scope_hash_matches_latest": True,
                 "current_scope_receipt_hash_matches": True,
@@ -63772,17 +63848,20 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                 "response_format": "json_object",
                 "max_retry_per_sample": 2,
                 "allowed_output_fields": list(deepseek_benchmark_service.ALLOWED_OUTPUT_FIELDS),
+                "authorization_nonce_present": True,
+                "authorization_nonce_digest": nonce_digest,
+                "authorization_nonce_status": "issued",
             },
         }
 
     def test_synthetic_benchmark_exercises_bounded_repair_but_never_closes_ltg07(self):
         calls: list[tuple[str, int, bool]] = []
 
-        def repair_once(sample, attempt, repair):
+        def repair_once(sample, attempt, repair, _timeout):
             calls.append((sample["sample_id"], attempt, repair))
             if attempt == 1:
                 return {"text": "not-json", "provider_response_format_requested": True}
-            return self._valid_model_result()
+            return self._valid_model_result(sample, attempt)
 
         packet = deepseek_benchmark_service._execute_benchmark(
             self._scope("synthetic-model"),
@@ -63823,6 +63902,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                         "approved_by_user": True,
                         "provider_run_approved_by_user": True,
                         "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
+                        "authorization_nonce": self.NONCE,
                     }
                 )
 
@@ -63849,6 +63929,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                         "approved_by_user": True,
                         "provider_run_approved_by_user": False,
                         "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
+                        "authorization_nonce": self.NONCE,
                     }
                 )
 
@@ -63867,7 +63948,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             store = SQLiteMetaStore(db_path)
             store.write_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY, self._hub())
             clear_task_statuses_for_tests()
-            fake_call = self._valid_model_result
+            fake_call = self._production_caller()
             with (
                 patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path),
                 patch.object(task_service, "SQLITE_META_PATH", db_path),
@@ -63883,6 +63964,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                         "approved_by_user": True,
                         "provider_run_approved_by_user": True,
                         "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
+                        "authorization_nonce": self.NONCE,
                     },
                 )
                 self.assertEqual(response.status_code, 200)
@@ -63906,8 +63988,8 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             self.assertNotIn("test-only-secret", json.dumps(current, ensure_ascii=False))
 
     def test_action_leakage_is_discarded_and_every_output_is_safety_reviewed(self):
-        def unsafe_result(*_args):
-            result = self._valid_model_result()
+        def unsafe_result(sample, attempt, *_args):
+            result = self._valid_model_result(sample, attempt)
             result["text"] = json.dumps(
                 {
                     "summary": "建议买入并逐步加仓",
@@ -63975,6 +64057,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                         "approved_by_user": True,
                         "provider_run_approved_by_user": True,
                         "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
+                        "authorization_nonce": self.NONCE,
                     }
                 )
         key_lookup.assert_not_called()
@@ -63996,7 +64079,16 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                     "created": 1,
                     "model": "test-model",
                     "choices": [
-                        {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": self._valid_model_result()["text"]}}
+                        {
+                            "index": 0,
+                            "finish_reason": "stop",
+                            "message": {
+                                "role": "assistant",
+                                "content": self._valid_model_result(
+                                    deepseek_benchmark_service.FIXED_SAMPLES[0]
+                                )["text"],
+                            },
+                        }
                     ],
                     "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18},
                 },
@@ -64008,14 +64100,230 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             "test-model",
             http_client=http_client,
         )
-        result = caller(deepseek_benchmark_service.FIXED_SAMPLES[0], 1, False)
+        result = caller(deepseek_benchmark_service.FIXED_SAMPLES[0], 1, False, 10.0)
         caller.close()
         self.assertEqual(len(request_bodies), 1)
         self.assertEqual(request_bodies[0]["response_format"], {"type": "json_object"})
-        self.assertIn("JSON object", request_bodies[0]["messages"][0]["content"])
+        self.assertEqual(request_bodies[0]["temperature"], deepseek_benchmark_service.MODEL_TEMPERATURE)
+        self.assertEqual(request_bodies[0]["messages"][0]["content"], deepseek_benchmark_service.SYSTEM_PROMPT)
         self.assertTrue(result["provider_call_dispatched"])
         self.assertTrue(result["provider_response_observed"])
+        self.assertEqual(result["returned_model"], "test-model")
+        self.assertEqual(result["finish_reason"], "stop")
+        self.assertTrue(result["provider_request_id_present"])
+        self.assertFalse(caller.production_eligible)
+        self.assertEqual(caller.transport_provenance, "explicit_http_client_or_injected_transport_test_only")
         self.assertTrue(http_client.is_closed)
+
+    def test_mock_transport_can_validate_outputs_but_never_promotes_production(self):
+        import httpx
+
+        call_count = 0
+
+        def handler(request):
+            nonlocal call_count
+            call_count += 1
+            body = json.loads(request.content)
+            sample = json.loads(body["messages"][-1]["content"])
+            return httpx.Response(
+                200,
+                request=request,
+                json={
+                    "id": f"mock-{call_count}",
+                    "object": "chat.completion",
+                    "created": 1,
+                    "model": "test-model",
+                    "choices": [{
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": self._valid_model_result(sample, call_count)["text"],
+                        },
+                    }],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18},
+                },
+            )
+
+        caller = deepseek_benchmark_service._build_real_model_call(
+            "test-only",
+            "test-model",
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        packet = deepseek_benchmark_service._execute_benchmark(
+            self._scope(), caller, evidence_source="real_provider", model_used="test-model"
+        )
+        caller.close()
+        self.assertEqual(packet["success_count"], 40)
+        self.assertEqual(call_count, 40)
+        self.assertFalse(packet["transport_production_eligible"])
+        self.assertFalse(packet["production_fact_ready"])
+        self.assertFalse(packet["deepseek_called"])
+
+    def test_provider_metadata_mismatch_length_and_missing_id_are_rejected(self):
+        mutations = (
+            ({"returned_model": "unexpected-model"}, "provider_returned_model_mismatch"),
+            ({"finish_reason": "length"}, "provider_finish_reason_not_stop"),
+            ({"provider_request_id_present": False, "provider_request_id_hash": ""}, "provider_request_id_missing"),
+        )
+        for mutation, expected_code in mutations:
+            with self.subTest(expected_code=expected_code):
+                def result(sample, attempt, *_args):
+                    value = self._valid_model_result(sample, attempt)
+                    value.update(mutation)
+                    return value
+
+                packet = deepseek_benchmark_service._execute_benchmark(
+                    self._scope(), result, evidence_source="real_provider", model_used="test-model"
+                )
+                self.assertEqual(packet["success_count"], 0)
+                self.assertEqual({row["failure_code"] for row in packet["model_ledger"]}, {expected_code})
+                self.assertFalse(packet["production_fact_ready"])
+
+    def test_cn_en_action_position_target_and_numeric_leakage_are_rejected(self):
+        examples = (
+            ("建议买入并逐步加仓", "strategy_action_language_detected"),
+            ("控制仓位后介入并择机退出", "strategy_action_language_detected"),
+            ("increase position allocation and set target price", "strategy_action_language_detected"),
+            ("目标价为十二点五元并预计上涨百分之十", "strategy_action_language_detected"),
+            ("保持研究边界但置信度为30%", "numeric_output_detected"),
+        )
+        sample = deepseek_benchmark_service.FIXED_SAMPLES[0]
+        for summary, expected_code in examples:
+            with self.subTest(summary=summary):
+                payload = self._valid_model_result(sample)["text"]
+                parsed = json.loads(payload)
+                parsed["summary"] = summary
+                valid, code, _, safety, action_safe, numeric_safe = deepseek_benchmark_service._validate_output(
+                    parsed, sample
+                )
+                self.assertFalse(valid)
+                self.assertEqual(code, expected_code)
+                self.assertFalse(safety)
+                self.assertFalse(action_safe if expected_code == "strategy_action_language_detected" else numeric_safe)
+
+    def test_scope_binds_prompt_base_url_temperature_and_strict_receipt_state(self):
+        for field, replacement in (
+            ("system_prompt_sha256", "0" * 64),
+            ("base_url", "https://example.invalid"),
+            ("temperature", 1),
+        ):
+            with self.subTest(field=field):
+                scope = self._scope()
+                scope[field] = replacement
+                self.assertFalse(deepseek_benchmark_service._scope_contract_matches(scope, "test-model"))
+
+        payload_safe = deepseek_benchmark_service._safe_payload({
+            "approved_by_user": True,
+            "provider_run_approved_by_user": True,
+            "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
+            "authorization_nonce": self.NONCE,
+        })
+        for receipt_name, field, replacement, expected in (
+            ("deepseek_provider_benchmark_scope_ticket_receipt", "schema_version", "old", "approved_scope_ticket_receipt_schema_invalid"),
+            ("deepseek_provider_benchmark_scope_ticket_receipt", "status", "consumed", "approved_scope_ticket_receipt_not_ready"),
+            ("deepseek_provider_benchmark_execution_request_receipt", "schema_version", "old", "approved_execution_request_missing"),
+            ("deepseek_provider_benchmark_execution_request_receipt", "status", "consumed", "approved_execution_request_not_ready"),
+        ):
+            with self.subTest(receipt=receipt_name, field=field):
+                hub = self._hub()
+                hub[receipt_name][field] = replacement
+                _, blockers = deepseek_benchmark_service._execution_scope(hub, payload_safe)
+                self.assertIn(expected, blockers)
+        with self.assertRaisesRegex(ValueError, "deepseek_base_url_not_allowlisted"):
+            deepseek_benchmark_service._build_real_model_call(
+                "test-only", "test-model", base_url="https://example.invalid"
+            )
+
+    def test_single_use_nonce_replay_is_blocked_before_second_client_build(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "meta.sqlite"
+            store = SQLiteMetaStore(db_path)
+            store.write_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY, self._hub())
+            clear_task_statuses_for_tests()
+            caller = self._production_caller()
+            request = {
+                "approved_by_user": True,
+                "provider_run_approved_by_user": True,
+                "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
+                "authorization_nonce": self.NONCE,
+            }
+            with (
+                patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path),
+                patch.object(task_service, "SQLITE_META_PATH", db_path),
+                patch.object(app_config, "get_deepseek_model", return_value="test-model"),
+                patch.object(app_config, "get_deepseek_keys", return_value=["test-only-secret"]) as key_lookup,
+                patch.object(deepseek_benchmark_service, "_build_real_model_call", return_value=caller) as builder,
+            ):
+                first = deepseek_benchmark_service.run_deepseek_provider_benchmark_task(request)
+                second = deepseek_benchmark_service.run_deepseek_provider_benchmark_task(request)
+
+            self.assertEqual(first["status"], "success")
+            self.assertEqual(second["status"], "failed")
+            self.assertEqual(builder.call_count, 1)
+            self.assertEqual(key_lookup.call_count, 1)
+            serialized = json.dumps(store.read_packet(deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY))
+            serialized += json.dumps(store.read_packet(deepseek_benchmark_service.CURRENT_PACKET_KEY))
+            self.assertNotIn(self.NONCE, serialized)
+
+    def test_single_use_nonce_atomic_concurrency_has_one_winner(self):
+        import threading
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "meta.sqlite"
+            SQLiteMetaStore(db_path).write_packet(
+                deepseek_benchmark_service.FACTOR_HUB_PACKET_KEY, self._hub()
+            )
+            payload_safe = deepseek_benchmark_service._safe_payload({
+                "approved_by_user": True,
+                "provider_run_approved_by_user": True,
+                "benchmark_scope_hash": self._scope()["benchmark_scope_hash"],
+                "authorization_nonce": self.NONCE,
+            })
+            results = []
+
+            def consume():
+                results.append(deepseek_benchmark_service._consume_authorization_nonce(
+                    raw_nonce=self.NONCE, payload_safe=payload_safe
+                ))
+
+            with patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path):
+                threads = [threading.Thread(target=consume) for _ in range(2)]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join()
+
+            self.assertEqual(sum(int(success) for success, _ in results), 1)
+            self.assertEqual(len(results), 2)
+
+    def test_global_deadline_stops_remaining_samples(self):
+        class Clock:
+            value = 0.0
+
+            def __call__(self):
+                return self.value
+
+        clock = Clock()
+        calls = 0
+
+        def slow_result(sample, attempt, _repair, _timeout):
+            nonlocal calls
+            calls += 1
+            clock.value = deepseek_benchmark_service.GLOBAL_DEADLINE_SECONDS + 1
+            return self._valid_model_result(sample, attempt)
+
+        packet = deepseek_benchmark_service._execute_benchmark(
+            self._scope(),
+            slow_result,
+            evidence_source="synthetic_test",
+            model_used="test-model",
+            clock=clock,
+        )
+        self.assertEqual(calls, 1)
+        self.assertTrue(packet["global_deadline_exceeded"])
+        self.assertGreater(packet["global_elapsed_seconds"], packet["global_deadline_seconds"])
+        self.assertFalse(packet["production_fact_ready"])
 
     def test_sdk_timeout_is_one_attempt_and_classified_as_provider_timeout(self):
         import httpx
@@ -64033,7 +64341,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             http_client=httpx.Client(transport=httpx.MockTransport(timeout_handler)),
         )
         with self.assertRaises(deepseek_benchmark_service.GovernedModelCallError) as raised:
-            caller(deepseek_benchmark_service.FIXED_SAMPLES[0], 1, False)
+            caller(deepseek_benchmark_service.FIXED_SAMPLES[0], 1, False, 10.0)
         caller.close()
         self.assertEqual(calls, 1)
         self.assertEqual(raised.exception.safe_code, "model_timeout")
@@ -64055,7 +64363,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
 
         caller = deepseek_benchmark_service._OpenAIModelCaller(StubClient(), "test-model")
         with self.assertRaises(deepseek_benchmark_service.GovernedModelCallError) as raised:
-            caller(deepseek_benchmark_service.FIXED_SAMPLES[0], 1, False)
+            caller(deepseek_benchmark_service.FIXED_SAMPLES[0], 1, False, 10.0)
         self.assertEqual(raised.exception.safe_code, "model_request_locally_rejected")
         self.assertFalse(raised.exception.network_attempted)
         self.assertFalse(raised.exception.provider_call_dispatched)
@@ -64063,7 +64371,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
     def test_v1_closeout_accepts_only_real_provider_quality_safety_packet(self):
         packet = deepseek_benchmark_service._execute_benchmark(
             self._scope(),
-            self._valid_model_result,
+            self._production_caller(),
             evidence_source="real_provider",
             model_used="test-model",
         )
@@ -64090,6 +64398,10 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                 ("total_tokens", 0),
                 ("production_deepseek_explanation_complete", False),
                 ("scope_binding_valid", False),
+                ("authorization_nonce_consumed", False),
+                ("transport_production_eligible", False),
+                ("global_deadline_exceeded", True),
+                ("provider_response_metadata_complete", False),
             ):
                 falsified = dict(packet)
                 falsified[field] = replacement
@@ -64100,7 +64412,15 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
                 fact_rows = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
                 self.assertFalse(fact_rows["governed_model_runtime"], field)
 
-            for ledger_field, replacement in (("input_hash", "0" * 64), ("attempt", 4)):
+            for ledger_field, replacement in (
+                ("input_hash", "0" * 64),
+                ("attempt", 4),
+                ("returned_model", "unexpected-model"),
+                ("finish_reason", "length"),
+                ("provider_request_id_hash", ""),
+                ("authorization_nonce_consumed", False),
+                ("does_not_modify_strategy_action", False),
+            ):
                 falsified = json.loads(json.dumps(packet))
                 falsified["model_ledger"][0][ledger_field] = replacement
                 store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, falsified)
@@ -64115,7 +64435,10 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertEqual(row["required_response_format"], "json_object")
         self.assertEqual(row["sdk_max_retries"], 0)
         self.assertEqual(row["max_network_attempts_per_sample"], 3)
+        self.assertEqual(row["global_deadline_seconds"], 180)
         self.assertTrue(row["scope_contract_exact_binding_required"])
+        self.assertTrue(row["approval_nonce_enforced"])
+        self.assertTrue(row["explicit_http_client_transport_is_test_only"])
         self.assertTrue(row["last_good_preserved_on_failure"])
         self.assertFalse(row["synthetic_evidence_closes_ltg07"])
         self.assertFalse(row["cache_get_external_calls"])

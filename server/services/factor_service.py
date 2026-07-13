@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -2186,7 +2187,7 @@ def _deepseek_provider_benchmark_scope_ticket(payload_safe: dict[str, Any]) -> d
     scope = _dict(payload_safe.get("approved_scope_contract"))
     digest = deepseek_benchmark_service.benchmark_scope_hash(scope)
     return {
-        "schema_version": "factor_deepseek_provider_benchmark_scope_ticket.v2",
+        "schema_version": deepseek_benchmark_service.SCOPE_TICKET_SCHEMA_VERSION,
         "scope_hash_algorithm": "sha256",
         "scope_hash": digest,
         "scope_hash_short": digest[:16],
@@ -2227,7 +2228,12 @@ def _deepseek_provider_benchmark_scope_row(
     }
 
 
-def _deepseek_provider_benchmark_scope_payload(payload: Any, hub: dict[str, Any]) -> dict[str, Any]:
+def _deepseek_provider_benchmark_scope_payload(
+    payload: Any,
+    hub: dict[str, Any],
+    *,
+    issue_authorization_nonce: bool = True,
+) -> dict[str, Any]:
     recipe = hub.get("deepseek_provider_benchmark_execution_recipe")
     recipe = recipe if isinstance(recipe, dict) else {}
     requested_sample_count = int(
@@ -2253,6 +2259,7 @@ def _deepseek_provider_benchmark_scope_payload(payload: Any, hub: dict[str, Any]
     response_format = str(_dict(payload).get("response_format") or deepseek_benchmark_service.RESPONSE_FORMAT)
     model = str(_deepseek_model_strategy("factor_explain").get("model") or "")
     approved_scope_contract = deepseek_benchmark_service.build_benchmark_scope_contract(model)
+    authorization_nonce = secrets.token_urlsafe(32) if issue_authorization_nonce else ""
     payload_safe = {
         "approved_by_user": approved,
         "requested_sample_count": max(0, min(requested_sample_count, 500)),
@@ -2274,6 +2281,10 @@ def _deepseek_provider_benchmark_scope_payload(payload: Any, hub: dict[str, Any]
         "external_sources_allowed": False,
         "provider_model_called": False,
         "production_deepseek_explanation_complete": False,
+        "authorization_nonce": authorization_nonce,
+        "authorization_nonce_present": bool(authorization_nonce),
+        "authorization_nonce_digest": deepseek_benchmark_service.authorization_nonce_digest(authorization_nonce),
+        "authorization_nonce_status": "issued" if authorization_nonce else "not_issued",
     }
     payload_safe["benchmark_scope_ticket"] = _deepseek_provider_benchmark_scope_ticket(payload_safe)
     return payload_safe
@@ -2292,6 +2303,13 @@ def _deepseek_provider_benchmark_scope_receipt(
     )
     phase_scope_ok = set(DEEPSEEK_PROVIDER_BENCHMARK_SCOPE_PHASES) == set(payload_safe.get("phase_keys") or [])
     secret_present = payload_safe.get("server_secret_present") is True
+    nonce = str(payload_safe.get("authorization_nonce") or "")
+    nonce_digest = str(payload_safe.get("authorization_nonce_digest") or "")
+    nonce_ready = bool(
+        nonce
+        and nonce_digest == deepseek_benchmark_service.authorization_nonce_digest(nonce)
+        and payload_safe.get("authorization_nonce_status") == "issued"
+    )
     scope_ticket = _dict(payload_safe.get("benchmark_scope_ticket"))
     approved_scope_contract = _dict(payload_safe.get("approved_scope_contract"))
     approved_scope_contract_hash = str(payload_safe.get("approved_scope_contract_hash") or "")
@@ -2315,6 +2333,7 @@ def _deepseek_provider_benchmark_scope_receipt(
             phase_scope_ok,
             exact_scope_contract_ok,
             bool(scope_hash_short),
+            nonce_ready,
         ]
     )
     rows = [
@@ -2383,6 +2402,13 @@ def _deepseek_provider_benchmark_scope_receipt(
             blocks_model_execution=True,
         ),
         _deepseek_provider_benchmark_scope_row(
+            "single_use_authorization_nonce",
+            "passed_nonce_issued" if nonce_ready else "blocked_nonce_not_issued",
+            nonce_ready,
+            f"authorization_nonce_present={nonce_ready}; nonce_digest_present={bool(nonce_digest)}",
+            "Issue one random single-use nonce bound to the exact scope; consume it atomically before HTTP.",
+        ),
+        _deepseek_provider_benchmark_scope_row(
             "no_model_call_boundary",
             "passed_no_model_call",
             True,
@@ -2409,14 +2435,14 @@ def _deepseek_provider_benchmark_scope_receipt(
     ]
     blockers = [str(row["criterion"]) for row in rows if row.get("blocks_model_execution")]
     status = (
-        "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending"
+        deepseek_benchmark_service.SCOPE_READY_STATUS
         if local_scope_ready and secret_present
         else "deepseek_provider_benchmark_scope_ticket_ready_secret_pending"
         if local_scope_ready
         else "deepseek_provider_benchmark_scope_ticket_blocked_preflight"
     )
     receipt = {
-        "schema_version": "factor_deepseek_provider_benchmark_scope_ticket_receipt.v1",
+        "schema_version": deepseek_benchmark_service.SCOPE_RECEIPT_SCHEMA_VERSION,
         "status": status,
         "scope": "local_deepseek_provider_benchmark_scope_ticket_no_model_call",
         "ltg": "LTG-07",
@@ -2443,6 +2469,12 @@ def _deepseek_provider_benchmark_scope_receipt(
         "approved_scope_contract_hash": approved_scope_contract_hash,
         "benchmark_scope_hash": approved_scope_contract_hash,
         "benchmark_scope_hash_short": scope_hash_short,
+        "authorization_nonce": nonce,
+        "authorization_nonce_present": nonce_ready,
+        "authorization_nonce_digest": nonce_digest,
+        "authorization_nonce_status": "issued" if nonce_ready else "not_issued",
+        "approval_nonce_enforced": True,
+        "approval_replay_boundary": "single_use_sqlite_compare_and_consume_before_http",
         "bound_model": approved_scope_contract.get("model") or "",
         "fixed_sample_ids": approved_scope_contract.get("sample_ids") or [],
         "fixed_sample_ids_hash": approved_scope_contract.get("sample_ids_hash") or "",
@@ -2508,6 +2540,8 @@ def _deepseek_provider_benchmark_scope_receipt(
                 "max_retry_per_sample": receipt["max_retry_per_sample"],
                 "scope_hash_short": scope_hash_short,
                 "server_secret_present": secret_present,
+                "authorization_nonce_present": nonce_ready,
+                "authorization_nonce_digest": nonce_digest,
                 "provider_benchmark_done": False,
             },
             "row_count": len(rows),
@@ -2531,6 +2565,7 @@ def _missing_deepseek_provider_benchmark_scope_ticket(now: str) -> tuple[dict[st
             "response_format": "json_object",
         },
         {"deepseek_provider_benchmark_execution_recipe": {}},
+        issue_authorization_nonce=False,
     )
     receipt, rows = _deepseek_provider_benchmark_scope_receipt(payload_safe, now)
     receipt["status"] = "deepseek_provider_benchmark_scope_ticket_missing"
@@ -2622,6 +2657,9 @@ def _deepseek_provider_benchmark_execution_request_payload(
         or payload_dict.get("provider_benchmark_scope_hash")
         or ""
     ).strip()
+    authorization_nonce = str(payload_dict.get("authorization_nonce") or "")
+    authorization_nonce_digest = deepseek_benchmark_service.authorization_nonce_digest(authorization_nonce)
+    latest_nonce_digest = str(scope_receipt.get("authorization_nonce_digest") or "")
     return {
         "approved_by_user": bool(
             payload_dict.get("approved_by_user") is True
@@ -2634,6 +2672,17 @@ def _deepseek_provider_benchmark_execution_request_payload(
         "latest_scope_hash": str(scope_receipt.get("benchmark_scope_hash") or ""),
         "latest_scope_hash_short": str(scope_receipt.get("benchmark_scope_hash_short") or ""),
         "latest_ready_for_explicit_provider_benchmark_task": scope_receipt.get("ready_for_explicit_provider_benchmark_task") is True,
+        "authorization_nonce_present": bool(authorization_nonce),
+        "authorization_nonce_digest": authorization_nonce_digest,
+        "latest_authorization_nonce_present": scope_receipt.get("authorization_nonce_present") is True,
+        "latest_authorization_nonce_digest": latest_nonce_digest,
+        "latest_authorization_nonce_status": str(scope_receipt.get("authorization_nonce_status") or ""),
+        "authorization_nonce_matches_latest": bool(
+            authorization_nonce
+            and latest_nonce_digest
+            and authorization_nonce_digest == latest_nonce_digest
+            and scope_receipt.get("authorization_nonce_status") == "issued"
+        ),
         "server_secret_presence_checked": scope_receipt.get("server_secret_presence_checked") is True,
         "server_secret_present": scope_receipt.get("server_secret_present") is True,
         "execution_recipe_status": str(recipe.get("status") or ""),
@@ -2704,6 +2753,7 @@ def _deepseek_provider_benchmark_execution_request_receipt(
     )
     recipe_ready = bool(payload_safe.get("execution_recipe_status"))
     target_route_ok = payload_safe.get("target_model_task_route") == "POST /api/factor-quant/deepseek-provider-benchmark"
+    nonce_matches = payload_safe.get("authorization_nonce_matches_latest") is True
     rows = [
         _deepseek_provider_benchmark_execution_request_row(
             "latest_scope_ticket_visible",
@@ -2746,6 +2796,16 @@ def _deepseek_provider_benchmark_execution_request_receipt(
             current_scope_receipt_hash_matches,
             f"contract_hash_short={approved_scope_contract_hash[:16]}; current_scope_hash_matches={current_scope_receipt_hash_matches}",
             "Bind the execution receipt to the exact current model/sample/retry/timeout/schema/prompt/ledger/cost contract.",
+        ),
+        _deepseek_provider_benchmark_execution_request_row(
+            "single_use_authorization_nonce_bound",
+            "passed_nonce_bound" if nonce_matches else "blocked_nonce_missing_or_mismatch",
+            nonce_matches,
+            (
+                f"authorization_nonce_present={payload_safe.get('authorization_nonce_present') is True}; "
+                f"nonce_digest_matches={nonce_matches}; nonce_status={payload_safe.get('latest_authorization_nonce_status')}"
+            ),
+            "Submit the exact one-time nonce issued by the current scope ticket.",
         ),
         _deepseek_provider_benchmark_execution_request_row(
             "execution_recipe_visible",
@@ -2802,6 +2862,9 @@ def _deepseek_provider_benchmark_execution_request_receipt(
     elif not current_scope_receipt_hash_matches:
         status = "deepseek_provider_benchmark_execution_request_blocked_scope_contract_mismatch"
         allowed_next_step = "regenerate_scope_and_execution_receipts"
+    elif not nonce_matches:
+        status = "deepseek_provider_benchmark_execution_request_blocked_nonce_missing_or_mismatch"
+        allowed_next_step = "resubmit_execution_request_with_current_single_use_nonce"
     elif not recipe_ready:
         status = "deepseek_provider_benchmark_execution_request_blocked_local_recipe"
         allowed_next_step = "repair_deepseek_provider_benchmark_execution_recipe"
@@ -2810,7 +2873,7 @@ def _deepseek_provider_benchmark_execution_request_receipt(
         allowed_next_step = "manual_submit_future_deepseek_provider_benchmark_bound_to_scope_ticket"
     ready = status == "deepseek_provider_benchmark_execution_request_ready_manual_model_task_pending"
     receipt = {
-        "schema_version": "factor_deepseek_provider_benchmark_execution_request.v1",
+        "schema_version": deepseek_benchmark_service.EXECUTION_RECEIPT_SCHEMA_VERSION,
         "status": status,
         "scope": "local_deepseek_provider_benchmark_execution_request_no_model_execution",
         "created_at": now,
@@ -2833,8 +2896,11 @@ def _deepseek_provider_benchmark_execution_request_receipt(
         "provider_run_approved_by_user": provider_run_confirmed,
         "approved_scope_contract": approved_scope_contract,
         "approved_scope_contract_hash": approved_scope_contract_hash,
-        "approval_nonce_enforced": False,
-        "approval_replay_boundary": "exact_current_scope_and_execution_receipt_hash_no_one_time_nonce",
+        "approval_nonce_enforced": True,
+        "authorization_nonce_present": nonce_matches,
+        "authorization_nonce_digest": str(payload_safe.get("authorization_nonce_digest") or ""),
+        "authorization_nonce_status": "issued" if nonce_matches else "not_issued",
+        "approval_replay_boundary": "single_use_sqlite_compare_and_consume_before_http",
         "required_sample_count": payload_safe.get("required_sample_count"),
         "requested_sample_count": payload_safe.get("requested_sample_count"),
         "required_json_success_rate": payload_safe.get("required_json_success_rate"),
