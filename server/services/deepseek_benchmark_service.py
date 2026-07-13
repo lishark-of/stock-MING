@@ -1237,12 +1237,16 @@ def _build_test_only_model_call(
 
 
 def _write_current(packet: Mapping[str, Any]) -> None:
+    production_markers = (
+        "provider_benchmark_done",
+        "production_fact_ready",
+        "governed_model_runtime",
+        "production_deepseek_explanation_complete",
+    )
+    if any(packet.get(field) is True for field in production_markers):
+        raise ValueError("production_packet_requires_atomic_task_event_promotion")
     store = SQLiteMetaStore(SQLITE_META_PATH)
     store.write_packet(CURRENT_PACKET_KEY, dict(packet))
-    if packet.get("production_fact_ready") is True:
-        promoted = dict(packet)
-        promoted["packet_key"] = LAST_GOOD_PACKET_KEY
-        store.write_packet(LAST_GOOD_PACKET_KEY, promoted)
 
 
 def run_deepseek_provider_benchmark_task(payload: Any = None) -> dict[str, Any]:

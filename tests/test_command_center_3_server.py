@@ -64414,6 +64414,41 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
             store = SQLiteMetaStore(db_path)
             self.assertIsNone(store.read_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY))
 
+    def test_direct_current_writer_rejects_forged_production_packet_without_any_write(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "meta.sqlite"
+            store = SQLiteMetaStore(db_path)
+            current_before = {"schema_version": "current.before.v1", "marker": "keep-current"}
+            last_good_before = {"schema_version": "last-good.before.v1", "marker": "keep-last-good"}
+            store.write_packet(deepseek_benchmark_service.CURRENT_PACKET_KEY, current_before)
+            store.write_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY, last_good_before)
+            forged = {
+                "schema_version": "caller.packet.v1",
+                "status": "deepseek_provider_benchmark_passed",
+                "provider_benchmark_done": True,
+                "production_fact_ready": True,
+                "governed_model_runtime": True,
+                "production_deepseek_explanation_complete": True,
+            }
+
+            with (
+                patch.object(deepseek_benchmark_service, "SQLITE_META_PATH", db_path),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "production_packet_requires_atomic_task_event_promotion",
+                ),
+            ):
+                deepseek_benchmark_service._write_current(forged)
+
+            self.assertEqual(
+                store.read_packet(deepseek_benchmark_service.CURRENT_PACKET_KEY),
+                current_before,
+            )
+            self.assertEqual(
+                store.read_packet(deepseek_benchmark_service.LAST_GOOD_PACKET_KEY),
+                last_good_before,
+            )
+
     def test_sdk_timeout_is_one_attempt_and_classified_as_provider_timeout(self):
         import httpx
 
