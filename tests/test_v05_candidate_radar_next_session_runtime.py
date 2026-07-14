@@ -156,12 +156,44 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         self.assertEqual(lineage["candidate_result_version"], packet["candidate_radar_v05_result_version"])
         self.assertEqual(lineage["data_date"], "2026-07-13")
         self.assertEqual(next_packet["result_version"], packet["candidate_radar_v05_result_version"])
+        self.assertEqual(next_packet["data_date"], "2026-07-13")
+        self.assertEqual(next_packet["trade_date"], "2026-07-13")
+        self.assertEqual(
+            next_packet["freshness_state"]["state"],
+            lineage["freshness_state"]["state"],
+        )
         self.assertFalse(next_packet["external_calls_triggered"])
         self.assertFalse(next_packet["tushare_called"])
         self.assertFalse(next_packet["deepseek_called"])
         self.assertTrue(next_packet["does_not_modify_strategy_action"])
         self.assertTrue(next_packet["does_not_modify_operation_zones"])
         self.assertEqual(SQLiteMetaStore(self.meta_path).read_packet(worker_packet_key), worker_packet_sentinel)
+
+        # Compatibility P3 summaries may still contain an older result.  They must
+        # not overwrite the newer v0.5 same-packet lineage on the Next Session GET.
+        store = SQLiteMetaStore(self.meta_path)
+        candidate_packet_with_old_p3 = dict(store.read_packet(candidate_service.PACKET_KEY))
+        candidate_packet_with_old_p3["search_quant_projection_interpretation_summary"] = {
+            "interpretation_ready": True,
+            "ordinary_result_summary": "legacy compatibility summary",
+            "symbol": "OLD001",
+        }
+        candidate_packet_with_old_p3["search_quant_result_version_summary"] = {
+            "current_result_version": "legacy-qrv",
+            "current_result_task_id": "legacy-task",
+            "current_result_data_date": "2026-07-07",
+            "current_result_freshness_state": "fresh",
+        }
+        candidate_packet_with_old_p3["search_quant_result_lineage"] = {
+            "result_version": "legacy-qrv",
+            "task_id": "legacy-task",
+        }
+        store.write_packet(candidate_service.PACKET_KEY, candidate_packet_with_old_p3)
+        normalized_next_packet = next_session_service.read_next_session_cache()
+        self.assertEqual(normalized_next_packet["result_version"], packet["candidate_radar_v05_result_version"])
+        self.assertEqual(normalized_next_packet["current_result_task_id"], task["task_id"])
+        self.assertEqual(normalized_next_packet["data_date"], "2026-07-13")
+        self.assertEqual(normalized_next_packet["freshness_state"]["state"], "unknown")
 
         store = SQLiteMetaStore(self.meta_path)
         last_good_before = store.read_packet(candidate_service.CANDIDATE_V05_LAST_GOOD_PACKET_KEY)

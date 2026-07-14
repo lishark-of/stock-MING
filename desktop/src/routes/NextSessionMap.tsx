@@ -462,14 +462,16 @@ export default function NextSessionMap() {
   const candidateRadarResultVersionSummary =
     (candidateRadarCache.search_quant_result_version_summary as Record<string, unknown> | undefined) ?? {};
   const candidateRadarCurrentResultVersion = String(
-    candidateRadarResultVersionSummary.current_result_version ??
+    (candidateRadarV05LineageReady ? candidateRadarV05Lineage.candidate_result_version : undefined) ??
+      candidateRadarResultVersionSummary.current_result_version ??
       candidateRadarResultLineage.result_version ??
       candidateRadarProviderModelAcceptance.result_version ??
       candidateRadarV05Lineage.candidate_result_version ??
       ""
   );
   const candidateRadarLatestResultVersion = String(
-    candidateRadarResultVersionSummary.latest_task_result_version ??
+    (candidateRadarV05LineageReady ? candidateRadarV05Lineage.candidate_result_version : undefined) ??
+      candidateRadarResultVersionSummary.latest_task_result_version ??
       candidateRadarResultVersionSummary.latest_result_version ??
       candidateRadarResultLineage.result_version ??
       candidateRadarV05Lineage.candidate_result_version ??
@@ -479,7 +481,8 @@ export default function NextSessionMap() {
     ? `当前结果版本 ${candidateRadarCurrentResultVersion}; latest ${candidateRadarLatestResultVersion || candidateRadarCurrentResultVersion}`
     : "等待 result_version 回放";
   const candidateRadarCanonicalTaskId = String(
-    candidateRadarResultVersionSummary.canonical_result_task_id ??
+    (candidateRadarV05LineageReady ? candidateRadarV05Lineage.candidate_task_id : undefined) ??
+      candidateRadarResultVersionSummary.canonical_result_task_id ??
       candidateRadarResultVersionSummary.canonical_task_id ??
       candidateRadarResultLineage.canonical_result_task_id ??
       candidateRadarResultLineage.canonical_task_id ??
@@ -531,14 +534,16 @@ export default function NextSessionMap() {
     ? `当前确认标的：${candidateRadarConfirmedSymbol}`
     : "等待下一票雷达确认标的";
   const candidateRadarCurrentResultSymbol = String(
-    candidateRadarResultVersionSummary.current_result_symbol ??
+    (candidateRadarV05LineageReady ? candidateRadarV05Lineage.symbol : undefined) ??
+      candidateRadarResultVersionSummary.current_result_symbol ??
       candidateRadarResultLineage.symbol ??
       candidateRadarProviderModelAcceptance.symbol ??
       candidateRadarV05Lineage.symbol ??
       ""
   );
   const candidateRadarDataDate = String(
-    candidateRadarResultVersionSummary.current_result_data_date ??
+    (candidateRadarV05LineageReady ? candidateRadarV05Lineage.data_date : undefined) ??
+      candidateRadarResultVersionSummary.current_result_data_date ??
       candidateRadarResultVersionSummary.latest_task_data_date ??
       candidateRadarResultVersionSummary.data_date ??
       candidateRadarResultLineage.data_date ??
@@ -547,7 +552,8 @@ export default function NextSessionMap() {
       ""
   );
   const candidateRadarFreshnessState = String(
-    candidateRadarResultVersionSummary.current_result_freshness_state ??
+    (candidateRadarV05LineageReady ? candidateRadarV05Freshness.freshness_state ?? candidateRadarV05Freshness.state : undefined) ??
+      candidateRadarResultVersionSummary.current_result_freshness_state ??
       candidateRadarResultVersionSummary.latest_task_freshness_state ??
       candidateRadarResultVersionSummary.freshness_state ??
       candidateRadarResultLineage.freshness_state ??
@@ -559,7 +565,8 @@ export default function NextSessionMap() {
   const candidateRadarFreshnessLabel =
     `${candidateRadarDataDate || "等待 data_date"} / ${candidateRadarFreshnessState || "等待 freshness"}`;
   const candidateRadarLatestTaskSymbol = String(
-    candidateRadarResultVersionSummary.latest_task_symbol ??
+    (candidateRadarV05LineageReady ? candidateRadarV05Lineage.symbol : undefined) ??
+      candidateRadarResultVersionSummary.latest_task_symbol ??
       candidateRadarResultLineage.symbol ??
       candidateRadarProviderModelAcceptance.symbol ??
       candidateRadarConfirmedSymbol ??
@@ -603,7 +610,8 @@ export default function NextSessionMap() {
     ? `为 ${candidateRadarConfirmedSymbol} 生成完整图谱`
     : "等待确认标的";
   const candidateRadarSourceTaskLabel = String(
-    candidateRadarResultVersionSummary.current_result_task_id ||
+    (candidateRadarV05LineageReady ? candidateRadarV05Lineage.candidate_task_id : undefined) ||
+      candidateRadarResultVersionSummary.current_result_task_id ||
       candidateRadarResultVersionSummary.latest_task_id ||
       candidateRadarResultLineage.task_id ||
       candidateRadarProviderModelAcceptance.task_id ||

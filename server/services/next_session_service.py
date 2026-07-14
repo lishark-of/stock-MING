@@ -3063,6 +3063,10 @@ def read_next_session_cache() -> dict[str, Any]:
         packet["chart_payload_generated"] = False
         packet["operation_zones_generated"] = False
         packet["manual_next_session_generate_required"] = True
+    # A v0.5 local candidate task is the newest same-packet lineage.  Apply this
+    # after the compatibility P3 handoff above so an older quant result summary
+    # cannot reintroduce mixed result/date/freshness fields.
+    packet = _apply_candidate_radar_v05_lineage(packet)
     activation_receipt, activation_rows = _next_session_replacement_activation_receipt(packet)
     legacy_parity_recipe, legacy_parity_rows = _next_session_legacy_parity_execution_recipe(packet)
     (
@@ -4069,6 +4073,41 @@ def _local_exact_next_session_sample_packet(
             "It is not provider-backed market data, Streamlit reference capture, browser QA, durable CI evidence, or production ECharts replacement.",
         ],
     }
+
+
+def _apply_candidate_radar_v05_lineage(packet: dict[str, Any]) -> dict[str, Any]:
+    """Keep the v0.5 local candidate handoff authoritative on the Next Session surface.
+
+    CandidateRadar still carries older P2/P3 result summaries for compatibility.  Those
+    summaries must not overwrite the newer v0.5 same-packet lineage, otherwise the UI can
+    show a stale result_version/data date/freshness next to the current candidate task.
+    This is a readback normalization only; it never calls a provider or writes cache.
+    """
+    lineage = _as_dict(packet.get("candidate_radar_v05_lineage"))
+    if lineage.get("status") != "same_packet_lineage_ready":
+        return packet
+    result_version = _safe_text(lineage.get("candidate_result_version") or "", limit=128)
+    task_id = _safe_text(lineage.get("candidate_task_id") or "", limit=128)
+    symbol = _safe_text(lineage.get("symbol") or "", limit=32)
+    data_date = lineage.get("data_date")
+    freshness_state = _as_dict(lineage.get("freshness_state"))
+    if not (result_version and task_id and symbol and data_date and freshness_state):
+        return packet
+    normalized = dict(packet)
+    normalized["result_version"] = result_version
+    normalized["current_result_task_id"] = task_id
+    normalized["source_task_id"] = task_id
+    normalized["latest_confirmed_task_id"] = task_id
+    normalized["latest_confirmed_symbol"] = symbol
+    normalized["trade_date"] = data_date
+    normalized["data_date"] = data_date
+    normalized["freshness_state"] = dict(freshness_state)
+    normalized["candidate_radar_v05_result_version"] = result_version
+    normalized["candidate_radar_v05_source_task_id"] = task_id
+    normalized["candidate_radar_v05_data_date"] = data_date
+    normalized["candidate_radar_v05_freshness_state"] = dict(freshness_state)
+    normalized["candidate_radar_v05_readback_authoritative"] = True
+    return normalized
 
 
 def create_next_session_task(payload: Any = None) -> dict[str, Any]:
