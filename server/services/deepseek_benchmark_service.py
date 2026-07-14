@@ -40,8 +40,8 @@ MODEL_TIMEOUT_SECONDS = 25.0
 # Keep the output contract fixed, but leave enough bounded budget for the
 # governed provider run to finish instead of classifying valid responses as
 # ``finish_reason=length``.
-MODEL_MAX_TOKENS = 1024
-GLOBAL_DEADLINE_SECONDS = 600.0
+MODEL_MAX_TOKENS = 1536
+GLOBAL_DEADLINE_SECONDS = 900.0
 MODEL_TEMPERATURE = 0
 SDK_MAX_RETRIES = 0
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
