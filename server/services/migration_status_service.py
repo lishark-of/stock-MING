@@ -7623,6 +7623,7 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         and streamlit_review.get("explicit_review_task_done") is True
         and streamlit_review.get("local_streamlit_parity_review_ready") is True
         and streamlit_review.get("same_packet_no_loss_review_ready") is True
+        and streamlit_review.get("same_packet_signal_capability_coverage_reviewed") is True
         and streamlit_review.get("streamlit_reference_captured") is False
         and streamlit_review.get("streamlit_parity_complete") is False
         and streamlit_review.get("production_replacement_complete") is False
@@ -7706,6 +7707,9 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         "reduced_motion_accessibility_qa_done": reduced_motion_done,
         "local_streamlit_parity_review_ready": streamlit_same_packet_review_ready,
         "same_packet_no_loss_review_ready": streamlit_same_packet_review_ready,
+        "same_packet_signal_capability_coverage_reviewed": streamlit_review.get(
+            "same_packet_signal_capability_coverage_reviewed"
+        ) is True,
         "local_browser_qa_review_ready": review_ready,
         "local_production_promotion_review_ready": production_promotion_review_ready,
         "local_release_gate_evidence_observed": local_release_gate_evidence_observed,
@@ -14423,6 +14427,21 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             if direct_evidence_count
             else "observed_in_next_session_map_static_contract"
         )
+        same_packet_coverage_reviewed = (
+            direct_evidence.get("same_packet_signal_capability_coverage_reviewed") is True
+        )
+        ltg08_missing_evidence_items = [
+            "next-session direct production evidence for all stage rows",
+            "durable CI/release evidence for Next Session replacement",
+            "production replacement promotion review",
+            "matching remote CI review after local Next Session evidence",
+            "release review after matching remote CI green",
+        ]
+        if not same_packet_coverage_reviewed:
+            ltg08_missing_evidence_items.insert(
+                1,
+                "same-packet retained signal/capability coverage evidence",
+            )
         rows.append(
             {
                 "id": "LTG-08",
@@ -14465,14 +14484,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 ),
                 "release_review_pending_count": 1 if ltg08_release_review_pending else 0,
                 "strict_closeout_ready": False,
-                "missing_evidence_items": [
-                    "next-session direct production evidence for all stage rows",
-                    "same-packet retained signal/capability coverage evidence",
-                    "durable CI/release evidence for Next Session replacement",
-                    "production replacement promotion review",
-                    "matching remote CI review after local Next Session evidence",
-                    "release review after matching remote CI green",
-                ],
+                "missing_evidence_items": ltg08_missing_evidence_items,
                 "production_blocker_count": observed_pending_count,
                 "production_replacement_complete": next_session_contract.get("production_replacement_complete") is True,
                 "streamlit_parity_complete": next_session_contract.get("streamlit_parity_complete") is True,
@@ -14491,6 +14503,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "same_packet_no_loss_review_ready": (
                     direct_evidence.get("same_packet_no_loss_review_ready") is True
                 ),
+                "same_packet_signal_capability_coverage_reviewed": same_packet_coverage_reviewed,
                 "local_browser_qa_review_ready": direct_evidence.get("local_browser_qa_review_ready") is True,
                 "local_release_gate_evidence_observed": (
                     direct_evidence.get("local_release_gate_evidence_observed") is True
@@ -15974,6 +15987,7 @@ def _merge_ltg_stage_scope_observations(
                 "release_review_blocked_by_dirty_worktree",
                 "strict_closeout_ready",
                 "missing_evidence_items",
+                "same_packet_signal_capability_coverage_reviewed",
                 "per_slice_trade_isolation_recheck_required",
                 "permanent_release_invariant",
                 "continued_no_broker_proof_required",
@@ -16037,15 +16051,25 @@ def _merge_ltg_stage_scope_observations(
                 item["observed_next_session_browser_qa_direct_evidence_done"] = next_browser_evidence_done
                 item["observed_next_session_browser_qa_is_production_replacement"] = False
                 if next_browser_evidence_done:
+                    same_packet_coverage_reviewed = observed.get(
+                        "same_packet_signal_capability_coverage_reviewed"
+                    ) is True
                     item["not_complete_because"] = (
-                        "same-packet retained signal/capability reference capture, feature-by-feature capability coverage, durable CI/release "
-                        "evidence, and production replacement promotion are pending; local browser "
-                        "visual/performance/reduced-motion QA is observed but not production replacement."
+                        (
+                            "feature-by-feature capability coverage, durable CI/release evidence, and production replacement promotion are pending; "
+                            if same_packet_coverage_reviewed
+                            else "same-packet retained signal/capability reference capture, feature-by-feature capability coverage, durable CI/release evidence, "
+                            "and production replacement promotion are pending; "
+                        )
+                        + "local browser visual/performance/reduced-motion QA is observed but not production replacement."
                     )
                     item["next_step"] = (
-                        "Run explicit same-packet retained signal/capability coverage evidence and feature-by-feature no-loss review, then "
-                        "attach durable CI/release evidence and production replacement promotion; do not rerun "
-                        "local browser QA unless the route or packet contract changes."
+                        (
+                            "Attach durable CI/release evidence and production replacement promotion; "
+                            if same_packet_coverage_reviewed
+                            else "Run explicit same-packet retained signal/capability coverage evidence and feature-by-feature no-loss review, then attach durable CI/release evidence and production replacement promotion; "
+                        )
+                        + "do not rerun local browser QA unless the route or packet contract changes."
                     )
         merged.append(item)
     return merged

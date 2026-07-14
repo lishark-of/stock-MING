@@ -922,10 +922,16 @@ def assert_ltg08_next_session_stage_scope(
     test_case.assertEqual(row["remote_review_pending_count"], 1 if row["remote_review_pending"] else 0)
     test_case.assertEqual(row["release_review_pending_count"], 1 if row["release_review_pending"] else 0)
     test_case.assertFalse(row["strict_closeout_ready"])
-    test_case.assertIn(
-        "same-packet retained signal/capability coverage evidence",
-        row["missing_evidence_items"],
-    )
+    if row.get("same_packet_signal_capability_coverage_reviewed") is True:
+        test_case.assertNotIn(
+            "same-packet retained signal/capability coverage evidence",
+            row["missing_evidence_items"],
+        )
+    else:
+        test_case.assertIn(
+            "same-packet retained signal/capability coverage evidence",
+            row["missing_evidence_items"],
+        )
     test_case.assertIn(
         "matching remote CI review after local Next Session evidence",
         row["missing_evidence_items"],

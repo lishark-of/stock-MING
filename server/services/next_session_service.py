@@ -980,6 +980,161 @@ def _next_session_streamlit_parity_review_row(
     }
 
 
+def _next_session_same_packet_signal_capability_coverage(packet: Mapping[str, Any]) -> dict[str, Any]:
+    """Observe retained Next Session signal/capability fields in one packet.
+
+    This is deliberately a read-only inspection of the exact ECharts payload.
+    It does not compare or launch the legacy UI, call a provider/model, or
+    promote the replacement.  A later explicit parity-review POST binds this
+    observation to a review task.
+    """
+    chart = _as_dict(packet.get("chart_payload"))
+    chart_summary = _as_dict(packet.get("chart_summary")) or _as_dict(chart.get("chart_summary"))
+    chart_contract = _as_dict(chart.get("chart_contract"))
+    interaction_audit = _as_dict(chart.get("interaction_readiness_audit"))
+    data_trust = _as_dict(chart.get("data_trust_summary")) or _as_dict(packet.get("data_trust_summary"))
+    position_conflict = _as_dict(chart.get("position_conflict")) or _as_dict(packet.get("position_context"))
+    lineage = _as_dict(packet.get("candidate_radar_v05_lineage"))
+    chart_source_task_id = _safe_text(chart.get("source_task_id") or "", limit=128)
+    chart_result_version = _safe_text(chart.get("result_version") or "", limit=128)
+    chart_data_date = _safe_text(chart.get("data_date") or packet.get("data_date") or "", limit=32)
+    lineage_bound = True
+    if lineage.get("status") == "same_packet_lineage_ready":
+        lineage_bound = bool(
+            chart_source_task_id
+            and chart_result_version
+            and chart_source_task_id == _safe_text(lineage.get("candidate_task_id") or "", limit=128)
+            and chart_result_version == _safe_text(lineage.get("candidate_result_version") or "", limit=128)
+            and chart_data_date == _safe_text(lineage.get("data_date") or "", limit=32)
+        )
+
+    rows = [
+        {
+            "coverage_key": "latest_close_anchor",
+            "label": "latest close anchor",
+            "retained": bool(_as_dict(chart.get("latest_close_anchor")).get("price") is not None),
+            "source": "chart_payload.latest_close_anchor",
+        },
+        {
+            "coverage_key": "scenario_paths",
+            "label": "scenario paths",
+            "retained": bool(_as_list(chart.get("scenario_series")) and _as_list(chart.get("scenario_anchor_rows"))),
+            "source": "chart_payload.scenario_series/scenario_anchor_rows",
+        },
+        {
+            "coverage_key": "reference_and_limit_lines",
+            "label": "reference and limit lines",
+            "retained": bool(_as_list(chart.get("reference_line_rows")) and _as_list(chart.get("reference_lines"))),
+            "source": "chart_payload.reference_line_rows/reference_lines",
+        },
+        {
+            "coverage_key": "operation_zones_and_guardrails",
+            "label": "operation zones and guardrails",
+            "retained": bool(
+                _as_list(chart.get("zone_interaction_rows"))
+                and all(row.get("frontend_mutable") is False for row in _as_list(chart.get("zone_interaction_rows")) if isinstance(row, dict))
+            ),
+            "source": "chart_payload.zone_interaction_rows",
+        },
+        {
+            "coverage_key": "position_conflict_warnings",
+            "label": "position conflict warnings",
+            "retained": bool(position_conflict),
+            "source": "chart_payload.position_conflict/position_context",
+        },
+        {
+            "coverage_key": "freshness_and_data_trust",
+            "label": "freshness and data trust",
+            "retained": bool(data_trust and (_as_list(data_trust.get("facts")) or packet.get("freshness_state"))),
+            "source": "chart_payload.data_trust_summary + packet.freshness_state",
+        },
+        {
+            "coverage_key": "deepseek_status_display",
+            "label": "DeepSeek status display",
+            "retained": bool(chart.get("deepseek_status") or _as_dict(data_trust.get("deepseek")).get("status")),
+            "source": "chart_payload.deepseek_status/data_trust_summary.deepseek",
+        },
+        {
+            "coverage_key": "hover_click_drilldown",
+            "label": "hover and click drilldown",
+            "retained": bool(
+                interaction_audit.get("schema_version") == "next_session_interaction_readiness.v1"
+                and int(interaction_audit.get("blocking_count") or 0) == 0
+            ),
+            "source": "chart_payload.interaction_readiness_audit",
+        },
+        {
+            "coverage_key": "read_only_action_boundary",
+            "label": "read-only action boundary",
+            "retained": bool(
+                chart_contract.get("cache_only") is True
+                and chart_contract.get("frontend_computes_trade_action") is False
+                and chart_contract.get("does_not_modify_action") is True
+                and chart_contract.get("does_not_modify_operation_zones") is True
+            ),
+            "source": "chart_payload.chart_contract",
+        },
+    ]
+    missing = [str(row["coverage_key"]) for row in rows if row.get("retained") is not True]
+    packet_safe = (
+        packet.get("external_calls_triggered") is not True
+        and packet.get("tushare_called") is not True
+        and packet.get("deepseek_called") is not True
+        and packet.get("github_called") is not True
+        and packet.get("does_not_execute_trades") is not False
+        and packet.get("does_not_modify_strategy_action") is not False
+    )
+    direct_evidence_ready = bool(
+        packet_safe
+        and chart.get("is_exact_next_session_packet") is True
+        and chart_summary.get("has_drawable_data") is True
+        and not missing
+        and lineage_bound
+    )
+    for row in rows:
+        row.update(
+            {
+                "direct_observation": True,
+                "same_packet": True,
+                "review_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_modify_operation_zones": True,
+                "contains_secret": False,
+            }
+        )
+    return {
+        "schema_version": "next_session_same_packet_signal_capability_coverage.v1",
+        "status": "same_packet_signal_capability_coverage_ready" if direct_evidence_ready else "same_packet_signal_capability_coverage_pending",
+        "scope": "exact_next_session_echarts_packet_same_packet_signal_capability_observation",
+        "same_packet": True,
+        "lineage_bound": lineage_bound,
+        "direct_observation": True,
+        "direct_evidence_ready": direct_evidence_ready,
+        "required_feature_group_count": len(rows),
+        "retained_feature_group_count": len(rows) - len(missing),
+        "missing_feature_groups": missing,
+        "rows": rows,
+        "row_count": len(rows),
+        "packet_safe": packet_safe,
+        "streamlit_reference_captured": False,
+        "streamlit_parity_complete": False,
+        "production_replacement_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "contains_secret": False,
+    }
+
+
 def _next_session_streamlit_parity_review_contract(
     parity_recipe: Mapping[str, Any],
     parity_rows: list[Mapping[str, Any]],
@@ -987,6 +1142,7 @@ def _next_session_streamlit_parity_review_contract(
     explicit_review: bool = False,
     task_id: str = "",
     reviewed_at: str = "",
+    retained_coverage: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     rows_by_phase = {
         str(row.get("phase")): row for row in parity_rows if isinstance(row, Mapping) and row.get("phase")
@@ -1010,6 +1166,12 @@ def _next_session_streamlit_parity_review_contract(
     hover_click_ready = rows_by_phase.get("hover_click_interaction_parity", {}).get("local_ready") is True
     read_only_ready = rows_by_phase.get("frontend_read_only_no_feature_loss_boundary", {}).get("local_ready") is True
     no_group_loss_ready = required_groups.issubset(preserved_groups)
+    retained_coverage_map = _as_dict(retained_coverage)
+    retained_coverage_ready = (
+        retained_coverage_map.get("direct_evidence_ready") is True
+        if retained_coverage is not None
+        else no_group_loss_ready
+    )
     rows = [
         _next_session_streamlit_parity_review_row(
             "explicit_post_review_task",
@@ -1094,6 +1256,7 @@ def _next_session_streamlit_parity_review_contract(
     ]
     blocking_rows = [row["criterion"] for row in rows if row["blocking"]]
     same_packet_ready = explicit_review and not blocking_rows
+    same_packet_ready = same_packet_ready and retained_coverage_ready
     status = (
         "next_session_streamlit_parity_review_ready_local_same_packet"
         if same_packet_ready
@@ -1109,6 +1272,8 @@ def _next_session_streamlit_parity_review_contract(
         "explicit_review_task_done": bool(explicit_review),
         "local_streamlit_parity_review_ready": same_packet_ready,
         "same_packet_no_loss_review_ready": same_packet_ready,
+        "same_packet_signal_capability_coverage_reviewed": bool(retained_coverage_ready and explicit_review),
+        "same_packet_signal_capability_coverage": retained_coverage_map,
         "feature_by_feature_parity_reviewed": same_packet_ready,
         "hover_click_parity_reviewed": same_packet_ready and hover_click_ready,
         "streamlit_reference_captured": False,
@@ -3067,6 +3232,9 @@ def read_next_session_cache() -> dict[str, Any]:
     # after the compatibility P3 handoff above so an older quant result summary
     # cannot reintroduce mixed result/date/freshness fields.
     packet = _apply_candidate_radar_v05_lineage(packet)
+    retained_signal_capability_coverage = _next_session_same_packet_signal_capability_coverage(packet)
+    packet["next_session_same_packet_signal_capability_coverage"] = retained_signal_capability_coverage
+    packet["next_session_same_packet_signal_capability_coverage_rows"] = retained_signal_capability_coverage["rows"]
     activation_receipt, activation_rows = _next_session_replacement_activation_receipt(packet)
     legacy_parity_recipe, legacy_parity_rows = _next_session_legacy_parity_execution_recipe(packet)
     (
@@ -3103,6 +3271,7 @@ def read_next_session_cache() -> dict[str, Any]:
         streamlit_parity_review = _next_session_streamlit_parity_review_contract(
             legacy_parity_recipe,
             legacy_parity_rows,
+            retained_coverage=retained_signal_capability_coverage,
         )
     packet["next_session_replacement_activation_receipt"] = activation_receipt
     packet["next_session_replacement_activation_rows"] = activation_rows
@@ -3471,6 +3640,7 @@ def run_next_session_streamlit_parity_review_task(payload: Any = None) -> dict[s
     packet = read_next_session_cache()
     parity_recipe = _as_dict(packet.get("next_session_legacy_parity_execution_recipe"))
     parity_rows = [row for row in _as_list(packet.get("next_session_legacy_parity_execution_rows")) if isinstance(row, dict)]
+    retained_coverage = _as_dict(packet.get("next_session_same_packet_signal_capability_coverage"))
     reviewed_at = _now_iso()
     review_contract = _next_session_streamlit_parity_review_contract(
         parity_recipe,
@@ -3478,6 +3648,7 @@ def run_next_session_streamlit_parity_review_task(payload: Any = None) -> dict[s
         explicit_review=True,
         task_id=task["task_id"],
         reviewed_at=reviewed_at,
+        retained_coverage=retained_coverage,
     )
     ledger = _next_session_streamlit_parity_review_call_ledger(review_contract, reviewed_at)
     _write_next_session_streamlit_parity_review_packet(
