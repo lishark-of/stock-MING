@@ -18765,6 +18765,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "deepseek_provider_benchmark_scope_ticket_missing",
                 "deepseek_provider_benchmark_scope_ticket_ready_secret_pending",
                 "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+                "deepseek_provider_benchmark_scope_ticket_consumed_new_authorization_required",
             },
         )
         self.assertTrue(payload["deepseek_durable_evidence_recipe_ready"])
@@ -18821,6 +18822,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "deepseek_provider_benchmark_scope_ticket_missing",
                 "deepseek_provider_benchmark_scope_ticket_ready_secret_pending",
                 "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+                "deepseek_provider_benchmark_scope_ticket_consumed_new_authorization_required",
             },
         )
         self.assertIsInstance(payload["observed"]["benchmark_scope_ticket_ready"], bool)

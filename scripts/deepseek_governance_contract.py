@@ -596,6 +596,10 @@ def build_contract() -> dict[str, Any]:
                 "deepseek_provider_benchmark_scope_ticket_blocked_preflight",
                 "deepseek_provider_benchmark_scope_ticket_ready_secret_pending",
                 "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+                # A successful explicit benchmark consumes the single-use
+                # scope nonce and deliberately leaves the local preflight
+                # receipt non-promoting until a new authorization is issued.
+                "deepseek_provider_benchmark_scope_ticket_consumed_new_authorization_required",
             }
             and scope_ticket_task.get("route") == "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket"
             and scope_ticket_task.get("button_gated") is True
