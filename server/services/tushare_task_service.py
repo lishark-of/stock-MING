@@ -6954,12 +6954,76 @@ def _full_market_dataset_batch(
     return _paginated_provider_rows(
         adapter_module,
         api=api,
-        params={"ts_code": None, "start_date": start_date, "end_date": end_date},
+        params={"start_date": start_date, "end_date": end_date},
         max_rows_per_call=max_rows_per_call,
         call_budget=call_budget,
         checkpoint_root=checkpoint_root,
         runtime_event_recorder=runtime_event_recorder,
     )
+
+
+def _full_market_dataset_trade_date_batches(
+    adapter_module: Any,
+    *,
+    api: str,
+    trade_dates: Iterable[str],
+    max_rows_per_call: int,
+    call_budget: dict[str, Any],
+    checkpoint_root: Path,
+    runtime_event_recorder: Any,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Fetch a full-market endpoint one validated trade date at a time.
+
+    Tushare's daily endpoint rejects an unscoped 90-session start/end query,
+    while a trade-date query is both bounded and paginatable.  Keep each
+    date's transport evidence in the aggregate ledger and fail closed if any
+    validated session cannot be fetched completely.
+    """
+    rows: list[dict[str, Any]] = []
+    ledgers: list[dict[str, Any]] = []
+    for trade_date in trade_dates:
+        batch_rows, batch_ledger = _paginated_provider_rows(
+            adapter_module,
+            api=api,
+            params={"trade_date": str(trade_date)},
+            max_rows_per_call=max_rows_per_call,
+            call_budget=call_budget,
+            checkpoint_root=checkpoint_root,
+            runtime_event_recorder=runtime_event_recorder,
+        )
+        ledgers.append(batch_ledger)
+        if batch_ledger.get("call_status") != "success":
+            continue
+        rows.extend(batch_rows)
+    successful = bool(ledgers) and all(row.get("call_status") == "success" for row in ledgers)
+    return rows if successful else [], {
+        "api": api,
+        "call_status": "success" if successful else "failed",
+        "provider_call_count": sum(_safe_int(row.get("provider_call_count")) for row in ledgers),
+        "historical_provider_call_count": sum(
+            _safe_int(row.get("historical_provider_call_count")) for row in ledgers
+        ),
+        "resumed_page_count": sum(_safe_int(row.get("resumed_page_count")) for row in ledgers),
+        "page_count": sum(_safe_int(row.get("page_count")) for row in ledgers),
+        "batch_count": len(ledgers),
+        "failed_batch_count": sum(row.get("call_status") != "success" for row in ledgers),
+        "row_count": len(rows) if successful else 0,
+        "pagination_complete": successful and all(row.get("pagination_complete") is True for row in ledgers),
+        "truncation_detected": any(row.get("truncation_detected") is True for row in ledgers),
+        "provider_transport_verified": successful
+        and all(row.get("provider_transport_verified") is True for row in ledgers),
+        "checkpoint_transport_promotable": False,
+        "external_calls_triggered": any(row.get("external_calls_triggered") is True for row in ledgers),
+        "tushare_called": any(row.get("tushare_called") is True for row in ledgers),
+        "error_message_safe": next(
+            (str(row.get("error_message_safe") or "") for row in ledgers if row.get("call_status") != "success"),
+            "",
+        ),
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
 
 
 def _run_full_market_universe_acceptance(
@@ -7103,23 +7167,28 @@ def _run_full_market_universe_acceptance(
     if preflight_ready:
         max_rows = _safe_int(context.get("max_rows_per_call"))
         for api in ("daily", "daily_basic", "moneyflow"):
-            api_start = (
-                selected_dates[-1]
-                if api == "daily_basic"
-                else selected_dates[-5]
-                if api == "moneyflow"
-                else selected_dates[0]
-            )
-            rows, batch_ledger = _full_market_dataset_batch(
-                adapter_module,
-                api=api,
-                start_date=api_start,
-                end_date=selected_dates[-1],
-                max_rows_per_call=max_rows,
-                call_budget=call_budget,
-                checkpoint_root=checkpoint_root,
-                runtime_event_recorder=record_runtime_event,
-            )
+            if api == "daily":
+                rows, batch_ledger = _full_market_dataset_trade_date_batches(
+                    adapter_module,
+                    api=api,
+                    trade_dates=selected_dates,
+                    max_rows_per_call=max_rows,
+                    call_budget=call_budget,
+                    checkpoint_root=checkpoint_root,
+                    runtime_event_recorder=record_runtime_event,
+                )
+            else:
+                api_start = selected_dates[-5] if api == "moneyflow" else selected_dates[0]
+                rows, batch_ledger = _full_market_dataset_batch(
+                    adapter_module,
+                    api=api,
+                    start_date=api_start,
+                    end_date=selected_dates[-1],
+                    max_rows_per_call=max_rows,
+                    call_budget=call_budget,
+                    checkpoint_root=checkpoint_root,
+                    runtime_event_recorder=record_runtime_event,
+                )
             datasets[api] = rows
             ledger.append(batch_ledger)
     else:

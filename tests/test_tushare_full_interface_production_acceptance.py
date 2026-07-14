@@ -99,6 +99,42 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
         self.assertEqual(contradictory["list_status"], "D")
         self.assertEqual(contradictory["list_status_source"], "provider_response")
 
+    def test_full_market_daily_batches_bind_one_validated_trade_date_per_call(self):
+        calls = []
+
+        def fake_batch(_adapter, *, api, params, **_kwargs):
+            calls.append((api, dict(params)))
+            return [{"ts_code": "000001.SZ", "trade_date": params["trade_date"]}], {
+                "api": api,
+                "call_status": "success",
+                "provider_call_count": 1,
+                "historical_provider_call_count": 0,
+                "resumed_page_count": 0,
+                "page_count": 1,
+                "pagination_complete": True,
+                "truncation_detected": False,
+                "provider_transport_verified": True,
+                "external_calls_triggered": True,
+                "tushare_called": True,
+            }
+
+        with patch.object(tushare_task_service, "_paginated_provider_rows", side_effect=fake_batch):
+            rows, ledger = tushare_task_service._full_market_dataset_trade_date_batches(
+                object(),
+                api="daily",
+                trade_dates=["20260710", "20260713"],
+                max_rows_per_call=5000,
+                call_budget={"used": 0, "historical": 0, "limit": 10},
+                checkpoint_root=self.root / "checkpoints",
+                runtime_event_recorder=lambda **_kwargs: {},
+            )
+
+        self.assertEqual(calls, [("daily", {"trade_date": "20260710"}), ("daily", {"trade_date": "20260713"})])
+        self.assertEqual([row["trade_date"] for row in rows], ["20260710", "20260713"])
+        self.assertEqual(ledger["batch_count"], 2)
+        self.assertEqual(ledger["provider_call_count"], 2)
+        self.assertTrue(ledger["provider_transport_verified"])
+
     def _contexts(self):
         today = dt.date.today().strftime("%Y%m%d")
         values = {
