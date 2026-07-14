@@ -118,6 +118,9 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         )
 
     def test_v05_post_processes_supplied_pool_updates_next_session_and_preserves_last_good(self) -> None:
+        worker_packet_key = worker_service.RUNTIME_QA_EXECUTION_PACKET_KEY
+        worker_packet_sentinel = {"schema_version": "worker_packet_sentinel.v1", "status": "preserved"}
+        SQLiteMetaStore(self.meta_path).write_packet(worker_packet_key, worker_packet_sentinel)
         task = candidate_service.run_candidate_full_pool_worker_fallback_task(self._payload())
 
         self.assertEqual(task["status"], "success")
@@ -158,6 +161,7 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         self.assertFalse(next_packet["deepseek_called"])
         self.assertTrue(next_packet["does_not_modify_strategy_action"])
         self.assertTrue(next_packet["does_not_modify_operation_zones"])
+        self.assertEqual(SQLiteMetaStore(self.meta_path).read_packet(worker_packet_key), worker_packet_sentinel)
 
         store = SQLiteMetaStore(self.meta_path)
         last_good_before = store.read_packet(candidate_service.CANDIDATE_V05_LAST_GOOD_PACKET_KEY)

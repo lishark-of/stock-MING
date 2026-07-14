@@ -5062,6 +5062,9 @@ def _run_candidate_v05_local_batch_task(
         "runtime_mode": "v04_local_batch",
         "operator_approved": True,
         "confirm_local_in_process_runtime": True,
+        # Candidate Radar owns its own packet; do not overwrite the canonical
+        # LTG-06 worker runtime QA packet while reusing the local batch engine.
+        "persist_runtime_packet": False,
         "runtime_scope_hash": expected_scope_hash,
         "confirm_scope_hash": expected_scope_hash,
         "chunk_size": payload_safe.get("chunk_size") or 10,

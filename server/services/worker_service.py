@@ -3299,7 +3299,9 @@ def _worker_v04_current_pointer(runtime_dir: Path, pointer: str = "current") -> 
     }
 
 
-def _worker_v04_local_batch_runtime(payload_safe: dict[str, Any], *, task_id: str, executed_at: str) -> dict[str, Any]:
+def _worker_v04_local_batch_runtime(
+    payload_safe: dict[str, Any], *, task_id: str, executed_at: str, persist_packet: bool = True
+) -> dict[str, Any]:
     scope_hash = str(payload_safe.get("runtime_scope_hash") or payload_safe.get("scope_hash") or "")
     scope_component = _worker_v04_scope_component(scope_hash)
     runtime_dir = WORKER_V04_RUNTIME_ROOT / scope_component / "worker_runtime"
@@ -3397,20 +3399,21 @@ def _worker_v04_local_batch_runtime(payload_safe: dict[str, Any], *, task_id: st
         _worker_v04_write_json_atomic(runtime_dir / "current.json", {**manifest, "pointer_kind": "current"})
     current_after = _worker_v04_current_pointer(runtime_dir, "current")
     last_good_after = _worker_v04_current_pointer(runtime_dir, "last_good")
-    SQLiteMetaStore(SQLITE_META_PATH).write_packet(
-        RUNTIME_QA_EXECUTION_PACKET_KEY,
-        {
-            "schema_version": "worker_v04_local_batch_runtime_packet.v1",
-            "status": status,
-            "task_id": task_id,
-            "runtime_scope_hash_short": scope_hash[:12],
-            "pool_count": len(pool),
-            "processed_count": len(processed),
-            "stage_rows": stage_rows,
-            "manifest_sha256": manifest["manifest_sha256"],
-            "contains_secret": False,
-        },
-    )
+    if persist_packet:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+            RUNTIME_QA_EXECUTION_PACKET_KEY,
+            {
+                "schema_version": "worker_v04_local_batch_runtime_packet.v1",
+                "status": status,
+                "task_id": task_id,
+                "runtime_scope_hash_short": scope_hash[:12],
+                "pool_count": len(pool),
+                "processed_count": len(processed),
+                "stage_rows": stage_rows,
+                "manifest_sha256": manifest["manifest_sha256"],
+                "contains_secret": False,
+            },
+        )
     return {
         "status": status,
         "runtime_dir": _worker_v04_path_label(runtime_dir),
@@ -3430,6 +3433,7 @@ def _worker_v04_local_batch_runtime(payload_safe: dict[str, Any], *, task_id: st
         "last_good_preserved": bool(status != "worker_v04_local_batch_runtime_success" and last_good_after.get("status") == "ready"),
         "local_runtime_not_full_market_claim": True,
         "local_runtime_is_not_celery_redis_production": True,
+        "runtime_packet_persisted": persist_packet,
         "worker_started": False,
         "celery_worker_started": False,
         "redis_pinged": False,
@@ -3476,7 +3480,13 @@ def _run_worker_v04_local_batch_runtime(payload: dict[str, Any]) -> dict[str, An
         progress=0.4,
         current_step="worker_v04_local_batch_runtime_processing_pool",
     )
-    result = _worker_v04_local_batch_runtime(payload_safe, task_id=str(task["task_id"]), executed_at=executed_at)
+    persist_packet = payload_safe.get("persist_runtime_packet") is not False
+    result = _worker_v04_local_batch_runtime(
+        payload_safe,
+        task_id=str(task["task_id"]),
+        executed_at=executed_at,
+        persist_packet=persist_packet,
+    )
     succeeded = result["status"] == "worker_v04_local_batch_runtime_success"
     ledger = [
         {
