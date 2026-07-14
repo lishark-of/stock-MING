@@ -17,6 +17,7 @@ from typing import Any
 
 from server.services import full_market_worker_service
 from .tushare_production_store import validate_tushare_full_market_production_version
+from .tauri_package_verifier import validate_tauri_production_package
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -1097,6 +1098,11 @@ def _build_version_rows(
 
     offline_desktop = _read_json(evidence_root / "desktop_runtime" / "tauri_packaged_runtime_offline_smoke.json")
     online_desktop = _read_json(evidence_root / "desktop_runtime" / "tauri_packaged_runtime_online_smoke.json")
+    tauri_package_verification = validate_tauri_production_package(
+        evidence_root,
+        expected_head_full=expected_head_full,
+        write_manifest=False,
+    )
     latest_default: Any = None
     latest_reduced: Any = None
     motion_root = evidence_root / "motion_qa"
@@ -1280,8 +1286,7 @@ def _build_version_rows(
         ),
         "streamlit_primary_retired": False,
         "desktop_production_package": bool(
-            isinstance(online_desktop, Mapping)
-            and online_desktop.get("production_package_complete") is True
+            tauri_package_verification.get("production_package_complete") is True
         ),
         "developer_signing_notarization": bool(
             isinstance(online_desktop, Mapping)
@@ -1327,6 +1332,26 @@ def _build_version_rows(
             _SAFE_FILE_FIELDS,
             observed=isinstance(remote_receipt, Mapping),
         ),
+        "tauri_package_verification": {
+            key: tauri_package_verification.get(key)
+            for key in (
+                "schema_version",
+                "status",
+                "production_package_complete",
+                "head_full",
+                "build_executed",
+                "build_command",
+                "artifact_set_sha256",
+                "app_bundle_sha256",
+                "app_executable_sha256",
+                "dmg_sha256",
+                "online_health_ready",
+                "offline_ui_verified",
+                "developer_id_signing_verified",
+                "notarization_ticket_detected",
+                "blockers",
+            )
+        },
         "tushare_production_version": {
             key: production_version.get(key)
             for key in (

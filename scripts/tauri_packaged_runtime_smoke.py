@@ -25,6 +25,7 @@ DEFAULT_APP = ROOT / "desktop/src-tauri/target/release/bundle/macos/stock-MING C
 DEFAULT_DMG = ROOT / "desktop/src-tauri/target/release/bundle/dmg/stock-MING Command Center_3.0.0_aarch64.dmg"
 TAURI_CONFIG = ROOT / "desktop/src-tauri/tauri.conf.json"
 DEFAULT_EVIDENCE_ROOT = ROOT / ".stock_ming_3/desktop_runtime"
+BUILD_RECEIPT_PATH = DEFAULT_EVIDENCE_ROOT / "tauri_build_receipt.json"
 SECRET_PATTERNS = (
     re.compile(rb"sk-[A-Za-z0-9_-]{20,}"),
     re.compile(rb"-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----"),
@@ -37,6 +38,19 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _git_head_full() -> str:
+    result = _run(["git", "rev-parse", "HEAD"], timeout=15)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _bundle_fingerprint(app_path: Path) -> dict[str, Any]:
@@ -430,6 +444,8 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     app_path = Path(args.app_path).expanduser().resolve()
     dmg_path = Path(args.dmg_path).expanduser().resolve()
     log_path = ROOT / ".stock_ming_3/logs/tauri_fastapi_autostart.log"
+    head_full = _git_head_full()
+    build_receipt = _read_json(BUILD_RECEIPT_PATH)
 
     if args.build:
         build = _run(["npm", "run", "tauri", "build"], cwd=ROOT / "desktop", timeout=args.build_timeout)
@@ -437,6 +453,10 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             return {
                 "schema_version": "tauri_packaged_runtime_smoke.v1",
                 "status": "tauri_build_failed_safe",
+                "head_full": head_full,
+                "build_executed": True,
+                "build_head_full": head_full,
+                "build_command": "cd desktop && npm run tauri build",
                 "build_exit_code": build.returncode,
                 "build_error_safe": _safe_first_line(build.stderr),
                 "production_package_complete": False,
@@ -620,6 +640,11 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     result: dict[str, Any] = {
         "schema_version": "tauri_packaged_runtime_smoke.v1",
         "status": "tauri_packaged_runtime_smoke_passed" if passed else "tauri_packaged_runtime_smoke_failed",
+        "head_full": head_full,
+        "build_executed": bool(args.build or build_receipt.get("build_executed") is True),
+        "build_head_full": build_receipt.get("head_full") or (head_full if args.build else ""),
+        "build_command": build_receipt.get("build_command") or ("cd desktop && npm run tauri build" if args.build else ""),
+        "build_artifact_set_sha256": build_receipt.get("artifact_set_sha256") or "",
         "direct_evidence_layer": (
             "L3_local_packaged_app_offline_ux_smoke"
             if args.expect_backend_offline
