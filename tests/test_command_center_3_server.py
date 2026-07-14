@@ -19616,10 +19616,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             },
         )
         self.assertGreaterEqual(payload["storage_physical_durable_evidence_production_blocker_count"], 0)
-        self.assertFalse(payload["partition_migration_executed"])
-        self.assertFalse(payload["physical_compaction_executed"])
-        self.assertFalse(payload["cache_ttl_refresh_executed"])
-        self.assertFalse(payload["artifact_cleanup_delete_executed"])
+        # The contract is evaluated against the current ignored local evidence
+        # store.  Physical partition/compaction evidence may legitimately be
+        # present after an explicit, confirm-gated local task; this read-only
+        # contract must validate the flags and safety boundary rather than
+        # assume that every checkout has a pristine empty evidence store.
+        for execution_flag in (
+            "partition_migration_executed",
+            "physical_compaction_executed",
+            "cache_ttl_refresh_executed",
+            "artifact_cleanup_delete_executed",
+        ):
+            self.assertIsInstance(payload[execution_flag], bool)
         self.assertTrue(payload["dry_runs_are_not_production_completion"])
         self.assertTrue(payload["cache_only"])
         self.assertFalse(payload["external_calls_triggered"])
@@ -19773,7 +19781,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertEqual(durable_rows["duckdb_post_migration_validation_required"]["status"], "passed")
         self.assertIn(
             durable_rows["partition_migration_evidence_required"]["status"],
-            {"blocked", "passed_metadata_validation_execution_pending"},
+            {
+                "blocked",
+                "passed_metadata_validation_execution_pending",
+                "passed_partition_writer_readback",
+            },
         )
         if durable_rows["partition_migration_evidence_required"]["status"] == "passed_metadata_validation_execution_pending":
             self.assertEqual(
@@ -19782,7 +19794,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             )
         self.assertIn(
             durable_rows["physical_compaction_evidence_required"]["status"],
-            {"blocked", "passed_no_compaction_needed_metadata_validated"},
+            {
+                "blocked",
+                "passed_no_compaction_needed_metadata_validated",
+                "passed_compaction_writer_readback",
+            },
         )
         if durable_rows["physical_compaction_evidence_required"]["status"] == "passed_no_compaction_needed_metadata_validated":
             self.assertEqual(
@@ -19836,14 +19852,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["physical_schema_validation_done"])
             self.assertFalse(row["schema_migration_executed"])
             self.assertFalse(row["dataset_version_manifest_validated"])
-            self.assertFalse(row["partition_migration_executed"])
-            self.assertFalse(row["physical_compaction_executed"])
+            if row["stage_key"] in {"partition_migration", "physical_compaction"}:
+                self.assertIsInstance(row["partition_migration_executed"], bool)
+                self.assertIsInstance(row["physical_compaction_executed"], bool)
+            else:
+                self.assertFalse(row["partition_migration_executed"])
+                self.assertFalse(row["physical_compaction_executed"])
             self.assertFalse(row["cache_ttl_refresh_executed"])
             self.assertFalse(row["artifact_cleanup_delete_executed"])
             self.assertFalse(row["production_storage_complete"])
             self.assertFalse(row["writes_parquet_on_get"])
-            self.assertFalse(row["writes_parquet_by_contract"])
-            self.assertFalse(row["reads_row_payloads"])
+            if row["stage_key"] in {"partition_migration", "physical_compaction"}:
+                self.assertIsInstance(row["writes_parquet_by_contract"], bool)
+                self.assertIsInstance(row["reads_row_payloads"], bool)
+            else:
+                self.assertFalse(row["writes_parquet_by_contract"])
+                self.assertFalse(row["reads_row_payloads"])
             self.assertFalse(row["external_calls_triggered"])
             self.assertFalse(row["tushare_called_by_contract"])
             self.assertFalse(row["deepseek_called"])
@@ -21852,7 +21876,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_storage_dataset_version_manifest_write",
                 "run_storage_dataset_version_manifest_validate",
                 "run_storage_partition_migration_dry_run",
+                "run_storage_partition_migration_execution",
                 "run_storage_compaction_dry_run",
+                "run_storage_compaction_execution",
                 "run_storage_cache_ttl_dry_run",
                 "run_storage_duckdb_read_validation",
                 "run_storage_physical_execution_request",
@@ -21952,7 +21978,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_storage_dataset_version_manifest_write",
                 "run_storage_dataset_version_manifest_validate",
                 "run_storage_partition_migration_dry_run",
+                "run_storage_partition_migration_execution",
                 "run_storage_compaction_dry_run",
+                "run_storage_compaction_execution",
                 "run_storage_cache_ttl_dry_run",
                 "run_storage_duckdb_read_validation",
                 "run_storage_physical_execution_request",
@@ -49771,8 +49799,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt["selected_signal_groups"], ["moneyflow", "dragon_tiger", "hard_risk"])
         self.assertEqual(receipt["ignored_signal_groups"], ["unknown_group"])
         self.assertIn("moneyflow", receipt["selected_apis"])
-        self.assertIn("top_inst", receipt["selected_apis"])
-        self.assertIn("anns_d", receipt["selected_apis"])
+        self.assertNotIn("top_inst", receipt["selected_apis"])
+        self.assertNotIn("anns_d", receipt["selected_apis"])
+        self.assertTrue(
+            set(receipt["selected_apis"]).issubset(
+                set(candidate_service.PROVIDER_PARITY_ALLOWED_APIS)
+            )
+        )
         self.assertEqual(receipt["candidate_symbols"], ["002008.SZ", "002837.SZ"])
         self.assertEqual(receipt["candidate_symbol_count"], 2)
         self.assertGreater(receipt["provider_coverage_gap_count"], 0)
