@@ -956,7 +956,7 @@ def _build_and_probe_official_transport(*, acceptance_run_id: str) -> tuple[Any,
             raise RuntimeError("real_celery_control_required")
         inspector = control.inspect(timeout=3)
         if not (
-            type(inspector) is Inspect
+            isinstance(inspector, Inspect)
             and all(
                 _method_has_official_owner(inspector, name, module_prefixes=("celery.",))
                 for name in ("ping", "registered", "active_queues")
