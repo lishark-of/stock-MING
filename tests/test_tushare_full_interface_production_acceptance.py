@@ -84,6 +84,21 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
         storage_service.PARQUET_ROOT = self.original_parquet_root
         self.tmp.cleanup()
 
+    def test_stock_basic_missing_status_uses_explicit_request_filter_provenance(self):
+        normalized = tushare_task_service._normalize_stock_basic_row(
+            {"ts_code": "000001.SZ", "list_date": "19910403"},
+            requested_list_status="L",
+        )
+        self.assertEqual(normalized["list_status"], "L")
+        self.assertEqual(normalized["list_status_source"], "request_filter")
+
+        contradictory = tushare_task_service._normalize_stock_basic_row(
+            {"ts_code": "000001.SZ", "list_status": "D", "list_date": "19910403"},
+            requested_list_status="L",
+        )
+        self.assertEqual(contradictory["list_status"], "D")
+        self.assertEqual(contradictory["list_status_source"], "provider_response")
+
     def _contexts(self):
         today = dt.date.today().strftime("%Y%m%d")
         values = {

@@ -6769,6 +6769,25 @@ def _listed_a_share_code(value: Any) -> bool:
     return tushare_production_store.is_listed_a_share_code(value)
 
 
+def _normalize_stock_basic_row(row: Mapping[str, Any], *, requested_list_status: str) -> dict[str, Any]:
+    """Normalize provider rows while preserving the request-scoped status filter.
+
+    Tushare may omit ``list_status`` from a ``stock_basic`` response even when
+    the explicit ``list_status=L`` request filter was accepted.  In that case
+    the filter is the authoritative provenance; an explicit contradictory
+    provider value still wins and is rejected by the downstream validator.
+    """
+    raw_status = str(row.get("list_status") or "").strip().upper()
+    effective_status = raw_status or str(requested_list_status or "").strip().upper()
+    normalized = {
+        key: row.get(key)
+        for key in ("ts_code", "symbol", "name", "area", "industry", "market", "exchange", "list_date")
+    }
+    normalized["list_status"] = effective_status
+    normalized["list_status_source"] = "provider_response" if raw_status else "request_filter"
+    return normalized
+
+
 def _full_market_minimum_sessions(api: str) -> int:
     if api == "daily":
         return tushare_production_store.REQUIRED_SESSIONS
@@ -7043,10 +7062,7 @@ def _run_full_market_universe_acceptance(
     )
     ledger.append(trade_page_ledger)
     normalized_stock = [
-        {
-            key: row.get(key)
-            for key in ("ts_code", "symbol", "name", "area", "industry", "market", "exchange", "list_status", "list_date")
-        }
+        _normalize_stock_basic_row(row, requested_list_status=context.get("list_status", "L"))
         for row in stock_rows
     ]
     codes = [str(row.get("ts_code") or "").upper() for row in normalized_stock]
