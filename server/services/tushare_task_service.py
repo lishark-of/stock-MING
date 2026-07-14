@@ -7167,7 +7167,7 @@ def _run_full_market_universe_acceptance(
     if preflight_ready:
         max_rows = _safe_int(context.get("max_rows_per_call"))
         for api in ("daily", "daily_basic", "moneyflow"):
-            if api == "daily":
+            if api in {"daily", "daily_basic"}:
                 rows, batch_ledger = _full_market_dataset_trade_date_batches(
                     adapter_module,
                     api=api,
