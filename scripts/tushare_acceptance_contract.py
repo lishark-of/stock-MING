@@ -693,10 +693,11 @@ def build_contract() -> dict[str, Any]:
             "scope_hash_not_bound_to_latest_execution_request",
             "exchange_scope_not_bound_to_execution_request",
             "date_window_not_bound_to_execution_request",
-            "trade_cal_provider_acceptance_execution_gate_blocked_before_provider_adapter_load",
+            "trade_cal_provider_acceptance_execution_gate_blocked_",
+            "_no_provider_call",
             "local_trade_cal_provider_acceptance_execution_gate",
             '"tushare_called": False',
-            '"provider_execution_gate_passed": True',
+            '"provider_execution_gate_passed": gate.get("ready") is True',
         )
     )
 

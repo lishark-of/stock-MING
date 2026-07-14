@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import config
+from config import get_deepseek_model
 from storage.sqlite_meta import SQLiteMetaStore
 
 from .task_service import create_task_record, update_task_status
@@ -1117,7 +1118,7 @@ class _OpenAIModelCaller:
         base_url: str = DEEPSEEK_BASE_URL,
     ) -> None:
         self._client = client
-        self._model = model
+        self._model = get_deepseek_model("factor_explain", default=model)
         self._base_url = base_url
         self.base_url_allowlisted = base_url in ALLOWED_DEEPSEEK_BASE_URLS
         self.transport_provenance = "constructed_caller_test_only_no_production_path"
@@ -1142,7 +1143,9 @@ class _OpenAIModelCaller:
         }
         try:
             response = self._client.chat.completions.create(
-                model=self._model,
+                # Keep the test-only caller aligned with the configured
+                # factor-explanation model at the actual SDK boundary.
+                model=get_deepseek_model("factor_explain", default=self._model),
                 temperature=MODEL_TEMPERATURE,
                 max_tokens=MODEL_MAX_TOKENS,
                 timeout=timeout_seconds,

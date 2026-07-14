@@ -2594,7 +2594,6 @@ def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[s
             requested
             and target_selected_apis
             and not missing_required_apis
-            and not context_blocked_apis
             and not unknown_targets
         )
         if not requested:
@@ -2610,7 +2609,12 @@ def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[s
             status = "target_sample_execution_recipe_blocked_missing_target_api_scope"
             next_step = "select_all_required_target_apis_before_provider_task"
         elif context_blocked_apis:
-            status = "target_sample_execution_recipe_blocked_missing_representative_context"
+            # A local recipe seed may be prepared before representative
+            # provider parameters are supplied.  Keep the seed visible and
+            # explicitly carry the missing-context boundary; the separate
+            # provider POST still must bind/validate these fields before any
+            # external call, and full-interface readiness remains false.
+            status = "target_sample_execution_recipe_ready_user_confirmation_required"
             next_step = "bind_per_api_representative_context_before_provider_task"
         else:
             status = "target_sample_execution_recipe_ready_user_confirmation_required"
@@ -2628,6 +2632,7 @@ def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[s
                     api: dict(api_contexts.get(api) or {}) for api in target_selected_apis
                 },
                 "context_blocked_apis": context_blocked_apis,
+                "provider_context_required_before_post": bool(context_blocked_apis),
                 "phase_keys": phase_keys,
                 "pending_phase_keys": phase_keys,
                 "required_evidence": [
@@ -2684,9 +2689,14 @@ def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[s
         and all(_production_api_context_ready(api, api_contexts.get(api, {})) for api in ALL_REFRESH_APIS)
         and _production_universe_context_ready(universe_context)
     )
+    recipe_schema_version = (
+        "tushare_provider_target_sample_execution_recipe.v2"
+        if full_interface_recipe_ready
+        else "tushare_provider_target_sample_execution_recipe.v1"
+    )
     recipe_issued_at = _dt.datetime.now().isoformat(timespec="microseconds")
     scope_payload = {
-        "schema_version": "tushare_provider_target_sample_execution_recipe.v2",
+        "schema_version": recipe_schema_version,
         "recipe_version": FULL_INTERFACE_PROVIDER_PRODUCTION_RECIPE_VERSION,
         "recipe_issued_at": recipe_issued_at,
         "scope": "local_target_sample_execution_recipe_seed_no_provider_execution",
@@ -2712,7 +2722,7 @@ def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[s
     }
     scope_hash = _canonical_sha256(scope_payload)
     return {
-        "schema_version": "tushare_provider_target_sample_execution_recipe.v2",
+        "schema_version": recipe_schema_version,
         "seed_schema_version": PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_SEED_SCHEMA_VERSION,
         "status": "target_sample_execution_recipe_ready_user_confirmation_required"
         if recipe_ready
