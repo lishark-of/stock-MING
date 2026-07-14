@@ -117,6 +117,15 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
             candidate_service._candidate_v05_scope_hash(changed_gaps, {"data_date": "2026-07-13"}),
         )
 
+    def test_candidate_provider_parity_acceptance_stays_on_approved_light_apis(self) -> None:
+        executed, skipped = candidate_service._candidate_provider_parity_acceptance_apis(
+            ["top_list", "trade_cal", "daily", "daily_basic", "moneyflow"],
+            max_apis=8,
+        )
+        self.assertEqual(executed, ["trade_cal", "daily", "daily_basic", "moneyflow"])
+        self.assertIn("top_list", skipped)
+        self.assertTrue(set(executed).issubset(set(candidate_service.PROVIDER_PARITY_ALLOWED_APIS)))
+
     def test_v05_post_processes_supplied_pool_updates_next_session_and_preserves_last_good(self) -> None:
         worker_packet_key = worker_service.RUNTIME_QA_EXECUTION_PACKET_KEY
         worker_packet_sentinel = {"schema_version": "worker_packet_sentinel.v1", "status": "preserved"}

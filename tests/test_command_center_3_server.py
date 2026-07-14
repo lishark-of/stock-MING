@@ -50072,8 +50072,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertTrue(receipt["tushare_call_ledger_evidence_done"])
             self.assertFalse(receipt["deepseek_model_ledger_evidence_done"])
             self.assertTrue(receipt["deepseek_skipped_by_request"])
-            self.assertEqual(receipt["provider_api_call_count"], 5)
-            self.assertEqual(receipt["provider_api_success_count"], 5)
+            self.assertEqual(receipt["provider_api_call_count"], 2)
+            self.assertEqual(receipt["provider_api_success_count"], 2)
+            self.assertTrue(
+                set(receipt["selected_apis"]).issubset(
+                    {"trade_cal", "daily", "daily_basic", "moneyflow"}
+                )
+            )
             self.assertFalse(receipt["provider_backed_acceptance_done"])
             self.assertFalse(receipt["production_radar_replacement_complete"])
             self.assertEqual(rows["tushare_provider_parity_call_ledger"]["status"], "passed_tushare_provider_parity_ledger")

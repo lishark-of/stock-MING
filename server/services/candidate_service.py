@@ -112,11 +112,14 @@ PROVIDER_PARITY_ACCEPTANCE_API_ALIASES = {
     "holdertrade": "stk_holdertrade",
     "pledge": "pledge_stat",
 }
+# Candidate Radar provider parity is deliberately narrower than the legacy signal
+# inventory.  A real acceptance task may read only the explicitly approved light
+# Tushare surface; the remaining signal groups stay visible as pending evidence.
+PROVIDER_PARITY_ALLOWED_APIS = ("trade_cal", "daily", "daily_basic", "moneyflow")
 PROVIDER_PARITY_ACCEPTANCE_LIGHT_APIS = (
+    "daily",
+    "daily_basic",
     "moneyflow",
-    "top_list",
-    "top_inst",
-    "anns_d",
 )
 PROVIDER_PARITY_DEFAULT_CANDIDATE_LIMIT = 20
 CANDIDATE_WORKER_EXECUTION_REQUEST_SCHEMA_VERSION = "candidate_radar_worker_execution_request.v1"
@@ -2876,7 +2879,7 @@ def _candidate_provider_parity_selected_groups(payload_safe: Mapping[str, Any]) 
             continue
         for api in requirement["apis"]:
             api_name = str(api)
-            if api_name not in selected_apis:
+            if api_name in PROVIDER_PARITY_ALLOWED_APIS and api_name not in selected_apis:
                 selected_apis.append(api_name)
     return selected, ignored, selected_apis
 
@@ -3292,7 +3295,7 @@ def _candidate_provider_parity_acceptance_apis(
     *,
     max_apis: int,
 ) -> tuple[list[str], list[str]]:
-    supported = set(getattr(tushare_task_service, "ALL_REFRESH_APIS", ()))
+    supported = set(PROVIDER_PARITY_ALLOWED_APIS)
     normalized: list[str] = []
     skipped: list[str] = []
     for raw_api in selected_apis:
