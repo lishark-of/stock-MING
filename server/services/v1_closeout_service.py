@@ -746,7 +746,14 @@ def _governed_model_runtime_ready(
                 and row.get("requested_model") == model
                 and row.get("returned_model") == model
                 and row.get("returned_model_matches_requested") is True
-                and row.get("finish_reason") == "stop"
+                # A bounded repair attempt may be discarded with a provider
+                # ``length`` finish reason; only the accepted attempt must
+                # terminate cleanly.  Requiring ``stop`` on discarded rows
+                # would reject an otherwise complete, auditable benchmark.
+                and (
+                    row.get("status") != "accepted"
+                    or row.get("finish_reason") == "stop"
+                )
                 and row.get("provider_request_id_present") is True
                 and len(str(row.get("provider_request_id_hash") or "")) == 64
                 and all(
