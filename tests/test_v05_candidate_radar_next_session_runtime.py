@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -170,6 +171,40 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         self.assertEqual(current_after["candidate_radar_v05_result_version"], last_good_before["candidate_radar_v05_result_version"])
         self.assertEqual(last_good_after["candidate_radar_v05_result_version"], last_good_before["candidate_radar_v05_result_version"])
         self.assertEqual(current_after["candidate_radar_v05_bucket_counts"]["processed_count"], 12)
+
+    def test_local_batch_downgrades_unvalidated_snapshot_freshness(self) -> None:
+        self.snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        self.snapshot_path.write_text(
+            json.dumps(
+                {
+                    "data_freshness": {
+                        "state": "today",
+                        "freshness_state": "fresh",
+                        "expected_trade_date": "2026-07-07",
+                        "data_date": "2026-07-07",
+                        "last_updated": "2026-07-07T17:04:35",
+                        "expected_trade_date_calendar_validated": False,
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        task = candidate_service.run_candidate_full_pool_worker_fallback_task(self._payload())
+        self.assertEqual(task["status"], "success")
+        packet = candidate_service.read_candidate_radar_cache()
+        freshness = packet["freshness_state"]
+        self.assertEqual(freshness["state"], "stale")
+        self.assertEqual(freshness["freshness_state"], "stale")
+        self.assertEqual(freshness["label"], "数据日期未按交易日历验证")
+        self.assertFalse(freshness["expected_trade_date_calendar_validated"])
+        self.assertEqual(freshness["as_of_date"], "2026-07-13")
+
+        next_packet = next_session_service.read_next_session_cache()
+        lineage_freshness = next_packet["candidate_radar_v05_lineage"]["freshness_state"]
+        self.assertEqual(lineage_freshness["state"], "stale")
+        self.assertFalse(lineage_freshness["expected_trade_date_calendar_validated"])
 
 
 if __name__ == "__main__":

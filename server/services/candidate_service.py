@@ -5156,8 +5156,29 @@ def _run_candidate_v05_local_batch_task(
         limit=32,
     )
     freshness_state = _as_dict(packet.get("freshness_state"))
+    snapshot_freshness_data_date = _safe_text(freshness_state.get("data_date") or "", limit=32)
+    expected_trade_date = _safe_text(freshness_state.get("expected_trade_date") or "", limit=32)
+    calendar_validated = freshness_state.get("expected_trade_date_calendar_validated") is True
     if data_date:
         freshness_state["data_date"] = data_date
+    # A local candidate pool may carry an explicit as-of date, but it has no
+    # provider/calendar proof by itself. Never inherit a stale snapshot's
+    # `today`/`fresh` label when the supplied date differs or calendar
+    # validation is absent; the result is research-only and must say so.
+    if (
+        str(freshness_state.get("state") or "").lower() in {"today", "fresh"}
+        and (
+            not calendar_validated
+            or (snapshot_freshness_data_date and data_date and data_date != snapshot_freshness_data_date)
+            or (expected_trade_date and data_date and data_date != expected_trade_date)
+        )
+    ):
+        freshness_state["state"] = "stale"
+        freshness_state["freshness_state"] = "stale"
+        freshness_state["label"] = "数据日期未按交易日历验证"
+        freshness_state["freshness_reason"] = "candidate_local_date_or_calendar_unverified"
+    freshness_state["expected_trade_date_calendar_validated"] = calendar_validated
+    freshness_state["as_of_date"] = data_date or snapshot_freshness_data_date or expected_trade_date
     result_version = "candidate-v05-" + hashlib.sha256(
         json.dumps(
             {"scope_hash": expected_scope_hash, "task_id": task["task_id"], "processed": runtime_result.get("processed_count")},
