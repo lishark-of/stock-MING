@@ -44,7 +44,7 @@ REQUIRED_COLUMNS = {
 }
 EXCHANGE_SUFFIX = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
 SH_PREFIXES = ("600", "601", "603", "605", "688", "689")
-SZ_PREFIXES = ("000", "001", "002", "003", "300", "301")
+SZ_PREFIXES = ("000", "001", "002", "003", "300", "301", "302")
 BJ_PREFIXES = ("4", "8", "920")
 __all__ = (
     "is_listed_a_share_code",

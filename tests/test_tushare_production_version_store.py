@@ -226,6 +226,10 @@ class TushareProductionVersionStoreTests(unittest.TestCase):
             )
             self.assertIn("stock_basic_exchange_suffix_or_membership_invalid", result["blockers"])
 
+    def test_new_sz_302_family_is_accepted(self):
+        self.assertTrue(store.is_listed_a_share_code("302132.SZ"))
+        self.assertTrue(tushare_task_service._listed_a_share_code("302132.SZ"))
+
     def test_task_coverage_minimums_share_the_production_store_session_policy(self):
         self.assertEqual(
             tushare_task_service._full_market_minimum_sessions("daily"),
