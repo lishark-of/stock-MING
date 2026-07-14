@@ -4107,6 +4107,61 @@ def _apply_candidate_radar_v05_lineage(packet: dict[str, Any]) -> dict[str, Any]
     normalized["candidate_radar_v05_data_date"] = data_date
     normalized["candidate_radar_v05_freshness_state"] = dict(freshness_state)
     normalized["candidate_radar_v05_readback_authoritative"] = True
+    # The compatibility P3 handoff can still point at an older searched symbol
+    # and provider task.  Keep the handoff envelope itself on the same v0.5
+    # lineage so the ordinary replay cannot mix old symbol/date/provider facts
+    # with the current local Candidate Radar result.
+    legacy_handoff = _as_dict(packet.get("candidate_radar_p3_handoff"))
+    if legacy_handoff:
+        handoff = dict(legacy_handoff)
+        handoff.update(
+            {
+                "status": "candidate_radar_v05_local_batch_ready_chart_pending",
+                "source_task_id": task_id,
+                "latest_confirmed_task_id": task_id,
+                "current_result_task_id": task_id,
+                "chart_source_task_id": task_id,
+                "result_version": result_version,
+                "chart_result_version": result_version,
+                "chart_is_bound_to_latest_confirmed": True,
+                "chart_is_bound_to_current_result": True,
+                "symbol": symbol,
+                "p2_small_data_ready": True,
+                "p3_readable_result_ready": True,
+                "provider_api_success_count": 0,
+                "provider_api_call_count": 0,
+                "provider_call_source": "candidate_radar_v05_local_batch",
+                "provider_call_ledger_replayed_from_source_task": False,
+                "source_task_external_calls_triggered": False,
+                "source_task_tushare_called": False,
+                "source_task_tushare_provider_ledger_ready": False,
+                "deepseek_governed_executor_status": "pending_disabled_not_called",
+                "uses_model_output": False,
+                "uses_deepseek_output": False,
+                "chart_payload_generated": (
+                    _as_dict(packet.get("chart_payload")).get("is_exact_next_session_packet") is True
+                ),
+                "operation_zones_generated": bool(
+                    _as_dict(packet.get("chart_payload")).get("zone_interaction_rows")
+                ),
+                "manual_next_session_generate_required": (
+                    _as_dict(packet.get("chart_payload")).get("is_exact_next_session_packet") is not True
+                ),
+                "cache_only_readback": True,
+                "creates_task_from_readback": False,
+                "calls_provider_or_model": False,
+                "candidate_is_not_buy_instruction": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_modify_operation_zones": True,
+                "contains_secret": False,
+            }
+        )
+        normalized["candidate_radar_p3_handoff"] = handoff
     return normalized
 
 

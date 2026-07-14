@@ -203,6 +203,16 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         self.assertEqual(normalized_next_packet["current_result_task_id"], task["task_id"])
         self.assertEqual(normalized_next_packet["data_date"], "2026-07-13")
         self.assertEqual(normalized_next_packet["freshness_state"]["state"], "unknown")
+        normalized_handoff = normalized_next_packet["candidate_radar_p3_handoff"]
+        self.assertEqual(
+            normalized_handoff["symbol"],
+            packet["candidate_radar_v05_next_session_lineage"]["symbol"],
+        )
+        self.assertEqual(normalized_handoff["source_task_id"], task["task_id"])
+        self.assertEqual(normalized_handoff["result_version"], packet["candidate_radar_v05_result_version"])
+        self.assertTrue(normalized_handoff["chart_is_bound_to_current_result"])
+        self.assertFalse(normalized_handoff["source_task_external_calls_triggered"])
+        self.assertFalse(normalized_handoff["source_task_tushare_called"])
 
         store = SQLiteMetaStore(self.meta_path)
         last_good_before = store.read_packet(candidate_service.CANDIDATE_V05_LAST_GOOD_PACKET_KEY)
