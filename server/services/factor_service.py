@@ -328,6 +328,7 @@ FACTOR_TEST_PRODUCTION_STAGE_MISSING_EVIDENCE = (
 )
 FACTOR_TEST_PROVIDER_SMALL_POOL_SAMPLE_SIZE = 5
 FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS = ("daily", "daily_basic")
+FACTOR_TEST_PROVIDER_SMALL_POOL_MONEYFLOW_OPTIONAL = True
 FACTOR_TEST_PROVIDER_SMALL_POOL_CALENDAR_APIS = ("trade_cal",)
 FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY = "command_center_factor_test_provider_small_pool_tushare_packet"
 
@@ -7494,6 +7495,12 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         source_scope_hash=source_scope_hash,
         expected_symbols=expected_symbol_set,
     )
+    # The bounded v0.3 provider contract intentionally fetches only trade_cal,
+    # daily and daily_basic.  Moneyflow is useful as an optional fourth score
+    # component, but it must not turn an otherwise valid provider sample into
+    # zero observations.  Keep the absence explicit in the receipt and never
+    # synthesize a moneyflow value.
+    moneyflow_optional = FACTOR_TEST_PROVIDER_SMALL_POOL_MONEYFLOW_OPTIONAL
 
     by_symbol: dict[str, list[dict[str, Any]]] = {}
     for row in daily_rows:
@@ -7538,13 +7545,14 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                 trade_date = str(current_row.get("trade_date") or "")
                 key = (symbol, trade_date)
                 basic = basic_by_key.get(key)
-                moneyflow = moneyflow_by_key.get(key)
+                moneyflow = moneyflow_by_key.get(key) or {}
                 if not basic:
                     missing_basic_count += 1
                     continue
                 if not moneyflow:
                     missing_moneyflow_count += 1
-                    continue
+                    if not moneyflow_optional:
+                        continue
                 close = _safe_float(current_row.get("close"), default=math.nan)
                 future_close = _safe_float(rows_for_symbol[future_index].get("close"), default=math.nan)
                 if not math.isfinite(close) or not math.isfinite(future_close) or close == 0:
@@ -7557,10 +7565,11 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                 sell_lg = _safe_float(moneyflow.get("sell_lg_amount"), default=math.nan)
                 buy_sm = _safe_float(moneyflow.get("buy_sm_amount"), default=math.nan)
                 sell_sm = _safe_float(moneyflow.get("sell_sm_amount"), default=math.nan)
-                if not all(
-                    math.isfinite(value)
-                    for value in (pe_ttm, pb, turnover_rate, total_mv, buy_lg, sell_lg, buy_sm, sell_sm)
-                ):
+                if not all(math.isfinite(value) for value in (pe_ttm, pb, turnover_rate, total_mv)):
+                    continue
+                moneyflow_values = (buy_lg, sell_lg, buy_sm, sell_sm)
+                has_moneyflow = all(math.isfinite(value) for value in moneyflow_values)
+                if not has_moneyflow and not moneyflow_optional:
                     continue
                 industry_value = ""
                 for source_row in (basic, current_row, moneyflow):
@@ -7584,7 +7593,10 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                         "turnover_rate": turnover_rate,
                         "total_mv": total_mv,
                         "log_total_mv": math.log(max(total_mv, 1.0)),
-                        "net_flow": (buy_lg - sell_lg) + 0.5 * (buy_sm - sell_sm),
+                        "net_flow": ((buy_lg - sell_lg) + 0.5 * (buy_sm - sell_sm))
+                        if has_moneyflow
+                        else None,
+                        "moneyflow_available": has_moneyflow,
                         "industry": industry_value,
                     }
                 )
@@ -7602,13 +7614,15 @@ def _factor_test_provider_small_pool_metric_validation_audit(
             count = len(observations)
             pe_ranks = _rank_average([item["pe_ttm"] for item in observations])
             pb_ranks = _rank_average([item["pb"] for item in observations])
-            flow_ranks = _rank_average([item["net_flow"] for item in observations])
             turnover_ranks = _rank_average([item["turnover_rate"] for item in observations])
+            flow_values = [item.get("net_flow") for item in observations]
+            moneyflow_available = bool(flow_values and all(_is_finite_number(value) for value in flow_values))
+            flow_ranks = _rank_average([float(value) for value in flow_values]) if moneyflow_available else [0.0] * count
             scores = [
                 (count + 1 - pe_ranks[index])
                 + (count + 1 - pb_ranks[index])
-                + flow_ranks[index]
                 + turnover_ranks[index]
+                + (flow_ranks[index] if moneyflow_available else 0.0)
                 for index in range(count)
             ]
             returns = [item["forward_return"] for item in observations]
@@ -7672,6 +7686,9 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                         "market_cap_neutral_rank_ic": market_cap_neutral_rank_ic,
                         "industry_neutral_rank_ic": industry_neutral_rank_ic,
                         "industry_group_count": len(industry_groups),
+                        "moneyflow_available": moneyflow_available,
+                        "score_components": ["pe_ttm", "pb", "turnover_rate"]
+                        + (["moneyflow"] if moneyflow_available else []),
                     }
                 )
                 metric_observation_count += count
@@ -7730,6 +7747,8 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                     "market_cap_neutral_rank_ic": _round_or_none(row["market_cap_neutral_rank_ic"]),
                     "industry_neutral_rank_ic": _round_or_none(row["industry_neutral_rank_ic"]),
                     "industry_group_count": row["industry_group_count"],
+                    "moneyflow_available": row.get("moneyflow_available") is True,
+                    "score_components": list(row.get("score_components") or []),
                     "research_only": True,
                 }
                 for row in period_rows[:10]
@@ -7936,6 +7955,9 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         "daily_row_count_read": len(daily_rows),
         "daily_basic_row_count_read": len(basic_rows),
         "moneyflow_row_count_read": len(moneyflow_rows),
+        "moneyflow_optional": moneyflow_optional,
+        "moneyflow_required_for_observation": not moneyflow_optional,
+        "missing_moneyflow_count": missing_moneyflow_count,
         "metric_observation_count": metric_observation_count,
         "horizon_summaries": horizon_summaries,
         "horizon_count": len(horizon_summaries),
@@ -7995,6 +8017,8 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                 "rolling_window_validation_done": rolling_done,
                 "cost_assumption_validation_done": cost_done,
                 "neutralization_stability_done": neutralization_stability_done,
+                "moneyflow_optional": moneyflow_optional,
+                "missing_moneyflow_count": missing_moneyflow_count,
                 "production_factor_test_validation_complete": False,
             },
             "row_count": len(rows),
@@ -8140,6 +8164,7 @@ def _factor_test_provider_small_pool_pit_bias_audit(
         source_scope_hash=source_scope_hash,
         expected_symbols=expected_symbol_set,
     )
+    moneyflow_optional = FACTOR_TEST_PROVIDER_SMALL_POOL_MONEYFLOW_OPTIONAL
     daily_keys = {
         (str(row.get("ts_code") or ""), str(row.get("trade_date") or ""))
         for row in daily_rows
@@ -8155,7 +8180,10 @@ def _factor_test_provider_small_pool_pit_bias_audit(
         for row in moneyflow_rows
         if isinstance(row, dict)
     }
-    fact_keys = basic_keys & moneyflow_keys
+    # The v0.3 provider scope has no moneyflow call.  When that optional
+    # dataset is absent, daily_basic remains the signal-date factor table;
+    # never invent a moneyflow row just to satisfy the PIT join.
+    fact_keys = basic_keys & moneyflow_keys if not moneyflow_optional else basic_keys
     fact_rows_same_trade_date = bool(fact_keys and fact_keys.issubset(daily_keys))
     missing_daily_fact_key_count = len(fact_keys - daily_keys)
 
@@ -8257,7 +8285,7 @@ def _factor_test_provider_small_pool_pit_bias_audit(
             "passed_fact_tables_join_on_signal_date" if fact_rows_same_trade_date else "blocked_fact_rows_missing_signal_date_match",
             fact_rows_same_trade_date,
             f"daily_keys={len(daily_keys)}; fact_keys={len(fact_keys)}; missing_daily_fact_keys={missing_daily_fact_key_count}; errors={dataset_error_safe}",
-            "Use only signal-date daily_basic and moneyflow rows as factor inputs.",
+            "Use only signal-date daily_basic rows (and moneyflow when present) as factor inputs.",
         ),
         _factor_test_provider_small_pool_pit_bias_row(
             "forward_labels_future_dated",
@@ -8302,6 +8330,10 @@ def _factor_test_provider_small_pool_pit_bias_audit(
         "expected_symbols": expected_symbols,
         "expected_symbol_count": len(expected_symbols),
         "fact_rows_same_trade_date": fact_rows_same_trade_date,
+        "moneyflow_optional": moneyflow_optional,
+        "moneyflow_row_count_read": len(moneyflow_rows),
+        "moneyflow_required_for_pit_join": not moneyflow_optional,
+        "missing_moneyflow_count": max(0, len(basic_keys - moneyflow_keys)),
         "forward_labels_future_dated": forward_labels_future_dated,
         "forward_label_row_count_checked": label_row_count,
         "future_date_violation_count": future_date_violation_count,
