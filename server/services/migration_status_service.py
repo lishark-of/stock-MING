@@ -565,7 +565,7 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "current_phase": "physical_execution_request_required",
         "first_allowed_route": "POST /api/storage/physical-execution-request",
         "second_allowed_route": "POST /api/storage/physical-execution/phase-a",
-        "future_provider_route": "future storage production promotion closeout review",
+        "future_provider_route": "future storage production promotion closeout review after remote CI and safety evidence",
         "target_acceptance_mode": "storage_physical_execution_and_promotion",
         "required_evidence": [
             "scope-bound physical execution request",
