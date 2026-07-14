@@ -1205,7 +1205,15 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             ),
             "worker_production",
         )
-        methods = {route.path: route.methods for route in app.routes}
+        # Newer FastAPI/Starlette versions expose internal included routers in
+        # ``app.routes`` alongside concrete APIRoute instances.  Only concrete
+        # routes have ``path``/``methods``; ignore framework containers while
+        # asserting our explicit POST route.
+        methods = {
+            route.path: route.methods
+            for route in app.routes
+            if hasattr(route, "path") and hasattr(route, "methods")
+        }
         self.assertEqual(methods["/api/worker/full-market-production-acceptance"], {"POST"})
         response = TestClient(app).get("/api/tasks/catalog")
         self.assertEqual(response.status_code, 200)
