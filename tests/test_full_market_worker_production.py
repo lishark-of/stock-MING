@@ -1211,6 +1211,14 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
         # still asserting the actual POST route.
         def concrete_routes(routes):
             for route in routes:
+                effective = getattr(route, "effective_route_contexts", None)
+                if effective is not None:
+                    yield from (
+                        context
+                        for context in effective()
+                        if hasattr(context, "path") and hasattr(context, "methods")
+                    )
+                    continue
                 children = getattr(route, "routes", None)
                 if children is not None:
                     yield from concrete_routes(children)
