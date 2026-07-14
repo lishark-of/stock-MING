@@ -35,8 +35,13 @@ SAMPLE_COUNT = 40
 SUCCESS_RATE_THRESHOLD = 0.9
 MAX_RETRIES_PER_SAMPLE = 2
 MODEL_TIMEOUT_SECONDS = 25.0
-MODEL_MAX_TOKENS = 420
-GLOBAL_DEADLINE_SECONDS = 180.0
+# DeepSeek reasoning models can spend part of the completion budget on
+# hidden reasoning before emitting the five-field closed-enum JSON object.
+# Keep the output contract fixed, but leave enough bounded budget for the
+# governed provider run to finish instead of classifying valid responses as
+# ``finish_reason=length``.
+MODEL_MAX_TOKENS = 1024
+GLOBAL_DEADLINE_SECONDS = 600.0
 MODEL_TEMPERATURE = 0
 SDK_MAX_RETRIES = 0
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"

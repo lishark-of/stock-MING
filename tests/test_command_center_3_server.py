@@ -64581,7 +64581,7 @@ class DeepSeekGovernedBenchmarkExecutorTests(unittest.TestCase):
         self.assertEqual(row["required_response_format"], "json_object")
         self.assertEqual(row["sdk_max_retries"], 0)
         self.assertEqual(row["max_network_attempts_per_sample"], 3)
-        self.assertEqual(row["global_deadline_seconds"], 180)
+        self.assertEqual(row["global_deadline_seconds"], 600)
         self.assertTrue(row["post_response_global_deadline_enforced"])
         self.assertTrue(row["scope_contract_exact_binding_required"])
         self.assertTrue(row["approval_nonce_enforced"])

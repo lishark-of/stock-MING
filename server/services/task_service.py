@@ -1157,7 +1157,7 @@ TASK_CATALOG = [
             "global_deadline",
             "single_use_authorization_nonce",
         ],
-        "global_deadline_seconds": 180,
+        "global_deadline_seconds": 600,
         "post_response_global_deadline_enforced": True,
         "approval_nonce_enforced": True,
         "authorization_nonce_caller_generated": True,
