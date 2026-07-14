@@ -251,6 +251,58 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         self.assertEqual(lineage_freshness["state"], "stale")
         self.assertFalse(lineage_freshness["expected_trade_date_calendar_validated"])
 
+    def test_provider_packet_read_restores_v05_lineage_and_downgrades_unvalidated_today(self) -> None:
+        self.snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        self.snapshot_path.write_text(
+            json.dumps(
+                {
+                    "data_freshness": {
+                        "state": "today",
+                        "expected_trade_date": "2026-07-07",
+                        "expected_trade_date_calendar_validated": False,
+                        "last_updated": "2026-07-07T17:04:35",
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        task = candidate_service.run_candidate_full_pool_worker_fallback_task(self._payload())
+        self.assertEqual(task["status"], "success")
+        store = SQLiteMetaStore(self.meta_path)
+        last_good = store.read_packet(candidate_service.CANDIDATE_V05_LAST_GOOD_PACKET_KEY)
+        provider_packet = dict(last_good)
+        for key in candidate_service._CANDIDATE_V05_PERSISTED_KEYS:
+            provider_packet.pop(key, None)
+        provider_packet.update(
+            {
+                "scan_mode": "provider_parity_acceptance",
+                "task_id": "local-provider-acceptance",
+                "data_date": "2026-07-07",
+                "freshness_state": {
+                    "source": "data_freshness",
+                    "state": "today",
+                    "expected_trade_date": "2026-07-07",
+                    "last_updated": "2026-07-07T17:04:35",
+                },
+            }
+        )
+        store.write_packet(candidate_service.PACKET_KEY, provider_packet)
+
+        view = candidate_service.read_candidate_radar_cache()
+        freshness = view["freshness_state"]
+        self.assertEqual(freshness["state"], "stale")
+        self.assertEqual(freshness["freshness_state"], "stale")
+        self.assertEqual(freshness["label"], "数据日期未按交易日历验证")
+        self.assertFalse(freshness["expected_trade_date_calendar_validated"])
+        self.assertEqual(view["candidate_radar_v05_result_version"], last_good["candidate_radar_v05_result_version"])
+        self.assertEqual(
+            view["candidate_radar_v05_next_session_lineage"]["status"],
+            "same_packet_lineage_ready",
+        )
+        self.assertEqual(view["task_id"], "local-provider-acceptance")
+        self.assertFalse(view["external_calls_triggered"])
+
 
 if __name__ == "__main__":
     unittest.main()

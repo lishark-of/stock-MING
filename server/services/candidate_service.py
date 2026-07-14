@@ -292,6 +292,7 @@ PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {
     "deep_scan_local_review",
     "provider_parity_dry_run",
     "provider_parity_execution_request",
+    "provider_parity_acceptance",
     "worker_execution_request",
     "full_pool_worker_fallback",
     "v05_candidate_local_batch",
@@ -5358,16 +5359,71 @@ def _candidate_freshness_state(snapshot_map: Mapping[str, Any]) -> dict[str, Any
         or data_freshness.get("expected_date"),
         "data_date": data_freshness.get("data_date") or data_freshness.get("trade_date"),
         "last_updated": data_freshness.get("last_updated") or data_freshness.get("updated_at"),
+        "label": data_freshness.get("label"),
+        "freshness_state": data_freshness.get("freshness_state"),
+        "expected_trade_date_calendar_validated": (
+            data_freshness.get("expected_trade_date_calendar_validated")
+            if "expected_trade_date_calendar_validated" in data_freshness
+            else None
+        ),
         "stale_inputs_are_reported_only": True,
         "enters_current_evidence": False,
         "does_not_modify_strategy_action": True,
     }
 
 
+def _normalize_candidate_freshness_state(
+    freshness_state: Mapping[str, Any],
+    *,
+    data_date: Any = "",
+) -> dict[str, Any]:
+    """Keep candidate freshness honest when a snapshot has no calendar proof.
+
+    Candidate Radar may reuse an older data-health snapshot after a provider
+    acceptance task writes a new packet.  A cached ``today``/``fresh`` label is
+    only authoritative when the snapshot explicitly proves the expected date
+    through the trading calendar.  Missing proof is left compatible for old
+    synthetic packets; an explicit ``False`` (or a date mismatch) always
+    downgrades the view to stale and keeps the gap visible.
+    """
+    normalized = dict(freshness_state)
+    state = str(normalized.get("state") or normalized.get("freshness_state") or "unknown").lower()
+    expected_trade_date = _safe_text(normalized.get("expected_trade_date") or "", limit=32)
+    snapshot_data_date = _safe_text(normalized.get("data_date") or "", limit=32)
+    effective_data_date = _safe_text(data_date or snapshot_data_date or "", limit=32)
+    calendar_marker = normalized.get("expected_trade_date_calendar_validated")
+    calendar_validated = calendar_marker is True if calendar_marker is not None else None
+    if effective_data_date:
+        normalized["data_date"] = effective_data_date
+    if calendar_marker is not None:
+        normalized["expected_trade_date_calendar_validated"] = calendar_validated
+
+    date_mismatch = bool(
+        effective_data_date
+        and (
+            (snapshot_data_date and effective_data_date != snapshot_data_date)
+            or (expected_trade_date and effective_data_date != expected_trade_date)
+        )
+    )
+    should_downgrade = state in {"today", "fresh"} and (
+        calendar_validated is False or date_mismatch
+    )
+    if should_downgrade:
+        normalized["state"] = "stale"
+        normalized["freshness_state"] = "stale"
+        normalized["label"] = "数据日期未按交易日历验证"
+        normalized["freshness_reason"] = "candidate_local_date_or_calendar_unverified"
+    elif state and "freshness_state" not in normalized:
+        normalized["freshness_state"] = normalized.get("state")
+    normalized["as_of_date"] = effective_data_date or snapshot_data_date or expected_trade_date
+    return normalized
+
+
 def _candidate_data_freshness_contract(freshness_state: Mapping[str, Any]) -> dict[str, Any]:
-    state = str(freshness_state.get("state") or "unknown")
-    expected_trade_date = freshness_state.get("expected_trade_date")
-    data_date = freshness_state.get("data_date")
+    normalized = _normalize_candidate_freshness_state(freshness_state)
+    state = str(normalized.get("state") or "unknown")
+    expected_trade_date = normalized.get("expected_trade_date")
+    data_date = normalized.get("data_date")
     if not data_date and expected_trade_date and state.lower() in {"fresh", "today"}:
         data_date = expected_trade_date
     if state.lower() == "today":
@@ -5381,7 +5437,9 @@ def _candidate_data_freshness_contract(freshness_state: Mapping[str, Any]) -> di
         "expected_data_date": expected_trade_date,
         "data_date": data_date,
         "latest_data_date": data_date,
-        "last_updated": freshness_state.get("last_updated"),
+        "last_updated": normalized.get("last_updated"),
+        "expected_trade_date_calendar_validated": normalized.get("expected_trade_date_calendar_validated"),
+        "as_of_date": normalized.get("as_of_date") or data_date or expected_trade_date,
         "current_evidence_requires_expected_trade_date": True,
         "stale_inputs_are_research_only": True,
         "enters_current_evidence": False,
@@ -5719,7 +5777,7 @@ def _scan_coverage(
     source_rows = _source_group_rows(snapshot_map)
     present = [row for row in source_rows if row["present"]]
     missing = [str(row["group"]) for row in source_rows if not row["present"]]
-    freshness_state = _candidate_freshness_state(snapshot_map)
+    freshness_state = _normalize_candidate_freshness_state(_candidate_freshness_state(snapshot_map))
     provider_rows = _provider_coverage_rows(snapshot_map)
     skipped_rows = _skipped_reason_rows(
         source_rows=source_rows,
@@ -14049,7 +14107,7 @@ def _build_full_pool_scan_plan(
     now: str,
 ) -> dict[str, Any]:
     provider_rows = _provider_coverage_rows(snapshot_map)
-    freshness_state = _candidate_freshness_state(snapshot_map)
+    freshness_state = _normalize_candidate_freshness_state(_candidate_freshness_state(snapshot_map))
     source_rows = _source_group_rows(snapshot_map)
     filter_rows = _full_pool_filter_rows(payload_safe)
     blocker_rows = _full_pool_blocker_rows(
@@ -14464,7 +14522,7 @@ def _build_deep_scan_plan(
     evidence_recovery_actions = _as_list(snapshot_map.get("next_ticket_evidence_recovery_actions"))[:10]
     candidate_rows = _candidate_rows(candidates)
     provider_rows = _provider_coverage_rows(snapshot_map)
-    freshness_state = _candidate_freshness_state(snapshot_map)
+    freshness_state = _normalize_candidate_freshness_state(_candidate_freshness_state(snapshot_map))
     parity_rows_raw = _legacy_parity_rows(
         snapshot_map=snapshot_map,
         radar_packet=radar_packet,
@@ -15464,6 +15522,69 @@ def _read_persisted_packet() -> dict[str, Any] | None:
     return packet if isinstance(packet, dict) else None
 
 
+_CANDIDATE_V05_PERSISTED_KEYS = (
+    "candidate_radar_v05_scope_hash",
+    "candidate_radar_v05_result_version",
+    "candidate_radar_v05_runtime",
+    "candidate_radar_v05_top_rows",
+    "candidate_radar_v05_watch_rows",
+    "candidate_radar_v05_excluded_rows",
+    "candidate_radar_v05_bucket_counts",
+    "candidate_radar_v05_coverage",
+    "candidate_radar_v05_next_session_task_id",
+    "candidate_radar_v05_next_session_lineage",
+)
+
+
+def _restore_candidate_v05_last_good_state(view: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep a later provider packet from erasing the v0.5 same-packet lineage.
+
+    Provider parity is allowed to update the canonical packet, but it must not
+    discard the last successful local Candidate Radar result or resurrect its
+    stale snapshot as ``today``.  This is a read-side compatibility bridge; it
+    performs no storage write and therefore keeps GET/cache read-only.
+    """
+    restored = dict(view)
+    if restored.get("candidate_radar_v05_result_version"):
+        return restored
+    try:
+        last_good = SQLiteMetaStore(SQLITE_META_PATH).read_packet(CANDIDATE_V05_LAST_GOOD_PACKET_KEY)
+    except Exception:
+        return restored
+    if not isinstance(last_good, dict) or not last_good.get("candidate_radar_v05_result_version"):
+        return restored
+    for key in _CANDIDATE_V05_PERSISTED_KEYS:
+        if key in last_good:
+            restored[key] = last_good[key]
+    lineage = _as_dict(last_good.get("candidate_radar_v05_next_session_lineage"))
+    v05_data_date = (
+        last_good.get("trade_date")
+        or lineage.get("data_date")
+        or _as_dict(last_good.get("freshness_state")).get("data_date")
+        or last_good.get("data_date")
+    )
+    restored_freshness = _normalize_candidate_freshness_state(
+        _as_dict(last_good.get("freshness_state")),
+        data_date=v05_data_date,
+    )
+    restored["freshness_state"] = restored_freshness
+    restored["data_freshness"] = _candidate_data_freshness_contract(restored_freshness)
+    restored["expected_trade_date"] = restored_freshness.get("expected_trade_date")
+    restored["expected_data_date"] = restored_freshness.get("expected_trade_date")
+    restored["latest_data_date"] = restored_freshness.get("data_date")
+    if last_good.get("trade_date"):
+        restored["trade_date"] = last_good.get("trade_date")
+    scan_coverage = _as_dict(restored.get("scan_coverage"))
+    if scan_coverage:
+        scan_coverage["freshness_state"] = restored_freshness
+        restored["scan_coverage"] = scan_coverage
+    coverage_summary = _as_dict(restored.get("coverage_detail_summary"))
+    if coverage_summary:
+        coverage_summary["freshness_state"] = restored_freshness.get("state")
+        restored["coverage_detail_summary"] = coverage_summary
+    return restored
+
+
 def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     row_count = len(_as_list(packet.get("candidate_rows")))
     persisted_scan_mode = str(packet.get("scan_mode") or "local_scan")
@@ -15486,6 +15607,21 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
         call_status=f"cache_read_persisted_{persisted_scan_mode}",
     )
     view = dict(_json_safe(packet))
+    # Carry the source snapshot's explicit calendar verdict into old packets
+    # that were persisted before the field was part of the candidate contract.
+    snapshot = packet_service.load_snapshot_cache()
+    snapshot_map = _safe_value(snapshot) if isinstance(_safe_value(snapshot), dict) else {}
+    snapshot_freshness = _candidate_freshness_state(snapshot_map)
+    persisted_freshness = _as_dict(view.get("freshness_state"))
+    for key in ("expected_trade_date", "expected_trade_date_calendar_validated", "last_updated", "source"):
+        if key not in persisted_freshness and key in snapshot_freshness:
+            persisted_freshness[key] = snapshot_freshness[key]
+    view["freshness_state"] = _normalize_candidate_freshness_state(
+        persisted_freshness,
+        data_date=view.get("trade_date") or view.get("data_date"),
+    )
+    view["data_freshness"] = _candidate_data_freshness_contract(view["freshness_state"])
+    view = _restore_candidate_v05_last_good_state(view)
     existing_ledger = _as_list(view.get("call_ledger"))
     view["loaded_at"] = _now_iso()
     view["cache_only"] = True
