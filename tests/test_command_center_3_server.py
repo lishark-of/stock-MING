@@ -95,6 +95,8 @@ CI_ALLOWED_PRODUCTION_PENDING_CONTRACT_BLOCKERS = {
     "storage": {
         "physical_execution_phase_a_is_local_direct_evidence_not_production",
         "physical_durable_evidence_recipe_is_local_pending",
+        "partition_migration_execution_has_direct_readback",
+        "compaction_execution_has_direct_readback",
     },
     "worker": {
         "queue_routing_contract_is_local_and_button_gated",
