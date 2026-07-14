@@ -116,9 +116,21 @@ def run_storage_partition_migration_dry_run(payload: dict[str, Any] | None = Non
     return task_envelope(task)
 
 
+@router.post("/partition-migration/execute")
+def run_storage_partition_migration_execution(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_partition_migration_execution_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/compaction/dry-run")
 def run_storage_compaction_dry_run(payload: dict[str, Any] | None = None) -> dict:
     task = storage_service.run_storage_compaction_dry_run_task(payload)
+    return task_envelope(task)
+
+
+@router.post("/compaction/execute")
+def run_storage_compaction_execution(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_compaction_execution_task(payload)
     return task_envelope(task)
 
 

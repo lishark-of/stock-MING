@@ -8916,7 +8916,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(overview["production_readiness"]["cache_ttl_dry_run_writes_parquet"])
         self.assertFalse(overview["production_readiness"]["cache_ttl_dry_run_reads_row_payloads"])
         self.assertEqual(overview["production_readiness"]["cache_ttl_refresh_executed_count"], 0)
-        self.assertEqual(overview["production_readiness"]["compaction_policy"], "dry_run_button_gated_no_parquet_rewrite")
+        self.assertEqual(
+            overview["production_readiness"]["compaction_policy"],
+            "confirm_gated_local_partition_rewrite_no_external_call",
+        )
         self.assertEqual(overview["production_readiness"]["compaction_dry_run_route"], "POST /api/storage/compaction/dry-run")
         self.assertTrue(overview["production_readiness"]["compaction_dry_run_button_gated"])
         self.assertFalse(overview["production_readiness"]["compaction_dry_run_writes_parquet"])

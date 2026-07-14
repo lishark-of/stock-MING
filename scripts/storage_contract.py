@@ -44,7 +44,9 @@ REQUIRED_STORAGE_TASK_TYPES = {
     "run_storage_dataset_version_manifest_write",
     "run_storage_dataset_version_manifest_validate",
     "run_storage_partition_migration_dry_run",
+    "run_storage_partition_migration_execution",
     "run_storage_compaction_dry_run",
+    "run_storage_compaction_execution",
     "run_storage_cache_ttl_dry_run",
     "run_storage_physical_execution_request",
     "run_storage_physical_execution_phase_a",
@@ -149,8 +151,8 @@ def _read_script(path: str) -> str:
         return ""
 
 
-def _physical_migration_stage_scope_rows() -> list[dict[str, Any]]:
-    return [
+def _physical_migration_stage_scope_rows(*, partition_execution_done: bool = False) -> list[dict[str, Any]]:
+    rows = [
         {
             "stage_key": stage_key,
             "stage_label": PHYSICAL_MIGRATION_STAGE_LABELS.get(stage_key, stage_key),
@@ -185,6 +187,17 @@ def _physical_migration_stage_scope_rows() -> list[dict[str, Any]]:
         }
         for stage_key in REQUIRED_PHYSICAL_MIGRATION_STAGES
     ]
+    for row in rows:
+        if row.get("stage_key") == "partition_migration" and partition_execution_done:
+            row.update(
+                {
+                    "current_status": "physical_execution_complete",
+                    "partition_migration_executed": True,
+                    "writes_parquet_by_contract": True,
+                    "reads_row_payloads": True,
+                }
+            )
+    return rows
 
 
 def build_contract() -> dict[str, Any]:
@@ -272,6 +285,8 @@ def build_contract() -> dict[str, Any]:
         if isinstance(row, dict)
     }
     manifest_validate_evidence = storage_service.storage_dataset_version_manifest_validate_evidence()
+    partition_execution_evidence = storage_service.storage_partition_migration_execution_evidence()
+    compaction_execution_evidence = storage_service.storage_compaction_execution_evidence()
     duckdb_read_validation_evidence = storage_service.storage_duckdb_read_validation_evidence()
     production_promotion_review_evidence = storage_service.storage_production_promotion_review_evidence()
     blocker_criteria = {
@@ -292,8 +307,6 @@ def build_contract() -> dict[str, Any]:
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/storage_contract.py")
     storage_page = _read_script("desktop/src/routes/StorageOverview.tsx")
-    physical_migration_stage_scope_rows = _physical_migration_stage_scope_rows()
-
     canonical_datasets = set(storage_service.CANONICAL_PARQUET_DATASETS)
     catalog_datasets = {
         str(row.get("dataset") or "")
@@ -301,6 +314,87 @@ def build_contract() -> dict[str, Any]:
         if isinstance(row, dict)
     }
     overview_datasets = set(_dict(overview.get("dataset_status")).keys())
+    partition_execution_rows = [
+        row for row in _list(partition_execution_evidence.get("rows")) if isinstance(row, dict)
+    ]
+    partition_execution_done = bool(
+        partition_execution_evidence.get("schema_version")
+        == "command_center_3_storage_partition_migration_execution.v1"
+        and partition_execution_evidence.get("status") == "partition_migration_execution_complete"
+        and partition_execution_evidence.get("partition_migration_executed") is True
+        and int(partition_execution_evidence.get("dataset_count") or 0) == len(canonical_datasets)
+        and int(partition_execution_evidence.get("partition_migration_executed_count") or 0)
+        == len(canonical_datasets)
+        and len(partition_execution_rows) == len(canonical_datasets)
+        and all(
+            row.get("status") == "partition_migration_executed"
+            and row.get("partition_migration_executed") is True
+            and row.get("schema_columns_match") is True
+            and row.get("row_count_match") is True
+            and _is_sha256(row.get("target_tree_sha256"))
+            and row.get("reads_row_payloads") is True
+            and row.get("writes_parquet") is True
+            and _flag_false(row, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called", "contains_secret")
+            and row.get("does_not_execute_trades") is True
+            and row.get("does_not_modify_strategy_action") is True
+            for row in partition_execution_rows
+        )
+        and partition_execution_evidence.get("writes_parquet") is True
+        and partition_execution_evidence.get("reads_row_payloads") is True
+        and _flag_false(
+            partition_execution_evidence,
+            "external_calls_triggered",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+            "contains_secret",
+        )
+        and partition_execution_evidence.get("does_not_execute_trades") is True
+        and partition_execution_evidence.get("does_not_modify_strategy_action") is True
+    )
+    compaction_execution_rows = [
+        row for row in _list(compaction_execution_evidence.get("rows")) if isinstance(row, dict)
+    ]
+    compaction_execution_done = bool(
+        compaction_execution_evidence.get("schema_version")
+        == "command_center_3_storage_compaction_execution.v1"
+        and compaction_execution_evidence.get("status") == "physical_compaction_execution_complete"
+        and compaction_execution_evidence.get("physical_compaction_executed") is True
+        and int(compaction_execution_evidence.get("dataset_count") or 0) == len(canonical_datasets)
+        and int(compaction_execution_evidence.get("physical_compaction_executed_count") or 0)
+        == len(canonical_datasets)
+        and len(compaction_execution_rows) == len(canonical_datasets)
+        and all(
+            row.get("status") == "physical_compaction_executed"
+            and row.get("physical_compaction_executed") is True
+            and row.get("schema_columns_match") is True
+            and row.get("row_count_match") is True
+            and len(str(row.get("target_tree_sha256") or "")) == 64
+            and all(char in "0123456789abcdef" for char in str(row.get("target_tree_sha256") or "").lower())
+            and row.get("reads_row_payloads") is True
+            and row.get("writes_parquet") is True
+            and _flag_false(row, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called", "contains_secret")
+            and row.get("does_not_execute_trades") is True
+            and row.get("does_not_modify_strategy_action") is True
+            for row in compaction_execution_rows
+        )
+        and compaction_execution_evidence.get("writes_parquet") is True
+        and compaction_execution_evidence.get("reads_row_payloads") is True
+        and _flag_false(
+            compaction_execution_evidence,
+            "external_calls_triggered",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+            "contains_secret",
+        )
+        and compaction_execution_evidence.get("does_not_execute_trades") is True
+        and compaction_execution_evidence.get("does_not_modify_strategy_action") is True
+    )
+    physical_migration_stage_scope_rows = _physical_migration_stage_scope_rows(
+        partition_execution_done=partition_execution_done
+    )
+
     schema_evidence_done = schema_acceptance_evidence.get("physical_schema_validation_done") is True
     current_result_atomic_promotion_done = (
         _dict(durable_evidence_rows.get("current_result_atomic_parquet_promotion_required")).get("passed") is True
@@ -907,10 +1001,10 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("physical_schema_validation_done") is schema_evidence_done
             and durable_evidence_recipe.get("schema_migration_executed") is schema_migration_noop_verified
             and durable_evidence_recipe.get("dataset_version_manifest_validated") is manifest_validation_done
-            and durable_evidence_recipe.get("partition_migration_executed") is False
+            and durable_evidence_recipe.get("partition_migration_executed") is partition_execution_done
             and durable_evidence_recipe.get("partition_migration_metadata_validation_done")
             is partition_metadata_validation_done
-            and durable_evidence_recipe.get("physical_compaction_executed") is False
+            and durable_evidence_recipe.get("physical_compaction_executed") is compaction_execution_done
             and durable_evidence_recipe.get("physical_compaction_metadata_validation_done")
             is compaction_metadata_validation_done
             and durable_evidence_recipe.get("cache_ttl_refresh_executed") is False
@@ -978,14 +1072,20 @@ def build_contract() -> dict[str, Any]:
                 and row.get("physical_schema_validation_done") is False
                 and row.get("schema_migration_executed") is False
                 and row.get("dataset_version_manifest_validated") is False
-                and row.get("partition_migration_executed") is False
+                and row.get("partition_migration_executed") is (
+                    partition_execution_done if row.get("stage_key") == "partition_migration" else False
+                )
                 and row.get("physical_compaction_executed") is False
                 and row.get("cache_ttl_refresh_executed") is False
                 and row.get("artifact_cleanup_delete_executed") is False
                 and row.get("production_storage_complete") is False
                 and row.get("writes_parquet_on_get") is False
-                and row.get("writes_parquet_by_contract") is False
-                and row.get("reads_row_payloads") is False
+                and row.get("writes_parquet_by_contract") is (
+                    partition_execution_done if row.get("stage_key") == "partition_migration" else False
+                )
+                and row.get("reads_row_payloads") is (
+                    partition_execution_done if row.get("stage_key") == "partition_migration" else False
+                )
                 and row.get("external_calls_triggered") is False
                 and row.get("tushare_called_by_contract") is False
                 and row.get("deepseek_called") is False
@@ -1204,6 +1304,56 @@ def build_contract() -> dict[str, Any]:
             "Partition migration dry-run must remain plan-only and must not write partitioned Parquet.",
         ),
         _row(
+            "partition_migration_execution_has_direct_readback",
+            partition_execution_done
+            and partition_execution_evidence.get("scope")
+            == "local_partition_migration_execution_no_provider_no_trade"
+            and partition_execution_evidence.get("approved_by_user") is True
+            and partition_execution_evidence.get("confirm_partition_migration") is True
+            and partition_execution_evidence.get("scope_hash_matches") is True
+            and partition_execution_evidence.get("writes_parquet") is True
+            and partition_execution_evidence.get("reads_row_payloads") is True
+            and partition_execution_evidence.get("deletes_artifacts") is False
+            and partition_execution_evidence.get("refreshes_providers") is False
+            and partition_execution_evidence.get("call_ledger")
+            and _flag_false(
+                partition_execution_evidence,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and partition_execution_evidence.get("does_not_execute_trades") is True
+            and partition_execution_evidence.get("does_not_modify_strategy_action") is True,
+            "Partition migration execution is accepted only when the explicit scope-bound local writer has per-dataset schema, row-count, and tree-hash readback evidence.",
+        ),
+        _row(
+            "compaction_execution_has_direct_readback",
+            compaction_execution_done
+            and compaction_execution_evidence.get("scope")
+            == "local_storage_compaction_no_provider_no_trade"
+            and compaction_execution_evidence.get("approved_by_user") is True
+            and compaction_execution_evidence.get("confirm_compaction") is True
+            and compaction_execution_evidence.get("scope_hash_matches") is True
+            and compaction_execution_evidence.get("writes_parquet") is True
+            and compaction_execution_evidence.get("reads_row_payloads") is True
+            and compaction_execution_evidence.get("deletes_artifacts") is False
+            and compaction_execution_evidence.get("refreshes_providers") is False
+            and compaction_execution_evidence.get("call_ledger")
+            and _flag_false(
+                compaction_execution_evidence,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and compaction_execution_evidence.get("does_not_execute_trades") is True
+            and compaction_execution_evidence.get("does_not_modify_strategy_action") is True,
+            "Compaction execution is accepted only when the explicit local rewrite has per-dataset schema, row-count, and tree-hash readback evidence.",
+        ),
+        _row(
             "compaction_dry_run_rewrites_no_parquet",
             compaction_packet.get("schema_version") == "command_center_3_storage_compaction_dry_run.v1"
             and compaction_packet.get("status") == "dry_run_completed"
@@ -1321,7 +1471,25 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_storage_dataset_version_manifest_validate"].get("schema_migration_executed") is False
             and task_rows["run_storage_dataset_version_manifest_validate"].get("production_storage_complete") is False
             and task_rows["run_storage_partition_migration_dry_run"].get("partition_migration_executed") is False
+            and task_rows["run_storage_partition_migration_execution"].get("route")
+            == "POST /api/storage/partition-migration/execute"
+            and task_rows["run_storage_partition_migration_execution"].get("requires_confirm_partition_migration") is True
+            and task_rows["run_storage_partition_migration_execution"].get("requires_dry_run_scope_hash") is True
+            and task_rows["run_storage_partition_migration_execution"].get("writes_parquet_on_post") is True
+            and task_rows["run_storage_partition_migration_execution"].get("writes_only_ignored_local_parquet") is True
+            and task_rows["run_storage_partition_migration_execution"].get("reads_row_payloads") is True
+            and task_rows["run_storage_partition_migration_execution"].get("deletes_source_files") is False
+            and task_rows["run_storage_partition_migration_execution"].get("production_storage_complete") is False
             and task_rows["run_storage_compaction_dry_run"].get("physical_compaction_executed") is False
+            and task_rows["run_storage_compaction_execution"].get("route")
+            == "POST /api/storage/compaction/execute"
+            and task_rows["run_storage_compaction_execution"].get("requires_confirm_compaction") is True
+            and task_rows["run_storage_compaction_execution"].get("requires_dry_run_scope_hash") is True
+            and task_rows["run_storage_compaction_execution"].get("writes_parquet_on_post") is True
+            and task_rows["run_storage_compaction_execution"].get("writes_only_ignored_local_parquet") is True
+            and task_rows["run_storage_compaction_execution"].get("reads_row_payloads") is True
+            and task_rows["run_storage_compaction_execution"].get("deletes_artifacts") is False
+            and task_rows["run_storage_compaction_execution"].get("production_storage_complete") is False
             and task_rows["run_storage_cache_ttl_dry_run"].get("refresh_executed") is False
             and task_rows["run_storage_physical_execution_request"].get("local_execution_request_only") is True
             and task_rows["run_storage_physical_execution_request"].get("requires_bound_scope_hash") is True
@@ -1483,8 +1651,18 @@ def build_contract() -> dict[str, Any]:
         "production_promotion_review_ready": production_promotion_review_evidence.get(
             "local_promotion_review_ready"
         ),
-        "partition_migration_executed": False,
-        "physical_compaction_executed": False,
+        "partition_migration_executed": partition_execution_done,
+        "partition_migration_execution_status": partition_execution_evidence.get("status"),
+        "partition_migration_execution_count": partition_execution_evidence.get(
+            "partition_migration_executed_count"
+        ),
+        "partition_migration_execution": partition_execution_evidence,
+        "physical_compaction_executed": compaction_execution_done,
+        "physical_compaction_execution_status": compaction_execution_evidence.get("status"),
+        "physical_compaction_execution_count": compaction_execution_evidence.get(
+            "physical_compaction_executed_count"
+        ),
+        "physical_compaction_execution": compaction_execution_evidence,
         "cache_ttl_refresh_executed": False,
         "artifact_cleanup_delete_executed": False,
         "dry_runs_are_not_production_completion": True,

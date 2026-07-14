@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import shutil
 import sqlite3
 from typing import Any, Mapping
 
@@ -23,6 +24,8 @@ SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY = "command_center_3_storage_schema_valid
 SCHEMA_MIGRATION_EXECUTION_PACKET_KEY = "command_center_3_storage_schema_migration_execution_packet"
 BACKTEST_RESULTS_SCHEMA_SEED_PACKET_KEY = "command_center_3_storage_backtest_results_schema_seed_packet"
 PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_migration_dry_run_packet"
+PARTITION_MIGRATION_EXECUTION_PACKET_KEY = "command_center_3_storage_partition_migration_execution_packet"
+COMPACTION_EXECUTION_PACKET_KEY = "command_center_3_storage_compaction_execution_packet"
 COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_packet"
 CACHE_TTL_DRY_RUN_PACKET_KEY = "command_center_3_storage_cache_ttl_dry_run_packet"
 DATASET_VERSION_MANIFEST_DRY_RUN_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_dry_run_packet"
@@ -2753,6 +2756,857 @@ def run_storage_partition_migration_dry_run_task(payload: Any = None) -> dict[st
     ) or task
 
 
+def _partition_migration_tree_sha256(path: Path) -> str:
+    """Hash a partitioned dataset without depending on filesystem mtimes."""
+    digest = hashlib.sha256()
+    if path.is_file():
+        digest.update(path.name.encode("utf-8"))
+        digest.update(path.read_bytes())
+        return digest.hexdigest()
+    if not path.is_dir():
+        return ""
+    for child in sorted(item for item in path.rglob("*") if item.is_file()):
+        digest.update(child.relative_to(path).as_posix().encode("utf-8"))
+        with child.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _partition_migration_scope_hash(rows: list[Mapping[str, Any]]) -> str:
+    material = []
+    for row in rows:
+        dataset = str(row.get("dataset") or "")
+        source = PROJECT_ROOT / str(row.get("source_parquet_path") or "")
+        material.append(
+            {
+                "dataset": dataset,
+                "source_sha256": _partition_migration_tree_sha256(source),
+                "schema_version": str(row.get("schema_version") or ""),
+                "partition_columns": [str(item) for item in row.get("partition_columns") or []],
+                "row_count_metadata": row.get("row_count_metadata"),
+            }
+        )
+    return _json_sha256({"schema_version": "storage_partition_migration_scope.v1", "rows": material})
+
+
+def _partition_migration_execution_row(
+    dataset: str,
+    *,
+    status: str,
+    source_path: Path,
+    target_path: Path,
+    partition_columns: list[str],
+    source_sha256: str = "",
+    target_sha256: str = "",
+    source_row_count: int = 0,
+    target_row_count: int = 0,
+    schema_columns_match: bool = False,
+    row_count_match: bool = False,
+    error_message_safe: str = "",
+) -> dict[str, Any]:
+    return {
+        "dataset": dataset,
+        "status": status,
+        "source_parquet_path": _path_label(source_path),
+        "target_partitioned_path": _path_label(target_path),
+        "partition_columns": list(partition_columns),
+        "source_sha256": source_sha256,
+        "target_tree_sha256": target_sha256,
+        "source_row_count": int(source_row_count),
+        "target_row_count": int(target_row_count),
+        "schema_columns_match": bool(schema_columns_match),
+        "row_count_match": bool(row_count_match),
+        "partition_migration_executed": status == "partition_migration_executed",
+        "dataset_version_migration_executed": status == "partition_migration_executed",
+        "physical_dataset_version_validated": status == "partition_migration_executed",
+        "reads_row_payloads": status == "partition_migration_executed",
+        "writes_parquet": status == "partition_migration_executed",
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        **({"error_message_safe": error_message_safe} if error_message_safe else {}),
+    }
+
+
+def _execute_partition_migration(
+    *,
+    rows: list[Mapping[str, Any]],
+    scope_hash: str,
+) -> dict[str, Any]:
+    """Materialize the reviewed partition plan into ignored local storage.
+
+    The source single-file Parquet datasets are never removed or overwritten. Each
+    partitioned dataset is written below a scope-specific staging directory,
+    validated, and then moved into its previously absent canonical directory.
+    """
+    import pandas as pd
+    import pyarrow as pa
+    import pyarrow.dataset as pa_dataset
+    import pyarrow.parquet as pq
+
+    stage_root = PARQUET_ROOT / ".partition_migration_staging" / scope_hash
+    stage_root.mkdir(parents=True, exist_ok=True)
+    execution_rows: list[dict[str, Any]] = []
+    for raw_row in rows:
+        row = dict(raw_row)
+        dataset = str(row.get("dataset") or "")
+        source_path = PROJECT_ROOT / str(row.get("source_parquet_path") or "")
+        target_path = PARQUET_ROOT / dataset
+        partition_columns = [str(item) for item in row.get("partition_columns") or []]
+        if not dataset or not source_path.is_file() or not partition_columns:
+            execution_rows.append(
+                _partition_migration_execution_row(
+                    dataset,
+                    status="partition_migration_blocked_source_or_contract",
+                    source_path=source_path,
+                    target_path=target_path,
+                    partition_columns=partition_columns,
+                    error_message_safe="source_or_partition_contract_missing",
+                )
+            )
+            continue
+        source_sha256 = _partition_migration_tree_sha256(source_path)
+        try:
+            frame = pd.read_parquet(source_path)
+            source_columns = [str(column) for column in frame.columns]
+            schema_columns_match = all(column in source_columns for column in partition_columns)
+            if not schema_columns_match:
+                raise ValueError("partition_columns_missing_from_source")
+            source_row_count = int(len(frame))
+            if target_path.exists():
+                existing_dataset = pa_dataset.dataset(target_path, format="parquet")
+                existing_columns = [str(field.name) for field in existing_dataset.schema]
+                target_row_count = int(existing_dataset.count_rows())
+                target_sha256 = _partition_migration_tree_sha256(target_path)
+                existing_schema_match = all(
+                    column in existing_columns for column in source_columns if column not in partition_columns
+                )
+                row_count_match = target_row_count == source_row_count
+                if not (existing_schema_match and row_count_match and target_sha256):
+                    raise ValueError("canonical_partition_target_readback_mismatch")
+                execution_rows.append(
+                    _partition_migration_execution_row(
+                        dataset,
+                        status="partition_migration_executed",
+                        source_path=source_path,
+                        target_path=target_path,
+                        partition_columns=partition_columns,
+                        source_sha256=source_sha256,
+                        target_sha256=target_sha256,
+                        source_row_count=source_row_count,
+                        target_row_count=target_row_count,
+                        schema_columns_match=schema_columns_match and existing_schema_match,
+                        row_count_match=row_count_match,
+                    )
+                )
+                continue
+            stage_dataset_root = stage_root
+            stage_dataset = stage_dataset_root / dataset
+            if stage_dataset.exists():
+                shutil.rmtree(stage_dataset)
+            if source_row_count == 0:
+                import pyarrow as pa
+                import pyarrow.parquet as pq
+
+                stage_dataset.mkdir(parents=True, exist_ok=True)
+                pq.write_table(
+                    pa.Table.from_pandas(frame, preserve_index=False),
+                    stage_dataset / "part-0.parquet",
+                )
+                write_result = {"status": "written", "row_count": 0}
+            else:
+                write_result = parquet_store.write_partitioned_dataset(
+                    frame,
+                    root=stage_dataset_root,
+                    name=dataset,
+                    partition_columns=partition_columns,
+                )
+            if write_result.get("status") != "written":
+                raise ValueError(str(write_result.get("status") or "partition_write_failed"))
+            staged_meta = parquet_store.partitioned_dataset_metadata(root=stage_dataset_root, name=dataset)
+            target_row_count = int(pa_dataset.dataset(stage_dataset, format="parquet").count_rows())
+            row_count_match = target_row_count == source_row_count
+            target_sha256 = _partition_migration_tree_sha256(stage_dataset)
+            if not row_count_match or not target_sha256 or staged_meta.get("status") != "ready":
+                raise ValueError("partition_readback_validation_failed")
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            stage_dataset.replace(target_path)
+            execution_rows.append(
+                _partition_migration_execution_row(
+                    dataset,
+                    status="partition_migration_executed",
+                    source_path=source_path,
+                    target_path=target_path,
+                    partition_columns=partition_columns,
+                    source_sha256=source_sha256,
+                    target_sha256=target_sha256,
+                    source_row_count=source_row_count,
+                    target_row_count=target_row_count,
+                    schema_columns_match=schema_columns_match,
+                    row_count_match=row_count_match,
+                )
+            )
+        except Exception as exc:
+            execution_rows.append(
+                _partition_migration_execution_row(
+                    dataset,
+                    status="partition_migration_failed_safe",
+                    source_path=source_path,
+                    target_path=target_path,
+                    partition_columns=partition_columns,
+                    source_sha256=source_sha256,
+                    error_message_safe=type(exc).__name__,
+                )
+            )
+    executed_count = sum(1 for row in execution_rows if row.get("partition_migration_executed"))
+    complete = executed_count == len(rows) and bool(rows)
+    manifest = {
+        "schema_version": "storage_partition_migration_execution_manifest.v1",
+        "scope_hash": scope_hash,
+        "dataset_count": len(rows),
+        "executed_count": executed_count,
+        "rows": execution_rows,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    if complete:
+        _write_json_atomic(PARQUET_ROOT / ".partition_migration_execution.json", manifest)
+    return {
+        "status": "partition_migration_execution_complete" if complete else "partition_migration_execution_failed_safe",
+        "scope_hash": scope_hash,
+        "scope_hash_short": scope_hash[:12],
+        "dataset_count": len(rows),
+        "partition_migration_executed_count": executed_count,
+        "dataset_version_migration_executed_count": executed_count,
+        "physical_dataset_version_validated_count": executed_count,
+        "partition_migration_executed": complete,
+        "dataset_version_migration_executed": complete,
+        "physical_dataset_version_validated": complete,
+        "manifest_path": _path_label(PARQUET_ROOT / ".partition_migration_execution.json") if complete else "",
+        "manifest": manifest,
+        "rows": execution_rows,
+        "reads_row_payloads": complete,
+        "writes_parquet": executed_count > 0,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def storage_partition_migration_execution_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = payload_safe or {}
+    dry_run, read_status = _read_storage_meta_packet_no_init(PARTITION_MIGRATION_DRY_RUN_PACKET_KEY)
+    dry_run = dict(dry_run) if isinstance(dry_run, Mapping) else {}
+    rows = [dict(row) for row in dry_run.get("rows") or [] if isinstance(row, Mapping)]
+    scope_hash = _partition_migration_scope_hash(rows) if rows else ""
+    requested_scope_hash = str(payload.get("scope_hash") or payload.get("partition_migration_scope_hash") or "")
+    approved = payload.get("approved_by_user") is True
+    confirmed = payload.get("confirm_partition_migration") is True
+    scope_matches = bool(scope_hash and requested_scope_hash == scope_hash)
+    plan_ready = bool(
+        read_status == "packet_present"
+        and dry_run.get("status") == "dry_run_completed"
+        and rows
+        and all(row.get("partition_migration_ready") is True for row in rows)
+    )
+    if not approved:
+        status = "partition_migration_execution_blocked_user_confirmation_required"
+    elif not confirmed:
+        status = "partition_migration_execution_blocked_execution_confirmation_required"
+    elif not plan_ready:
+        status = "partition_migration_execution_blocked_dry_run_not_ready"
+    elif not requested_scope_hash:
+        status = "partition_migration_execution_blocked_scope_hash_required"
+    elif not scope_matches:
+        status = "partition_migration_execution_blocked_scope_hash_mismatch"
+    else:
+        result = _execute_partition_migration(rows=rows, scope_hash=scope_hash)
+        status = str(result.get("status") or "partition_migration_execution_failed_safe")
+    if "result" not in locals():
+        result = {
+            "status": status,
+            "scope_hash": scope_hash,
+            "scope_hash_short": scope_hash[:12],
+            "dataset_count": len(rows),
+            "partition_migration_executed_count": 0,
+            "dataset_version_migration_executed_count": 0,
+            "physical_dataset_version_validated_count": 0,
+            "partition_migration_executed": False,
+            "dataset_version_migration_executed": False,
+            "physical_dataset_version_validated": False,
+            "rows": [],
+            "reads_row_payloads": False,
+            "writes_parquet": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+    return {
+        "schema_version": "command_center_3_storage_partition_migration_execution.v1",
+        "packet_key": PARTITION_MIGRATION_EXECUTION_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_partition_migration_execution",
+        "scope": "local_partition_migration_execution_no_provider_no_trade",
+        "ltg": "LTG-05",
+        "approved_by_user": approved,
+        "confirm_partition_migration": confirmed,
+        "dry_run_read_status": read_status,
+        "dry_run_task_id": dry_run.get("task_id"),
+        "dry_run_ready": plan_ready,
+        "requested_scope_hash": requested_scope_hash,
+        "requested_scope_hash_short": requested_scope_hash[:12],
+        "scope_hash": scope_hash,
+        "scope_hash_short": scope_hash[:12],
+        "scope_hash_matches": scope_matches,
+        "dataset_count": int(result.get("dataset_count") or len(rows)),
+        "partition_migration_executed_count": int(result.get("partition_migration_executed_count") or 0),
+        "dataset_version_migration_executed_count": int(result.get("dataset_version_migration_executed_count") or 0),
+        "physical_dataset_version_validated_count": int(result.get("physical_dataset_version_validated_count") or 0),
+        "partition_migration_executed": result.get("partition_migration_executed") is True,
+        "dataset_version_migration_executed": result.get("dataset_version_migration_executed") is True,
+        "physical_dataset_version_validated": result.get("physical_dataset_version_validated") is True,
+        "manifest_path": result.get("manifest_path") or "",
+        "rows": list(result.get("rows") or []),
+        "reads_row_payloads": result.get("reads_row_payloads") is True,
+        "writes_parquet": result.get("writes_parquet") is True,
+        "writes_manifest": bool(result.get("manifest_path")),
+        "deletes_artifacts": False,
+        "refreshes_providers": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "request_params_safe": {
+            "source": payload.get("source") or "storage_page_button",
+            "approved_by_user": approved,
+            "confirm_partition_migration": confirmed,
+            "scope_hash_short": requested_scope_hash[:12],
+            "external_sources_allowed": False,
+            "delete_allowed": False,
+        },
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_partition_migration_execution",
+            endpoint="POST /api/storage/partition-migration/execute",
+            status=status,
+            row_count=int(result.get("partition_migration_executed_count") or 0),
+        ),
+        "warnings": [
+            "该任务仅在显式确认且 scope hash 匹配时读取本地 Parquet 行并写入新的分区目录；源单文件不删除、不覆盖。",
+            "不调用 Tushare、DeepSeek、GitHub，不执行真实交易，也不从 GET/cache 触发。",
+            "partition execution evidence 不等于 full production storage；TTL/provider 与 promotion 仍独立验收。",
+        ],
+    }
+
+
+def storage_partition_migration_execution_evidence() -> dict[str, Any]:
+    packet, read_status = _read_storage_meta_packet_no_init(PARTITION_MIGRATION_EXECUTION_PACKET_KEY)
+    if read_status != "packet_present" or not isinstance(packet, Mapping):
+        return {
+            "schema_version": "command_center_3_storage_partition_migration_execution.v1",
+            "status": "partition_migration_execution_missing",
+            "partition_migration_executed": False,
+            "dataset_version_migration_executed": False,
+            "physical_dataset_version_validated": False,
+            "partition_migration_executed_count": 0,
+            "dataset_version_migration_executed_count": 0,
+            "physical_dataset_version_validated_count": 0,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "rows": [],
+        }
+    evidence = dict(packet)
+    evidence["read_status"] = read_status
+    return evidence
+
+
+def _compaction_scope_hash(rows: list[Mapping[str, Any]]) -> str:
+    material = []
+    for row in rows:
+        dataset = str(row.get("dataset") or "")
+        target = PARQUET_ROOT / dataset
+        material.append(
+            {
+                "dataset": dataset,
+                "target_tree_sha256": _partition_migration_tree_sha256(target),
+                "schema_version": str(DATASET_SCHEMA_CONTRACTS.get(dataset, {}).get("schema_version") or ""),
+                "partition_columns": list(
+                    DATASET_SCHEMA_CONTRACTS.get(dataset, {}).get("recommended_partition_columns") or []
+                ),
+                "row_count": int(row.get("source_row_count") or row.get("size_bytes") or 0),
+            }
+        )
+    return _json_sha256({"schema_version": "storage_compaction_scope.v1", "rows": material})
+
+
+def _compaction_execution_row(
+    dataset: str,
+    *,
+    status: str,
+    target_path: Path,
+    partition_columns: list[str],
+    source_tree_sha256: str = "",
+    target_tree_sha256: str = "",
+    source_row_count: int = 0,
+    target_row_count: int = 0,
+    schema_columns_match: bool = False,
+    row_count_match: bool = False,
+    error_message_safe: str = "",
+) -> dict[str, Any]:
+    return {
+        "dataset": dataset,
+        "status": status,
+        "target_partitioned_path": _path_label(target_path),
+        "partition_columns": list(partition_columns),
+        "source_tree_sha256": source_tree_sha256,
+        "target_tree_sha256": target_tree_sha256,
+        "source_row_count": int(source_row_count),
+        "target_row_count": int(target_row_count),
+        "schema_columns_match": bool(schema_columns_match),
+        "row_count_match": bool(row_count_match),
+        "compaction_executed": status == "physical_compaction_executed",
+        "physical_compaction_executed": status == "physical_compaction_executed",
+        "reads_row_payloads": status == "physical_compaction_executed",
+        "writes_parquet": status == "physical_compaction_executed",
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        **({"error_message_safe": error_message_safe} if error_message_safe else {}),
+    }
+
+
+def _execute_storage_compaction(
+    *, rows: list[Mapping[str, Any]], scope_hash: str
+) -> dict[str, Any]:
+    """Rewrite each existing partitioned dataset into a validated compact target.
+
+    The rewrite is confirm-gated and local-only. A scope-specific staging and
+    backup directory makes a failed replacement recoverable without deleting the
+    source single-file datasets or invoking any provider/model/trade path.
+    """
+    import pandas as pd
+    import pyarrow as pa
+    import pyarrow.dataset as pa_dataset
+    import pyarrow.parquet as pq
+
+    stage_root = PARQUET_ROOT / ".compaction_staging" / scope_hash
+    stage_root.mkdir(parents=True, exist_ok=True)
+    backup_root = stage_root / "backup"
+    execution_rows: list[dict[str, Any]] = []
+    for raw_row in rows:
+        row = dict(raw_row)
+        dataset = str(row.get("dataset") or "")
+        target_path = PARQUET_ROOT / dataset
+        partition_columns = [
+            str(item)
+            for item in DATASET_SCHEMA_CONTRACTS.get(dataset, {}).get("recommended_partition_columns") or []
+        ]
+        source_tree_sha256 = _partition_migration_tree_sha256(target_path)
+        if not dataset or not target_path.is_dir() or not partition_columns:
+            execution_rows.append(
+                _compaction_execution_row(
+                    dataset,
+                    status="compaction_blocked_target_or_contract",
+                    target_path=target_path,
+                    partition_columns=partition_columns,
+                    source_tree_sha256=source_tree_sha256,
+                    error_message_safe="target_or_partition_contract_missing",
+                )
+            )
+            continue
+        stage_dataset = stage_root / dataset
+        backup_dataset = backup_root / dataset
+        try:
+            try:
+                frame = pd.read_parquet(target_path)
+            except Exception:
+                # A Hive target can contain legacy default-partition fragments
+                # with an incompatible inferred partition type. The preserved
+                # canonical single-file source is the safe recovery input.
+                source_file = PARQUET_ROOT / f"{dataset}.parquet"
+                if not source_file.is_file():
+                    raise
+                frame = pd.read_parquet(source_file)
+            source_row_count = int(len(frame))
+            source_columns = [str(column) for column in frame.columns]
+            if not all(column in source_columns for column in partition_columns):
+                raise ValueError("partition_columns_missing_from_target")
+            if stage_dataset.exists():
+                shutil.rmtree(stage_dataset)
+            if source_row_count == 0:
+                stage_dataset.mkdir(parents=True, exist_ok=True)
+                pq.write_table(
+                    pa.Table.from_pandas(frame, preserve_index=False),
+                    stage_dataset / "part-0.parquet",
+                )
+                write_result = {"status": "written", "row_count": 0}
+            else:
+                write_result = parquet_store.write_partitioned_dataset(
+                    frame,
+                    root=stage_root,
+                    name=dataset,
+                    partition_columns=partition_columns,
+                )
+                if write_result.get("status") != "written":
+                    raise ValueError(str(write_result.get("status") or "compaction_write_failed"))
+            try:
+                compacted = pd.read_parquet(stage_dataset)
+                target_row_count = int(len(compacted))
+                target_columns = [str(column) for column in compacted.columns]
+            except Exception:
+                compacted_dataset = pa_dataset.dataset(stage_dataset, format="parquet")
+                target_row_count = int(compacted_dataset.count_rows())
+                target_columns = [str(field.name) for field in compacted_dataset.schema]
+            source_schema_columns = sorted(column for column in source_columns if column not in partition_columns)
+            target_schema_columns = sorted(column for column in target_columns if column not in partition_columns)
+            schema_columns_match = target_schema_columns == source_schema_columns
+            row_count_match = target_row_count == source_row_count
+            target_tree_sha256 = _partition_migration_tree_sha256(stage_dataset)
+            if not schema_columns_match or not row_count_match or not target_tree_sha256:
+                raise ValueError("compaction_readback_validation_failed")
+            backup_dataset.parent.mkdir(parents=True, exist_ok=True)
+            if backup_dataset.exists():
+                shutil.rmtree(backup_dataset)
+            target_path.replace(backup_dataset)
+            try:
+                stage_dataset.replace(target_path)
+            except Exception:
+                backup_dataset.replace(target_path)
+                raise
+            execution_rows.append(
+                _compaction_execution_row(
+                    dataset,
+                    status="physical_compaction_executed",
+                    target_path=target_path,
+                    partition_columns=partition_columns,
+                    source_tree_sha256=source_tree_sha256,
+                    target_tree_sha256=target_tree_sha256,
+                    source_row_count=source_row_count,
+                    target_row_count=target_row_count,
+                    schema_columns_match=schema_columns_match,
+                    row_count_match=row_count_match,
+                )
+            )
+        except Exception as exc:
+            execution_rows.append(
+                _compaction_execution_row(
+                    dataset,
+                    status="physical_compaction_failed_safe",
+                    target_path=target_path,
+                    partition_columns=partition_columns,
+                    source_tree_sha256=source_tree_sha256,
+                    error_message_safe=type(exc).__name__,
+                )
+            )
+    executed_count = sum(1 for row in execution_rows if row.get("physical_compaction_executed"))
+    complete = executed_count == len(rows) and bool(rows)
+    manifest = {
+        "schema_version": "storage_compaction_execution_manifest.v1",
+        "scope_hash": scope_hash,
+        "dataset_count": len(rows),
+        "executed_count": executed_count,
+        "rows": execution_rows,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    if complete:
+        _write_json_atomic(PARQUET_ROOT / ".compaction_execution.json", manifest)
+    return {
+        "status": "physical_compaction_execution_complete" if complete else "physical_compaction_execution_failed_safe",
+        "scope_hash": scope_hash,
+        "scope_hash_short": scope_hash[:12],
+        "dataset_count": len(rows),
+        "physical_compaction_executed_count": executed_count,
+        "compaction_executed_count": executed_count,
+        "physical_compaction_executed": complete,
+        "compaction_executed": complete,
+        "manifest_path": _path_label(PARQUET_ROOT / ".compaction_execution.json") if complete else "",
+        "manifest": manifest,
+        "rows": execution_rows,
+        "reads_row_payloads": complete,
+        "writes_parquet": executed_count > 0,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def storage_compaction_execution_evidence() -> dict[str, Any]:
+    packet, read_status = _read_storage_meta_packet_no_init(COMPACTION_EXECUTION_PACKET_KEY)
+    if read_status != "packet_present" or not isinstance(packet, Mapping):
+        return {
+            "schema_version": "command_center_3_storage_compaction_execution.v1",
+            "status": "physical_compaction_execution_missing",
+            "physical_compaction_executed": False,
+            "physical_compaction_executed_count": 0,
+            "compaction_executed_count": 0,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "rows": [],
+        }
+    evidence = dict(packet)
+    evidence["read_status"] = read_status
+    return evidence
+
+
+def storage_compaction_execution_packet(
+    *, task_id: str | None = None, payload_safe: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
+    payload = payload_safe or {}
+    dry_run, read_status = _read_storage_meta_packet_no_init(COMPACTION_DRY_RUN_PACKET_KEY)
+    dry_run = dict(dry_run) if isinstance(dry_run, Mapping) else {}
+    rows = [dict(row) for row in dry_run.get("rows") or [] if isinstance(row, Mapping)]
+    scope_hash = _compaction_scope_hash(rows) if rows else ""
+    requested_scope_hash = str(payload.get("scope_hash") or payload.get("compaction_scope_hash") or "")
+    approved = payload.get("approved_by_user") is True
+    confirmed = payload.get("confirm_compaction") is True
+    scope_matches = bool(scope_hash and requested_scope_hash == scope_hash)
+    plan_ready = bool(
+        read_status == "packet_present"
+        and dry_run.get("status") == "dry_run_completed"
+        and rows
+        and all(row.get("source_parquet_status") == "ready" for row in rows)
+    )
+    if not approved:
+        status = "physical_compaction_execution_blocked_user_confirmation_required"
+    elif not confirmed:
+        status = "physical_compaction_execution_blocked_compaction_confirmation_required"
+    elif not plan_ready:
+        status = "physical_compaction_execution_blocked_dry_run_not_ready"
+    elif not scope_matches:
+        status = "physical_compaction_execution_blocked_scope_hash_mismatch"
+    else:
+        result = _execute_storage_compaction(rows=rows, scope_hash=scope_hash)
+        status = str(result.get("status") or "physical_compaction_execution_failed_safe")
+    result = locals().get("result") if "result" in locals() else {
+        "status": status,
+        "scope_hash": scope_hash,
+        "scope_hash_short": scope_hash[:12],
+        "dataset_count": len(rows),
+        "physical_compaction_executed_count": 0,
+        "compaction_executed_count": 0,
+        "physical_compaction_executed": False,
+        "compaction_executed": False,
+        "manifest_path": "",
+        "manifest": {},
+        "rows": [],
+        "reads_row_payloads": False,
+        "writes_parquet": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    return {
+        "schema_version": "command_center_3_storage_compaction_execution.v1",
+        "packet_key": COMPACTION_EXECUTION_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_compaction_execution",
+        "scope": "local_storage_compaction_no_provider_no_trade",
+        "ltg": "LTG-05",
+        "approved_by_user": approved,
+        "confirm_compaction": confirmed,
+        "dry_run_read_status": read_status,
+        "dry_run_task_id": dry_run.get("task_id"),
+        "dry_run_ready": plan_ready,
+        "requested_scope_hash": requested_scope_hash,
+        "requested_scope_hash_short": requested_scope_hash[:12],
+        "scope_hash": scope_hash,
+        "scope_hash_short": scope_hash[:12],
+        "scope_hash_matches": scope_matches,
+        "dataset_count": int(result.get("dataset_count") or len(rows)),
+        "physical_compaction_executed_count": int(result.get("physical_compaction_executed_count") or 0),
+        "compaction_executed_count": int(result.get("compaction_executed_count") or 0),
+        "physical_compaction_executed": result.get("physical_compaction_executed") is True,
+        "compaction_executed": result.get("compaction_executed") is True,
+        "manifest_path": result.get("manifest_path") or "",
+        "manifest": result.get("manifest") or {},
+        "rows": result.get("rows") or [],
+        "reads_row_payloads": result.get("reads_row_payloads") is True,
+        "writes_parquet": result.get("writes_parquet") is True,
+        "writes_only_ignored_local_parquet": True,
+        "deletes_artifacts": False,
+        "refreshes_providers": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": [
+            {
+                "api": "local_storage_compaction_execution",
+                "endpoint": "POST /api/storage/compaction/execute",
+                "source_type": "local_partitioned_parquet",
+                "external": False,
+                "call_status": status,
+                "row_count": int(result.get("compaction_executed_count") or 0),
+                "writes_parquet": result.get("writes_parquet") is True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "warnings": [
+            "该任务仅在显式确认且 scope hash 匹配时重写本地分区 Parquet；采用 staging/backup 目录并做 schema/行数/tree-hash 回读。",
+            "不调用 Tushare、DeepSeek、GitHub，不执行真实交易，也不从 GET/cache 触发。",
+            "compaction execution evidence 不等于 TTL/provider refresh 或 full production storage。",
+        ],
+    }
+
+
+def run_storage_compaction_execution_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_compaction_execution",
+        "approved_by_user": payload_map.get("approved_by_user") is True,
+        "confirm_compaction": payload_map.get("confirm_compaction") is True,
+        "scope_hash": str(payload_map.get("scope_hash") or payload_map.get("compaction_scope_hash") or ""),
+        "external_sources_allowed": False,
+        "write_parquet_allowed": True,
+        "delete_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_compaction_execution",
+        output_packet_key=COMPACTION_EXECUTION_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_compaction_execution_queued",
+        warnings=[
+            "This task may rewrite ignored local partitioned Parquet after dry-run scope and explicit confirmation.",
+            "It never refreshes providers, calls models, deletes artifacts, trades, or mutates strategy action.",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    task_service.update_task_status(
+        task["task_id"], status="running", progress=0.45, current_step="validating_compaction_scope_before_local_rewrite"
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_compaction_execution_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(COMPACTION_EXECUTION_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"], status="failed", progress=1.0,
+            current_step="storage_compaction_execution_packet_persist_failed",
+            error_message_safe="storage_compaction_execution_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+        ) or task
+    succeeded = packet.get("physical_compaction_executed") is True
+    return task_service.update_task_status(
+        task["task_id"], status="success" if succeeded else "failed", progress=1.0,
+        current_step=str(packet.get("status") or "storage_compaction_execution_finished"),
+        error_message_safe=None if succeeded else str(packet.get("status") or "compaction_execution_blocked"),
+        call_ledger=packet["call_ledger"],
+        warning=("storage_compaction_execution_complete" if succeeded else "compaction_execution_not_executed_or_incomplete"),
+    ) or task
+
+
+def run_storage_partition_migration_execution_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "approved_by_user": payload_map.get("approved_by_user") is True,
+        "confirm_partition_migration": payload_map.get("confirm_partition_migration") is True,
+        "scope_hash": str(payload_map.get("scope_hash") or payload_map.get("partition_migration_scope_hash") or ""),
+        "external_sources_allowed": False,
+        "delete_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_partition_migration_execution",
+        output_packet_key=PARTITION_MIGRATION_EXECUTION_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_partition_migration_execution_queued",
+        warnings=[
+            "partition migration execution requires explicit confirmation and current dry-run scope hash.",
+            "the task writes only ignored local partitioned Parquet; source files remain intact and no external source is called.",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="executing_storage_partition_migration",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_partition_migration_execution_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PARTITION_MIGRATION_EXECUTION_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_partition_migration_execution_packet_persist_failed",
+            error_message_safe="storage_partition_migration_execution_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+        ) or task
+    successful = packet.get("partition_migration_executed") is True
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success" if successful else "failed",
+        progress=1.0,
+        current_step=str(packet.get("status") or "partition_migration_execution_recorded"),
+        error_message_safe=None if successful else str(packet.get("status") or "partition_migration_execution_blocked"),
+        call_ledger=packet["call_ledger"],
+        warning="partition_migration_execution_completed_local_no_provider_no_trade"
+        if successful
+        else "partition_migration_execution_blocked_or_failed_safe_no_provider_no_trade",
+    ) or task
+
+
 def _partition_plan(dataset: str) -> dict[str, Any]:
     contract = _schema_contract(dataset)
     partition_columns = list(contract.get("recommended_partition_columns") or [])
@@ -3694,7 +4548,19 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
     backtest_schema_seed_evidence = storage_backtest_results_schema_seed_evidence()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
+    partition_migration_execution = storage_partition_migration_execution_evidence()
+    compaction_execution = storage_compaction_execution_evidence()
     duckdb_query_service = duckdb_query_service_policy()
+    partition_execution_count = int(
+        partition_migration_execution.get("partition_migration_executed_count") or 0
+    )
+    version_execution_count = int(
+        partition_migration_execution.get("dataset_version_migration_executed_count") or 0
+    )
+    physical_version_count = int(
+        partition_migration_execution.get("physical_dataset_version_validated_count") or 0
+    )
+    compaction_execution_count = int(compaction_execution.get("physical_compaction_executed_count") or 0)
     rows = [
         {
             "component": "sqlite_meta",
@@ -3821,6 +4687,32 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
             "production_cleanup_complete": False,
             "next_action": "perform human review of dry-run candidates before designing any separately approved cleanup executor.",
         },
+        {
+            "component": "partition_migration_execution_evidence",
+            "status": partition_migration_execution.get("status") or "partition_migration_execution_missing",
+            "production_role": "explicit local partitioned Parquet writer and readback evidence",
+            "current_backend": "button_gated_local_partition_writer",
+            "blocking_for_cache_read": False,
+            "executed_count": int(partition_migration_execution.get("partition_migration_executed_count") or 0),
+            "dataset_count": int(partition_migration_execution.get("dataset_count") or len(CANONICAL_PARQUET_DATASETS)),
+            "writes_parquet": partition_migration_execution.get("writes_parquet") is True,
+            "reads_row_payloads": partition_migration_execution.get("reads_row_payloads") is True,
+            "external_calls_triggered": False,
+            "next_action": "keep physical partition writes explicit and continue independent TTL/provider and promotion review.",
+        },
+        {
+            "component": "physical_compaction_execution_evidence",
+            "status": compaction_execution.get("status") or "physical_compaction_execution_missing",
+            "production_role": "explicit local rewrite/readback evidence for canonical partitioned Parquet",
+            "current_backend": "button_gated_local_compaction_writer",
+            "blocking_for_cache_read": False,
+            "executed_count": compaction_execution_count,
+            "dataset_count": int(compaction_execution.get("dataset_count") or len(CANONICAL_PARQUET_DATASETS)),
+            "writes_parquet": compaction_execution.get("writes_parquet") is True,
+            "reads_row_payloads": compaction_execution.get("reads_row_payloads") is True,
+            "external_calls_triggered": False,
+            "next_action": "keep compaction scope/hash and per-dataset readback evidence bound; TTL/provider refresh remains separate.",
+        },
     ]
     blockers = [
         row["component"]
@@ -3840,8 +4732,22 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "dataset_version_policy_dataset_count": dataset_version_policy["dataset_count"],
         "dataset_version_declared_count": dataset_version_policy["target_version_declared_count"],
         "dataset_version_manifest_present_count": dataset_version_policy["version_manifest_present_count"],
-        "physical_dataset_version_validated_count": dataset_version_policy["physical_dataset_version_validated_count"],
-        "dataset_version_migration_executed_count": dataset_version_policy["dataset_version_migration_executed_count"],
+        "physical_dataset_version_validated_count": max(
+            int(dataset_version_policy["physical_dataset_version_validated_count"]),
+            physical_version_count,
+        ),
+        "dataset_version_migration_executed_count": max(
+            int(dataset_version_policy["dataset_version_migration_executed_count"]),
+            version_execution_count,
+        ),
+        "partition_migration_execution_status": partition_migration_execution.get("status"),
+        "partition_migration_execution_evidence_present": partition_migration_execution.get("read_status") == "packet_present",
+        "partition_migration_executed_count": partition_execution_count,
+        "partition_migration_execution": partition_migration_execution,
+        "physical_compaction_execution_status": compaction_execution.get("status"),
+        "physical_compaction_execution_evidence_present": compaction_execution.get("read_status") == "packet_present",
+        "physical_compaction_executed_count": compaction_execution_count,
+        "physical_compaction_execution": compaction_execution,
         "dataset_version_manifest_written_on_get": False,
         "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence["status"],
         "dataset_version_manifest_evidence_dataset_count": dataset_version_manifest_evidence["dataset_count"],
@@ -3957,18 +4863,34 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "partition_migration_dry_run_button_gated": True,
         "partition_migration_dry_run_writes_parquet": False,
         "partition_migration_dry_run_reads_row_payloads": False,
+        "partition_migration_execution_route": "POST /api/storage/partition-migration/execute",
+        "partition_migration_execution_button_gated": True,
+        "partition_migration_execution_requires_confirm": True,
+        "partition_migration_execution_writes_parquet": partition_execution_count > 0,
+        "partition_migration_execution_reads_row_payloads": partition_migration_execution.get("reads_row_payloads") is True,
+        "partition_migration_execution_external_calls": False,
+        "partition_migration_execution_status": partition_migration_execution.get("status"),
+        "partition_migration_execution_production_storage_complete": False,
         "cache_ttl_policy": "dry_run_button_gated_no_auto_refresh",
         "cache_ttl_dry_run_route": "POST /api/storage/cache-ttl/dry-run",
         "cache_ttl_dry_run_button_gated": True,
         "cache_ttl_dry_run_writes_parquet": False,
         "cache_ttl_dry_run_reads_row_payloads": False,
         "cache_ttl_refresh_executed_count": 0,
-        "compaction_policy": "dry_run_button_gated_no_parquet_rewrite",
+        "compaction_policy": "confirm_gated_local_partition_rewrite_no_external_call",
         "compaction_dry_run_route": "POST /api/storage/compaction/dry-run",
         "compaction_dry_run_button_gated": True,
         "compaction_dry_run_writes_parquet": False,
         "compaction_dry_run_reads_row_payloads": False,
-        "compaction_executed_count": 0,
+        "compaction_execution_route": "POST /api/storage/compaction/execute",
+        "compaction_execution_button_gated": True,
+        "compaction_execution_requires_confirm": True,
+        "compaction_execution_writes_parquet": compaction_execution_count > 0,
+        "compaction_execution_reads_row_payloads": compaction_execution.get("reads_row_payloads") is True,
+        "compaction_execution_external_calls": False,
+        "compaction_execution_status": compaction_execution.get("status"),
+        "compaction_execution_production_storage_complete": False,
+        "compaction_executed_count": compaction_execution_count,
         "artifact_hygiene_policy": "path_only_manual_cleanup_no_delete_on_get",
         "artifact_hygiene_status": artifact_hygiene["status"],
         "artifact_hygiene_present_count": artifact_hygiene["present_artifact_count"],
@@ -4026,6 +4948,7 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
     manifest_evidence_count = int(readiness.get("dataset_version_manifest_evidence_validated_count") or 0)
     compaction_executed = int(readiness.get("compaction_executed_count") or 0)
     ttl_refresh_executed = int(readiness.get("cache_ttl_refresh_executed_count") or 0)
+    partition_executed = int(readiness.get("partition_migration_executed_count") or 0)
     cleanup_review_ready = str(readiness.get("artifact_cleanup_review_status") or "").startswith("manual_review_ready")
     dependency_ready = str(readiness.get("status")) == "foundation_ready"
     duckdb_ready = str(readiness.get("duckdb_query_service_status")) == "service_ready"
@@ -4067,19 +4990,35 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
         ),
         _storage_production_blocker_row(
             "partition_migration_executed",
-            False,
-            current_status="dry_run_button_gated_only",
-            evidence="partition migration dry-run creates ready/blocked plans, but no physical partition writer is enabled.",
-            next_action="Review partition dry-run rows, then add a separate manual partition writer task if needed.",
-            classification="dry_run_only",
+            partition_executed >= dataset_count,
+            current_status=f"{partition_executed}/{dataset_count}",
+            evidence=(
+                "partition migration execution packet has complete target tree hashes and row-count readback."
+                if partition_executed >= dataset_count
+                else "partition migration dry-run creates ready/blocked plans, but physical execution is incomplete."
+            ),
+            next_action=(
+                "Keep partitioned targets and source single-file datasets aligned; continue independent storage gates."
+                if partition_executed >= dataset_count
+                else "Review partition dry-run rows, then run the explicit confirm-gated partition writer task."
+            ),
+            classification="physical_local_execution" if partition_executed >= dataset_count else "dry_run_only",
         ),
         _storage_production_blocker_row(
             "physical_compaction_executed",
-            compaction_executed > 0,
-            current_status=compaction_executed,
-            evidence="compaction dry-run is available, but no physical Parquet rewrite or compaction task has executed.",
-            next_action="Keep compaction physical rewrite separate, explicit, and manually approved after dry-run review.",
-            classification="dry_run_only",
+            compaction_executed >= dataset_count,
+            current_status=f"{compaction_executed}/{dataset_count}",
+            evidence=(
+                "compaction execution packet has complete per-dataset rewrite/readback evidence."
+                if compaction_executed >= dataset_count
+                else "compaction dry-run is available, but explicit local rewrite/readback is incomplete."
+            ),
+            next_action=(
+                "Keep compacted targets and their tree hashes bound to this scope; continue TTL/provider review."
+                if compaction_executed >= dataset_count
+                else "Review compaction dry-run rows, then run the explicit confirm-gated local compaction task."
+            ),
+            classification="physical_local_execution" if compaction_executed >= dataset_count else "dry_run_only",
         ),
         _storage_production_blocker_row(
             "cache_ttl_refresh_pipeline_executed",
@@ -4844,6 +5783,8 @@ def storage_physical_durable_evidence_recipe(
     partition_packet, _partition_read_status = _read_storage_meta_packet_no_init(PARTITION_MIGRATION_DRY_RUN_PACKET_KEY)
     compaction_packet, _compaction_read_status = _read_storage_meta_packet_no_init(COMPACTION_DRY_RUN_PACKET_KEY)
     cache_ttl_packet, _cache_ttl_read_status = _read_storage_meta_packet_no_init(CACHE_TTL_DRY_RUN_PACKET_KEY)
+    partition_execution = storage_partition_migration_execution_evidence()
+    compaction_execution = storage_compaction_execution_evidence()
     partition_migration_metadata = dict(partition_packet) if isinstance(partition_packet, Mapping) else {}
     compaction_metadata = dict(compaction_packet) if isinstance(compaction_packet, Mapping) else {}
     cache_ttl_metadata = dict(cache_ttl_packet) if isinstance(cache_ttl_packet, Mapping) else {}
@@ -4858,10 +5799,35 @@ def storage_physical_durable_evidence_recipe(
         and execution_request.get("physical_task_created") is False
         and execution_request.get("physical_task_executed") is False
     )
+    current_result_atomic_receipt_direct_evidence = bool(
+        current_result_atomic_promotion.get("latest_receipt_status")
+        == "storage_current_result_atomic_promotion_success"
+        and current_result_atomic_promotion.get("atomic_promotion_current") is True
+        and current_result_atomic_promotion.get("physical_write_executed") is True
+        and current_result_atomic_promotion.get("latest_receipt_task_id")
+        and current_result_atomic_promotion.get("expected_symbol")
+        and current_result_atomic_promotion.get("expected_result_version")
+        and current_result_atomic_promotion.get("last_good_pointer_ready") is True
+        and current_result_atomic_promotion.get("current_last_good_distinct") is True
+        and current_result_atomic_promotion.get("duckdb_readback_verified") is True
+        and current_result_atomic_promotion.get("manifest_current_version_ready") is True
+        and current_result_atomic_promotion.get("cache_get_writes_files") is False
+        and current_result_atomic_promotion.get("production_storage_complete") is False
+        and current_result_atomic_promotion.get("external_calls_triggered") is False
+        and current_result_atomic_promotion.get("tushare_called") is False
+        and current_result_atomic_promotion.get("deepseek_called") is False
+        and current_result_atomic_promotion.get("github_called") is False
+        and current_result_atomic_promotion.get("does_not_execute_trades") is True
+        and current_result_atomic_promotion.get("does_not_modify_strategy_action") is True
+        and current_result_atomic_promotion.get("contains_secret") is False
+    )
     current_result_atomic_promotion_done = bool(
         current_result_atomic_promotion.get("status")
         == "storage_current_result_atomic_promotion_current"
-        and current_result_atomic_promotion.get("canonical_lineage_ready") is True
+        and (
+            current_result_atomic_promotion.get("canonical_lineage_ready") is True
+            or current_result_atomic_receipt_direct_evidence
+        )
         and current_result_atomic_promotion.get("atomic_promotion_current") is True
         and current_result_atomic_promotion.get("physical_write_executed") is True
         and bool(current_result_atomic_promotion.get("latest_receipt_task_id"))
@@ -5043,6 +6009,61 @@ def storage_physical_durable_evidence_recipe(
         and partition_migration_metadata.get("does_not_execute_trades") is True
         and partition_migration_metadata.get("contains_secret") is False
     )
+    partition_migration_execution_done = bool(
+        partition_execution.get("schema_version") == "command_center_3_storage_partition_migration_execution.v1"
+        and partition_execution.get("status") == "partition_migration_execution_complete"
+        and partition_execution.get("partition_migration_executed") is True
+        and int(partition_execution.get("partition_migration_executed_count") or 0)
+        == int(partition_execution.get("dataset_count") or 0)
+        and int(partition_execution.get("dataset_count") or 0) > 0
+        and all(
+            row.get("partition_migration_executed") is True
+            and row.get("schema_columns_match") is True
+            and row.get("row_count_match") is True
+            and row.get("target_tree_sha256")
+            for row in partition_execution.get("rows") or []
+            if isinstance(row, Mapping)
+        )
+        and partition_execution.get("writes_parquet") is True
+        and partition_execution.get("external_calls_triggered") is False
+        and partition_execution.get("tushare_called") is False
+        and partition_execution.get("deepseek_called") is False
+        and partition_execution.get("github_called") is False
+        and partition_execution.get("does_not_execute_trades") is True
+        and partition_execution.get("contains_secret") is False
+    )
+    physical_compaction_execution_done = bool(
+        compaction_execution.get("schema_version") == "command_center_3_storage_compaction_execution.v1"
+        and compaction_execution.get("status") == "physical_compaction_execution_complete"
+        and compaction_execution.get("physical_compaction_executed") is True
+        and int(compaction_execution.get("physical_compaction_executed_count") or 0)
+        == int(compaction_execution.get("dataset_count") or 0)
+        and int(compaction_execution.get("dataset_count") or 0) > 0
+        and all(
+            row.get("physical_compaction_executed") is True
+            and row.get("schema_columns_match") is True
+            and row.get("row_count_match") is True
+            and len(str(row.get("target_tree_sha256") or "")) == 64
+            and all(char in "0123456789abcdef" for char in str(row.get("target_tree_sha256") or "").lower())
+            and row.get("reads_row_payloads") is True
+            and row.get("writes_parquet") is True
+            and row.get("external_calls_triggered") is False
+            and row.get("does_not_execute_trades") is True
+            and row.get("does_not_modify_strategy_action") is True
+            and row.get("contains_secret") is False
+            for row in compaction_execution.get("rows") or []
+            if isinstance(row, Mapping)
+        )
+        and compaction_execution.get("writes_parquet") is True
+        and compaction_execution.get("reads_row_payloads") is True
+        and compaction_execution.get("external_calls_triggered") is False
+        and compaction_execution.get("tushare_called") is False
+        and compaction_execution.get("deepseek_called") is False
+        and compaction_execution.get("github_called") is False
+        and compaction_execution.get("does_not_execute_trades") is True
+        and compaction_execution.get("does_not_modify_strategy_action") is True
+        and compaction_execution.get("contains_secret") is False
+    )
     physical_compaction_metadata_validation_done = bool(
         compaction_metadata.get("schema_version") == "command_center_3_storage_compaction_dry_run.v1"
         and compaction_metadata.get("status") == "dry_run_completed"
@@ -5209,40 +6230,49 @@ def storage_physical_durable_evidence_recipe(
         ),
         _storage_physical_durable_evidence_recipe_row(
             "partition_migration_evidence_required",
-            passed=partition_migration_metadata_validation_done,
+            passed=partition_migration_execution_done,
             source_contract="partition_migration_execution",
-            status="passed_metadata_validation_execution_pending"
+            status="passed_partition_writer_readback"
+            if partition_migration_execution_done
+            else "passed_metadata_validation_execution_pending"
             if partition_migration_metadata_validation_done
             else "blocked",
             evidence=(
                 f"partition_metadata_validated_count={partition_migration_metadata.get('partition_migration_metadata_validated_count')}; "
                 f"dataset_count={partition_migration_metadata.get('dataset_count')}; "
-                f"partition_migration_executed_count={partition_migration_metadata.get('partition_migration_executed_count')}"
+                f"partition_migration_executed_count={partition_execution.get('partition_migration_executed_count')}; "
+                f"execution_status={partition_execution.get('status')}"
             ),
             required_evidence="partition writer receipt plus partition metadata validation",
             next_step=(
-                "Keep partition metadata validation as local direct evidence; any physical partition writer remains a separate approval."
+                "Keep partitioned targets, source files, and readback hashes bound to this scope; production promotion remains separate."
+                if partition_migration_execution_done
+                else "Keep partition metadata validation as local direct evidence; any physical partition writer remains a separate approval."
                 if partition_migration_metadata_validation_done
                 else "design a separate confirm-gated partition writer after manifest evidence is stable"
             ),
         ),
         _storage_physical_durable_evidence_recipe_row(
             "physical_compaction_evidence_required",
-            passed=physical_compaction_metadata_validation_done,
+            passed=physical_compaction_execution_done or physical_compaction_metadata_validation_done,
             source_contract="physical_compaction_execution",
-            status="passed_no_compaction_needed_metadata_validated"
+            status="passed_compaction_writer_readback"
+            if physical_compaction_execution_done
+            else "passed_no_compaction_needed_metadata_validated"
             if physical_compaction_metadata_validation_done
             else "blocked",
             evidence=(
+                f"execution_status={compaction_execution.get('status')}; "
+                f"execution_count={compaction_execution.get('physical_compaction_executed_count')}; "
                 f"compaction_not_needed_count={compaction_metadata.get('compaction_not_needed_count')}; "
                 f"dataset_count={compaction_metadata.get('dataset_count')}; "
                 f"compaction_executed_count={compaction_metadata.get('compaction_executed_count')}"
             ),
             required_evidence="physical compaction task ledger and rewritten artifact metadata",
             next_step=(
-                "Keep no-compaction-needed metadata as local direct evidence; any future compaction still needs a separate maintenance task."
-                if physical_compaction_metadata_validation_done
-                else "execute compaction only through a separately approved maintenance task"
+                "Keep compacted targets and readback hashes bound to this scope; TTL/provider refresh remains separate."
+                if physical_compaction_execution_done
+                else "Keep no-compaction-needed metadata as local evidence; any future rewrite still needs a separate maintenance task."
             ),
         ),
         _storage_physical_durable_evidence_recipe_row(
@@ -5345,6 +6375,7 @@ def storage_physical_durable_evidence_recipe(
         "physical_execution_request_ready": execution_request_visible,
         "physical_execution_request_status": execution_request.get("status"),
         "current_result_atomic_parquet_promotion_done": current_result_atomic_promotion_done,
+        "current_result_atomic_receipt_direct_evidence": current_result_atomic_receipt_direct_evidence,
         "current_result_atomic_parquet_promotion_status": current_result_atomic_promotion.get("status"),
         "current_result_atomic_parquet_task_id": current_result_atomic_promotion.get(
             "latest_receipt_task_id"
@@ -5372,14 +6403,21 @@ def storage_physical_durable_evidence_recipe(
         "dataset_version_manifest_validated": manifest_validation_done,
         "dataset_version_manifest_validate_status": manifest_validation.get("status"),
         "dataset_version_manifest_validated_count": int(manifest_validation.get("validated_dataset_count") or 0),
-        "partition_migration_executed": False,
+        "partition_migration_executed": partition_migration_execution_done,
+        "partition_migration_execution_status": partition_execution.get("status"),
+        "partition_migration_execution_count": int(partition_execution.get("partition_migration_executed_count") or 0),
         "partition_migration_metadata_validation_done": partition_migration_metadata_validation_done,
         "partition_migration_metadata_validation_status": partition_migration_metadata.get("status"),
         "partition_migration_metadata_validated_count": int(
             partition_migration_metadata.get("partition_migration_metadata_validated_count") or 0
         ),
         "partition_migration_dataset_count": int(partition_migration_metadata.get("dataset_count") or 0),
-        "physical_compaction_executed": False,
+        "physical_compaction_executed": physical_compaction_execution_done,
+        "physical_compaction_execution_status": compaction_execution.get("status"),
+        "physical_compaction_execution_count": int(
+            compaction_execution.get("physical_compaction_executed_count") or 0
+        ),
+        "physical_compaction_execution": compaction_execution,
         "physical_compaction_metadata_validation_done": physical_compaction_metadata_validation_done,
         "physical_compaction_metadata_validation_status": compaction_metadata.get("status"),
         "physical_compaction_metadata_validated_count": int(

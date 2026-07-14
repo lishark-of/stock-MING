@@ -607,7 +607,9 @@ def _queue_for_task_type(task_type: str) -> str:
         "run_storage_dataset_version_manifest_write",
         "run_storage_dataset_version_manifest_validate",
         "run_storage_partition_migration_dry_run",
+        "run_storage_partition_migration_execution",
         "run_storage_compaction_dry_run",
+        "run_storage_compaction_execution",
         "run_storage_cache_ttl_dry_run",
     }:
         return "local_maintenance"
