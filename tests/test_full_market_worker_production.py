@@ -1205,14 +1205,21 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             ),
             "worker_production",
         )
-        # Newer FastAPI/Starlette versions expose internal included routers in
-        # ``app.routes`` alongside concrete APIRoute instances.  Only concrete
-        # routes have ``path``/``methods``; ignore framework containers while
-        # asserting our explicit POST route.
+        # Newer FastAPI/Starlette versions can expose internal included routers
+        # in ``app.routes`` instead of flattening their concrete children. Walk
+        # the route tree so this contract remains version-independent while
+        # still asserting the actual POST route.
+        def concrete_routes(routes):
+            for route in routes:
+                children = getattr(route, "routes", None)
+                if children is not None:
+                    yield from concrete_routes(children)
+                elif hasattr(route, "path") and hasattr(route, "methods"):
+                    yield route
+
         methods = {
             route.path: route.methods
-            for route in app.routes
-            if hasattr(route, "path") and hasattr(route, "methods")
+            for route in concrete_routes(app.routes)
         }
         self.assertEqual(methods["/api/worker/full-market-production-acceptance"], {"POST"})
         response = TestClient(app).get("/api/tasks/catalog")
