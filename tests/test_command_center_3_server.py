@@ -31159,7 +31159,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(task["does_not_modify_strategy_action"])
 
     def test_bootstrap_status_live_light_config_is_visible_without_execution(self):
-        clear_task_statuses_for_tests(clear_persisted=True)
+        clear_task_statuses_for_tests()
         self._with_bootstrap_env(
             COMMAND_CENTER_BOOTSTRAP_MODE="live_light",
             COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
