@@ -13752,7 +13752,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         class ExtendedFakeTushareAdapter:
             def get_trade_cal(self, **params):
-                return {"ok": True, "data": [{"cal_date": "20260610", "is_open": 1}], "error": ""}
+                return {"ok": True, "data": [{"exchange": "SSE", "cal_date": "20260610", "is_open": 1}], "error": ""}
 
             def get_margin_detail(self, **params):
                 return {"ok": True, "data": [], "error": ""}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from server.services import next_session_service, packet_service, task_service
 from server.services.task_service import clear_task_statuses_for_tests
@@ -22,10 +23,10 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
         clear_task_statuses_for_tests(clear_persisted=True)
 
     def tearDown(self):
+        clear_task_statuses_for_tests(clear_persisted=True)
         next_session_service.SQLITE_META_PATH = self.original_next_meta_path
         packet_service.SQLITE_META_PATH = self.original_packet_meta_path
         task_service.SQLITE_META_PATH = self.original_task_meta_path
-        clear_task_statuses_for_tests(clear_persisted=True)
         self.tmp.cleanup()
 
     def _write_candidate_packet(self, *, interpretation_uses_model_output: bool = False):
@@ -521,6 +522,65 @@ class NextSessionCandidateHandoffTests(unittest.TestCase):
         result_rows = {row["surface"]: row for row in packet["ordinary_result_replay_rows"]}
         self.assertIn("情景=1", result_rows["次日图谱"]["readable_result"])
         self.assertFalse(any(row["external_calls_triggered"] for row in packet["ordinary_result_replay_rows"]))
+
+
+class TaskStatusTestMetaIsolationTests(unittest.TestCase):
+    def test_clear_persisted_refuses_default_sqlite_meta_path_without_opening_store(self):
+        task_service._TASKS["local-test"] = {"task_id": "local-test"}
+        with patch.object(task_service, "SQLITE_META_PATH", task_service.DEFAULT_SQLITE_META_PATH):
+            with patch.object(task_service, "SQLiteMetaStore") as store_cls:
+                with self.assertRaisesRegex(RuntimeError, "refusing_to_clear_default_sqlite_task_statuses"):
+                    clear_task_statuses_for_tests(clear_persisted=True)
+                store_cls.assert_not_called()
+        self.assertEqual(task_service._TASKS, {})
+
+    def test_clear_persisted_allows_temp_meta_and_preserves_task_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_meta = Path(tmp) / "meta.sqlite"
+            store = SQLiteMetaStore(temp_meta)
+            task = {"task_id": "temp-task", "task_type": "unit", "status": "success"}
+            store.write_task_status(task)
+            self.assertEqual(store.read_task_status("temp-task"), task)
+            self.assertEqual(store.task_status_history_count("temp-task"), 1)
+
+            with patch.object(task_service, "SQLITE_META_PATH", temp_meta):
+                clear_task_statuses_for_tests(clear_persisted=True)
+
+            check = SQLiteMetaStore(temp_meta)
+            self.assertIsNone(check.read_task_status("temp-task"))
+            self.assertEqual(check.task_status_history_count("temp-task"), 1)
+            self.assertEqual(check.read_latest_task_status_history("temp-task")["task_id"], "temp-task")
+
+    def test_next_session_candidate_handoff_teardown_clears_temp_before_restoring_default(self):
+        opened_paths: list[Path] = []
+        real_store = task_service.SQLiteMetaStore
+
+        def recording_store(path):
+            opened_paths.append(Path(path).resolve())
+            return real_store(path)
+
+        case = NextSessionCandidateHandoffTests(
+            methodName="test_next_session_does_not_mark_unbound_chart_ready_for_confirmed_symbol"
+        )
+        case.setUp()
+        temp_meta = Path(task_service.SQLITE_META_PATH).resolve()
+        self.assertNotEqual(temp_meta, task_service.DEFAULT_SQLITE_META_PATH.resolve())
+        try:
+            with patch.object(task_service, "SQLiteMetaStore", side_effect=recording_store):
+                case.tearDown()
+        finally:
+            if getattr(case, "tmp", None) is not None:
+                try:
+                    case.tmp.cleanup()
+                except Exception:
+                    pass
+            next_session_service.SQLITE_META_PATH = case.original_next_meta_path
+            packet_service.SQLITE_META_PATH = case.original_packet_meta_path
+            task_service.SQLITE_META_PATH = case.original_task_meta_path
+
+        self.assertIn(temp_meta, opened_paths)
+        self.assertNotIn(task_service.DEFAULT_SQLITE_META_PATH.resolve(), opened_paths)
+        self.assertEqual(Path(task_service.SQLITE_META_PATH), Path(case.original_task_meta_path))
 
 
 if __name__ == "__main__":

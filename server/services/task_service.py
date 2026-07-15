@@ -5239,7 +5239,10 @@ def clear_task_statuses_for_tests(*, clear_persisted: bool = False) -> None:
     _TASKS.clear()
     if not clear_persisted:
         return
+    meta_path = Path(SQLITE_META_PATH).resolve()
+    if meta_path == DEFAULT_SQLITE_META_PATH.resolve():
+        raise RuntimeError("refusing_to_clear_default_sqlite_task_statuses")
     try:
-        SQLiteMetaStore(SQLITE_META_PATH).clear_task_statuses()
+        SQLiteMetaStore(meta_path).clear_task_statuses()
     except Exception:
         return
