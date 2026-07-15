@@ -260,6 +260,17 @@ FACTOR_TEST_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION = "factor_test_production_stag
 FACTOR_TEST_PROVIDER_SMALL_POOL_METRIC_VALIDATION_SCHEMA_VERSION = (
     "factor_test_provider_small_pool_metric_validation_audit.v1"
 )
+FACTOR_TEST_EFFECTIVE_DATED_INDUSTRY_SCHEMA_VERSION = (
+    "factor_test_effective_dated_industry_neutral_rank_ic.v1"
+)
+FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN = (
+    "in_date_inclusive_out_date_exclusive"
+)
+FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED = (
+    "in_date_inclusive_out_date_inclusive"
+)
+FACTOR_TEST_INDUSTRY_SOURCE_INDEX_MEMBER_ALL_V1 = "tushare_index_member_all.v1"
+FACTOR_TEST_INDUSTRY_MIN_GROUP_OBSERVATIONS = 2
 FACTOR_TEST_PROVIDER_SMALL_POOL_PIT_BIAS_SCHEMA_VERSION = (
     "factor_test_provider_small_pool_pit_bias_audit.v1"
 )
@@ -7368,6 +7379,478 @@ def _attach_factor_test_provider_small_pool_forward_return_label_audit(
     return packet, ledger
 
 
+def _factor_test_effective_dated_industry_neutral_rank_ic(
+    membership_rows: list[dict[str, Any]],
+    metric_rows: list[dict[str, Any]],
+    *,
+    expected_symbols: list[str],
+    requested_horizons: list[str],
+    source_contract: str = "",
+    interval_semantics: str = "",
+) -> dict[str, Any]:
+    """Join industry membership as-of each signal date and compute bounded Rank IC.
+
+    This is deliberately provider-independent.  Historical classifications must
+    be supplied as explicit ``in_date`` / ``out_date`` intervals; current
+    ``stock_basic`` or fact-table snapshots are never used as a fallback.
+    """
+
+    expected = sorted(
+        {
+            _factor_test_clean_symbol(item)
+            for item in expected_symbols
+            if _factor_test_clean_symbol(item)
+        }
+    )
+    expected_set = set(expected)
+    horizons = sorted(
+        {str(item or "").strip().lower() for item in requested_horizons if str(item or "").strip()},
+        key=lambda label: (
+            _factor_test_provider_small_pool_horizon_days(label) is None,
+            _factor_test_provider_small_pool_horizon_days(label) or 0,
+            label,
+        ),
+    )
+    source_contract_value = str(source_contract or "").strip().lower()
+    semantics_aliases = {
+        "closed_open": FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN,
+        "[in_date,out_date)": FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN,
+        FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN: FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN,
+        "closed_closed": FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED,
+        "[in_date,out_date]": FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED,
+        FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED: FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED,
+    }
+    source_default_semantics = {
+        FACTOR_TEST_INDUSTRY_SOURCE_INDEX_MEMBER_ALL_V1: FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN,
+    }
+    interval_semantics_requested = str(interval_semantics or "").strip().lower()
+    if interval_semantics_requested:
+        interval_semantics_resolved = semantics_aliases.get(interval_semantics_requested, "")
+        interval_semantics_resolution = (
+            "explicit_parameter"
+            if interval_semantics_resolved
+            else "unsupported_explicit_fail_closed"
+        )
+    else:
+        interval_semantics_resolved = source_default_semantics.get(source_contract_value, "")
+        interval_semantics_resolution = (
+            "source_contract_default" if interval_semantics_resolved else "unresolved_fail_closed"
+        )
+
+    unknown_labels = {
+        "unknown",
+        "unk",
+        "n/a",
+        "na",
+        "none",
+        "null",
+        "unclassified",
+        "未分类",
+        "未知",
+    }
+    classification_column_candidates = (
+        "ts_code",
+        "symbol",
+        "in_date",
+        "out_date",
+        "industry",
+        "industry_code",
+        "industry_name",
+    )
+    classification_columns_present = sorted(
+        {
+            column
+            for item in membership_rows
+            if isinstance(item, dict)
+            for column in classification_column_candidates
+            if column in item
+        }
+    )
+    canonical_memberships: list[dict[str, str]] = []
+    invalid_membership_row_count = 0
+    unknown_industry_row_count = 0
+    unexpected_symbol_row_count = 0
+    for item in membership_rows:
+        if not isinstance(item, dict):
+            invalid_membership_row_count += 1
+            continue
+        symbol = _factor_test_clean_symbol(item.get("ts_code") or item.get("symbol"))
+        in_date = _factor_test_date(item.get("in_date"))
+        out_raw = str(item.get("out_date") or "").strip()
+        out_date = _factor_test_date(out_raw) if out_raw else None
+        industry = str(
+            item.get("industry_code")
+            or item.get("industry")
+            or item.get("industry_name")
+            or ""
+        ).strip()
+        interval_order_invalid = bool(in_date and out_date and out_date < in_date)
+        empty_closed_open_interval = bool(
+            in_date
+            and out_date
+            and out_date == in_date
+            and interval_semantics_resolved == FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN
+        )
+        if (
+            not symbol
+            or not in_date
+            or (out_raw and not out_date)
+            or interval_order_invalid
+            or empty_closed_open_interval
+        ):
+            invalid_membership_row_count += 1
+            continue
+        if expected_set and symbol not in expected_set:
+            unexpected_symbol_row_count += 1
+            continue
+        if not industry or industry.casefold() in unknown_labels:
+            unknown_industry_row_count += 1
+            continue
+        canonical_memberships.append(
+            {
+                "ts_code": symbol,
+                "in_date": in_date.strftime("%Y%m%d"),
+                "out_date": out_date.strftime("%Y%m%d") if out_date else "",
+                "industry": industry,
+            }
+        )
+    canonical_memberships.sort(
+        key=lambda row: (row["ts_code"], row["in_date"], row["out_date"], row["industry"])
+    )
+    classification_digest_payload = {
+        "source_contract": source_contract_value,
+        "interval_semantics": interval_semantics_resolved,
+        "rows": canonical_memberships,
+    }
+    classification_digest = hashlib.sha256(
+        json.dumps(classification_digest_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    by_symbol: dict[str, list[dict[str, str]]] = {}
+    for row in canonical_memberships:
+        by_symbol.setdefault(row["ts_code"], []).append(row)
+    overlap_interval_count = 0
+    for rows_for_symbol in by_symbol.values():
+        for previous, current in zip(rows_for_symbol, rows_for_symbol[1:]):
+            previous_out = previous["out_date"] or "99991231"
+            if interval_semantics_resolved == FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN:
+                overlaps = current["in_date"] < previous_out
+            elif interval_semantics_resolved == FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED:
+                overlaps = current["in_date"] <= previous_out
+            else:
+                overlaps = False
+            if overlaps:
+                overlap_interval_count += 1
+
+    canonical_metrics: list[dict[str, Any]] = []
+    invalid_metric_row_count = 0
+    for item in metric_rows:
+        if not isinstance(item, dict):
+            invalid_metric_row_count += 1
+            continue
+        symbol = _factor_test_clean_symbol(item.get("ts_code") or item.get("symbol"))
+        signal_date_value = _factor_test_date(item.get("signal_date") or item.get("trade_date"))
+        horizon = str(item.get("horizon") or "").strip().lower()
+        score = _safe_float(item.get("score"), default=math.nan)
+        forward_return = _safe_float(item.get("forward_return"), default=math.nan)
+        if (
+            not symbol
+            or not signal_date_value
+            or (expected_set and symbol not in expected_set)
+            or not horizon
+            or (horizons and horizon not in horizons)
+            or not math.isfinite(score)
+            or not math.isfinite(forward_return)
+        ):
+            invalid_metric_row_count += 1
+            continue
+        score_canonical = float.fromhex(float(score).hex())
+        forward_return_canonical = float.fromhex(float(forward_return).hex())
+        canonical_metrics.append(
+            {
+                "ts_code": symbol,
+                "signal_date": signal_date_value.strftime("%Y%m%d"),
+                "horizon": horizon,
+                "score": score_canonical,
+                "forward_return": forward_return_canonical,
+            }
+        )
+    canonical_metrics.sort(
+        key=lambda row: (
+            row["signal_date"],
+            row["horizon"],
+            row["ts_code"],
+            float(row["score"]).hex(),
+            float(row["forward_return"]).hex(),
+        )
+    )
+    metric_key_counts: dict[tuple[str, str, str], int] = {}
+    for row in canonical_metrics:
+        metric_key = (row["signal_date"], row["horizon"], row["ts_code"])
+        metric_key_counts[metric_key] = metric_key_counts.get(metric_key, 0) + 1
+    duplicate_metric_row_count = sum(count - 1 for count in metric_key_counts.values() if count > 1)
+    metric_digest_rows = [
+        {
+            "ts_code": row["ts_code"],
+            "signal_date": row["signal_date"],
+            "horizon": row["horizon"],
+            "score_float_hex": float(row["score"]).hex(),
+            "forward_return_float_hex": float(row["forward_return"]).hex(),
+        }
+        for row in canonical_metrics
+    ]
+    metric_digest = hashlib.sha256(
+        json.dumps(metric_digest_rows, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    joined_rows: list[dict[str, Any]] = []
+    gap_assignment_count = 0
+    future_effective_assignment_count = 0
+    overlap_assignment_count = 0
+    for row in canonical_metrics:
+        intervals = by_symbol.get(row["ts_code"], [])
+        if interval_semantics_resolved == FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN:
+            matches = [
+                item
+                for item in intervals
+                if item["in_date"] <= row["signal_date"]
+                and (not item["out_date"] or row["signal_date"] < item["out_date"])
+            ]
+        elif interval_semantics_resolved == FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED:
+            matches = [
+                item
+                for item in intervals
+                if item["in_date"] <= row["signal_date"] <= (item["out_date"] or "99991231")
+            ]
+        else:
+            matches = []
+        if len(matches) != 1:
+            if len(matches) > 1:
+                overlap_assignment_count += 1
+            elif any(item["in_date"] > row["signal_date"] for item in intervals):
+                future_effective_assignment_count += 1
+            else:
+                gap_assignment_count += 1
+            continue
+        joined_rows.append({**row, "industry": matches[0]["industry"]})
+
+    joined_by_period: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in joined_rows:
+        joined_by_period.setdefault((row["signal_date"], row["horizon"]), []).append(row)
+
+    metric_symbol_gap_period_count = 0
+    metric_observation_count_mismatch_period_count = 0
+    single_industry_period_count = 0
+    undersized_industry_group_period_count = 0
+    industry_group_size_min_observed: int | None = None
+    non_finite_period_count = 0
+    horizon_period_values: dict[str, list[dict[str, Any]]] = {item: [] for item in horizons}
+    for (signal_date, horizon), rows_for_period in sorted(joined_by_period.items()):
+        observed_symbols = {row["ts_code"] for row in rows_for_period}
+        if expected_set and observed_symbols != expected_set:
+            metric_symbol_gap_period_count += 1
+            continue
+        if expected_set and len(rows_for_period) != len(expected_set):
+            metric_observation_count_mismatch_period_count += 1
+            continue
+        industry_groups = sorted({str(row["industry"]) for row in rows_for_period})
+        if len(industry_groups) < 2:
+            single_industry_period_count += 1
+            continue
+        industry_group_sizes = {
+            industry: sum(1 for row in rows_for_period if row["industry"] == industry)
+            for industry in industry_groups
+        }
+        period_min_group_size = min(industry_group_sizes.values())
+        industry_group_size_min_observed = (
+            period_min_group_size
+            if industry_group_size_min_observed is None
+            else min(industry_group_size_min_observed, period_min_group_size)
+        )
+        if period_min_group_size < FACTOR_TEST_INDUSTRY_MIN_GROUP_OBSERVATIONS:
+            undersized_industry_group_period_count += 1
+            continue
+        industry_score_means = {
+            industry: _mean(
+                [float(row["score"]) for row in rows_for_period if row["industry"] == industry]
+            )
+            for industry in industry_groups
+        }
+        residual_scores = [
+            float(row["score"]) - industry_score_means[str(row["industry"])]
+            for row in rows_for_period
+        ]
+        if len({round(value, 12) for value in residual_scores}) < 2:
+            non_finite_period_count += 1
+            continue
+        rank_ic = _pearson_correlation(
+            _rank_average(residual_scores),
+            _rank_average([float(row["forward_return"]) for row in rows_for_period]),
+        )
+        if not math.isfinite(rank_ic):
+            non_finite_period_count += 1
+            continue
+        horizon_period_values.setdefault(horizon, []).append(
+            {
+                "signal_date": signal_date,
+                "observation_count": len(rows_for_period),
+                "industry_group_count": len(industry_groups),
+                "industry_group_size_min": period_min_group_size,
+                "industry_neutral_rank_ic": _round_or_none(rank_ic),
+            }
+        )
+
+    missing_horizons = [item for item in horizons if not horizon_period_values.get(item)]
+    missing_membership_symbols = sorted(expected_set - set(by_symbol))
+    blockers: list[str] = []
+    for blocker, present in (
+        ("interval_semantics_unresolved", not interval_semantics_resolved),
+        ("invalid_membership_rows", invalid_membership_row_count > 0),
+        ("unknown_industry_membership", unknown_industry_row_count > 0),
+        ("unexpected_membership_symbols", unexpected_symbol_row_count > 0),
+        ("overlapping_membership_intervals", overlap_interval_count > 0),
+        ("missing_membership_symbols", bool(missing_membership_symbols)),
+        ("invalid_metric_rows", invalid_metric_row_count > 0),
+        ("duplicate_metric_observations", duplicate_metric_row_count > 0),
+        ("membership_gap_at_signal_date", gap_assignment_count > 0),
+        ("future_effective_membership_at_signal_date", future_effective_assignment_count > 0),
+        ("overlap_at_signal_date", overlap_assignment_count > 0),
+        ("metric_symbol_gap_by_period", metric_symbol_gap_period_count > 0),
+        (
+            "metric_observation_count_must_equal_expected_five",
+            metric_observation_count_mismatch_period_count > 0,
+        ),
+        ("fewer_than_two_industries_by_period", single_industry_period_count > 0),
+        (
+            "industry_group_sample_too_small",
+            undersized_industry_group_period_count > 0,
+        ),
+        ("non_finite_industry_neutral_rank_ic", non_finite_period_count > 0),
+        ("missing_requested_horizon_metrics", bool(missing_horizons)),
+        (
+            "bounded_small_pool_requires_exactly_five_symbols",
+            len(expected) != FACTOR_TEST_PROVIDER_SMALL_POOL_SAMPLE_SIZE,
+        ),
+        ("empty_effective_dated_membership", not canonical_memberships),
+        ("empty_metric_observations", not canonical_metrics),
+    ):
+        if present:
+            blockers.append(blocker)
+
+    horizon_summaries = {
+        horizon: {
+            "horizon": horizon,
+            "industry_neutral_period_count": len(values),
+            "industry_neutral_rank_ic_mean": _round_or_none(
+                _mean([row["industry_neutral_rank_ic"] for row in values])
+            ),
+            "industry_group_count_max": max(
+                [int(row["industry_group_count"]) for row in values] or [0]
+            ),
+            "industry_group_size_min": min(
+                [int(row["industry_group_size_min"]) for row in values] or [0]
+            ),
+            "minimum_industry_group_observations_required": FACTOR_TEST_INDUSTRY_MIN_GROUP_OBSERVATIONS,
+            "sample_rows": values[:10],
+        }
+        for horizon, values in horizon_period_values.items()
+    }
+    result_version_payload = {
+        "classification_data_digest": classification_digest,
+        "metric_data_digest": metric_digest,
+        "source_contract": source_contract_value,
+        "interval_semantics": interval_semantics_resolved,
+        "expected_symbols": expected,
+        "requested_horizons": horizons,
+        "small_pool_only": True,
+    }
+    result_version_hash = hashlib.sha256(
+        json.dumps(result_version_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    passed = not blockers
+    return {
+        "schema_version": FACTOR_TEST_EFFECTIVE_DATED_INDUSTRY_SCHEMA_VERSION,
+        "status": (
+            "passed_effective_dated_industry_neutral_rank_ic_research_only"
+            if passed
+            else "blocked_effective_dated_industry_membership_or_metric_contract"
+        ),
+        "passed": passed,
+        "classification_data_digest": classification_digest,
+        "classification_data_digest_short": classification_digest[:16],
+        "metric_data_digest": metric_digest,
+        "source_contract": source_contract_value,
+        "interval_semantics_requested": interval_semantics_requested,
+        "interval_semantics": interval_semantics_resolved,
+        "interval_semantics_resolution": interval_semantics_resolution,
+        "interval_predicate": (
+            "in_date <= signal_date < out_date; empty out_date is open ended"
+            if interval_semantics_resolved == FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN
+            else (
+                "in_date <= signal_date <= out_date; empty out_date is open ended"
+                if interval_semantics_resolved
+                == FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED
+                else "unresolved; no interval assignment is allowed"
+            )
+        ),
+        "result_version": result_version_hash[:16],
+        "result_version_hash": result_version_hash,
+        "result_version_summary": {
+            "classification_data_digest": classification_digest,
+            "classification_data_digest_short": classification_digest[:16],
+            "classification_digest_bound": True,
+            "metric_data_digest": metric_digest,
+            "metric_digest_bound": True,
+            "source_contract": source_contract_value,
+            "interval_semantics": interval_semantics_resolved,
+            "small_pool_only": True,
+        },
+        "expected_symbols": expected,
+        "expected_symbol_count": len(expected),
+        "requested_horizons": horizons,
+        "classification_row_count": len(canonical_memberships),
+        "classification_columns_present": classification_columns_present,
+        "classification_symbol_count": len(by_symbol),
+        "classification_coverage_complete": bool(expected_set and expected_set.issubset(by_symbol)),
+        "joined_assignment_count": len(joined_rows),
+        "invalid_membership_row_count": invalid_membership_row_count,
+        "unknown_industry_row_count": unknown_industry_row_count,
+        "unexpected_symbol_row_count": unexpected_symbol_row_count,
+        "overlap_interval_count": overlap_interval_count,
+        "gap_assignment_count": gap_assignment_count,
+        "future_effective_assignment_count": future_effective_assignment_count,
+        "overlap_assignment_count": overlap_assignment_count,
+        "invalid_metric_row_count": invalid_metric_row_count,
+        "duplicate_metric_row_count": duplicate_metric_row_count,
+        "metric_symbol_gap_period_count": metric_symbol_gap_period_count,
+        "metric_observation_count_mismatch_period_count": metric_observation_count_mismatch_period_count,
+        "single_industry_period_count": single_industry_period_count,
+        "minimum_industry_group_observations_required": FACTOR_TEST_INDUSTRY_MIN_GROUP_OBSERVATIONS,
+        "undersized_industry_group_period_count": undersized_industry_group_period_count,
+        "industry_group_size_min_observed": industry_group_size_min_observed,
+        "non_finite_period_count": non_finite_period_count,
+        "missing_membership_symbols": missing_membership_symbols,
+        "missing_horizons": missing_horizons,
+        "horizon_summaries": horizon_summaries,
+        "blocker_count": len(blockers),
+        "blockers": blockers,
+        "pit_interval_join_done": passed,
+        "uses_current_stock_basic_snapshot": False,
+        "provider_independent": True,
+        "small_pool_only": True,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "worker_called": False,
+        "does_not_execute_trades": True,
+    }
+
+
 def _factor_test_provider_small_pool_metric_validation_row(
     criterion: str,
     status: str,
@@ -7522,15 +8005,17 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         for row in moneyflow_rows
         if isinstance(row, dict)
     }
+    effective_dated_industry_membership_rows = [
+        dict(row)
+        for row in factor_tests.get("effective_dated_industry_membership_rows", [])
+        if isinstance(row, dict)
+    ]
     industry_classification_column_candidates = [
         "industry",
-        "industry_name",
         "industry_code",
-        "sector",
-        "sector_name",
-        "sw_industry",
-        "sw_l1",
-        "sw_l1_code",
+        "industry_name",
+        "in_date",
+        "out_date",
     ]
 
     grouped_observations: dict[tuple[str, str], list[dict[str, Any]]] = {}
@@ -7571,17 +8056,6 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                 has_moneyflow = all(math.isfinite(value) for value in moneyflow_values)
                 if not has_moneyflow and not moneyflow_optional:
                     continue
-                industry_value = ""
-                for source_row in (basic, current_row, moneyflow):
-                    if not isinstance(source_row, dict):
-                        continue
-                    for column in industry_classification_column_candidates:
-                        candidate = str(source_row.get(column) or "").strip()
-                        if candidate:
-                            industry_value = candidate
-                            break
-                    if industry_value:
-                        break
                 grouped_observations.setdefault((trade_date, label), []).append(
                     {
                         "ts_code": symbol,
@@ -7597,7 +8071,6 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                         if has_moneyflow
                         else None,
                         "moneyflow_available": has_moneyflow,
-                        "industry": industry_value,
                     }
                 )
 
@@ -7605,6 +8078,7 @@ def _factor_test_provider_small_pool_metric_validation_audit(
     rolling_window = FACTOR_TEST_PROVIDER_SMALL_POOL_METRIC_ROLLING_WINDOW
     cost_bps = FACTOR_TEST_PROVIDER_SMALL_POOL_ASSUMED_ROUND_TRIP_COST_BPS
     horizon_summaries: dict[str, dict[str, Any]] = {}
+    industry_metric_rows: list[dict[str, Any]] = []
     metric_observation_count = 0
     for label, _ in horizon_pairs:
         period_rows: list[dict[str, Any]] = []
@@ -7650,28 +8124,17 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                     _rank_average(returns),
                 )
             industry_neutral_rank_ic = math.nan
-            industry_values = [str(item.get("industry") or "").strip() for item in observations]
-            industry_groups = sorted({item for item in industry_values if item})
-            if len(industry_groups) >= 2 and all(industry_values):
-                industry_score_means = {
-                    industry: _mean(
-                        [
-                            scores[index]
-                            for index, value in enumerate(industry_values)
-                            if value == industry
-                        ]
-                    )
-                    for industry in industry_groups
+            industry_groups: list[str] = []
+            industry_metric_rows.extend(
+                {
+                    "ts_code": str(observations[index].get("ts_code") or ""),
+                    "signal_date": trade_date,
+                    "horizon": label,
+                    "score": scores[index],
+                    "forward_return": returns[index],
                 }
-                industry_residual_scores = [
-                    scores[index] - industry_score_means[industry_values[index]]
-                    for index in range(count)
-                ]
-                if len({round(item, 12) for item in industry_residual_scores}) > 1:
-                    industry_neutral_rank_ic = _pearson_correlation(
-                        _rank_average(industry_residual_scores),
-                        _rank_average(returns),
-                    )
+                for index in range(count)
+            )
             if math.isfinite(ic) and math.isfinite(rank_ic):
                 period_rows.append(
                     {
@@ -7755,6 +8218,40 @@ def _factor_test_provider_small_pool_metric_validation_audit(
             ],
         }
 
+    industry_source_contract = str(
+        factor_tests.get("effective_dated_industry_source_contract") or ""
+    ).strip()
+    industry_interval_semantics = str(
+        factor_tests.get("effective_dated_industry_interval_semantics") or ""
+    ).strip()
+    industry_membership_contract = _factor_test_effective_dated_industry_neutral_rank_ic(
+        effective_dated_industry_membership_rows,
+        industry_metric_rows,
+        expected_symbols=expected_symbols,
+        requested_horizons=[label for label, _days in horizon_pairs],
+        source_contract=industry_source_contract,
+        interval_semantics=industry_interval_semantics,
+    )
+    for label, industry_summary in _dict(
+        industry_membership_contract.get("horizon_summaries")
+    ).items():
+        if label not in horizon_summaries or not isinstance(industry_summary, dict):
+            continue
+        horizon_summaries[label].update(
+            {
+                "industry_neutral_rank_ic_mean": industry_summary.get(
+                    "industry_neutral_rank_ic_mean"
+                ),
+                "industry_neutral_period_count": int(
+                    industry_summary.get("industry_neutral_period_count") or 0
+                ),
+                "industry_group_count_max": int(
+                    industry_summary.get("industry_group_count_max") or 0
+                ),
+                "industry_neutral_sample_rows": list(industry_summary.get("sample_rows") or []),
+            }
+        )
+
     horizon_values = list(horizon_summaries.values())
     rolling_done = bool(
         provider_sample_done
@@ -7770,42 +8267,22 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         rolling_done
         and all(item.get("market_cap_neutral_rank_ic_mean") is not None for item in horizon_values)
     )
-    industry_source_rows = [*daily_rows, *basic_rows, *moneyflow_rows]
-    industry_classification_columns_present = sorted(
-        {
-            column
-            for row in industry_source_rows
-            if isinstance(row, dict)
-            for column in industry_classification_column_candidates
-            if str(row.get(column) or "").strip()
-        }
+    industry_classification_rows = effective_dated_industry_membership_rows
+    industry_classification_columns_present = list(
+        industry_membership_contract.get("classification_columns_present") or []
     )
-    industry_classification_rows = [
-        row
-        for row in industry_source_rows
-        if isinstance(row, dict)
-        and any(str(row.get(column) or "").strip() for column in industry_classification_column_candidates)
-    ]
-    industry_classification_symbol_count = len(
-        {
-            str(row.get("ts_code") or "").strip()
-            for row in industry_classification_rows
-            if str(row.get("ts_code") or "").strip()
-        }
+    industry_classification_symbol_count = int(
+        industry_membership_contract.get("classification_symbol_count") or 0
     )
-    industry_classification_symbol_set = {
-        str(row.get("ts_code") or "").strip()
-        for row in industry_classification_rows
-        if str(row.get("ts_code") or "").strip()
-    }
     industry_classification_coverage_complete = bool(
-        expected_symbol_set and expected_symbol_set.issubset(industry_classification_symbol_set)
+        industry_membership_contract.get("classification_coverage_complete")
     )
     industry_neutral_period_count = sum(
         int(item.get("industry_neutral_period_count") or 0) for item in horizon_values
     )
     industry_neutralization_done = bool(
         rolling_done
+        and industry_membership_contract.get("passed") is True
         and industry_classification_coverage_complete
         and horizon_values
         and all(int(item.get("industry_neutral_period_count") or 0) > 0 for item in horizon_values)
@@ -7814,15 +8291,16 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         industry_neutralization_status = "passed_industry_neutral_rank_ic_visible"
         industry_neutralization_degraded_reason = ""
     elif industry_classification_rows:
-        industry_neutralization_status = "blocked_industry_neutral_rank_ic_unavailable"
+        industry_neutralization_status = "blocked_effective_dated_industry_membership_contract"
         industry_neutralization_degraded_reason = (
-            "same-scope industry or sector columns are present, but joined observations did not produce finite "
-            "industry-neutral rank IC for every requested horizon"
+            "effective-dated industry membership did not pass the PIT interval join and requested-horizon "
+            f"Rank IC contract: {industry_membership_contract.get('blockers') or []}"
         )
     else:
         industry_neutralization_status = "blocked_missing_industry_classification"
         industry_neutralization_degraded_reason = (
-            "scoped provider fact tables only include daily/daily_basic/moneyflow rows; no industry or sector classification columns are available"
+            "no explicit effective-dated in_date/out_date industry membership rows are available; current "
+            "stock_basic or fact-table snapshots are not used to backfill history"
         )
     neutralization_stability_done = bool(market_cap_neutralization_done and industry_neutralization_done)
     dataset_error_safe = "; ".join(
@@ -7850,10 +8328,23 @@ def _factor_test_provider_small_pool_metric_validation_audit(
     result_version_payload = {
         "scope_hash": source_scope_hash,
         "source_task_id": acceptance.get("task_id") or "",
-        "horizons": [item["horizon"] for item in horizon_values],
+        "horizons": list(industry_membership_contract.get("requested_horizons") or []),
         "metric_observation_count": metric_observation_count,
         "period_counts": {item["horizon"]: item["period_count"] for item in horizon_values},
         "data_date": acceptance.get("provider_latest_data_date") or "",
+        "industry_classification_data_digest": industry_membership_contract.get(
+            "classification_data_digest"
+        )
+        or "",
+        "industry_metric_data_digest": industry_membership_contract.get("metric_data_digest")
+        or "",
+        "industry_contract_result_version_hash": industry_membership_contract.get(
+            "result_version_hash"
+        )
+        or "",
+        "industry_source_contract": industry_membership_contract.get("source_contract") or "",
+        "industry_interval_semantics": industry_membership_contract.get("interval_semantics")
+        or "",
     }
     result_version = hashlib.sha256(
         json.dumps(result_version_payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
@@ -7911,8 +8402,8 @@ def _factor_test_provider_small_pool_metric_validation_audit(
             "industry_neutralization_classification",
             industry_neutralization_status,
             industry_neutralization_done,
-            f"industry_rows={len(industry_classification_rows)}; industry_symbols={industry_classification_symbol_count}; columns_present={industry_classification_columns_present}; industry_neutral_rank_ic={ {key: value.get('industry_neutral_rank_ic_mean') for key, value in horizon_summaries.items()} }; industry_neutral_period_count={industry_neutral_period_count}; candidate_columns={industry_classification_column_candidates}",
-            "Add same-scope industry or sector classification before marking neutralization stability complete.",
+            f"industry_rows={len(industry_classification_rows)}; industry_symbols={industry_classification_symbol_count}; columns_present={industry_classification_columns_present}; source_contract={industry_membership_contract.get('source_contract')}; interval_semantics={industry_membership_contract.get('interval_semantics')}; classification_digest={industry_membership_contract.get('classification_data_digest_short')}; metric_digest={str(industry_membership_contract.get('metric_data_digest') or '')[:16]}; pit_interval_join_done={industry_membership_contract.get('pit_interval_join_done')}; min_group_required={industry_membership_contract.get('minimum_industry_group_observations_required')}; blockers={industry_membership_contract.get('blockers')}; industry_neutral_rank_ic={ {key: value.get('industry_neutral_rank_ic_mean') for key, value in horizon_summaries.items()} }; industry_neutral_period_count={industry_neutral_period_count}; candidate_columns={industry_classification_column_candidates}",
+            "Add explicit effective-dated in_date/out_date industry membership; never backfill history from a current stock_basic snapshot.",
             rolling_done=rolling_done,
             cost_done=cost_done,
             neutralization_done=neutralization_stability_done,
@@ -7945,7 +8436,43 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         "freshness_state": "provider_sample_replay_current_for_scope" if acceptance.get("provider_latest_data_date") else "unknown",
         "result_version": result_version[:16],
         "result_version_hash": result_version,
-        "input_packet_keys": ["daily", "daily_basic", "moneyflow", "provider_small_pool_forward_return_label_audit"],
+        "result_version_summary": {
+            "schema_version": "factor_test_metric_result_version_summary.v1",
+            "result_version": result_version[:16],
+            "industry_classification_data_digest": industry_membership_contract.get(
+                "classification_data_digest"
+            )
+            or "",
+            "industry_classification_digest_bound": True,
+            "industry_metric_data_digest": industry_membership_contract.get("metric_data_digest")
+            or "",
+            "industry_metric_digest_bound": True,
+            "industry_contract_result_version_hash": industry_membership_contract.get(
+                "result_version_hash"
+            )
+            or "",
+            "industry_contract_result_version_bound": True,
+            "industry_source_contract": industry_membership_contract.get("source_contract")
+            or "",
+            "industry_interval_semantics": industry_membership_contract.get(
+                "interval_semantics"
+            )
+            or "",
+            "provider_small_pool_only": True,
+            "full_market_validation_done": False,
+            "production_factor_test_validation_complete": False,
+        },
+        "input_packet_keys": [
+            "daily",
+            "daily_basic",
+            "moneyflow",
+            "provider_small_pool_forward_return_label_audit",
+        ]
+        + (
+            ["effective_dated_industry_membership_rows"]
+            if effective_dated_industry_membership_rows
+            else []
+        ),
         "output_packet_keys": ["provider_small_pool_metric_validation_audit", "provider_small_pool_metric_validation_rows"],
         "provider_call_ledger_ids": acceptance.get("provider_task_ids") or [],
         "provider_sample_done": provider_sample_done,
@@ -7974,6 +8501,34 @@ def _factor_test_provider_small_pool_metric_validation_audit(
         "industry_classification_row_count": len(industry_classification_rows),
         "industry_classification_symbol_count": industry_classification_symbol_count,
         "industry_classification_coverage_complete": industry_classification_coverage_complete,
+        "industry_classification_data_digest": industry_membership_contract.get(
+            "classification_data_digest"
+        )
+        or "",
+        "industry_classification_data_digest_short": industry_membership_contract.get(
+            "classification_data_digest_short"
+        )
+        or "",
+        "industry_classification_digest_bound_to_result_version": True,
+        "industry_metric_data_digest": industry_membership_contract.get("metric_data_digest")
+        or "",
+        "industry_metric_digest_bound_to_result_version": True,
+        "industry_contract_result_version_hash": industry_membership_contract.get(
+            "result_version_hash"
+        )
+        or "",
+        "industry_contract_result_version_bound_to_result_version": True,
+        "industry_source_contract": industry_membership_contract.get("source_contract") or "",
+        "industry_interval_semantics": industry_membership_contract.get("interval_semantics")
+        or "",
+        "industry_interval_semantics_resolution": industry_membership_contract.get(
+            "interval_semantics_resolution"
+        )
+        or "",
+        "industry_effective_dated_membership_contract": industry_membership_contract,
+        "industry_pit_interval_join_done": industry_membership_contract.get("pit_interval_join_done")
+        is True,
+        "industry_uses_current_stock_basic_snapshot": False,
         "industry_neutral_period_count": industry_neutral_period_count,
         "industry_classification_required_before_neutralization_stability": True,
         "neutralization_stability_done": neutralization_stability_done,
@@ -8017,6 +8572,10 @@ def _factor_test_provider_small_pool_metric_validation_audit(
                 "rolling_window_validation_done": rolling_done,
                 "cost_assumption_validation_done": cost_done,
                 "neutralization_stability_done": neutralization_stability_done,
+                "industry_classification_data_digest_short": receipt[
+                    "industry_classification_data_digest_short"
+                ],
+                "industry_pit_interval_join_done": receipt["industry_pit_interval_join_done"],
                 "moneyflow_optional": moneyflow_optional,
                 "missing_moneyflow_count": missing_moneyflow_count,
                 "production_factor_test_validation_complete": False,

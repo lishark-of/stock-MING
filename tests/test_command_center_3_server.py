@@ -61340,6 +61340,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                         "pe_ttm": 28.0 - symbol_index * 2.0 + (date_index % 3) * 0.05,
                         "pb": 3.0 - symbol_index * 0.2,
                         "total_mv": market_caps[symbol_index],
+                        "industry": "current_snapshot_must_not_backfill_history",
                         "provider_scope_hash": scope_hash,
                     }
                 )
@@ -61416,6 +61417,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("industry", audit["industry_neutralization_degraded_reason"])
         self.assertEqual(audit["industry_classification_row_count"], 0)
         self.assertEqual(audit["industry_classification_symbol_count"], 0)
+        self.assertFalse(audit["industry_uses_current_stock_basic_snapshot"])
         self.assertIn("industry", audit["industry_classification_column_candidates"])
         self.assertTrue(audit["industry_classification_required_before_neutralization_stability"])
         self.assertFalse(audit["neutralization_stability_done"])
@@ -61518,22 +61520,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(stage_rows_by_key["neutralization_stability_validation"]["provider_direct_evidence_present"])
 
     def test_factor_test_provider_small_pool_metric_validation_computes_industry_neutral_rank_ic(self):
-        symbols = ["000001.SZ", "002008.SZ", "300750.SZ", "600000.SH", "600519.SH", "601318.SH"]
+        symbols = ["000001.SZ", "002008.SZ", "300750.SZ", "600000.SH", "600519.SH"]
         industries = {
             "000001.SZ": "bank",
-            "002008.SZ": "machinery",
-            "300750.SZ": "battery",
-            "600000.SH": "bank",
-            "600519.SH": "consumer",
-            "601318.SH": "insurance",
+            "002008.SZ": "bank",
+            "300750.SZ": "technology",
+            "600000.SH": "technology",
+            "600519.SH": "technology",
         }
         scope_hash = "scope-industry"
         daily_rows = []
         daily_basic_rows = []
         moneyflow_rows = []
-        market_caps = [1_000_000.0, 4_500_000.0, 1_800_000.0, 7_000_000.0, 2_700_000.0, 5_200_000.0]
+        market_caps = [1_000_000.0, 4_500_000.0, 1_800_000.0, 7_000_000.0, 2_700_000.0]
+        start_date = _dt.date(2025, 1, 2)
         for date_index in range(60):
-            trade_date = f"2025{date_index + 1:04d}"
+            trade_date = (start_date + _dt.timedelta(days=date_index)).strftime("%Y%m%d")
             for symbol_index, symbol in enumerate(symbols):
                 daily_rows.append(
                     {
@@ -61551,7 +61553,6 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                         "pe_ttm": 28.0 - symbol_index * 1.7 + (date_index % 4) * 0.05,
                         "pb": 3.0 - symbol_index * 0.15,
                         "total_mv": market_caps[symbol_index],
-                        "industry": industries[symbol],
                         "provider_scope_hash": scope_hash,
                     }
                 )
@@ -61581,6 +61582,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             return packets[dataset]
 
         factor_tests = {
+            "effective_dated_industry_source_contract": "tushare_index_member_all.v1",
+            "effective_dated_industry_membership_rows": [
+                {
+                    "ts_code": symbol,
+                    "in_date": "20240101",
+                    "out_date": "",
+                    "industry": industries[symbol],
+                }
+                for symbol in symbols
+            ],
             "provider_small_pool_acceptance_receipt": {
                 "task_id": "local-provider",
                 "acceptance_scope_hash": scope_hash,
@@ -61600,7 +61611,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "expected_symbol_count": len(symbols),
                 "labeled_symbol_count": len(symbols),
                 "symbol_coverage_complete": True,
-                "requested_horizons": ["1d", "5d"],
+                "requested_horizons": ["1d", "5d", "20d"],
                 "source_acceptance_scope_hash": scope_hash,
                 "source_acceptance_scope_hash_short": "scope-industry",
             },
@@ -61610,6 +61621,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             audit, rows, ledger = factor_service._factor_test_provider_small_pool_metric_validation_audit(
                 factor_tests,
                 "2026-07-12T11:10:00",
+            )
+            daily_basic_rows[0]["pe_ttm"] = 0.01
+            changed_metric_audit, _changed_rows, _changed_ledger = (
+                factor_service._factor_test_provider_small_pool_metric_validation_audit(
+                    factor_tests,
+                    "2026-07-12T11:10:01",
+                )
             )
         finally:
             factor_service.storage_service.parquet_dataset_status = original_reader
@@ -61627,6 +61645,46 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(audit["neutralization_stability_done"])
         self.assertIsNotNone(audit["horizon_summaries"]["1d"]["industry_neutral_rank_ic_mean"])
         self.assertIsNotNone(audit["horizon_summaries"]["5d"]["industry_neutral_rank_ic_mean"])
+        self.assertIsNotNone(audit["horizon_summaries"]["20d"]["industry_neutral_rank_ic_mean"])
+        self.assertTrue(audit["industry_pit_interval_join_done"])
+        self.assertEqual(audit["industry_source_contract"], "tushare_index_member_all.v1")
+        self.assertEqual(
+            audit["industry_interval_semantics"],
+            "in_date_inclusive_out_date_exclusive",
+        )
+        self.assertFalse(audit["industry_uses_current_stock_basic_snapshot"])
+        self.assertTrue(audit["industry_classification_data_digest"])
+        self.assertEqual(
+            audit["industry_effective_dated_membership_contract"]["classification_data_digest"],
+            audit["industry_classification_data_digest"],
+        )
+        self.assertEqual(
+            audit["result_version_summary"]["industry_classification_data_digest"],
+            audit["industry_classification_data_digest"],
+        )
+        self.assertTrue(audit["result_version_summary"]["industry_classification_digest_bound"])
+        self.assertEqual(
+            audit["result_version_summary"]["industry_metric_data_digest"],
+            audit["industry_effective_dated_membership_contract"]["metric_data_digest"],
+        )
+        self.assertEqual(
+            audit["result_version_summary"]["industry_contract_result_version_hash"],
+            audit["industry_effective_dated_membership_contract"]["result_version_hash"],
+        )
+        self.assertTrue(audit["result_version_summary"]["industry_metric_digest_bound"])
+        self.assertTrue(audit["result_version_summary"]["industry_contract_result_version_bound"])
+        self.assertNotEqual(audit["result_version"], changed_metric_audit["result_version"])
+        self.assertNotEqual(
+            audit["industry_metric_data_digest"],
+            changed_metric_audit["industry_metric_data_digest"],
+        )
+        self.assertEqual(
+            audit["industry_effective_dated_membership_contract"][
+                "minimum_industry_group_observations_required"
+            ],
+            2,
+        )
+        self.assertFalse(audit["result_version_summary"]["full_market_validation_done"])
         self.assertNotIn("industry neutralization stability evidence", audit["missing_evidence"])
         self.assertFalse(audit["external_calls_triggered"])
         self.assertFalse(audit["tushare_called"])
