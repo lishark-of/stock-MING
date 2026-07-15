@@ -727,23 +727,33 @@ def _load_factor_test_industry_trusted_state(
         if not payload or len(payload) > 4096:
             return None, "industry_provider_trust_state_corrupt"
         state = json.loads(payload.decode("utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except (UnicodeError, json.JSONDecodeError):
+        return None, "industry_provider_trust_state_json_invalid"
+    except OSError:
         return None, "industry_provider_trust_state_corrupt"
     finally:
         if descriptor >= 0:
             os.close(descriptor)
-    if not isinstance(state, dict) or set(state) != {
+    if type(state) is not dict or set(state) != {
         "schema_version",
         "sequence_no",
         "event_digest",
         "event_mac",
         "state_mac",
     }:
-        return None, "industry_provider_trust_state_corrupt"
+        return None, "industry_provider_trust_state_type_invalid"
+    if not (
+        type(state.get("schema_version")) is str
+        and type(state.get("sequence_no")) is int
+        and type(state.get("event_digest")) is str
+        and type(state.get("event_mac")) is str
+        and type(state.get("state_mac")) is str
+    ):
+        return None, "industry_provider_trust_state_type_invalid"
     material = _factor_test_industry_state_material(
-        int(state.get("sequence_no") or 0),
-        str(state.get("event_digest") or ""),
-        str(state.get("event_mac") or ""),
+        state["sequence_no"],
+        state["event_digest"],
+        state["event_mac"],
     )
     if not (
         material["schema_version"] == state.get("schema_version")
@@ -751,7 +761,7 @@ def _load_factor_test_industry_trusted_state(
         and len(material["event_digest"]) == 64
         and len(material["event_mac"]) == 64
         and hmac.compare_digest(
-            str(state.get("state_mac") or ""),
+            state["state_mac"],
             _factor_test_industry_trusted_mac(secret, material),
         )
     ):
@@ -865,6 +875,305 @@ def _factor_test_provider_industry_membership_event(
     return event
 
 
+def _factor_test_provider_industry_membership_persisted_type_blockers(
+    event: Any,
+    *,
+    require_trusted_auth: bool,
+) -> list[str]:
+    """Reject type-confused persisted evidence before any coercion or hashing.
+
+    Python considers ``bool`` an ``int``.  Every externally persisted authority
+    field therefore uses ``type(value) is ...`` instead of ``isinstance``.  The
+    authoritative receipt/row/ledger shapes are closed schemas: a reader never
+    guesses how to coerce a malformed SQLite JSON value into trusted evidence.
+    """
+
+    if type(event) is not dict:
+        return ["event_missing_or_not_exact_object"]
+    base_fields = {
+        "schema_version",
+        "status",
+        "created_at",
+        "task_id",
+        "industry_scope_hash",
+        "source_acceptance_scope_hash",
+        "provider_api",
+        "authoritative_success",
+        "raw_row_count",
+        "raw_rows_digest",
+        "call_ledger_count",
+        "call_ledger_digest",
+        "transport_receipt_set_digest",
+        "receipt",
+        "raw_rows",
+        "call_ledger",
+        "contains_secret",
+        "does_not_execute_trades",
+        "does_not_modify_strategy_action",
+        "event_digest",
+    }
+    trusted_fields = {"sequence_no", "previous_event_mac", "event_mac"}
+    has_trusted_fields = any(key in event for key in trusted_fields)
+    expected_fields = base_fields | trusted_fields if require_trusted_auth or has_trusted_fields else base_fields
+    blockers: list[str] = []
+    if set(event) != expected_fields:
+        blockers.append("event_field_set_mismatch")
+    for key in {
+        "schema_version",
+        "status",
+        "created_at",
+        "task_id",
+        "industry_scope_hash",
+        "source_acceptance_scope_hash",
+        "provider_api",
+        "raw_rows_digest",
+        "call_ledger_digest",
+        "transport_receipt_set_digest",
+        "event_digest",
+    }:
+        if type(event.get(key)) is not str:
+            blockers.append(f"event_{key}_type_invalid")
+    for key in {
+        "authoritative_success",
+        "contains_secret",
+        "does_not_execute_trades",
+        "does_not_modify_strategy_action",
+    }:
+        if type(event.get(key)) is not bool:
+            blockers.append(f"event_{key}_type_invalid")
+    for key in {"raw_row_count", "call_ledger_count"}:
+        if type(event.get(key)) is not int:
+            blockers.append(f"event_{key}_type_invalid")
+    if type(event.get("receipt")) is not dict:
+        blockers.append("event_receipt_type_invalid")
+    if type(event.get("raw_rows")) is not list:
+        blockers.append("event_raw_rows_type_invalid")
+    if type(event.get("call_ledger")) is not list:
+        blockers.append("event_call_ledger_type_invalid")
+    if require_trusted_auth or has_trusted_fields:
+        if type(event.get("sequence_no")) is not int:
+            blockers.append("event_sequence_no_type_invalid")
+        for key in ("previous_event_mac", "event_mac"):
+            if type(event.get(key)) is not str:
+                blockers.append(f"event_{key}_type_invalid")
+    if blockers or event.get("authoritative_success") is not True:
+        return sorted(set(blockers))
+
+    receipt = event["receipt"]
+    receipt_string_fields = {
+        "schema_version", "status", "created_at", "ltg", "source_contract",
+        "official_provider_documentation", "official_is_new_default",
+        "source_out_date_field_description", "source_out_date_endpoint_semantics",
+        "industry_scope_hash", "industry_scope_hash_short",
+        "source_acceptance_scope_hash", "source_acceptance_scope_hash_short",
+        "signal_start_date", "signal_end_date", "provider_api", "allowed_next_step",
+        "execution_mode", "provider_raw_rows_digest", "provider_raw_rows_digest_short",
+        "provider_call_ledger_digest", "provider_transport_receipt_set_digest", "task_id",
+    }
+    receipt_int_fields = {
+        "official_minimum_points", "official_max_rows_per_call", "symbol_count",
+        "expected_provider_call_count", "maximum_provider_call_count", "provider_call_count",
+        "provider_success_call_count", "provider_empty_call_count", "provider_failed_call_count",
+        "provider_transport_verified_call_count", "provider_raw_row_count",
+        "provider_valid_row_count", "provider_symbol_coverage_count",
+        "provider_original_raw_row_count", "provider_unique_raw_row_count",
+        "provider_duplicate_raw_row_count", "schema_blocker_count",
+    }
+    receipt_bool_fields = {
+        "source_interval_semantics_resolved", "pit_promotion_fail_closed",
+        "pit_eligible_membership_rows_written", "effective_dated_membership_rows_promoted",
+        "requested_source_acceptance_scope_hash_matches", "requested_industry_scope_hash_matches",
+        "preflight_ready", "execution_authorized", "provider_symbol_coverage_complete",
+        "provider_call_ledger_evidence_done", "provider_industry_membership_raw_rows_collected",
+        "provider_backed_pit_industry_membership_done", "production_factor_test_validation_complete",
+        "cache_get_external_calls", "react_render_external_calls", "external_calls_triggered",
+        "tushare_called", "deepseek_called", "github_called", "does_not_execute_trades",
+        "does_not_modify_strategy_action", "contains_secret", "env_key_name_exposed",
+        "credential_value_exposed", "provider_transport_complete",
+        "provider_partial_result_detected",
+    }
+    receipt_list_fields = {
+        "official_input_fields", "official_output_fields", "symbols",
+        "provider_query_is_new_values", "preflight_blockers", "authorization_blockers",
+        "blocking_evidence", "provider_duplicate_raw_row_fingerprints", "provider_failure_modes",
+        "schema_blockers", "evidence_blockers", "covered_symbols",
+    }
+    receipt_fields = (
+        receipt_string_fields
+        | receipt_int_fields
+        | receipt_bool_fields
+        | receipt_list_fields
+        | {"scope_ticket"}
+    )
+    if set(receipt) != receipt_fields:
+        blockers.append("receipt_field_set_mismatch")
+    for key in receipt_string_fields:
+        if type(receipt.get(key)) is not str:
+            blockers.append(f"receipt_{key}_type_invalid")
+    for key in receipt_int_fields:
+        if type(receipt.get(key)) is not int:
+            blockers.append(f"receipt_{key}_type_invalid")
+    for key in receipt_bool_fields:
+        if type(receipt.get(key)) is not bool:
+            blockers.append(f"receipt_{key}_type_invalid")
+    for key in receipt_list_fields:
+        value = receipt.get(key)
+        if type(value) is not list or any(type(item) is not str for item in value):
+            blockers.append(f"receipt_{key}_type_invalid")
+
+    scope_ticket = receipt.get("scope_ticket")
+    scope_ticket_fields = {
+        "schema_version", "scope_hash_algorithm", "scope_hash", "scope_hash_short",
+        "scope_fields", "requested_scope_hash", "requested_source_acceptance_scope_hash",
+        "approved_by_user", "authorize_live_provider_call", "provider_run_approved_by_user",
+        "credential_presence", "contains_secret", "env_key_name_exposed",
+        "credential_value_exposed",
+    }
+    if type(scope_ticket) is not dict or set(scope_ticket) != scope_ticket_fields:
+        blockers.append("receipt_scope_ticket_type_or_fields_invalid")
+        scope_ticket = {}
+    for key in {
+        "schema_version", "scope_hash_algorithm", "scope_hash", "scope_hash_short",
+        "requested_scope_hash", "requested_source_acceptance_scope_hash",
+    }:
+        if type(scope_ticket.get(key)) is not str:
+            blockers.append(f"scope_ticket_{key}_type_invalid")
+    for key in {
+        "approved_by_user", "authorize_live_provider_call", "provider_run_approved_by_user",
+        "contains_secret", "env_key_name_exposed", "credential_value_exposed",
+    }:
+        if type(scope_ticket.get(key)) is not bool:
+            blockers.append(f"scope_ticket_{key}_type_invalid")
+    credential = scope_ticket.get("credential_presence")
+    credential_fields = {
+        "schema_version", "status", "server_side_tushare_credential_present",
+        "credential_value_exposed", "env_key_name_exposed",
+    }
+    if type(credential) is not dict or set(credential) != credential_fields:
+        blockers.append("scope_ticket_credential_presence_type_or_fields_invalid")
+        credential = {}
+    for key in {"schema_version", "status"}:
+        if type(credential.get(key)) is not str:
+            blockers.append(f"credential_presence_{key}_type_invalid")
+    for key in {
+        "server_side_tushare_credential_present", "credential_value_exposed",
+        "env_key_name_exposed",
+    }:
+        if type(credential.get(key)) is not bool:
+            blockers.append(f"credential_presence_{key}_type_invalid")
+
+    scope = scope_ticket.get("scope_fields")
+    scope_string_fields = {
+        "api", "source_acceptance_scope_hash", "source_acceptance_receipt_digest",
+        "source_acceptance_hub_packet_key", "source_acceptance_packet_key",
+        "source_acceptance_packet_digest", "source_acceptance_packet_mode",
+        "source_acceptance_packet_schema_version", "source_acceptance_packet_task_type",
+        "source_acceptance_packet_transport_symbol", "signal_start_date", "signal_end_date",
+        "source_contract", "source_out_date_endpoint_semantics", "pit_promotion_policy",
+    }
+    scope_list_fields = {
+        "source_acceptance_packet_authority_blockers", "symbols", "queries",
+        "provider_output_fields",
+    }
+    scope_fields = scope_string_fields | scope_list_fields | {"source_acceptance_packet_authority_valid"}
+    if type(scope) is not dict or set(scope) != scope_fields:
+        blockers.append("scope_fields_type_or_fields_invalid")
+        scope = {}
+    for key in scope_string_fields:
+        if type(scope.get(key)) is not str:
+            blockers.append(f"scope_{key}_type_invalid")
+    if type(scope.get("source_acceptance_packet_authority_valid")) is not bool:
+        blockers.append("scope_source_acceptance_packet_authority_valid_type_invalid")
+    for key in scope_list_fields - {"queries"}:
+        value = scope.get(key)
+        if type(value) is not list or any(type(item) is not str for item in value):
+            blockers.append(f"scope_{key}_type_invalid")
+    queries = scope.get("queries")
+    if type(queries) is not list or any(
+        type(item) is not dict
+        or set(item) != {"ts_code", "is_new"}
+        or type(item.get("ts_code")) is not str
+        or type(item.get("is_new")) is not str
+        for item in (queries if type(queries) is list else [])
+    ):
+        blockers.append("scope_queries_type_invalid")
+
+    row_fields = set(FACTOR_TEST_INDUSTRY_PROVIDER_OUTPUT_FIELDS) | {
+        "query_is_new", "provider_source_contract", "provider_out_date_endpoint_semantics",
+        "pit_eligible", "provider_call_ordinal", "provider_row_ordinal", "provider_raw_fields",
+        "schema_valid", "schema_blockers",
+    }
+    row_string_fields = set(FACTOR_TEST_INDUSTRY_PROVIDER_OUTPUT_FIELDS) | {
+        "query_is_new", "provider_source_contract", "provider_out_date_endpoint_semantics",
+    }
+    raw_rows = event["raw_rows"]
+    for row in raw_rows:
+        if type(row) is not dict or set(row) != row_fields:
+            blockers.append("raw_row_type_or_fields_invalid")
+            continue
+        for key in row_string_fields:
+            if type(row.get(key)) is not str:
+                blockers.append(f"raw_row_{key}_type_invalid")
+        for key in {"provider_call_ordinal", "provider_row_ordinal"}:
+            if type(row.get(key)) is not int:
+                blockers.append(f"raw_row_{key}_type_invalid")
+        for key in {"pit_eligible", "schema_valid"}:
+            if type(row.get(key)) is not bool:
+                blockers.append(f"raw_row_{key}_type_invalid")
+        if type(row.get("schema_blockers")) is not list or any(
+            type(item) is not str for item in row.get("schema_blockers", [])
+        ):
+            blockers.append("raw_row_schema_blockers_type_invalid")
+        raw_fields = row.get("provider_raw_fields")
+        if type(raw_fields) is not dict or set(raw_fields) != set(
+            FACTOR_TEST_INDUSTRY_PROVIDER_OUTPUT_FIELDS
+        ) or any(type(value) not in {str, type(None)} for value in raw_fields.values()):
+            blockers.append("raw_row_provider_raw_fields_type_invalid")
+
+    ledger_string_fields = {
+        "api", "scope_hash", "scope_hash_short", "source_acceptance_scope_hash_short",
+        "task_id", "data_date", "local_fetched_at", "call_status", "failure_mode",
+        "error_message_safe", "provider_transport_receipt_digest",
+        "source_out_date_endpoint_semantics",
+    }
+    ledger_int_fields = {
+        "row_count", "provider_source_row_count", "provider_stored_row_count",
+        "provider_row_limit", "provider_non_mapping_row_count", "provider_transport_call_count",
+        "provider_transport_receipt_count",
+    }
+    ledger_bool_fields = {
+        "provider_row_overflow", "provider_declared_actual_row_count_mismatch",
+        "safe_failure_mode_visible", "provider_transport_verified",
+        "official_client_identity_verified", "pit_eligible", "external",
+        "external_calls_triggered", "tushare_called", "deepseek_called", "github_called",
+        "does_not_execute_trades", "does_not_modify_strategy_action", "contains_secret",
+    }
+    ledger_fields = ledger_string_fields | ledger_int_fields | ledger_bool_fields | {
+        "request_params_safe", "provider_declared_row_count"
+    }
+    for item in event["call_ledger"]:
+        if type(item) is not dict or set(item) != ledger_fields:
+            blockers.append("call_ledger_row_type_or_fields_invalid")
+            continue
+        for key in ledger_string_fields:
+            if type(item.get(key)) is not str:
+                blockers.append(f"call_ledger_{key}_type_invalid")
+        for key in ledger_int_fields:
+            if type(item.get(key)) is not int:
+                blockers.append(f"call_ledger_{key}_type_invalid")
+        for key in ledger_bool_fields:
+            if type(item.get(key)) is not bool:
+                blockers.append(f"call_ledger_{key}_type_invalid")
+        if type(item.get("provider_declared_row_count")) not in {int, type(None)}:
+            blockers.append("call_ledger_provider_declared_row_count_type_invalid")
+        params = item.get("request_params_safe")
+        if type(params) is not dict or set(params) != {"ts_code", "is_new"} or any(
+            type(value) is not str for value in params.values()
+        ):
+            blockers.append("call_ledger_request_params_safe_type_invalid")
+    return sorted(set(blockers))
+
+
 def _factor_test_provider_industry_membership_event_valid(
     event: Any,
     *,
@@ -873,12 +1182,15 @@ def _factor_test_provider_industry_membership_event_valid(
     trusted_secret: bytes | None = None,
     require_trusted_auth: bool = False,
 ) -> tuple[bool, list[str]]:
-    blockers: list[str] = []
-    if not isinstance(event, dict):
-        return False, ["event_missing_or_not_object"]
+    blockers = _factor_test_provider_industry_membership_persisted_type_blockers(
+        event,
+        require_trusted_auth=require_trusted_auth,
+    )
+    if blockers:
+        return False, blockers
     if event.get("schema_version") != FACTOR_TEST_INDUSTRY_PROVIDER_EVENT_SCHEMA_VERSION:
         blockers.append("event_schema_mismatch")
-    digest = str(event.get("event_digest") or "")
+    digest = event["event_digest"]
     digest_material = {
         key: value
         for key, value in event.items()
@@ -886,9 +1198,9 @@ def _factor_test_provider_industry_membership_event_valid(
     }
     if not digest or digest != _factor_test_industry_evidence_digest(digest_material):
         blockers.append("event_digest_mismatch")
-    task_id = str(event.get("task_id") or "")
-    industry_scope_hash = str(event.get("industry_scope_hash") or "")
-    source_scope_hash = str(event.get("source_acceptance_scope_hash") or "")
+    task_id = event["task_id"]
+    industry_scope_hash = event["industry_scope_hash"]
+    source_scope_hash = event["source_acceptance_scope_hash"]
     if not task_id:
         blockers.append("task_id_missing")
     if len(industry_scope_hash) != 64:
@@ -897,20 +1209,20 @@ def _factor_test_provider_industry_membership_event_valid(
         blockers.append("source_acceptance_scope_hash_invalid")
     rows = _list(event.get("raw_rows"))
     ledger = _list(event.get("call_ledger"))
-    if int(event.get("raw_row_count") or 0) != len(rows):
+    if event["raw_row_count"] != len(rows):
         blockers.append("raw_row_count_mismatch")
-    if str(event.get("raw_rows_digest") or "") != _factor_test_industry_evidence_digest(rows):
+    if event["raw_rows_digest"] != _factor_test_industry_evidence_digest(rows):
         blockers.append("raw_rows_digest_mismatch")
-    if int(event.get("call_ledger_count") or 0) != len(ledger):
+    if event["call_ledger_count"] != len(ledger):
         blockers.append("call_ledger_count_mismatch")
-    if str(event.get("call_ledger_digest") or "") != _factor_test_industry_evidence_digest(ledger):
+    if event["call_ledger_digest"] != _factor_test_industry_evidence_digest(ledger):
         blockers.append("call_ledger_digest_mismatch")
     transport_digests = [
-        str(row.get("provider_transport_receipt_digest") or "")
+        row["provider_transport_receipt_digest"]
         for row in ledger
         if isinstance(row, dict)
     ]
-    if str(event.get("transport_receipt_set_digest") or "") != (
+    if event["transport_receipt_set_digest"] != (
         _factor_test_industry_evidence_digest(transport_digests)
     ):
         blockers.append("transport_receipt_set_digest_mismatch")
@@ -919,16 +1231,16 @@ def _factor_test_provider_industry_membership_event_valid(
         "task_id": task_id,
         "industry_scope_hash": industry_scope_hash,
         "source_acceptance_scope_hash": source_scope_hash,
-        "provider_raw_rows_digest": str(event.get("raw_rows_digest") or ""),
-        "provider_call_ledger_digest": str(event.get("call_ledger_digest") or ""),
-        "provider_transport_receipt_set_digest": str(
-            event.get("transport_receipt_set_digest") or ""
-        ),
+        "provider_raw_rows_digest": event["raw_rows_digest"],
+        "provider_call_ledger_digest": event["call_ledger_digest"],
+        "provider_transport_receipt_set_digest": event[
+            "transport_receipt_set_digest"
+        ],
     }
     for key, expected in receipt_bindings.items():
-        if str(receipt.get(key) or "") != expected:
+        if receipt[key] != expected:
             blockers.append(f"receipt_{key}_binding_mismatch")
-    if int(receipt.get("provider_raw_row_count") or 0) != len(rows):
+    if receipt["provider_raw_row_count"] != len(rows):
         blockers.append("receipt_raw_row_count_mismatch")
     if event.get("authoritative_success") is True:
         if not rows or len(ledger) != FACTOR_TEST_INDUSTRY_PROVIDER_MAX_CALLS:
@@ -954,8 +1266,8 @@ def _factor_test_provider_industry_membership_event_valid(
             blockers.append("authoritative_receipt_not_success")
     if require_trusted_auth:
         sequence_no = event.get("sequence_no")
-        previous_event_mac = str(event.get("previous_event_mac") or "")
-        event_mac = str(event.get("event_mac") or "")
+        previous_event_mac = event["previous_event_mac"]
+        event_mac = event["event_mac"]
         auth_material = {
             key: value for key, value in event.items() if key != "event_mac"
         }
@@ -1034,7 +1346,7 @@ def _factor_test_provider_industry_membership_full_chain_blockers(
             require_current_source_packets=False,
         )
         blockers.extend(f"full_chain_{item}" for item in semantic_blockers)
-        sequence_no = int(event_dict.get("sequence_no") or 0)
+        sequence_no = event_dict["sequence_no"]
         if sequence_no in events_by_sequence:
             blockers.append("full_chain_duplicate_sequence")
         else:
@@ -1049,9 +1361,9 @@ def _factor_test_provider_industry_membership_full_chain_blockers(
         event = events_by_sequence.get(sequence_no)
         if not event:
             continue
-        if str(event.get("previous_event_mac") or "") != previous_mac:
+        if event["previous_event_mac"] != previous_mac:
             blockers.append("full_chain_previous_event_mac_mismatch")
-        previous_mac = str(event.get("event_mac") or "")
+        previous_mac = event["event_mac"]
 
     terminal = events_by_sequence.get(terminal_sequence)
     if not (
@@ -1074,7 +1386,7 @@ def _factor_test_provider_industry_membership_full_chain_blockers(
     return sorted(set(blockers))
 
 
-def _read_factor_test_provider_industry_membership_authoritative_state(
+def _read_factor_test_provider_industry_membership_authoritative_state_unsafe(
     meta_path: Path = SQLITE_META_PATH,
 ) -> dict[str, Any]:
     if not Path(meta_path).exists():
@@ -1147,13 +1459,13 @@ def _read_factor_test_provider_industry_membership_authoritative_state(
         current_blockers.append(state_blocker or "industry_provider_trust_state_missing")
         last_good_blockers.append(state_blocker or "industry_provider_trust_state_missing")
     elif current_valid:
-        sequence_no = int(current.get("sequence_no") or 0)
-        current_mac = str(current.get("event_mac") or "")
-        previous_mac = str(current.get("previous_event_mac") or "")
+        sequence_no = current["sequence_no"]
+        current_mac = current["event_mac"]
+        previous_mac = current["previous_event_mac"]
         if not (
             trusted_state.get("sequence_no") == sequence_no
             and trusted_state.get("event_digest") == current.get("event_digest")
-            and hmac.compare_digest(str(trusted_state.get("event_mac") or ""), current_mac)
+            and hmac.compare_digest(trusted_state["event_mac"], current_mac)
         ):
             current_valid = False
             current_blockers.append("trusted_state_current_anchor_mismatch")
@@ -1163,8 +1475,8 @@ def _read_factor_test_provider_industry_membership_authoritative_state(
                 last_good_blockers.append("first_sequence_last_good_or_chain_mismatch")
         elif not (
             last_good_valid
-            and int(last_good.get("sequence_no") or 0) == sequence_no - 1
-            and hmac.compare_digest(str(last_good.get("event_mac") or ""), previous_mac)
+            and last_good["sequence_no"] == sequence_no - 1
+            and hmac.compare_digest(last_good["event_mac"], previous_mac)
         ):
             last_good_valid = False
             last_good_blockers.append("last_good_previous_mac_chain_mismatch")
@@ -1195,6 +1507,39 @@ def _read_factor_test_provider_industry_membership_authoritative_state(
         "last_good_blockers": last_good_blockers,
         "current": current if current_valid else None,
         "last_good": last_good if last_good_valid else None,
+    }
+
+
+def _read_factor_test_provider_industry_membership_authoritative_state(
+    meta_path: Path = SQLITE_META_PATH,
+) -> dict[str, Any]:
+    """Read authority evidence without allowing persisted corruption to 500 GET.
+
+    The unsafe implementation assumes validated shapes after each boundary.
+    This outer reader is deliberately broad because SQLite JSON, filesystem
+    permissions, and direct local tampering are all untrusted inputs here.
+    """
+
+    try:
+        return _read_factor_test_provider_industry_membership_authoritative_state_unsafe(
+            meta_path
+        )
+    except json.JSONDecodeError:
+        blocker = "industry_provider_persisted_json_invalid"
+    except PermissionError:
+        blocker = "industry_provider_persisted_storage_permissions_invalid"
+    except (TypeError, ValueError, OverflowError):
+        blocker = "industry_provider_persisted_type_or_sequence_invalid"
+    except Exception:
+        blocker = "industry_provider_authoritative_reader_failed_safe"
+    return {
+        "status": "authoritative_provider_industry_membership_missing_or_invalid",
+        "current_valid": False,
+        "last_good_valid": False,
+        "current_blockers": [blocker],
+        "last_good_blockers": [blocker],
+        "current": None,
+        "last_good": None,
     }
 
 
@@ -1319,6 +1664,11 @@ def _persist_factor_test_provider_industry_membership_event(
             if state_blocker:
                 raise RuntimeError(state_blocker)
         except Exception as exc:
+            # If the cross-file state replacement succeeded but its final
+            # verification failed, rolling SQLite back can leave the terminal
+            # anchor intentionally mismatched.  Integrity wins over
+            # availability: readers stay sealed until trusted manual recovery;
+            # no code here rewrites or guesses a replacement state.
             try:
                 store.restore_packet_pair_and_delete_event_atomic(
                     FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY,
@@ -9416,6 +9766,113 @@ def _run_factor_test_provider_industry_membership_live_and_persist(
     return executed, rows, ledger, persisted
 
 
+def _persist_factor_test_provider_industry_membership_final_projection(
+    task: dict[str, Any],
+    *,
+    receipt: dict[str, Any],
+    rows: list[dict[str, Any]],
+    ledger: list[dict[str, Any]],
+    authoritative_event: dict[str, Any],
+    meta_path: Path = SQLITE_META_PATH,
+) -> dict[str, Any]:
+    """Persist the narrow Factor-owned final projection in one SQLite write.
+
+    This is intentionally not a generic ``payload_safe`` mutation API.  Only
+    this task type can write this closed projection, and external-call flags are
+    derived from the sanitized ledger rather than accepted from a caller.
+    """
+
+    if type(task) is not dict or task.get("task_type") != FACTOR_TEST_INDUSTRY_PROVIDER_TASK_TYPE:
+        raise RuntimeError("factor_industry_final_projection_task_type_invalid")
+    task_id = task.get("task_id")
+    if type(task_id) is not str or not task_id:
+        raise RuntimeError("factor_industry_final_projection_task_id_invalid")
+    if type(receipt) is not dict or type(rows) is not list or type(ledger) is not list:
+        raise RuntimeError("factor_industry_final_projection_shape_invalid")
+    if any(type(row) is not dict for row in rows) or any(
+        type(item) is not dict for item in ledger
+    ):
+        raise RuntimeError("factor_industry_final_projection_row_type_invalid")
+
+    # A JSON round trip rejects non-JSON runtime objects and makes the exact
+    # persisted projection independent from later in-memory mutations.
+    receipt_safe = json.loads(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
+    rows_safe = json.loads(json.dumps(rows, ensure_ascii=False, sort_keys=True))
+    ledger_safe = json.loads(json.dumps(ledger, ensure_ascii=False, sort_keys=True))
+    external_calls_triggered = any(
+        item.get("external_calls_triggered") is True or item.get("external") is True
+        for item in ledger_safe
+    )
+    tushare_called = any(item.get("tushare_called") is True for item in ledger_safe)
+    authoritative_summary = {
+        key: authoritative_event.get(key)
+        for key in (
+            "status",
+            "event_digest",
+            "event_packet_key",
+            "authoritative_current_promoted",
+            "authoritative_success",
+            "raw_row_count",
+            "raw_rows_digest",
+            "call_ledger_digest",
+            "transport_receipt_set_digest",
+            "persistence_error_safe",
+        )
+        if key in authoritative_event
+    }
+    payload_safe = {
+        "provider_industry_membership_receipt": receipt_safe,
+        "provider_industry_membership_rows": rows_safe,
+        "provider_industry_membership_call_ledger": ledger_safe,
+        "provider_industry_membership_authoritative_event": authoritative_summary,
+        "industry_scope_hash": receipt_safe.get("industry_scope_hash"),
+        "industry_scope_hash_short": receipt_safe.get("industry_scope_hash_short"),
+        "source_acceptance_scope_hash": receipt_safe.get("source_acceptance_scope_hash"),
+        "source_acceptance_scope_hash_short": receipt_safe.get(
+            "source_acceptance_scope_hash_short"
+        ),
+        "symbol_count": receipt_safe.get("symbol_count"),
+        "provider_api": FACTOR_TEST_INDUSTRY_PROVIDER_API,
+        "execution_authorized": receipt_safe.get("execution_authorized") is True,
+        "external_calls_triggered": external_calls_triggered,
+        "tushare_called": tushare_called,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+    task["payload_safe"] = payload_safe
+    task["call_ledger"] = ledger_safe
+    task["external_calls_triggered"] = external_calls_triggered
+    task["tushare_called"] = tushare_called
+    task["deepseek_called"] = False
+    task["github_called"] = False
+    task["does_not_execute_trades"] = True
+    task["does_not_modify_strategy_action"] = True
+    task["provider_evidence_authoritative"] = (
+        authoritative_summary.get("authoritative_current_promoted") is True
+    )
+    task["provider_evidence_event_digest"] = str(
+        authoritative_summary.get("event_digest") or ""
+    )
+
+    store = SQLiteMetaStore(meta_path)
+    store.write_task_status(task)
+    readback = store.read_task_status(task_id)
+    if not (
+        type(readback) is dict
+        and readback.get("payload_safe") == payload_safe
+        and readback.get("call_ledger") == ledger_safe
+        and readback.get("external_calls_triggered") is external_calls_triggered
+        and readback.get("tushare_called") is tushare_called
+    ):
+        raise RuntimeError("factor_industry_final_projection_readback_mismatch")
+    return task
+
+
 def _factor_test_effective_dated_industry_neutral_rank_ic(
     membership_rows: list[dict[str, Any]],
     metric_rows: list[dict[str, Any]],
@@ -12276,12 +12733,13 @@ def run_factor_test_provider_industry_membership_task(
         ),
         call_ledger=ledger,
     ) or task
-    updated["payload_safe"] = payload_safe
-    updated["provider_evidence_authoritative"] = bool(
-        authoritative_event.get("authoritative_current_promoted") is True
-    )
-    updated["provider_evidence_event_digest"] = str(
-        authoritative_event.get("event_digest") or ""
+    updated = _persist_factor_test_provider_industry_membership_final_projection(
+        updated,
+        receipt=receipt,
+        rows=rows,
+        ledger=ledger,
+        authoritative_event=authoritative_event,
+        meta_path=SQLITE_META_PATH,
     )
     return updated
 

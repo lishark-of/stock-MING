@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -1110,6 +1111,7 @@ class FactorIndustryMembershipProviderPreflightTests(unittest.TestCase):
                 update_calls.append({"task_id": task_id, **kwargs})
                 return {
                     "task_id": task_id,
+                    "task_type": factor_service.FACTOR_TEST_INDUSTRY_PROVIDER_TASK_TYPE,
                     "status": kwargs.get("status"),
                     "call_ledger": list(kwargs.get("call_ledger") or []),
                 }
@@ -1238,6 +1240,221 @@ class FactorIndustryMembershipProviderPreflightTests(unittest.TestCase):
             )
             self.assertFalse(after["current_valid"])
             self.assertFalse(after["last_good_valid"])
+
+    def test_trusted_state_invalid_json_permissions_and_exact_types_fail_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta_path = Path(tmp) / "meta.sqlite"
+            self._seed_authoritative_source_packet(meta_path)
+            secret, blocker = factor_service._create_factor_test_industry_trusted_secret(
+                meta_path
+            )
+            self.assertTrue(secret)
+            self.assertEqual(blocker, "")
+            factor_service._persist_factor_test_provider_industry_membership_event(
+                *self._authoritative_artifacts("state-types", "valid"),
+                meta_path=meta_path,
+                trusted_secret=secret,
+            )
+            _directory, _key_path, state_path = factor_service._factor_test_industry_trust_paths(
+                meta_path
+            )
+            original = state_path.read_text(encoding="utf-8")
+            original_state = json.loads(original)
+            cases = {
+                "invalid_json": "{not-json",
+                "bool_as_int": json.dumps({**original_state, "sequence_no": True}),
+                "string_as_int": json.dumps({**original_state, "sequence_no": "1"}),
+                "list_as_int": json.dumps({**original_state, "sequence_no": []}),
+                "object_as_int": json.dumps({**original_state, "sequence_no": {}}),
+                "list_as_mac": json.dumps({**original_state, "event_mac": []}),
+            }
+            for label, content in cases.items():
+                with self.subTest(label=label):
+                    state_path.write_text(content, encoding="utf-8")
+                    state_path.chmod(0o600)
+                    state = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                        meta_path
+                    )
+                    self.assertFalse(state["current_valid"])
+                    self.assertFalse(state["last_good_valid"])
+                    self.assertTrue(state["current_blockers"])
+                    state_path.write_text(original, encoding="utf-8")
+                    state_path.chmod(0o600)
+            state_path.chmod(0o644)
+            permissions = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                meta_path
+            )
+            self.assertFalse(permissions["current_valid"])
+            self.assertIn(
+                "industry_provider_trust_state_permissions_invalid",
+                permissions["current_blockers"],
+            )
+
+    def test_current_and_event_invalid_json_and_exact_types_never_escape_reader(self):
+        mutation_cases = {
+            "raw_count_bool": ("raw_row_count", True),
+            "raw_count_string": ("raw_row_count", "10"),
+            "raw_count_list": ("raw_row_count", []),
+            "raw_count_object": ("raw_row_count", {}),
+            "sequence_bool": ("sequence_no", True),
+            "sequence_list": ("sequence_no", []),
+            "receipt_count_object": ("receipt.provider_raw_row_count", {}),
+            "ledger_count_string": ("call_ledger.0.row_count", "1"),
+        }
+        for label, (field, value) in mutation_cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                meta_path = Path(tmp) / "meta.sqlite"
+                self._seed_authoritative_source_packet(meta_path)
+                secret, _ = factor_service._create_factor_test_industry_trusted_secret(meta_path)
+                written = factor_service._persist_factor_test_provider_industry_membership_event(
+                    *self._authoritative_artifacts(f"event-{label}", "valid"),
+                    meta_path=meta_path,
+                    trusted_secret=secret,
+                )
+                with sqlite3.connect(meta_path) as connection:
+                    raw = connection.execute(
+                        "SELECT payload_json FROM packets WHERE packet_key = ?",
+                        (factor_service.FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY,),
+                    ).fetchone()[0]
+                    current = json.loads(raw)
+                    if field.startswith("receipt."):
+                        current["receipt"][field.split(".", 1)[1]] = value
+                    elif field.startswith("call_ledger.0."):
+                        current["call_ledger"][0][field.rsplit(".", 1)[1]] = value
+                    else:
+                        current[field] = value
+                    connection.execute(
+                        "UPDATE packets SET payload_json = ? WHERE packet_key = ?",
+                        (
+                            json.dumps(current),
+                            factor_service.FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY,
+                        ),
+                    )
+                    connection.commit()
+                state = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                    meta_path
+                )
+                self.assertFalse(state["current_valid"])
+                self.assertTrue(state["current_blockers"])
+                self.assertEqual(written["raw_row_count"], 10)
+
+        for packet_kind in ("current", "event"):
+            with self.subTest(packet_kind=packet_kind), tempfile.TemporaryDirectory() as tmp:
+                meta_path = Path(tmp) / "meta.sqlite"
+                self._seed_authoritative_source_packet(meta_path)
+                secret, _ = factor_service._create_factor_test_industry_trusted_secret(meta_path)
+                written = factor_service._persist_factor_test_provider_industry_membership_event(
+                    *self._authoritative_artifacts(f"json-{packet_kind}", "valid"),
+                    meta_path=meta_path,
+                    trusted_secret=secret,
+                )
+                packet_key = (
+                    factor_service.FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY
+                    if packet_kind == "current"
+                    else written["event_packet_key"]
+                )
+                with sqlite3.connect(meta_path) as connection:
+                    connection.execute(
+                        "UPDATE packets SET payload_json = ? WHERE packet_key = ?",
+                        ("{invalid-json", packet_key),
+                    )
+                    connection.commit()
+                state = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                    meta_path
+                )
+                self.assertFalse(state["current_valid"])
+                self.assertFalse(state["last_good_valid"])
+                self.assertTrue(state["current_blockers"])
+                with patch.object(factor_service, "SQLITE_META_PATH", meta_path):
+                    attached = factor_service._attach_factor_test_provider_industry_membership_authoritative_state(
+                        {"factor_tests": {}}
+                    )
+                attached_state = attached["factor_tests"][
+                    "provider_industry_membership_authoritative_state"
+                ]
+                self.assertFalse(attached_state["current_valid"])
+                self.assertTrue(attached_state["current_blockers"])
+
+    def test_factor_owned_final_projection_survives_task_restart_after_live_persist_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta_path = Path(tmp) / "meta.sqlite"
+            self._seed_authoritative_source_packet(meta_path)
+            secret, _ = factor_service._create_factor_test_industry_trusted_secret(meta_path)
+            factor_service._persist_factor_test_provider_industry_membership_event(
+                *self._authoritative_artifacts("projection-before", "before"),
+                meta_path=meta_path,
+                trusted_secret=secret,
+            )
+            before = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                meta_path
+            )
+            with patch.object(
+                factor_service,
+                "_persist_factor_test_provider_industry_membership_event",
+                side_effect=RuntimeError("post-live projection persistence failure"),
+            ):
+                executed, rows, ledger, persisted = self._run_controlled_live(
+                    meta_path,
+                    "projection-live-failed",
+                    "actual",
+                )
+            payload = {
+                "approved_by_user": True,
+                "authorize_live_provider_call": True,
+                "provider_run_approved_by_user": True,
+                "acceptance_scope_hash": self.source_scope_hash,
+                "industry_scope_hash": executed["industry_scope_hash"],
+            }
+            task_service._TASKS.clear()
+            try:
+                with patch.object(
+                    factor_service, "SQLITE_META_PATH", meta_path
+                ), patch.object(
+                    task_service, "SQLITE_META_PATH", meta_path
+                ), patch.object(
+                    factor_service,
+                    "read_factor_quant_cache",
+                    return_value={"factor_tests": self._factor_tests()},
+                ), patch.object(
+                    factor_service,
+                    "_factor_test_credential_presence",
+                    side_effect=self._credential_present,
+                ), patch.object(
+                    factor_service,
+                    "_run_factor_test_provider_industry_membership_live_and_persist",
+                    return_value=(executed, rows, ledger, persisted),
+                ):
+                    projected = factor_service.run_factor_test_provider_industry_membership_task(
+                        payload
+                    )
+                self.assertEqual(projected["status"], "failed")
+                self.assertEqual(len(projected["payload_safe"]["provider_industry_membership_rows"]), 10)
+                self.assertEqual(len(projected["call_ledger"]), 10)
+                self.assertTrue(projected["external_calls_triggered"])
+                self.assertTrue(projected["tushare_called"])
+                task_id = projected["task_id"]
+                task_service._TASKS.clear()
+                with patch.object(task_service, "SQLITE_META_PATH", meta_path):
+                    restarted = task_service.read_task_status(task_id)
+                self.assertEqual(restarted["storage_source"], "sqlite_meta")
+                self.assertEqual(len(restarted["payload_safe"]["provider_industry_membership_rows"]), 10)
+                self.assertEqual(
+                    len(restarted["payload_safe"]["provider_industry_membership_call_ledger"]),
+                    10,
+                )
+                self.assertEqual(len(restarted["call_ledger"]), 10)
+                self.assertTrue(restarted["external_calls_triggered"])
+                self.assertTrue(restarted["tushare_called"])
+                self.assertFalse(restarted["provider_evidence_authoritative"])
+                after = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                    meta_path
+                )
+                self.assertTrue(after["current_valid"])
+                self.assertEqual(
+                    after["current"]["event_digest"], before["current"]["event_digest"]
+                )
+            finally:
+                task_service._TASKS.clear()
 
     def test_authoritative_reader_is_zero_write_when_trust_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
