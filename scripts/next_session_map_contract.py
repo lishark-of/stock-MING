@@ -655,7 +655,7 @@ def build_contract() -> dict[str, Any]:
             and browser_qa_runbook.get("scope") == "local_next_session_browser_qa_runbook_not_browser_execution"
             and browser_qa_runbook.get("status") == "next_session_browser_qa_runbook_ready_execution_pending"
             and browser_qa_runbook.get("local_runbook_ready") is True
-            and browser_qa_runbook.get("next_route") == "#next"
+            and browser_qa_runbook.get("next_route") == "#next-session-chart"
             and browser_qa_runbook.get("artifact_root") == ".stock_ming_3/motion_qa"
             and browser_qa_runbook.get("opens_no_browser") is True
             and browser_qa_runbook.get("writes_no_artifacts") is True
@@ -666,8 +666,9 @@ def build_contract() -> dict[str, Any]:
             and _dict(browser_qa_runbook_rows.get("next_session_browser_qa_runbook_ready")).get("status") == "passed_static_policy"
             and browser_qa_evidence.get("schema_version") == "next_session_browser_qa_evidence.v1"
             and browser_qa_evidence.get("scope") == "local_next_session_browser_qa_evidence_reader_no_browser_execution"
-            and browser_qa_evidence.get("next_route") == "#next"
-            and browser_qa_evidence.get("reads_ignored_local_reports_only") is True
+            and browser_qa_evidence.get("next_route") == "#next-session-chart"
+            and browser_qa_evidence.get("reads_ignored_local_reports_only") is False
+            and browser_qa_evidence.get("reads_current_head_terminal_v6_pair_only") is True
             and browser_qa_evidence.get("screenshots_are_not_tracked") is True
             and browser_qa_evidence.get("report_artifacts_are_not_tracked") is True
             and browser_qa_evidence.get("production_replacement_complete") is False

@@ -1893,7 +1893,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("MetricGrid", (route_dir / "CommandCenterHome.tsx").read_text(encoding="utf-8"))
         home_source = (route_dir / "CommandCenterHome.tsx").read_text(encoding="utf-8")
         self.assertIn("sqlite_meta", home_source)
-        self.assertIn("<h1>今日作战台</h1>", home_source)
+        self.assertIn('<h1 data-ltg10-route-heading="home">今日作战台</h1>', home_source)
         self.assertIn("先看能不能用、当前标的、最近结果和下一步。", home_source)
         self.assertNotIn("Daily Command Center；先看下一步、来源、缺少证据和仅供研究边界", home_source)
         self.assertNotIn("Daily Command Center；先看下一步、来源、缺口和 research-only 边界", home_source)
@@ -7037,7 +7037,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("live_light", page)
         self.assertIn("auto Tushare", page)
         self.assertIn("auto DeepSeek", page)
-        self.assertIn("<h1>下一票雷达</h1>", page)
+        self.assertIn('<h1 data-ltg10-route-heading="candidates">下一票雷达</h1>', page)
         self.assertIn("先看候选、数据来源、缺少证据和仅供研究边界", page)
         self.assertNotIn("Candidate Radar；先看候选、来源、缺少证据和仅供研究边界", page)
         self.assertNotIn("Candidate Radar；先看候选、来源、缺少证据和 research-only 边界", page)
@@ -8445,9 +8445,12 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("github_called", page)
         self.assertIn("does_not_execute_trades", page)
         self.assertIn("普通用户次日图谱摘要", page)
-        self.assertIn("<h1>次日图谱</h1>", page)
+        self.assertIn('<h1 data-ltg10-route-heading="next">次日图谱</h1>', page)
         self.assertIn('aria-label="next session ordinary page status"', page)
-        self.assertLess(page.index("<h1>次日图谱</h1>"), page.index("普通用户次日图谱摘要"))
+        self.assertLess(
+            page.index('<h1 data-ltg10-route-heading="next">次日图谱</h1>'),
+            page.index("普通用户次日图谱摘要"),
+        )
         self.assertIn("下一步、来源、缺口、边界和最近结果", page)
         self.assertIn("nextSessionStatusLabel", page)
         self.assertIn("candidateRadarReadableResultReady", page)

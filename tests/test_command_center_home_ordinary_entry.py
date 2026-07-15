@@ -68,7 +68,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
     def test_daily_command_center_summary_shows_user_decision_fields_first(self):
         source = self.source
 
-        self.assertIn("<h1>今日作战台</h1>", source)
+        self.assertIn('<h1 data-ltg10-route-heading="home">今日作战台</h1>', source)
         self.assertIn("先看下一步、数据来源、缺少证据和仅供研究边界", source)
         self.assertIn('title="本地 FastAPI 接线速读"', source)
         self.assertLess(source.index('title="本地 FastAPI 接线速读"'), source.index('title="今日作战台摘要"'))

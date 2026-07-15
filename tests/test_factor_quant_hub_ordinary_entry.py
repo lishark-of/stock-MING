@@ -55,7 +55,7 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
     def test_stock_quant_projection_summary_shows_user_decision_fields_first(self):
         source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
 
-        self.assertIn("<h1>股票量化推演</h1>", source)
+        self.assertIn('<h1 data-ltg10-route-heading="factor">股票量化推演</h1>', source)
         self.assertIn('title="量化推演操作台"', source)
         self.assertIn("普通用户量化推演摘要", source)
         self.assertIn("下一步、来源、缺口、边界和最近可用缓存", source)
@@ -110,7 +110,10 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "结果边界"', source)
         self.assertIn('label: "仅供研究"', source)
         self.assertLess(source.index("普通用户量化推演摘要"), source.index('launchTask("/api/factor-quant/run-light"'))
-        self.assertLess(source.index("<h1>股票量化推演</h1>"), source.index("普通用户量化推演摘要"))
+        self.assertLess(
+            source.index('<h1 data-ltg10-route-heading="factor">股票量化推演</h1>'),
+            source.index("普通用户量化推演摘要"),
+        )
         self.assertLess(source.index("普通用户量化推演摘要"), source.index("高级验收任务"))
         self.assertLess(source.index("普通用户量化推演摘要"), source.index("开发 / 审计指标"))
         self.assertLess(source.index('label: "本地缓存"'), source.index("开发 / 审计指标"))

@@ -16,7 +16,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
     def test_candidate_radar_has_ordinary_user_summary_before_audit_details(self):
-        self.assertIn("<h1>下一票雷达</h1>", self.page)
+        self.assertIn('<h1 data-ltg10-route-heading="candidates">下一票雷达</h1>', self.page)
         self.assertIn('title="普通用户雷达摘要"', self.page)
         self.assertIn('title="下一票候选池"', self.page)
         self.assertIn('title="搜票量化推演"', self.page)
