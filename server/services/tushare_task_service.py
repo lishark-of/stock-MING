@@ -298,6 +298,12 @@ FULL_MARKET_UNIVERSE_SCHEMA_VERSION = "tushare_full_market_universe_production.v
 FULL_MARKET_UNIVERSE_MIN_ROWS = 3000
 FULL_INTERFACE_PROVIDER_PRODUCTION_RECIPE_VERSION = "tushare_full_interface_provider_recipe.v2"
 PRODUCTION_VALID_EMPTY_APIS = frozenset(EXTENDED_REFRESH_APIS)
+# ``anns_d`` is a separately purchased Tushare permission.  Probe it before
+# the ordinary point/feature interfaces during the all-interface production
+# acceptance so a missing announcement entitlement cannot burn the rest of
+# the bounded full-market call budget.  This changes execution order only;
+# the approved 20-interface scope and its digest remain exact and unchanged.
+FULL_INTERFACE_PERMISSION_PROBE_APIS = ("anns_d",)
 API_REPRESENTATIVE_REQUIRED_FIELDS = {
     "daily": (("ts_code",), ("trade_date",), ("close",)),
     "daily_basic": (("ts_code",), ("trade_date",), ("turnover_rate", "pe", "total_mv", "circ_mv")),
@@ -6730,6 +6736,84 @@ def _full_interface_provider_production_gate_ledger_row(
     }
 
 
+def _full_interface_provider_execution_order(selected_apis: Iterable[str]) -> list[str]:
+    """Return the exact approved interface set with independent permissions first."""
+
+    selected = [str(api) for api in selected_apis]
+    permission_first = [api for api in FULL_INTERFACE_PERMISSION_PROBE_APIS if api in selected]
+    return permission_first + [api for api in selected if api not in permission_first]
+
+
+def _production_provider_failure_stop(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Classify one non-success production row and stop the current full run.
+
+    Retryable and unknown states must stop before the remaining provider scope,
+    but neither is evidence of a terminal provider failure.  Unknown states are
+    treated as a contract error so a future status cannot silently continue the
+    production pipeline.
+    """
+
+    call_status = str(row.get("call_status") or "")
+    observed_failure_mode = str(row.get("failure_mode") or "")
+    terminal_failure_modes = {
+        "missing_required_parameter",
+        "parse_failed_or_invalid_result",
+        "permission_denied",
+        "provider_error_safe",
+    }
+    successful_status_pairs = {
+        "success": {"", "none"},
+        "empty": {"", "empty_result_or_no_record"},
+    }
+    retryable_status_pairs = {
+        "retry_pending": {"", "retry_pending"},
+        "rate_limited_retryable": {"", "rate_limited_retryable"},
+    }
+    if observed_failure_mode in successful_status_pairs.get(call_status, set()):
+        return {}
+    api = str(row.get("api") or "unknown")
+    terminal_provider_failure = bool(
+        call_status == "failed" and observed_failure_mode in terminal_failure_modes
+    )
+    retryable_provider_state = bool(
+        observed_failure_mode in retryable_status_pairs.get(call_status, set())
+    )
+    contract_error = not terminal_provider_failure and not retryable_provider_state
+    if terminal_provider_failure:
+        status = "full_interface_provider_execution_stopped_on_first_terminal_failure"
+        stop_classification = "terminal_provider_failure"
+        failure_mode = observed_failure_mode or call_status
+    elif retryable_provider_state:
+        status = "full_interface_provider_execution_paused_on_retryable_provider_state"
+        stop_classification = "retryable_provider_state"
+        failure_mode = observed_failure_mode or call_status
+    else:
+        status = "full_interface_provider_execution_blocked_call_status_contract_error"
+        stop_classification = "provider_call_status_contract_error"
+        failure_mode = "provider_call_status_contract_error"
+    return {
+        "enforced": True,
+        "status": status,
+        "stop_classification": stop_classification,
+        "failed_api": api,
+        "observed_call_status": call_status,
+        "observed_failure_mode": observed_failure_mode,
+        "failure_mode": failure_mode,
+        "error_message_safe": _safe_text(row.get("error_message_safe") or failure_mode),
+        "terminal_provider_failure": terminal_provider_failure,
+        "retryable_provider_state": retryable_provider_state,
+        "provider_call_status_contract_error": contract_error,
+        "automatic_retry": False,
+        "automatic_retry_allowed": False,
+        "manual_retry_requires_explicit_task": retryable_provider_state,
+        "remaining_interfaces_not_called": True,
+        "full_market_universe_not_called": True,
+        "production_promotion_allowed": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def _promote_staged_parquet_datasets(
     call_ledger: list[dict[str, Any]],
     *,
@@ -8031,9 +8115,15 @@ def run_tushare_refresh_task(
     adapter_module = adapter
     call_ledger: list[dict[str, Any]] = []
     trade_cal_provider_data: Any = None
-    for index, api in enumerate(selected_apis, start=1):
+    provider_failure_stop: dict[str, Any] = {}
+    execution_apis = (
+        _full_interface_provider_execution_order(selected_apis)
+        if production_acceptance
+        else list(selected_apis)
+    )
+    for index, api in enumerate(execution_apis, start=1):
         params = _request_params_for_api(api, payload)
-        progress = 0.05 + (index - 1) / max(len(selected_apis), 1) * 0.85
+        progress = 0.05 + (index - 1) / max(len(execution_apis), 1) * 0.85
         update_task_status(
             task["task_id"],
             status="running",
@@ -8043,15 +8133,17 @@ def run_tushare_refresh_task(
         )
         now = _now_iso()
         if "ts_code" in REFRESH_API_SPECS[api]["params"] and not params.get("ts_code"):
-            call_ledger.append(
-                _blocked_missing_param_ledger_row(
-                    api,
-                    params=params,
-                    missing_param="ts_code",
-                    now=now,
-                    scope=provider_call_scope,
-                )
+            blocked_row = _blocked_missing_param_ledger_row(
+                api,
+                params=params,
+                missing_param="ts_code",
+                now=now,
+                scope=provider_call_scope,
             )
+            call_ledger.append(blocked_row)
+            if production_acceptance:
+                provider_failure_stop = _production_provider_failure_stop(blocked_row)
+                break
             continue
         if adapter_module is None:
             update_task_status(
@@ -8173,6 +8265,10 @@ def run_tushare_refresh_task(
                 }
             )
         call_ledger.append(ledger_row)
+        if production_acceptance:
+            provider_failure_stop = _production_provider_failure_stop(ledger_row)
+            if provider_failure_stop:
+                break
 
     success_or_empty = [row for row in call_ledger if row.get("call_status") in {"success", "empty"}]
     failed = [row for row in call_ledger if row.get("call_status") == "failed"]
@@ -8191,6 +8287,26 @@ def run_tushare_refresh_task(
         status = "failed"
         current_step = "tushare_refresh_blocked_missing_params"
         error_message_safe = _safe_text(blocked[0].get("error_message_safe") or "missing_required_params")
+    if production_acceptance and provider_failure_stop:
+        status = "failed"
+        failed_api = str(provider_failure_stop.get("failed_api") or "provider")
+        failure_mode = str(provider_failure_stop.get("failure_mode") or "provider_error_safe")
+        if provider_failure_stop.get("terminal_provider_failure") is True:
+            current_step = (
+                f"full_interface_provider_execution_stopped_{failed_api}_{failure_mode}_safe"
+            )
+        elif provider_failure_stop.get("retryable_provider_state") is True:
+            current_step = (
+                f"full_interface_provider_execution_paused_{failed_api}_{failure_mode}_safe"
+            )
+        else:
+            current_step = (
+                f"full_interface_provider_execution_blocked_{failed_api}_"
+                "call_status_contract_error_safe"
+            )
+        error_message_safe = _safe_text(
+            provider_failure_stop.get("error_message_safe") or failure_mode
+        )
 
     api_validation_rows = _api_validation_rows(selected_apis, call_ledger)
     api_validation_summary = _api_validation_summary(api_validation_rows)
@@ -8289,12 +8405,21 @@ def run_tushare_refresh_task(
             outer_call_ledger=call_ledger,
             official_runtime=official_runtime,
         )
-        if production_acceptance and adapter_module is not None
+        if production_acceptance and adapter_module is not None and not provider_failure_stop
         else {
             "schema_version": FULL_MARKET_UNIVERSE_SCHEMA_VERSION,
-            "status": "full_market_universe_production_not_requested",
+            "status": (
+                "full_market_universe_production_blocked_upstream_interface_failure"
+                if provider_failure_stop
+                else "full_market_universe_production_not_requested"
+            ),
             "production_complete": False,
             "provider_provenance_verified": False,
+            "blockers": (
+                ["outer_full_interface_provider_failure_stop"]
+                if provider_failure_stop
+                else []
+            ),
             "artifacts": {},
         }
     )
@@ -8343,6 +8468,9 @@ def run_tushare_refresh_task(
         "status": status,
         "task_type": task_type,
         "selected_apis": selected_apis,
+        "provider_execution_order": execution_apis,
+        "provider_failure_stop": provider_failure_stop,
+        "provider_failure_stop_enforced": bool(production_acceptance),
         "api_groups": {
             "core": list(CORE_REFRESH_APIS),
             "calendar": list(CALENDAR_REFRESH_APIS),

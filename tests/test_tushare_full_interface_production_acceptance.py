@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import datetime as dt
+import json
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
@@ -249,6 +250,48 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
             }
         return {"status": "not_enabled", "dataset": None, "row_count": 0, "path": ""}
 
+    def _seed_existing_production_state(self):
+        store = SQLiteMetaStore(self.db_path)
+        packets = {
+            tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_PACKET_KEY: {
+                "status": "existing-production",
+                "immutable": "production",
+            },
+            tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_STAGING_PACKET_KEY: {
+                "status": "existing-staging",
+                "immutable": "staging",
+            },
+            tushare_task_service.FULL_MARKET_UNIVERSE_CURRENT_PACKET_KEY: {
+                "status": "existing-current",
+                "immutable": "current",
+            },
+            tushare_task_service.FULL_MARKET_UNIVERSE_LAST_GOOD_PACKET_KEY: {
+                "status": "existing-last-good",
+                "immutable": "last-good",
+            },
+        }
+        for key, packet in packets.items():
+            store.write_packet(key, packet)
+        production_root = storage_service.PARQUET_ROOT / "full_market_universe"
+        staging_path = production_root / ".attempts" / "existing" / "staging.bin"
+        pointer_path = production_root / "pointer.json"
+        staging_path.parent.mkdir(parents=True, exist_ok=True)
+        staging_path.write_bytes(b"existing-staging-bytes")
+        pointer_path.write_bytes(
+            json.dumps({"status": "existing-pointer"}, sort_keys=True).encode("utf-8")
+        )
+        return packets, {
+            staging_path: staging_path.read_bytes(),
+            pointer_path: pointer_path.read_bytes(),
+        }
+
+    def _assert_existing_production_state_unchanged(self, packets, files):
+        store = SQLiteMetaStore(self.db_path)
+        for key, packet in packets.items():
+            self.assertEqual(store.read_packet(key), packet, key)
+        for path, content in files.items():
+            self.assertEqual(path.read_bytes(), content, str(path))
+
     def test_missing_execution_request_blocks_before_adapter_load_or_call(self):
         adapter = _FakeFullInterfaceAdapter()
         payload = self._seed_payload()
@@ -280,6 +323,292 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
         production_root = storage_service.PARQUET_ROOT / "full_market_universe"
         self.assertFalse((production_root / "pointer.json").exists())
         self.assertFalse((production_root / "execution_runs").exists())
+
+    def test_separate_anns_permission_is_probed_first_and_failure_stops_all_remaining_calls(self):
+        payload, _recipe, _receipt = self._seed_request_chain()
+        adapter = _FakeFullInterfaceAdapter(failed_api="anns_d")
+        with patch.object(
+            tushare_task_service,
+            "_run_full_market_universe_acceptance",
+            side_effect=AssertionError("upstream permission failure must block full-market calls"),
+        ):
+            task = tushare_task_service.run_tushare_full_interface_provider_production_acceptance(
+                payload,
+                adapter=adapter,
+            )
+
+        self.assertEqual(task["status"], "failed")
+        self.assertEqual(adapter.calls, ["anns_d"])
+        self.assertIn("anns_d_permission_denied", task["current_step"])
+        self.assertEqual(len(task["call_ledger"]), 1)
+        self.assertEqual(task["call_ledger"][0]["failure_mode"], "permission_denied")
+        packet = SQLiteMetaStore(self.db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertEqual(packet["selected_apis"], list(tushare_task_service.ALL_REFRESH_APIS))
+        self.assertEqual(packet["provider_execution_order"][0], "anns_d")
+        self.assertEqual(len(packet["provider_execution_order"]), len(tushare_task_service.ALL_REFRESH_APIS))
+        self.assertEqual(set(packet["provider_execution_order"]), set(tushare_task_service.ALL_REFRESH_APIS))
+        self.assertTrue(packet["provider_failure_stop_enforced"])
+        self.assertEqual(packet["provider_failure_stop"]["failed_api"], "anns_d")
+        self.assertTrue(packet["provider_failure_stop"]["remaining_interfaces_not_called"])
+        self.assertFalse(packet["provider_failure_stop"]["production_promotion_allowed"])
+        self.assertEqual(
+            packet["full_market_universe_evidence"]["status"],
+            "full_market_universe_production_blocked_upstream_interface_failure",
+        )
+        self.assertFalse((storage_service.PARQUET_ROOT / "full_market_universe" / "pointer.json").exists())
+
+    def test_valid_empty_anns_evidence_does_not_trigger_failure_stop(self):
+        payload, _recipe, _receipt = self._seed_request_chain()
+        adapter = _FakeFullInterfaceAdapter(empty_api="anns_d")
+        with patch.object(tushare_task_service, "_write_parquet_dataset", side_effect=self._staged_parquet_result):
+            task = tushare_task_service.run_tushare_full_interface_provider_production_acceptance(
+                payload,
+                adapter=adapter,
+            )
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(adapter.calls[0], "anns_d")
+        self.assertEqual(set(adapter.calls), set(tushare_task_service.ALL_REFRESH_APIS))
+        packet = SQLiteMetaStore(self.db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertEqual(packet["provider_failure_stop"], {})
+        self.assertTrue(packet["provider_failure_stop_enforced"])
+        anns = next(row for row in task["call_ledger"] if row["api"] == "anns_d")
+        self.assertEqual(anns["call_status"], "empty")
+        self.assertFalse(anns["valid_empty_semantics_verified"])
+        self.assertFalse(anns["provider_transport_verified"])
+
+    def test_failure_stop_distinguishes_retryable_unknown_and_terminal_states(self):
+        for call_status, failure_mode in (
+            ("success", ""),
+            ("success", "none"),
+            ("empty", ""),
+            ("empty", "empty_result_or_no_record"),
+        ):
+            with self.subTest(valid=(call_status, failure_mode)):
+                self.assertEqual(
+                    tushare_task_service._production_provider_failure_stop(
+                        {
+                            "api": "anns_d",
+                            "call_status": call_status,
+                            "failure_mode": failure_mode,
+                        }
+                    ),
+                    {},
+                )
+
+        terminal_modes = (
+            "permission_denied",
+            "parse_failed_or_invalid_result",
+            "provider_error_safe",
+            "missing_required_parameter",
+        )
+        for failure_mode in terminal_modes:
+            with self.subTest(terminal=failure_mode):
+                terminal = tushare_task_service._production_provider_failure_stop(
+                    {
+                        "api": "anns_d",
+                        "call_status": "failed",
+                        "failure_mode": failure_mode,
+                    }
+                )
+                self.assertTrue(terminal["terminal_provider_failure"])
+                self.assertFalse(terminal["retryable_provider_state"])
+                self.assertFalse(terminal["provider_call_status_contract_error"])
+                self.assertEqual(terminal["stop_classification"], "terminal_provider_failure")
+
+        for call_status in ("retry_pending", "rate_limited_retryable"):
+            for failure_mode in ("", call_status):
+                with self.subTest(retryable=(call_status, failure_mode)):
+                    retryable = tushare_task_service._production_provider_failure_stop(
+                        {
+                            "api": "anns_d",
+                            "call_status": call_status,
+                            "failure_mode": failure_mode,
+                        }
+                    )
+                    self.assertFalse(retryable["terminal_provider_failure"])
+                    self.assertTrue(retryable["retryable_provider_state"])
+                    self.assertFalse(retryable["provider_call_status_contract_error"])
+                    self.assertFalse(retryable["automatic_retry"])
+                    self.assertFalse(retryable["automatic_retry_allowed"])
+                    self.assertTrue(retryable["manual_retry_requires_explicit_task"])
+
+        contradictory_pairs = (
+            ("failed", "future_failure_taxonomy"),
+            ("retry_pending", "future_failure_taxonomy"),
+            ("rate_limited_retryable", "permission_denied"),
+            ("success", "permission_denied"),
+            ("empty", "provider_error_safe"),
+            ("future_provider_state", "future_failure_taxonomy"),
+        )
+        for call_status, failure_mode in contradictory_pairs:
+            with self.subTest(contract_error=(call_status, failure_mode)):
+                blocked = tushare_task_service._production_provider_failure_stop(
+                    {
+                        "api": "anns_d",
+                        "call_status": call_status,
+                        "failure_mode": failure_mode,
+                    }
+                )
+                self.assertFalse(blocked["terminal_provider_failure"])
+                self.assertFalse(blocked["retryable_provider_state"])
+                self.assertTrue(blocked["provider_call_status_contract_error"])
+                self.assertEqual(
+                    blocked["stop_classification"],
+                    "provider_call_status_contract_error",
+                )
+                self.assertEqual(
+                    blocked["failure_mode"],
+                    "provider_call_status_contract_error",
+                )
+                self.assertFalse(blocked["automatic_retry"])
+
+    def test_retryable_and_unknown_states_stop_remaining_provider_scope(self):
+        cases = (
+            (
+                "failed",
+                "permission_denied",
+                "stopped_anns_d_permission_denied_safe",
+                "terminal",
+            ),
+            (
+                "failed",
+                "parse_failed_or_invalid_result",
+                "stopped_anns_d_parse_failed_or_invalid_result_safe",
+                "terminal",
+            ),
+            (
+                "failed",
+                "provider_error_safe",
+                "stopped_anns_d_provider_error_safe_safe",
+                "terminal",
+            ),
+            (
+                "failed",
+                "missing_required_parameter",
+                "stopped_anns_d_missing_required_parameter_safe",
+                "terminal",
+            ),
+            ("retry_pending", "", "paused_anns_d_retry_pending_safe", "retryable"),
+            (
+                "rate_limited_retryable",
+                "",
+                "paused_anns_d_rate_limited_retryable_safe",
+                "retryable",
+            ),
+            (
+                "failed",
+                "future_failure_taxonomy",
+                "blocked_anns_d_call_status_contract_error_safe",
+                "contract_error",
+            ),
+            (
+                "retry_pending",
+                "future_failure_taxonomy",
+                "blocked_anns_d_call_status_contract_error_safe",
+                "contract_error",
+            ),
+            (
+                "rate_limited_retryable",
+                "permission_denied",
+                "blocked_anns_d_call_status_contract_error_safe",
+                "contract_error",
+            ),
+            (
+                "success",
+                "permission_denied",
+                "blocked_anns_d_call_status_contract_error_safe",
+                "contract_error",
+            ),
+            (
+                "empty",
+                "provider_error_safe",
+                "blocked_anns_d_call_status_contract_error_safe",
+                "contract_error",
+            ),
+            (
+                "future_provider_state",
+                "future_failure_taxonomy",
+                "blocked_anns_d_call_status_contract_error_safe",
+                "contract_error",
+            ),
+        )
+        for call_status, failure_mode, expected_step, expected_class in cases:
+            with self.subTest(pair=(call_status, failure_mode)):
+                task_service._TASKS.clear()
+                payload, _recipe, _receipt = self._seed_request_chain()
+                existing_packets, existing_files = self._seed_existing_production_state()
+                adapter = _FakeFullInterfaceAdapter()
+
+                def ledger_row(api, *, params, now, scope=None, **_kwargs):
+                    return {
+                        "api": api,
+                        "scope_hash": str((scope or {}).get("scope_hash") or ""),
+                        "scope_hash_short": str((scope or {}).get("scope_hash_short") or ""),
+                        "request_params_safe": params,
+                        "row_count": 0,
+                        "data_date": None,
+                        "local_fetched_at": now,
+                        "call_status": call_status,
+                        "failure_mode": failure_mode,
+                        "failure_mode_status": "unknown",
+                        "safe_failure_mode_visible": True,
+                        "error_message_safe": call_status,
+                        "provider_transport_verified": False,
+                        "runtime_adapter_module_identity_verified": False,
+                        "parquet_status": "not_written_non_success_state",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+
+                with patch.object(
+                    tushare_task_service,
+                    "_call_ledger_row",
+                    side_effect=ledger_row,
+                ), patch.object(
+                    tushare_task_service,
+                    "_run_full_market_universe_acceptance",
+                    side_effect=AssertionError(
+                        "non-success provider state must stop before full-market calls"
+                    ),
+                ):
+                    task = tushare_task_service.run_tushare_full_interface_provider_production_acceptance(
+                        payload,
+                        adapter=adapter,
+                    )
+
+                self.assertEqual(task["status"], "failed")
+                self.assertEqual(adapter.calls, ["anns_d"])
+                self.assertIn(expected_step, task["current_step"])
+                packet = SQLiteMetaStore(self.db_path).read_packet(
+                    "command_center_tushare_refresh_packet"
+                )
+                stop = packet["provider_failure_stop"]
+                self.assertTrue(stop["remaining_interfaces_not_called"])
+                self.assertTrue(stop["full_market_universe_not_called"])
+                self.assertFalse(stop["production_promotion_allowed"])
+                self.assertFalse(stop["automatic_retry"])
+                if expected_class == "terminal":
+                    self.assertTrue(stop["terminal_provider_failure"])
+                    self.assertFalse(stop["retryable_provider_state"])
+                    self.assertFalse(stop["provider_call_status_contract_error"])
+                elif expected_class == "retryable":
+                    self.assertFalse(stop["terminal_provider_failure"])
+                    self.assertTrue(stop["retryable_provider_state"])
+                    self.assertFalse(stop["provider_call_status_contract_error"])
+                else:
+                    self.assertFalse(stop["terminal_provider_failure"])
+                    self.assertFalse(stop["retryable_provider_state"])
+                    self.assertTrue(stop["provider_call_status_contract_error"])
+                self._assert_existing_production_state_unchanged(
+                    existing_packets,
+                    existing_files,
+                )
 
     def test_newer_ready_seed_is_authoritative_over_stale_refresh_recipe(self):
         stale = tushare_task_service._provider_target_sample_execution_recipe_seed(self._seed_payload())
@@ -467,6 +796,8 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
         self.assertEqual(ledger["margin_detail"]["failure_mode"], "empty_result_or_no_record")
         self.assertEqual(ledger["top_list"]["failure_mode"], "permission_denied")
         self.assertTrue(ledger["top_list"]["safe_failure_mode_visible"])
+        self.assertNotIn("top_inst", adapter.calls)
+        self.assertNotIn("stock_basic", adapter.calls)
         self.assertIsNone(SQLiteMetaStore(self.db_path).read_packet(tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_PACKET_KEY))
 
     def test_parquet_partial_promotion_restores_canonical_files(self):
