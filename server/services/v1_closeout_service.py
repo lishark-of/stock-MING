@@ -367,6 +367,17 @@ def _read_model_task_status(db_path: Path, packet: Any) -> Any:
             "SELECT payload_json FROM task_status WHERE task_id = ?",
             (task_id,),
         ).fetchone()
+        if row is None:
+            row = connection.execute(
+                """
+                SELECT payload_json
+                FROM task_status_history
+                WHERE task_id = ?
+                ORDER BY history_id DESC
+                LIMIT 1
+                """,
+                (task_id,),
+            ).fetchone()
         payload = json.loads(row[0]) if row else None
         return payload if isinstance(payload, Mapping) else None
     except Exception:

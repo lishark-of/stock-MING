@@ -1579,6 +1579,17 @@ def run_deepseek_provider_benchmark_task(payload: Any = None) -> dict[str, Any]:
     try:
         connection = sqlite3.connect(SQLITE_META_PATH, timeout=5, isolation_level=None)
         connection.execute("BEGIN IMMEDIATE")
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS task_status_history (
+                history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                payload_digest TEXT NOT NULL
+            )
+            """
+        )
         updated_at = _now_iso()
         for packet_key, payload_value in (
             (CURRENT_PACKET_KEY, packet),
@@ -1593,13 +1604,15 @@ def run_deepseek_provider_benchmark_task(payload: Any = None) -> dict[str, Any]:
                     updated_at,
                 ),
             )
+        task_payload = json.dumps(dict(completed_task), ensure_ascii=False, default=str)
+        task_id = str(completed_task.get("task_id") or "")
         connection.execute(
             "INSERT OR REPLACE INTO task_status(task_id, payload_json, updated_at) VALUES (?, ?, ?)",
-            (
-                str(completed_task.get("task_id") or ""),
-                json.dumps(dict(completed_task), ensure_ascii=False, default=str),
-                updated_at,
-            ),
+            (task_id, task_payload, updated_at),
+        )
+        connection.execute(
+            "INSERT INTO task_status_history(task_id, payload_json, updated_at, payload_digest) VALUES (?, ?, ?, ?)",
+            (task_id, task_payload, updated_at, hashlib.sha256(task_payload.encode("utf-8")).hexdigest()),
         )
         connection.commit()
     except Exception:

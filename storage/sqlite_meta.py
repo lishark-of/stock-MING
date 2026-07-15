@@ -38,6 +38,17 @@ class SQLiteMetaStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS task_status_history (
+                    history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    payload_digest TEXT NOT NULL
+                )
+                """
+            )
             conn.commit()
 
     def write_packet(self, packet_key: str, packet: Any) -> dict[str, Any]:
@@ -170,13 +181,25 @@ class SQLiteMetaStore:
             raise ValueError("task_id is required")
         now = _dt.datetime.now().isoformat(timespec="seconds")
         payload = json.dumps(task, ensure_ascii=False, default=str)
+        payload_digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         with closing(self._connect()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute(
                 "INSERT OR REPLACE INTO task_status(task_id, payload_json, updated_at) VALUES (?, ?, ?)",
                 (task_id, payload, now),
             )
+            conn.execute(
+                "INSERT INTO task_status_history(task_id, payload_json, updated_at, payload_digest) VALUES (?, ?, ?, ?)",
+                (task_id, payload, now, payload_digest),
+            )
             conn.commit()
-        return {"task_id": task_id, "updated_at": now, "status": "written"}
+        return {
+            "task_id": task_id,
+            "updated_at": now,
+            "status": "written",
+            "payload_digest": payload_digest,
+            "history_appended": True,
+        }
 
     def read_task_status(self, task_id: str) -> dict[str, Any] | None:
         with closing(self._connect()) as conn:
@@ -209,10 +232,58 @@ class SQLiteMetaStore:
             )
         return items
 
-    def clear_task_statuses(self) -> dict[str, Any]:
+    def read_latest_task_status_history(self, task_id: str) -> dict[str, Any] | None:
+        """Read the newest append-only task projection when the live row is absent."""
+
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                """
+                SELECT payload_json, updated_at, payload_digest
+                FROM task_status_history
+                WHERE task_id = ?
+                ORDER BY history_id DESC
+                LIMIT 1
+                """,
+                (str(task_id),),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(row[0])
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        payload["storage_source"] = "sqlite_task_status_history"
+        payload["history_updated_at"] = str(row[1])
+        payload["history_payload_digest"] = str(row[2])
+        return payload
+
+    def task_status_history_count(self, task_id: str | None = None) -> int:
+        with closing(self._connect()) as conn:
+            if task_id is None:
+                row = conn.execute("SELECT COUNT(*) FROM task_status_history").fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM task_status_history WHERE task_id = ?",
+                    (str(task_id),),
+                ).fetchone()
+        return int(row[0] if row else 0)
+
+    def clear_task_statuses(self, *, preserve_history: bool = True) -> dict[str, Any]:
         with closing(self._connect()) as conn:
             row = conn.execute("SELECT COUNT(*) FROM task_status").fetchone()
             deleted = int(row[0] if row else 0)
             conn.execute("DELETE FROM task_status")
+            history_deleted = 0
+            if not preserve_history:
+                history_row = conn.execute("SELECT COUNT(*) FROM task_status_history").fetchone()
+                history_deleted = int(history_row[0] if history_row else 0)
+                conn.execute("DELETE FROM task_status_history")
             conn.commit()
-        return {"status": "cleared", "deleted_count": deleted}
+        return {
+            "status": "cleared",
+            "deleted_count": deleted,
+            "history_preserved": bool(preserve_history),
+            "history_deleted_count": history_deleted,
+        }

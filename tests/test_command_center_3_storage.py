@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from server.services import v1_closeout_service
 from storage.redis_cache import RedisCache
 from storage.sqlite_meta import SQLiteMetaStore
 
@@ -25,11 +26,20 @@ class CommandCenter3StorageTests(unittest.TestCase):
             task = {"task_id": "task-1", "status": "success"}
             store.write_task_status(task)
             self.assertEqual(store.read_task_status("task-1"), task)
+            self.assertEqual(store.task_status_history_count("task-1"), 1)
             task_meta = store.list_task_metadata()
             self.assertEqual(task_meta[0]["task_id"], "task-1")
             self.assertEqual(task_meta[0]["status"], "success")
             self.assertEqual(store.clear_task_statuses()["deleted_count"], 1)
             self.assertEqual(store.list_task_metadata(), [])
+            history = store.read_latest_task_status_history("task-1")
+            self.assertEqual(history["status"], "success")
+            self.assertEqual(history["storage_source"], "sqlite_task_status_history")
+            recovered = v1_closeout_service._read_model_task_status(
+                Path(tmp) / "meta.sqlite",
+                {"execution_task_id": "task-1"},
+            )
+            self.assertEqual(recovered["status"], "success")
 
     def test_redis_cache_memory_fallback(self):
         cache = RedisCache(use_memory_fallback=True)
