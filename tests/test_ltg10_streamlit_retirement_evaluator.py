@@ -174,7 +174,33 @@ def _network_ledger(route: str = "#home") -> list[dict]:
 
 def _network_seal(route: str = "#home") -> dict:
     ledger = _network_ledger(route)
-    return {"sealed": True, "pending_request_count": 0, "quiet_window_ms": 650, "quiet_elapsed_ms": 1400.0, "instrumentation_integrity": True, "late_event_count": 0, "late_events": [], "deny_all_network_guard": True, "denied_attempt_count": 0, "denied_attempts": [], "final_window_ms": 10750, "final_window_elapsed_ms": 10850.0, "ledger_count": len(ledger), "ledger_digest_material": ledger}
+    return {
+        "sealed": True,
+        "pending_request_count": 0,
+        "quiet_window_ms": 650,
+        "quiet_elapsed_ms": 1400.0,
+        "instrumentation_integrity": True,
+        "late_event_count": 0,
+        "late_events": [],
+        "deny_all_network_guard": True,
+        "denied_attempt_count": 0,
+        "denied_attempts": [],
+        "final_window_ms": 10750,
+        "final_window_elapsed_ms": 10850.0,
+        "ledger_count": len(ledger),
+        "ledger_digest_material": ledger,
+        "guard_mode": retirement.FINAL_NETWORK_GUARD,
+        "interval_registration_count": 3,
+        "interval_clear_count": 3,
+        "tracked_interval_count": 2,
+        "quiesced_interval_count": 2,
+        "active_interval_count_after_quiesce": 0,
+        "interval_registry_integrity": True,
+        "quiesce_started_at_monotonic_ns": 1000,
+        "quiesce_completed_at_monotonic_ns": 1001,
+        "quiesce_complete": True,
+        "denied_interval_registration_count": 0,
+    }
 
 
 def _minimal_attestation(
@@ -206,18 +232,32 @@ def _minimal_attestation(
         "route_payload_sha256": retirement._digest([]),
         "network_seal_sha256": retirement._digest(_network_seal()),
         "native_snapshot_api": "WKWebView.takeSnapshotWithConfiguration.afterScreenUpdates",
-        "final_network_guard": "deny_all_then_exit",
+        "final_network_guard": retirement.FINAL_NETWORK_GUARD,
         "final_window_ms": 10750,
         "exit_after_output": True,
         "expected_exit_code": 0,
     }
     app["exit_contract_sha256"] = retirement._digest({
-        "final_network_guard": "deny_all_then_exit",
+        "final_network_guard": retirement.FINAL_NETWORK_GUARD,
         "final_window_ms": 10750,
         "exit_after_output": True,
         "expected_exit_code": 0,
     })
     app["response_sha256"] = hashlib.sha256(nonce + retirement._canonical_bytes(app)).hexdigest()
+    transport = {
+        "output_frame_magic": "LTG10QA1",
+        "output_frame_version": 1,
+        "output_frame_codec": "gzip_deterministic_v1",
+        "output_frame_flags": 0,
+        "output_frame_reserved": 0,
+        "output_frame_compressed_bytes": 512,
+        "output_frame_uncompressed_bytes": 1024,
+        "output_frame_raw_json_sha256": "f" * 64,
+    }
+    app.update(transport)
+    app["output_frame_transport_response_sha256"] = hashlib.sha256(
+        nonce + retirement._canonical_bytes(transport)
+    ).hexdigest()
     report = {
         "schema_version": retirement.ATTESTATION_SCHEMA,
         "status": "actual_packaged_tauri_ordinary_flow_passed",
@@ -259,6 +299,7 @@ def _minimal_attestation(
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
+        "payload_size_bytes": 1024,
     }
     report["runner_response_sha256"] = hashlib.sha256(
         nonce + retirement._canonical_bytes(report)
@@ -323,6 +364,11 @@ class StreamlitRetirementEvaluatorTests(unittest.TestCase):
         blocked_payload = json.loads(blocked.stdout)
 
         self.assertEqual(plan_payload["qa_matrix_count"], 12)
+        self.assertEqual(retirement.EXPECTED_VIEWPORTS, {"desktop": (1440, 820), "mobile": (390, 844)})
+        self.assertEqual(
+            {(row["viewport"], row["width"], row["height"]) for row in plan_payload["rows"]},
+            {("desktop", 1440, 820), ("mobile", 390, 844)},
+        )
         self.assertFalse(plan_payload["public_raw_report_accepted"])
         self.assertEqual(plan_payload["evidence_transport"], "recorder_private_one_shot_session_only")
         self.assertFalse(capability_payload["packaged_dom_driver_supported"])
@@ -594,14 +640,14 @@ process.stdout.write(JSON.stringify(payload));
             "component": "CommandCenterHome",
             "viewport": "desktop",
             "width": 1440,
-            "height": 900,
+            "height": 820,
             "observed_inner_width": 1440,
-            "observed_inner_height": 900,
+            "observed_inner_height": 820,
             "device_pixel_ratio": 1.0,
             "native_inner_width_px": 1440,
-            "native_inner_height_px": 900,
+            "native_inner_height_px": 820,
             "screenshot_pixel_width": 1440,
-            "screenshot_pixel_height": 900,
+            "screenshot_pixel_height": 820,
             "observed_url": "tauri://localhost/#home",
             "runtime_surface": "actual_packaged_tauri_react",
             "protocol": "tauri:",
@@ -793,6 +839,19 @@ process.stdout.write(JSON.stringify(payload));
         self.assertFalse(retirement._network_seal_ready({**_network_seal(), "late_event_count": 1, "late_events": [{"kind": "fetch"}]}))
         self.assertFalse(retirement._network_seal_ready({**_network_seal(), "denied_attempt_count": 1, "denied_attempts": [{"kind": "fetch"}]}))
         self.assertFalse(retirement._network_seal_ready({**_network_seal(), "final_window_elapsed_ms": 10_000.0}))
+        for field, value in (
+            ("guard_mode", "deny_all_then_exit"),
+            ("interval_clear_count", 2),
+            ("quiesced_interval_count", 1),
+            ("active_interval_count_after_quiesce", 1),
+            ("interval_registry_integrity", False),
+            ("quiesce_started_at_monotonic_ns", 0),
+            ("quiesce_completed_at_monotonic_ns", 999),
+            ("quiesce_complete", False),
+            ("denied_interval_registration_count", 1),
+        ):
+            with self.subTest(interval_quiescence_field=field):
+                self.assertFalse(retirement._network_seal_ready({**_network_seal(), field: value}))
         late_get = [
             *_network_ledger(),
             {"sequence": 3, "request_id": "request-2", "observed_monotonic_ns": 102, "phase": "navigation", "method": "GET", "url": "http://127.0.0.1:8710/api/health", "resource_type": "fetch", "status": 0, "task_request": False, "pending_count_after": 1},
@@ -833,7 +892,7 @@ process.stdout.write(JSON.stringify(payload));
         gradient.save(gradient_bytes, format="PNG")
         payload = gradient_bytes.getvalue()
         self.assertTrue(retirement._png_bytes_valid(payload, (390, 844)))
-        self.assertFalse(retirement._png_bytes_valid(payload, (1440, 900)))
+        self.assertFalse(retirement._png_bytes_valid(payload, (1440, 820)))
         self.assertFalse(retirement._png_bytes_valid(payload[:-1] + b"x", (390, 844)))
         self.assertFalse(
             retirement._task_post_counts_zero(
@@ -870,6 +929,19 @@ process.stdout.write(JSON.stringify(payload));
                 runner_pid=1234,
                 reported_pid=9999,
             )
+            oversized_report = {
+                **report,
+                "payload_size_bytes": retirement.MAX_TRUSTED_NATIVE_PAYLOAD_BYTES + 1,
+            }
+            oversized_report["runner_response_sha256"] = hashlib.sha256(
+                nonce + retirement._canonical_bytes(
+                    {
+                        key: value
+                        for key, value in oversized_report.items()
+                        if key != "runner_response_sha256"
+                    }
+                )
+            ).hexdigest()
             with patch.object(
                 retirement.tauri_package_verifier,
                 "measure_fixed_tauri_package_artifacts",
@@ -898,10 +970,22 @@ process.stdout.write(JSON.stringify(payload));
                     package=old_package,
                     project_root=ROOT,
                 )
+                _derived_oversized, oversized_blockers = retirement._validate_trusted_runner_attestation(
+                    session,
+                    attestation=oversized_report,
+                    challenge=challenge,
+                    nonce=nonce,
+                    expected_runner_pid=1234,
+                    expected_runner_executable=expected_runner,
+                    expected_head_full=HEAD,
+                    package=package,
+                    project_root=ROOT,
+                )
 
         self.assertIsNone(derived)
         self.assertIn("trusted_runner_identity_nonce_or_head_invalid", blockers)
         self.assertIn("formal_package_verifier_binding_invalid", old_blockers)
+        self.assertIn("trusted_runner_payload_size_invalid", oversized_blockers)
 
     def test_fake_runner_file_is_rejected_before_process_launch_or_nonce_write(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1048,7 +1132,14 @@ process.stdout.write(JSON.stringify(payload));
         for token in (
             "eval_with_callback",
             "set_size",
+            "converge_webview_content_size",
+            "VIEWPORT_RESIZE_ATTEMPTS: usize = 8",
+            "VIEWPORT_MAX_CORRECTION_CSS_PX: i64 = 256",
+            "window.innerWidth",
+            "window.innerHeight",
             "with_webview",
+            "safeAreaInsets",
+            "configuration.setRect",
             "takeSnapshotWithConfiguration_completionHandler",
             "--ltg10-qa-in-fd",
             "--ltg10-qa-out-fd",
@@ -1066,12 +1157,75 @@ process.stdout.write(JSON.stringify(payload));
         self.assertIn("os.pipe()", (ROOT / "server/services/streamlit_retirement_evidence_service.py").read_text())
         self.assertIn("WKWebView.takeSnapshotWithConfiguration.afterScreenUpdates", runner)
         self.assertIn("nativeBuffer.length < 8", runner)
+        self.assertIn("MAX_NATIVE_OUTPUT_BYTES = 192 * 1024 * 1024", runner)
+        self.assertIn("MAX_NATIVE_JSON_FRAME_BYTES = 64 * 1024 * 1024", runner)
+        self.assertIn("MAX_NATIVE_DECOMPRESSED_JSON_BYTES = 192 * 1024 * 1024", runner)
+        self.assertIn("nativeJsonFrameLengthValid(compressedLength", runner)
+        self.assertIn("strictDeterministicGunzip", runner)
+        self.assertNotIn("MAX_NATIVE_OUTPUT_BYTES = 64 * 1024 * 1024", runner)
+        self.assertIn("MAX_EVAL_BYTES: usize = 16 * 1024 * 1024", native)
+        self.assertIn("MAX_SNAPSHOT_BYTES: usize = 32 * 1024 * 1024", native)
+        self.assertIn("MAX_COMPRESSED_OUTPUT_JSON_BYTES: usize = 64 * 1024 * 1024", native)
+        self.assertIn("MAX_UNCOMPRESSED_OUTPUT_JSON_BYTES: usize = 192 * 1024 * 1024", native)
+        self.assertIn(".mtime(0)", native)
+        self.assertIn(".operating_system(255)", native)
         self.assertIn("nativeFailureCode(nativeStderr)", runner)
+        self.assertIn("Math.floor(performance.now() * 1e6)", init)
+        self.assertNotIn("performance.timeOrigin + performance.now()", init)
         for forbidden in ("webdriverio", "wdio", "open_devtools", "devtools", "Safari inspector"):
             self.assertNotIn(forbidden, f"{native}\n{init}\n{runner}")
         self.assertNotIn("std::env::var", native)
+        self.assertNotIn("window.inner_size()", native)
         self.assertNotIn("127.0.0.1", native)
         self.assertNotIn("8710", native)
+
+    def test_native_json_frame_limit_rejects_oversize_and_preserves_limit_order(self):
+        runner_path = ROOT / "scripts/streamlit_retirement_packaged_qa_runner.mjs"
+        harness = r"""
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('function nativeJsonFrameLengthValid');
+const marker = '\n\nfunction strictDeterministicGunzip';
+const end = source.indexOf(marker, start);
+if (start < 0 || end < 0) process.exit(10);
+const validate = vm.runInNewContext(`(${source.slice(start, end)})`);
+const gzipStart = source.indexOf('function strictDeterministicGunzip');
+const gzipEnd = source.indexOf('\n\nfunction parseNativeOutput', gzipStart);
+if (gzipStart < 0 || gzipEnd < 0) process.exit(14);
+const { gzipSync, inflateRawSync, crc32 } = require('node:zlib');
+const strictGunzip = vm.runInNewContext(`(${source.slice(gzipStart, gzipEnd)})`, { Buffer, inflateRawSync, crc32 });
+const MiB = 1024 * 1024;
+if (!validate(64 * MiB, 8 + 64 * MiB, 64 * MiB)) process.exit(11);
+if (validate(64 * MiB + 1, 8 + 64 * MiB + 1, 64 * MiB)) process.exit(12);
+if (!(16 * MiB <= 64 * MiB && 32 * MiB <= 64 * MiB && 64 * MiB < 192 * MiB)) process.exit(13);
+const raw = Buffer.from('deterministic transport payload');
+const valid = gzipSync(raw, { level: 6, mtime: 0 });
+valid[8] = 0;
+valid[9] = 255;
+if (!strictGunzip(valid, raw.length, 192 * MiB).equals(raw)) process.exit(15);
+for (const invalid of [
+  valid.subarray(0, valid.length - 1),
+  Buffer.concat([valid.subarray(0, valid.length - 8), Buffer.from([0]), valid.subarray(valid.length - 8)]),
+  Buffer.concat([valid, valid]),
+  Buffer.from(valid.map((byte, index) => index === valid.length - 8 ? byte ^ 1 : byte))
+]) {
+  let rejected = false;
+  try { strictGunzip(invalid, raw.length, 192 * MiB); } catch { rejected = true; }
+  if (!rejected) process.exit(16);
+}
+let bombRejected = false;
+try { strictGunzip(valid, raw.length, raw.length - 1); } catch { bombRejected = true; }
+if (!bombRejected) process.exit(17);
+"""
+        result = subprocess.run(
+            ["node", "-e", harness, str(runner_path)],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_document_start_prototype_guards_execute_and_delayed_network_is_denied(self):
         init_path = ROOT / "desktop/src-tauri/src/ltg10_packaged_qa_init.js"
@@ -1079,7 +1233,9 @@ process.stdout.write(JSON.stringify(payload));
 const fs = require('node:fs');
 const vm = require('node:vm');
 let clock = 0;
-const nativeCalls = { fetch: 0, xhr: 0, websocket: 0, eventsource: 0, worker: 0, beacon: 0, serviceworker: 0 };
+const nativeCalls = { fetch: 0, xhr: 0, websocket: 0, eventsource: 0, worker: 0, beacon: 0, serviceworker: 0, intervalSet: 0, intervalClear: 0 };
+let nextInterval = 0;
+const nativeIntervals = new Set();
 class Window {}
 class FakeTarget { addEventListener() {} }
 class XMLHttpRequest extends FakeTarget { open() {} send() { nativeCalls.xhr += 1; } }
@@ -1102,6 +1258,8 @@ document.body = { innerHTML: '', innerText: '', querySelectorAll: () => [] };
 const navigator = new Navigator();
 const customElements = new CustomElementRegistry();
 Window.prototype.fetch = async function() { nativeCalls.fetch += 1; return { status: 200, url: 'tauri://localhost/#home' }; };
+Window.prototype.setInterval = function() { nativeCalls.intervalSet += 1; const handle = ++nextInterval; nativeIntervals.add(handle); return handle; };
+Window.prototype.clearInterval = function(handle) { nativeCalls.intervalClear += 1; nativeIntervals.delete(handle); };
 const sandbox = {
   Window, XMLHttpRequest, WebSocket, EventSource, Worker, ServiceWorkerContainer, Navigator, CustomElementRegistry, Element, Document,
   navigator, customElements, document, location: { href: 'tauri://localhost/#home', hash: '#home' },
@@ -1118,6 +1276,7 @@ vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox, { filename: p
 (async () => {
   clock = 2_000;
   const api = sandbox.__STOCK_MING_LTG10_QA__;
+  sandbox.setInterval(() => {}, 1000);
   const token = api.beginSeal();
   await new Promise((resolve) => setImmediate(resolve));
   const started = api.takeObservation(token);
@@ -1126,7 +1285,8 @@ vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox, { filename: p
     [sandbox.XMLHttpRequest.prototype, 'constructor'], [sandbox.WebSocket.prototype, 'constructor'],
     [sandbox.EventSource.prototype, 'constructor'], [sandbox.Worker.prototype, 'constructor'],
     [sandbox.Navigator.prototype, 'sendBeacon'], [sandbox.ServiceWorkerContainer.prototype, 'register'],
-    [sandbox.CustomElementRegistry.prototype, 'define']
+    [sandbox.CustomElementRegistry.prototype, 'define'], [sandbox.Window.prototype, 'setInterval'],
+    [sandbox.Window.prototype, 'clearInterval']
   ].every(([owner, key]) => { const d = Object.getOwnPropertyDescriptor(owner, key); return d && d.writable === false && d.configurable === false; });
   clock += 10_100;
   const attempts = [];
@@ -1139,10 +1299,15 @@ vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox, { filename: p
   attempts.push((await sandbox.Window.prototype.fetch.call(sandbox, 'http://127.0.0.1:8710/late').then(() => false, () => true)));
   attempts.push(sandbox.Navigator.prototype.sendBeacon.call(sandbox.navigator, 'http://127.0.0.1:8710/late') === false);
   attempts.push((await sandbox.ServiceWorkerContainer.prototype.register.call(sandbox.navigator.serviceWorker, 'http://127.0.0.1:8710/late-sw.js').then(() => false, () => true)));
+  try { sandbox.setInterval(() => {}, 1000); } catch { attempts.push(true); }
   const seal = api.verifySeal();
   process.stdout.write(JSON.stringify({
     descriptorsLocked, startedReady: started.status === 'ready' && started.value.hook_integrity === true,
-    attempts, denied: seal.denied_attempt_count, late: seal.late_event_count, nativeCalls
+    attempts, denied: seal.denied_attempt_count, late: seal.late_event_count,
+    intervalDenied: seal.denied_interval_registration_count,
+    intervalQuiesced: started.value.quiesced_interval_count,
+    activeIntervals: nativeIntervals.size,
+    nativeCalls
   }));
 })().catch((error) => { console.error(error); process.exit(1); });
 """
@@ -1161,10 +1326,13 @@ vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox, { filename: p
         payload = json.loads(result.stdout)
         self.assertTrue(payload["descriptorsLocked"])
         self.assertTrue(payload["startedReady"])
-        self.assertEqual(payload["attempts"], [True] * 7)
+        self.assertEqual(payload["attempts"], [True] * 8)
         self.assertEqual(payload["denied"], 7)
         self.assertGreaterEqual(payload["late"], 7)
-        self.assertEqual(payload["nativeCalls"], {"fetch": 0, "xhr": 0, "websocket": 0, "eventsource": 0, "worker": 0, "beacon": 0, "serviceworker": 0})
+        self.assertEqual(payload["intervalDenied"], 1)
+        self.assertEqual(payload["intervalQuiesced"], 1)
+        self.assertEqual(payload["activeIntervals"], 0)
+        self.assertEqual(payload["nativeCalls"], {"fetch": 0, "xhr": 0, "websocket": 0, "eventsource": 0, "worker": 0, "beacon": 0, "serviceworker": 0, "intervalSet": 1, "intervalClear": 1})
 
     def test_active_route_binding_alias_conditional_and_component_root_mutations_fail_ast(self):
         mutations = (

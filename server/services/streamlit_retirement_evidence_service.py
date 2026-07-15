@@ -101,9 +101,11 @@ VISUAL_REVIEW_EVENT_SCHEMA = "streamlit_retirement_visual_review_event.v2"
 VISUAL_REVIEW_STATE_SCHEMA = "streamlit_retirement_visual_review_state.v1"
 CHALLENGE_SCHEMA = "streamlit_retirement_packaged_runner_challenge.v6"
 ATTESTATION_SCHEMA = "streamlit_retirement_packaged_runner_attestation.v7"
-APP_ATTESTATION_SCHEMA = "streamlit_retirement_packaged_app_attestation.v6"
+APP_ATTESTATION_SCHEMA = "streamlit_retirement_packaged_app_attestation.v7"
 RUNNER_SCHEMA = "streamlit_retirement_packaged_runner.v4"
 SOURCE_SCHEMA = "streamlit_retirement_source_ast_contract.v5"
+FINAL_NETWORK_GUARD = "quiesce_tracked_intervals_then_deny_all_then_exit"
+MAX_TRUSTED_NATIVE_PAYLOAD_BYTES = 192 * 1024 * 1024
 TRUSTED_RUNNER_FAILURE_PREFIX = "packaged Tauri native adapter failed closed:"
 TRUSTED_RUNNER_SAFE_FAILURE_CODES = frozenset(
     {
@@ -140,7 +142,7 @@ EXPECTED_ROUTE_HEADINGS = {
     "#marginEtf": "ETF / 融资",
     "#qmt-replay": "QMT 本地回放",
 }
-EXPECTED_VIEWPORTS = {"desktop": (1440, 900), "mobile": (390, 844)}
+EXPECTED_VIEWPORTS = {"desktop": (1440, 820), "mobile": (390, 844)}
 FORBIDDEN_ORDINARY_COMPONENT_IDS = (
     "LegacyTools",
     "AdminTools",
@@ -231,6 +233,7 @@ ATTESTATION_FIELDS = {
     "does_not_execute_trades",
     "does_not_modify_strategy_action",
     "contains_secret",
+    "payload_size_bytes",
 }
 ROW_FIELDS = {
     "route",
@@ -297,6 +300,17 @@ NETWORK_SEAL_FIELDS = {
     "final_window_elapsed_ms",
     "ledger_count",
     "ledger_digest_material",
+    "guard_mode",
+    "interval_registration_count",
+    "interval_clear_count",
+    "tracked_interval_count",
+    "quiesced_interval_count",
+    "active_interval_count_after_quiesce",
+    "interval_registry_integrity",
+    "quiesce_started_at_monotonic_ns",
+    "quiesce_completed_at_monotonic_ns",
+    "quiesce_complete",
+    "denied_interval_registration_count",
 }
 APP_ATTESTATION_FIELDS = {
     "schema_version",
@@ -323,6 +337,25 @@ APP_ATTESTATION_FIELDS = {
     "exit_after_output",
     "expected_exit_code",
     "exit_contract_sha256",
+    "output_frame_magic",
+    "output_frame_version",
+    "output_frame_codec",
+    "output_frame_flags",
+    "output_frame_reserved",
+    "output_frame_compressed_bytes",
+    "output_frame_uncompressed_bytes",
+    "output_frame_raw_json_sha256",
+    "output_frame_transport_response_sha256",
+}
+APP_TRANSPORT_ATTESTATION_FIELDS = {
+    "output_frame_magic",
+    "output_frame_version",
+    "output_frame_codec",
+    "output_frame_flags",
+    "output_frame_reserved",
+    "output_frame_compressed_bytes",
+    "output_frame_uncompressed_bytes",
+    "output_frame_raw_json_sha256",
 }
 EVENT_FIELDS = {
     "schema_version",
@@ -1073,6 +1106,26 @@ def _network_seal_ready(value: object) -> bool:
         and value.get("deny_all_network_guard") is True
         and value.get("denied_attempt_count") == 0
         and value.get("denied_attempts") == []
+        and value.get("guard_mode") == FINAL_NETWORK_GUARD
+        and type(value.get("interval_registration_count")) is int
+        and int(value.get("interval_registration_count") or 0) >= 0
+        and type(value.get("interval_clear_count")) is int
+        and value.get("interval_registration_count") == value.get("interval_clear_count")
+        and type(value.get("tracked_interval_count")) is int
+        and int(value.get("tracked_interval_count") or 0) >= 0
+        and type(value.get("quiesced_interval_count")) is int
+        and value.get("tracked_interval_count") == value.get("quiesced_interval_count")
+        and type(value.get("active_interval_count_after_quiesce")) is int
+        and value.get("active_interval_count_after_quiesce") == 0
+        and value.get("interval_registry_integrity") is True
+        and type(value.get("quiesce_started_at_monotonic_ns")) is int
+        and int(value.get("quiesce_started_at_monotonic_ns") or 0) > 0
+        and type(value.get("quiesce_completed_at_monotonic_ns")) is int
+        and int(value.get("quiesce_completed_at_monotonic_ns") or 0)
+        >= int(value.get("quiesce_started_at_monotonic_ns") or 0)
+        and value.get("quiesce_complete") is True
+        and type(value.get("denied_interval_registration_count")) is int
+        and value.get("denied_interval_registration_count") == 0
         and type(value.get("final_window_ms")) is int
         and int(value.get("final_window_ms") or 0) >= 10_500
         and type(value.get("final_window_elapsed_ms")) in {int, float}
@@ -1385,6 +1438,36 @@ def _validate_trusted_runner_attestation(
     ):
         blockers.append("formal_package_verifier_binding_invalid")
     app = report.get("app_attestation") if isinstance(report.get("app_attestation"), Mapping) else {}
+    native_app = {
+        key: value
+        for key, value in app.items()
+        if key not in APP_TRANSPORT_ATTESTATION_FIELDS
+        and key != "output_frame_transport_response_sha256"
+    }
+    transport_material = {
+        key: app.get(key)
+        for key in APP_TRANSPORT_ATTESTATION_FIELDS
+    }
+    observed_transport_response = str(app.get("output_frame_transport_response_sha256") or "")
+    expected_transport_response = hashlib.sha256(
+        nonce + _canonical_bytes(transport_material)
+    ).hexdigest()
+    transport_attestation_ready = bool(
+        app.get("output_frame_magic") == "LTG10QA1"
+        and app.get("output_frame_version") == 1
+        and app.get("output_frame_codec") == "gzip_deterministic_v1"
+        and app.get("output_frame_flags") == 0
+        and app.get("output_frame_reserved") == 0
+        and type(app.get("output_frame_compressed_bytes")) is int
+        and 0 < int(app.get("output_frame_compressed_bytes") or 0) <= 64 * 1024 * 1024
+        and type(app.get("output_frame_uncompressed_bytes")) is int
+        and 0 < int(app.get("output_frame_uncompressed_bytes") or 0) <= MAX_TRUSTED_NATIVE_PAYLOAD_BYTES
+        and _valid_sha256(app.get("output_frame_raw_json_sha256"))
+        and _valid_sha256(observed_transport_response)
+        and hmac.compare_digest(observed_transport_response, expected_transport_response)
+        and int(report.get("payload_size_bytes") or 0)
+        >= 96 + int(app.get("output_frame_compressed_bytes") or 0)
+    )
     app_executable = Path(str(app.get("executable_path") or ""))
     app_parent_executable = Path(str(app.get("parent_executable_path") or ""))
     node_executable = shutil.which("node")
@@ -1395,13 +1478,14 @@ def _validate_trusted_runner_attestation(
     )
     network_seal_value = report.get("network_seal_audit") if isinstance(report.get("network_seal_audit"), Mapping) else {}
     exit_contract = {
-        "final_network_guard": "deny_all_then_exit",
+        "final_network_guard": FINAL_NETWORK_GUARD,
         "final_window_ms": app.get("final_window_ms"),
         "exit_after_output": True,
         "expected_exit_code": 0,
     }
     if not (
         set(app) == APP_ATTESTATION_FIELDS
+        and transport_attestation_ready
         and app.get("schema_version") == APP_ATTESTATION_SCHEMA
         and app.get("status") == "packaged_tauri_app_nonce_attested"
         and type(app.get("pid")) is int
@@ -1430,12 +1514,12 @@ def _validate_trusted_runner_attestation(
         and app.get("network_seal_sha256") == _digest(report.get("network_seal_audit"))
         and app.get("native_snapshot_api")
         == "WKWebView.takeSnapshotWithConfiguration.afterScreenUpdates"
-        and app.get("final_network_guard") == "deny_all_then_exit"
+        and app.get("final_network_guard") == FINAL_NETWORK_GUARD
         and app.get("final_window_ms") == network_seal_value.get("final_window_ms")
         and app.get("exit_after_output") is True
         and app.get("expected_exit_code") == 0
         and app.get("exit_contract_sha256") == _digest(exit_contract)
-        and _nonce_bound_response_valid(app, nonce, response_field="response_sha256")
+        and _nonce_bound_response_valid(native_app, nonce, response_field="response_sha256")
     ):
         blockers.append("packaged_tauri_app_nonce_attestation_invalid")
     source, source_blocker = _source_contract(project_root)
@@ -1636,6 +1720,11 @@ def _validate_trusted_runner_attestation(
         and report.get("contains_secret") is False
     ):
         blockers.append("trusted_runner_safety_boundary_invalid")
+    if not (
+        type(report.get("payload_size_bytes")) is int
+        and 0 < int(report.get("payload_size_bytes") or 0) <= MAX_TRUSTED_NATIVE_PAYLOAD_BYTES
+    ):
+        blockers.append("trusted_runner_payload_size_invalid")
     if blockers or source is None:
         return None, sorted(set(blockers))
     return {
@@ -1650,6 +1739,7 @@ def _validate_trusted_runner_attestation(
         "route_count": len(EXPECTED_ROUTES),
         "viewport_count": len(EXPECTED_VIEWPORTS),
         "qa_matrix_count": expected_count,
+        "payload_size_bytes": int(report.get("payload_size_bytes") or 0),
         "visual_review_required": canvas_present_count > 0,
         "canvas_present_count": canvas_present_count,
         "visual_review_rows": visual_review_rows,

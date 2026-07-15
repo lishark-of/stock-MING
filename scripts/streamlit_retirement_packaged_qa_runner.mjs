@@ -30,17 +30,24 @@ import {
 } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { crc32, inflateRawSync } from "node:zlib";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = dirname(SCRIPT_PATH);
 const DEFAULT_PROJECT_ROOT = resolve(SCRIPT_DIR, "..");
 const RUNNER_SCHEMA = "streamlit_retirement_packaged_runner.v4";
 const ATTESTATION_SCHEMA = "streamlit_retirement_packaged_runner_attestation.v7";
-const APP_ATTESTATION_SCHEMA = "streamlit_retirement_packaged_app_attestation.v6";
+const APP_ATTESTATION_SCHEMA = "streamlit_retirement_packaged_app_attestation.v7";
 const CHALLENGE_SCHEMA = "streamlit_retirement_packaged_runner_challenge.v6";
 const NATIVE_INPUT_SCHEMA = "streamlit_retirement_packaged_native_input.v1";
 const NATIVE_OUTPUT_SCHEMA = "streamlit_retirement_packaged_native_output.v2";
-const MAX_NATIVE_OUTPUT_BYTES = 64 * 1024 * 1024;
+const MAX_NATIVE_OUTPUT_BYTES = 192 * 1024 * 1024;
+const MAX_NATIVE_JSON_FRAME_BYTES = 64 * 1024 * 1024;
+const MAX_NATIVE_DECOMPRESSED_JSON_BYTES = 192 * 1024 * 1024;
+const OUTPUT_FRAME_MAGIC = Buffer.from("LTG10QA1", "ascii");
+const OUTPUT_FRAME_CODEC = 1;
+const OUTPUT_FRAME_CODEC_NAME = "gzip_deterministic_v1";
+const OUTPUT_FRAME_HEADER_BYTES = 96;
 const QA_IN_FLAG = "--ltg10-qa-in-fd";
 const QA_OUT_FLAG = "--ltg10-qa-out-fd";
 const EXPECTED_ROUTES = [
@@ -182,7 +189,7 @@ const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {
   ])
 };
 const VIEWPORTS = [
-  { name: "desktop", width: 1440, height: 900 },
+  { name: "desktop", width: 1440, height: 820 },
   { name: "mobile", width: 390, height: 844 }
 ];
 const EXPECTED_IMPORT_MANIFEST_DIGEST = "1810d7793af84f69b05e31861e2500a7a851f5e53172afae739c2d4af1bf3dd2";
@@ -1503,10 +1510,15 @@ const NATIVE_FAILURE_CODE_RULES = [
   ["current executable unavailable", "package_identity_invalid"],
   ["packaged QA document-start instrumentation", "document_instrumentation_unavailable"],
   ["native viewport resize", "viewport_measurement_invalid"],
+  ["WKWebView content geometry", "viewport_measurement_invalid"],
+  ["WKWebView safe-area", "viewport_measurement_invalid"],
+  ["WKWebView native scale", "viewport_measurement_invalid"],
+  ["WKWebView native pixel", "viewport_measurement_invalid"],
   ["WebView actual inner viewport", "viewport_measurement_invalid"],
   ["native inner-size measurement", "viewport_measurement_invalid"],
   ["native inner size", "viewport_measurement_invalid"],
   ["packaged route navigation", "route_navigation_invalid"],
+  ["WebView eval result", "observation_invalid"],
   ["WebView observation", "observation_invalid"],
   ["observation ", "observation_invalid"],
   ["packaged DOM observation", "observation_invalid"],
@@ -1528,19 +1540,87 @@ function nativeFailureCode(stderrBytes) {
   return rule ? rule[1] : "unknown";
 }
 
-function parseNativeOutput(buffer) {
-  if (buffer.length < 8) throw new Error("native output frame missing");
-  const jsonLength = Number(buffer.readBigUInt64BE(0));
-  if (!Number.isSafeInteger(jsonLength) || jsonLength <= 0 || jsonLength > 16 * 1024 * 1024 || 8 + jsonLength > buffer.length) {
+function nativeJsonFrameLengthValid(jsonLength, bufferLength, maxBytes = MAX_NATIVE_JSON_FRAME_BYTES) {
+  return (
+    Number.isSafeInteger(jsonLength) &&
+    Number.isSafeInteger(bufferLength) &&
+    Number.isSafeInteger(maxBytes) &&
+    jsonLength > 0 &&
+    maxBytes > 0 &&
+    jsonLength <= maxBytes &&
+    8 + jsonLength <= bufferLength
+  );
+}
+
+function strictDeterministicGunzip(frame, expectedLength, maxBytes = MAX_NATIVE_DECOMPRESSED_JSON_BYTES) {
+  if (
+    !Buffer.isBuffer(frame) || frame.length < 18 ||
+    frame.subarray(0, 10).toString("hex") !== "1f8b08000000000000ff" ||
+    !Number.isSafeInteger(expectedLength) || expectedLength <= 0 || expectedLength > maxBytes
+  ) throw new Error("native output JSON compression invalid");
+  const deflate = frame.subarray(10, frame.length - 8);
+  let inflated;
+  try {
+    inflated = inflateRawSync(deflate, { info: true, maxOutputLength: maxBytes });
+  } catch {
+    throw new Error("native output JSON compression invalid");
+  }
+  const raw = inflated?.buffer;
+  if (!Buffer.isBuffer(raw) || inflated?.engine?.bytesWritten !== deflate.length || raw.length !== expectedLength) {
+    throw new Error("native output JSON compression invalid");
+  }
+  const footer = frame.subarray(frame.length - 8);
+  if (footer.readUInt32LE(0) !== (Number(crc32(raw)) >>> 0) || footer.readUInt32LE(4) !== (raw.length >>> 0)) {
+    throw new Error("native output JSON compression invalid");
+  }
+  return raw;
+}
+
+function parseNativeOutput(buffer, nonce) {
+  if (buffer.length < OUTPUT_FRAME_HEADER_BYTES) throw new Error("native output frame missing");
+  if (
+    !buffer.subarray(0, 8).equals(OUTPUT_FRAME_MAGIC) || buffer[8] !== OUTPUT_FRAME_CODEC ||
+    buffer[9] !== 0 || !buffer.subarray(10, 16).equals(Buffer.alloc(6))
+  ) throw new Error("native output frame codec invalid");
+  const compressedLength = Number(buffer.readBigUInt64BE(16));
+  const uncompressedLength = Number(buffer.readBigUInt64BE(24));
+  if (!nativeJsonFrameLengthValid(compressedLength, buffer.length - (OUTPUT_FRAME_HEADER_BYTES - 8))) {
     throw new Error("native output JSON frame invalid");
+  }
+  if (!Number.isSafeInteger(uncompressedLength) || uncompressedLength <= 0 || uncompressedLength > MAX_NATIVE_DECOMPRESSED_JSON_BYTES) {
+    throw new Error("native output JSON frame invalid");
+  }
+  const rawSha256 = buffer.subarray(32, 64).toString("hex");
+  const transportResponseSha256 = buffer.subarray(64, 96).toString("hex");
+  const compressedEnd = OUTPUT_FRAME_HEADER_BYTES + compressedLength;
+  if (compressedEnd > buffer.length) throw new Error("native output JSON frame invalid");
+  const raw = strictDeterministicGunzip(
+    buffer.subarray(OUTPUT_FRAME_HEADER_BYTES, compressedEnd), uncompressedLength
+  );
+  if (!sameText(sha256(raw), rawSha256)) throw new Error("native output JSON hash invalid");
+  const transport = {
+    output_frame_magic: "LTG10QA1",
+    output_frame_version: 1,
+    output_frame_codec: OUTPUT_FRAME_CODEC_NAME,
+    output_frame_flags: 0,
+    output_frame_reserved: 0,
+    output_frame_compressed_bytes: compressedLength,
+    output_frame_uncompressed_bytes: uncompressedLength,
+    output_frame_raw_json_sha256: rawSha256
+  };
+  const expectedTransportResponse = sha256(
+    Buffer.concat([nonce, Buffer.from(JSON.stringify(canonical(transport)))])
+  );
+  if (!sameText(transportResponseSha256, expectedTransportResponse)) {
+    throw new Error("native output frame nonce response invalid");
   }
   let output;
   try {
-    output = JSON.parse(buffer.subarray(8, 8 + jsonLength).toString("utf8"));
+    output = JSON.parse(raw.toString("utf8"));
   } catch {
     throw new Error("native output JSON invalid");
   }
-  let offset = 8 + jsonLength;
+  let offset = compressedEnd;
   const screenshots = [];
   const expected = Number(output?.qa_matrix_count || 0);
   for (let index = 0; index < expected; index += 1) {
@@ -1554,7 +1634,11 @@ function parseNativeOutput(buffer) {
     offset += length;
   }
   if (offset !== buffer.length) throw new Error("native output contains trailing bytes");
-  return { output, screenshots };
+  return {
+    output,
+    screenshots,
+    transport: { ...transport, output_frame_transport_response_sha256: transportResponseSha256 }
+  };
 }
 
 function nonceResponseValid(value, nonce, responseField) {
@@ -1667,20 +1751,34 @@ function sealAuditReady(value) {
   const fields = [
     "sealed", "pending_request_count", "quiet_window_ms", "quiet_elapsed_ms", "instrumentation_integrity",
     "late_event_count", "late_events", "deny_all_network_guard", "denied_attempt_count", "denied_attempts",
-    "final_window_ms", "final_window_elapsed_ms", "ledger_count", "ledger_digest_material"
+    "final_window_ms", "final_window_elapsed_ms", "ledger_count", "ledger_digest_material",
+    "guard_mode", "interval_registration_count", "interval_clear_count", "tracked_interval_count",
+    "quiesced_interval_count", "active_interval_count_after_quiesce", "interval_registry_integrity",
+    "quiesce_started_at_monotonic_ns", "quiesce_completed_at_monotonic_ns", "quiesce_complete",
+    "denied_interval_registration_count"
   ];
   return exactObject(value, fields) && value.sealed === true && value.pending_request_count === 0 &&
     Number.isInteger(value.quiet_window_ms) && value.quiet_window_ms >= 500 &&
     typeof value.quiet_elapsed_ms === "number" && value.quiet_elapsed_ms >= value.quiet_window_ms &&
     value.instrumentation_integrity === true && value.late_event_count === 0 && Array.isArray(value.late_events) && value.late_events.length === 0 &&
     value.deny_all_network_guard === true && value.denied_attempt_count === 0 && Array.isArray(value.denied_attempts) && value.denied_attempts.length === 0 &&
+    value.guard_mode === "quiesce_tracked_intervals_then_deny_all_then_exit" &&
+    Number.isInteger(value.interval_registration_count) && value.interval_registration_count >= 0 &&
+    value.interval_registration_count === value.interval_clear_count &&
+    Number.isInteger(value.tracked_interval_count) && value.tracked_interval_count >= 0 &&
+    value.tracked_interval_count === value.quiesced_interval_count &&
+    value.active_interval_count_after_quiesce === 0 && value.interval_registry_integrity === true &&
+    Number.isInteger(value.quiesce_started_at_monotonic_ns) && value.quiesce_started_at_monotonic_ns > 0 &&
+    Number.isInteger(value.quiesce_completed_at_monotonic_ns) &&
+    value.quiesce_completed_at_monotonic_ns >= value.quiesce_started_at_monotonic_ns &&
+    value.quiesce_complete === true && value.denied_interval_registration_count === 0 &&
     Number.isInteger(value.final_window_ms) && value.final_window_ms >= 10_500 &&
     typeof value.final_window_elapsed_ms === "number" && value.final_window_elapsed_ms >= value.final_window_ms &&
     Number.isInteger(value.ledger_count) && value.ledger_count === value.ledger_digest_material?.length &&
     localNetworkLedgerComplete(value.ledger_digest_material);
 }
 
-function validateNativeMatrix(output, screenshots, challenge, nonce, childPid, packagePaths, runnerPath) {
+function validateNativeMatrix(output, screenshots, challenge, nonce, childPid, packagePaths, runnerPath, transport) {
   const fields = [
     "schema_version", "status", "app_attestation", "route_count", "viewport_count", "qa_matrix_count", "rows", "seal_audit",
     "external_calls_triggered", "tushare_called", "deepseek_called", "github_called",
@@ -1704,7 +1802,7 @@ function validateNativeMatrix(output, screenshots, challenge, nonce, childPid, p
     "final_network_guard", "final_window_ms", "exit_after_output", "expected_exit_code", "exit_contract_sha256", "response_sha256"
   ];
   const exitContract = {
-    final_network_guard: "deny_all_then_exit",
+    final_network_guard: "quiesce_tracked_intervals_then_deny_all_then_exit",
     final_window_ms: output.seal_audit?.final_window_ms,
     exit_after_output: true,
     expected_exit_code: 0
@@ -1738,7 +1836,7 @@ function validateNativeMatrix(output, screenshots, challenge, nonce, childPid, p
     app.route_payload_sha256 !== digest(output.rows) ||
     app.network_seal_sha256 !== digest(output.seal_audit) ||
     app.native_snapshot_api !== "WKWebView.takeSnapshotWithConfiguration.afterScreenUpdates" ||
-    app.final_network_guard !== "deny_all_then_exit" || app.final_window_ms !== output.seal_audit.final_window_ms ||
+    app.final_network_guard !== "quiesce_tracked_intervals_then_deny_all_then_exit" || app.final_window_ms !== output.seal_audit.final_window_ms ||
     app.exit_after_output !== true || app.expected_exit_code !== 0 || app.exit_contract_sha256 !== digest(exitContract) ||
     !nonceResponseValid(app, nonce, "response_sha256")
   ) throw new Error("native packaged app attestation invalid");
@@ -1790,7 +1888,7 @@ function validateNativeMatrix(output, screenshots, challenge, nonce, childPid, p
   if (digest(output.seal_audit.ledger_digest_material) !== digest(output.rows.at(-1)?.network_ledger)) {
     throw new Error("native final seal observed late network activity");
   }
-  return { app, runnerPath, observedCanvasCount };
+  return { app: { ...app, ...transport }, runnerPath, observedCanvasCount };
 }
 
 function writePrivateScreenshot(session, index, route, viewport, bytes) {
@@ -1853,9 +1951,9 @@ async function trustedSession(args) {
   if (code !== 0 || signal || nativeBuffer.length < 8) {
     throw new Error(`packaged Tauri native adapter failed closed:${nativeFailureCode(nativeStderr)}`);
   }
-  const { output, screenshots } = parseNativeOutput(nativeBuffer);
-  const { observedCanvasCount } = validateNativeMatrix(
-    output, screenshots, challenge, nonce, child.pid, packagePaths, runnerPath
+  const { output, screenshots, transport } = parseNativeOutput(nativeBuffer, nonce);
+  const { app, observedCanvasCount } = validateNativeMatrix(
+    output, screenshots, challenge, nonce, child.pid, packagePaths, runnerPath, transport
   );
   const rows = output.rows.map((nativeRow, index) => {
     const screenshotPath = writePrivateScreenshot(session, index, nativeRow.route, nativeRow.viewport, screenshots[index]);
@@ -1888,7 +1986,7 @@ async function trustedSession(args) {
     app_bundle_sha256: challenge.app_bundle_sha256,
     app_executable_sha256: challenge.app_executable_sha256,
     dmg_sha256: challenge.dmg_sha256,
-    app_attestation: output.app_attestation,
+    app_attestation: app,
     app_exit_confirmed: code === 0 && !signal,
     app_exit_code: code,
     app_exit_signal: signal || "",
@@ -1906,29 +2004,33 @@ async function trustedSession(args) {
     github_called: false,
     does_not_execute_trades: true,
     does_not_modify_strategy_action: true,
-    contains_secret: false
+    contains_secret: false,
+    payload_size_bytes: nativeBuffer.length
   };
   report.runner_response_sha256 = sha256(Buffer.concat([nonce, Buffer.from(JSON.stringify(canonical(report)))]));
   return report;
 }
 
-function emit(value, json) {
-  process.stdout.write(json ? `${JSON.stringify(value)}\n` : `${JSON.stringify(value, null, 2)}\n`);
+async function emit(value, json) {
+  const payload = json ? `${JSON.stringify(value)}\n` : `${JSON.stringify(value, null, 2)}\n`;
+  await new Promise((resolvePromise, reject) => {
+    process.stdout.write(payload, (error) => error ? reject(error) : resolvePromise());
+  });
 }
 
 const args = parseArgs(process.argv);
 try {
   if (args.mode === "plan") {
-    emit(plan(args.projectRoot), args.json);
+    await emit(plan(args.projectRoot), args.json);
     process.exit(0);
   }
   if (args.mode === "capability") {
-    emit(capability(args.projectRoot), args.json);
+    await emit(capability(args.projectRoot), args.json);
     process.exit(0);
   }
   if (args.mode === "source") {
     const result = inspectSource(args.projectRoot);
-    emit(result, args.json);
+    await emit(result, args.json);
     process.exit(result.status === "source_ast_contract_verified" ? 0 : 2);
   }
   if (args.mode === "trusted-session") {
@@ -1938,7 +2040,7 @@ try {
       !result.actual_packaged_tauri_launch_allowed ||
       !result.production_nonce_attestation_supported
     ) {
-      emit(
+      await emit(
         {
           schema_version: RUNNER_SCHEMA,
           status: "packaged_tauri_trusted_session_blocked_before_nonce_read_or_launch",
@@ -1956,11 +2058,11 @@ try {
       process.exit(2);
     }
     const report = await trustedSession(args);
-    emit(report, args.json);
+    await emit(report, args.json);
     process.exit(0);
   }
   const result = capability(args.projectRoot);
-  emit(
+  await emit(
     {
       ...result,
       status: "packaged_tauri_ordinary_flow_execution_blocked_fail_closed",
@@ -1972,7 +2074,7 @@ try {
   );
   process.exit(2);
 } catch (error) {
-  emit(
+  await emit(
     {
       schema_version: RUNNER_SCHEMA,
       status: "packaged_tauri_runner_failed_closed",

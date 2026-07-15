@@ -7,6 +7,7 @@
 //! observes its own production WebView, takes native WKWebView snapshots, then
 //! writes one length-framed response to the inherited output pipe.
 
+use flate2::{write::GzEncoder, Compression, GzBuilder};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -26,14 +27,25 @@ use tauri::{LogicalSize, Manager, WebviewWindow};
 
 const INPUT_SCHEMA: &str = "streamlit_retirement_packaged_native_input.v1";
 const OUTPUT_SCHEMA: &str = "streamlit_retirement_packaged_native_output.v2";
-const APP_ATTESTATION_SCHEMA: &str = "streamlit_retirement_packaged_app_attestation.v6";
+const APP_ATTESTATION_SCHEMA: &str = "streamlit_retirement_packaged_app_attestation.v7";
 const CHALLENGE_SCHEMA: &str = "streamlit_retirement_packaged_runner_challenge.v6";
 const MAX_INPUT_BYTES: usize = 256 * 1024;
 const MAX_EVAL_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SNAPSHOT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_COMPRESSED_OUTPUT_JSON_BYTES: usize = 64 * 1024 * 1024;
+const MAX_UNCOMPRESSED_OUTPUT_JSON_BYTES: usize = 192 * 1024 * 1024;
+const OUTPUT_FRAME_MAGIC: &[u8; 8] = b"LTG10QA1";
+const OUTPUT_FRAME_CODEC: u8 = 1;
+const OUTPUT_FRAME_FLAGS: u8 = 0;
+const OUTPUT_FRAME_RESERVED: [u8; 6] = [0; 6];
+const OUTPUT_FRAME_CODEC_NAME: &str = "gzip_deterministic_v1";
 const QA_IN_FLAG: &str = "--ltg10-qa-in-fd";
 const QA_OUT_FLAG: &str = "--ltg10-qa-out-fd";
 const FINAL_DENY_WINDOW_MS: u64 = 10_750;
+const FINAL_NETWORK_GUARD: &str = "quiesce_tracked_intervals_then_deny_all_then_exit";
+const VIEWPORT_RESIZE_ATTEMPTS: usize = 8;
+const VIEWPORT_RESIZE_SETTLE_MS: u64 = 150;
+const VIEWPORT_MAX_CORRECTION_CSS_PX: i64 = 256;
 
 const ROUTES: [(&str, &str, &str); 6] = [
     ("#home", "CommandCenterHome", "今日作战台"),
@@ -43,7 +55,7 @@ const ROUTES: [(&str, &str, &str); 6] = [
     ("#marginEtf", "MarginEtf", "ETF / 融资"),
     ("#qmt-replay", "QmtReplayLab", "QMT 本地回放"),
 ];
-const VIEWPORTS: [(&str, u32, u32); 2] = [("desktop", 1440, 900), ("mobile", 390, 844)];
+const VIEWPORTS: [(&str, u32, u32); 2] = [("desktop", 1440, 820), ("mobile", 390, 844)];
 
 /// Installed at document-start only for an authenticated inherited-FD session.
 pub const INITIALIZATION_SCRIPT: &str = include_str!("ltg10_packaged_qa_init.js");
@@ -52,6 +64,16 @@ pub const INITIALIZATION_SCRIPT: &str = include_str!("ltg10_packaged_qa_init.js"
 pub struct TrustedSession {
     input_fd: RawFd,
     output_fd: RawFd,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct NativeWebviewContent {
+    origin_x: f64,
+    origin_y: f64,
+    width_points: f64,
+    height_points: f64,
+    width_pixels: u32,
+    height_pixels: u32,
 }
 
 fn fixed_path_is_direct(project_root: &Path, path: &Path, directory: bool) -> bool {
@@ -318,10 +340,7 @@ fn run<R: tauri::Runtime>(window: WebviewWindow<R>, session: TrustedSession) -> 
     let mut rows = Vec::with_capacity(12);
     let mut screenshots = Vec::with_capacity(12);
     for (viewport, width, height) in VIEWPORTS {
-        window
-            .set_size(LogicalSize::new(width, height))
-            .map_err(|error| format!("native viewport resize failed: {error}"))?;
-        thread::sleep(Duration::from_millis(250));
+        converge_webview_content_size(&window, width, height)?;
         for (route, component, expected_heading) in ROUTES {
             navigate(&window, route)?;
             let started = monotonic_ns();
@@ -354,25 +373,24 @@ fn run<R: tauri::Runtime>(window: WebviewWindow<R>, session: TrustedSession) -> 
                     "WebView actual inner viewport does not match requested content size".into(),
                 );
             }
-            let native_inner = window
-                .inner_size()
-                .map_err(|error| format!("native inner-size measurement failed: {error}"))?;
             let expected_physical_width = (f64::from(width) * device_pixel_ratio).round() as u32;
             let expected_physical_height = (f64::from(height) * device_pixel_ratio).round() as u32;
-            if native_inner.width != expected_physical_width
-                || native_inner.height != expected_physical_height
+            let native_content =
+                native_webview_content(&window, width, height, device_pixel_ratio)?;
+            if native_content.width_pixels != expected_physical_width
+                || native_content.height_pixels != expected_physical_height
             {
-                return Err("native inner size is not bound to measured WebView DPR".into());
+                return Err("native WebView content size is not bound to measured DPR".into());
             }
-            let snapshot = native_snapshot(&window, width)?;
+            let snapshot = native_snapshot(&window, &native_content)?;
             if snapshot.len() > MAX_SNAPSHOT_BYTES {
                 return Err("native snapshot exceeds private frame limit".into());
             }
             let finished = monotonic_ns();
             let screenshot_sha256 = sha256_hex(&snapshot);
             let (screenshot_pixel_width, screenshot_pixel_height) = png_dimensions(&snapshot)?;
-            if screenshot_pixel_width != native_inner.width
-                || screenshot_pixel_height != native_inner.height
+            if screenshot_pixel_width != native_content.width_pixels
+                || screenshot_pixel_height != native_content.height_pixels
             {
                 return Err(
                     "native snapshot pixels do not match measured native inner size".into(),
@@ -389,11 +407,11 @@ fn run<R: tauri::Runtime>(window: WebviewWindow<R>, session: TrustedSession) -> 
             row.insert("height".into(), Value::from(height));
             row.insert(
                 "native_inner_width_px".into(),
-                Value::from(native_inner.width),
+                Value::from(native_content.width_pixels),
             );
             row.insert(
                 "native_inner_height_px".into(),
-                Value::from(native_inner.height),
+                Value::from(native_content.height_pixels),
             );
             row.insert(
                 "screenshot_pixel_width".into(),
@@ -438,7 +456,7 @@ fn run<R: tauri::Runtime>(window: WebviewWindow<R>, session: TrustedSession) -> 
     let executable =
         env::current_exe().map_err(|error| format!("current executable unavailable: {error}"))?;
     let exit_contract = json!({
-        "final_network_guard": "deny_all_then_exit",
+        "final_network_guard": FINAL_NETWORK_GUARD,
         "final_window_ms": seal_audit.get("final_window_ms").cloned().unwrap_or(Value::Null),
         "exit_after_output": true,
         "expected_exit_code": 0,
@@ -476,7 +494,7 @@ fn run<R: tauri::Runtime>(window: WebviewWindow<R>, session: TrustedSession) -> 
         "route_payload_sha256": route_payload_sha256,
         "network_seal_sha256": digest(&seal_audit),
         "native_snapshot_api": "WKWebView.takeSnapshotWithConfiguration.afterScreenUpdates",
-        "final_network_guard": "deny_all_then_exit",
+        "final_network_guard": FINAL_NETWORK_GUARD,
         "final_window_ms": seal_audit.get("final_window_ms").cloned().unwrap_or(Value::Null),
         "exit_after_output": true,
         "expected_exit_code": 0,
@@ -500,7 +518,157 @@ fn run<R: tauri::Runtime>(window: WebviewWindow<R>, session: TrustedSession) -> 
         "does_not_modify_strategy_action": true,
         "contains_secret": false,
     });
-    write_output(session.output_fd, &output, &screenshots)
+    write_output(session.output_fd, &output, &screenshots, &input.nonce)
+}
+
+fn converge_webview_content_size<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    target_width: u32,
+    target_height: u32,
+) -> Result<(), String> {
+    let mut requested_width = f64::from(target_width);
+    let mut requested_height = f64::from(target_height);
+    for _attempt in 0..VIEWPORT_RESIZE_ATTEMPTS {
+        window
+            .set_size(LogicalSize::new(requested_width, requested_height))
+            .map_err(|error| format!("native viewport resize failed: {error}"))?;
+        thread::sleep(Duration::from_millis(VIEWPORT_RESIZE_SETTLE_MS));
+        let observed = eval(
+            window,
+            "({width: window.innerWidth, height: window.innerHeight})",
+        )?;
+        let observed_width = observed
+            .get("width")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or("native viewport resize observation invalid")?;
+        let observed_height = observed
+            .get("height")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or("native viewport resize observation invalid")?;
+        if observed_width == target_width && observed_height == target_height {
+            return Ok(());
+        }
+        let width_correction = i64::from(target_width) - i64::from(observed_width);
+        let height_correction = i64::from(target_height) - i64::from(observed_height);
+        if width_correction.abs() > VIEWPORT_MAX_CORRECTION_CSS_PX
+            || height_correction.abs() > VIEWPORT_MAX_CORRECTION_CSS_PX
+        {
+            continue;
+        }
+        requested_width += width_correction as f64;
+        requested_height += height_correction as f64;
+        if !requested_width.is_finite()
+            || !requested_height.is_finite()
+            || requested_width <= 0.0
+            || requested_height <= 0.0
+            || (requested_width - f64::from(target_width)).abs()
+                > VIEWPORT_MAX_CORRECTION_CSS_PX as f64
+            || (requested_height - f64::from(target_height)).abs()
+                > VIEWPORT_MAX_CORRECTION_CSS_PX as f64
+        {
+            return Err("native viewport resize correction invalid".into());
+        }
+    }
+    Err("native viewport resize did not converge".into())
+}
+
+#[cfg(target_os = "macos")]
+fn native_webview_content<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    expected_width: u32,
+    expected_height: u32,
+    device_pixel_ratio: f64,
+) -> Result<NativeWebviewContent, String> {
+    use objc2_web_kit::WKWebView;
+
+    let (sender, receiver) = mpsc::sync_channel(1);
+    window
+        .with_webview(move |platform| unsafe {
+            let view: &WKWebView = &*platform.inner().cast();
+            let bounds = view.bounds();
+            let insets = view.safeAreaInsets();
+            let _ = sender.send((
+                bounds.origin.x,
+                bounds.origin.y,
+                bounds.size.width,
+                bounds.size.height,
+                insets.top,
+                insets.right,
+                insets.bottom,
+                insets.left,
+                view.isFlipped(),
+            ));
+        })
+        .map_err(|error| format!("WKWebView content geometry dispatch failed: {error}"))?;
+    let (bounds_x, bounds_y, bounds_width, bounds_height, top, right, bottom, left, flipped) =
+        receiver
+            .recv_timeout(Duration::from_secs(20))
+            .map_err(|_| "WKWebView content geometry timed out".to_string())?;
+    let geometry_values = [
+        bounds_x,
+        bounds_y,
+        bounds_width,
+        bounds_height,
+        top,
+        right,
+        bottom,
+        left,
+    ];
+    if geometry_values.iter().any(|value| !value.is_finite())
+        || bounds_width <= 0.0
+        || bounds_height <= 0.0
+        || [top, right, bottom, left].iter().any(|value| *value < 0.0)
+    {
+        return Err("WKWebView safe-area geometry invalid".into());
+    }
+    let width_points = bounds_width - left - right;
+    let height_points = bounds_height - top - bottom;
+    if width_points != f64::from(expected_width) || height_points != f64::from(expected_height) {
+        return Err("WKWebView safe-area content does not match DOM viewport".into());
+    }
+    let native_scale = window
+        .scale_factor()
+        .map_err(|error| format!("native scale-factor measurement failed: {error}"))?;
+    if !native_scale.is_finite()
+        || native_scale < 1.0
+        || native_scale > 4.0
+        || native_scale != device_pixel_ratio
+    {
+        return Err("WKWebView native scale is not bound to measured DPR".into());
+    }
+    let scaled_width = width_points * native_scale;
+    let scaled_height = height_points * native_scale;
+    if !scaled_width.is_finite()
+        || !scaled_height.is_finite()
+        || scaled_width != scaled_width.round()
+        || scaled_height != scaled_height.round()
+        || scaled_width <= 0.0
+        || scaled_height <= 0.0
+        || scaled_width > f64::from(u32::MAX)
+        || scaled_height > f64::from(u32::MAX)
+    {
+        return Err("WKWebView native pixel geometry invalid".into());
+    }
+    Ok(NativeWebviewContent {
+        origin_x: bounds_x + left,
+        origin_y: bounds_y + if flipped { top } else { bottom },
+        width_points,
+        height_points,
+        width_pixels: scaled_width as u32,
+        height_pixels: scaled_height as u32,
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn native_webview_content<R: tauri::Runtime>(
+    _window: &WebviewWindow<R>,
+    _expected_width: u32,
+    _expected_height: u32,
+    _device_pixel_ratio: f64,
+) -> Result<NativeWebviewContent, String> {
+    Err("WKWebView content geometry unavailable on this platform".into())
 }
 
 fn read_input(fd: RawFd) -> Result<Input, String> {
@@ -621,7 +789,7 @@ fn validate_input(input: &Input) -> Result<PackageIdentity, String> {
             .collect(),
     );
     let expected_viewports = json!({
-        "desktop": {"width": 1440, "height": 900},
+        "desktop": {"width": 1440, "height": 820},
         "mobile": {"width": 390, "height": 844},
     });
     if object.get("expected_routes") != Some(&expected_routes)
@@ -772,9 +940,25 @@ fn wait_for_document<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Result<(),
 }
 
 fn navigate<R: tauri::Runtime>(window: &WebviewWindow<R>, route: &str) -> Result<(), String> {
+    let route_key = route.trim_start_matches('#');
     let script = format!(
-        "(() => {{ location.hash = {}; return true; }})()",
-        serde_json::to_string(route).map_err(|_| "route serialization failed")?
+        r#"(() => {{
+            const routeKey = {};
+            const button = Array.from(document.querySelectorAll("button[data-route-key]")).find(
+                (candidate) => candidate.getAttribute("data-route-key") === routeKey
+            );
+            if (!button) return false;
+            button.click();
+            const resetScroll = () => {{
+                window.scrollTo(0, 0);
+                if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+            }};
+            resetScroll();
+            queueMicrotask(resetScroll);
+            requestAnimationFrame(resetScroll);
+            return true;
+        }})()"#,
+        serde_json::to_string(route_key).map_err(|_| "route serialization failed")?
     );
     if eval(window, &script)? != Value::Bool(true) {
         return Err("packaged route navigation callback invalid".into());
@@ -858,6 +1042,42 @@ fn seal_audit<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Result<Value, Str
         .get("ledger_count")
         .and_then(Value::as_u64)
         .ok_or("seal-start ledger count invalid")?;
+    let quiesce_started = verified
+        .get("quiesce_started_at_monotonic_ns")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let quiesce_completed = verified
+        .get("quiesce_completed_at_monotonic_ns")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let interval_registration_count = verified
+        .get("interval_registration_count")
+        .and_then(Value::as_u64);
+    let interval_clear_count = verified.get("interval_clear_count").and_then(Value::as_u64);
+    let tracked_interval_count = verified
+        .get("tracked_interval_count")
+        .and_then(Value::as_u64);
+    let quiesced_interval_count = verified
+        .get("quiesced_interval_count")
+        .and_then(Value::as_u64);
+    let interval_quiescence_ready = verified.get("guard_mode").and_then(Value::as_str)
+        == Some(FINAL_NETWORK_GUARD)
+        && interval_registration_count.is_some()
+        && interval_registration_count == interval_clear_count
+        && tracked_interval_count.is_some()
+        && tracked_interval_count == quiesced_interval_count
+        && verified
+            .get("active_interval_count_after_quiesce")
+            .and_then(Value::as_u64)
+            == Some(0)
+        && verified.get("interval_registry_integrity") == Some(&Value::Bool(true))
+        && quiesce_started > 0
+        && quiesce_completed >= quiesce_started
+        && verified.get("quiesce_complete") == Some(&Value::Bool(true))
+        && verified
+            .get("denied_interval_registration_count")
+            .and_then(Value::as_u64)
+            == Some(0);
     if verified.get("sealed") != Some(&Value::Bool(true))
         || verified
             .get("pending_request_count")
@@ -873,6 +1093,7 @@ fn seal_audit<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Result<Value, Str
             .and_then(Value::as_f64)
             .map_or(true, |elapsed| elapsed < FINAL_DENY_WINDOW_MS as f64)
         || verified.get("ledger_count").and_then(Value::as_u64) != Some(started_count)
+        || !interval_quiescence_ready
     {
         return Err("final global quiet seal detected late or incomplete activity".into());
     }
@@ -904,16 +1125,17 @@ fn eval<R: tauri::Runtime>(window: &WebviewWindow<R>, script: &str) -> Result<Va
 #[cfg(target_os = "macos")]
 fn native_snapshot<R: tauri::Runtime>(
     window: &WebviewWindow<R>,
-    width: u32,
+    content: &NativeWebviewContent,
 ) -> Result<Vec<u8>, String> {
     use block2::RcBlock;
     use objc2::{runtime::AnyObject, MainThreadMarker};
     use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
-    use objc2_foundation::{NSDictionary, NSError, NSNumber};
+    use objc2_foundation::{NSDictionary, NSError, NSNumber, NSPoint, NSRect, NSSize};
     use objc2_web_kit::{WKSnapshotConfiguration, WKWebView};
     use std::ptr::NonNull;
 
     let (sender, receiver) = mpsc::sync_channel(1);
+    let content = *content;
     window
         .with_webview(move |platform| unsafe {
             let Some(marker) = MainThreadMarker::new() else {
@@ -925,7 +1147,11 @@ fn native_snapshot<R: tauri::Runtime>(
             let view: &WKWebView = &*platform.inner().cast();
             let configuration = WKSnapshotConfiguration::new(marker);
             configuration.setAfterScreenUpdates(true);
-            let snapshot_width = NSNumber::new_f64(width as f64);
+            configuration.setRect(NSRect::new(
+                NSPoint::new(content.origin_x, content.origin_y),
+                NSSize::new(content.width_points, content.height_points),
+            ));
+            let snapshot_width = NSNumber::new_f64(content.width_points);
             configuration.setSnapshotWidth(Some(&snapshot_width));
             let block = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
                 if !error.is_null() || image.is_null() {
@@ -969,18 +1195,67 @@ fn native_snapshot<R: tauri::Runtime>(
 #[cfg(not(target_os = "macos"))]
 fn native_snapshot<R: tauri::Runtime>(
     _window: &WebviewWindow<R>,
-    _width: u32,
+    _content: &NativeWebviewContent,
 ) -> Result<Vec<u8>, String> {
     Err("WKWebView native snapshot unavailable on this platform".into())
 }
 
-fn write_output(fd: RawFd, output: &Value, screenshots: &[Vec<u8>]) -> Result<(), String> {
+fn write_output(
+    fd: RawFd,
+    output: &Value,
+    screenshots: &[Vec<u8>],
+    nonce: &[u8; 32],
+) -> Result<(), String> {
     // SAFETY: ownership of the inherited one-shot descriptor transfers here.
     let mut file = unsafe { File::from_raw_fd(fd) };
     let payload = canonical_bytes(output)?;
+    if payload.len() > MAX_UNCOMPRESSED_OUTPUT_JSON_BYTES {
+        return Err("native output JSON exceeds uncompressed frame limit".into());
+    }
+    let mut encoder: GzEncoder<Vec<u8>> = GzBuilder::new()
+        .mtime(0)
+        .operating_system(255)
+        .write(Vec::new(), Compression::new(6));
+    encoder
+        .write_all(&payload)
+        .map_err(|_| "native output JSON compression failed")?;
+    let compressed = encoder
+        .finish()
+        .map_err(|_| "native output JSON compression failed")?;
+    if compressed.len() > MAX_COMPRESSED_OUTPUT_JSON_BYTES {
+        return Err("native output JSON exceeds compressed frame limit".into());
+    }
+    let payload_sha256 = sha256_hex(&payload);
+    let transport_material = json!({
+        "output_frame_magic": "LTG10QA1",
+        "output_frame_version": 1,
+        "output_frame_codec": OUTPUT_FRAME_CODEC_NAME,
+        "output_frame_flags": OUTPUT_FRAME_FLAGS,
+        "output_frame_reserved": 0,
+        "output_frame_compressed_bytes": compressed.len(),
+        "output_frame_uncompressed_bytes": payload.len(),
+        "output_frame_raw_json_sha256": payload_sha256,
+    });
+    let mut response_hasher = Sha256::new();
+    response_hasher.update(nonce);
+    response_hasher.update(canonical_bytes(&transport_material)?);
+    let transport_response = response_hasher.finalize();
+    let payload_sha = Sha256::digest(&payload);
+    file.write_all(OUTPUT_FRAME_MAGIC)
+        .map_err(|_| "output frame magic write failed")?;
+    file.write_all(&[OUTPUT_FRAME_CODEC, OUTPUT_FRAME_FLAGS])
+        .map_err(|_| "output frame codec write failed")?;
+    file.write_all(&OUTPUT_FRAME_RESERVED)
+        .map_err(|_| "output frame reserved write failed")?;
+    file.write_all(&(compressed.len() as u64).to_be_bytes())
+        .map_err(|_| "output header write failed")?;
     file.write_all(&(payload.len() as u64).to_be_bytes())
         .map_err(|_| "output header write failed")?;
-    file.write_all(&payload)
+    file.write_all(&payload_sha)
+        .map_err(|_| "output JSON hash write failed")?;
+    file.write_all(&transport_response)
+        .map_err(|_| "output transport response write failed")?;
+    file.write_all(&compressed)
         .map_err(|_| "output payload write failed")?;
     for screenshot in screenshots {
         file.write_all(&(screenshot.len() as u64).to_be_bytes())

@@ -2866,6 +2866,7 @@ name = "stock_ming_command_center"
 version = "3.0.0"
 dependencies = [
  "block2",
+ "flate2",
  "libc",
  "objc2",
  "objc2-app-kit",

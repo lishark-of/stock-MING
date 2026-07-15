@@ -23,8 +23,13 @@
   let lastActivityMs = performance.now();
   let sealed = false;
   let sealStartedMs = 0;
+  let intervalRegistrationCount = 0;
+  let intervalClearCount = 0;
+  let deniedIntervalRegistrationCount = 0;
+  const activeIntervals = new Set();
+  let intervalQuiescence = null;
 
-  const nowNs = () => Math.max(1, Math.floor((performance.timeOrigin + performance.now()) * 1e6));
+  const nowNs = () => Math.max(1, Math.floor(performance.now() * 1e6));
   const absoluteUrl = (value) => {
     try { return new URL(String(value), location.href).href; } catch { return String(value || ""); }
   };
@@ -45,6 +50,52 @@
     const ready = Boolean(descriptor?.value === value && descriptor.writable === false && descriptor.configurable === false);
     if (ready) lockedHooks.push({ owner, key, value, label });
     return ready;
+  };
+  const originalSetInterval = window.setInterval;
+  const originalClearInterval = window.clearInterval;
+  const wrappedSetInterval = function(...args) {
+    if (sealed) {
+      deniedIntervalRegistrationCount += 1;
+      markActivity("interval-registration-denied");
+      throw new DOMException("ltg10_final_interval_guard_denied_registration", "InvalidStateError");
+    }
+    const handle = Reflect.apply(originalSetInterval, window, args);
+    activeIntervals.add(handle);
+    intervalRegistrationCount += 1;
+    return handle;
+  };
+  const wrappedClearInterval = function(handle) {
+    if (activeIntervals.delete(handle)) intervalClearCount += 1;
+    return Reflect.apply(originalClearInterval, window, [handle]);
+  };
+  const intervalOwners = [window, typeof Window === "function" ? Window.prototype : null]
+    .filter((owner, index, owners) => owner && owners.indexOf(owner) === index);
+  for (const owner of intervalOwners) {
+    lockValue(owner, "setInterval", wrappedSetInterval, owner === window ? "window.setInterval" : "Window.prototype.setInterval");
+    lockValue(owner, "clearInterval", wrappedClearInterval, owner === window ? "window.clearInterval" : "Window.prototype.clearInterval");
+  }
+  const quiesceIntervals = () => {
+    const started = nowNs();
+    const tracked = activeIntervals.size;
+    for (const handle of [...activeIntervals]) {
+      Reflect.apply(originalClearInterval, window, [handle]);
+      if (activeIntervals.delete(handle)) intervalClearCount += 1;
+    }
+    const completed = nowNs();
+    const integrity = activeIntervals.size === 0 && intervalRegistrationCount === intervalClearCount && tracked >= 0;
+    return {
+      guard_mode: "quiesce_tracked_intervals_then_deny_all_then_exit",
+      interval_registration_count: intervalRegistrationCount,
+      interval_clear_count: intervalClearCount,
+      tracked_interval_count: tracked,
+      quiesced_interval_count: tracked,
+      active_interval_count_after_quiesce: activeIntervals.size,
+      interval_registry_integrity: integrity,
+      quiesce_started_at_monotonic_ns: started,
+      quiesce_completed_at_monotonic_ns: completed,
+      quiesce_complete: integrity && completed >= started,
+      denied_interval_registration_count: deniedIntervalRegistrationCount
+    };
   };
   const denyNetworkAttempt = (method, url, resourceType) => {
     const row = {
@@ -429,7 +480,11 @@
   const accessibleName = (element) => {
     const labelledBy = element.getAttribute("aria-labelledby");
     if (labelledBy) return labelledBy.split(/\s+/).map((id) => document.getElementById(id)?.textContent || "").join(" ").trim();
-    return (element.getAttribute("aria-label") || element.getAttribute("alt") || element.getAttribute("title") || element.textContent || "").trim();
+    const explicit = element.getAttribute("aria-label") || element.getAttribute("alt") || element.getAttribute("title");
+    if (explicit) return explicit.trim();
+    const tag = element.tagName.toLowerCase();
+    const ownsTextName = ["a", "button", "h1", "h2", "h3", "h4", "h5", "h6", "label", "legend", "option", "summary"].includes(tag) || element.hasAttribute("role");
+    return ownsTextName ? (element.textContent || "").trim() : "";
   };
   const stableSelector = (element, index) => {
     if (element.id) return `#${CSS.escape(element.id)}`;
@@ -558,10 +613,12 @@
       const token = `seal-${++observationSequence}`;
       observations.set(token, { status: "pending" });
       waitForQuiet().then((quiet) => {
+        intervalQuiescence = quiesceIntervals();
         sealed = true;
         sealStartedMs = performance.now();
         observations.set(token, { status: "ready", value: {
           ...quiet,
+          ...intervalQuiescence,
           sealed: true,
           deny_all_network_guard: true,
           denied_attempt_count: 0,
@@ -577,6 +634,7 @@
     verifySeal() {
       const quiet = quietState();
       return {
+        ...(intervalQuiescence || {}),
         sealed: quiet.sealed,
         pending_request_count: quiet.pending_request_count,
         quiet_window_ms: quiet.quiet_window_ms,
@@ -587,6 +645,7 @@
         deny_all_network_guard: quiet.deny_all_network_guard,
         denied_attempt_count: quiet.denied_attempt_count,
         denied_attempts: quiet.denied_attempts,
+        denied_interval_registration_count: deniedIntervalRegistrationCount,
         final_window_ms: quiet.final_window_ms,
         final_window_elapsed_ms: quiet.final_window_elapsed_ms,
         ledger_count: ledger.length,
