@@ -14,6 +14,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import stat
 import subprocess
 import tempfile
 import uuid
@@ -32,6 +33,13 @@ MANIFEST_PATH = PACKAGE_ROOT / "tauri_production_package_manifest.json"
 POINTER_PATH = PACKAGE_ROOT / "tauri_production_package_pointer.json"
 MANIFEST_SCHEMA = "tauri_production_package_manifest.v1"
 POINTER_SCHEMA = "tauri_production_package_pointer.v1"
+FIXED_APP_RELATIVE = Path(
+    "desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app"
+)
+FIXED_DMG_RELATIVE = Path(
+    "desktop/src-tauri/target/release/bundle/dmg/stock-MING Command Center_3.0.0_aarch64.dmg"
+)
+FIXED_EXECUTABLE_NAME = "stock_ming_command_center"
 
 
 def _now_iso() -> str:
@@ -80,8 +88,8 @@ def _bundle_fingerprint(path: Path) -> dict[str, Any]:
     return {"sha256": digest.hexdigest() if file_count else "", "size_bytes": size, "file_count": file_count}
 
 
-def _smoke_module() -> Any:
-    script = PROJECT_ROOT / "scripts" / "tauri_packaged_runtime_smoke.py"
+def _smoke_module(project_root: Path = PROJECT_ROOT) -> Any:
+    script = project_root / "scripts" / "tauri_packaged_runtime_smoke.py"
     spec = importlib.util.spec_from_file_location("command_center_tauri_packaged_runtime_smoke", script)
     if spec is None or spec.loader is None:
         raise RuntimeError("tauri_smoke_module_unavailable")
@@ -121,6 +129,113 @@ def _path_from_smoke(value: Any) -> Path:
         return Path()
     path = Path(text)
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _artifact_set_sha256(
+    app_bundle_sha256: str,
+    dmg_sha256: str,
+    bundle_identifier: str,
+    bundle_version: str,
+) -> str:
+    return hashlib.sha256(
+        "|".join(
+            (app_bundle_sha256, dmg_sha256, bundle_identifier, bundle_version)
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _fixed_path_is_direct(project_root: Path, path: Path, *, directory: bool) -> bool:
+    try:
+        relative = path.relative_to(project_root)
+    except ValueError:
+        return False
+    cursor = project_root
+    try:
+        if project_root.is_symlink() or not project_root.is_dir():
+            return False
+        for part in relative.parts:
+            cursor = cursor / part
+            metadata = cursor.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                return False
+        metadata = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISDIR(metadata.st_mode) if directory else stat.S_ISREG(metadata.st_mode)
+
+
+def measure_fixed_tauri_package_artifacts(
+    project_root: Path = PROJECT_ROOT,
+) -> dict[str, Any]:
+    """Recompute the one fixed package identity without trusting receipt paths or hashes."""
+
+    project = project_root.absolute()
+    app_path = project / FIXED_APP_RELATIVE
+    dmg_path = project / FIXED_DMG_RELATIVE
+    executable_path = app_path / "Contents" / "MacOS" / FIXED_EXECUTABLE_NAME
+    blockers: list[str] = []
+    if not _fixed_path_is_direct(project, app_path, directory=True):
+        blockers.append("fixed_packaged_app_path_missing_or_aliased")
+    if not _fixed_path_is_direct(project, dmg_path, directory=False):
+        blockers.append("fixed_packaged_dmg_path_missing_or_aliased")
+    if not _fixed_path_is_direct(project, executable_path, directory=False):
+        blockers.append("fixed_packaged_executable_path_missing_or_aliased")
+
+    app_fingerprint: dict[str, Any] = {}
+    identity: dict[str, Any] = {}
+    executable_sha256 = ""
+    dmg_sha256 = ""
+    if not blockers:
+        try:
+            smoke = _smoke_module(project)
+            identity = smoke._read_bundle_identity(app_path)
+            if identity.get("executable_name") != FIXED_EXECUTABLE_NAME:
+                blockers.append("fixed_packaged_executable_name_mismatch")
+            app_fingerprint = _bundle_fingerprint(app_path)
+            executable_sha256 = _sha256_file(executable_path)
+            dmg_sha256 = _sha256_file(dmg_path)
+        except (OSError, ValueError, RuntimeError):
+            blockers.append("fixed_package_disk_measurement_failed")
+
+    app_bundle_sha256 = str(app_fingerprint.get("sha256") or "")
+    bundle_identifier = str(identity.get("bundle_id") or "")
+    bundle_version = str(identity.get("version") or "")
+    artifact_set_sha256 = (
+        _artifact_set_sha256(
+            app_bundle_sha256,
+            dmg_sha256,
+            bundle_identifier,
+            bundle_version,
+        )
+        if all(
+            (app_bundle_sha256, executable_sha256, dmg_sha256, bundle_identifier, bundle_version)
+        )
+        else ""
+    )
+    if not all(
+        _valid_hex(value)
+        for value in (
+            app_bundle_sha256,
+            executable_sha256,
+            dmg_sha256,
+            artifact_set_sha256,
+        )
+    ):
+        blockers.append("fixed_package_disk_identity_incomplete")
+    return {
+        "app_path": str(app_path),
+        "dmg_path": str(dmg_path),
+        "app_executable_path": str(executable_path),
+        "app_bundle_sha256": app_bundle_sha256,
+        "app_executable_sha256": executable_sha256,
+        "dmg_sha256": dmg_sha256,
+        "artifact_set_sha256": artifact_set_sha256,
+        "bundle_identifier": bundle_identifier,
+        "bundle_version": bundle_version,
+        "app_bundle_size_bytes": int(app_fingerprint.get("size_bytes") or 0),
+        "app_bundle_file_count": int(app_fingerprint.get("file_count") or 0),
+        "blockers": sorted(set(blockers)),
+    }
 
 
 def _safe_bool(value: Any) -> bool:
@@ -211,36 +326,32 @@ def validate_tauri_production_package(
     manifest_path = package_root / MANIFEST_PATH.name
     pointer_path = package_root / POINTER_PATH.name
     online, offline, build = _read_json(online_path), _read_json(offline_path), _read_json(build_path)
-    head_full = expected_head_full or _git_head_full(root.parent)
+    actual_head_full = _git_head_full(PROJECT_ROOT)
+    head_full = expected_head_full or actual_head_full
     blockers, summary = _evidence_common_checks(online, offline, build, head_full=head_full)
-    app_path, dmg_path = _package_paths(online)
-    if not app_path.is_dir() or not dmg_path.is_file():
-        blockers.append("packaged_app_or_dmg_missing")
-    app_fingerprint: dict[str, Any] = {}
-    executable_sha256 = ""
-    if app_path.is_dir():
-        try:
-            smoke = _smoke_module()
-            identity = smoke._read_bundle_identity(app_path)
-            executable = app_path / "Contents" / "MacOS" / str(identity.get("executable_name") or "")
-            app_fingerprint = _bundle_fingerprint(app_path)
-            executable_sha256 = _sha256_file(executable) if executable.is_file() else ""
-            if app_fingerprint.get("sha256") != online.get("app_bundle_sha256"):
-                blockers.append("app_bundle_disk_hash_mismatch")
-            if executable_sha256 != online.get("app_executable_sha256"):
-                blockers.append("app_executable_disk_hash_mismatch")
-            if online.get("bundle_identifier") != identity.get("bundle_id"):
-                blockers.append("bundle_identifier_readback_mismatch")
-            if online.get("bundle_version") != identity.get("version"):
-                blockers.append("bundle_version_readback_mismatch")
-        except (OSError, ValueError, RuntimeError):
-            blockers.append("app_bundle_readback_failed")
-    if dmg_path.is_file():
-        try:
-            if _sha256_file(dmg_path) != online.get("dmg_sha256"):
-                blockers.append("dmg_disk_hash_mismatch")
-        except OSError:
-            blockers.append("dmg_readback_failed")
+    if not head_full or head_full != actual_head_full:
+        blockers.append("formal_package_expected_head_not_current_repository_head")
+    measured = measure_fixed_tauri_package_artifacts(PROJECT_ROOT)
+    blockers.extend(str(item) for item in measured.get("blockers", []))
+    app_path = Path(str(measured.get("app_path") or ""))
+    dmg_path = Path(str(measured.get("dmg_path") or ""))
+    expected_app_label = FIXED_APP_RELATIVE.as_posix()
+    expected_dmg_label = FIXED_DMG_RELATIVE.as_posix()
+    for label, receipt in (("online", online), ("offline", offline), ("build", build)):
+        if receipt.get("app_path") != expected_app_label:
+            blockers.append(f"{label}_app_path_not_fixed_canonical_target")
+        if receipt.get("dmg_path") != expected_dmg_label:
+            blockers.append(f"{label}_dmg_path_not_fixed_canonical_target")
+        for field in ("app_bundle_sha256", "dmg_sha256", "artifact_set_sha256"):
+            if receipt.get(field) != measured.get(field):
+                blockers.append(f"{label}_{field}_not_recomputed_from_fixed_disk_target")
+    for label, receipt in (("online", online), ("offline", offline)):
+        if receipt.get("app_executable_sha256") != measured.get("app_executable_sha256"):
+            blockers.append(f"{label}_app_executable_sha256_not_recomputed_from_fixed_disk_target")
+        if receipt.get("bundle_identifier") != measured.get("bundle_identifier"):
+            blockers.append(f"{label}_bundle_identifier_readback_mismatch")
+        if receipt.get("bundle_version") != measured.get("bundle_version"):
+            blockers.append(f"{label}_bundle_version_readback_mismatch")
     if not _screenshot_exists_for_hash(str(offline.get("offline_screenshot_sha256") or ""), package_root):
         blockers.append("offline_screenshot_hash_not_found_on_disk")
     for label, smoke in (("online", online), ("offline", offline)):
@@ -269,11 +380,15 @@ def validate_tauri_production_package(
         "build_command": build.get("build_command") or "",
         "app_path": _relative_path(app_path, root.parent),
         "dmg_path": _relative_path(dmg_path, root.parent),
-        "app_bundle_sha256": app_fingerprint.get("sha256") or "",
-        "app_executable_sha256": executable_sha256,
-        "dmg_sha256": _sha256_file(dmg_path) if dmg_path.is_file() else "",
-        "artifact_set_sha256": online.get("artifact_set_sha256") or "",
-        "online_offline_artifact_match": not any("artifact_set_mismatch" in item for item in blockers),
+        "app_bundle_sha256": measured.get("app_bundle_sha256") or "",
+        "app_executable_sha256": measured.get("app_executable_sha256") or "",
+        "dmg_sha256": measured.get("dmg_sha256") or "",
+        "artifact_set_sha256": measured.get("artifact_set_sha256") or "",
+        "bundle_identifier": measured.get("bundle_identifier") or "",
+        "bundle_version": measured.get("bundle_version") or "",
+        "online_offline_artifact_match": not any(
+            "artifact_set" in item or "fixed_disk_target" in item for item in blockers
+        ),
         "online_health_ready": online.get("health_ready_during_launch") is True,
         "offline_ui_verified": offline.get("backend_offline_packaged_ux_verified") is True
         and offline.get("offline_notice_observed") is True,
@@ -324,32 +439,19 @@ def record_tauri_build_receipt(evidence_root: Path | str = EVIDENCE_ROOT, *, hea
     """Record hashes immediately after the exact authorized Tauri build command."""
     root = Path(evidence_root).expanduser().resolve()
     package_root = root / "desktop_runtime"
-    smoke = _smoke_module()
-    app_path = Path(smoke.DEFAULT_APP)
-    dmg_path = Path(smoke.DEFAULT_DMG)
-    app_fingerprint = _bundle_fingerprint(app_path) if app_path.is_dir() else {"sha256": ""}
-    dmg_sha256 = _sha256_file(dmg_path) if dmg_path.is_file() else ""
-    identity = _smoke_module()._read_bundle_identity(app_path) if app_path.is_dir() else {}
-    artifact_set_sha256 = hashlib.sha256(
-        "|".join(
-            (
-                app_fingerprint.get("sha256") or "",
-                dmg_sha256,
-                str(identity.get("bundle_id") or ""),
-                str(identity.get("version") or ""),
-            )
-        ).encode("utf-8")
-    ).hexdigest()
+    measured = measure_fixed_tauri_package_artifacts(PROJECT_ROOT)
+    app_path = Path(str(measured.get("app_path") or ""))
+    dmg_path = Path(str(measured.get("dmg_path") or ""))
     receipt = {
         "schema_version": "tauri_build_receipt.v1",
-        "build_executed": app_path.is_dir() and dmg_path.is_file(),
+        "build_executed": not measured.get("blockers"),
         "build_command": "cd desktop && npm run tauri build",
-        "head_full": head_full or _git_head_full(root.parent),
+        "head_full": head_full or _git_head_full(PROJECT_ROOT),
         "app_path": _relative_path(app_path, root.parent),
         "dmg_path": _relative_path(dmg_path, root.parent),
-        "app_bundle_sha256": app_fingerprint.get("sha256") or "",
-        "dmg_sha256": dmg_sha256,
-        "artifact_set_sha256": artifact_set_sha256,
+        "app_bundle_sha256": measured.get("app_bundle_sha256") or "",
+        "dmg_sha256": measured.get("dmg_sha256") or "",
+        "artifact_set_sha256": measured.get("artifact_set_sha256") or "",
         "contains_secret": False,
         "external_calls_triggered": False,
         "does_not_execute_trades": True,
@@ -362,4 +464,8 @@ def record_tauri_build_receipt(evidence_root: Path | str = EVIDENCE_ROOT, *, hea
     return receipt
 
 
-__all__ = ["record_tauri_build_receipt", "validate_tauri_production_package"]
+__all__ = [
+    "measure_fixed_tauri_package_artifacts",
+    "record_tauri_build_receipt",
+    "validate_tauri_production_package",
+]

@@ -1027,10 +1027,10 @@ export default function MarginEtf() {
   ];
 
   return (
-    <>
+    <div data-ltg10-component-id="MarginEtf">
       <div className="page-head">
         <div>
-          <h1>ETF / 融资</h1>
+          <h1 data-ltg10-route-heading="marginEtf">ETF / 融资</h1>
           <p>先看 ETF 候选、融资现金线、风险提示和下一步。</p>
         </div>
       </div>
@@ -1252,6 +1252,6 @@ export default function MarginEtf() {
         <DataLineageTable rows={warnings.map((warning, index) => ({ 序号: index + 1, warning }))} />
         <DataLineageTable rows={callLedger} />
       </details>
-    </>
+    </div>
   );
 }

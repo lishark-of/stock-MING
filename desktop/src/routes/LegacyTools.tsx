@@ -294,7 +294,7 @@ export default function LegacyTools() {
   ];
 
   return (
-    <>
+    <div data-ltg10-component-id="LegacyTools">
       <PacketCard title="Legacy / Admin / Debug" subtitle="Streamlit 2.0 保留为 legacy，不再作为正式主应用" status="legacy">
         <PageStateBanner
           loading={loading}
@@ -585,6 +585,6 @@ export default function LegacyTools() {
         <JsonDetails title="streamlit retirement readiness receipt raw" data={streamlitRetirementReadinessReceipt} />
         <JsonDetails title="streamlit retirement durable evidence recipe raw" data={streamlitRetirementDurableEvidenceRecipe} />
       </PacketCard>
-    </>
+    </div>
   );
 }

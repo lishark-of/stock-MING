@@ -286,9 +286,9 @@ export default function QmtReplayLab() {
   const cacheStatus = firstText(qmtCache.status, "cache_missing");
 
   return (
-    <>
+    <div data-ltg10-component-id="QmtReplayLab">
       <div className="page-head">
-        <h1>QMT 本地回放</h1>
+        <h1 data-ltg10-route-heading="qmt-replay">QMT 本地回放</h1>
         <StatusBadge label={unsafeBoundary ? "safety_blocked" : cacheStatus} tone={unsafeBoundary ? "bad" : statusTone(cacheStatus)} />
       </div>
 
@@ -436,6 +436,6 @@ export default function QmtReplayLab() {
         <DataLineageTable rows={displayLedger} />
         <DataLineageTable rows={warningRows} />
       </details>
-    </>
+    </div>
   );
 }

@@ -1846,10 +1846,10 @@ export default function NextSessionMap() {
   ];
 
   return (
-    <>
+    <div data-ltg10-component-id="NextSessionMap">
       <div className="page-head">
         <div>
-          <h1>次日图谱</h1>
+          <h1 data-ltg10-route-heading="next">次日图谱</h1>
           <p aria-label="next session ordinary page status" aria-live="polite">
             {nextSessionReadableStatusLabel}；{nextSessionLiveLightModeLabel}；下一步：{nextSessionLiveLightNextStep}。
           </p>
@@ -2286,6 +2286,6 @@ export default function NextSessionMap() {
       <JsonDetails title="次日图谱 cache packet" data={packet} />
       </details>
     </PacketCard>
-    </>
+    </div>
   );
 }

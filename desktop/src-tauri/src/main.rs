@@ -9,13 +9,31 @@ use std::{
     time::Duration,
 };
 
+mod ltg10_packaged_qa;
+
 const FASTAPI_HOST: &str = "127.0.0.1";
 const FASTAPI_PORT: u16 = 8710;
 
 fn main() {
-    tauri::Builder::default()
-        .setup(|_app| {
-            ensure_local_fastapi_on_app_open();
+    let qa_session = match ltg10_packaged_qa::TrustedSession::from_process_args() {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("ltg10 packaged QA refused: {error}");
+            std::process::exit(78);
+        }
+    };
+    let mut builder = tauri::Builder::default();
+    if qa_session.is_some() {
+        builder =
+            builder.append_invoke_initialization_script(ltg10_packaged_qa::INITIALIZATION_SCRIPT);
+    }
+    builder
+        .setup(move |app| {
+            if let Some(session) = qa_session {
+                ltg10_packaged_qa::start(app, session)?;
+            } else {
+                ensure_local_fastapi_on_app_open();
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -103,7 +121,8 @@ fn resolve_project_root() -> Option<PathBuf> {
 }
 
 fn is_project_root(path: &Path) -> bool {
-    path.join("server/main.py").is_file() && path.join("desktop/src-tauri/tauri.conf.json").is_file()
+    path.join("server/main.py").is_file()
+        && path.join("desktop/src-tauri/tauri.conf.json").is_file()
 }
 
 fn python_executable(project_root: &Path) -> PathBuf {
@@ -151,7 +170,10 @@ fn local_fastapi_ready() -> bool {
 }
 
 fn local_fastapi_health_body_ready(response: &str) -> bool {
-    let compact: String = response.chars().filter(|ch| !ch.is_ascii_whitespace()).collect();
+    let compact: String = response
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .collect();
     compact.contains("200OK")
         && compact.contains("\"service\":\"stock-MINGCommandCenter3.0\"")
         && compact.contains("\"status\":\"ok\"")

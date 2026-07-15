@@ -222,6 +222,7 @@ export default function Layout({
           aria-current={active === route.key ? "page" : undefined}
           className={active === route.key ? "nav-active" : ""}
           data-route-active={active === route.key ? "true" : "false"}
+          data-route-key={route.key}
           onClick={() => onNavigate(route.key)}
         >
           <span className="nav-label">{route.label}</span>

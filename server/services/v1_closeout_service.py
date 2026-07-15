@@ -15,7 +15,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from server.services import full_market_worker_service, motion_evidence_service, release_promotion_service
+from server.services import (
+    full_market_worker_service,
+    motion_evidence_service,
+    release_promotion_service,
+    streamlit_retirement_evidence_service,
+)
 from .tushare_production_store import validate_tushare_full_market_production_version
 from .tauri_package_verifier import validate_tauri_production_package
 
@@ -1247,6 +1252,13 @@ def _build_version_rows(
         evidence_root,
         expected_head_full=expected_head_full,
     )
+    streamlit_primary_retirement = (
+        streamlit_retirement_evidence_service.validate_streamlit_primary_retirement(
+            evidence_root,
+            expected_head_full=expected_head_full,
+            tauri_package_verification=tauri_package_verification,
+        )
+    )
     full_market_worker_fact = full_market_worker_service.validate_full_market_worker_production_fact(
         evidence_root
     )
@@ -1276,7 +1288,9 @@ def _build_version_rows(
         "candidate_radar_production_replacement": (
             full_market_worker_fact.get("candidate_radar_production_replacement") is True
         ),
-        "streamlit_primary_retired": False,
+        "streamlit_primary_retired": bool(
+            streamlit_primary_retirement.get("streamlit_primary_retired") is True
+        ),
         "desktop_production_package": bool(
             tauri_package_verification.get("production_package_complete") is True
         ),
@@ -1358,6 +1372,29 @@ def _build_version_rows(
                 "developer_id_signing_verified",
                 "notarization_ticket_detected",
                 "blockers",
+            )
+        },
+        "streamlit_primary_retirement": {
+            key: streamlit_primary_retirement.get(key)
+            for key in (
+                "schema_version",
+                "status",
+                "streamlit_primary_retired",
+                "head_full",
+                "fallback_disposition",
+                "route_count",
+                "viewport_count",
+                "qa_matrix_count",
+                "artifact_set_sha256",
+                "source_contract_digest",
+                "route_matrix_digest",
+                "blockers",
+                "trust_boundary",
+                "read_only",
+                "writes_storage",
+                "external_calls_triggered",
+                "does_not_execute_trades",
+                "contains_secret",
             )
         },
         "tushare_production_version": {
@@ -1492,6 +1529,7 @@ def build_v1_closeout_evaluation(
         "remote_ci_review_summary": context["remote_receipt_summary"],
         "production_release_promotion_summary": context["release_promotion_summary"],
         "motion_current_head_evidence_summary": context["motion_current_head_evidence_summary"],
+        "streamlit_primary_retirement_summary": context["streamlit_primary_retirement"],
         "tushare_production_version": context["tushare_production_version"],
         "cache_only": True,
         "read_only": True,

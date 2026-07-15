@@ -4345,10 +4345,10 @@ export default function CommandCenterHome() {
   };
 
   return (
-    <>
+    <div data-ltg10-component-id="CommandCenterHome">
       <div className="page-head">
         <div>
-          <h1>今日作战台</h1>
+          <h1 data-ltg10-route-heading="home">今日作战台</h1>
           <p>先看能不能用、当前标的、最近结果和下一步。</p>
         </div>
         <StatusBadge label={dailyCommandStatusLabel} tone={dailyCommandHealthOk ? "good" : "warn"} />
@@ -5501,6 +5501,6 @@ export default function CommandCenterHome() {
         </PacketCard>
       </div>
       </details>
-    </>
+    </div>
   );
 }

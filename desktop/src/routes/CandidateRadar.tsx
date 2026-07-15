@@ -5858,10 +5858,10 @@ export default function CandidateRadar() {
     );
 
   return (
-    <>
+    <div data-ltg10-component-id="CandidateRadar">
       <div className="page-head">
         <div>
-          <h1>下一票雷达</h1>
+          <h1 data-ltg10-route-heading="candidates">下一票雷达</h1>
           <p>先看候选、数据来源、缺少证据和仅供研究边界。</p>
         </div>
         <StatusBadge label={candidateRadarStatusLabel} tone={candidateRadarCacheGetReadable ? "good" : "neutral"} />
@@ -8096,6 +8096,6 @@ export default function CandidateRadar() {
           <JsonDetails title="candidate radar cache raw" data={cache} />
         </PacketCard>
       </details>
-    </>
+    </div>
   );
 }

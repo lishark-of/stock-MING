@@ -2788,10 +2788,10 @@ export default function FactorQuantHub() {
   ];
 
   return (
-    <>
+    <div data-ltg10-component-id="FactorQuantHub">
       <div className="page-head">
         <div>
-          <h1>股票量化推演</h1>
+          <h1 data-ltg10-route-heading="factor">股票量化推演</h1>
           <p>因子、次日图谱和模型解释状态一屏看清；只做研究预览，不修改交易动作。</p>
         </div>
       </div>
@@ -3782,6 +3782,6 @@ export default function FactorQuantHub() {
       <JsonDetails title="Factor Quant Hub packet" data={packet} />
       </details>
       </PacketCard>
-    </>
+    </div>
   );
 }
