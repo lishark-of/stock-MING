@@ -68,12 +68,23 @@
     if (activeIntervals.delete(handle)) intervalClearCount += 1;
     return Reflect.apply(originalClearInterval, window, [handle]);
   };
-  const intervalOwners = [window, typeof Window === "function" ? Window.prototype : null]
-    .filter((owner, index, owners) => owner && owners.indexOf(owner) === index);
+  const windowPrototype = typeof Window === "function" ? Window.prototype : null;
+  const intervalOwners = [window, windowPrototype];
+  let intervalHookInstallReady = Boolean(windowPrototype && windowPrototype !== window);
   for (const owner of intervalOwners) {
-    lockValue(owner, "setInterval", wrappedSetInterval, owner === window ? "window.setInterval" : "Window.prototype.setInterval");
-    lockValue(owner, "clearInterval", wrappedClearInterval, owner === window ? "window.clearInterval" : "Window.prototype.clearInterval");
+    const setReady = lockValue(owner, "setInterval", wrappedSetInterval, owner === window ? "window.setInterval" : "Window.prototype.setInterval");
+    const clearReady = lockValue(owner, "clearInterval", wrappedClearInterval, owner === window ? "window.clearInterval" : "Window.prototype.clearInterval");
+    intervalHookInstallReady = intervalHookInstallReady && setReady && clearReady;
   }
+  const intervalHookIntegrity = () => Boolean(
+    intervalHookInstallReady && intervalOwners.length === 2 && intervalOwners.every((owner) => {
+      const setDescriptor = Object.getOwnPropertyDescriptor(owner, "setInterval");
+      const clearDescriptor = Object.getOwnPropertyDescriptor(owner, "clearInterval");
+      return setDescriptor?.value === wrappedSetInterval && clearDescriptor?.value === wrappedClearInterval &&
+        setDescriptor.writable === false && setDescriptor.configurable === false &&
+        clearDescriptor.writable === false && clearDescriptor.configurable === false;
+    })
+  );
   const quiesceIntervals = () => {
     const started = nowNs();
     const tracked = activeIntervals.size;
@@ -82,7 +93,8 @@
       if (activeIntervals.delete(handle)) intervalClearCount += 1;
     }
     const completed = nowNs();
-    const integrity = activeIntervals.size === 0 && intervalRegistrationCount === intervalClearCount && tracked >= 0;
+    const integrity = intervalHookIntegrity() && activeIntervals.size === 0 &&
+      intervalRegistrationCount === intervalClearCount && tracked >= 0;
     return {
       guard_mode: "quiesce_tracked_intervals_then_deny_all_then_exit",
       interval_registration_count: intervalRegistrationCount,
@@ -374,6 +386,7 @@
       (!wrappedBeacon || navigator.sendBeacon === wrappedBeacon) &&
       (!wrappedServiceWorkerRegister || serviceWorkerContainer?.register === wrappedServiceWorkerRegister) &&
       (!wrappedCustomDefine || window.customElements.define === wrappedCustomDefine) &&
+      intervalHookIntegrity() &&
       lockedHooks.length >= 8 && lockedHooks.every(({ owner, key, value }) => {
         const descriptor = Object.getOwnPropertyDescriptor(owner, key);
         return descriptor?.value === value && descriptor.writable === false && descriptor.configurable === false;

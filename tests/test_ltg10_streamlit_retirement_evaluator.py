@@ -1260,6 +1260,18 @@ const customElements = new CustomElementRegistry();
 Window.prototype.fetch = async function() { nativeCalls.fetch += 1; return { status: 200, url: 'tauri://localhost/#home' }; };
 Window.prototype.setInterval = function() { nativeCalls.intervalSet += 1; const handle = ++nextInterval; nativeIntervals.add(handle); return handle; };
 Window.prototype.clearInterval = function(handle) { nativeCalls.intervalClear += 1; nativeIntervals.delete(handle); };
+const blockedTimerHook = String(process.argv[3] || '').startsWith('blocked-');
+const blockedTimerOwner = String(process.argv[3] || '').includes('window-') ? 'window' : 'prototype';
+const blockedTimerKey = String(process.argv[3] || '').endsWith('-clear') ? 'clearInterval' : 'setInterval';
+const originalPrototypeSetInterval = Window.prototype.setInterval;
+const originalPrototypeClearInterval = Window.prototype.clearInterval;
+if (blockedTimerHook && blockedTimerOwner === 'prototype') {
+  Object.defineProperty(Window.prototype, blockedTimerKey, {
+    value: blockedTimerKey === 'setInterval' ? originalPrototypeSetInterval : originalPrototypeClearInterval,
+    writable: false,
+    configurable: false
+  });
+}
 const sandbox = {
   Window, XMLHttpRequest, WebSocket, EventSource, Worker, ServiceWorkerContainer, Navigator, CustomElementRegistry, Element, Document,
   navigator, customElements, document, location: { href: 'tauri://localhost/#home', hash: '#home' },
@@ -1271,11 +1283,37 @@ const sandbox = {
 };
 Object.setPrototypeOf(sandbox, Window.prototype);
 sandbox.window = sandbox;
+if (blockedTimerHook && blockedTimerOwner === 'window') {
+  Object.defineProperty(sandbox, blockedTimerKey, {
+    value: blockedTimerKey === 'setInterval' ? originalPrototypeSetInterval : originalPrototypeClearInterval,
+    writable: false,
+    configurable: false
+  });
+}
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox, { filename: process.argv[2] });
 (async () => {
   clock = 2_000;
   const api = sandbox.__STOCK_MING_LTG10_QA__;
+  if (blockedTimerHook) {
+    sandbox.Window.prototype.setInterval.call(sandbox, () => {}, 1000);
+    const token = api.beginSeal();
+    await new Promise((resolve) => setImmediate(resolve));
+    const started = api.takeObservation(token);
+    const seal = api.verifySeal();
+    const blockedOwner = blockedTimerOwner === 'window' ? sandbox : sandbox.Window.prototype;
+    const blockedDescriptor = Object.getOwnPropertyDescriptor(blockedOwner, blockedTimerKey);
+    const blockedOriginal = blockedTimerKey === 'setInterval' ? originalPrototypeSetInterval : originalPrototypeClearInterval;
+    const payload = {
+      blockedDescriptorPreserved: blockedDescriptor?.value === blockedOriginal,
+      nativeIntervalCount: nativeIntervals.size,
+      startedReady: started.status === 'ready',
+      sealPassed: seal.sealed === true && seal.instrumentation_integrity === true && seal.quiesce_complete === true,
+      instrumentationIntegrity: seal.instrumentation_integrity
+    };
+    process.stdout.write(JSON.stringify(payload), () => process.exit(0));
+    return;
+  }
   sandbox.setInterval(() => {}, 1000);
   const token = api.beginSeal();
   await new Promise((resolve) => setImmediate(resolve));
@@ -1286,8 +1324,12 @@ vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox, { filename: p
     [sandbox.EventSource.prototype, 'constructor'], [sandbox.Worker.prototype, 'constructor'],
     [sandbox.Navigator.prototype, 'sendBeacon'], [sandbox.ServiceWorkerContainer.prototype, 'register'],
     [sandbox.CustomElementRegistry.prototype, 'define'], [sandbox.Window.prototype, 'setInterval'],
-    [sandbox.Window.prototype, 'clearInterval']
+    [sandbox.Window.prototype, 'clearInterval'], [sandbox, 'setInterval'], [sandbox, 'clearInterval']
   ].every(([owner, key]) => { const d = Object.getOwnPropertyDescriptor(owner, key); return d && d.writable === false && d.configurable === false; });
+  const timerValuesExact =
+    Object.getOwnPropertyDescriptor(sandbox, 'setInterval')?.value === Object.getOwnPropertyDescriptor(sandbox.Window.prototype, 'setInterval')?.value &&
+    Object.getOwnPropertyDescriptor(sandbox, 'clearInterval')?.value === Object.getOwnPropertyDescriptor(sandbox.Window.prototype, 'clearInterval')?.value &&
+    Object.getOwnPropertyDescriptor(sandbox, 'setInterval')?.value !== originalPrototypeSetInterval;
   clock += 10_100;
   const attempts = [];
   for (const Constructor of [sandbox.WebSocket.prototype.constructor, sandbox.EventSource.prototype.constructor, sandbox.Worker.prototype.constructor]) {
@@ -1302,7 +1344,7 @@ vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox, { filename: p
   try { sandbox.setInterval(() => {}, 1000); } catch { attempts.push(true); }
   const seal = api.verifySeal();
   process.stdout.write(JSON.stringify({
-    descriptorsLocked, startedReady: started.status === 'ready' && started.value.hook_integrity === true,
+    descriptorsLocked, timerValuesExact, startedReady: started.status === 'ready' && started.value.hook_integrity === true,
     attempts, denied: seal.denied_attempt_count, late: seal.late_event_count,
     intervalDenied: seal.denied_interval_registration_count,
     intervalQuiesced: started.value.quiesced_interval_count,
@@ -1325,6 +1367,7 @@ vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox, { filename: p
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
         self.assertTrue(payload["descriptorsLocked"])
+        self.assertTrue(payload["timerValuesExact"])
         self.assertTrue(payload["startedReady"])
         self.assertEqual(payload["attempts"], [True] * 8)
         self.assertEqual(payload["denied"], 7)
@@ -1333,6 +1376,31 @@ vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox, { filename: p
         self.assertEqual(payload["intervalQuiesced"], 1)
         self.assertEqual(payload["activeIntervals"], 0)
         self.assertEqual(payload["nativeCalls"], {"fetch": 0, "xhr": 0, "websocket": 0, "eventsource": 0, "worker": 0, "beacon": 0, "serviceworker": 0, "intervalSet": 1, "intervalClear": 1})
+
+        for blocked_mode in (
+            "blocked-prototype-set",
+            "blocked-prototype-clear",
+            "blocked-window-set",
+            "blocked-window-clear",
+        ):
+            with self.subTest(blocked_mode=blocked_mode), tempfile.TemporaryDirectory() as temp_dir:
+                path = Path(temp_dir) / "blocked_timer_guard.cjs"
+                path.write_text(harness, encoding="utf-8")
+                blocked_result = subprocess.run(
+                    ["node", str(path), str(init_path), blocked_mode],
+                    cwd=ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=20,
+                )
+                self.assertEqual(blocked_result.returncode, 0, blocked_result.stderr)
+                blocked = json.loads(blocked_result.stdout)
+                self.assertTrue(blocked["blockedDescriptorPreserved"])
+                self.assertEqual(blocked["nativeIntervalCount"], 1)
+                self.assertFalse(blocked["startedReady"])
+                self.assertFalse(blocked["sealPassed"])
+                self.assertFalse(blocked["instrumentationIntegrity"])
 
     def test_active_route_binding_alias_conditional_and_component_root_mutations_fail_ast(self):
         mutations = (
