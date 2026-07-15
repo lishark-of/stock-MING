@@ -19383,6 +19383,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                     "worker_full_pool_execution_evidence_required",
                     "worker_deep_scan_execution_evidence_required",
                     "deepseek_model_ledger_if_enabled_required",
+                    "browser_visual_performance_evidence_required",
                 }
             )
         else:
@@ -21785,12 +21786,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(route_coverage["task_creation_route_count"], catalog["task_count"])
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
+        self.assertEqual(route_coverage["local_control_plane_route_count"], 1)
+        self.assertEqual(
+            route_coverage["local_control_plane_routes"],
+            ["POST /api/audit/production-release-promotion"],
+        )
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
         self.assertTrue(route_coverage["call_ledger_required_for_all_known_post_routes"])
         self.assertFalse(route_coverage["cancel_routes_external_calls"])
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
+        self.assertFalse(route_coverage["control_plane_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
         self.assertEqual(implementation_status["task_count"], catalog["task_count"])
         self.assertEqual(implementation_status["stub_task_count"], len(implementation_status["stub_task_types"]))
@@ -22407,6 +22414,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(catalog["task_lifecycle_routes"][0]["external_call_policy"], "local_cancel_no_external_call")
         self.assertEqual(catalog["task_lifecycle_routes"][1]["route"], "POST /api/tasks/{task_id}/retry")
         self.assertEqual(catalog["task_lifecycle_routes"][1]["external_call_policy"], "local_retry_no_external_call")
+        self.assertEqual(
+            catalog["control_plane_post_routes"][0]["route"],
+            "POST /api/audit/production-release-promotion",
+        )
+        self.assertEqual(
+            catalog["control_plane_post_routes"][0]["authoritative_state"],
+            "hmac_append_only_release_promotion_journal",
+        )
+        self.assertFalse(catalog["control_plane_post_routes"][0]["creates_task"])
         self.assertEqual(by_type["refresh_tushare_facts"]["route"], "POST /api/tasks/refresh-tushare-facts")
         self.assertEqual(by_type["refresh_tushare_facts"]["current_backend"], "button_gated_tushare_pipeline")
         self.assertFalse(by_type["refresh_tushare_facts"]["retry_policy"]["auto_retry_enabled"])
@@ -25119,6 +25135,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         dispatch_by_task = {row["task_type"]: row for row in packet["dispatch_plan_rows"]}
         self.assertEqual(dispatch_by_task["refresh_tushare_facts"]["future_queue"], "provider_refresh")
         self.assertEqual(dispatch_by_task["run_candidate_radar_quant_projection"]["future_queue"], "provider_refresh")
+        self.assertEqual(
+            dispatch_by_task["run_factor_test_provider_industry_membership"]["future_queue"],
+            "provider_refresh",
+        )
         self.assertEqual(dispatch_by_task["run_deepseek_factor_explanation"]["future_queue"], "model_explain")
         self.assertEqual(dispatch_by_task["run_storage_artifact_cleanup_dry_run"]["future_queue"], "local_maintenance")
         self.assertEqual(dispatch_by_task["run_storage_schema_validation_dry_run"]["future_queue"], "local_maintenance")
@@ -29868,7 +29888,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             row["evidence_key"]: row
             for row in replay_cache["freshness_durable_evidence_rows"]
         }["current_evidence_producer_coverage"]
-        self.assertEqual(replay_latest["status"], "no_producer_cache_refresh_task_found")
+        self.assertEqual(replay_latest["status"], "historical_task_evidence_visible_non_actionable")
+        self.assertTrue(replay_latest["historical_evidence"])
+        self.assertFalse(replay_latest["current_actionable"])
+        self.assertFalse(replay_latest["receipt_visible"])
+        self.assertTrue(replay_latest["historical_receipt_visible"])
+        self.assertEqual(replay_latest["latest_task_id"], task["task_id"])
         self.assertTrue(replay_direct_evidence["direct_evidence_done"])
         self.assertEqual(replay_direct_evidence["evidence_source"], "sqlite_packet_replay")
         self.assertFalse(replay_direct_evidence["task_metadata_evidence_done"])
@@ -45704,6 +45729,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(browser_qa_review["local_browser_qa_review_ready"])
         self.assertTrue(browser_qa_review["opens_no_browser"])
         self.assertTrue(browser_qa_review["writes_no_artifacts"])
+        self.assertFalse(browser_qa_review["reads_ignored_local_reports_only"])
+        self.assertTrue(browser_qa_review["reads_current_head_terminal_v6_pair_only"])
         self.assertFalse(browser_qa_review["production_radar_replacement_complete"])
         self.assertFalse(browser_qa_review["legacy_retirement_ready"])
         self.assertFalse(browser_qa_review["external_calls_triggered"])

@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from server.api import routes_audit
 from server.main import app
 from server.services import audit_service, release_promotion_service, v1_closeout_service
 
@@ -246,20 +247,69 @@ class ReleasePromotionJournalTests(unittest.TestCase):
         self.assertIn("get", operations)
         self.assertIn("post", operations)
 
+    def test_api_post_returns_safe_local_control_plane_ledger(self) -> None:
+        packet = {
+            "status": "production_release_promotion_blocked",
+            "release_promotion_current_head": False,
+            "promotion_written": False,
+            "blockers": ["explicit_user_production_promotion_approval_required"],
+        }
+        with patch.object(
+            routes_audit.release_promotion_service,
+            "promote_production_release",
+            return_value=packet,
+        ):
+            response = routes_audit.promote_production_release(
+                {"approved_by_user": False, "authorization": "SHOULD_DROP"}
+            )
+
+        self.assertEqual(response["data"], packet)
+        self.assertEqual(len(response["call_ledger"]), 1)
+        ledger = response["call_ledger"][0]
+        self.assertEqual(ledger["api"], "local_production_release_promotion_journal")
+        self.assertEqual(ledger["endpoint"], "POST /api/audit/production-release-promotion")
+        self.assertEqual(ledger["request_method"], "POST")
+        self.assertEqual(ledger["call_status"], "production_release_promotion_blocked")
+        self.assertEqual(
+            ledger["row_count_semantics"],
+            "validated_current_pointer_visibility_not_insert_count",
+        )
+        self.assertFalse(ledger["promotion_written"])
+        self.assertFalse(ledger["external_calls_triggered"])
+        self.assertFalse(ledger["github_api_called"])
+        self.assertTrue(ledger["does_not_execute_trades"])
+        self.assertTrue(ledger["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        with patch.object(
+            routes_audit.release_promotion_service,
+            "validate_production_release_promotion",
+            return_value=packet,
+        ):
+            read_response = routes_audit.get_production_release_promotion()
+        read_ledger = read_response["call_ledger"][0]
+        self.assertEqual(read_ledger["endpoint"], "GET /api/audit/production-release-promotion")
+        self.assertEqual(read_ledger["request_method"], "GET")
+        self.assertEqual(read_ledger["mode"], "read_only_validation")
+        self.assertFalse(read_ledger["promotion_written"])
+        self.assertFalse(read_ledger["external_calls_triggered"])
+
     def test_explicit_approval_is_required_before_any_write(self) -> None:
-        result = release_promotion_service.promote_production_release(
-            {"approved_by_user": False, "release_gate_complete": True},
-            evidence_root=self.evidence_root,
-            expected_head_full=self.head,
-        )
-        self.assertFalse(result["promotion_written"])
-        self.assertIn("explicit_user_production_promotion_approval_required", result["blockers"])
-        self.assertFalse((self.release_root / release_promotion_service.JOURNAL_NAME).exists())
-        trust_directory, key_path = release_promotion_service._trust_paths(
-            self.evidence_root
-        )
-        self.assertFalse(trust_directory.exists())
-        self.assertFalse(key_path.exists())
+        for approval in (False, "true", 1):
+            with self.subTest(approval=approval):
+                result = release_promotion_service.promote_production_release(
+                    {"approved_by_user": approval, "release_gate_complete": True},
+                    evidence_root=self.evidence_root,
+                    expected_head_full=self.head,
+                )
+                self.assertFalse(result["promotion_written"])
+                self.assertIn("explicit_user_production_promotion_approval_required", result["blockers"])
+                self.assertFalse((self.release_root / release_promotion_service.JOURNAL_NAME).exists())
+                trust_directory, key_path = release_promotion_service._trust_paths(
+                    self.evidence_root
+                )
+                self.assertFalse(trust_directory.exists())
+                self.assertFalse(key_path.exists())
 
     def test_get_is_zero_write_before_and_after_key_installation(self) -> None:
         journal = self.release_root / release_promotion_service.JOURNAL_NAME

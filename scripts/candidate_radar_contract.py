@@ -3044,7 +3044,8 @@ def build_contract() -> dict[str, Any]:
             and browser_qa_evidence.get("opens_no_browser") is True
             and browser_qa_evidence.get("starts_no_servers") is True
             and browser_qa_evidence.get("writes_no_artifacts") is True
-            and browser_qa_evidence.get("reads_ignored_local_reports_only") is True
+            and browser_qa_evidence.get("reads_ignored_local_reports_only") is False
+            and browser_qa_evidence.get("reads_current_head_terminal_v6_pair_only") is True
             and browser_qa_evidence.get("production_radar_replacement_complete") is False
             and browser_qa_evidence.get("legacy_retirement_ready") is False
             and _flag_false(browser_qa_evidence, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
@@ -3057,7 +3058,7 @@ def build_contract() -> dict[str, Any]:
             and policy.get("candidate_browser_qa_evidence_is_not_production_replacement") is True
             and "candidate_browser_qa_evidence_summary" in candidate_frontend
             and "candidate_browser_qa_evidence_rows" in candidate_frontend,
-            "Candidate Radar browser QA evidence may read ignored local reports for #candidates, but it must not open a browser, write artifacts, call providers, or mark production replacement complete.",
+            "Candidate Radar browser QA evidence accepts only the current-head terminal v6 normal/reduced pair for #candidates; it must not open a browser, write artifacts, call providers, or mark production replacement complete.",
         ),
         _row(
             "candidate_browser_qa_review_is_button_gated_not_production",
@@ -3066,7 +3067,8 @@ def build_contract() -> dict[str, Any]:
             and browser_qa_review.get("opens_no_browser") is True
             and browser_qa_review.get("starts_no_servers") is True
             and browser_qa_review.get("writes_no_artifacts") is True
-            and browser_qa_review.get("reads_ignored_local_reports_only") is True
+            and browser_qa_review.get("reads_ignored_local_reports_only") is False
+            and browser_qa_review.get("reads_current_head_terminal_v6_pair_only") is True
             and browser_qa_review.get("production_radar_replacement_complete") is False
             and browser_qa_review.get("legacy_retirement_ready") is False
             and browser_qa_review.get("full_pool_scan_done") is False

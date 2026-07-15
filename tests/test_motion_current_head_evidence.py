@@ -1258,6 +1258,21 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
             self.assertEqual(len(candidate_rows), 8)
             self.assertEqual(len(next_rows), 8)
             self.assertTrue(all(row["reads_current_head_v6_validation_only"] for row in candidate_rows + next_rows))
+            candidate_review = candidate_service._candidate_browser_qa_review_contract(
+                candidate_summary,
+                candidate_rows,
+                explicit_review=True,
+                task_id="current-head-review",
+                reviewed_at="2026-07-16T00:00:00Z",
+            )
+            self.assertEqual(candidate_review["status"], "candidate_browser_qa_review_ready_local_artifact")
+            self.assertTrue(candidate_review["local_browser_qa_review_ready"])
+            self.assertFalse(candidate_review["reads_ignored_local_reports_only"])
+            self.assertTrue(candidate_review["reads_current_head_terminal_v6_pair_only"])
+            self.assertIn(
+                "current_head_terminal_v6_pair_policy_preserved",
+                {row["criterion"] for row in candidate_review["rows"]},
+            )
 
     def test_resigned_historical_cache_provenance_is_not_current_get_activity(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

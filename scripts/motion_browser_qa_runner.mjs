@@ -511,7 +511,7 @@ function selfTestFastApiValidator() {
   optionalNext.call_ledger.reverse();
   assert(!analyze(optionalNext, "/api/next-session/cache").valid, "primary_cache_row_must_be_first");
   const secret = safeAudit();
-  secret.data.api_key = "must_not_appear";
+  secret.data.api_key = "dummy";
   assert(!analyze(secret).valid, "secret_field");
   assert(!analyze(safeAudit(), "/api/not-allowlisted/cache").valid, "unknown_endpoint");
 

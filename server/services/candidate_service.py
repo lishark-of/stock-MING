@@ -7121,10 +7121,14 @@ def _candidate_browser_qa_review_contract(
             blocks_review=True,
         ),
         _candidate_browser_qa_review_row(
-            "ignored_artifact_policy_preserved",
-            "passed" if evidence_summary.get("reads_ignored_local_reports_only") is True else "blocked_artifact_policy",
-            passed=evidence_summary.get("reads_ignored_local_reports_only") is True,
-            evidence="Review reads only ignored local reports and does not commit screenshots, videos, or JSON artifacts.",
+            "current_head_terminal_v6_pair_policy_preserved",
+            "passed"
+            if evidence_summary.get("reads_ignored_local_reports_only") is False
+            and evidence_summary.get("reads_current_head_terminal_v6_pair_only") is True
+            else "blocked_artifact_policy",
+            passed=evidence_summary.get("reads_ignored_local_reports_only") is False
+            and evidence_summary.get("reads_current_head_terminal_v6_pair_only") is True,
+            evidence="Review accepts only the authenticated current-head terminal v6 normal/reduced pair; legacy ignored reports stay compatibility-only.",
             blocks_review=True,
         ),
         _candidate_browser_qa_review_row(
@@ -7173,7 +7177,8 @@ def _candidate_browser_qa_review_contract(
         "opens_no_browser": True,
         "starts_no_servers": True,
         "writes_no_artifacts": True,
-        "reads_ignored_local_reports_only": True,
+        "reads_ignored_local_reports_only": False,
+        "reads_current_head_terminal_v6_pair_only": True,
         "screenshots_are_not_tracked": True,
         "report_artifacts_are_not_tracked": True,
         "production_radar_replacement_complete": False,

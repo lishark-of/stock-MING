@@ -9,6 +9,31 @@ from server.services import audit_service, release_promotion_service
 router = APIRouter(prefix="/api/audit")
 
 
+def _production_release_promotion_ledger(packet: dict, *, request_method: str) -> list[dict]:
+    return [
+        {
+            "api": "local_production_release_promotion_journal",
+            "endpoint": f"{request_method} /api/audit/production-release-promotion",
+            "request_method": request_method,
+            "mode": "read_only_validation" if request_method == "GET" else "explicit_local_control_plane_write",
+            "call_status": str(packet.get("status") or "production_release_promotion_blocked"),
+            "row_count": 1 if packet.get("release_promotion_current_head") is True else 0,
+            "row_count_semantics": "validated_current_pointer_visibility_not_insert_count",
+            "promotion_written": packet.get("promotion_written") is True,
+            "idempotent_replay": packet.get("idempotent_replay") is True,
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "github_api_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+    ]
+
+
 @router.get("/cache")
 def get_call_ledger_audit_cache() -> dict:
     packet = audit_service.read_call_ledger_audit_cache()
@@ -18,13 +43,21 @@ def get_call_ledger_audit_cache() -> dict:
 @router.get("/production-release-promotion")
 def get_production_release_promotion() -> dict:
     packet = release_promotion_service.validate_production_release_promotion()
-    return envelope(packet, warnings=packet.get("blockers"))
+    return envelope(
+        packet,
+        call_ledger=_production_release_promotion_ledger(packet, request_method="GET"),
+        warnings=packet.get("blockers"),
+    )
 
 
 @router.post("/production-release-promotion")
 def promote_production_release(payload: dict | None = None) -> dict:
     packet = release_promotion_service.promote_production_release(payload)
-    return envelope(packet, warnings=packet.get("blockers"))
+    return envelope(
+        packet,
+        call_ledger=_production_release_promotion_ledger(packet, request_method="POST"),
+        warnings=packet.get("blockers"),
+    )
 
 
 @router.get("/user-route-qa")

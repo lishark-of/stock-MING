@@ -3257,6 +3257,24 @@ TASK_LIFECYCLE_POST_ROUTES = [
     },
 ]
 
+TASK_CONTROL_PLANE_POST_ROUTES = [
+    {
+        "route": "POST /api/audit/production-release-promotion",
+        "label": "确认并写入 current-head 生产发布提升事件",
+        "route_type": "local_release_control_plane",
+        "button_gated": True,
+        "current_backend": "local_hmac_append_only_release_promotion_journal",
+        "external_call_policy": "explicit_literal_approval_local_write_no_external_call",
+        "possible_external_sources": [],
+        "requires_user_confirmation": True,
+        "creates_task": False,
+        "authoritative_state": "hmac_append_only_release_promotion_journal",
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+]
+
 TASK_RETRY_POLICY_VERSION = "task_retry_policy.audit.v1"
 TASK_RETRY_POLICY_DEFAULT = {
     "manual_retry_allowed": True,
@@ -3620,25 +3638,30 @@ def _now_iso() -> str:
 def _build_route_coverage() -> dict[str, Any]:
     task_routes = [str(item.get("route") or "") for item in TASK_CATALOG]
     lifecycle_routes = [str(item.get("route") or "") for item in TASK_LIFECYCLE_POST_ROUTES]
-    known_post_routes = task_routes + lifecycle_routes
+    control_plane_routes = [str(item.get("route") or "") for item in TASK_CONTROL_PLANE_POST_ROUTES]
+    known_post_routes = task_routes + lifecycle_routes + control_plane_routes
+    route_contracts = TASK_CATALOG + TASK_LIFECYCLE_POST_ROUTES + TASK_CONTROL_PLANE_POST_ROUTES
     return {
         "status": "ready",
         "scope": "command_center_3_button_gated_post_routes",
         "task_creation_route_count": len(task_routes),
         "local_lifecycle_route_count": len(lifecycle_routes),
+        "local_control_plane_route_count": len(control_plane_routes),
         "known_post_route_count": len(known_post_routes),
         "task_creation_routes": task_routes,
         "local_lifecycle_routes": lifecycle_routes,
+        "local_control_plane_routes": control_plane_routes,
         "known_post_routes": known_post_routes,
         "uncovered_post_routes": [],
-        "all_known_post_routes_button_gated": all(bool(item.get("button_gated")) for item in TASK_CATALOG + TASK_LIFECYCLE_POST_ROUTES),
+        "all_known_post_routes_button_gated": all(bool(item.get("button_gated")) for item in route_contracts),
         "call_ledger_required_for_all_known_post_routes": all(
-            bool(item.get("call_ledger_required")) for item in TASK_CATALOG + TASK_LIFECYCLE_POST_ROUTES
+            bool(item.get("call_ledger_required")) for item in route_contracts
         ),
         "cache_reads_create_no_tasks": True,
         "cancel_routes_external_calls": False,
         "retry_routes_external_calls": False,
         "lifecycle_routes_external_calls": False,
+        "control_plane_routes_external_calls": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
     }
@@ -3900,6 +3923,7 @@ def build_task_catalog() -> dict[str, Any]:
         "status": "ready",
         "tasks": [_catalog_task_item(item) for item in TASK_CATALOG],
         "task_lifecycle_routes": [dict(item) for item in TASK_LIFECYCLE_POST_ROUTES],
+        "control_plane_post_routes": [dict(item) for item in TASK_CONTROL_PLANE_POST_ROUTES],
         "route_coverage": route_coverage,
         "implementation_status": implementation_status,
         "retry_policy_summary": retry_policy_summary,

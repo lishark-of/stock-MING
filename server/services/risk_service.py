@@ -132,6 +132,7 @@ def _trade_isolation_audit(policy: Mapping[str, Any]) -> tuple[dict[str, Any], l
     catalog = task_service.build_task_catalog()
     tasks = _as_list(catalog.get("tasks"))
     lifecycle_routes = _as_list(catalog.get("task_lifecycle_routes"))
+    control_plane_routes = _as_list(catalog.get("control_plane_post_routes"))
     route_coverage = _as_dict(catalog.get("route_coverage"))
     task_boundary_rows: list[dict[str, Any]] = []
     for item in tasks:
@@ -158,6 +159,20 @@ def _trade_isolation_audit(policy: Mapping[str, Any]) -> tuple[dict[str, Any], l
                 "button_gated": route.get("button_gated") is True,
                 "call_ledger_required": route.get("call_ledger_required") is True,
                 "possible_external_sources": [],
+                "does_not_execute_trades": route.get("does_not_execute_trades", True) is not False,
+                "does_not_modify_strategy_action": route.get("does_not_modify_strategy_action", True) is not False,
+            }
+        )
+    for item in control_plane_routes:
+        route = _as_dict(item)
+        task_boundary_rows.append(
+            {
+                "task_type": route.get("route_type") or "local_control_plane_route",
+                "route": route.get("route"),
+                "current_backend": route.get("current_backend", "local_control_plane"),
+                "button_gated": route.get("button_gated") is True,
+                "call_ledger_required": route.get("call_ledger_required") is True,
+                "possible_external_sources": route.get("possible_external_sources", []),
                 "does_not_execute_trades": route.get("does_not_execute_trades", True) is not False,
                 "does_not_modify_strategy_action": route.get("does_not_modify_strategy_action", True) is not False,
             }
@@ -219,12 +234,12 @@ def _trade_isolation_audit(policy: Mapping[str, Any]) -> tuple[dict[str, Any], l
         _trade_isolation_row(
             "task_catalog_all_routes_no_trade",
             all_task_routes_no_trade,
-            evidence=f"{len(task_boundary_rows)} task/lifecycle route rows declare no trade execution",
+            evidence=f"{len(task_boundary_rows)} task/lifecycle/control-plane route rows declare no trade execution",
         ),
         _trade_isolation_row(
             "task_catalog_all_routes_no_strategy_action_mutation",
             all_task_routes_no_action,
-            evidence=f"{len(task_boundary_rows)} task/lifecycle route rows declare no strategy action mutation",
+            evidence=f"{len(task_boundary_rows)} task/lifecycle/control-plane route rows declare no strategy action mutation",
         ),
         _trade_isolation_row(
             "all_known_post_routes_button_gated",
@@ -352,7 +367,7 @@ def _trade_isolation_release_receipt(
             and trade_isolation_audit.get("research_paths_cannot_mutate_strategy_action") is True
             else "blocked",
             f"task_boundary_rows={trade_isolation_audit.get('task_boundary_row_count')}",
-            "All known POST/lifecycle routes declare no trade execution and no strategy action mutation.",
+            "All known POST task/lifecycle/control-plane routes declare no trade execution and no strategy action mutation.",
         ),
         _row(
             "frontend_no_trade_boundaries_visible",

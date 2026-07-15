@@ -301,6 +301,15 @@ def _parameterized_get_route_specs() -> list[dict[str, Any]]:
             "not_invoked_by_audit_reader": True,
         },
         {
+            "route": "GET /api/audit/production-release-promotion",
+            "source": "production_release_promotion_local_validation",
+            "route_type": "read_only_local_validation",
+            "cache_only": True,
+            "external_calls_triggered": False,
+            "requires_runtime_parameter": False,
+            "not_invoked_by_audit_reader": True,
+        },
+        {
             "route": "GET /api/packets/{packet_key}",
             "source": "packet_detail",
             "route_type": "parameterized_local_detail",

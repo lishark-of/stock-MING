@@ -588,6 +588,7 @@ def _queue_for_task_type(task_type: str) -> str:
         "run_candidate_radar_quant_projection",
         "run_candidate_radar_quant_projection_provider_model_acceptance",
         "run_candidate_radar_provider_parity_acceptance",
+        "run_factor_test_provider_industry_membership",
     }:
         return "provider_refresh"
     if task_type in {
