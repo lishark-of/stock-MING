@@ -5795,6 +5795,119 @@ def _factor_test_small_pool_merge_dataframe(api: str, df: Any, payload: Any) -> 
         }
 
 
+def _normalize_trade_cal_exchange(value: Any) -> str:
+    return str(value or "").strip().upper()
+
+
+def _normalize_trade_cal_cal_date(value: Any) -> str:
+    parsed = _parse_trade_cal_date(value)
+    return parsed.strftime("%Y%m%d") if parsed else ""
+
+
+def _normalize_trade_cal_canonical_frame(df: Any) -> tuple[Any | None, list[str]]:
+    keys = ["exchange", "cal_date"]
+    missing = [key for key in keys if key not in df.columns]
+    if missing:
+        return None, missing
+    normalized = df.copy()
+    normalized["exchange"] = normalized["exchange"].map(_normalize_trade_cal_exchange)
+    normalized["cal_date"] = normalized["cal_date"].map(_normalize_trade_cal_cal_date)
+    invalid = []
+    if bool((normalized["exchange"] == "").any()):
+        invalid.append("exchange")
+    if bool((normalized["cal_date"] == "").any()):
+        invalid.append("cal_date")
+    if invalid:
+        return None, invalid
+    normalized["__trade_cal_exchange_key"] = normalized["exchange"]
+    normalized["__trade_cal_cal_date_key"] = normalized["cal_date"]
+    return normalized, []
+
+
+def _trade_cal_canonical_merge_dataframe(df: Any, *, root: Path) -> tuple[Any | None, dict[str, Any]]:
+    dataset = PARQUET_DATASETS["trade_cal"]
+    path = parquet_store.dataset_path(root=root, name=dataset)
+    keys = ["exchange", "cal_date"]
+    dedupe_keys = ["__trade_cal_exchange_key", "__trade_cal_cal_date_key"]
+    try:
+        import pandas as pd
+
+        input_row_count = int(len(df))
+        current, invalid_current = _normalize_trade_cal_canonical_frame(df)
+        if current is None:
+            return None, {
+                "merge_applied": True,
+                "merge_status": "trade_cal_canonical_merge_failed_missing_input_keys",
+                "input_row_count": input_row_count,
+                "existing_row_count": 0,
+                "merged_row_count": 0,
+                "dedupe_keys": keys,
+                "dedupe_key_normalized": True,
+                "missing_input_keys": invalid_current,
+                "preserved_existing_canonical": path.exists(),
+                "error_message_safe": "trade_cal_input_missing_exchange_cal_date",
+            }
+        if not path.exists():
+            current = current.drop(columns=dedupe_keys)
+            return current, {
+                "merge_applied": False,
+                "merge_status": "trade_cal_canonical_no_existing_dataset",
+                "input_row_count": input_row_count,
+                "existing_row_count": 0,
+                "merged_row_count": input_row_count,
+                "dedupe_keys": keys,
+                "dedupe_key_normalized": True,
+                "preserved_existing_canonical": False,
+            }
+        existing_raw = pd.read_parquet(path)
+        existing_row_count = int(len(existing_raw))
+        existing, invalid_existing = _normalize_trade_cal_canonical_frame(existing_raw)
+        if existing is None:
+            return None, {
+                "merge_applied": True,
+                "merge_status": "trade_cal_canonical_merge_failed_missing_existing_keys",
+                "input_row_count": input_row_count,
+                "existing_row_count": existing_row_count,
+                "merged_row_count": 0,
+                "dedupe_keys": keys,
+                "dedupe_key_normalized": True,
+                "missing_existing_keys": invalid_existing,
+                "preserved_existing_canonical": True,
+                "error_message_safe": "trade_cal_existing_missing_exchange_cal_date",
+            }
+        combined = pd.concat([existing, current], ignore_index=True, sort=False)
+        merged = combined.drop_duplicates(subset=dedupe_keys, keep="last")
+        merged = merged.drop(columns=dedupe_keys)
+        existing_dates = existing["cal_date"].astype(str)
+        merged_dates = merged["cal_date"].astype(str)
+        return merged, {
+            "merge_applied": True,
+            "merge_status": "trade_cal_canonical_merged_exchange_cal_date",
+            "input_row_count": input_row_count,
+            "existing_row_count": existing_row_count,
+            "merged_row_count": int(len(merged)),
+            "dedupe_keys": keys,
+            "dedupe_key_normalized": True,
+            "existing_window_start": existing_dates.min() if existing_row_count else "",
+            "existing_window_end": existing_dates.max() if existing_row_count else "",
+            "merged_window_start": merged_dates.min() if len(merged) else "",
+            "merged_window_end": merged_dates.max() if len(merged) else "",
+            "preserved_existing_canonical": True,
+        }
+    except Exception as exc:
+        return None, {
+            "merge_applied": True,
+            "merge_status": "trade_cal_canonical_merge_failed_preserved_existing",
+            "input_row_count": int(len(df)) if hasattr(df, "__len__") else 0,
+            "existing_row_count": 0,
+            "merged_row_count": 0,
+            "dedupe_keys": keys,
+            "dedupe_key_normalized": True,
+            "preserved_existing_canonical": path.exists(),
+            "error_message_safe": _safe_text(exc),
+        }
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -5821,7 +5934,6 @@ def _write_parquet_dataset(
             "row_count": 0,
             "path": str(parquet_store.dataset_path(root=storage_service.PARQUET_ROOT, name=dataset)),
         }
-    df, merge_result = _factor_test_small_pool_merge_dataframe(api, df, payload)
     production_staging = (
         str(_payload_field(payload, "acceptance_mode", "") or "")
         == FULL_INTERFACE_PROVIDER_PRODUCTION_MODE
@@ -5832,6 +5944,18 @@ def _write_parquet_dataset(
         / str((scope or {}).get("scope_hash") or "missing_scope")
     )
     write_root = staging_root if production_staging else storage_service.PARQUET_ROOT
+    if api == "trade_cal" and not production_staging:
+        df, merge_result = _trade_cal_canonical_merge_dataframe(df, root=write_root)
+        if df is None:
+            return {
+                "status": "failed",
+                "dataset": dataset,
+                "row_count": 0,
+                "path": str(parquet_store.dataset_path(root=write_root, name=dataset)),
+                **merge_result,
+            }
+    else:
+        df, merge_result = _factor_test_small_pool_merge_dataframe(api, df, payload)
     try:
         result = parquet_store.write_dataset(df, root=write_root, name=dataset)
     except Exception as exc:
