@@ -104,6 +104,25 @@ ATTESTATION_SCHEMA = "streamlit_retirement_packaged_runner_attestation.v7"
 APP_ATTESTATION_SCHEMA = "streamlit_retirement_packaged_app_attestation.v6"
 RUNNER_SCHEMA = "streamlit_retirement_packaged_runner.v4"
 SOURCE_SCHEMA = "streamlit_retirement_source_ast_contract.v5"
+TRUSTED_RUNNER_FAILURE_PREFIX = "packaged Tauri native adapter failed closed:"
+TRUSTED_RUNNER_SAFE_FAILURE_CODES = frozenset(
+    {
+        "qa_descriptor_invalid",
+        "input_frame_invalid",
+        "input_contract_invalid",
+        "challenge_contract_invalid",
+        "runner_parent_identity_invalid",
+        "package_identity_invalid",
+        "document_instrumentation_unavailable",
+        "viewport_measurement_invalid",
+        "route_navigation_invalid",
+        "observation_invalid",
+        "snapshot_invalid",
+        "network_seal_invalid",
+        "native_output_invalid",
+        "unknown",
+    }
+)
 EXPECTED_IMPORT_MANIFEST_DIGEST = "1810d7793af84f69b05e31861e2500a7a851f5e53172afae739c2d4af1bf3dd2"
 EXPECTED_ROUTES = (
     ("#home", "CommandCenterHome"),
@@ -1948,12 +1967,53 @@ def _execute_trusted_runner_session(
             if descriptor >= 0:
                 os.close(descriptor)
     if process is None or process.returncode != 0:
-        return None, int(process.pid if process is not None else 0), "trusted_runner_session_failed_closed"
+        return (
+            None,
+            int(process.pid if process is not None else 0),
+            _trusted_runner_failure_blocker(stdout),
+        )
     try:
         payload = json.loads(stdout)
     except Exception:
         return None, process.pid, "trusted_runner_session_output_invalid"
     return (dict(payload), process.pid, "") if isinstance(payload, Mapping) else (None, process.pid, "trusted_runner_session_output_invalid")
+
+
+def _trusted_runner_failure_blocker(stdout: str | None) -> str:
+    """Return only an allowlisted child category; never expose runner output."""
+
+    generic = "trusted_runner_session_failed_closed"
+    try:
+        payload = json.loads(stdout or "")
+    except Exception:
+        return generic
+    expected_fields = {
+        "schema_version",
+        "status",
+        "error_safe",
+        "writes_evidence",
+        "creates_trust_key",
+        "external_calls_triggered",
+        "does_not_execute_trades",
+    }
+    if not (
+        isinstance(payload, Mapping)
+        and set(payload) == expected_fields
+        and payload.get("schema_version") == RUNNER_SCHEMA
+        and payload.get("status") == "packaged_tauri_runner_failed_closed"
+        and payload.get("writes_evidence") is False
+        and payload.get("creates_trust_key") is False
+        and payload.get("external_calls_triggered") is False
+        and payload.get("does_not_execute_trades") is True
+    ):
+        return generic
+    error_safe = payload.get("error_safe")
+    if not isinstance(error_safe, str) or not error_safe.startswith(TRUSTED_RUNNER_FAILURE_PREFIX):
+        return generic
+    code = error_safe.removeprefix(TRUSTED_RUNNER_FAILURE_PREFIX)
+    if code not in TRUSTED_RUNNER_SAFE_FAILURE_CODES:
+        return generic
+    return f"{generic}:{code}"
 
 
 def _trust_paths(evidence_root: Path) -> tuple[Path, Path, Path]:

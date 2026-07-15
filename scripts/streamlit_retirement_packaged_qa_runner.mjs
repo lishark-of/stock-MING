@@ -1486,6 +1486,48 @@ function collectStream(stream, limit) {
   });
 }
 
+const NATIVE_FAILURE_CODE_RULES = [
+  ["qa inherited descriptor", "qa_descriptor_invalid"],
+  ["qa descriptors must be distinct", "qa_descriptor_invalid"],
+  ["native input frame", "input_frame_invalid"],
+  ["native input JSON", "input_contract_invalid"],
+  ["native input fields", "input_contract_invalid"],
+  ["native input schema", "input_contract_invalid"],
+  ["native nonce", "input_contract_invalid"],
+  ["native input trailing", "input_contract_invalid"],
+  ["challenge ", "challenge_contract_invalid"],
+  ["runner parent", "runner_parent_identity_invalid"],
+  ["runner process path", "runner_parent_identity_invalid"],
+  ["packaged executable identity", "package_identity_invalid"],
+  ["fixed packaged artifact", "package_identity_invalid"],
+  ["current executable unavailable", "package_identity_invalid"],
+  ["packaged QA document-start instrumentation", "document_instrumentation_unavailable"],
+  ["native viewport resize", "viewport_measurement_invalid"],
+  ["WebView actual inner viewport", "viewport_measurement_invalid"],
+  ["native inner-size measurement", "viewport_measurement_invalid"],
+  ["native inner size", "viewport_measurement_invalid"],
+  ["packaged route navigation", "route_navigation_invalid"],
+  ["WebView observation", "observation_invalid"],
+  ["observation ", "observation_invalid"],
+  ["packaged DOM observation", "observation_invalid"],
+  ["native snapshot", "snapshot_invalid"],
+  ["WKWebView native snapshot", "snapshot_invalid"],
+  ["network activity occurred", "network_seal_invalid"],
+  ["final global quiet seal", "network_seal_invalid"],
+  ["native output", "native_output_invalid"]
+];
+
+function nativeFailureCode(stderrBytes) {
+  const text = Buffer.isBuffer(stderrBytes) ? stderrBytes.toString("utf8") : "";
+  const marker = ["ltg10 packaged QA refused: ", "ltg10 packaged QA failed closed: "]
+    .map((prefix) => text.lastIndexOf(prefix))
+    .reduce((latest, index) => Math.max(latest, index), -1);
+  if (marker < 0) return "unknown";
+  const detail = text.slice(marker).split(/\r?\n/, 1)[0];
+  const rule = NATIVE_FAILURE_CODE_RULES.find(([fragment]) => detail.includes(fragment));
+  return rule ? rule[1] : "unknown";
+}
+
 function parseNativeOutput(buffer) {
   if (buffer.length < 8) throw new Error("native output frame missing");
   const jsonLength = Number(buffer.readBigUInt64BE(0));
@@ -1806,10 +1848,11 @@ async function trustedSession(args) {
     child.once("exit", (code, signal) => resolvePromise({ code, signal }));
   });
   const timeout = setTimeout(() => child.kill("SIGKILL"), 240_000);
-  const [{ code, signal }, nativeBuffer] = await Promise.all([exitPromise, outputPromise]);
+  const [{ code, signal }, nativeBuffer, nativeStderr] = await Promise.all([exitPromise, outputPromise, stderrPromise]);
   clearTimeout(timeout);
-  await stderrPromise;
-  if (code !== 0 || signal) throw new Error("packaged Tauri native adapter failed closed");
+  if (code !== 0 || signal || nativeBuffer.length < 8) {
+    throw new Error(`packaged Tauri native adapter failed closed:${nativeFailureCode(nativeStderr)}`);
+  }
   const { output, screenshots } = parseNativeOutput(nativeBuffer);
   const { observedCanvasCount } = validateNativeMatrix(
     output, screenshots, challenge, nonce, child.pid, packagePaths, runnerPath

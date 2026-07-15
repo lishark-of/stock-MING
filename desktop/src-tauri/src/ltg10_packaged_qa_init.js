@@ -1,4 +1,4 @@
-(() => {
+;(() => {
   "use strict";
   if (Object.prototype.hasOwnProperty.call(window, "__STOCK_MING_LTG10_QA__")) return;
 

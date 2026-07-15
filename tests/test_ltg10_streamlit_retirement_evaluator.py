@@ -930,6 +930,44 @@ process.stdout.write(JSON.stringify(payload));
         self.assertEqual(pid, 0)
         self.assertEqual(blocker, "trusted_runner_session_executable_identity_invalid")
 
+    def test_runner_failure_detail_accepts_only_fixed_safe_native_category(self):
+        payload = {
+            "schema_version": retirement.RUNNER_SCHEMA,
+            "status": "packaged_tauri_runner_failed_closed",
+            "error_safe": (
+                retirement.TRUSTED_RUNNER_FAILURE_PREFIX
+                + "document_instrumentation_unavailable"
+            ),
+            "writes_evidence": False,
+            "creates_trust_key": False,
+            "external_calls_triggered": False,
+            "does_not_execute_trades": True,
+        }
+        self.assertEqual(
+            retirement._trusted_runner_failure_blocker(json.dumps(payload)),
+            "trusted_runner_session_failed_closed:document_instrumentation_unavailable",
+        )
+        self.assertEqual(
+            retirement._trusted_runner_failure_blocker(
+                json.dumps({**payload, "error_safe": "private path /tmp/session secret nonce"})
+            ),
+            "trusted_runner_session_failed_closed",
+        )
+        self.assertEqual(
+            retirement._trusted_runner_failure_blocker(
+                json.dumps({**payload, "error_safe": retirement.TRUSTED_RUNNER_FAILURE_PREFIX + "unlisted"})
+            ),
+            "trusted_runner_session_failed_closed",
+        )
+        self.assertEqual(
+            retirement._trusted_runner_failure_blocker(json.dumps({**payload, "extra": "field"})),
+            "trusted_runner_session_failed_closed",
+        )
+        self.assertEqual(
+            retirement._trusted_runner_failure_blocker("not-json"),
+            "trusted_runner_session_failed_closed",
+        )
+
     def test_symlinked_private_session_parent_is_rejected_without_external_write(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "evidence"
@@ -1021,8 +1059,14 @@ process.stdout.write(JSON.stringify(payload));
         for token in ("fetch", "XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "Worker", "serviceWorker", "ServiceWorkerContainer", "PerformanceObserver"):
             self.assertIn(token, init)
         self.assertIn("append_invoke_initialization_script", main)
+        self.assertTrue(
+            init.lstrip().startswith(";(() => {"),
+            "Tauri appends this source directly after its invoke IIFE; an explicit separator is required",
+        )
         self.assertIn("os.pipe()", (ROOT / "server/services/streamlit_retirement_evidence_service.py").read_text())
         self.assertIn("WKWebView.takeSnapshotWithConfiguration.afterScreenUpdates", runner)
+        self.assertIn("nativeBuffer.length < 8", runner)
+        self.assertIn("nativeFailureCode(nativeStderr)", runner)
         for forbidden in ("webdriverio", "wdio", "open_devtools", "devtools", "Safari inspector"):
             self.assertNotIn(forbidden, f"{native}\n{init}\n{runner}")
         self.assertNotIn("std::env::var", native)
