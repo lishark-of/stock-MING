@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from server.services import full_market_worker_service
+from server.services import full_market_worker_service, release_promotion_service
 from .tushare_production_store import validate_tushare_full_market_production_version
 from .tauri_package_verifier import validate_tauri_production_package
 
@@ -1266,6 +1266,10 @@ def _build_version_rows(
 
     release_receipt = _read_json(evidence_root / "release_gate" / "release_gate_review_receipt.json")
     remote_receipt = _read_json(evidence_root / "release_gate" / "remote_ci_review_receipt.json")
+    release_promotion = release_promotion_service.validate_production_release_promotion(
+        evidence_root,
+        expected_head_full=expected_head_full,
+    )
     full_market_worker_fact = full_market_worker_service.validate_full_market_worker_production_fact(
         evidence_root
     )
@@ -1319,10 +1323,7 @@ def _build_version_rows(
             and remote_receipt.get("artifact_digest_verified") is True
         ),
         "release_promotion_current_head": bool(
-            isinstance(release_receipt, Mapping)
-            and release_receipt.get("release_gate_complete") is True
-            and release_receipt.get("release_review_complete") is True
-            and release_receipt.get("production_release_complete") is True
+            release_promotion.get("release_promotion_current_head") is True
         ),
         "qmt_research_isolation": _qmt_isolation_ready(qmt),
     }
@@ -1343,6 +1344,27 @@ def _build_version_rows(
             _SAFE_FILE_FIELDS,
             observed=isinstance(remote_receipt, Mapping),
         ),
+        "release_promotion_summary": {
+            key: release_promotion.get(key)
+            for key in (
+                "schema_version",
+                "status",
+                "head_full",
+                "journal_present",
+                "event_id",
+                "release_promotion_current_head",
+                "release_gate_complete",
+                "release_review_complete",
+                "production_release_complete",
+                "blockers",
+                "read_only",
+                "writes_storage",
+                "external_calls_triggered",
+                "does_not_execute_trades",
+                "does_not_modify_strategy_action",
+                "contains_secret",
+            )
+        },
         "tauri_package_verification": {
             key: tauri_package_verification.get(key)
             for key in (
@@ -1493,6 +1515,7 @@ def build_v1_closeout_evaluation(
         "governed_model_runtime_summary": context["governed_model_summary"],
         "release_review_summary": context["release_receipt_summary"],
         "remote_ci_review_summary": context["remote_receipt_summary"],
+        "production_release_promotion_summary": context["release_promotion_summary"],
         "tushare_production_version": context["tushare_production_version"],
         "cache_only": True,
         "read_only": True,
