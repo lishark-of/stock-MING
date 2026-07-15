@@ -130,6 +130,13 @@ def _call_pro(api, **params):
         if pd is not None and not isinstance(data, pd.DataFrame):
             return _result(api, error=f"{api} 返回类型异常：{type(data).__name__}")
         call_id = uuid.uuid4().hex
+        try:
+            from tushare.pro.client import DataApi
+        except Exception:
+            DataApi = None
+        official_client_identity_verified = bool(
+            DataApi is not None and type(pro) is DataApi
+        )
         _TRANSPORT_RECEIPTS[call_id] = {
             "schema_version": TRANSPORT_RECEIPT_VERSION,
             "call_id": call_id,
@@ -137,6 +144,7 @@ def _call_pro(api, **params):
             "provider": SOURCE_NAME,
             "sdk_method_invoked": True,
             "provider_response_received": True,
+            "official_client_identity_verified": official_client_identity_verified,
             "issued_at": _now(),
         }
         return _result(api, ok=True, data=data, transport_call_id=call_id)
@@ -172,6 +180,30 @@ def get_index_weight(index_code=None, trade_date=None, start_date=None, end_date
         trade_date=_normalize_date(trade_date),
         start_date=_normalize_date(start_date),
         end_date=_normalize_date(end_date),
+    )
+
+
+def get_index_member_all(
+    l1_code=None,
+    l2_code=None,
+    l3_code=None,
+    ts_code=None,
+    is_new=None,
+):
+    """Read SW industry membership without inventing date-range parameters.
+
+    The provider documents ``in_date`` and ``out_date`` as output fields but
+    does not document whether ``out_date`` is an inclusive or exclusive
+    endpoint.  This adapter therefore returns the source rows unchanged; PIT
+    interval interpretation belongs to the audited Factor task.
+    """
+    return _call_pro(
+        "index_member_all",
+        l1_code=(l1_code or "").strip().upper() or None,
+        l2_code=(l2_code or "").strip().upper() or None,
+        l3_code=(l3_code or "").strip().upper() or None,
+        ts_code=_normalize_ts_code(ts_code) or None,
+        is_new=(str(is_new or "").strip().upper() or None),
     )
 
 

@@ -6024,12 +6024,21 @@ def _consume_runtime_transport_evidence(adapter_module: Any, result: Mapping[str
             for receipt in receipts
         )
     )
+    official_client_identity_verified = bool(
+        verified
+        and receipts
+        and all(
+            receipt.get("official_client_identity_verified") is True
+            for receipt in receipts
+        )
+    )
     return {
         "schema_version": "tushare_runtime_transport_consumption.v1",
         "runtime_adapter_module_identity_verified": module_identity_verified,
         "transport_receipt_count": len(receipts),
         "transport_call_count": len(call_ids),
         "provider_transport_verified": verified,
+        "official_client_identity_verified": official_client_identity_verified,
         "provider": "Tushare" if verified else "unverified",
         "api": api,
         "transport_receipt_digest": _canonical_sha256(receipts) if verified else "",

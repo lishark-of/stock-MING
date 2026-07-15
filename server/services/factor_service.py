@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import hmac
 import json
 import math
 import os
+import secrets
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -271,6 +274,47 @@ FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED = (
 )
 FACTOR_TEST_INDUSTRY_SOURCE_INDEX_MEMBER_ALL_V1 = "tushare_index_member_all.v1"
 FACTOR_TEST_INDUSTRY_MIN_GROUP_OBSERVATIONS = 2
+FACTOR_TEST_INDUSTRY_PROVIDER_TASK_TYPE = "run_factor_test_provider_industry_membership"
+FACTOR_TEST_INDUSTRY_PROVIDER_ROUTE = "POST /api/factor-quant/provider-industry-membership"
+FACTOR_TEST_INDUSTRY_PROVIDER_API = "index_member_all"
+FACTOR_TEST_INDUSTRY_PROVIDER_DOC_URL = "https://tushare.pro/document/2?doc_id=335"
+FACTOR_TEST_INDUSTRY_PROVIDER_IS_NEW_VALUES = ("Y", "N")
+FACTOR_TEST_INDUSTRY_PROVIDER_OUTPUT_FIELDS = (
+    "l1_code",
+    "l1_name",
+    "l2_code",
+    "l2_name",
+    "l3_code",
+    "l3_name",
+    "ts_code",
+    "name",
+    "in_date",
+    "out_date",
+    "is_new",
+)
+FACTOR_TEST_INDUSTRY_PROVIDER_MAX_CALLS = (
+    5 * len(FACTOR_TEST_INDUSTRY_PROVIDER_IS_NEW_VALUES)
+)
+FACTOR_TEST_INDUSTRY_PROVIDER_EVENT_SCHEMA_VERSION = (
+    "factor_test_provider_industry_membership_event.v2"
+)
+FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY = (
+    "command_center_factor_industry_provider_current"
+)
+FACTOR_TEST_INDUSTRY_PROVIDER_LAST_GOOD_PACKET_KEY = (
+    "command_center_factor_industry_provider_last_good"
+)
+FACTOR_TEST_INDUSTRY_PROVIDER_EVENT_PACKET_PREFIX = (
+    "command_center_factor_industry_provider_event:"
+)
+FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_DIRECTORY_NAME = (
+    ".factor_industry_provider_trust"
+)
+FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_KEY_NAME = "writer.key"
+FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_STATE_NAME = "writer.state"
+FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_STATE_SCHEMA_VERSION = (
+    "factor_test_provider_industry_membership_trust_state.v1"
+)
 FACTOR_TEST_PROVIDER_SMALL_POOL_PIT_BIAS_SCHEMA_VERSION = (
     "factor_test_provider_small_pool_pit_bias_audit.v1"
 )
@@ -461,6 +505,749 @@ def _merge_factor_test_small_pool_task_state(packet: dict[str, Any]) -> dict[str
     return merged
 
 
+def _factor_test_industry_evidence_digest(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _factor_test_industry_trusted_mac(secret: bytes, value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hmac.new(secret, encoded, hashlib.sha256).hexdigest()
+
+
+def _factor_test_industry_trust_paths(meta_path: Path) -> tuple[Path, Path, Path]:
+    directory = Path(meta_path).resolve().parent / FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_DIRECTORY_NAME
+    return (
+        directory,
+        directory / FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_KEY_NAME,
+        directory / FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_STATE_NAME,
+    )
+
+
+def _factor_test_industry_owned_by_current_user(metadata: os.stat_result) -> bool:
+    getuid = getattr(os, "getuid", None)
+    return getuid is None or metadata.st_uid == getuid()
+
+
+def _load_factor_test_industry_trusted_secret(
+    meta_path: Path,
+) -> tuple[bytes | None, str]:
+    directory, key_path, state_path = _factor_test_industry_trust_paths(meta_path)
+    try:
+        directory_metadata = directory.lstat()
+        key_metadata = key_path.lstat()
+    except FileNotFoundError:
+        return None, "industry_provider_trust_key_missing"
+    except OSError:
+        return None, "industry_provider_trust_key_corrupt"
+    if not (
+        stat.S_ISDIR(directory_metadata.st_mode)
+        and not stat.S_ISLNK(directory_metadata.st_mode)
+        and stat.S_IMODE(directory_metadata.st_mode) == 0o700
+        and _factor_test_industry_owned_by_current_user(directory_metadata)
+        and stat.S_ISREG(key_metadata.st_mode)
+        and not stat.S_ISLNK(key_metadata.st_mode)
+        and stat.S_IMODE(key_metadata.st_mode) == 0o600
+        and _factor_test_industry_owned_by_current_user(key_metadata)
+    ):
+        return None, "industry_provider_trust_permissions_invalid"
+    try:
+        entries = {entry.name for entry in directory.iterdir()}
+    except OSError:
+        return None, "industry_provider_trust_key_corrupt"
+    if FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_KEY_NAME not in entries or not entries.issubset(
+        {
+            FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_KEY_NAME,
+            FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_STATE_NAME,
+        }
+    ):
+        return None, "industry_provider_trust_key_corrupt"
+    flags = os.O_RDONLY | int(getattr(os, "O_CLOEXEC", 0)) | int(
+        getattr(os, "O_NOFOLLOW", 0)
+    )
+    descriptor = -1
+    try:
+        descriptor = os.open(key_path, flags)
+        opened = os.fstat(descriptor)
+        if not (
+            stat.S_ISREG(opened.st_mode)
+            and opened.st_dev == key_metadata.st_dev
+            and opened.st_ino == key_metadata.st_ino
+            and stat.S_IMODE(opened.st_mode) == 0o600
+            and _factor_test_industry_owned_by_current_user(opened)
+        ):
+            return None, "industry_provider_trust_permissions_invalid"
+        secret = os.read(descriptor, 33)
+    except OSError:
+        return None, "industry_provider_trust_key_corrupt"
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if len(secret) != 32:
+        return None, "industry_provider_trust_key_corrupt"
+    return secret, ""
+
+
+def _create_factor_test_industry_trusted_secret(
+    meta_path: Path,
+) -> tuple[bytes | None, str]:
+    directory, key_path, _state_path = _factor_test_industry_trust_paths(meta_path)
+    try:
+        directory.mkdir(mode=0o700, exist_ok=False)
+    except FileExistsError:
+        secret, blocker = _load_factor_test_industry_trusted_secret(meta_path)
+        if secret is not None or blocker != "industry_provider_trust_key_missing":
+            return secret, blocker
+    except OSError:
+        return None, "industry_provider_trust_key_corrupt"
+    try:
+        metadata = directory.lstat()
+        if not (
+            stat.S_ISDIR(metadata.st_mode)
+            and not stat.S_ISLNK(metadata.st_mode)
+            and stat.S_IMODE(metadata.st_mode) == 0o700
+            and _factor_test_industry_owned_by_current_user(metadata)
+        ):
+            return None, "industry_provider_trust_permissions_invalid"
+        if any(directory.iterdir()):
+            return None, "industry_provider_trust_key_corrupt"
+    except OSError:
+        return None, "industry_provider_trust_key_corrupt"
+    temporary = directory / f".{FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_KEY_NAME}.{secrets.token_hex(8)}.tmp"
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | int(getattr(os, "O_CLOEXEC", 0))
+            | int(getattr(os, "O_NOFOLLOW", 0)),
+            0o600,
+        )
+        secret = secrets.token_bytes(32)
+        os.write(descriptor, secret)
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.link(temporary, key_path, follow_symlinks=False)
+        temporary.unlink()
+        directory_descriptor = os.open(
+            directory,
+            os.O_RDONLY | int(getattr(os, "O_DIRECTORY", 0)),
+        )
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except FileExistsError:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+        return _load_factor_test_industry_trusted_secret(meta_path)
+    except OSError:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+        return None, "industry_provider_trust_key_corrupt"
+    return _load_factor_test_industry_trusted_secret(meta_path)
+
+
+def _factor_test_industry_state_material(
+    sequence_no: int,
+    event_digest: str,
+    event_mac: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_STATE_SCHEMA_VERSION,
+        "sequence_no": sequence_no,
+        "event_digest": event_digest,
+        "event_mac": event_mac,
+    }
+
+
+def _load_factor_test_industry_trusted_state(
+    meta_path: Path,
+    secret: bytes,
+) -> tuple[dict[str, Any] | None, str]:
+    _directory, _key_path, state_path = _factor_test_industry_trust_paths(meta_path)
+    try:
+        metadata = state_path.lstat()
+    except FileNotFoundError:
+        return None, "industry_provider_trust_state_missing"
+    except OSError:
+        return None, "industry_provider_trust_state_corrupt"
+    if not (
+        stat.S_ISREG(metadata.st_mode)
+        and not stat.S_ISLNK(metadata.st_mode)
+        and stat.S_IMODE(metadata.st_mode) == 0o600
+        and _factor_test_industry_owned_by_current_user(metadata)
+    ):
+        return None, "industry_provider_trust_state_permissions_invalid"
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            state_path,
+            os.O_RDONLY
+            | int(getattr(os, "O_CLOEXEC", 0))
+            | int(getattr(os, "O_NOFOLLOW", 0)),
+        )
+        opened = os.fstat(descriptor)
+        if not (
+            stat.S_ISREG(opened.st_mode)
+            and opened.st_dev == metadata.st_dev
+            and opened.st_ino == metadata.st_ino
+            and stat.S_IMODE(opened.st_mode) == 0o600
+            and _factor_test_industry_owned_by_current_user(opened)
+        ):
+            return None, "industry_provider_trust_state_permissions_invalid"
+        payload = os.read(descriptor, 4097)
+        if not payload or len(payload) > 4096:
+            return None, "industry_provider_trust_state_corrupt"
+        state = json.loads(payload.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None, "industry_provider_trust_state_corrupt"
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if not isinstance(state, dict) or set(state) != {
+        "schema_version",
+        "sequence_no",
+        "event_digest",
+        "event_mac",
+        "state_mac",
+    }:
+        return None, "industry_provider_trust_state_corrupt"
+    material = _factor_test_industry_state_material(
+        int(state.get("sequence_no") or 0),
+        str(state.get("event_digest") or ""),
+        str(state.get("event_mac") or ""),
+    )
+    if not (
+        material["schema_version"] == state.get("schema_version")
+        and material["sequence_no"] > 0
+        and len(material["event_digest"]) == 64
+        and len(material["event_mac"]) == 64
+        and hmac.compare_digest(
+            str(state.get("state_mac") or ""),
+            _factor_test_industry_trusted_mac(secret, material),
+        )
+    ):
+        return None, "industry_provider_trust_state_corrupt"
+    return state, ""
+
+
+def _write_factor_test_industry_trusted_state(
+    meta_path: Path,
+    secret: bytes,
+    *,
+    sequence_no: int,
+    event_digest: str,
+    event_mac: str,
+) -> str:
+    directory, _key_path, state_path = _factor_test_industry_trust_paths(meta_path)
+    material = _factor_test_industry_state_material(sequence_no, event_digest, event_mac)
+    payload = {
+        **material,
+        "state_mac": _factor_test_industry_trusted_mac(secret, material),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    temporary = directory / f".{FACTOR_TEST_INDUSTRY_PROVIDER_TRUST_STATE_NAME}.{secrets.token_hex(8)}.tmp"
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | int(getattr(os, "O_CLOEXEC", 0))
+            | int(getattr(os, "O_NOFOLLOW", 0)),
+            0o600,
+        )
+        os.write(descriptor, encoded)
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(temporary, state_path)
+        directory_descriptor = os.open(
+            directory,
+            os.O_RDONLY | int(getattr(os, "O_DIRECTORY", 0)),
+        )
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except OSError:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+        return "industry_provider_trust_state_corrupt"
+    loaded, blocker = _load_factor_test_industry_trusted_state(meta_path, secret)
+    return "" if loaded is not None and not blocker else blocker or "industry_provider_trust_state_corrupt"
+
+
+def _factor_test_provider_industry_membership_event(
+    receipt: dict[str, Any],
+    rows: list[dict[str, Any]],
+    ledger: list[dict[str, Any]],
+) -> dict[str, Any]:
+    receipt_projection = {
+        key: value for key, value in dict(receipt).items() if key != "call_ledger"
+    }
+    exact_rows = [dict(row) for row in rows if isinstance(row, dict)]
+    exact_ledger = [dict(row) for row in ledger if isinstance(row, dict)]
+    raw_rows_digest = _factor_test_industry_evidence_digest(exact_rows)
+    call_ledger_digest = _factor_test_industry_evidence_digest(exact_ledger)
+    transport_receipt_digests = [
+        str(row.get("provider_transport_receipt_digest") or "")
+        for row in exact_ledger
+    ]
+    transport_receipt_set_digest = _factor_test_industry_evidence_digest(
+        transport_receipt_digests
+    )
+    receipt_projection.update(
+        {
+            "provider_raw_rows_digest": raw_rows_digest,
+            "provider_raw_row_count": len(exact_rows),
+            "provider_call_ledger_digest": call_ledger_digest,
+            "provider_transport_receipt_set_digest": transport_receipt_set_digest,
+        }
+    )
+    event = {
+        "schema_version": FACTOR_TEST_INDUSTRY_PROVIDER_EVENT_SCHEMA_VERSION,
+        "status": str(receipt_projection.get("status") or ""),
+        "created_at": str(receipt_projection.get("created_at") or _now_iso()),
+        "task_id": str(receipt_projection.get("task_id") or ""),
+        "industry_scope_hash": str(receipt_projection.get("industry_scope_hash") or ""),
+        "source_acceptance_scope_hash": str(
+            receipt_projection.get("source_acceptance_scope_hash") or ""
+        ),
+        "provider_api": FACTOR_TEST_INDUSTRY_PROVIDER_API,
+        "authoritative_success": bool(
+            receipt_projection.get("provider_call_ledger_evidence_done") is True
+            and receipt_projection.get("provider_industry_membership_raw_rows_collected") is True
+        ),
+        "raw_row_count": len(exact_rows),
+        "raw_rows_digest": raw_rows_digest,
+        "call_ledger_count": len(exact_ledger),
+        "call_ledger_digest": call_ledger_digest,
+        "transport_receipt_set_digest": transport_receipt_set_digest,
+        "receipt": receipt_projection,
+        "raw_rows": exact_rows,
+        "call_ledger": exact_ledger,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    event["event_digest"] = _factor_test_industry_evidence_digest(event)
+    return event
+
+
+def _factor_test_provider_industry_membership_event_valid(
+    event: Any,
+    *,
+    store: SQLiteMetaStore | None = None,
+    require_append_only_event: bool = False,
+    trusted_secret: bytes | None = None,
+    require_trusted_auth: bool = False,
+) -> tuple[bool, list[str]]:
+    blockers: list[str] = []
+    if not isinstance(event, dict):
+        return False, ["event_missing_or_not_object"]
+    if event.get("schema_version") != FACTOR_TEST_INDUSTRY_PROVIDER_EVENT_SCHEMA_VERSION:
+        blockers.append("event_schema_mismatch")
+    digest = str(event.get("event_digest") or "")
+    digest_material = {
+        key: value
+        for key, value in event.items()
+        if key not in {"event_digest", "sequence_no", "previous_event_mac", "event_mac"}
+    }
+    if not digest or digest != _factor_test_industry_evidence_digest(digest_material):
+        blockers.append("event_digest_mismatch")
+    task_id = str(event.get("task_id") or "")
+    industry_scope_hash = str(event.get("industry_scope_hash") or "")
+    source_scope_hash = str(event.get("source_acceptance_scope_hash") or "")
+    if not task_id:
+        blockers.append("task_id_missing")
+    if len(industry_scope_hash) != 64:
+        blockers.append("industry_scope_hash_invalid")
+    if len(source_scope_hash) != 64:
+        blockers.append("source_acceptance_scope_hash_invalid")
+    rows = _list(event.get("raw_rows"))
+    ledger = _list(event.get("call_ledger"))
+    if int(event.get("raw_row_count") or 0) != len(rows):
+        blockers.append("raw_row_count_mismatch")
+    if str(event.get("raw_rows_digest") or "") != _factor_test_industry_evidence_digest(rows):
+        blockers.append("raw_rows_digest_mismatch")
+    if int(event.get("call_ledger_count") or 0) != len(ledger):
+        blockers.append("call_ledger_count_mismatch")
+    if str(event.get("call_ledger_digest") or "") != _factor_test_industry_evidence_digest(ledger):
+        blockers.append("call_ledger_digest_mismatch")
+    transport_digests = [
+        str(row.get("provider_transport_receipt_digest") or "")
+        for row in ledger
+        if isinstance(row, dict)
+    ]
+    if str(event.get("transport_receipt_set_digest") or "") != (
+        _factor_test_industry_evidence_digest(transport_digests)
+    ):
+        blockers.append("transport_receipt_set_digest_mismatch")
+    receipt = _dict(event.get("receipt"))
+    receipt_bindings = {
+        "task_id": task_id,
+        "industry_scope_hash": industry_scope_hash,
+        "source_acceptance_scope_hash": source_scope_hash,
+        "provider_raw_rows_digest": str(event.get("raw_rows_digest") or ""),
+        "provider_call_ledger_digest": str(event.get("call_ledger_digest") or ""),
+        "provider_transport_receipt_set_digest": str(
+            event.get("transport_receipt_set_digest") or ""
+        ),
+    }
+    for key, expected in receipt_bindings.items():
+        if str(receipt.get(key) or "") != expected:
+            blockers.append(f"receipt_{key}_binding_mismatch")
+    if int(receipt.get("provider_raw_row_count") or 0) != len(rows):
+        blockers.append("receipt_raw_row_count_mismatch")
+    if event.get("authoritative_success") is True:
+        if not rows or len(ledger) != FACTOR_TEST_INDUSTRY_PROVIDER_MAX_CALLS:
+            blockers.append("authoritative_evidence_shape_incomplete")
+        if receipt.get("provider_duplicate_raw_row_count") not in (0, None):
+            blockers.append("authoritative_duplicate_rows_blocked")
+        if not all(
+            isinstance(row, dict)
+            and row.get("api") == FACTOR_TEST_INDUSTRY_PROVIDER_API
+            and row.get("task_id") == task_id
+            and row.get("scope_hash") == industry_scope_hash
+            and row.get("call_status") == "success"
+            and row.get("provider_transport_verified") is True
+            and bool(row.get("provider_transport_receipt_digest"))
+            and row.get("tushare_called") is True
+            for row in ledger
+        ):
+            blockers.append("authoritative_transport_or_scope_binding_invalid")
+        if not (
+            receipt.get("provider_call_ledger_evidence_done") is True
+            and receipt.get("provider_industry_membership_raw_rows_collected") is True
+        ):
+            blockers.append("authoritative_receipt_not_success")
+    if require_trusted_auth:
+        sequence_no = event.get("sequence_no")
+        previous_event_mac = str(event.get("previous_event_mac") or "")
+        event_mac = str(event.get("event_mac") or "")
+        auth_material = {
+            key: value for key, value in event.items() if key != "event_mac"
+        }
+        if not (
+            trusted_secret is not None
+            and type(sequence_no) is int
+            and sequence_no > 0
+            and len(event_mac) == 64
+            and (
+                (sequence_no == 1 and not previous_event_mac)
+                or (sequence_no > 1 and len(previous_event_mac) == 64)
+            )
+            and hmac.compare_digest(
+                event_mac,
+                _factor_test_industry_trusted_mac(trusted_secret, auth_material),
+            )
+        ):
+            blockers.append("trusted_event_authentication_invalid")
+    if require_append_only_event:
+        if store is None or not digest:
+            blockers.append("append_only_event_store_unavailable")
+        else:
+            persisted = store.read_packet(
+                f"{FACTOR_TEST_INDUSTRY_PROVIDER_EVENT_PACKET_PREFIX}{digest}"
+            )
+            if persisted != event:
+                blockers.append("append_only_event_readback_mismatch")
+    return not blockers, blockers
+
+
+def _read_factor_test_provider_industry_membership_authoritative_state(
+    meta_path: Path = SQLITE_META_PATH,
+) -> dict[str, Any]:
+    if not Path(meta_path).exists():
+        return {
+            "status": "authoritative_provider_industry_membership_missing",
+            "current_valid": False,
+            "last_good_valid": False,
+            "current_blockers": ["current_packet_missing"],
+            "last_good_blockers": ["last_good_packet_missing"],
+        }
+    secret, secret_blocker = _load_factor_test_industry_trusted_secret(meta_path)
+    if secret is None:
+        return {
+            "status": "authoritative_provider_industry_membership_missing_or_invalid",
+            "current_valid": False,
+            "last_good_valid": False,
+            "current_blockers": [secret_blocker or "industry_provider_trust_key_missing"],
+            "last_good_blockers": [secret_blocker or "industry_provider_trust_key_missing"],
+        }
+    trusted_state, state_blocker = _load_factor_test_industry_trusted_state(
+        meta_path,
+        secret,
+    )
+    store = SQLiteMetaStore(meta_path, read_only=True)
+    current = store.read_packet(FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY)
+    last_good = store.read_packet(FACTOR_TEST_INDUSTRY_PROVIDER_LAST_GOOD_PACKET_KEY)
+    current_valid, current_blockers = _factor_test_provider_industry_membership_event_valid(
+        current,
+        store=store,
+        require_append_only_event=True,
+        trusted_secret=secret,
+        require_trusted_auth=True,
+    )
+    last_good_valid, last_good_blockers = _factor_test_provider_industry_membership_event_valid(
+        last_good,
+        store=store,
+        require_append_only_event=True,
+        trusted_secret=secret,
+        require_trusted_auth=True,
+    )
+    if current_valid:
+        current_semantic_blockers = (
+            _factor_test_provider_industry_membership_authority_blockers(
+                _dict(current.get("receipt")),
+                [dict(row) for row in _list(current.get("raw_rows")) if isinstance(row, dict)],
+                [dict(row) for row in _list(current.get("call_ledger")) if isinstance(row, dict)],
+                meta_path=meta_path,
+            )
+        )
+        if current_semantic_blockers:
+            current_valid = False
+            current_blockers.extend(current_semantic_blockers)
+    if last_good_valid:
+        last_good_semantic_blockers = (
+            _factor_test_provider_industry_membership_authority_blockers(
+                _dict(last_good.get("receipt")),
+                [dict(row) for row in _list(last_good.get("raw_rows")) if isinstance(row, dict)],
+                [dict(row) for row in _list(last_good.get("call_ledger")) if isinstance(row, dict)],
+                meta_path=meta_path,
+            )
+        )
+        if last_good_semantic_blockers:
+            last_good_valid = False
+            last_good_blockers.extend(last_good_semantic_blockers)
+    if trusted_state is None:
+        current_valid = False
+        last_good_valid = False
+        current_blockers.append(state_blocker or "industry_provider_trust_state_missing")
+        last_good_blockers.append(state_blocker or "industry_provider_trust_state_missing")
+    elif current_valid:
+        sequence_no = int(current.get("sequence_no") or 0)
+        current_mac = str(current.get("event_mac") or "")
+        previous_mac = str(current.get("previous_event_mac") or "")
+        if not (
+            trusted_state.get("sequence_no") == sequence_no
+            and trusted_state.get("event_digest") == current.get("event_digest")
+            and hmac.compare_digest(str(trusted_state.get("event_mac") or ""), current_mac)
+        ):
+            current_valid = False
+            current_blockers.append("trusted_state_current_anchor_mismatch")
+        if sequence_no == 1:
+            if last_good != current or previous_mac:
+                last_good_valid = False
+                last_good_blockers.append("first_sequence_last_good_or_chain_mismatch")
+        elif not (
+            last_good_valid
+            and int(last_good.get("sequence_no") or 0) == sequence_no - 1
+            and hmac.compare_digest(str(last_good.get("event_mac") or ""), previous_mac)
+        ):
+            last_good_valid = False
+            last_good_blockers.append("last_good_previous_mac_chain_mismatch")
+    return {
+        "status": (
+            "authoritative_provider_industry_membership_current_verified"
+            if current_valid
+            else "authoritative_provider_industry_membership_missing_or_invalid"
+        ),
+        "current_valid": current_valid,
+        "last_good_valid": last_good_valid,
+        "current_blockers": current_blockers,
+        "last_good_blockers": last_good_blockers,
+        "current": current if current_valid else None,
+        "last_good": last_good if last_good_valid else None,
+    }
+
+
+def _persist_factor_test_provider_industry_membership_event(
+    receipt: dict[str, Any],
+    rows: list[dict[str, Any]],
+    ledger: list[dict[str, Any]],
+    *,
+    meta_path: Path = SQLITE_META_PATH,
+    trusted_secret: bytes | None = None,
+) -> dict[str, Any]:
+    event = _factor_test_provider_industry_membership_event(receipt, rows, ledger)
+    valid, blockers = _factor_test_provider_industry_membership_event_valid(event)
+    if not valid:
+        raise RuntimeError(f"industry_provider_event_invalid:{','.join(blockers)}")
+    store = SQLiteMetaStore(meta_path)
+    previous_current: dict[str, Any] | None = None
+    if event.get("authoritative_success") is True:
+        authority_blockers = _factor_test_provider_industry_membership_authority_blockers(
+            receipt,
+            rows,
+            ledger,
+            meta_path=meta_path,
+        )
+        if authority_blockers:
+            raise RuntimeError(
+                f"industry_provider_authority_validation_failed:{','.join(authority_blockers)}"
+            )
+        disk_secret, secret_blocker = _load_factor_test_industry_trusted_secret(meta_path)
+        if not (
+            trusted_secret is not None
+            and disk_secret is not None
+            and hmac.compare_digest(trusted_secret, disk_secret)
+        ):
+            raise RuntimeError(
+                secret_blocker or "industry_provider_trusted_secret_missing_or_mismatch"
+            )
+        previous_raw = store.read_packet(FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY)
+        if previous_raw is not None:
+            previous_state = _read_factor_test_provider_industry_membership_authoritative_state(
+                meta_path
+            )
+            previous_current = _dict(previous_state.get("current"))
+            if previous_state.get("current_valid") is not True or not previous_current:
+                raise RuntimeError("industry_provider_previous_current_or_anchor_invalid")
+        else:
+            existing_state, existing_state_blocker = (
+                _load_factor_test_industry_trusted_state(meta_path, trusted_secret)
+            )
+            if existing_state is not None:
+                raise RuntimeError("industry_provider_trusted_state_exists_without_current")
+            if existing_state_blocker not in {
+                "",
+                "industry_provider_trust_state_missing",
+            }:
+                raise RuntimeError(existing_state_blocker)
+        sequence_no = int(previous_current.get("sequence_no") or 0) + 1 if previous_current else 1
+        previous_event_mac = (
+            str(previous_current.get("event_mac") or "")
+            if previous_current is not None
+            else ""
+        )
+        event["sequence_no"] = sequence_no
+        event["previous_event_mac"] = previous_event_mac
+        event["event_mac"] = _factor_test_industry_trusted_mac(
+            trusted_secret,
+            {key: value for key, value in event.items() if key != "event_mac"},
+        )
+        trusted_valid, trusted_blockers = _factor_test_provider_industry_membership_event_valid(
+            event,
+            trusted_secret=trusted_secret,
+            require_trusted_auth=True,
+        )
+        if not trusted_valid:
+            raise RuntimeError(
+                f"industry_provider_trusted_event_invalid:{','.join(trusted_blockers)}"
+            )
+    event_key = f"{FACTOR_TEST_INDUSTRY_PROVIDER_EVENT_PACKET_PREFIX}{event['event_digest']}"
+    existing_event = store.read_packet(event_key)
+    if existing_event is not None and existing_event != event:
+        raise RuntimeError("industry_provider_append_only_event_collision")
+    if existing_event is None:
+        store.promote_packet_atomic(event_key, event)
+    if store.read_packet(event_key) != event:
+        raise RuntimeError("industry_provider_append_only_event_readback_mismatch")
+    promoted = False
+    if event.get("authoritative_success") is True:
+        success_valid, success_blockers = _factor_test_provider_industry_membership_event_valid(
+            event,
+            store=store,
+            require_append_only_event=True,
+            trusted_secret=trusted_secret,
+            require_trusted_auth=True,
+        )
+        if not success_valid:
+            raise RuntimeError(
+                f"industry_provider_authoritative_event_invalid:{','.join(success_blockers)}"
+            )
+        last_good = previous_current if previous_current is not None else event
+        store.promote_packet_pair_atomic(
+            FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY,
+            event,
+            FACTOR_TEST_INDUSTRY_PROVIDER_LAST_GOOD_PACKET_KEY,
+            last_good,
+        )
+        state_blocker = _write_factor_test_industry_trusted_state(
+            meta_path,
+            trusted_secret,
+            sequence_no=int(event["sequence_no"]),
+            event_digest=str(event["event_digest"]),
+            event_mac=str(event["event_mac"]),
+        )
+        if state_blocker:
+            raise RuntimeError(state_blocker)
+        promoted = True
+    return {
+        "status": "industry_provider_event_persisted",
+        "event_digest": event["event_digest"],
+        "event_packet_key": event_key,
+        "authoritative_current_promoted": promoted,
+        "authoritative_success": event.get("authoritative_success") is True,
+        "raw_row_count": event["raw_row_count"],
+        "raw_rows_digest": event["raw_rows_digest"],
+        "call_ledger_digest": event["call_ledger_digest"],
+        "transport_receipt_set_digest": event["transport_receipt_set_digest"],
+    }
+
+
+def _attach_factor_test_provider_industry_membership_authoritative_state(
+    packet: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(packet)
+    factor_tests = dict(_dict(merged.get("factor_tests")))
+    for key in (
+        "provider_industry_membership_receipt",
+        "provider_industry_membership_rows",
+        "provider_industry_membership_last_good",
+    ):
+        factor_tests.pop(key, None)
+    state = _read_factor_test_provider_industry_membership_authoritative_state(
+        SQLITE_META_PATH
+    )
+    current = _dict(state.get("current"))
+    last_good = _dict(state.get("last_good"))
+    factor_tests["provider_industry_membership_authoritative_state"] = {
+        key: value for key, value in state.items() if key not in {"current", "last_good"}
+    }
+    if current:
+        receipt = dict(_dict(current.get("receipt")))
+        receipt["authoritative_event_digest"] = current.get("event_digest")
+        receipt["authoritative_event_verified"] = True
+        receipt["source_task_status_is_non_authoritative_projection"] = True
+        factor_tests["provider_industry_membership_receipt"] = receipt
+        factor_tests["provider_industry_membership_rows"] = _list(current.get("raw_rows"))
+    if last_good:
+        factor_tests["provider_industry_membership_last_good"] = {
+            "event_digest": last_good.get("event_digest"),
+            "task_id": last_good.get("task_id"),
+            "industry_scope_hash": last_good.get("industry_scope_hash"),
+            "raw_row_count": last_good.get("raw_row_count"),
+            "raw_rows_digest": last_good.get("raw_rows_digest"),
+            "verified": True,
+        }
+    merged["factor_tests"] = factor_tests
+    return merged
+
+
 def _safe_text(value: Any, *, limit: int = 240) -> str:
     text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
     return text[:limit]
@@ -511,6 +1298,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet["status_is_not_production_evidence"] = True
     packet["deepseek_explain_governance"] = _deepseek_explain_governance()
     packet = _merge_factor_test_small_pool_task_state(packet)
+    packet = _attach_factor_test_provider_industry_membership_authoritative_state(packet)
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
     candidate_handoff = _read_candidate_radar_quant_projection_handoff(now)
     candidate_handoff_ledger: list[dict[str, Any]] = []
@@ -7379,6 +8167,868 @@ def _attach_factor_test_provider_small_pool_forward_return_label_audit(
     return packet, ledger
 
 
+def _factor_test_provider_industry_membership_scope(
+    payload: Any,
+    factor_tests: dict[str, Any],
+) -> dict[str, Any]:
+    payload_dict = payload if isinstance(payload, dict) else {}
+    source = _dict(factor_tests.get("provider_small_pool_acceptance_receipt"))
+    if SQLITE_META_PATH.exists():
+        try:
+            persisted_hub = SQLiteMetaStore(
+                SQLITE_META_PATH,
+                read_only=True,
+            ).read_packet("command_center_factor_quant_hub_packet")
+            persisted_source = _dict(
+                _dict(_dict(persisted_hub).get("factor_tests")).get(
+                    "provider_small_pool_acceptance_receipt"
+                )
+            )
+            if persisted_source:
+                source = persisted_source
+        except Exception:
+            pass
+    source_symbols = source.get("symbols_with_core_rows") or source.get("symbols") or []
+    symbols = sorted(
+        {
+            _factor_test_clean_symbol(item)
+            for item in source_symbols
+            if _factor_test_clean_symbol(item)
+        }
+    )
+    queries = [
+        {"ts_code": symbol, "is_new": is_new}
+        for symbol in symbols
+        for is_new in FACTOR_TEST_INDUSTRY_PROVIDER_IS_NEW_VALUES
+    ]
+    scope_material = {
+        "api": FACTOR_TEST_INDUSTRY_PROVIDER_API,
+        "source_acceptance_scope_hash": str(source.get("acceptance_scope_hash") or ""),
+        "source_acceptance_receipt_digest": _factor_test_industry_evidence_digest(source),
+        "source_acceptance_packet_key": "command_center_factor_quant_hub_packet",
+        "symbols": symbols,
+        "signal_start_date": str(source.get("start_date") or ""),
+        "signal_end_date": str(source.get("end_date") or ""),
+        "queries": queries,
+        "provider_output_fields": list(FACTOR_TEST_INDUSTRY_PROVIDER_OUTPUT_FIELDS),
+        "source_contract": FACTOR_TEST_INDUSTRY_SOURCE_INDEX_MEMBER_ALL_V1,
+        "source_out_date_endpoint_semantics": "provider_documentation_unspecified",
+        "pit_promotion_policy": "fail_closed_until_endpoint_semantics_independently_verified",
+    }
+    digest = hashlib.sha256(
+        json.dumps(scope_material, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return {
+        "schema_version": "factor_test_provider_industry_membership_scope.v1",
+        "scope_hash_algorithm": "sha256",
+        "scope_hash": digest,
+        "scope_hash_short": digest[:16],
+        "scope_fields": scope_material,
+        "requested_scope_hash": str(
+            payload_dict.get("industry_scope_hash")
+            or payload_dict.get("scope_hash")
+            or ""
+        ).strip(),
+        "requested_source_acceptance_scope_hash": str(
+            payload_dict.get("acceptance_scope_hash")
+            or payload_dict.get("source_acceptance_scope_hash")
+            or ""
+        ).strip(),
+        "approved_by_user": payload_dict.get("approved_by_user") is True,
+        "authorize_live_provider_call": payload_dict.get("authorize_live_provider_call") is True,
+        "provider_run_approved_by_user": payload_dict.get("provider_run_approved_by_user") is True,
+        "credential_presence": _factor_test_credential_presence(),
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+
+
+def _factor_test_provider_industry_membership_preflight(
+    payload: Any,
+    factor_tests: dict[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    scope = _factor_test_provider_industry_membership_scope(payload, factor_tests)
+    fields = _dict(scope.get("scope_fields"))
+    symbols = [str(item) for item in _list(fields.get("symbols")) if item]
+    source_scope_hash = str(fields.get("source_acceptance_scope_hash") or "")
+    source = _dict(factor_tests.get("provider_small_pool_acceptance_receipt"))
+    requested_source_scope_hash = str(scope.get("requested_source_acceptance_scope_hash") or "")
+    requested_scope_hash = str(scope.get("requested_scope_hash") or "")
+    credential_present = _dict(scope.get("credential_presence")).get(
+        "server_side_tushare_credential_present"
+    ) is True
+    preflight_blockers: list[str] = []
+    if len(symbols) != FACTOR_TEST_PROVIDER_SMALL_POOL_SAMPLE_SIZE:
+        preflight_blockers.append("source_small_pool_must_contain_exactly_five_symbols")
+    if not source_scope_hash:
+        preflight_blockers.append("source_acceptance_scope_hash_missing")
+    if not (
+        source.get("provider_call_ledger_evidence_done") is True
+        and source.get("sample_rows_collected") is True
+    ):
+        preflight_blockers.append("source_provider_small_pool_direct_evidence_missing")
+    if not fields.get("signal_start_date") or not fields.get("signal_end_date"):
+        preflight_blockers.append("source_signal_date_window_missing")
+    if not credential_present:
+        preflight_blockers.append("server_side_tushare_credential_missing")
+    preflight_ready = not preflight_blockers
+    approval_flags_ready = bool(
+        scope.get("approved_by_user") is True
+        and scope.get("authorize_live_provider_call") is True
+        and scope.get("provider_run_approved_by_user") is True
+    )
+    source_scope_matches = bool(
+        source_scope_hash
+        and requested_source_scope_hash
+        and source_scope_hash == requested_source_scope_hash
+    )
+    industry_scope_matches = bool(
+        requested_scope_hash
+        and requested_scope_hash == str(scope.get("scope_hash") or "")
+    )
+    execution_authorized = bool(
+        preflight_ready
+        and approval_flags_ready
+        and source_scope_matches
+        and industry_scope_matches
+    )
+    authorization_blockers = list(preflight_blockers)
+    if not approval_flags_ready:
+        authorization_blockers.append("three_explicit_provider_approval_flags_required")
+    if not source_scope_matches:
+        authorization_blockers.append("source_acceptance_scope_hash_missing_or_mismatch")
+    if not industry_scope_matches:
+        authorization_blockers.append("industry_scope_hash_missing_or_mismatch")
+    status = (
+        "factor_test_provider_industry_membership_ready_for_authorized_execution"
+        if execution_authorized
+        else "factor_test_provider_industry_membership_preflight_ready_authorization_pending"
+        if preflight_ready
+        else "factor_test_provider_industry_membership_preflight_blocked"
+    )
+    return {
+        "schema_version": "factor_test_provider_industry_membership_receipt.v1",
+        "status": status,
+        "created_at": now,
+        "ltg": "LTG-03/LTG-11/LTG-12",
+        "source_contract": FACTOR_TEST_INDUSTRY_SOURCE_INDEX_MEMBER_ALL_V1,
+        "official_provider_documentation": FACTOR_TEST_INDUSTRY_PROVIDER_DOC_URL,
+        "official_minimum_points": 2000,
+        "official_max_rows_per_call": 2000,
+        "official_input_fields": ["l1_code", "l2_code", "l3_code", "ts_code", "is_new"],
+        "official_output_fields": list(FACTOR_TEST_INDUSTRY_PROVIDER_OUTPUT_FIELDS),
+        "official_is_new_default": "Y",
+        "source_out_date_field_description": "removal_date",
+        "source_out_date_endpoint_semantics": "provider_documentation_unspecified",
+        "source_interval_semantics_resolved": False,
+        "pit_promotion_fail_closed": True,
+        "pit_eligible_membership_rows_written": False,
+        "effective_dated_membership_rows_promoted": False,
+        "scope_ticket": scope,
+        "industry_scope_hash": scope.get("scope_hash"),
+        "industry_scope_hash_short": scope.get("scope_hash_short"),
+        "source_acceptance_scope_hash": source_scope_hash,
+        "source_acceptance_scope_hash_short": source_scope_hash[:16],
+        "requested_source_acceptance_scope_hash_matches": source_scope_matches,
+        "requested_industry_scope_hash_matches": industry_scope_matches,
+        "symbols": symbols,
+        "symbol_count": len(symbols),
+        "signal_start_date": fields.get("signal_start_date"),
+        "signal_end_date": fields.get("signal_end_date"),
+        "provider_api": FACTOR_TEST_INDUSTRY_PROVIDER_API,
+        "provider_query_is_new_values": list(FACTOR_TEST_INDUSTRY_PROVIDER_IS_NEW_VALUES),
+        "expected_provider_call_count": len(_list(fields.get("queries"))),
+        "maximum_provider_call_count": FACTOR_TEST_INDUSTRY_PROVIDER_MAX_CALLS,
+        "preflight_ready": preflight_ready,
+        "execution_authorized": execution_authorized,
+        "preflight_blockers": preflight_blockers,
+        "authorization_blockers": authorization_blockers,
+        "provider_call_count": 0,
+        "provider_success_call_count": 0,
+        "provider_empty_call_count": 0,
+        "provider_failed_call_count": 0,
+        "provider_transport_verified_call_count": 0,
+        "provider_raw_row_count": 0,
+        "provider_valid_row_count": 0,
+        "provider_symbol_coverage_count": 0,
+        "provider_symbol_coverage_complete": False,
+        "provider_call_ledger_evidence_done": False,
+        "provider_industry_membership_raw_rows_collected": False,
+        "provider_backed_pit_industry_membership_done": False,
+        "production_factor_test_validation_complete": False,
+        "allowed_next_step": (
+            "execute_exact_scope_index_member_all_provider_task"
+            if execution_authorized
+            else "request_exact_scope_index_member_all_authorization"
+            if preflight_ready
+            else "resolve_preflight_blockers_without_provider_call"
+        ),
+        "blocking_evidence": [
+            "provider_out_date_endpoint_semantics_independently_verified",
+            "PIT interval promotion review on the same Factor result version",
+            "full-market validation",
+            "current-head release promotion",
+        ],
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+        "call_ledger": [
+            {
+                "api": "local_factor_test_provider_industry_membership_preflight",
+                "request_params_safe": {
+                    "provider_api": FACTOR_TEST_INDUSTRY_PROVIDER_API,
+                    "symbol_count": len(symbols),
+                    "expected_provider_call_count": len(_list(fields.get("queries"))),
+                    "industry_scope_hash_short": scope.get("scope_hash_short"),
+                    "source_acceptance_scope_hash_short": source_scope_hash[:16],
+                    "execution_authorized": execution_authorized,
+                },
+                "row_count": len(authorization_blockers),
+                "data_date": fields.get("signal_end_date"),
+                "local_fetched_at": now,
+                "call_status": status,
+                "error_message_safe": "",
+                **_local_ledger_boundary(),
+            }
+        ],
+    }
+
+
+def _factor_test_provider_industry_membership_rows(data: Any) -> dict[str, Any]:
+    """Extract the provider contract without the generic 200-row truncation."""
+
+    rows: list[dict[str, Any]] = []
+    declared_row_count: int | None = None
+    if data is None:
+        source_row_count = 0
+    elif hasattr(data, "empty") and hasattr(data, "where") and hasattr(data, "notna"):
+        source_row_count = int(len(data))
+        if source_row_count:
+            rows = [
+                dict(row)
+                for row in data.where(data.notna(), None).to_dict("records")
+                if isinstance(row, dict)
+            ]
+    elif isinstance(data, list):
+        source_row_count = len(data)
+        rows = [dict(row) for row in data if isinstance(row, dict)]
+    elif isinstance(data, dict):
+        declared = data.get("row_count")
+        if declared is not None:
+            try:
+                declared_row_count = int(declared)
+            except Exception:
+                declared_row_count = -1
+        nested = data.get("rows")
+        if isinstance(nested, list):
+            source_row_count = len(nested)
+            rows = [dict(row) for row in nested if isinstance(row, dict)]
+        else:
+            source_row_count = 1
+            rows = [dict(data)]
+    else:
+        source_row_count = 0
+    non_mapping_row_count = max(0, source_row_count - len(rows))
+    overflow = source_row_count > 2000
+    stored_rows = rows[:2000]
+    declared_mismatch = bool(
+        declared_row_count is not None and declared_row_count != source_row_count
+    )
+    return {
+        "rows": stored_rows,
+        "provider_source_row_count": source_row_count,
+        "provider_stored_row_count": len(stored_rows),
+        "provider_row_limit": 2000,
+        "provider_row_overflow": overflow,
+        "provider_non_mapping_row_count": non_mapping_row_count,
+        "provider_declared_row_count": declared_row_count,
+        "provider_declared_actual_row_count_mismatch": declared_mismatch,
+    }
+
+
+def _factor_test_provider_industry_membership_failure_mode(error: Any) -> str:
+    text = _safe_text(error).lower()
+    if any(marker in text for marker in ("permission", "权限", "积分", "access denied")):
+        return "permission_denied"
+    if any(marker in text for marker in ("parse", "decode", "invalid result", "类型异常")):
+        return "parse_failed_or_invalid_result"
+    return "provider_error_safe"
+
+
+def _factor_test_provider_industry_membership_sanitize_row(
+    row: dict[str, Any],
+    *,
+    expected_symbol: str,
+    query_is_new: str,
+    provider_call_ordinal: int,
+    provider_row_ordinal: int,
+) -> tuple[dict[str, Any], list[str]]:
+    provider_raw_fields = {
+        field: row.get(field) for field in FACTOR_TEST_INDUSTRY_PROVIDER_OUTPUT_FIELDS
+    }
+    clean = {
+        field: _safe_text(row.get(field), limit=80)
+        for field in FACTOR_TEST_INDUSTRY_PROVIDER_OUTPUT_FIELDS
+    }
+    clean["ts_code"] = _factor_test_clean_symbol(clean.get("ts_code"))
+    clean["query_is_new"] = query_is_new
+    clean["provider_source_contract"] = FACTOR_TEST_INDUSTRY_SOURCE_INDEX_MEMBER_ALL_V1
+    clean["provider_out_date_endpoint_semantics"] = "provider_documentation_unspecified"
+    clean["pit_eligible"] = False
+    clean["provider_call_ordinal"] = int(provider_call_ordinal)
+    clean["provider_row_ordinal"] = int(provider_row_ordinal)
+    clean["provider_raw_fields"] = provider_raw_fields
+    blockers: list[str] = []
+    if clean["ts_code"] != expected_symbol:
+        blockers.append("unexpected_symbol")
+    for field in ("l1_code", "l1_name", "l2_code", "l2_name", "l3_code", "l3_name", "in_date", "is_new"):
+        if not clean.get(field):
+            blockers.append(f"missing_{field}")
+    for field in ("in_date", "out_date"):
+        value = str(clean.get(field) or "")
+        if value and (len(value) != 8 or not value.isdigit()):
+            blockers.append(f"invalid_{field}")
+    if clean.get("is_new") not in FACTOR_TEST_INDUSTRY_PROVIDER_IS_NEW_VALUES:
+        blockers.append("invalid_is_new")
+    if clean.get("is_new") and clean.get("is_new") != query_is_new:
+        blockers.append("query_response_is_new_mismatch")
+    clean["schema_valid"] = not blockers
+    clean["schema_blockers"] = blockers
+    return clean, blockers
+
+
+def _factor_test_provider_industry_membership_execute(
+    receipt: dict[str, Any],
+    now: str,
+    *,
+    task_id: str,
+    adapter: Any = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    executed = dict(receipt)
+    scope = _dict(_dict(executed.get("scope_ticket")).get("scope_fields"))
+    queries = [dict(row) for row in _list(scope.get("queries")) if isinstance(row, dict)]
+    live_adapter = adapter is None
+    adapter_module = adapter
+    if adapter_module is None:
+        import tushare_adapter as adapter_module
+
+    provider_ledger: list[dict[str, Any]] = []
+    raw_rows: list[dict[str, Any]] = []
+    schema_blockers: list[str] = []
+    for provider_call_ordinal, query in enumerate(
+        queries[:FACTOR_TEST_INDUSTRY_PROVIDER_MAX_CALLS]
+    ):
+        symbol = str(query.get("ts_code") or "")
+        is_new = str(query.get("is_new") or "")
+        params = {"ts_code": symbol, "is_new": is_new}
+        call_now = _now_iso()
+        try:
+            result = adapter_module.get_index_member_all(**params)
+            if not isinstance(result, dict):
+                result = {
+                    "ok": False,
+                    "data": None,
+                    "error": f"invalid result type: {type(result).__name__}",
+                }
+        except Exception as exc:
+            result = {"ok": False, "data": None, "error": _safe_text(exc)}
+        row_extract = _factor_test_provider_industry_membership_rows(result.get("data"))
+        rows = [dict(row) for row in _list(row_extract.get("rows")) if isinstance(row, dict)]
+        transport = (
+            tushare_task_service._consume_runtime_transport_evidence(
+                adapter_module,
+                result,
+                FACTOR_TEST_INDUSTRY_PROVIDER_API,
+            )
+            if live_adapter
+            else {
+                "provider_transport_verified": False,
+                "official_client_identity_verified": False,
+                "transport_call_count": 0,
+                "transport_receipt_count": 0,
+                "transport_receipt_digest": "",
+            }
+        )
+        sanitized_rows: list[dict[str, Any]] = []
+        row_blockers: list[str] = []
+        for provider_row_ordinal, row in enumerate(rows):
+            clean, blockers = _factor_test_provider_industry_membership_sanitize_row(
+                row,
+                expected_symbol=symbol,
+                query_is_new=is_new,
+                provider_call_ordinal=provider_call_ordinal,
+                provider_row_ordinal=provider_row_ordinal,
+            )
+            sanitized_rows.append(clean)
+            row_blockers.extend(blockers)
+        raw_rows.extend(sanitized_rows)
+        schema_blockers.extend(row_blockers)
+        if row_extract.get("provider_row_overflow") is True:
+            row_blockers.append("provider_row_count_exceeds_official_2000_limit")
+            schema_blockers.append("provider_row_count_exceeds_official_2000_limit")
+        if int(row_extract.get("provider_non_mapping_row_count") or 0) > 0:
+            row_blockers.append("provider_non_mapping_rows_present")
+            schema_blockers.append("provider_non_mapping_rows_present")
+        if row_extract.get("provider_declared_actual_row_count_mismatch") is True:
+            row_blockers.append("provider_declared_actual_row_count_mismatch")
+            schema_blockers.append("provider_declared_actual_row_count_mismatch")
+        ok = result.get("ok") is True
+        if not ok:
+            call_status = "failed"
+            failure_mode = _factor_test_provider_industry_membership_failure_mode(result.get("error"))
+        elif row_blockers:
+            call_status = "failed_schema_validation"
+            failure_mode = "parse_failed_or_invalid_result"
+        elif sanitized_rows:
+            call_status = "success"
+            failure_mode = "none"
+        else:
+            call_status = "empty"
+            failure_mode = "empty_result_or_no_record"
+        provider_ledger.append(
+            {
+                "api": FACTOR_TEST_INDUSTRY_PROVIDER_API,
+                "scope_hash": str(_dict(executed.get("scope_ticket")).get("scope_hash") or ""),
+                "scope_hash_short": str(_dict(executed.get("scope_ticket")).get("scope_hash_short") or ""),
+                "source_acceptance_scope_hash_short": str(executed.get("source_acceptance_scope_hash_short") or ""),
+                "task_id": task_id,
+                "request_params_safe": params,
+                "row_count": len(sanitized_rows),
+                "provider_source_row_count": int(
+                    row_extract.get("provider_source_row_count") or 0
+                ),
+                "provider_stored_row_count": int(
+                    row_extract.get("provider_stored_row_count") or 0
+                ),
+                "provider_row_limit": 2000,
+                "provider_row_overflow": row_extract.get("provider_row_overflow") is True,
+                "provider_non_mapping_row_count": int(
+                    row_extract.get("provider_non_mapping_row_count") or 0
+                ),
+                "provider_declared_row_count": row_extract.get(
+                    "provider_declared_row_count"
+                ),
+                "provider_declared_actual_row_count_mismatch": row_extract.get(
+                    "provider_declared_actual_row_count_mismatch"
+                )
+                is True,
+                "data_date": max(
+                    [str(row.get("in_date") or "") for row in sanitized_rows] or [""]
+                ),
+                "local_fetched_at": call_now,
+                "call_status": call_status,
+                "failure_mode": failure_mode,
+                "safe_failure_mode_visible": True,
+                "error_message_safe": ""
+                if ok
+                else tushare_task_service._safe_text(result.get("error")),
+                "provider_transport_verified": transport.get("provider_transport_verified") is True,
+                "official_client_identity_verified": transport.get(
+                    "official_client_identity_verified"
+                )
+                is True,
+                "provider_transport_call_count": int(transport.get("transport_call_count") or 0),
+                "provider_transport_receipt_count": int(transport.get("transport_receipt_count") or 0),
+                "provider_transport_receipt_digest": str(transport.get("transport_receipt_digest") or ""),
+                "source_out_date_endpoint_semantics": "provider_documentation_unspecified",
+                "pit_eligible": False,
+                "external": live_adapter,
+                "external_calls_triggered": live_adapter,
+                "tushare_called": live_adapter,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+        )
+
+    duplicate_fingerprints: list[str] = []
+    seen_fingerprints: set[str] = set()
+    for row in raw_rows:
+        fingerprint = _factor_test_industry_evidence_digest(
+            _dict(row.get("provider_raw_fields"))
+        )
+        if fingerprint in seen_fingerprints:
+            duplicate_fingerprints.append(fingerprint)
+        else:
+            seen_fingerprints.add(fingerprint)
+    success_count = sum(row.get("call_status") == "success" for row in provider_ledger)
+    empty_count = sum(row.get("call_status") == "empty" for row in provider_ledger)
+    failed_count = len(provider_ledger) - success_count - empty_count
+    transport_verified_count = sum(
+        row.get("provider_transport_verified") is True for row in provider_ledger
+    )
+    valid_rows = [row for row in raw_rows if row.get("schema_valid") is True]
+    covered_symbols = sorted({str(row.get("ts_code") or "") for row in valid_rows if row.get("ts_code")})
+    expected_symbols = [str(item) for item in _list(executed.get("symbols")) if item]
+    coverage_complete = set(expected_symbols) == set(covered_symbols)
+    provider_transport_complete = bool(
+        live_adapter
+        and len(provider_ledger) == FACTOR_TEST_INDUSTRY_PROVIDER_MAX_CALLS
+        and transport_verified_count == len(provider_ledger)
+    )
+    raw_evidence_done = bool(
+        provider_transport_complete
+        and success_count == len(provider_ledger)
+        and empty_count == 0
+        and failed_count == 0
+        and coverage_complete
+        and valid_rows
+        and not schema_blockers
+        and not duplicate_fingerprints
+    )
+    raw_digest = _factor_test_industry_evidence_digest(raw_rows)
+    call_ledger_digest = _factor_test_industry_evidence_digest(provider_ledger)
+    transport_receipt_set_digest = _factor_test_industry_evidence_digest(
+        [
+            str(row.get("provider_transport_receipt_digest") or "")
+            for row in provider_ledger
+        ]
+    )
+    failure_modes = sorted(
+        {
+            str(row.get("failure_mode") or "")
+            for row in provider_ledger
+            if str(row.get("failure_mode") or "") not in {"", "none"}
+        }
+    )
+    partial_result = bool(
+        success_count > 0 and (empty_count > 0 or failed_count > 0)
+    )
+    status = (
+        "factor_test_provider_industry_membership_collected_pit_promotion_blocked_undocumented_out_date_semantics"
+        if raw_evidence_done
+        else "factor_test_provider_industry_membership_degraded_duplicate_raw_rows"
+        if duplicate_fingerprints
+        else "factor_test_provider_industry_membership_degraded_permission_denied"
+        if "permission_denied" in failure_modes
+        else "factor_test_provider_industry_membership_degraded_no_data"
+        if empty_count == len(provider_ledger) and provider_ledger
+        else "factor_test_provider_industry_membership_degraded_partial_result"
+        if partial_result
+        else "factor_test_provider_industry_membership_injected_preflight_rows_ready_not_provider_evidence"
+        if not live_adapter and failed_count == 0 and coverage_complete
+        else "factor_test_provider_industry_membership_degraded_review_failure_modes"
+    )
+    executed.update(
+        {
+            "status": status,
+            "execution_authorized": True,
+            "execution_mode": "live_tushare_adapter" if live_adapter else "injected_test_adapter",
+            "provider_call_count": len(provider_ledger),
+            "provider_success_call_count": success_count,
+            "provider_empty_call_count": empty_count,
+            "provider_failed_call_count": failed_count,
+            "provider_transport_verified_call_count": transport_verified_count,
+            "provider_transport_complete": provider_transport_complete,
+            "provider_raw_row_count": len(raw_rows),
+            "provider_original_raw_row_count": len(raw_rows),
+            "provider_unique_raw_row_count": len(seen_fingerprints),
+            "provider_duplicate_raw_row_count": len(duplicate_fingerprints),
+            "provider_duplicate_raw_row_fingerprints": sorted(set(duplicate_fingerprints)),
+            "provider_valid_row_count": len(valid_rows),
+            "provider_symbol_coverage_count": len(covered_symbols),
+            "provider_symbol_coverage_complete": coverage_complete,
+            "provider_call_ledger_evidence_done": raw_evidence_done,
+            "provider_industry_membership_raw_rows_collected": raw_evidence_done,
+            "provider_backed_pit_industry_membership_done": False,
+            "source_interval_semantics_resolved": False,
+            "pit_promotion_fail_closed": True,
+            "pit_eligible_membership_rows_written": False,
+            "effective_dated_membership_rows_promoted": False,
+            "provider_raw_rows_digest": raw_digest,
+            "provider_raw_rows_digest_short": raw_digest[:16],
+            "provider_call_ledger_digest": call_ledger_digest,
+            "provider_transport_receipt_set_digest": transport_receipt_set_digest,
+            "provider_partial_result_detected": partial_result,
+            "provider_failure_modes": failure_modes,
+            "schema_blocker_count": len(schema_blockers),
+            "schema_blockers": sorted(set(schema_blockers)),
+            "evidence_blockers": sorted(
+                set(schema_blockers)
+                | ({"duplicate_provider_raw_rows"} if duplicate_fingerprints else set())
+                | ({"provider_no_data"} if empty_count == len(provider_ledger) and provider_ledger else set())
+                | ({"provider_partial_result"} if partial_result else set())
+                | ({"provider_call_failure"} if failed_count else set())
+            ),
+            "covered_symbols": covered_symbols,
+            "production_factor_test_validation_complete": False,
+            "allowed_next_step": (
+                "independently_verify_out_date_endpoint_semantics_then_run_same_scope_pit_promotion_review"
+                if raw_evidence_done
+                else "review_safe_failure_modes_without_automatic_retry"
+            ),
+            "external_calls_triggered": live_adapter,
+            "tushare_called": live_adapter,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "call_ledger": provider_ledger,
+        }
+    )
+    return executed, raw_rows, provider_ledger
+
+
+def _factor_test_provider_industry_membership_authority_blockers(
+    receipt: dict[str, Any],
+    rows: list[dict[str, Any]],
+    ledger: list[dict[str, Any]],
+    *,
+    meta_path: Path = SQLITE_META_PATH,
+) -> list[str]:
+    """Independently re-evaluate live evidence before issuing authority."""
+
+    blockers: list[str] = []
+    task_id = str(receipt.get("task_id") or "")
+    scope_ticket = _dict(receipt.get("scope_ticket"))
+    scope = _dict(scope_ticket.get("scope_fields"))
+    scope_hash = str(scope_ticket.get("scope_hash") or "")
+    source_scope_hash = str(scope.get("source_acceptance_scope_hash") or "")
+    symbols = [str(item) for item in _list(scope.get("symbols")) if item]
+    if not (
+        scope_ticket.get("approved_by_user") is True
+        and scope_ticket.get("authorize_live_provider_call") is True
+        and scope_ticket.get("provider_run_approved_by_user") is True
+        and receipt.get("execution_authorized") is True
+        and receipt.get("requested_source_acceptance_scope_hash_matches") is True
+        and receipt.get("requested_industry_scope_hash_matches") is True
+        and str(scope_ticket.get("requested_scope_hash") or "") == scope_hash
+        and str(scope_ticket.get("requested_source_acceptance_scope_hash") or "")
+        == source_scope_hash
+    ):
+        blockers.append("authority_three_approvals_or_scope_confirmation_missing")
+    source_receipt: dict[str, Any] = {}
+    if Path(meta_path).exists():
+        try:
+            source_packet = SQLiteMetaStore(meta_path, read_only=True).read_packet(
+                "command_center_factor_quant_hub_packet"
+            )
+            source_receipt = _dict(
+                _dict(_dict(source_packet).get("factor_tests")).get(
+                    "provider_small_pool_acceptance_receipt"
+                )
+            )
+        except Exception:
+            source_receipt = {}
+    if not (
+        source_receipt
+        and source_receipt.get("provider_call_ledger_evidence_done") is True
+        and source_receipt.get("sample_rows_collected") is True
+        and str(source_receipt.get("acceptance_scope_hash") or "") == source_scope_hash
+        and str(scope.get("source_acceptance_receipt_digest") or "")
+        == _factor_test_industry_evidence_digest(source_receipt)
+        and sorted(
+            _factor_test_clean_symbol(item)
+            for item in _list(source_receipt.get("symbols_with_core_rows"))
+            if _factor_test_clean_symbol(item)
+        )
+        == sorted(symbols)
+        and str(source_receipt.get("start_date") or "")
+        == str(scope.get("signal_start_date") or "")
+        and str(source_receipt.get("end_date") or "")
+        == str(scope.get("signal_end_date") or "")
+    ):
+        blockers.append("authority_source_provider_packet_missing_or_scope_mismatch")
+    recalculated_scope_hash = hashlib.sha256(
+        json.dumps(scope, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    expected_queries = [
+        {"ts_code": symbol, "is_new": is_new}
+        for symbol in sorted(symbols)
+        for is_new in FACTOR_TEST_INDUSTRY_PROVIDER_IS_NEW_VALUES
+    ]
+    scope_queries = [
+        {"ts_code": str(row.get("ts_code") or ""), "is_new": str(row.get("is_new") or "")}
+        for row in _list(scope.get("queries"))
+        if isinstance(row, dict)
+    ]
+    if not task_id:
+        blockers.append("authority_task_id_missing")
+    if scope_hash != recalculated_scope_hash:
+        blockers.append("authority_scope_hash_recalculation_mismatch")
+    if str(receipt.get("industry_scope_hash") or "") != scope_hash:
+        blockers.append("authority_receipt_scope_hash_mismatch")
+    if str(receipt.get("source_acceptance_scope_hash") or "") != source_scope_hash:
+        blockers.append("authority_source_scope_hash_mismatch")
+    if len(symbols) != FACTOR_TEST_PROVIDER_SMALL_POOL_SAMPLE_SIZE:
+        blockers.append("authority_symbol_count_not_exactly_five")
+    if scope_queries != expected_queries or len(expected_queries) != FACTOR_TEST_INDUSTRY_PROVIDER_MAX_CALLS:
+        blockers.append("authority_exact_query_plan_mismatch")
+    if len(ledger) != len(expected_queries):
+        blockers.append("authority_call_ledger_count_mismatch")
+
+    rows_by_call: dict[int, list[dict[str, Any]]] = {}
+    raw_fingerprints: set[str] = set()
+    duplicate_count = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            blockers.append("authority_non_object_raw_row")
+            continue
+        call_ordinal = int(row.get("provider_call_ordinal") or 0)
+        row_ordinal = int(row.get("provider_row_ordinal") or 0)
+        rows_by_call.setdefault(call_ordinal, []).append(row)
+        if not (0 <= call_ordinal < len(expected_queries)):
+            blockers.append("authority_raw_row_call_ordinal_out_of_range")
+            continue
+        query = expected_queries[call_ordinal]
+        raw_fields = _dict(row.get("provider_raw_fields"))
+        fingerprint = _factor_test_industry_evidence_digest(raw_fields)
+        if fingerprint in raw_fingerprints:
+            duplicate_count += 1
+        raw_fingerprints.add(fingerprint)
+        rebuilt, rebuilt_blockers = _factor_test_provider_industry_membership_sanitize_row(
+            raw_fields,
+            expected_symbol=query["ts_code"],
+            query_is_new=query["is_new"],
+            provider_call_ordinal=call_ordinal,
+            provider_row_ordinal=row_ordinal,
+        )
+        if rebuilt_blockers or rebuilt.get("schema_valid") is not True:
+            blockers.append("authority_raw_row_schema_invalid")
+        if rebuilt != row:
+            blockers.append("authority_raw_row_normalization_or_provenance_mismatch")
+    if duplicate_count:
+        blockers.append("authority_duplicate_raw_rows")
+    for call_ordinal, call_rows in rows_by_call.items():
+        ordinals = sorted(int(row.get("provider_row_ordinal") or 0) for row in call_rows)
+        if ordinals != list(range(len(call_rows))):
+            blockers.append("authority_raw_row_ordinals_not_contiguous")
+
+    for index, expected_query in enumerate(expected_queries):
+        if index >= len(ledger):
+            break
+        item = ledger[index]
+        call_rows = rows_by_call.get(index, [])
+        if not isinstance(item, dict):
+            blockers.append("authority_non_object_call_ledger_row")
+            continue
+        if item.get("api") != FACTOR_TEST_INDUSTRY_PROVIDER_API:
+            blockers.append("authority_api_mismatch")
+        if item.get("task_id") != task_id or item.get("scope_hash") != scope_hash:
+            blockers.append("authority_ledger_task_or_scope_mismatch")
+        if _dict(item.get("request_params_safe")) != expected_query:
+            blockers.append("authority_request_params_mismatch")
+        if item.get("call_status") != "success":
+            blockers.append("authority_non_success_call")
+        if int(item.get("row_count") or 0) != len(call_rows):
+            blockers.append("authority_ledger_stored_row_count_mismatch")
+        if not call_rows:
+            blockers.append("authority_each_exact_call_requires_non_empty_rows")
+        if int(item.get("provider_source_row_count") or 0) != len(call_rows):
+            blockers.append("authority_provider_source_row_count_mismatch")
+        if int(item.get("provider_stored_row_count") or 0) != len(call_rows):
+            blockers.append("authority_provider_stored_row_count_mismatch")
+        if (
+            item.get("provider_row_overflow") is True
+            or item.get("provider_declared_actual_row_count_mismatch") is True
+            or int(item.get("provider_non_mapping_row_count") or 0) > 0
+        ):
+            blockers.append("authority_provider_row_fidelity_blocked")
+        if not (
+            item.get("provider_transport_verified") is True
+            and item.get("official_client_identity_verified") is True
+            and int(item.get("provider_transport_call_count") or 0) == 1
+            and int(item.get("provider_transport_receipt_count") or 0) == 1
+            and len(str(item.get("provider_transport_receipt_digest") or "")) == 64
+            and item.get("external") is True
+            and item.get("external_calls_triggered") is True
+            and item.get("tushare_called") is True
+        ):
+            blockers.append("authority_runtime_transport_semantics_invalid")
+    raw_digest = _factor_test_industry_evidence_digest(rows)
+    ledger_digest = _factor_test_industry_evidence_digest(ledger)
+    transport_digest = _factor_test_industry_evidence_digest(
+        [str(row.get("provider_transport_receipt_digest") or "") for row in ledger]
+    )
+    expected_receipt_values = {
+        "provider_raw_row_count": len(rows),
+        "provider_original_raw_row_count": len(rows),
+        "provider_unique_raw_row_count": len(raw_fingerprints),
+        "provider_duplicate_raw_row_count": duplicate_count,
+        "provider_call_count": len(ledger),
+        "provider_success_call_count": len(ledger),
+        "provider_empty_call_count": 0,
+        "provider_failed_call_count": 0,
+        "provider_transport_verified_call_count": len(ledger),
+    }
+    for key, expected in expected_receipt_values.items():
+        if int(receipt.get(key) or 0) != expected:
+            blockers.append(f"authority_receipt_{key}_mismatch")
+    if str(receipt.get("provider_raw_rows_digest") or "") != raw_digest:
+        blockers.append("authority_receipt_raw_digest_mismatch")
+    if str(receipt.get("provider_call_ledger_digest") or "") != ledger_digest:
+        blockers.append("authority_receipt_ledger_digest_mismatch")
+    if str(receipt.get("provider_transport_receipt_set_digest") or "") != transport_digest:
+        blockers.append("authority_receipt_transport_digest_mismatch")
+    if not (
+        rows
+        and receipt.get("provider_transport_complete") is True
+        and receipt.get("provider_symbol_coverage_complete") is True
+        and receipt.get("provider_call_ledger_evidence_done") is True
+        and receipt.get("provider_industry_membership_raw_rows_collected") is True
+    ):
+        blockers.append("authority_receipt_success_semantics_incomplete")
+    return sorted(set(blockers))
+
+
+def _run_factor_test_provider_industry_membership_live_and_persist(
+    receipt: dict[str, Any],
+    now: str,
+    *,
+    task_id: str,
+    meta_path: Path = SQLITE_META_PATH,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    executed, rows, ledger = _factor_test_provider_industry_membership_execute(
+        receipt,
+        now,
+        task_id=task_id,
+        adapter=None,
+    )
+    executed["task_id"] = task_id
+    authority_blockers = _factor_test_provider_industry_membership_authority_blockers(
+        executed,
+        rows,
+        ledger,
+        meta_path=meta_path,
+    )
+    trusted_secret: bytes | None = None
+    if not authority_blockers:
+        trusted_secret, trust_blocker = _create_factor_test_industry_trusted_secret(
+            meta_path
+        )
+        if trusted_secret is None:
+            authority_blockers.append(
+                trust_blocker or "industry_provider_trust_key_creation_failed"
+            )
+    if authority_blockers:
+        executed["provider_call_ledger_evidence_done"] = False
+        executed["provider_industry_membership_raw_rows_collected"] = False
+        executed["status"] = (
+            "factor_test_provider_industry_membership_authority_validation_failed_safe"
+        )
+        executed["authority_validation_blockers"] = sorted(set(authority_blockers))
+    persisted = _persist_factor_test_provider_industry_membership_event(
+        executed,
+        rows,
+        ledger,
+        meta_path=meta_path,
+        trusted_secret=trusted_secret,
+    )
+    return executed, rows, ledger, persisted
+
+
 def _factor_test_effective_dated_industry_neutral_rank_ic(
     membership_rows: list[dict[str, Any]],
     metric_rows: list[dict[str, Any]],
@@ -7420,9 +9070,6 @@ def _factor_test_effective_dated_industry_neutral_rank_ic(
         "[in_date,out_date]": FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED,
         FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED: FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_CLOSED,
     }
-    source_default_semantics = {
-        FACTOR_TEST_INDUSTRY_SOURCE_INDEX_MEMBER_ALL_V1: FACTOR_TEST_INDUSTRY_INTERVAL_SEMANTICS_CLOSED_OPEN,
-    }
     interval_semantics_requested = str(interval_semantics or "").strip().lower()
     if interval_semantics_requested:
         interval_semantics_resolved = semantics_aliases.get(interval_semantics_requested, "")
@@ -7432,10 +9079,8 @@ def _factor_test_effective_dated_industry_neutral_rank_ic(
             else "unsupported_explicit_fail_closed"
         )
     else:
-        interval_semantics_resolved = source_default_semantics.get(source_contract_value, "")
-        interval_semantics_resolution = (
-            "source_contract_default" if interval_semantics_resolved else "unresolved_fail_closed"
-        )
+        interval_semantics_resolved = ""
+        interval_semantics_resolution = "unresolved_fail_closed"
 
     unknown_labels = {
         "unknown",
@@ -10075,6 +11720,173 @@ def run_factor_test_provider_small_pool_acceptance_task(payload: Any = None) -> 
         call_ledger=list(receipt.get("call_ledger") or []),
     ) or task
     updated["payload_safe"] = payload_safe
+    return updated
+
+
+def run_factor_test_provider_industry_membership_task(
+    payload: Any = None,
+    *,
+    adapter: Any = None,
+) -> dict[str, Any]:
+    """Run the explicit, scope-bound SW industry-membership collection task.
+
+    A POST without the exact approval flags and both scope hashes records only
+    preflight.  A live call records raw source rows and provenance, but remains
+    fail-closed for PIT promotion because the provider documentation does not
+    define whether ``out_date`` is inclusive or exclusive.
+    """
+    now = _now_iso()
+    hub_before = dict(read_factor_quant_cache())
+    factor_tests_before = _dict(hub_before.get("factor_tests"))
+    receipt = _factor_test_provider_industry_membership_preflight(
+        payload,
+        factor_tests_before,
+        now,
+    )
+    payload_safe = {
+        "provider_industry_membership_receipt": receipt,
+        "provider_industry_membership_rows": [],
+        "industry_scope_hash": receipt.get("industry_scope_hash"),
+        "industry_scope_hash_short": receipt.get("industry_scope_hash_short"),
+        "source_acceptance_scope_hash": receipt.get("source_acceptance_scope_hash"),
+        "source_acceptance_scope_hash_short": receipt.get("source_acceptance_scope_hash_short"),
+        "symbol_count": receipt.get("symbol_count"),
+        "provider_api": FACTOR_TEST_INDUSTRY_PROVIDER_API,
+        "execution_authorized": receipt.get("execution_authorized") is True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+    task = create_task_record(
+        FACTOR_TEST_INDUSTRY_PROVIDER_TASK_TYPE,
+        output_packet_key="command_center_factor_quant_hub_packet",
+        payload=payload_safe,
+        current_step="factor_test_provider_industry_membership_preflight_queued",
+        warnings=[
+            "index_member_all 仅可由显式 POST、双 scope hash 与三项用户授权触发；GET/cache/render/typing 不外联。",
+            "官方文档未定义 out_date 端点包含性；真实 raw rows 也不会自动提升为 PIT 行业中性证据。",
+            "任务不调用 DeepSeek/GitHub/worker/QMT，不修改 strategy action，不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.2,
+        current_step="factor_test_provider_industry_membership_preflight_ready",
+        call_ledger=list(receipt.get("call_ledger") or []),
+    )
+    rows: list[dict[str, Any]] = []
+    ledger = list(receipt.get("call_ledger") or [])
+    authoritative_event: dict[str, Any] = {}
+    if receipt.get("execution_authorized") is True:
+        update_task_status(
+            task["task_id"],
+            status="running",
+            progress=0.4,
+            current_step="running_scope_bound_tushare_index_member_all",
+            call_ledger=ledger,
+        )
+        if adapter is None:
+            try:
+                receipt, rows, ledger, authoritative_event = (
+                    _run_factor_test_provider_industry_membership_live_and_persist(
+                        receipt,
+                        now,
+                        task_id=str(task["task_id"]),
+                    )
+                )
+            except Exception as exc:
+                receipt = dict(receipt)
+                receipt.update(
+                    {
+                        "task_id": task["task_id"],
+                        "status": "factor_test_provider_industry_membership_authority_or_persistence_failed_safe",
+                        "provider_call_ledger_evidence_done": False,
+                        "provider_industry_membership_raw_rows_collected": False,
+                        "authority_or_persistence_error_safe": _safe_text(exc),
+                    }
+                )
+        else:
+            receipt, rows, ledger = _factor_test_provider_industry_membership_execute(
+                receipt,
+                now,
+                task_id=str(task["task_id"]),
+                adapter=adapter,
+            )
+    receipt["task_id"] = task["task_id"]
+    payload_safe["provider_industry_membership_receipt"] = receipt
+    payload_safe["provider_industry_membership_rows"] = rows
+    if authoritative_event:
+        payload_safe["provider_industry_membership_authoritative_event"] = (
+            authoritative_event
+        )
+    try:
+        hub = dict(read_factor_quant_cache())
+        factor_tests = dict(_dict(hub.get("factor_tests")))
+        factor_tests["provider_industry_membership_source_contract"] = (
+            FACTOR_TEST_INDUSTRY_SOURCE_INDEX_MEMBER_ALL_V1
+        )
+        factor_tests["provider_industry_membership_source_out_date_semantics"] = (
+            "provider_documentation_unspecified"
+        )
+        factor_tests["provider_industry_membership_pit_promotion_fail_closed"] = True
+        factor_tests["provider_industry_membership_does_not_replace_effective_dated_rows"] = True
+        existing_ledger = _list(factor_tests.get("call_ledger"))
+        factor_tests["call_ledger"] = list(ledger) + list(existing_ledger)
+        hub["factor_tests"] = factor_tests
+        hub["call_ledger"] = list(ledger) + list(_list(hub.get("call_ledger")))
+        hub["external_calls_triggered"] = False
+        hub["tushare_called"] = False
+        hub["deepseek_called"] = False
+        hub["github_called"] = False
+        hub["does_not_execute_trades"] = True
+        hub["does_not_modify_strategy_action"] = True
+        warning = (
+            "Factor 行业分类 provider raw rows 已绑定 scope；out_date 端点语义仍未证实，PIT 提升保持 fail-closed。"
+            if receipt.get("provider_industry_membership_raw_rows_collected") is True
+            else "Factor 行业分类 provider preflight/失败模式已记录；未形成 PIT 行业分类生产证据。"
+        )
+        hub["warnings"] = [warning] + [
+            item for item in _list(hub.get("warnings")) if item != warning
+        ]
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+            "command_center_factor_quant_hub_packet",
+            hub,
+        )
+    except Exception as exc:
+        payload_safe["cache_write_error_safe"] = _safe_text(exc)
+    live_execution_failed = bool(
+        adapter is None
+        and receipt.get("execution_authorized") is True
+        and receipt.get("provider_call_ledger_evidence_done") is not True
+    )
+    authoritative_write_failed = bool(
+        adapter is None
+        and receipt.get("execution_authorized") is True
+        and not authoritative_event
+    )
+    final_status = "failed" if live_execution_failed or authoritative_write_failed else "success"
+    updated = update_task_status(
+        task["task_id"],
+        status=final_status,
+        progress=1.0,
+        current_step=str(receipt.get("status") or "factor_test_provider_industry_membership_recorded"),
+        error_message_safe=(
+            str(receipt.get("status") or "provider_industry_membership_failed_safe")
+            if final_status == "failed"
+            else ""
+        ),
+        call_ledger=ledger,
+    ) or task
+    updated["payload_safe"] = payload_safe
+    updated["provider_evidence_authoritative"] = bool(
+        authoritative_event.get("authoritative_current_promoted") is True
+    )
+    updated["provider_evidence_event_digest"] = str(
+        authoritative_event.get("event_digest") or ""
+    )
     return updated
 
 
@@ -13496,6 +15308,8 @@ def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
         return run_factor_test_provider_small_pool_execution_request_task(payload)
     if task_type == "run_factor_test_provider_small_pool_acceptance":
         return run_factor_test_provider_small_pool_acceptance_task(payload)
+    if task_type == FACTOR_TEST_INDUSTRY_PROVIDER_TASK_TYPE:
+        return run_factor_test_provider_industry_membership_task(payload)
     if task_type == "run_deepseek_factor_explanation":
         return run_factor_deepseek_explanation_task(payload)
     if task_type == "run_deepseek_provider_benchmark_scope_ticket":

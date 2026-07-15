@@ -61583,6 +61583,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         factor_tests = {
             "effective_dated_industry_source_contract": "tushare_index_member_all.v1",
+            "effective_dated_industry_interval_semantics": "in_date_inclusive_out_date_exclusive",
             "effective_dated_industry_membership_rows": [
                 {
                     "ts_code": symbol,
