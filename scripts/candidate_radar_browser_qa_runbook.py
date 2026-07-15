@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNNER_SCRIPT = ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 CANDIDATE_ROUTE = ROOT / "desktop" / "src" / "routes" / "CandidateRadar.tsx"
 ARTIFACT_ROOT = ".stock_ming_3/motion_qa"
-LOCAL_VITE_BASE = "http://127.0.0.1:5173"
+LOCAL_VITE_BASE = "http://127.0.0.1:4173"
 LOCAL_API_BASE = "http://127.0.0.1:8710"
 
 QA_ROUTE = {
@@ -34,9 +34,9 @@ QA_VIEWPORTS = [
     {"name": "mobile", "width": 390, "height": 844},
 ]
 PERFORMANCE_BUDGETS = {
-    "candidate_radar_first_stable_ms": 1200,
-    "route_transition_observed_ms": 500,
-    "largest_motion_layout_shift": 0.1,
+    "candidate_radar_first_stable_us": 1_200_000,
+    "route_transition_observed_us": 500_000,
+    "largest_motion_layout_shift_ppm": 100_000,
     "long_task_over_50ms_count": 0,
 }
 VISUAL_ACCEPTANCE_CRITERIA = [
@@ -77,7 +77,7 @@ def build_runbook() -> dict[str, Any]:
     candidate_source = _read(CANDIDATE_ROUTE)
     runner_available = (
         RUNNER_SCRIPT.exists()
-        and "command_center_3_motion_browser_qa_result.v1" in runner
+        and "command_center_3_motion_browser_qa_result.v6" in runner
         and "explicit_local_browser_visual_performance_run" in runner
         and "chromium.launch" in runner
         and "page.goto" in runner
@@ -88,7 +88,8 @@ def build_runbook() -> dict[str, Any]:
         and "local_urls_only" in runner
         and "external_calls_triggered: false" in runner
         and "does_not_execute_trades: true" in runner
-        and "child_process" not in runner
+        and "execFileSync(\"git\"" in runner
+        and "--expected-head-full" in runner
         and ("tushare" + "_adapter") not in runner
         and ("deepseek" + "_adapter") not in runner
         and ("api.github" + ".com") not in runner

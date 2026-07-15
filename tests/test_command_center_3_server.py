@@ -23,6 +23,7 @@ from server.services.task_service import (
     read_task_status,
     update_task_status,
 )
+from tests.test_motion_current_head_evidence import write_attested_pair
 from storage.sqlite_meta import SQLiteMetaStore
 
 
@@ -2138,6 +2139,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "MOTION_QA_ARTIFACT_ROOT", original_root)
         return audit_service.MOTION_QA_ARTIFACT_ROOT
+
+    def _write_current_head_motion_pair(self, motion_root: Path) -> None:
+        current_head = str(audit_service._current_git_head_summary().get("head_full") or "")
+        write_attested_pair(motion_root.parent, head=current_head)
 
     def test_ltg01_producer_cache_refresh_handoff_surfaces_sqlite_replay_direct_evidence(self):
         packet_keys = sorted(
@@ -7084,7 +7089,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(runbook["scope"], "local_next_session_browser_qa_runbook_not_browser_execution")
         self.assertEqual(runbook["status"], "next_session_browser_qa_runbook_ready_execution_pending")
         self.assertTrue(runbook["local_runbook_ready"])
-        self.assertEqual(runbook["next_route"], "#next")
+        self.assertEqual(runbook["next_route"], "#next-session-chart")
         self.assertEqual(runbook["artifact_root"], ".stock_ming_3/motion_qa")
         self.assertFalse(runbook["production_replacement_complete"])
         self.assertFalse(runbook["streamlit_parity_complete"])
@@ -7099,8 +7104,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         evidence = service_packet["next_session_browser_qa_evidence_summary"]
         self.assertEqual(evidence["schema_version"], "next_session_browser_qa_evidence.v1")
         self.assertEqual(evidence["scope"], "local_next_session_browser_qa_evidence_reader_no_browser_execution")
-        self.assertEqual(evidence["next_route"], "#next")
-        self.assertTrue(evidence["reads_ignored_local_reports_only"])
+        self.assertEqual(evidence["next_route"], "#next-session-chart")
+        self.assertFalse(evidence["reads_ignored_local_reports_only"])
+        self.assertTrue(evidence["reads_current_head_terminal_v6_pair_only"])
         self.assertTrue(evidence["screenshots_are_not_tracked"])
         self.assertTrue(evidence["report_artifacts_are_not_tracked"])
         self.assertFalse(evidence["production_replacement_complete"])
@@ -21317,7 +21323,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("QA_ROUTES", script)
         self.assertIn("QA_VIEWPORTS", script)
         self.assertIn("#candidates", script)
-        self.assertIn("#next", script)
+        self.assertIn('"#next-session-chart"', script)
         self.assertIn("#tasks", script)
         self.assertIn("visual_qa_complete", script)
         self.assertIn("browser_performance_verified", script)
@@ -21423,7 +21429,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("QA_VIEWPORTS", script)
         self.assertIn("VISUAL_ACCEPTANCE_CRITERIA", script)
         self.assertIn("PERFORMANCE_BUDGETS", script)
-        self.assertIn("127.0.0.1:5173", script)
+        self.assertIn("127.0.0.1:4173", script)
         self.assertIn("127.0.0.1:8710", script)
         self.assertIn(".stock_ming_3/motion_qa", script)
         self.assertIn("opens_no_browser", script)
@@ -21434,7 +21440,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("httpx.", script)
         self.assertNotIn("subprocess", script)
         self.assertNotIn("openai", script.lower())
-        self.assertIn("command_center_3_motion_browser_qa_result.v1", runner)
+        self.assertIn("command_center_3_motion_browser_qa_result.v6", runner)
         self.assertIn("explicit_local_browser_visual_performance_run", runner)
         self.assertIn("chromium.launch", runner)
         self.assertIn("page.goto", runner)
@@ -21443,7 +21449,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("local_urls_only", runner)
         self.assertIn("external_calls_triggered: false", runner)
         self.assertIn("does_not_execute_trades: true", runner)
-        self.assertNotIn("child_process", runner)
+        self.assertIn("execFileSync", runner)
+        self.assertIn("--expected-head-full", runner)
+        self.assertIn("createHmac", runner)
+        self.assertIn('serviceWorkers: "block"', runner)
+        self.assertIn("formalPackageBinding", runner)
+        self.assertIn("frontendServiceIdentity", runner)
+        self.assertIn("--initialize-runner-trust", runner)
         self.assertNotIn("uvicorn", runner)
         self.assertNotIn("npm run dev", runner)
         self.assertNotIn("tushare_adapter", runner)
@@ -27886,6 +27898,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "MOTION_QA_ARTIFACT_ROOT", original_root)
         return audit_service.MOTION_QA_ARTIFACT_ROOT
+
+    def _write_current_head_motion_pair(self, motion_root: Path) -> None:
+        current_head = str(audit_service._current_git_head_summary().get("head_full") or "")
+        write_attested_pair(motion_root.parent, head=current_head)
 
     def _with_release_gate_receipt_path(self):
         original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
@@ -45665,7 +45681,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(browser_qa_evidence["opens_no_browser"])
         self.assertTrue(browser_qa_evidence["starts_no_servers"])
         self.assertTrue(browser_qa_evidence["writes_no_artifacts"])
-        self.assertTrue(browser_qa_evidence["reads_ignored_local_reports_only"])
+        self.assertFalse(browser_qa_evidence["reads_ignored_local_reports_only"])
+        self.assertTrue(browser_qa_evidence["reads_current_head_terminal_v6_pair_only"])
         self.assertFalse(browser_qa_evidence["production_radar_replacement_complete"])
         self.assertFalse(browser_qa_evidence["legacy_retirement_ready"])
         self.assertFalse(browser_qa_evidence["external_calls_triggered"])
@@ -46127,37 +46144,38 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         packet = candidate_service.read_candidate_radar_cache()
 
         evidence = packet["candidate_browser_qa_evidence_summary"]
-        self.assertEqual(evidence["status"], "candidate_browser_qa_evidence_review_required_local_artifact")
-        self.assertTrue(evidence["local_browser_qa_evidence_found"])
-        self.assertEqual(evidence["candidate_viewport_row_count"], 4)
+        self.assertEqual(evidence["status"], "candidate_browser_qa_evidence_pending")
+        self.assertFalse(evidence["local_browser_qa_evidence_found"])
+        self.assertEqual(evidence["legacy_v1_report_count"], 1)
+        self.assertEqual(evidence["legacy_v1_compatibility_status"], "blocked_not_promotion_evidence")
+        self.assertEqual(evidence["candidate_viewport_row_count"], 0)
         self.assertEqual(evidence["review_required_count"], 0)
-        self.assertTrue(evidence["default_motion_passed"])
+        self.assertFalse(evidence["default_motion_passed"])
         self.assertFalse(evidence["reduced_motion_passed"])
         self.assertFalse(evidence["motion_viewport_coverage_complete"])
         self.assertFalse(evidence["candidate_browser_qa_evidence_ready"])
-        self.assertEqual(evidence["default_motion_viewports"], ["desktop", "laptop", "mobile", "tablet"])
+        self.assertEqual(evidence["default_motion_viewports"], [])
         self.assertEqual(evidence["reduced_motion_viewports"], [])
-        self.assertEqual(evidence["missing_default_motion_viewports"], [])
+        self.assertEqual(evidence["missing_default_motion_viewports"], ["desktop", "laptop", "mobile", "tablet"])
         self.assertEqual(evidence["missing_reduced_motion_viewports"], ["desktop", "laptop", "mobile", "tablet"])
-        self.assertTrue(evidence["candidate_visual_qa_evidence_passed"])
-        self.assertTrue(evidence["candidate_browser_performance_evidence_passed"])
-        self.assertTrue(evidence["visual_qa_complete"])
-        self.assertTrue(evidence["browser_performance_trace_done"])
+        self.assertFalse(evidence["candidate_visual_qa_evidence_passed"])
+        self.assertFalse(evidence["candidate_browser_performance_evidence_passed"])
+        self.assertFalse(evidence["visual_qa_complete"])
+        self.assertFalse(evidence["browser_performance_trace_done"])
         self.assertFalse(evidence["production_radar_replacement_complete"])
         self.assertFalse(evidence["legacy_retirement_ready"])
         self.assertTrue(evidence["opens_no_browser"])
         self.assertTrue(evidence["writes_no_artifacts"])
-        self.assertTrue(evidence["reads_ignored_local_reports_only"])
+        self.assertFalse(evidence["reads_ignored_local_reports_only"])
+        self.assertTrue(evidence["reads_current_head_terminal_v6_pair_only"])
         self.assertFalse(evidence["external_calls_triggered"])
         self.assertTrue(evidence["does_not_execute_trades"])
         self.assertTrue(evidence["does_not_modify_strategy_action"])
-        self.assertEqual(packet["counts"]["candidate_browser_qa_evidence_row_count"], 4)
+        self.assertEqual(packet["counts"]["candidate_browser_qa_evidence_row_count"], 0)
         self.assertEqual(packet["counts"]["candidate_browser_qa_evidence_review_required_count"], 0)
-        self.assertTrue(packet["counts"]["candidate_browser_qa_visual_evidence_passed"])
-        self.assertTrue(packet["counts"]["candidate_browser_qa_performance_evidence_passed"])
-        self.assertEqual(len(packet["candidate_browser_qa_evidence_rows"]), 4)
-        self.assertTrue(all(row["route"] == "#candidates" for row in packet["candidate_browser_qa_evidence_rows"]))
-        self.assertTrue(all(row["production_radar_replacement_complete"] is False for row in packet["candidate_browser_qa_evidence_rows"]))
+        self.assertFalse(packet["counts"]["candidate_browser_qa_visual_evidence_passed"])
+        self.assertFalse(packet["counts"]["candidate_browser_qa_performance_evidence_passed"])
+        self.assertEqual(packet["candidate_browser_qa_evidence_rows"], [])
         self.assertFalse(packet["fast_scan_readiness_audit"]["production_radar_replacement_complete"])
         self.assertFalse(packet["replacement_gap_triage_contract"]["legacy_retirement_ready"])
 
@@ -46361,28 +46379,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         cache = self.client.get("/api/candidate-radar/cache").json()["data"]
         evidence = cache["candidate_browser_qa_evidence_summary"]
-        self.assertEqual(evidence["status"], "candidate_browser_qa_evidence_passed_local_artifact")
-        self.assertTrue(evidence["default_motion_passed"])
-        self.assertTrue(evidence["reduced_motion_passed"])
-        self.assertTrue(evidence["motion_viewport_coverage_complete"])
-        self.assertTrue(evidence["candidate_browser_qa_evidence_ready"])
-        self.assertEqual(evidence["default_motion_viewports"], ["desktop", "laptop", "mobile", "tablet"])
-        self.assertEqual(evidence["reduced_motion_viewports"], ["desktop", "laptop", "mobile", "tablet"])
-        self.assertEqual(evidence["missing_default_motion_viewports"], [])
-        self.assertEqual(evidence["missing_reduced_motion_viewports"], [])
-        self.assertTrue(evidence["candidate_visual_qa_evidence_passed"])
-        self.assertTrue(evidence["candidate_browser_performance_evidence_passed"])
+        self.assertEqual(evidence["status"], "candidate_browser_qa_evidence_pending")
+        self.assertEqual(evidence["legacy_v1_report_count"], 2)
+        self.assertEqual(evidence["legacy_v1_compatibility_status"], "blocked_not_promotion_evidence")
+        self.assertFalse(evidence["default_motion_passed"])
+        self.assertFalse(evidence["reduced_motion_passed"])
+        self.assertFalse(evidence["motion_viewport_coverage_complete"])
+        self.assertFalse(evidence["candidate_browser_qa_evidence_ready"])
         review = cache["candidate_browser_qa_review_contract"]
-        self.assertEqual(review["status"], "candidate_browser_qa_review_ready_local_artifact")
+        self.assertEqual(review["status"], "candidate_browser_qa_review_pending")
         self.assertTrue(review["explicit_review_task_done"])
-        self.assertTrue(review["local_browser_qa_review_ready"])
-        self.assertEqual(review["blocking_review_count"], 0)
-        self.assertEqual(review["blocking_review_keys"], [])
-        self.assertTrue(review["default_motion_passed"])
-        self.assertTrue(review["reduced_motion_passed"])
-        self.assertTrue(review["motion_viewport_coverage_complete"])
-        self.assertEqual(review["missing_default_motion_viewports"], [])
-        self.assertEqual(review["missing_reduced_motion_viewports"], [])
+        self.assertFalse(review["local_browser_qa_review_ready"])
+        self.assertGreater(review["blocking_review_count"], 0)
+        self.assertIn("candidate_route_evidence_available", review["blocking_review_keys"])
         self.assertFalse(review["production_radar_replacement_complete"])
         self.assertFalse(review["legacy_retirement_ready"])
         self.assertFalse(review["full_pool_scan_done"])
@@ -46393,51 +46402,49 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(cache["policy"]["candidate_browser_qa_review_is_not_production_replacement"])
         no_loss = cache["no_feature_loss_acceptance_contract"]
         no_loss_rows = {row["criterion"]: row for row in cache["no_feature_loss_acceptance_rows"]}
-        self.assertTrue(no_loss["browser_performance_trace_done"])
-        self.assertTrue(no_loss["browser_visual_delta_qa_done"])
-        self.assertEqual(no_loss_rows["browser_performance_trace_pending"]["status"], "reviewed_local_artifact")
-        self.assertTrue(no_loss_rows["browser_performance_trace_pending"]["production_ready"])
+        self.assertFalse(no_loss["browser_performance_trace_done"])
+        self.assertFalse(no_loss["browser_visual_delta_qa_done"])
+        self.assertEqual(no_loss_rows["browser_performance_trace_pending"]["status"], "pending_visual_perf_trace")
         triage = cache["replacement_gap_triage_contract"]
         triage_rows = {row["gap_key"]: row for row in cache["replacement_gap_triage_rows"]}
         self.assertFalse(triage["legacy_retirement_ready"])
-        self.assertEqual(triage_rows["browser_visual_delta_qa"]["status"], "passed")
-        self.assertFalse(triage_rows["browser_visual_delta_qa"]["blocks_legacy_retirement"])
-        self.assertEqual(triage_rows["browser_performance_trace"]["status"], "passed")
-        self.assertFalse(triage_rows["browser_performance_trace"]["blocks_legacy_retirement"])
+        self.assertEqual(triage_rows["browser_visual_delta_qa"]["status"], "pending_visual_qa")
+        self.assertTrue(triage_rows["browser_visual_delta_qa"]["blocks_legacy_retirement"])
+        self.assertEqual(triage_rows["browser_performance_trace"]["status"], "pending_perf_trace")
+        self.assertTrue(triage_rows["browser_performance_trace"]["blocks_legacy_retirement"])
         self.assertIn("provider_backed_acceptance", triage["blocking_gap_keys"])
         self.assertIn("full_pool_worker_execution", triage["blocking_gap_keys"])
         self.assertIn("deep_scan_execution", triage["blocking_gap_keys"])
-        self.assertNotIn("browser_visual_delta_qa", triage["blocking_gap_keys"])
-        self.assertNotIn("browser_performance_trace", triage["blocking_gap_keys"])
+        self.assertIn("browser_visual_delta_qa", triage["blocking_gap_keys"])
+        self.assertIn("browser_performance_trace", triage["blocking_gap_keys"])
         promotion = cache["candidate_radar_promotion_blocker_audit"]
         promotion_rows = {row["criterion"]: row for row in cache["candidate_radar_promotion_blocker_rows"]}
         self.assertFalse(promotion["promotion_ready"])
         self.assertFalse(promotion["production_radar_replacement_complete"])
-        self.assertEqual(promotion["browser_evidence_blocker_count"], 0)
+        self.assertGreater(promotion["browser_evidence_blocker_count"], 0)
         self.assertGreater(promotion["provider_acceptance_blocker_count"], 0)
         self.assertGreater(promotion["worker_execution_blocker_count"], 0)
-        self.assertEqual(promotion_rows["browser_visual_and_performance_reviewed"]["status"], "passed")
-        self.assertFalse(promotion_rows["browser_visual_and_performance_reviewed"]["blocks_promotion"])
+        self.assertTrue(promotion_rows["browser_visual_and_performance_reviewed"]["blocks_promotion"])
         self.assertIn("provider_signal_coverage_complete", promotion["blocking_promotion_keys"])
         self.assertIn("full_pool_execution_complete", promotion["blocking_promotion_keys"])
         self.assertIn("deep_scan_execution_complete", promotion["blocking_promotion_keys"])
         activation = cache["candidate_radar_production_activation_receipt"]
         activation_rows = {row["activation_key"]: row for row in cache["candidate_radar_production_activation_rows"]}
-        self.assertTrue(activation["browser_visual_performance_reviewed"])
-        self.assertNotIn("browser_visual_performance_review", activation["missing_evidence_items"])
+        self.assertFalse(activation["browser_visual_performance_reviewed"])
+        self.assertIn("browser_visual_performance_review", activation["missing_evidence_items"])
         self.assertIn("durable_ci_or_packaged_runtime_evidence", activation["missing_evidence_items"])
         self.assertEqual(
             activation_rows["browser_visual_performance_review_required"]["status"],
-            "reviewed_local_artifact",
+            "pending_browser_review",
         )
-        self.assertFalse(activation_rows["browser_visual_performance_review_required"]["production_blocker"])
+        self.assertTrue(activation_rows["browser_visual_performance_review_required"]["production_blocker"])
         self.assertFalse(activation["production_radar_replacement_complete"])
         durable = cache["candidate_radar_durable_evidence_recipe"]
         durable_rows = {row["evidence_key"]: row for row in cache["candidate_radar_durable_evidence_rows"]}
-        self.assertTrue(durable["browser_visual_performance_reviewed"])
-        self.assertNotIn("browser_visual_performance_evidence_required", durable["missing_durable_evidence"])
-        self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["passed"])
-        self.assertFalse(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
+        self.assertFalse(durable["browser_visual_performance_reviewed"])
+        self.assertIn("browser_visual_performance_evidence_required", durable["missing_durable_evidence"])
+        self.assertFalse(durable_rows["browser_visual_performance_evidence_required"]["passed"])
+        self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
         self.assertIn("worker_full_pool_execution_evidence_required", durable["missing_durable_evidence"])
         self.assertIn("worker_deep_scan_execution_evidence_required", durable["missing_durable_evidence"])
         self.assertIn("provider_backed_parity_call_ledger_required", durable["missing_durable_evidence"])
@@ -46526,18 +46533,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         evidence, rows = candidate_service._candidate_browser_qa_evidence_summary()
 
-        self.assertEqual(evidence["status"], "candidate_browser_qa_evidence_passed_local_artifact")
-        self.assertEqual(evidence["report_count"], 4)
-        self.assertEqual(evidence["passing_report_count"], 4)
-        self.assertEqual(evidence["latest_run_id"], "00-fresh-reduced")
-        self.assertIn("00-fresh-reduced", evidence["latest_report_path"])
-        self.assertEqual(evidence["latest_generated_at"], "2026-06-15T01:10:00.000Z")
-        self.assertTrue(evidence["default_motion_passed"])
-        self.assertTrue(evidence["reduced_motion_passed"])
-        self.assertTrue(evidence["candidate_browser_qa_evidence_ready"])
-        self.assertEqual(len(rows), 16)
-        self.assertTrue(all(row["route"] == "#candidates" for row in rows))
-        self.assertTrue(all(row["production_radar_replacement_complete"] is False for row in rows))
+        self.assertEqual(evidence["status"], "candidate_browser_qa_evidence_pending")
+        self.assertEqual(evidence["scanned_report_count"], 4)
+        self.assertEqual(evidence["legacy_v1_report_count"], 4)
+        self.assertEqual(evidence["legacy_v1_compatibility_status"], "blocked_not_promotion_evidence")
+        self.assertEqual(evidence["report_count"], 0)
+        self.assertEqual(evidence["passing_report_count"], 0)
+        self.assertIsNone(evidence["latest_run_id"])
+        self.assertIsNone(evidence["latest_report_path"])
+        self.assertIsNone(evidence["latest_generated_at"])
+        self.assertFalse(evidence["default_motion_passed"])
+        self.assertFalse(evidence["reduced_motion_passed"])
+        self.assertFalse(evidence["candidate_browser_qa_evidence_ready"])
+        self.assertEqual(rows, [])
+        self.assertTrue(evidence["reads_current_head_terminal_v6_pair_only"])
 
     def test_candidate_radar_production_replacement_review_is_button_gated_local_only(self):
         self._with_meta_store()
@@ -50327,12 +50336,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         next_rows = {row["phase"]: row for row in packet["candidate_radar_next_execution_rows"]}
         review = packet["candidate_browser_qa_review_contract"]
         durable = packet["candidate_radar_durable_evidence_recipe"]
-        self.assertEqual(review["status"], "candidate_browser_qa_review_ready_local_artifact")
+        self.assertEqual(review["status"], "candidate_browser_qa_review_pending")
         self.assertTrue(review["explicit_review_task_done"])
-        self.assertTrue(review["local_browser_qa_review_ready"])
-        self.assertNotIn("browser_visual_performance_evidence_required", durable["missing_durable_evidence"])
-        self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["passed"])
-        self.assertFalse(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
+        self.assertFalse(review["local_browser_qa_review_ready"])
+        self.assertIn("browser_visual_performance_evidence_required", durable["missing_durable_evidence"])
+        self.assertFalse(durable_rows["browser_visual_performance_evidence_required"]["passed"])
+        self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
         self.assertEqual(receipt["schema_version"], "candidate_radar_worker_execution_request.v1")
         self.assertEqual(receipt["status"], "candidate_radar_worker_execution_request_ready_manual_worker_task_pending")
         self.assertEqual(receipt["route"], "POST /api/candidate-radar/worker-execution-request")
@@ -51275,7 +51284,6 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "worker_runtime_round_trip_link",
             "local_worker_full_pool_fallback_receipt",
             "local_worker_deep_scan_fallback_receipt",
-            "browser_visual_performance_promotion",
         }
         review_or_acceptance_keys = {
             "search_quant_provider_model_acceptance",
@@ -51289,6 +51297,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(radar_stage_manifest["direct_evidence_stage_count"], len(radar_direct_keys))
         self.assertEqual(radar_stage_manifest["pending_stage_count"], len(radar_pending_keys))
         self.assertTrue(required_direct_keys.issubset(radar_direct_keys))
+        self.assertIn("browser_visual_performance_promotion", radar_pending_keys)
         self.assertTrue(review_or_acceptance_keys.issubset(radar_direct_keys | radar_pending_keys))
         self.assertIn("provider_parity_acceptance", radar_direct_keys | radar_pending_keys)
         self.assertTrue(worker_execution_keys.issubset(radar_direct_keys | radar_pending_keys))
@@ -51425,6 +51434,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(ltg13["production_blocker_count"], len(ltg13_pending_keys))
         self.assertEqual(ltg13["direct_evidence_stage_count"], len(ltg13_direct_keys))
         self.assertTrue(required_direct_keys.issubset(ltg13_direct_keys))
+        self.assertIn("browser_visual_performance_promotion", ltg13_pending_keys)
         self.assertTrue(worker_execution_keys.issubset(ltg13_direct_keys | ltg13_pending_keys))
         self.assertIn("worker_transport_round_trip_smoke", ltg13_direct_keys | ltg13_pending_keys)
         self.assertTrue(ltg13["cache_render_boundary_verified"])
@@ -51437,7 +51447,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg13["worker_deep_scan_fallback_execution_verified"])
         self.assertTrue(ltg13["local_worker_full_pool_fallback_evidence_visible"])
         self.assertTrue(ltg13["local_worker_deep_scan_fallback_evidence_visible"])
-        self.assertTrue(ltg13["browser_visual_performance_evidence_verified"])
+        self.assertFalse(ltg13["browser_visual_performance_evidence_verified"])
         self.assertTrue(ltg13["legacy_retirement_review_direct_evidence_verified"])
         self.assertTrue(ltg13["production_promotion_review_direct_evidence_verified"])
         self.assertTrue(ltg13["legacy_retirement_review_ready_for_local_review"])
@@ -54888,15 +54898,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         evidence, rows = next_session_service._next_session_browser_qa_evidence_summary()
 
-        self.assertEqual(evidence["status"], "next_session_browser_qa_evidence_passed_local_artifact")
-        self.assertEqual(evidence["report_count"], 4)
-        self.assertEqual(evidence["passing_report_count"], 4)
-        self.assertEqual(evidence["latest_run_id"], "00-fresh-reduced")
-        self.assertIn("00-fresh-reduced", evidence["latest_report_path"])
-        self.assertEqual(evidence["latest_generated_at"], "2026-06-18T09:01:00Z")
-        self.assertTrue(evidence["default_motion_passed"])
-        self.assertTrue(evidence["reduced_motion_passed"])
-        self.assertEqual(len(rows), 16)
+        self.assertEqual(evidence["status"], "next_session_browser_qa_evidence_pending")
+        self.assertEqual(evidence["scanned_report_count"], 4)
+        self.assertEqual(evidence["legacy_v1_report_count"], 4)
+        self.assertEqual(evidence["legacy_v1_compatibility_status"], "blocked_not_promotion_evidence")
+        self.assertEqual(evidence["report_count"], 0)
+        self.assertEqual(evidence["passing_report_count"], 0)
+        self.assertIsNone(evidence["latest_run_id"])
+        self.assertIsNone(evidence["latest_report_path"])
+        self.assertIsNone(evidence["latest_generated_at"])
+        self.assertFalse(evidence["default_motion_passed"])
+        self.assertFalse(evidence["reduced_motion_passed"])
+        self.assertEqual(rows, [])
+        self.assertTrue(evidence["reads_current_head_terminal_v6_pair_only"])
 
     def test_next_session_browser_qa_review_task_is_button_gated_local_only(self):
         self._with_meta_store()
@@ -54977,7 +54991,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         task = response["data"]["task"]
         self.assertEqual(task["task_type"], "run_next_session_browser_qa_review")
         self.assertEqual(task["status"], "success")
-        self.assertEqual(task["current_step"], "next_session_browser_qa_review_ready")
+        self.assertEqual(task["current_step"], "next_session_browser_qa_review_pending")
         self.assertFalse(task["external_calls_triggered"])
         self.assertFalse(task["tushare_called"])
         self.assertFalse(task["deepseek_called"])
@@ -54988,20 +55002,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
         ledger = task["call_ledger"][0]
         self.assertEqual(ledger["api"], "local_next_session_browser_qa_review")
-        self.assertEqual(ledger["call_status"], "next_session_browser_qa_review_ready_local_artifact")
+        self.assertEqual(ledger["call_status"], "next_session_browser_qa_review_pending")
         self.assertFalse(ledger["external"])
         self.assertFalse(ledger["external_calls_triggered"])
 
         refreshed = self.client.get("/api/next-session/cache").json()["data"]
         review = refreshed["next_session_browser_qa_review_contract"]
-        self.assertEqual(review["status"], "next_session_browser_qa_review_ready_local_artifact")
+        self.assertEqual(review["status"], "next_session_browser_qa_review_pending")
         self.assertTrue(review["explicit_review_task_done"])
-        self.assertTrue(review["local_browser_qa_review_ready"])
-        self.assertEqual(review["blocking_review_count"], 0)
-        self.assertTrue(review["default_motion_passed"])
-        self.assertTrue(review["reduced_motion_passed"])
-        self.assertTrue(review["next_visual_qa_evidence_passed"])
-        self.assertTrue(review["next_browser_performance_evidence_passed"])
+        self.assertFalse(review["local_browser_qa_review_ready"])
+        self.assertGreater(review["blocking_review_count"], 0)
+        self.assertFalse(review["default_motion_passed"])
+        self.assertFalse(review["reduced_motion_passed"])
+        self.assertFalse(review["next_visual_qa_evidence_passed"])
+        self.assertFalse(review["next_browser_performance_evidence_passed"])
         self.assertFalse(review["streamlit_parity_complete"])
         self.assertFalse(review["production_replacement_complete"])
         self.assertTrue(review["opens_no_browser"])
@@ -55010,7 +55024,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(review["tushare_called"])
         self.assertFalse(review["deepseek_called"])
         self.assertFalse(review["github_called"])
-        self.assertTrue(refreshed["next_session_browser_qa_review_ready"])
+        self.assertFalse(refreshed["next_session_browser_qa_review_ready"])
 
     def test_next_session_browser_qa_review_persists_when_projection_cache_missing(self):
         self._with_meta_store()
@@ -55078,30 +55092,25 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         task = response["data"]["task"]
         self.assertEqual(task["task_type"], "run_next_session_browser_qa_review")
         self.assertEqual(task["status"], "success")
-        self.assertEqual(task["current_step"], "next_session_browser_qa_review_ready")
+        self.assertEqual(task["current_step"], "next_session_browser_qa_review_pending")
         self.assertNotIn("authorization", task["payload_safe"])
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
         persisted = next_session_service.SQLiteMetaStore(next_session_service.SQLITE_META_PATH).read_packet(
             next_session_service.NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY
         )
-        self.assertEqual(persisted["packet_key"], next_session_service.NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY)
-        self.assertEqual(persisted["status"], "next_session_browser_qa_review_ready_local_artifact")
-        self.assertFalse(persisted["external_calls_triggered"])
-        self.assertFalse(persisted["tushare_called"])
-        self.assertFalse(persisted["deepseek_called"])
-        self.assertFalse(persisted["github_called"])
+        self.assertIsNone(persisted)
 
         refreshed = next_session_service.read_next_session_cache()
         self.assertEqual(refreshed["status"], "cache_missing")
         review = refreshed["next_session_browser_qa_review_contract"]
-        self.assertEqual(review["status"], "next_session_browser_qa_review_ready_local_artifact")
-        self.assertTrue(review["explicit_review_task_done"])
-        self.assertTrue(review["local_browser_qa_review_ready"])
-        self.assertEqual(review["task_id"], task["task_id"])
-        self.assertEqual(review["blocking_review_count"], 0)
-        self.assertTrue(review["next_visual_qa_evidence_passed"])
-        self.assertTrue(review["next_browser_performance_evidence_passed"])
+        self.assertEqual(review["status"], "next_session_browser_qa_review_pending")
+        self.assertFalse(review["explicit_review_task_done"])
+        self.assertFalse(review["local_browser_qa_review_ready"])
+        self.assertIsNone(review["task_id"])
+        self.assertGreater(review["blocking_review_count"], 0)
+        self.assertFalse(review["next_visual_qa_evidence_passed"])
+        self.assertFalse(review["next_browser_performance_evidence_passed"])
         self.assertFalse(review["streamlit_parity_complete"])
         self.assertFalse(review["production_replacement_complete"])
         self.assertTrue(review["opens_no_browser"])
@@ -55110,8 +55119,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(review["tushare_called"])
         self.assertFalse(review["deepseek_called"])
         self.assertFalse(review["github_called"])
-        self.assertTrue(refreshed["next_session_browser_qa_review_ready"])
-        self.assertIn("local_next_session_browser_qa_review", {row.get("api") for row in refreshed["call_ledger"]})
+        self.assertFalse(refreshed["next_session_browser_qa_review_ready"])
+        self.assertNotIn("local_next_session_browser_qa_review", {row.get("api") for row in refreshed["call_ledger"]})
         self.assertIn(
             "local_next_session_production_stage_scope_manifest",
             {row.get("api") for row in refreshed["call_ledger"]},
@@ -55122,23 +55131,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertTrue(stage_scope["local_manifest_ready"])
         self.assertEqual(stage_scope["stage_count"], 8)
-        self.assertEqual(stage_scope["direct_evidence_stage_count"], 3)
-        self.assertEqual(stage_scope["pending_stage_count"], 5)
-        self.assertEqual(stage_scope["production_blocker_count"], 5)
-        self.assertEqual(
-            set(stage_scope["direct_evidence_stage_keys"]),
-            {
-                "browser_visual_qa",
-                "browser_performance_trace",
-                "reduced_motion_accessibility_qa",
-            },
-        )
+        self.assertEqual(stage_scope["direct_evidence_stage_count"], 0)
+        self.assertEqual(stage_scope["pending_stage_count"], 8)
+        self.assertEqual(stage_scope["production_blocker_count"], 8)
+        self.assertEqual(stage_scope["direct_evidence_stage_keys"], [])
         self.assertFalse(stage_scope["exact_cache_payload_contract_done"])
         self.assertFalse(stage_scope["interaction_hover_click_contract_done"])
-        self.assertTrue(stage_scope["browser_visual_qa_done"])
-        self.assertTrue(stage_scope["browser_performance_trace_done"])
-        self.assertTrue(stage_scope["reduced_motion_accessibility_qa_done"])
-        self.assertTrue(stage_scope["local_browser_qa_review_ready"])
+        self.assertFalse(stage_scope["browser_visual_qa_done"])
+        self.assertFalse(stage_scope["browser_performance_trace_done"])
+        self.assertFalse(stage_scope["reduced_motion_accessibility_qa_done"])
+        self.assertFalse(stage_scope["local_browser_qa_review_ready"])
         self.assertFalse(stage_scope["streamlit_parity_complete"])
         self.assertFalse(stage_scope["durable_ci_evidence_complete"])
         self.assertFalse(stage_scope["production_replacement_complete"])
@@ -55152,37 +55154,30 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         stage_rows = {row["stage_key"]: row for row in refreshed["next_session_production_stage_scope_rows"]}
         self.assertFalse(stage_rows["exact_cache_payload_contract"]["direct_evidence_complete"])
         self.assertFalse(stage_rows["interaction_hover_click_contract"]["direct_evidence_complete"])
-        self.assertTrue(stage_rows["browser_visual_qa"]["direct_evidence_complete"])
-        self.assertTrue(stage_rows["browser_performance_trace"]["direct_evidence_complete"])
-        self.assertTrue(stage_rows["reduced_motion_accessibility_qa"]["direct_evidence_complete"])
+        self.assertFalse(stage_rows["browser_visual_qa"]["direct_evidence_complete"])
+        self.assertFalse(stage_rows["browser_performance_trace"]["direct_evidence_complete"])
+        self.assertFalse(stage_rows["reduced_motion_accessibility_qa"]["direct_evidence_complete"])
         self.assertFalse(stage_rows["streamlit_parity_review"]["direct_evidence_complete"])
-        self.assertEqual(refreshed["counts"]["next_session_production_stage_scope_blocker_count"], 5)
+        self.assertEqual(refreshed["counts"]["next_session_production_stage_scope_blocker_count"], 8)
         self.assertTrue(refreshed["policy"]["next_session_production_stage_scope_manifest_is_local"])
         self.assertTrue(refreshed["policy"]["next_session_production_stage_scope_is_not_production_completion"])
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         ltg08 = observed_stage_rows["LTG-08"]
-        assert_ltg08_next_session_stage_scope(self, ltg08, expected_direct_count=3)
-        self.assertEqual(ltg08["status"], "observed_next_session_direct_evidence_production_pending")
+        assert_ltg08_next_session_stage_scope(self, ltg08, expected_direct_count=0)
+        self.assertEqual(ltg08["status"], "observed_in_next_session_map_static_contract")
         self.assertEqual(ltg08["row_count"], 8)
-        self.assertEqual(ltg08["pending_stage_count"], 5)
-        self.assertEqual(ltg08["production_blocker_count"], 5)
-        self.assertEqual(ltg08["direct_evidence_stage_count"], 3)
-        self.assertEqual(
-            set(ltg08["direct_evidence_stage_keys"]),
-            {
-                "browser_visual_qa",
-                "browser_performance_trace",
-                "reduced_motion_accessibility_qa",
-            },
-        )
+        self.assertEqual(ltg08["pending_stage_count"], 8)
+        self.assertEqual(ltg08["production_blocker_count"], 8)
+        self.assertEqual(ltg08["direct_evidence_stage_count"], 0)
+        self.assertEqual(ltg08["direct_evidence_stage_keys"], [])
         self.assertFalse(ltg08["exact_cache_payload_contract_done"])
         self.assertFalse(ltg08["interaction_hover_click_contract_done"])
-        self.assertTrue(ltg08["browser_visual_qa_done"])
-        self.assertTrue(ltg08["browser_performance_trace_done"])
-        self.assertTrue(ltg08["reduced_motion_accessibility_qa_done"])
-        self.assertTrue(ltg08["local_browser_qa_review_ready"])
+        self.assertFalse(ltg08["browser_visual_qa_done"])
+        self.assertFalse(ltg08["browser_performance_trace_done"])
+        self.assertFalse(ltg08["reduced_motion_accessibility_qa_done"])
+        self.assertFalse(ltg08["local_browser_qa_review_ready"])
         self.assertFalse(ltg08["streamlit_parity_complete"])
         self.assertFalse(ltg08["production_replacement_complete"])
         self.assertFalse(ltg08["external_calls_triggered"])
@@ -55195,14 +55190,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg08["can_close_from_observed_row"])
         long_term_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
         ltg08_goal = long_term_goals["LTG-08"]
-        self.assertTrue(ltg08_goal["observed_next_session_browser_qa_direct_evidence_done"])
+        self.assertFalse(ltg08_goal["observed_next_session_browser_qa_direct_evidence_done"])
         self.assertFalse(ltg08_goal["observed_next_session_browser_qa_is_production_replacement"])
-        self.assertIn("same-packet retained signal/capability coverage", ltg08_goal["next_step"])
-        self.assertNotIn("same-packet Streamlit parity", ltg08_goal["next_step"])
-        self.assertIn("durable CI/release evidence", ltg08_goal["next_step"])
-        self.assertIn("do not rerun local browser QA", ltg08_goal["next_step"])
-        self.assertIn("same-packet retained signal/capability reference capture", ltg08_goal["not_complete_because"])
-        self.assertIn("local browser visual/performance/reduced-motion QA is observed", ltg08_goal["not_complete_because"])
+        self.assertIn("browser", ltg08_goal["next_step"].lower())
+        self.assertNotIn("local browser visual/performance/reduced-motion QA is observed", ltg08_goal["not_complete_because"])
 
     def test_next_session_streamlit_parity_review_is_same_packet_local_only(self):
         self._with_meta_store()
@@ -55461,7 +55452,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             json={"reviewer": "local", "authorization": "Bearer SHOULD_DROP"},
         ).json()
         self.assertTrue(browser_response["ok"])
-        self.assertEqual(browser_response["data"]["task"]["current_step"], "next_session_browser_qa_review_ready")
+        self.assertEqual(browser_response["data"]["task"]["current_step"], "next_session_browser_qa_review_pending")
 
         parity_response = self.client.post(
             "/api/next-session/streamlit-parity-review",
@@ -55481,7 +55472,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         task = response["data"]["task"]
         self.assertEqual(task["task_type"], "run_next_session_production_promotion_review")
         self.assertEqual(task["status"], "success")
-        self.assertEqual(task["current_step"], "next_session_production_promotion_review_ready")
+        self.assertEqual(task["current_step"], "next_session_production_promotion_review_pending")
         self.assertFalse(task["external_calls_triggered"])
         self.assertFalse(task["tushare_called"])
         self.assertFalse(task["deepseek_called"])
@@ -55493,7 +55484,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ledger = task["call_ledger"][0]
         self.assertEqual(ledger["api"], "local_next_session_production_promotion_review")
         self.assertEqual(
-            ledger["call_status"], "next_session_production_promotion_review_ready_replacement_blocked"
+            ledger["call_status"], "next_session_production_promotion_review_pending"
         )
         self.assertFalse(ledger["external"])
         self.assertFalse(ledger["external_calls_triggered"])
@@ -55501,21 +55492,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         persisted = next_session_service.SQLiteMetaStore(next_session_service.SQLITE_META_PATH).read_packet(
             next_session_service.NEXT_SESSION_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY
         )
-        self.assertEqual(
-            persisted["packet_key"], next_session_service.NEXT_SESSION_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY
-        )
-        self.assertEqual(persisted["status"], "next_session_production_promotion_review_ready_replacement_blocked")
-        self.assertFalse(persisted["external_calls_triggered"])
-        self.assertFalse(persisted["tushare_called"])
-        self.assertFalse(persisted["deepseek_called"])
-        self.assertFalse(persisted["github_called"])
+        self.assertIsNone(persisted)
 
         refreshed = self.client.get("/api/next-session/cache").json()["data"]
         review = refreshed["next_session_production_promotion_review_contract"]
-        self.assertEqual(review["status"], "next_session_production_promotion_review_ready_replacement_blocked")
-        self.assertTrue(review["explicit_review_task_done"])
-        self.assertTrue(review["local_production_promotion_review_ready"])
-        self.assertTrue(review["local_browser_qa_review_ready"])
+        self.assertEqual(review["status"], "next_session_production_promotion_review_pending")
+        self.assertFalse(review["explicit_review_task_done"])
+        self.assertFalse(review["local_production_promotion_review_ready"])
+        self.assertFalse(review["local_browser_qa_review_ready"])
         self.assertTrue(review["same_packet_no_loss_review_ready"])
         self.assertTrue(review["durable_evidence_recipe_ready"])
         self.assertFalse(review["ready_to_mark_production_replacement_complete"])
@@ -55529,46 +55513,42 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(review["tushare_called"])
         self.assertFalse(review["deepseek_called"])
         self.assertFalse(review["github_called"])
-        self.assertTrue(refreshed["next_session_production_promotion_review_ready"])
-        self.assertIn(
+        self.assertFalse(refreshed["next_session_production_promotion_review_ready"])
+        self.assertNotIn(
             "local_next_session_production_promotion_review", {row.get("api") for row in refreshed["call_ledger"]}
         )
 
         stage_scope = refreshed["next_session_production_stage_scope_manifest"]
-        self.assertTrue(stage_scope["local_production_promotion_review_ready"])
+        self.assertFalse(stage_scope["local_production_promotion_review_ready"])
         self.assertFalse(stage_scope["durable_ci_evidence_complete"])
         self.assertFalse(stage_scope["production_replacement_complete"])
-        self.assertEqual(stage_scope["direct_evidence_stage_count"], 7)
-        self.assertEqual(stage_scope["pending_stage_count"], 1)
+        self.assertEqual(stage_scope["direct_evidence_stage_count"], 3)
+        self.assertEqual(stage_scope["pending_stage_count"], 5)
         self.assertEqual(
             set(stage_scope["direct_evidence_stage_keys"]),
             {
                 "exact_cache_payload_contract",
                 "interaction_hover_click_contract",
                 "streamlit_parity_review",
-                "browser_visual_qa",
-                "browser_performance_trace",
-                "reduced_motion_accessibility_qa",
-                "production_replacement_promotion",
             },
         )
         stage_rows = {row["stage_key"]: row for row in refreshed["next_session_production_stage_scope_rows"]}
-        self.assertTrue(stage_rows["production_replacement_promotion"]["direct_evidence_complete"])
+        self.assertFalse(stage_rows["production_replacement_promotion"]["direct_evidence_complete"])
         self.assertTrue(stage_rows["production_replacement_promotion"]["production_blocker"])
         self.assertIn(
-            "local_promotion_review", stage_rows["production_replacement_promotion"]["current_status"]
+            "pending", stage_rows["production_replacement_promotion"]["current_status"]
         )
         self.assertFalse(stage_rows["durable_ci_release_evidence"]["direct_evidence_complete"])
-        self.assertIn("durable CI", stage_rows["production_replacement_promotion"]["missing_evidence"][0])
+        self.assertIn("explicit production replacement promotion review", stage_rows["production_replacement_promotion"]["missing_evidence"])
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         ltg08 = observed_stage_rows["LTG-08"]
-        assert_ltg08_next_session_stage_scope(self, ltg08, expected_direct_count=7)
+        assert_ltg08_next_session_stage_scope(self, ltg08, expected_direct_count=3)
         self.assertEqual(ltg08["status"], "observed_next_session_direct_evidence_production_pending")
-        self.assertEqual(ltg08["direct_evidence_stage_count"], 7)
-        self.assertEqual(ltg08["pending_stage_count"], 1)
-        self.assertIn("production_replacement_promotion", ltg08["direct_evidence_stage_keys"])
+        self.assertEqual(ltg08["direct_evidence_stage_count"], 3)
+        self.assertEqual(ltg08["pending_stage_count"], 5)
+        self.assertNotIn("production_replacement_promotion", ltg08["direct_evidence_stage_keys"])
         self.assertFalse(ltg08["production_replacement_complete"])
         self.assertFalse(ltg08["streamlit_parity_complete"])
         self.assertFalse(ltg08["external_calls_triggered"])
@@ -55584,14 +55564,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             handoff["schema_version"], "ltg08_next_session_production_replacement_handoff_summary.v1"
         )
         self.assertEqual(
-            handoff["status"], "next_session_local_promotion_review_ready_release_evidence_pending"
+            handoff["status"], "next_session_same_packet_review_ready_promotion_review_needed"
         )
-        self.assertTrue(handoff["local_review_chain_ready_for_release_evidence"])
-        self.assertTrue(handoff["local_browser_qa_review_ready"])
+        self.assertFalse(handoff["local_review_chain_ready_for_release_evidence"])
+        self.assertFalse(handoff["local_browser_qa_review_ready"])
         self.assertTrue(handoff["same_packet_no_loss_review_ready"])
-        self.assertTrue(handoff["local_production_promotion_review_ready"])
-        self.assertEqual(handoff["direct_evidence_stage_count"], 7)
-        self.assertEqual(handoff["pending_stage_count"], 1)
+        self.assertFalse(handoff["local_production_promotion_review_ready"])
+        self.assertEqual(handoff["direct_evidence_stage_count"], 3)
+        self.assertEqual(handoff["pending_stage_count"], 5)
         self.assertTrue(handoff["requires_retained_signal_capability_release_evidence"])
         self.assertTrue(handoff["requires_durable_ci_release_evidence"])
         self.assertTrue(handoff["requires_remote_ci_review_after_local_complete"])
@@ -55605,7 +55585,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(handoff["does_not_execute_trades"])
         self.assertFalse(handoff["can_close_goal"])
         self.assertFalse(next_session_queue["future_handoff_ready_from_local_receipt"])
-        self.assertTrue(
+        self.assertFalse(
             next_session_queue["supporting_next_session_local_review_chain_ready_for_release_evidence"]
         )
         self.assertTrue(next_session_queue["supporting_next_session_requires_durable_ci_release_evidence"])
@@ -58246,7 +58226,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("#candidates", matrix_routes)
         self.assertIn("#worker", matrix_routes)
         budget_metrics = {row.get("metric") for row in packet["motion_browser_qa_matrix_rows"] if row.get("metric")}
-        self.assertIn("route_transition_observed_ms", budget_metrics)
+        self.assertIn("route_transition_observed_us", budget_metrics)
         self.assertTrue(packet["counts"]["motion_browser_qa_runbook_ready"])
         self.assertEqual(packet["counts"]["motion_browser_qa_matrix_count"], 24)
         self.assertGreaterEqual(packet["counts"]["motion_browser_qa_performance_budget_count"], 4)
@@ -59398,36 +59378,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         motion_root = self._with_motion_qa_root()
         clear_task_statuses_for_tests(clear_persisted=True)
 
-        for run_id, reduced in (("default-run", False), ("reduced-run", True)):
-            report_dir = motion_root / run_id
-            report_dir.mkdir(parents=True, exist_ok=True)
-            (report_dir / "motion_browser_qa_report.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
-                        "run_id": run_id,
-                        "generated_at": "2026-06-13T21:00:00",
-                        "status": "motion_browser_qa_passed",
-                        "reduced_motion": reduced,
-                        "visual_qa_complete": True,
-                        "browser_performance_verified": True,
-                        "qa_matrix_count": 20,
-                        "passed_count": 20,
-                        "review_required_count": 0,
-                        "console_error_count": 0,
-                        "route_count": 5,
-                        "viewport_count": 4,
-                        "external_calls_triggered": False,
-                        "tushare_called": False,
-                        "deepseek_called": False,
-                        "github_called": False,
-                        "does_not_execute_trades": True,
-                        "does_not_modify_strategy_action": True,
-                    },
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
+        self._write_current_head_motion_pair(motion_root)
 
         response = self.client.post(
             "/api/audit/motion-browser-qa-review",
@@ -59491,48 +59442,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self._with_meta_store()
         motion_root = self._with_motion_qa_root()
 
-        reports = [
-            ("z-older-default", False, "2026-06-13T21:00:00", "older-default"),
-            ("2026-06-18-newer-default", False, "2026-06-18T08:40:15", "newer-default"),
-            ("2026-06-18-newer-reduced", True, "2026-06-18T08:41:36", "newer-reduced"),
-        ]
-        for directory, reduced, generated_at, run_id in reports:
-            report_dir = motion_root / directory
-            report_dir.mkdir(parents=True, exist_ok=True)
-            (report_dir / "motion_browser_qa_report.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
-                        "run_id": run_id,
-                        "generated_at": generated_at,
-                        "status": "motion_browser_qa_passed",
-                        "reduced_motion": reduced,
-                        "visual_qa_complete": True,
-                        "browser_performance_verified": True,
-                        "qa_matrix_count": 20,
-                        "passed_count": 20,
-                        "review_required_count": 0,
-                        "console_error_count": 0,
-                        "route_count": 5,
-                        "viewport_count": 4,
-                        "external_calls_triggered": False,
-                        "tushare_called": False,
-                        "deepseek_called": False,
-                        "github_called": False,
-                        "does_not_execute_trades": True,
-                        "does_not_modify_strategy_action": True,
-                    },
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
+        self._write_current_head_motion_pair(motion_root)
 
         packet = self.client.get("/api/audit/cache").json()["data"]
         evidence = packet["motion_browser_qa_evidence_contract"]
-        self.assertEqual(evidence["latest_default_run_id"], "newer-default")
-        self.assertEqual(evidence["latest_reduced_motion_run_id"], "newer-reduced")
-        self.assertIn("2026-06-18-newer-default", evidence["latest_default_report_path"])
-        self.assertIn("2026-06-18-newer-reduced", evidence["latest_reduced_motion_report_path"])
+        self.assertEqual(evidence["latest_default_run_id"], "2026-07-15T12-00-00-000Z-normal")
+        self.assertEqual(evidence["latest_reduced_motion_run_id"], "2026-07-15T12-00-00-001Z-reduced")
+        self.assertIn("2026-07-15T12-00-00-000Z-normal", evidence["latest_default_report_path"])
+        self.assertIn("2026-07-15T12-00-00-001Z-reduced", evidence["latest_reduced_motion_report_path"])
         self.assertTrue(evidence["default_motion_passed"])
         self.assertTrue(evidence["reduced_motion_passed"])
         self.assertTrue(evidence["visual_qa_complete"])
@@ -59550,36 +59467,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         motion_root = self._with_motion_qa_root()
         clear_task_statuses_for_tests(clear_persisted=True)
 
-        for run_id, reduced in (("default-run", False), ("reduced-run", True)):
-            report_dir = motion_root / run_id
-            report_dir.mkdir(parents=True, exist_ok=True)
-            (report_dir / "motion_browser_qa_report.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
-                        "run_id": run_id,
-                        "generated_at": "2026-06-13T21:00:00",
-                        "status": "motion_browser_qa_passed",
-                        "reduced_motion": reduced,
-                        "visual_qa_complete": True,
-                        "browser_performance_verified": True,
-                        "qa_matrix_count": 20,
-                        "passed_count": 20,
-                        "review_required_count": 0,
-                        "console_error_count": 0,
-                        "route_count": 5,
-                        "viewport_count": 4,
-                        "external_calls_triggered": False,
-                        "tushare_called": False,
-                        "deepseek_called": False,
-                        "github_called": False,
-                        "does_not_execute_trades": True,
-                        "does_not_modify_strategy_action": True,
-                    },
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
+        self._write_current_head_motion_pair(motion_root)
 
         review_response = self.client.post("/api/audit/motion-browser-qa-review", json={"reviewer": "local"}).json()
         self.assertTrue(review_response["ok"])
@@ -59660,36 +59548,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         motion_root = self._with_motion_qa_root()
         clear_task_statuses_for_tests(clear_persisted=True)
 
-        for run_id, reduced in (("default-run", False), ("reduced-run", True)):
-            report_dir = motion_root / run_id
-            report_dir.mkdir(parents=True, exist_ok=True)
-            (report_dir / "motion_browser_qa_report.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
-                        "run_id": run_id,
-                        "generated_at": "2026-06-13T21:00:00",
-                        "status": "motion_browser_qa_passed",
-                        "reduced_motion": reduced,
-                        "visual_qa_complete": True,
-                        "browser_performance_verified": True,
-                        "qa_matrix_count": 20,
-                        "passed_count": 20,
-                        "review_required_count": 0,
-                        "console_error_count": 0,
-                        "route_count": 5,
-                        "viewport_count": 4,
-                        "external_calls_triggered": False,
-                        "tushare_called": False,
-                        "deepseek_called": False,
-                        "github_called": False,
-                        "does_not_execute_trades": True,
-                        "does_not_modify_strategy_action": True,
-                    },
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
+        self._write_current_head_motion_pair(motion_root)
 
         self.client.post("/api/audit/motion-browser-qa-review", json={"reviewer": "local"})
         self.client.post(

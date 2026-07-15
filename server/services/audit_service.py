@@ -24,6 +24,7 @@ from server.services import (
     market_service,
     migration_status_service,
     model_strategy_service,
+    motion_evidence_service,
     next_session_service,
     packet_service,
     position_service,
@@ -508,6 +509,22 @@ def _current_git_head_summary() -> dict[str, Any]:
     if head_text.startswith("ref:"):
         ref_name = head_text.split(":", 1)[1].strip()
         ref_text = _read_local_text(git_dir / ref_name).strip()
+        if not ref_text:
+            common_text = _read_local_text(git_dir / "commondir").strip()
+            if common_text:
+                common_dir = Path(common_text)
+                if not common_dir.is_absolute():
+                    common_dir = (git_dir / common_dir).resolve()
+                ref_text = _read_local_text(common_dir / ref_name).strip()
+                if not ref_text:
+                    packed_refs = _read_local_text(common_dir / "packed-refs")
+                    for line in packed_refs.splitlines():
+                        if line.startswith(("#", "^")) or " " not in line:
+                            continue
+                        packed_head, packed_ref = line.split(" ", 1)
+                        if packed_ref.strip() == ref_name:
+                            ref_text = packed_head.strip()
+                            break
         head_full = ref_text if ref_text else ""
         branch = ref_name.removeprefix("refs/heads/")
         return {
@@ -2192,7 +2209,7 @@ def _release_gate_readiness_audit(
         and "writes_no_artifacts" in motion_browser_qa_runbook
         and "external_calls_triggered" in motion_browser_qa_runbook
         and "motion_browser_qa_runner.mjs" in motion_browser_qa_runbook
-        and "command_center_3_motion_browser_qa_result.v1" in motion_browser_qa_runner
+        and "command_center_3_motion_browser_qa_result.v6" in motion_browser_qa_runner
         and "explicit_local_browser_visual_performance_run" in motion_browser_qa_runner
         and "chromium.launch" in motion_browser_qa_runner
         and "page.goto" in motion_browser_qa_runner
@@ -4228,7 +4245,7 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
     runner_script = _read_local_text(MOTION_BROWSER_QA_RUNNER_PATH)
     route_specs = [
         ("#home", "Command Center", "page staging and status summary clarity"),
-        ("#next", "Next Session Map", "chart update clarity and reduced-motion chart updates"),
+        ("#next-session-chart", "Next Session Map", "chart update clarity and reduced-motion chart updates"),
         ("#candidates", "Candidate Radar", "radar result cluster and runtime-budget visibility"),
         ("#worker", "Worker Runtime", "runtime evidence visibility and production-blocker readability"),
         ("#tasks", "Task Monitor", "task phase confirmation and progress readability"),
@@ -4244,33 +4261,44 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
         MOTION_BROWSER_QA_RUNBOOK_PATH.exists()
         and "command_center_3_motion_browser_qa_runbook.v1" in script
         and "local_browser_qa_runbook_not_browser_execution" in script
-        and "127.0.0.1:5173" in script
+        and "127.0.0.1:4173" in script
         and "127.0.0.1:8710" in script
         and "writes_no_artifacts" in script
     )
     runner_available = (
         MOTION_BROWSER_QA_RUNNER_PATH.exists()
-        and "command_center_3_motion_browser_qa_result.v1" in runner_script
+        and "command_center_3_motion_browser_qa_result.v6" in runner_script
         and "explicit_local_browser_visual_performance_run" in runner_script
         and "chromium.launch" in runner_script
         and "page.goto" in runner_script
         and ".stock_ming_3/motion_qa" in runner_script
         and "starts_no_servers" in runner_script
         and "local_urls_only" in runner_script
+        and "--expected-head-full" in runner_script
+        and "createHmac" in runner_script
+        and ".runner_attestation_v4" in runner_script
+        and "--initialize-runner-trust" in runner_script
+        and 'serviceWorkers: "block"' in runner_script
+        and "formalPackageBinding" in runner_script
         and "tushare_adapter" not in runner_script
         and "deepseek_adapter" not in runner_script
         and "api.github.com" not in runner_script
     )
     rows = [
         {
+            "phase": "initialize_runner_trust_once",
+            "status": "manual_required",
+            "evidence": "on a clean current HEAD and only with no prior motion evidence, use --initialize-runner-trust; normal runner execution never creates or repairs trust",
+        },
+        {
             "phase": "start_fastapi_backend",
             "status": "manual_required",
             "evidence": "scripts/dev_server.sh uses project .venv and serves FastAPI on 127.0.0.1:8710",
         },
         {
-            "phase": "start_vite_frontend",
+            "phase": "start_vite_preview",
             "status": "manual_required",
-            "evidence": "cd desktop && npm run dev serves local Vite on 127.0.0.1:5173",
+            "evidence": "after current-head build/package validation, cd desktop && npm run preview serves desktop/dist on exact 127.0.0.1:4173",
         },
         {
             "phase": "load_pinned_routes",
@@ -4322,7 +4350,7 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
             "width": width,
             "height": height,
             "risk_focus": risk_focus,
-            "url": f"http://127.0.0.1:5173/{route}",
+            "url": f"http://127.0.0.1:4173/{route}",
             "visual_qa_complete": False,
             "performance_trace_complete": False,
         }
@@ -4331,15 +4359,15 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
     ]
     performance_budget_rows = [
         {
-            "metric": "route_transition_observed_ms",
-            "budget": 500,
-            "scope": "hash route change after cache is loaded",
+            "metric": "route_transition_observed_us",
+            "budget": 500_000,
+            "scope": "same-page hash route change after cache is loaded",
             "verified": False,
         },
         {
-            "metric": "largest_motion_layout_shift",
-            "budget": 0.1,
-            "scope": "state confirmation cue and card staging",
+            "metric": "largest_motion_layout_shift_ppm",
+            "budget": 100_000,
+            "scope": "PerformanceObserver layout-shift entries",
             "verified": False,
         },
         {
@@ -4349,8 +4377,8 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
             "verified": False,
         },
         {
-            "metric": "candidate_radar_first_stable_ms",
-            "budget": 1200,
+            "metric": "candidate_radar_first_stable_us",
+            "budget": 1_200_000,
             "scope": "cache already local; no provider refresh",
             "verified": False,
         },
@@ -4366,7 +4394,7 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
         "browser_performance_verified": False,
         "production_motion_complete": False,
         "local_api_base": "http://127.0.0.1:8710",
-        "local_vite_base": "http://127.0.0.1:5173",
+        "local_vite_base": "http://127.0.0.1:4173",
         "runner_script": "scripts/motion_browser_qa_runner.mjs",
         "browser_runner_available": runner_available,
         "runner_executes_only_when_called": True,
@@ -4444,24 +4472,27 @@ def _motion_browser_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[st
         )
     )
     rows = rows[-20:]
-    passed_rows = [
-        row
-        for row in rows
-        if row["status"] == "motion_browser_qa_passed"
-        and row["visual_qa_complete"] is True
-        and row["browser_performance_verified"] is True
-        and row["qa_matrix_count"] >= 20
-        and row["passed_count"] >= 20
-        and row["review_required_count"] == 0
-        and row["console_error_count"] == 0
-    ]
-    default_rows = [row for row in passed_rows if row["reduced_motion"] is False]
-    reduced_rows = [row for row in passed_rows if row["reduced_motion"] is True]
-    default_passed = bool(default_rows)
-    reduced_passed = bool(reduced_rows)
-    evidence_ready = default_passed and reduced_passed
-    latest_default = default_rows[-1] if default_rows else {}
-    latest_reduced = reduced_rows[-1] if reduced_rows else {}
+    current_head_full = str(_current_git_head_summary().get("head_full") or "")
+    validation = motion_evidence_service.validate_current_motion_evidence(
+        MOTION_QA_ARTIFACT_ROOT.parent,
+        expected_head_full=current_head_full,
+        project_root=(
+            PROJECT_ROOT
+            if MOTION_QA_ARTIFACT_ROOT == PROJECT_ROOT / ".stock_ming_3" / "motion_qa"
+            else None
+        ),
+    )
+    evidence_ready = validation.get("motion_current_head_pair_verified") is True
+    default_passed = evidence_ready and validation.get("normal_mode_verified") is True
+    reduced_passed = evidence_ready and validation.get("reduced_mode_verified") is True
+    latest_default = next(
+        (row for row in reversed(rows) if row.get("run_id") == validation.get("normal_run_id")),
+        {},
+    )
+    latest_reduced = next(
+        (row for row in reversed(rows) if row.get("run_id") == validation.get("reduced_run_id")),
+        {},
+    )
     contract = {
         "schema_version": "command_center_3_motion_browser_qa_evidence.v1",
         "status": "motion_browser_qa_evidence_available_review_pending"
@@ -4471,7 +4502,7 @@ def _motion_browser_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[st
         "ltg": "LTG-14",
         "artifact_root": ".stock_ming_3/motion_qa",
         "report_count": len(rows),
-        "passing_report_count": len(passed_rows),
+        "passing_report_count": 2 if evidence_ready else 0,
         "default_motion_passed": default_passed,
         "reduced_motion_passed": reduced_passed,
         "visual_qa_complete": evidence_ready,
@@ -4481,6 +4512,17 @@ def _motion_browser_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[st
         "latest_reduced_motion_run_id": latest_reduced.get("run_id"),
         "latest_default_report_path": latest_default.get("artifact_report_path"),
         "latest_reduced_motion_report_path": latest_reduced.get("artifact_report_path"),
+        "current_head_full": current_head_full,
+        "current_head_pair_verified": evidence_ready,
+        "frontend_source_digest": validation.get("frontend_source_digest"),
+        "build_identity_digest": validation.get("build_identity_digest"),
+        "dist_manifest_digest": validation.get("dist_manifest_digest"),
+        "package_identity_digest": validation.get("package_identity_digest"),
+        "attestation_blocker_count": validation.get("blocker_count"),
+        "attestation_blockers": validation.get("blockers"),
+        "runner_attestation_trust_boundary": validation.get("trust_boundary"),
+        "reader_created_or_repaired_trust_material": False,
+        "key_or_fingerprint_exposed": False,
         "row_count": len(rows),
         "cache_only": True,
         "reads_ignored_local_reports_only": True,

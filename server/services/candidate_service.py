@@ -17,7 +17,7 @@ from config import (
     get_deepseek_model,
 )
 from storage.sqlite_meta import SQLiteMetaStore
-from server.services import next_session_service, packet_service, task_service, tushare_task_service, worker_service
+from server.services import motion_evidence_service, next_session_service, packet_service, task_service, tushare_task_service, worker_service
 
 
 PACKET_KEY = "command_center_3_candidate_radar_cache"
@@ -6624,7 +6624,7 @@ def _candidate_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[
     ]
     runner_available = (
         MOTION_BROWSER_QA_RUNNER_PATH.exists()
-        and "command_center_3_motion_browser_qa_result.v1" in runner_source
+        and "command_center_3_motion_browser_qa_result.v6" in runner_source
         and "explicit_local_browser_visual_performance_run" in runner_source
         and "chromium.launch" in runner_source
         and "page.goto" in runner_source
@@ -6739,9 +6739,9 @@ def _candidate_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[
         "viewport_count": len(viewports),
         "qa_matrix_count": len(matrix_rows),
         "performance_budgets": {
-            "candidate_radar_first_stable_ms": 1200,
-            "route_transition_observed_ms": 500,
-            "largest_motion_layout_shift": 0.1,
+            "candidate_radar_first_stable_us": 1_200_000,
+            "route_transition_observed_us": 500_000,
+            "largest_motion_layout_shift_ppm": 100_000,
             "long_task_over_50ms_count": 0,
         },
         "visual_acceptance_criteria": [
@@ -6806,18 +6806,35 @@ def _candidate_browser_qa_report_sort_key(path: Path, report: Mapping[str, Any])
         return 0.0, str(path)
 
 
+def _candidate_motion_transition_us(report: Mapping[str, Any], row: Mapping[str, Any]) -> tuple[int | None, int | None]:
+    observed = row.get("route_transition_observed_us")
+    budget = row.get("route_transition_budget_us") or _as_dict(report.get("performance_budgets")).get("route_transition_observed_us")
+    if type(observed) is int and type(budget) is int:
+        return observed, budget
+    legacy_observed = row.get("route_transition_observed_ms")
+    legacy_budget = row.get("route_transition_budget_ms") or _as_dict(report.get("performance_budgets")).get("route_transition_observed_ms")
+    try:
+        return int(round(float(legacy_observed) * 1000)), int(round(float(legacy_budget) * 1000))
+    except Exception:
+        return None, None
+
+
+def _candidate_layout_shift_ppm(row: Mapping[str, Any]) -> int | None:
+    value = row.get("largest_motion_layout_shift_ppm")
+    if type(value) is int:
+        return value
+    try:
+        return int(round(float(row.get("largest_motion_layout_shift")) * 1_000_000))
+    except Exception:
+        return None
+
+
 def _candidate_browser_qa_report_rows_passed(report: Mapping[str, Any], rows: list[Mapping[str, Any]]) -> bool:
     if not rows:
         return False
     for row in rows:
-        transition_observed = row.get("route_transition_observed_ms")
-        transition_budget = row.get("route_transition_budget_ms") or _as_dict(report.get("performance_budgets")).get(
-            "route_transition_observed_ms"
-        )
-        try:
-            transition_within_budget = float(transition_observed) <= float(transition_budget)
-        except Exception:
-            transition_within_budget = False
+        transition_observed, transition_budget = _candidate_motion_transition_us(report, row)
+        transition_within_budget = transition_observed is not None and transition_budget is not None and transition_observed <= transition_budget
         if (
             str(row.get("status") or "") != "passed"
             or row.get("visual_qa_complete") is not True
@@ -6831,14 +6848,8 @@ def _candidate_browser_qa_report_rows_passed(report: Mapping[str, Any], rows: li
 
 
 def _candidate_browser_qa_evidence_row(report: Mapping[str, Any], row: Mapping[str, Any], report_path: Path) -> dict[str, Any]:
-    transition_observed = row.get("route_transition_observed_ms")
-    transition_budget = row.get("route_transition_budget_ms") or _as_dict(report.get("performance_budgets")).get(
-        "route_transition_observed_ms"
-    )
-    try:
-        transition_within_budget = float(transition_observed) <= float(transition_budget)
-    except Exception:
-        transition_within_budget = False
+    transition_observed, transition_budget = _candidate_motion_transition_us(report, row)
+    transition_within_budget = transition_observed is not None and transition_budget is not None and transition_observed <= transition_budget
     row_status = str(row.get("status") or "unknown")
     long_task_count = int(row.get("long_task_over_50ms_count") or 0)
     clipped_count = int(row.get("clipped_count") or 0)
@@ -6859,10 +6870,10 @@ def _candidate_browser_qa_evidence_row(report: Mapping[str, Any], row: Mapping[s
         "visual_qa_complete": visual_complete,
         "performance_trace_complete": performance_trace_complete,
         "performance_passed": performance_passed,
-        "route_transition_observed_ms": transition_observed,
-        "route_transition_budget_ms": transition_budget,
+        "route_transition_observed_us": transition_observed,
+        "route_transition_budget_us": transition_budget,
         "long_task_over_50ms_count": long_task_count,
-        "largest_motion_layout_shift": row.get("largest_motion_layout_shift"),
+        "largest_motion_layout_shift_ppm": _candidate_layout_shift_ppm(row),
         "clipped_count": clipped_count,
         "offscreen_count": offscreen_count,
         "review_required": row_status != "passed" or not visual_complete or not performance_passed,
@@ -6882,60 +6893,51 @@ def _candidate_browser_qa_evidence_row(report: Mapping[str, Any], row: Mapping[s
 
 
 def _candidate_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    report_paths = (
-        sorted(MOTION_QA_ARTIFACT_ROOT.glob("*/motion_browser_qa_report.json"))
-        if MOTION_QA_ARTIFACT_ROOT.exists()
-        else []
+    report_paths = sorted(MOTION_QA_ARTIFACT_ROOT.glob("*/motion_browser_qa_report.json")) if MOTION_QA_ARTIFACT_ROOT.exists() else []
+    legacy_v1_report_count = sum(
+        1
+        for path in report_paths
+        if _read_candidate_browser_qa_report(path).get("schema_version") == "command_center_3_motion_browser_qa_result.v1"
     )
-    report_entries: list[tuple[float, str, Path, dict[str, Any]]] = []
-    for path in report_paths:
-        report = _read_candidate_browser_qa_report(path)
-        sort_ts, sort_path = _candidate_browser_qa_report_sort_key(path, report)
-        report_entries.append((sort_ts, sort_path, path, report))
-    report_entries.sort(key=lambda item: (item[0], item[1]))
-    candidate_rows: list[dict[str, Any]] = []
-    scanned_report_count = 0
-    valid_report_count = 0
-    candidate_report_count = 0
-    passing_candidate_report_count = 0
-    latest_report_path: str | None = None
-    latest_run_id: str | None = None
-    latest_generated_at: Any = None
-    for _sort_ts, _sort_path, path, report in report_entries[-20:]:
-        scanned_report_count += 1
-        if not report:
+    expected_head_full = motion_evidence_service.current_repository_head(PROJECT_ROOT)
+    validation = motion_evidence_service.validate_current_motion_evidence(
+        MOTION_QA_ARTIFACT_ROOT.parent,
+        expected_head_full=expected_head_full,
+        project_root=PROJECT_ROOT,
+    )
+    verified = validation.get("motion_current_head_pair_verified") is True
+    trusted_rows = _as_dict(validation.get("validated_route_rows")).get("#candidates") if verified else []
+    candidate_rows = []
+    for row in _as_list(trusted_rows):
+        if not isinstance(row, Mapping):
             continue
-        valid_report = (
-            report.get("schema_version") == "command_center_3_motion_browser_qa_result.v1"
-            and report.get("scope") == "explicit_local_browser_visual_performance_run"
-            and report.get("local_urls_only") is True
-            and report.get("starts_no_servers") is True
-            and report.get("external_calls_triggered") is False
-            and report.get("tushare_called") is False
-            and report.get("deepseek_called") is False
-            and report.get("github_called") is False
-            and report.get("does_not_execute_trades") is True
-            and report.get("does_not_modify_strategy_action") is True
+        transition_observed = row.get("route_transition_observed_us")
+        transition_budget = row.get("route_transition_budget_us")
+        performance_passed = bool(
+            row.get("performance_trace_complete") is True
+            and type(transition_observed) is int
+            and type(transition_budget) is int
+            and transition_observed <= transition_budget
+            and row.get("long_task_over_50ms_count") == 0
         )
-        if not valid_report:
-            continue
-        valid_report_count += 1
-        report_candidate_rows = [
-            row
-            for row in _as_list(report.get("rows"))
-            if isinstance(row, Mapping) and str(row.get("route") or "") == "#candidates"
-        ]
-        if not report_candidate_rows:
-            continue
-        candidate_report_count += 1
-        if _candidate_browser_qa_report_rows_passed(report, report_candidate_rows):
-            passing_candidate_report_count += 1
-        latest_report_path = _relative_project_path(path)
-        latest_run_id = str(report.get("run_id") or path.parent.name)
-        latest_generated_at = report.get("generated_at")
-        candidate_rows.extend(_candidate_browser_qa_evidence_row(report, row, path) for row in report_candidate_rows)
-
-    candidate_rows = candidate_rows[-16:]
+        visual_passed = row.get("visual_qa_complete") is True and row.get("status") == "passed"
+        candidate_rows.append(
+            {
+                **dict(row),
+                "performance_passed": performance_passed,
+                "review_required": not (visual_passed and performance_passed),
+                "reads_current_head_v6_validation_only": True,
+                "production_radar_replacement_complete": False,
+                "legacy_retirement_ready": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
+            }
+        )
     row_count = len(candidate_rows)
     review_required_count = sum(1 for row in candidate_rows if row.get("review_required") is True)
     visual_passed_count = sum(1 for row in candidate_rows if row.get("visual_qa_complete") is True)
@@ -6956,7 +6958,7 @@ def _candidate_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[dict[
     missing_default_motion_viewports = sorted(required_viewports - default_motion_viewports)
     missing_reduced_motion_viewports = sorted(required_viewports - reduced_motion_viewports)
     motion_viewport_coverage_complete = default_motion_passed and reduced_motion_passed
-    local_evidence_found = row_count > 0
+    local_evidence_found = verified and row_count == 8
     visual_passed = local_evidence_found and visual_passed_count == row_count and review_required_count == 0
     performance_passed = local_evidence_found and performance_passed_count == row_count and review_required_count == 0
     candidate_browser_qa_evidence_ready = visual_passed and performance_passed and motion_viewport_coverage_complete
@@ -6974,12 +6976,14 @@ def _candidate_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[dict[
         "ltg": "LTG-13/LTG-14",
         "artifact_root": ".stock_ming_3/motion_qa",
         "local_browser_qa_evidence_found": local_evidence_found,
-        "scanned_report_count": scanned_report_count,
-        "valid_report_count": valid_report_count,
-        "candidate_report_count": candidate_report_count,
-        "passing_candidate_report_count": passing_candidate_report_count,
-        "report_count": candidate_report_count,
-        "passing_report_count": passing_candidate_report_count,
+        "scanned_report_count": len(report_paths),
+        "valid_report_count": 2 if verified else 0,
+        "legacy_v1_report_count": legacy_v1_report_count,
+        "legacy_v1_compatibility_status": "blocked_not_promotion_evidence" if legacy_v1_report_count else "not_present",
+        "candidate_report_count": 2 if verified else 0,
+        "passing_candidate_report_count": 2 if candidate_browser_qa_evidence_ready else 0,
+        "report_count": 2 if verified else 0,
+        "passing_report_count": 2 if candidate_browser_qa_evidence_ready else 0,
         "candidate_route": "#candidates",
         "candidate_viewport_row_count": row_count,
         "review_required_count": review_required_count,
@@ -7001,14 +7005,18 @@ def _candidate_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[dict[
         "visual_qa_complete": visual_passed,
         "browser_performance_trace_done": performance_passed,
         "browser_visual_delta_qa_done": visual_passed,
-        "latest_report_path": latest_report_path,
-        "latest_run_id": latest_run_id,
-        "latest_generated_at": latest_generated_at,
+        "latest_report_path": None,
+        "latest_run_id": validation.get("normal_run_id"),
+        "latest_generated_at": None,
+        "current_head_full": expected_head_full,
+        "current_head_motion_validation_status": validation.get("status"),
+        "current_head_motion_validation_blockers": _as_list(validation.get("blockers")),
         "row_count": row_count,
         "opens_no_browser": True,
         "starts_no_servers": True,
         "writes_no_artifacts": True,
-        "reads_ignored_local_reports_only": True,
+        "reads_ignored_local_reports_only": False,
+        "reads_current_head_terminal_v6_pair_only": True,
         "screenshots_are_not_tracked": True,
         "report_artifacts_are_not_tracked": True,
         "production_radar_replacement_complete": False,
@@ -7022,7 +7030,7 @@ def _candidate_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[dict[
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "candidate_is_not_buy_instruction": True,
-        "note": "This reads ignored local motion browser QA reports for #candidates only. It does not open a browser, write artifacts, prove provider parity, or mark production radar replacement complete.",
+        "note": "Only validate_current_motion_evidence current-head terminal v6 normal/reduced rows can advance review. Legacy v1 reports are compatibility-visible but always blocked.",
     }
     return summary, candidate_rows
 

@@ -18,12 +18,12 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_ROOT = ".stock_ming_3/motion_qa"
 LOCAL_API_BASE = "http://127.0.0.1:8710"
-LOCAL_VITE_BASE = "http://127.0.0.1:5173"
+LOCAL_VITE_BASE = "http://127.0.0.1:4173"
 RUNNER_SCRIPT = ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 
 QA_ROUTES = [
     {"route": "#home", "label": "Command Center", "risk_focus": "page staging and status summary clarity"},
-    {"route": "#next", "label": "Next Session Map", "risk_focus": "chart update clarity and reduced-motion chart updates"},
+    {"route": "#next-session-chart", "label": "Next Session Map", "risk_focus": "chart update clarity and reduced-motion chart updates"},
     {"route": "#candidates", "label": "Candidate Radar", "risk_focus": "radar result cluster and runtime-budget visibility"},
     {"route": "#worker", "label": "Worker Runtime", "risk_focus": "runtime evidence visibility and production-blocker readability"},
     {"route": "#tasks", "label": "Task Monitor", "risk_focus": "task phase confirmation and progress readability"},
@@ -46,10 +46,10 @@ VISUAL_ACCEPTANCE_CRITERIA = [
 ]
 
 PERFORMANCE_BUDGETS = [
-    {"metric": "route_transition_observed_ms", "budget": 500, "scope": "hash route change after cache is loaded"},
-    {"metric": "largest_motion_layout_shift", "budget": 0.1, "scope": "state confirmation cue and card staging"},
+    {"metric": "route_transition_observed_us", "budget": 500_000, "scope": "same-page hash route change after cache is loaded"},
+    {"metric": "largest_motion_layout_shift_ppm", "budget": 100_000, "scope": "PerformanceObserver layout-shift entries"},
     {"metric": "long_task_over_50ms_count", "budget": 0, "scope": "route change, chart update, candidate radar render"},
-    {"metric": "candidate_radar_first_stable_ms", "budget": 1200, "scope": "cache already local; no provider refresh"},
+    {"metric": "candidate_radar_first_stable_us", "budget": 1_200_000, "scope": "cache already local; no provider refresh"},
 ]
 
 
@@ -79,16 +79,25 @@ def build_runbook() -> dict[str, Any]:
     runner_source = _read_text(RUNNER_SCRIPT)
     runner_available = (
         RUNNER_SCRIPT.exists()
-        and "command_center_3_motion_browser_qa_result.v1" in runner_source
+        and "command_center_3_motion_browser_qa_result.v6" in runner_source
         and "explicit_local_browser_visual_performance_run" in runner_source
         and "chromium.launch" in runner_source
         and "page.goto" in runner_source
+        and "window.location.hash = hash" in runner_source
+        and "PerformanceObserver" in runner_source
         and ".stock_ming_3/motion_qa" in runner_source
         and "starts_no_servers" in runner_source
         and "local_urls_only" in runner_source
         and "external_calls_triggered: false" in runner_source
         and "does_not_execute_trades: true" in runner_source
-        and "child_process" not in runner_source
+        and "--expected-head-full" in runner_source
+        and "execFileSync(\"git\"" in runner_source
+        and "createHmac" in runner_source
+        and ".runner_attestation_v4" in runner_source
+        and "--initialize-runner-trust" in runner_source
+        and 'serviceWorkers: "block"' in runner_source
+        and "formalPackageBinding" in runner_source
+        and "frontendServiceIdentity" in runner_source
         and "uvicorn" not in runner_source
         and "npm run dev" not in runner_source
         and "tushare_adapter" not in runner_source
@@ -134,14 +143,19 @@ def build_runbook() -> dict[str, Any]:
     ]
     runbook_rows = [
         _row(
+            "initialize_runner_trust_once",
+            "manual_required",
+            "on a clean current HEAD and only when no prior motion evidence exists, run the explicit --initialize-runner-trust action; normal runs never create or repair trust",
+        ),
+        _row(
             "start_fastapi_backend",
             "manual_required",
             "scripts/dev_server.sh uses project .venv and serves FastAPI on 127.0.0.1:8710",
         ),
         _row(
-            "start_vite_frontend",
+            "start_vite_preview",
             "manual_required",
-            "cd desktop && npm run dev serves local Vite on 127.0.0.1:5173",
+            "after the current-head build/package gate, cd desktop && npm run preview serves desktop/dist on exact 127.0.0.1:4173",
         ),
         _row(
             "load_pinned_routes",
@@ -201,6 +215,7 @@ def build_runbook() -> dict[str, Any]:
         "runner_executes_only_when_called": True,
         "runner_starts_no_servers": True,
         "runner_writes_ignored_local_artifacts": True,
+        "runner_trust_initialization_is_explicit_and_non_repairing": True,
         "artifact_root": ARTIFACT_ROOT,
         "route_count": len(QA_ROUTES),
         "viewport_count": len(QA_VIEWPORTS),

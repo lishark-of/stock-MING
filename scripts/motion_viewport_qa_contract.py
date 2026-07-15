@@ -19,7 +19,7 @@ DESKTOP_SRC = ROOT / "desktop" / "src"
 
 QA_ROUTES = [
     {"route": "#home", "label": "Command Center", "risk_focus": "page staging and status summary clarity"},
-    {"route": "#next", "label": "Next Session Map", "risk_focus": "chart update clarity and reduced-motion chart updates"},
+    {"route": "#next-session-chart", "label": "Next Session Map", "risk_focus": "chart update clarity and reduced-motion chart updates"},
     {"route": "#candidates", "label": "Candidate Radar", "risk_focus": "radar result cluster and runtime-budget visibility"},
     {"route": "#worker", "label": "Worker Runtime", "risk_focus": "runtime evidence visibility and production-blocker readability"},
     {"route": "#tasks", "label": "Task Monitor", "risk_focus": "task phase confirmation and progress readability"},
@@ -285,7 +285,7 @@ def build_contract() -> dict[str, Any]:
         ),
         row(
             "explicit_browser_runner_script_available",
-            "command_center_3_motion_browser_qa_result.v1" in runner_source
+            "command_center_3_motion_browser_qa_result.v6" in runner_source
             and "explicit_local_browser_visual_performance_run" in runner_source
             and "page.goto" in runner_source
             and ".stock_ming_3/motion_qa" in runner_source,
@@ -337,7 +337,7 @@ def build_contract() -> dict[str, Any]:
         "visual_qa_complete": False,
         "browser_performance_verified": False,
         "browser_runner_bundled": False,
-        "explicit_browser_runner_script_available": "command_center_3_motion_browser_qa_result.v1" in runner_source,
+        "explicit_browser_runner_script_available": "command_center_3_motion_browser_qa_result.v6" in runner_source,
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,

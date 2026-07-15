@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from server.main import app
 from server.services import v1_closeout_service
+from tests.test_motion_current_head_evidence import write_attested_pair
 
 
 def _safe_boundary(*, external: bool = False, tushare: bool = False) -> dict:
@@ -199,24 +200,7 @@ def _seed_complete_local_versions(root: Path) -> None:
     }
     _write_json(root / "desktop_runtime" / "tauri_packaged_runtime_offline_smoke.json", desktop_base)
     _write_json(root / "desktop_runtime" / "tauri_packaged_runtime_online_smoke.json", desktop_base)
-    motion_base = {
-        "schema_version": "command_center_3_motion_browser_qa_result.v1",
-        "status": "motion_browser_qa_passed",
-        "passed_count": 4,
-        "review_required_count": 0,
-        "visual_qa_complete": True,
-        "browser_performance_verified": True,
-        "production_motion_complete": False,
-        **_safe_boundary(),
-    }
-    _write_json(
-        root / "motion_qa" / "default" / "motion_browser_qa_report.json",
-        {**motion_base, "reduced_motion": False},
-    )
-    _write_json(
-        root / "motion_qa" / "reduced" / "motion_browser_qa_report.json",
-        {**motion_base, "reduced_motion": True},
-    )
+    write_attested_pair(root, head=v1_closeout_service._read_current_head_full())
 
 
 class V1EvidenceCloseoutTests(unittest.TestCase):

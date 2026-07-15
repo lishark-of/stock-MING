@@ -3027,7 +3027,7 @@ def build_contract() -> dict[str, Any]:
             and "#candidates" in browser_qa_runbook
             and "opens_no_browser" in browser_qa_runbook
             and "writes_no_artifacts" in browser_qa_runbook
-            and "command_center_3_motion_browser_qa_result.v1" in motion_runner
+            and "command_center_3_motion_browser_qa_result.v6" in motion_runner
             and "#candidates" in motion_runner
             and "radar-result-cluster" in candidate_frontend
             and "candidate_browser_qa_runbook_contract" in candidate_frontend

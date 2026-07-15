@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from server.services import full_market_worker_service, release_promotion_service
+from server.services import full_market_worker_service, motion_evidence_service, release_promotion_service
 from .tushare_production_store import validate_tushare_full_market_production_version
 from .tauri_package_verifier import validate_tauri_production_package
 
@@ -1114,33 +1114,11 @@ def _build_version_rows(
         expected_head_full=expected_head_full,
         write_manifest=False,
     )
-    latest_default: Any = None
-    latest_reduced: Any = None
-    motion_root = evidence_root / "motion_qa"
-    motion_paths = (
-        sorted(motion_root.glob("**/motion_browser_qa_report.json"), reverse=True)
-        if motion_root.is_dir()
-        else []
+    motion_validation = motion_evidence_service.validate_current_motion_evidence(
+        evidence_root,
+        expected_head_full=expected_head_full,
+        project_root=evidence_root.parent if evidence_root.name == ".stock_ming_3" else None,
     )
-    for path in motion_paths:
-        report = _read_json(path)
-        passed = bool(
-            isinstance(report, Mapping)
-            and report.get("status") == "motion_browser_qa_passed"
-            and int(report.get("passed_count") or 0) > 0
-            and int(report.get("review_required_count") or 0) == 0
-            and report.get("visual_qa_complete") is True
-            and report.get("browser_performance_verified") is True
-            and _boundary_safe(report)
-        )
-        if not passed:
-            continue
-        if report.get("reduced_motion") is True and latest_reduced is None:
-            latest_reduced = report
-        if report.get("reduced_motion") is False and latest_default is None:
-            latest_default = report
-        if latest_default is not None and latest_reduced is not None:
-            break
 
     qmt_current = root_packets.get(ROOT_PACKET_KEYS[2])
     qmt_last_good = root_packets.get(ROOT_PACKET_KEYS[3])
@@ -1242,11 +1220,10 @@ def _build_version_rows(
         ),
         (
             "v0.6",
-            [offline_desktop, online_desktop, latest_default, latest_reduced],
+            [offline_desktop, online_desktop, motion_validation],
             desktop_ready(offline_desktop)
             and desktop_ready(online_desktop)
-            and latest_default is not None
-            and latest_reduced is not None,
+            and motion_validation.get("motion_current_head_pair_verified") is True,
             ["desktop_or_motion_acceptance_missing"],
         ),
         ("v0.7", [qmt], _qmt_isolation_ready(qmt), ["qmt_research_isolation_receipt_missing_or_unsafe"]),
@@ -1309,10 +1286,7 @@ def _build_version_rows(
             and online_desktop.get("notarization_ticket_detected") is True
         ),
         "motion_production_promoted": bool(
-            latest_default
-            and latest_reduced
-            and latest_default.get("production_motion_complete") is True
-            and latest_reduced.get("production_motion_complete") is True
+            motion_validation.get("motion_current_head_pair_verified") is True
         ),
         "remote_ci_current_head": bool(
             isinstance(remote_receipt, Mapping)
@@ -1328,6 +1302,7 @@ def _build_version_rows(
         "qmt_research_isolation": _qmt_isolation_ready(qmt),
     }
     context = {
+        "motion_current_head_evidence_summary": motion_validation,
         "qmt_summary": _safe_summary(qmt, _SAFE_PACKET_FIELDS, observed=isinstance(qmt, Mapping)),
         "governed_model_summary": _safe_summary(
             governed_model,
@@ -1516,6 +1491,7 @@ def build_v1_closeout_evaluation(
         "release_review_summary": context["release_receipt_summary"],
         "remote_ci_review_summary": context["remote_receipt_summary"],
         "production_release_promotion_summary": context["release_promotion_summary"],
+        "motion_current_head_evidence_summary": context["motion_current_head_evidence_summary"],
         "tushare_production_version": context["tushare_production_version"],
         "cache_only": True,
         "read_only": True,
