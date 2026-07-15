@@ -1163,7 +1163,7 @@ def _read_persisted_packet_no_init(packet_key: str) -> dict[str, Any]:
     if not packet_service.SQLITE_META_PATH.exists():
         return {}
     try:
-        packet = SQLiteMetaStore(packet_service.SQLITE_META_PATH).read_packet(packet_key)
+        packet = SQLiteMetaStore(packet_service.SQLITE_META_PATH, read_only=True).read_packet(packet_key)
     except Exception:
         return {}
     return dict(packet) if isinstance(packet, Mapping) else {}
@@ -1892,6 +1892,70 @@ def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+_HISTORICAL_EVIDENCE_TRUE_BOOLEAN_KEYS = {
+    "latest_task_found",
+    "historical_evidence",
+    "historical_receipt_visible",
+    "history_integrity_valid",
+    "does_not_refresh_provider",
+    "does_not_execute_trades",
+    "does_not_modify_strategy_action",
+}
+
+
+def _historical_task_evidence_projection(
+    latest_task: Mapping[str, Any],
+    wrapper: Mapping[str, Any],
+    rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Make append-only task history visible without making it current/actionable."""
+
+    storage_source = str(latest_task.get("storage_source") or "")
+    if not storage_source.startswith("sqlite_task_status_history"):
+        return dict(wrapper), rows
+    integrity_valid = latest_task.get("history_integrity_valid") is True
+    projection = dict(wrapper)
+    historical_receipt = projection.pop("receipt", {})
+    historical_receipt_map = (
+        dict(historical_receipt) if integrity_valid and isinstance(historical_receipt, Mapping) else {}
+    )
+    projection.update(
+        {
+            "status": (
+                "historical_task_evidence_visible_non_actionable"
+                if integrity_valid
+                else "historical_task_evidence_rejected_integrity_failure"
+            ),
+            "storage_source": storage_source,
+            "history_updated_at": latest_task.get("history_updated_at"),
+            "history_payload_digest": latest_task.get("history_payload_digest"),
+            "history_integrity_valid": integrity_valid,
+            "history_integrity_error": str(latest_task.get("history_integrity_error") or ""),
+            "historical_evidence": True,
+            "current_actionable": False,
+            "receipt_visible": False,
+            "historical_receipt_visible": bool(historical_receipt_map),
+            "historical_receipt": historical_receipt_map,
+            "allowed_next_step": "current_live_task_or_explicit_post_required",
+        }
+    )
+    for key, value in list(projection.items()):
+        if isinstance(value, bool) and key not in _HISTORICAL_EVIDENCE_TRUE_BOOLEAN_KEYS:
+            projection[key] = False
+    if not integrity_valid:
+        return projection, []
+    historical_rows: list[dict[str, Any]] = []
+    for row in rows:
+        row_projection = dict(row)
+        row_projection["historical_evidence"] = True
+        row_projection["current_actionable"] = False
+        for key, value in list(row_projection.items()):
+            if isinstance(value, bool) and key not in _HISTORICAL_EVIDENCE_TRUE_BOOLEAN_KEYS:
+                row_projection[key] = False
+        historical_rows.append(row_projection)
+    return projection, historical_rows
+
+
 def _safe_bool(value: Any, default: bool = False) -> bool:
     if value is None:
         return bool(default)
@@ -2238,13 +2302,11 @@ def _latest_trade_cal_provider_acceptance_dry_run_from_tasks() -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
 ]:
-    latest_task = next(
-        (
-            task
-            for task in task_service.list_task_statuses()
-            if str(task.get("task_type") or "") == TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_TASK_TYPE
-        ),
-        None,
+    latest_task = task_service.read_latest_task_status_by_type(
+        TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+        include_history_fallback=True,
+        expected_history_receipt_key="trade_cal_provider_acceptance_dry_run_receipt",
+        expected_history_receipt_schema_version=TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
     )
     if not latest_task:
         return (
@@ -2338,6 +2400,11 @@ def _latest_trade_cal_provider_acceptance_dry_run_from_tasks() -> tuple[
         "does_not_modify_strategy_action": True,
         "receipt": receipt_map,
     }
+    latest_receipt, row_list = _historical_task_evidence_projection(
+        latest_task,
+        latest_receipt,
+        row_list,
+    )
     return latest_receipt, row_list, credential_list
 
 
@@ -2651,13 +2718,13 @@ def _latest_trade_cal_provider_acceptance_execution_request_from_tasks() -> tupl
     dict[str, Any],
     list[dict[str, Any]],
 ]:
-    latest_task = next(
-        (
-            task
-            for task in task_service.list_task_statuses()
-            if str(task.get("task_type") or "") == TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE
+    latest_task = task_service.read_latest_task_status_by_type(
+        TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE,
+        include_history_fallback=True,
+        expected_history_receipt_key="trade_cal_provider_acceptance_execution_request_receipt",
+        expected_history_receipt_schema_version=(
+            TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_SCHEMA_VERSION
         ),
-        None,
     )
     if not latest_task:
         return (
@@ -2759,7 +2826,7 @@ def _latest_trade_cal_provider_acceptance_execution_request_from_tasks() -> tupl
         "does_not_modify_strategy_action": True,
         "receipt": receipt_map,
     }
-    return latest_receipt, row_list
+    return _historical_task_evidence_projection(latest_task, latest_receipt, row_list)
 
 
 def _producer_cache_refresh_execution_payload_safe(
@@ -3038,13 +3105,11 @@ def _build_producer_cache_refresh_execution_request(
 
 
 def _latest_producer_cache_refresh_execution_request_from_tasks() -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    latest_task = next(
-        (
-            task
-            for task in task_service.list_task_statuses()
-            if str(task.get("task_type") or "") == PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_TASK_TYPE
-        ),
-        None,
+    latest_task = task_service.read_latest_task_status_by_type(
+        PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_TASK_TYPE,
+        include_history_fallback=True,
+        expected_history_receipt_key="producer_cache_refresh_execution_request_receipt",
+        expected_history_receipt_schema_version=PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_SCHEMA_VERSION,
     )
     if not latest_task:
         return (
@@ -3149,7 +3214,7 @@ def _latest_producer_cache_refresh_execution_request_from_tasks() -> tuple[dict[
         "does_not_modify_strategy_action": True,
         "receipt": receipt_map,
     }
-    return latest_receipt, row_list
+    return _historical_task_evidence_projection(latest_task, latest_receipt, row_list)
 
 
 def _producer_cache_refresh_payload_safe(
@@ -3747,13 +3812,11 @@ def _build_producer_cache_refresh_receipt(
 
 
 def _latest_producer_cache_refresh_from_tasks() -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    latest_task = next(
-        (
-            task
-            for task in task_service.list_task_statuses()
-            if str(task.get("task_type") or "") == PRODUCER_CACHE_REFRESH_TASK_TYPE
-        ),
-        None,
+    latest_task = task_service.read_latest_task_status_by_type(
+        PRODUCER_CACHE_REFRESH_TASK_TYPE,
+        include_history_fallback=True,
+        expected_history_receipt_key="producer_cache_refresh_receipt",
+        expected_history_receipt_schema_version=PRODUCER_CACHE_REFRESH_SCHEMA_VERSION,
     )
     if not latest_task:
         return (
@@ -3843,7 +3906,7 @@ def _latest_producer_cache_refresh_from_tasks() -> tuple[dict[str, Any], list[di
         "does_not_modify_strategy_action": True,
         "receipt": receipt_map,
     }
-    return latest_receipt, row_list
+    return _historical_task_evidence_projection(latest_task, latest_receipt, row_list)
 
 
 def _producer_cache_refresh_direct_evidence(
@@ -3855,7 +3918,7 @@ def _producer_cache_refresh_direct_evidence(
     sqlite_packet_keys: list[str] = []
     sqlite_packet_rows: list[dict[str, Any]] = []
     try:
-        store = SQLiteMetaStore(packet_service.SQLITE_META_PATH)
+        store = SQLiteMetaStore(packet_service.SQLITE_META_PATH, read_only=True)
         for spec in PRODUCER_CACHE_REFRESH_PACKET_SPECS:
             packet_key = str(spec["packet_key"])
             packet = store.read_packet(packet_key)
@@ -4002,18 +4065,17 @@ def _latest_tushare_provider_target_sample_execution_request_from_tasks() -> tup
     dict[str, Any],
     list[dict[str, Any]],
 ]:
-    latest_task = next(
-        (
-            task
-            for task in task_service.list_task_statuses()
-            if str(task.get("task_type") or "")
-            == tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE
+    latest_task = task_service.read_latest_task_status_by_type(
+        tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE,
+        include_history_fallback=True,
+        expected_history_receipt_key="provider_target_sample_execution_request_receipt",
+        expected_history_receipt_schema_version=(
+            tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_SCHEMA_VERSION
         ),
-        None,
     )
     if not latest_task:
         try:
-            packet = SQLiteMetaStore(packet_service.SQLITE_META_PATH).read_packet(
+            packet = SQLiteMetaStore(packet_service.SQLITE_META_PATH, read_only=True).read_packet(
                 "command_center_tushare_provider_target_sample_execution_request_packet"
             )
         except Exception:
@@ -4180,7 +4242,7 @@ def _latest_tushare_provider_target_sample_execution_request_from_tasks() -> tup
         "does_not_modify_strategy_action": True,
         "receipt": receipt_map,
     }
-    return latest_receipt, row_list
+    return _historical_task_evidence_projection(latest_task, latest_receipt, row_list)
 
 
 def _first_value(snapshot: Mapping[str, Any], *keys: str) -> Any:
@@ -4994,13 +5056,11 @@ def _latest_trade_cal_provider_acceptance_promotion_review_from_tasks() -> tuple
     dict[str, Any],
     list[dict[str, Any]],
 ]:
-    latest_task = next(
-        (
-            task
-            for task in task_service.list_task_statuses()
-            if str(task.get("task_type") or "") == TRADE_CAL_PROVIDER_ACCEPTANCE_PROMOTION_REVIEW_TASK_TYPE
-        ),
-        None,
+    latest_task = task_service.read_latest_task_status_by_type(
+        TRADE_CAL_PROVIDER_ACCEPTANCE_PROMOTION_REVIEW_TASK_TYPE,
+        include_history_fallback=True,
+        expected_history_receipt_key="trade_cal_provider_acceptance_promotion_review_receipt",
+        expected_history_receipt_schema_version=TRADE_CAL_PROVIDER_ACCEPTANCE_PROMOTION_REVIEW_SCHEMA_VERSION,
     )
     if not latest_task:
         return (
@@ -5104,7 +5164,7 @@ def _latest_trade_cal_provider_acceptance_promotion_review_from_tasks() -> tuple
         "does_not_modify_strategy_action": True,
         "receipt": receipt_map,
     }
-    return latest_receipt, row_list
+    return _historical_task_evidence_projection(latest_task, latest_receipt, row_list)
 
 
 def _trade_cal_release_review_payload_safe(
@@ -5331,13 +5391,11 @@ def _latest_trade_cal_provider_acceptance_release_review_from_tasks() -> tuple[
     dict[str, Any],
     list[dict[str, Any]],
 ]:
-    latest_task = next(
-        (
-            task
-            for task in task_service.list_task_statuses()
-            if str(task.get("task_type") or "") == TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_TASK_TYPE
-        ),
-        None,
+    latest_task = task_service.read_latest_task_status_by_type(
+        TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_TASK_TYPE,
+        include_history_fallback=True,
+        expected_history_receipt_key="trade_cal_provider_acceptance_release_review_receipt",
+        expected_history_receipt_schema_version=TRADE_CAL_PROVIDER_ACCEPTANCE_RELEASE_REVIEW_SCHEMA_VERSION,
     )
     if not latest_task:
         return (
@@ -5375,8 +5433,7 @@ def _latest_trade_cal_provider_acceptance_release_review_from_tasks() -> tuple[
     row_safe = _safe_value(rows) if isinstance(rows, list) else []
     receipt_map = receipt_safe if isinstance(receipt_safe, dict) else {}
     row_list = row_safe if isinstance(row_safe, list) else []
-    return (
-        {
+    latest_receipt = {
             "schema_version": "data_health_latest_trade_cal_provider_acceptance_release_review.v1",
             "status": "latest_trade_cal_provider_acceptance_release_review_visible",
             "scope": "local_task_status_lookup_no_provider_execution",
@@ -5417,9 +5474,8 @@ def _latest_trade_cal_provider_acceptance_release_review_from_tasks() -> tuple[
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "receipt": receipt_map,
-        },
-        row_list,
-    )
+        }
+    return _historical_task_evidence_projection(latest_task, latest_receipt, row_list)
 
 
 def _trade_cal_production_promotion_review_payload_safe(
@@ -5688,13 +5744,15 @@ def _latest_trade_cal_provider_acceptance_production_promotion_review_from_tasks
     dict[str, Any],
     list[dict[str, Any]],
 ]:
-    latest_task = next(
-        (
-            task
-            for task in task_service.list_task_statuses()
-            if str(task.get("task_type") or "") == TRADE_CAL_PROVIDER_ACCEPTANCE_PRODUCTION_PROMOTION_REVIEW_TASK_TYPE
+    latest_task = task_service.read_latest_task_status_by_type(
+        TRADE_CAL_PROVIDER_ACCEPTANCE_PRODUCTION_PROMOTION_REVIEW_TASK_TYPE,
+        include_history_fallback=True,
+        expected_history_receipt_key=(
+            "trade_cal_provider_acceptance_production_promotion_review_receipt"
         ),
-        None,
+        expected_history_receipt_schema_version=(
+            TRADE_CAL_PROVIDER_ACCEPTANCE_PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION
+        ),
     )
     if not latest_task:
         return (
@@ -5733,8 +5791,7 @@ def _latest_trade_cal_provider_acceptance_production_promotion_review_from_tasks
     receipt_map = receipt_safe if isinstance(receipt_safe, dict) else {}
     row_list = row_safe if isinstance(row_safe, list) else []
     production_complete = receipt_map.get("production_freshness_gate_complete") is True
-    return (
-        {
+    latest_receipt = {
             "schema_version": "data_health_latest_trade_cal_provider_acceptance_production_promotion_review.v1",
             "status": "latest_trade_cal_provider_acceptance_production_promotion_review_visible",
             "scope": "local_task_status_lookup_no_provider_execution",
@@ -5776,9 +5833,8 @@ def _latest_trade_cal_provider_acceptance_production_promotion_review_from_tasks
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "receipt": receipt_map,
-        },
-        row_list,
-    )
+        }
+    return _historical_task_evidence_projection(latest_task, latest_receipt, row_list)
 
 
 def _freshness_production_blocker_row(

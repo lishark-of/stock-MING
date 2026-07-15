@@ -3993,7 +3993,7 @@ def _read_persisted_task(task_id: str) -> dict[str, Any] | None:
     if not SQLITE_META_PATH.exists():
         return None
     try:
-        task = SQLiteMetaStore(SQLITE_META_PATH).read_task_status(str(task_id))
+        task = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_task_status(str(task_id))
     except Exception:
         return None
     return task if isinstance(task, dict) else None
@@ -4003,7 +4003,7 @@ def _list_persisted_tasks() -> list[dict[str, Any]]:
     if not SQLITE_META_PATH.exists():
         return []
     try:
-        store = SQLiteMetaStore(SQLITE_META_PATH)
+        store = SQLiteMetaStore(SQLITE_META_PATH, read_only=True)
         tasks = [task for item in store.list_task_metadata() if (task := store.read_task_status(str(item.get("task_id") or "")))]
     except Exception:
         return []
@@ -4323,7 +4323,9 @@ def _candidate_cache_replay_packet() -> dict[str, Any] | None:
     packet = None
     if SQLITE_META_PATH.exists():
         try:
-            packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet("command_center_3_candidate_radar_cache")
+            packet = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_packet(
+                "command_center_3_candidate_radar_cache"
+            )
         except Exception:
             packet = None
     if isinstance(packet, dict):
@@ -4964,6 +4966,66 @@ def read_task_status(task_id: str) -> dict[str, Any] | None:
     if replay_task is not None:
         return replay_task
     return None
+
+
+def read_latest_task_status_by_type(
+    task_type: str,
+    *,
+    include_history_fallback: bool = False,
+    expected_history_receipt_key: str | None = None,
+    expected_history_receipt_schema_version: str | None = None,
+) -> dict[str, Any] | None:
+    """Read the latest live task of a type, optionally falling back to history.
+
+    History rows are read-only evidence projections. They are never copied into
+    memory or the live ``task_status`` table.
+    """
+
+    task_type_key = str(task_type or "")
+    live_task = next(
+        (
+            task
+            for task in list_task_statuses()
+            if str(task.get("task_type") or "") == task_type_key
+        ),
+        None,
+    )
+    if live_task is not None or not include_history_fallback or not SQLITE_META_PATH.exists():
+        return live_task
+    if not expected_history_receipt_key or not expected_history_receipt_schema_version:
+        return {
+            "task_id": None,
+            "task_type": task_type_key,
+            "status": "history_integrity_failed_safe",
+            "current_step": "historical_evidence_rejected",
+            "storage_source": "sqlite_task_status_history_invalid",
+            "historical_evidence": True,
+            "current_actionable": False,
+            "history_integrity_valid": False,
+            "history_integrity_error": "history_receipt_binding_not_declared",
+            "history_updated_at": None,
+            "history_payload_digest": None,
+        }
+    try:
+        return SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_latest_task_status_history_by_type(
+            task_type_key,
+            expected_receipt_key=expected_history_receipt_key,
+            expected_receipt_schema_version=expected_history_receipt_schema_version,
+        )
+    except Exception:
+        return {
+            "task_id": None,
+            "task_type": task_type_key,
+            "status": "history_integrity_failed_safe",
+            "current_step": "historical_evidence_rejected",
+            "storage_source": "sqlite_task_status_history_invalid",
+            "historical_evidence": True,
+            "current_actionable": False,
+            "history_integrity_valid": False,
+            "history_integrity_error": "history_lookup_failed_safe",
+            "history_updated_at": None,
+            "history_payload_digest": None,
+        }
 
 
 def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:

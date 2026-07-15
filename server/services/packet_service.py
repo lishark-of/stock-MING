@@ -831,7 +831,7 @@ def _read_persisted_packet(packet_key: str) -> dict[str, Any] | None:
     if not SQLITE_META_PATH.exists():
         return None
     try:
-        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(packet_key)
+        packet = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_packet(packet_key)
     except Exception:
         return None
     if packet is None:
