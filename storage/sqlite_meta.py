@@ -191,6 +191,49 @@ class SQLiteMetaStore:
             "last_good_payload_digest": hashlib.sha256(pairs[1][1].encode("utf-8")).hexdigest(),
         }
 
+    def restore_packet_pair_and_delete_event_atomic(
+        self,
+        current_key: str,
+        current_packet: Any | None,
+        last_good_key: str,
+        last_good_packet: Any | None,
+        *,
+        event_key_to_delete: str = "",
+    ) -> None:
+        """Best-effort writer rollback after a cross-file trust-state failure."""
+
+        now = _dt.datetime.now().isoformat(timespec="microseconds")
+        with closing(self._connect()) as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                for packet_key, packet in (
+                    (current_key, current_packet),
+                    (last_good_key, last_good_packet),
+                ):
+                    if packet is None:
+                        conn.execute("DELETE FROM packets WHERE packet_key = ?", (packet_key,))
+                    else:
+                        payload = json.dumps(
+                            packet,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            default=str,
+                        )
+                        conn.execute(
+                            "INSERT OR REPLACE INTO packets(packet_key, payload_json, updated_at) VALUES (?, ?, ?)",
+                            (packet_key, payload, now),
+                        )
+                if event_key_to_delete:
+                    conn.execute(
+                        "DELETE FROM packets WHERE packet_key = ?",
+                        (event_key_to_delete,),
+                    )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
     def read_packet(self, packet_key: str) -> Any:
         with closing(self._connect()) as conn:
             row = conn.execute("SELECT payload_json FROM packets WHERE packet_key = ?", (packet_key,)).fetchone()

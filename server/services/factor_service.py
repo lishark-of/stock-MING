@@ -386,6 +386,15 @@ FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS = ("daily", "daily_basic")
 FACTOR_TEST_PROVIDER_SMALL_POOL_MONEYFLOW_OPTIONAL = True
 FACTOR_TEST_PROVIDER_SMALL_POOL_CALENDAR_APIS = ("trade_cal",)
 FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY = "command_center_factor_test_provider_small_pool_tushare_packet"
+FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_SCHEMA_VERSION = (
+    "command_center_tushare_refresh_task.v1"
+)
+FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_TASK_TYPE = (
+    "run_factor_test_provider_small_pool_symbol_sample"
+)
+FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_MODE = (
+    "persisted_live_tushare_symbol_sample_transport"
+)
 
 
 def _now_iso() -> str:
@@ -977,6 +986,94 @@ def _factor_test_provider_industry_membership_event_valid(
     return not blockers, blockers
 
 
+def _factor_test_provider_industry_membership_full_chain_blockers(
+    store: SQLiteMetaStore,
+    *,
+    trusted_secret: bytes,
+    trusted_state: dict[str, Any],
+    current: dict[str, Any],
+    last_good: dict[str, Any],
+    meta_path: Path,
+) -> list[str]:
+    """Verify every authoritative event from sequence 1 through the state anchor.
+
+    The terminal state is intentionally insufficient by itself: deleting an old
+    event packet or rolling the SQLite file back must invalidate the whole view.
+    Non-authoritative failure/audit events do not participate in this chain.
+    """
+
+    blockers: list[str] = []
+    events_by_sequence: dict[int, dict[str, Any]] = {}
+    for metadata in store.list_packet_metadata():
+        packet_key = str(metadata.get("packet_key") or "")
+        if not packet_key.startswith(FACTOR_TEST_INDUSTRY_PROVIDER_EVENT_PACKET_PREFIX):
+            continue
+        event = store.read_packet(packet_key)
+        event_dict = _dict(event)
+        has_trusted_fields = any(
+            key in event_dict
+            for key in ("sequence_no", "previous_event_mac", "event_mac")
+        )
+        if event_dict.get("authoritative_success") is not True and not has_trusted_fields:
+            continue
+        valid, event_blockers = _factor_test_provider_industry_membership_event_valid(
+            event_dict,
+            store=store,
+            require_append_only_event=True,
+            trusted_secret=trusted_secret,
+            require_trusted_auth=True,
+        )
+        if not valid:
+            blockers.extend(f"full_chain_{item}" for item in event_blockers)
+            continue
+        semantic_blockers = _factor_test_provider_industry_membership_authority_blockers(
+            _dict(event_dict.get("receipt")),
+            [dict(row) for row in _list(event_dict.get("raw_rows")) if isinstance(row, dict)],
+            [dict(row) for row in _list(event_dict.get("call_ledger")) if isinstance(row, dict)],
+            meta_path=meta_path,
+            require_current_source_packets=False,
+        )
+        blockers.extend(f"full_chain_{item}" for item in semantic_blockers)
+        sequence_no = int(event_dict.get("sequence_no") or 0)
+        if sequence_no in events_by_sequence:
+            blockers.append("full_chain_duplicate_sequence")
+        else:
+            events_by_sequence[sequence_no] = event_dict
+
+    terminal_sequence = int(trusted_state.get("sequence_no") or 0)
+    expected_sequences = list(range(1, terminal_sequence + 1))
+    if sorted(events_by_sequence) != expected_sequences:
+        blockers.append("full_chain_sequence_gap_truncation_or_rollback")
+    previous_mac = ""
+    for sequence_no in expected_sequences:
+        event = events_by_sequence.get(sequence_no)
+        if not event:
+            continue
+        if str(event.get("previous_event_mac") or "") != previous_mac:
+            blockers.append("full_chain_previous_event_mac_mismatch")
+        previous_mac = str(event.get("event_mac") or "")
+
+    terminal = events_by_sequence.get(terminal_sequence)
+    if not (
+        terminal
+        and terminal == current
+        and terminal.get("event_digest") == trusted_state.get("event_digest")
+        and hmac.compare_digest(
+            str(terminal.get("event_mac") or ""),
+            str(trusted_state.get("event_mac") or ""),
+        )
+    ):
+        blockers.append("full_chain_terminal_anchor_mismatch")
+    expected_last_good = (
+        events_by_sequence.get(terminal_sequence - 1)
+        if terminal_sequence > 1
+        else terminal
+    )
+    if not expected_last_good or expected_last_good != last_good:
+        blockers.append("full_chain_last_good_mismatch")
+    return sorted(set(blockers))
+
+
 def _read_factor_test_provider_industry_membership_authoritative_state(
     meta_path: Path = SQLITE_META_PATH,
 ) -> dict[str, Any]:
@@ -1025,6 +1122,7 @@ def _read_factor_test_provider_industry_membership_authoritative_state(
                 [dict(row) for row in _list(current.get("raw_rows")) if isinstance(row, dict)],
                 [dict(row) for row in _list(current.get("call_ledger")) if isinstance(row, dict)],
                 meta_path=meta_path,
+                require_current_source_packets=False,
             )
         )
         if current_semantic_blockers:
@@ -1037,6 +1135,7 @@ def _read_factor_test_provider_industry_membership_authoritative_state(
                 [dict(row) for row in _list(last_good.get("raw_rows")) if isinstance(row, dict)],
                 [dict(row) for row in _list(last_good.get("call_ledger")) if isinstance(row, dict)],
                 meta_path=meta_path,
+                require_current_source_packets=False,
             )
         )
         if last_good_semantic_blockers:
@@ -1069,6 +1168,21 @@ def _read_factor_test_provider_industry_membership_authoritative_state(
         ):
             last_good_valid = False
             last_good_blockers.append("last_good_previous_mac_chain_mismatch")
+        full_chain_blockers = (
+            _factor_test_provider_industry_membership_full_chain_blockers(
+                store,
+                trusted_secret=secret,
+                trusted_state=trusted_state,
+                current=_dict(current),
+                last_good=_dict(last_good),
+                meta_path=meta_path,
+            )
+        )
+        if full_chain_blockers:
+            current_valid = False
+            last_good_valid = False
+            current_blockers.extend(full_chain_blockers)
+            last_good_blockers.extend(full_chain_blockers)
     return {
         "status": (
             "authoritative_provider_industry_membership_current_verified"
@@ -1098,6 +1212,8 @@ def _persist_factor_test_provider_industry_membership_event(
         raise RuntimeError(f"industry_provider_event_invalid:{','.join(blockers)}")
     store = SQLiteMetaStore(meta_path)
     previous_current: dict[str, Any] | None = None
+    previous_current_packet: dict[str, Any] | None = None
+    previous_last_good_packet: dict[str, Any] | None = None
     if event.get("authoritative_success") is True:
         authority_blockers = _factor_test_provider_industry_membership_authority_blockers(
             receipt,
@@ -1118,8 +1234,13 @@ def _persist_factor_test_provider_industry_membership_event(
             raise RuntimeError(
                 secret_blocker or "industry_provider_trusted_secret_missing_or_mismatch"
             )
-        previous_raw = store.read_packet(FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY)
-        if previous_raw is not None:
+        previous_current_packet = store.read_packet(
+            FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY
+        )
+        previous_last_good_packet = store.read_packet(
+            FACTOR_TEST_INDUSTRY_PROVIDER_LAST_GOOD_PACKET_KEY
+        )
+        if previous_current_packet is not None:
             previous_state = _read_factor_test_provider_industry_membership_authoritative_state(
                 meta_path
             )
@@ -1160,6 +1281,7 @@ def _persist_factor_test_provider_industry_membership_event(
             )
     event_key = f"{FACTOR_TEST_INDUSTRY_PROVIDER_EVENT_PACKET_PREFIX}{event['event_digest']}"
     existing_event = store.read_packet(event_key)
+    event_was_new = existing_event is None
     if existing_event is not None and existing_event != event:
         raise RuntimeError("industry_provider_append_only_event_collision")
     if existing_event is None:
@@ -1180,21 +1302,37 @@ def _persist_factor_test_provider_industry_membership_event(
                 f"industry_provider_authoritative_event_invalid:{','.join(success_blockers)}"
             )
         last_good = previous_current if previous_current is not None else event
-        store.promote_packet_pair_atomic(
-            FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY,
-            event,
-            FACTOR_TEST_INDUSTRY_PROVIDER_LAST_GOOD_PACKET_KEY,
-            last_good,
-        )
-        state_blocker = _write_factor_test_industry_trusted_state(
-            meta_path,
-            trusted_secret,
-            sequence_no=int(event["sequence_no"]),
-            event_digest=str(event["event_digest"]),
-            event_mac=str(event["event_mac"]),
-        )
-        if state_blocker:
-            raise RuntimeError(state_blocker)
+        try:
+            store.promote_packet_pair_atomic(
+                FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY,
+                event,
+                FACTOR_TEST_INDUSTRY_PROVIDER_LAST_GOOD_PACKET_KEY,
+                last_good,
+            )
+            state_blocker = _write_factor_test_industry_trusted_state(
+                meta_path,
+                trusted_secret,
+                sequence_no=int(event["sequence_no"]),
+                event_digest=str(event["event_digest"]),
+                event_mac=str(event["event_mac"]),
+            )
+            if state_blocker:
+                raise RuntimeError(state_blocker)
+        except Exception as exc:
+            try:
+                store.restore_packet_pair_and_delete_event_atomic(
+                    FACTOR_TEST_INDUSTRY_PROVIDER_CURRENT_PACKET_KEY,
+                    previous_current_packet,
+                    FACTOR_TEST_INDUSTRY_PROVIDER_LAST_GOOD_PACKET_KEY,
+                    previous_last_good_packet,
+                    event_key_to_delete=event_key if event_was_new else "",
+                )
+            except Exception as rollback_exc:
+                raise RuntimeError(
+                    "industry_provider_promotion_failed_and_rollback_failed:"
+                    f"{_safe_text(exc)}:{_safe_text(rollback_exc)}"
+                ) from rollback_exc
+            raise
         promoted = True
     return {
         "status": "industry_provider_event_persisted",
@@ -8167,6 +8305,135 @@ def _attach_factor_test_provider_small_pool_forward_return_label_audit(
     return packet, ledger
 
 
+def _factor_test_provider_small_pool_live_packet_contract(
+    meta_path: Path,
+    *,
+    expected_symbols: list[str],
+) -> dict[str, Any]:
+    """Read and validate the exact durable packet behind the source sample.
+
+    The hub's summarized acceptance receipt is not sufficient authority: a
+    fixture-shaped receipt can look identical.  This second anchor must be the
+    exact live Tushare refresh packet with verified transport evidence.
+    """
+
+    blockers: list[str] = []
+    packet: dict[str, Any] = {}
+    if not Path(meta_path).exists():
+        blockers.append("source_live_small_pool_packet_store_missing")
+    else:
+        try:
+            packet = _dict(
+                SQLiteMetaStore(meta_path, read_only=True).read_packet(
+                    FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY
+                )
+            )
+        except Exception:
+            blockers.append("source_live_small_pool_packet_read_failed")
+    if not packet:
+        blockers.append("source_live_small_pool_packet_missing")
+        return {
+            "packet_key": FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY,
+            "packet_digest": "",
+            "mode": "",
+            "schema_version": "",
+            "task_type": "",
+            "transport_symbol": "",
+            "valid": False,
+            "blockers": sorted(set(blockers)),
+        }
+
+    if packet.get("schema_version") != FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_SCHEMA_VERSION:
+        blockers.append("source_live_small_pool_packet_schema_mismatch")
+    if packet.get("packet_key") != FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY:
+        blockers.append("source_live_small_pool_packet_key_mismatch")
+    if packet.get("task_type") != FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_TASK_TYPE:
+        blockers.append("source_live_small_pool_packet_task_type_mismatch")
+    if not (
+        packet.get("status") == "success"
+        and packet.get("external_calls_triggered") is True
+        and packet.get("tushare_called") is True
+        and packet.get("deepseek_called") is False
+        and packet.get("github_called") is False
+        and packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+        and int(packet.get("call_count") or 0) == 2
+        and int(packet.get("success_count") or 0) == 2
+        and int(packet.get("failed_count") or 0) == 0
+        and int(packet.get("blocked_count") or 0) == 0
+    ):
+        blockers.append("source_live_small_pool_packet_runtime_summary_invalid")
+    if any(
+        packet.get(key) is True
+        for key in (
+            "fixture_provider_authorized",
+            "provider_fixture",
+            "test_fixture",
+            "local_fixture",
+        )
+    ):
+        blockers.append("source_live_small_pool_fixture_or_test_source_rejected")
+    source_markers = {
+        str(packet.get(key) or "").strip().lower()
+        for key in ("mode", "source", "execution_mode", "provider_execution_mode")
+        if str(packet.get(key) or "").strip()
+    }
+    if any(
+        marker in value
+        for value in source_markers
+        for marker in ("fixture", "fake", "local", "test")
+    ):
+        blockers.append("source_live_small_pool_fixture_or_test_source_rejected")
+
+    expected_set = {
+        _factor_test_clean_symbol(symbol)
+        for symbol in expected_symbols
+        if _factor_test_clean_symbol(symbol)
+    }
+    ledger = [dict(item) for item in _list(packet.get("call_ledger")) if isinstance(item, dict)]
+    transport_symbols: set[str] = set()
+    observed_apis: list[str] = []
+    for item in ledger:
+        params = _dict(item.get("request_params_safe"))
+        symbol = _factor_test_clean_symbol(params.get("ts_code"))
+        if symbol:
+            transport_symbols.add(symbol)
+        observed_apis.append(str(item.get("api") or ""))
+        if not (
+            item.get("call_status") == "success"
+            and int(item.get("row_count") or 0) > 0
+            and item.get("external") is True
+            and item.get("external_calls_triggered") is True
+            and item.get("tushare_called") is True
+            and item.get("provider_transport_verified") is True
+            and item.get("runtime_adapter_module_identity_verified") is True
+            and int(item.get("provider_transport_call_count") or 0) == 1
+            and int(item.get("provider_transport_receipt_count") or 0) == 1
+            and len(str(item.get("provider_transport_receipt_digest") or "")) == 64
+            and set(params) == {"ts_code", "start_date", "end_date"}
+            and bool(str(params.get("start_date") or ""))
+            and bool(str(params.get("end_date") or ""))
+        ):
+            blockers.append("source_live_small_pool_transport_ledger_invalid")
+    if sorted(observed_apis) != sorted(FACTOR_TEST_PROVIDER_SMALL_POOL_PROVIDER_APIS):
+        blockers.append("source_live_small_pool_core_api_pair_missing")
+    if len(ledger) != 2:
+        blockers.append("source_live_small_pool_transport_ledger_count_mismatch")
+    if len(transport_symbols) != 1 or not transport_symbols.issubset(expected_set):
+        blockers.append("source_live_small_pool_transport_symbol_not_in_acceptance_scope")
+
+    return {
+        "packet_key": FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY,
+        "packet_digest": _factor_test_industry_evidence_digest(packet),
+        "mode": FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_MODE if not blockers else "",
+        "schema_version": str(packet.get("schema_version") or ""),
+        "task_type": str(packet.get("task_type") or ""),
+        "transport_symbol": next(iter(sorted(transport_symbols)), ""),
+        "valid": not blockers,
+        "blockers": sorted(set(blockers)),
+    }
+
+
 def _factor_test_provider_industry_membership_scope(
     payload: Any,
     factor_tests: dict[str, Any],
@@ -8201,11 +8468,25 @@ def _factor_test_provider_industry_membership_scope(
         for symbol in symbols
         for is_new in FACTOR_TEST_INDUSTRY_PROVIDER_IS_NEW_VALUES
     ]
+    source_live_packet = _factor_test_provider_small_pool_live_packet_contract(
+        SQLITE_META_PATH,
+        expected_symbols=symbols,
+    )
     scope_material = {
         "api": FACTOR_TEST_INDUSTRY_PROVIDER_API,
         "source_acceptance_scope_hash": str(source.get("acceptance_scope_hash") or ""),
         "source_acceptance_receipt_digest": _factor_test_industry_evidence_digest(source),
-        "source_acceptance_packet_key": "command_center_factor_quant_hub_packet",
+        "source_acceptance_hub_packet_key": "command_center_factor_quant_hub_packet",
+        "source_acceptance_packet_key": source_live_packet.get("packet_key"),
+        "source_acceptance_packet_digest": source_live_packet.get("packet_digest"),
+        "source_acceptance_packet_mode": source_live_packet.get("mode"),
+        "source_acceptance_packet_schema_version": source_live_packet.get("schema_version"),
+        "source_acceptance_packet_task_type": source_live_packet.get("task_type"),
+        "source_acceptance_packet_transport_symbol": source_live_packet.get("transport_symbol"),
+        "source_acceptance_packet_authority_valid": source_live_packet.get("valid") is True,
+        "source_acceptance_packet_authority_blockers": list(
+            source_live_packet.get("blockers") or []
+        ),
         "symbols": symbols,
         "signal_start_date": str(source.get("start_date") or ""),
         "signal_end_date": str(source.get("end_date") or ""),
@@ -8267,8 +8548,23 @@ def _factor_test_provider_industry_membership_preflight(
     if not (
         source.get("provider_call_ledger_evidence_done") is True
         and source.get("sample_rows_collected") is True
+        and source.get("external_calls_triggered") is True
+        and source.get("tushare_called") is True
+        and source.get("provider_execution_implemented") is True
+        and source.get("provider_backed_small_pool_validation_done") is True
+        and source.get("fixture_provider_authorized") is False
     ):
         preflight_blockers.append("source_provider_small_pool_direct_evidence_missing")
+    if fields.get("source_acceptance_packet_authority_valid") is not True:
+        preflight_blockers.extend(
+            str(item)
+            for item in _list(
+                fields.get("source_acceptance_packet_authority_blockers")
+            )
+            if str(item)
+        )
+        if not _list(fields.get("source_acceptance_packet_authority_blockers")):
+            preflight_blockers.append("source_live_small_pool_packet_authority_invalid")
     if not fields.get("signal_start_date") or not fields.get("signal_end_date"):
         preflight_blockers.append("source_signal_date_window_missing")
     if not credential_present:
@@ -8787,6 +9083,7 @@ def _factor_test_provider_industry_membership_authority_blockers(
     ledger: list[dict[str, Any]],
     *,
     meta_path: Path = SQLITE_META_PATH,
+    require_current_source_packets: bool = True,
 ) -> list[str]:
     """Independently re-evaluate live evidence before issuing authority."""
 
@@ -8810,37 +9107,102 @@ def _factor_test_provider_industry_membership_authority_blockers(
     ):
         blockers.append("authority_three_approvals_or_scope_confirmation_missing")
     source_receipt: dict[str, Any] = {}
-    if Path(meta_path).exists():
-        try:
-            source_packet = SQLiteMetaStore(meta_path, read_only=True).read_packet(
-                "command_center_factor_quant_hub_packet"
-            )
-            source_receipt = _dict(
-                _dict(_dict(source_packet).get("factor_tests")).get(
-                    "provider_small_pool_acceptance_receipt"
+    if require_current_source_packets:
+        if Path(meta_path).exists():
+            try:
+                source_packet = SQLiteMetaStore(meta_path, read_only=True).read_packet(
+                    "command_center_factor_quant_hub_packet"
                 )
+                source_receipt = _dict(
+                    _dict(_dict(source_packet).get("factor_tests")).get(
+                        "provider_small_pool_acceptance_receipt"
+                    )
+                )
+            except Exception:
+                source_receipt = {}
+        if not (
+            source_receipt
+            and source_receipt.get("provider_call_ledger_evidence_done") is True
+            and source_receipt.get("sample_rows_collected") is True
+            and source_receipt.get("external_calls_triggered") is True
+            and source_receipt.get("tushare_called") is True
+            and source_receipt.get("provider_execution_implemented") is True
+            and source_receipt.get("provider_backed_small_pool_validation_done") is True
+            and source_receipt.get("fixture_provider_authorized") is False
+            and str(source_receipt.get("acceptance_scope_hash") or "") == source_scope_hash
+            and str(scope.get("source_acceptance_receipt_digest") or "")
+            == _factor_test_industry_evidence_digest(source_receipt)
+            and scope.get("source_acceptance_hub_packet_key")
+            == "command_center_factor_quant_hub_packet"
+            and sorted(
+                _factor_test_clean_symbol(item)
+                for item in _list(source_receipt.get("symbols_with_core_rows"))
+                if _factor_test_clean_symbol(item)
             )
-        except Exception:
-            source_receipt = {}
-    if not (
-        source_receipt
-        and source_receipt.get("provider_call_ledger_evidence_done") is True
-        and source_receipt.get("sample_rows_collected") is True
-        and str(source_receipt.get("acceptance_scope_hash") or "") == source_scope_hash
-        and str(scope.get("source_acceptance_receipt_digest") or "")
-        == _factor_test_industry_evidence_digest(source_receipt)
-        and sorted(
-            _factor_test_clean_symbol(item)
-            for item in _list(source_receipt.get("symbols_with_core_rows"))
-            if _factor_test_clean_symbol(item)
+            == sorted(symbols)
+            and str(source_receipt.get("start_date") or "")
+            == str(scope.get("signal_start_date") or "")
+            and str(source_receipt.get("end_date") or "")
+            == str(scope.get("signal_end_date") or "")
+        ):
+            blockers.append("authority_source_provider_packet_missing_or_scope_mismatch")
+        source_live_packet = _factor_test_provider_small_pool_live_packet_contract(
+            meta_path,
+            expected_symbols=symbols,
         )
-        == sorted(symbols)
-        and str(source_receipt.get("start_date") or "")
-        == str(scope.get("signal_start_date") or "")
-        and str(source_receipt.get("end_date") or "")
-        == str(scope.get("signal_end_date") or "")
+        if not (
+            source_live_packet.get("valid") is True
+            and scope.get("source_acceptance_packet_authority_valid") is True
+            and not _list(scope.get("source_acceptance_packet_authority_blockers"))
+            and scope.get("source_acceptance_packet_key")
+            == FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY
+            and scope.get("source_acceptance_packet_key")
+            == source_live_packet.get("packet_key")
+            and scope.get("source_acceptance_packet_digest")
+            == source_live_packet.get("packet_digest")
+            and scope.get("source_acceptance_packet_mode")
+            == FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_MODE
+            and scope.get("source_acceptance_packet_mode")
+            == source_live_packet.get("mode")
+            and scope.get("source_acceptance_packet_schema_version")
+            == FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_SCHEMA_VERSION
+            and scope.get("source_acceptance_packet_schema_version")
+            == source_live_packet.get("schema_version")
+            and scope.get("source_acceptance_packet_task_type")
+            == FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_TASK_TYPE
+            and scope.get("source_acceptance_packet_task_type")
+            == source_live_packet.get("task_type")
+            and scope.get("source_acceptance_packet_transport_symbol")
+            == source_live_packet.get("transport_symbol")
+        ):
+            blockers.append("authority_live_small_pool_packet_missing_or_scope_mismatch")
+            blockers.extend(
+                f"authority_{item}"
+                for item in _list(source_live_packet.get("blockers"))
+                if str(item)
+            )
+    elif not (
+        len(source_scope_hash) == 64
+        and len(str(scope.get("source_acceptance_receipt_digest") or "")) == 64
+        and scope.get("source_acceptance_hub_packet_key")
+        == "command_center_factor_quant_hub_packet"
+        and scope.get("source_acceptance_packet_key")
+        == FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY
+        and len(str(scope.get("source_acceptance_packet_digest") or "")) == 64
+        and scope.get("source_acceptance_packet_mode")
+        == FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_MODE
+        and scope.get("source_acceptance_packet_schema_version")
+        == FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_SCHEMA_VERSION
+        and scope.get("source_acceptance_packet_task_type")
+        == FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_TASK_TYPE
+        and _factor_test_clean_symbol(
+            scope.get("source_acceptance_packet_transport_symbol")
+        )
+        in set(symbols)
+        and scope.get("source_acceptance_packet_authority_valid") is True
+        and not _list(scope.get("source_acceptance_packet_authority_blockers"))
     ):
-        blockers.append("authority_source_provider_packet_missing_or_scope_mismatch")
+        blockers.append("authority_signed_source_packet_contract_invalid")
     recalculated_scope_hash = hashlib.sha256(
         json.dumps(scope, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()
@@ -8997,35 +9359,60 @@ def _run_factor_test_provider_industry_membership_live_and_persist(
         adapter=None,
     )
     executed["task_id"] = task_id
-    authority_blockers = _factor_test_provider_industry_membership_authority_blockers(
-        executed,
-        rows,
-        ledger,
-        meta_path=meta_path,
-    )
-    trusted_secret: bytes | None = None
-    if not authority_blockers:
-        trusted_secret, trust_blocker = _create_factor_test_industry_trusted_secret(
-            meta_path
+    try:
+        authority_blockers = _factor_test_provider_industry_membership_authority_blockers(
+            executed,
+            rows,
+            ledger,
+            meta_path=meta_path,
         )
-        if trusted_secret is None:
-            authority_blockers.append(
-                trust_blocker or "industry_provider_trust_key_creation_failed"
+        trusted_secret: bytes | None = None
+        if not authority_blockers:
+            trusted_secret, trust_blocker = _create_factor_test_industry_trusted_secret(
+                meta_path
             )
-    if authority_blockers:
+            if trusted_secret is None:
+                authority_blockers.append(
+                    trust_blocker or "industry_provider_trust_key_creation_failed"
+                )
+        if authority_blockers:
+            executed["provider_call_ledger_evidence_done"] = False
+            executed["provider_industry_membership_raw_rows_collected"] = False
+            executed["status"] = (
+                "factor_test_provider_industry_membership_authority_validation_failed_safe"
+            )
+            executed["authority_validation_blockers"] = sorted(set(authority_blockers))
+        persisted = _persist_factor_test_provider_industry_membership_event(
+            executed,
+            rows,
+            ledger,
+            meta_path=meta_path,
+            trusted_secret=trusted_secret,
+        )
+    except Exception as exc:
+        # The provider calls already happened.  A later authority/storage fault
+        # must fail promotion without erasing the actual sanitized evidence.
         executed["provider_call_ledger_evidence_done"] = False
         executed["provider_industry_membership_raw_rows_collected"] = False
         executed["status"] = (
-            "factor_test_provider_industry_membership_authority_validation_failed_safe"
+            "factor_test_provider_industry_membership_authority_or_persistence_failed_safe"
         )
-        executed["authority_validation_blockers"] = sorted(set(authority_blockers))
-    persisted = _persist_factor_test_provider_industry_membership_event(
-        executed,
-        rows,
-        ledger,
-        meta_path=meta_path,
-        trusted_secret=trusted_secret,
-    )
+        executed["authority_or_persistence_error_safe"] = _safe_text(exc)
+        executed["actual_provider_call_ledger_preserved"] = True
+        executed["actual_provider_call_ledger_count"] = len(ledger)
+        executed["actual_provider_raw_rows_preserved"] = True
+        executed["actual_provider_raw_row_count"] = len(rows)
+        executed["call_ledger"] = list(ledger)
+        persisted = {
+            "status": "industry_provider_event_persistence_failed_safe",
+            "authoritative_current_promoted": False,
+            "authoritative_success": False,
+            "event_digest": "",
+            "raw_row_count": len(rows),
+            "raw_rows_digest": _factor_test_industry_evidence_digest(rows),
+            "call_ledger_digest": _factor_test_industry_evidence_digest(ledger),
+            "persistence_error_safe": _safe_text(exc),
+        }
     return executed, rows, ledger, persisted
 
 
@@ -11818,6 +12205,15 @@ def run_factor_test_provider_industry_membership_task(
     receipt["task_id"] = task["task_id"]
     payload_safe["provider_industry_membership_receipt"] = receipt
     payload_safe["provider_industry_membership_rows"] = rows
+    payload_safe["external_calls_triggered"] = any(
+        isinstance(item, dict)
+        and (item.get("external_calls_triggered") is True or item.get("external") is True)
+        for item in ledger
+    )
+    payload_safe["tushare_called"] = any(
+        isinstance(item, dict) and item.get("tushare_called") is True
+        for item in ledger
+    )
     if authoritative_event:
         payload_safe["provider_industry_membership_authoritative_event"] = (
             authoritative_event
@@ -11837,8 +12233,8 @@ def run_factor_test_provider_industry_membership_task(
         factor_tests["call_ledger"] = list(ledger) + list(existing_ledger)
         hub["factor_tests"] = factor_tests
         hub["call_ledger"] = list(ledger) + list(_list(hub.get("call_ledger")))
-        hub["external_calls_triggered"] = False
-        hub["tushare_called"] = False
+        hub["external_calls_triggered"] = payload_safe["external_calls_triggered"]
+        hub["tushare_called"] = payload_safe["tushare_called"]
         hub["deepseek_called"] = False
         hub["github_called"] = False
         hub["does_not_execute_trades"] = True

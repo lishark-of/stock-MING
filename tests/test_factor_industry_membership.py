@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -351,8 +352,57 @@ class FactorIndustryMembershipProviderPreflightTests(unittest.TestCase):
                 "symbols_with_core_rows": list(self.symbols),
                 "sample_rows_collected": True,
                 "provider_call_ledger_evidence_done": True,
+                "external_calls_triggered": True,
+                "tushare_called": True,
+                "provider_execution_implemented": True,
+                "provider_backed_small_pool_validation_done": True,
+                "fixture_provider_authorized": False,
             }
         }
+
+    def _live_source_packet(self, *, mode: str = ""):
+        ledger = []
+        for index, api in enumerate(("daily", "daily_basic")):
+            ledger.append(
+                {
+                    "api": api,
+                    "call_status": "success",
+                    "row_count": 59,
+                    "external": True,
+                    "external_calls_triggered": True,
+                    "tushare_called": True,
+                    "provider_transport_verified": True,
+                    "runtime_adapter_module_identity_verified": True,
+                    "provider_transport_call_count": 1,
+                    "provider_transport_receipt_count": 1,
+                    "provider_transport_receipt_digest": f"{index + 1:064x}",
+                    "request_params_safe": {
+                        "ts_code": self.symbols[0],
+                        "start_date": "20250101",
+                        "end_date": "20250331",
+                    },
+                }
+            )
+        packet = {
+            "schema_version": factor_service.FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_SCHEMA_VERSION,
+            "status": "success",
+            "packet_key": factor_service.FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY,
+            "task_type": factor_service.FACTOR_TEST_PROVIDER_SMALL_POOL_LIVE_PACKET_TASK_TYPE,
+            "call_count": 2,
+            "success_count": 2,
+            "failed_count": 0,
+            "blocked_count": 0,
+            "call_ledger": ledger,
+            "external_calls_triggered": True,
+            "tushare_called": True,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        if mode:
+            packet["provider_execution_mode"] = mode
+        return packet
 
     @staticmethod
     def _credential_present():
@@ -364,25 +414,29 @@ class FactorIndustryMembershipProviderPreflightTests(unittest.TestCase):
             "env_key_name_exposed": False,
         }
 
+    def _preflight(self, payload, now):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta_path = Path(tmp) / "meta.sqlite"
+            self._seed_authoritative_source_packet(meta_path)
+            with patch.object(factor_service, "SQLITE_META_PATH", meta_path), patch.object(
+                factor_service,
+                "_factor_test_credential_presence",
+                side_effect=self._credential_present,
+            ):
+                return factor_service._factor_test_provider_industry_membership_preflight(
+                    payload, self._factor_tests(), now
+                )
+
     def _authorized_preflight(self):
-        with patch.object(
-            factor_service,
-            "_factor_test_credential_presence",
-            side_effect=self._credential_present,
-        ):
-            first = factor_service._factor_test_provider_industry_membership_preflight(
-                {}, self._factor_tests(), "2026-07-15T10:00:00"
-            )
-            payload = {
-                "approved_by_user": True,
-                "authorize_live_provider_call": True,
-                "provider_run_approved_by_user": True,
-                "acceptance_scope_hash": self.source_scope_hash,
-                "industry_scope_hash": first["industry_scope_hash"],
-            }
-            return factor_service._factor_test_provider_industry_membership_preflight(
-                payload, self._factor_tests(), "2026-07-15T10:00:01"
-            )
+        first = self._preflight({}, "2026-07-15T10:00:00")
+        payload = {
+            "approved_by_user": True,
+            "authorize_live_provider_call": True,
+            "provider_run_approved_by_user": True,
+            "acceptance_scope_hash": self.source_scope_hash,
+            "industry_scope_hash": first["industry_scope_hash"],
+        }
+        return self._preflight(payload, "2026-07-15T10:00:01")
 
     def _execute_injected(self, mode: str):
         receipt = self._authorized_preflight()
@@ -481,9 +535,14 @@ class FactorIndustryMembershipProviderPreflightTests(unittest.TestCase):
         return executed, rows, ledger
 
     def _seed_authoritative_source_packet(self, meta_path: Path):
-        SQLiteMetaStore(meta_path).write_packet(
+        store = SQLiteMetaStore(meta_path)
+        store.write_packet(
             "command_center_factor_quant_hub_packet",
             {"factor_tests": self._factor_tests()},
+        )
+        store.write_packet(
+            factor_service.FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY,
+            self._live_source_packet(),
         )
 
     def _run_controlled_live(self, meta_path: Path, task_id: str, marker: str, *, fail=False):
@@ -540,14 +599,7 @@ class FactorIndustryMembershipProviderPreflightTests(unittest.TestCase):
         )
 
     def test_preflight_is_scope_bound_and_does_not_resolve_out_date_semantics(self):
-        with patch.object(
-            factor_service,
-            "_factor_test_credential_presence",
-            side_effect=self._credential_present,
-        ):
-            receipt = factor_service._factor_test_provider_industry_membership_preflight(
-                {}, self._factor_tests(), "2026-07-15T10:00:00"
-            )
+        receipt = self._preflight({}, "2026-07-15T10:00:00")
 
         self.assertTrue(receipt["preflight_ready"])
         self.assertFalse(receipt["execution_authorized"])
@@ -563,6 +615,43 @@ class FactorIndustryMembershipProviderPreflightTests(unittest.TestCase):
         self.assertFalse(receipt["external_calls_triggered"])
         self.assertFalse(receipt["tushare_called"])
 
+    def test_missing_or_fixture_live_source_packet_blocks_without_creating_trust(self):
+        for mode in ("missing", "fake_provider_fixture"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                meta_path = Path(tmp) / "meta.sqlite"
+                store = SQLiteMetaStore(meta_path)
+                store.write_packet(
+                    "command_center_factor_quant_hub_packet",
+                    {"factor_tests": self._factor_tests()},
+                )
+                if mode != "missing":
+                    store.write_packet(
+                        factor_service.FACTOR_TEST_PROVIDER_SMALL_POOL_PACKET_KEY,
+                        self._live_source_packet(mode=mode),
+                    )
+                with patch.object(
+                    factor_service, "SQLITE_META_PATH", meta_path
+                ), patch.object(
+                    factor_service,
+                    "_factor_test_credential_presence",
+                    side_effect=self._credential_present,
+                ):
+                    receipt = factor_service._factor_test_provider_industry_membership_preflight(
+                        {}, self._factor_tests(), "2026-07-15T10:00:00"
+                    )
+                self.assertFalse(receipt["preflight_ready"])
+                self.assertFalse(receipt["execution_authorized"])
+                self.assertTrue(
+                    any(
+                        blocker.startswith("source_live_small_pool_")
+                        for blocker in receipt["authorization_blockers"]
+                    )
+                )
+                trust_directory, _key, _state = (
+                    factor_service._factor_test_industry_trust_paths(meta_path)
+                )
+                self.assertFalse(trust_directory.exists())
+
     def test_exact_double_scope_and_three_flags_authorize_execution(self):
         receipt = self._authorized_preflight()
 
@@ -571,22 +660,16 @@ class FactorIndustryMembershipProviderPreflightTests(unittest.TestCase):
         self.assertTrue(receipt["requested_source_acceptance_scope_hash_matches"])
         self.assertTrue(receipt["requested_industry_scope_hash_matches"])
 
-        with patch.object(
-            factor_service,
-            "_factor_test_credential_presence",
-            side_effect=self._credential_present,
-        ):
-            bad = factor_service._factor_test_provider_industry_membership_preflight(
-                {
-                    "approved_by_user": True,
-                    "authorize_live_provider_call": True,
-                    "provider_run_approved_by_user": True,
-                    "acceptance_scope_hash": self.source_scope_hash,
-                    "industry_scope_hash": "b" * 64,
-                },
-                self._factor_tests(),
-                "2026-07-15T10:00:02",
-            )
+        bad = self._preflight(
+            {
+                "approved_by_user": True,
+                "authorize_live_provider_call": True,
+                "provider_run_approved_by_user": True,
+                "acceptance_scope_hash": self.source_scope_hash,
+                "industry_scope_hash": "b" * 64,
+            },
+            "2026-07-15T10:00:02",
+        )
         self.assertFalse(bad["execution_authorized"])
         self.assertIn("industry_scope_hash_missing_or_mismatch", bad["authorization_blockers"])
 
@@ -933,6 +1016,197 @@ class FactorIndustryMembershipProviderPreflightTests(unittest.TestCase):
             self.assertNotEqual(
                 restarted["current"]["event_digest"],
                 restarted["last_good"]["event_digest"],
+            )
+
+    def test_deleting_early_authoritative_event_invalidates_full_chain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta_path = Path(tmp) / "meta.sqlite"
+            self._seed_authoritative_source_packet(meta_path)
+            secret, blocker = factor_service._create_factor_test_industry_trusted_secret(
+                meta_path
+            )
+            self.assertTrue(secret)
+            self.assertEqual(blocker, "")
+            writes = []
+            for index in range(1, 4):
+                writes.append(
+                    factor_service._persist_factor_test_provider_industry_membership_event(
+                        *self._authoritative_artifacts(
+                            f"chain-task-{index}", f"chain-{index}"
+                        ),
+                        meta_path=meta_path,
+                        trusted_secret=secret,
+                    )
+                )
+            before = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                meta_path
+            )
+            self.assertTrue(before["current_valid"])
+            with sqlite3.connect(meta_path) as connection:
+                connection.execute(
+                    "DELETE FROM packets WHERE packet_key = ?",
+                    (writes[0]["event_packet_key"],),
+                )
+                connection.commit()
+            after = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                meta_path
+            )
+            self.assertFalse(after["current_valid"])
+            self.assertFalse(after["last_good_valid"])
+            self.assertIn(
+                "full_chain_sequence_gap_truncation_or_rollback",
+                after["current_blockers"],
+            )
+
+    def test_post_live_persistence_exception_preserves_actual_rows_and_ledger(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta_path = Path(tmp) / "meta.sqlite"
+            self._seed_authoritative_source_packet(meta_path)
+            secret, blocker = factor_service._create_factor_test_industry_trusted_secret(
+                meta_path
+            )
+            self.assertTrue(secret)
+            self.assertEqual(blocker, "")
+            factor_service._persist_factor_test_provider_industry_membership_event(
+                *self._authoritative_artifacts("before-persist-failure", "before"),
+                meta_path=meta_path,
+                trusted_secret=secret,
+            )
+            before = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                meta_path
+            )
+            with patch.object(
+                factor_service,
+                "_persist_factor_test_provider_industry_membership_event",
+                side_effect=RuntimeError("post-live persistence test failure"),
+            ):
+                executed, rows, ledger, persisted = self._run_controlled_live(
+                    meta_path,
+                    "post-live-persist-failure",
+                    "actual",
+                )
+            self.assertEqual(len(ledger), 10)
+            self.assertEqual(len(rows), 10)
+            self.assertTrue(all(item["external_calls_triggered"] for item in ledger))
+            self.assertTrue(all(item["tushare_called"] for item in ledger))
+            self.assertTrue(executed["actual_provider_call_ledger_preserved"])
+            self.assertTrue(executed["actual_provider_raw_rows_preserved"])
+            self.assertFalse(persisted["authoritative_current_promoted"])
+            self.assertEqual(
+                executed["status"],
+                "factor_test_provider_industry_membership_authority_or_persistence_failed_safe",
+            )
+            after = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                meta_path
+            )
+            self.assertTrue(after["current_valid"])
+            self.assertEqual(
+                after["current"]["event_digest"], before["current"]["event_digest"]
+            )
+
+            update_calls = []
+
+            def record_update(task_id, **kwargs):
+                update_calls.append({"task_id": task_id, **kwargs})
+                return {
+                    "task_id": task_id,
+                    "status": kwargs.get("status"),
+                    "call_ledger": list(kwargs.get("call_ledger") or []),
+                }
+
+            payload = {
+                "approved_by_user": True,
+                "authorize_live_provider_call": True,
+                "provider_run_approved_by_user": True,
+                "acceptance_scope_hash": self.source_scope_hash,
+                "industry_scope_hash": executed["industry_scope_hash"],
+            }
+            with patch.object(
+                factor_service, "SQLITE_META_PATH", meta_path
+            ), patch.object(
+                factor_service,
+                "read_factor_quant_cache",
+                return_value={"factor_tests": self._factor_tests()},
+            ), patch.object(
+                factor_service,
+                "_factor_test_credential_presence",
+                side_effect=self._credential_present,
+            ), patch.object(
+                factor_service,
+                "create_task_record",
+                return_value={"task_id": "task-final-projection"},
+            ), patch.object(
+                factor_service,
+                "update_task_status",
+                side_effect=record_update,
+            ), patch.object(
+                factor_service,
+                "_run_factor_test_provider_industry_membership_live_and_persist",
+                return_value=(executed, rows, ledger, persisted),
+            ):
+                projected = factor_service.run_factor_test_provider_industry_membership_task(
+                    payload
+                )
+            self.assertEqual(projected["status"], "failed")
+            self.assertTrue(projected["payload_safe"]["external_calls_triggered"])
+            self.assertTrue(projected["payload_safe"]["tushare_called"])
+            self.assertEqual(len(update_calls[-1]["call_ledger"]), 10)
+            self.assertTrue(
+                all(
+                    item["external_calls_triggered"]
+                    for item in update_calls[-1]["call_ledger"]
+                )
+            )
+
+    def test_trust_state_write_failure_rolls_back_current_last_good_and_new_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta_path = Path(tmp) / "meta.sqlite"
+            self._seed_authoritative_source_packet(meta_path)
+            secret, blocker = factor_service._create_factor_test_industry_trusted_secret(
+                meta_path
+            )
+            self.assertTrue(secret)
+            self.assertEqual(blocker, "")
+            factor_service._persist_factor_test_provider_industry_membership_event(
+                *self._authoritative_artifacts("rollback-first", "first"),
+                meta_path=meta_path,
+                trusted_secret=secret,
+            )
+            before = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                meta_path
+            )
+            second = self._authoritative_artifacts("rollback-second", "second")
+            second_digest = factor_service._factor_test_provider_industry_membership_event(
+                *second
+            )["event_digest"]
+            with patch.object(
+                factor_service,
+                "_write_factor_test_industry_trusted_state",
+                return_value="test_trust_state_write_failure",
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "test_trust_state_write_failure"
+                ):
+                    factor_service._persist_factor_test_provider_industry_membership_event(
+                        *second,
+                        meta_path=meta_path,
+                        trusted_secret=secret,
+                    )
+            after = factor_service._read_factor_test_provider_industry_membership_authoritative_state(
+                meta_path
+            )
+            self.assertTrue(after["current_valid"])
+            self.assertTrue(after["last_good_valid"])
+            self.assertEqual(
+                after["current"]["event_digest"], before["current"]["event_digest"]
+            )
+            self.assertEqual(
+                after["last_good"]["event_digest"], before["last_good"]["event_digest"]
+            )
+            self.assertIsNone(
+                SQLiteMetaStore(meta_path, read_only=True).read_packet(
+                    f"{factor_service.FACTOR_TEST_INDUSTRY_PROVIDER_EVENT_PACKET_PREFIX}{second_digest}"
+                )
             )
 
     def test_trusted_terminal_state_tamper_fails_closed(self):
