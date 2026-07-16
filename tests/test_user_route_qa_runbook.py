@@ -311,10 +311,39 @@ class UserRouteQaRunbookTests(unittest.TestCase):
         self.assertTrue(route_packet["counts"]["user_route_qa_latest_report_passed"])
         self.assertTrue(route_packet["counts"]["user_route_qa_latest_report_margin_etf_confirmed_bridge_passed"])
         self.assertTrue(route_packet["policy"]["user_route_qa_evidence_does_not_create_task"])
-        self.assertFalse(route_packet["external_calls_triggered"])
-        self.assertFalse(route_packet["tushare_called"])
-        self.assertFalse(route_packet["deepseek_called"])
-        self.assertTrue(route_packet["does_not_execute_trades"])
+        for field in (
+            "external",
+            "external_calls_triggered",
+            "provider_or_model_calls",
+            "provider_called",
+            "model_called",
+            "worker_called",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+            "trade_called",
+            "trading_called",
+            "broker_called",
+            "order_called",
+            "real_trading_enabled",
+            "contains_secret",
+        ):
+            self.assertIs(route_envelope["call_ledger"][0][field], False)
+            self.assertIs(route_packet[field], False)
+        for field in ("does_not_execute_trades", "does_not_modify_strategy_action"):
+            self.assertIs(route_envelope["call_ledger"][0][field], True)
+            self.assertIs(route_packet[field], True)
+        self.assertIn("call_ledger", route_packet)
+        self.assertIn("cache_call_ledger", route_packet)
+        self.assertIsNot(route_packet["call_ledger"], route_packet["cache_call_ledger"])
+        self.assertEqual(route_packet["call_ledger"][0]["api"], "GET /api/audit/user-route-qa")
+        self.assertEqual(route_packet["cache_call_ledger"][0]["api"], "GET /api/audit/user-route-qa")
+        self.assertIs(route_packet["call_ledger"][0]["external"], False)
+        self.assertIs(route_packet["cache_call_ledger"][0]["external"], False)
+        self.assertEqual(route_envelope["call_ledger"][0]["source"], "GET /api/audit/user-route-qa")
+        self.assertEqual(route_envelope["call_ledger"][0]["route"], "GET /api/audit/user-route-qa")
+        self.assertEqual(route_envelope["call_ledger"][0]["request_method"], "GET")
+        self.assertEqual(route_envelope["call_ledger"][0]["call_status"], "cache_read")
 
 
 if __name__ == "__main__":

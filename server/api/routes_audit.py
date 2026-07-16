@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from server.schemas.packets import envelope
+from server.schemas.packets import cache_read_call_ledger, cache_read_packet, envelope
 from server.services import audit_service, release_promotion_service
 
 
@@ -115,6 +115,7 @@ def get_user_route_qa_evidence_cache() -> dict:
                 "api": "GET /api/audit/user-route-qa",
                 "mode": "cache_only",
                 "source": ".stock_ming_3/user_route_qa ignored local reports",
+                "external": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
@@ -131,7 +132,14 @@ def get_user_route_qa_evidence_cache() -> dict:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
     }
-    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+    current_ledger = cache_read_call_ledger(
+        api="GET /api/audit/user-route-qa",
+        route="GET /api/audit/user-route-qa",
+        packet=packet,
+        existing=packet.get("call_ledger"),
+    )
+    response_packet = cache_read_packet(packet, cache_call_ledger=current_ledger)
+    return envelope(response_packet, call_ledger=current_ledger, warnings=packet.get("warnings"))
 
 
 @router.post("/motion-browser-qa-review")

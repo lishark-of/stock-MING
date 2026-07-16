@@ -56,7 +56,7 @@ const FASTAPI_CACHE_ENDPOINT_COUNT = 19;
 
 const FASTAPI_CACHE_CONTRACTS = new Map([
   ["/api/audit/cache", { schema: "call_ledger_audit_cache.v1", packet: "command_center_3_call_ledger_audit_cache", ledgerApis: ["local_call_ledger_audit_cache"] }],
-  ["/api/audit/user-route-qa", { schema: "command_center_3_user_route_qa_evidence_cache.v1", packet: "command_center_3_user_route_qa_evidence_cache", ledgerApis: ["GET /api/audit/user-route-qa"] }],
+  ["/api/audit/user-route-qa", { schema: "command_center_3_user_route_qa_evidence_cache.v1", packet: "command_center_3_user_route_qa_evidence_cache", strictCurrentRead: true, ledgerApis: ["GET /api/audit/user-route-qa"] }],
   ["/api/bootstrap/status", { schema: "command_center_bootstrap_runtime_mode.v1", packet: "command_center_3_bootstrap_runtime_mode_packet", ledgerApis: ["local_bootstrap_runtime_mode_cache"] }],
   ["/api/desktop/preflight-cache", { schema: "desktop_shell_preflight_cache.v1", packet: "command_center_3_desktop_shell_preflight_cache", strictCurrentRead: true, ledgerApis: ["local_desktop_shell_preflight_cache"] }],
   ["/api/factor-quant/cache", { schema: "factor_quant_hub.v1", packet: "command_center_factor_quant_hub_packet", strictCurrentRead: true, ledgerApis: ["local_factor_quant_cache"] }],
@@ -227,23 +227,421 @@ const HISTORICAL_FLAG_NAMES = new Set([
 const FORBIDDEN_SECRET_KEYS = new Set([
   "api_key", "apikey", "api_token", "access_key", "access_token", "refresh_token", "authorization",
   "password", "passwd", "secret", "token", "credential", "client_secret", "private_key",
-  "bearer_token", "cookie", "set_cookie"
+  "bearer_token", "cookie", "set_cookie", "api_keys", "api_tokens", "access_tokens", "refresh_tokens",
+  "credentials", "passwords", "secrets", "tokens", "private_keys", "bearer_tokens", "cookies", "set_cookies"
 ]);
+const STRICT_ANY_TAIL_FORBIDDEN = new Set([
+  "api_key", "apikey", "api_token", "access_key", "access_token", "refresh_token", "authorization",
+  "password", "passwd", "client_secret", "private_key", "bearer_token", "cookie", "set_cookie",
+  "api_keys", "api_tokens", "access_tokens", "refresh_tokens", "passwords", "private_keys",
+  "bearer_tokens", "cookies", "set_cookies", "credentials", "token", "tokens", "secret", "secrets", "credential"
+]);
+const STRICT_STATUS_TAIL_FORBIDDEN = new Set(["current", "runtime", "active"]);
+const SAFE_BOOLEAN_SECRET_POLICIES = new Map([
+  ["contains_secret", false],
+  ["display_strips_query_hash_username_password", true],
+  ["launcher_diagnostic_urls_contain_secret", false],
+  ["launcher_prints_raw_query_hash_username_password", false],
+  ["authorization_header_allowed", false],
+  ["authorization_nonce_caller_generated", true],
+  ["authorization_nonce_present", null],
+  ["authorization_nonce_raw_persisted", false],
+  ["authorization_nonce_required", true],
+  ["authorization_nonce_strong", null],
+  ["config_audit_includes_credential_values", false],
+  ["credential_value_allowed", false],
+  ["credential_value_budget_log_allowed", false],
+  ["credential_value_exposed", false],
+  ["credential_value_read_allowed", false],
+  ["credential_values_exposed", false],
+  ["credential_values_read", false],
+  ["credential_env_key_name_allowed", false],
+  ["credential_env_key_names_exposed", false],
+  ["credential_env_key_names_exposed_to_frontend", false],
+  ["credential_env_key_names_included", false],
+  ["does_not_scan_secret_values", true],
+  ["does_not_expose_credentials", true],
+  ["does_not_include_token_or_raw_log", true],
+  ["does_not_read_api_keys", true],
+  ["desktop_shortcut_installer_reads_credentials", false],
+  ["frontend_stores_tokens", false],
+  ["ledger_redaction_credential_material_exposed", false],
+  ["lineage_must_exclude_credential_values", true],
+  ["live_full_requires_separate_authorization", null],
+  ["live_full_reserved_requires_separate_authorization", true],
+  ["live_light_credential_values_exposed", false],
+  ["live_light_ledger_redaction_credential_material_exposed", false],
+  ["ownership_audit_includes_credential_values", false],
+  ["promotion_review_scope_hash_input_includes_secret", false],
+  ["promotion_scope_hash_input_includes_secret", false],
+  ["reads_credential_values", false],
+  ["requires_separate_live_provider_authorization", true],
+  ["retirement_scope_hash_input_includes_secret", false],
+  ["review_scope_hash_input_includes_secret", false],
+  ["scans_secret_values", false],
+  ["separate_authorization_required", true],
+  ["scope_intake_secret_like_payload_fields_dropped", true],
+  ["secret_like_model_value_redacted", false],
+  ["secret_like_payload_fields_dropped", true],
+  ["secret_like_raw_redacted", false],
+  ["search_quant_projection_p1_contains_secret", false],
+  ["server_secret_values_exposed", false],
+  ["server_secret_values_read", false],
+  ["status_get_exposes_credential_values", false],
+  ["status_get_reads_credential_values", false],
+  ["requires_live_provider_authorization_flag", true],
+  ["token_usage_record_required", true],
+  ["runtime_budget_token_usage_record_required", true],
+  ["live_light_scope_intake_secret_like_payload_fields_dropped", true],
+  ["live_light_runtime_budget_token_usage_record_required", true],
+  ["credential_presence_check_reads_values", false],
+  ["credential_presence_check_exposes_values", false],
+  ["credential_presence_check_exposes_env_key_names", false],
+  ["credential_presence_check_exposes_value_lengths", false],
+  ["worker_execution_scope_hash_input_includes_secret", false]
+]);
+const SAFE_BOOLEAN_METADATA_POLICIES = new Map([
+  ["cache_may_contain_token_key", false], ["contains_secret_scan_step", null],
+  ["credential_missing_may_be_verified", false], ["credential_preflight_contract_visible", true],
+  ["credential_preflight_ready", false], ["credential_preflight_ready_required", true],
+  ["credential_presence_booleans_only", true], ["credential_presence_check_requires_post", true],
+  ["credential_presence_check_requires_user_approval", true], ["credential_present", true],
+  ["frontend_packet_may_contain_token_key", false], ["frontend_token_exposure_absent", true],
+  ["hard_boundary_token_key_frontend_log_packet_cache_allowed", false], ["high_risk_secret_scan_step", true],
+  ["live_light_credential_preflight_contract_visible", true],
+  ["live_light_credential_presence_check_requires_post", true],
+  ["live_light_credential_presence_check_requires_user_approval", true],
+  ["live_light_status_get_checks_credential_presence", false], ["loads_token_or_key", false],
+  ["logs_may_contain_token_key", false], ["payload_secret_fields_dropped", true],
+  ["requires_credential_preflight_ready", true],
+  ["runtime_hard_boundary_token_key_frontend_log_packet_cache_allowed", false],
+  ["scope_hash_excludes_secret_fields", true],
+  ["secret_artifact_allowlist_review_head_matches_current", false],
+  ["secret_artifact_allowlist_review_ready", false],
+  ["secret_artifact_allowlist_review_receipt_calls_no_github_api_from_cache", true],
+  ["secret_artifact_allowlist_review_receipt_head_matches_current", false],
+  ["secret_artifact_allowlist_review_receipt_is_local_ignored", true],
+  ["secret_artifact_allowlist_review_receipt_is_not_release_review", true],
+  ["secret_artifact_allowlist_review_receipt_present", true], ["secret_artifact_scan_required", true],
+  ["secret_keyword_review_contract_exists", true], ["secret_keyword_review_contract_is_structured", true],
+  ["secret_keyword_review_contract_step", true], ["server_secret_presence_checked", true],
+  ["server_secret_present", true], ["status_get_checks_credential_presence", false],
+  ["motion_tokens_present", true],
+  ["live_light_runtime_budget_token_usage_required", true],
+  ["server_side_tushare_credential_present", true],
+  ["task_status_may_contain_token_key", false], ["tauri_app_open_autostart_loads_token_or_key", false],
+  ["token_budget_cost_evidence_complete", false], ["token_budget_estimate_present", true],
+  ["token_key_allowed", false], ["token_key_exposure_allowed", false],
+  ["token_key_frontend_exposure", false], ["token_key_frontend_log_packet_cache_allowed", false],
+  ["token_usage_required", true], ["token_usage_visible_safe_summary_only", true]
+]);
+const SAFE_NON_SECRET_NUMBER_KEYS = new Set([
+  "blocking_credential_missing_provider_count", "credential_missing_provider_count", "credential_present_provider_count",
+  "credential_required_provider_count", "credential_row_count", "deepseek_credential_missing_provider_count",
+  "latest_trade_cal_provider_acceptance_dry_run_credential_row_count", "max_tokens_per_attempt", "output_token_estimate",
+  "prompt_token_estimate", "provider_parity_credential_missing_count", "search_quant_projection_acceptance_credential_missing_count",
+  "secret_artifact_allowlist_review_receipt_missing_evidence_count"
+]);
+const SAFE_NON_SECRET_TEXT_KEYS = new Set([
+  "credential_missing_status", "credential_presence_check_method", "credential_presence_check_route",
+  "credential_presence_status", "safe_credential_label", "secret_artifact_allowlist_review_receipt_status",
+  "server_secret_presence_check"
+]);
+const SAFE_NON_SECRET_CONTAINER_KEYS = new Set([
+  "credential_presence_summary", "latest_trade_cal_provider_acceptance_dry_run_credential_rows",
+  "live_light_credential_preflight_contract", "provider_parity_credential_presence_rows",
+  "search_quant_projection_credential_presence_rows", "credential_presence_rows"
+]);
+const SAFE_NON_SECRET_AUDIT_CONTAINER_KEYS = new Set([
+  "secret_artifact_allowlist_review_receipt_missing_evidence", "secret_artifact_allowlist_review_receipt"
+]);
+const SECRET_MATERIAL_SUFFIXES = new Set([
+  "blob", "body", "bytes", "content", "data", "document", "entry", "field", "header", "headers",
+  "env", "environment", "fingerprint", "hash", "item", "json", "map", "material", "metadata",
+  "name", "object", "payload", "pem", "raw", "record", "request", "response", "sha", "sha256",
+  "str", "string", "text", "value", "values", "variable", "digest"
+]);
+const MAX_SECRET_SCAN_DEPTH = 128;
+const MAX_SECRET_SCAN_NODES = 250000;
+// These are explicitly sanitized metadata, not credentials or credential-derived material.
+const SAFE_SENSITIVE_STATUS_VALUES = new Set([
+  "all_required_env_keys_present_no_values_read", "blocked_missing_credentials_no_external_call", "credential_present",
+  "credential_preflight_contract_visible_post_only", "inactive_until_live_light_mode", "missing",
+  "missing_no_value_read", "not_required_by_payload", "present_no_value_read", "present_no_values_read", "present_but_not_verified",
+  "provider_empty_result_not_verified", "provider_no_record_not_negative_evidence",
+  "provider_permission_denied_safe_error", "required_env_key_missing_no_values_read",
+  "secret_artifact_allowlist_review_ready", "secret_artifact_allowlist_review_receipt_present_but_not_verified",
+  "skipped_budget_exceeded_no_external_call",
+  "skipped_due_to_rate_limit_reused_existing_task", "clean", "clean_or_allowed_assets_only",
+  "reviewed_no_high_risk_values", "secret_keyword_review_contract_ready_manual_review_pending", "credential_present",
+  "credential_missing", "present_no_values_read"
+]);
+const SAFE_SENSITIVE_PROVIDER_VALUES = new Set(["deepseek", "tushare"]);
+const SAFE_SENSITIVE_CREDENTIAL_REF_RE = /^(?:deepseek|tushare)_(?:primary_credential|secondary_credential_\d+)$/;
+const SAFE_SENSITIVE_HASH_RE = /^(?:[0-9a-f]{16}|[0-9a-f]{40}|[0-9a-f]{64})$/;
+const SAFE_SENSITIVE_ROUTE_RE = /^(?:GET|POST) \/api\/[a-z0-9/_-]+$/;
+const SAFE_SENSITIVE_SCHEMA_RE = /^command_center_[a-z0-9_]+\.v\d+$/;
+const SAFE_AUDIT_MISSING_EVIDENCE_VALUES = new Set([
+  "periodic secret/artifact allowlist review receipt", "readable periodic secret/artifact allowlist review receipt",
+  "secret/artifact allowlist review receipt schema", "secret/artifact allowlist review ready status",
+  "current HEAD matching secret/artifact allowlist review", "explicit user authorization for allowlist review",
+  "clean high-risk secret scan review", "structured secret keyword review", "clean generated artifact scan review",
+  "cache read no-external/no-provider/no-trade boundary flags"
+]);
+const SAFE_AUDIT_RECEIPT_KEYS = new Set([
+  "schema_version", "status", "scope", "receipt_path", "read_status", "current_head", "current_head_full",
+  "current_branch", "head_matches_current", "periodic_allowlist_review_ready", "false_positive_allowlist_review_ready",
+  "release_review_complete", "release_gate_complete", "production_release_complete", "cache_get_external_calls",
+  "cache_get_calls_github_api", "external_calls_triggered", "tushare_called", "deepseek_called", "github_called",
+  "github_api_called", "does_not_execute_trades", "does_not_modify_strategy_action", "contains_secret", "missing_evidence",
+  "missing_evidence_count", "high_risk_secret_scan_status", "secret_keyword_review_status", "generated_artifact_scan_status",
+  "explicit_user_allowlist_review_authorized", "call_ledger", "branch", "head", "head_full", "manual_review_note_safe",
+  "receipt_writer", "reviewed_at_utc", "reviewer", "explicit_user_release_review_authorized", "can_close_goal",
+  "strict_closeout_ready", "decision", "remote_artifact_digest", "remote_run_id"
+]);
+const SAFE_AUDIT_CALL_LEDGER_KEYS = new Set([
+  "api", "source", "call_status", "periodic_allowlist_review_ready", "local_fetched_at", "external",
+  "github_called", "github_api_called", "does_not_execute_trades", "does_not_modify_strategy_action"
+]);
+const SAFE_SENSITIVE_BOOLEAN_KEYS = new Set([
+  "contains_secret", "credential_values_read", "credential_values_exposed", "env_key_names_included",
+  "required", "present", "values_read", "values_exposed", "value_lengths_exposed", "credential_value_exposed",
+  "credential_value_read_allowed", "credential_env_key_name_allowed", "external_calls_triggered",
+  "tushare_called", "deepseek_called", "github_called", "does_not_execute_trades", "does_not_modify_strategy_action",
+  "server_side_tushare_credential_present", "credential_presence_booleans_only", "credential_preflight_ready",
+  "credential_preflight_ready_required", "credential_presence_check_requires_post", "credential_presence_check_requires_user_approval",
+  "env_key_names_exposed", "present_no_values_read", "required_for_selected_dry_run", "safe_provider_labels_only",
+  "status_get_reads_credential_values", "status_get_checks_credential_presence", "status_get_exposes_env_key_names",
+  "status_get_exposes_credential_values", "status_get_exposes_value_lengths", "raw_config_dump_allowed",
+  "provider_execution_allowed_from_preflight", "model_execution_allowed_from_preflight",
+  "production_promotion_allowed_from_preflight", "frontend_packet_may_contain_token_key", "logs_may_contain_token_key",
+  "cache_may_contain_token_key", "token_key_allowed", "token_key_exposure_allowed", "motion_tokens_present",
+  "credential_presence_check_reads_values", "credential_presence_check_exposes_values", "credential_presence_check_exposes_env_key_names",
+  "credential_presence_check_exposes_value_lengths", "checked_by_membership_only", "env_key_name_exposed",
+  "cache_get_calls_github_api", "cache_get_external_calls", "explicit_user_allowlist_review_authorized",
+  "false_positive_allowlist_review_ready", "github_api_called", "periodic_allowlist_review_ready",
+  "production_release_complete", "release_gate_complete", "release_review_complete", "head_matches_current", "external"
+]);
+const SAFE_SENSITIVE_BOOLEAN_POLARITIES = new Map([
+  ["required", null], ["present", null], ["values_read", false], ["values_exposed", false],
+  ["value_lengths_exposed", false], ["env_key_names_included", false], ["credential_value_exposed", false],
+  ["credential_value_read_allowed", false], ["credential_env_key_name_allowed", false],
+  ["external_calls_triggered", false], ["tushare_called", false], ["deepseek_called", false],
+  ["github_called", false], ["does_not_execute_trades", true], ["does_not_modify_strategy_action", true],
+  ["credential_presence_booleans_only", true], ["credential_preflight_ready", false],
+  ["credential_preflight_ready_required", true], ["credential_presence_check_requires_post", true],
+  ["credential_presence_check_requires_user_approval", true]
+  , ["env_key_names_exposed", false], ["present_no_values_read", true], ["required_for_selected_dry_run", null],
+  ["safe_provider_labels_only", true], ["status_get_reads_credential_values", false],
+  ["status_get_checks_credential_presence", false], ["status_get_exposes_env_key_names", false],
+  ["status_get_exposes_credential_values", false], ["status_get_exposes_value_lengths", false],
+  ["raw_config_dump_allowed", false], ["provider_execution_allowed_from_preflight", false],
+  ["model_execution_allowed_from_preflight", false], ["production_promotion_allowed_from_preflight", false],
+  ["frontend_packet_may_contain_token_key", false], ["logs_may_contain_token_key", false],
+  ["cache_may_contain_token_key", false], ["token_key_allowed", false], ["token_key_exposure_allowed", false],
+  ["credential_presence_check_reads_values", false], ["credential_presence_check_exposes_values", false],
+  ["credential_presence_check_exposes_env_key_names", false], ["credential_presence_check_exposes_value_lengths", false],
+  ["checked_by_membership_only", true], ["env_key_name_exposed", false], ["motion_tokens_present", true],
+  ["head_matches_current", null], ["explicit_user_allowlist_review_authorized", null],
+  ["explicit_user_release_review_authorized", null], ["false_positive_allowlist_review_ready", null],
+  ["periodic_allowlist_review_ready", null], ["release_review_complete", null], ["release_gate_complete", null],
+  ["production_release_complete", null], ["strict_closeout_ready", null], ["can_close_goal", null],
+  ["cache_get_calls_github_api", false], ["cache_get_external_calls", false], ["explicit_user_allowlist_review_authorized", null],
+  ["false_positive_allowlist_review_ready", null], ["github_api_called", false], ["periodic_allowlist_review_ready", null],
+  ["production_release_complete", false], ["release_gate_complete", false], ["release_review_complete", null],
+  ["head_matches_current", null], ["external", false]
+]);
+const SAFE_SENSITIVE_NUMBER_KEYS = new Set([
+  "required_provider_count", "present_provider_count", "missing_provider_count", "credential_ref_count",
+  "env_key_name_count", "credential_row_count", "row_count", "max_tokens_per_attempt", "output_token_estimate",
+  "prompt_token_estimate", "cost_ceiling_usd_per_million_tokens", "present_key_count", "required_key_count", "missing_evidence_count"
+]);
+function safeSensitivePrimitive(key, value) {
+  if (typeof value === "boolean") {
+    if (!SAFE_SENSITIVE_BOOLEAN_KEYS.has(key)) return false;
+    if (SAFE_SENSITIVE_BOOLEAN_POLARITIES.has(key)) {
+      const expected = SAFE_SENSITIVE_BOOLEAN_POLARITIES.get(key);
+      return expected === null || value === expected;
+    }
+    return !forbiddenSecretFieldKey(key) || safeBooleanSecretPolicy(key, value);
+  }
+  if (typeof value === "number") return SAFE_SENSITIVE_NUMBER_KEYS.has(key) && Number.isFinite(value) && value >= 0 && value <= 1_000_000_000;
+  if (typeof value !== "string") return value === null;
+  if (SAFE_SENSITIVE_STATUS_VALUES.has(value)) return true;
+  if (key === "provider" || key === "provider_name") return SAFE_SENSITIVE_PROVIDER_VALUES.has(value);
+  if (key === "credential_ref" || key === "credential_refs") return SAFE_SENSITIVE_CREDENTIAL_REF_RE.test(value);
+  if (key === "schema_version") return /^[a-z0-9_]+\.v\d+$/.test(value) &&
+    (!/(?:secret|token|password|raw|value)/.test(value) || [
+      "command_center_live_light_credential_preflight_contract.v1",
+      "factor_test_provider_small_pool_credential_presence.v1",
+      "command_center_3_secret_artifact_allowlist_review_receipt.v1"
+    ].includes(value));
+  if (key === "scope_hash" || key === "scope_hash_short" || key.endsWith("_sha256") || key.endsWith("_digest")) {
+    return SAFE_SENSITIVE_HASH_RE.test(value);
+  }
+  if (key === "presence_check_method" || key === "credential_presence_check_method") {
+    return ["environment_key_membership_only", "environment_key_membership_only_no_value_read"].includes(value);
+  }
+  if (key === "credential_presence_check_route") return SAFE_SENSITIVE_ROUTE_RE.test(value);
+  if (key === "safe_credential_label") return value === "tushare_server_token";
+  if (key === "credential_presence_status") return value === "" || SAFE_SENSITIVE_STATUS_VALUES.has(value);
+  if (key === "status" || key === "state" || key === "read_status" || key === "call_status") {
+    return SAFE_SENSITIVE_STATUS_VALUES.has(value) ||
+      (/^[a-z0-9_]+$/.test(value) && !/(?:secret|token|credential|password|raw|value)/.test(value));
+  }
+  if (key === "mode") return ["live_light", "cache_only"].includes(value);
+  if (key === "allowed_provider_labels") return SAFE_SENSITIVE_PROVIDER_VALUES.has(value);
+  if (key === "missing_evidence") return /^[a-z0-9 _/.-]+$/.test(value) && !/(?:token|password|api_key|credential_value)/.test(value);
+  if (key === "current_branch") return /^[A-Za-z0-9._/-]{1,120}$/.test(value);
+  if (key === "current_head" || key === "current_head_full") return /^(?:[0-9a-f]{7,40})$/.test(value);
+  if (key === "head" || key === "head_full") return /^(?:[0-9a-f]{7,40})$/.test(value);
+  if (key === "branch" || key === "current_branch") return /^[A-Za-z0-9._/-]{1,120}$/.test(value);
+  if (key === "receipt_path") return /^(?:\.?[A-Za-z0-9_-]+\/)*[A-Za-z0-9_.-]+\.json$/.test(value);
+  if (key === "scope") return value === "ignored_manual_secret_artifact_allowlist_review_no_cache_github_api";
+  if (key === "api") return value === "local_secret_artifact_allowlist_review_receipt_readback";
+  if (key === "source") return value === "ignored local secret/artifact allowlist review receipt";
+  if (key === "local_fetched_at") return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value);
+  if (key === "reviewed_at_utc") return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value);
+  if (key === "receipt_writer") return /^scripts\/[a-z0-9_]+\.py$/.test(value);
+  if (key === "reviewer") return /^[A-Za-z0-9 ._-]{1,120}$/.test(value);
+  if (key === "manual_review_note_safe") return /^(?:Current-head|Same-head|reviewed)/.test(value) && value.length <= 400;
+  if (key === "remote_artifact_digest") return /^sha256:[0-9a-f]{64}$/.test(value);
+  if (key === "remote_run_id") return /^\d{1,32}$/.test(value);
+  if (key === "decision") return /^[a-z0-9 _-]{1,160}$/.test(value) && !/(?:token|password|api_key|raw)/.test(value);
+  if (key === "method" || key === "request_method") return ["GET", "POST"].includes(value);
+  return false;
+}
+function safeNonSecretMetadata(key, value) {
+  if (key === "authorization_nonce_digest") return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+  if (key === "cost_ceiling_usd_per_million_tokens") {
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1_000_000;
+  }
+  if (key === "authorization_nonce_consumed_at") return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(value);
+  if (key === "authorization_nonce_status") return ["issued", "not_issued", "consumed"].includes(value);
+  if (key === "credential_presence_status") return typeof value === "string" && value.length <= 200 && (value === "" || SAFE_SENSITIVE_STATUS_VALUES.has(value));
+  if (SAFE_NON_SECRET_NUMBER_KEYS.has(key)) return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1_000_000_000;
+  if (SAFE_NON_SECRET_TEXT_KEYS.has(key)) {
+    if (key === "safe_credential_label") return value === "tushare_server_token";
+    if (key === "credential_presence_status") return typeof value === "string" && value.length <= 200 && (value === "" || SAFE_SENSITIVE_STATUS_VALUES.has(value));
+    if (key === "credential_presence_check_method" || key === "server_secret_presence_check") {
+      return ["environment_key_membership_only", "environment_key_membership_only_no_value_read"].includes(value);
+    }
+    if (key === "credential_presence_check_route") return typeof value === "string" && SAFE_SENSITIVE_ROUTE_RE.test(value);
+    if (key === "credential_missing_status" || key === "secret_artifact_allowlist_review_receipt_status") return SAFE_SENSITIVE_STATUS_VALUES.has(value);
+    return false;
+  }
+  if (SAFE_NON_SECRET_CONTAINER_KEYS.has(key)) return Boolean(value && typeof value === "object");
+  return false;
+}
 
 function safeRecord(value) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+function canonicalSecretKey(rawKey) {
+  return rawKey
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function safeBooleanSecretPolicy(rawKey, value) {
+  if (typeof value !== "boolean") return false;
+  const key = canonicalSecretKey(rawKey);
+  const policy = SAFE_BOOLEAN_SECRET_POLICIES.has(key)
+    ? SAFE_BOOLEAN_SECRET_POLICIES
+    : SAFE_BOOLEAN_METADATA_POLICIES;
+  if (!policy.has(key)) return false;
+  const expected = policy.get(key);
+  return expected === null || value === expected;
+}
+
+function secretMaterialSuffix(value) {
+  return SECRET_MATERIAL_SUFFIXES.has(value) ||
+    /^sha\d*$/.test(value) || /^blake\d*$/.test(value) ||
+    ["checksum", "hmac", "md5"].includes(value);
+}
+
+function forbiddenSecretFieldKey(rawKey) {
+  const key = canonicalSecretKey(rawKey);
+  for (const forbidden of FORBIDDEN_SECRET_KEYS) {
+    if (key === forbidden || key.endsWith(`_${forbidden}`)) return true;
+    const marker = `${forbidden}_`;
+    let position = key.indexOf(marker);
+    while (position >= 0) {
+      const boundaryBefore = position === 0 || key[position - 1] === "_";
+      const tailTokens = key.slice(position + marker.length).split("_");
+      if (boundaryBefore && (
+        STRICT_ANY_TAIL_FORBIDDEN.has(forbidden) ||
+        STRICT_STATUS_TAIL_FORBIDDEN.has(tailTokens[0]) ||
+        tailTokens.some(secretMaterialSuffix)
+      )) return true;
+      position = key.indexOf(marker, position + 1);
+    }
+  }
+  return false;
+}
+
+function safeAuditReceiptContainer(value, row = false) {
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) {
+    return row
+      ? value.every(item => safeAuditReceiptContainer(item, true))
+      : value.every(item => typeof item === "string" && SAFE_AUDIT_MISSING_EVIDENCE_VALUES.has(item));
+  }
+  const allowed = row ? SAFE_AUDIT_CALL_LEDGER_KEYS : SAFE_AUDIT_RECEIPT_KEYS;
+  for (const [rawKey, child] of Object.entries(value)) {
+    const key = canonicalSecretKey(rawKey);
+    if (!allowed.has(key)) return false;
+    if (key === "missing_evidence") {
+      if (!safeAuditReceiptContainer(child, false)) return false;
+      continue;
+    }
+    if (key === "call_ledger") {
+      if (!safeAuditReceiptContainer(child, true)) return false;
+      continue;
+    }
+    if (child && typeof child === "object") return false;
+    if (!safeSensitivePrimitive(key, child) && !safeBooleanSecretPolicy(key, child) && !safeNonSecretMetadata(key, child)) return false;
+  }
+  return true;
+}
+
 function secretBearingFieldCount(value) {
   if (!value || typeof value !== "object") return 0;
   let count = 0;
-  for (const [rawKey, child] of Object.entries(value)) {
-    const key = rawKey.toLowerCase().replace(/[ -]/g, "_");
-    const benignNegativeDisclosure = key === "contains_secret" && child === false;
-    if (!benignNegativeDisclosure && (FORBIDDEN_SECRET_KEYS.has(key) || [...FORBIDDEN_SECRET_KEYS].some(name => key.endsWith(`_${name}`)))) count += 1;
-    if (key === "contains_secret" && child === true) count += 1;
-    if (typeof child === "string" && (/^\s*(bearer|basic)\s+\S+/i.test(child) || child.includes("-----BEGIN PRIVATE KEY-----"))) count += 1;
-    count += secretBearingFieldCount(child);
+  let scannedNodes = 0;
+  const stack = [{ node: value, depth: 0, sensitiveContext: false, containerKey: "" }];
+  while (stack.length) {
+    const { node, depth, sensitiveContext, containerKey } = stack.pop();
+    if (depth > MAX_SECRET_SCAN_DEPTH) return count + 1;
+    for (const [rawKey, child] of Object.entries(node)) {
+      scannedNodes += 1;
+      if (scannedNodes > MAX_SECRET_SCAN_NODES) return count + 1;
+      const key = canonicalSecretKey(rawKey);
+      const forbiddenSecretKey = forbiddenSecretFieldKey(rawKey);
+      const primitiveKey = sensitiveContext && /^\d+$/.test(rawKey) ? containerKey : key;
+      if (sensitiveContext && child !== null && typeof child !== "object" && !safeSensitivePrimitive(primitiveKey, child)) count += 1;
+      if (SAFE_NON_SECRET_AUDIT_CONTAINER_KEYS.has(key) && child && typeof child === "object") {
+        if (!safeAuditReceiptContainer(child, key.endsWith("_missing_evidence") ? false : false)) count += 1;
+        continue;
+      }
+      if (forbiddenSecretKey && !safeBooleanSecretPolicy(key, child) && !safeNonSecretMetadata(key, child) &&
+        !(SAFE_NON_SECRET_CONTAINER_KEYS.has(key) && child && typeof child === "object")) count += 1;
+      if (
+        typeof child === "boolean" &&
+        (key === "contains_secret" || key.endsWith("_contains_secret") || key.endsWith("_contain_secret") || key.endsWith("_includes_secret")) &&
+        child === true &&
+        !forbiddenSecretKey
+      ) count += 1;
+      if (typeof child === "string" && (/^\s*(bearer|basic)\s+\S+/i.test(child) || child.includes("-----BEGIN PRIVATE KEY-----"))) count += 1;
+      if (child && typeof child === "object") {
+        const childSensitive = sensitiveContext || SAFE_NON_SECRET_CONTAINER_KEYS.has(key);
+        stack.push({ node: child, depth: depth + 1, sensitiveContext: childSensitive, containerKey: childSensitive ? key : "" });
+      }
+    }
   }
   return count;
 }
@@ -251,13 +649,23 @@ function secretBearingFieldCount(value) {
 function nonLocalUrlCount(value) {
   if (!value || typeof value !== "object") return 0;
   let count = 0;
-  for (const child of Object.values(value)) {
-    if (typeof child === "string" && /^https?:\/\//i.test(child)) {
-      try {
-        const parsed = new URL(child);
-        if (!ALLOWED_LOCAL_HOSTS.has(parsed.hostname)) count += 1;
-      } catch { count += 1; }
-    } else count += nonLocalUrlCount(child);
+  let scannedNodes = 0;
+  const stack = [{ node: value, depth: 0 }];
+  while (stack.length) {
+    const { node, depth } = stack.pop();
+    if (depth > MAX_SECRET_SCAN_DEPTH) return count + 1;
+    for (const child of Object.values(node)) {
+      scannedNodes += 1;
+      if (scannedNodes > MAX_SECRET_SCAN_NODES) return count + 1;
+      if (typeof child === "string" && /^https?:\/\//i.test(child)) {
+        try {
+          const parsed = new URL(child);
+          if (!ALLOWED_LOCAL_HOSTS.has(parsed.hostname)) count += 1;
+        } catch { count += 1; }
+      } else if (child && typeof child === "object") {
+        stack.push({ node: child, depth: depth + 1 });
+      }
+    }
   }
   return count;
 }
@@ -273,9 +681,17 @@ function flagViolationCount(record, names, expected) {
 function historicalProvenanceCount(value, topLevel = false) {
   if (!value || typeof value !== "object") return 0;
   let count = 0;
-  for (const [name, child] of Object.entries(value)) {
-    if (!topLevel && HISTORICAL_FLAG_NAMES.has(name) && child === true) count += 1;
-    count += historicalProvenanceCount(child, false);
+  let scannedNodes = 0;
+  const stack = [{ node: value, depth: 0, topLevel }];
+  while (stack.length) {
+    const { node, depth, topLevel: currentTopLevel } = stack.pop();
+    if (depth > MAX_SECRET_SCAN_DEPTH) return count + 1;
+    for (const [name, child] of Object.entries(node)) {
+      scannedNodes += 1;
+      if (scannedNodes > MAX_SECRET_SCAN_NODES) return count + 1;
+      if (!currentTopLevel && HISTORICAL_FLAG_NAMES.has(name) && child === true) count += 1;
+      if (child && typeof child === "object") stack.push({ node: child, depth: depth + 1, topLevel: false });
+    }
   }
   return count;
 }
@@ -478,6 +894,11 @@ function selfTestFastApiValidator() {
     });
   };
   const assert = (condition, label) => { if (!condition) throw new Error(`FastAPI validator self-test failed: ${label}`); };
+  let attackCount = 0;
+  const reject = (result, label) => {
+    attackCount += 1;
+    assert(!result.valid, label);
+  };
   const safeResult = analyze(safeAudit());
   assert(FASTAPI_CACHE_CONTRACTS.size === 19, "exact_19_endpoint_surface");
   assert(safeResult.valid, "safe_cache_response");
@@ -488,10 +909,10 @@ function selfTestFastApiValidator() {
 
   const extraTop = safeAudit();
   extraTop.malicious = true;
-  assert(!analyze(extraTop).valid, "2xx_extra_top_level_json");
+  reject(analyze(extraTop), "2xx_extra_top_level_json");
   const missingExternalProof = safeAudit();
   delete missingExternalProof.call_ledger[0].external;
-  assert(!analyze(missingExternalProof).valid, "ledger_external_proof_missing");
+  reject(analyze(missingExternalProof), "ledger_external_proof_missing");
   for (const [label, field] of [
     ["external_ledger", "external_calls_triggered"], ["provider_ledger", "tushare_called"],
     ["model_ledger", "deepseek_called"], ["worker_ledger", "worker_called"],
@@ -499,17 +920,17 @@ function selfTestFastApiValidator() {
   ]) {
     const payload = safeAudit();
     payload.call_ledger[0][field] = true;
-    assert(!analyze(payload).valid, label);
+    reject(analyze(payload), label);
   }
   const taskPost = safeAudit();
   taskPost.call_ledger[0].request_method = "POST";
-  assert(!analyze(taskPost).valid, "task_post_ledger");
+  reject(analyze(taskPost), "task_post_ledger");
   const externalUrl = safeAudit();
   externalUrl.call_ledger[0].endpoint = "https://example.invalid/api";
-  assert(!analyze(externalUrl).valid, "non_local_ledger_source");
+  reject(analyze(externalUrl), "non_local_ledger_source");
   const unrelatedApi = safeAudit();
   unrelatedApi.call_ledger[0].api = "local_task_status_index";
-  assert(!analyze(unrelatedApi).valid, "endpoint_owned_api_required");
+  reject(analyze(unrelatedApi), "endpoint_owned_api_required");
   const optionalNext = safeAudit();
   optionalNext.data.schema_version = "next_session_projection.v1";
   optionalNext.data.packet_key = "command_center_next_session_projection_packet";
@@ -521,15 +942,15 @@ function selfTestFastApiValidator() {
   assert(analyze(optionalNext, "/api/next-session/cache").valid, "single_current_endpoint_ledger_row");
   const minimalPrimary = structuredClone(optionalNext);
   minimalPrimary.call_ledger[0] = { api: "local_next_session_cache", external: false, external_calls_triggered: false };
-  assert(!analyze(minimalPrimary, "/api/next-session/cache").valid, "minimal_primary_row_rejected");
+  reject(analyze(minimalPrimary, "/api/next-session/cache"), "minimal_primary_row_rejected");
   const wrongRoute = structuredClone(optionalNext);
   wrongRoute.call_ledger[0].route = "GET /api/worker/cache";
-  assert(!analyze(wrongRoute, "/api/next-session/cache").valid, "raw_route_binding_required");
+  reject(analyze(wrongRoute, "/api/next-session/cache"), "raw_route_binding_required");
   const missingWorkerProof = structuredClone(optionalNext);
   delete missingWorkerProof.call_ledger[0].worker_called;
-  assert(!analyze(missingWorkerProof, "/api/next-session/cache").valid, "explicit_worker_boundary_required");
+  reject(analyze(missingWorkerProof, "/api/next-session/cache"), "explicit_worker_boundary_required");
   optionalNext.call_ledger.push({ ...safeLedger(), api: "local_next_session_production_stage_scope_manifest" });
-  assert(!analyze(optionalNext, "/api/next-session/cache").valid, "historical_row_forbidden_in_current_ledger");
+  reject(analyze(optionalNext, "/api/next-session/cache"), "historical_row_forbidden_in_current_ledger");
   const missingEnvelope = structuredClone(optionalNext);
   missingEnvelope.call_ledger = [{
     ...safeLedger(), api: "local_next_session_cache",
@@ -543,11 +964,145 @@ function selfTestFastApiValidator() {
   };
   missingEnvelope.data.status = "ready";
   missingEnvelope.data.cache_source = "cache_missing";
-  assert(!analyze(missingEnvelope, "/api/next-session/cache").valid, "missing_envelope_rejects_ready_data");
+  reject(analyze(missingEnvelope, "/api/next-session/cache"), "missing_envelope_rejects_ready_data");
   const secret = safeAudit();
   secret.data.api_key = "dummy";
-  assert(!analyze(secret).valid, "secret_field");
-  assert(!analyze(safeAudit(), "/api/not-allowlisted/cache").valid, "unknown_endpoint");
+  reject(analyze(secret), "secret_field");
+  const booleanSecretPolicy = safeAudit();
+  booleanSecretPolicy.data.launcher_diagnostic_urls_contain_secret = false;
+  booleanSecretPolicy.data.display_strips_query_hash_username_password = true;
+  booleanSecretPolicy.data.launcher_prints_raw_query_hash_username_password = false;
+  booleanSecretPolicy.data.live_full_requires_separate_authorization = true;
+  assert(analyze(booleanSecretPolicy).valid, "boolean_secret_policy_disclosures_are_not_credentials");
+  const unsafeContainsSecret = structuredClone(booleanSecretPolicy);
+  unsafeContainsSecret.data.launcher_diagnostic_urls_contain_secret = true;
+  reject(analyze(unsafeContainsSecret), "contains_secret_true_rejected");
+  const unsafeDisplayStripping = structuredClone(booleanSecretPolicy);
+  unsafeDisplayStripping.data.display_strips_query_hash_username_password = false;
+  reject(analyze(unsafeDisplayStripping), "display_stripping_false_rejected");
+  const unsafeApiKeyBoolean = structuredClone(booleanSecretPolicy);
+  unsafeApiKeyBoolean.data.api_key = false;
+  reject(analyze(unsafeApiKeyBoolean), "api_key_boolean_rejected");
+  const unsafeAuthorizationBoolean = structuredClone(booleanSecretPolicy);
+  unsafeAuthorizationBoolean.data.authorization = false;
+  reject(analyze(unsafeAuthorizationBoolean), "authorization_boolean_rejected");
+  const unsafeContainsSecretExact = structuredClone(booleanSecretPolicy);
+  unsafeContainsSecretExact.data.contains_secret = true;
+  reject(analyze(unsafeContainsSecretExact), "contains_secret_exact_true_rejected");
+  const unsafeNestedCredential = structuredClone(booleanSecretPolicy);
+  unsafeNestedCredential.data.api_key = { present: true };
+  reject(analyze(unsafeNestedCredential), "nested_api_key_object_rejected");
+  for (const [key, value, label] of [
+    ["api_key_value", false, "api_key_boolean_material_wrapper_rejected"],
+    ["authorization_header", false, "authorization_boolean_material_wrapper_rejected"],
+    ["token_metadata", false, "token_boolean_material_wrapper_rejected"],
+    ["private_key_pem", false, "private_key_boolean_material_wrapper_rejected"]
+  ]) {
+    const unsafeBooleanShape = structuredClone(booleanSecretPolicy);
+    unsafeBooleanShape.data[key] = value;
+    reject(analyze(unsafeBooleanShape), label);
+  }
+  const unsafeCompositeAuthorization = structuredClone(booleanSecretPolicy);
+  unsafeCompositeAuthorization.data.api_key_requires_separate_authorization = false;
+  reject(analyze(unsafeCompositeAuthorization), "composite_authorization_name_rejected");
+  const unsafeUnreviewedDisclosure = structuredClone(booleanSecretPolicy);
+  unsafeUnreviewedDisclosure.data.unreviewed_payload_contains_secret = false;
+  reject(analyze(unsafeUnreviewedDisclosure), "unreviewed_secret_disclosure_rejected");
+  for (const key of ["live_full_reserved_requires_separate_authorization", "requires_separate_live_provider_authorization"]) {
+    const unsafeAuthorizationPolicy = structuredClone(booleanSecretPolicy);
+    unsafeAuthorizationPolicy.data[key] = false;
+    reject(analyze(unsafeAuthorizationPolicy), `${key}_false_rejected`);
+  }
+  for (const [key, value, label] of [
+    ["apiKey", "dummy", "camel_case_api_key_rejected"],
+    ["api.key", "dummy", "dotted_api_key_rejected"],
+    ["api/key", "dummy", "slash_api_key_rejected"],
+    ["api_key_value", "dummy", "api_key_value_rejected"],
+    ["authorization_header", "dummy", "authorization_header_rejected"],
+    ["token_metadata", { value: "dummy" }, "token_metadata_rejected"],
+    ["credential.payload", "dummy", "credential_payload_rejected"],
+    ["privateKey", "dummy", "camel_case_private_key_rejected"],
+    ["private_key_pem", "dummy", "private_key_pem_rejected"],
+    ["api_key_hash", "dummy", "api_key_hash_rejected"],
+    ["token_digest", "dummy", "token_digest_rejected"],
+    ["credential_fingerprint", "dummy", "credential_fingerprint_rejected"],
+    ["api_key_env_name", "dummy", "api_key_env_name_rejected"],
+    ["api_key_current_hash", "dummy", "api_key_current_hash_rejected"],
+    ["api_key_runtime_value", "dummy", "api_key_runtime_value_rejected"],
+    ["credential_current_payload", "dummy", "credential_current_payload_rejected"],
+    ["authorization_safe_header", "dummy", "authorization_safe_header_rejected"],
+    ["api_key_current", "dummy", "api_key_current_rejected"],
+    ["authorization_current", "dummy", "authorization_current_rejected"],
+    ["credentials_current", { value: "dummy" }, "credentials_current_rejected"],
+    ["hash_api_key_current", "dummy", "hash_api_key_current_rejected"],
+    ["token_current", "dummy", "token_current_rejected"],
+    ["secret_current", "dummy", "secret_current_rejected"],
+    ["credential_current", "dummy", "credential_current_rejected"],
+    ["credentials", { value: "dummy" }, "plural_credentials_rejected"],
+    ["access_tokens", ["dummy"], "plural_access_tokens_rejected"],
+    ["token_sha512", "dummy", "token_sha512_rejected"],
+    ["api_key_sha1", "dummy", "api_key_sha1_rejected"],
+    ["credential_md5", "dummy", "credential_md5_rejected"],
+    ["access_token_checksum", "dummy", "access_token_checksum_rejected"]
+  ]) {
+    const unsafeSecretShape = structuredClone(booleanSecretPolicy);
+    unsafeSecretShape.data[key] = value;
+    reject(analyze(unsafeSecretShape), label);
+  }
+  const validSanitizedMetadata = structuredClone(booleanSecretPolicy);
+  validSanitizedMetadata.data.authorization_nonce_digest = "a".repeat(64);
+  validSanitizedMetadata.data.authorization_nonce_caller_generated = true;
+  validSanitizedMetadata.data.authorization_nonce_present = true;
+  validSanitizedMetadata.data.authorization_nonce_raw_persisted = false;
+  validSanitizedMetadata.data.authorization_nonce_required = true;
+  validSanitizedMetadata.data.authorization_nonce_strong = true;
+  validSanitizedMetadata.data.authorization_nonce_status = "issued";
+  validSanitizedMetadata.data.authorization_nonce_consumed_at = "2026-07-16T12:34:56";
+  validSanitizedMetadata.data.cost_ceiling_usd_per_million_tokens = 10;
+  assert(analyze(validSanitizedMetadata).valid, "sanitized_metadata_shape_accepted");
+  for (const [key, value, label] of [
+    ["safe_credential_label", "opaque-secret", "safe_label_opaque_secret_rejected"],
+    ["credential_presence_status", "opaque-secret", "presence_status_opaque_secret_rejected"],
+    ["credential_presence_summary", { value: "opaque-secret" }, "summary_nested_opaque_secret_rejected"],
+    ["credential_presence_summary", { value_length: 64 }, "summary_value_length_rejected"],
+    ["credential_presence_summary", { raw_value: 123456 }, "summary_numeric_secret_rejected"],
+    ["credential_presence_summary", { credential_available: true }, "summary_unknown_boolean_rejected"],
+    ["credential_presence_summary", { values_exposed: true }, "summary_values_exposed_true_rejected"],
+    ["credential_presence_summary", { external_calls_triggered: true }, "summary_external_true_rejected"],
+    ["credential_presence_summary", { does_not_execute_trades: false }, "summary_trade_boundary_false_rejected"],
+    ["provider_parity_credential_presence_rows", [{ value: "opaque-secret" }], "rows_nested_opaque_secret_rejected"],
+    ["tokens_latest", "opaque-secret", "plural_tokens_tail_rejected"],
+    ["secrets_previous", "opaque-secret", "plural_secrets_tail_rejected"]
+  ]) {
+    const unsafeSanitizedMetadata = structuredClone(validSanitizedMetadata);
+    unsafeSanitizedMetadata.data[key] = value;
+    reject(analyze(unsafeSanitizedMetadata), label);
+  }
+  for (const [key, value, label] of [
+    ["authorization_nonce_digest", "dummy", "nonce_digest_raw_rejected"],
+    ["authorization_nonce_digest", "a".repeat(63), "nonce_digest_short_rejected"],
+    ["authorization_nonce_digest", { value: "dummy" }, "nonce_digest_object_rejected"],
+    ["cost_ceiling_usd_per_million_tokens", "10", "cost_ceiling_string_rejected"],
+    ["cost_ceiling_usd_per_million_tokens", { value: 10 }, "cost_ceiling_object_rejected"],
+    ["cost_ceiling_usd_per_million_tokens", -1, "cost_ceiling_negative_rejected"],
+    ["authorization_nonce_caller_generated", false, "nonce_caller_generated_false_rejected"],
+    ["authorization_nonce_raw_persisted", true, "nonce_raw_persisted_true_rejected"],
+    ["authorization_nonce_required", false, "nonce_required_false_rejected"],
+    ["authorization_nonce_status", "raw_secret", "nonce_status_enum_rejected"],
+    ["authorization_nonce_consumed_at", "12345678", "nonce_consumed_at_format_rejected"]
+  ]) {
+    const unsafeMetadata = structuredClone(booleanSecretPolicy);
+    unsafeMetadata.data[key] = value;
+    reject(analyze(unsafeMetadata), label);
+  }
+  const tooDeep = safeAudit();
+  let nested = tooDeep.data;
+  for (let depth = 0; depth <= MAX_SECRET_SCAN_DEPTH; depth += 1) {
+    nested.safe_metadata = {};
+    nested = nested.safe_metadata;
+  }
+  reject(analyze(tooDeep), "secret_scan_depth_limit_fail_closed");
+  reject(analyze(safeAudit(), "/api/not-allowlisted/cache"), "unknown_endpoint");
 
   const cachedHistory = safeAudit();
   cachedHistory.data.historical_provider_receipt = { tushare_called: true, provider_or_model_calls: true };
@@ -573,7 +1128,7 @@ function selfTestFastApiValidator() {
   };
   assert(analyze(taskHistory, "/api/tasks").valid, "task_history_not_current_get");
   taskHistory.data.readback_external_calls_triggered = true;
-  assert(!analyze(taskHistory, "/api/tasks").valid, "task_history_current_get_attack");
+  reject(analyze(taskHistory, "/api/tasks"), "task_history_current_get_attack");
 
   const cacheMissing = {
     ok: false, data: null,
@@ -587,7 +1142,7 @@ function selfTestFastApiValidator() {
     call_ledger: [{ ...safeLedger(), api: "local_packet_cache_read" }], warnings: []
   };
   assert(analyze(cacheMissing, "/api/packets/command_center_etf_packet").valid, "exact_cache_missing_contract");
-  return { status: "motion_fastapi_validator_self_test_passed", attack_count: 16, external_calls_triggered: false };
+  return { status: "motion_fastapi_validator_self_test_passed", attack_count: attackCount, external_calls_triggered: false };
 }
 
 function fastApiHealthContract(value) {
