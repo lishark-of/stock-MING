@@ -5,6 +5,9 @@ import subprocess
 import tempfile
 import unittest
 
+from fastapi.testclient import TestClient
+
+from server.main import app
 from server.services import desktop_service
 
 
@@ -23,6 +26,8 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
     def test_fastapi_cors_allows_browser_and_tauri_local_shells(self):
         source = SERVER_MAIN.read_text(encoding="utf-8")
 
+        self.assertIn('"http://127.0.0.1:4173"', source)
+        self.assertIn('"http://localhost:4173"', source)
         self.assertIn("LOCAL_VITE_DEV_PORTS = (5173, 5174, 5184, 5185)", source)
         self.assertIn("f\"http://127.0.0.1:{port}\"", source)
         self.assertIn("f\"http://localhost:{port}\"", source)
@@ -30,11 +35,45 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn('"http://tauri.localhost"', source)
         self.assertIn("LOCAL_VITE_ORIGIN_REGEX", source)
         self.assertIn(":51(7[3-9]|8[0-9]|9[0-9])", source)
-        self.assertIn("allow_origins=[*LOCAL_VITE_ORIGINS, *TAURI_ORIGINS]", source)
+        self.assertIn(
+            "allow_origins=[*LOCAL_VITE_PREVIEW_ORIGINS, *LOCAL_VITE_ORIGINS, *TAURI_ORIGINS]",
+            source,
+        )
         self.assertIn("allow_origin_regex=LOCAL_VITE_ORIGIN_REGEX", source)
         self.assertIn('allow_methods=["GET", "POST"]', source)
         self.assertIn("allow_credentials=False", source)
         self.assertNotIn("allow_origins=[\"*\"]", source)
+
+    def test_fastapi_cors_accepts_exact_preview_origins_and_rejects_neighbors(self):
+        client = TestClient(app)
+
+        for origin in ("http://127.0.0.1:4173", "http://localhost:4173"):
+            response = client.get("/health", headers={"Origin": origin})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers.get("access-control-allow-origin"), origin)
+            self.assertNotIn("access-control-allow-credentials", response.headers)
+
+            preflight = client.options(
+                "/health",
+                headers={
+                    "Origin": origin,
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+            self.assertEqual(preflight.status_code, 200)
+            self.assertEqual(preflight.headers.get("access-control-allow-origin"), origin)
+            self.assertNotIn("access-control-allow-credentials", preflight.headers)
+
+        for origin in (
+            "http://127.0.0.1:4172",
+            "http://127.0.0.1:4174",
+            "http://0.0.0.0:4173",
+            "https://localhost:4173",
+            "http://localhost.example:4173",
+        ):
+            response = client.get("/health", headers={"Origin": origin})
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn("access-control-allow-origin", response.headers)
 
     def test_preflight_script_is_read_only_and_documents_safety(self):
         source = SCRIPT.read_text(encoding="utf-8")

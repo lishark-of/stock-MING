@@ -35,6 +35,10 @@ from server.api import (
 )
 
 
+LOCAL_VITE_PREVIEW_ORIGINS = [
+    "http://127.0.0.1:4173",
+    "http://localhost:4173",
+]
 LOCAL_VITE_DEV_PORTS = (5173, 5174, 5184, 5185)
 LOCAL_VITE_ORIGINS = [
     origin
@@ -55,7 +59,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[*LOCAL_VITE_ORIGINS, *TAURI_ORIGINS],
+    allow_origins=[*LOCAL_VITE_PREVIEW_ORIGINS, *LOCAL_VITE_ORIGINS, *TAURI_ORIGINS],
     allow_origin_regex=LOCAL_VITE_ORIGIN_REGEX,
     allow_credentials=False,
     allow_methods=["GET", "POST"],
