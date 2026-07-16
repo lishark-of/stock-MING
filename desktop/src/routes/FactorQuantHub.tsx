@@ -634,6 +634,8 @@ export default function FactorQuantHub() {
   const universeWorkerBatchExecutionRecipe = packet.universe_worker_batch_execution_recipe ?? {};
   const universeWorkerBatchExecutionRequest = packet.universe_worker_batch_execution_request_receipt ?? {};
   const universeWorkerBatchResearchReceipt = packet.universe_worker_batch_research_receipt ?? {};
+  const universeLocalExecutionEvidence =
+    (universeWorkerBatchResearchReceipt.local_execution_evidence as Record<string, unknown> | undefined) ?? {};
   const universeDurableEvidenceRecipe = packet.universe_durable_evidence_recipe ?? {};
   const universeResearchTaskPlan = packet.universe_research_task_plan ?? {};
   const universeLocalRankZscore = packet.universe_local_rank_zscore_dry_run ?? {};
@@ -3198,6 +3200,21 @@ export default function FactorQuantHub() {
         <button onClick={() => launchTask("/api/factor-quant/refresh-data")} title={ordinaryQuantRefreshButtonLabel} aria-label={ordinaryQuantRefreshButtonLabel}>手动刷新数据</button>
         <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })} title={ordinaryQuantRunLightButtonLabel} aria-label={ordinaryQuantRunLightButtonLabel}>运行轻量推演</button>
       </div>
+      {universeWorkerBatchResearchReceipt.local_worker_execution_evidence_done === true ? (
+        <PacketCard title="本地股票池研究">
+          <p className="risk-note">读取已缓存的 provider 小池数据，在本地任务中完成横截面排名、zscore 和市值中性化；本次读取不外联，也不代表全市场验证或交易指令。</p>
+          <MetricGrid
+            items={[
+              { label: "数据来源", value: String(universeLocalExecutionEvidence.input_source ?? "local cache") },
+              { label: "股票覆盖", value: `${String(universeLocalExecutionEvidence.full_pool_covered_symbol_count ?? 0)} / ${String(universeLocalExecutionEvidence.full_pool_requested_symbol_count ?? 0)}` },
+              { label: "横截面输出", value: String(universeLocalExecutionEvidence.rank_output_row_count ?? 0), tone: universeLocalExecutionEvidence.cross_sectional_rank_zscore_done === true ? "good" : "warn" },
+              { label: "市值中性化", value: universeLocalExecutionEvidence.neutralization_done === true ? "已完成" : "待补", tone: universeLocalExecutionEvidence.neutralization_done === true ? "good" : "warn" },
+              { label: "本地小池", value: universeLocalExecutionEvidence.local_bounded_pool_validation_done === true ? "已验证" : "待补", tone: universeLocalExecutionEvidence.local_bounded_pool_validation_done === true ? "good" : "warn" },
+              { label: "全市场", value: universeLocalExecutionEvidence.full_pool_validation_done === true ? "已验证" : "未验证", tone: universeLocalExecutionEvidence.full_pool_validation_done === true ? "good" : "neutral" }
+            ]}
+          />
+        </PacketCard>
+      ) : null}
       <p className="risk-note">普通路径只保留查看缓存、手动刷新和轻量推演；DeepSeek 解释入口下沉为高级开关，不阻塞 Tushare-first 和基础图谱。</p>
       <div aria-label="stock quant ordinary factor universe worker batch preflight">
         <h3>研究池扩展</h3>
@@ -3287,9 +3304,9 @@ export default function FactorQuantHub() {
         <summary>高级验收任务</summary>
         <div className="actions">
           <button onClick={() => launchTask("/api/factor-quant/universe-research-plan", { universe_mode: "full_pool" })}>生成读取计划</button>
-          <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-dry-run", { approved_by_user: true, universe_mode: "full_pool" })}>批量研究预检</button>
+          <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-dry-run", { approved_by_user: true, universe_mode: "custom_pool", symbols: ["000001.SZ", "002008.SZ", "300750.SZ", "600000.SH", "600519.SH"] })}>本地小池研究预检</button>
           <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-execution-request", { approved_by_user: true, worker_batch_scope_hash: String(universeWorkerBatchDryRun.worker_batch_scope_hash ?? "") })}>批量执行请求</button>
-          <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-research", { approved_by_user: true, worker_batch_scope_hash: String(universeWorkerBatchExecutionRequest.worker_batch_scope_hash ?? universeWorkerBatchDryRun.worker_batch_scope_hash ?? ""), execution_request_task_id: String(universeWorkerBatchExecutionRequest.task_id ?? "") })}>批量研究回执</button>
+          <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-research", { approved_by_user: true, execute_local_worker_evidence: true, worker_batch_scope_hash: String(universeWorkerBatchExecutionRequest.worker_batch_scope_hash ?? universeWorkerBatchDryRun.worker_batch_scope_hash ?? ""), execution_request_task_id: String(universeWorkerBatchExecutionRequest.task_id ?? "") })}>运行本地小池研究</button>
           <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-dry-run", { approved_by_user: true, symbols: ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"], forward_return_horizons: ["1d", "5d"] })}>小池验收预检</button>
           <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-execution-request", { approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "") })}>小池执行请求</button>
           <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-acceptance", { approved_by_user: true, authorize_live_provider_call: true, provider_run_approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolExecutionRequest.acceptance_scope_hash ?? "") })}>真实小池样本验收（调用 Tushare）</button>

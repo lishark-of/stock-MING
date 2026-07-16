@@ -844,7 +844,10 @@ def build_contract() -> dict[str, Any]:
             and "不启动 worker、不调用 Tushare/DeepSeek/GitHub" in factor_page
             and "不在前端计算 rank/zscore" in factor_page
             and "production_factor_universe_complete" in factor_page
-            and "批量研究预检" in factor_page
+            and "本地小池研究预检" in factor_page
+            and "execute_local_worker_evidence: true" in factor_page
+            and "本地股票池研究" in factor_page
+            and "本次读取不外联，也不代表全市场验证或交易指令" in factor_page
             and "Factor Universe 本地 Rank/Zscore Dry-run" in factor_page
             and "前端不计算 rank/zscore" in factor_page
             and "显式 worker batch" in factor_page

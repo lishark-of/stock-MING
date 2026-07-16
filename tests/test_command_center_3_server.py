@@ -62269,7 +62269,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt["universe_mode"], "custom_pool")
         self.assertEqual(receipt["symbol_count"], 24)
         self.assertEqual(receipt["symbol_limit"], 500)
-        self.assertEqual(receipt["minimum_symbol_count_for_watchlist_or_custom_pool"], 20)
+        self.assertEqual(receipt["minimum_symbol_count_for_watchlist_or_custom_pool"], 5)
+        self.assertEqual(receipt["minimum_symbol_count_for_full_pool_validation"], 20)
         self.assertEqual(receipt["missing_required_stages"], [])
         self.assertEqual(receipt["ignored_stages"], ["unsupported_stage"])
         self.assertIn("neutralization", receipt["required_stages"])
@@ -62939,9 +62940,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "local_factor_universe_worker_batch_execution_evidence_no_celery_no_provider",
         )
         self.assertTrue(receipt["local_worker_execution_evidence_done"])
-        self.assertTrue(receipt["worker_task_created"])
-        self.assertTrue(receipt["worker_task_executed"])
-        self.assertTrue(receipt["worker_execution_implemented"])
+        self.assertTrue(receipt["local_execution_task_created"])
+        self.assertTrue(receipt["local_execution_task_executed"])
+        self.assertTrue(receipt["local_execution_implemented"])
+        self.assertFalse(receipt["worker_task_created"])
+        self.assertFalse(receipt["worker_task_executed"])
+        self.assertFalse(receipt["worker_execution_implemented"])
         self.assertFalse(receipt["worker_started"])
         self.assertFalse(receipt["celery_worker_started"])
         self.assertFalse(receipt["redis_pinged"])
@@ -62990,8 +62994,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         cached = packet["universe_worker_batch_research_receipt"]
         self.assertTrue(cached["local_worker_execution_evidence_done"])
         durable = packet["universe_durable_evidence_recipe"]
-        self.assertTrue(durable["worker_task_created"])
-        self.assertTrue(durable["worker_task_executed"])
+        self.assertFalse(durable["worker_task_created"])
+        self.assertFalse(durable["worker_task_executed"])
         self.assertTrue(durable["storage_read_executed"])
         self.assertTrue(durable["cross_sectional_rank_zscore_done"])
         self.assertTrue(durable["zscore_done"])
@@ -63023,13 +63027,122 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             expected_full_pool_validation_done=True,
         )
         self.assertIn("local_worker_batch_execution_evidence", ltg04["direct_evidence_stage_keys"])
-        self.assertTrue(ltg04["worker_execution_implemented"])
+        self.assertTrue(ltg04["local_execution_implemented"])
+        self.assertFalse(ltg04["worker_execution_implemented"])
         self.assertTrue(ltg04["worker_batch_executed"])
         self.assertTrue(ltg04["cross_sectional_rank_zscore_done"])
         self.assertTrue(ltg04["neutralization_done"])
         self.assertTrue(ltg04["full_pool_validation_done"])
         self.assertFalse(ltg04["production_factor_universe_complete"])
         self.assertNotIn("SHOULD_DROP", json.dumps(migration, ensure_ascii=False))
+
+    def test_factor_universe_worker_batch_uses_bounded_provider_cache_for_multifactor_neutralization(self):
+        import pandas as pd
+
+        self._with_meta_store()
+        root = self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        symbols = ["000001.SZ", "002008.SZ", "300750.SZ", "600000.SH", "600519.SH"]
+        scope_hash = "47c51d91082a" * 5 + "47c5"
+        daily_rows = []
+        basic_rows = []
+        moneyflow_rows = []
+        for symbol_index, symbol in enumerate(symbols, start=1):
+            for day in range(1, 26):
+                trade_date = f"202601{day:02d}"
+                common = {
+                    "ts_code": symbol,
+                    "trade_date": trade_date,
+                    "provider_scope_hash": scope_hash,
+                    "provider_scope_hash_short": scope_hash[:12],
+                    "provider_acceptance_mode": "factor_test_provider_small_pool_sample",
+                    "provider_source_task_type": "run_factor_test_provider_small_pool_acceptance",
+                }
+                close = 10.0 + symbol_index + day * (0.02 + symbol_index * 0.005)
+                daily_rows.append(
+                    {
+                        **common,
+                        "open": close - 0.1,
+                        "high": close + 0.2,
+                        "low": close - 0.2,
+                        "close": close,
+                        "pct_chg": 0.2 + symbol_index * 0.1,
+                        "vol": 1000.0 + day,
+                        "amount": 10000.0 + symbol_index * 100.0,
+                    }
+                )
+                basic_rows.append(
+                    {
+                        **common,
+                        "turnover_rate": 1.0 + symbol_index * 0.3 + day * 0.01,
+                        "pe_ttm": 10.0 + symbol_index,
+                        "pb": 1.0 + symbol_index * 0.4,
+                        "total_mv": 100000.0 * symbol_index + day * 10.0,
+                        "circ_mv": 80000.0 * symbol_index + day * 8.0,
+                    }
+                )
+                moneyflow_rows.append(
+                    {
+                        **common,
+                        "buy_sm_amount": 100.0,
+                        "sell_sm_amount": 80.0,
+                        "buy_lg_amount": 1000.0 + symbol_index * 100.0,
+                        "sell_lg_amount": 700.0 - symbol_index * 20.0,
+                        "net_mf_amount": 300.0 + symbol_index * 120.0,
+                    }
+                )
+        storage_service.parquet_store.write_dataset(pd.DataFrame(daily_rows), root=root, name="daily")
+        storage_service.parquet_store.write_dataset(pd.DataFrame(basic_rows), root=root, name="daily_basic")
+        storage_service.parquet_store.write_dataset(pd.DataFrame(moneyflow_rows), root=root, name="moneyflow")
+
+        dry_run = self.client.post(
+            "/api/factor-quant/universe-worker-batch-dry-run",
+            json={"approved_by_user": True, "universe_mode": "custom_pool", "symbols": symbols},
+        ).json()["data"]["task"]["payload_safe"]["universe_worker_batch_dry_run_receipt"]
+        self.assertTrue(dry_run["preflight_ready_for_explicit_worker_batch_task"])
+        self.assertEqual(dry_run["minimum_symbol_count_for_watchlist_or_custom_pool"], 5)
+        execution_request_task = self.client.post(
+            "/api/factor-quant/universe-worker-batch-execution-request",
+            json={"approved_by_user": True, "worker_batch_scope_hash": dry_run["worker_batch_scope_hash"]},
+        ).json()["data"]["task"]
+        execution_request = execution_request_task["payload_safe"]["universe_worker_batch_execution_request_receipt"]
+        task = self.client.post(
+            "/api/factor-quant/universe-worker-batch-research",
+            json={
+                "approved_by_user": True,
+                "execute_local_worker_evidence": True,
+                "worker_batch_scope_hash": execution_request["worker_batch_scope_hash"],
+                "execution_request_task_id": execution_request_task["task_id"],
+            },
+        ).json()["data"]["task"]
+
+        receipt = task["payload_safe"]["universe_worker_batch_research_receipt"]
+        evidence = receipt["local_execution_evidence"]
+        self.assertEqual(evidence["input_source"], "provider_cached_market_panel")
+        self.assertTrue(evidence["provider_cached_input_used"])
+        self.assertTrue(evidence["provider_backed_cache_lineage_ready"])
+        self.assertEqual(evidence["provider_scope_hash_short"], scope_hash[:12])
+        self.assertEqual(evidence["source_metric_keys"], [
+            "momentum_20d",
+            "turnover_rate",
+            "value_inverse_pb",
+            "large_moneyflow_balance",
+        ])
+        self.assertEqual(evidence["rank_output_row_count"], 5)
+        self.assertEqual(evidence["factor_combination_row_count"], 5)
+        self.assertEqual(evidence["neutralized_output_row_count"], 5)
+        self.assertEqual(evidence["neutralization_method"], "local_log_total_mv_ols_residual_research_only")
+        self.assertTrue(evidence["local_bounded_pool_validation_done"])
+        self.assertFalse(evidence["full_pool_validation_done"])
+        self.assertFalse(evidence["production_factor_universe_complete"])
+        self.assertFalse(evidence["external_calls_triggered"])
+        self.assertFalse(evidence["tushare_called"])
+        self.assertFalse(evidence["deepseek_called"])
+        self.assertTrue(evidence["does_not_execute_trades"])
+        self.assertTrue(evidence["does_not_modify_strategy_action"])
+        self.assertEqual(receipt["provider_scope_hash_short"], scope_hash[:12])
+        self.assertTrue(receipt["local_bounded_pool_validation_done"])
+        self.assertFalse(receipt["full_pool_validation_done"])
 
     def test_ltg_stage_scope_observes_factor_universe_rank_zscore_direct_evidence_without_completion(self):
         self._with_meta_store()

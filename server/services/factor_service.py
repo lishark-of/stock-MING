@@ -90,6 +90,8 @@ FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_ROUTE = "POST /api/factor-quant/universe-w
 FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_TASK_TYPE = "run_factor_universe_worker_batch_research"
 FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT = 500
 FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS = 20
+FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_SYMBOLS = 5
+FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_HISTORY_ROWS = 20
 FACTOR_LIGHT_LOCAL_UNIVERSE_MODES = {"watchlist", "custom_pool"}
 FACTOR_LIGHT_LOCAL_UNIVERSE_SYMBOL_LIMIT = 50
 FACTOR_LIGHT_LOCAL_RANK_ZSCORE_MIN_SYMBOLS = 5
@@ -13030,7 +13032,8 @@ def _factor_universe_worker_batch_dry_run_payload(payload: Any, now: str) -> dic
         "ignored_symbols": ignored_symbols,
         "symbol_count": len(symbols),
         "symbol_limit": FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT,
-        "minimum_symbol_count_for_watchlist_or_custom_pool": FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS,
+        "minimum_symbol_count_for_watchlist_or_custom_pool": FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_SYMBOLS,
+        "minimum_symbol_count_for_full_pool_validation": FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS,
         "full_pool_uses_server_side_universe_resolver": mode == "full_pool",
         "required_datasets": list(FACTOR_UNIVERSE_RESEARCH_PLAN_DATASETS),
         "required_stages": list(FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES),
@@ -13057,7 +13060,7 @@ def _factor_universe_worker_batch_dry_run_receipt(payload_safe: dict[str, Any], 
     approved_by_user = payload_safe.get("approved_by_user") is True
     missing_stages = [str(item) for item in payload_safe.get("missing_required_stages") or []]
     full_pool_scope = mode == "full_pool"
-    bounded_scope = full_pool_scope or symbol_count >= FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS
+    bounded_scope = full_pool_scope or symbol_count >= FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_SYMBOLS
     read_plan = _build_factor_universe_research_read_plan(
         {"universe_mode": mode, "symbols": payload_safe.get("symbols") or []},
         now,
@@ -13076,7 +13079,12 @@ def _factor_universe_worker_batch_dry_run_receipt(payload_safe: dict[str, Any], 
             "universe_scope_bounded",
             "passed_full_pool_scope" if full_pool_scope else "passed_symbol_scope" if bounded_scope else "blocked_not_enough_symbols",
             bounded_scope,
-            f"universe_mode={mode}; symbol_count={symbol_count}; minimum={FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS}; limit={FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT}",
+            (
+                f"universe_mode={mode}; symbol_count={symbol_count}; "
+                f"local_minimum={FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_SYMBOLS}; "
+                f"full_pool_minimum={FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS}; "
+                f"limit={FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT}"
+            ),
             "Use full_pool with a server-side resolver or provide a bounded watchlist/custom_pool before worker execution.",
         ),
         _factor_universe_worker_batch_dry_run_row(
@@ -13167,7 +13175,8 @@ def _factor_universe_worker_batch_dry_run_receipt(payload_safe: dict[str, Any], 
         "symbol_count": symbol_count,
         "ignored_symbols": payload_safe.get("ignored_symbols") or [],
         "symbol_limit": FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT,
-        "minimum_symbol_count_for_watchlist_or_custom_pool": FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS,
+        "minimum_symbol_count_for_watchlist_or_custom_pool": FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_SYMBOLS,
+        "minimum_symbol_count_for_full_pool_validation": FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS,
         "full_pool_uses_server_side_universe_resolver": full_pool_scope,
         "required_datasets": payload_safe.get("required_datasets") or [],
         "required_stages": payload_safe.get("required_stages") or [],
@@ -13967,6 +13976,255 @@ def _factor_universe_worker_batch_research_payload(
     }
 
 
+def _factor_universe_cross_section_zscores(values: dict[str, float]) -> dict[str, float]:
+    if not values:
+        return {}
+    mean_value = sum(values.values()) / len(values)
+    variance = sum((value - mean_value) ** 2 for value in values.values()) / len(values)
+    std_value = math.sqrt(variance)
+    if not std_value:
+        return {symbol: 0.0 for symbol in values}
+    return {
+        symbol: (value - mean_value) / std_value
+        for symbol, value in values.items()
+    }
+
+
+def _factor_universe_provider_cache_execution_evidence(
+    payload_safe: dict[str, Any],
+) -> dict[str, Any]:
+    dataset_rows = {
+        dataset: _storage_query_rows(storage_service.parquet_dataset_status(dataset, limit=10000))
+        for dataset in ("daily", "daily_basic", "moneyflow")
+    }
+    requested_symbols = {
+        str(item).strip().upper()
+        for item in payload_safe.get("symbols", [])
+        if str(item).strip()
+    }
+    provider_rows = {
+        dataset: [
+            row
+            for row in rows
+            if str(row.get("provider_acceptance_mode") or "") == "factor_test_provider_small_pool_sample"
+            and str(row.get("provider_scope_hash") or row.get("provider_scope_hash_short") or "").strip()
+            and (not requested_symbols or str(row.get("ts_code") or "").strip().upper() in requested_symbols)
+        ]
+        for dataset, rows in dataset_rows.items()
+    }
+    scope_sets = [
+        {
+            str(row.get("provider_scope_hash") or row.get("provider_scope_hash_short") or "").strip()
+            for row in rows
+            if str(row.get("provider_scope_hash") or row.get("provider_scope_hash_short") or "").strip()
+        }
+        for rows in provider_rows.values()
+    ]
+    common_scopes = set.intersection(*scope_sets) if scope_sets and all(scope_sets) else set()
+    selected_scope = sorted(common_scopes)[-1] if common_scopes else ""
+    if selected_scope:
+        provider_rows = {
+            dataset: [
+                row
+                for row in rows
+                if str(row.get("provider_scope_hash") or row.get("provider_scope_hash_short") or "").strip()
+                == selected_scope
+            ]
+            for dataset, rows in provider_rows.items()
+        }
+
+    symbols_by_dataset = [
+        {str(row.get("ts_code") or "").strip().upper() for row in rows if str(row.get("ts_code") or "").strip()}
+        for rows in provider_rows.values()
+    ]
+    common_symbols = set.intersection(*symbols_by_dataset) if symbols_by_dataset and all(symbols_by_dataset) else set()
+    if requested_symbols:
+        common_symbols &= requested_symbols
+    sorted_symbols = sorted(common_symbols)
+
+    dates_by_symbol_and_dataset: list[set[str]] = []
+    for rows in provider_rows.values():
+        for symbol in sorted_symbols:
+            dates_by_symbol_and_dataset.append(
+                {
+                    str(row.get("trade_date") or "")
+                    for row in rows
+                    if str(row.get("ts_code") or "").strip().upper() == symbol
+                    and str(row.get("trade_date") or "")
+                }
+            )
+    common_dates = (
+        set.intersection(*dates_by_symbol_and_dataset)
+        if dates_by_symbol_and_dataset and all(dates_by_symbol_and_dataset)
+        else set()
+    )
+    selected_trade_date = max(common_dates) if common_dates else ""
+    latest_rows: dict[str, dict[str, dict[str, Any]]] = {
+        dataset: {
+            str(row.get("ts_code") or "").strip().upper(): row
+            for row in rows
+            if str(row.get("trade_date") or "") == selected_trade_date
+        }
+        for dataset, rows in provider_rows.items()
+    }
+
+    metric_values: dict[str, dict[str, float]] = {
+        "momentum_20d": {},
+        "turnover_rate": {},
+        "value_inverse_pb": {},
+        "large_moneyflow_balance": {},
+    }
+    market_caps: dict[str, float] = {}
+    history_counts: dict[str, int] = {}
+    for symbol in sorted_symbols:
+        daily_history = sorted(
+            [
+                row
+                for row in provider_rows["daily"]
+                if str(row.get("ts_code") or "").strip().upper() == symbol
+                and str(row.get("trade_date") or "") <= selected_trade_date
+                and _is_finite_number(row.get("close"))
+            ],
+            key=lambda row: str(row.get("trade_date") or ""),
+        )
+        history_counts[symbol] = len(daily_history)
+        basic = latest_rows["daily_basic"].get(symbol, {})
+        moneyflow = latest_rows["moneyflow"].get(symbol, {})
+        if len(daily_history) < FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_HISTORY_ROWS:
+            continue
+        latest_close = float(daily_history[-1]["close"])
+        lookback_close = float(daily_history[-FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_HISTORY_ROWS]["close"])
+        turnover = basic.get("turnover_rate")
+        pb = basic.get("pb")
+        total_mv = basic.get("total_mv")
+        net_mf = moneyflow.get("net_mf_amount")
+        buy_lg = moneyflow.get("buy_lg_amount")
+        sell_lg = moneyflow.get("sell_lg_amount")
+        required_values = (turnover, pb, total_mv, net_mf, buy_lg, sell_lg)
+        if not all(_is_finite_number(value) for value in required_values):
+            continue
+        pb_value = float(pb)
+        market_cap = float(total_mv)
+        flow_denominator = abs(float(buy_lg)) + abs(float(sell_lg))
+        if lookback_close <= 0 or pb_value <= 0 or market_cap <= 0:
+            continue
+        metric_values["momentum_20d"][symbol] = latest_close / lookback_close - 1.0
+        metric_values["turnover_rate"][symbol] = float(turnover)
+        metric_values["value_inverse_pb"][symbol] = -math.log(pb_value)
+        metric_values["large_moneyflow_balance"][symbol] = float(net_mf) / max(flow_denominator, 1.0)
+        market_caps[symbol] = market_cap
+
+    eligible_symbols = set(market_caps)
+    for values in metric_values.values():
+        eligible_symbols &= set(values)
+    eligible_symbols = set(sorted(eligible_symbols))
+    metric_zscores = {
+        metric: _factor_universe_cross_section_zscores(
+            {symbol: value for symbol, value in values.items() if symbol in eligible_symbols}
+        )
+        for metric, values in metric_values.items()
+    }
+    combined_raw = {
+        symbol: sum(metric_zscores[metric][symbol] for metric in metric_zscores) / len(metric_zscores)
+        for symbol in eligible_symbols
+    }
+    combined_zscores = _factor_universe_cross_section_zscores(combined_raw)
+    sorted_combined = sorted(combined_zscores.items(), key=lambda item: item[1])
+    rank_denominator = max(len(sorted_combined) - 1, 1)
+    rank_rows = [
+        {
+            "ts_code": symbol,
+            "trade_date": selected_trade_date,
+            "factor_key": "provider_cached_multifactor_composite_v1",
+            "rank_pct": round(index / rank_denominator, 6),
+            "zscore": round(score, 6),
+            "component_zscores": {
+                metric: round(values[symbol], 6)
+                for metric, values in metric_zscores.items()
+            },
+            "research_only": True,
+            "enters_strategy_action": False,
+        }
+        for index, (symbol, score) in enumerate(sorted_combined)
+    ]
+    combined_scores = [
+        {
+            "ts_code": row["ts_code"],
+            "trade_date": row["trade_date"],
+            "combined_research_score": row["zscore"],
+            "source_factor_count": len(metric_zscores),
+            "research_only": True,
+        }
+        for row in rank_rows
+    ]
+
+    neutralized_rows: list[dict[str, Any]] = []
+    if len(rank_rows) >= FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_SYMBOLS:
+        x_values = {symbol: math.log(market_caps[symbol]) for symbol in combined_zscores}
+        x_mean = sum(x_values.values()) / len(x_values)
+        y_mean = sum(combined_zscores.values()) / len(combined_zscores)
+        x_variance = sum((value - x_mean) ** 2 for value in x_values.values())
+        if x_variance:
+            slope = sum(
+                (x_values[symbol] - x_mean) * (combined_zscores[symbol] - y_mean)
+                for symbol in combined_zscores
+            ) / x_variance
+            intercept = y_mean - slope * x_mean
+            residuals = {
+                symbol: combined_zscores[symbol] - (intercept + slope * x_values[symbol])
+                for symbol in combined_zscores
+            }
+            neutralized_zscores = _factor_universe_cross_section_zscores(residuals)
+            neutralized_rows = [
+                {
+                    "ts_code": row["ts_code"],
+                    "trade_date": row["trade_date"],
+                    "factor_key": row["factor_key"],
+                    "neutralization_group": "log_total_mv_ols",
+                    "neutralized_zscore": round(neutralized_zscores[row["ts_code"]], 6),
+                    "research_only": True,
+                    "enters_strategy_action": False,
+                }
+                for row in rank_rows
+            ]
+
+    scope_short_values = {
+        str(row.get("provider_scope_hash_short") or selected_scope[:12]).strip()
+        for rows in provider_rows.values()
+        for row in rows
+        if str(row.get("provider_scope_hash_short") or selected_scope[:12]).strip()
+    }
+    lineage_ready = bool(selected_scope and len(scope_short_values) == 1)
+    evidence_done = len(rank_rows) >= FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_SYMBOLS
+    return {
+        "status": (
+            "provider_cached_bounded_pool_ready"
+            if evidence_done and neutralized_rows and lineage_ready
+            else "provider_cached_bounded_pool_blocked"
+        ),
+        "provider_cached_input_used": evidence_done,
+        "provider_backed_cache_lineage_ready": lineage_ready,
+        "provider_scope_hash": selected_scope,
+        "provider_scope_hash_short": next(iter(scope_short_values), selected_scope[:12]),
+        "source_dataset_row_counts": {
+            dataset: len(rows)
+            for dataset, rows in provider_rows.items()
+        },
+        "storage_read_row_count": sum(len(rows) for rows in provider_rows.values()),
+        "common_symbol_count": len(common_symbols),
+        "eligible_symbol_count": len(eligible_symbols),
+        "selected_trade_date": selected_trade_date,
+        "minimum_history_rows": FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_HISTORY_ROWS,
+        "minimum_observed_history_rows": min(history_counts.values(), default=0),
+        "metric_keys": list(metric_zscores),
+        "rank_rows": rank_rows,
+        "combined_scores": combined_scores,
+        "neutralized_rows": neutralized_rows,
+        "neutralization_method": "local_log_total_mv_ols_residual_research_only" if neutralized_rows else "",
+        "local_execution_evidence_done": evidence_done,
+    }
+
+
 def _factor_universe_worker_batch_local_execution_evidence(
     payload_safe: dict[str, Any],
     now: str,
@@ -13995,7 +14253,7 @@ def _factor_universe_worker_batch_local_execution_evidence(
     eligible_groups = {
         key: rows
         for key, rows in groups.items()
-        if len({str(row.get("ts_code")) for row in rows}) >= FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS
+        if len({str(row.get("ts_code")) for row in rows}) >= FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_SYMBOLS
     }
     selected_key = sorted(eligible_groups)[-1] if eligible_groups else None
     selected_rows = eligible_groups.get(selected_key, []) if selected_key else []
@@ -14061,18 +14319,42 @@ def _factor_universe_worker_batch_local_execution_evidence(
                         "enters_strategy_action": False,
                     }
                 )
+    provider_cached = _factor_universe_provider_cache_execution_evidence(payload_safe)
+    provider_cached_input_used = provider_cached.get("local_execution_evidence_done") is True
+    if provider_cached_input_used:
+        rank_rows = [dict(row) for row in provider_cached.get("rank_rows", [])]
+        combined_scores = [dict(row) for row in provider_cached.get("combined_scores", [])]
+        neutralized_rows = [dict(row) for row in provider_cached.get("neutralized_rows", [])]
+        selected_key = (
+            str(provider_cached.get("selected_trade_date") or ""),
+            "provider_cached_multifactor_composite_v1",
+        )
     rank_done = bool(rank_rows)
     neutralization_done = bool(neutralized_rows)
     blockers: list[str] = []
-    if not factor_rows:
+    if not factor_rows and not provider_cached_input_used:
         blockers.append("storage_rows_missing")
     if not rank_done:
         blockers.append("not_enough_usable_cross_section_rows")
     if not neutralization_done:
         blockers.append("industry_market_cap_neutralization_pending")
-    unique_tickers = {str(row.get("ts_code")) for row in usable_rows}
-    unique_dates = {str(row.get("trade_date")) for row in usable_rows}
-    unique_factors = {str(row.get("factor_key")) for row in usable_rows}
+    if provider_cached_input_used and provider_cached.get("provider_backed_cache_lineage_ready") is not True:
+        blockers.append("provider_cache_scope_lineage_missing")
+    unique_tickers = (
+        {str(row.get("ts_code")) for row in rank_rows}
+        if provider_cached_input_used
+        else {str(row.get("ts_code")) for row in usable_rows}
+    )
+    unique_dates = (
+        {str(provider_cached.get("selected_trade_date") or "")}
+        if provider_cached_input_used
+        else {str(row.get("trade_date")) for row in usable_rows}
+    )
+    unique_factors = (
+        {str(item) for item in provider_cached.get("metric_keys", [])}
+        if provider_cached_input_used
+        else {str(row.get("factor_key")) for row in usable_rows}
+    )
     requested_symbol_count = len(requested_symbols)
     covered_requested_symbols = requested_symbols.intersection(unique_tickers)
     coverage_ratio = (
@@ -14084,6 +14366,14 @@ def _factor_universe_worker_batch_local_execution_evidence(
     result_hash = hashlib.sha256(
         json.dumps(combined_scores, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest() if combined_scores else ""
+    local_bounded_pool_validation_done = bool(
+        requested_symbol_count >= FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_SYMBOLS
+        and coverage_ratio == 1.0
+        and rank_done
+        and neutralization_done
+        and bool(combined_scores)
+        and bool(result_hash)
+    )
     full_pool_validation_done = bool(
         payload_safe.get("universe_mode") == "full_pool"
         and requested_symbol_count >= FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS
@@ -14098,20 +14388,43 @@ def _factor_universe_worker_batch_local_execution_evidence(
         "status": (
             "factor_universe_worker_batch_local_execution_ready_full_pool_validation"
             if full_pool_validation_done
+            else "factor_universe_worker_batch_local_execution_ready_bounded_provider_pool"
+            if local_bounded_pool_validation_done and provider_cached_input_used
             else "factor_universe_worker_batch_local_execution_ready_neutralization"
             if neutralization_done
             else "factor_universe_worker_batch_local_execution_ready_neutralization_pending"
             if evidence_done
             else "factor_universe_worker_batch_local_execution_blocked_not_enough_data"
         ),
-        "scope": "local_factor_universe_worker_batch_execution_evidence_no_celery_no_provider",
+        "scope": (
+            "local_factor_universe_worker_batch_provider_cached_input_no_external_call"
+            if provider_cached_input_used
+            else "local_factor_universe_worker_batch_execution_evidence_no_celery_no_provider"
+        ),
         "created_at": now,
-        "dataset": "factor_values",
+        "dataset": "daily+daily_basic+moneyflow" if provider_cached_input_used else "factor_values",
+        "input_source": "provider_cached_market_panel" if provider_cached_input_used else "factor_values",
+        "provider_cached_input_used": provider_cached_input_used,
+        "provider_backed_cache_lineage_ready": provider_cached.get("provider_backed_cache_lineage_ready") is True,
+        "provider_scope_hash": provider_cached.get("provider_scope_hash") or "",
+        "provider_scope_hash_short": provider_cached.get("provider_scope_hash_short") or "",
+        "source_dataset_row_counts": provider_cached.get("source_dataset_row_counts") or {},
+        "source_metric_keys": provider_cached.get("metric_keys") or [],
+        "minimum_history_rows": provider_cached.get("minimum_history_rows") or 0,
+        "minimum_observed_history_rows": provider_cached.get("minimum_observed_history_rows") or 0,
         "sample_limit": sample_limit,
-        "storage_status": factor_packet.get("status") or "missing",
-        "storage_read_executed": bool(factor_rows),
-        "storage_read_row_count": len(factor_rows),
-        "usable_row_count": len(usable_rows),
+        "storage_status": "ready" if provider_cached_input_used else factor_packet.get("status") or "missing",
+        "storage_read_executed": bool(factor_rows) or provider_cached_input_used,
+        "storage_read_row_count": (
+            int(provider_cached.get("storage_read_row_count") or 0)
+            if provider_cached_input_used
+            else len(factor_rows)
+        ),
+        "usable_row_count": (
+            int(provider_cached.get("eligible_symbol_count") or 0)
+            if provider_cached_input_used
+            else len(usable_rows)
+        ),
         "unique_ticker_count": len(unique_tickers),
         "unique_trade_date_count": len(unique_dates),
         "factor_key_count": len(unique_factors),
@@ -14120,7 +14433,13 @@ def _factor_universe_worker_batch_local_execution_evidence(
         "selected_factor_key": selected_key[1] if selected_key else "",
         "rank_output_row_count": len(rank_rows),
         "zscore_output_row_count": len(rank_rows),
-        "neutralization_method": "local_category_mean_residual_research_only" if neutralization_done else "",
+        "neutralization_method": (
+            str(provider_cached.get("neutralization_method") or "")
+            if provider_cached_input_used
+            else "local_category_mean_residual_research_only"
+            if neutralization_done
+            else ""
+        ),
         "neutralization_group_count": len({row["neutralization_group"] for row in neutralized_rows}),
         "neutralized_output_row_count": len(neutralized_rows),
         "factor_combination_row_count": len(combined_scores),
@@ -14134,15 +14453,21 @@ def _factor_universe_worker_batch_local_execution_evidence(
         "full_pool_requested_symbol_count": requested_symbol_count,
         "full_pool_covered_symbol_count": len(covered_requested_symbols),
         "full_pool_coverage_ratio": round(coverage_ratio, 6),
+        "local_bounded_pool_validation_done": local_bounded_pool_validation_done,
+        "local_bounded_pool_minimum_symbol_count": FACTOR_UNIVERSE_LOCAL_RESEARCH_MIN_SYMBOLS,
         "local_worker_execution_evidence_done": evidence_done,
-        "worker_task_created": evidence_done,
-        "worker_task_executed": evidence_done,
-        "worker_execution_implemented": evidence_done,
-        "worker_runtime_bound_to_local_task": evidence_done,
+        "local_execution_task_created": evidence_done,
+        "local_execution_task_executed": evidence_done,
+        "local_execution_implemented": evidence_done,
+        "local_execution_runtime_bound": evidence_done,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_execution_implemented": False,
+        "worker_runtime_bound_to_local_task": False,
         "worker_started": False,
         "celery_worker_started": False,
         "redis_pinged": False,
-        "storage_read_execution_done": bool(factor_rows),
+        "storage_read_execution_done": bool(factor_rows) or provider_cached_input_used,
         "cross_sectional_rank_zscore_done": rank_done,
         "zscore_done": rank_done,
         "neutralization_done": neutralization_done,
@@ -14171,12 +14496,19 @@ def _factor_universe_worker_batch_local_execution_evidence(
                     "scope": "local_factor_universe_worker_batch_execution_evidence_no_celery_no_provider",
                     "universe_mode": payload_safe.get("universe_mode"),
                     "symbol_count": payload_safe.get("symbol_count") or 0,
-                    "storage_read_row_count": len(factor_rows),
+                    "input_source": "provider_cached_market_panel" if provider_cached_input_used else "factor_values",
+                    "provider_scope_hash_short": provider_cached.get("provider_scope_hash_short") or "",
+                    "storage_read_row_count": (
+                        int(provider_cached.get("storage_read_row_count") or 0)
+                        if provider_cached_input_used
+                        else len(factor_rows)
+                    ),
                     "rank_output_row_count": len(rank_rows),
                     "neutralization_done": neutralization_done,
                     "neutralized_output_row_count": len(neutralized_rows),
                     "full_pool_validation_done": full_pool_validation_done,
                     "full_pool_coverage_ratio": round(coverage_ratio, 6),
+                    "local_bounded_pool_validation_done": local_bounded_pool_validation_done,
                     "production_factor_universe_complete": False,
                 },
                 "row_count": len(rank_rows),
@@ -14185,6 +14517,8 @@ def _factor_universe_worker_batch_local_execution_evidence(
                 "call_status": (
                     "local_worker_batch_execution_ready_local_full_pool_validation"
                     if full_pool_validation_done
+                    else "local_worker_batch_execution_ready_bounded_provider_pool"
+                    if local_bounded_pool_validation_done and provider_cached_input_used
                     else "local_worker_batch_execution_ready_local_neutralization"
                     if neutralization_done
                     else "local_worker_batch_execution_ready_neutralization_pending"
@@ -14195,7 +14529,12 @@ def _factor_universe_worker_batch_local_execution_evidence(
                 **_local_ledger_boundary(),
             }
         ],
-        "note": "This is local worker-batch execution evidence over cached factor_values. It does not start Celery/Redis, call providers/models, prove provider-backed full-market production coverage, execute trades, or mutate strategy action.",
+        "note": (
+            "This local fallback task computed a bounded cross-section from previously cached provider rows. "
+            "It made no external call and does not prove full-market production coverage."
+            if provider_cached_input_used
+            else "This is local worker-batch execution evidence over cached factor_values. It does not start Celery/Redis, call providers/models, prove provider-backed full-market production coverage, execute trades, or mutate strategy action."
+        ),
     }
 
 
@@ -14310,6 +14649,8 @@ def _factor_universe_worker_batch_research_receipt(
         allowed_next_step = (
             "collect_factor_universe_promotion_review_evidence"
             if local_execution.get("full_pool_validation_done") is True
+            else "bind_real_worker_runtime_and_expand_bounded_pool_before_full_pool_validation"
+            if local_execution.get("local_bounded_pool_validation_done") is True
             else "collect_full_pool_validation_and_promotion_evidence"
             if local_execution.get("neutralization_done") is True
             else "collect_neutralization_full_pool_and_promotion_evidence"
@@ -14318,7 +14659,7 @@ def _factor_universe_worker_batch_research_receipt(
         "schema_version": "factor_universe_worker_batch_research_receipt.v1",
         "status": status,
         "scope": (
-            "local_factor_universe_worker_batch_execution_evidence_no_celery_no_provider"
+            str(local_execution.get("scope") or "local_factor_universe_worker_batch_execution_evidence")
             if local_execution_done
             else "local_factor_universe_worker_batch_research_receipt_no_worker_or_provider_execution"
         ),
@@ -14350,14 +14691,21 @@ def _factor_universe_worker_batch_research_receipt(
         "phase_keys": payload_safe.get("phase_keys") or [],
         "phase_count": len(payload_safe.get("phase_keys") or []),
         "local_worker_task_record_created": ready,
-        "worker_task_created": local_execution_done,
-        "worker_task_executed": local_execution_done,
-        "worker_execution_implemented": local_execution_done,
+        "local_execution_task_created": local_execution_done,
+        "local_execution_task_executed": local_execution_done,
+        "local_execution_implemented": local_execution_done,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_execution_implemented": False,
         "worker_process_started": False,
         "worker_started": False,
         "celery_worker_started": False,
         "redis_pinged": False,
         "storage_read_executed": local_execution.get("storage_read_execution_done") is True,
+        "input_source": local_execution.get("input_source") or "",
+        "provider_cached_input_used": local_execution.get("provider_cached_input_used") is True,
+        "provider_backed_cache_lineage_ready": local_execution.get("provider_backed_cache_lineage_ready") is True,
+        "provider_scope_hash_short": local_execution.get("provider_scope_hash_short") or "",
         "large_universe_pipeline_done": False,
         "cross_sectional_rank_zscore_done": local_execution.get("cross_sectional_rank_zscore_done") is True,
         "zscore_done": local_execution.get("zscore_done") is True,
@@ -14365,6 +14713,7 @@ def _factor_universe_worker_batch_research_receipt(
         "factor_combination_research_done": local_execution.get("factor_combination_research_done") is True,
         "result_summary_persisted": local_execution.get("result_summary_persisted") is True,
         "full_pool_validation_done": local_execution.get("full_pool_validation_done") is True,
+        "local_bounded_pool_validation_done": local_execution.get("local_bounded_pool_validation_done") is True,
         "production_factor_universe_complete": False,
         "storage_read_row_count": int(local_execution.get("storage_read_row_count") or 0),
         "usable_row_count": int(local_execution.get("usable_row_count") or 0),
@@ -14423,11 +14772,16 @@ def _factor_universe_worker_batch_research_receipt(
                 "scope_hash_short": receipt["worker_batch_scope_hash_short"],
                 "local_receipt_ready": ready,
                 "local_worker_task_record_created": ready,
-                "worker_task_created": local_execution_done,
-                "worker_task_executed": local_execution_done,
+                "local_execution_task_created": local_execution_done,
+                "local_execution_task_executed": local_execution_done,
+                "worker_task_created": False,
+                "worker_task_executed": False,
                 "worker_process_started": False,
                 "storage_read_executed": local_execution.get("storage_read_execution_done") is True,
+                "input_source": local_execution.get("input_source") or "",
+                "provider_scope_hash_short": local_execution.get("provider_scope_hash_short") or "",
                 "cross_sectional_rank_zscore_done": local_execution.get("cross_sectional_rank_zscore_done") is True,
+                "local_bounded_pool_validation_done": local_execution.get("local_bounded_pool_validation_done") is True,
                 "full_pool_validation_done": local_execution.get("full_pool_validation_done") is True,
                 "production_factor_universe_complete": False,
             },
@@ -14544,8 +14898,10 @@ def _attach_factor_universe_worker_batch_research_receipt(
         )
         contract["local_worker_execution_evidence_done"] = receipt.get("local_worker_execution_evidence_done") is True
         contract["local_worker_task_record_created"] = bool(receipt.get("local_worker_task_record_created"))
-        contract["worker_task_created"] = receipt.get("worker_task_created") is True
-        contract["worker_task_executed"] = receipt.get("worker_task_executed") is True
+        contract["local_execution_task_created"] = receipt.get("local_execution_task_created") is True
+        contract["local_execution_task_executed"] = receipt.get("local_execution_task_executed") is True
+        contract["worker_task_created"] = False
+        contract["worker_task_executed"] = False
         contract["worker_started"] = False
         contract["large_universe_pipeline_done"] = False
         contract["cross_sectional_rank_zscore_done"] = receipt.get("cross_sectional_rank_zscore_done") is True
