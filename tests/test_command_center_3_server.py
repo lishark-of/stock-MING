@@ -27312,6 +27312,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(seed["github_called"])
         self.assertTrue(seed["does_not_execute_trades"])
         self.assertTrue(seed["does_not_modify_strategy_action"])
+        self.assertTrue(factor["runtime"]["local_rank_zscore_evidence_seed"])
+        self.assertFalse(factor["runtime"]["local_rank_zscore_seed_is_provider_acceptance"])
 
         self.assertEqual(storage["status"], "ready")
         self.assertEqual(storage["metadata"]["status"], "ready")
