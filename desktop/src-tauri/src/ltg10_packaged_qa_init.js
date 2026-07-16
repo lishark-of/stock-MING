@@ -604,6 +604,11 @@
         attach_shadow_calls: attachShadowCalls.map((row) => ({ ...row })),
         custom_element_events: customElementEvents.map((row) => ({ ...row })),
         dynamic_frame_events: frameCreateEvents.map((row) => ({ ...row })),
+        post_seal_capture: sealed,
+        deny_all_network_guard_at_observation: sealed,
+        late_event_count_at_observation: lateEvents.length,
+        denied_attempt_count_at_observation: deniedNetworkAttempts.length,
+        denied_interval_registration_count_at_observation: deniedIntervalRegistrationCount,
         network_ledger_complete: quiet.hook_integrity && pending.size === 0 && quiet.quiet_elapsed_ms >= QUIET_WINDOW_MS,
         network_ledger: ledger.map((row) => ({ ...row }))
       };

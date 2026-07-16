@@ -1528,6 +1528,7 @@ const NATIVE_FAILURE_CODE_RULES = [
   ["WKWebView native snapshot", "snapshot_invalid"],
   ["network activity occurred", "network_seal_invalid"],
   ["final global quiet seal", "network_seal_invalid"],
+  ["post-seal final capture", "network_seal_invalid"],
   ["native output", "native_output_invalid"]
 ];
 
@@ -1847,6 +1848,8 @@ function validateNativeMatrix(output, screenshots, challenge, nonce, childPid, p
     "observed_url", "dom_ledger", "task_post_count_before", "task_post_count_after", "navigation_post_count", "network_ledger",
     "observed_inner_width", "observed_inner_height", "device_pixel_ratio", "pending_request_count", "quiet_window_ms", "quiet_elapsed_ms",
     "instrumentation_integrity", "attach_shadow_calls", "custom_element_events", "dynamic_frame_events", "network_ledger_complete",
+    "post_seal_capture", "deny_all_network_guard_at_observation", "late_event_count_at_observation",
+    "denied_attempt_count_at_observation", "denied_interval_registration_count_at_observation",
     "route", "component", "viewport", "width", "height", "runtime_surface", "protocol",
     "native_inner_width_px", "native_inner_height_px", "screenshot_pixel_width", "screenshot_pixel_height",
     "observation_started_monotonic_ns", "observation_finished_monotonic_ns", "screenshot_index",
@@ -1860,6 +1863,7 @@ function validateNativeMatrix(output, screenshots, challenge, nonce, childPid, p
     const png = pngDimensions(screenshot);
     const expectedPhysicalWidth = Math.round(expected.width * Number(row.device_pixel_ratio));
     const expectedPhysicalHeight = Math.round(expected.height * Number(row.device_pixel_ratio));
+    const expectedPostSealCapture = index === output.rows.length - 1;
     if (
       !exactObject(row, nativeRowFields) || row.route !== expected.route || row.component !== expected.component ||
       row.viewport !== expected.name || row.width !== expected.width || row.height !== expected.height ||
@@ -1880,6 +1884,10 @@ function validateNativeMatrix(output, screenshots, challenge, nonce, childPid, p
       !Array.isArray(row.attach_shadow_calls) || row.attach_shadow_calls.length !== 0 ||
       !Array.isArray(row.custom_element_events) || row.custom_element_events.length !== 0 ||
       !Array.isArray(row.dynamic_frame_events) || row.dynamic_frame_events.length !== 0 ||
+      row.post_seal_capture !== expectedPostSealCapture ||
+      row.deny_all_network_guard_at_observation !== expectedPostSealCapture ||
+      row.late_event_count_at_observation !== 0 || row.denied_attempt_count_at_observation !== 0 ||
+      row.denied_interval_registration_count_at_observation !== 0 ||
       row.network_ledger_complete !== true || !localNetworkLedgerComplete(row.network_ledger) ||
       !domLedgerReady(row.dom_ledger, expected.route, expected.component, expected.expectedHeading)
     ) throw new Error(`native route matrix row invalid:${index}`);

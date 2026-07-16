@@ -664,6 +664,11 @@ process.stdout.write(JSON.stringify(payload));
             "attach_shadow_calls": [],
             "custom_element_events": [],
             "dynamic_frame_events": [],
+            "post_seal_capture": False,
+            "deny_all_network_guard_at_observation": False,
+            "late_event_count_at_observation": 0,
+            "denied_attempt_count_at_observation": 0,
+            "denied_interval_registration_count_at_observation": 0,
             "network_ledger_complete": True,
             "network_ledger": _network_ledger(),
             "screenshot_path": "screenshots/01-home-desktop.png",
@@ -684,6 +689,33 @@ process.stdout.write(JSON.stringify(payload));
         self.assertTrue(retirement._runner_row_hmac_valid(row, nonce))
         self.assertFalse(retirement._runner_row_hmac_valid({**row, "route": "#legacy"}, nonce))
         self.assertFalse(retirement._runner_row_hmac_valid(row, os.urandom(32)))
+
+    def test_post_seal_capture_marker_is_exactly_last_row_and_fail_closed(self):
+        before = {
+            "post_seal_capture": False,
+            "deny_all_network_guard_at_observation": False,
+            "late_event_count_at_observation": 0,
+            "denied_attempt_count_at_observation": 0,
+            "denied_interval_registration_count_at_observation": 0,
+        }
+        final = {
+            **before,
+            "post_seal_capture": True,
+            "deny_all_network_guard_at_observation": True,
+        }
+        self.assertTrue(retirement._post_seal_capture_ready(before, 0, 12))
+        self.assertTrue(retirement._post_seal_capture_ready(final, 11, 12))
+        self.assertFalse(retirement._post_seal_capture_ready(before, 11, 12))
+        self.assertFalse(retirement._post_seal_capture_ready(final, 10, 12))
+        for field in (
+            "late_event_count_at_observation",
+            "denied_attempt_count_at_observation",
+            "denied_interval_registration_count_at_observation",
+        ):
+            with self.subTest(field=field):
+                self.assertFalse(
+                    retirement._post_seal_capture_ready({**final, field: 1}, 11, 12)
+                )
 
     def test_nonce_attestation_binds_component_map_and_source_digest(self):
         source, blocker = retirement._source_contract(ROOT)
@@ -1174,6 +1206,26 @@ process.stdout.write(JSON.stringify(payload));
         self.assertIn("startup_attempt_deadline(Instant::now(), deadline)", native)
         self.assertIn("Err(EvalError::CallbackDisconnected) => StartupEvalDecision::Retry", native)
         self.assertIn('["WebView eval callback", "observation_invalid"]', runner)
+        run_start = native.index("fn run<R: tauri::Runtime>")
+        initial_observe = native.index("let mut observation = observe(", run_start)
+        seal_call = native.index("let ledger_count = begin_seal(&window)?;", initial_observe)
+        post_seal_start = native.index("started = monotonic_ns();", seal_call)
+        post_seal_observe = native.index("observation = observe(", post_seal_start)
+        snapshot = native.index("let snapshot = native_snapshot", post_seal_observe)
+        deny_window = native.index("FINAL_DENY_WINDOW_MS + 100", snapshot)
+        final_verify = native.index("let verified = verify_existing_seal", deny_window)
+        final_binding = native.index("final_seal_audit = Some(verified);", final_verify)
+        self.assertLess(initial_observe, seal_call)
+        self.assertLess(seal_call, post_seal_start)
+        self.assertLess(post_seal_start, post_seal_observe)
+        self.assertLess(post_seal_observe, snapshot)
+        self.assertLess(snapshot, deny_window)
+        self.assertLess(deny_window, final_verify)
+        self.assertLess(final_verify, final_binding)
+        self.assertIn(
+            'let seal_audit = final_seal_audit.ok_or("post-seal final capture missing")?;',
+            native,
+        )
         self.assertIn("Math.floor(performance.now() * 1e6)", init)
         self.assertNotIn("performance.timeOrigin + performance.now()", init)
         for forbidden in ("webdriverio", "wdio", "open_devtools", "devtools", "Safari inspector"):
@@ -1199,6 +1251,8 @@ const cases = [
   ['ltg10 packaged QA failed closed: WebView eval callback timed out\n', 'observation_invalid'],
   ['ltg10 packaged QA failed closed: WebView eval dispatch failed\n', 'observation_invalid'],
   ['ltg10 packaged QA failed closed: packaged QA document-start instrumentation unavailable\n', 'document_instrumentation_unavailable'],
+  ['ltg10 packaged QA failed closed: network activity occurred during the post-seal final capture\n', 'network_seal_invalid'],
+  ['ltg10 packaged QA failed closed: post-seal final capture missing\n', 'network_seal_invalid'],
   ['ltg10 packaged QA failed closed: deliberately unmapped failure\n', 'unknown'],
 ];
 for (const [stderr, expected] of cases) {

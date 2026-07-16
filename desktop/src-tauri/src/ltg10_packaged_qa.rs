@@ -144,6 +144,10 @@ fn eval_deadline_budget(now: Instant, deadline: Instant) -> Result<Duration, Eva
     }
 }
 
+fn is_final_capture(viewport: &str, route: &str) -> bool {
+    viewport == VIEWPORTS[VIEWPORTS.len() - 1].0 && route == ROUTES[ROUTES.len() - 1].0
+}
+
 fn fixed_path_is_direct(project_root: &Path, path: &Path, directory: bool) -> bool {
     let Ok(relative) = path.strip_prefix(project_root) else {
         return false;
@@ -407,12 +411,13 @@ fn run<R: tauri::Runtime>(window: WebviewWindow<R>, session: TrustedSession) -> 
     wait_for_document(&window)?;
     let mut rows = Vec::with_capacity(12);
     let mut screenshots = Vec::with_capacity(12);
+    let mut final_seal_audit = None;
     for (viewport, width, height) in VIEWPORTS {
         converge_webview_content_size(&window, width, height)?;
         for (route, component, expected_heading) in ROUTES {
             navigate(&window, route)?;
-            let started = monotonic_ns();
-            let observation = observe(
+            let mut started = monotonic_ns();
+            let mut observation = observe(
                 &window,
                 route,
                 component,
@@ -421,6 +426,22 @@ fn run<R: tauri::Runtime>(window: WebviewWindow<R>, session: TrustedSession) -> 
                 width,
                 height,
             )?;
+            let seal_started_count = if is_final_capture(viewport, route) {
+                let ledger_count = begin_seal(&window)?;
+                started = monotonic_ns();
+                observation = observe(
+                    &window,
+                    route,
+                    component,
+                    expected_heading,
+                    viewport,
+                    width,
+                    height,
+                )?;
+                Some(ledger_count)
+            } else {
+                None
+            };
             let observed_inner_width = observation
                 .get("observed_inner_width")
                 .and_then(Value::as_u64)
@@ -463,6 +484,16 @@ fn run<R: tauri::Runtime>(window: WebviewWindow<R>, session: TrustedSession) -> 
                 return Err(
                     "native snapshot pixels do not match measured native inner size".into(),
                 );
+            }
+            if let Some(started_count) = seal_started_count {
+                thread::sleep(Duration::from_millis(FINAL_DENY_WINDOW_MS + 100));
+                let verified = verify_existing_seal(&window, started_count)?;
+                if observation.get("network_ledger") != verified.get("ledger_digest_material") {
+                    return Err(
+                        "network activity occurred during the post-seal final capture".into(),
+                    );
+                }
+                final_seal_audit = Some(verified);
             }
             let mut row = observation
                 .as_object()
@@ -510,7 +541,7 @@ fn run<R: tauri::Runtime>(window: WebviewWindow<R>, session: TrustedSession) -> 
             screenshots.push(snapshot);
         }
     }
-    let seal_audit = seal_audit(&window)?;
+    let seal_audit = final_seal_audit.ok_or("post-seal final capture missing")?;
     if rows.last().and_then(|row| row.get("network_ledger"))
         != seal_audit.get("ledger_digest_material")
     {
@@ -1106,18 +1137,23 @@ fn await_observation<R: tauri::Runtime>(
     Err("packaged WebView observation quiet wait timed out".into())
 }
 
-fn seal_audit<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Result<Value, String> {
+fn begin_seal<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Result<u64, String> {
     let token = eval(window, "window.__STOCK_MING_LTG10_QA__.beginSeal()")?
         .as_str()
         .map(str::to_owned)
         .ok_or("seal token invalid")?;
     let started = await_observation(window, &token, Duration::from_secs(25))?;
-    thread::sleep(Duration::from_millis(FINAL_DENY_WINDOW_MS + 100));
-    let verified = eval(window, "window.__STOCK_MING_LTG10_QA__.verifySeal()")?;
-    let started_count = started
+    started
         .get("ledger_count")
         .and_then(Value::as_u64)
-        .ok_or("seal-start ledger count invalid")?;
+        .ok_or_else(|| "seal-start ledger count invalid".to_string())
+}
+
+fn verify_existing_seal<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    started_count: u64,
+) -> Result<Value, String> {
+    let verified = eval(window, "window.__STOCK_MING_LTG10_QA__.verifySeal()")?;
     let quiesce_started = verified
         .get("quiesce_started_at_monotonic_ns")
         .and_then(Value::as_u64)
@@ -1225,8 +1261,8 @@ fn eval_with_deadline<R: tauri::Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{
-        eval_deadline_budget, startup_attempt_deadline, startup_eval_decision, EvalError,
-        StartupEvalDecision,
+        eval_deadline_budget, is_final_capture, startup_attempt_deadline, startup_eval_decision,
+        EvalError, StartupEvalDecision,
     };
     use serde_json::Value;
     use std::time::{Duration, Instant};
@@ -1285,6 +1321,13 @@ mod tests {
             eval_deadline_budget(deadline, deadline),
             Err(EvalError::CallbackTimeout)
         );
+    }
+
+    #[test]
+    fn only_last_viewport_and_route_is_the_post_seal_capture() {
+        assert!(is_final_capture("mobile", "#qmt-replay"));
+        assert!(!is_final_capture("desktop", "#qmt-replay"));
+        assert!(!is_final_capture("mobile", "#home"));
     }
 }
 

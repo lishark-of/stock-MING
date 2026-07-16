@@ -265,6 +265,11 @@ ROW_FIELDS = {
     "attach_shadow_calls",
     "custom_element_events",
     "dynamic_frame_events",
+    "post_seal_capture",
+    "deny_all_network_guard_at_observation",
+    "late_event_count_at_observation",
+    "denied_attempt_count_at_observation",
+    "denied_interval_registration_count_at_observation",
     "network_ledger_complete",
     "screenshot_path",
     "screenshot_byte_length",
@@ -1322,6 +1327,20 @@ def _task_post_counts_zero(row: Mapping[str, Any]) -> bool:
     )
 
 
+def _post_seal_capture_ready(row: Mapping[str, Any], index: int, total: int) -> bool:
+    expected = total > 0 and index == total - 1
+    return bool(
+        row.get("post_seal_capture") is expected
+        and row.get("deny_all_network_guard_at_observation") is expected
+        and type(row.get("late_event_count_at_observation")) is int
+        and row.get("late_event_count_at_observation") == 0
+        and type(row.get("denied_attempt_count_at_observation")) is int
+        and row.get("denied_attempt_count_at_observation") == 0
+        and type(row.get("denied_interval_registration_count_at_observation")) is int
+        and row.get("denied_interval_registration_count_at_observation") == 0
+    )
+
+
 def _runner_row_hmac_valid(row: Mapping[str, Any], nonce: bytes) -> bool:
     if set(row) != ROW_FIELDS:
         return False
@@ -1553,7 +1572,8 @@ def _validate_trusted_runner_attestation(
     native_rows: list[dict[str, Any]] = []
     visual_review_rows: list[dict[str, Any]] = []
     canvas_present_count = 0
-    for row_value in rows:
+    expected_count = len(expected_pairs)
+    for row_index, row_value in enumerate(rows):
         if not isinstance(row_value, Mapping) or set(row_value) != ROW_FIELDS:
             blockers.append("raw_runner_row_schema_invalid")
             continue
@@ -1637,6 +1657,7 @@ def _validate_trusted_runner_attestation(
             and row.get("attach_shadow_calls") == []
             and row.get("custom_element_events") == []
             and row.get("dynamic_frame_events") == []
+            and _post_seal_capture_ready(row, row_index, expected_count)
             and row.get("network_ledger_complete") is True
             and network_ready
             and screenshot_ready
@@ -1679,7 +1700,6 @@ def _validate_trusted_runner_attestation(
                 "pixel_height": row.get("screenshot_pixel_height"),
             }
         )
-    expected_count = len(expected_pairs)
     seal_audit = report.get("network_seal_audit")
     seal_ready = _network_seal_ready(seal_audit)
     if not seal_ready or not network_ledgers or not _network_seal_matches_last_row(seal_audit, network_ledgers[-1]):
