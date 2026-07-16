@@ -51,41 +51,16 @@ const MAX_PNG_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_PNG_IDAT_BYTES = 12 * 1024 * 1024;
 const MAX_PNG_DECODED_BYTES = 64 * 1024 * 1024;
 const MAX_FASTAPI_RESPONSE_BYTES = 32 * 1024 * 1024;
-const FASTAPI_RESPONSE_SEMANTIC_SCHEMA_VERSION = "command_center_3_motion_fastapi_response_semantic.v2";
+const FASTAPI_RESPONSE_SEMANTIC_SCHEMA_VERSION = "command_center_3_motion_fastapi_response_semantic.v3";
 const FASTAPI_CACHE_ENDPOINT_COUNT = 19;
 
 const FASTAPI_CACHE_CONTRACTS = new Map([
   ["/api/audit/cache", { schema: "call_ledger_audit_cache.v1", packet: "command_center_3_call_ledger_audit_cache", ledgerApis: ["local_call_ledger_audit_cache"] }],
   ["/api/audit/user-route-qa", { schema: "command_center_3_user_route_qa_evidence_cache.v1", packet: "command_center_3_user_route_qa_evidence_cache", ledgerApis: ["GET /api/audit/user-route-qa"] }],
   ["/api/bootstrap/status", { schema: "command_center_bootstrap_runtime_mode.v1", packet: "command_center_3_bootstrap_runtime_mode_packet", ledgerApis: ["local_bootstrap_runtime_mode_cache"] }],
-  ["/api/desktop/preflight-cache", { schema: "desktop_shell_preflight_cache.v1", packet: "command_center_3_desktop_shell_preflight_cache", ledgerApis: [
-    "local_desktop_shell_preflight_cache", "local_tauri_release_manifest_contract", "local_one_click_startup_summary",
-    "local_p0_frontend_backend_connection_receipt", "local_p0_ordinary_connection_rows", "local_p0_post_startup_readback_rows",
-    "local_p0_failure_diagnostic_rows", "local_p0_to_p1_ordinary_handoff_rows", "local_p0_ordinary_reconnect_rows",
-    "local_p0_launcher_check_only_rows", "local_p0_ordinary_quick_action_rows", "local_p0_current_next_action_rows",
-    "local_p0_startup_30s_quick_read_rows", "local_p0_ordinary_one_screen_rows", "local_command_center_3_launcher_contract",
-    "local_tauri_production_package_readiness_receipt", "local_tauri_package_durable_evidence_recipe"
-  ] }],
-  ["/api/factor-quant/cache", { schema: "factor_quant_hub.v1", packet: "command_center_factor_quant_hub_packet", ledgerApis: [
-    "local_factor_quant_cache", "local_factor_universe_rank_zscore_dry_run", "local_factor_universe_execution_readiness_receipt",
-    "local_factor_universe_execution_activation_receipt", "local_factor_universe_worker_batch_execution_recipe",
-    "local_factor_universe_worker_batch_execution_request", "local_factor_universe_worker_batch_research_receipt",
-    "local_factor_universe_durable_evidence_recipe", "local_deepseek_production_activation_receipt",
-    "local_deepseek_provider_benchmark_execution_recipe", "local_deepseek_provider_benchmark_scope_ticket",
-    "local_deepseek_provider_benchmark_execution_request", "local_deepseek_durable_evidence_recipe",
-    "local_factor_test_storage_query_consumption", "local_factor_test_local_dataset_sample_evidence",
-    "local_factor_test_production_validation_qa_contract", "local_factor_test_provider_validation_blocker_audit",
-    "local_factor_test_provider_sample_readiness_receipt", "local_factor_test_provider_sample_activation_receipt",
-    "local_factor_test_provider_small_pool_execution_recipe", "local_factor_test_provider_small_pool_execution_request",
-    "local_factor_test_provider_small_pool_forward_return_label_audit", "local_factor_test_provider_small_pool_metric_validation_audit",
-    "local_factor_test_provider_small_pool_pit_bias_audit", "local_factor_test_durable_evidence_recipe",
-    "local_factor_test_production_stage_scope_manifest"
-  ] }],
-  ["/api/next-session/cache", { schema: "next_session_operation_projection.v1", packet: "command_center_next_session_projection_packet", allowCacheMissing: true, includeMissingData: true, ledgerApis: [
-    "local_next_session_cache", "local_next_session_browser_qa_review", "local_next_session_streamlit_parity_review",
-    "local_next_session_production_promotion_review", "local_next_session_candidate_radar_p3_handoff",
-    "local_next_session_durable_evidence_recipe", "local_next_session_production_stage_scope_manifest"
-  ] }],
+  ["/api/desktop/preflight-cache", { schema: "desktop_shell_preflight_cache.v1", packet: "command_center_3_desktop_shell_preflight_cache", strictCurrentRead: true, ledgerApis: ["local_desktop_shell_preflight_cache"] }],
+  ["/api/factor-quant/cache", { schema: "factor_quant_hub.v1", packet: "command_center_factor_quant_hub_packet", strictCurrentRead: true, ledgerApis: ["local_factor_quant_cache"] }],
+  ["/api/next-session/cache", { schema: "next_session_projection.v1", packet: "command_center_next_session_projection_packet", allowCacheMissing: true, includeMissingData: true, strictCurrentRead: true, ledgerApis: ["local_next_session_cache"] }],
   ["/api/position/cache", { schema: "position_context_cache.v1", packet: "command_center_3_position_context_cache", ledgerApis: ["local_position_context_cache"] }],
   ["/api/candidate-radar/cache", { schema: "candidate_radar_cache.v1", packet: "command_center_3_candidate_radar_cache", ledgerApis: [
     "local_candidate_radar_cache", "local_candidate_radar_legacy_parity_acceptance_receipt",
@@ -104,12 +79,7 @@ const FASTAPI_CACHE_CONTRACTS = new Map([
   ["/api/data-health/cache", { schema: "data_health_timeline_cache.v1", packet: "command_center_3_data_health_timeline_cache", ledgerApis: ["local_data_health_timeline_cache", "local_freshness_durable_evidence_recipe"] }],
   ["/api/tasks", { schema: "command_center_3_task_status_index.v1", packet: "command_center_3_task_status_index", historicalTaskSummary: true, ledgerApis: ["local_task_status_index"] }],
   ["/api/tasks/catalog", { schema: "command_center_3_task_catalog.v1", packet: "command_center_3_task_catalog", ledgerApis: ["local_task_catalog_cache"] }],
-  ["/api/worker/cache", { schema: "worker_runtime_cache.v1", packet: "command_center_3_worker_runtime_cache", ledgerApis: [
-    "local_worker_runtime_cache", "local_worker_queue_routing_contract", "local_worker_production_readiness_receipt",
-    "local_worker_production_activation_receipt", "local_worker_runtime_qa_execution_recipe",
-    "local_worker_runtime_qa_execution_request", "local_worker_runtime_qa_dry_run", "local_worker_runtime_qa_execution",
-    "local_worker_runtime_durable_evidence_recipe"
-  ] }],
+  ["/api/worker/cache", { schema: "worker_runtime_cache.v1", packet: "command_center_3_worker_runtime_cache", strictCurrentRead: true, ledgerApis: ["local_worker_runtime_cache"] }],
   ["/api/packets", { schema: "command_center_3_packet_index.v1", ledgerApis: ["local_packet_registry_cache"] }],
   ["/api/packets/command_center_etf_packet", { packet: "command_center_etf_packet", allowCacheMissing: true, packetDetail: true, ledgerApis: ["local_packet_cache_read"] }],
   ["/api/packets/command_center_margin_packet", { packet: "command_center_margin_packet", allowCacheMissing: true, packetDetail: true, ledgerApis: ["local_packet_cache_read"] }],
@@ -243,6 +213,12 @@ const CURRENT_FALSE_FLAGS = [
   "trading_called", "broker_called", "order_called", "real_trading_enabled"
 ];
 const CURRENT_TRUE_FLAGS = ["does_not_execute_trades", "does_not_modify_strategy_action"];
+const STRICT_CURRENT_LEDGER_FALSE_FLAGS = [
+  "external", "external_calls_triggered", "provider_or_model_calls", "provider_called",
+  "model_called", "worker_called", "tushare_called", "deepseek_called", "github_called",
+  "trade_called", "trading_called", "broker_called", "order_called", "real_trading_enabled",
+  "contains_secret"
+];
 const HISTORICAL_FLAG_NAMES = new Set([
   "external_calls_triggered", "tushare_called", "deepseek_called", "github_called",
   "provider_or_model_calls", "provider_called", "model_called", "worker_called",
@@ -305,11 +281,14 @@ function historicalProvenanceCount(value, topLevel = false) {
 }
 
 function exactCacheMissingError(error, endpoint, packetKey) {
+  const expectedRoute = endpoint.startsWith("/api/packets/")
+    ? "GET /api/packets/{packet_key}"
+    : `GET ${endpoint}`;
   return Boolean(safeRecord(error) && canonicalJson(Object.keys(error).sort()) === canonicalJson(["code", "details", "message"]) &&
     error.code === "cache_missing" && typeof error.message === "string" && error.message.length > 0 &&
     safeRecord(error.details) && canonicalJson(Object.keys(error.details).sort()) === canonicalJson(["cache_source", "packet_key", "route"]) &&
     error.details.cache_source === "cache_missing" && error.details.packet_key === packetKey &&
-    (error.details.route === endpoint || (endpoint.startsWith("/api/packets/") && error.details.route === "GET /api/packets/{packet_key}")));
+    error.details.route === expectedRoute);
 }
 
 function endpointDataIdentityValid(data, contract) {
@@ -317,6 +296,21 @@ function endpointDataIdentityValid(data, contract) {
   if (contract.schema && data.schema_version !== contract.schema) return false;
   if (contract.packet && data.packet_key !== contract.packet) return false;
   return true;
+}
+
+function strictCurrentReadFlagsValid(record) {
+  return Boolean(safeRecord(record) &&
+    STRICT_CURRENT_LEDGER_FALSE_FLAGS.every(name =>
+      Object.prototype.hasOwnProperty.call(record, name) && record[name] === false) &&
+    CURRENT_TRUE_FLAGS.every(name =>
+      Object.prototype.hasOwnProperty.call(record, name) && record[name] === true));
+}
+
+function strictCurrentReadLedgerRowValid(row, endpoint) {
+  return Boolean(strictCurrentReadFlagsValid(row) &&
+    row.source === `GET ${endpoint}` && row.route === `GET ${endpoint}` &&
+    row.request_method === "GET" && Number.isInteger(row.row_count) && row.row_count >= 0 &&
+    ((row.call_status === "cache_read") || (row.call_status === "cache_missing" && row.row_count === 0)));
 }
 
 function taskHistorySummaryValid(data) {
@@ -349,6 +343,7 @@ function ledgerAnalysis(ledger, endpoint, contract) {
   for (let index = 0; index < ledger.length; index += 1) {
     const row = ledger[index];
     if (!safeRecord(row)) { rowsTyped = false; continue; }
+    if (contract?.strictCurrentRead && !strictCurrentReadLedgerRowValid(row, endpoint)) sourcesAllowlisted = false;
     const api = row.api;
     const apiPosition = typeof api === "string" ? expectedApis.indexOf(api) : -1;
     if (apiPosition < 0 || (index === 0 && apiPosition !== 0) || apiPosition <= previousApiPosition) sourcesAllowlisted = false;
@@ -400,7 +395,12 @@ function analyzeFastApiResponse(value, { endpoint, method, statusCode, bodySha25
         ? flagViolationCount(data, ["readback_external_calls_triggered", "cache_api_external_calls_triggered", "page_render_external_calls"], false) === 0
       : flagViolationCount(data, CURRENT_FALSE_FLAGS, false) === 0;
     if (flagViolationCount(data, CURRENT_TRUE_FLAGS, true) > 0) dataCurrentReadFlagsValid = false;
+    if (contract?.strictCurrentRead && !strictCurrentReadFlagsValid(data)) dataCurrentReadFlagsValid = false;
+    if (contract?.strictCurrentRead && cacheMissing &&
+      (data.status !== "cache_missing" || data.cache_source !== "cache_missing")) dataCurrentReadFlagsValid = false;
   }
+  const strictLedgerStateValid = !contract?.strictCurrentRead || ledger.every(row =>
+    safeRecord(row) && row.call_status === (cacheMissing ? "cache_missing" : "cache_read"));
   const secretCount = secretBearingFieldCount(value);
   const summary = {
     schema_version: FASTAPI_RESPONSE_SEMANTIC_SCHEMA_VERSION,
@@ -414,6 +414,8 @@ function analyzeFastApiResponse(value, { endpoint, method, statusCode, bodySha25
     error_code: cacheMissing ? "cache_missing" : "",
     data_schema_version: typeof data.schema_version === "string" ? data.schema_version : "",
     data_packet_key: typeof data.packet_key === "string" ? data.packet_key : "",
+    data_status: typeof data.status === "string" ? data.status : "",
+    data_cache_source: typeof data.cache_source === "string" ? data.cache_source : "",
     ledger_count: ledger.length,
     ledger_rows_typed: ledgerResult.rowsTyped,
     ledger_sources_allowlisted: ledgerResult.sourcesAllowlisted,
@@ -424,6 +426,10 @@ function analyzeFastApiResponse(value, { endpoint, method, statusCode, bodySha25
     ledger_current_trade_count: ledgerResult.currentTrade,
     task_post_count: ledgerResult.taskPosts,
     data_current_read_flags_valid: dataCurrentReadFlagsValid,
+    strict_current_read_contract: contract?.strictCurrentRead === true,
+    strict_current_read_valid: Boolean(
+      !contract?.strictCurrentRead || (dataCurrentReadFlagsValid && strictLedgerStateValid && ledgerResult.sourcesAllowlisted)
+    ),
     historical_provenance_count: historicalProvenanceCount(
       data, !(contract?.historicalTaskSummary || contract?.packetDetail)
     ),
@@ -434,7 +440,7 @@ function analyzeFastApiResponse(value, { endpoint, method, statusCode, bodySha25
     envelopeState !== "invalid" && ledgerResult.rowsTyped && ledgerResult.sourcesAllowlisted &&
     ledgerResult.currentExternal === 0 && ledgerResult.currentProvider === 0 && ledgerResult.currentModel === 0 &&
     ledgerResult.currentWorker === 0 && ledgerResult.currentTrade === 0 && ledgerResult.taskPosts === 0 &&
-    dataCurrentReadFlagsValid && secretCount === 0);
+    dataCurrentReadFlagsValid && strictLedgerStateValid && secretCount === 0);
   return { valid, summary, digest: objectDigest(summary) };
 }
 
@@ -442,18 +448,22 @@ function selfTestFastApiValidator() {
   const safeLedger = () => ({
     api: "local_call_ledger_audit_cache", external: false,
     external_calls_triggered: false, provider_or_model_calls: false,
-    tushare_called: false, deepseek_called: false, github_called: false,
-    worker_called: false, trade_called: false, does_not_execute_trades: true,
-    does_not_modify_strategy_action: true
+    provider_called: false, model_called: false, tushare_called: false,
+    deepseek_called: false, github_called: false, worker_called: false,
+    trade_called: false, trading_called: false, broker_called: false,
+    order_called: false, real_trading_enabled: false, contains_secret: false,
+    does_not_execute_trades: true, does_not_modify_strategy_action: true
   });
   const safeAudit = () => ({
     ok: true,
     data: {
       schema_version: "call_ledger_audit_cache.v1",
       packet_key: "command_center_3_call_ledger_audit_cache",
-      external_calls_triggered: false, provider_or_model_calls: false,
+      external: false, external_calls_triggered: false, provider_or_model_calls: false,
+      provider_called: false, model_called: false, worker_called: false,
       tushare_called: false, deepseek_called: false, github_called: false,
-      real_trading_enabled: false, contains_secret: false,
+      trade_called: false, trading_called: false, broker_called: false,
+      order_called: false, real_trading_enabled: false, contains_secret: false,
       does_not_execute_trades: true, does_not_modify_strategy_action: true
     },
     error: null,
@@ -501,15 +511,39 @@ function selfTestFastApiValidator() {
   unrelatedApi.call_ledger[0].api = "local_task_status_index";
   assert(!analyze(unrelatedApi).valid, "endpoint_owned_api_required");
   const optionalNext = safeAudit();
-  optionalNext.data.schema_version = "next_session_operation_projection.v1";
+  optionalNext.data.schema_version = "next_session_projection.v1";
   optionalNext.data.packet_key = "command_center_next_session_projection_packet";
-  optionalNext.call_ledger = [
-    { ...safeLedger(), api: "local_next_session_cache" },
-    { ...safeLedger(), api: "local_next_session_production_stage_scope_manifest" }
-  ];
-  assert(analyze(optionalNext, "/api/next-session/cache").valid, "ordered_optional_endpoint_ledger_rows");
-  optionalNext.call_ledger.reverse();
-  assert(!analyze(optionalNext, "/api/next-session/cache").valid, "primary_cache_row_must_be_first");
+  optionalNext.call_ledger = [{
+    ...safeLedger(), api: "local_next_session_cache",
+    source: "GET /api/next-session/cache", route: "GET /api/next-session/cache",
+    request_method: "GET", row_count: 1, call_status: "cache_read"
+  }];
+  assert(analyze(optionalNext, "/api/next-session/cache").valid, "single_current_endpoint_ledger_row");
+  const minimalPrimary = structuredClone(optionalNext);
+  minimalPrimary.call_ledger[0] = { api: "local_next_session_cache", external: false, external_calls_triggered: false };
+  assert(!analyze(minimalPrimary, "/api/next-session/cache").valid, "minimal_primary_row_rejected");
+  const wrongRoute = structuredClone(optionalNext);
+  wrongRoute.call_ledger[0].route = "GET /api/worker/cache";
+  assert(!analyze(wrongRoute, "/api/next-session/cache").valid, "raw_route_binding_required");
+  const missingWorkerProof = structuredClone(optionalNext);
+  delete missingWorkerProof.call_ledger[0].worker_called;
+  assert(!analyze(missingWorkerProof, "/api/next-session/cache").valid, "explicit_worker_boundary_required");
+  optionalNext.call_ledger.push({ ...safeLedger(), api: "local_next_session_production_stage_scope_manifest" });
+  assert(!analyze(optionalNext, "/api/next-session/cache").valid, "historical_row_forbidden_in_current_ledger");
+  const missingEnvelope = structuredClone(optionalNext);
+  missingEnvelope.call_ledger = [{
+    ...safeLedger(), api: "local_next_session_cache",
+    source: "GET /api/next-session/cache", route: "GET /api/next-session/cache",
+    request_method: "GET", row_count: 0, call_status: "cache_missing"
+  }];
+  missingEnvelope.ok = false;
+  missingEnvelope.error = {
+    code: "cache_missing", message: "missing",
+    details: { cache_source: "cache_missing", packet_key: "command_center_next_session_projection_packet", route: "GET /api/next-session/cache" }
+  };
+  missingEnvelope.data.status = "ready";
+  missingEnvelope.data.cache_source = "cache_missing";
+  assert(!analyze(missingEnvelope, "/api/next-session/cache").valid, "missing_envelope_rejects_ready_data");
   const secret = safeAudit();
   secret.data.api_key = "dummy";
   assert(!analyze(secret).valid, "secret_field");

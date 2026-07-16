@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from server.api.task_response import task_envelope
-from server.schemas.packets import cache_envelope
+from server.schemas.packets import cache_envelope, cache_read_call_ledger, cache_read_packet
 from server.services import next_session_service
 
 
@@ -15,10 +15,18 @@ router = APIRouter(prefix="/api/next-session")
 @router.get("/cache")
 def get_next_session_cache() -> dict:
     packet = next_session_service.read_next_session_cache()
+    current_ledger = cache_read_call_ledger(
+        api="local_next_session_cache",
+        route="GET /api/next-session/cache",
+        packet=packet,
+        existing=packet.get("cache_call_ledger") or packet.get("call_ledger"),
+    )
+    response_packet = cache_read_packet(packet, cache_call_ledger=current_ledger)
     return cache_envelope(
-        packet,
+        response_packet,
         route="GET /api/next-session/cache",
         missing_message="当前没有精确次日操作图谱缓存；请通过按钮任务生成后再查看。",
+        call_ledger=current_ledger,
         include_missing_data=True,
     )
 

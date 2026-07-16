@@ -1053,7 +1053,7 @@ def build_next_session_cache() -> dict[str, Any]:
     return _attach_next_session_chart_summary(_cache_missing_packet(
         next_session_projection.PACKET_KEY,
         "Command Center 3.0 cache API 不触发 Tushare/DeepSeek；当前未发现精确的次日操作图谱 packet 缓存。",
-        schema_version=next_session_projection.SCHEMA_VERSION,
+        schema_version="next_session_projection.v1",
         source_snapshot_available=bool(snapshot),
         legacy_projection_cache=_summary_of_packet(legacy_projection) if legacy_projection is not None else {"available": False},
         chart_payload=_legacy_projection_chart_payload(legacy_projection) if legacy_projection is not None else _missing_next_session_chart_payload(),

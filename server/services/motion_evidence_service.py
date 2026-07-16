@@ -200,20 +200,28 @@ _ELEMENT_ROW_KEYS = {
     "visibility", "opacity_ppm", "clipped", "offscreen",
 }
 _OVERLAP_ROW_KEYS = {"left", "right"}
-FASTAPI_RESPONSE_SEMANTIC_SCHEMA = "command_center_3_motion_fastapi_response_semantic.v2"
+FASTAPI_RESPONSE_SEMANTIC_SCHEMA = "command_center_3_motion_fastapi_response_semantic.v3"
 _FASTAPI_RESPONSE_SEMANTIC_KEYS = {
     "schema_version", "endpoint", "method", "status_code", "raw_body_sha256",
     "raw_body_size_bytes", "envelope_state", "envelope_ok", "error_code",
-    "data_schema_version", "data_packet_key", "ledger_count", "ledger_rows_typed",
+    "data_schema_version", "data_packet_key", "data_status", "data_cache_source",
+    "ledger_count", "ledger_rows_typed",
     "ledger_sources_allowlisted", "ledger_current_external_count",
     "ledger_current_provider_count", "ledger_current_model_count",
     "ledger_current_worker_count", "ledger_current_trade_count", "task_post_count",
-    "data_current_read_flags_valid", "historical_provenance_count",
+    "data_current_read_flags_valid", "strict_current_read_contract",
+    "strict_current_read_valid", "historical_provenance_count",
     "secret_bearing_field_count", "ledger_contract_rows",
 }
 _FASTAPI_LEDGER_CONTRACT_KEYS = {
     "api", "source", "method", "path", "external", "provider", "model",
     "worker", "trade", "task_post", "secret",
+}
+_FASTAPI_STRICT_CURRENT_READ_ENDPOINTS = {
+    "/api/desktop/preflight-cache",
+    "/api/factor-quant/cache",
+    "/api/next-session/cache",
+    "/api/worker/cache",
 }
 _FASTAPI_CACHE_CONTRACTS = {
     "/api/audit/cache": ("call_ledger_audit_cache.v1", "command_center_3_call_ledger_audit_cache", False),
@@ -221,7 +229,7 @@ _FASTAPI_CACHE_CONTRACTS = {
     "/api/bootstrap/status": ("command_center_bootstrap_runtime_mode.v1", "command_center_3_bootstrap_runtime_mode_packet", False),
     "/api/desktop/preflight-cache": ("desktop_shell_preflight_cache.v1", "command_center_3_desktop_shell_preflight_cache", False),
     "/api/factor-quant/cache": ("factor_quant_hub.v1", "command_center_factor_quant_hub_packet", False),
-    "/api/next-session/cache": ("next_session_operation_projection.v1", "command_center_next_session_projection_packet", True),
+    "/api/next-session/cache": ("next_session_projection.v1", "command_center_next_session_projection_packet", True),
     "/api/position/cache": ("position_context_cache.v1", "command_center_3_position_context_cache", False),
     "/api/candidate-radar/cache": ("candidate_radar_cache.v1", "command_center_3_candidate_radar_cache", False),
     "/api/storage": ("command_center_3_storage_overview.v1", "", False),
@@ -249,40 +257,9 @@ _FASTAPI_LEDGER_APIS: dict[str, tuple[str, ...]] = {
     "/api/audit/cache": ("local_call_ledger_audit_cache",),
     "/api/audit/user-route-qa": ("GET /api/audit/user-route-qa",),
     "/api/bootstrap/status": ("local_bootstrap_runtime_mode_cache",),
-    "/api/desktop/preflight-cache": (
-        "local_desktop_shell_preflight_cache", "local_tauri_release_manifest_contract",
-        "local_one_click_startup_summary", "local_p0_frontend_backend_connection_receipt",
-        "local_p0_ordinary_connection_rows", "local_p0_post_startup_readback_rows",
-        "local_p0_failure_diagnostic_rows", "local_p0_to_p1_ordinary_handoff_rows",
-        "local_p0_ordinary_reconnect_rows", "local_p0_launcher_check_only_rows",
-        "local_p0_ordinary_quick_action_rows", "local_p0_current_next_action_rows",
-        "local_p0_startup_30s_quick_read_rows", "local_p0_ordinary_one_screen_rows",
-        "local_command_center_3_launcher_contract", "local_tauri_production_package_readiness_receipt",
-        "local_tauri_package_durable_evidence_recipe",
-    ),
-    "/api/factor-quant/cache": (
-        "local_factor_quant_cache", "local_factor_universe_rank_zscore_dry_run",
-        "local_factor_universe_execution_readiness_receipt", "local_factor_universe_execution_activation_receipt",
-        "local_factor_universe_worker_batch_execution_recipe", "local_factor_universe_worker_batch_execution_request",
-        "local_factor_universe_worker_batch_research_receipt", "local_factor_universe_durable_evidence_recipe",
-        "local_deepseek_production_activation_receipt", "local_deepseek_provider_benchmark_execution_recipe",
-        "local_deepseek_provider_benchmark_scope_ticket", "local_deepseek_provider_benchmark_execution_request",
-        "local_deepseek_durable_evidence_recipe", "local_factor_test_storage_query_consumption",
-        "local_factor_test_local_dataset_sample_evidence", "local_factor_test_production_validation_qa_contract",
-        "local_factor_test_provider_validation_blocker_audit", "local_factor_test_provider_sample_readiness_receipt",
-        "local_factor_test_provider_sample_activation_receipt", "local_factor_test_provider_small_pool_execution_recipe",
-        "local_factor_test_provider_small_pool_execution_request",
-        "local_factor_test_provider_small_pool_forward_return_label_audit",
-        "local_factor_test_provider_small_pool_metric_validation_audit",
-        "local_factor_test_provider_small_pool_pit_bias_audit", "local_factor_test_durable_evidence_recipe",
-        "local_factor_test_production_stage_scope_manifest",
-    ),
-    "/api/next-session/cache": (
-        "local_next_session_cache", "local_next_session_browser_qa_review",
-        "local_next_session_streamlit_parity_review", "local_next_session_production_promotion_review",
-        "local_next_session_candidate_radar_p3_handoff", "local_next_session_durable_evidence_recipe",
-        "local_next_session_production_stage_scope_manifest",
-    ),
+    "/api/desktop/preflight-cache": ("local_desktop_shell_preflight_cache",),
+    "/api/factor-quant/cache": ("local_factor_quant_cache",),
+    "/api/next-session/cache": ("local_next_session_cache",),
     "/api/position/cache": ("local_position_context_cache",),
     "/api/candidate-radar/cache": (
         "local_candidate_radar_cache", "local_candidate_radar_legacy_parity_acceptance_receipt",
@@ -305,13 +282,7 @@ _FASTAPI_LEDGER_APIS: dict[str, tuple[str, ...]] = {
     "/api/data-health/cache": ("local_data_health_timeline_cache", "local_freshness_durable_evidence_recipe"),
     "/api/tasks": ("local_task_status_index",),
     "/api/tasks/catalog": ("local_task_catalog_cache",),
-    "/api/worker/cache": (
-        "local_worker_runtime_cache", "local_worker_queue_routing_contract",
-        "local_worker_production_readiness_receipt", "local_worker_production_activation_receipt",
-        "local_worker_runtime_qa_execution_recipe", "local_worker_runtime_qa_execution_request",
-        "local_worker_runtime_qa_dry_run", "local_worker_runtime_qa_execution",
-        "local_worker_runtime_durable_evidence_recipe",
-    ),
+    "/api/worker/cache": ("local_worker_runtime_cache",),
     "/api/packets": ("local_packet_registry_cache",),
     "/api/packets/command_center_etf_packet": ("local_packet_cache_read",),
     "/api/packets/command_center_margin_packet": ("local_packet_cache_read",),
@@ -876,7 +847,8 @@ def _fastapi_response_semantic_valid(entry: Mapping[str, Any]) -> bool:
         return False
     if any(type(summary.get(name)) is not bool for name in (
         "envelope_ok", "ledger_rows_typed", "ledger_sources_allowlisted",
-        "data_current_read_flags_valid",
+        "data_current_read_flags_valid", "strict_current_read_contract",
+        "strict_current_read_valid",
     )):
         return False
     state = summary.get("envelope_state")
@@ -895,6 +867,18 @@ def _fastapi_response_semantic_valid(entry: Mapping[str, Any]) -> bool:
             not expected_packet
             or summary.get("data_packet_key") == expected_packet
             or (state == "cache_missing" and purpose == "fastapi_cache_read" and endpoint.startswith("/api/packets/") and summary.get("data_packet_key") == "")
+        )
+    )
+    strict_contract_expected = endpoint in _FASTAPI_STRICT_CURRENT_READ_ENDPOINTS
+    strict_contract_valid = bool(
+        summary.get("strict_current_read_contract") is strict_contract_expected
+        and (not strict_contract_expected or summary.get("strict_current_read_valid") is True)
+        and (
+            not (strict_contract_expected and state == "cache_missing")
+            or (
+                summary.get("data_status") == "cache_missing"
+                and summary.get("data_cache_source") == "cache_missing"
+            )
         )
     )
     raw_binding_valid = bool(
@@ -958,6 +942,7 @@ def _fastapi_response_semantic_valid(entry: Mapping[str, Any]) -> bool:
         raw_binding_valid
         and state_valid
         and identity_valid
+        and strict_contract_valid
         and counters_safe
         and ledger_contract_valid
         and isinstance(digest, str)

@@ -5,26 +5,33 @@ from typing import Any
 from fastapi import APIRouter
 
 from server.api.task_response import task_envelope
-from server.schemas.packets import envelope
+from server.schemas.packets import cache_read_call_ledger, cache_read_packet, envelope
 from server.services import desktop_service
 
 
 router = APIRouter(prefix="/api/desktop")
 
 
-def _desktop_shell_preflight_envelope() -> dict:
+def _desktop_shell_preflight_envelope(route: str) -> dict:
     packet = desktop_service.read_desktop_shell_preflight_cache()
-    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+    current_ledger = cache_read_call_ledger(
+        api="local_desktop_shell_preflight_cache",
+        route=route,
+        packet=packet,
+        existing=packet.get("cache_call_ledger") or packet.get("call_ledger"),
+    )
+    response_packet = cache_read_packet(packet, cache_call_ledger=current_ledger)
+    return envelope(response_packet, call_ledger=current_ledger, warnings=packet.get("warnings"))
 
 
 @router.get("/preflight-cache")
 def get_desktop_shell_preflight_cache() -> dict:
-    return _desktop_shell_preflight_envelope()
+    return _desktop_shell_preflight_envelope("GET /api/desktop/preflight-cache")
 
 
 @router.get("/preflight")
 def get_desktop_shell_preflight_alias() -> dict:
-    return _desktop_shell_preflight_envelope()
+    return _desktop_shell_preflight_envelope("GET /api/desktop/preflight")
 
 
 @router.post("/tauri-package-artifact-review")

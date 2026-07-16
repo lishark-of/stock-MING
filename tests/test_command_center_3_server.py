@@ -28334,7 +28334,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_action"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertTrue(packet["does_not_modify_operation_zones"])
-        ledger_by_api = {row["api"]: row for row in response["call_ledger"]}
+        self.assertEqual([row["api"] for row in response["call_ledger"]], ["local_next_session_cache"])
+        ledger_by_api = {row["api"]: row for row in packet["call_ledger"]}
         self.assertIn("local_next_session_candidate_radar_p3_handoff", ledger_by_api)
         self.assertFalse(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["external"])
         self.assertFalse(ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["tushare_called"])
@@ -28500,7 +28501,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
-        ledger_by_api = {row["api"]: row for row in response["call_ledger"]}
+        self.assertEqual([row["api"] for row in response["call_ledger"]], ["local_next_session_cache"])
+        ledger_by_api = {row["api"]: row for row in packet["call_ledger"]}
         self.assertTrue(
             ledger_by_api["local_next_session_candidate_radar_p3_handoff"]["request_params_safe"][
                 "chart_is_bound_to_current_result"
@@ -59880,12 +59882,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(factor["call_ledger"][0]["call_status"], "cache_read")
         self.assertFalse(factor["call_ledger"][0]["external"])
         self.assertIn("GET /api/factor-quant/cache", factor["warnings"][0])
-        self.assertIn("local_parquet_factor_values", {item.get("api") for item in factor["call_ledger"]})
-        self.assertIn("local_factor_test_storage_query_consumption", {item.get("api") for item in factor["call_ledger"]})
-        self.assertIn("local_factor_test_local_dataset_sample_evidence", {item.get("api") for item in factor["call_ledger"]})
-        self.assertIn("local_factor_test_provider_validation_blocker_audit", {item.get("api") for item in factor["call_ledger"]})
-        self.assertIn("local_factor_test_provider_sample_readiness_receipt", {item.get("api") for item in factor["call_ledger"]})
-        self.assertIn("local_factor_test_provider_sample_activation_receipt", {item.get("api") for item in factor["call_ledger"]})
+        historical_factor_apis = {item.get("api") for item in factor["data"]["call_ledger"]}
+        self.assertIn("local_parquet_factor_values", historical_factor_apis)
+        self.assertIn("local_factor_test_storage_query_consumption", historical_factor_apis)
+        self.assertIn("local_factor_test_local_dataset_sample_evidence", historical_factor_apis)
+        self.assertIn("local_factor_test_provider_validation_blocker_audit", historical_factor_apis)
+        self.assertIn("local_factor_test_provider_sample_readiness_receipt", historical_factor_apis)
+        self.assertIn("local_factor_test_provider_sample_activation_receipt", historical_factor_apis)
         self.assertEqual(factor["data"]["factor_values_storage"]["dataset"], "factor_values")
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
         storage_query = factor["data"]["factor_tests"]["storage_query_consumption"]
@@ -59976,7 +59979,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("trade_action_isolation", validation_criteria)
         self.assertIn(
             "local_factor_test_production_validation_qa_contract",
-            {item.get("api") for item in factor["call_ledger"]},
+            {item.get("api") for item in factor["data"]["call_ledger"]},
         )
         provider_validation_blocker = factor["data"]["factor_tests"]["provider_validation_blocker_audit"]
         self.assertEqual(provider_validation_blocker["schema_version"], "factor_test_provider_validation_blocker_audit.v1")
@@ -60219,7 +60222,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             refreshed_tests["provider_small_pool_execution_request_receipt"]["acceptance_scope_hash"],
             "scope-hash-preserved",
         )
-        ledger = {row["api"]: row for row in factor["call_ledger"]}
+        ledger = {row["api"]: row for row in factor["data"]["call_ledger"]}
         self.assertEqual(
             ledger["local_factor_test_provider_small_pool_execution_request"]["call_status"],
             "factor_test_provider_small_pool_execution_request_ready_manual_provider_task_pending",
@@ -60407,7 +60410,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["production_factor_test_validation_complete"])
         self.assertIn(
             "local_factor_test_provider_small_pool_execution_recipe",
-            {item.get("api") for item in factor["call_ledger"]},
+            {item.get("api") for item in factor["data"]["call_ledger"]},
         )
         durable_recipe = factor["data"]["factor_tests"]["durable_evidence_recipe"]
         self.assertEqual(durable_recipe["schema_version"], "factor_test_durable_evidence_recipe.v1")
@@ -60493,7 +60496,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn(
             "local_factor_test_durable_evidence_recipe",
-            {item.get("api") for item in factor["call_ledger"]},
+            {item.get("api") for item in factor["data"]["call_ledger"]},
         )
         production_stage_manifest = factor["data"]["factor_tests"]["production_stage_scope_manifest"]
         self.assertEqual(
@@ -60600,7 +60603,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn(
             "local_factor_test_production_stage_scope_manifest",
-            {item.get("api") for item in factor["call_ledger"]},
+            {item.get("api") for item in factor["data"]["call_ledger"]},
         )
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(factor, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(factor, ensure_ascii=False))

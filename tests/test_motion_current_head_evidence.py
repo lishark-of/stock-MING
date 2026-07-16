@@ -167,6 +167,8 @@ def _fastapi_semantic_summary(
         "error_code": "cache_missing" if envelope_state == "cache_missing" else "",
         "data_schema_version": schema,
         "data_packet_key": packet,
+        "data_status": "cache_missing" if envelope_state == "cache_missing" else "ready",
+        "data_cache_source": "cache_missing" if envelope_state == "cache_missing" else "sqlite",
         "ledger_count": len(ledger_apis),
         "ledger_rows_typed": True,
         "ledger_sources_allowlisted": True,
@@ -177,6 +179,8 @@ def _fastapi_semantic_summary(
         "ledger_current_trade_count": 0,
         "task_post_count": 0,
         "data_current_read_flags_valid": True,
+        "strict_current_read_contract": path in motion_evidence_service._FASTAPI_STRICT_CURRENT_READ_ENDPOINTS,
+        "strict_current_read_valid": True,
         "historical_provenance_count": historical_provenance_count,
         "secret_bearing_field_count": 0,
         "ledger_contract_rows": [
@@ -215,6 +219,8 @@ def _health_semantic_summary(*, body_sha256: str, body_size_bytes: int, status_c
         "error_code": "",
         "data_schema_version": "",
         "data_packet_key": "",
+        "data_status": "healthy",
+        "data_cache_source": "local",
         "ledger_count": 1,
         "ledger_rows_typed": True,
         "ledger_sources_allowlisted": True,
@@ -225,6 +231,8 @@ def _health_semantic_summary(*, body_sha256: str, body_size_bytes: int, status_c
         "ledger_current_trade_count": 0,
         "task_post_count": 0,
         "data_current_read_flags_valid": True,
+        "strict_current_read_contract": False,
+        "strict_current_read_valid": True,
         "historical_provenance_count": 0,
         "secret_bearing_field_count": 0,
         "ledger_contract_rows": [
@@ -1156,10 +1164,8 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
         optional = _fastapi_semantic_summary(
             path="/api/next-session/cache", body_sha256="b" * 64, body_size_bytes=256,
         )
-        optional["ledger_contract_rows"] = [
-            optional["ledger_contract_rows"][0], optional["ledger_contract_rows"][-1]
-        ]
-        optional["ledger_count"] = len(optional["ledger_contract_rows"])
+        optional["ledger_contract_rows"] = [optional["ledger_contract_rows"][0]]
+        optional["ledger_count"] = 1
         optional_entry = {
             "method": "GET", "status_code": 200, "body_sha256": "b" * 64,
             "body_size_bytes": 256, "purpose": "fastapi_cache_read",
@@ -1167,9 +1173,31 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
             "response_semantic_digest": motion_evidence_service._digest(optional),
         }
         self.assertTrue(motion_evidence_service._fastapi_response_semantic_valid(optional_entry))
-        optional["ledger_contract_rows"].reverse()
+        optional["strict_current_read_valid"] = False
         optional_entry["response_semantic_digest"] = motion_evidence_service._digest(optional)
         self.assertFalse(motion_evidence_service._fastapi_response_semantic_valid(optional_entry))
+        optional["strict_current_read_valid"] = True
+        optional["ledger_contract_rows"].append(
+            {
+                **optional["ledger_contract_rows"][0],
+                "api": "local_next_session_production_stage_scope_manifest",
+            }
+        )
+        optional["ledger_count"] = 2
+        optional_entry["response_semantic_digest"] = motion_evidence_service._digest(optional)
+        self.assertFalse(motion_evidence_service._fastapi_response_semantic_valid(optional_entry))
+        missing = _fastapi_semantic_summary(
+            path="/api/next-session/cache", body_sha256="c" * 64, body_size_bytes=256,
+            envelope_state="cache_missing",
+        )
+        missing["data_status"] = "ready"
+        missing_entry = {
+            "method": "GET", "status_code": 200, "body_sha256": "c" * 64,
+            "body_size_bytes": 256, "purpose": "fastapi_cache_read",
+            "path": "/api/next-session/cache", "response_semantic_summary": missing,
+            "response_semantic_digest": motion_evidence_service._digest(missing),
+        }
+        self.assertFalse(motion_evidence_service._fastapi_response_semantic_valid(missing_entry))
         original = motion_evidence_service._FASTAPI_LEDGER_APIS.pop("/api/audit/cache")
         try:
             self.assertFalse(motion_evidence_service._fastapi_response_semantic_valid(entry))
