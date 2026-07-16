@@ -52,7 +52,17 @@ const MAX_PNG_IDAT_BYTES = 12 * 1024 * 1024;
 const MAX_PNG_DECODED_BYTES = 64 * 1024 * 1024;
 const MAX_FASTAPI_RESPONSE_BYTES = 32 * 1024 * 1024;
 const FASTAPI_RESPONSE_SEMANTIC_SCHEMA_VERSION = "command_center_3_motion_fastapi_response_semantic.v3";
-const FASTAPI_CACHE_ENDPOINT_COUNT = 19;
+const FASTAPI_CACHE_ENDPOINT_COUNT = 20;
+// /api/migration/status is a read-only progress envelope.  Its nested
+// ``safe_fields`` objects intentionally carry sanitized absence/usage metadata
+// whose names contain token/nonce/secret vocabulary, but never raw material.
+// Keep this allowlist endpoint-local; do not weaken the global secret scanner.
+const MIGRATION_SAFE_FIELDS = new Set([
+  "authorization_nonce_digest", "authorization_nonce_present", "authorization_nonce_consumed",
+  "total_tokens", "retry_tokens", "token_usage_complete", "token_budget_cost_evidence_complete",
+  "contains_secret",
+]);
+const MIGRATION_SAFE_SUMMARY_FIELDS = new Set(["requires_token_cost_redaction_review"]);
 
 const FASTAPI_CACHE_CONTRACTS = new Map([
   ["/api/audit/cache", { schema: "call_ledger_audit_cache.v1", packet: "command_center_3_call_ledger_audit_cache", ledgerApis: ["local_call_ledger_audit_cache"] }],
@@ -534,6 +544,58 @@ function safeNonSecretMetadata(key, value) {
   return false;
 }
 
+function migrationSanitizedMetadataValid(key, value) {
+  if (key === "authorization_nonce_digest") {
+    return value === null || (typeof value === "string" && SAFE_SENSITIVE_HASH_RE.test(value));
+  }
+  if (["authorization_nonce_present", "authorization_nonce_consumed", "token_usage_complete", "token_budget_cost_evidence_complete"].includes(key)) {
+    return value === null || typeof value === "boolean";
+  }
+  if (["total_tokens", "retry_tokens"].includes(key)) {
+    return value === null || (Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000_000);
+  }
+  if (key === "contains_secret") return value === null || value === false;
+  if (MIGRATION_SAFE_SUMMARY_FIELDS.has(key)) return typeof value === "boolean";
+  return false;
+}
+
+function migrationSafeFieldsValueValid(key, value) {
+  if (MIGRATION_SAFE_FIELDS.has(key)) return migrationSanitizedMetadataValid(key, value);
+  if (forbiddenSecretFieldKey(key)) return false;
+  if (value === null || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value) && value >= 0 && value <= 1_000_000_000;
+  if (typeof value === "string") return /^[A-Za-z0-9._:/ -]{1,200}$/.test(value);
+  if (Array.isArray(value)) return value.length <= 64 && value.every(item => typeof item === "string" && /^[A-Za-z0-9._:/ -]{1,120}$/.test(item));
+  return false;
+}
+
+// Remove only explicitly allowlisted sanitized metadata before the generic
+// secret scan.  Invalid values remain in the scan and therefore fail closed.
+function migrationStatusSecretScanValue(value) {
+  let invalid = false;
+  const clone = (node, path = [], inSafeFields = false) => {
+    if (Array.isArray(node)) return node.map((child, index) => clone(child, path.concat(String(index)), inSafeFields));
+    if (!node || typeof node !== "object") return node;
+    const result = {};
+    for (const [rawKey, child] of Object.entries(node)) {
+      const key = canonicalSecretKey(rawKey);
+      const safeField = inSafeFields;
+      const safeSummary = path[0] === "data" && MIGRATION_SAFE_SUMMARY_FIELDS.has(key);
+      if (safeField || safeSummary) {
+        if (safeField) {
+          if (!migrationSafeFieldsValueValid(key, child)) invalid = true;
+          if (MIGRATION_SAFE_FIELDS.has(key)) continue;
+        } else if (!migrationSanitizedMetadataValid(key, child)) invalid = true;
+        if (safeSummary) continue;
+      }
+      if (key === "safe_fields" && (!child || typeof child !== "object" || Array.isArray(child))) invalid = true;
+      result[rawKey] = clone(child, path.concat(key), key === "safe_fields");
+    }
+    return result;
+  };
+  return { value: clone(value), invalid };
+}
+
 function safeRecord(value) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -817,7 +879,8 @@ function analyzeFastApiResponse(value, { endpoint, method, statusCode, bodySha25
   }
   const strictLedgerStateValid = !contract?.strictCurrentRead || ledger.every(row =>
     safeRecord(row) && row.call_status === (cacheMissing ? "cache_missing" : "cache_read"));
-  const secretCount = secretBearingFieldCount(value);
+  const migrationScan = endpoint === "/api/migration/status" ? migrationStatusSecretScanValue(value) : { value, invalid: false };
+  const secretCount = migrationScan.invalid ? 1 : secretBearingFieldCount(migrationScan.value);
   const summary = {
     schema_version: FASTAPI_RESPONSE_SEMANTIC_SCHEMA_VERSION,
     endpoint,
@@ -1095,6 +1158,50 @@ function selfTestFastApiValidator() {
     unsafeMetadata.data[key] = value;
     reject(analyze(unsafeMetadata), label);
   }
+  const migration = structuredClone(booleanSecretPolicy);
+  migration.data = {
+    schema_version: "command_center_3_migration_status.v2",
+    packet_key: "command_center_3_migration_status",
+    status: "active_migration",
+    safe_fields: {
+      authorization_nonce_digest: null,
+      authorization_nonce_present: null,
+      authorization_nonce_consumed: null,
+      total_tokens: null,
+      retry_tokens: null,
+      token_usage_complete: null,
+      token_budget_cost_evidence_complete: null,
+      contains_secret: null,
+      selected_apis: ["trade_cal"],
+      migration_status: "ready_cache_replay",
+      numeric_budget: 0,
+      historical_external_calls_triggered: true,
+    },
+    requires_token_cost_redaction_review: true,
+  };
+  migration.call_ledger = [{ ...safeLedger(), api: "local_migration_status_cache" }];
+  assert(analyze(migration, "/api/migration/status").valid, "migration_sanitized_metadata_accepted");
+  const migrationRequiresReview = structuredClone(migration);
+  migrationRequiresReview.data.requires_token_cost_redaction_review = "true";
+  reject(analyze(migrationRequiresReview, "/api/migration/status"), "migration_review_flag_type_rejected");
+  const migrationRawDigest = structuredClone(migration);
+  migrationRawDigest.data.safe_fields.authorization_nonce_digest = "opaque-secret";
+  reject(analyze(migrationRawDigest, "/api/migration/status"), "migration_nonce_digest_raw_rejected");
+  const migrationSecretField = structuredClone(migration);
+  migrationSecretField.data.safe_fields.api_key = "opaque-secret";
+  reject(analyze(migrationSecretField, "/api/migration/status"), "migration_nested_secret_rejected");
+  const migrationContainsSecret = structuredClone(migration);
+  migrationContainsSecret.data.safe_fields.contains_secret = true;
+  reject(analyze(migrationContainsSecret, "/api/migration/status"), "migration_contains_secret_true_rejected");
+  const migrationToken = structuredClone(migration);
+  migrationToken.data.safe_fields.token = "opaque-secret";
+  reject(analyze(migrationToken, "/api/migration/status"), "migration_unknown_token_rejected");
+  const migrationArrayShape = structuredClone(migration);
+  migrationArrayShape.data.safe_fields.selected_apis = [123];
+  reject(analyze(migrationArrayShape, "/api/migration/status"), "migration_array_shape_rejected");
+  const migrationCurrentFlag = structuredClone(migration);
+  migrationCurrentFlag.data.external_calls_triggered = true;
+  reject(analyze(migrationCurrentFlag, "/api/migration/status"), "migration_current_external_flag_rejected");
   const tooDeep = safeAudit();
   let nested = tooDeep.data;
   for (let depth = 0; depth <= MAX_SECRET_SCAN_DEPTH; depth += 1) {
