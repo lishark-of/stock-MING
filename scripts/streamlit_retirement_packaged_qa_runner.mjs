@@ -1518,6 +1518,8 @@ const NATIVE_FAILURE_CODE_RULES = [
   ["native inner-size measurement", "viewport_measurement_invalid"],
   ["native inner size", "viewport_measurement_invalid"],
   ["packaged route navigation", "route_navigation_invalid"],
+  ["WebView eval dispatch failed", "observation_invalid"],
+  ["WebView eval callback", "observation_invalid"],
   ["WebView eval result", "observation_invalid"],
   ["WebView observation", "observation_invalid"],
   ["observation ", "observation_invalid"],

@@ -18,7 +18,7 @@ use std::{
     os::fd::{FromRawFd, RawFd},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
-    sync::mpsc,
+    sync::mpsc::{self, RecvTimeoutError},
     sync::OnceLock,
     thread,
     time::{Duration, Instant},
@@ -74,6 +74,74 @@ struct NativeWebviewContent {
     height_points: f64,
     width_pixels: u32,
     height_pixels: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EvalError {
+    Dispatch,
+    CallbackTimeout,
+    CallbackDisconnected,
+    ResultTooLarge,
+    ResultInvalid,
+}
+
+impl EvalError {
+    fn safe_message(self) -> &'static str {
+        match self {
+            Self::Dispatch => "WebView eval dispatch failed",
+            Self::CallbackTimeout => "WebView eval callback timed out",
+            Self::CallbackDisconnected => "WebView eval callback disconnected",
+            Self::ResultTooLarge => "WebView eval result exceeds private limit",
+            Self::ResultInvalid => "WebView eval result invalid",
+        }
+    }
+}
+
+impl From<EvalError> for String {
+    fn from(error: EvalError) -> Self {
+        error.safe_message().into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StartupEvalDecision {
+    Ready,
+    Retry,
+    Fail(EvalError),
+}
+
+fn startup_eval_decision(
+    result: Result<Value, EvalError>,
+    before_deadline: bool,
+) -> StartupEvalDecision {
+    if !before_deadline {
+        return StartupEvalDecision::Fail(EvalError::CallbackTimeout);
+    }
+    match result {
+        Ok(Value::Bool(true)) => StartupEvalDecision::Ready,
+        Ok(_) | Err(EvalError::CallbackDisconnected) => StartupEvalDecision::Retry,
+        Err(error) => StartupEvalDecision::Fail(error),
+    }
+}
+
+fn startup_attempt_deadline(now: Instant, global_deadline: Instant) -> Option<Instant> {
+    if now >= global_deadline {
+        return None;
+    }
+    Some(
+        now.checked_add(Duration::from_secs(20))
+            .unwrap_or(global_deadline)
+            .min(global_deadline),
+    )
+}
+
+fn eval_deadline_budget(now: Instant, deadline: Instant) -> Result<Duration, EvalError> {
+    let remaining = deadline.saturating_duration_since(now);
+    if remaining.is_zero() {
+        Err(EvalError::CallbackTimeout)
+    } else {
+        Ok(remaining)
+    }
 }
 
 fn fixed_path_is_direct(project_root: &Path, path: &Path, directory: bool) -> bool {
@@ -927,14 +995,22 @@ fn process_path(_pid: u32) -> Result<PathBuf, String> {
 fn wait_for_document<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(30);
     while Instant::now() < deadline {
-        if eval(
+        let Some(attempt_deadline) = startup_attempt_deadline(Instant::now(), deadline) else {
+            break;
+        };
+        let result = eval_with_deadline(
             window,
             "Boolean(window.__STOCK_MING_LTG10_QA__ && document.querySelector('#root'))",
-        )? == Value::Bool(true)
-        {
-            return Ok(());
+            attempt_deadline,
+        );
+        match startup_eval_decision(result, Instant::now() < deadline) {
+            StartupEvalDecision::Ready => return Ok(()),
+            StartupEvalDecision::Retry => {}
+            StartupEvalDecision::Fail(error) => return Err(error.into()),
         }
-        thread::sleep(Duration::from_millis(200));
+        thread::sleep(
+            Duration::from_millis(200).min(deadline.saturating_duration_since(Instant::now())),
+        );
     }
     Err("packaged QA document-start instrumentation unavailable".into())
 }
@@ -1101,25 +1177,115 @@ fn seal_audit<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Result<Value, Str
 }
 
 fn eval<R: tauri::Runtime>(window: &WebviewWindow<R>, script: &str) -> Result<Value, String> {
+    eval_with_timeout(window, script, Duration::from_secs(20)).map_err(Into::into)
+}
+
+fn eval_with_timeout<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    script: &str,
+    timeout: Duration,
+) -> Result<Value, EvalError> {
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .ok_or(EvalError::CallbackTimeout)?;
+    eval_with_deadline(window, script, deadline)
+}
+
+fn eval_with_deadline<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    script: &str,
+    deadline: Instant,
+) -> Result<Value, EvalError> {
     let (sender, receiver) = mpsc::sync_channel(1);
     window
         .eval_with_callback(script, move |value| {
             let _ = sender.send(value);
         })
-        .map_err(|error| format!("WebView eval dispatch failed: {error}"))?;
-    let raw = receiver
-        .recv_timeout(Duration::from_secs(20))
-        .map_err(|_| "WebView eval callback timed out".to_string())?;
+        .map_err(|_| EvalError::Dispatch)?;
+    let receive_budget = eval_deadline_budget(Instant::now(), deadline)?;
+    let raw = match receiver.recv_timeout(receive_budget) {
+        Ok(value) => value,
+        Err(RecvTimeoutError::Timeout) => return Err(EvalError::CallbackTimeout),
+        Err(RecvTimeoutError::Disconnected) => return Err(EvalError::CallbackDisconnected),
+    };
+    eval_deadline_budget(Instant::now(), deadline)?;
     if raw.len() > MAX_EVAL_BYTES {
-        return Err("WebView eval result exceeds private limit".into());
+        return Err(EvalError::ResultTooLarge);
     }
-    let mut value: Value = serde_json::from_str(&raw).map_err(|_| "WebView eval result invalid")?;
+    let mut value: Value = serde_json::from_str(&raw).map_err(|_| EvalError::ResultInvalid)?;
     if let Value::String(inner) = &value {
         if let Ok(decoded) = serde_json::from_str(inner) {
             value = decoded;
         }
     }
+    eval_deadline_budget(Instant::now(), deadline)?;
     Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        eval_deadline_budget, startup_attempt_deadline, startup_eval_decision, EvalError,
+        StartupEvalDecision,
+    };
+    use serde_json::Value;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn startup_eval_retries_only_not_ready_or_disconnected() {
+        assert_eq!(
+            startup_eval_decision(Ok(Value::Bool(true)), true),
+            StartupEvalDecision::Ready
+        );
+        assert_eq!(
+            startup_eval_decision(Ok(Value::Bool(false)), true),
+            StartupEvalDecision::Retry
+        );
+        assert_eq!(
+            startup_eval_decision(Err(EvalError::CallbackDisconnected), true),
+            StartupEvalDecision::Retry
+        );
+        assert_eq!(
+            startup_eval_decision(Err(EvalError::CallbackTimeout), true),
+            StartupEvalDecision::Fail(EvalError::CallbackTimeout)
+        );
+        assert_eq!(
+            startup_eval_decision(Err(EvalError::Dispatch), true),
+            StartupEvalDecision::Fail(EvalError::Dispatch)
+        );
+        assert_eq!(
+            startup_eval_decision(Ok(Value::Bool(true)), false),
+            StartupEvalDecision::Fail(EvalError::CallbackTimeout)
+        );
+    }
+
+    #[test]
+    fn startup_attempt_deadline_never_exceeds_global_budget() {
+        let now = Instant::now();
+        assert_eq!(
+            startup_attempt_deadline(now, now + Duration::from_secs(30)),
+            Some(now + Duration::from_secs(20))
+        );
+        assert_eq!(
+            startup_attempt_deadline(now, now + Duration::from_millis(375)),
+            Some(now + Duration::from_millis(375))
+        );
+        assert_eq!(startup_attempt_deadline(now, now), None);
+        assert_eq!(
+            startup_attempt_deadline(now + Duration::from_secs(10), now),
+            None
+        );
+
+        let deadline = now + Duration::from_millis(375);
+        assert_eq!(
+            eval_deadline_budget(now + Duration::from_millis(350), deadline),
+            Ok(Duration::from_millis(25))
+        );
+        assert_eq!(
+            eval_deadline_budget(deadline, deadline),
+            Err(EvalError::CallbackTimeout)
+        );
+    }
 }
 
 #[cfg(target_os = "macos")]

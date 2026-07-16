@@ -1170,6 +1170,10 @@ process.stdout.write(JSON.stringify(payload));
         self.assertIn(".mtime(0)", native)
         self.assertIn(".operating_system(255)", native)
         self.assertIn("nativeFailureCode(nativeStderr)", runner)
+        self.assertIn("startup_eval_decision", native)
+        self.assertIn("startup_attempt_deadline(Instant::now(), deadline)", native)
+        self.assertIn("Err(EvalError::CallbackDisconnected) => StartupEvalDecision::Retry", native)
+        self.assertIn('["WebView eval callback", "observation_invalid"]', runner)
         self.assertIn("Math.floor(performance.now() * 1e6)", init)
         self.assertNotIn("performance.timeOrigin + performance.now()", init)
         for forbidden in ("webdriverio", "wdio", "open_devtools", "devtools", "Safari inspector"):
@@ -1178,6 +1182,38 @@ process.stdout.write(JSON.stringify(payload));
         self.assertNotIn("window.inner_size()", native)
         self.assertNotIn("127.0.0.1", native)
         self.assertNotIn("8710", native)
+
+    def test_native_failure_classifier_covers_startup_eval_failures(self):
+        runner_path = ROOT / "scripts/streamlit_retirement_packaged_qa_runner.mjs"
+        harness = r"""
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('const NATIVE_FAILURE_CODE_RULES');
+const end = source.indexOf('\n\nfunction nativeJsonFrameLengthValid', start);
+if (start < 0 || end < 0) process.exit(10);
+const extract = source.slice(start, end);
+const classify = vm.runInNewContext(`(() => { ${extract}; return nativeFailureCode; })()`, { Buffer });
+const cases = [
+  ['ltg10 packaged QA failed closed: WebView eval callback disconnected\n', 'observation_invalid'],
+  ['ltg10 packaged QA failed closed: WebView eval callback timed out\n', 'observation_invalid'],
+  ['ltg10 packaged QA failed closed: WebView eval dispatch failed\n', 'observation_invalid'],
+  ['ltg10 packaged QA failed closed: packaged QA document-start instrumentation unavailable\n', 'document_instrumentation_unavailable'],
+  ['ltg10 packaged QA failed closed: deliberately unmapped failure\n', 'unknown'],
+];
+for (const [stderr, expected] of cases) {
+  if (classify(Buffer.from(stderr)) !== expected) process.exit(11);
+}
+"""
+        completed = subprocess.run(
+            ["node", "-e", harness, str(runner_path)],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_native_json_frame_limit_rejects_oversize_and_preserves_limit_order(self):
         runner_path = ROOT / "scripts/streamlit_retirement_packaged_qa_runner.mjs"
