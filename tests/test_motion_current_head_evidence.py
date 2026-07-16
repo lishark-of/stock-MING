@@ -764,7 +764,7 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
         self.assertIn("response_semantic_summary", source)
         self.assertIn("historical_provenance_count", source)
         self.assertIn("ledger_contract_rows", source)
-        self.assertIn("FASTAPI_CACHE_ENDPOINT_COUNT = 19", source)
+        self.assertIn("FASTAPI_CACHE_ENDPOINT_COUNT = 20", source)
         self.assertNotIn("/^(local_", source)
         self.assertIn("MAX_PNG_DECODED_BYTES", source)
         self.assertIn("maxOutputLength", source)
@@ -1147,7 +1147,7 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
                 self.assertNotIn("runner_event_mac_invalid", joined)
 
     def test_endpoint_and_ledger_contract_surfaces_are_exact_and_drift_closed(self) -> None:
-        self.assertEqual(len(motion_evidence_service._FASTAPI_CACHE_CONTRACTS), 19)
+        self.assertEqual(len(motion_evidence_service._FASTAPI_CACHE_CONTRACTS), 20)
         self.assertEqual(set(motion_evidence_service._FASTAPI_CACHE_CONTRACTS), set(motion_evidence_service._FASTAPI_LEDGER_APIS))
         summary = _fastapi_semantic_summary(
             path="/api/audit/cache",
@@ -1173,6 +1173,17 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
             "response_semantic_digest": motion_evidence_service._digest(optional),
         }
         self.assertTrue(motion_evidence_service._fastapi_response_semantic_valid(optional_entry))
+
+        migration = _fastapi_semantic_summary(
+            path="/api/migration/status", body_sha256="c" * 64, body_size_bytes=512,
+        )
+        migration_entry = {
+            "method": "GET", "status_code": 200, "body_sha256": "c" * 64,
+            "body_size_bytes": 512, "purpose": "fastapi_cache_read",
+            "response_semantic_summary": migration,
+            "response_semantic_digest": motion_evidence_service._digest(migration),
+        }
+        self.assertTrue(motion_evidence_service._fastapi_response_semantic_valid(migration_entry))
         optional["strict_current_read_valid"] = False
         optional_entry["response_semantic_digest"] = motion_evidence_service._digest(optional)
         self.assertFalse(motion_evidence_service._fastapi_response_semantic_valid(optional_entry))

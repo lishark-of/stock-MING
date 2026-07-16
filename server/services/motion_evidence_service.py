@@ -236,6 +236,7 @@ _FASTAPI_CACHE_CONTRACTS = {
     "/api/storage/catalog": ("command_center_3_storage_dataset_catalog.v1", "", False),
     "/api/storage/current-result": ("command_center_3_storage_current_result_cache.v1", "", False),
     "/api/data-health/cache": ("data_health_timeline_cache.v1", "command_center_3_data_health_timeline_cache", False),
+    "/api/migration/status": ("command_center_3_migration_status.v2", "command_center_3_migration_status", False),
     "/api/tasks": ("command_center_3_task_status_index.v1", "command_center_3_task_status_index", False),
     "/api/tasks/catalog": ("command_center_3_task_catalog.v1", "command_center_3_task_catalog", False),
     "/api/worker/cache": ("worker_runtime_cache.v1", "command_center_3_worker_runtime_cache", False),
@@ -251,8 +252,8 @@ _FASTAPI_CACHE_CONTRACTS = {
 # endpoint.  Some button-gated local review receipts are optional, so requiring
 # every allowlisted API on every read would reject a clean cache with no such
 # receipt.  The primary cache-read API is always required first.  The home route
-# currently consumes nineteen cache endpoints (an earlier review counted
-# eighteen by omitting one of the three packet-detail reads).
+# currently consumes twenty cache endpoints, including the read-only migration
+# status cache consumed by the ordinary home and health views.
 _FASTAPI_LEDGER_APIS: dict[str, tuple[str, ...]] = {
     "/api/audit/cache": ("local_call_ledger_audit_cache",),
     "/api/audit/user-route-qa": ("GET /api/audit/user-route-qa",),
@@ -280,6 +281,7 @@ _FASTAPI_LEDGER_APIS: dict[str, tuple[str, ...]] = {
     "/api/storage/catalog": ("local_storage_dataset_catalog_cache",),
     "/api/storage/current-result": ("local_storage_current_result_cache",),
     "/api/data-health/cache": ("local_data_health_timeline_cache", "local_freshness_durable_evidence_recipe"),
+    "/api/migration/status": ("local_migration_status_cache",),
     "/api/tasks": ("local_task_status_index",),
     "/api/tasks/catalog": ("local_task_catalog_cache",),
     "/api/worker/cache": ("local_worker_runtime_cache",),
@@ -289,7 +291,7 @@ _FASTAPI_LEDGER_APIS: dict[str, tuple[str, ...]] = {
     "/api/packets/command_center_margin_etf_refresh_receipt": ("local_packet_cache_read",),
 }
 _FASTAPI_HEALTH_LEDGER_APIS = ("local_health_check",)
-_FASTAPI_CACHE_ENDPOINT_COUNT = 19
+_FASTAPI_CACHE_ENDPOINT_COUNT = 20
 
 _MAX_PNG_FILE_BYTES = 16 * 1024 * 1024
 _MAX_PNG_IDAT_BYTES = 12 * 1024 * 1024

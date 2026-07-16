@@ -87,6 +87,7 @@ const FASTAPI_CACHE_CONTRACTS = new Map([
   ["/api/storage/catalog", { schema: "command_center_3_storage_dataset_catalog.v1", ledgerApis: ["local_storage_dataset_catalog_cache"] }],
   ["/api/storage/current-result", { schema: "command_center_3_storage_current_result_cache.v1", ledgerApis: ["local_storage_current_result_cache"] }],
   ["/api/data-health/cache", { schema: "data_health_timeline_cache.v1", packet: "command_center_3_data_health_timeline_cache", ledgerApis: ["local_data_health_timeline_cache", "local_freshness_durable_evidence_recipe"] }],
+  ["/api/migration/status", { schema: "command_center_3_migration_status.v2", packet: "command_center_3_migration_status", ledgerApis: ["local_migration_status_cache"] }],
   ["/api/tasks", { schema: "command_center_3_task_status_index.v1", packet: "command_center_3_task_status_index", historicalTaskSummary: true, ledgerApis: ["local_task_status_index"] }],
   ["/api/tasks/catalog", { schema: "command_center_3_task_catalog.v1", packet: "command_center_3_task_catalog", ledgerApis: ["local_task_catalog_cache"] }],
   ["/api/worker/cache", { schema: "worker_runtime_cache.v1", packet: "command_center_3_worker_runtime_cache", strictCurrentRead: true, ledgerApis: ["local_worker_runtime_cache"] }],
@@ -963,7 +964,7 @@ function selfTestFastApiValidator() {
     assert(!result.valid, label);
   };
   const safeResult = analyze(safeAudit());
-  assert(FASTAPI_CACHE_CONTRACTS.size === 19, "exact_19_endpoint_surface");
+  assert(FASTAPI_CACHE_CONTRACTS.size === 20, "exact_20_endpoint_surface");
   assert(safeResult.valid, "safe_cache_response");
   assert(canonicalJson(safeResult.summary.ledger_contract_rows) === canonicalJson([{
     api: "local_call_ledger_audit_cache", source: "/api/audit/cache", method: "GET", path: "/api/audit/cache",
