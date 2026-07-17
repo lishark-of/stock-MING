@@ -5408,7 +5408,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("不能在任务或页面里硬编码模型名", task_catalog_page)
         self.assertIn("任务记录", task_catalog_page)
         self.assertIn("任务详情轮询", task_catalog_page)
-        self.assertIn("选择任务后轮询 GET /api/tasks/{task_id}", task_catalog_page)
+        self.assertIn("选择任务后轮询 GET /api/tasks 本地索引", task_catalog_page)
         self.assertIn("<TaskStatusPanel taskId={selectedTaskId} onSuccess={refreshTasks} />", task_catalog_page)
         self.assertIn("任务状态总览", task_catalog_page)
         self.assertIn("command_center_3_task_status_index", task_catalog_page)

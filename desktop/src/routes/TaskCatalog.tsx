@@ -385,7 +385,7 @@ export default function TaskCatalog() {
         <DataLineageTable rows={taskRows} />
       </PacketCard>
 
-      <PacketCard title="任务详情轮询" subtitle="选择任务后轮询 GET /api/tasks/{task_id}；不创建任务、不外联" status={selectedTaskId ? "selected" : "empty"}>
+      <PacketCard title="任务详情轮询" subtitle="选择任务后轮询 GET /api/tasks 本地索引；不创建任务、不外联" status={selectedTaskId ? "selected" : "empty"}>
         <p>详情面板复用 TaskStatusPanel，会展示单任务 call_ledger、status_history 和本地取消入口。</p>
         <p>读取路径仍然是 FastAPI GET cache；不会调用 Tushare、DeepSeek 或 GitHub。</p>
         <div className="button-row">
