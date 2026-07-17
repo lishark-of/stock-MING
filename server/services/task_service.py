@@ -11,6 +11,7 @@ from config import DEEPSEEK_MODEL_CONFIG_KEYS
 from storage.sqlite_meta import SQLiteMetaStore
 
 from .model_strategy_service import build_deepseek_model_strategy_ref
+from .request_local_memo import memoize_request_local_read
 
 
 _TASKS: dict[str, dict[str, Any]] = {}
@@ -5201,6 +5202,7 @@ def _merge_task_statuses() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     return sorted_tasks, persistence
 
 
+@memoize_request_local_read("task_status_list")
 def list_task_statuses() -> list[dict[str, Any]]:
     tasks, _ = _merge_task_statuses()
     return tasks

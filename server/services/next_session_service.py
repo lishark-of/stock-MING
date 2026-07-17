@@ -9,6 +9,7 @@ from typing import Any
 from storage.sqlite_meta import SQLiteMetaStore
 
 from . import motion_evidence_service, packet_service
+from .request_local_memo import memoize_request_local_read
 from .task_service import create_task_record, update_task_status
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -3176,6 +3177,7 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
     }
 
 
+@memoize_request_local_read("next_session_cache")
 def read_next_session_cache() -> dict[str, Any]:
     _sync_packet_service_sqlite_path()
     packet = dict(packet_service.build_next_session_cache())

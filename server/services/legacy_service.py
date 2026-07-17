@@ -11,6 +11,7 @@ from server.services import packet_service
 from storage.sqlite_meta import SQLiteMetaStore
 
 from .task_service import create_task_record, list_task_statuses, update_task_status
+from .request_local_memo import memoize_request_local_read
 
 
 PACKET_KEY = "command_center_3_legacy_bridge_cache"
@@ -2121,6 +2122,7 @@ def run_streamlit_fallback_retirement_review_task(payload: Any = None) -> dict[s
     ) or task
 
 
+@memoize_request_local_read("legacy_bridge_cache")
 def read_legacy_bridge_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)

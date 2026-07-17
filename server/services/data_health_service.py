@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from server.services import packet_service, task_service, tushare_task_service
+from server.services.request_local_memo import memoize_request_local_read
 from storage.sqlite_meta import SQLiteMetaStore
 
 
@@ -7524,6 +7525,7 @@ def _freshness_durable_evidence_recipe(
     }
 
 
+@memoize_request_local_read("data_health_timeline_cache")
 def read_data_health_timeline_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)

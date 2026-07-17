@@ -18,6 +18,7 @@ from config import get_deepseek_auto_explain_enabled, get_deepseek_factor_explai
 from storage.sqlite_meta import SQLiteMetaStore
 
 from . import deepseek_benchmark_service, model_strategy_service, packet_service, storage_service, tushare_task_service
+from .request_local_memo import memoize_request_local_read
 from .task_service import create_task_record, create_task_stub, list_task_statuses, update_task_status
 
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
@@ -1766,6 +1767,7 @@ def _safe_float(value: Any, *, default: float = 0.0) -> float:
     return number if math.isfinite(number) else default
 
 
+@memoize_request_local_read("factor_quant_cache")
 def read_factor_quant_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_factor_quant_cache())
     now = _now_iso()

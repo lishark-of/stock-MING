@@ -5,6 +5,7 @@ from typing import Any, Mapping
 
 import config
 from server.services import packet_service, task_service, v1_closeout_service
+from server.services.request_local_memo import request_local_memo_scope
 
 
 TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE = "run_tushare_deepseek_linkage_review"
@@ -16892,6 +16893,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+@request_local_memo_scope
 def build_migration_status() -> dict[str, Any]:
     loaded_at = _now_iso()
     command_center_3_v1_local_rc = v1_closeout_service.build_v1_closeout_evaluation()

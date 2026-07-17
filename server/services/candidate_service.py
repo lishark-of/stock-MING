@@ -19,6 +19,7 @@ from config import (
 )
 from storage.sqlite_meta import SQLiteMetaStore
 from server.services import motion_evidence_service, next_session_service, packet_service, task_service, tushare_task_service, worker_service
+from server.services.request_local_memo import memoize_request_local_read
 
 
 PACKET_KEY = "command_center_3_candidate_radar_cache"
@@ -15952,6 +15953,7 @@ def _read_candidate_radar_cache_uncached() -> dict[str, Any]:
     )
 
 
+@memoize_request_local_read("candidate_radar_cache")
 def read_candidate_radar_cache() -> dict[str, Any]:
     global _CANDIDATE_CACHE_MEMO_BUILDING
     global _CANDIDATE_CACHE_MEMO_GENERATION
