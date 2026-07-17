@@ -85,6 +85,12 @@ export function shouldKeepHomeResultPending({ pendingSymbol, pendingTaskId, bind
   return binding.symbol !== symbol || binding.taskId !== taskId;
 }
 
+export function shouldClearHomePendingEdit({ pendingSymbol, currentSymbol, currentValid }) {
+  const pending = strictHomeSymbol(pendingSymbol);
+  const current = strictHomeSymbol(currentSymbol);
+  return currentValid === true && Boolean(pending && current && pending === current);
+}
+
 export function shouldShowHomeSupportingDetails({ binding, inputGateClosed }) {
   return Boolean(binding && inputGateClosed === false);
 }

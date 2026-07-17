@@ -17,6 +17,7 @@ import {
   sameOrdinaryHomeResultBinding,
   selectMatchingHomeConfirmedChain,
   selectMatchingHomeResultBinding,
+  shouldClearHomePendingEdit,
   shouldKeepHomeResultPending,
   shouldShowHomeSupportingDetails,
   strictHomeIdentity,
@@ -2635,13 +2636,20 @@ export default function CommandCenterHome() {
   useEffect(() => {
     if (!homeQuantPendingResultSymbol || !homeQuantPendingResultTaskId) return;
     if (ordinaryHomePendingResultReplay) return;
+    const currentInputStillMatchesPending = shouldClearHomePendingEdit({
+      pendingSymbol: homeQuantPendingResultSymbol,
+      currentSymbol: homeQuantSymbolValidation.normalized,
+      currentValid: homeQuantSymbolValidation.valid,
+    });
     setHomeQuantPendingResultSymbol("");
     setHomeQuantPendingResultTaskId("");
-    setHomeQuantSymbolTouched(false);
+    if (currentInputStillMatchesPending) setHomeQuantSymbolTouched(false);
   }, [
     homeQuantPendingResultSymbol,
     homeQuantPendingResultTaskId,
     ordinaryHomePendingResultReplay,
+    homeQuantSymbolValidation.normalized,
+    homeQuantSymbolValidation.valid,
   ]);
   const ordinaryHomeLocalDataSourceContract = {
     schema_version: "ordinary_home_local_data_source_contract.v1",

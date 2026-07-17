@@ -22,6 +22,7 @@ class CommandCenterHomeResultBindingRuntimeTests(unittest.TestCase):
               sameOrdinaryHomeResultBinding,
               selectMatchingHomeConfirmedChain,
               selectMatchingHomeResultBinding,
+              shouldClearHomePendingEdit,
               shouldKeepHomeResultPending,
               shouldShowHomeSupportingDetails,
               strictHomeIdentity,
@@ -151,6 +152,10 @@ class CommandCenterHomeResultBindingRuntimeTests(unittest.TestCase):
                 old_binding: shouldKeepHomeResultPending({{pendingSymbol: "600519.SH", pendingTaskId: "task-2", binding: summaryBinding}}),
                 wrong_task: shouldKeepHomeResultPending({{pendingSymbol: "000001.SZ", pendingTaskId: "task-2", binding: summaryBinding}}),
                 exact_new_binding: shouldKeepHomeResultPending({{pendingSymbol: "000001.SZ", pendingTaskId: "task-1", binding: summaryBinding}}),
+                clear_matching_edit: shouldClearHomePendingEdit({{pendingSymbol: "000001.SZ", currentSymbol: "000001.SZ", currentValid: true}}),
+                keep_changed_edit: shouldClearHomePendingEdit({{pendingSymbol: "000001.SZ", currentSymbol: "600519.SH", currentValid: true}}),
+                keep_invalid_edit: shouldClearHomePendingEdit({{pendingSymbol: "000001.SZ", currentSymbol: "", currentValid: false}}),
+                keep_cleared_edit: shouldClearHomePendingEdit({{pendingSymbol: "000001.SZ", currentSymbol: "", currentValid: false}}),
               }},
               details: {{
                 visible: shouldShowHomeSupportingDetails({{binding: summaryBinding, inputGateClosed: false}}),
@@ -234,6 +239,9 @@ class CommandCenterHomeResultBindingRuntimeTests(unittest.TestCase):
         self.assertTrue(self.result["pending"]["old_binding"])
         self.assertTrue(self.result["pending"]["wrong_task"])
         self.assertFalse(self.result["pending"]["exact_new_binding"])
+        self.assertTrue(self.result["pending"]["clear_matching_edit"])
+        for state in ("keep_changed_edit", "keep_invalid_edit", "keep_cleared_edit"):
+            self.assertFalse(self.result["pending"][state])
 
     def test_supporting_details_share_the_authoritative_input_gate(self) -> None:
         self.assertTrue(self.result["details"]["visible"])

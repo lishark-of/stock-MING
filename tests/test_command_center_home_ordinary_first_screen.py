@@ -113,7 +113,8 @@ class CommandCenterHomeOrdinaryFirstScreenTests(unittest.TestCase):
         self.assertNotIn("setHomeQuantSymbolTouched(false)", launch)
         self.assertIn("shouldKeepHomeResultPending", binding)
         self.assertIn("ordinaryHomeAuthoritativeResultBinding", binding)
-        self.assertIn("setHomeQuantSymbolTouched(false)", binding)
+        self.assertIn("shouldClearHomePendingEdit", binding)
+        self.assertIn("if (currentInputStillMatchesPending) setHomeQuantSymbolTouched(false)", binding)
 
     def test_guarded_supporting_details_hide_old_links_and_metadata(self) -> None:
         details_start = self.source.index('className="home-research-technical-details')

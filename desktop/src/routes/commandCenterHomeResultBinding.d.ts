@@ -50,6 +50,11 @@ export function shouldKeepHomeResultPending(input: {
   pendingTaskId: unknown;
   binding: OrdinaryHomeResultBinding | null;
 }): boolean;
+export function shouldClearHomePendingEdit(input: {
+  pendingSymbol: unknown;
+  currentSymbol: unknown;
+  currentValid: boolean;
+}): boolean;
 export function shouldShowHomeSupportingDetails(input: {
   binding: OrdinaryHomeResultBinding | null;
   inputGateClosed: boolean;
