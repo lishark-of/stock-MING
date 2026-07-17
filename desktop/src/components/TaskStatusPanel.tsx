@@ -65,6 +65,25 @@ function isTushareProviderLedgerRow(row: Record<string, unknown>) {
   return row.tushare_called === true || (row.external_calls_triggered === true && taskLedgerApi(row).startsWith("tushare_"));
 }
 
+function ledgerRowShowsExternalAttempt(row: Record<string, unknown>) {
+  if (
+    row.external_calls_triggered === true ||
+    row.external === true ||
+    row.tushare_called === true ||
+    row.deepseek_called === true ||
+    row.github_called === true
+  ) return true;
+  const api = taskLedgerApi(row).toLowerCase();
+  const provider = String(row.provider ?? row.provider_name ?? row.source ?? "").toLowerCase();
+  const callStatus = String(row.call_status ?? row.status ?? "").toLowerCase();
+  const blockedBeforeCall = /(?:blocked_before|not_called|not_executed|skipped|local_only)/.test(callStatus);
+  const providerIdentityObserved =
+    /(?:tushare|deepseek|github)/.test(provider) ||
+    /^(?:tushare_|deepseek_|github_)/.test(api) ||
+    /^(?:trade_cal|daily|daily_basic|moneyflow|stock_basic|index_member_all|anns_d)$/.test(api);
+  return !blockedBeforeCall && Boolean(callStatus) && providerIdentityObserved;
+}
+
 function firstNonEmptyString(...values: unknown[]) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -147,13 +166,20 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
         </div>
       );
     }
-    return <p className="panel-loading">正在读取任务状态：{taskId}</p>;
+    return <p className="panel-loading">正在读取任务状态…</p>;
   }
   const callLedger = task.call_ledger ?? [];
   const tushareProviderRows = callLedger.filter(isTushareProviderLedgerRow);
   const tushareProviderSuccessCount = tushareProviderRows.filter((row) => String(row.call_status ?? "") === "success").length;
   const taskDeepSeekCalled = task.deepseek_called === true || callLedger.some((row) => row.deepseek_called === true);
   const taskGithubCalled = task.github_called === true || callLedger.some((row) => row.github_called === true);
+  const ledgerExternalObserved = callLedger.some(ledgerRowShowsExternalAttempt);
+  const externalCallsObserved =
+    task.external_calls_triggered === true ||
+    task.tushare_called === true ||
+    task.deepseek_called === true ||
+    task.github_called === true ||
+    ledgerExternalObserved;
   const statusHistory = task.status_history ?? [];
   const cancellable = task.status === "pending" || task.status === "running";
   const taskStatusLabel = labelForStatus(task.status);
@@ -230,7 +256,9 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       回放项: "交易边界",
       当前状态: task.does_not_execute_trades === false || task.does_not_modify_strategy_action === false
         ? "阻断：任务 ledger 标记交易或 action 边界异常"
-        : "不交易、不改 strategy action",
+        : task.does_not_execute_trades === true && task.does_not_modify_strategy_action === true
+          ? "不交易、不改 strategy action"
+          : "边界待确认：旧任务未提供完整安全标记",
       用户下一步: taskGithubCalled ? "先查看审计详情里的外部调用来源" : "把结果当研究线索，不当买入指令",
       证据: "task safety flags",
       边界: "真实交易路径继续隔离；Radar candidate 不是买入指令。"
@@ -315,6 +343,24 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     { href: candidateRadarResultReplay ? CANDIDATE_CONFIRM_HREF : "#tasks", label: candidateRadarResultReplay ? "回到下一票雷达确认" : "查看任务列表", title: "回到本地入口；再次确认前不会创建任务", aria: "open local recovery entry from failed task status" },
     { href: "#packets", label: "查看 Packet", title: "打开 Packet 注册表；只读查看本地输出", aria: "open packet registry from failed task status" }
   ];
+  const taskSafetyBlocked =
+    task.does_not_execute_trades === false ||
+    task.does_not_modify_strategy_action === false;
+  const taskSafetyExplicit =
+    task.does_not_execute_trades === true &&
+    task.does_not_modify_strategy_action === true;
+  const taskBoundaryTechnicalRows = [
+    {
+      external_calls_observed: externalCallsObserved,
+      ledger_external_observed: ledgerExternalObserved,
+      task_external_calls_flag: task.external_calls_triggered ?? "unknown",
+      tushare_called: task.tushare_called ?? "unknown",
+      deepseek_called: task.deepseek_called ?? "unknown",
+      github_called: task.github_called ?? "unknown",
+      does_not_execute_trades: task.does_not_execute_trades ?? "unknown",
+      does_not_modify_strategy_action: task.does_not_modify_strategy_action ?? "unknown"
+    }
+  ];
   const taskOrdinarySummaryItems: MetricItem[] = [
     { label: "当前标的", value: taskConfirmedSymbolLabel, tone: taskConfirmedSymbol ? "good" as const : "warn" as const },
     { label: "确认任务", value: taskConfirmTaskLabel, tone: candidateRadarResultReplay ? toneForStatus(task.status) : "warn" as const },
@@ -323,22 +369,23 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     { label: "P2 写回", value: callLedgerQuickStatus, tone: callLedger.length ? "good" as const : "warn" as const },
     { label: "Tushare-first", value: tushareProviderRows.length ? `${tushareProviderSuccessCount}/${tushareProviderRows.length}` : "等待 ledger", tone: tushareProviderRows.length ? "good" as const : "warn" as const },
     { label: "P3 结果", value: candidateRadarResultReplay ? "可回放到量化/图谱" : "按输出 packet 回放", tone: task.status === "success" ? "good" as const : "warn" as const },
-    { label: "安全边界", value: "不交易、不改 action", tone: "good" as const }
+    {
+      label: "安全边界",
+      value: taskSafetyBlocked ? "边界异常" : taskSafetyExplicit ? "不交易、不改 action" : "边界待确认",
+      tone: taskSafetyBlocked ? "bad" as const : taskSafetyExplicit ? "good" as const : "warn" as const
+    }
   ];
-  const taskResultSummary = task.error_message_safe
-    ? "任务未完成，请查看技术详情。"
-    : task.status === "success"
-      ? candidateRadarResultReplay
-        ? "结果已写回，可继续查看量化推演。"
-        : "任务已完成，可打开本地结果。"
-      : task.status === "running"
-        ? `正在本地处理，已完成 ${Math.round((task.progress ?? 0) * 100)}%。`
-        : task.status === "cancelled"
-          ? "任务已取消，已保留本地状态。"
+  const taskResultSummary = task.status === "success"
+    ? candidateRadarResultReplay
+      ? "结果已写回，可继续查看量化推演。"
+      : "任务已完成，可打开本地结果。"
+    : task.status === "failed"
+      ? "任务未完成，请查看技术详情。"
+      : task.status === "cancelled"
+        ? "任务已取消，已保留本地状态。"
+        : task.status === "running"
+          ? `正在本地处理，已完成 ${Math.round((task.progress ?? 0) * 100)}%。`
           : "任务已进入队列，等待本地处理。";
-  const taskBoundaryBlocked =
-    task.does_not_execute_trades === false ||
-    task.does_not_modify_strategy_action === false;
   const primaryResultLink = showTaskFailureRecovery ? taskFailureRecoveryLinks[0] : p3ResultReplayLinks[0];
   const primaryResultLabel = showTaskFailureRecovery
     ? primaryResultLink.label
@@ -364,15 +411,17 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <progress className="task-progress" value={task.progress ?? 0} max={1} aria-label={`任务进度 ${Math.round((task.progress ?? 0) * 100)}%`} />
       <p className="task-panel__plain-result">{taskResultSummary}</p>
       <p className="task-panel__plain-boundary">
-        {taskBoundaryBlocked
+        {taskSafetyBlocked
           ? "安全边界需要复核，技术详情中保留完整记录。"
-          : task.external_calls_triggered
+          : !taskSafetyExplicit
+            ? "边界待确认：旧任务未提供完整交易隔离标记。"
+            : externalCallsObserved
             ? "安全边界：数据调用已记录；不执行交易，不修改策略。"
-            : "安全边界：只读回放，不执行交易，不修改策略。"}
+            : "安全边界：不执行交易，不修改策略；外联状态待确认。"}
       </p>
       {cancellable ? (
         <button
-          className="task-panel__primary-action"
+          className="task-panel__secondary-action task-panel__secondary-action--danger"
           title={cancelButtonTitle}
           aria-label={cancelButtonTitle}
           onClick={() =>
@@ -394,6 +443,7 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
         <summary>技术详情</summary>
         {successRefreshMessage ? <p className="panelSuccessRefresh">{successRefreshMessage}</p> : null}
         {task.warnings?.length ? <p className="risk-note">{task.warnings[0]}</p> : null}
+        {task.status === "failed" && task.error_message_safe ? <p className="risk-note">失败说明：{task.error_message_safe}</p> : null}
         <div aria-label="task status ordinary summary">
           <p className="risk-note">任务速读：普通用户先看状态、写回、Tushare-first、结果入口和安全边界；工程明细默认收起。</p>
           <p className="risk-note">当前标的：{taskConfirmedSymbolLabel}；确认任务：{taskConfirmTaskLabel}。</p>
@@ -429,7 +479,10 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
             </div>
           </div>
         ) : null}
-        <TaskBoundarySummary task={task} />
+        <DataLineageTable rows={taskBoundaryTechnicalRows} summary="边界标记与外联聚合" />
+        {taskSafetyExplicit && task.external_calls_triggered === true && (task.status === "failed" || !task.error_message_safe)
+          ? <TaskBoundarySummary task={task} />
+          : null}
         <details className="developer-audit-details" aria-label="task status audit details">
           <summary>任务审计详情</summary>
           <p>普通用户先看状态轨、当前步骤、本地回放提示和取消按钮；运行元数据、P1/P2/P3 明细、call ledger、model ledger 和状态历史默认收起。</p>

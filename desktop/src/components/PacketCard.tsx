@@ -1,4 +1,3 @@
-import StatusBadge from "./StatusBadge";
 import type { ReactNode } from "react";
 import "./ProductSurface.css";
 
@@ -12,9 +11,14 @@ export function statusTone(status?: string): StatusTone {
     /(?:^|[_\s-])not[_\s-]?(?:ok|ready|available|completed|passed|success|successful|fresh|verified)(?:$|[_\s-])/.test(value) ||
     tokens.some((token) => ["notready", "unready", "unavailable", "incomplete", "unsuccessful", "unverified"].includes(token));
   if (explicitlyNegatedPositive) return "bad";
-  if (tokens.some((token) => ["failed", "failure", "error", "blocked", "blocker", "blockers", "expired", "stale", "denied", "invalid", "missing", "rejected", "unsafe"].includes(token))) return "bad";
-  if (/(pending|partial|review|warn|fallback|degraded|not_run|not_executed)/.test(value)) return "warn";
-  if (tokens.some((token) => ["ok", "ready", "passed", "success", "fresh", "completed", "available", "verified"].includes(token))) return "good";
+  const negatedNegativePattern = /(?:^|[_\s-])(?:not|no)[_\s-]?(?:blocked|blocker|blockers|failed|failure|error|errors|missing|unsafe|stale|denied|invalid|rejected)(?:$|[_\s-])/g;
+  const explicitlyNegatedNegative = negatedNegativePattern.test(value);
+  const remainingValue = value.replace(negatedNegativePattern, " ");
+  const remainingTokens = remainingValue.split(/[^a-z0-9]+/).filter(Boolean);
+  if (remainingTokens.some((token) => ["failed", "failure", "error", "blocked", "blocker", "blockers", "expired", "stale", "denied", "invalid", "missing", "rejected", "unsafe"].includes(token))) return "bad";
+  if (/(pending|partial|review|warn|fallback|degraded|not_run|not_executed)/.test(remainingValue)) return "warn";
+  if (explicitlyNegatedNegative) return "good";
+  if (remainingTokens.some((token) => ["ok", "ready", "passed", "success", "fresh", "completed", "available", "verified"].includes(token))) return "good";
   return "neutral";
 }
 
@@ -52,7 +56,6 @@ export default function PacketCard({
         {status ? (
           <span className="packet-card__state" role="status" aria-label={`状态：${status}`} title={toneLabel(tone)}>
             <span className="packet-card__state-dot" aria-hidden="true" />
-            <span className="product-surface-sr-only"><StatusBadge label={status} tone={tone} /></span>
           </span>
         ) : null}
       </div>

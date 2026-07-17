@@ -26,7 +26,7 @@ class SharedUiNoiseReductionTests(unittest.TestCase):
 
         self.assertIn("task-panel__plain-result", visible)
         self.assertIn("task-panel__plain-boundary", visible)
-        self.assertIn("task-panel__primary-action", visible)
+        self.assertIn("task-panel__secondary-action--danger", visible)
         self.assertNotIn("任务编号：{task.task_id}", visible)
         self.assertNotIn("任务类型：{task.task_type}", visible)
         self.assertNotIn("call_ledger", visible)
@@ -37,6 +37,29 @@ class SharedUiNoiseReductionTests(unittest.TestCase):
         self.assertIn("任务类型：{task.task_type}", technical)
         self.assertIn('aria-label="task status p2 writeback quick read"', technical)
         self.assertIn('aria-label="task status p3 result replay quick read"', technical)
+
+    def test_task_panel_status_and_safety_are_fail_closed(self):
+        source = (COMPONENTS / "TaskStatusPanel.tsx").read_text(encoding="utf-8")
+
+        summary = source[source.index("const taskResultSummary") : source.index("const primaryResultLink")]
+        self.assertLess(summary.index('task.status === "failed"'), summary.index('task.status === "running"'))
+        self.assertIn('task.status === "cancelled"', summary)
+        self.assertNotIn("error_message_safe", summary)
+        self.assertIn('task.status === "failed" && task.error_message_safe', source)
+        self.assertIn('(task.status === "failed" || !task.error_message_safe)', source)
+        self.assertIn("task.does_not_execute_trades === true", source)
+        self.assertIn("task.does_not_modify_strategy_action === true", source)
+        self.assertIn("边界待确认：旧任务未提供完整交易隔离标记", source)
+        self.assertIn("ledgerExternalObserved", source)
+        self.assertIn("externalCallsObserved", source)
+        self.assertIn("taskBoundaryTechnicalRows", source)
+        self.assertIn('summary="边界标记与外联聚合"', source)
+        self.assertIn("row.external_calls_triggered === true", source)
+        self.assertIn("row.external === true", source)
+        self.assertIn("row.provider ?? row.provider_name ?? row.source", source)
+        self.assertIn("trade_cal|daily|daily_basic|moneyflow|stock_basic|index_member_all|anns_d", source)
+        self.assertIn("task-panel__secondary-action--danger", source)
+        self.assertNotIn("正在读取任务状态：{taskId}", source)
 
     def test_lineage_table_defaults_to_progressive_disclosure(self):
         source = (COMPONENTS / "DataLineageTable.tsx").read_text(encoding="utf-8")
@@ -59,16 +82,22 @@ class SharedUiNoiseReductionTests(unittest.TestCase):
         self.assertIn('role="status"', source)
         self.assertIn("aria-label={`状态：${status}`}", source)
         self.assertIn('className="packet-card__state-dot"', source)
-        self.assertIn('className="product-surface-sr-only"', source)
-        self.assertNotIn("{status ? <StatusBadge", source)
+        self.assertNotIn("StatusBadge", source)
+        self.assertNotIn("product-surface-sr-only", source)
 
     def test_packet_card_tone_parser_is_negative_first_and_token_bound(self):
         source = (COMPONENTS / "PacketCard.tsx").read_text(encoding="utf-8")
         negative = source.index("const explicitlyNegatedPositive")
-        good = source.index('tokens.some((token) => ["ok", "ready"')
+        negated_negative = source.index("const negatedNegativePattern")
+        bad = source.index('remainingTokens.some((token) => ["failed"')
+        good = source.index('remainingTokens.some((token) => ["ok", "ready"')
 
-        self.assertLess(negative, good)
+        self.assertLess(negative, negated_negative)
+        self.assertLess(negated_negative, bad)
+        self.assertLess(bad, good)
         self.assertIn("not[_\\s-]?(?:ok|ready", source)
+        self.assertIn("(?:not|no)[_\\s-]?(?:blocked|blocker|blockers", source)
+        self.assertIn('value.replace(negatedNegativePattern, " ")', source)
         for status in ("notready", "unready", "unavailable", "incomplete", "unsuccessful", "unverified"):
             self.assertIn(status, source)
 
