@@ -73,7 +73,8 @@ const FASTAPI_CACHE_CONTRACTS = new Map([
   ["/api/next-session/cache", { schema: "next_session_projection.v1", packet: "command_center_next_session_projection_packet", allowCacheMissing: true, includeMissingData: true, strictCurrentRead: true, ledgerApis: ["local_next_session_cache"] }],
   ["/api/position/cache", { schema: "position_context_cache.v1", packet: "command_center_3_position_context_cache", ledgerApis: ["local_position_context_cache"] }],
   ["/api/candidate-radar/cache", { schema: "candidate_radar_cache.v1", packet: "command_center_3_candidate_radar_cache", ledgerApis: [
-    "local_candidate_radar_cache", "local_candidate_radar_legacy_parity_acceptance_receipt",
+    "local_candidate_radar_cache", "local_candidate_radar_quick_scan",
+    "local_candidate_radar_legacy_parity_acceptance_receipt",
     "local_candidate_radar_production_activation_receipt", "local_candidate_radar_quant_projection_execution_request",
     "local_candidate_radar_provider_parity_execution_request", "local_candidate_radar_worker_execution_recipe",
     "local_candidate_radar_worker_execution_request", "local_candidate_radar_full_pool_worker_fallback_preview",
@@ -971,6 +972,22 @@ function selfTestFastApiValidator() {
     api: "local_call_ledger_audit_cache", source: "/api/audit/cache", method: "GET", path: "/api/audit/cache",
     external: false, provider: false, model: false, worker: false, trade: false, task_post: false, secret: false
   }]), "exact_normalized_ledger_contract");
+
+  const safeCandidate = safeAudit();
+  safeCandidate.data.schema_version = "candidate_radar_cache.v1";
+  safeCandidate.data.packet_key = "command_center_3_candidate_radar_cache";
+  safeCandidate.call_ledger = [
+    { ...safeLedger(), api: "local_candidate_radar_cache" },
+    { ...safeLedger(), api: "local_candidate_radar_quick_scan" },
+    { ...safeLedger(), api: "local_candidate_radar_durable_evidence_recipe" }
+  ];
+  assert(analyze(safeCandidate, "/api/candidate-radar/cache").valid,
+    "candidate_local_quick_scan_provenance_allowlisted_in_order");
+  const duplicateCandidateAttachment = structuredClone(safeCandidate);
+  duplicateCandidateAttachment.call_ledger.splice(2, 0,
+    { ...safeLedger(), api: "local_candidate_radar_durable_evidence_recipe" });
+  reject(analyze(duplicateCandidateAttachment, "/api/candidate-radar/cache"),
+    "candidate_duplicate_attachment_rejected");
 
   const extraTop = safeAudit();
   extraTop.malicious = true;

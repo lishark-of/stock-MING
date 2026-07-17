@@ -312,6 +312,38 @@ class CandidateCacheReadSafetyTests(unittest.TestCase):
         self.assertEqual(result, [{"packet_key": candidate_service.PACKET_KEY, "nested_generation": 2}])
         self.assertEqual(build_count, 2)
 
+    def test_candidate_durable_evidence_attachment_is_idempotent(self) -> None:
+        contract = {
+            "row_count": 0,
+            "durable_evidence_blocker_count": 1,
+            "local_recipe_ready": True,
+            "status": "candidate_radar_durable_evidence_recipe_ready_production_pending",
+        }
+        packet = {
+            "counts": {},
+            "policy": {},
+            "call_ledger": [
+                candidate_service._candidate_call_ledger_row(
+                    api="local_candidate_radar_cache",
+                    source_snapshot="sqlite_meta_candidate_radar_packet",
+                    row_count=1,
+                    call_status="cache_read",
+                )
+            ],
+            "warnings": [],
+        }
+        with patch.object(
+            candidate_service,
+            "_candidate_radar_durable_evidence_recipe",
+            return_value=(contract, []),
+        ):
+            once = candidate_service._attach_candidate_radar_durable_evidence_recipe(packet)
+            twice = candidate_service._attach_candidate_radar_durable_evidence_recipe(once)
+
+        apis = [row.get("api") for row in twice["call_ledger"]]
+        self.assertEqual(apis[0], "local_candidate_radar_cache")
+        self.assertEqual(apis.count("local_candidate_radar_durable_evidence_recipe"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

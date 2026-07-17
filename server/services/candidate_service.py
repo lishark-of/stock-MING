@@ -10971,7 +10971,14 @@ def _attach_candidate_radar_durable_evidence_recipe(packet: Mapping[str, Any]) -
     policy["candidate_radar_durable_evidence_recipe_calls_provider_or_model"] = False
     policy["candidate_radar_durable_evidence_recipe_is_not_production_replacement"] = True
     policy["candidate_radar_durable_evidence_requires_worker_provider_browser_model_evidence"] = True
-    ledger = _as_list(view.get("call_ledger"))
+    ledger = [
+        row
+        for row in _as_list(view.get("call_ledger"))
+        if not (
+            isinstance(row, Mapping)
+            and row.get("api") == "local_candidate_radar_durable_evidence_recipe"
+        )
+    ]
     ledger.append(
         _candidate_call_ledger_row(
             api="local_candidate_radar_durable_evidence_recipe",
