@@ -1161,6 +1161,11 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             "provider": {"provider_audit": {"provider_execution_enabled": True}},
             "model": {"model_audit": {"model_execution_enabled": True}},
             "worker": {"worker_audit": {"worker_execution_enabled": True}},
+            "account_string": {"account_audit": {"account_id": "local-account"}},
+            "provider_string": {"provider_audit": {"provider_execution_status": "enabled"}},
+            "worker_float": {"worker_audit": {"worker_execution_count": 1.0}},
+            "model_mapping": {"model_audit": {"model_execution": {"enabled": True}}},
+            "provider_list": {"provider_audit": {"provider_execution": ["enabled"]}},
         }
         for label, business_evidence in nested_claims.items():
             with self.subTest(label=label):
@@ -1174,6 +1179,18 @@ class QmtReadonlyReplayTests(unittest.TestCase):
                     blocked["error_message_safe"],
                     "canonical_candidate_packet_boundary_invalid",
                 )
+
+        self._seed_canonical_source()
+        candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
+        candidate["business_evidence"] = {
+            "trade_date": "20260715",
+            "expected_trade_date": "20260715",
+            "provider_backed": False,
+            "research_score": 1.25,
+        }
+        store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
+        accepted = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(accepted["status"], "local_export_contract_and_replay_verified")
 
     def test_canonical_pool_runtime_chart_and_ledger_bindings_fail_closed(self):
         self._use_real_canonical_validation()

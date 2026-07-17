@@ -1058,9 +1058,10 @@ def _validate_exact_safety_boundary(value: Mapping[str, Any], *, code: str) -> N
                 if key.startswith(_CANONICAL_NESTED_EXECUTION_PREFIXES) and key not in (
                     _CANONICAL_SAFETY_FIELDS | _CANONICAL_ALLOWED_HIGH_RISK_METADATA_FIELDS
                 ):
-                    if isinstance(raw_value, bool) and raw_value is not False:
-                        raise ReplayValidationError(code)
-                    if type(raw_value) is int and raw_value != 0:
+                    if not (
+                        raw_value is False
+                        or (type(raw_value) is int and raw_value == 0)
+                    ):
                         raise ReplayValidationError(code)
                 walk(raw_value)
         elif isinstance(node, (list, tuple)):
