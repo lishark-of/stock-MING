@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import os
 import time
@@ -1268,6 +1269,140 @@ def _date_text(value: Any) -> str:
     if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
         return text[:10]
     return ""
+
+
+def _strict_identity_text(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _strict_packet_yyyymmdd(value: Any) -> str:
+    text = _strict_identity_text(value)
+    if len(text) != 8 or not text.isdigit():
+        return ""
+    try:
+        parsed = _dt.datetime.strptime(text, "%Y%m%d").date()
+    except ValueError:
+        return ""
+    return text if parsed.strftime("%Y%m%d") == text else ""
+
+
+def _canonical_expected_yyyymmdd(value: Any) -> str:
+    text = _strict_identity_text(value)
+    if len(text) == 8 and text.isdigit():
+        return _strict_packet_yyyymmdd(text)
+    if len(text) != 10 or text[4:5] != "-" or text[7:8] != "-":
+        return ""
+    try:
+        parsed = _dt.date.fromisoformat(text)
+    except ValueError:
+        return ""
+    return parsed.strftime("%Y%m%d")
+
+
+def _margin_etf_focus_packet_date(packet: Mapping[str, Any]) -> str:
+    for key in ("data_date", "trade_date", "latest_data_date", "latest_trade_date"):
+        value = _strict_packet_yyyymmdd(packet.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _margin_etf_focus_status(packet: Mapping[str, Any]) -> tuple[str, str]:
+    return (
+        _strict_identity_text(packet.get("status")).lower(),
+        _strict_identity_text(packet.get("data_status") or packet.get("cache_state")).lower(),
+    )
+
+
+def _attach_margin_etf_focus_binding(
+    etf_packet: Any,
+    margin_packet: Any,
+    data_freshness: Any,
+) -> tuple[dict, dict]:
+    etf = _as_mapping(etf_packet)
+    margin = _as_mapping(margin_packet)
+    freshness = _as_mapping(data_freshness)
+    etf_date = _margin_etf_focus_packet_date(etf)
+    margin_date = _margin_etf_focus_packet_date(margin)
+    expected_date = _canonical_expected_yyyymmdd(
+        freshness.get("expected_trade_date") or freshness.get("expected_data_date")
+    )
+    etf_status, etf_data_status = _margin_etf_focus_status(etf)
+    margin_status, margin_data_status = _margin_etf_focus_status(margin)
+    current_ready = bool(
+        etf_date
+        and margin_date
+        and expected_date
+        and etf_date == margin_date == expected_date
+        and freshness.get("expected_trade_date_calendar_validated") is True
+        and _strict_identity_text(freshness.get("freshness_state")).lower() == "fresh"
+        and etf_status == "ready"
+        and etf_data_status in {"ready", "cached"}
+        and margin_status == "ready"
+        and margin_data_status in {"ready", "cached"}
+        and _strict_identity_text(margin.get("verification_status")) == "已验证"
+        and bool(_as_list(etf.get("recommended_etfs")))
+    )
+    if not current_ready:
+        return dict(etf), dict(margin)
+
+    core_etfs = []
+    for item in _as_list(etf.get("recommended_etfs"))[:3]:
+        row = _as_mapping(item)
+        core_etfs.append(
+            {
+                "code": _strict_identity_text(row.get("code") or row.get("etf_code") or row.get("ts_code")),
+                "name": _strict_identity_text(row.get("name") or row.get("etf_name") or row.get("fund_name")),
+                "reason": _strict_identity_text(row.get("reason") or row.get("evidence_chain_summary") or row.get("risk_note")),
+            }
+        )
+    canonical_result = {
+        "producer": "command_center_home_snapshot.margin_etf_focus_binding",
+        "data_date": etf_date,
+        "expected_trade_date": expected_date,
+        "etf": {
+            "status": etf_status,
+            "data_status": etf_data_status,
+            "recommended_cash_ratio": etf.get("recommended_cash_ratio"),
+            "current_margin_ratio": etf.get("current_margin_ratio"),
+            "recommended_margin_ratio": etf.get("recommended_margin_ratio"),
+            "allow_new_margin": etf.get("allow_new_margin") is True,
+            "core_etfs": core_etfs,
+        },
+        "margin": {
+            "status": margin_status,
+            "data_status": margin_data_status,
+            "verification_status": "已验证",
+            "financing_balance_yi": margin.get("financing_balance_yi"),
+            "financing_buy_yi": margin.get("financing_buy_yi"),
+            "margin_balance_yi": margin.get("margin_balance_yi"),
+        },
+    }
+    encoded = json.dumps(canonical_result, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    result_digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    binding = {
+        "producer": "command_center_home_snapshot.margin_etf_focus_binding",
+        "producer_run_id": f"home-snapshot:{result_digest[:16]}",
+        "result_version": f"margin-etf:{result_digest}",
+        "etf_packet_key": "command_center_etf_packet",
+        "margin_packet_key": "command_center_margin_packet",
+        "data_date": etf_date,
+        "expected_trade_date": expected_date,
+        "freshness_state": "fresh",
+        "calendar_validated": True,
+        "same_margin_etf_packet_date_bound": True,
+        "usable_for_risk_budget": True,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    available_cash = etf.get("available_cash")
+    if isinstance(available_cash, Number) and not isinstance(available_cash, bool):
+        binding["available_cash"] = available_cash
+    return (
+        {**etf, "margin_etf_focus_binding": dict(binding)},
+        {**margin, "margin_etf_focus_binding": dict(binding)},
+    )
 
 
 def _explicit_packet_data_date(packet: Mapping[str, Any]) -> str:
@@ -7700,6 +7835,11 @@ def build_home_action_snapshot(
         hard_risk_packet,
     )
     data_freshness = build_data_freshness(timestamp, errors, deepseek_called=deepseek_called)
+    etf_packet, margin_packet = _attach_margin_etf_focus_binding(
+        etf_packet,
+        margin_packet,
+        data_freshness,
+    )
     market_packet = _attach_current_evidence_freshness_context(market_packet, data_freshness)
     radar_packet_for_snapshot = _attach_current_evidence_freshness_context(
         radar_packet_service.build_command_center_radar_packet(

@@ -77,8 +77,20 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function normalizedDate(value: unknown) {
-  return text(value, "").replace(/[^0-9]/g, "");
+function strictString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function strictYyyyMmDd(value: unknown) {
+  const candidate = strictString(value);
+  if (!/^\d{8}$/.test(candidate)) return "";
+  const year = Number(candidate.slice(0, 4));
+  const month = Number(candidate.slice(4, 6));
+  const day = Number(candidate.slice(6, 8));
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day
+    ? candidate
+    : "";
 }
 
 function cashText(value: unknown) {
@@ -1051,13 +1063,12 @@ export default function MarginEtf() {
   const marginEtfEtfBinding = record(etfPacket.margin_etf_focus_binding ?? etfPacket.result_binding);
   const marginEtfMarginBinding = record(marginPacket.margin_etf_focus_binding ?? marginPacket.result_binding);
   const marginEtfFocusBinding = marginEtfEtfBinding;
-  const marginEtfFocusDataDate = normalizedDate(marginEtfFocusBinding.data_date);
-  const marginEtfFocusExpectedTradeDate = normalizedDate(marginEtfFocusBinding.expected_trade_date);
-  const marginEtfMarginDataDate = normalizedDate(marginEtfMarginBinding.data_date);
-  const marginEtfMarginExpectedTradeDate = normalizedDate(marginEtfMarginBinding.expected_trade_date);
-  const marginEtfFocusFreshnessState = text(
+  const marginEtfFocusDataDate = strictYyyyMmDd(marginEtfFocusBinding.data_date);
+  const marginEtfFocusExpectedTradeDate = strictYyyyMmDd(marginEtfFocusBinding.expected_trade_date);
+  const marginEtfMarginDataDate = strictYyyyMmDd(marginEtfMarginBinding.data_date);
+  const marginEtfMarginExpectedTradeDate = strictYyyyMmDd(marginEtfMarginBinding.expected_trade_date);
+  const marginEtfFocusFreshnessState = strictString(
     marginEtfFocusBinding.freshness_state ?? marginEtfFocusBinding.data_freshness_state,
-    ""
   ).toLowerCase();
   const marginEtfFocusSamePacketBound =
     (marginEtfFocusBinding.same_margin_etf_packet_date_bound === true ||
@@ -1065,28 +1076,29 @@ export default function MarginEtf() {
     (marginEtfMarginBinding.same_margin_etf_packet_date_bound === true ||
       marginEtfMarginBinding.same_packet_date_bound === true);
   const marginEtfFocusBindingsMatch =
-    text(marginEtfFocusBinding.etf_packet_key, "") === text(marginEtfMarginBinding.etf_packet_key, "") &&
-    text(marginEtfFocusBinding.margin_packet_key, "") === text(marginEtfMarginBinding.margin_packet_key, "") &&
-    text(marginEtfFocusBinding.task_id, "") === text(marginEtfMarginBinding.task_id, "") &&
-    text(marginEtfFocusBinding.result_version, "") === text(marginEtfMarginBinding.result_version, "") &&
+    strictString(marginEtfFocusBinding.etf_packet_key) === strictString(marginEtfMarginBinding.etf_packet_key) &&
+    strictString(marginEtfFocusBinding.margin_packet_key) === strictString(marginEtfMarginBinding.margin_packet_key) &&
+    strictString(marginEtfFocusBinding.producer_run_id) === strictString(marginEtfMarginBinding.producer_run_id) &&
+    strictString(marginEtfFocusBinding.result_version) === strictString(marginEtfMarginBinding.result_version) &&
     marginEtfFocusDataDate === marginEtfMarginDataDate &&
     marginEtfFocusExpectedTradeDate === marginEtfMarginExpectedTradeDate &&
-    marginEtfFocusFreshnessState === text(
+    marginEtfFocusFreshnessState === strictString(
       marginEtfMarginBinding.freshness_state ?? marginEtfMarginBinding.data_freshness_state,
-      ""
     ).toLowerCase();
   const marginEtfFocusBindingComplete =
     marginEtfFocusSamePacketBound &&
     marginEtfFocusBindingsMatch &&
-    text(marginEtfFocusBinding.etf_packet_key, "") === text(etfPacket.packet_key, "") &&
-    text(marginEtfFocusBinding.margin_packet_key, "") === text(marginPacket.packet_key, "") &&
-    text(marginEtfFocusBinding.etf_packet_key, "") === "command_center_etf_packet" &&
-    text(marginEtfFocusBinding.margin_packet_key, "") === "command_center_margin_packet" &&
-    Boolean(text(marginEtfFocusBinding.task_id, "")) &&
-    Boolean(text(marginEtfFocusBinding.result_version, "")) &&
+    strictString(marginEtfFocusBinding.etf_packet_key) === strictString(etfPacket.packet_key) &&
+    strictString(marginEtfFocusBinding.margin_packet_key) === strictString(marginPacket.packet_key) &&
+    strictString(marginEtfFocusBinding.etf_packet_key) === "command_center_etf_packet" &&
+    strictString(marginEtfFocusBinding.margin_packet_key) === "command_center_margin_packet" &&
+    Boolean(strictString(marginEtfFocusBinding.producer_run_id)) &&
+    Boolean(strictString(marginEtfFocusBinding.result_version)) &&
     Boolean(marginEtfFocusDataDate) &&
     Boolean(marginEtfFocusExpectedTradeDate);
   const marginEtfFocusCurrentEvidenceUsable =
+    !loading &&
+    !error &&
     marginEtfFocusBindingComplete &&
     marginEtfFocusBinding.usable_for_risk_budget === true &&
     marginEtfMarginBinding.usable_for_risk_budget === true &&
@@ -1126,7 +1138,7 @@ export default function MarginEtf() {
         </div>
       </div>
 
-      <main className="margin-etf-focus" aria-label="ETF 融资普通用户摘要">
+      <section className="margin-etf-focus" aria-label="ETF 融资普通用户摘要">
         <header className="margin-etf-focus__hero">
           <div>
             <span className="margin-etf-focus__eyebrow">RISK BUDGET · LOCAL READBACK</span>
@@ -1205,7 +1217,7 @@ export default function MarginEtf() {
             <a href={DATA_CAPABILITY_HREF} aria-label="复核 ETF 融资数据状态">复核数据状态 <span aria-hidden="true">↗</span></a>
           </section>
         </div>
-      </main>
+      </section>
 
       <details className="margin-etf-technical-details developer-audit-details" aria-label="ETF 融资研究与技术详情">
         <summary>研究辅助与技术详情</summary>

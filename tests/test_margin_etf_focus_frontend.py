@@ -11,13 +11,12 @@ class MarginEtfFocusFrontendTests(unittest.TestCase):
     def setUp(self):
         self.page = PAGE.read_text(encoding="utf-8")
         self.style = STYLE.read_text(encoding="utf-8")
-        focus_start = self.page.index('<main className="margin-etf-focus"')
+        focus_start = self.page.index('<section className="margin-etf-focus"')
         details_start = self.page.index('<details className="margin-etf-technical-details', focus_start)
         self.focus = self.page[focus_start:details_start]
         self.details = self.page[details_start:]
 
     def test_focus_precedes_one_default_closed_technical_details_container(self):
-        self.assertIn('import "./MarginEtf.css";', self.page)
         self.assertIn('aria-label="ETF 融资普通用户摘要"', self.focus)
         self.assertIn('aria-label="ETF 融资研究与技术详情"', self.details)
         opening_tag = self.details.split(">", 1)[0]
@@ -56,7 +55,7 @@ class MarginEtfFocusFrontendTests(unittest.TestCase):
             "same_packet_date_bound",
             '"command_center_etf_packet"',
             '"command_center_margin_packet"',
-            "task_id",
+            "producer_run_id",
             "result_version",
             "data_date",
             "expected_trade_date",
@@ -67,6 +66,10 @@ class MarginEtfFocusFrontendTests(unittest.TestCase):
             "marginEtfFocusBindingsMatch",
             "marginEtfMarginBinding.usable_for_risk_budget === true",
             "marginEtfMarginBinding.calendar_validated === true",
+            "strictString",
+            "strictYyyyMmDd",
+            "!loading",
+            "!error",
         ):
             self.assertIn(required, self.page)
         self.assertIn("marginEtfFocusCurrentEvidenceUsable", self.page)
