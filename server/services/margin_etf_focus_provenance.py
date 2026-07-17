@@ -98,7 +98,7 @@ def strict_timestamp_shanghai(value: Any) -> dt.datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=SHANGHAI)
+        return None
     return parsed.astimezone(SHANGHAI)
 
 
@@ -193,6 +193,8 @@ def build_source_projection(
     }
     ready = bool(
         target_text
+        and etf_packet.get("packet_key") == "command_center_etf_packet"
+        and margin_packet.get("packet_key") == "command_center_margin_packet"
         and etf_safety
         and margin_safety
         and etf_date
@@ -200,9 +202,9 @@ def build_source_projection(
         and etf_updated
         and margin_updated
         and strict_text(etf_packet.get("status"), limit=32).lower() == "ready"
-        and strict_text(etf_packet.get("data_status") or etf_packet.get("cache_state"), limit=32).lower() == "ready"
+        and strict_text(etf_packet.get("data_status"), limit=32).lower() == "ready"
         and strict_text(margin_packet.get("status"), limit=32).lower() == "ready"
-        and strict_text(margin_packet.get("data_status") or margin_packet.get("cache_state"), limit=32).lower() == "ready"
+        and strict_text(margin_packet.get("data_status"), limit=32).lower() == "ready"
         and strict_text(etf_packet.get("verification_status"), limit=32) == "已验证"
         and strict_text(margin_packet.get("verification_status"), limit=32) == "已验证"
         and source_labels["etf"]
