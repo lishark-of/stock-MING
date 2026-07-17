@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import config as app_config
 from server.services import audit_service, bootstrap_service, candidate_service, data_capability_service, data_health_service, deepseek_benchmark_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, tushare_task_service, v1_closeout_service, worker_service
-from server.services import migration_status_service
+from server.services import margin_etf_focus_provenance, migration_status_service
 from server.services.task_service import (
     clear_task_statuses_for_tests,
     create_task_record,
@@ -45368,17 +45368,42 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             {
                 "etf_packet": {
                     "status": "ready",
-                    "trade_date": "20260610",
-                    "recommended_etfs": [{"code": "512480.SH", "name": "半导体 ETF"}],
+                    "data_status": "ready",
+                    "data_date": "20260610",
+                    "updated_at": "2026-06-10T10:00:00+08:00",
+                    "source": "ETF local cache",
+                    "verification_status": "已验证",
+                    "recommended_cash_ratio": 22,
+                    "current_margin_ratio": 9,
+                    "recommended_margin_ratio": 10,
+                    "allow_new_margin": False,
+                    "available_cash": 128000,
+                    "recommended_etfs": [{"code": "512480.SH", "name": "半导体 ETF", "reason": "本地研究样本"}],
+                    **{field: False for field in margin_etf_focus_provenance.FALSE_SAFETY_FIELDS},
+                    **{field: True for field in margin_etf_focus_provenance.TRUE_SAFETY_FIELDS},
+                    "warnings": [],
                     "authorization": "Bearer SHOULD_DROP",
                 },
-                "margin_packet": {"status": "ready", "trade_date": "20260610", "margin_balance_yi": 12.3},
+                "margin_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "trade_date": "20260610",
+                    "updated_at": "2026-06-10T10:00:01+08:00",
+                    "source": "margin local cache",
+                    "verification_status": "已验证",
+                    "financing_balance_yi": 12.3,
+                    "financing_buy_yi": 1.2,
+                    "margin_balance_yi": 14.5,
+                    **{field: False for field in margin_etf_focus_provenance.FALSE_SAFETY_FIELDS},
+                    **{field: True for field in margin_etf_focus_provenance.TRUE_SAFETY_FIELDS},
+                    "warnings": [],
+                },
             }
         )
 
         response = self.client.post(
             "/api/market/margin-etf-local-refresh",
-            json={"source": "test", "authorization": "Bearer SHOULD_DROP"},
+            json={"source": "test", "target": "002008.SZ", "authorization": "Bearer SHOULD_DROP"},
         ).json()
 
         self.assertTrue(response["ok"])
@@ -45387,7 +45412,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(task["status"], "success")
         self.assertEqual(task["output_packet_key"], "command_center_margin_etf_refresh_receipt")
         self.assertEqual(task["payload_safe"]["requested_packet_keys"], ["command_center_etf_packet", "command_center_margin_packet"])
-        self.assertEqual(task["payload_safe"]["etf_row_count"], 1)
+        self.assertEqual(task["payload_safe"]["target"], "002008.SZ")
+        self.assertEqual(task["payload_safe"]["source_identity"], "margin_etf_local_packet_replay.v1")
+        self.assertRegex(task["payload_safe"]["source_projection_sha256"], r"^[0-9a-f]{64}$")
         self.assertIn("scope_hash", task["payload_safe"])
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
         self.assertEqual(response["call_ledger"][0]["api"], "local_margin_etf_packet_refresh")

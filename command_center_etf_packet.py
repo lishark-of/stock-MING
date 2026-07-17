@@ -503,7 +503,8 @@ def _apply_etf_packet_contract(packet: Any = None) -> dict:
         for field in (*LOCAL_READ_FALSE_SAFETY_FIELDS, *LOCAL_READ_TRUE_SAFETY_FIELDS)
         if field in payload
     }
-    explicit_warnings = payload.get("warnings") if "warnings" in payload else []
+    has_explicit_warnings = "warnings" in payload
+    explicit_warnings = payload.get("warnings")
     etfs = as_list(payload.get("recommended_etfs"))
     status = to_text(payload.get("status"), "waiting")
     data_status = to_text(payload.get("data_status") or payload.get("cache_state"), "missing")
@@ -553,11 +554,15 @@ def _apply_etf_packet_contract(packet: Any = None) -> dict:
             capability_state=payload.get("capability_state"),
         )
     )
-    payload["warnings"] = explicit_warnings
-    for field in LOCAL_READ_FALSE_SAFETY_FIELDS:
-        payload[field] = False if field == "deepseek_called" else explicit_safety.get(field, False)
-    for field in LOCAL_READ_TRUE_SAFETY_FIELDS:
-        payload[field] = explicit_safety.get(field, True)
+    if has_explicit_warnings:
+        payload["warnings"] = explicit_warnings
+    else:
+        payload.pop("warnings", None)
+    for field in (*LOCAL_READ_FALSE_SAFETY_FIELDS, *LOCAL_READ_TRUE_SAFETY_FIELDS):
+        if field in explicit_safety:
+            payload[field] = explicit_safety[field]
+        else:
+            payload.pop(field, None)
     return payload
 
 
@@ -945,7 +950,6 @@ def build_command_center_etf_packet(
                 existing.get("manual_required_text"),
                 default="融资 ETF 只读取本地配置或手动刷新结果；页面打开不会自动全量发现。",
             ),
-            "deepseek_called": False,
         }
         return _apply_etf_packet_contract(packet)
     allocation = as_mapping(state_map.get("legacy_margin_etf_allocation_result"))
@@ -1004,7 +1008,6 @@ def build_command_center_etf_packet(
                 else "暂无 ETF 配置快照；点击刷新今日基础数据只生成本地配置快照，不自动全量发现。"
             ),
         ),
-        "deepseek_called": False,
     }
     packet["allow_new_margin"] = _allow_new_margin(current_ratio, recommended_ratio, packet["risk_state"])
     packet["margin_risk_notice"] = _margin_risk_notice(current_ratio, recommended_ratio, packet["allow_new_margin"])

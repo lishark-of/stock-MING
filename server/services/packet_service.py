@@ -16,6 +16,25 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT_CACHE_PATH = PROJECT_ROOT / ".stock_ming_cache" / "command_center_latest.json"
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
+MARGIN_ETF_FOCUS_SAFETY_FIELDS = (
+    "external",
+    "external_calls_triggered",
+    "provider_or_model_calls",
+    "provider_called",
+    "model_called",
+    "worker_called",
+    "tushare_called",
+    "deepseek_called",
+    "github_called",
+    "trade_called",
+    "trading_called",
+    "broker_called",
+    "order_called",
+    "real_trading_enabled",
+    "contains_secret",
+    "does_not_execute_trades",
+    "does_not_modify_strategy_action",
+)
 
 SNAPSHOT_PACKET_ALIASES = {
     "a_share_fact_lineage_summary": "a_share_fact_lineage_summary",
@@ -120,6 +139,10 @@ def _normalize_cached_packet(packet_key: str, packet: Any, *, source: str, sourc
     payload = json_safe(packet)
     if not isinstance(payload, dict):
         payload = {"value": payload}
+    if packet_key in {"command_center_etf_packet", "command_center_margin_packet"}:
+        payload["cache_api_explicit_safety_fields"] = sorted(
+            field for field in MARGIN_ETF_FOCUS_SAFETY_FIELDS if field in payload
+        )
     payload.setdefault("packet_key", packet_key)
     payload.update(_cache_api_flags(source, source_key))
     payload.setdefault("external_calls_triggered", False)
@@ -1178,16 +1201,16 @@ def list_packets() -> dict[str, Any]:
     return index
 
 
-def read_packet(packet_key: str) -> dict[str, Any]:
-    if str(packet_key) == "command_center_factor_quant_hub_packet":
+def _read_packet_without_margin_etf_binding(packet_key: str) -> dict[str, Any]:
+    if packet_key == "command_center_factor_quant_hub_packet":
         return build_factor_quant_cache()
-    persisted = _read_persisted_packet(str(packet_key))
+    persisted = _read_persisted_packet(packet_key)
     if persisted:
         return persisted
-    cached = _read_snapshot_packet(str(packet_key))
+    cached = _read_snapshot_packet(packet_key)
     if cached:
         return cached
-    builder = PACKET_BUILDERS.get(str(packet_key))
+    builder = PACKET_BUILDERS.get(packet_key)
     if builder is None:
         return _cache_missing_packet(
             packet_key,
@@ -1195,6 +1218,32 @@ def read_packet(packet_key: str) -> dict[str, Any]:
             source_snapshot_available=bool(load_snapshot_cache()),
         )
     return builder()
+
+
+def read_packet(packet_key: str) -> dict[str, Any]:
+    packet_key_text = str(packet_key)
+    packet = _read_packet_without_margin_etf_binding(packet_key_text)
+    if packet_key_text not in {"command_center_etf_packet", "command_center_margin_packet"}:
+        return packet
+    import command_center_home_snapshot as home_snapshot
+
+    etf_packet = (
+        packet
+        if packet_key_text == "command_center_etf_packet"
+        else _read_packet_without_margin_etf_binding("command_center_etf_packet")
+    )
+    margin_packet = (
+        packet
+        if packet_key_text == "command_center_margin_packet"
+        else _read_packet_without_margin_etf_binding("command_center_margin_packet")
+    )
+    freshness = load_snapshot_cache().get("data_freshness")
+    bound_etf, bound_margin = home_snapshot._attach_margin_etf_focus_binding(
+        etf_packet,
+        margin_packet,
+        freshness,
+    )
+    return bound_etf if packet_key_text == "command_center_etf_packet" else bound_margin
 
 
 def packet_index_call_ledger(index: dict[str, Any]) -> list[dict[str, Any]]:

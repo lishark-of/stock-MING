@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime as _dt
-import hashlib
 import json
 import math
 import os
@@ -1334,98 +1333,114 @@ def _strict_margin_etf_identity(value: Any, *, limit: int = 160) -> str:
     return text if all(character in allowed for character in text) else ""
 
 
-def _strict_margin_etf_display_text(value: Any, *, limit: int = 240) -> str:
-    text = _strict_identity_text(value)
-    return text if text and len(text) <= limit and not any(ord(character) < 32 for character in text) else ""
+def _margin_etf_task_provenance(
+    *,
+    etf_packet: Mapping[str, Any],
+    margin_packet: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    from server.services import margin_etf_focus_provenance, task_service
 
-
-def _strict_margin_etf_sha256(value: Any) -> str:
-    text = _strict_identity_text(value)
-    return text if len(text) == 64 and text == text.lower() and all(character in "0123456789abcdef" for character in text) else ""
-
-
-def _strict_margin_etf_target(value: Any) -> str:
-    text = _strict_identity_text(value)
-    if len(text) != 9 or text[6:7] != "." or not text[:6].isdigit() or text[7:] not in {"SH", "SZ", "BJ"}:
-        return ""
-    return text
-
-
-def _strict_margin_etf_number(value: Any, *, minimum: float, maximum: float) -> int | float | None:
-    if isinstance(value, bool) or not isinstance(value, Number):
-        return None
-    number = float(value)
-    if not math.isfinite(number) or number < minimum or number > maximum:
-        return None
-    return int(number) if number.is_integer() else number
-
-
-def _strict_margin_etf_timestamp(value: Any) -> _dt.datetime | None:
-    text = _strict_identity_text(value)
-    if not text or "T" not in text:
-        return None
-    try:
-        return _dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def _strict_margin_etf_packet_identity(packet: Mapping[str, Any]) -> dict:
-    identity = {
-        "task_id": _strict_margin_etf_identity(packet.get("source_task_id")),
-        "scope_hash": _strict_margin_etf_sha256(packet.get("source_scope_hash")),
-        "target": _strict_margin_etf_target(packet.get("target")),
-        "source": _strict_margin_etf_identity(packet.get("source_identity")),
-        "result_version": _strict_margin_etf_identity(packet.get("source_result_version")),
+    task = task_service.read_latest_task_status_by_type(margin_etf_focus_provenance.TASK_TYPE)
+    if not isinstance(task, Mapping):
+        return {}, {}
+    payload = task.get("payload_safe")
+    ledger_rows = task.get("call_ledger")
+    if not isinstance(payload, Mapping) or not isinstance(ledger_rows, list) or len(ledger_rows) != 1:
+        return {}, {}
+    ledger = ledger_rows[0]
+    if not isinstance(ledger, Mapping):
+        return {}, {}
+    target = margin_etf_focus_provenance.strict_target(payload.get("target"))
+    source_projection = margin_etf_focus_provenance.build_source_projection(
+        etf_packet,
+        margin_packet,
+        target=target,
+    )
+    if source_projection is None:
+        return {}, {}
+    source_projection_sha256 = margin_etf_focus_provenance.canonical_digest(source_projection)
+    source_result_version = f"margin-etf-source:{source_projection_sha256}"
+    scope_material = margin_etf_focus_provenance.build_source_scope_material(
+        target=target,
+        source_projection_sha256=source_projection_sha256,
+    )
+    scope_hash = margin_etf_focus_provenance.canonical_digest(scope_material)
+    expected_payload = {
+        "source": "margin_etf_page_button",
+        "mode": "local_packet_replay",
+        "requested_packet_keys": list(margin_etf_focus_provenance.REQUESTED_PACKET_KEYS),
+        "target": target,
+        "source_identity": margin_etf_focus_provenance.SOURCE_IDENTITY,
+        "source_result_version": source_result_version,
+        "source_projection_sha256": source_projection_sha256,
+        "scope_hash": scope_hash,
+        "scope_hash_short": scope_hash[:12],
+        "degraded_reason": "",
+        "external_sources_allowed": False,
+        "provider_refresh_allowed": False,
+        "model_call_allowed": False,
+        "trade_allowed": False,
     }
-    return identity if all(identity.values()) else {}
-
-
-def _margin_etf_packet_safety_ready(packet: Mapping[str, Any]) -> bool:
-    warnings = packet.get("warnings")
-    return bool(
-        isinstance(warnings, list)
-        and not warnings
-        and all(packet.get(field) is False for field in MARGIN_ETF_FOCUS_FALSE_SAFETY_FIELDS)
-        and all(packet.get(field) is True for field in MARGIN_ETF_FOCUS_TRUE_SAFETY_FIELDS)
+    task_id = _strict_margin_etf_identity(task.get("task_id"))
+    storage_source = _strict_margin_etf_identity(task.get("storage_source"))
+    expected_ledger = {
+        "api": "local_margin_etf_packet_refresh",
+        "endpoint": margin_etf_focus_provenance.TASK_ROUTE,
+        "task_id": task_id,
+        "task_type": margin_etf_focus_provenance.TASK_TYPE,
+        "output_packet_key": margin_etf_focus_provenance.TASK_OUTPUT_PACKET_KEY,
+        "request_params_safe": expected_payload,
+        "target": target,
+        "source_identity": margin_etf_focus_provenance.SOURCE_IDENTITY,
+        "source_result_version": source_result_version,
+        "source_projection_sha256": source_projection_sha256,
+        "scope_hash": scope_hash,
+        "scope_hash_short": scope_hash[:12],
+        "row_count": len(source_projection["etf"]["recommended_etfs"]),
+        "data_date": source_projection["etf"]["data_date"],
+        "call_status": "local_packet_replay_ready",
+        "failure_mode": "",
+        "error_message_safe": "",
+        **{field: False for field in MARGIN_ETF_FOCUS_FALSE_SAFETY_FIELDS},
+        **{field: True for field in MARGIN_ETF_FOCUS_TRUE_SAFETY_FIELDS},
+    }
+    ledger_fetched_at = margin_etf_focus_provenance.canonical_timestamp_shanghai(ledger.get("local_fetched_at"))
+    ledger_without_time = {key: ledger.get(key) for key in expected_ledger}
+    ledger_keys_exact = set(ledger) == {*expected_ledger, "local_fetched_at"}
+    task_ready = bool(
+        task_id
+        and storage_source in {"memory_and_sqlite", "sqlite_meta"}
+        and task.get("task_type") == margin_etf_focus_provenance.TASK_TYPE
+        and task.get("status") == "success"
+        and task.get("progress") == 1.0
+        and task.get("current_step") == "margin_etf_local_packet_replay_ready_no_external_call"
+        and task.get("output_packet_key") == margin_etf_focus_provenance.TASK_OUTPUT_PACKET_KEY
+        and dict(payload) == expected_payload
+        and ledger_without_time == expected_ledger
+        and ledger_keys_exact
+        and ledger_fetched_at
+        and task.get("external_calls_triggered") is False
+        and task.get("tushare_called") is False
+        and task.get("deepseek_called") is False
+        and task.get("github_called") is False
+        and task.get("does_not_execute_trades") is True
+        and task.get("does_not_modify_strategy_action") is True
     )
-
-
-def _margin_etf_candidate_projection(items: Any) -> list[dict]:
-    if not isinstance(items, list) or not items:
-        return []
-    result = []
-    for item in items[:3]:
-        if not isinstance(item, Mapping):
-            return []
-        code = _strict_identity_text(item.get("code"))
-        name = _strict_identity_text(item.get("name"))
-        reason = _strict_identity_text(item.get("reason"))
-        if (
-            len(code) != 9
-            or code[6:7] != "."
-            or not code[:6].isdigit()
-            or code[7:] not in {"SH", "SZ"}
-            or not name
-            or len(name) > 120
-            or not reason
-            or len(reason) > 500
-        ):
-            return []
-        result.append({"code": code, "name": name, "reason": reason})
-    return result
-
-
-def _canonical_margin_etf_digest(value: Any) -> str:
-    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _margin_etf_focus_status(packet: Mapping[str, Any]) -> tuple[str, str]:
-    return (
-        _strict_identity_text(packet.get("status")).lower(),
-        _strict_identity_text(packet.get("data_status") or packet.get("cache_state")).lower(),
-    )
+    if not task_ready:
+        return {}, {}
+    ledger_projection = {**expected_ledger, "local_fetched_at": ledger_fetched_at}
+    source_identity = {
+        "task_id": task_id,
+        "task_type": margin_etf_focus_provenance.TASK_TYPE,
+        "scope_hash": scope_hash,
+        "target": target,
+        "source": margin_etf_focus_provenance.SOURCE_IDENTITY,
+        "result_version": source_result_version,
+        "source_projection_sha256": source_projection_sha256,
+        "ledger_sha256": margin_etf_focus_provenance.canonical_digest(ledger_projection),
+        "ledger_fetched_at": ledger_fetched_at,
+    }
+    return source_identity, source_projection
 
 
 def _attach_margin_etf_focus_binding(
@@ -1436,45 +1451,34 @@ def _attach_margin_etf_focus_binding(
     etf = _as_mapping(etf_packet)
     margin = _as_mapping(margin_packet)
     freshness = _as_mapping(data_freshness)
-    etf_date = _strict_packet_yyyymmdd(etf.get("data_date"))
-    margin_date = _strict_packet_yyyymmdd(margin.get("trade_date"))
     expected_date = _canonical_expected_yyyymmdd(freshness.get("expected_trade_date"))
-    etf_status, etf_data_status = _margin_etf_focus_status(etf)
-    margin_status, margin_data_status = _margin_etf_focus_status(margin)
-    etf_identity = _strict_margin_etf_packet_identity(etf)
-    margin_identity = _strict_margin_etf_packet_identity(margin)
-    etf_updated = _strict_margin_etf_timestamp(etf.get("updated_at"))
-    margin_updated = _strict_margin_etf_timestamp(margin.get("updated_at"))
-    snapshot_updated = _strict_margin_etf_timestamp(freshness.get("last_updated"))
-    core_etfs = _margin_etf_candidate_projection(etf.get("recommended_etfs"))
-    available_cash = _strict_margin_etf_number(etf.get("available_cash"), minimum=0, maximum=1_000_000_000_000_000)
-    recommended_cash_ratio = _strict_margin_etf_number(etf.get("recommended_cash_ratio"), minimum=0, maximum=100)
-    current_margin_ratio = _strict_margin_etf_number(etf.get("current_margin_ratio"), minimum=0, maximum=100)
-    recommended_margin_ratio = _strict_margin_etf_number(etf.get("recommended_margin_ratio"), minimum=0, maximum=100)
-    financing_balance_yi = _strict_margin_etf_number(margin.get("financing_balance_yi"), minimum=0, maximum=1_000_000_000)
-    financing_buy_yi = _strict_margin_etf_number(margin.get("financing_buy_yi"), minimum=-1_000_000_000, maximum=1_000_000_000)
-    margin_balance_yi = _strict_margin_etf_number(margin.get("margin_balance_yi"), minimum=0, maximum=1_000_000_000)
-    margin_metrics_valid = all(
-        margin.get(field) in (None, "") or value is not None
-        for field, value in (
-            ("financing_balance_yi", financing_balance_yi),
-            ("financing_buy_yi", financing_buy_yi),
-            ("margin_balance_yi", margin_balance_yi),
-        )
+    source_identity, source_projection = _margin_etf_task_provenance(
+        etf_packet=etf,
+        margin_packet=margin,
     )
-    source_labels = {
-        "etf": _strict_margin_etf_display_text(etf.get("source")),
-        "margin": _strict_margin_etf_display_text(margin.get("source")),
-    }
-    packet_dates_not_stale = bool(
+    if not source_identity or not source_projection:
+        return dict(etf), dict(margin)
+    from server.services import margin_etf_focus_provenance
+
+    etf_source = source_projection["etf"]
+    margin_source = source_projection["margin"]
+    etf_date = etf_source["data_date"]
+    margin_date = margin_source["trade_date"]
+    etf_updated = margin_etf_focus_provenance.strict_timestamp_shanghai(etf_source["updated_at"])
+    margin_updated = margin_etf_focus_provenance.strict_timestamp_shanghai(margin_source["updated_at"])
+    ledger_fetched = margin_etf_focus_provenance.strict_timestamp_shanghai(source_identity["ledger_fetched_at"])
+    snapshot_updated = margin_etf_focus_provenance.strict_timestamp_shanghai(freshness.get("last_updated"))
+    canonical_snapshot_updated = margin_etf_focus_provenance.canonical_timestamp_shanghai(freshness.get("last_updated"))
+    timestamp_order_ready = bool(
         etf_updated
         and margin_updated
+        and ledger_fetched
         and snapshot_updated
-        and expected_date
-        and etf_updated.date() >= _dt.datetime.strptime(expected_date, "%Y%m%d").date()
-        and margin_updated.date() >= _dt.datetime.strptime(expected_date, "%Y%m%d").date()
-        and etf_updated.date() <= snapshot_updated.date()
-        and margin_updated.date() <= snapshot_updated.date()
+        and max(etf_updated, margin_updated) <= ledger_fetched <= snapshot_updated
+        and all(
+            value.strftime("%Y%m%d") == expected_date
+            for value in (etf_updated, margin_updated, ledger_fetched, snapshot_updated)
+        )
     )
     current_ready = bool(
         etf_date
@@ -1483,77 +1487,60 @@ def _attach_margin_etf_focus_binding(
         and etf_date == margin_date == expected_date
         and freshness.get("expected_trade_date_calendar_validated") is True
         and _strict_identity_text(freshness.get("freshness_state")).lower() == "fresh"
-        and etf_status == "ready"
-        and etf_data_status == "ready"
-        and margin_status == "ready"
-        and margin_data_status == "ready"
-        and _strict_identity_text(etf.get("verification_status")) == "已验证"
-        and _strict_identity_text(margin.get("verification_status")) == "已验证"
-        and etf_identity
-        and etf_identity == margin_identity
-        and packet_dates_not_stale
-        and source_labels["etf"]
-        and source_labels["margin"]
-        and _margin_etf_packet_safety_ready(etf)
-        and _margin_etf_packet_safety_ready(margin)
-        and core_etfs
-        and available_cash is not None
-        and recommended_cash_ratio is not None
-        and current_margin_ratio is not None
-        and recommended_margin_ratio is not None
-        and margin_metrics_valid
-        and isinstance(etf.get("allow_new_margin"), bool)
+        and timestamp_order_ready
+        and canonical_snapshot_updated
     )
     if not current_ready:
         return dict(etf), dict(margin)
 
     projection = {
         "schema_version": MARGIN_ETF_FOCUS_PROJECTION_SCHEMA_VERSION,
-        "source_identity": etf_identity,
+        "source_identity": source_identity,
         "data_date": etf_date,
         "expected_trade_date": expected_date,
         "freshness_state": "fresh",
         "calendar_validated": True,
         "packet_updated_at": {
-            "etf": _strict_identity_text(etf.get("updated_at")),
-            "margin": _strict_identity_text(margin.get("updated_at")),
-            "snapshot": _strict_identity_text(freshness.get("last_updated")),
+            "etf": etf_source["updated_at"],
+            "margin": margin_source["updated_at"],
+            "ledger": source_identity["ledger_fetched_at"],
+            "snapshot": canonical_snapshot_updated,
         },
-        "source_labels": source_labels,
+        "source_labels": {"etf": etf_source["source"], "margin": margin_source["source"]},
         "etf": {
-            "status": etf_status,
-            "data_status": etf_data_status,
+            "status": "ready",
+            "data_status": "ready",
             "verification_status": "已验证",
-            "available_cash": available_cash,
-            "recommended_cash_ratio": recommended_cash_ratio,
-            "current_margin_ratio": current_margin_ratio,
-            "recommended_margin_ratio": recommended_margin_ratio,
-            "allow_new_margin": etf.get("allow_new_margin"),
-            "core_etfs": core_etfs,
+            "available_cash": etf_source["available_cash"],
+            "recommended_cash_ratio": etf_source["recommended_cash_ratio"],
+            "current_margin_ratio": etf_source["current_margin_ratio"],
+            "recommended_margin_ratio": etf_source["recommended_margin_ratio"],
+            "allow_new_margin": etf_source["allow_new_margin"],
+            "core_etfs": etf_source["recommended_etfs"],
         },
         "margin": {
-            "status": margin_status,
-            "data_status": margin_data_status,
+            "status": "ready",
+            "data_status": "ready",
             "verification_status": "已验证",
-            "financing_balance_yi": financing_balance_yi,
-            "financing_buy_yi": financing_buy_yi,
-            "margin_balance_yi": margin_balance_yi,
+            "financing_balance_yi": margin_source["financing_balance_yi"],
+            "financing_buy_yi": margin_source["financing_buy_yi"],
+            "margin_balance_yi": margin_source["margin_balance_yi"],
         },
     }
     safety = {
         **{field: False for field in MARGIN_ETF_FOCUS_FALSE_SAFETY_FIELDS},
         **{field: True for field in MARGIN_ETF_FOCUS_TRUE_SAFETY_FIELDS},
     }
-    projection_digest = _canonical_margin_etf_digest(projection)
+    projection_digest = margin_etf_focus_provenance.canonical_digest(projection)
     binding_material = {
         "schema_version": MARGIN_ETF_FOCUS_SCHEMA_VERSION,
         "producer": MARGIN_ETF_FOCUS_PRODUCER,
-        "source_identity": etf_identity,
+        "source_identity": source_identity,
         "safety": safety,
         "projection": projection,
         "projection_sha256": projection_digest,
     }
-    result_digest = _canonical_margin_etf_digest(binding_material)
+    result_digest = margin_etf_focus_provenance.canonical_digest(binding_material)
     binding = {
         "schema_version": MARGIN_ETF_FOCUS_SCHEMA_VERSION,
         "producer": MARGIN_ETF_FOCUS_PRODUCER,
@@ -1561,7 +1548,7 @@ def _attach_margin_etf_focus_binding(
         "result_version": f"margin-etf:{result_digest}",
         "binding_sha256": result_digest,
         "projection_sha256": projection_digest,
-        "source_identity": etf_identity,
+        "source_identity": source_identity,
         "etf_packet_key": "command_center_etf_packet",
         "margin_packet_key": "command_center_margin_packet",
         "data_date": etf_date,

@@ -369,10 +369,6 @@ def build_command_center_margin_packet(
         "trade_date": _first_text(payload.get("date"), payload.get("trade_date"), payload.get("latest_date")),
         "target": _first_text(target, existing_target),
         "ticker": _first_text(payload.get("ticker"), payload.get("ts_code"), target),
-        "source_task_id": payload.get("source_task_id"),
-        "source_scope_hash": payload.get("source_scope_hash"),
-        "source_identity": payload.get("source_identity"),
-        "source_result_version": payload.get("source_result_version"),
         "financing_balance_yi": financing_balance_yi,
         "financing_buy_yi": financing_buy_yi,
         "margin_balance_yi": margin_balance_yi,
@@ -407,7 +403,6 @@ def build_command_center_margin_packet(
         "decision_guardrail": _first_text(payload.get("decision_guardrail"), default=_decision_guardrail(status, leverage_state)),
         "risk_notes": _build_risk_notes(payload, status, leverage_state),
         "manual_required_text": "融资融券来自 Tushare margin_detail 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
-        "deepseek_called": False,
     }
     packet.update(
         build_legacy_packet_decision_contract(
@@ -419,9 +414,13 @@ def build_command_center_margin_packet(
             capability_state=capability_state,
         )
     )
-    packet["warnings"] = payload.get("warnings", [])
-    for field in LOCAL_READ_FALSE_SAFETY_FIELDS:
-        packet[field] = False if field == "deepseek_called" else payload.get(field) if field in payload else False
-    for field in LOCAL_READ_TRUE_SAFETY_FIELDS:
-        packet[field] = payload.get(field) if field in payload else True
+    if "warnings" in payload:
+        packet["warnings"] = payload.get("warnings")
+    else:
+        packet.pop("warnings", None)
+    for field in (*LOCAL_READ_FALSE_SAFETY_FIELDS, *LOCAL_READ_TRUE_SAFETY_FIELDS):
+        if field in payload:
+            packet[field] = payload[field]
+        else:
+            packet.pop(field, None)
     return packet

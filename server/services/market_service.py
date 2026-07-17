@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import datetime as _dt
-import hashlib
 import json
 from collections.abc import Mapping
 from typing import Any
 
-from server.services import packet_service, task_service
+from server.services import margin_etf_focus_provenance, packet_service, task_service
 
 
 PACKET_KEY = "command_center_3_market_context_cache"
@@ -315,53 +314,46 @@ def _packet_status(packet: Mapping[str, Any]) -> str:
     return str(packet.get("status") or packet.get("data_status") or packet.get("cache_state") or "").lower()
 
 
-def _packet_is_available(packet: Mapping[str, Any]) -> bool:
-    status = _packet_status(packet)
-    return bool(packet) and status not in {"", "cache_missing", "missing", "waiting"}
-
-
-def _local_refresh_scope_hash(scope: Mapping[str, Any]) -> str:
-    encoded = json.dumps(_json_safe(scope), ensure_ascii=False, sort_keys=True, default=str)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
 def run_margin_etf_local_refresh_task(payload: Any = None) -> dict[str, Any]:
     payload_safe = _safe_value(payload)
     payload_map = payload_safe if isinstance(payload_safe, dict) else {}
     etf_packet = packet_service.read_packet("command_center_etf_packet")
     margin_packet = packet_service.read_packet("command_center_margin_packet")
-    etf_rows = [
-        *(_as_list(etf_packet.get("recommended_etfs"))),
-        *(_as_list(etf_packet.get("actionable_etfs"))),
-        *(_as_list(etf_packet.get("watch_etfs"))),
-        *(_as_list(etf_packet.get("avoid_etfs"))),
-        *(_as_list(etf_packet.get("excluded_etfs"))),
-    ]
-    scope_material = {
-        "route": "POST /api/market/margin-etf-local-refresh",
-        "mode": "local_packet_replay",
-        "requested_packet_keys": ["command_center_etf_packet", "command_center_margin_packet"],
-        "payload": payload_map,
-        "etf_status": _packet_status(etf_packet),
-        "margin_status": _packet_status(margin_packet),
-        "etf_source_key": etf_packet.get("source_cache_key") or etf_packet.get("source_key"),
-        "margin_source_key": margin_packet.get("source_cache_key") or margin_packet.get("source_key"),
-        "etf_row_count": len(etf_rows),
-    }
-    scope_hash = _local_refresh_scope_hash(scope_material)
-    etf_available = _packet_is_available(etf_packet)
-    margin_available = _packet_is_available(margin_packet)
-    call_status = "local_packet_replay_ready" if etf_available or margin_available else "degraded_local_packets_missing"
-    failure_mode = "" if etf_available or margin_available else "local_packet_missing"
+    target = margin_etf_focus_provenance.strict_target(payload_map.get("target"))
+    source_projection = margin_etf_focus_provenance.build_source_projection(
+        etf_packet,
+        margin_packet,
+        target=target,
+    )
+    source_projection_sha256 = (
+        margin_etf_focus_provenance.canonical_digest(source_projection) if source_projection is not None else ""
+    )
+    source_result_version = (
+        f"margin-etf-source:{source_projection_sha256}" if source_projection_sha256 else ""
+    )
+    scope_material = (
+        margin_etf_focus_provenance.build_source_scope_material(
+            target=target,
+            source_projection_sha256=source_projection_sha256,
+        )
+        if target and source_projection_sha256
+        else {}
+    )
+    scope_hash = (
+        margin_etf_focus_provenance.canonical_digest(scope_material) if scope_material else ""
+    )
+    call_status = "local_packet_replay_ready" if scope_hash else "degraded_local_packet_provenance_invalid"
+    failure_mode = "" if scope_hash else "local_packet_provenance_invalid"
     task_payload = {
-        "source": payload_map.get("source") or "margin_etf_page_button",
+        "source": "margin_etf_page_button",
         "mode": "local_packet_replay",
-        "requested_packet_keys": ["command_center_etf_packet", "command_center_margin_packet"],
+        "requested_packet_keys": list(margin_etf_focus_provenance.REQUESTED_PACKET_KEYS),
+        "target": target,
+        "source_identity": margin_etf_focus_provenance.SOURCE_IDENTITY if scope_hash else "",
+        "source_result_version": source_result_version,
+        "source_projection_sha256": source_projection_sha256,
         "scope_hash": scope_hash,
         "scope_hash_short": scope_hash[:12],
-        "etf_status": scope_material["etf_status"],
-        "margin_status": scope_material["margin_status"],
-        "etf_row_count": len(etf_rows),
         "degraded_reason": failure_mode,
         "external_sources_allowed": False,
         "provider_refresh_allowed": False,
@@ -385,21 +377,38 @@ def run_margin_etf_local_refresh_task(payload: Any = None) -> dict[str, Any]:
     ledger = [
         {
             "api": "local_margin_etf_packet_refresh",
-            "endpoint": "POST /api/market/margin-etf-local-refresh",
+            "endpoint": margin_etf_focus_provenance.TASK_ROUTE,
+            "task_id": task.get("task_id"),
+            "task_type": margin_etf_focus_provenance.TASK_TYPE,
+            "output_packet_key": margin_etf_focus_provenance.TASK_OUTPUT_PACKET_KEY,
             "request_params_safe": task_payload,
+            "target": target,
+            "source_identity": task_payload["source_identity"],
+            "source_result_version": source_result_version,
+            "source_projection_sha256": source_projection_sha256,
             "scope_hash": scope_hash,
             "scope_hash_short": scope_hash[:12],
-            "row_count": len(etf_rows),
-            "data_date": etf_packet.get("trade_date") or margin_packet.get("trade_date"),
+            "row_count": len(source_projection.get("etf", {}).get("recommended_etfs", [])) if source_projection else 0,
+            "data_date": source_projection.get("etf", {}).get("data_date") if source_projection else "",
             "local_fetched_at": now,
             "call_status": call_status,
             "failure_mode": failure_mode,
-            "error_message_safe": "local ETF/margin packets missing" if failure_mode else "",
+            "error_message_safe": "local ETF/margin packet provenance invalid" if failure_mode else "",
             "external": False,
             "external_calls_triggered": False,
+            "provider_or_model_calls": False,
+            "provider_called": False,
+            "model_called": False,
+            "worker_called": False,
             "tushare_called": False,
             "deepseek_called": False,
             "github_called": False,
+            "trade_called": False,
+            "trading_called": False,
+            "broker_called": False,
+            "order_called": False,
+            "real_trading_enabled": False,
+            "contains_secret": False,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
         }
