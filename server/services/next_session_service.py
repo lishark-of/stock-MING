@@ -3177,6 +3177,27 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
     }
 
 
+_NEXT_SESSION_READ_NOTICES = (
+    "GET /api/next-session/cache 只读取本地次日图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+    "next_session_replacement_activation_receipt 只是替代验收路径，不运行浏览器、不证明生产替代完成。",
+    "next_session_streamlit_parity_review 只审查本地同包 no-feature-loss 证据；不会打开 Streamlit、不会运行浏览器、不会移除 fallback、不会证明生产替代完成。",
+    "next_session_durable_evidence_recipe 只固定 ECharts 生产替代前的 durable evidence 清单；不会打开浏览器、调用 provider/model、执行交易或证明生产替代完成。",
+    "next_session_production_promotion_review 只审查本地 promotion 阻断状态；不会调用 provider/model/GitHub、不会移除 fallback、不会证明生产替代完成。",
+    "next_session_production_stage_scope_manifest 只把本地阶段证据和剩余阻断暴露到 cache/UI；不会运行浏览器、不会调用 provider/model/GitHub、不会证明生产替代完成。",
+)
+
+
+def _with_next_session_read_notices(packet: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = dict(packet)
+    normalized["warnings"] = [str(item) for item in _as_list(packet.get("warnings"))]
+    notices = [str(item) for item in _as_list(packet.get("notices"))]
+    for notice in _NEXT_SESSION_READ_NOTICES:
+        if notice not in notices:
+            notices.append(notice)
+    normalized["notices"] = notices
+    return normalized
+
+
 @memoize_request_local_read("next_session_cache")
 def read_next_session_cache() -> dict[str, Any]:
     _sync_packet_service_sqlite_path()
@@ -3506,19 +3527,7 @@ def read_next_session_cache() -> dict[str, Any]:
     packet.setdefault("does_not_modify_action", True)
     packet.setdefault("does_not_modify_strategy_action", True)
     packet.setdefault("does_not_modify_operation_zones", True)
-    warnings = [str(item) for item in _as_list(packet.get("warnings"))]
-    for warning in [
-        "GET /api/next-session/cache 只读取本地次日图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
-        " next_session_replacement_activation_receipt 只是替代验收路径，不运行浏览器、不证明生产替代完成。",
-        "next_session_streamlit_parity_review 只审查本地同包 no-feature-loss 证据；不会打开 Streamlit、不会运行浏览器、不会移除 fallback、不会证明生产替代完成。",
-        "next_session_durable_evidence_recipe 只固定 ECharts 生产替代前的 durable evidence 清单；不会打开浏览器、调用 provider/model、执行交易或证明生产替代完成。",
-        "next_session_production_promotion_review 只审查本地 promotion 阻断状态；不会调用 provider/model/GitHub、不会移除 fallback、不会证明生产替代完成。",
-        "next_session_production_stage_scope_manifest 只把本地阶段证据和剩余阻断暴露到 cache/UI；不会运行浏览器、不会调用 provider/model/GitHub、不会证明生产替代完成。",
-    ]:
-        if warning not in warnings:
-            warnings.append(warning)
-    packet["warnings"] = warnings
-    return packet
+    return _with_next_session_read_notices(packet)
 
 
 def _next_session_browser_qa_review_call_ledger(review_contract: Mapping[str, Any], now: str) -> list[dict[str, Any]]:
@@ -4288,6 +4297,21 @@ def _apply_candidate_radar_v05_lineage(packet: dict[str, Any]) -> dict[str, Any]
     normalized["candidate_radar_v05_data_date"] = data_date
     normalized["candidate_radar_v05_freshness_state"] = dict(freshness_state)
     normalized["candidate_radar_v05_readback_authoritative"] = True
+    chart_payload = _as_dict(packet.get("chart_payload"))
+    if chart_payload:
+        chart_payload = dict(chart_payload)
+        chart_payload["symbol"] = symbol
+        chart_payload["source_task_id"] = task_id
+        chart_payload["result_version"] = result_version
+        chart_payload["candidate_scope_hash"] = _safe_text(
+            lineage.get("candidate_scope_hash") or "", limit=128
+        )
+        chart_payload["data_date"] = data_date
+        chart_payload["candidate_radar_v05_lineage_status"] = "same_packet_lineage_ready"
+        normalized["chart_payload"] = chart_payload
+        chart_summary = dict(_as_dict(normalized.get("chart_summary")))
+        chart_summary["symbol"] = symbol
+        normalized["chart_summary"] = chart_summary
     # The compatibility P3 handoff can still point at an older searched symbol
     # and provider task.  Keep the handoff envelope itself on the same v0.5
     # lineage so the ordinary replay cannot mix old symbol/date/provider facts

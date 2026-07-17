@@ -547,6 +547,7 @@ def _next_session_chart_summary(payload: dict[str, Any]) -> dict[str, Any]:
     has_drawable_data = bool((payload.get("historical_points") or []) or (payload.get("scenario_series") or []))
     return {
         "status": payload.get("status") or ("ready" if has_drawable_data else "missing"),
+        "symbol": payload.get("symbol") or payload.get("ts_code") or payload.get("confirmed_symbol"),
         "renderer": contract.get("renderer") or "ECharts",
         "source_packet": contract.get("source_packet") or payload.get("source_packet"),
         "is_exact_next_session_packet": bool(payload.get("is_exact_next_session_packet")),
@@ -582,6 +583,7 @@ def _attach_next_session_chart_contract(payload: dict[str, Any], source_packet: 
     payload.setdefault("reference_lines", [])
     payload.setdefault("operation_zones", [])
     payload.setdefault("warnings", [])
+    payload.setdefault("notices", [])
     if source_packet and not payload.get("source_packet"):
         payload["source_packet"] = source_packet
     if "y_axis_range" not in payload:
@@ -768,6 +770,7 @@ def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
     payload = {
         "status": "ready",
         "source_packet": next_session_projection.PACKET_KEY,
+        "symbol": source.get("symbol") or source.get("ts_code") or source.get("confirmed_symbol"),
         "is_exact_next_session_packet": True,
         "uses_real_daily_close": bool(model.get("uses_real_daily_close") or _summary_of_packet(source).get("available")),
         "historical_source_label": "command_center_next_session_projection_packet.chart_render_model",
@@ -795,7 +798,8 @@ def _exact_next_session_chart_payload(packet: Any) -> dict[str, Any]:
         ],
         "reference_lines": _exact_reference_lines_from_model(model),
         "operation_zones": _operation_zone_overlays(model.get("operation_zone_overlays") or model.get("operation_zones") or source.get("operation_zones")),
-        "warnings": ["图表只读展示，不修改 strategy action、价格、持仓或 operation_zones。"],
+        "warnings": [],
+        "notices": ["图表只读展示，不修改研究结论、价格、持仓或参考区。"],
     }
     payload["y_axis_range"] = model.get("y_axis_range") or _chart_y_axis_range(payload)
     return _attach_next_session_chart_contract(payload)

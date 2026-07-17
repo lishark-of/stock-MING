@@ -4974,6 +4974,7 @@ def _candidate_v05_attach_next_session_lineage(
     next_packet["candidate_scope_hash"] = scope_hash
     chart_payload = _as_dict(next_packet.get("chart_payload"))
     if chart_payload:
+        chart_payload["symbol"] = symbol
         chart_payload["source_task_id"] = task_id
         chart_payload["result_version"] = result_version
         chart_payload["data_date"] = data_date

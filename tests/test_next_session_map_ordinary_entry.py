@@ -19,7 +19,8 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("chart_ready_for_confirmed_symbol: false", self.page)
         self.assertIn("chart_stale_for_confirmed_symbol: chartStaleForConfirmedSymbol", self.page)
         self.assertIn('status: chartStaleForConfirmedSymbol ? "stale_for_latest_confirmed_symbol" : rawChartSummary.status', self.page)
-        self.assertIn("<NextSessionChart payload={chartPayload} />", self.page)
+        self.assertIn("const ordinaryNextSessionChartPayload = ordinaryNextSessionChartReady ? chartPayload : undefined;", self.page)
+        self.assertIn("<NextSessionChart payload={ordinaryNextSessionChartPayload} ordinary />", self.page)
 
     def test_next_session_has_three_step_ordinary_result_replay_before_audit(self):
         summary_start = self.page.index('title="普通用户次日图谱摘要"')

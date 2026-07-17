@@ -183,7 +183,13 @@ function lineStyleLabel(type: "solid" | "dashed" | "dotted"): string {
   return "虚线";
 }
 
-export default function NextSessionChart({ payload }: { payload: ChartPayload | null | undefined }) {
+export default function NextSessionChart({
+  payload,
+  ordinary = false
+}: {
+  payload: ChartPayload | null | undefined;
+  ordinary?: boolean;
+}) {
   const [selectedInsight, setSelectedInsight] = useState<SelectedInsight | null>(null);
   const reducedMotion = useReducedMotionPreference();
   const historicalPoints = payload?.historical_points ?? [];
@@ -192,12 +198,13 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
   const referenceLines = payload?.reference_lines ?? [];
   const operationZones = payload?.operation_zones ?? [];
   const contract = payload?.chart_contract;
+  const historicalSeriesName = ordinary ? "近期走势" : "历史 close";
   const pointMeta = useMemo(() => {
     const map = new Map<string, PointMeta>();
     historicalPoints.forEach((point) => {
       if (!point.x) return;
-      map.set(metaKey("历史 close", point.x), {
-        seriesName: "历史 close",
+      map.set(metaKey(historicalSeriesName, point.x), {
+        seriesName: historicalSeriesName,
         x: point.x,
         source: point.source ?? payload?.historical_source_label ?? "GET /api/next-session/cache.chart_payload.historical_points",
         triggerCondition: point.trigger_condition ?? "历史段只作为图谱坐标，不触发交易动作。",
@@ -220,7 +227,7 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
       });
     });
     return map;
-  }, [historicalPoints, payload?.future_source_label, payload?.historical_source_label, payload?.uses_real_daily_close, scenarioSeries]);
+  }, [historicalPoints, historicalSeriesName, payload?.future_source_label, payload?.historical_source_label, payload?.uses_real_daily_close, scenarioSeries]);
 
   if (!payload || payload.status === "missing" || (!historical.length && !scenarioSeries.length)) {
     return (
@@ -366,7 +373,7 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
 
   const series: SeriesOption[] = [
     {
-      name: "历史 close",
+      name: historicalSeriesName,
       type: "line",
       smooth: true,
       symbolSize: 6,
@@ -418,17 +425,17 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
   return (
     <>
       <div className="chart-refresh-frame" data-chart-state={chartMotionState}>
-        <EChartPanel option={option} onChartClick={handleChartClick} />
+        <EChartPanel option={option} onChartClick={ordinary ? undefined : handleChartClick} />
       </div>
-      <ChartSafetyStrip
+      {!ordinary ? <ChartSafetyStrip
         contract={contract}
         source={payload.source_packet}
         extraItems={[
           { label: "精确图谱", value: payload.is_exact_next_session_packet === true ? "是" : "否" },
           { label: "真实 close", value: payload.uses_real_daily_close === true ? "是" : "待验证" }
         ]}
-      />
-      {referenceLegend.length || operationLegend.length ? (
+      /> : null}
+      {!ordinary && (referenceLegend.length || operationLegend.length) ? (
         <div className="chart-legend-grid">
           <div className="chart-legend-block">
             <strong>参考线图例</strong>
@@ -466,15 +473,15 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
           </div>
         </div>
       ) : null}
-      <div className="chart-interaction-notes">
+      {!ordinary ? <div className="chart-interaction-notes">
         <strong>图谱交互说明</strong>
         <ul>
           <li>先按图表路径、参考线、操作区、缺少证据复核；hover 显示价位来源、触发条件和纪律说明。</li>
           <li>点击情景路径只展开触发条件，不生成交易建议。</li>
           <li>操作区为后端 cache 投影，前端只读渲染，不改 operation_zones。</li>
         </ul>
-      </div>
-      {selectedInsight ? (
+      </div> : null}
+      {!ordinary && selectedInsight ? (
         <div className="chart-selected-insight">
           <strong>{selectedInsight.title}</strong>
           <p>{selectedInsight.detail}</p>
@@ -482,7 +489,7 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
           <small>边界：{selectedInsight.guardrail}</small>
         </div>
       ) : null}
-      {payload.warnings?.length ? <p className="risk-note">{payload.warnings[0]}</p> : null}
+      {!ordinary && payload.warnings?.length ? <p className="risk-note">{payload.warnings[0]}</p> : null}
     </>
   );
 }

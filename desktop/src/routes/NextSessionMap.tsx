@@ -10,6 +10,8 @@ import RouteCacheLoadingOverlay from "../components/RouteCacheLoadingBoundary";
 import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
+import { evaluateNextSessionOrdinaryGate } from "./nextSessionOrdinaryGate";
+import "./NextSessionMap.css";
 
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
 const DATA_CAPABILITY_HREF = "#dataCapability";
@@ -165,6 +167,7 @@ export default function NextSessionMap() {
   const candidateRadarDetailHasLastGood = Object.keys(candidateRadarDetailCache).length > 0;
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
+  const [taskEnvelopeWarnings, setTaskEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [cacheMissingMessage, setCacheMissingMessage] = useState("");
   const [taskIndex, setTaskIndex] = useState<TaskStatusIndex | null>(null);
   const [taskId, setTaskId] = useState("");
@@ -258,7 +261,10 @@ export default function NextSessionMap() {
       .catch(() => setCandidateRadarDetailStatus("error"));
   };
   const refreshTaskIndex = () =>
-    getTasks().then((res) => setTaskIndex(res.data));
+    getTasks().then((res) => {
+      setTaskEnvelopeWarnings(res.warnings ?? []);
+      setTaskIndex(res.data);
+    });
 
   useEffect(() => {
     let cancelled = false;
@@ -598,6 +604,50 @@ export default function NextSessionMap() {
   );
   const candidateRadarFreshnessLabel =
     `${candidateRadarDataDate || "等待 data_date"} / ${candidateRadarFreshnessState || "等待 freshness"}`;
+  const ordinaryNextSessionGate = evaluateNextSessionOrdinaryGate({
+    loading: initialLayoutLoading || loading,
+    error,
+    packet,
+    chartPayload: rawChartPayload,
+    chartSummary: rawChartSummary,
+    lineage: candidateRadarV05Lineage,
+    confirmedSymbol: candidateRadarConfirmedSymbol,
+    cacheEnvelopeWarnings,
+    taskEnvelopeWarnings,
+    taskIndex: taskIndex as Record<string, unknown> | null,
+    durableEvidence: durableEvidenceRecipe,
+  });
+  const ordinaryNextSessionChartReady = ordinaryNextSessionGate.ready;
+  const ordinaryNextSessionCandidateDataDate = ordinaryNextSessionGate.dataDate
+    ? ordinaryNextSessionGate.dataDate.replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3")
+    : "";
+  const ordinaryNextSessionChartPayload = ordinaryNextSessionChartReady ? chartPayload : undefined;
+  const ordinaryNextSessionReferenceRows = rowsFromArray(ordinaryNextSessionChartPayload?.reference_lines);
+  const ordinaryNextSessionSupport = ordinaryNextSessionReferenceRows.find((row) =>
+    /support|支撑/i.test(String(row.key ?? row.label ?? ""))
+  );
+  const ordinaryNextSessionPressure = ordinaryNextSessionReferenceRows.find((row) =>
+    /resistance|pressure|压力/i.test(String(row.key ?? row.label ?? ""))
+  );
+  const ordinaryNextSessionScenarioRows = rowsFromArray(ordinaryNextSessionChartPayload?.scenario_series);
+  const ordinaryNextSessionTriggerCondition = ordinaryNextSessionScenarioRows
+    .map((row) => ordinaryNextText(row.trigger_condition, ""))
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("；");
+  const ordinaryNextSessionBlockedReason = ordinaryNextSessionGate.reason;
+  const ordinaryNextSessionConclusion = ordinaryNextSessionChartReady
+    ? `已核对 ${ordinaryNextSessionGate.symbol} 的同源次日走势；请结合参考区和失效条件人工复核。`
+    : `${ordinaryNextSessionBlockedReason}；当前不沿用旧标的或旧日期结果。`;
+  const ordinaryNextSessionSupportLabel = ordinaryNextSessionChartReady
+    ? String(ordinaryNextSessionSupport?.value ?? ordinaryNextSessionSupport?.price ?? "未提供支撑参考")
+    : "待同源验证";
+  const ordinaryNextSessionPressureLabel = ordinaryNextSessionChartReady
+    ? String(ordinaryNextSessionPressure?.value ?? ordinaryNextSessionPressure?.price ?? "未提供压力参考")
+    : "待同源验证";
+  const ordinaryNextSessionInvalidation = ordinaryNextSessionChartReady
+    ? "标的、来源、版本、数据日期、交易日历或安全状态任一变化时，本图立即停止展示。"
+    : "当前核对未通过；旧图、日期不明、日历未验证或仍有提示的结果都不会作为次日结论。";
   const candidateRadarLatestTaskSymbol = String(
     (candidateRadarV05LineageReady ? candidateRadarV05Lineage.symbol : undefined) ??
       candidateRadarResultVersionSummary.latest_task_symbol ??
@@ -1887,10 +1937,101 @@ export default function NextSessionMap() {
         <div>
           <h1 data-ltg10-route-heading="next">次日图谱</h1>
           <p aria-label="next session ordinary page status" aria-live="polite">
-            {nextSessionReadableStatusLabel}；{nextSessionLiveLightModeLabel}；下一步：{nextSessionLiveLightNextStep}。
+            次日走势只在标的、来源、数据日期和有效性全部核对后展示。
           </p>
         </div>
       </div>
+      <section
+        className="next-session-ordinary-dashboard"
+        data-chart-binding-ready={ordinaryNextSessionChartReady ? "true" : "false"}
+        aria-label="next session ordinary first screen"
+      >
+        <div className="next-session-ordinary-identity">
+          <div>
+            <span>当前标的</span>
+            <strong>{candidateRadarConfirmedSymbol || "等待确认"}</strong>
+          </div>
+          <div>
+            <span>数据日期</span>
+            <strong>{ordinaryNextSessionCandidateDataDate || "待验证"}</strong>
+          </div>
+          <div className="next-session-ordinary-conclusion" role="status" aria-live="polite">
+            <span>{ordinaryNextSessionChartReady ? "同源图谱已就绪" : "图谱暂不展示"}</span>
+            <p>{ordinaryNextSessionConclusion}</p>
+          </div>
+        </div>
+
+        <div
+          id="next-session-chart"
+          className="next-session-ordinary-chart"
+          role="region"
+          tabIndex={0}
+          aria-describedby="next-session-chart-keyboard-hint"
+          aria-label={ordinaryNextSessionChartReady ? nextSessionChartReviewRegionLabel : ordinaryNextSessionBlockedReason}
+        >
+          <p id="next-session-chart-keyboard-hint" className="next-session-visually-hidden">
+            图表支持 hover 和键盘聚焦；查看不会创建 task、修改价格、持仓或操作区。
+          </p>
+          <div className="next-session-ordinary-section-title">
+            <span>次日路径</span>
+            <small>{ordinaryNextSessionChartReady ? "来源一致 · 标的一致 · 日期一致" : "暂缓展示"}</small>
+          </div>
+          {ordinaryNextSessionChartReady ? (
+            <NextSessionChart payload={ordinaryNextSessionChartPayload} ordinary />
+          ) : (
+            <div className="next-session-ordinary-chart-empty">
+              <strong>没有可安全展示的次日图谱</strong>
+              <p>{ordinaryNextSessionBlockedReason || "等待同源图谱"}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="next-session-ordinary-reference" aria-label="next session key reference areas">
+          <div>
+            <span>支撑参考</span>
+            <strong>{ordinaryNextSessionSupportLabel}</strong>
+          </div>
+          <div>
+            <span>压力参考</span>
+            <strong>{ordinaryNextSessionPressureLabel}</strong>
+          </div>
+          <p>参考区只用于人工复核，不代表买入、卖出、加仓或减仓指令。</p>
+        </div>
+
+        <div className="next-session-ordinary-conditions" aria-label="next session trigger and invalidation conditions">
+          <div>
+            <span>触发观察</span>
+            <p>{ordinaryNextSessionChartReady ? ordinaryNextSessionTriggerCondition || "本地结果未提供额外触发条件。" : "绑定通过前不展示触发条件。"}</p>
+          </div>
+          <div>
+            <span>失效条件</span>
+            <p>{ordinaryNextSessionInvalidation}</p>
+          </div>
+        </div>
+
+        <div className="next-session-ordinary-boundary" aria-label="next session research boundary and single next action">
+          <p><span aria-hidden="true" />仅作研究辅助，不下单、不改任何研究结论；页面打开与输入不会调用数据接口、模型或后台执行器。</p>
+          <div className="next-session-ordinary-primary-action">
+            {initialLayoutLoading || loading ? (
+              <button type="button" disabled>正在读取本地图谱</button>
+            ) : !candidateRadarConfirmedSymbol ? (
+              <a href={CANDIDATE_CONFIRM_HREF}>去确认研究标的</a>
+            ) : !ordinaryNextSessionChartReady ? (
+              <button
+                type="button"
+                onClick={() => void refreshCache()}
+                title="只刷新本地只读状态；不会创建任务或调用外部数据、模型和后台执行器"
+              >刷新本地图谱状态</button>
+            ) : (
+              <a href="#factor">下一步：复核支持与压制</a>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <details className="next-session-research-technical-details" aria-label="next session research and technical details">
+        <summary>研究与技术详情</summary>
+        <div className="next-session-research-technical-content">
     <PacketCard title="普通用户次日图谱摘要" subtitle="下一步、来源、缺口、边界和最近结果" status={nextSessionReadableStatusLabel}>
       <div aria-label="next session app first research read">
         <h3>本地投研速读</h3>
@@ -2226,10 +2367,7 @@ export default function NextSessionMap() {
         ]}
       />
       <p className="risk-note">{String(packet.summary ?? "当前只读取 cache；无缓存时不会触发 Tushare。")}</p>
-      <div id="next-session-chart" className="next-session-chart-review" role="region" tabIndex={0} aria-describedby="next-session-chart-keyboard-hint" aria-label={nextSessionChartReviewRegionLabel} title={nextSessionChartReviewRegionLabel}>
-        <NextSessionChart payload={chartPayload} />
-      </div>
-      <p id="next-session-chart-keyboard-hint" className="risk-note">图表支持 hover 查看路径来源、条件和纪律说明；键盘可聚焦此区域并读取下方参考线、操作区图例和只读边界。图表查看不会创建 task、修改价格、持仓或操作区。</p>
+      <p className="risk-note">主 ECharts 图已提升到普通首屏，并在标的、来源任务、数据日期或 freshness 未验证时 fail-closed；这里保留合同与审计明细。</p>
       <details id="next-session-audit" className="developer-audit-details" aria-label="next session developer audit details">
         <summary>开发 / 审计指标</summary>
         <p className="risk-note">普通用户先看上方次日图谱摘要和图表；QA、coverage、promotion、cache ledger 和原始 packet 默认收起。</p>
@@ -2352,6 +2490,8 @@ export default function NextSessionMap() {
       <JsonDetails title="次日图谱 cache packet" data={packet} />
       </details>
     </PacketCard>
+        </div>
+      </details>
     </div>
   );
 }
