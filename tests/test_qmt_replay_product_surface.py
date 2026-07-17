@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ROUTE = ROOT / "desktop" / "src" / "routes" / "QmtReplayLab.tsx"
 ROUTE_STYLES = ROOT / "desktop" / "src" / "routes" / "QmtReplayLab.css"
+ORDINARY_GATE = ROOT / "desktop" / "src" / "routes" / "qmtReplayOrdinaryGate.ts"
 
 
 class QmtReplayProductSurfaceTests(unittest.TestCase):
@@ -12,6 +13,7 @@ class QmtReplayProductSurfaceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.page = ROUTE.read_text(encoding="utf-8")
         cls.styles = ROUTE_STYLES.read_text(encoding="utf-8")
+        cls.gate = ORDINARY_GATE.read_text(encoding="utf-8")
 
     def test_ordinary_surface_has_exactly_five_user_facing_blocks(self):
         self.assertIn('import "./QmtReplayLab.css";', self.page)
@@ -65,27 +67,31 @@ class QmtReplayProductSurfaceTests(unittest.TestCase):
         self.assertIn("not_ready|not_available", self.page)
         self.assertIn('new Set(["ready", "success", "succeeded", "passed", "match", "preserved", "fresh"])', self.page)
         self.assertNotIn("/ready|success|passed|match/i", self.page)
-        self.assertIn('new Set(["fresh", "today", "current"])', self.page)
-        self.assertIn("candidateCalendarValidated", self.page)
-        self.assertIn("normalizedDate(candidateDataDate) === normalizedDate(candidateExpectedTradeDate)", self.page)
-        self.assertIn("normalizedDate(candidateDataDate) === normalizedDate(nextDataDate)", self.page)
+        self.assertIn('new Set(["fresh", "current", "today"])', self.gate)
+        self.assertIn("freshness.expected_trade_date_calendar_validated === true", self.gate)
+        self.assertIn("dataDate === expectedDataDate", self.gate)
+        self.assertIn("candidateLineage.dataDate === nextLineage.dataDate", self.gate)
         self.assertNotIn("/fresh|today/i", self.page)
 
     def test_unexpected_external_activity_blocks_the_local_replay_boundary(self):
         self.assertIn("const externalCallsTriggered =", self.page)
-        self.assertIn("const boundaryExplicitSafe = isolationEvidenceIsExplicitSafe", self.page)
-        self.assertIn("const ledgerExplicitSafe = ledgerRows.length > 0", self.page)
-        self.assertIn("localTransportLedgerIsExplicitSafe(row)", self.page)
-        self.assertIn('row.api === "frontend_fastapi_request"', self.page)
-        self.assertIn("row.provider_or_model_calls === false", self.page)
+        self.assertIn("const safetyExplicitSafe = qmtGate.safetyReady && qmtGate.ledgersReady", self.page)
+        self.assertIn("function envelopeLedgerSafe", self.gate)
+        self.assertIn("function qmtBoundarySafe", self.gate)
+        self.assertIn("function qmtPayloadLedgerSafe", self.gate)
+        self.assertIn('row.api === "frontend_fastapi_request"', self.gate)
+        self.assertIn("row.provider_or_model_calls !== true", self.gate)
         self.assertIn("const safetyUnknown = !unsafeBoundary && !safetyExplicitSafe", self.page)
-        self.assertIn("qmt_external_connection_attempted", self.page)
-        self.assertIn("broker_session_opened", self.page)
-        self.assertIn("account_query_executed", self.page)
-        self.assertIn("real_order_submitted", self.page)
-        self.assertIn("real_trade_executed", self.page)
-        self.assertIn("real_holdings_modified", self.page)
-        self.assertIn("approved && lineageReady && safetyExplicitSafe", self.page)
+        for token in (
+            "qmt_external_connection_attempted",
+            "broker_session_opened",
+            "account_query_executed",
+            "real_order_submitted",
+            "real_trade_executed",
+            "real_holdings_modified",
+        ):
+            self.assertIn(token, self.gate)
+        self.assertIn("approved && qmtGate.launchReady && !submitting", self.page)
 
     def test_unknown_isolation_never_claims_disconnected_or_allows_launch(self):
         self.assertIn("连接与交易隔离证据不完整｜已停止本地回放", self.page)
@@ -94,17 +100,20 @@ class QmtReplayProductSurfaceTests(unittest.TestCase):
         self.assertNotIn("QMT未连接｜券商未连接", self.page)
 
     def test_historical_replay_requires_exact_current_lineage(self):
-        self.assertIn("const qmtLineageBound = qmtSourceMatches && candidateDateReady && safetyExplicitSafe", self.page)
-        self.assertIn('const qmtCurrentResultReady = qmtCacheStatusNormalized === "ready_cache_replay"', self.page)
-        self.assertIn("const qmtResultBound = qmtLineageBound && qmtCurrentResultReady && !loading && !cacheError", self.page)
+        self.assertIn("const qmtResultBound = qmtGate.resultReady", self.page)
+        self.assertIn('qmtStatus === "ready_cache_replay"', self.gate)
+        self.assertIn("qmtSourceReady", self.gate)
+        self.assertIn("qmtResultIntegrityReady", self.gate)
+        self.assertIn("const resultReady = baseReady", self.gate)
         self.assertIn("const rawVirtualEvents = qmtResultBound ? rawVirtualEventsUnbound : []", self.page)
         for token in (
-            "qmtSourceSymbol === candidateSymbol",
-            "qmtSourceTaskId === candidateTaskId",
-            "qmtSourceResultVersion === candidateResultVersion",
-            "qmtSourceScopeHash === candidateScopeHash",
+            "strictQmtSymbol(source.source_symbol) === candidateLineage.symbol",
+            "strictQmtId(source.source_task_id) === candidateLineage.taskId",
+            "strictQmtId(source.source_result_version) === candidateLineage.resultVersion",
+            "strictQmtScope(source.source_scope_hash) === candidateLineage.scopeHash",
+            "strictQmtDate(source.source_data_date) === candidateLineage.dataDate",
         ):
-            self.assertIn(token, self.page)
+            self.assertIn(token, self.gate)
 
     def test_route_css_has_mobile_and_reduced_motion_contracts(self):
         self.assertIn("@media (max-width: 420px)", self.styles)
