@@ -6,6 +6,7 @@ import MetricGrid, { type MetricItem } from "./MetricGrid";
 import StateClarityRail from "./StateClarityRail";
 import StatusBadge from "./StatusBadge";
 import TaskBoundarySummary from "./TaskBoundarySummary";
+import "./ProductSurface.css";
 
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
 
@@ -129,13 +130,20 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
         <div className="task-panel task-panel--failed motion-surface" data-task-state="lookup_failed" data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
           <div className="task-panel__head">
             <StatusBadge label="读取失败" tone="bad" />
-            <span>任务编号：{taskId}</span>
+            <strong>任务状态暂不可用</strong>
           </div>
-          <p>任务状态读取失败：{lookupError.error}</p>
-          <p>本地任务状态接口只读取任务记录，不调用 Tushare、DeepSeek 或 GitHub。</p>
-          <p>查询审计记录：{lookupError.call_ledger.length}</p>
-          {lookupError.warnings.length ? <p className="risk-note">{String(lookupError.warnings[0])}</p> : null}
-          {lookupError.call_ledger.length ? <DataLineageTable rows={lookupError.call_ledger} /> : <p className="empty-state">暂无任务查询审计记录。</p>}
+          <p className="task-panel__plain-result">无法读取这项任务，请稍后重试。</p>
+          <p className="task-panel__plain-boundary">状态查询仅访问本地记录，不会调用数据源、模型、GitHub 或交易路径。</p>
+          <button className="task-panel__primary-action" onClick={loadTask}>重新读取</button>
+          <details className="task-panel__technical-details" aria-label="task lookup technical details">
+            <summary>技术详情</summary>
+            <p>任务编号：{taskId}</p>
+            <p>任务状态读取失败：{lookupError.error}</p>
+            <p>本地任务状态接口只读取任务记录，不调用 Tushare、DeepSeek 或 GitHub。</p>
+            <p>查询审计记录：{lookupError.call_ledger.length}</p>
+            {lookupError.warnings.length ? <p className="risk-note">{String(lookupError.warnings[0])}</p> : null}
+            {lookupError.call_ledger.length ? <DataLineageTable rows={lookupError.call_ledger} /> : <p className="empty-state">暂无任务查询审计记录。</p>}
+          </details>
         </div>
       );
     }
@@ -317,12 +325,32 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     { label: "P3 结果", value: candidateRadarResultReplay ? "可回放到量化/图谱" : "按输出 packet 回放", tone: task.status === "success" ? "good" as const : "warn" as const },
     { label: "安全边界", value: "不交易、不改 action", tone: "good" as const }
   ];
+  const taskResultSummary = task.error_message_safe
+    ? "任务未完成，请查看技术详情。"
+    : task.status === "success"
+      ? candidateRadarResultReplay
+        ? "结果已写回，可继续查看量化推演。"
+        : "任务已完成，可打开本地结果。"
+      : task.status === "running"
+        ? `正在本地处理，已完成 ${Math.round((task.progress ?? 0) * 100)}%。`
+        : task.status === "cancelled"
+          ? "任务已取消，已保留本地状态。"
+          : "任务已进入队列，等待本地处理。";
+  const taskBoundaryBlocked =
+    task.does_not_execute_trades === false ||
+    task.does_not_modify_strategy_action === false;
+  const primaryResultLink = showTaskFailureRecovery ? taskFailureRecoveryLinks[0] : p3ResultReplayLinks[0];
+  const primaryResultLabel = showTaskFailureRecovery
+    ? primaryResultLink.label
+    : candidateRadarResultReplay
+      ? "查看量化推演"
+      : "查看结果";
 
   return (
     <div className={`task-panel task-panel--${task.status} motion-surface`} data-task-state={task.status} data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
       <div className="task-panel__head">
         <StatusBadge label={taskStatusLabel} tone={toneForStatus(task.status)} />
-        <span>{task.task_type}</span>
+        <strong>任务进度</strong>
       </div>
       <StateClarityRail
         label="任务执行状态"
@@ -333,80 +361,98 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
           { label: "完成", state: stateForTaskStep(task.status, "finished"), detail: taskStatusLabel }
         ]}
       />
-      <progress className="task-progress" value={task.progress ?? 0} max={1} />
-      {successRefreshMessage ? <p className="panelSuccessRefresh">{successRefreshMessage}</p> : null}
-      <div aria-label="task status ordinary summary">
-        <p className="risk-note">任务速读：普通用户先看状态、写回、Tushare-first、结果入口和安全边界；工程明细默认收起。</p>
-        <p className="risk-note">当前标的：{taskConfirmedSymbolLabel}；确认任务：{taskConfirmTaskLabel}。</p>
-        <MetricGrid items={taskOrdinarySummaryItems} />
-      </div>
-      {candidateRadarResultReplay ? (
-        <div aria-label="task status tushare first ledger quick read">
-          <p className="risk-note">Tushare-first 速读：普通用户先看主任务是否已回放接口级 ledger；这张表只读当前任务状态，不创建新 task。</p>
-          <DataLineageTable rows={taskTushareFirstQuickRows} />
-        </div>
-      ) : null}
-      <div aria-label="task status p2 writeback quick read">
-        <p className="risk-note">P2 写回速读：普通用户先看 cache、call_ledger、packet 三面是否有本地回放信号；这张表只读任务状态，不创建新 task。</p>
-        <DataLineageTable rows={p2WritebackQuickRows} />
-      </div>
-      <div aria-label="task status p3 result replay quick read">
-        <p className="risk-note">P3 结果入口速读：任务写回后按本地入口回放可解释结果；这些链接只切换本地页面，不创建 task、不调用 provider/model。</p>
-        <DataLineageTable rows={p3ResultReplayRows} />
-      </div>
-      <div className="actions" aria-label="task status p3 result replay links">
-        {p3ResultReplayLinks.map((link) => (
-          <a key={link.href} href={link.href} title={link.title} aria-label={link.aria}>{link.label}</a>
-        ))}
-      </div>
-      {showTaskFailureRecovery ? (
-        <div aria-label="task status failed recovery quick read">
-          <p className="risk-note">失败/取消恢复速读：先回 P0 确认前后端联通，再由用户手动回到原入口；这里不自动重试、不调用 provider/model、不执行真实交易。</p>
-          <DataLineageTable rows={taskFailureRecoveryRows} />
-          <div className="actions" aria-label="task status failed recovery links">
-            {taskFailureRecoveryLinks.map((link) => (
-              <a key={`${link.href}-${link.label}`} href={link.href} title={link.title} aria-label={link.aria}>{link.label}</a>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      <TaskBoundarySummary task={task} />
-      <button
-        disabled={!cancellable}
-        title={cancelButtonTitle}
-        aria-label={cancelButtonTitle}
-        onClick={() =>
-          void cancelTask(task.task_id, "manual_cancel_from_task_status_panel").then((res) => {
-            setCancelMessage(res.ok ? "本地取消请求已写入任务状态，不调用 Tushare、DeepSeek 或 GitHub。" : String(res.error ?? "cancel_failed"));
-            loadTask();
-          })
-        }
-      >
-        本地取消任务
-      </button>
+      <progress className="task-progress" value={task.progress ?? 0} max={1} aria-label={`任务进度 ${Math.round((task.progress ?? 0) * 100)}%`} />
+      <p className="task-panel__plain-result">{taskResultSummary}</p>
+      <p className="task-panel__plain-boundary">
+        {taskBoundaryBlocked
+          ? "安全边界需要复核，技术详情中保留完整记录。"
+          : task.external_calls_triggered
+            ? "安全边界：数据调用已记录；不执行交易，不修改策略。"
+            : "安全边界：只读回放，不执行交易，不修改策略。"}
+      </p>
+      {cancellable ? (
+        <button
+          className="task-panel__primary-action"
+          title={cancelButtonTitle}
+          aria-label={cancelButtonTitle}
+          onClick={() =>
+            void cancelTask(task.task_id, "manual_cancel_from_task_status_panel").then((res) => {
+              setCancelMessage(res.ok ? "本地取消请求已写入任务状态，不调用 Tushare、DeepSeek 或 GitHub。" : String(res.error ?? "cancel_failed"));
+              loadTask();
+            })
+          }
+        >
+          本地取消任务
+        </button>
+      ) : (
+        <a className="task-panel__primary-action" href={primaryResultLink.href} title={primaryResultLink.title} aria-label={primaryResultLink.aria}>
+          {primaryResultLabel}
+        </a>
+      )}
       {cancelMessage ? <p className="risk-note">{cancelMessage}</p> : null}
-      {task.warnings?.length ? <p className="risk-note">{task.warnings[0]}</p> : null}
-      <details className="developer-audit-details" aria-label="task status audit details">
-        <summary>任务审计详情</summary>
-        <p>普通用户先看状态轨、当前步骤、本地回放提示和取消按钮；运行元数据、P1/P2/P3 明细、call ledger、model ledger 和状态历史默认收起。</p>
-        <div aria-label="task status runtime metadata details">
-          <p>当前步骤：{task.current_step}</p>
-          <p>任务编号：{task.task_id}</p>
-          <p>运行方式：{task.backend ?? "local_fallback"}</p>
-          <p>记录来源：{task.storage_source ?? "memory_or_sqlite_fallback"}</p>
-          <p>创建时间：{task.created_at ?? "--"}</p>
-          <p>开始时间：{task.started_at ?? "--"}</p>
-          <p>结束时间：{task.finished_at ?? "--"}</p>
+      <details className="task-panel__technical-details" aria-label="task status technical details">
+        <summary>技术详情</summary>
+        {successRefreshMessage ? <p className="panelSuccessRefresh">{successRefreshMessage}</p> : null}
+        {task.warnings?.length ? <p className="risk-note">{task.warnings[0]}</p> : null}
+        <div aria-label="task status ordinary summary">
+          <p className="risk-note">任务速读：普通用户先看状态、写回、Tushare-first、结果入口和安全边界；工程明细默认收起。</p>
+          <p className="risk-note">当前标的：{taskConfirmedSymbolLabel}；确认任务：{taskConfirmTaskLabel}。</p>
+          <MetricGrid items={taskOrdinarySummaryItems} />
         </div>
-        <p>审计记录：{callLedger.length}</p>
-        <DeepSeekModelStrategyLedger callLedger={callLedger} />
-        {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无任务审计记录。</p>}
-        {statusHistory.length ? (
-          <>
-            <p>状态变化记录：{statusHistory.length}</p>
-            <DataLineageTable rows={statusHistory} />
-          </>
+        {candidateRadarResultReplay ? (
+          <div aria-label="task status tushare first ledger quick read">
+            <p className="risk-note">Tushare-first 速读：普通用户先看主任务是否已回放接口级 ledger；这张表只读当前任务状态，不创建新 task。</p>
+            <DataLineageTable rows={taskTushareFirstQuickRows} />
+          </div>
         ) : null}
+        <div aria-label="task status p2 writeback quick read">
+          <p className="risk-note">P2 写回速读：普通用户先看 cache、call_ledger、packet 三面是否有本地回放信号；这张表只读任务状态，不创建新 task。</p>
+          <DataLineageTable rows={p2WritebackQuickRows} />
+        </div>
+        <div aria-label="task status p3 result replay quick read">
+          <p className="risk-note">P3 结果入口速读：任务写回后按本地入口回放可解释结果；这些链接只切换本地页面，不创建 task、不调用 provider/model。</p>
+          <DataLineageTable rows={p3ResultReplayRows} />
+        </div>
+        <div className="actions" aria-label="task status p3 result replay links">
+          {p3ResultReplayLinks.map((link) => (
+            <a key={link.href} href={link.href} title={link.title} aria-label={link.aria}>{link.label}</a>
+          ))}
+        </div>
+        {showTaskFailureRecovery ? (
+          <div aria-label="task status failed recovery quick read">
+            <p className="risk-note">失败/取消恢复速读：先回 P0 确认前后端联通，再由用户手动回到原入口；这里不自动重试、不调用 provider/model、不执行真实交易。</p>
+            <DataLineageTable rows={taskFailureRecoveryRows} />
+            <div className="actions" aria-label="task status failed recovery links">
+              {taskFailureRecoveryLinks.map((link) => (
+                <a key={`${link.href}-${link.label}`} href={link.href} title={link.title} aria-label={link.aria}>{link.label}</a>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <TaskBoundarySummary task={task} />
+        <details className="developer-audit-details" aria-label="task status audit details">
+          <summary>任务审计详情</summary>
+          <p>普通用户先看状态轨、当前步骤、本地回放提示和取消按钮；运行元数据、P1/P2/P3 明细、call ledger、model ledger 和状态历史默认收起。</p>
+          <div aria-label="task status runtime metadata details">
+            <p>当前步骤：{task.current_step}</p>
+            <p>任务编号：{task.task_id}</p>
+            <p>任务类型：{task.task_type}</p>
+            <p>运行方式：{task.backend ?? "local_fallback"}</p>
+            <p>记录来源：{task.storage_source ?? "memory_or_sqlite_fallback"}</p>
+            <p>创建时间：{task.created_at ?? "--"}</p>
+            <p>开始时间：{task.started_at ?? "--"}</p>
+            <p>结束时间：{task.finished_at ?? "--"}</p>
+          </div>
+          <p>审计记录：{callLedger.length}</p>
+          <DeepSeekModelStrategyLedger callLedger={callLedger} />
+          {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无任务审计记录。</p>}
+          {statusHistory.length ? (
+            <>
+              <p>状态变化记录：{statusHistory.length}</p>
+              <DataLineageTable rows={statusHistory} />
+            </>
+          ) : null}
+        </details>
       </details>
     </div>
   );

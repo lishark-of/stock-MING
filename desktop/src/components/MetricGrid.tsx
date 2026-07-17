@@ -1,5 +1,5 @@
-import StatusBadge from "./StatusBadge";
 import type { CSSProperties } from "react";
+import "./ProductSurface.css";
 
 export type MetricItem = {
   label: string;
@@ -21,6 +21,20 @@ function displayValue(value: MetricItem["value"]) {
   return String(value);
 }
 
+function toneLabel(tone: NonNullable<MetricItem["tone"]>) {
+  if (tone === "good") return "状态正常";
+  if (tone === "warn") return "需要留意";
+  if (tone === "bad") return "存在阻断";
+  return "状态中性";
+}
+
+function toneIcon(tone: NonNullable<MetricItem["tone"]>) {
+  if (tone === "good") return "✓";
+  if (tone === "warn") return "!";
+  if (tone === "bad") return "×";
+  return "•";
+}
+
 export default function MetricGrid({ items }: { items: MetricItem[] }) {
   return (
     <div className="metric-grid">
@@ -30,11 +44,17 @@ export default function MetricGrid({ items }: { items: MetricItem[] }) {
           data-metric-tone={item.tone ?? "neutral"}
           data-motion-purpose="visual_hierarchy_clarity"
           key={`${item.label}-${index}`}
+          role="group"
+          aria-label={`${item.label}，${toneLabel(item.tone ?? "neutral")}`}
           style={{ "--motion-delay": `${Math.min(index, 8) * 24}ms` } as CSSProperties}
         >
-          <span>{item.label}</span>
+          <span className="metric-card__label">{item.label}</span>
           <strong>{displayValue(item.value)}</strong>
-          {item.tone ? <StatusBadge label={item.tone} tone={item.tone} /> : null}
+          {item.tone ? (
+            <span className="metric-card__tone" aria-hidden="true" title={toneLabel(item.tone)}>
+              {toneIcon(item.tone)}
+            </span>
+          ) : null}
         </div>
       ))}
     </div>
