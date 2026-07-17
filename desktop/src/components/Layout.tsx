@@ -106,6 +106,15 @@ const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; rout
   }
 ];
 
+const PRIMARY_ROUTE_INDEX: Partial<Record<RouteKey, string>> = {
+  home: "01",
+  candidates: "02",
+  factor: "03",
+  next: "04",
+  marginEtf: "05",
+  "qmt-replay": "06"
+};
+
 export default function Layout({
   active,
   onNavigate,
@@ -214,7 +223,9 @@ export default function Layout({
         ? "去预检"
         : "看进度";
 
-  const routeButtons = (routes: Array<{ key: RouteKey; label: string }>) => (
+  const activeRouteGroup = ROUTE_GROUPS.find((group) => group.routes.some((route) => route.key === active));
+  const activeRouteLabel = activeRouteGroup?.routes.find((route) => route.key === active)?.label ?? "研究工作台";
+  const routeButtons = (routes: Array<{ key: RouteKey; label: string }>, primary = false) => (
     <>
       {routes.map((route) => (
         <button
@@ -223,9 +234,12 @@ export default function Layout({
           className={active === route.key ? "nav-active" : ""}
           data-route-active={active === route.key ? "true" : "false"}
           data-route-key={route.key}
+          data-nav-tier={primary ? "primary" : "support"}
           onClick={() => onNavigate(route.key)}
         >
+          {primary ? <span className="nav-index" aria-hidden="true">{PRIMARY_ROUTE_INDEX[route.key]}</span> : null}
           <span className="nav-label">{route.label}</span>
+          {primary ? <span className="nav-arrow" aria-hidden="true">&#8599;</span> : null}
         </button>
       ))}
     </>
@@ -234,7 +248,13 @@ export default function Layout({
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand">stock-MING 3.0</div>
+        <div className="brand" aria-label="stock-MING Command Center 3.0">
+          <span className="brand-mark" aria-hidden="true">M</span>
+          <span className="brand-copy">
+            <strong>stock-MING</strong>
+            <small>COMMAND CENTER 3.0</small>
+          </span>
+        </div>
         <div
           className="local-link-status"
           data-local-fastapi-status={localFastapiStatus}
@@ -280,7 +300,7 @@ export default function Layout({
               <section className="nav-group" data-nav-priority="ordinary" aria-label="ordinary user entrances" key={group.title}>
                 <p className="nav-group-title">{group.title}</p>
                 <p className="nav-group-hint">{group.hint}</p>
-                {routeButtons(group.routes)}
+                {routeButtons(group.routes, true)}
                 <p className="nav-group-hint nav-ordinary-boundary">{ORDINARY_NAVIGATION_BOUNDARY}</p>
               </section>
             ) : (
@@ -323,7 +343,20 @@ export default function Layout({
         ) : null}
         <p className="sidebar-note">普通投研主线：今日作战台 → 下一票雷达 → 股票量化推演 → 次日图谱 → QMT 本地回放；ETF / 融资风险随时可查。只做研究辅助，不下单；QMT、券商、账户与订单路径保持隔离；旧工作台仅作排查回退入口。</p>
       </aside>
-      <main className="content">{children}</main>
+      <main className="content">
+        <div className="content-ambient" aria-hidden="true" />
+        <header className="workspace-bar" aria-label="current research workspace">
+          <span className="workspace-route">
+            <small>{activeRouteGroup?.primary ? "PRIMARY RESEARCH FLOW" : activeRouteGroup?.title ?? "LOCAL WORKSPACE"}</small>
+            <strong>{activeRouteLabel}</strong>
+          </span>
+          <span className="workspace-boundary" role="status">
+            <span className="workspace-boundary-dot" aria-hidden="true" />
+            只读研究 · 无下单路径
+          </span>
+        </header>
+        <div className="content-canvas">{children}</div>
+      </main>
     </div>
   );
 }
