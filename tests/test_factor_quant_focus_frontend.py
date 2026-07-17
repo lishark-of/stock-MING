@@ -25,7 +25,6 @@ class FactorQuantFocusFrontendTests(unittest.TestCase):
             "正向因素",
             "负向因素",
             "样本日期",
-            "因子覆盖",
             "当前限制",
             "下一步",
             "查看次日图谱",
@@ -38,6 +37,7 @@ class FactorQuantFocusFrontendTests(unittest.TestCase):
         self.assertIn("factorFocusSuppressFactors", self.focus)
         self.assertIn("factorFocusNeutralFactors", self.focus)
         self.assertIn("factorFocusMissingFactors", self.focus)
+        self.assertIn("factorFocusCoverageMetricLabel", self.focus)
         self.assertIn('href={NEXT_SESSION_CHART_HREF}', self.focus)
         self.assertIn('href={CANDIDATE_CONFIRM_HREF}', self.focus)
         self.assertNotIn("onClick=", self.focus)
@@ -73,23 +73,51 @@ class FactorQuantFocusFrontendTests(unittest.TestCase):
         for field in ("factor_name", "display_name", "label", "title", "name", "factor_key"):
             self.assertIn(f"row.{field}", helper)
 
-    def test_stale_or_not_ready_evidence_cannot_show_directional_conclusion(self):
-        self.assertIn('freshnessGate.usable_for_score === false', self.source)
-        self.assertIn('"stale"', self.source)
-        self.assertIn('"expired"', self.source)
-        self.assertIn('"not_ready"', self.source)
-        self.assertIn('"blocked"', self.source)
-        self.assertIn('state.includes("not_ready")', self.source)
-        self.assertIn('state.endsWith("_blocked")', self.source)
-        self.assertIn('factorFocusFreshnessBlocked ? "--" : factorFocusScoreLabel', self.source)
-        self.assertIn('factorFocusFreshnessBlocked ? 0 : factorFocusScorePercent', self.source)
-        self.assertIn('factorFocusFreshnessBlocked ? "历史 / 不可用"', self.source)
-        self.assertIn("旧分数和因子覆盖只作历史回看，不能作为当前结论", self.source)
+    def test_focus_requires_same_factor_packet_task_and_result_version(self):
+        binding_start = self.source.index("const factorFocusResultBinding =")
+        binding_end = self.source.index("const factorFocusCompositeScore", binding_start)
+        binding = self.source[binding_start:binding_end]
+        for field in (
+            "factorFocusBindingSymbol",
+            "factorFocusBindingTaskId",
+            "factorFocusBindingResultVersion",
+            "factorFocusBindingDataDate",
+            "factorFocusBindingPacketKey",
+            "same_factor_packet_task_result_version_bound",
+            "factorFocusBindingComplete",
+        ):
+            self.assertIn(field, binding)
+        self.assertNotIn("candidateRadarConfirmedSymbol", binding)
+        self.assertNotIn("candidateRadarResultDataDate", binding)
+        self.assertIn('factorFocusBindingComplete ? factorFocusBindingDataDate : "日期待同包绑定"', self.source)
+        self.assertIn('factorFocusBindingComplete ? factorFocusBindingSymbol : ""', self.source)
+        self.assertIn("等待同包标的", self.focus)
+
+    def test_unknown_or_unbound_freshness_cannot_show_directional_conclusion(self):
+        self.assertIn('const factorFocusCurrentFreshnessStates = new Set(["fresh", "current", "today"]);', self.source)
+        self.assertIn('freshnessGate.usable_for_score === true', self.source)
+        self.assertIn("factorFocusFreshnessCalendarValidated", self.source)
+        self.assertIn("factorFocusBindingDateNormalized === factorFocusExpectedDateNormalized", self.source)
+        self.assertIn("factorFocusBindingComplete && factorFocusFreshnessCurrent", self.source)
+        self.assertIn('factorFocusCurrentEvidenceUsable ? factorFocusScoreLabel : "--"', self.source)
+        self.assertIn('factorFocusCurrentEvidenceUsable ? factorFocusScorePercent : 0', self.source)
+        self.assertIn('"历史 / 不可用"', self.source)
+        self.assertIn("旧分数和因子只作历史回看", self.source)
         conclusion_start = self.source.index("const factorFocusConclusion =")
         conclusion_end = self.source.index("const factorFocusTone", conclusion_start)
         conclusion = self.source[conclusion_start:conclusion_end]
-        self.assertLess(conclusion.index("factorFocusFreshnessBlocked"), conclusion.index("factorFocusSupportBands"))
+        self.assertLess(conclusion.index("factorFocusBindingComplete"), conclusion.index("factorFocusFreshnessCurrent"))
+        self.assertLess(conclusion.index("factorFocusFreshnessCurrent"), conclusion.index("factorFocusSupportBands"))
+        self.assertIn('"等待同包结果"', conclusion)
         self.assertIn('"数据待更新"', conclusion)
+
+    def test_coverage_prefers_packet_authority_and_labels_local_ratio_honestly(self):
+        self.assertIn("runtime.coverage ?? packet.factor_coverage ?? packet.coverage ?? score.coverage", self.source)
+        self.assertIn("factorFocusHasAuthoritativeCoverage", self.source)
+        self.assertIn('"运行覆盖（结果包）"', self.source)
+        self.assertIn('"已列出因子比例"', self.source)
+        self.assertIn("factorFocusListedFactorPercent", self.source)
+        self.assertNotIn("const factorFocusCoveragePercent = factorFocusFactorTotal", self.source)
 
     def test_styles_are_route_scoped_and_small_viewport_safe(self):
         self.assertIn(".factor-focus-dashboard", self.styles)
