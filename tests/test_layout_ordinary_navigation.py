@@ -64,6 +64,12 @@ class LayoutOrdinaryNavigationTests(unittest.TestCase):
         self.assertIn('className="nav-group-hint"', source)
         self.assertIn(".nav-group-hint", styles)
 
+    def test_mobile_hash_targets_clear_the_sticky_navigation(self):
+        styles = (ROOT / "src" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn(".content [id]", styles)
+        self.assertIn("scroll-margin-top: 237px", styles)
+
 
 if __name__ == "__main__":
     unittest.main()

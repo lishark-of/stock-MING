@@ -1695,6 +1695,10 @@ pre {
     padding: 12px;
   }
 
+  .content [id] {
+    scroll-margin-top: 237px;
+  }
+
   .page-head,
   .packet-card-title,
   .task-panel__head {

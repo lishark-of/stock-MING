@@ -738,6 +738,8 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
         self.assertIn('observer.observe({ type: "layout-shift", buffered: true })', source)
         self.assertIn('observer.observe({ type: "longtask", buffered: true })', source)
         self.assertIn("document.getAnimations()", source)
+        self.assertIn("motionAuditStartedUs", source)
+        self.assertIn("inspectPage(page, route, motionAuditStartedUs)", source)
         self.assertIn("exactLocalUrl(request.url())", source)
         self.assertIn("ALLOWED_READ_METHODS", source)
         self.assertIn('new Set(["GET"])', source)

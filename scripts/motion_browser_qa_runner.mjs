@@ -2478,6 +2478,7 @@ async function runQa(args) {
           route,
           { timeout: 20000 }
         );
+        const motionAuditStartedUs = await page.evaluate(() => Math.round(performance.now() * 1000));
         const routeBudgetUs = route.route === "#candidates" ? PERFORMANCE_BUDGETS.candidate_radar_first_stable_us : PERFORMANCE_BUDGETS.route_transition_observed_us;
         const animationObservation = await page.evaluate(async budgetUs => {
           const stage = document.querySelector(".route-stage");
@@ -2496,7 +2497,7 @@ async function runQa(args) {
         const visualSettleWaitMs = args.reducedMotion ? 80 : 500;
         await page.waitForTimeout(visualSettleWaitMs);
         await waitForSessionIdle(activeSession, `pre-inspect:${viewport.name}:${route.route}`);
-        const inspected = await inspectPage(page, route, transitionStartedUs);
+        const inspected = await inspectPage(page, route, motionAuditStartedUs);
         const currentUrl = exactLocalUrl(page.url());
         const screenshotPath = resolve(outputDir, viewport.name, `${route.route.replace("#", "") || "home"}.png`);
         const viewportDir = resolve(outputDir, viewport.name);
