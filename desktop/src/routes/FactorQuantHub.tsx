@@ -11,7 +11,6 @@ import PacketCard from "../components/PacketCard";
 import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
-import "./FactorQuantHub.css";
 
 // Legacy marker: plain href="#candidates" module-top links are superseded by the confirm-input deep link.
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";

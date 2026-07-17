@@ -118,7 +118,8 @@ const TRUSTED_REACHABLE_SOURCE_PATHS = [
   "desktop/src/components/TaskLaunchReceipt.tsx",
   "desktop/src/components/TaskStatusPanel.tsx",
   "desktop/src/routes/CommandCenterHome.css",
-  "desktop/src/routes/CandidateRadar.css"
+  "desktop/src/routes/CandidateRadar.css",
+  "desktop/src/routes/FactorQuantHub.css"
 ];
 const FORBIDDEN_ORDINARY_URL_PATTERN = /(?:tauri:\/\/(?:localhost)?\/?#legacy|https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):8501(?:\/|$))/i;
 const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {

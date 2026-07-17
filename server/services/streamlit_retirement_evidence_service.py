@@ -72,6 +72,7 @@ TRUSTED_SOURCE_RELATIVES = (
     Path("desktop/src/routes/CandidateRadar.tsx"),
     Path("desktop/src/routes/CandidateRadar.css"),
     Path("desktop/src/routes/FactorQuantHub.tsx"),
+    Path("desktop/src/routes/FactorQuantHub.css"),
     Path("desktop/src/routes/NextSessionMap.tsx"),
     Path("desktop/src/routes/MarginEtf.tsx"),
     Path("desktop/src/routes/QmtReplayLab.tsx"),

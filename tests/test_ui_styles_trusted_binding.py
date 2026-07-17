@@ -19,10 +19,13 @@ class UiStylesTrustedBindingTests(unittest.TestCase):
             "./components/ProductSurface.css",
             "./routes/CommandCenterHome.css",
             "./routes/CandidateRadar.css",
+            "./routes/FactorQuantHub.css",
         ):
             self.assertEqual(self.main.count(f'import "{relative}";'), 1)
         self.assertNotIn('import "./CommandCenterHome.css";', self.home)
         self.assertNotIn('import "./CandidateRadar.css";', self.candidate)
+        factor = (ROOT / "desktop/src/routes/FactorQuantHub.tsx").read_text(encoding="utf-8")
+        self.assertNotIn('import "./FactorQuantHub.css";', factor)
 
     def test_all_product_styles_are_bound_by_both_trust_layers(self) -> None:
         for relative in (
@@ -31,6 +34,7 @@ class UiStylesTrustedBindingTests(unittest.TestCase):
             "desktop/src/components/ProductSurface.css",
             "desktop/src/routes/CommandCenterHome.css",
             "desktop/src/routes/CandidateRadar.css",
+            "desktop/src/routes/FactorQuantHub.css",
         ):
             self.assertIn(f'"{relative}"', self.runner)
             self.assertIn(f'Path("{relative}")', self.service)
