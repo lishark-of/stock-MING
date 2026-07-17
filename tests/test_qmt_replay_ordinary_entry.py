@@ -26,13 +26,13 @@ class QmtReplayOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn('key: "tradeReview", label: "QMT', self.layout)
 
     def test_permanent_safety_boundary_is_first_screen_and_explicit(self):
-        page_head = self.page.index('className="page-head"')
+        page_head = self.page.index('className="page-head qmt-product-hero"')
         safety = self.page.index('data-qmt-permanent-safety-boundary="true"')
-        metrics = self.page.index("<MetricGrid")
+        source = self.page.index('data-qmt-ordinary-block="source"')
         operator = self.page.index('id="qmt-replay-operator"')
 
         self.assertLess(page_head, safety)
-        self.assertLess(safety, metrics)
+        self.assertLess(safety, source)
         self.assertLess(safety, operator)
         self.assertIn("QMT未连接｜券商未连接｜无账户绑定｜无订单接口｜不会下单｜仅本地研究回放", self.page)
         self.assertIn("不会探测 QMT 进程、端口或账户", self.page)
@@ -60,7 +60,7 @@ class QmtReplayOrdinaryEntryTests(unittest.TestCase):
 
     def test_only_explicit_confirmed_launch_posts_local_replay(self):
         launch_start = self.page.index("const launchReplay = () =>")
-        launch_end = self.page.index("const payloadCallLedger", launch_start)
+        launch_end = self.page.index("const displayLedger", launch_start)
         launch = self.page[launch_start:launch_end]
 
         self.assertEqual(self.page.count("postQmtLocalReplay("), 1)
