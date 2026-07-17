@@ -3205,6 +3205,11 @@ def _move_next_session_fixed_warnings_to_notices(packet: Mapping[str, Any]) -> d
     return normalized
 
 
+def _with_next_session_read_notices(packet: Mapping[str, Any]) -> dict[str, Any]:
+    """Compatibility name for the read-only notice normalizer."""
+    return _move_next_session_fixed_warnings_to_notices(packet)
+
+
 @memoize_request_local_read("next_session_cache")
 def read_next_session_cache() -> dict[str, Any]:
     _sync_packet_service_sqlite_path()

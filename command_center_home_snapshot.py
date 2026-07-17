@@ -8080,6 +8080,8 @@ def build_home_action_snapshot(
         margin_packet,
         data_freshness,
     )
+    etf_packet.setdefault("deepseek_called", False)
+    margin_packet.setdefault("deepseek_called", False)
     market_packet = _attach_current_evidence_freshness_context(market_packet, data_freshness)
     radar_packet_for_snapshot = _attach_current_evidence_freshness_context(
         radar_packet_service.build_command_center_radar_packet(
