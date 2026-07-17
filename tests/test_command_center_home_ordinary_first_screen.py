@@ -69,7 +69,13 @@ class CommandCenterHomeOrdinaryFirstScreenTests(unittest.TestCase):
             self.assertIn(field, binding)
         self.assertIn("makeStrictHomeResultBinding", binding)
         self.assertIn("selectMatchingHomeResultBinding", binding)
-        self.assertIn("ORDINARY_HOME_CURRENT_FRESHNESS_STATES.has(binding.freshness)", binding)
+        self.assertIn("isCanonicalHomeResultFreshness(binding.freshness)", binding)
+        self.assertIn("ordinaryHomeCandidateCurrentResolution.incomplete", binding)
+        self.assertIn("ordinaryHomeCandidateCanonicalResolution.incomplete", binding)
+        self.assertIn("ordinaryHomeCandidateResolution.incomplete", binding)
+        self.assertIn("dailyCommandConfirmedChainResolution.incomplete", self.source)
+        self.assertIn("latest_confirmed_symbol_readback_external_calls_triggered === false", self.source)
+        self.assertIn("latest_confirmed_symbol_creates_task_from_readback === false", self.source)
         self.assertIn("binding.symbol === ordinaryHomeConfirmedSymbolForBinding", binding)
         self.assertIn("binding.taskId === dailyCommandConfirmedSourceTaskId", binding)
         self.assertIn("binding.dataDate === ordinaryHomeExpectedTradeDateNormalized", binding)
@@ -83,7 +89,7 @@ class CommandCenterHomeOrdinaryFirstScreenTests(unittest.TestCase):
         first_screen_end = self.source.index("return (", first_screen_start)
         first_screen = self.source[first_screen_start:first_screen_end]
 
-        self.assertIn("ordinaryHomeUserEditedNewSymbol\n    ? null", first_screen)
+        self.assertIn("ordinaryHomeResultInputGateClosed\n    ? null", first_screen)
         self.assertIn("hasUnconfirmedHomeSymbolEdit", self.source)
         self.assertIn("尚未确认；旧标的结果不会套用到新输入", first_screen)
         self.assertIn("旧标的结果保持退出", first_screen)
@@ -91,6 +97,32 @@ class CommandCenterHomeOrdinaryFirstScreenTests(unittest.TestCase):
         self.assertIn("ordinaryHomeFirstScreenBinding?.symbol", first_screen)
         self.assertIn('ordinaryHomeFirstScreenActionKind === "result"', first_screen)
         self.assertIn('ordinaryHomeFirstScreenActionKind === "refresh"', first_screen)
+        self.assertIn("ordinaryHomePendingResultReplay", first_screen)
+        self.assertIn("旧结果继续隐藏", first_screen)
+
+    def test_post_success_keeps_old_result_hidden_until_exact_readback(self) -> None:
+        launch_start = self.source.index("const launchHomeQuantProjection")
+        launch_end = self.source.index("const launchLiveBootstrap", launch_start)
+        launch = self.source[launch_start:launch_end]
+        binding_start = self.source.index("const ordinaryHomePendingResultReplay")
+        binding_end = self.source.index("const ordinaryHomeLocalDataSourceContract", binding_start)
+        binding = self.source[binding_start:binding_end]
+
+        self.assertIn("setHomeQuantPendingResultSymbol(requestedSymbol)", launch)
+        self.assertIn("setHomeQuantPendingResultTaskId(nextTaskId)", launch)
+        self.assertNotIn("setHomeQuantSymbolTouched(false)", launch)
+        self.assertIn("shouldKeepHomeResultPending", binding)
+        self.assertIn("ordinaryHomeAuthoritativeResultBinding", binding)
+        self.assertIn("setHomeQuantSymbolTouched(false)", binding)
+
+    def test_guarded_supporting_details_hide_old_links_and_metadata(self) -> None:
+        details_start = self.source.index('className="home-research-technical-details')
+        details = self.source[details_start:]
+        self.assertIn('data-authoritative-result-details="true"', details)
+        self.assertIn("hidden={!ordinaryHomeSupportingDetailsReady}", details)
+        self.assertIn("aria-hidden={!ordinaryHomeSupportingDetailsReady}", details)
+        self.assertIn("旧摘要、来源、版本和结果链接保持隐藏", details)
+        self.assertIn("shouldShowHomeSupportingDetails", self.source)
 
     def test_confirm_status_line_uses_the_same_fail_closed_first_screen_state(self) -> None:
         first_screen_start = self.source.index("const ordinaryHomeFirstScreenBinding")

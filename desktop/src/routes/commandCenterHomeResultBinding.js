@@ -1,6 +1,7 @@
 const HOME_SYMBOL_PATTERN = /^\d{6}\.(SH|SZ|BJ)$/;
 const HOME_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const HOME_FRESHNESS_PATTERN = /^[a-z][a-z0-9_]*$/;
+const HOME_CANONICAL_RESULT_FRESHNESS_STATES = new Set(["fresh", "fresh_provider"]);
 
 function strictHomeString(value, pattern, maxLength) {
   if (typeof value !== "string" || !value || value !== value.trim() || value.length > maxLength) return "";
@@ -17,6 +18,11 @@ export function strictHomeIdentity(value, maxLength = 160) {
 
 export function strictHomeFreshness(value) {
   return strictHomeString(value, HOME_FRESHNESS_PATTERN, 64);
+}
+
+export function isCanonicalHomeResultFreshness(value) {
+  const freshness = strictHomeFreshness(value);
+  return Boolean(freshness && HOME_CANONICAL_RESULT_FRESHNESS_STATES.has(freshness));
 }
 
 export function strictHomeResultDate(value, options = {}) {
@@ -64,10 +70,23 @@ export function sameOrdinaryHomeResultBinding(left, right) {
 
 export function selectMatchingHomeResultBinding(bindings) {
   const complete = bindings.filter(Boolean);
-  if (!complete.length) return { binding: null, conflict: false };
+  const incomplete = bindings.length === 0 || complete.length !== bindings.length;
+  if (!complete.length) return { binding: null, conflict: false, incomplete };
   const first = complete[0];
   const conflict = complete.some((binding) => !sameOrdinaryHomeResultBinding(first, binding));
-  return { binding: conflict ? null : first, conflict };
+  return { binding: incomplete || conflict ? null : first, conflict, incomplete };
+}
+
+export function shouldKeepHomeResultPending({ pendingSymbol, pendingTaskId, binding }) {
+  const symbol = strictHomeSymbol(pendingSymbol);
+  const taskId = strictHomeIdentity(pendingTaskId, 160);
+  if (!pendingSymbol && !pendingTaskId) return false;
+  if (!symbol || !taskId || !binding) return true;
+  return binding.symbol !== symbol || binding.taskId !== taskId;
+}
+
+export function shouldShowHomeSupportingDetails({ binding, inputGateClosed }) {
+  return Boolean(binding && inputGateClosed === false);
 }
 
 export function makeStrictHomeConfirmedChain(record, fields, source) {
@@ -82,10 +101,11 @@ export function makeStrictHomeConfirmedChain(record, fields, source) {
 
 export function selectMatchingHomeConfirmedChain(chains) {
   const complete = chains.filter(Boolean);
-  if (!complete.length) return { chain: null, conflict: false };
+  const incomplete = chains.length === 0 || complete.length !== chains.length;
+  if (!complete.length) return { chain: null, conflict: false, incomplete };
   const first = complete[0];
   const conflict = complete.some((chain) => chain.symbol !== first.symbol || chain.taskId !== first.taskId);
-  return { chain: conflict ? null : first, conflict };
+  return { chain: incomplete || conflict ? null : first, conflict, incomplete };
 }
 
 export function hasUnconfirmedHomeSymbolEdit({ touched, raw, valid, normalized, confirmedSymbol }) {

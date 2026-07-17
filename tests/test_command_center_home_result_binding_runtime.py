@@ -16,11 +16,14 @@ class CommandCenterHomeResultBindingRuntimeTests(unittest.TestCase):
             f"""
             import {{
               hasUnconfirmedHomeSymbolEdit,
+              isCanonicalHomeResultFreshness,
               makeStrictHomeConfirmedChain,
               makeStrictHomeResultBinding,
               sameOrdinaryHomeResultBinding,
               selectMatchingHomeConfirmedChain,
               selectMatchingHomeResultBinding,
+              shouldKeepHomeResultPending,
+              shouldShowHomeSupportingDetails,
               strictHomeIdentity,
               strictHomeResultDate,
               strictHomeSymbol,
@@ -61,6 +64,32 @@ class CommandCenterHomeResultBindingRuntimeTests(unittest.TestCase):
               lineageFields,
               "storage",
             );
+            const fourMatchingBindings = [
+              summaryBinding,
+              lineageBinding,
+              {{...summaryBinding, source: "canonical_summary"}},
+              {{...lineageBinding, source: "canonical_lineage"}},
+            ];
+            const missingSurfaceTruthTable = fourMatchingBindings.map((_, missingIndex) =>
+              selectMatchingHomeResultBinding(
+                fourMatchingBindings.map((binding, index) => index === missingIndex ? null : binding),
+              ),
+            );
+            const conflictingBindingByField = Object.fromEntries(
+              [
+                ["symbol", "600519.SH"],
+                ["taskId", "task-2"],
+                ["resultVersion", "qrv_2"],
+                ["dataDate", "20260716"],
+                ["freshness", "fresh"],
+              ].map(([field, value]) => [
+                field,
+                selectMatchingHomeResultBinding([
+                  summaryBinding,
+                  {{...summaryBinding, [field]: value, source: `conflict_${{field}}`}},
+                ]),
+              ]),
+            );
             const partialSummary = makeStrictHomeResultBinding(
               {{current_result_symbol: "000001.SZ"}},
               currentFields,
@@ -100,9 +129,33 @@ class CommandCenterHomeResultBindingRuntimeTests(unittest.TestCase):
               }},
               sources: {{
                 matching: selectMatchingHomeResultBinding([summaryBinding, lineageBinding]),
+                complete_four: selectMatchingHomeResultBinding(fourMatchingBindings),
+                complete_plus_missing: selectMatchingHomeResultBinding([summaryBinding, null]),
+                missing_surface_truth_table: missingSurfaceTruthTable,
+                conflicting_field_truth_table: conflictingBindingByField,
                 partials_do_not_splice: selectMatchingHomeResultBinding([partialSummary, partialLineage]),
                 freshness_equal: sameOrdinaryHomeResultBinding(summaryBinding, freshnessConflict),
                 freshness_conflict: selectMatchingHomeResultBinding([summaryBinding, freshnessConflict]),
+              }},
+              freshness: {{
+                fresh: isCanonicalHomeResultFreshness("fresh"),
+                fresh_provider: isCanonicalHomeResultFreshness("fresh_provider"),
+                current: isCanonicalHomeResultFreshness("current"),
+                today: isCanonicalHomeResultFreshness("today"),
+                validated_current: isCanonicalHomeResultFreshness("validated_current"),
+                wrapped: isCanonicalHomeResultFreshness(" fresh "),
+              }},
+              pending: {{
+                none: shouldKeepHomeResultPending({{pendingSymbol: "", pendingTaskId: "", binding: summaryBinding}}),
+                before_task_id: shouldKeepHomeResultPending({{pendingSymbol: "000001.SZ", pendingTaskId: "", binding: summaryBinding}}),
+                old_binding: shouldKeepHomeResultPending({{pendingSymbol: "600519.SH", pendingTaskId: "task-2", binding: summaryBinding}}),
+                wrong_task: shouldKeepHomeResultPending({{pendingSymbol: "000001.SZ", pendingTaskId: "task-2", binding: summaryBinding}}),
+                exact_new_binding: shouldKeepHomeResultPending({{pendingSymbol: "000001.SZ", pendingTaskId: "task-1", binding: summaryBinding}}),
+              }},
+              details: {{
+                visible: shouldShowHomeSupportingDetails({{binding: summaryBinding, inputGateClosed: false}}),
+                hidden_for_input: shouldShowHomeSupportingDetails({{binding: summaryBinding, inputGateClosed: true}}),
+                hidden_without_binding: shouldShowHomeSupportingDetails({{binding: null, inputGateClosed: false}}),
               }},
               confirmed: {{
                 partial_does_not_splice: makeStrictHomeConfirmedChain(
@@ -111,6 +164,11 @@ class CommandCenterHomeResultBindingRuntimeTests(unittest.TestCase):
                   "partial",
                 ),
                 conflict: selectMatchingHomeConfirmedChain([confirmedA, confirmedB]),
+                matching: selectMatchingHomeConfirmedChain([
+                  confirmedA,
+                  {{...confirmedA, source: "writeback"}},
+                ]),
+                missing: selectMatchingHomeConfirmedChain([confirmedA, null]),
               }},
               edits: {{
                 untouched: hasUnconfirmedHomeSymbolEdit({{touched: false, raw: "", valid: false, normalized: "", confirmedSymbol: "000001.SZ"}}),
@@ -145,17 +203,51 @@ class CommandCenterHomeResultBindingRuntimeTests(unittest.TestCase):
 
     def test_sources_must_be_individually_complete_and_equal(self) -> None:
         self.assertFalse(self.result["sources"]["matching"]["conflict"])
+        self.assertFalse(self.result["sources"]["matching"]["incomplete"])
         self.assertEqual(self.result["sources"]["matching"]["binding"]["taskId"], "task-1")
+        self.assertIsNotNone(self.result["sources"]["complete_four"]["binding"])
+        self.assertFalse(self.result["sources"]["complete_four"]["incomplete"])
+        self.assertIsNone(self.result["sources"]["complete_plus_missing"]["binding"])
+        self.assertTrue(self.result["sources"]["complete_plus_missing"]["incomplete"])
+        for resolution in self.result["sources"]["missing_surface_truth_table"]:
+            self.assertIsNone(resolution["binding"])
+            self.assertTrue(resolution["incomplete"])
+        for resolution in self.result["sources"]["conflicting_field_truth_table"].values():
+            self.assertIsNone(resolution["binding"])
+            self.assertTrue(resolution["conflict"])
         self.assertIsNone(self.result["sources"]["partials_do_not_splice"]["binding"])
         self.assertFalse(self.result["sources"]["partials_do_not_splice"]["conflict"])
+        self.assertTrue(self.result["sources"]["partials_do_not_splice"]["incomplete"])
         self.assertFalse(self.result["sources"]["freshness_equal"])
         self.assertTrue(self.result["sources"]["freshness_conflict"]["conflict"])
         self.assertIsNone(self.result["sources"]["freshness_conflict"]["binding"])
+
+    def test_only_canonical_exact_freshness_states_are_accepted(self) -> None:
+        self.assertTrue(self.result["freshness"]["fresh"])
+        self.assertTrue(self.result["freshness"]["fresh_provider"])
+        for state in ("current", "today", "validated_current", "wrapped"):
+            self.assertFalse(self.result["freshness"][state])
+
+    def test_post_success_waits_for_the_exact_new_result_binding(self) -> None:
+        self.assertFalse(self.result["pending"]["none"])
+        self.assertTrue(self.result["pending"]["before_task_id"])
+        self.assertTrue(self.result["pending"]["old_binding"])
+        self.assertTrue(self.result["pending"]["wrong_task"])
+        self.assertFalse(self.result["pending"]["exact_new_binding"])
+
+    def test_supporting_details_share_the_authoritative_input_gate(self) -> None:
+        self.assertTrue(self.result["details"]["visible"])
+        self.assertFalse(self.result["details"]["hidden_for_input"])
+        self.assertFalse(self.result["details"]["hidden_without_binding"])
 
     def test_confirmed_chain_never_splices_or_silently_picks_a_conflict(self) -> None:
         self.assertIsNone(self.result["confirmed"]["partial_does_not_splice"])
         self.assertTrue(self.result["confirmed"]["conflict"]["conflict"])
         self.assertIsNone(self.result["confirmed"]["conflict"]["chain"])
+        self.assertFalse(self.result["confirmed"]["matching"]["incomplete"])
+        self.assertIsNotNone(self.result["confirmed"]["matching"]["chain"])
+        self.assertTrue(self.result["confirmed"]["missing"]["incomplete"])
+        self.assertIsNone(self.result["confirmed"]["missing"]["chain"])
 
     def test_touched_empty_or_invalid_input_remains_fail_closed(self) -> None:
         self.assertFalse(self.result["edits"]["untouched"])

@@ -31,6 +31,7 @@ export type HomeConfirmedChainFields = {
 export function strictHomeSymbol(value: unknown): string;
 export function strictHomeIdentity(value: unknown, maxLength?: number): string;
 export function strictHomeFreshness(value: unknown): string;
+export function isCanonicalHomeResultFreshness(value: unknown): boolean;
 export function strictHomeResultDate(value: unknown, options?: { allowIsoDate?: boolean }): string;
 export function makeStrictHomeResultBinding(
   record: Record<string, unknown>,
@@ -43,7 +44,16 @@ export function sameOrdinaryHomeResultBinding(
 ): boolean;
 export function selectMatchingHomeResultBinding(
   bindings: Array<OrdinaryHomeResultBinding | null>,
-): { binding: OrdinaryHomeResultBinding | null; conflict: boolean };
+): { binding: OrdinaryHomeResultBinding | null; conflict: boolean; incomplete: boolean };
+export function shouldKeepHomeResultPending(input: {
+  pendingSymbol: unknown;
+  pendingTaskId: unknown;
+  binding: OrdinaryHomeResultBinding | null;
+}): boolean;
+export function shouldShowHomeSupportingDetails(input: {
+  binding: OrdinaryHomeResultBinding | null;
+  inputGateClosed: boolean;
+}): boolean;
 export function makeStrictHomeConfirmedChain(
   record: Record<string, unknown>,
   fields: HomeConfirmedChainFields,
@@ -51,7 +61,7 @@ export function makeStrictHomeConfirmedChain(
 ): OrdinaryHomeConfirmedChain | null;
 export function selectMatchingHomeConfirmedChain(
   chains: Array<OrdinaryHomeConfirmedChain | null>,
-): { chain: OrdinaryHomeConfirmedChain | null; conflict: boolean };
+): { chain: OrdinaryHomeConfirmedChain | null; conflict: boolean; incomplete: boolean };
 export function hasUnconfirmedHomeSymbolEdit(input: {
   touched: boolean;
   raw: unknown;

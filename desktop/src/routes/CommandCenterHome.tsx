@@ -11,11 +11,14 @@ import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 import {
   hasUnconfirmedHomeSymbolEdit,
+  isCanonicalHomeResultFreshness,
   makeStrictHomeConfirmedChain,
   makeStrictHomeResultBinding,
   sameOrdinaryHomeResultBinding,
   selectMatchingHomeConfirmedChain,
   selectMatchingHomeResultBinding,
+  shouldKeepHomeResultPending,
+  shouldShowHomeSupportingDetails,
   strictHomeIdentity,
   strictHomeResultDate,
   type OrdinaryHomeResultBinding,
@@ -23,14 +26,6 @@ import {
 
 const LIVE_BOOTSTRAP_SESSION_KEY = "command_center_3_live_bootstrap_session_key";
 const DATA_CAPABILITY_HREF = "#dataCapability";
-const ORDINARY_HOME_CURRENT_FRESHNESS_STATES = new Set([
-  "fresh",
-  "fresh_provider",
-  "current",
-  "today",
-  "validated_current",
-]);
-
 function readLiveBootstrapSessionKey(): string {
   try {
     return window.sessionStorage.getItem(LIVE_BOOTSTRAP_SESSION_KEY) ?? "";
@@ -201,6 +196,8 @@ export default function CommandCenterHome() {
   const [liveBootstrapManualStatus, setLiveBootstrapManualStatus] = useState("not_checked");
   const [homeQuantSymbol, setHomeQuantSymbol] = useState("");
   const [homeQuantSymbolTouched, setHomeQuantSymbolTouched] = useState(false);
+  const [homeQuantPendingResultSymbol, setHomeQuantPendingResultSymbol] = useState("");
+  const [homeQuantPendingResultTaskId, setHomeQuantPendingResultTaskId] = useState("");
   const [homeQuantSubmitting, setHomeQuantSubmitting] = useState(false);
   const [homeQuantReceipt, setHomeQuantReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [homeQuantTaskId, setHomeQuantTaskId] = useState("");
@@ -1147,8 +1144,8 @@ export default function CommandCenterHome() {
       "可解释结果只从本地 cache / ledger / packet 回放；不会从结果回放卡创建 task、调用模型或生成交易动作。"
   );
   const taskIndexConfirmedChainSafe =
-    taskIndex?.latest_confirmed_symbol_readback_external_calls_triggered !== true &&
-    taskIndex?.latest_confirmed_symbol_creates_task_from_readback !== true;
+    taskIndex?.latest_confirmed_symbol_readback_external_calls_triggered === false &&
+    taskIndex?.latest_confirmed_symbol_creates_task_from_readback === false;
   const dailyCommandConfirmedChainResolution = selectMatchingHomeConfirmedChain([
     makeStrictHomeConfirmedChain(
       candidateQuantP1ShortestPathCheckpoint,
@@ -1178,7 +1175,8 @@ export default function CommandCenterHome() {
         )
       : null,
   ]);
-  const dailyCommandConfirmedChainConflict = dailyCommandConfirmedChainResolution.conflict;
+  const dailyCommandConfirmedChainConflict =
+    dailyCommandConfirmedChainResolution.conflict || dailyCommandConfirmedChainResolution.incomplete;
   const dailyCommandConfirmedSymbol = dailyCommandConfirmedChainResolution.chain?.symbol ?? "";
   const dailyCommandConfirmedSourceTaskId = dailyCommandConfirmedChainResolution.chain?.taskId ?? "";
   useEffect(() => {
@@ -2564,11 +2562,17 @@ export default function CommandCenterHome() {
     ordinaryHomeCandidateCurrentResolution.binding,
     ordinaryHomeCandidateCanonicalResolution.binding,
   ]);
+  const ordinaryHomeCandidateIdentityIncomplete =
+    ordinaryHomeCandidateCurrentResolution.incomplete ||
+    ordinaryHomeCandidateCanonicalResolution.incomplete ||
+    ordinaryHomeCandidateResolution.incomplete;
   const ordinaryHomeCandidateIdentityConflict =
     ordinaryHomeCandidateCurrentResolution.conflict ||
     ordinaryHomeCandidateCanonicalResolution.conflict ||
     ordinaryHomeCandidateResolution.conflict;
-  const ordinaryHomeCandidateBinding = ordinaryHomeCandidateIdentityConflict
+  const ordinaryHomeCandidateIdentityInvalid =
+    ordinaryHomeCandidateIdentityIncomplete || ordinaryHomeCandidateIdentityConflict;
+  const ordinaryHomeCandidateBinding = ordinaryHomeCandidateIdentityInvalid
     ? null
     : ordinaryHomeCandidateResolution.binding;
   const ordinaryHomeBindingMatchesConfirmedChain = (binding: OrdinaryHomeResultBinding) =>
@@ -2585,7 +2589,7 @@ export default function CommandCenterHome() {
       ordinaryHomeFreshnessIsFresh &&
       ordinaryHomeExpectedTradeDateNormalized &&
       binding.dataDate === ordinaryHomeExpectedTradeDateNormalized &&
-      ORDINARY_HOME_CURRENT_FRESHNESS_STATES.has(binding.freshness)
+      isCanonicalHomeResultFreshness(binding.freshness)
     );
   const ordinaryHomeCandidateBindingReady = Boolean(
     dailyCommandP3OneGlanceReadable &&
@@ -2607,7 +2611,7 @@ export default function CommandCenterHome() {
   );
   const ordinaryHomeResultIdentityConflict =
     dailyCommandConfirmedChainConflict ||
-    ordinaryHomeCandidateIdentityConflict ||
+    ordinaryHomeCandidateIdentityInvalid ||
     ordinaryHomeCandidateStorageConflict;
   const ordinaryHomeAuthoritativeResultBinding: OrdinaryHomeResultBinding | null =
     ordinaryHomeResultIdentityConflict
@@ -2617,6 +2621,28 @@ export default function CommandCenterHome() {
         : ordinaryHomeStorageBindingReady
           ? ordinaryHomeStorageBinding
           : null;
+  const ordinaryHomePendingResultReplay = shouldKeepHomeResultPending({
+    pendingSymbol: homeQuantPendingResultSymbol,
+    pendingTaskId: homeQuantPendingResultTaskId,
+    binding: ordinaryHomeAuthoritativeResultBinding,
+  });
+  const ordinaryHomeResultInputGateClosed =
+    homeQuantSubmitting || ordinaryHomeUserEditedNewSymbol || ordinaryHomePendingResultReplay;
+  const ordinaryHomeSupportingDetailsReady = shouldShowHomeSupportingDetails({
+    binding: ordinaryHomeAuthoritativeResultBinding,
+    inputGateClosed: ordinaryHomeResultInputGateClosed,
+  });
+  useEffect(() => {
+    if (!homeQuantPendingResultSymbol || !homeQuantPendingResultTaskId) return;
+    if (ordinaryHomePendingResultReplay) return;
+    setHomeQuantPendingResultSymbol("");
+    setHomeQuantPendingResultTaskId("");
+    setHomeQuantSymbolTouched(false);
+  }, [
+    homeQuantPendingResultSymbol,
+    homeQuantPendingResultTaskId,
+    ordinaryHomePendingResultReplay,
+  ]);
   const ordinaryHomeLocalDataSourceContract = {
     schema_version: "ordinary_home_local_data_source_contract.v1",
     cache_ready: dailyCommandP2CacheReady,
@@ -4404,11 +4430,14 @@ export default function CommandCenterHome() {
 
   const launchHomeQuantProjection = () => {
     if (!homeQuantCanSubmit || homeQuantSubmitting) return;
+    const requestedSymbol = homeQuantSymbolValidation.normalized;
     setHomeQuantSubmitting(true);
     setHomeQuantSubmitError("");
+    setHomeQuantPendingResultSymbol(requestedSymbol);
+    setHomeQuantPendingResultTaskId("");
     void postCandidateRadarQuantProjection({
       scan_mode: "search_quant_projection",
-      symbol: homeQuantSymbolValidation.normalized,
+      symbol: requestedSymbol,
       include_tushare: true,
       include_deepseek: false,
       user_approved: true,
@@ -4445,12 +4474,16 @@ export default function CommandCenterHome() {
       const nextTaskId = String(res.data?.task_id ?? res.data?.task?.task_id ?? "");
       setHomeQuantTaskId(nextTaskId);
       if (!res.ok || !nextTaskId) {
+        setHomeQuantPendingResultSymbol("");
+        setHomeQuantPendingResultTaskId("");
         setHomeQuantSubmitError(res.error ?? "home_quant_projection_task_not_created");
       } else {
-        setHomeQuantSymbolTouched(false);
+        setHomeQuantPendingResultTaskId(nextTaskId);
         refreshHomeResearchReadback();
       }
     }).catch((err) => {
+      setHomeQuantPendingResultSymbol("");
+      setHomeQuantPendingResultTaskId("");
       setHomeQuantSubmitError(err instanceof Error ? err.message : String(err));
     }).finally(() => {
       setHomeQuantSubmitting(false);
@@ -4494,7 +4527,8 @@ export default function CommandCenterHome() {
     });
   };
 
-  const ordinaryHomeFirstScreenBinding = ordinaryHomeUserEditedNewSymbol
+  const ordinaryHomeNewResultPending = homeQuantSubmitting || ordinaryHomePendingResultReplay;
+  const ordinaryHomeFirstScreenBinding = ordinaryHomeResultInputGateClosed
     ? null
     : ordinaryHomeAuthoritativeResultBinding;
   const ordinaryHomeFirstScreenResultReady = ordinaryHomeFirstScreenBinding !== null;
@@ -4504,6 +4538,8 @@ export default function CommandCenterHome() {
     ? "正在读取本地市场与数据状态，暂不生成结论。"
     : !dailyCommandHealthOk
       ? "本地连接尚未就绪，暂不展示投研结论。"
+      : ordinaryHomeNewResultPending
+        ? `${homeQuantPendingResultSymbol || ordinaryHomeEditedSymbolLabel} 已确认，正在等待新任务的同源结果完整回读；旧结果继续隐藏。`
       : ordinaryHomeUserEditedNewSymbol
         ? `${ordinaryHomeEditedSymbolLabel} 尚未确认；旧标的结果不会套用到新输入。`
         : !ordinaryHomeFreshnessIsFresh
@@ -4517,6 +4553,8 @@ export default function CommandCenterHome() {
     ? "本地读取中"
     : !dailyCommandHealthOk
       ? "本地未就绪"
+      : ordinaryHomeNewResultPending
+        ? "等待新结果回读"
       : ordinaryHomeUserEditedNewSymbol
         ? "等待确认新标的"
         : !ordinaryHomeFreshnessIsFresh
@@ -4530,6 +4568,8 @@ export default function CommandCenterHome() {
     ? "wait"
     : dailyCommandNeedsStartupRecovery
       ? "recovery"
+      : ordinaryHomeNewResultPending
+        ? "refresh"
       : ordinaryHomeUserEditedNewSymbol
         ? "confirm"
         : !ordinaryHomeFreshnessIsFresh
@@ -4575,6 +4615,8 @@ export default function CommandCenterHome() {
     ? "确认中：正在启动本地数据链，稍后自动回读结果。"
     : homeQuantSubmitError
       ? "确认失败：请先检查本地连接，再重新确认。"
+      : ordinaryHomePendingResultReplay
+        ? "确认已接收：等待同一股票、同一任务的四面结果完整回读；旧结果保持隐藏。"
       : ordinaryHomeUserEditedNewSymbol
         ? homeQuantSymbolValidation.valid
           ? `${ordinaryHomeEditedSymbolLabel} 尚未确认；确认前不显示旧标的结果。`
@@ -4695,6 +4737,16 @@ export default function CommandCenterHome() {
         }}
       >
         <summary>研究与技术详情</summary>
+        {!ordinaryHomeSupportingDetailsReady ? (
+          <p className="risk-note" aria-label="ordinary home guarded supporting details">
+            当前输入或结果身份尚未完成同源验证；旧摘要、来源、版本和结果链接保持隐藏。
+          </p>
+        ) : null}
+        <div
+          data-authoritative-result-details="true"
+          hidden={!ordinaryHomeSupportingDetailsReady}
+          aria-hidden={!ordinaryHomeSupportingDetailsReady}
+        >
         <p className="risk-note">数据血缘、任务回执、P0–P6、LTG、工程矩阵和完整审计默认收起；普通使用只需查看上方五类信息。</p>
       <PacketCard title="今日可用" subtitle="普通首页只看能不能用、看哪只票、有没有结果、下一步点哪里" status={ordinaryHomeStatusBadge}>
         <div className="home-primary-status-stability-frame">
@@ -5839,6 +5891,7 @@ export default function CommandCenterHome() {
         </PacketCard>
       </div>
       </details>
+      </div>
       </details>
     </div>
   );
