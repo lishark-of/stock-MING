@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from server.api.routes_candidate import get_candidate_radar_cache
-from server.services import candidate_service, data_health_service, packet_service, task_service
+from server.services import candidate_service, data_health_service, motion_evidence_service, packet_service, task_service
 from server.services.request_local_memo import request_local_memo_scope
 from storage.sqlite_meta import SQLiteMetaStore
 
@@ -328,7 +328,10 @@ class CandidateCacheReadSafetyTests(unittest.TestCase):
                     source_snapshot="sqlite_meta_candidate_radar_packet",
                     row_count=1,
                     call_status="cache_read",
-                )
+                ),
+                {"api": "local_candidate_radar_durable_evidence_recipe", "call_status": "stale"},
+                {"api": "local_candidate_radar_production_replacement_review_preview"},
+                {"api": "local_candidate_radar_durable_evidence_recipe", "call_status": "duplicate"},
             ],
             "warnings": [],
         }
@@ -343,6 +346,14 @@ class CandidateCacheReadSafetyTests(unittest.TestCase):
         apis = [row.get("api") for row in twice["call_ledger"]]
         self.assertEqual(apis[0], "local_candidate_radar_cache")
         self.assertEqual(apis.count("local_candidate_radar_durable_evidence_recipe"), 1)
+        self.assertLess(
+            apis.index("local_candidate_radar_durable_evidence_recipe"),
+            apis.index("local_candidate_radar_production_replacement_review_preview"),
+        )
+        self.assertEqual(
+            twice["call_ledger"][apis.index("local_candidate_radar_durable_evidence_recipe")]["call_status"],
+            contract["status"],
+        )
 
     def test_persisted_quick_scan_history_does_not_replace_current_get_ledger(self) -> None:
         persisted = {
@@ -370,6 +381,8 @@ class CandidateCacheReadSafetyTests(unittest.TestCase):
         self.assertEqual(apis[0], "local_candidate_radar_cache")
         self.assertNotIn("local_candidate_radar_quick_scan", apis)
         self.assertEqual(len(apis), len(set(apis)))
+        allowlist = motion_evidence_service._FASTAPI_LEDGER_APIS["/api/candidate-radar/cache"]
+        self.assertEqual([allowlist.index(api) for api in apis], sorted(allowlist.index(api) for api in apis))
 
 
 if __name__ == "__main__":
