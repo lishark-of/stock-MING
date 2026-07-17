@@ -13,6 +13,7 @@ import TaskStatusPanel from "../components/TaskStatusPanel";
 
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
 const DATA_CAPABILITY_HREF = "#dataCapability";
+const EMPTY_CANDIDATE_RADAR_ORDINARY_FALLBACK = Object.freeze({}) as Record<string, unknown>;
 
 function rowsFromArray(items: unknown, fallbackKey = "value"): Array<Record<string, unknown>> {
   if (!Array.isArray(items)) return [];
@@ -158,7 +159,10 @@ function latestNextTushareTaskSummary(tasks: NextTaskLike[]) {
 
 export default function NextSessionMap() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
-  const [candidateRadarCache, setCandidateRadarCache] = useState<Record<string, unknown>>({});
+  const candidateRadarCache = EMPTY_CANDIDATE_RADAR_ORDINARY_FALLBACK;
+  const [candidateRadarDetailCache, setCandidateRadarDetailCache] = useState<Record<string, unknown>>({});
+  const [candidateRadarDetailStatus, setCandidateRadarDetailStatus] = useState<"idle" | "loading" | "ready" | "empty" | "error">("idle");
+  const candidateRadarDetailHasLastGood = Object.keys(candidateRadarDetailCache).length > 0;
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [cacheMissingMessage, setCacheMissingMessage] = useState("");
@@ -234,17 +238,32 @@ export default function NextSessionMap() {
         refreshTaskIndex();
       }
     });
-  const refreshCandidateRadarCache = () =>
-    getCandidateRadarCache().then((res) => {
-      if (res.ok !== false) setCandidateRadarCache(res.data ?? {});
-    });
+  const refreshCandidateRadarCache = () => {
+    setCandidateRadarDetailStatus("loading");
+    return getCandidateRadarCache()
+      .then((res) => {
+        if (res.ok === false) {
+          setCandidateRadarDetailStatus("error");
+          return;
+        }
+        const nextCandidateRadarCache = res.data ?? {};
+        if (Object.keys(nextCandidateRadarCache).length) {
+          setCandidateRadarDetailCache(nextCandidateRadarCache);
+          setCandidateRadarDetailStatus("ready");
+          return;
+        }
+        setCandidateRadarDetailCache({});
+        setCandidateRadarDetailStatus("empty");
+      })
+      .catch(() => setCandidateRadarDetailStatus("error"));
+  };
   const refreshTaskIndex = () =>
     getTasks().then((res) => setTaskIndex(res.data));
 
   useEffect(() => {
     let cancelled = false;
     setInitialLayoutLoading(true);
-    void Promise.allSettled([refreshCache(), refreshCandidateRadarCache(), refreshTaskIndex()])
+    void Promise.allSettled([refreshCache(), refreshTaskIndex()])
       .then((results) => {
         if (cancelled) return;
         const failed = results.find((result) => result.status === "rejected");
@@ -532,10 +551,13 @@ export default function NextSessionMap() {
   const candidateRadarModelLedgerLabel = candidateRadarModelLedgerId
     ? `model_ledger_id ${candidateRadarModelLedgerId}；DeepSeek 只解释事实摘要，不改图谱数据`
     : "等待安全模型账本；Next 仍按 Tushare-first 和 Factor 结果回放";
+  const taskIndexConfirmedSymbol = String(taskIndex?.latest_confirmed_symbol ?? "");
+  const taskIndexConfirmedTaskId = String(taskIndex?.latest_confirmed_task_id ?? "");
   const candidateRadarConfirmedSymbol = String(
     packet.latest_confirmed_symbol ||
-      candidateRadarCache.latest_confirmed_symbol ||
       packetCandidateRadarP3HandoffSymbol ||
+      taskIndexConfirmedSymbol ||
+      candidateRadarCache.latest_confirmed_symbol ||
       candidateRadarReceipt.symbol ||
       candidateRadarSmallDataWriteback.symbol ||
       candidateRadarInterpretation.symbol ||
@@ -608,7 +630,7 @@ export default function NextSessionMap() {
     : "等待 current / last-good 结果";
   const candidateRadarDegradedLabel = candidateRadarDegradedVisible
     ? `本次 degraded ${candidateRadarDegradedSymbol || "本次标的"} / ${candidateRadarDegradedVersion || candidateRadarLatestResultVersion || "等待版本"}；task ${String(candidateRadarResultVersionSummary.latest_task_id ?? candidateRadarResultLineage.task_id ?? "等待任务")}：${candidateRadarDegradedReason}；不覆盖 current`
-    : "未降级；current 与 latest 可按同一结果回放";
+    : "候选详情不参与普通结论；降级状态请在高级诊断按需查看";
   const candidateRadarOverwriteGuardLabel =
     candidateRadarResultVersionSummary.old_task_can_overwrite_current === false ||
     candidateRadarResultLineage.old_task_can_overwrite_current === false
@@ -629,8 +651,9 @@ export default function NextSessionMap() {
       candidateRadarProviderModelAcceptance.task_id ||
       candidateRadarV05Lineage.candidate_task_id ||
       packet.latest_confirmed_task_id ||
-      candidateRadarCache.latest_confirmed_task_id ||
       packetCandidateRadarP3HandoffSourceTask ||
+      taskIndexConfirmedTaskId ||
+      candidateRadarCache.latest_confirmed_task_id ||
       candidateRadarCache.search_quant_projection_latest_task_id ||
       candidateRadarCache.latest_task_id ||
       candidateRadarReceipt.latest_task_id ||
@@ -739,7 +762,7 @@ export default function NextSessionMap() {
     },
     {
       label: "只读来源",
-      value: "GET /api/tasks + 本地次日图谱数据 + CandidateRadar cache",
+      value: "GET /api/tasks + 本地次日图谱数据；CandidateRadar 完整详情仅在高级诊断按需读取",
       tone: "good"
     },
     {
@@ -811,7 +834,7 @@ export default function NextSessionMap() {
   const nextSessionResultVersionGuardItems: MetricItem[] = [
     { label: "current/last-good", value: candidateRadarLastGoodLabel, tone: candidateRadarCurrentResultVersion ? "good" : "warn" },
     { label: "日期/新鲜度", value: candidateRadarFreshnessLabel, tone: candidateRadarDataDate && candidateRadarFreshnessState ? "good" : "warn" },
-    { label: "本次降级", value: candidateRadarDegradedLabel, tone: candidateRadarDegradedVisible ? "warn" : "good" },
+    { label: "本次降级", value: candidateRadarDegradedLabel, tone: "warn" },
     { label: "覆盖保护", value: candidateRadarOverwriteGuardLabel, tone: candidateRadarOverwriteGuardLabel.includes("旧任务不能覆盖") ? "good" : "warn" }
   ];
   const candidateRadarReadableResultReady =
@@ -2038,7 +2061,7 @@ export default function NextSessionMap() {
           <a href="#next-session-chart" title="跳到本页完整次日图谱区域；只读本地次日图谱数据" aria-label="open chart area from next session progress watch">图谱区域</a>
           <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant from next session progress watch">股票量化推演</a>
         </div>
-        <p className="risk-note">边用边看：{nextSessionProgressWatchNext}；这只来自 GET /api/tasks、本地次日图谱数据和 CandidateRadar cache，不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易，也不改操作区。</p>
+        <p className="risk-note">边用边看：{nextSessionProgressWatchNext}；这只来自 GET /api/tasks 和本地次日图谱数据，CandidateRadar 完整详情仅在高级诊断按需读取；不创建第二个 task、不补调 Tushare/DeepSeek、不真实交易，也不改操作区。</p>
       </details>
       <div aria-label="next session ordinary progress checkpoint">
         <h3>当前图谱 checkpoint</h3>
@@ -2105,7 +2128,7 @@ export default function NextSessionMap() {
       </div>
       <details className="developer-audit-details" aria-label="next session upstream readback details">
         <summary>上游确认链路详情</summary>
-        <p className="risk-note">普通首屏先读 P3 图谱；上游确认、任务、P2 写回和结果入口的链路回放默认收起，需要排查来源时再展开。</p>
+        <p className="risk-note">普通首屏先读 P3 图谱包内嵌的交接证据；候选雷达完整缓存默认不读取，需要排查来源时可在图表后的高级诊断中显式读取本地明细。</p>
         <div aria-label="next session upstream one screen actions">
           <h3>上游确认一屏行动</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成图谱页上游速读；本页只读回放，不创建 task、不调用模型。</p>
@@ -2210,6 +2233,36 @@ export default function NextSessionMap() {
       <details id="next-session-audit" className="developer-audit-details" aria-label="next session developer audit details">
         <summary>开发 / 审计指标</summary>
         <p className="risk-note">普通用户先看上方次日图谱摘要和图表；QA、coverage、promotion、cache ledger 和原始 packet 默认收起。</p>
+        <div className="actions" aria-label="next session explicit candidate radar cache read">
+          <button
+            type="button"
+            onClick={() => { void refreshCandidateRadarCache(); }}
+            disabled={candidateRadarDetailStatus === "loading"}
+            title="只读取本机 CandidateRadar cache；不创建任务、不调用外部数据或模型"
+          >
+            {candidateRadarDetailStatus === "loading"
+              ? "正在读取本地上游明细"
+              : candidateRadarDetailStatus === "idle"
+                ? "读取本地上游明细"
+                : "重新读取本地上游明细"}
+          </button>
+        </div>
+        <p className="risk-note" aria-live="polite">
+          {candidateRadarDetailStatus === "loading"
+            ? "正在读取本地上游明细；普通图谱继续使用同包交接证据。"
+            : candidateRadarDetailStatus === "ready"
+            ? "本地上游明细已读取。"
+            : candidateRadarDetailStatus === "empty"
+              ? "本地候选缓存为空；普通图谱仍使用同包交接证据。"
+            : candidateRadarDetailStatus === "error"
+              ? candidateRadarDetailHasLastGood
+                ? "本地上游明细重新读取失败；已保留上次成功读取的明细，普通图谱仍使用同包交接证据。"
+                : "本地上游明细读取失败；普通图谱仍使用同包交接证据。"
+              : "未读取完整候选缓存；普通图谱不受影响。"}
+        </p>
+        {candidateRadarDetailHasLastGood
+          ? <JsonDetails title="CandidateRadar 按需本地明细" data={candidateRadarDetailCache} />
+          : null}
         <p className="risk-note">审计索引：图表合同、交互审计、交互阻断、信号/能力覆盖、替代激活收据、替代阻断、缺失证据、local_activation_receipt_ready、production_blocker_count、missing_evidence_count、cache envelope ledger、cache warnings。</p>
         <div className="actions" aria-label="next session developer audit gated review actions">
           <button onClick={reviewBrowserQa}>审查本地 QA</button>

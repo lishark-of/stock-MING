@@ -35,6 +35,8 @@ const WorkerRuntime = lazy(() => import("./routes/WorkerRuntime"));
 const ROUTE_STORAGE_KEY = "stock_ming_command_center_3_route";
 const ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS = [0, 80, 240, 600, 1200, 2000];
 const ROUTE_ANCHOR_HARD_DEADLINE_MS = 25000;
+const CANDIDATE_SETTLED_ANCHOR_QUIET_MS = 48;
+const CANDIDATE_SETTLED_ANCHOR_MAX_WAIT_MS = 400;
 const ROUTE_KEYS: RouteKey[] = [
   "home",
   "health",
@@ -183,6 +185,16 @@ export default function App() {
     let stabilityWindowElapsed = false;
     let stopped = false;
     let settledScrollScheduled = false;
+    let settledAnimationWaitScheduled = false;
+    let settledScrollDeadlineElapsed = false;
+    let settledScrollQuietTimer: number | null = null;
+    let settledScrollMaxTimer: number | null = null;
+    let settledScrollFrame: number | null = null;
+    const cancelSettledScrollFrame = () => {
+      if (settledScrollFrame === null) return;
+      window.cancelAnimationFrame(settledScrollFrame);
+      settledScrollFrame = null;
+    };
     const stopRetryTimers = () => {
       retryTimers.forEach((timer) => window.clearTimeout(timer));
       retryTimers = [];
@@ -199,6 +211,15 @@ export default function App() {
         window.clearTimeout(hardStopTimer);
         hardStopTimer = null;
       }
+      if (settledScrollQuietTimer !== null) {
+        window.clearTimeout(settledScrollQuietTimer);
+        settledScrollQuietTimer = null;
+      }
+      if (settledScrollMaxTimer !== null) {
+        window.clearTimeout(settledScrollMaxTimer);
+        settledScrollMaxTimer = null;
+      }
+      cancelSettledScrollFrame();
       window.removeEventListener("wheel", stopAnchorRetries);
       window.removeEventListener("touchstart", stopAnchorRetries);
       window.removeEventListener("pointerdown", stopAnchorRetries);
@@ -214,6 +235,43 @@ export default function App() {
         stabilityWindowElapsed = true;
         scrollToAnchor();
       }, Math.max(...ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS) + 200);
+    };
+    const commitSettledAnchorScroll = () => {
+      if (settledScrollQuietTimer !== null) {
+        window.clearTimeout(settledScrollQuietTimer);
+        settledScrollQuietTimer = null;
+      }
+      cancelSettledScrollFrame();
+      settledScrollFrame = window.requestAnimationFrame(() => {
+        settledScrollFrame = null;
+        if (cancelled || stopped) return;
+        document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+        stopAnchorRetries();
+      });
+    };
+    const scheduleSettledAnchorScroll = () => {
+      if (route !== "candidates") {
+        if (cancelled || stopped) return;
+        document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+        stopAnchorRetries();
+        return;
+      }
+      if (cancelled || stopped || settledScrollDeadlineElapsed) return;
+      settledScrollScheduled = true;
+      stopRetryTimers();
+      if (settledScrollQuietTimer !== null) window.clearTimeout(settledScrollQuietTimer);
+      cancelSettledScrollFrame();
+      if (settledScrollMaxTimer === null) {
+        settledScrollMaxTimer = window.setTimeout(() => {
+          settledScrollMaxTimer = null;
+          settledScrollDeadlineElapsed = true;
+          commitSettledAnchorScroll();
+        }, CANDIDATE_SETTLED_ANCHOR_MAX_WAIT_MS);
+      }
+      settledScrollQuietTimer = window.setTimeout(() => {
+        settledScrollQuietTimer = null;
+        commitSettledAnchorScroll();
+      }, CANDIDATE_SETTLED_ANCHOR_QUIET_MS);
     };
     const scrollToAnchor = () => {
       if (cancelled || stopped) return false;
@@ -231,18 +289,19 @@ export default function App() {
             && animationTarget instanceof Element
             && (animationTarget === routeShell || routeShell.contains(animationTarget));
         });
-        if (runningAnimations.length && !settledScrollScheduled) {
-          settledScrollScheduled = true;
-          observer?.disconnect();
+        if (runningAnimations.length) {
+          if (settledAnimationWaitScheduled || settledScrollScheduled) return true;
+          settledAnimationWaitScheduled = true;
           stopRetryTimers();
           void Promise.allSettled(runningAnimations.map((animation) => animation.finished)).then(() => {
             if (cancelled || stopped) return;
-            document.getElementById(anchor)?.scrollIntoView({ block: "start" });
-            stopAnchorRetries();
+            settledAnimationWaitScheduled = false;
+            scheduleSettledAnchorScroll();
           });
           return true;
         }
-        if (settledScrollScheduled) return true;
+        scheduleSettledAnchorScroll();
+        return true;
       }
       target.scrollIntoView({ block: "start" });
       if (
@@ -256,12 +315,19 @@ export default function App() {
       }
       return true;
     };
-    observer = new MutationObserver(scrollToAnchor);
+    observer = new MutationObserver(() => {
+      if (route === "candidates" && settledScrollScheduled) {
+        scheduleSettledAnchorScroll();
+        return;
+      }
+      scrollToAnchor();
+    });
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      characterData: true,
       attributes: true,
-      attributeFilter: ["data-route-cache-loading", "data-route-cache-settled"],
+      attributeFilter: ["data-route-cache-loading", "data-route-cache-settled", "class", "style", "hidden", "open"],
     });
     window.addEventListener("wheel", stopAnchorRetries, { passive: true });
     window.addEventListener("touchstart", stopAnchorRetries, { passive: true });
