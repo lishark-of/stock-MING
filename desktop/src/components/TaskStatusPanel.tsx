@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { cancelTask, getTask, type ApiEnvelope, type TaskRecord } from "../api/client";
+import { cancelTask, getTasks, type ApiEnvelope, type TaskRecord, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "./DataLineageTable";
 import DeepSeekModelStrategyLedger from "./DeepSeekModelStrategyLedger";
 import MetricGrid, { type MetricItem } from "./MetricGrid";
@@ -34,21 +34,15 @@ function labelForStatus(status: TaskRecord["status"]) {
   return "等待中";
 }
 
-function mergeTaskEnvelope(res: ApiEnvelope<TaskRecord>): TaskRecord | null {
+function taskFromIndex(res: ApiEnvelope<TaskStatusIndex>, taskId: string): TaskRecord | null {
   if (!res.ok) return null;
-  const dataLedger = res.data.call_ledger ?? [];
-  const dataWarnings = res.data.warnings ?? [];
-  return {
-    ...res.data,
-    call_ledger: dataLedger.length ? dataLedger : res.call_ledger,
-    warnings: dataWarnings.length ? dataWarnings : res.warnings
-  };
+  return res.data.tasks.find((row) => row.task_id === taskId) ?? null;
 }
 
-function taskLookupError(res: ApiEnvelope<TaskRecord>): TaskLookupError | null {
-  if (res.ok) return null;
+function taskIndexLookupError(res: ApiEnvelope<TaskStatusIndex>, taskId: string): TaskLookupError | null {
+  if (res.ok && res.data.tasks.some((row) => row.task_id === taskId)) return null;
   return {
-    error: String(res.error ?? "task_lookup_failed"),
+    error: String(res.error ?? "task_not_found_in_local_index"),
     call_ledger: res.call_ledger ?? [],
     warnings: res.warnings ?? []
   };
@@ -85,14 +79,14 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
 
   const loadTask = () => {
     if (!taskId) return;
-    void getTask(taskId).then((res) => {
-      const mergedTask = mergeTaskEnvelope(res);
+    void getTasks().then((res) => {
+      const mergedTask = taskFromIndex(res, taskId);
       if (mergedTask) {
         setTask(mergedTask);
         setLookupError(null);
         return;
       }
-      setLookupError(taskLookupError(res));
+      setLookupError(taskIndexLookupError(res, taskId));
     });
   };
 
@@ -100,15 +94,15 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     if (!taskId) return undefined;
     let active = true;
     const load = () => {
-      void getTask(taskId).then((res) => {
-        const mergedTask = mergeTaskEnvelope(res);
+      void getTasks().then((res) => {
+        const mergedTask = taskFromIndex(res, taskId);
         if (!active) return;
         if (mergedTask) {
           setTask(mergedTask);
           setLookupError(null);
           return;
         }
-        setLookupError(taskLookupError(res));
+        setLookupError(taskIndexLookupError(res, taskId));
       });
     };
     load();
