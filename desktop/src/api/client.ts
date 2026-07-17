@@ -122,7 +122,7 @@ const RESPONSE_PARSE_ERROR = "response_parse_failed";
 const TAURI_GET_STARTUP_RETRY_ATTEMPTS = 40;
 const TAURI_GET_STARTUP_RETRY_DELAY_MS = 500;
 const TAURI_GET_STARTUP_DEADLINE_MS = 25000;
-const LOCAL_API_FETCH_TIMEOUT_MS = 5000;
+const LOCAL_API_FETCH_TIMEOUT_MS = 7000;
 const inFlightReadOnlyRequests = new Map<string, Promise<ApiEnvelope<unknown>>>();
 
 async function fetchLocalApi(url: string, init?: RequestInit, timeoutMs = LOCAL_API_FETCH_TIMEOUT_MS): Promise<Response> {
