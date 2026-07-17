@@ -2442,6 +2442,18 @@ async function runQa(args) {
       await page.goto(warmupUrl, { waitUntil: "networkidle", timeout: 20000 });
       await page.waitForTimeout(args.reducedMotion ? 80 : 500);
       await closeSession(activeSession, `warmup:${viewport.name}`);
+      const warmupCoveredPaths = new Set(
+        warmupRequestLedger
+          .filter(entry => (
+            entry.viewport === viewport.name &&
+            entry.event_type === "response" &&
+            entry.purpose === "vite_preview_dist_resource" &&
+            entry.body_matches_dist === true &&
+            entry.body_schema_valid === true
+          ))
+          .map(entry => entry.dist_path)
+      );
+      const manifestPaths = currentDistManifest.entry_graph.filter(path => !warmupCoveredPaths.has(path));
       activeSession = createSession("manifest", "#manifest", manifestRequestLedger);
       await page.evaluate(async paths => {
         for (const path of paths) {
@@ -2450,7 +2462,7 @@ async function runQa(args) {
           if (!response.ok) throw new Error(`manifest_fetch_failed:${url}:${response.status}`);
           await response.arrayBuffer();
         }
-      }, currentDistManifest.entry_graph);
+      }, manifestPaths);
       await closeSession(activeSession, `manifest:${viewport.name}`);
       for (const route of routes) {
         const activeRequestLedger = [];
