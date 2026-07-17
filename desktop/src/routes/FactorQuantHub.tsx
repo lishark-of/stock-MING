@@ -11,6 +11,7 @@ import PacketCard from "../components/PacketCard";
 import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
+import "./FactorQuantHub.css";
 
 // Legacy marker: plain href="#candidates" module-top links are superseded by the confirm-input deep link.
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
@@ -85,6 +86,17 @@ function ordinaryFactorMetricItems(items: MetricItem[]): MetricItem[] {
     value: ordinaryFactorText(item.value),
     tone: undefined
   }));
+}
+
+function factorDisplayName(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const row = value as Record<string, unknown>;
+    const name = row.factor_name ?? row.display_name ?? row.label ?? row.title ?? row.name ?? row.factor_key;
+    return name ? ordinaryFactorText(name) : "未命名因子";
+  }
+  return value === null || value === undefined || value === ""
+    ? "未命名因子"
+    : ordinaryFactorText(value);
 }
 
 type FactorTaskLike = {
@@ -2788,6 +2800,100 @@ export default function FactorQuantHub() {
     { label: "任务边界", value: ordinaryQuantTaskBoundary },
     { label: "结果边界", value: ordinaryQuantResultBoundary, tone: "good" }
   ];
+  const factorFocusSupportFactors = Array.isArray(score.support_factors) ? score.support_factors : [];
+  const factorFocusSuppressFactors = Array.isArray(score.suppress_factors) ? score.suppress_factors : [];
+  const factorFocusNeutralFactors = Array.isArray(score.neutral_factors) ? score.neutral_factors : [];
+  const factorFocusMissingFactors = Array.isArray(score.missing_factors) ? score.missing_factors : [];
+  const factorFocusFactorTotal =
+    factorFocusSupportFactors.length +
+    factorFocusSuppressFactors.length +
+    factorFocusNeutralFactors.length +
+    factorFocusMissingFactors.length;
+  const factorFocusCoveredCount =
+    factorFocusSupportFactors.length + factorFocusSuppressFactors.length + factorFocusNeutralFactors.length;
+  const factorFocusCoveragePercent = factorFocusFactorTotal
+    ? Math.round((factorFocusCoveredCount / factorFocusFactorTotal) * 100)
+    : 0;
+  const factorFocusRuntimeUniverse =
+    runtime.universe && typeof runtime.universe === "object" && !Array.isArray(runtime.universe)
+      ? (runtime.universe as Record<string, unknown>)
+      : {};
+  const factorFocusRuntimeSymbols = Array.isArray(factorFocusRuntimeUniverse.items)
+    ? factorFocusRuntimeUniverse.items
+    : [];
+  const factorFocusSymbol = candidateRadarConfirmedSymbol || String(factorFocusRuntimeSymbols[0] ?? "").trim();
+  const factorFocusCompositeScore = Number(score.composite_score);
+  const factorFocusScoreAvailable = score.composite_score !== null &&
+    score.composite_score !== undefined &&
+    score.composite_score !== "" &&
+    Number.isFinite(factorFocusCompositeScore);
+  const factorFocusScoreLabel = factorFocusScoreAvailable ? factorFocusCompositeScore.toFixed(1) : "--";
+  const factorFocusScorePercent = factorFocusScoreAvailable
+    ? Math.max(0, Math.min(100, factorFocusCompositeScore))
+    : 0;
+  const factorFocusBand = String(score.score_band ?? "").trim().toLowerCase();
+  const factorFocusSupportBands = new Set(["support", "strong_support", "bullish", "positive"]);
+  const factorFocusSuppressBands = new Set(["suppress", "strong_suppress", "bearish", "negative"]);
+  const factorFocusNeutralBands = new Set(["neutral", "balanced", "mixed"]);
+  const factorFocusFreshnessStates = [
+    candidateRadarResultFreshness,
+    freshnessGate.status,
+    freshnessGate.freshness_state,
+    freshnessGate.evidence_state
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_"))
+    .filter(Boolean);
+  const factorFocusBlockedFreshnessStates = new Set([
+    "stale",
+    "expired",
+    "not_ready",
+    "blocked",
+    "missing",
+    "unavailable",
+    "future_unavailable"
+  ]);
+  const factorFocusFreshnessBlocked = freshnessGate.usable_for_score === false ||
+    factorFocusFreshnessStates.some((state) =>
+      factorFocusBlockedFreshnessStates.has(state) ||
+      state.startsWith("stale_") ||
+      state.startsWith("expired_") ||
+      state.includes("not_ready") ||
+      state.endsWith("_blocked")
+    );
+  const factorFocusDisplayedScoreLabel = factorFocusFreshnessBlocked ? "--" : factorFocusScoreLabel;
+  const factorFocusDisplayedScorePercent = factorFocusFreshnessBlocked ? 0 : factorFocusScorePercent;
+  const factorFocusCoverageLabel = factorFocusFreshnessBlocked ? "历史 / 不可用" : `${factorFocusCoveragePercent}%`;
+  const factorFocusDisplayedCoveragePercent = factorFocusFreshnessBlocked ? 0 : factorFocusCoveragePercent;
+  const factorFocusConclusion = factorFocusFreshnessBlocked
+    ? "数据待更新"
+    : empty || !factorFocusScoreAvailable
+      ? "等待本地结果"
+    : factorFocusSupportBands.has(factorFocusBand) || factorFocusSupportFactors.length > factorFocusSuppressFactors.length
+      ? "支持"
+      : factorFocusSuppressBands.has(factorFocusBand) || factorFocusSuppressFactors.length > factorFocusSupportFactors.length
+        ? "压制"
+        : factorFocusNeutralBands.has(factorFocusBand) || factorFocusNeutralFactors.length > 0
+          ? "中性"
+          : "中性";
+  const factorFocusTone = factorFocusConclusion === "支持"
+    ? "support"
+    : factorFocusConclusion === "压制"
+      ? "suppress"
+      : factorFocusConclusion === "中性"
+        ? "neutral"
+        : "waiting";
+  const factorFocusSampleDate =
+    candidateRadarResultDataDate || latestFactorTushareTask.dataDate || String(freshnessGate.latest_data_date ?? "") || "日期待回放";
+  const factorFocusLimitation = factorFocusFreshnessBlocked
+    ? "数据状态未就绪；旧分数和因子覆盖只作历史回看，不能作为当前结论。"
+    : factorFocusMissingFactors.length
+      ? `仍有 ${factorFocusMissingFactors.length} 项因子缺少可用样本，当前结论只适合研究复核。`
+      : factorFocusFactorTotal
+        ? "当前因子已有可读覆盖；仍需结合次日图谱和风险边界复核。"
+        : "本地因子结果尚未生成，先确认或更换股票代码。";
+  const factorFocusConclusionSentence = factorFocusSymbol
+    ? `${factorFocusSymbol} 当前量化结论为${factorFocusConclusion}。这是研究参考，不是买卖指令。`
+    : "尚未确认股票代码；先选择标的，再查看量化结论。";
 
   return (
     <div data-ltg10-component-id="FactorQuantHub">
@@ -2797,6 +2903,99 @@ export default function FactorQuantHub() {
           <p>因子、次日图谱和模型解释状态一屏看清；只做研究预览，不修改交易动作。</p>
         </div>
       </div>
+      <section id="factor-score" className="factor-focus-dashboard" aria-label="当前标的量化结论">
+        <header className="factor-focus-dashboard__header">
+          <div>
+            <span className="factor-focus-dashboard__eyebrow">FACTOR SNAPSHOT</span>
+            <h2>当前标的量化结论</h2>
+            <p>先看方向、关键因子与样本覆盖；研究合同和审计记录已收进下方详情。</p>
+          </div>
+          <span className={`factor-focus-dashboard__conclusion factor-focus-dashboard__conclusion--${factorFocusTone}`}>
+            {factorFocusConclusion}
+          </span>
+        </header>
+
+        <div className="factor-focus-dashboard__spotlight">
+          <div className="factor-focus-dashboard__spotlight-copy">
+            <span>当前标的</span>
+            <strong>{factorFocusSymbol || "等待选择"}</strong>
+            <p>{factorFocusConclusionSentence}</p>
+          </div>
+          <div className="factor-focus-dashboard__score" aria-label={`综合得分 ${factorFocusDisplayedScoreLabel}`}>
+            <span>综合得分</span>
+            <strong>{factorFocusDisplayedScoreLabel}</strong>
+            <div className="factor-focus-dashboard__bar" aria-hidden="true">
+              <i style={{ width: `${factorFocusDisplayedScorePercent}%` }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="factor-focus-dashboard__factor-grid">
+          <article className="factor-focus-dashboard__factor-card factor-focus-dashboard__factor-card--support">
+            <div className="factor-focus-dashboard__factor-heading">
+              <span>正向因素</span>
+              <b>{factorFocusSupportFactors.length}</b>
+            </div>
+            {factorFocusSupportFactors.length ? (
+              <ul>{factorFocusSupportFactors.slice(0, 4).map((factor: unknown, index: number) => <li key={`support-${index}`}>{factorDisplayName(factor)}</li>)}</ul>
+            ) : (
+              <p>暂无明确支持项</p>
+            )}
+          </article>
+          <article className="factor-focus-dashboard__factor-card factor-focus-dashboard__factor-card--suppress">
+            <div className="factor-focus-dashboard__factor-heading">
+              <span>负向因素</span>
+              <b>{factorFocusSuppressFactors.length}</b>
+            </div>
+            {factorFocusSuppressFactors.length ? (
+              <ul>{factorFocusSuppressFactors.slice(0, 4).map((factor: unknown, index: number) => <li key={`suppress-${index}`}>{factorDisplayName(factor)}</li>)}</ul>
+            ) : (
+              <p>暂无明确压制项</p>
+            )}
+          </article>
+        </div>
+
+        <div className="factor-focus-dashboard__context-grid">
+          <article className="factor-focus-dashboard__coverage">
+            <div>
+              <span>样本日期</span>
+              <strong>{factorFocusSampleDate}</strong>
+            </div>
+            <div>
+              <span>因子覆盖</span>
+              <strong>{factorFocusCoverageLabel}</strong>
+            </div>
+            <div className="factor-focus-dashboard__coverage-bar" aria-hidden="true">
+              <i style={{ width: `${factorFocusDisplayedCoveragePercent}%` }} />
+            </div>
+            <p>
+              {factorFocusFreshnessBlocked ? "历史快照 · " : ""}支持 {factorFocusSupportFactors.length} · 中性 {factorFocusNeutralFactors.length} · 压制 {factorFocusSuppressFactors.length} · 待补 {factorFocusMissingFactors.length}
+            </p>
+          </article>
+          <article className="factor-focus-dashboard__limitation">
+            <span>当前限制</span>
+            <p>{factorFocusLimitation}</p>
+          </article>
+        </div>
+
+        <footer className="factor-focus-dashboard__footer">
+          <div>
+            <span>下一步</span>
+            <strong>{factorFocusSymbol ? "查看次日图谱，或更换标的继续研究" : "先确认股票代码"}</strong>
+          </div>
+          <nav aria-label="量化结论下一步">
+            <a href={NEXT_SESSION_CHART_HREF}>查看次日图谱</a>
+            <a href={CANDIDATE_CONFIRM_HREF}>确认或更换标的</a>
+          </nav>
+        </footer>
+      </section>
+
+      <details className="factor-research-details">
+        <summary>
+          <span>研究与审计详情</span>
+          <small>展开查看因子合同、数据来源、回放记录与安全边界</small>
+        </summary>
+        <div className="factor-research-details__content">
       <PacketCard title="量化推演操作台" subtitle="因子、次日图谱和模型解释状态一屏看清；只做研究预览，不修改交易动作" status={ordinaryQuantStatusLabel}>
       <PacketCard title="普通用户量化推演摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={ordinaryQuantStatusLabel}>
         <div aria-label="stock quant ordinary user first summary">
@@ -3453,7 +3652,7 @@ export default function FactorQuantHub() {
           ]}
         />
       </details>
-      <section id="factor-score" aria-label="factor support suppress summary">
+      <section id="factor-score-detail" aria-label="factor support suppress summary">
         <EChartPanel option={option} />
         <ChartSafetyStrip
           contract={scoreChartContract}
@@ -3799,6 +3998,8 @@ export default function FactorQuantHub() {
       <JsonDetails title="Factor Quant Hub packet" data={packet} />
       </details>
       </PacketCard>
+        </div>
+      </details>
     </div>
   );
 }
