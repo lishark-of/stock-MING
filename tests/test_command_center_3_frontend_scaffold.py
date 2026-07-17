@@ -149,6 +149,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("parts.length > 1 ? parts.slice(1).join(\"/\").split(\"?\")[0] : \"\"", app)
         self.assertIn("ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS", app)
         self.assertIn("target.scrollIntoView({ block: \"start\" })", app)
+        self.assertIn('window.scrollTo({ top: 0, left: 0, behavior: "auto" })', app)
+        self.assertIn("stopAnchorRetries();", app)
         self.assertIn("new MutationObserver", app)
         self.assertIn("window.setTimeout(scrollToAnchor, delayMs)", app)
         self.assertIn("retryTimers.forEach((timer) => window.clearTimeout(timer));", app)

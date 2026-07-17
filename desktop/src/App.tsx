@@ -167,26 +167,39 @@ export default function App() {
 
   useEffect(() => {
     const anchor = routeAnchorFromHash();
-    if (!anchor) return;
+    if (!anchor) {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      return;
+    }
     let cancelled = false;
     let observer: MutationObserver | null = null;
+    let observerTimer: number | null = null;
+    let retryTimers: number[] = [];
+    const stopAnchorRetries = () => {
+      observer?.disconnect();
+      retryTimers.forEach((timer) => window.clearTimeout(timer));
+      retryTimers = [];
+      if (observerTimer !== null) {
+        window.clearTimeout(observerTimer);
+        observerTimer = null;
+      }
+    };
     const scrollToAnchor = () => {
       if (cancelled) return false;
       const target = document.getElementById(anchor);
       if (!target) return false;
       target.scrollIntoView({ block: "start" });
+      stopAnchorRetries();
       return true;
     };
     observer = new MutationObserver(scrollToAnchor);
     observer.observe(document.body, { childList: true, subtree: true });
     queueMicrotask(scrollToAnchor);
-    const retryTimers = ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS.map((delayMs) => window.setTimeout(scrollToAnchor, delayMs));
-    const observerTimer = window.setTimeout(() => observer?.disconnect(), Math.max(...ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS) + 200);
+    retryTimers = ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS.map((delayMs) => window.setTimeout(scrollToAnchor, delayMs));
+    observerTimer = window.setTimeout(stopAnchorRetries, Math.max(...ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS) + 200);
     return () => {
       cancelled = true;
-      observer?.disconnect();
-      retryTimers.forEach((timer) => window.clearTimeout(timer));
-      window.clearTimeout(observerTimer);
+      stopAnchorRetries();
     };
   }, [route, localFastapiRefreshNonce, hashScrollVersion]);
 
