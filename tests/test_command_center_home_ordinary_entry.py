@@ -657,6 +657,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("const target = document.getElementById(anchor)", app_source)
         self.assertIn('target.scrollIntoView({ block: "start" })', app_source)
         self.assertIn('window.scrollTo({ top: 0, left: 0, behavior: "auto" })', app_source)
+        self.assertIn("}, [route, hashScrollVersion]);", app_source)
         self.assertIn("stopAnchorRetries();", app_source)
         self.assertIn("observer = new MutationObserver", app_source)
         self.assertIn("queueMicrotask(scrollToAnchor)", app_source)

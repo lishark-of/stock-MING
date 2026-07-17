@@ -167,10 +167,12 @@ export default function App() {
 
   useEffect(() => {
     const anchor = routeAnchorFromHash();
-    if (!anchor) {
-      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-      return;
-    }
+    if (!anchor) window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [route, hashScrollVersion]);
+
+  useEffect(() => {
+    const anchor = routeAnchorFromHash();
+    if (!anchor) return;
     let cancelled = false;
     let observer: MutationObserver | null = null;
     let observerTimer: number | null = null;
