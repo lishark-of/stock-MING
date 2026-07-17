@@ -5,6 +5,7 @@ import copy
 import hashlib
 import inspect
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -511,6 +512,119 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         self.assertEqual(cached["source_lineage"], written["source_lineage"])
         self.assertEqual(cached["safety_boundary"], written["safety_boundary"])
         self.assertEqual(cached["virtual_research_events"], written["virtual_research_events"])
+        self.assertTrue(cached["result_task_binding_validated"])
+        self.assertEqual(cached["result_task_binding_status"], "result_task_sqlite_binding_validated")
+
+    def test_cache_get_requires_persisted_result_task_and_remains_zero_write(self):
+        written = service.run_qmt_readonly_local_replay(_payload())
+        task_id = str(written["task_id"])
+        task_service._TASKS.clear()
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute("DELETE FROM task_status WHERE task_id = ?", (task_id,))
+            connection.execute("DELETE FROM task_status_history WHERE task_id = ?", (task_id,))
+            connection.commit()
+        before = self.db_path.read_bytes()
+
+        cached = service.read_qmt_replay_cache()
+
+        self.assertEqual(cached["status"], "latest_attempt_blocked")
+        self.assertFalse(cached["result_task_binding_validated"])
+        self.assertEqual(cached["result_task_binding_status"], "result_task_accessor_missing")
+        self.assertEqual(cached["virtual_research_events"], [])
+        self.assertEqual(self.db_path.read_bytes(), before)
+        self.assertEqual(task_service._TASKS, {})
+
+    def test_cache_get_rejects_failed_result_task(self):
+        written = service.run_qmt_readonly_local_replay(_payload())
+        task_service.update_task_status(
+            str(written["task_id"]),
+            status="failed",
+            progress=1.0,
+            current_step="qmt_local_decimal_replay_failed_safe",
+            error_message_safe="simulated_failed_task",
+        )
+
+        cached = service.read_qmt_replay_cache()
+
+        self.assertEqual(cached["status"], "latest_attempt_blocked")
+        self.assertEqual(cached["result_task_binding_status"], "result_task_status_invalid")
+        self.assertFalse(cached["result_integrity_validated"])
+
+    def test_cache_get_rejects_result_task_payload_and_ledger_mismatch(self):
+        for mutate, expected in (
+            (
+                lambda task: task["payload_safe"].update(scenario="stress"),
+                "result_task_payload_mismatch",
+            ),
+            (
+                lambda task: task["call_ledger"][0].update(row_count=999),
+                "result_task_call_ledger_mismatch",
+            ),
+        ):
+            with self.subTest(expected=expected):
+                written = service.run_qmt_readonly_local_replay(_payload())
+                task = task_service._TASKS[str(written["task_id"])]
+                mutate(task)
+                if expected == "result_task_payload_mismatch":
+                    task["input_hash"] = task_service._task_input_hash(
+                        service.TASK_TYPE,
+                        dict(task["payload_safe"]),
+                    )
+                task_service._persist_task(task)
+
+                cached = service.read_qmt_replay_cache()
+
+                self.assertEqual(cached["status"], "latest_attempt_blocked")
+                self.assertEqual(cached["result_task_binding_status"], expected)
+                task_service._TASKS.clear()
+
+    def test_cache_get_rejects_accessor_sqlite_and_final_history_divergence(self):
+        written = service.run_qmt_readonly_local_replay(_payload())
+        task_id = str(written["task_id"])
+        task_service._TASKS[task_id]["warnings"].append("memory_only_tamper")
+        memory_mismatch = service.read_qmt_replay_cache()
+        self.assertEqual(memory_mismatch["result_task_binding_status"], "result_task_accessor_sqlite_mismatch")
+
+        task_service._TASKS.clear()
+        store = service.SQLiteMetaStore(self.db_path, read_only=True)
+        persisted = store.read_task_status(task_id)
+        persisted["warnings"].append("sqlite_current_without_history")
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE task_status SET payload_json = ? WHERE task_id = ?",
+                (json.dumps(persisted, ensure_ascii=False), task_id),
+            )
+            connection.commit()
+
+        history_mismatch = service.read_qmt_replay_cache()
+
+        self.assertEqual(history_mismatch["status"], "latest_attempt_blocked")
+        self.assertEqual(history_mismatch["result_task_binding_status"], "result_task_final_history_mismatch")
+
+    def test_cache_marks_valid_old_result_historical_when_canonical_source_is_gone(self):
+        self._use_real_canonical_validation()
+        self._seed_canonical_source()
+        written = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(service.read_qmt_replay_cache()["status"], "ready_cache_replay")
+        store = service.SQLiteMetaStore(self.db_path)
+        next_session = store.read_packet(service.NEXT_SESSION_PACKET_KEY)
+        next_session["result_version"] = "candidate-v05-ffffffffffffffff"
+        next_session["candidate_radar_v05_lineage"]["candidate_result_version"] = (
+            "candidate-v05-ffffffffffffffff"
+        )
+        store.write_packet(service.NEXT_SESSION_PACKET_KEY, next_session)
+        before = self.db_path.read_bytes()
+
+        cached = service.read_qmt_replay_cache()
+
+        self.assertEqual(cached["result_hash"], written["result_hash"])
+        self.assertEqual(cached["status"], "historical_isolated_replay")
+        self.assertTrue(cached["result_integrity_validated"])
+        self.assertTrue(cached["result_task_binding_validated"])
+        self.assertFalse(cached["lineage_validation"]["passed"])
+        self.assertEqual(cached["lineage_validation"]["status"], "historical_source_lineage_isolated")
+        self.assertIn("canonical_candidate_next_lineage_mismatch", cached["warnings"][0])
+        self.assertEqual(self.db_path.read_bytes(), before)
 
     def test_optional_source_lineage_rejects_unsafe_symbol_and_task_id(self):
         invalid_symbol = _payload()

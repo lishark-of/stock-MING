@@ -35,6 +35,7 @@ REQUEST_SCHEMA_VERSION = "qmt_readonly_local_replay_request.v1"
 RESULT_SCHEMA_VERSION = "qmt_readonly_local_replay_result.v1"
 CACHE_SCHEMA_VERSION = "qmt_readonly_local_replay_cache.v1"
 TASK_TYPE = "run_qmt_readonly_local_replay"
+TASK_COMPLETED_STEP = "qmt_local_decimal_replay_completed_no_external_call"
 CANDIDATE_PACKET_KEY = "command_center_3_candidate_radar_cache"
 NEXT_SESSION_PACKET_KEY = "command_center_next_session_projection_packet"
 CANDIDATE_TASK_TYPE = "run_candidate_radar_full_pool_worker_fallback"
@@ -1564,6 +1565,189 @@ def _result_packet_integrity(packet: Any) -> tuple[bool, str]:
     return True, "result_integrity_validated"
 
 
+def _without_accessor_metadata(task: Mapping[str, Any]) -> dict[str, Any]:
+    row = dict(task)
+    row.pop("storage_source", None)
+    return row
+
+
+def _read_persisted_result_task_and_history(task_id: str) -> tuple[Any, Any, str]:
+    if not SQLITE_META_PATH.exists():
+        return None, None, "result_task_sqlite_missing"
+    connection: sqlite3.Connection | None = None
+    try:
+        persisted = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_task_status(task_id)
+        uri = f"file:{SQLITE_META_PATH.resolve().as_posix()}?mode=ro"
+        connection = sqlite3.connect(uri, uri=True)
+        history_row = connection.execute(
+            """
+            SELECT payload_json
+            FROM task_status_history
+            WHERE task_id = ?
+            ORDER BY history_id DESC
+            LIMIT 1
+            """,
+            (task_id,),
+        ).fetchone()
+    except Exception:
+        return None, None, "result_task_sqlite_read_failed"
+    finally:
+        if connection is not None:
+            connection.close()
+    if not isinstance(persisted, Mapping):
+        return None, None, "result_task_persisted_missing"
+    if history_row is None:
+        return dict(persisted), None, "result_task_final_history_missing"
+    try:
+        history = json.loads(history_row[0])
+    except Exception:
+        return dict(persisted), None, "result_task_final_history_invalid"
+    return dict(persisted), history, "result_task_sqlite_read"
+
+
+def _result_task_binding(packet: Any) -> tuple[bool, str]:
+    if not isinstance(packet, Mapping):
+        return False, "result_task_packet_missing"
+    task_id = packet.get("task_id")
+    if not isinstance(task_id, str) or not SOURCE_TASK_ID_PATTERN.fullmatch(task_id):
+        return False, "result_task_id_invalid"
+
+    accessor = task_service.read_task_status(task_id)
+    if not isinstance(accessor, Mapping):
+        return False, "result_task_accessor_missing"
+    persisted, final_history, read_status = _read_persisted_result_task_and_history(task_id)
+    if not isinstance(persisted, Mapping):
+        return False, read_status
+    if not isinstance(final_history, Mapping):
+        return False, read_status
+    accessor_core = _without_accessor_metadata(accessor)
+    persisted_core = _without_accessor_metadata(persisted)
+    history_core = _without_accessor_metadata(final_history)
+    if accessor_core != persisted_core:
+        return False, "result_task_accessor_sqlite_mismatch"
+    if history_core != persisted_core:
+        return False, "result_task_final_history_mismatch"
+
+    if persisted.get("task_id") != task_id or persisted.get("task_type") != TASK_TYPE:
+        return False, "result_task_identity_mismatch"
+    if (
+        persisted.get("status") != "success"
+        or isinstance(persisted.get("progress"), bool)
+        or persisted.get("progress") != 1.0
+    ):
+        return False, "result_task_status_invalid"
+    if persisted.get("current_step") != TASK_COMPLETED_STEP:
+        return False, "result_task_step_invalid"
+    if persisted.get("output_packet_key") != CURRENT_PACKET_KEY:
+        return False, "result_task_output_invalid"
+    if persisted.get("error_message_safe") != "":
+        return False, "result_task_error_not_empty"
+    if not isinstance(persisted.get("finished_at"), str) or not str(persisted.get("finished_at") or "").strip():
+        return False, "result_task_finished_at_invalid"
+
+    payload = persisted.get("payload_safe")
+    lineage = packet.get("source_lineage")
+    if not isinstance(payload, Mapping) or not isinstance(lineage, Mapping):
+        return False, "result_task_payload_invalid"
+    expected_payload = {
+        "request_schema_version": REQUEST_SCHEMA_VERSION,
+        "approved_by_user": True,
+        "mode": packet.get("mode"),
+        "scenario": packet.get("scenario"),
+        "max_frames": packet.get("max_frames"),
+        "source_result_version": packet.get("source_result_version"),
+        "source_scope_hash": packet.get("source_scope_hash"),
+        "source_data_date": packet.get("source_data_date"),
+        "source_symbol": lineage.get("source_symbol"),
+        "source_task_id": lineage.get("source_task_id"),
+        "scope_hash": packet.get("scope_hash"),
+        "raw_snapshot_stored_in_task_audit": False,
+        "external_qmt_connection_allowed": False,
+    }
+    if any(payload.get(key) != value for key, value in expected_payload.items()):
+        return False, "result_task_payload_mismatch"
+    expected_input_hash = hashlib.sha256(
+        json.dumps(
+            {"task_type": TASK_TYPE, "payload_safe": dict(payload)},
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    if persisted.get("input_hash") != expected_input_hash:
+        return False, "result_task_input_hash_invalid"
+
+    if persisted.get("call_ledger") != packet.get("call_ledger"):
+        return False, "result_task_call_ledger_mismatch"
+    if any(
+        (
+            persisted.get("external_calls_triggered") is not False,
+            persisted.get("deepseek_called") is not False,
+            persisted.get("tushare_called") is not False,
+            persisted.get("github_called") is not False,
+            persisted.get("does_not_execute_trades") is not True,
+            persisted.get("does_not_modify_strategy_action") is not True,
+        )
+    ):
+        return False, "result_task_boundary_invalid"
+
+    status_history = persisted.get("status_history")
+    if not isinstance(status_history, list) or not status_history or not isinstance(status_history[-1], Mapping):
+        return False, "result_task_status_history_invalid"
+    final_status = status_history[-1]
+    if set(final_status) != {"status", "progress", "current_step", "at"} or any(
+        (
+            final_status.get("status") != "success",
+            isinstance(final_status.get("progress"), bool),
+            final_status.get("progress") != 1.0,
+            final_status.get("current_step") != TASK_COMPLETED_STEP,
+            not isinstance(final_status.get("at"), str),
+            not str(final_status.get("at") or "").strip(),
+        )
+    ):
+        return False, "result_task_status_history_invalid"
+    task_log = persisted.get("task_log")
+    if not isinstance(task_log, list) or not task_log or not isinstance(task_log[-1], Mapping):
+        return False, "result_task_log_invalid"
+    final_log = task_log[-1]
+    if any(
+        (
+            final_log.get("event") != "task_status_updated",
+            final_log.get("status") != "success",
+            final_log.get("current_step") != TASK_COMPLETED_STEP,
+            final_log.get("external") is not False,
+            final_log.get("external_calls_triggered") is not False,
+            final_log.get("contains_secret") is not False,
+            final_log.get("stack_trace_included") is not False,
+        )
+    ):
+        return False, "result_task_log_invalid"
+    return True, "result_task_sqlite_binding_validated"
+
+
+def _current_source_lineage_binding(packet: Any) -> tuple[bool, str]:
+    if not isinstance(packet, Mapping):
+        return False, "current_source_result_missing"
+    lineage = packet.get("source_lineage")
+    if not isinstance(lineage, Mapping):
+        return False, "current_source_lineage_missing"
+    try:
+        _validate_canonical_source_binding(
+            {
+                "source_symbol": lineage.get("source_symbol"),
+                "source_task_id": lineage.get("source_task_id"),
+                "source_result_version": packet.get("source_result_version"),
+                "source_scope_hash": packet.get("source_scope_hash"),
+                "source_data_date": packet.get("source_data_date"),
+            }
+        )
+    except ReplayValidationError as exc:
+        return False, str(exc) or "current_source_lineage_not_current"
+    except Exception:
+        return False, "current_source_lineage_read_failed"
+    return True, "current_source_lineage_validated"
+
+
 def _persist_success_packets(packet: Mapping[str, Any]) -> None:
     # SQLiteMetaStore is intentionally constructed only inside POST execution.
     SQLiteMetaStore(SQLITE_META_PATH)
@@ -1760,7 +1944,7 @@ def run_qmt_readonly_local_replay(payload: Any = None) -> dict[str, Any]:
         task_id,
         status="success",
         progress=1.0,
-        current_step="qmt_local_decimal_replay_completed_no_external_call",
+        current_step=TASK_COMPLETED_STEP,
         output_packet_key=CURRENT_PACKET_KEY,
         call_ledger=packet["call_ledger"],
         warning="qmt_local_replay_completed_without_external_qmt_or_trade_execution",
@@ -1773,11 +1957,20 @@ def read_qmt_replay_cache() -> dict[str, Any]:
     last_good, last_good_source = _read_packet_no_init(LAST_GOOD_PACKET_KEY)
     current_ok, current_integrity = _result_packet_integrity(current)
     last_good_ok, last_good_integrity = _result_packet_integrity(last_good)
+    current_task_ok, current_task_binding = (
+        _result_task_binding(current) if current_ok else (False, "result_task_not_checked_invalid_result")
+    )
+    last_good_task_ok, last_good_task_binding = (
+        _result_task_binding(last_good) if last_good_ok else (False, "result_task_not_checked_invalid_result")
+    )
+    current_result_ok = current_ok and current_task_ok
+    last_good_result_ok = last_good_ok and last_good_task_ok
     current_present = current_source == "packet_present"
-    selected = current if current_ok else last_good if not current_present and last_good_ok else None
+    selected = current if current_result_ok else last_good if not current_present and last_good_result_ok else None
     ledger = _local_call_ledger(call_status="cache_read_no_external_call")
     if not isinstance(selected, Mapping):
-        invalid_current = current_present and not current_ok
+        invalid_current = current_present and not current_result_ok
+        blocked_status = current_integrity if not current_ok else current_task_binding
         return {
             "packet_key": CACHE_PACKET_KEY,
             "schema_version": CACHE_SCHEMA_VERSION,
@@ -1803,7 +1996,9 @@ def read_qmt_replay_cache() -> dict[str, Any]:
             },
             "virtual_research_events": [],
             "result_integrity_validated": False,
-            "result_integrity_status": current_integrity if invalid_current else "result_packet_missing",
+            "result_integrity_status": blocked_status if invalid_current else "result_packet_missing",
+            "result_task_binding_validated": False,
+            "result_task_binding_status": current_task_binding if current_ok else "result_task_not_checked_invalid_result",
             "lineage_validation": {
                 "schema_version": "qmt_readonly_source_lineage_validation.v1",
                 "status": "blocked_invalid_result" if invalid_current else "waiting_for_first_result",
@@ -1814,17 +2009,27 @@ def read_qmt_replay_cache() -> dict[str, Any]:
             "safety_boundary": _boundary_flags(),
             **_boundary_flags(),
             "call_ledger": ledger,
-            "warnings": [f"qmt_replay_current_result_integrity_blocked:{current_integrity}"] if invalid_current else [],
+            "warnings": [f"qmt_replay_current_result_blocked:{blocked_status}"] if invalid_current else [],
             "notices": ["尚无本地 QMT replay 缓存；GET 未创建目录、数据库、任务或外部连接。"],
         }
 
     packet = dict(selected)
     selected_status = str(packet.get("status") or "")
+    selected_is_current = current_result_ok
+    selected_task_binding = current_task_binding if selected_is_current else last_good_task_binding
+    source_current, source_lineage_status = _current_source_lineage_binding(packet)
+    cache_status = (
+        "historical_isolated_replay"
+        if not source_current
+        else "ready_cache_replay"
+        if selected_is_current
+        else "degraded_last_good_replay"
+    )
     packet.update(
         {
             "packet_key": CACHE_PACKET_KEY,
             "schema_version": CACHE_SCHEMA_VERSION,
-            "status": "ready_cache_replay" if current_ok else "degraded_last_good_replay" if last_good_ok else "latest_attempt_blocked",
+            "status": cache_status,
             "selected_result_status": selected_status,
             "mode": "cache_only",
             "cache_only": True,
@@ -1835,17 +2040,21 @@ def read_qmt_replay_cache() -> dict[str, Any]:
             "current_result_summary": _packet_summary(current),
             "last_good_result_summary": _packet_summary(last_good),
             "result_integrity_validated": True,
-            "result_integrity_status": current_integrity if current_ok else last_good_integrity,
+            "result_integrity_status": current_integrity if selected_is_current else last_good_integrity,
+            "result_task_binding_validated": True,
+            "result_task_binding_status": selected_task_binding,
             "lineage_validation": {
                 "schema_version": "qmt_readonly_source_lineage_validation.v1",
-                "status": "source_result_integrity_validated",
-                "passed": True,
+                "status": "source_result_current_and_validated" if source_current else "historical_source_lineage_isolated",
+                "passed": source_current,
             },
             **_boundary_flags(),
             "call_ledger": ledger,
-            "warnings": [],
+            "warnings": [] if source_current else [f"qmt_replay_source_historical_isolated:{source_lineage_status}"],
             "notices": [
-                "GET 仅回放 SQLite 中的本地 current/last-good 结果，不创建任务、不连接 QMT、不执行真实交易。"
+                "源 Candidate/Next 已变更；该 replay 仅作历史隔离研究证据，不是当前 ready 结果。"
+                if not source_current
+                else "GET 仅回放 SQLite 中的本地 current/last-good 结果，不创建任务、不连接 QMT、不执行真实交易。"
             ],
         }
     )
