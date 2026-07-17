@@ -126,6 +126,20 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         self.assertIn("top_list", skipped)
         self.assertTrue(set(executed).issubset(set(candidate_service.PROVIDER_PARITY_ALLOWED_APIS)))
 
+    def test_qmt_source_notice_move_is_exact_and_preserves_provider_failure_suffix(self) -> None:
+        fixed = (
+            "provider 阻断、stale 输入、缺失 provider 数据和降级模式会作为 coverage gap 展示，"
+            "不会在页面渲染时补数。"
+        )
+        provider_failure = fixed + " provider_failure=permission_denied"
+
+        moved = candidate_service._move_qmt_source_fixed_warnings_to_notices(
+            {"warnings": [fixed, provider_failure], "notices": []}
+        )
+
+        self.assertEqual(moved["notices"], [fixed])
+        self.assertEqual(moved["warnings"], [provider_failure])
+
     def test_v05_post_processes_supplied_pool_updates_next_session_and_preserves_last_good(self) -> None:
         worker_packet_key = worker_service.RUNTIME_QA_EXECUTION_PACKET_KEY
         worker_packet_sentinel = {"schema_version": "worker_packet_sentinel.v1", "status": "preserved"}
@@ -134,6 +148,14 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
 
         self.assertEqual(task["status"], "success")
         self.assertEqual(task["current_step"], "candidate_radar_v05_local_batch_ready")
+        persisted_task = SQLiteMetaStore(self.meta_path, read_only=True).read_task_status(task["task_id"])
+        for field, expected in candidate_service._candidate_v05_task_safety_boundary().items():
+            if isinstance(expected, bool):
+                self.assertIs(task[field], expected, field)
+                self.assertIs(persisted_task[field], expected, field)
+            else:
+                self.assertEqual(task[field], expected, field)
+                self.assertEqual(persisted_task[field], expected, field)
         packet = candidate_service.read_candidate_radar_cache()
         self.assertEqual(packet["status"], "candidate_radar_v05_local_batch_ready")
         counts = packet["candidate_radar_v05_bucket_counts"]
@@ -186,6 +208,22 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         self.assertFalse(
             any(str(item).startswith("GET /api/next-session/cache 只读取") for item in next_packet["warnings"])
         )
+        persisted_next = SQLiteMetaStore(self.meta_path, read_only=True).read_packet(
+            next_session_service.packet_service.next_session_projection.PACKET_KEY
+        )
+        self.assertEqual(persisted_next["warnings"], [])
+        self.assertEqual(persisted_next["freshness_state"], lineage["freshness_state"])
+        self.assertEqual(len(persisted_next["call_ledger"]), 1)
+        self.assertEqual(
+            persisted_next["call_ledger"][0]["api"],
+            "local_next_session_candidate_v05_lineage",
+        )
+        self.assertEqual(
+            persisted_next["call_ledger"][0]["request_params_safe"]["source_task_id"],
+            task["task_id"],
+        )
+        for field, expected in candidate_service._candidate_v05_task_safety_boundary().items():
+            self.assertEqual(persisted_next["call_ledger"][0][field], expected, field)
         self.assertEqual(SQLiteMetaStore(self.meta_path).read_packet(worker_packet_key), worker_packet_sentinel)
 
         # Compatibility P3 summaries may still contain an older result.  They must

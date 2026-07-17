@@ -80,6 +80,32 @@ CANDIDATE_LEDGER_TRUE_FIELDS = (
     "does_not_modify_strategy_action",
     "does_not_modify_holdings",
 )
+CANDIDATE_TASK_FALSE_FIELDS = CANDIDATE_LEDGER_FALSE_FIELDS
+CANDIDATE_TASK_ZERO_FIELDS = CANDIDATE_LEDGER_ZERO_FIELDS
+CANDIDATE_TASK_TRUE_FIELDS = CANDIDATE_LEDGER_TRUE_FIELDS
+CANONICAL_SOURCE_DURABLE_STORAGE_SOURCES = frozenset({"sqlite_meta", "memory_and_sqlite"})
+_CANONICAL_SAFETY_FIELDS = frozenset(
+    CANDIDATE_TASK_FALSE_FIELDS + CANDIDATE_TASK_ZERO_FIELDS + CANDIDATE_TASK_TRUE_FIELDS
+)
+_CANONICAL_ALLOWED_HIGH_RISK_METADATA_FIELDS = frozenset({
+    "trade_date",
+    "expected_trade_date",
+    "provider_backed",
+})
+_CANONICAL_HIGH_RISK_PREFIXES = (
+    "external_",
+    "provider_",
+    "model_",
+    "worker_",
+    "qmt_",
+    "broker_",
+    "account_",
+    "order_",
+    "trade_",
+    "real_order_",
+    "real_trade_",
+    "secret_",
+)
 
 ALLOWED_SCENARIOS = {"baseline", "stress", "recovery"}
 ALLOWED_MAX_FRAMES = {12, 24, 48}
@@ -813,6 +839,42 @@ def _read_packet_no_init(packet_key: str) -> tuple[Any, str]:
     return parsed, "packet_present"
 
 
+def _read_persisted_source_task_no_init(task_id: str) -> Mapping[str, Any] | None:
+    if not SQLITE_META_PATH.exists():
+        return None
+    try:
+        task = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_task_status(task_id)
+    except Exception:
+        return None
+    return task if isinstance(task, Mapping) else None
+
+
+def _validate_exact_safety_boundary(value: Mapping[str, Any], *, code: str) -> None:
+    if any(value.get(field) is not False for field in CANDIDATE_TASK_FALSE_FIELDS):
+        raise ReplayValidationError(code)
+    if any(
+        type(value.get(field)) is not int or value.get(field) != 0
+        for field in CANDIDATE_TASK_ZERO_FIELDS
+    ):
+        raise ReplayValidationError(code)
+    if any(value.get(field) is not True for field in CANDIDATE_TASK_TRUE_FIELDS):
+        raise ReplayValidationError(code)
+    for raw_key in value:
+        key = str(raw_key or "").strip().lower()
+        if key in _CANONICAL_SAFETY_FIELDS or key in _CANONICAL_ALLOWED_HIGH_RISK_METADATA_FIELDS:
+            continue
+        raw_value = value.get(raw_key)
+        # Evidence collections may retain compatibility provider/model audit
+        # rows.  They are not executable top-level boundary claims; every
+        # executable scalar flag above remains exact and mandatory.
+        if isinstance(raw_value, (Mapping, list, tuple)):
+            continue
+        if "contains_secret" in key and raw_value is False:
+            continue
+        if key.startswith(_CANONICAL_HIGH_RISK_PREFIXES) or "secret" in key:
+            raise ReplayValidationError(code)
+
+
 def _canonical_fresh_lineage(packet: Any, *, lineage_key: str) -> dict[str, Any]:
     if not isinstance(packet, Mapping):
         raise ReplayValidationError("canonical_source_packet_missing")
@@ -825,19 +887,15 @@ def _canonical_fresh_lineage(packet: Any, *, lineage_key: str) -> dict[str, Any]
         raise ReplayValidationError("canonical_source_lineage_status_invalid")
     if lineage.get("candidate_packet_key") != CANDIDATE_PACKET_KEY:
         raise ReplayValidationError("canonical_source_packet_key_invalid")
+    _validate_exact_safety_boundary(lineage, code="canonical_source_lineage_boundary_invalid")
     if not all(
         (
             lineage.get("research_only") is True,
             lineage.get("no_buy") is True,
             lineage.get("no_action") is True,
             lineage.get("no_trade") is True,
-            lineage.get("external_calls_triggered") is False,
-            lineage.get("tushare_called") is False,
-            lineage.get("deepseek_called") is False,
-            lineage.get("github_called") is False,
             lineage.get("does_not_modify_strategy_action") is True,
             lineage.get("does_not_modify_operation_zones") is True,
-            lineage.get("contains_secret") is False,
         )
     ):
         raise ReplayValidationError("canonical_source_boundary_invalid")
@@ -875,6 +933,8 @@ def _canonical_fresh_lineage(packet: Any, *, lineage_key: str) -> dict[str, Any]
         raise ReplayValidationError("canonical_source_freshness_date_mismatch")
     if _normalize_source_data_date(freshness.get("expected_trade_date")) != data_date:
         raise ReplayValidationError("canonical_source_expected_date_mismatch")
+    if _normalize_source_data_date(freshness.get("as_of_date")) != data_date:
+        raise ReplayValidationError("canonical_source_as_of_date_mismatch")
     return {
         "source_symbol": symbol,
         "source_task_id": task_id,
@@ -892,11 +952,22 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
         raise ReplayValidationError("canonical_candidate_next_packet_missing")
     if not isinstance(candidate, Mapping) or not isinstance(next_session, Mapping):
         raise ReplayValidationError("canonical_candidate_next_packet_invalid")
+    _validate_exact_safety_boundary(candidate, code="canonical_candidate_packet_boundary_invalid")
+    _validate_exact_safety_boundary(next_session, code="canonical_next_session_packet_boundary_invalid")
+    if not isinstance(candidate.get("warnings"), list) or candidate.get("warnings"):
+        raise ReplayValidationError("canonical_candidate_warnings_present")
+    if not isinstance(next_session.get("warnings"), list) or next_session.get("warnings"):
+        raise ReplayValidationError("canonical_next_session_warnings_present")
     if candidate.get("packet_key") != CANDIDATE_PACKET_KEY or candidate.get("schema_version") != "candidate_radar_cache.v1":
         raise ReplayValidationError("canonical_candidate_packet_invalid")
     if candidate.get("status") != "candidate_radar_v05_local_batch_ready":
         raise ReplayValidationError("canonical_candidate_status_invalid")
-    if candidate.get("scan_mode") != "v05_candidate_local_batch":
+    if (
+        candidate.get("scan_mode") != "v05_candidate_local_batch"
+        or candidate.get("mode") != "v05_candidate_local_batch"
+        or candidate.get("cache_only") is not True
+        or candidate.get("read_only") is not True
+    ):
         raise ReplayValidationError("canonical_candidate_mode_invalid")
     if next_session.get("packet_key") != NEXT_SESSION_PACKET_KEY or next_session.get("schema_version") != "next_session_projection.v1":
         raise ReplayValidationError("canonical_next_session_packet_invalid")
@@ -915,6 +986,17 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
     )
     if candidate_lineage["raw"] != next_lineage["raw"]:
         raise ReplayValidationError("canonical_candidate_next_lineage_mismatch")
+    candidate_freshness = candidate.get("freshness_state")
+    next_freshness = next_session.get("freshness_state")
+    lineage_freshness = candidate_lineage["raw"].get("freshness_state")
+    if not isinstance(candidate_freshness, Mapping) or not isinstance(next_freshness, Mapping):
+        raise ReplayValidationError("canonical_source_top_freshness_missing")
+    if not (
+        _canonical_json(candidate_freshness)
+        == _canonical_json(next_freshness)
+        == _canonical_json(lineage_freshness)
+    ):
+        raise ReplayValidationError("canonical_source_top_freshness_mismatch")
     expected = {key: candidate_lineage[key] for key in (
         "source_symbol",
         "source_task_id",
@@ -922,12 +1004,24 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
         "source_scope_hash",
         "source_data_date",
     )}
+    if _normalize_symbol(candidate.get("latest_confirmed_symbol")) != expected["source_symbol"]:
+        raise ReplayValidationError("canonical_candidate_symbol_binding_invalid")
+    if _normalize_symbol(next_session.get("latest_confirmed_symbol")) != expected["source_symbol"]:
+        raise ReplayValidationError("canonical_next_session_symbol_binding_invalid")
+    candidate_top_rows = candidate.get("candidate_radar_v05_top_rows")
+    if not isinstance(candidate_top_rows, list) or not candidate_top_rows or not isinstance(candidate_top_rows[0], Mapping):
+        raise ReplayValidationError("canonical_candidate_top_row_missing")
+    if _normalize_symbol(candidate_top_rows[0].get("symbol")) != expected["source_symbol"]:
+        raise ReplayValidationError("canonical_candidate_top_symbol_mismatch")
     observed = {key: normalized.get(key) for key in expected}
     if observed != expected:
         raise ReplayValidationError("canonical_source_request_mismatch")
     if candidate.get("task_id") != expected["source_task_id"] or candidate.get("latest_confirmed_task_id") != expected["source_task_id"]:
         raise ReplayValidationError("canonical_candidate_task_binding_invalid")
-    if candidate.get("latest_confirmed_task_status") != "success":
+    if (
+        candidate.get("latest_confirmed_task_status") != "success"
+        or candidate.get("latest_confirmed_task_current_step") != CANDIDATE_TASK_STEP
+    ):
         raise ReplayValidationError("canonical_candidate_task_status_invalid")
     if candidate.get("candidate_radar_v05_result_version") != expected["source_result_version"]:
         raise ReplayValidationError("canonical_candidate_result_version_mismatch")
@@ -937,24 +1031,72 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
         raise ReplayValidationError("canonical_candidate_data_date_mismatch")
     if next_session.get("source_task_id") != expected["source_task_id"] or next_session.get("result_version") != expected["source_result_version"]:
         raise ReplayValidationError("canonical_next_session_task_result_mismatch")
+    if (
+        next_session.get("latest_confirmed_task_id") != expected["source_task_id"]
+        or next_session.get("latest_confirmed_task_status") != "success"
+        or next_session.get("latest_confirmed_task_current_step") != CANDIDATE_TASK_STEP
+    ):
+        raise ReplayValidationError("canonical_next_session_task_status_invalid")
     if next_session.get("candidate_scope_hash") != expected["source_scope_hash"]:
         raise ReplayValidationError("canonical_next_session_scope_hash_mismatch")
     if _normalize_source_data_date(next_session.get("data_date") or next_session.get("trade_date")) != expected["source_data_date"]:
         raise ReplayValidationError("canonical_next_session_data_date_mismatch")
+    chart_payload = next_session.get("chart_payload")
+    if not isinstance(chart_payload, Mapping):
+        raise ReplayValidationError("canonical_next_session_chart_payload_missing")
+    if chart_payload.get("status") != "ready" or chart_payload.get("source_packet") != NEXT_SESSION_PACKET_KEY:
+        raise ReplayValidationError("canonical_next_session_chart_payload_invalid")
+    if chart_payload.get("is_exact_next_session_packet") is not True:
+        raise ReplayValidationError("canonical_next_session_chart_payload_invalid")
+    for key in ("symbol", "ts_code", "confirmed_symbol"):
+        if _normalize_symbol(chart_payload.get(key)) != expected["source_symbol"]:
+            raise ReplayValidationError("canonical_next_session_chart_symbol_mismatch")
+    if (
+        chart_payload.get("source_task_id") != expected["source_task_id"]
+        or chart_payload.get("result_version") != expected["source_result_version"]
+        or chart_payload.get("candidate_scope_hash") != expected["source_scope_hash"]
+        or _normalize_source_data_date(chart_payload.get("data_date")) != expected["source_data_date"]
+        or chart_payload.get("candidate_radar_v05_lineage_status") != "same_packet_lineage_ready"
+    ):
+        raise ReplayValidationError("canonical_next_session_chart_binding_invalid")
 
     source_task = task_service.read_task_status(expected["source_task_id"])
     if not isinstance(source_task, Mapping):
         raise ReplayValidationError("canonical_source_task_missing")
+    if source_task.get("storage_source") not in CANONICAL_SOURCE_DURABLE_STORAGE_SOURCES:
+        raise ReplayValidationError("canonical_source_task_not_durable")
+    persisted_source_task = _read_persisted_source_task_no_init(expected["source_task_id"])
+    if not isinstance(persisted_source_task, Mapping):
+        raise ReplayValidationError("canonical_source_task_not_durable")
+    accessor_projection = {
+        str(key): value
+        for key, value in source_task.items()
+        if key != "storage_source"
+    }
+    persisted_projection = {
+        str(key): value
+        for key, value in persisted_source_task.items()
+        if key != "storage_source"
+    }
+    if _canonical_json(accessor_projection) != _canonical_json(persisted_projection):
+        raise ReplayValidationError("canonical_source_task_memory_sqlite_mismatch")
     if source_task.get("task_type") != CANDIDATE_TASK_TYPE:
         raise ReplayValidationError("canonical_source_task_type_invalid")
-    if source_task.get("status") != "success" or source_task.get("current_step") != CANDIDATE_TASK_STEP:
+    if (
+        source_task.get("status") != "success"
+        or source_task.get("current_step") != CANDIDATE_TASK_STEP
+        or type(source_task.get("progress")) is not float
+        or source_task.get("progress") != 1.0
+        or source_task.get("error_message_safe") != ""
+        or not isinstance(source_task.get("finished_at"), str)
+        or not str(source_task.get("finished_at") or "").strip()
+    ):
         raise ReplayValidationError("canonical_source_task_status_invalid")
     if source_task.get("output_packet_key") != CANDIDATE_PACKET_KEY:
         raise ReplayValidationError("canonical_source_task_output_invalid")
-    if source_task.get("cache_replay_only") is True or source_task.get("storage_source") == "candidate_cache_replay":
+    if source_task.get("cache_replay_only") is True:
         raise ReplayValidationError("canonical_source_task_not_durable")
-    if source_task.get("external_calls_triggered") is not False or source_task.get("does_not_execute_trades") is not True:
-        raise ReplayValidationError("canonical_source_task_boundary_invalid")
+    _validate_exact_safety_boundary(source_task, code="canonical_source_task_boundary_invalid")
     payload_safe = source_task.get("payload_safe")
     if not isinstance(payload_safe, Mapping):
         raise ReplayValidationError("canonical_source_task_payload_invalid")
@@ -971,7 +1113,12 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
     status_history = source_task.get("status_history")
     if not isinstance(status_history, list) or not status_history or not isinstance(status_history[-1], Mapping):
         raise ReplayValidationError("canonical_source_task_history_invalid")
-    if status_history[-1].get("status") != "success" or status_history[-1].get("current_step") != CANDIDATE_TASK_STEP:
+    if (
+        status_history[-1].get("status") != "success"
+        or status_history[-1].get("current_step") != CANDIDATE_TASK_STEP
+        or type(status_history[-1].get("progress")) is not float
+        or status_history[-1].get("progress") != 1.0
+    ):
         raise ReplayValidationError("canonical_source_task_history_invalid")
     if payload_safe.get("runtime_mode") != "v05_candidate_local_batch" or payload_safe.get("operator_approved") is not True:
         raise ReplayValidationError("canonical_source_task_payload_invalid")
@@ -982,11 +1129,20 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
     if _normalize_source_data_date(payload_safe.get("data_date") or payload_safe.get("trade_date")) != expected["source_data_date"]:
         raise ReplayValidationError("canonical_source_task_data_date_mismatch")
     source_pool = payload_safe.get("full_pool_candidates")
-    if not isinstance(source_pool, list) or expected["source_symbol"] not in {
-        str(row.get("ticker") or row.get("symbol") or "").strip().upper()
-        for row in source_pool
-        if isinstance(row, Mapping)
-    }:
+    if not isinstance(source_pool, list):
+        raise ReplayValidationError("canonical_source_task_pool_invalid")
+    source_pool_symbols: list[str] = []
+    for row in source_pool:
+        if not isinstance(row, Mapping):
+            raise ReplayValidationError("canonical_source_task_pool_invalid")
+        try:
+            symbol = _normalize_symbol(row.get("ticker") or row.get("symbol"))
+        except ReplayValidationError as exc:
+            raise ReplayValidationError("canonical_source_task_pool_invalid") from exc
+        if symbol not in source_pool_symbols:
+            source_pool_symbols.append(symbol)
+    source_pool_symbol_set = set(source_pool_symbols)
+    if not source_pool_symbol_set or expected["source_symbol"] not in source_pool_symbol_set:
         raise ReplayValidationError("canonical_source_symbol_not_in_task_pool")
     task_ledger = source_task.get("call_ledger")
     if not isinstance(task_ledger, list) or len(task_ledger) != 1 or not isinstance(task_ledger[0], Mapping):
@@ -1001,10 +1157,221 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
         raise ReplayValidationError("canonical_source_task_ledger_rows_invalid")
     if any(task_ledger_row.get(field) is not False for field in CANDIDATE_LEDGER_FALSE_FIELDS):
         raise ReplayValidationError("canonical_source_task_ledger_boundary_invalid")
-    if any(task_ledger_row.get(field) != 0 for field in CANDIDATE_LEDGER_ZERO_FIELDS):
+    if any(
+        type(task_ledger_row.get(field)) is not int or task_ledger_row.get(field) != 0
+        for field in CANDIDATE_LEDGER_ZERO_FIELDS
+    ):
         raise ReplayValidationError("canonical_source_task_ledger_boundary_invalid")
     if any(task_ledger_row.get(field) is not True for field in CANDIDATE_LEDGER_TRUE_FIELDS):
         raise ReplayValidationError("canonical_source_task_ledger_boundary_invalid")
+    if (
+        task_ledger_row.get("source_snapshot") != "payload.full_pool_candidates"
+        or task_ledger_row.get("data_date") is not None
+        or task_ledger_row.get("error_message_safe") != ""
+        or not isinstance(task_ledger_row.get("local_fetched_at"), str)
+        or not str(task_ledger_row.get("local_fetched_at") or "").strip()
+    ):
+        raise ReplayValidationError("canonical_source_task_ledger_invalid")
+    if processed_count != len(source_pool_symbol_set):
+        raise ReplayValidationError("canonical_source_processed_count_mismatch")
+    request_params = task_ledger_row.get("request_params_safe")
+    if not isinstance(request_params, Mapping):
+        raise ReplayValidationError("canonical_source_task_ledger_request_invalid")
+    expected_request_values = {
+        "scan_mode": "v05_candidate_local_batch",
+        "runtime_mode": "v05_candidate_local_batch",
+        "local_worker_fallback_only": True,
+        "operator_approved": True,
+        "candidate_scope_hash_short": expected["source_scope_hash"][:12],
+        "scope_hash_matches": True,
+        "input_candidate_count": processed_count,
+        "normalized_candidate_count": processed_count,
+        "processed_candidate_count": processed_count,
+        "external_sources_allowed": False,
+        "provider_backed_acceptance_done": False,
+        "deepseek_model_execution_done": False,
+        "production_full_pool_scan_done": False,
+        "next_session_task_status": "success",
+        "next_session_lineage_status": "same_packet_lineage_ready",
+    }
+    if any(request_params.get(key) != value for key, value in expected_request_values.items()):
+        raise ReplayValidationError("canonical_source_task_ledger_request_invalid")
+    local_pool_audit = candidate.get("local_candidate_pool_audit")
+    if not isinstance(local_pool_audit, Mapping):
+        raise ReplayValidationError("canonical_candidate_pool_audit_invalid")
+    if (
+        local_pool_audit.get("input_source") != task_ledger_row.get("source_snapshot")
+        or local_pool_audit.get("input_candidate_count") != processed_count
+        or local_pool_audit.get("normalized_candidate_count") != processed_count
+        or any(
+            local_pool_audit.get(field) != 0
+            for field in (
+                "disabled_candidate_count",
+                "invalid_candidate_count",
+                "duplicate_candidate_count",
+                "truncated_candidate_count",
+                "skipped_candidate_count",
+            )
+        )
+    ):
+        raise ReplayValidationError("canonical_candidate_pool_audit_invalid")
+    bucket_counts = candidate.get("candidate_radar_v05_bucket_counts")
+    if not isinstance(bucket_counts, Mapping):
+        raise ReplayValidationError("canonical_candidate_bucket_counts_invalid")
+    for field in ("input_count", "processed_count", "top_count", "watch_count", "excluded_count"):
+        if type(bucket_counts.get(field)) is not int or bucket_counts.get(field) < 0:
+            raise ReplayValidationError("canonical_candidate_bucket_counts_invalid")
+    if bucket_counts.get("input_count") != processed_count or bucket_counts.get("processed_count") != processed_count:
+        raise ReplayValidationError("canonical_candidate_bucket_counts_mismatch")
+    if sum(bucket_counts.get(field) for field in ("top_count", "watch_count", "excluded_count")) != processed_count:
+        raise ReplayValidationError("canonical_candidate_bucket_counts_mismatch")
+    bucket_rows: list[Mapping[str, Any]] = []
+    for key, count_field in (
+        ("candidate_radar_v05_top_rows", "top_count"),
+        ("candidate_radar_v05_watch_rows", "watch_count"),
+        ("candidate_radar_v05_excluded_rows", "excluded_count"),
+    ):
+        rows = candidate.get(key)
+        if not isinstance(rows, list) or len(rows) != bucket_counts.get(count_field):
+            raise ReplayValidationError("canonical_candidate_bucket_rows_mismatch")
+        if any(not isinstance(row, Mapping) for row in rows):
+            raise ReplayValidationError("canonical_candidate_bucket_rows_mismatch")
+        bucket_rows.extend(rows)
+    try:
+        bucket_symbol_set = {_normalize_symbol(row.get("symbol")) for row in bucket_rows}
+    except ReplayValidationError as exc:
+        raise ReplayValidationError("canonical_candidate_bucket_rows_mismatch") from exc
+    if len(bucket_rows) != processed_count or bucket_symbol_set != source_pool_symbol_set:
+        raise ReplayValidationError("canonical_candidate_bucket_rows_mismatch")
+    runtime = candidate.get("candidate_radar_v05_runtime")
+    if not isinstance(runtime, Mapping) or runtime.get("status") != "worker_v04_local_batch_runtime_success":
+        raise ReplayValidationError("canonical_candidate_runtime_invalid")
+    if (
+        type(runtime.get("pool_count")) is not int
+        or runtime.get("pool_count") != processed_count
+        or type(runtime.get("processed_count")) is not int
+        or runtime.get("processed_count") != processed_count
+    ):
+        raise ReplayValidationError("canonical_candidate_runtime_count_mismatch")
+    manifest = runtime.get("manifest")
+    if not isinstance(manifest, Mapping):
+        raise ReplayValidationError("canonical_candidate_runtime_manifest_invalid")
+    stage_rows = runtime.get("stage_rows")
+    if not isinstance(stage_rows, list) or not stage_rows or any(not isinstance(row, Mapping) for row in stage_rows):
+        raise ReplayValidationError("canonical_candidate_runtime_manifest_invalid")
+    if (
+        manifest.get("schema_version") != "worker_v04_local_batch_runtime_manifest.v1"
+        or manifest.get("status") != "worker_v04_local_batch_runtime_success"
+        or manifest.get("runtime_scope_hash_short") != expected["source_scope_hash"][:12]
+        or manifest.get("pool_count") != processed_count
+        or manifest.get("processed_count") != processed_count
+        or manifest.get("failed_symbol") != ""
+        or manifest.get("stage_count") != len(stage_rows)
+        or manifest.get("append_only_event_count") != len(stage_rows)
+        or runtime.get("append_only_event_count") != len(stage_rows)
+        or runtime.get("chunk_count") != len(stage_rows)
+        or manifest.get("chunk_count") != len(stage_rows)
+        or request_params.get("chunk_count") != len(stage_rows)
+        or request_params.get("stage_count") != len(stage_rows)
+        or bucket_counts.get("chunk_count") != len(stage_rows)
+        or bucket_counts.get("stage_count") != len(stage_rows)
+        or manifest.get("local_runtime_not_full_market_claim") is not True
+        or manifest.get("local_runtime_is_not_celery_redis_production") is not True
+        or manifest.get("contains_secret") is not False
+        or manifest.get("external_calls_triggered") is not False
+    ):
+        raise ReplayValidationError("canonical_candidate_runtime_manifest_invalid")
+    if any(
+        row.get("status") != "success"
+        or row.get("append_only_write_done") is not True
+        or type(row.get("processed_count")) is not int
+        or row.get("processed_count") <= 0
+        or not isinstance(row.get("event_sha256"), str)
+        or not SOURCE_HASH_PATTERN.fullmatch(str(row.get("event_sha256")))
+        for row in stage_rows
+    ) or sum(int(row.get("processed_count") or 0) for row in stage_rows) != processed_count:
+        raise ReplayValidationError("canonical_candidate_runtime_manifest_invalid")
+    manifest_sha256 = manifest.get("manifest_sha256")
+    manifest_hash_material = {
+        str(key): value
+        for key, value in manifest.items()
+        if key not in {"status", "manifest_sha256"}
+    }
+    if not isinstance(manifest_sha256, str) or _sha256(manifest_hash_material) != manifest_sha256:
+        raise ReplayValidationError("canonical_candidate_runtime_manifest_invalid")
+    if (
+        task_ledger_row.get("runtime_manifest_path") != runtime.get("manifest_path")
+        or task_ledger_row.get("runtime_event_log_path") != runtime.get("event_log_path")
+        or task_ledger_row.get("runtime_manifest_sha256") != manifest_sha256
+    ):
+        raise ReplayValidationError("canonical_source_task_runtime_binding_invalid")
+    candidate_ledger = candidate.get("call_ledger")
+    if not isinstance(candidate_ledger, list) or len(candidate_ledger) != 1 or not isinstance(candidate_ledger[0], Mapping):
+        raise ReplayValidationError("canonical_candidate_ledger_invalid")
+    candidate_ledger_row = candidate_ledger[0]
+    _validate_exact_safety_boundary(candidate_ledger_row, code="canonical_candidate_ledger_boundary_invalid")
+    candidate_request = candidate_ledger_row.get("request_params_safe")
+    if not isinstance(candidate_request, Mapping):
+        raise ReplayValidationError("canonical_candidate_ledger_invalid")
+    task_core = {
+        key: value
+        for key, value in task_ledger_row.items()
+        if key != "request_params_safe"
+    }
+    candidate_core = {
+        key: value
+        for key, value in candidate_ledger_row.items()
+        if key != "request_params_safe"
+    }
+    if _canonical_json(task_core) != _canonical_json(candidate_core):
+        raise ReplayValidationError("canonical_candidate_task_ledger_mismatch")
+    expected_candidate_request = {
+        key: value
+        for key, value in request_params.items()
+        if key not in {"next_session_task_status", "next_session_lineage_status"}
+    }
+    if _canonical_json(candidate_request) != _canonical_json(expected_candidate_request):
+        raise ReplayValidationError("canonical_candidate_task_ledger_mismatch")
+    next_ledger = next_session.get("call_ledger")
+    if not isinstance(next_ledger, list) or len(next_ledger) != 1 or not isinstance(next_ledger[0], Mapping):
+        raise ReplayValidationError("canonical_next_session_ledger_invalid")
+    next_ledger_row = next_ledger[0]
+    _validate_exact_safety_boundary(next_ledger_row, code="canonical_next_session_ledger_boundary_invalid")
+    if next_ledger_row.get("does_not_modify_operation_zones") is not True:
+        raise ReplayValidationError("canonical_next_session_ledger_boundary_invalid")
+    if (
+        next_ledger_row.get("api") != "local_next_session_candidate_v05_lineage"
+        or next_ledger_row.get("source_snapshot") != CANDIDATE_PACKET_KEY
+        or next_ledger_row.get("call_status") != "candidate_radar_v05_lineage_ready"
+        or next_ledger_row.get("row_count") != 1
+        or _normalize_source_data_date(next_ledger_row.get("data_date")) != expected["source_data_date"]
+        or next_ledger_row.get("error_message_safe") != ""
+    ):
+        raise ReplayValidationError("canonical_next_session_ledger_invalid")
+    next_request = next_ledger_row.get("request_params_safe")
+    expected_next_request = {
+        "source_task_id": expected["source_task_id"],
+        "result_version": expected["source_result_version"],
+        "candidate_scope_hash": expected["source_scope_hash"],
+        "symbol": expected["source_symbol"],
+        "source_packet_key": CANDIDATE_PACKET_KEY,
+        "target_packet_key": NEXT_SESSION_PACKET_KEY,
+    }
+    if not isinstance(next_request, Mapping):
+        raise ReplayValidationError("canonical_next_session_ledger_invalid")
+    next_request_projection = {str(key): value for key, value in next_request.items() if key != "data_date"}
+    if (
+        _canonical_json(next_request_projection) != _canonical_json(expected_next_request)
+        or _normalize_source_data_date(next_request.get("data_date")) != expected["source_data_date"]
+    ):
+        raise ReplayValidationError("canonical_next_session_ledger_invalid")
+    coverage = candidate.get("candidate_radar_v05_coverage")
+    if not isinstance(coverage, Mapping):
+        raise ReplayValidationError("canonical_candidate_coverage_invalid")
+    if coverage.get("signal_retained_coverage") != "local_supplied_pool_rows_scored_and_bucketed":
+        raise ReplayValidationError("canonical_candidate_coverage_invalid")
+    if coverage.get("gap_status") != "provider_deepseek_celery_redis_browser_release_evidence_pending":
+        raise ReplayValidationError("canonical_candidate_coverage_invalid")
     derived_result_version = "candidate-v05-" + hashlib.sha256(
         json.dumps(
             {

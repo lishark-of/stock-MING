@@ -104,6 +104,66 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             self.canonical_patch_active = False
 
     def _seed_canonical_source(self, *, task_status: str = "success") -> None:
+        boundary = {
+            **{field: False for field in service.CANDIDATE_TASK_FALSE_FIELDS},
+            **{field: 0 for field in service.CANDIDATE_TASK_ZERO_FIELDS},
+            **{field: True for field in service.CANDIDATE_TASK_TRUE_FIELDS},
+        }
+        task_request = {
+            "scan_mode": "v05_candidate_local_batch",
+            "runtime_mode": "v05_candidate_local_batch",
+            "local_worker_fallback_only": True,
+            "operator_approved": True,
+            "candidate_scope_hash_short": SOURCE_HASH[:12],
+            "scope_hash_matches": True,
+            "input_candidate_count": SOURCE_PROCESSED_COUNT,
+            "normalized_candidate_count": SOURCE_PROCESSED_COUNT,
+            "processed_candidate_count": SOURCE_PROCESSED_COUNT,
+            "chunk_count": 1,
+            "stage_count": 1,
+            "external_sources_allowed": False,
+            "provider_backed_acceptance_done": False,
+            "deepseek_model_execution_done": False,
+            "production_full_pool_scan_done": False,
+            "next_session_task_status": "success",
+            "next_session_lineage_status": "same_packet_lineage_ready",
+        }
+        ledger_common = {
+            "api": "local_candidate_radar_v05_local_batch",
+            "source_snapshot": "payload.full_pool_candidates",
+            "row_count": SOURCE_PROCESSED_COUNT,
+            "data_date": None,
+            "local_fetched_at": "2026-07-10T15:00:00+08:00",
+            "call_status": "candidate_radar_v05_local_batch_success",
+            "error_message_safe": "",
+            "runtime_manifest_path": "v04_acceptance/source/worker_runtime/manifest_local-worker-123.json",
+            "runtime_event_log_path": "v04_acceptance/source/worker_runtime/events.jsonl",
+            **{field: False for field in service.CANDIDATE_LEDGER_FALSE_FIELDS},
+            **{field: 0 for field in service.CANDIDATE_LEDGER_ZERO_FIELDS},
+            **{field: True for field in service.CANDIDATE_LEDGER_TRUE_FIELDS},
+        }
+        manifest = {
+            "schema_version": "worker_v04_local_batch_runtime_manifest.v1",
+            "status": "worker_v04_local_batch_runtime_success",
+            "task_id": "local-worker-123",
+            "runtime_scope_hash_short": SOURCE_HASH[:12],
+            "pool_count": SOURCE_PROCESSED_COUNT,
+            "processed_count": SOURCE_PROCESSED_COUNT,
+            "chunk_size": 1,
+            "chunk_count": 1,
+            "stage_count": 1,
+            "failed_symbol": "",
+            "result_checksum": "b" * 64,
+            "append_only_event_count": 1,
+            "local_runtime_not_full_market_claim": True,
+            "local_runtime_is_not_celery_redis_production": True,
+            "contains_secret": False,
+            "external_calls_triggered": False,
+        }
+        manifest["manifest_sha256"] = service._sha256(
+            {key: value for key, value in manifest.items() if key != "status"}
+        )
+        ledger_common["runtime_manifest_sha256"] = manifest["manifest_sha256"]
         task = task_service.build_task_record(
             service.CANDIDATE_TASK_TYPE,
             task_id=SOURCE_TASK_ID,
@@ -119,15 +179,9 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             status=task_status,
             progress=1.0,
             current_step=service.CANDIDATE_TASK_STEP if task_status == "success" else "candidate_source_failed",
-            call_ledger=[{
-                "api": "local_candidate_radar_v05_local_batch",
-                "call_status": "candidate_radar_v05_local_batch_success",
-                "row_count": SOURCE_PROCESSED_COUNT,
-                **{field: False for field in service.CANDIDATE_LEDGER_FALSE_FIELDS},
-                **{field: 0 for field in service.CANDIDATE_LEDGER_ZERO_FIELDS},
-                **{field: True for field in service.CANDIDATE_LEDGER_TRUE_FIELDS},
-            }],
+            call_ledger=[{**ledger_common, "request_params_safe": task_request}],
         )
+        task.update(boundary)
         task_service._persist_task(task)
         lineage = {
             "schema_version": "candidate_radar_v05_next_session_lineage.v1",
@@ -145,6 +199,7 @@ class QmtReadonlyReplayTests(unittest.TestCase):
                 "expected_trade_date": SOURCE_DATA_DATE,
                 "expected_trade_date_calendar_validated": True,
                 "calendar_validated": True,
+                "as_of_date": SOURCE_DATA_DATE,
             },
             "research_only": True,
             "no_buy": True,
@@ -156,7 +211,7 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             "github_called": False,
             "does_not_modify_strategy_action": True,
             "does_not_modify_operation_zones": True,
-            "contains_secret": False,
+            **boundary,
         }
         store = service.SQLiteMetaStore(self.db_path)
         store.write_packet(
@@ -165,14 +220,74 @@ class QmtReadonlyReplayTests(unittest.TestCase):
                 "packet_key": service.CANDIDATE_PACKET_KEY,
                 "schema_version": "candidate_radar_cache.v1",
                 "status": "candidate_radar_v05_local_batch_ready",
+                "mode": "v05_candidate_local_batch",
                 "scan_mode": "v05_candidate_local_batch",
+                "cache_only": True,
+                "read_only": True,
                 "task_id": SOURCE_TASK_ID,
                 "latest_confirmed_task_id": SOURCE_TASK_ID,
                 "latest_confirmed_task_status": "success",
+                "latest_confirmed_task_current_step": service.CANDIDATE_TASK_STEP,
+                "latest_confirmed_symbol": SOURCE_SYMBOL,
                 "candidate_radar_v05_result_version": SOURCE_RESULT_VERSION,
                 "candidate_radar_v05_scope_hash": SOURCE_HASH,
+                "candidate_radar_v05_top_rows": [{"symbol": SOURCE_SYMBOL, "candidate_bucket": "Top"}],
+                "candidate_radar_v05_watch_rows": [],
+                "candidate_radar_v05_excluded_rows": [],
+                "candidate_radar_v05_bucket_counts": {
+                    "input_count": SOURCE_PROCESSED_COUNT,
+                    "processed_count": SOURCE_PROCESSED_COUNT,
+                    "top_count": SOURCE_PROCESSED_COUNT,
+                    "watch_count": 0,
+                    "excluded_count": 0,
+                    "chunk_count": 1,
+                    "stage_count": 1,
+                },
+                "candidate_radar_v05_runtime": {
+                    "status": "worker_v04_local_batch_runtime_success",
+                    "pool_count": SOURCE_PROCESSED_COUNT,
+                    "processed_count": SOURCE_PROCESSED_COUNT,
+                    "chunk_count": 1,
+                    "append_only_event_count": 1,
+                    "manifest_path": ledger_common["runtime_manifest_path"],
+                    "event_log_path": ledger_common["runtime_event_log_path"],
+                    "stage_rows": [{
+                        "chunk_index": 0,
+                        "status": "success",
+                        "chunk_size": 1,
+                        "processed_count": SOURCE_PROCESSED_COUNT,
+                        "event_sha256": "c" * 64,
+                        "append_only_write_done": True,
+                    }],
+                    "manifest": manifest,
+                },
+                "candidate_radar_v05_coverage": {
+                    "signal_retained_coverage": "local_supplied_pool_rows_scored_and_bucketed",
+                    "gap_status": "provider_deepseek_celery_redis_browser_release_evidence_pending",
+                },
+                "local_candidate_pool_audit": {
+                    "input_source": "payload.full_pool_candidates",
+                    "input_candidate_count": SOURCE_PROCESSED_COUNT,
+                    "normalized_candidate_count": SOURCE_PROCESSED_COUNT,
+                    "disabled_candidate_count": 0,
+                    "invalid_candidate_count": 0,
+                    "duplicate_candidate_count": 0,
+                    "truncated_candidate_count": 0,
+                    "skipped_candidate_count": 0,
+                },
                 "trade_date": SOURCE_DATA_DATE,
+                "freshness_state": copy.deepcopy(lineage["freshness_state"]),
                 "candidate_radar_v05_next_session_lineage": copy.deepcopy(lineage),
+                "call_ledger": [{
+                    **ledger_common,
+                    "request_params_safe": {
+                        key: value
+                        for key, value in task_request.items()
+                        if key not in {"next_session_task_status", "next_session_lineage_status"}
+                    },
+                }],
+                "warnings": [],
+                **boundary,
             },
         )
         store.write_packet(
@@ -184,11 +299,54 @@ class QmtReadonlyReplayTests(unittest.TestCase):
                 "mode": "cache_only",
                 "cache_only": True,
                 "read_only": True,
+                "latest_confirmed_task_id": SOURCE_TASK_ID,
+                "latest_confirmed_task_status": "success",
+                "latest_confirmed_task_current_step": service.CANDIDATE_TASK_STEP,
                 "source_task_id": SOURCE_TASK_ID,
                 "result_version": SOURCE_RESULT_VERSION,
+                "latest_confirmed_symbol": SOURCE_SYMBOL,
                 "candidate_scope_hash": SOURCE_HASH,
                 "data_date": SOURCE_DATA_DATE,
+                "trade_date": SOURCE_DATA_DATE,
+                "freshness_state": copy.deepcopy(lineage["freshness_state"]),
+                "chart_payload": {
+                    "status": "ready",
+                    "source_packet": service.NEXT_SESSION_PACKET_KEY,
+                    "symbol": SOURCE_SYMBOL,
+                    "ts_code": SOURCE_SYMBOL,
+                    "confirmed_symbol": SOURCE_SYMBOL,
+                    "source_task_id": SOURCE_TASK_ID,
+                    "result_version": SOURCE_RESULT_VERSION,
+                    "data_date": SOURCE_DATA_DATE,
+                    "candidate_scope_hash": SOURCE_HASH,
+                    "candidate_radar_v05_lineage_status": "same_packet_lineage_ready",
+                    "is_exact_next_session_packet": True,
+                },
+                "call_ledger": [{
+                    "api": "local_next_session_candidate_v05_lineage",
+                    "source_snapshot": service.CANDIDATE_PACKET_KEY,
+                    "request_params_safe": {
+                        "source_task_id": SOURCE_TASK_ID,
+                        "result_version": SOURCE_RESULT_VERSION,
+                        "candidate_scope_hash": SOURCE_HASH,
+                        "symbol": SOURCE_SYMBOL,
+                        "data_date": SOURCE_DATA_DATE,
+                        "source_packet_key": service.CANDIDATE_PACKET_KEY,
+                        "target_packet_key": service.NEXT_SESSION_PACKET_KEY,
+                    },
+                    "row_count": 1,
+                    "data_date": SOURCE_DATA_DATE,
+                    "local_fetched_at": "2026-07-10T15:00:00+08:00",
+                    "call_status": "candidate_radar_v05_lineage_ready",
+                    "error_message_safe": "",
+                    "does_not_modify_operation_zones": True,
+                    **{field: False for field in service.CANDIDATE_LEDGER_FALSE_FIELDS},
+                    **{field: 0 for field in service.CANDIDATE_LEDGER_ZERO_FIELDS},
+                    **{field: True for field in service.CANDIDATE_LEDGER_TRUE_FIELDS},
+                }],
                 "candidate_radar_v05_lineage": copy.deepcopy(lineage),
+                "warnings": [],
+                **boundary,
             },
         )
 
@@ -492,24 +650,217 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             replay_blocked = service.run_qmt_readonly_local_replay(_payload())
         self.assertEqual(replay_blocked["error_message_safe"], "canonical_source_task_not_durable")
 
+    def test_canonical_source_task_requires_durable_storage_source(self):
+        self._use_real_canonical_validation()
+        self._seed_canonical_source()
+        real_read_task_status = task_service.read_task_status
+        source_task = real_read_task_status(SOURCE_TASK_ID)
+        self.assertEqual(source_task["storage_source"], "memory_and_sqlite")
+
+        for storage_source in (None, "", "memory", "unknown", "candidate_cache_replay"):
+            forged_task = copy.deepcopy(source_task)
+            if storage_source is None:
+                forged_task.pop("storage_source", None)
+            else:
+                forged_task["storage_source"] = storage_source
+            with patch.object(
+                task_service,
+                "read_task_status",
+                side_effect=lambda task_id, forged=forged_task: (
+                    forged if task_id == SOURCE_TASK_ID else real_read_task_status(task_id)
+                ),
+            ):
+                blocked = service.run_qmt_readonly_local_replay(_payload())
+            self.assertEqual(blocked["error_message_safe"], "canonical_source_task_not_durable", storage_source)
+
+    def test_canonical_source_task_rejects_memory_sqlite_mismatch(self):
+        self._use_real_canonical_validation()
+        self._seed_canonical_source()
+        task_service._TASKS[SOURCE_TASK_ID]["warnings"].append("memory_only_forged_warning")
+
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+
+        self.assertEqual(blocked["error_message_safe"], "canonical_source_task_memory_sqlite_mismatch")
+
+    def test_canonical_source_symbol_binds_candidate_next_and_top_row(self):
+        self._use_real_canonical_validation()
+        self._seed_canonical_source()
+        store = service.SQLiteMetaStore(self.db_path)
+
+        for packet_key, field, expected_error in (
+            (service.CANDIDATE_PACKET_KEY, "latest_confirmed_symbol", "canonical_candidate_symbol_binding_invalid"),
+            (service.NEXT_SESSION_PACKET_KEY, "latest_confirmed_symbol", "canonical_next_session_symbol_binding_invalid"),
+        ):
+            packet = store.read_packet(packet_key)
+            original = packet[field]
+            packet[field] = "000001.SZ"
+            store.write_packet(packet_key, packet)
+            blocked = service.run_qmt_readonly_local_replay(_payload())
+            self.assertEqual(blocked["error_message_safe"], expected_error)
+            packet[field] = original
+            store.write_packet(packet_key, packet)
+
+        candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
+        candidate["candidate_radar_v05_top_rows"][0]["symbol"] = "000001.SZ"
+        store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_candidate_top_symbol_mismatch")
+
+    def test_canonical_candidate_next_and_lineage_boundaries_are_exact(self):
+        self._use_real_canonical_validation()
+        store = service.SQLiteMetaStore(self.db_path)
+        for packet_key, mutate, expected_error in (
+            (
+                service.CANDIDATE_PACKET_KEY,
+                lambda packet: packet.update(broker_called=True),
+                "canonical_candidate_packet_boundary_invalid",
+            ),
+            (
+                service.NEXT_SESSION_PACKET_KEY,
+                lambda packet: packet.update(external_calls_triggered=True),
+                "canonical_next_session_packet_boundary_invalid",
+            ),
+            (
+                service.CANDIDATE_PACKET_KEY,
+                lambda packet: packet["candidate_radar_v05_next_session_lineage"].update(broker_called=True),
+                "canonical_source_lineage_boundary_invalid",
+            ),
+        ):
+            self._seed_canonical_source()
+            packet = store.read_packet(packet_key)
+            mutate(packet)
+            store.write_packet(packet_key, packet)
+            blocked = service.run_qmt_readonly_local_replay(_payload())
+            self.assertEqual(blocked["error_message_safe"], expected_error)
+
+    def test_canonical_candidate_next_warnings_and_freshness_fail_closed(self):
+        self._use_real_canonical_validation()
+        store = service.SQLiteMetaStore(self.db_path)
+        for packet_key, expected_error in (
+            (service.CANDIDATE_PACKET_KEY, "canonical_candidate_warnings_present"),
+            (service.NEXT_SESSION_PACKET_KEY, "canonical_next_session_warnings_present"),
+        ):
+            self._seed_canonical_source()
+            packet = store.read_packet(packet_key)
+            packet["warnings"] = ["provider_failure=permission_denied"]
+            store.write_packet(packet_key, packet)
+            blocked = service.run_qmt_readonly_local_replay(_payload())
+            self.assertEqual(blocked["error_message_safe"], expected_error)
+
+        self._seed_canonical_source()
+        candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
+        candidate.pop("freshness_state")
+        store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_source_top_freshness_missing")
+
+        self._seed_canonical_source()
+        candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
+        candidate["freshness_state"]["as_of_date"] = "20260709"
+        store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_source_top_freshness_mismatch")
+
+    def test_canonical_pool_runtime_chart_and_ledger_bindings_fail_closed(self):
+        self._use_real_canonical_validation()
+        store = service.SQLiteMetaStore(self.db_path)
+
+        self._seed_canonical_source()
+        source_task = task_service._TASKS[SOURCE_TASK_ID]
+        source_task["payload_safe"]["full_pool_candidates"].append({"ticker": "000001.SZ"})
+        source_task["input_hash"] = hashlib.sha256(
+            json.dumps(
+                {"task_type": service.CANDIDATE_TASK_TYPE, "payload_safe": source_task["payload_safe"]},
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()[:16]
+        store.write_task_status(source_task)
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_source_processed_count_mismatch")
+
+        self._seed_canonical_source()
+        candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
+        candidate["candidate_radar_v05_runtime"]["manifest"]["processed_count"] = 2
+        manifest = candidate["candidate_radar_v05_runtime"]["manifest"]
+        manifest["manifest_sha256"] = service._sha256(
+            {key: value for key, value in manifest.items() if key not in {"status", "manifest_sha256"}}
+        )
+        candidate["call_ledger"][0]["runtime_manifest_sha256"] = manifest["manifest_sha256"]
+        store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_candidate_runtime_manifest_invalid")
+
+        self._seed_canonical_source()
+        next_session = store.read_packet(service.NEXT_SESSION_PACKET_KEY)
+        next_session["chart_payload"]["confirmed_symbol"] = "000001.SZ"
+        store.write_packet(service.NEXT_SESSION_PACKET_KEY, next_session)
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_next_session_chart_symbol_mismatch")
+
+        self._seed_canonical_source()
+        next_session = store.read_packet(service.NEXT_SESSION_PACKET_KEY)
+        next_session["call_ledger"][0]["broker_called"] = True
+        store.write_packet(service.NEXT_SESSION_PACKET_KEY, next_session)
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_next_session_ledger_boundary_invalid")
+
+    def test_canonical_source_task_top_level_boundary_is_exact(self):
+        self._use_real_canonical_validation()
+        self._seed_canonical_source()
+        source_task = task_service._TASKS[SOURCE_TASK_ID]
+        store = service.SQLiteMetaStore(self.db_path)
+
+        for field in service.CANDIDATE_TASK_FALSE_FIELDS:
+            source_task[field] = True
+            store.write_task_status(source_task)
+            blocked = service.run_qmt_readonly_local_replay(_payload())
+            self.assertEqual(blocked["error_message_safe"], "canonical_source_task_boundary_invalid", field)
+            source_task[field] = False
+            store.write_task_status(source_task)
+        for field in service.CANDIDATE_TASK_ZERO_FIELDS:
+            source_task[field] = 1
+            store.write_task_status(source_task)
+            blocked = service.run_qmt_readonly_local_replay(_payload())
+            self.assertEqual(blocked["error_message_safe"], "canonical_source_task_boundary_invalid", field)
+            source_task[field] = 0
+            store.write_task_status(source_task)
+        for field in service.CANDIDATE_TASK_TRUE_FIELDS:
+            source_task[field] = False
+            store.write_task_status(source_task)
+            blocked = service.run_qmt_readonly_local_replay(_payload())
+            self.assertEqual(blocked["error_message_safe"], "canonical_source_task_boundary_invalid", field)
+            source_task[field] = True
+            store.write_task_status(source_task)
+
+        source_task.pop("provider_called")
+        store.write_task_status(source_task)
+        missing = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(missing["error_message_safe"], "canonical_source_task_boundary_invalid")
+
     def test_canonical_source_rejects_task_ledger_and_result_self_sealing(self):
         self._use_real_canonical_validation()
         self._seed_canonical_source()
 
         task = task_service._TASKS[SOURCE_TASK_ID]
+        store = service.SQLiteMetaStore(self.db_path)
         task["call_ledger"][0]["broker_session_opened"] = True
+        store.write_task_status(task)
         unsafe_ledger = service.run_qmt_readonly_local_replay(_payload())
         self.assertEqual(unsafe_ledger["error_message_safe"], "canonical_source_task_ledger_boundary_invalid")
 
         task["call_ledger"][0]["broker_session_opened"] = False
+        store.write_task_status(task)
         forged_result_version = "candidate-v05-" + "f" * 16
-        store = service.SQLiteMetaStore(self.db_path)
         candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
         next_session = store.read_packet(service.NEXT_SESSION_PACKET_KEY)
         candidate["candidate_radar_v05_result_version"] = forged_result_version
         candidate["candidate_radar_v05_next_session_lineage"]["candidate_result_version"] = forged_result_version
         next_session["result_version"] = forged_result_version
         next_session["candidate_radar_v05_lineage"]["candidate_result_version"] = forged_result_version
+        next_session["chart_payload"]["result_version"] = forged_result_version
+        next_session["call_ledger"][0]["request_params_safe"]["result_version"] = forged_result_version
         store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
         store.write_packet(service.NEXT_SESSION_PACKET_KEY, next_session)
         forged_payload = _payload()

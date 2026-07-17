@@ -3177,21 +3177,28 @@ def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str,
     }
 
 
-_NEXT_SESSION_READ_NOTICES = (
+_NEXT_SESSION_FIXED_NOTICES = (
     "GET /api/next-session/cache 只读取本地次日图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
     "next_session_replacement_activation_receipt 只是替代验收路径，不运行浏览器、不证明生产替代完成。",
     "next_session_streamlit_parity_review 只审查本地同包 no-feature-loss 证据；不会打开 Streamlit、不会运行浏览器、不会移除 fallback、不会证明生产替代完成。",
     "next_session_durable_evidence_recipe 只固定 ECharts 生产替代前的 durable evidence 清单；不会打开浏览器、调用 provider/model、执行交易或证明生产替代完成。",
     "next_session_production_promotion_review 只审查本地 promotion 阻断状态；不会调用 provider/model/GitHub、不会移除 fallback、不会证明生产替代完成。",
     "next_session_production_stage_scope_manifest 只把本地阶段证据和剩余阻断暴露到 cache/UI；不会运行浏览器、不会调用 provider/model/GitHub、不会证明生产替代完成。",
+    "This is a button-gated local confirmed-symbol preview for ordinary Next Session readability.",
+    "It is not provider-backed market data, Streamlit reference capture, browser QA, durable CI evidence, or production ECharts replacement.",
 )
 
 
-def _with_next_session_read_notices(packet: Mapping[str, Any]) -> dict[str, Any]:
+def _move_next_session_fixed_warnings_to_notices(packet: Mapping[str, Any]) -> dict[str, Any]:
     normalized = dict(packet)
-    normalized["warnings"] = [str(item) for item in _as_list(packet.get("warnings"))]
+    legacy_joined_notice = _NEXT_SESSION_FIXED_NOTICES[0] + " " + _NEXT_SESSION_FIXED_NOTICES[1]
+    normalized["warnings"] = [
+        str(item)
+        for item in _as_list(packet.get("warnings"))
+        if str(item) not in _NEXT_SESSION_FIXED_NOTICES and str(item) != legacy_joined_notice
+    ]
     notices = [str(item) for item in _as_list(packet.get("notices"))]
-    for notice in _NEXT_SESSION_READ_NOTICES:
+    for notice in _NEXT_SESSION_FIXED_NOTICES:
         if notice not in notices:
             notices.append(notice)
     normalized["notices"] = notices
@@ -3528,7 +3535,7 @@ def read_next_session_cache() -> dict[str, Any]:
     packet.setdefault("does_not_modify_action", True)
     packet.setdefault("does_not_modify_strategy_action", True)
     packet.setdefault("does_not_modify_operation_zones", True)
-    return _with_next_session_read_notices(packet)
+    return _move_next_session_fixed_warnings_to_notices(packet)
 
 
 def _next_session_browser_qa_review_call_ledger(review_contract: Mapping[str, Any], now: str) -> list[dict[str, Any]]:

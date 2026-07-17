@@ -4852,6 +4852,47 @@ def _candidate_call_ledger_row(
     }
 
 
+def _candidate_v05_task_safety_boundary() -> dict[str, Any]:
+    """Authoritative top-level boundary for the local v0.5 source task."""
+    return {
+        "external": False,
+        "external_calls_triggered": False,
+        "external_call_count": 0,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "provider_called": False,
+        "model_called": False,
+        "provider_or_model_calls": False,
+        "worker_called": False,
+        "worker_dispatched": False,
+        "qmt_called": False,
+        "qmt_connection_count": 0,
+        "qmt_external_connection_attempted": False,
+        "qmt_process_discovered": False,
+        "qmt_client_imported": False,
+        "xtquant_imported": False,
+        "trade_called": False,
+        "trading_called": False,
+        "broker_called": False,
+        "broker_session_opened": False,
+        "broker_session_count": 0,
+        "account_query_executed": False,
+        "order_called": False,
+        "real_order_submitted": False,
+        "real_order_count": 0,
+        "real_order_cancelled": False,
+        "real_trade_executed": False,
+        "real_trade_count": 0,
+        "real_holdings_modified": False,
+        "real_trading_enabled": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+    }
+
+
 def _candidate_v05_scope_hash(candidates: list[dict[str, Any]], payload_safe: Mapping[str, Any]) -> str:
     data_date = _safe_text(payload_safe.get("data_date") or payload_safe.get("trade_date") or "", limit=32)
     payload = {
@@ -4991,15 +5032,17 @@ def _candidate_v05_attach_next_session_lineage(
         "github_called": False,
         "does_not_modify_strategy_action": True,
         "does_not_modify_operation_zones": True,
-        "contains_secret": False,
+        **_candidate_v05_task_safety_boundary(),
     }
     next_packet = dict(next_packet)
     next_packet["candidate_radar_v05_lineage"] = lineage
     next_packet["source_task_id"] = task_id
     next_packet["result_version"] = result_version
     next_packet["trade_date"] = data_date
+    next_packet["data_date"] = data_date
     next_packet["latest_confirmed_symbol"] = symbol
     next_packet["candidate_scope_hash"] = scope_hash
+    next_packet["freshness_state"] = dict(freshness_state)
     chart_payload = _as_dict(next_packet.get("chart_payload"))
     if chart_payload:
         chart_payload["symbol"] = symbol
@@ -5009,14 +5052,27 @@ def _candidate_v05_attach_next_session_lineage(
         chart_payload["candidate_scope_hash"] = scope_hash
         chart_payload["candidate_radar_v05_lineage_status"] = "same_packet_lineage_ready"
         next_packet["chart_payload"] = chart_payload
-    next_packet["external_calls_triggered"] = False
-    next_packet["tushare_called"] = False
-    next_packet["deepseek_called"] = False
-    next_packet["github_called"] = False
-    next_packet["does_not_execute_trades"] = True
-    next_packet["does_not_modify_strategy_action"] = True
+    next_ledger = _candidate_call_ledger_row(
+        api="local_next_session_candidate_v05_lineage",
+        source_snapshot="command_center_3_candidate_radar_cache",
+        row_count=1,
+        call_status="candidate_radar_v05_lineage_ready",
+        request_params_safe={
+            "source_task_id": task_id,
+            "result_version": result_version,
+            "candidate_scope_hash": scope_hash,
+            "symbol": symbol,
+            "data_date": data_date,
+            "source_packet_key": PACKET_KEY,
+            "target_packet_key": NEXT_SESSION_PACKET_KEY,
+        },
+    )
+    next_ledger["data_date"] = data_date
+    next_ledger["does_not_modify_operation_zones"] = True
+    next_packet["call_ledger"] = [next_ledger]
+    next_packet.update(_candidate_v05_task_safety_boundary())
     next_packet["does_not_modify_operation_zones"] = True
-    next_packet["contains_secret"] = False
+    next_packet = next_session_service._move_next_session_fixed_warnings_to_notices(next_packet)
     SQLiteMetaStore(next_session_service.SQLITE_META_PATH).write_packet(NEXT_SESSION_PACKET_KEY, next_packet)
     return lineage
 
@@ -5315,14 +5371,9 @@ def _run_candidate_v05_local_batch_task(
     packet["warnings"] = [
         "Candidate Radar v0.5 processed the full supplied pool through the local in-process runtime; this is not full-market, provider-backed, DeepSeek, Celery/Redis, browser, or release evidence."
     ] + [warning for warning in _as_list(packet.get("warnings")) if "v0.5" not in str(warning)]
-    packet["external_calls_triggered"] = False
-    packet["tushare_called"] = False
-    packet["deepseek_called"] = False
-    packet["github_called"] = False
-    packet["does_not_execute_trades"] = True
-    packet["does_not_modify_strategy_action"] = True
+    packet.update(_candidate_v05_task_safety_boundary())
     packet["candidate_is_not_buy_instruction"] = True
-    packet["contains_secret"] = False
+    packet = _move_qmt_source_fixed_warnings_to_notices(packet)
 
     try:
         store = SQLiteMetaStore(SQLITE_META_PATH)
@@ -15939,20 +15990,22 @@ def _read_candidate_radar_cache_uncached() -> dict[str, Any]:
     )
 
 
-_QMT_SOURCE_NOTICE_PREFIXES = (
-    "GET /api/candidate-radar/cache 只读展示",
-    "POST /api/candidate-radar/scan-quick 只扫描本地缓存",
-    "候选不是买入指令",
-    "本页不调用 Tushare、DeepSeek 或 GitHub",
-    "provider 阻断、stale 输入、缺失 provider 数据和降级模式会作为 coverage gap 展示",
-    "Candidate Radar v0.5 processed the full supplied pool",
-    "Candidate Radar durable evidence recipe 只固定",
-    "Candidate Radar production stage-scope manifest 只列出",
-    "Candidate Radar production replacement review 只审查",
-    "Candidate Radar production promotion dry-run 只绑定",
-    "Candidate Radar legacy retirement review 只审查",
-    "Candidate Radar production promotion review 只审查",
-)
+_QMT_SOURCE_FIXED_NOTICES = frozenset({
+    "GET /api/candidate-radar/cache 只读展示下一票雷达缓存；不会自动全市场扫描。",
+    "GET /api/candidate-radar/cache 只读展示已持久化的 local scan 结果；不会自动全市场扫描。",
+    "POST /api/candidate-radar/scan-quick 只扫描本地缓存并记录覆盖缺口；不会调用外部源。",
+    "候选不是买入指令；必须经过证据链、触发条件、纪律和仓位预算复核。",
+    "候选不是买入指令；扫描结果不修改 strategy action、不执行真实交易。",
+    "本页不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。",
+    "provider 阻断、stale 输入、缺失 provider 数据和降级模式会作为 coverage gap 展示，不会在页面渲染时补数。",
+    "Candidate Radar v0.5 processed the full supplied pool through the local in-process runtime; this is not full-market, provider-backed, DeepSeek, Celery/Redis, browser, or release evidence.",
+    "Candidate Radar durable evidence recipe 只固定下一票雷达生产替代证据清单；不会运行扫描、调用 Tushare/DeepSeek/GitHub、退掉 legacy 或完成生产替代。",
+    "Candidate Radar production stage-scope manifest 只列出生产替代剩余阶段；不会运行 worker、调用 Tushare/DeepSeek/GitHub、退掉 legacy 或完成生产替代。",
+    "Candidate Radar production replacement review 只审查本地迁移证据和缺口；不会运行扫描、启动 worker、调用 Tushare/DeepSeek/GitHub、退掉 legacy 或完成生产替代。",
+    "Candidate Radar production promotion dry-run 只绑定本地 production review scope；不会运行 worker、调用 Tushare/DeepSeek/GitHub、退掉 legacy 或完成生产替代。",
+    "Candidate Radar legacy retirement review 只审查本地退场边界；不会运行 worker、调用 Tushare/DeepSeek/GitHub、退掉 legacy 或完成生产替代。",
+    "Candidate Radar production promotion review 只审查本地 promotion 边界；不会运行 worker、调用 Tushare/DeepSeek/GitHub、退掉 legacy 或完成生产替代。",
+})
 
 
 def _move_qmt_source_fixed_warnings_to_notices(packet: Mapping[str, Any]) -> dict[str, Any]:
@@ -15961,7 +16014,7 @@ def _move_qmt_source_fixed_warnings_to_notices(packet: Mapping[str, Any]) -> dic
     notices = [str(item) for item in _as_list(packet.get("notices"))]
     for item in _as_list(packet.get("warnings")):
         text = str(item)
-        if any(text.startswith(prefix) for prefix in _QMT_SOURCE_NOTICE_PREFIXES):
+        if text in _QMT_SOURCE_FIXED_NOTICES:
             if text not in notices:
                 notices.append(text)
         else:
@@ -23323,6 +23376,8 @@ def run_candidate_full_pool_worker_fallback_task(payload: Any = None) -> dict[st
         return task
     payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
     if str(payload_safe.get("runtime_mode") or "") == "v05_candidate_local_batch":
+        task.update(_candidate_v05_task_safety_boundary())
+        task_service._persist_task(task)
         return _run_candidate_v05_local_batch_task(task, payload_safe)
 
     task_service.update_task_status(
