@@ -21,6 +21,8 @@ class UiStylesTrustedBindingTests(unittest.TestCase):
             "./routes/CandidateRadar.css",
             "./routes/FactorQuantHub.css",
             "./routes/NextSessionMap.css",
+            "./routes/MarginEtf.css",
+            "./routes/QmtReplayLab.css",
         ):
             self.assertEqual(self.main.count(f'import "{relative}";'), 1)
         self.assertNotIn('import "./CommandCenterHome.css";', self.home)
@@ -31,6 +33,8 @@ class UiStylesTrustedBindingTests(unittest.TestCase):
         self.assertNotIn('import "./NextSessionMap.css";', next_session)
         margin_etf = (ROOT / "desktop/src/routes/MarginEtf.tsx").read_text(encoding="utf-8")
         self.assertNotIn('import "./MarginEtf.css";', margin_etf)
+        qmt_replay = (ROOT / "desktop/src/routes/QmtReplayLab.tsx").read_text(encoding="utf-8")
+        self.assertNotIn('import "./QmtReplayLab.css";', qmt_replay)
 
     def test_all_product_styles_are_bound_by_both_trust_layers(self) -> None:
         for relative in (
@@ -44,6 +48,8 @@ class UiStylesTrustedBindingTests(unittest.TestCase):
             "desktop/src/routes/NextSessionMap.css",
             "desktop/src/routes/nextSessionOrdinaryGate.ts",
             "desktop/src/routes/MarginEtf.css",
+            "desktop/src/routes/QmtReplayLab.css",
+            "desktop/src/routes/qmtReplayOrdinaryGate.ts",
         ):
             self.assertIn(f'"{relative}"', self.runner)
             self.assertIn(f'Path("{relative}")', self.service)

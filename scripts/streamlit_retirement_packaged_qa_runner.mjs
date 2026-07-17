@@ -123,7 +123,9 @@ const TRUSTED_REACHABLE_SOURCE_PATHS = [
   "desktop/src/routes/FactorQuantHub.css",
   "desktop/src/routes/NextSessionMap.css",
   "desktop/src/routes/nextSessionOrdinaryGate.ts",
-  "desktop/src/routes/MarginEtf.css"
+  "desktop/src/routes/MarginEtf.css",
+  "desktop/src/routes/QmtReplayLab.css",
+  "desktop/src/routes/qmtReplayOrdinaryGate.ts"
 ];
 const FORBIDDEN_ORDINARY_URL_PATTERN = /(?:tauri:\/\/(?:localhost)?\/?#legacy|https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):8501(?:\/|$))/i;
 const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {
@@ -201,14 +203,15 @@ const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {
     "../components/PageStateBanner",
     "../components/StatusBadge",
     "../components/TaskLaunchReceipt",
-    "../components/TaskStatusPanel"
+    "../components/TaskStatusPanel",
+    "./qmtReplayOrdinaryGate"
   ])
 };
 const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 820 },
   { name: "mobile", width: 390, height: 844 }
 ];
-const EXPECTED_IMPORT_MANIFEST_DIGEST = "7f81a5c67a504e43225d105072e172460dfdb359be9dec3383cfdbb00502e14d";
+const EXPECTED_IMPORT_MANIFEST_DIGEST = "4c7e0101c8f95c020a8282443fdf034e629c9ad92b9dc77734a9991a477ddc91";
 
 function sha256(data) {
   return createHash("sha256").update(data).digest("hex");
@@ -917,7 +920,8 @@ function importContract(ts, sourceFile, expectedComponent) {
     if (/react-dom|(?:^|\/)(?:legacy|admin|system)(?:\/|$)/i.test(source)) unsafe = true;
     const exactTrustedRouteHelper =
       (expectedComponent === "CommandCenterHome" && source === "./commandCenterHomeResultBinding.js") ||
-      (expectedComponent === "NextSessionMap" && source === "./nextSessionOrdinaryGate");
+      (expectedComponent === "NextSessionMap" && source === "./nextSessionOrdinaryGate") ||
+      (expectedComponent === "QmtReplayLab" && source === "./qmtReplayOrdinaryGate");
     if (
       source.startsWith(".") &&
       !source.startsWith("../api/") &&

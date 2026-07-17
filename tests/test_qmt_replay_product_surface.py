@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ROUTE = ROOT / "desktop" / "src" / "routes" / "QmtReplayLab.tsx"
 ROUTE_STYLES = ROOT / "desktop" / "src" / "routes" / "QmtReplayLab.css"
 ORDINARY_GATE = ROOT / "desktop" / "src" / "routes" / "qmtReplayOrdinaryGate.ts"
+MAIN = ROOT / "desktop" / "src" / "main.tsx"
 
 
 class QmtReplayProductSurfaceTests(unittest.TestCase):
@@ -14,9 +15,11 @@ class QmtReplayProductSurfaceTests(unittest.TestCase):
         cls.page = ROUTE.read_text(encoding="utf-8")
         cls.styles = ROUTE_STYLES.read_text(encoding="utf-8")
         cls.gate = ORDINARY_GATE.read_text(encoding="utf-8")
+        cls.main = MAIN.read_text(encoding="utf-8")
 
     def test_ordinary_surface_has_exactly_five_user_facing_blocks(self):
-        self.assertIn('import "./QmtReplayLab.css";', self.page)
+        self.assertNotIn('import "./QmtReplayLab.css";', self.page)
+        self.assertEqual(self.main.count('import "./routes/QmtReplayLab.css";'), 1)
         self.assertEqual(self.page.count("data-qmt-ordinary-block="), 5)
         for block in ("safety", "source", "controls", "timeline", "result"):
             self.assertIn(f'data-qmt-ordinary-block="{block}"', self.page)

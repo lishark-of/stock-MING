@@ -8,6 +8,7 @@ import "./routes/CandidateRadar.css";
 import "./routes/FactorQuantHub.css";
 import "./routes/NextSessionMap.css";
 import "./routes/MarginEtf.css";
+import "./routes/QmtReplayLab.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

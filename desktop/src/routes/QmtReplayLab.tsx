@@ -21,7 +21,6 @@ import {
   strictQmtScope,
   strictQmtSymbol,
 } from "./qmtReplayOrdinaryGate";
-import "./QmtReplayLab.css";
 
 type Row = Record<string, unknown>;
 type ReplayFrameCount = 12 | 24 | 48;
