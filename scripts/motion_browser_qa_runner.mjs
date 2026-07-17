@@ -2272,10 +2272,7 @@ async function runQa(args) {
         const inflight = [...inflightRequests.values()].filter((item) => item.session.session_id === session.session_id);
         if (inflight.length) throw new Error(`${stage}: ${inflight.length} request(s) remain inflight for ${session.session_id}`);
       };
-      const closeSession = async (session, stage) => {
-        if (activeSession.session_id !== session.session_id || closedSessions.has(session.session_id)) {
-          throw new Error(`${stage}: attempted to close a stale or already closed network session`);
-        }
+      const waitForSessionIdle = async (session, stage) => {
         await page.waitForLoadState("networkidle", { timeout: NETWORK_IDLE_TIMEOUT_MS });
         const deadline = Date.now() + NETWORK_IDLE_TIMEOUT_MS;
         while (true) {
@@ -2283,10 +2280,16 @@ async function runQa(args) {
           const inflight = [...inflightRequests.values()].filter((item) => item.session.session_id === session.session_id);
           const lastActivity = sessionActivity.get(session.session_id) || 0;
           if (!inflight.length && Date.now() - lastActivity >= NETWORK_QUIET_WINDOW_MS) break;
-          if (Date.now() >= deadline) throw new Error(`${stage}: network did not become idle with inflight=0`);
+          if (Date.now() >= deadline) throw new Error(`${stage}: network did not become idle with inflight=${inflight.length}`);
           await page.waitForTimeout(25);
         }
         await assertNetworkBoundary(stage, session);
+      };
+      const closeSession = async (session, stage) => {
+        if (activeSession.session_id !== session.session_id || closedSessions.has(session.session_id)) {
+          throw new Error(`${stage}: attempted to close a stale or already closed network session`);
+        }
+        await waitForSessionIdle(session, stage);
         closedSessions.add(session.session_id);
         await page.waitForTimeout(50);
         await assertNetworkBoundary(`${stage}:sealed`, session);
@@ -2492,7 +2495,7 @@ async function runQa(args) {
         const routeTransitionUs = (await page.evaluate(() => Math.round(performance.now() * 1000))) - transitionStartedUs;
         const visualSettleWaitMs = args.reducedMotion ? 80 : 500;
         await page.waitForTimeout(visualSettleWaitMs);
-        await assertNetworkBoundary(`pre-inspect:${viewport.name}:${route.route}`, activeSession);
+        await waitForSessionIdle(activeSession, `pre-inspect:${viewport.name}:${route.route}`);
         const inspected = await inspectPage(page, route, transitionStartedUs);
         const currentUrl = exactLocalUrl(page.url());
         const screenshotPath = resolve(outputDir, viewport.name, `${route.route.replace("#", "") || "home"}.png`);
