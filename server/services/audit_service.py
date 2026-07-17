@@ -2218,7 +2218,7 @@ def _release_gate_readiness_audit(
         and "writes_no_artifacts" in motion_browser_qa_runbook
         and "external_calls_triggered" in motion_browser_qa_runbook
         and "motion_browser_qa_runner.mjs" in motion_browser_qa_runbook
-        and "command_center_3_motion_browser_qa_result.v6" in motion_browser_qa_runner
+        and "command_center_3_motion_browser_qa_result.v7" in motion_browser_qa_runner
         and "explicit_local_browser_visual_performance_run" in motion_browser_qa_runner
         and "chromium.launch" in motion_browser_qa_runner
         and "page.goto" in motion_browser_qa_runner
@@ -4276,7 +4276,7 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
     )
     runner_available = (
         MOTION_BROWSER_QA_RUNNER_PATH.exists()
-        and "command_center_3_motion_browser_qa_result.v6" in runner_script
+        and "command_center_3_motion_browser_qa_result.v7" in runner_script
         and "explicit_local_browser_visual_performance_run" in runner_script
         and "chromium.launch" in runner_script
         and "page.goto" in runner_script

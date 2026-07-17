@@ -5,6 +5,7 @@ import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
+import RouteCacheLoadingOverlay from "../components/RouteCacheLoadingBoundary";
 import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
@@ -23,6 +24,7 @@ export default function TaskCatalog() {
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const initialLayoutReady = !loading && !error;
 
   const refreshTasks = () => {
     setError("");
@@ -245,7 +247,8 @@ export default function TaskCatalog() {
   const empty = !loading && !error && !catalogTasks?.length && !taskRecords.length;
 
   return (
-    <>
+    <div className="route-cache-loading-shell" data-route-cache-loading={loading ? "true" : "false"} data-route-cache-ready={initialLayoutReady ? "true" : "false"} aria-busy={loading} data-ltg10-component-id="TaskCatalog">
+      <RouteCacheLoadingOverlay loading={loading} />
       <div className="page-head">
         <h1>Task Monitor / 任务监控</h1>
         <StatusBadge label={String(catalog.status ?? "catalog")} tone={catalog.status === "ready" ? "good" : "neutral"} />
@@ -443,6 +446,6 @@ export default function TaskCatalog() {
         <JsonDetails title="task status index raw" data={taskIndex ?? {}} />
         <JsonDetails title="task records raw" data={taskRecords} />
       </PacketCard>
-    </>
+    </div>
   );
 }

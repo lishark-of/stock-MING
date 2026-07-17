@@ -104,6 +104,47 @@ textarea:focus {
   animation: cc-route-reveal var(--motion-duration-route) var(--motion-ease-emphasized) both;
 }
 
+.route-cache-loading-shell {
+  min-height: min(720px, calc(100vh - 96px));
+  position: relative;
+}
+
+.route-cache-loading-shell[data-route-cache-loading="true"] > :not(.route-cache-loading-overlay) {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.route-cache-loading-overlay {
+  inset: 0 0 auto;
+  margin: 0;
+  min-height: 132px;
+  position: absolute;
+  z-index: 5;
+}
+
+.home-primary-status-stability-frame {
+  display: grid;
+  gap: 14px;
+}
+
+.home-status-metrics-stability-slot {
+  min-height: 280px;
+}
+
+.home-market-freshness-stability-slot {
+  min-height: 220px;
+}
+
+@media (max-width: 1000px) {
+  .home-status-metrics-stability-slot {
+    min-height: 550px;
+  }
+
+  .home-market-freshness-stability-slot {
+    min-height: 335px;
+  }
+}
+
 .motion-surface {
   transform-origin: 50% 0;
 }
@@ -1544,7 +1585,18 @@ pre {
   padding-left: 10px;
 }
 
+.home-confirm-status-line {
+  min-height: 44px;
+}
+
 @media (max-width: 760px) {
+  .home-status-metrics-stability-slot {
+    min-height: 540px;
+  }
+
+  .home-market-freshness-stability-slot {
+    min-height: 470px;
+  }
   .app-shell {
     display: block;
   }

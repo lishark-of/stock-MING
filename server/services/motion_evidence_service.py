@@ -26,8 +26,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 
-REPORT_SCHEMA = "command_center_3_motion_browser_qa_result.v6"
-TRACE_SCHEMA = "command_center_3_motion_browser_performance_trace.v5"
+REPORT_SCHEMA = "command_center_3_motion_browser_qa_result.v7"
+TRACE_SCHEMA = "command_center_3_motion_browser_performance_trace.v6"
 STATE_SCHEMA = "command_center_3_motion_runner_attestation_state.v3"
 EVENT_SCHEMA = "command_center_3_motion_runner_attestation_event.v3"
 ANCHOR_SCHEMA = "command_center_3_motion_runner_high_water_anchor.v2"
@@ -136,8 +136,11 @@ _ROW_KEYS = {
     "clipped_rows", "offscreen_rows", "horizontal_overflow_px", "overlap_count",
     "overlap_rows", "unnamed_interactive_count", "unnamed_interactive_rows",
     "concealed_motion_content_count", "concealed_motion_content_rows",
-    "expected_heading", "heading_text", "expected_anchor",
-    "expected_anchor_ready", "motion_marker_name", "motion_marker_minimum",
+    "expected_heading", "heading_text", "expected_heading_paint_visible", "expected_anchor",
+    "expected_anchor_ready", "expected_anchor_paint_visible", "expected_anchor_sticky_clearance",
+    "route_cache_boundary_required", "route_cache_boundary_present",
+    "route_cache_ready", "route_cache_not_busy", "route_cache_shell_visible",
+    "route_cache_overlay_absent", "route_cache_not_degraded", "route_cache_content_visible", "motion_marker_name", "motion_marker_minimum",
     "motion_marker_minimum_ready", "long_task_observer_ready",
     "layout_shift_observer_ready", "request_count", "request_ledger",
     "post_request_count", "post_request_urls", "motion_markers", "screenshot_path",
@@ -1136,8 +1139,21 @@ def _row_recomputed_pass(row: Any) -> tuple[bool, list[str]]:
     for key, (minimum, maximum) in integer_limits.items():
         if type(row.get(key)) is not int or not minimum <= row[key] <= maximum:
             reasons.append(f"{key}_budget_failed")
-    for key in ("expected_anchor_ready", "motion_marker_minimum_ready", "long_task_observer_ready", "layout_shift_observer_ready", "performance_trace_complete"):
+    for key in (
+        "expected_heading_paint_visible", "expected_anchor_ready", "expected_anchor_paint_visible", "expected_anchor_sticky_clearance",
+        "route_cache_ready", "route_cache_not_busy", "route_cache_shell_visible",
+        "route_cache_overlay_absent", "route_cache_not_degraded", "route_cache_content_visible", "motion_marker_minimum_ready",
+        "long_task_observer_ready", "layout_shift_observer_ready", "performance_trace_complete",
+    ):
         if type(row.get(key)) is not bool or row.get(key) is not True:
+            reasons.append(f"{key}_invalid")
+    boundary_required = route in {"#home", "#next-session-chart", "#candidates", "#tasks"}
+    if type(row.get("route_cache_boundary_required")) is not bool or row.get("route_cache_boundary_required") is not boundary_required:
+        reasons.append("route_cache_boundary_required_invalid")
+    if type(row.get("route_cache_boundary_present")) is not bool or row.get("route_cache_boundary_present") is not boundary_required:
+        reasons.append("route_cache_boundary_present_invalid")
+    for key in ("visible_element_count", "audited_first_viewport_element_count"):
+        if type(row.get(key)) is not int or row.get(key) < 1:
             reasons.append(f"{key}_invalid")
     if type(row.get("navigation_animation_count")) is not int or row.get("navigation_animation_count") < 1:
         reasons.append("navigation_animation_count_invalid")

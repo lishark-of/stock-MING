@@ -373,8 +373,19 @@ def _rows(motion_root: Path, run_id: str, mode: str) -> tuple[list[dict], list[d
                     "concealed_motion_content_rows": [],
                     "expected_heading": heading,
                     "heading_text": heading,
+                    "expected_heading_paint_visible": True,
                     "expected_anchor": anchor,
                     "expected_anchor_ready": True,
+                    "expected_anchor_paint_visible": True,
+                    "expected_anchor_sticky_clearance": True,
+                    "route_cache_boundary_required": route in {"#home", "#next-session-chart", "#candidates", "#tasks"},
+                    "route_cache_boundary_present": route in {"#home", "#next-session-chart", "#candidates", "#tasks"},
+                    "route_cache_ready": True,
+                    "route_cache_not_busy": True,
+                    "route_cache_shell_visible": True,
+                    "route_cache_overlay_absent": True,
+                    "route_cache_not_degraded": True,
+                    "route_cache_content_visible": True,
                     "motion_marker_name": marker,
                     "motion_marker_minimum": 1,
                     "motion_marker_minimum_ready": True,
@@ -799,6 +810,38 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
             facts = {row["evidence_key"]: row["observed"] for row in evaluation["production_fact_rows"]}
             self.assertTrue(facts["motion_production_promoted"])
             self.assertTrue(evaluation["motion_current_head_evidence_summary"]["motion_current_head_pair_verified"])
+
+    def test_route_cache_visibility_gates_fail_closed_individually(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_attested_pair(root)
+            report_path = next((root / "motion_qa").glob("*-normal/motion_browser_qa_report.json"))
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            base_row = next(row for row in report["rows"] if row["route"] == "#home")
+            for field in (
+                "expected_heading_paint_visible",
+                "expected_anchor_paint_visible",
+                "expected_anchor_sticky_clearance",
+                "route_cache_ready",
+                "route_cache_not_busy",
+                "route_cache_shell_visible",
+                "route_cache_overlay_absent",
+                "route_cache_not_degraded",
+                "route_cache_content_visible",
+            ):
+                with self.subTest(field=field):
+                    row = json.loads(json.dumps(base_row))
+                    row[field] = False
+                    passed, reasons = motion_evidence_service._row_recomputed_pass(row)
+                    self.assertFalse(passed)
+                    self.assertIn(f"{field}_invalid", reasons)
+            for field in ("route_cache_boundary_required", "route_cache_boundary_present"):
+                with self.subTest(field=field):
+                    row = json.loads(json.dumps(base_row))
+                    row[field] = False
+                    passed, reasons = motion_evidence_service._row_recomputed_pass(row)
+                    self.assertFalse(passed)
+                    self.assertIn(f"{field}_invalid", reasons)
 
     def test_old_head_and_duplicate_mode_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

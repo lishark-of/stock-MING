@@ -177,8 +177,7 @@ export default function App() {
     let observer: MutationObserver | null = null;
     let observerTimer: number | null = null;
     let retryTimers: number[] = [];
-    const stopAnchorRetries = () => {
-      observer?.disconnect();
+    const stopRetryTimers = () => {
       retryTimers.forEach((timer) => window.clearTimeout(timer));
       retryTimers = [];
       if (observerTimer !== null) {
@@ -186,19 +185,34 @@ export default function App() {
         observerTimer = null;
       }
     };
+    const stopAnchorRetries = () => {
+      observer?.disconnect();
+      stopRetryTimers();
+    };
     const scrollToAnchor = () => {
       if (cancelled) return false;
       const target = document.getElementById(anchor);
       if (!target) return false;
+      if (target.closest('[data-route-cache-loading="true"]')) return false;
       target.scrollIntoView({ block: "start" });
-      stopAnchorRetries();
+      const routeShell = target.closest("[data-route-cache-loading]");
+      if (routeShell?.getAttribute("data-route-cache-settled") === "false") {
+        stopRetryTimers();
+      } else {
+        stopAnchorRetries();
+      }
       return true;
     };
     observer = new MutationObserver(scrollToAnchor);
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-route-cache-loading", "data-route-cache-settled"],
+    });
     queueMicrotask(scrollToAnchor);
     retryTimers = ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS.map((delayMs) => window.setTimeout(scrollToAnchor, delayMs));
-    observerTimer = window.setTimeout(stopAnchorRetries, Math.max(...ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS) + 200);
+    observerTimer = window.setTimeout(stopRetryTimers, Math.max(...ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS) + 200);
     return () => {
       cancelled = true;
       stopAnchorRetries();

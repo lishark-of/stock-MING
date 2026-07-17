@@ -121,7 +121,23 @@ export const BACKEND_OFFLINE_ERROR = "backend_offline_or_unreachable";
 const RESPONSE_PARSE_ERROR = "response_parse_failed";
 const TAURI_GET_STARTUP_RETRY_ATTEMPTS = 40;
 const TAURI_GET_STARTUP_RETRY_DELAY_MS = 500;
+const TAURI_GET_STARTUP_DEADLINE_MS = 25000;
+const LOCAL_API_FETCH_TIMEOUT_MS = 5000;
 const inFlightReadOnlyRequests = new Map<string, Promise<ApiEnvelope<unknown>>>();
+
+async function fetchLocalApi(url: string, init?: RequestInit, timeoutMs = LOCAL_API_FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort(init?.signal?.reason);
+  if (init?.signal?.aborted) forwardAbort();
+  else init?.signal?.addEventListener("abort", forwardAbort, { once: true });
+  const timeout = window.setTimeout(() => controller.abort(new DOMException("local_api_timeout", "TimeoutError")), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+    init?.signal?.removeEventListener("abort", forwardAbort);
+  }
+}
 
 function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -297,20 +313,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
     const startupAttemptCount = method === "GET" && isTauriRuntime()
       ? TAURI_GET_STARTUP_RETRY_ATTEMPTS
       : 1;
-    for (let attempt = 0; attempt < startupAttemptCount; attempt += 1) {
+    const requestDeadlineAt = Date.now() + (startupAttemptCount > 1 ? TAURI_GET_STARTUP_DEADLINE_MS : LOCAL_API_FETCH_TIMEOUT_MS);
+    startupAttempts: for (let attempt = 0; attempt < startupAttemptCount; attempt += 1) {
       let connectionFailed = false;
       for (const apiBase of API_BASE_CANDIDATES) {
+        const remainingStartupMs = requestDeadlineAt - Date.now();
+        if (remainingStartupMs <= 0) break startupAttempts;
         if (!triedApiBases.some((candidate) => sameApiBase(candidate, apiBase))) {
           triedApiBases.push(apiBase);
         }
         try {
-          const res = await fetch(`${apiBase}${path}`, {
+          const res = await fetchLocalApi(`${apiBase}${path}`, {
             ...init,
             headers: {
               "Content-Type": "application/json",
               ...(init?.headers ?? {})
             }
-          });
+          }, Math.min(LOCAL_API_FETCH_TIMEOUT_MS, remainingStartupMs));
           if (!res.ok) {
             if (res.status === 404 && API_BASE_CANDIDATES.length > 1) {
               lastError = `HTTP ${res.status} from ${safeApiBaseDisplay(apiBase)}`;
@@ -342,7 +361,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
         }
       }
       if (!connectionFailed || attempt + 1 >= startupAttemptCount) break;
-      await waitForLocalBackend(TAURI_GET_STARTUP_RETRY_DELAY_MS);
+      const remainingStartupMs = requestDeadlineAt - Date.now();
+      if (remainingStartupMs <= 0) break;
+      await waitForLocalBackend(Math.min(TAURI_GET_STARTUP_RETRY_DELAY_MS, remainingStartupMs));
     }
     return failedRequestEnvelope<T>(path, lastCallStatus, lastError, triedApiBases.length ? triedApiBases : API_BASE_CANDIDATES);
   };

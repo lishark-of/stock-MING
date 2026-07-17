@@ -285,7 +285,7 @@ def build_contract() -> dict[str, Any]:
         ),
         row(
             "explicit_browser_runner_script_available",
-            "command_center_3_motion_browser_qa_result.v6" in runner_source
+            "command_center_3_motion_browser_qa_result.v7" in runner_source
             and "explicit_local_browser_visual_performance_run" in runner_source
             and "page.goto" in runner_source
             and ".stock_ming_3/motion_qa" in runner_source,
@@ -337,7 +337,7 @@ def build_contract() -> dict[str, Any]:
         "visual_qa_complete": False,
         "browser_performance_verified": False,
         "browser_runner_bundled": False,
-        "explicit_browser_runner_script_available": "command_center_3_motion_browser_qa_result.v6" in runner_source,
+        "explicit_browser_runner_script_available": "command_center_3_motion_browser_qa_result.v7" in runner_source,
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,

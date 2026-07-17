@@ -6,6 +6,7 @@ import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import PageStateBanner from "../components/PageStateBanner";
+import RouteCacheLoadingOverlay from "../components/RouteCacheLoadingBoundary";
 import StateClarityRail from "../components/StateClarityRail";
 import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
@@ -237,7 +238,10 @@ export default function CandidateRadar() {
   const searchSymbolRef = useRef("");
   const searchSymbolTouchedRef = useRef(false);
   const [loading, setLoading] = useState(true);
+  const [initialLayoutLoading, setInitialLayoutLoading] = useState(true);
+  const [initialLayoutSettled, setInitialLayoutSettled] = useState(false);
   const [error, setError] = useState("");
+  const initialLayoutReady = !initialLayoutLoading && !error;
   const quantProjectionP1ConfirmPayloadContract = {
     schema_version: "candidate_radar_p1_confirm_button_contract.v1",
     source: "candidate_radar_confirm_button",
@@ -270,7 +274,7 @@ export default function CandidateRadar() {
   const refreshCache = () => {
     setLoading(true);
     setError("");
-    void getCandidateRadarCache()
+    return getCandidateRadarCache()
       .then((res) => {
         setCache(res.data);
         setCacheEnvelopeLedger(res.call_ledger ?? []);
@@ -292,20 +296,20 @@ export default function CandidateRadar() {
       .finally(() => setLoading(false));
   };
   const refreshBootstrapStatus = () => {
-    void getBootstrapStatus().then((res) => {
+    return getBootstrapStatus().then((res) => {
       setBootstrapStatus(res.data);
       setBootstrapEnvelopeLedger(res.call_ledger ?? []);
       setBootstrapEnvelopeWarnings(res.warnings ?? []);
     });
   };
   const refreshTaskIndex = () => {
-    void getTasks().then((res) => setTaskIndex(res.data));
+    return getTasks().then((res) => setTaskIndex(res.data));
   };
   const refreshUserRouteQaEvidence = () => {
-    void getAuditUserRouteQa().then((res) => setAuditUserRouteQa(res.data));
+    return getAuditUserRouteQa().then((res) => setAuditUserRouteQa(res.data));
   };
   const refreshDataCapabilityCache = () => {
-    void getDataCapabilityCache().then((res) => {
+    return getDataCapabilityCache().then((res) => {
       setDataCapabilityCache(res.data);
       setDataCapabilityEnvelopeLedger(res.call_ledger ?? []);
     });
@@ -318,7 +322,7 @@ export default function CandidateRadar() {
     refreshDataCapabilityCache();
   };
   const refreshDesktopPreflight = () => {
-    void getDesktopPreflightCache().then((res) => {
+    return getDesktopPreflightCache().then((res) => {
       setDesktopPreflight(res.data);
       setDesktopPreflightEnvelopeLedger(res.call_ledger ?? []);
     });
@@ -464,17 +468,35 @@ export default function CandidateRadar() {
     });
 
   useEffect(() => {
-    refreshCache();
-    refreshBootstrapStatus();
-    refreshDesktopPreflight();
-    refreshTaskIndex();
-    refreshUserRouteQaEvidence();
-    refreshDataCapabilityCache();
+    let cancelled = false;
+    setInitialLayoutLoading(true);
+    setInitialLayoutSettled(false);
+    const coreCache = refreshCache();
+    void Promise.allSettled([
+      refreshBootstrapStatus(),
+      refreshDesktopPreflight(),
+      refreshTaskIndex(),
+      refreshUserRouteQaEvidence(),
+      refreshDataCapabilityCache(),
+    ]).then((results) => {
+      if (cancelled) return;
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") {
+        setError((current) => current || (failed.reason instanceof Error ? failed.reason.message : String(failed.reason)));
+      }
+      setInitialLayoutSettled(true);
+    });
+    void coreCache.finally(() => {
+      if (!cancelled) setInitialLayoutLoading(false);
+    });
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => {
     const anchor = candidateRadarRouteAnchorFromHash();
     if (anchor !== "candidate-radar-search-quant-projection") return;
-    document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+    if (!document.getElementById(anchor)?.closest('[data-route-cache-loading="true"]')) {
+      document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+    }
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -5858,7 +5880,8 @@ export default function CandidateRadar() {
     );
 
   return (
-    <div data-ltg10-component-id="CandidateRadar">
+    <div className="route-cache-loading-shell" data-route-cache-loading={initialLayoutLoading ? "true" : "false"} data-route-cache-ready={initialLayoutReady ? "true" : "false"} data-route-cache-settled={initialLayoutSettled ? "true" : "false"} aria-busy={initialLayoutLoading} data-ltg10-component-id="CandidateRadar">
+      <RouteCacheLoadingOverlay loading={initialLayoutLoading} />
       <div className="page-head">
         <div>
           <h1 data-ltg10-route-heading="candidates">下一票雷达</h1>

@@ -19,8 +19,8 @@ import { inflateSync } from "node:zlib";
 
 const require = createRequire(import.meta.url);
 
-const SCHEMA_VERSION = "command_center_3_motion_browser_qa_result.v6";
-const TRACE_SCHEMA_VERSION = "command_center_3_motion_browser_performance_trace.v5";
+const SCHEMA_VERSION = "command_center_3_motion_browser_qa_result.v7";
+const TRACE_SCHEMA_VERSION = "command_center_3_motion_browser_performance_trace.v6";
 const STATE_SCHEMA_VERSION = "command_center_3_motion_runner_attestation_state.v3";
 const EVENT_SCHEMA_VERSION = "command_center_3_motion_runner_attestation_event.v3";
 const ANCHOR_SCHEMA_VERSION = "command_center_3_motion_runner_high_water_anchor.v2";
@@ -2067,11 +2067,73 @@ async function inspectPage(page, route, transitionStartedUs) {
       .slice(0, 20);
     const documentElement = document.documentElement;
     const horizontalOverflowPx = Math.max(0, documentElement.scrollWidth - documentElement.clientWidth);
+    const hasEffectivePaintStyle = (element) => {
+      let current = element;
+      let effectiveOpacity = 1;
+      while (current instanceof Element) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility !== "visible") return false;
+        effectiveOpacity *= Number(style.opacity || "1");
+        if (effectiveOpacity < 0.94) return false;
+        current = current.parentElement;
+      }
+      return true;
+    };
     const anchorElement = document.querySelector(expected.anchor);
     const anchorRect = anchorElement?.getBoundingClientRect();
-    const anchorReady = Boolean(
-      anchorElement && anchorRect && anchorRect.width > 0 && anchorRect.height > 0 && anchorRect.top < window.innerHeight && anchorRect.bottom > 0
+    const anchorStyle = anchorElement ? getComputedStyle(anchorElement) : null;
+    const anchorSampleX = anchorRect ? Math.min(window.innerWidth - 1, Math.max(0, anchorRect.left + Math.min(anchorRect.width / 2, 24))) : 0;
+    const anchorSampleY = anchorRect ? Math.min(window.innerHeight - 1, Math.max(0, anchorRect.top + Math.min(anchorRect.height / 2, 24))) : 0;
+    const anchorHit = anchorRect ? document.elementFromPoint(anchorSampleX, anchorSampleY) : null;
+    const anchorPaintVisible = Boolean(
+      anchorElement && anchorRect && anchorStyle &&
+      anchorStyle.display !== "none" && anchorStyle.visibility === "visible" && hasEffectivePaintStyle(anchorElement) &&
+      anchorRect.width > 0 && anchorRect.height > 0 &&
+      anchorHit && (anchorElement === anchorHit || anchorElement.contains(anchorHit))
     );
+    const headingElement = document.querySelector(".route-stage h1");
+    const headingRect = headingElement?.getBoundingClientRect();
+    const headingStyle = headingElement ? getComputedStyle(headingElement) : null;
+    const headingIntersectsViewport = Boolean(headingRect && headingRect.bottom > 0 && headingRect.top < window.innerHeight && headingRect.right > 0 && headingRect.left < window.innerWidth);
+    const headingSampleX = headingRect ? Math.min(window.innerWidth - 1, Math.max(0, headingRect.left + Math.min(headingRect.width / 2, 24))) : 0;
+    const headingSampleY = headingRect ? Math.min(window.innerHeight - 1, Math.max(0, headingRect.top + Math.min(headingRect.height / 2, 24))) : 0;
+    const headingHit = headingIntersectsViewport ? document.elementFromPoint(headingSampleX, headingSampleY) : null;
+    const headingPaintVisible = Boolean(
+      headingElement && headingRect && headingStyle &&
+      headingStyle.display !== "none" && headingStyle.visibility === "visible" && hasEffectivePaintStyle(headingElement) &&
+      headingRect.width > 0 && headingRect.height > 0 &&
+      (!headingIntersectsViewport || (headingHit && (headingElement === headingHit || headingElement.contains(headingHit))))
+    );
+    const stickyBottom = Array.from(document.querySelectorAll("body *")).reduce((bottom, element) => {
+      const style = getComputedStyle(element);
+      if (style.position !== "fixed" && style.position !== "sticky") return bottom;
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0 || rect.top > 1 || rect.bottom <= 0 || !anchorRect) return bottom;
+      if (rect.right <= anchorRect.left || rect.left >= anchorRect.right) return bottom;
+      return Math.max(bottom, rect.bottom);
+    }, 0);
+    const anchorReady = Boolean(
+      anchorPaintVisible && anchorRect && anchorRect.top < window.innerHeight && anchorRect.bottom > 0
+    );
+    const anchorHasStickyClearance = Boolean(anchorReady && anchorRect && anchorRect.top >= stickyBottom - 1);
+    const routeCacheBoundaryRequired = ["#home", "#next-session-chart", "#candidates", "#tasks"].includes(expected.route);
+    const routeCacheShell = document.querySelector(".route-cache-loading-shell");
+    const routeCacheShellStyle = routeCacheShell ? getComputedStyle(routeCacheShell) : null;
+    const routeCacheShellRect = routeCacheShell?.getBoundingClientRect();
+    const routeCacheBoundaryPresent = Boolean(routeCacheShell);
+    const routeCacheReady = routeCacheBoundaryRequired
+      ? routeCacheShell?.getAttribute("data-route-cache-ready") === "true"
+      : true;
+    const routeCacheNotBusy = routeCacheBoundaryRequired
+      ? routeCacheShell?.getAttribute("aria-busy") === "false"
+      : true;
+    const routeCacheShellVisible = routeCacheBoundaryRequired
+      ? Boolean(routeCacheShellStyle && routeCacheShellRect && routeCacheShellStyle.visibility === "visible" && routeCacheShellStyle.display !== "none" && routeCacheShellRect.width > 0 && routeCacheShellRect.height > 0)
+      : true;
+    const routeCacheOverlayAbsent = document.querySelector(".route-cache-loading-overlay") === null;
+    const routeCacheNotDegraded = routeCacheBoundaryRequired
+      ? routeCacheShell?.getAttribute("data-route-cache-degraded") !== "true"
+      : true;
     const perf = window.__commandCenterMotionQaPerformance || { longTasks: [], layoutShifts: [] };
     const longTasks = perf.longTasks.filter((entry) => entry.start_us >= startedUs && entry.duration_us > 50000);
     const layoutShifts = perf.layoutShifts.filter((entry) => entry.start_us >= startedUs && entry.had_recent_input === false);
@@ -2081,6 +2143,7 @@ async function inspectPage(page, route, transitionStartedUs) {
       title: document.title,
       heading_text: headingText,
       expected_heading_ready: headingText === expected.heading,
+      expected_heading_paint_visible: headingPaintVisible,
       visible_element_count: visible.length,
       audited_first_viewport_element_count: firstViewportRows.length,
       clipped_count: clippedRows.length,
@@ -2096,6 +2159,16 @@ async function inspectPage(page, route, transitionStartedUs) {
       concealed_motion_content_rows: concealedContentRows,
       expected_anchor: expected.anchor,
       expected_anchor_ready: anchorReady,
+      expected_anchor_paint_visible: anchorPaintVisible,
+      expected_anchor_sticky_clearance: anchorHasStickyClearance,
+      route_cache_boundary_required: routeCacheBoundaryRequired,
+      route_cache_boundary_present: routeCacheBoundaryPresent,
+      route_cache_ready: routeCacheReady,
+      route_cache_not_busy: routeCacheNotBusy,
+      route_cache_shell_visible: routeCacheShellVisible,
+      route_cache_overlay_absent: routeCacheOverlayAbsent,
+      route_cache_not_degraded: routeCacheNotDegraded,
+      route_cache_content_visible: anchorPaintVisible,
       motion_markers: motionMarkers,
       motion_marker_minimum_ready: Number(motionMarkers[expected.marker] || 0) >= expected.marker_minimum,
       long_task_observer_ready: perf.longTaskObserver === true,
@@ -2471,14 +2544,17 @@ async function runQa(args) {
       for (const route of routes) {
         const activeRequestLedger = [];
         activeSession = createSession("route", route.route, activeRequestLedger);
-        const transitionStartedUs = await page.evaluate(() => Math.round(performance.now() * 1000));
-        await page.evaluate(hash => { window.location.hash = hash; }, route.navigation_hash || route.route);
+        const motionAuditStartedUs = await page.evaluate(hash => {
+          const startedUs = Math.round(performance.now() * 1000);
+          window.location.hash = hash;
+          return startedUs;
+        }, route.navigation_hash || route.route);
+        const transitionStartedUs = motionAuditStartedUs;
         await page.waitForFunction(
           expected => document.querySelector(".route-stage h1")?.textContent?.trim() === expected.heading && Boolean(document.querySelector(expected.anchor)),
           route,
           { timeout: 20000 }
         );
-        const motionAuditStartedUs = await page.evaluate(() => Math.round(performance.now() * 1000));
         const routeBudgetUs = route.route === "#candidates" ? PERFORMANCE_BUDGETS.candidate_radar_first_stable_us : PERFORMANCE_BUDGETS.route_transition_observed_us;
         const animationObservation = await page.evaluate(async budgetUs => {
           const stage = document.querySelector(".route-stage");
@@ -2493,6 +2569,26 @@ async function runQa(args) {
           ]);
           return { count: animations.length, completed: !timedOut };
         }, routeBudgetUs);
+        await page.waitForFunction(expected => {
+          const required = ["#home", "#next-session-chart", "#candidates", "#tasks"].includes(expected.route);
+          const shell = document.querySelector(".route-cache-loading-shell");
+          if (required && (
+            !shell ||
+            shell.getAttribute("data-route-cache-ready") !== "true" ||
+            shell.getAttribute("aria-busy") !== "false" ||
+            shell.getAttribute("data-route-cache-degraded") === "true" ||
+            document.querySelector(".route-cache-loading-overlay") !== null
+          )) return false;
+          const anchor = document.querySelector(expected.anchor);
+          const rect = anchor?.getBoundingClientRect();
+          const style = anchor ? getComputedStyle(anchor) : null;
+          if (!anchor || !rect || !style || style.display === "none" || style.visibility !== "visible" || Number(style.opacity || "1") < 0.94) return false;
+          if (rect.width <= 0 || rect.height <= 0 || rect.top >= innerHeight || rect.bottom <= 0) return false;
+          const x = Math.min(innerWidth - 1, Math.max(0, rect.left + Math.min(rect.width / 2, 24)));
+          const y = Math.min(innerHeight - 1, Math.max(0, rect.top + Math.min(rect.height / 2, 24)));
+          const hit = document.elementFromPoint(x, y);
+          return Boolean(hit && (anchor === hit || anchor.contains(hit)));
+        }, route, { timeout: 20000 });
         const routeTransitionUs = (await page.evaluate(() => Math.round(performance.now() * 1000))) - transitionStartedUs;
         const visualSettleWaitMs = args.reducedMotion ? 80 : 500;
         await page.waitForTimeout(visualSettleWaitMs);
@@ -2511,6 +2607,7 @@ async function runQa(args) {
         const postRequests = activeRequestLedger.filter(item => item.method === "POST");
         const passed =
           inspected.expected_heading_ready === true &&
+          inspected.expected_heading_paint_visible === true &&
           animationObservation.count >= 1 &&
           animationObservation.completed === true &&
           inspected.long_task_observer_ready === true &&
@@ -2521,6 +2618,15 @@ async function runQa(args) {
           inspected.unnamed_interactive_count === 0 &&
           inspected.concealed_motion_content_count === 0 &&
           inspected.expected_anchor_ready === true &&
+          inspected.expected_anchor_paint_visible === true &&
+          inspected.expected_anchor_sticky_clearance === true &&
+          inspected.route_cache_boundary_present === inspected.route_cache_boundary_required &&
+          inspected.route_cache_ready === true &&
+          inspected.route_cache_not_busy === true &&
+          inspected.route_cache_shell_visible === true &&
+          inspected.route_cache_overlay_absent === true &&
+          inspected.route_cache_not_degraded === true &&
+          inspected.route_cache_content_visible === true &&
           inspected.motion_marker_minimum_ready === true &&
           postRequests.length === 0 &&
           inspected.long_task_over_50ms_count <= PERFORMANCE_BUDGETS.long_task_over_50ms_count &&
@@ -2559,8 +2665,19 @@ async function runQa(args) {
           concealed_motion_content_rows: inspected.concealed_motion_content_rows,
           expected_heading: route.heading,
           heading_text: inspected.heading_text,
+          expected_heading_paint_visible: inspected.expected_heading_paint_visible,
           expected_anchor: inspected.expected_anchor,
           expected_anchor_ready: inspected.expected_anchor_ready,
+          expected_anchor_paint_visible: inspected.expected_anchor_paint_visible,
+          expected_anchor_sticky_clearance: inspected.expected_anchor_sticky_clearance,
+          route_cache_boundary_required: inspected.route_cache_boundary_required,
+          route_cache_boundary_present: inspected.route_cache_boundary_present,
+          route_cache_ready: inspected.route_cache_ready,
+          route_cache_not_busy: inspected.route_cache_not_busy,
+          route_cache_shell_visible: inspected.route_cache_shell_visible,
+          route_cache_overlay_absent: inspected.route_cache_overlay_absent,
+          route_cache_not_degraded: inspected.route_cache_not_degraded,
+          route_cache_content_visible: inspected.route_cache_content_visible,
           motion_marker_name: route.marker,
           motion_marker_minimum: route.marker_minimum,
           motion_marker_minimum_ready: inspected.motion_marker_minimum_ready,

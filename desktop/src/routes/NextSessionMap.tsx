@@ -6,6 +6,7 @@ import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import NextSessionChart from "../components/NextSessionChart";
 import PacketCard from "../components/PacketCard";
+import RouteCacheLoadingOverlay from "../components/RouteCacheLoadingBoundary";
 import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
@@ -171,13 +172,15 @@ export default function NextSessionMap() {
   const [streamlitParityTaskId, setStreamlitParityTaskId] = useState("");
   const [productionPromotionTaskId, setProductionPromotionTaskId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [initialLayoutLoading, setInitialLayoutLoading] = useState(true);
   const [error, setError] = useState("");
+  const initialLayoutReady = !initialLayoutLoading && !error;
 
   const refreshCache = () => {
     setLoading(true);
     setError("");
     setCacheMissingMessage("");
-    void getNextSessionCache().then((res) => {
+    return getNextSessionCache().then((res) => {
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
       setPacket(res.data);
@@ -232,16 +235,25 @@ export default function NextSessionMap() {
       }
     });
   const refreshCandidateRadarCache = () =>
-    void getCandidateRadarCache().then((res) => {
+    getCandidateRadarCache().then((res) => {
       if (res.ok !== false) setCandidateRadarCache(res.data ?? {});
     });
   const refreshTaskIndex = () =>
-    void getTasks().then((res) => setTaskIndex(res.data));
+    getTasks().then((res) => setTaskIndex(res.data));
 
   useEffect(() => {
-    refreshCache();
-    refreshCandidateRadarCache();
-    refreshTaskIndex();
+    let cancelled = false;
+    setInitialLayoutLoading(true);
+    void Promise.allSettled([refreshCache(), refreshCandidateRadarCache(), refreshTaskIndex()])
+      .then((results) => {
+        if (cancelled) return;
+        const failed = results.find((result) => result.status === "rejected");
+        if (failed?.status === "rejected") {
+          setError((current) => current || (failed.reason instanceof Error ? failed.reason.message : String(failed.reason)));
+        }
+        setInitialLayoutLoading(false);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const legacy = packet.legacy_projection_cache as Record<string, unknown> | undefined;
@@ -1846,7 +1858,8 @@ export default function NextSessionMap() {
   ];
 
   return (
-    <div data-ltg10-component-id="NextSessionMap">
+    <div className="route-cache-loading-shell" data-route-cache-loading={initialLayoutLoading ? "true" : "false"} data-route-cache-ready={initialLayoutReady ? "true" : "false"} aria-busy={initialLayoutLoading} data-ltg10-component-id="NextSessionMap">
+      <RouteCacheLoadingOverlay loading={initialLayoutLoading} />
       <div className="page-head">
         <div>
           <h1 data-ltg10-route-heading="next">次日图谱</h1>

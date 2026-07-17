@@ -79,7 +79,7 @@ def build_runbook() -> dict[str, Any]:
     runner_source = _read_text(RUNNER_SCRIPT)
     runner_available = (
         RUNNER_SCRIPT.exists()
-        and "command_center_3_motion_browser_qa_result.v6" in runner_source
+        and "command_center_3_motion_browser_qa_result.v7" in runner_source
         and "explicit_local_browser_visual_performance_run" in runner_source
         and "chromium.launch" in runner_source
         and "page.goto" in runner_source

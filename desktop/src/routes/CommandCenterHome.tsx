@@ -5,6 +5,7 @@ import JsonDetails from "../components/JsonDetails";
 import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
+import RouteCacheLoadingOverlay from "../components/RouteCacheLoadingBoundary";
 import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
@@ -236,6 +237,7 @@ export default function CommandCenterHome() {
   const [auditReadbackRequested, setAuditReadbackRequested] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const initialLayoutReady = !loading;
 
   useEffect(() => {
     let cancelled = false;
@@ -258,7 +260,6 @@ export default function CommandCenterHome() {
         if (res.ok === false) setError((current) => current || `${label}: ${res.error ?? "request_not_ok"}`);
       }).catch((err) => recordRequestFailure(label, err)).finally(() => {
         secondaryPending -= 1;
-        if (!cancelled && secondaryPending <= 0) setLoading(false);
       });
     };
     const trackP0 = <T extends { ok?: boolean; error?: string | null }>(
@@ -4345,7 +4346,8 @@ export default function CommandCenterHome() {
   };
 
   return (
-    <div data-ltg10-component-id="CommandCenterHome">
+    <div className="route-cache-loading-shell" data-route-cache-loading={loading ? "true" : "false"} data-route-cache-ready={initialLayoutReady ? "true" : "false"} data-route-cache-degraded={Boolean(error) ? "true" : "false"} aria-busy={loading} data-ltg10-component-id="CommandCenterHome">
+      <RouteCacheLoadingOverlay loading={loading} />
       <div className="page-head">
         <div>
           <h1 data-ltg10-route-heading="home">今日作战台</h1>
@@ -4354,16 +4356,20 @@ export default function CommandCenterHome() {
         <StatusBadge label={dailyCommandStatusLabel} tone={dailyCommandHealthOk ? "good" : "warn"} />
       </div>
       <PacketCard title="今日可用" subtitle="普通首页只看能不能用、看哪只票、有没有结果、下一步点哪里" status={ordinaryHomeStatusBadge}>
-        <MetricGrid items={ordinaryHomeMetricItems(ordinaryHomeStatusItems)} />
-        <div aria-label="ordinary home market session freshness">
-          <h3>市场会话与数据新鲜度</h3>
-          <p className="ordinary-status-note" aria-live="polite">{ordinaryHomeFreshnessExplanation}</p>
-          <MetricGrid items={ordinaryHomeMarketSessionItems} />
-          {ordinaryHomeFreshnessNeedsAttention ? (
-            <div className="actions" aria-label="ordinary home market session freshness actions">
-              <a href="#dataHealth" title="查看数据健康；只读本地缓存，不刷新外部数据源" aria-label="open data health from home market session freshness">查看数据健康</a>
-            </div>
-          ) : null}
+        <div className="home-primary-status-stability-frame">
+          <div className="home-status-metrics-stability-slot">
+            <MetricGrid items={ordinaryHomeMetricItems(ordinaryHomeStatusItems)} />
+          </div>
+          <div className="home-market-freshness-stability-slot" aria-label="ordinary home market session freshness">
+            <h3>市场会话与数据新鲜度</h3>
+            <p className="ordinary-status-note" aria-live="polite">{ordinaryHomeFreshnessExplanation}</p>
+            <MetricGrid items={ordinaryHomeMarketSessionItems} />
+            {ordinaryHomeFreshnessNeedsAttention ? (
+              <div className="actions" aria-label="ordinary home market session freshness actions">
+                <a href="#dataHealth" title="查看数据健康；只读本地缓存，不刷新外部数据源" aria-label="open data health from home market session freshness">查看数据健康</a>
+              </div>
+            ) : null}
+          </div>
         </div>
         <p className="ordinary-status-note" aria-label="ordinary home input confirm first sentence">输入确认速读：输入只做本地校验；确认后看最近结果、候选池、ETF/融资、股票量化推演和次日图谱。</p>
         <div id="home-p1-symbol-confirm" className="actions" aria-label="daily command ordinary home primary controls">
@@ -4390,7 +4396,7 @@ export default function CommandCenterHome() {
           )}
         </div>
         {homeQuantSubmitError ? <p className="ordinary-status-note" aria-live="polite">确认失败：请检查本地连接后重试。</p> : null}
-        <p className="ordinary-status-note" aria-label="ordinary home confirm status" aria-live="polite">{ordinaryHomeConfirmStatusLine}</p>
+        <p className="ordinary-status-note home-confirm-status-line" aria-label="ordinary home confirm status" aria-live="polite">{ordinaryHomeConfirmStatusLine}</p>
         <div className="actions" aria-label="ordinary home visible result quick actions">
           <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor result from visible home quick actions">股票量化推演</a>
           <a href="#next/next-session-chart" title="切换到次日图谱图表区域；只读本地图谱" aria-label="open next result from visible home quick actions">次日图谱</a>
