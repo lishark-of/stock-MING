@@ -59,6 +59,22 @@ class CandidateRadarFocusFrontendTests(unittest.TestCase):
         self.assertIn("@media (prefers-reduced-motion: reduce)", self.styles)
         self.assertNotIn("\nbody {", self.styles)
         self.assertNotIn("\n:root {", self.styles)
+        self.assertNotIn("overflow-wrap: anywhere", self.styles)
+        self.assertIn("word-break: keep-all", self.styles)
+
+    def test_freshness_uses_exact_states_and_never_promotes_not_ready(self) -> None:
+        helper_start = self.page.index("function candidateFreshnessPresentation")
+        helper_end = self.page.index("function ordinaryUserText", helper_start)
+        helper = self.page[helper_start:helper_end]
+
+        self.assertIn('currentStates.has(normalized)', helper)
+        self.assertIn('waitingStates.has(normalized)', helper)
+        self.assertIn('"not_ready"', helper)
+        self.assertIn('"unready"', helper)
+        self.assertIn('normalized.includes("not_ready")', helper)
+        self.assertIn('"数据状态待确认"', helper)
+        self.assertNotIn("/(fresh|today|current|ready)/", self.page)
+        self.assertIn("candidateFreshnessPresentation(", self.page)
 
 
 if __name__ == "__main__":

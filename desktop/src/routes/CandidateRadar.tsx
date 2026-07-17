@@ -26,6 +26,31 @@ function displayText(value: unknown, fallback = "--") {
   return String(value);
 }
 
+function candidateFreshnessPresentation(value: unknown, localDataReadable: boolean) {
+  const normalized = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const currentStates = new Set(["fresh", "today", "current", "ready", "up_to_date", "validated_current"]);
+  const staleStates = new Set(["stale", "expired", "old", "outdated"]);
+  const waitingStates = new Set([
+    "not_ready",
+    "unready",
+    "waiting",
+    "pending",
+    "blocked",
+    "missing",
+    "unavailable",
+    "unknown"
+  ]);
+
+  if (currentStates.has(normalized)) return { label: "数据已更新", tone: "good" };
+  if (staleStates.has(normalized) || normalized.startsWith("stale_") || normalized.startsWith("expired_")) {
+    return { label: "数据偏旧", tone: "warn" };
+  }
+  if (waitingStates.has(normalized) || normalized.includes("not_ready") || normalized.endsWith("_blocked")) {
+    return { label: localDataReadable ? "数据状态待确认" : "等待数据", tone: "warn" };
+  }
+  return { label: localDataReadable ? "本地数据可读" : "等待数据", tone: "neutral" };
+}
+
 function ordinaryUserText(value: unknown, fallback = "--") {
   const text = displayText(value, fallback);
   return text
@@ -5889,19 +5914,13 @@ export default function CandidateRadar() {
     );
   const candidateFocusFreshnessRaw = String(
     freshnessState.state ?? freshnessState.freshness_state ?? cache.freshness ?? ""
-  ).toLowerCase();
-  const candidateFocusFreshnessLabel = /(fresh|today|current|ready)/.test(candidateFocusFreshnessRaw)
-    ? "数据已更新"
-    : /(stale|expired|old)/.test(candidateFocusFreshnessRaw)
-      ? "数据偏旧"
-      : candidateRadarCacheGetReadable
-        ? "本地数据可读"
-        : "等待数据";
-  const candidateFocusFreshnessTone = /(stale|expired|old)/.test(candidateFocusFreshnessRaw)
-    ? "warn"
-    : candidateRadarCacheGetReadable
-      ? "good"
-      : "neutral";
+  );
+  const candidateFocusFreshness = candidateFreshnessPresentation(
+    candidateFocusFreshnessRaw,
+    candidateRadarCacheGetReadable
+  );
+  const candidateFocusFreshnessLabel = candidateFocusFreshness.label;
+  const candidateFocusFreshnessTone = candidateFocusFreshness.tone;
   const candidateFocusDataDate = displayText(
     freshnessState.data_date ?? freshnessState.as_of_date ?? cache.data_date,
     "日期待回放"

@@ -204,7 +204,8 @@
   font-size: clamp(1.45rem, 2.7vw, 2.1rem);
   letter-spacing: -0.035em;
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: keep-all;
 }
 
 .candidate-focus-dashboard__spotlight-copy > p {
