@@ -119,7 +119,9 @@ const TRUSTED_REACHABLE_SOURCE_PATHS = [
   "desktop/src/components/TaskStatusPanel.tsx",
   "desktop/src/routes/CommandCenterHome.css",
   "desktop/src/routes/CandidateRadar.css",
-  "desktop/src/routes/FactorQuantHub.css"
+  "desktop/src/routes/FactorQuantHub.css",
+  "desktop/src/routes/NextSessionMap.css",
+  "desktop/src/routes/nextSessionOrdinaryGate.ts"
 ];
 const FORBIDDEN_ORDINARY_URL_PATTERN = /(?:tauri:\/\/(?:localhost)?\/?#legacy|https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):8501(?:\/|$))/i;
 const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {
@@ -175,7 +177,8 @@ const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {
     "../components/RouteCacheLoadingBoundary",
     "../components/StateClarityRail",
     "../components/TaskLaunchReceipt",
-    "../components/TaskStatusPanel"
+    "../components/TaskStatusPanel",
+    "./nextSessionOrdinaryGate"
   ]),
   MarginEtf: new Set([
     "react",
@@ -202,7 +205,7 @@ const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 820 },
   { name: "mobile", width: 390, height: 844 }
 ];
-const EXPECTED_IMPORT_MANIFEST_DIGEST = "2136c935ff75b56ca26fc8ad48285afdcb3846d7cf8659f6e3feb9c6bb8e0df8";
+const EXPECTED_IMPORT_MANIFEST_DIGEST = "263413a6fcd407dcfd6dcb8974ecb1e946ca6b1f220e3cdb8bf2d455ab9b42b4";
 
 function sha256(data) {
   return createHash("sha256").update(data).digest("hex");
@@ -909,7 +912,14 @@ function importContract(ts, sourceFile, expectedComponent) {
     }
     manifest.push(declaration);
     if (/react-dom|(?:^|\/)(?:legacy|admin|system)(?:\/|$)/i.test(source)) unsafe = true;
-    if (source.startsWith(".") && !source.startsWith("../api/") && !source.startsWith("../components/")) unsafe = true;
+    const exactTrustedRouteHelper =
+      expectedComponent === "NextSessionMap" && source === "./nextSessionOrdinaryGate";
+    if (
+      source.startsWith(".") &&
+      !source.startsWith("../api/") &&
+      !source.startsWith("../components/") &&
+      !exactTrustedRouteHelper
+    ) unsafe = true;
     if (!source.startsWith(".") && !["react", "echarts"].includes(source)) unsafe = true;
   }
   const sourceCounts = observedSources.reduce((counts, source) => counts.set(source, (counts.get(source) || 0) + 1), new Map());

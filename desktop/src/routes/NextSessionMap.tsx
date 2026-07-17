@@ -11,7 +11,6 @@ import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 import { evaluateNextSessionOrdinaryGate } from "./nextSessionOrdinaryGate";
-import "./NextSessionMap.css";
 
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
 const DATA_CAPABILITY_HREF = "#dataCapability";
