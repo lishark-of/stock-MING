@@ -41,9 +41,12 @@ const QMT_FALSE_FIELDS = [
   "qmt_process_discovered",
   "qmt_client_imported",
   "xtquant_imported",
+  "trade_called",
+  "trading_called",
   "broker_called",
   "broker_session_opened",
   "account_query_executed",
+  "order_called",
   "real_order_submitted",
   "real_order_cancelled",
   "real_trade_executed",
@@ -55,6 +58,7 @@ const QMT_FALSE_FIELDS = [
   "provider_called",
   "model_called",
   "provider_or_model_calls",
+  "worker_called",
   "worker_dispatched",
   "contains_secret",
 ] as const;
@@ -69,6 +73,25 @@ const QMT_TRUE_FIELDS = [
   "does_not_execute_trades",
   "does_not_modify_strategy_action",
   "does_not_modify_holdings",
+] as const;
+const CANDIDATE_GET_LEDGER_APIS = [
+  "local_candidate_radar_cache",
+  "local_candidate_radar_legacy_parity_acceptance_receipt",
+  "local_candidate_radar_production_activation_receipt",
+  "local_candidate_radar_quant_projection_execution_request",
+  "local_candidate_radar_provider_parity_execution_request",
+  "local_candidate_radar_worker_execution_recipe",
+  "local_candidate_radar_worker_execution_request",
+  "local_candidate_radar_full_pool_worker_fallback_preview",
+  "local_candidate_radar_deep_scan_worker_fallback_preview",
+  "local_candidate_radar_worker_runtime_linked_evidence",
+  "local_candidate_radar_next_execution_recipe",
+  "local_candidate_radar_durable_evidence_recipe",
+  "local_candidate_radar_production_replacement_review_preview",
+  "local_candidate_radar_production_promotion_dry_run_preview",
+  "local_candidate_radar_legacy_retirement_review_preview",
+  "local_candidate_radar_production_promotion_review_preview",
+  "local_candidate_radar_production_stage_scope_manifest",
 ] as const;
 
 function record(value: unknown): QmtGateRecord {
@@ -161,32 +184,40 @@ function warningsEmpty(value: unknown): boolean {
 
 function commonLedgerRowSafe(row: QmtGateRecord): boolean {
   return row.external === false &&
-    row.external_calls_triggered === false &&
-    row.tushare_called === false &&
-    row.deepseek_called === false &&
-    row.github_called === false &&
-    row.does_not_execute_trades === true &&
-    row.does_not_modify_strategy_action === true &&
-    row.provider_or_model_calls !== true &&
-    row.provider_called !== true &&
-    row.model_called !== true &&
-    row.worker_dispatched !== true &&
-    row.qmt_called !== true &&
-    row.broker_called !== true &&
-    row.account_query_executed !== true &&
-    row.real_order_submitted !== true &&
-    row.real_trade_executed !== true;
+    QMT_FALSE_FIELDS.every((field) => row[field] === false) &&
+    QMT_ZERO_FIELDS.every((field) => row[field] === 0) &&
+    QMT_TRUE_FIELDS.every((field) => row[field] === true);
 }
 
-function envelopeLedgerSafe(value: unknown): boolean {
+function envelopeLedgerSafe(
+  value: unknown,
+  spec: {
+    endpoint: string;
+    backendApi: string;
+    backendCallStatus: string;
+    allowedBackendApis: readonly string[];
+  },
+): boolean {
   if (!Array.isArray(value) || value.length < 2) return false;
   const rows = value.map(record);
   const frontend = rows.filter((row) => row.api === "frontend_fastapi_request");
+  const backendRows = rows.filter((row) => row.api !== "frontend_fastapi_request");
+  const backend = backendRows.filter((row) => row.api === spec.backendApi);
+  const allowedBackendApis = new Set(spec.allowedBackendApis);
   return frontend.length === 1 &&
+    backendRows.length === rows.length - 1 &&
+    backend.length === 1 &&
+    new Set(backendRows.map((row) => row.api)).size === backendRows.length &&
+    backendRows.every((row) => typeof row.api === "string" && allowedBackendApis.has(row.api)) &&
+    frontend[0].endpoint === spec.endpoint &&
     frontend[0].frontend_backend_auto_link_success === true &&
     frontend[0].frontend_backend_auto_link_scope === "local_fastapi_only" &&
+    frontend[0].call_status === "frontend_backend_auto_link_success" &&
     frontend[0].page_render_external_calls === false &&
     frontend[0].provider_or_model_calls === false &&
+    backend[0].call_status === spec.backendCallStatus &&
+    backendRows.every((row) => typeof row.call_status === "string" && row.call_status.trim().length > 0) &&
+    backendRows.every((row) => typeof row.row_count === "number" && Number.isInteger(row.row_count) && row.row_count >= 0) &&
     rows.every(commonLedgerRowSafe);
 }
 
@@ -233,9 +264,22 @@ export function evaluateQmtReplayOrdinaryGate(input: QmtReplayGateInput): QmtRep
     new Set(["cache_missing", "ready_cache_replay"]).has(qmtStatus) &&
     input.qmt.mode === "cache_only" && input.qmt.cache_only === true && input.qmt.read_only === true;
   const safetyReady = qmtBoundarySafe(input.qmt.safety_boundary);
-  const ledgersReady = envelopeLedgerSafe(input.candidateLedger) &&
-    envelopeLedgerSafe(input.nextLedger) &&
-    envelopeLedgerSafe(input.qmtLedger) &&
+  const ledgersReady = envelopeLedgerSafe(input.candidateLedger, {
+    endpoint: "/api/candidate-radar/cache",
+    backendApi: "local_candidate_radar_cache",
+    backendCallStatus: "cache_read_persisted_v05_candidate_local_batch",
+    allowedBackendApis: CANDIDATE_GET_LEDGER_APIS,
+  }) && envelopeLedgerSafe(input.nextLedger, {
+    endpoint: "/api/next-session/cache",
+    backendApi: "local_next_session_cache",
+    backendCallStatus: "cache_read",
+    allowedBackendApis: ["local_next_session_cache"],
+  }) && envelopeLedgerSafe(input.qmtLedger, {
+    endpoint: "/api/qmt-replay/cache",
+    backendApi: "local_qmt_readonly_decimal_replay",
+    backendCallStatus: "cache_read_no_external_call",
+    allowedBackendApis: ["local_qmt_readonly_decimal_replay"],
+  }) &&
     qmtPayloadLedgerSafe(input.qmt.call_ledger);
   const warningsReady = warningsEmpty(input.candidateWarnings) && warningsEmpty(input.nextWarnings) && warningsEmpty(input.qmtWarnings) &&
     warningsEmpty(input.candidate.warnings) && warningsEmpty(input.nextSession.warnings) && warningsEmpty(input.qmt.warnings);

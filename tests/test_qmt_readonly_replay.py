@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import hashlib
 import inspect
 import json
 import tempfile
@@ -17,6 +18,17 @@ from server.services import task_service
 
 
 SOURCE_HASH = "a" * 64
+SOURCE_TASK_ID = "local-source-task-123"
+SOURCE_DATA_DATE = "20260710"
+SOURCE_SYMBOL = "600519.SH"
+SOURCE_PROCESSED_COUNT = 1
+SOURCE_RESULT_VERSION = "candidate-v05-" + hashlib.sha256(
+    json.dumps(
+        {"scope_hash": SOURCE_HASH, "task_id": SOURCE_TASK_ID, "processed": SOURCE_PROCESSED_COUNT},
+        sort_keys=True,
+        default=str,
+    ).encode("utf-8")
+).hexdigest()[:16]
 
 
 def _payload(*, scenario: str = "baseline") -> dict:
@@ -25,11 +37,11 @@ def _payload(*, scenario: str = "baseline") -> dict:
         "mode": "local_research_replay",
         "scenario": scenario,
         "max_frames": 12,
-        "source_result_version": "candidate-next.v1",
+        "source_result_version": SOURCE_RESULT_VERSION,
         "source_scope_hash": SOURCE_HASH,
-        "source_data_date": "20260710",
-        "source_symbol": "600519.SH",
-        "source_task_id": "local-source-task-123",
+        "source_data_date": SOURCE_DATA_DATE,
+        "source_symbol": SOURCE_SYMBOL,
+        "source_task_id": SOURCE_TASK_ID,
         "snapshot": {
             "as_of": "2026-07-13T15:00:00+08:00",
             "cash": "100000.00",
@@ -64,12 +76,121 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         self.service_db_patch.start()
         self.task_db_patch.start()
         task_service._TASKS.clear()
+        self.canonical_patch = patch.object(
+            service,
+            "_validate_canonical_source_binding",
+            return_value={
+                "source_symbol": SOURCE_SYMBOL,
+                "source_task_id": SOURCE_TASK_ID,
+                "source_result_version": SOURCE_RESULT_VERSION,
+                "source_scope_hash": SOURCE_HASH,
+                "source_data_date": SOURCE_DATA_DATE,
+            },
+        )
+        self.canonical_patch.start()
+        self.canonical_patch_active = True
 
     def tearDown(self) -> None:
         task_service._TASKS.clear()
+        if self.canonical_patch_active:
+            self.canonical_patch.stop()
         self.task_db_patch.stop()
         self.service_db_patch.stop()
         self.temp_dir.cleanup()
+
+    def _use_real_canonical_validation(self) -> None:
+        if self.canonical_patch_active:
+            self.canonical_patch.stop()
+            self.canonical_patch_active = False
+
+    def _seed_canonical_source(self, *, task_status: str = "success") -> None:
+        task = task_service.build_task_record(
+            service.CANDIDATE_TASK_TYPE,
+            task_id=SOURCE_TASK_ID,
+            output_packet_key=service.CANDIDATE_PACKET_KEY,
+            payload={
+                "runtime_mode": "v05_candidate_local_batch",
+                "operator_approved": True,
+                "candidate_scope_hash": SOURCE_HASH,
+                "confirm_scope_hash": SOURCE_HASH,
+                "data_date": SOURCE_DATA_DATE,
+                "full_pool_candidates": [{"ticker": SOURCE_SYMBOL}],
+            },
+            status=task_status,
+            progress=1.0,
+            current_step=service.CANDIDATE_TASK_STEP if task_status == "success" else "candidate_source_failed",
+            call_ledger=[{
+                "api": "local_candidate_radar_v05_local_batch",
+                "call_status": "candidate_radar_v05_local_batch_success",
+                "row_count": SOURCE_PROCESSED_COUNT,
+                **{field: False for field in service.CANDIDATE_LEDGER_FALSE_FIELDS},
+                **{field: 0 for field in service.CANDIDATE_LEDGER_ZERO_FIELDS},
+                **{field: True for field in service.CANDIDATE_LEDGER_TRUE_FIELDS},
+            }],
+        )
+        task_service._persist_task(task)
+        lineage = {
+            "schema_version": "candidate_radar_v05_next_session_lineage.v1",
+            "status": "same_packet_lineage_ready",
+            "candidate_packet_key": service.CANDIDATE_PACKET_KEY,
+            "candidate_task_id": SOURCE_TASK_ID,
+            "candidate_scope_hash": SOURCE_HASH,
+            "candidate_result_version": SOURCE_RESULT_VERSION,
+            "symbol": SOURCE_SYMBOL,
+            "data_date": SOURCE_DATA_DATE,
+            "freshness_state": {
+                "state": "fresh",
+                "freshness_state": "fresh",
+                "data_date": SOURCE_DATA_DATE,
+                "expected_trade_date": SOURCE_DATA_DATE,
+                "expected_trade_date_calendar_validated": True,
+                "calendar_validated": True,
+            },
+            "research_only": True,
+            "no_buy": True,
+            "no_action": True,
+            "no_trade": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_operation_zones": True,
+            "contains_secret": False,
+        }
+        store = service.SQLiteMetaStore(self.db_path)
+        store.write_packet(
+            service.CANDIDATE_PACKET_KEY,
+            {
+                "packet_key": service.CANDIDATE_PACKET_KEY,
+                "schema_version": "candidate_radar_cache.v1",
+                "status": "candidate_radar_v05_local_batch_ready",
+                "scan_mode": "v05_candidate_local_batch",
+                "task_id": SOURCE_TASK_ID,
+                "latest_confirmed_task_id": SOURCE_TASK_ID,
+                "latest_confirmed_task_status": "success",
+                "candidate_radar_v05_result_version": SOURCE_RESULT_VERSION,
+                "candidate_radar_v05_scope_hash": SOURCE_HASH,
+                "trade_date": SOURCE_DATA_DATE,
+                "candidate_radar_v05_next_session_lineage": copy.deepcopy(lineage),
+            },
+        )
+        store.write_packet(
+            service.NEXT_SESSION_PACKET_KEY,
+            {
+                "packet_key": service.NEXT_SESSION_PACKET_KEY,
+                "schema_version": "next_session_projection.v1",
+                "status": "ready_cache_replay",
+                "mode": "cache_only",
+                "cache_only": True,
+                "read_only": True,
+                "source_task_id": SOURCE_TASK_ID,
+                "result_version": SOURCE_RESULT_VERSION,
+                "candidate_scope_hash": SOURCE_HASH,
+                "data_date": SOURCE_DATA_DATE,
+                "candidate_radar_v05_lineage": copy.deepcopy(lineage),
+            },
+        )
 
     def test_empty_cache_get_creates_no_directory_database_or_task(self):
         before = sorted(str(path.relative_to(self.temp_dir.name)) for path in Path(self.temp_dir.name).rglob("*"))
@@ -106,7 +227,7 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             {
                 "source_symbol": "600519.SH",
                 "source_task_id": "local-source-task-123",
-                "source_result_version": "candidate-next.v1",
+                "source_result_version": SOURCE_RESULT_VERSION,
                 "source_scope_hash": SOURCE_HASH,
                 "source_data_date": "20260710",
             },
@@ -320,6 +441,83 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         self.assertEqual(cached["status"], "latest_attempt_blocked")
         self.assertEqual(cached["result_integrity_status"], "result_integrity_key_missing_or_invalid")
         self.assertFalse(cached["result_integrity_validated"])
+
+    def test_post_requires_real_canonical_candidate_next_and_source_task(self):
+        self._use_real_canonical_validation()
+
+        missing = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(missing["status"], "local_replay_blocked_safe")
+        self.assertEqual(missing["error_message_safe"], "canonical_candidate_next_packet_missing")
+
+        self._seed_canonical_source()
+        accepted = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(accepted["status"], "local_export_contract_and_replay_verified")
+        self.assertEqual(service._result_packet_integrity(accepted), (True, "result_integrity_validated"))
+
+        for field, value in (
+            ("source_task_id", "nonexistent-candidate-task"),
+            ("source_result_version", "forged-result.v1"),
+            ("source_scope_hash", "f" * 64),
+            ("source_data_date", "20260709"),
+        ):
+            forged = _payload()
+            forged[field] = value
+            blocked = service.run_qmt_readonly_local_replay(forged)
+            self.assertEqual(blocked["status"], "local_replay_blocked_safe", field)
+            self.assertEqual(blocked["error_message_safe"], "canonical_source_request_mismatch", field)
+
+    def test_canonical_source_task_must_be_real_success_not_cache_replay(self):
+        self._use_real_canonical_validation()
+        self._seed_canonical_source(task_status="failed")
+
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+
+        self.assertEqual(blocked["status"], "local_replay_blocked_safe")
+        self.assertEqual(blocked["error_message_safe"], "canonical_source_task_status_invalid")
+
+        task = task_service.read_task_status(SOURCE_TASK_ID)
+        self.assertIsNotNone(task)
+        task["status"] = "success"
+        task["current_step"] = service.CANDIDATE_TASK_STEP
+        task["status_history"][-1]["status"] = "success"
+        task["status_history"][-1]["current_step"] = service.CANDIDATE_TASK_STEP
+        task["storage_source"] = "candidate_cache_replay"
+        task["cache_replay_only"] = True
+        real_read_task_status = task_service.read_task_status
+        with patch.object(
+            task_service,
+            "read_task_status",
+            side_effect=lambda task_id: task if task_id == SOURCE_TASK_ID else real_read_task_status(task_id),
+        ):
+            replay_blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(replay_blocked["error_message_safe"], "canonical_source_task_not_durable")
+
+    def test_canonical_source_rejects_task_ledger_and_result_self_sealing(self):
+        self._use_real_canonical_validation()
+        self._seed_canonical_source()
+
+        task = task_service._TASKS[SOURCE_TASK_ID]
+        task["call_ledger"][0]["broker_session_opened"] = True
+        unsafe_ledger = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(unsafe_ledger["error_message_safe"], "canonical_source_task_ledger_boundary_invalid")
+
+        task["call_ledger"][0]["broker_session_opened"] = False
+        forged_result_version = "candidate-v05-" + "f" * 16
+        store = service.SQLiteMetaStore(self.db_path)
+        candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
+        next_session = store.read_packet(service.NEXT_SESSION_PACKET_KEY)
+        candidate["candidate_radar_v05_result_version"] = forged_result_version
+        candidate["candidate_radar_v05_next_session_lineage"]["candidate_result_version"] = forged_result_version
+        next_session["result_version"] = forged_result_version
+        next_session["candidate_radar_v05_lineage"]["candidate_result_version"] = forged_result_version
+        store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
+        store.write_packet(service.NEXT_SESSION_PACKET_KEY, next_session)
+        forged_payload = _payload()
+        forged_payload["source_result_version"] = forged_result_version
+
+        self_sealed = service.run_qmt_readonly_local_replay(forged_payload)
+
+        self.assertEqual(self_sealed["error_message_safe"], "canonical_source_result_version_not_task_derived")
 
     def test_source_data_date_is_required_real_and_canonical(self):
         for value in (None, "2026-02-30", "x20260710", 20260710):

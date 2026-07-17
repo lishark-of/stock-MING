@@ -80,7 +80,11 @@ class QmtReplayProductSurfaceTests(unittest.TestCase):
         self.assertIn("function qmtBoundarySafe", self.gate)
         self.assertIn("function qmtPayloadLedgerSafe", self.gate)
         self.assertIn('row.api === "frontend_fastapi_request"', self.gate)
-        self.assertIn("row.provider_or_model_calls !== true", self.gate)
+        self.assertIn("QMT_FALSE_FIELDS.every((field) => row[field] === false)", self.gate)
+        self.assertIn("QMT_ZERO_FIELDS.every((field) => row[field] === 0)", self.gate)
+        self.assertIn("QMT_TRUE_FIELDS.every((field) => row[field] === true)", self.gate)
+        self.assertIn("frontend[0].endpoint === spec.endpoint", self.gate)
+        self.assertIn("backend[0].call_status === spec.backendCallStatus", self.gate)
         self.assertIn("const safetyUnknown = !unsafeBoundary && !safetyExplicitSafe", self.page)
         for token in (
             "qmt_external_connection_attempted",

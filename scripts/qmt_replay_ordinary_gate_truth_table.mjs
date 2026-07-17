@@ -14,32 +14,57 @@ const moduleUrl = `data:text/javascript;base64,${Buffer.from(compiled).toString(
 const { evaluateQmtReplayOrdinaryGate } = await import(moduleUrl);
 
 const scope = "a".repeat(64);
-const commonSafe = (api) => ({
+const commonSafe = (api, callStatus = "verified", rowCount = 0) => ({
   api,
+  call_status: callStatus,
+  row_count: rowCount,
   external: false,
   external_calls_triggered: false,
+  external_call_count: 0,
   tushare_called: false,
   deepseek_called: false,
   github_called: false,
   provider_or_model_calls: false,
   provider_called: false,
   model_called: false,
+  worker_called: false,
   worker_dispatched: false,
   qmt_called: false,
+  qmt_connection_count: 0,
+  qmt_external_connection_attempted: false,
+  qmt_process_discovered: false,
+  qmt_client_imported: false,
+  xtquant_imported: false,
+  trade_called: false,
+  trading_called: false,
   broker_called: false,
+  broker_session_opened: false,
+  broker_session_count: 0,
   account_query_executed: false,
+  order_called: false,
   real_order_submitted: false,
+  real_order_count: 0,
+  real_order_cancelled: false,
   real_trade_executed: false,
+  real_trade_count: 0,
+  real_holdings_modified: false,
+  real_trading_enabled: false,
+  contains_secret: false,
   does_not_execute_trades: true,
   does_not_modify_strategy_action: true,
+  does_not_modify_holdings: true,
 });
-const frontend = () => ({
-  ...commonSafe("frontend_fastapi_request"),
+const frontend = (endpoint) => ({
+  ...commonSafe("frontend_fastapi_request", "frontend_backend_auto_link_success"),
+  endpoint,
   frontend_backend_auto_link_success: true,
   frontend_backend_auto_link_scope: "local_fastapi_only",
   page_render_external_calls: false,
 });
-const envelopeLedger = (api) => [frontend(), commonSafe(api)];
+const envelopeLedger = (endpoint, api, callStatus) => [
+  frontend(endpoint),
+  commonSafe(api, callStatus),
+];
 const boundary = () => ({
   ...commonSafe("local_qmt_readonly_decimal_replay"),
   external_call_count: 0,
@@ -101,7 +126,11 @@ const makeInput = () => ({
     candidate_radar_v05_next_session_lineage: lineage(),
   },
   candidateWarnings: [],
-  candidateLedger: envelopeLedger("local_candidate_radar_cache"),
+  candidateLedger: envelopeLedger(
+    "/api/candidate-radar/cache",
+    "local_candidate_radar_cache",
+    "cache_read_persisted_v05_candidate_local_batch",
+  ),
   nextSession: {
     packet_key: "command_center_next_session_projection_packet",
     schema_version: "next_session_projection.v1",
@@ -113,7 +142,7 @@ const makeInput = () => ({
     candidate_radar_v05_lineage: lineage(),
   },
   nextWarnings: [],
-  nextLedger: envelopeLedger("local_next_session_cache"),
+  nextLedger: envelopeLedger("/api/next-session/cache", "local_next_session_cache", "cache_read"),
   qmt: {
     packet_key: "command_center_3_qmt_replay_cache",
     schema_version: "qmt_readonly_local_replay_cache.v1",
@@ -134,7 +163,11 @@ const makeInput = () => ({
     },
   },
   qmtWarnings: [],
-  qmtLedger: envelopeLedger("local_qmt_replay_cache"),
+  qmtLedger: envelopeLedger(
+    "/api/qmt-replay/cache",
+    "local_qmt_readonly_decimal_replay",
+    "cache_read_no_external_call",
+  ),
 });
 const makeReadyResult = (input) => {
   input.qmt.status = "ready_cache_replay";
@@ -157,6 +190,13 @@ const makeReadyResult = (input) => {
 const rows = [
   ["valid_first_launch", "launchReady", true, () => {}],
   ["valid_bound_result", "resultReady", true, makeReadyResult],
+  ["valid_candidate_optional_allowlisted_ledgers", "launchReady", true, (v) => {
+    v.candidateLedger.push(commonSafe(
+      "local_candidate_radar_worker_execution_recipe",
+      "candidate_radar_worker_execution_recipe_ready_production_pending",
+      13,
+    ));
+  }],
   ["loading", "launchReady", false, (v) => { v.loading = true; }],
   ["read_error", "launchReady", false, (v) => { v.error = "offline"; }],
   ["candidate_warning", "launchReady", false, (v) => { v.candidateWarnings = ["warning"]; }],
@@ -169,7 +209,7 @@ const rows = [
   ["next_ledger_missing", "launchReady", false, (v) => { v.nextLedger = []; }],
   ["qmt_envelope_ledger_missing", "launchReady", false, (v) => { v.qmtLedger = []; }],
   ["qmt_payload_ledger_missing", "launchReady", false, (v) => { v.qmt.call_ledger = []; }],
-  ["frontend_ledger_duplicate", "launchReady", false, (v) => { v.candidateLedger.push(frontend()); }],
+  ["frontend_ledger_duplicate", "launchReady", false, (v) => { v.candidateLedger.push(frontend("/api/candidate-radar/cache")); }],
   ["ledger_provider_call", "launchReady", false, (v) => { v.nextLedger[1].provider_called = true; }],
   ["candidate_status_missing", "launchReady", false, (v) => { delete v.candidate.status; }],
   ["next_status_failed", "launchReady", false, (v) => { v.nextSession.status = "failed"; }],
@@ -193,6 +233,63 @@ const rows = [
   ["ready_result_source_scope_mismatch", "resultReady", false, (v) => { makeReadyResult(v); v.qmt.source_lineage.source_scope_hash = "b".repeat(64); }],
   ["ready_result_lineage_pass_missing", "resultReady", false, (v) => { makeReadyResult(v); delete v.qmt.lineage_validation.passed; }],
 ];
+
+for (const field of [
+  "external",
+  "external_calls_triggered",
+  "tushare_called",
+  "deepseek_called",
+  "github_called",
+  "provider_called",
+  "model_called",
+  "provider_or_model_calls",
+  "worker_called",
+  "worker_dispatched",
+  "qmt_called",
+  "qmt_external_connection_attempted",
+  "qmt_process_discovered",
+  "qmt_client_imported",
+  "xtquant_imported",
+  "trade_called",
+  "trading_called",
+  "broker_called",
+  "broker_session_opened",
+  "account_query_executed",
+  "order_called",
+  "real_order_submitted",
+  "real_order_cancelled",
+  "real_trade_executed",
+  "real_holdings_modified",
+  "real_trading_enabled",
+  "contains_secret",
+]) {
+  rows.push([`candidate_ledger_${field}_true`, "launchReady", false, (v) => { v.candidateLedger[1][field] = true; }]);
+}
+for (const field of [
+  "external_call_count",
+  "qmt_connection_count",
+  "broker_session_count",
+  "real_order_count",
+  "real_trade_count",
+]) {
+  rows.push([`candidate_ledger_${field}_nonzero`, "launchReady", false, (v) => { v.candidateLedger[1][field] = 1; }]);
+}
+for (const field of [
+  "does_not_execute_trades",
+  "does_not_modify_strategy_action",
+  "does_not_modify_holdings",
+]) {
+  rows.push([`candidate_ledger_${field}_false`, "launchReady", false, (v) => { v.candidateLedger[1][field] = false; }]);
+}
+rows.push(
+  ["candidate_next_ledger_swap", "launchReady", false, (v) => { v.candidateLedger = v.nextLedger; }],
+  ["next_qmt_ledger_swap", "launchReady", false, (v) => { v.nextLedger = v.qmtLedger; }],
+  ["qmt_candidate_ledger_swap", "launchReady", false, (v) => { v.qmtLedger = v.candidateLedger; }],
+  ["candidate_backend_status_wrong", "launchReady", false, (v) => { v.candidateLedger[1].call_status = "cache_read"; }],
+  ["candidate_backend_unknown", "launchReady", false, (v) => { v.candidateLedger.push(commonSafe("local_unknown_candidate_cache", "cache_read", 1)); }],
+  ["candidate_backend_duplicate", "launchReady", false, (v) => { v.candidateLedger.push({ ...v.candidateLedger[1] }); }],
+  ["qmt_frontend_endpoint_wrong", "launchReady", false, (v) => { v.qmtLedger[0].endpoint = "/api/candidate-radar/cache"; }],
+);
 
 const results = rows.map(([name, field, expected, mutate]) => {
   const input = makeInput();

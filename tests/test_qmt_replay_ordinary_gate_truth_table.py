@@ -24,6 +24,7 @@ class QmtReplayOrdinaryGateTruthTableTests(unittest.TestCase):
         rows = {row["name"]: row for row in report["results"]}
         self.assertTrue(rows["valid_first_launch"]["actual"])
         self.assertTrue(rows["valid_bound_result"]["actual"])
+        self.assertTrue(rows["valid_candidate_optional_allowlisted_ledgers"]["actual"])
         for key in (
             "candidate_warning",
             "candidate_ledger_missing",
@@ -35,6 +36,15 @@ class QmtReplayOrdinaryGateTruthTableTests(unittest.TestCase):
             "qmt_boundary_trade",
             "ready_result_integrity_missing",
             "ready_result_source_date_mismatch",
+            "candidate_next_ledger_swap",
+            "qmt_candidate_ledger_swap",
+            "candidate_backend_status_wrong",
+            "candidate_backend_unknown",
+            "candidate_backend_duplicate",
+            "qmt_frontend_endpoint_wrong",
+            "candidate_ledger_broker_session_opened_true",
+            "candidate_ledger_contains_secret_true",
+            "candidate_ledger_external_call_count_nonzero",
         ):
             self.assertFalse(rows[key]["actual"], key)
 
