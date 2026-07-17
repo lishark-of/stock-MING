@@ -764,7 +764,7 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
         self.assertIn("response_semantic_summary", source)
         self.assertIn("historical_provenance_count", source)
         self.assertIn("ledger_contract_rows", source)
-        self.assertIn("FASTAPI_CACHE_ENDPOINT_COUNT = 20", source)
+        self.assertIn("FASTAPI_CACHE_ENDPOINT_COUNT = 21", source)
         self.assertNotIn("/^(local_", source)
         self.assertIn("MAX_PNG_DECODED_BYTES", source)
         self.assertIn("maxOutputLength", source)

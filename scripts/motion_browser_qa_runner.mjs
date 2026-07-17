@@ -52,7 +52,7 @@ const MAX_PNG_IDAT_BYTES = 12 * 1024 * 1024;
 const MAX_PNG_DECODED_BYTES = 64 * 1024 * 1024;
 const MAX_FASTAPI_RESPONSE_BYTES = 32 * 1024 * 1024;
 const FASTAPI_RESPONSE_SEMANTIC_SCHEMA_VERSION = "command_center_3_motion_fastapi_response_semantic.v3";
-const FASTAPI_CACHE_ENDPOINT_COUNT = 20;
+const FASTAPI_CACHE_ENDPOINT_COUNT = 21;
 // /api/migration/status is a read-only progress envelope.  Its nested
 // ``safe_fields`` objects intentionally carry sanitized absence/usage metadata
 // whose names contain token/nonce/secret vocabulary, but never raw material.
@@ -87,6 +87,7 @@ const FASTAPI_CACHE_CONTRACTS = new Map([
   ["/api/storage/catalog", { schema: "command_center_3_storage_dataset_catalog.v1", ledgerApis: ["local_storage_dataset_catalog_cache"] }],
   ["/api/storage/current-result", { schema: "command_center_3_storage_current_result_cache.v1", ledgerApis: ["local_storage_current_result_cache"] }],
   ["/api/data-health/cache", { schema: "data_health_timeline_cache.v1", packet: "command_center_3_data_health_timeline_cache", ledgerApis: ["local_data_health_timeline_cache", "local_freshness_durable_evidence_recipe"] }],
+  ["/api/data-capability/cache", { schema: "data_capability_cache.v1", packet: "command_center_3_data_capability_cache", ledgerApis: ["local_data_capability_cache"] }],
   ["/api/migration/status", { schema: "command_center_3_migration_status.v2", packet: "command_center_3_migration_status", ledgerApis: ["local_migration_status_cache"] }],
   ["/api/tasks", { schema: "command_center_3_task_status_index.v1", packet: "command_center_3_task_status_index", historicalTaskSummary: true, ledgerApis: ["local_task_status_index"] }],
   ["/api/tasks/catalog", { schema: "command_center_3_task_catalog.v1", packet: "command_center_3_task_catalog", ledgerApis: ["local_task_catalog_cache"] }],
@@ -964,7 +965,7 @@ function selfTestFastApiValidator() {
     assert(!result.valid, label);
   };
   const safeResult = analyze(safeAudit());
-  assert(FASTAPI_CACHE_CONTRACTS.size === 20, "exact_20_endpoint_surface");
+  assert(FASTAPI_CACHE_CONTRACTS.size === FASTAPI_CACHE_ENDPOINT_COUNT, "exact_cache_endpoint_surface");
   assert(safeResult.valid, "safe_cache_response");
   assert(canonicalJson(safeResult.summary.ledger_contract_rows) === canonicalJson([{
     api: "local_call_ledger_audit_cache", source: "/api/audit/cache", method: "GET", path: "/api/audit/cache",
