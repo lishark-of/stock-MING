@@ -1920,38 +1920,49 @@ def _without_accessor_metadata(task: Mapping[str, Any]) -> dict[str, Any]:
     return row
 
 
+_HISTORY_PROJECTION_METADATA_FIELDS = frozenset(
+    {
+        "storage_source",
+        "historical_evidence",
+        "current_actionable",
+        "history_integrity_valid",
+        "history_integrity_error",
+        "history_id",
+        "history_updated_at",
+        "history_payload_digest",
+        "history_actual_payload_digest",
+        "history_lookup_query_count",
+        "history_task_type_binding_source",
+    }
+)
+
+
+def _history_payload_projection(history: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): value
+        for key, value in history.items()
+        if key not in _HISTORY_PROJECTION_METADATA_FIELDS
+    }
+
+
 def _read_persisted_result_task_and_history(task_id: str) -> tuple[Any, Any, str]:
     if not SQLITE_META_PATH.exists():
         return None, None, "result_task_sqlite_missing"
-    connection: sqlite3.Connection | None = None
     try:
-        persisted = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_task_status(task_id)
-        uri = f"file:{SQLITE_META_PATH.resolve().as_posix()}?mode=ro"
-        connection = sqlite3.connect(uri, uri=True)
-        history_row = connection.execute(
-            """
-            SELECT payload_json
-            FROM task_status_history
-            WHERE task_id = ?
-            ORDER BY history_id DESC
-            LIMIT 1
-            """,
-            (task_id,),
-        ).fetchone()
+        store = SQLiteMetaStore(SQLITE_META_PATH, read_only=True)
+        persisted = store.read_task_status(task_id)
+        history = store.read_latest_task_status_history(task_id)
     except Exception:
         return None, None, "result_task_sqlite_read_failed"
-    finally:
-        if connection is not None:
-            connection.close()
     if not isinstance(persisted, Mapping):
         return None, None, "result_task_persisted_missing"
-    if history_row is None:
+    if not isinstance(history, Mapping):
         return dict(persisted), None, "result_task_final_history_missing"
-    try:
-        history = json.loads(history_row[0])
-    except Exception:
-        return dict(persisted), None, "result_task_final_history_invalid"
-    return dict(persisted), history, "result_task_sqlite_read"
+    if history.get("history_integrity_valid") is not True or history.get("history_integrity_error") != "":
+        return dict(persisted), dict(history), "result_task_final_history_integrity_invalid"
+    if history.get("task_id") != task_id or history.get("task_type") != TASK_TYPE:
+        return dict(persisted), dict(history), "result_task_final_history_identity_invalid"
+    return dict(persisted), dict(history), "result_task_sqlite_history_validated"
 
 
 def _result_task_binding(packet: Any) -> tuple[bool, str]:
@@ -1969,9 +1980,11 @@ def _result_task_binding(packet: Any) -> tuple[bool, str]:
         return False, read_status
     if not isinstance(final_history, Mapping):
         return False, read_status
+    if read_status != "result_task_sqlite_history_validated":
+        return False, read_status
     accessor_core = _without_accessor_metadata(accessor)
     persisted_core = _without_accessor_metadata(persisted)
-    history_core = _without_accessor_metadata(final_history)
+    history_core = _without_accessor_metadata(_history_payload_projection(final_history))
     if accessor_core != persisted_core:
         return False, "result_task_accessor_sqlite_mismatch"
     if history_core != persisted_core:
@@ -1981,7 +1994,7 @@ def _result_task_binding(packet: Any) -> tuple[bool, str]:
         return False, "result_task_identity_mismatch"
     if (
         persisted.get("status") != "success"
-        or isinstance(persisted.get("progress"), bool)
+        or type(persisted.get("progress")) is not float
         or persisted.get("progress") != 1.0
     ):
         return False, "result_task_status_invalid"
@@ -1998,6 +2011,9 @@ def _result_task_binding(packet: Any) -> tuple[bool, str]:
     lineage = packet.get("source_lineage")
     if not isinstance(payload, Mapping) or not isinstance(lineage, Mapping):
         return False, "result_task_payload_invalid"
+    replay = packet.get("replay")
+    if not isinstance(replay, Mapping):
+        return False, "result_task_replay_missing"
     expected_payload = {
         "request_schema_version": REQUEST_SCHEMA_VERSION,
         "approved_by_user": True,
@@ -2010,10 +2026,24 @@ def _result_task_binding(packet: Any) -> tuple[bool, str]:
         "source_symbol": lineage.get("source_symbol"),
         "source_task_id": lineage.get("source_task_id"),
         "scope_hash": packet.get("scope_hash"),
+        "position_count": replay.get("initial_position_count"),
+        "event_count": replay.get("event_count"),
         "raw_snapshot_stored_in_task_audit": False,
         "external_qmt_connection_allowed": False,
     }
-    if any(payload.get(key) != value for key, value in expected_payload.items()):
+    if set(payload) != set(expected_payload) or any(
+        payload.get(key) != value for key, value in expected_payload.items()
+    ):
+        return False, "result_task_payload_mismatch"
+    if any(
+        type(payload.get(key)) is not int
+        or type(replay.get(replay_key)) is not int
+        or payload.get(key) < 0
+        for key, replay_key in (
+            ("position_count", "initial_position_count"),
+            ("event_count", "event_count"),
+        )
+    ):
         return False, "result_task_payload_mismatch"
     expected_input_hash = hashlib.sha256(
         json.dumps(
@@ -2041,36 +2071,92 @@ def _result_task_binding(packet: Any) -> tuple[bool, str]:
         return False, "result_task_boundary_invalid"
 
     status_history = persisted.get("status_history")
-    if not isinstance(status_history, list) or not status_history or not isinstance(status_history[-1], Mapping):
-        return False, "result_task_status_history_invalid"
-    final_status = status_history[-1]
-    if set(final_status) != {"status", "progress", "current_step", "at"} or any(
-        (
-            final_status.get("status") != "success",
-            isinstance(final_status.get("progress"), bool),
-            final_status.get("progress") != 1.0,
-            final_status.get("current_step") != TASK_COMPLETED_STEP,
-            not isinstance(final_status.get("at"), str),
-            not str(final_status.get("at") or "").strip(),
-        )
+    task_log = persisted.get("task_log")
+    if (
+        not isinstance(status_history, list)
+        or len(status_history) != 3
+        or any(not isinstance(row, Mapping) for row in status_history)
     ):
         return False, "result_task_status_history_invalid"
-    task_log = persisted.get("task_log")
-    if not isinstance(task_log, list) or not task_log or not isinstance(task_log[-1], Mapping):
+    if (
+        not isinstance(task_log, list)
+        or len(task_log) != 3
+        or any(not isinstance(row, Mapping) for row in task_log)
+    ):
         return False, "result_task_log_invalid"
-    final_log = task_log[-1]
+    expected_lifecycle = (
+        (
+            "pending",
+            0.0,
+            "qmt_local_decimal_replay_queued_no_external_call",
+            "local task record created without external work",
+        ),
+        (
+            "running",
+            0.5,
+            "qmt_local_decimal_replay_running_no_external_call",
+            "local task status updated",
+        ),
+        (
+            "success",
+            1.0,
+            TASK_COMPLETED_STEP,
+            "qmt_local_replay_completed_without_external_qmt_or_trade_execution",
+        ),
+    )
+    for index, (expected_status, expected_progress, expected_step, expected_message) in enumerate(expected_lifecycle):
+        history_row = status_history[index]
+        log_row = task_log[index]
+        if set(history_row) != {"status", "progress", "current_step", "at"} or any(
+            (
+                history_row.get("status") != expected_status,
+                type(history_row.get("progress")) is not float,
+                history_row.get("progress") != expected_progress,
+                history_row.get("current_step") != expected_step,
+                not isinstance(history_row.get("at"), str),
+                not str(history_row.get("at") or "").strip(),
+            )
+        ):
+            return False, "result_task_status_history_invalid"
+        if set(log_row) != {
+            "event",
+            "status",
+            "current_step",
+            "message_safe",
+            "at",
+            "external",
+            "external_calls_triggered",
+            "contains_secret",
+            "stack_trace_included",
+        } or any(
+            (
+                log_row.get("event") != ("task_created" if index == 0 else "task_status_updated"),
+                log_row.get("status") != expected_status,
+                log_row.get("current_step") != expected_step,
+                log_row.get("message_safe") != expected_message,
+                log_row.get("at") != history_row.get("at"),
+                log_row.get("external") is not False,
+                log_row.get("external_calls_triggered") is not False,
+                log_row.get("contains_secret") is not False,
+                log_row.get("stack_trace_included") is not False,
+            )
+        ):
+            return False, "result_task_log_invalid"
+    lifecycle_times = [str(row.get("at")) for row in status_history]
+    try:
+        parsed_times = [_dt.datetime.fromisoformat(value) for value in lifecycle_times]
+    except (TypeError, ValueError):
+        return False, "result_task_lifecycle_time_invalid"
+    if parsed_times != sorted(parsed_times):
+        return False, "result_task_lifecycle_time_invalid"
     if any(
         (
-            final_log.get("event") != "task_status_updated",
-            final_log.get("status") != "success",
-            final_log.get("current_step") != TASK_COMPLETED_STEP,
-            final_log.get("external") is not False,
-            final_log.get("external_calls_triggered") is not False,
-            final_log.get("contains_secret") is not False,
-            final_log.get("stack_trace_included") is not False,
+            persisted.get("created_at") != lifecycle_times[0],
+            persisted.get("started_at") != lifecycle_times[1],
+            persisted.get("finished_at") != lifecycle_times[2],
         )
     ):
-        return False, "result_task_log_invalid"
+        return False, "result_task_lifecycle_time_invalid"
     return True, "result_task_sqlite_binding_validated"
 
 
@@ -2319,11 +2405,27 @@ def read_qmt_replay_cache() -> dict[str, Any]:
     ledger = _local_call_ledger(call_status="cache_read_no_external_call")
     if not isinstance(selected, Mapping):
         invalid_current = current_present and not current_result_ok
-        blocked_status = current_integrity if not current_ok else current_task_binding
+        invalid_last_good = (
+            not current_present
+            and last_good_source == "packet_present"
+            and not last_good_result_ok
+        )
+        blocked_available_result = invalid_current or invalid_last_good
+        if invalid_current:
+            blocked_status = current_integrity if not current_ok else current_task_binding
+            blocked_task_status = current_task_binding if current_ok else "result_task_not_checked_invalid_result"
+        elif invalid_last_good:
+            blocked_status = last_good_integrity if not last_good_ok else last_good_task_binding
+            blocked_task_status = (
+                last_good_task_binding if last_good_ok else "result_task_not_checked_invalid_result"
+            )
+        else:
+            blocked_status = "result_packet_missing"
+            blocked_task_status = "result_task_not_checked_invalid_result"
         return {
             "packet_key": CACHE_PACKET_KEY,
             "schema_version": CACHE_SCHEMA_VERSION,
-            "status": "latest_attempt_blocked" if invalid_current else "cache_missing",
+            "status": "latest_attempt_blocked" if blocked_available_result else "cache_missing",
             "mode": "cache_only",
             "cache_only": True,
             "read_only": True,
@@ -2345,12 +2447,12 @@ def read_qmt_replay_cache() -> dict[str, Any]:
             },
             "virtual_research_events": [],
             "result_integrity_validated": False,
-            "result_integrity_status": blocked_status if invalid_current else "result_packet_missing",
+            "result_integrity_status": blocked_status,
             "result_task_binding_validated": False,
-            "result_task_binding_status": current_task_binding if current_ok else "result_task_not_checked_invalid_result",
+            "result_task_binding_status": blocked_task_status,
             "lineage_validation": {
                 "schema_version": "qmt_readonly_source_lineage_validation.v1",
-                "status": "blocked_invalid_result" if invalid_current else "waiting_for_first_result",
+                "status": "blocked_invalid_result" if blocked_available_result else "waiting_for_first_result",
                 "passed": False,
             },
             "external_qmt_integration_verified": False,
@@ -2358,7 +2460,13 @@ def read_qmt_replay_cache() -> dict[str, Any]:
             "safety_boundary": _boundary_flags(),
             **_boundary_flags(),
             "call_ledger": ledger,
-            "warnings": [f"qmt_replay_current_result_blocked:{blocked_status}"] if invalid_current else [],
+            "warnings": (
+                [
+                    f"qmt_replay_{'current' if invalid_current else 'last_good'}_result_blocked:{blocked_status}"
+                ]
+                if blocked_available_result
+                else []
+            ),
             "notices": ["尚无本地 QMT replay 缓存；GET 未创建目录、数据库、任务或外部连接。"],
         }
 

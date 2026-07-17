@@ -678,6 +678,100 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         self.assertEqual(history_mismatch["status"], "latest_attempt_blocked")
         self.assertEqual(history_mismatch["result_task_binding_status"], "result_task_final_history_mismatch")
 
+    def test_cache_get_uses_formal_history_digest_and_identity_validator(self):
+        written = service.run_qmt_readonly_local_replay(_payload())
+        task_id = str(written["task_id"])
+        task_service._TASKS.clear()
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                """
+                UPDATE task_status_history
+                SET payload_json = payload_json || ' '
+                WHERE history_id = (
+                    SELECT MAX(history_id) FROM task_status_history WHERE task_id = ?
+                )
+                """,
+                (task_id,),
+            )
+            connection.commit()
+
+        cached = service.read_qmt_replay_cache()
+
+        self.assertEqual(cached["status"], "latest_attempt_blocked")
+        self.assertEqual(
+            cached["result_task_binding_status"],
+            "result_task_final_history_integrity_invalid",
+        )
+        self.assertEqual(cached["last_good_packet_source"], "packet_present")
+
+    def test_cache_get_requires_exact_task_payload_and_replay_counts(self):
+        for mutate in (
+            lambda payload: payload.update(untrusted_extra="not_part_of_contract"),
+            lambda payload: payload.update(position_count=int(payload["position_count"]) + 1),
+            lambda payload: payload.update(event_count=int(payload["event_count"]) + 1),
+        ):
+            with self.subTest(mutate=mutate):
+                written = service.run_qmt_readonly_local_replay(_payload())
+                task = task_service._TASKS[str(written["task_id"])]
+                mutate(task["payload_safe"])
+                task["input_hash"] = task_service._task_input_hash(
+                    service.TASK_TYPE,
+                    dict(task["payload_safe"]),
+                )
+                task_service._persist_task(task)
+
+                cached = service.read_qmt_replay_cache()
+
+                self.assertEqual(cached["status"], "latest_attempt_blocked")
+                self.assertEqual(cached["result_task_binding_status"], "result_task_payload_mismatch")
+                task_service._TASKS.clear()
+
+    def test_cache_get_requires_complete_lifecycle_and_matching_times(self):
+        written = service.run_qmt_readonly_local_replay(_payload())
+        task = task_service._TASKS[str(written["task_id"])]
+        task["status_history"] = [task["status_history"][-1]]
+        task["task_log"] = [task["task_log"][-1]]
+        task_service._persist_task(task)
+
+        truncated = service.read_qmt_replay_cache()
+
+        self.assertEqual(truncated["status"], "latest_attempt_blocked")
+        self.assertEqual(truncated["result_task_binding_status"], "result_task_status_history_invalid")
+
+        written = service.run_qmt_readonly_local_replay(_payload(scenario="stress"))
+        task = task_service._TASKS[str(written["task_id"])]
+        task["finished_at"] = task["started_at"]
+        task_service._persist_task(task)
+
+        bad_time = service.read_qmt_replay_cache()
+
+        self.assertEqual(bad_time["status"], "latest_attempt_blocked")
+        self.assertEqual(bad_time["result_task_binding_status"], "result_task_lifecycle_time_invalid")
+
+    def test_missing_current_with_invalid_last_good_is_explicitly_blocked(self):
+        written = service.run_qmt_readonly_local_replay(_payload())
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "DELETE FROM packets WHERE packet_key = ?",
+                (service.CURRENT_PACKET_KEY,),
+            )
+            connection.commit()
+        task_service.update_task_status(
+            str(written["task_id"]),
+            status="failed",
+            progress=1.0,
+            current_step="qmt_local_decimal_replay_failed_safe",
+            error_message_safe="invalidated_last_good_task",
+        )
+
+        cached = service.read_qmt_replay_cache()
+
+        self.assertEqual(cached["current_packet_source"], "packet_missing")
+        self.assertEqual(cached["last_good_packet_source"], "packet_present")
+        self.assertEqual(cached["status"], "latest_attempt_blocked")
+        self.assertEqual(cached["result_task_binding_status"], "result_task_status_invalid")
+        self.assertIn("qmt_replay_last_good_result_blocked", cached["warnings"][0])
+
     def test_cache_marks_valid_old_result_historical_when_canonical_source_is_gone(self):
         self._use_real_canonical_validation()
         self._seed_canonical_source()
