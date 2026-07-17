@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
+import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,6 +17,12 @@ from storage.sqlite_meta import SQLiteMetaStore
 
 
 class CandidateCacheReadSafetyTests(unittest.TestCase):
+    def setUp(self) -> None:
+        candidate_service._clear_candidate_radar_cache_memo()
+
+    def tearDown(self) -> None:
+        candidate_service._clear_candidate_radar_cache_memo()
+
     @staticmethod
     def _file_state(path: Path) -> tuple[bool, int, int, str]:
         if not path.exists():
@@ -187,6 +197,193 @@ class CandidateCacheReadSafetyTests(unittest.TestCase):
             ):
                 self.assertIsNone(task_service._candidate_cache_replay_packet())
                 builder.assert_not_called()
+
+    def test_candidate_cache_memo_reuses_one_build_across_repeated_reads(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="candidate_memo_repeat_") as tmp:
+            root = Path(tmp)
+            snapshot_path = root / "command_center_latest.json"
+            snapshot_path.write_text("{}", encoding="utf-8")
+            build_count = 0
+
+            def build_packet(*_args, **_kwargs) -> dict:
+                nonlocal build_count
+                build_count += 1
+                return {"packet_key": candidate_service.PACKET_KEY, "build_count": build_count}
+
+            with (
+                patch.object(candidate_service, "SQLITE_META_PATH", root / "meta.sqlite"),
+                patch.object(packet_service, "SNAPSHOT_CACHE_PATH", snapshot_path),
+                patch.object(candidate_service, "_build_candidate_radar_packet", side_effect=build_packet),
+            ):
+                packets = [candidate_service.read_candidate_radar_cache() for _ in range(21)]
+
+            self.assertEqual(build_count, 1)
+            self.assertEqual({packet["build_count"] for packet in packets}, {1})
+
+    def test_candidate_cache_memo_singleflights_eight_threads(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="candidate_memo_threads_") as tmp:
+            root = Path(tmp)
+            snapshot_path = root / "command_center_latest.json"
+            snapshot_path.write_text("{}", encoding="utf-8")
+            build_count = 0
+            count_lock = threading.Lock()
+            start_barrier = threading.Barrier(8)
+
+            def build_packet(*_args, **_kwargs) -> dict:
+                nonlocal build_count
+                with count_lock:
+                    build_count += 1
+                    current_build = build_count
+                time.sleep(0.05)
+                return {
+                    "packet_key": candidate_service.PACKET_KEY,
+                    "build_count": current_build,
+                    "nested": {"rows": []},
+                }
+
+            def read_packet() -> dict:
+                start_barrier.wait(timeout=2)
+                return candidate_service.read_candidate_radar_cache()
+
+            with (
+                patch.object(candidate_service, "SQLITE_META_PATH", root / "meta.sqlite"),
+                patch.object(packet_service, "SNAPSHOT_CACHE_PATH", snapshot_path),
+                patch.object(candidate_service, "_build_candidate_radar_packet", side_effect=build_packet),
+                ThreadPoolExecutor(max_workers=8) as pool,
+            ):
+                packets = list(pool.map(lambda _: read_packet(), range(8)))
+
+            self.assertEqual(build_count, 1)
+            self.assertEqual({packet["build_count"] for packet in packets}, {1})
+            self.assertEqual(len({id(packet) for packet in packets}), 8)
+            self.assertEqual(len({id(packet["nested"]) for packet in packets}), 8)
+
+    def test_candidate_cache_memo_returns_independent_json_copies(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="candidate_memo_copy_") as tmp:
+            root = Path(tmp)
+            snapshot_path = root / "command_center_latest.json"
+            snapshot_path.write_text("{}", encoding="utf-8")
+            build_count = 0
+
+            def build_packet() -> dict:
+                nonlocal build_count
+                build_count += 1
+                return {
+                    "packet_key": candidate_service.PACKET_KEY,
+                    "nested": {"rows": [{"value": 1}]},
+                }
+
+            with (
+                patch.object(candidate_service, "SQLITE_META_PATH", root / "meta.sqlite"),
+                patch.object(packet_service, "SNAPSHOT_CACHE_PATH", snapshot_path),
+                patch.object(candidate_service, "_read_candidate_radar_cache_uncached", side_effect=build_packet),
+            ):
+                first = candidate_service.read_candidate_radar_cache()
+                first["nested"]["rows"][0]["value"] = 99
+                second = candidate_service.read_candidate_radar_cache()
+
+            self.assertEqual(build_count, 1)
+            self.assertEqual(second["nested"]["rows"][0]["value"], 1)
+            self.assertIsNot(first, second)
+            self.assertIsNot(first["nested"], second["nested"])
+
+    def test_candidate_cache_memo_invalidates_on_same_size_atomic_snapshot_replace(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="candidate_memo_snapshot_replace_") as tmp:
+            root = Path(tmp)
+            snapshot_path = root / "command_center_latest.json"
+            snapshot_path.write_text('{"v":1}', encoding="utf-8")
+            original_stat = snapshot_path.stat()
+            build_count = 0
+
+            def build_packet() -> dict:
+                nonlocal build_count
+                build_count += 1
+                return {"packet_key": candidate_service.PACKET_KEY, "build_count": build_count}
+
+            with (
+                patch.object(candidate_service, "SQLITE_META_PATH", root / "meta.sqlite"),
+                patch.object(packet_service, "SNAPSHOT_CACHE_PATH", snapshot_path),
+                patch.object(candidate_service, "_read_candidate_radar_cache_uncached", side_effect=build_packet),
+            ):
+                first = candidate_service.read_candidate_radar_cache()
+                replacement = root / "replacement.json"
+                replacement.write_text('{"v":2}', encoding="utf-8")
+                self.assertEqual(replacement.stat().st_size, original_stat.st_size)
+                os.replace(replacement, snapshot_path)
+                self.assertNotEqual(snapshot_path.stat().st_ino, original_stat.st_ino)
+                second = candidate_service.read_candidate_radar_cache()
+
+            self.assertEqual(first["build_count"], 1)
+            self.assertEqual(second["build_count"], 2)
+            self.assertEqual(build_count, 2)
+
+    def test_candidate_cache_memo_invalidates_on_canonical_sqlite_or_wal_change_but_not_shm(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="candidate_memo_sqlite_wal_") as tmp:
+            root = Path(tmp)
+            snapshot_path = root / "command_center_latest.json"
+            snapshot_path.write_text("{}", encoding="utf-8")
+            sqlite_path = root / "meta.sqlite"
+            store = SQLiteMetaStore(sqlite_path)
+            store.write_packet("unrelated_seed_packet", {"schema_version": "seed.v1"})
+            wal_path = Path(f"{sqlite_path}-wal")
+            shm_path = Path(f"{sqlite_path}-shm")
+            build_count = 0
+
+            def build_packet() -> dict:
+                nonlocal build_count
+                build_count += 1
+                return {"packet_key": candidate_service.PACKET_KEY, "build_count": build_count}
+
+            with (
+                patch.object(candidate_service, "SQLITE_META_PATH", sqlite_path),
+                patch.object(packet_service, "SNAPSHOT_CACHE_PATH", snapshot_path),
+                patch.object(candidate_service, "_read_candidate_radar_cache_uncached", side_effect=build_packet),
+            ):
+                self.assertEqual(candidate_service.read_candidate_radar_cache()["build_count"], 1)
+                store.write_packet(
+                    candidate_service.PACKET_KEY,
+                    {
+                        "packet_key": candidate_service.PACKET_KEY,
+                        "schema_version": candidate_service.SCHEMA_VERSION,
+                        "status": "ready",
+                    },
+                )
+                self.assertEqual(candidate_service.read_candidate_radar_cache()["build_count"], 2)
+                wal_path.write_bytes(b"wal-created")
+                self.assertEqual(candidate_service.read_candidate_radar_cache()["build_count"], 3)
+                shm_path.write_bytes(b"shm-must-not-be-a-generation-input")
+                self.assertEqual(candidate_service.read_candidate_radar_cache()["build_count"], 3)
+
+            self.assertEqual(build_count, 3)
+
+    def test_candidate_cache_memo_does_not_publish_build_crossing_generation_change(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="candidate_memo_generation_race_") as tmp:
+            root = Path(tmp)
+            snapshot_path = root / "command_center_latest.json"
+            snapshot_path.write_text('{"v":1}', encoding="utf-8")
+            build_count = 0
+
+            def build_packet() -> dict:
+                nonlocal build_count
+                build_count += 1
+                current_build = build_count
+                if current_build == 1:
+                    replacement = root / "replacement-during-build.json"
+                    replacement.write_text('{"v":2}', encoding="utf-8")
+                    os.replace(replacement, snapshot_path)
+                return {"packet_key": candidate_service.PACKET_KEY, "build_count": current_build}
+
+            with (
+                patch.object(candidate_service, "SQLITE_META_PATH", root / "meta.sqlite"),
+                patch.object(packet_service, "SNAPSHOT_CACHE_PATH", snapshot_path),
+                patch.object(candidate_service, "_read_candidate_radar_cache_uncached", side_effect=build_packet),
+            ):
+                first = candidate_service.read_candidate_radar_cache()
+                second = candidate_service.read_candidate_radar_cache()
+
+            self.assertEqual(build_count, 2)
+            self.assertEqual(first["build_count"], 2)
+            self.assertEqual(second["build_count"], 2)
 
 
 if __name__ == "__main__":

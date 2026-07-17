@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import threading
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -617,6 +618,60 @@ def _json_safe(value: Any) -> Any:
         return json.loads(json.dumps(value, ensure_ascii=False, default=str))
     except Exception:
         return {"serialization_error_safe": "candidate_radar_cache_not_json_serializable"}
+
+
+_CANDIDATE_CACHE_MEMO_CONDITION = threading.Condition(threading.RLock())
+_CANDIDATE_CACHE_MEMO_EPOCH = 0
+_CANDIDATE_CACHE_MEMO_GENERATION: tuple[Any, ...] | None = None
+_CANDIDATE_CACHE_MEMO_PACKET: dict[str, Any] | None = None
+_CANDIDATE_CACHE_MEMO_BUILDING = False
+
+
+def _candidate_cache_path_generation(path: Path) -> tuple[str, bool, int, int, int, int]:
+    try:
+        path_label = str(path.resolve(strict=False))
+    except Exception:
+        path_label = str(path)
+    try:
+        stat = path.stat()
+    except OSError:
+        return path_label, False, 0, 0, 0, 0
+    return (
+        path_label,
+        True,
+        int(stat.st_dev),
+        int(stat.st_ino),
+        int(stat.st_size),
+        int(stat.st_mtime_ns),
+    )
+
+
+def _candidate_cache_generation() -> tuple[Any, ...]:
+    sqlite_path = Path(SQLITE_META_PATH)
+    with _CANDIDATE_CACHE_MEMO_CONDITION:
+        epoch = _CANDIDATE_CACHE_MEMO_EPOCH
+    return (
+        epoch,
+        _candidate_cache_path_generation(Path(packet_service.SNAPSHOT_CACHE_PATH)),
+        _candidate_cache_path_generation(sqlite_path),
+        _candidate_cache_path_generation(Path(f"{sqlite_path}-wal")),
+    )
+
+
+def _candidate_cache_packet_copy(packet: Mapping[str, Any]) -> dict[str, Any]:
+    copied = _json_safe(packet)
+    return copied if isinstance(copied, dict) else {"serialization_error_safe": "candidate_radar_cache_not_object"}
+
+
+def _clear_candidate_radar_cache_memo() -> None:
+    global _CANDIDATE_CACHE_MEMO_EPOCH
+    global _CANDIDATE_CACHE_MEMO_GENERATION
+    global _CANDIDATE_CACHE_MEMO_PACKET
+    with _CANDIDATE_CACHE_MEMO_CONDITION:
+        _CANDIDATE_CACHE_MEMO_EPOCH += 1
+        _CANDIDATE_CACHE_MEMO_GENERATION = None
+        _CANDIDATE_CACHE_MEMO_PACKET = None
+        _CANDIDATE_CACHE_MEMO_CONDITION.notify_all()
 
 
 def _read_local_text(path: Path) -> str:
@@ -15877,7 +15932,7 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     return _json_safe(view)
 
 
-def read_candidate_radar_cache() -> dict[str, Any]:
+def _read_candidate_radar_cache_uncached() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
@@ -15895,6 +15950,50 @@ def read_candidate_radar_cache() -> dict[str, Any]:
         scan_mode="cache_only",
         previous_packet=persisted,
     )
+
+
+def read_candidate_radar_cache() -> dict[str, Any]:
+    global _CANDIDATE_CACHE_MEMO_BUILDING
+    global _CANDIDATE_CACHE_MEMO_GENERATION
+    global _CANDIDATE_CACHE_MEMO_PACKET
+
+    generation_retry_count = 0
+    while True:
+        generation_before = _candidate_cache_generation()
+        with _CANDIDATE_CACHE_MEMO_CONDITION:
+            if (
+                _CANDIDATE_CACHE_MEMO_GENERATION == generation_before
+                and isinstance(_CANDIDATE_CACHE_MEMO_PACKET, dict)
+            ):
+                return _candidate_cache_packet_copy(_CANDIDATE_CACHE_MEMO_PACKET)
+            if _CANDIDATE_CACHE_MEMO_BUILDING:
+                _CANDIDATE_CACHE_MEMO_CONDITION.wait()
+                continue
+            _CANDIDATE_CACHE_MEMO_BUILDING = True
+
+        try:
+            packet = _read_candidate_radar_cache_uncached()
+            generation_after = _candidate_cache_generation()
+        except BaseException:
+            with _CANDIDATE_CACHE_MEMO_CONDITION:
+                _CANDIDATE_CACHE_MEMO_BUILDING = False
+                _CANDIDATE_CACHE_MEMO_CONDITION.notify_all()
+            raise
+
+        with _CANDIDATE_CACHE_MEMO_CONDITION:
+            generation_current = _candidate_cache_generation()
+            stable_generation = generation_before == generation_after == generation_current
+            if stable_generation:
+                _CANDIDATE_CACHE_MEMO_GENERATION = generation_current
+                _CANDIDATE_CACHE_MEMO_PACKET = _candidate_cache_packet_copy(packet)
+            _CANDIDATE_CACHE_MEMO_BUILDING = False
+            _CANDIDATE_CACHE_MEMO_CONDITION.notify_all()
+
+        if stable_generation:
+            return _candidate_cache_packet_copy(packet)
+        if generation_retry_count >= 1:
+            return _candidate_cache_packet_copy(packet)
+        generation_retry_count += 1
 
 
 def run_candidate_quick_scan_task(payload: Any = None) -> dict[str, Any]:
