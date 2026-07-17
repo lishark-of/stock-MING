@@ -34,6 +34,7 @@ const WorkerRuntime = lazy(() => import("./routes/WorkerRuntime"));
 
 const ROUTE_STORAGE_KEY = "stock_ming_command_center_3_route";
 const ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS = [0, 80, 240, 600, 1200, 2000];
+const ROUTE_ANCHOR_HARD_DEADLINE_MS = 25000;
 const ROUTE_KEYS: RouteKey[] = [
   "home",
   "health",
@@ -176,7 +177,10 @@ export default function App() {
     let cancelled = false;
     let observer: MutationObserver | null = null;
     let observerTimer: number | null = null;
+    let hardStopTimer: number | null = null;
     let retryTimers: number[] = [];
+    let anchorRetryScheduled = false;
+    let stabilityWindowElapsed = false;
     const stopRetryTimers = () => {
       retryTimers.forEach((timer) => window.clearTimeout(timer));
       retryTimers = [];
@@ -188,6 +192,25 @@ export default function App() {
     const stopAnchorRetries = () => {
       observer?.disconnect();
       stopRetryTimers();
+      if (hardStopTimer !== null) {
+        window.clearTimeout(hardStopTimer);
+        hardStopTimer = null;
+      }
+      window.removeEventListener("wheel", stopAnchorRetries);
+      window.removeEventListener("touchstart", stopAnchorRetries);
+      window.removeEventListener("pointerdown", stopAnchorRetries);
+      window.removeEventListener("keydown", stopAnchorRetries);
+    };
+    const scheduleAnchorStabilityRetries = () => {
+      if (anchorRetryScheduled) return;
+      anchorRetryScheduled = true;
+      retryTimers = ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS.map((delayMs) => window.setTimeout(scrollToAnchor, delayMs));
+      observerTimer = window.setTimeout(() => {
+        observerTimer = null;
+        retryTimers = [];
+        stabilityWindowElapsed = true;
+        scrollToAnchor();
+      }, Math.max(...ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS) + 200);
     };
     const scrollToAnchor = () => {
       if (cancelled) return false;
@@ -196,8 +219,11 @@ export default function App() {
       if (target.closest('[data-route-cache-loading="true"]')) return false;
       target.scrollIntoView({ block: "start" });
       const routeShell = target.closest("[data-route-cache-loading]");
-      if (routeShell?.getAttribute("data-route-cache-settled") !== "false") {
+      const routeSettled = routeShell?.getAttribute("data-route-cache-settled");
+      if (!routeShell || (stabilityWindowElapsed && routeSettled !== "false")) {
         stopAnchorRetries();
+      } else {
+        scheduleAnchorStabilityRetries();
       }
       return true;
     };
@@ -208,9 +234,12 @@ export default function App() {
       attributes: true,
       attributeFilter: ["data-route-cache-loading", "data-route-cache-settled"],
     });
+    window.addEventListener("wheel", stopAnchorRetries, { passive: true });
+    window.addEventListener("touchstart", stopAnchorRetries, { passive: true });
+    window.addEventListener("pointerdown", stopAnchorRetries, { passive: true });
+    window.addEventListener("keydown", stopAnchorRetries);
+    hardStopTimer = window.setTimeout(stopAnchorRetries, ROUTE_ANCHOR_HARD_DEADLINE_MS);
     queueMicrotask(scrollToAnchor);
-    retryTimers = ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS.map((delayMs) => window.setTimeout(scrollToAnchor, delayMs));
-    observerTimer = window.setTimeout(stopRetryTimers, Math.max(...ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS) + 200);
     return () => {
       cancelled = true;
       stopAnchorRetries();

@@ -19,12 +19,18 @@ class RouteCacheLoadingBoundaryTests(unittest.TestCase):
         self.assertIn("target.closest('[data-route-cache-loading=\"true\"]')", source)
         self.assertIn('attributeFilter: ["data-route-cache-loading", "data-route-cache-settled"]', source)
         self.assertIn("attributes: true", source)
-        self.assertIn("observerTimer = window.setTimeout(stopRetryTimers", source)
-        self.assertIn('routeShell?.getAttribute("data-route-cache-settled") !== "false"', source)
-        self.assertNotIn(
-            'routeShell?.getAttribute("data-route-cache-settled") === "false") {\n        stopRetryTimers()',
-            source,
-        )
+        self.assertIn("observerTimer = window.setTimeout(() =>", source)
+        self.assertIn("ROUTE_ANCHOR_HARD_DEADLINE_MS = 25000", source)
+        self.assertIn("const scheduleAnchorStabilityRetries = () =>", source)
+        self.assertIn("if (anchorRetryScheduled) return", source)
+        self.assertIn("stabilityWindowElapsed = true", source)
+        self.assertIn("hardStopTimer = window.setTimeout(stopAnchorRetries", source)
+        self.assertIn('const routeShell = target.closest("[data-route-cache-loading]")', source)
+        self.assertIn('const routeSettled = routeShell?.getAttribute("data-route-cache-settled")', source)
+        self.assertIn('stabilityWindowElapsed && routeSettled !== "false"', source)
+        self.assertIn("scheduleAnchorStabilityRetries();", source)
+        self.assertIn('window.addEventListener("wheel", stopAnchorRetries', source)
+        self.assertIn('window.removeEventListener("wheel", stopAnchorRetries)', source)
 
     def test_four_cache_routes_expose_fail_closed_ready_state(self) -> None:
         routes = {
