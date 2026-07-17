@@ -123,6 +123,7 @@ const TAURI_GET_STARTUP_RETRY_ATTEMPTS = 40;
 const TAURI_GET_STARTUP_RETRY_DELAY_MS = 500;
 const TAURI_GET_STARTUP_DEADLINE_MS = 25000;
 const LOCAL_API_FETCH_TIMEOUT_MS = 7000;
+const LOCAL_AUDIT_CACHE_FETCH_TIMEOUT_MS = 12000;
 const inFlightReadOnlyRequests = new Map<string, Promise<ApiEnvelope<unknown>>>();
 
 async function fetchLocalApi(url: string, init?: RequestInit, timeoutMs = LOCAL_API_FETCH_TIMEOUT_MS): Promise<Response> {
@@ -298,7 +299,11 @@ function failedRequestEnvelope<T>(
   };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  fetchTimeoutMs = LOCAL_API_FETCH_TIMEOUT_MS
+): Promise<ApiEnvelope<T>> {
   const method = String(init?.method ?? "GET").toUpperCase();
   const canDedupeReadOnlyRequest = method === "GET" && !init?.body && !init?.signal;
   const readOnlyDedupeKey = canDedupeReadOnlyRequest ? `${method}:${path}` : "";
@@ -313,7 +318,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
     const startupAttemptCount = method === "GET" && isTauriRuntime()
       ? TAURI_GET_STARTUP_RETRY_ATTEMPTS
       : 1;
-    const requestDeadlineAt = Date.now() + (startupAttemptCount > 1 ? TAURI_GET_STARTUP_DEADLINE_MS : LOCAL_API_FETCH_TIMEOUT_MS);
+    const requestDeadlineAt = Date.now() + (startupAttemptCount > 1 ? TAURI_GET_STARTUP_DEADLINE_MS : fetchTimeoutMs);
     startupAttempts: for (let attempt = 0; attempt < startupAttemptCount; attempt += 1) {
       let connectionFailed = false;
       for (const apiBase of API_BASE_CANDIDATES) {
@@ -329,7 +334,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
               "Content-Type": "application/json",
               ...(init?.headers ?? {})
             }
-          }, Math.min(LOCAL_API_FETCH_TIMEOUT_MS, remainingStartupMs));
+          }, Math.min(fetchTimeoutMs, remainingStartupMs));
           if (!res.ok) {
             if (res.status === 404 && API_BASE_CANDIDATES.length > 1) {
               lastError = `HTTP ${res.status} from ${safeApiBaseDisplay(apiBase)}`;
@@ -394,7 +399,7 @@ export function getHealth() {
 }
 
 export function getAuditCache() {
-  return request<Record<string, unknown>>("/api/audit/cache");
+  return request<Record<string, unknown>>("/api/audit/cache", undefined, LOCAL_AUDIT_CACHE_FETCH_TIMEOUT_MS);
 }
 
 export function getAuditUserRouteQa() {

@@ -66,10 +66,16 @@ class RouteCacheLoadingBoundaryTests(unittest.TestCase):
     def test_local_api_reads_have_a_bounded_abort_timeout(self) -> None:
         source = (ROOT / "desktop/src/api/client.ts").read_text(encoding="utf-8")
         self.assertIn("LOCAL_API_FETCH_TIMEOUT_MS = 7000", source)
+        self.assertIn("LOCAL_AUDIT_CACHE_FETCH_TIMEOUT_MS = 12000", source)
         self.assertIn("TAURI_GET_STARTUP_DEADLINE_MS = 25000", source)
+        self.assertIn("fetchTimeoutMs = LOCAL_API_FETCH_TIMEOUT_MS", source)
         self.assertIn("const requestDeadlineAt = Date.now() +", source)
         self.assertIn("const remainingStartupMs = requestDeadlineAt - Date.now()", source)
-        self.assertIn("Math.min(LOCAL_API_FETCH_TIMEOUT_MS, remainingStartupMs)", source)
+        self.assertIn("Math.min(fetchTimeoutMs, remainingStartupMs)", source)
+        self.assertIn(
+            'request<Record<string, unknown>>("/api/audit/cache", undefined, LOCAL_AUDIT_CACHE_FETCH_TIMEOUT_MS)',
+            source,
+        )
         self.assertIn("new AbortController()", source)
         self.assertIn('new DOMException("local_api_timeout", "TimeoutError")', source)
         self.assertIn("signal: controller.signal", source)
