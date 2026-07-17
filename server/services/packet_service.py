@@ -140,6 +140,7 @@ def _normalize_cached_packet(packet_key: str, packet: Any, *, source: str, sourc
     if not isinstance(payload, dict):
         payload = {"value": payload}
     if packet_key in {"command_center_etf_packet", "command_center_margin_packet"}:
+        payload.pop("margin_etf_focus_binding", None)
         payload["cache_api_explicit_safety_fields"] = sorted(
             field for field in MARGIN_ETF_FOCUS_SAFETY_FIELDS if field in payload
         )

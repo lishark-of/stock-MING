@@ -1612,8 +1612,10 @@ def _attach_margin_etf_focus_binding(
     now: _dt.datetime | None = None,
     evidence_root: Path | None = None,
 ) -> tuple[dict, dict]:
-    etf = _as_mapping(etf_packet)
-    margin = _as_mapping(margin_packet)
+    etf = dict(_as_mapping(etf_packet))
+    margin = dict(_as_mapping(margin_packet))
+    etf.pop("margin_etf_focus_binding", None)
+    margin.pop("margin_etf_focus_binding", None)
     binding, evidence_digests = _build_margin_etf_focus_binding(
         etf,
         margin,

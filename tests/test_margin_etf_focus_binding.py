@@ -164,10 +164,13 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
 
     def test_canonical_persisted_task_receives_identical_reachable_binding(self):
         etf, margin, freshness = self._packets()
+        etf["margin_etf_focus_binding"] = {"attacker": "must_be_replaced"}
+        margin["margin_etf_focus_binding"] = {"attacker": "must_be_replaced"}
         bound_etf, bound_margin = self._attach(etf, margin, freshness)
 
         binding = bound_etf["margin_etf_focus_binding"]
         self.assertEqual(binding, bound_margin["margin_etf_focus_binding"])
+        self.assertNotIn("attacker", binding)
         self.assertEqual(binding["projection"]["etf"]["available_cash"], "128000")
         self.assertEqual(binding["source_identity"]["task_type"], provenance.TASK_TYPE)
         self.assertEqual(binding["source_identity"]["ledger_fetched_at"], "2026-07-17T10:02:00+08:00")
@@ -201,6 +204,34 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
                 evidence_root=self.evidence_root,
             )
         self.assertTrue(bound["margin_etf_focus_binding"]["producer_receipt"]["verified"])
+
+    def test_persisted_and_snapshot_forged_bindings_are_stripped_without_trust(self):
+        etf, margin, freshness = self._packets()
+        forged = {"producer_receipt": {"verified": True}, "usable_for_risk_budget": True}
+        etf["margin_etf_focus_binding"] = copy.deepcopy(forged)
+        margin["margin_etf_focus_binding"] = copy.deepcopy(forged)
+
+        for source in ("sqlite_meta", "stock_ming_snapshot"):
+            with self.subTest(source=source):
+                normalized_etf = packet_service._normalize_cached_packet(
+                    "command_center_etf_packet", etf, source=source, source_key="etf_packet"
+                )
+                normalized_margin = packet_service._normalize_cached_packet(
+                    "command_center_margin_packet", margin, source=source, source_key="margin_packet"
+                )
+                self.assertNotIn("margin_etf_focus_binding", normalized_etf)
+                self.assertNotIn("margin_etf_focus_binding", normalized_margin)
+
+        with patch("server.services.task_service.read_latest_task_status_by_type", return_value={}):
+            bound_etf, bound_margin = snapshot._attach_margin_etf_focus_binding(
+                etf,
+                margin,
+                freshness,
+                now=self.now,
+                evidence_root=self.evidence_root,
+            )
+        self.assertNotIn("margin_etf_focus_binding", bound_etf)
+        self.assertNotIn("margin_etf_focus_binding", bound_margin)
 
     def test_hand_json_missing_safety_and_explicit_deepseek_true_fail_closed(self):
         etf, margin, freshness = self._packets()
@@ -332,6 +363,8 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
         etf, margin, freshness = self._packets()
         task = self._task(etf, margin)
         self._record(etf, margin, freshness, task)
+        etf["margin_etf_focus_binding"] = {"attacker": "must_be_stripped"}
+        margin["margin_etf_focus_binding"] = {"attacker": "must_be_stripped"}
         _, _, state_path = provenance._trust_paths(self.evidence_root)
         state_bytes = state_path.read_bytes()
         state_path.unlink()
