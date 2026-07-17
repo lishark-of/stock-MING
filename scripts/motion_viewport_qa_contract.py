@@ -145,7 +145,7 @@ def build_contract() -> dict[str, Any]:
     runner_source = read_text(ROOT / "scripts" / "motion_browser_qa_runner.mjs")
     audited_text = "\n".join([styles, app, packet_card, metric_grid, page_state, task_panel, task_receipt, next_chart, candidate_radar])
     motion_loop_text = "\n".join(
-        [styles, packet_card, metric_grid, page_state, task_panel, task_receipt, next_chart, candidate_radar]
+        [styles, packet_card, metric_grid, page_state, task_panel, task_receipt, next_chart]
     )
     production_stage_rows = motion_production_stage_scope_rows()
     production_stage_keys = {str(item.get("stage_key") or "") for item in production_stage_rows}
@@ -269,8 +269,11 @@ def build_contract() -> dict[str, Any]:
         ),
         row(
             "no_timer_or_raf_motion_loop",
-            "setTimeout" not in motion_loop_text and "requestAnimationFrame" not in motion_loop_text,
-            "audited motion surfaces use no timer or RAF animation loop; App route-anchor retries are navigation-only",
+            "setTimeout" not in motion_loop_text
+            and "requestAnimationFrame" not in motion_loop_text
+            and candidate_radar.count("window.requestAnimationFrame") == 2
+            and candidate_radar.count("window.cancelAnimationFrame") == 2,
+            "audited motion surfaces use no timer or RAF animation loop; App anchor navigation and Candidate's cancellable two-frame layout reveal are bounded lifecycle work",
         ),
         row(
             "no_provider_or_trade_markers",
@@ -285,7 +288,8 @@ def build_contract() -> dict[str, Any]:
         ),
         row(
             "explicit_browser_runner_script_available",
-            "command_center_3_motion_browser_qa_result.v7" in runner_source
+            "command_center_3_motion_browser_qa_result.v8" in runner_source
+            and "mounted_route_after_double_raf" in runner_source
             and "explicit_local_browser_visual_performance_run" in runner_source
             and "page.goto" in runner_source
             and ".stock_ming_3/motion_qa" in runner_source,
@@ -337,7 +341,10 @@ def build_contract() -> dict[str, Any]:
         "visual_qa_complete": False,
         "browser_performance_verified": False,
         "browser_runner_bundled": False,
-        "explicit_browser_runner_script_available": "command_center_3_motion_browser_qa_result.v7" in runner_source,
+        "explicit_browser_runner_script_available": (
+            "command_center_3_motion_browser_qa_result.v8" in runner_source
+            and "mounted_route_after_double_raf" in runner_source
+        ),
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,

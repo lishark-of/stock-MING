@@ -358,6 +358,9 @@ def _rows(motion_root: Path, run_id: str, mode: str) -> tuple[list[dict], list[d
                     "navigation_animation_count": 1,
                     "navigation_animation_wait_completed": True,
                     "long_task_over_50ms_count": 0,
+                    "layout_measurement_scope": "mounted_route_after_double_raf",
+                    "layout_measurement_started_us_after_transition": 1,
+                    "layout_shift_entry_count": 0,
                     "largest_motion_layout_shift_ppm": 0,
                     "visible_element_count": 1,
                     "audited_first_viewport_element_count": 1,
@@ -746,13 +749,18 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
     def test_runner_uses_one_warmup_navigation_observers_secure_png_and_report_first_commit(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "scripts" / "motion_browser_qa_runner.mjs").read_text(encoding="utf-8")
         self.assertEqual(source.count("page.goto("), 1)
-        self.assertIn("window.location.hash = hash", source)
+        self.assertIn("window.location.hash = expected.hash", source)
         self.assertIn('navigation_hash: "#next/next-session-chart"', source)
         self.assertIn('observer.observe({ type: "layout-shift", buffered: true })', source)
         self.assertIn('observer.observe({ type: "longtask", buffered: true })', source)
         self.assertIn("document.getAnimations()", source)
         self.assertIn("motionAuditStartedUs", source)
-        self.assertIn("inspectPage(page, route, motionAuditStartedUs)", source)
+        self.assertIn("inspectPage(page, route, transitionStartedUs, motionAuditStartedUs)", source)
+        self.assertIn("scheduleMountedRouteBaseline", source)
+        self.assertIn("requestAnimationFrame(() => requestAnimationFrame(() =>", source)
+        self.assertIn("cacheLoadingObserved", source)
+        self.assertIn("ROUTE_MOTION_BASELINE_TIMEOUT_MS = 20000", source)
+        self.assertIn("route_motion_baseline_timeout", source)
         self.assertIn("exactLocalUrl(request.url())", source)
         self.assertIn("ALLOWED_READ_METHODS", source)
         self.assertIn('new Set(["GET"])', source)
@@ -1025,6 +1033,11 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
             report = json.loads(report_path.read_text(encoding="utf-8"))
             row = report["rows"][0]
             row["route_transition_observed_us"] = 999_999
+            row["layout_measurement_scope"] = "legacy_transition_window"
+            row["layout_measurement_started_us_after_transition"] = 0
+            row["layout_shift_entry_count"] = 0
+            row["largest_motion_layout_shift_ppm"] = 1
+            report["rows"][1]["layout_shift_entry_count"] = -1
             row["motion_markers"]["state_rail"] = 0
             row["request_count"] = 1
             row["request_ledger"] = [{
@@ -1038,6 +1051,10 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
             result = motion_evidence_service.validate_current_motion_evidence(root, expected_head_full=HEAD)
             joined = "\n".join(result["blockers"])
             self.assertIn("route_transition_observed_us_budget_failed", joined)
+            self.assertIn("layout_measurement_scope_invalid", joined)
+            self.assertIn("layout_measurement_started_us_after_transition_invalid", joined)
+            self.assertIn("layout_shift_entry_count_invalid", joined)
+            self.assertIn("layout_shift_entry_summary_inconsistent", joined)
             self.assertIn("motion_marker_minimum_failed", joined)
             self.assertIn("request_ledger_invalid", joined)
             self.assertIn("row_claim_mismatch", joined)
@@ -1275,7 +1292,7 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
         finally:
             motion_evidence_service._FASTAPI_LEDGER_APIS["/api/audit/cache"] = original
 
-    def test_candidate_and_next_consumers_block_v1_and_accept_only_verified_v6_rows(self) -> None:
+    def test_candidate_and_next_consumers_block_v1_and_accept_only_verified_v8_rows(self) -> None:
         def trusted_rows(route: str, label: str) -> list[dict]:
             rows = []
             for reduced in (False, True):
@@ -1296,6 +1313,9 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
                             "route_transition_observed_us": 1,
                             "route_transition_budget_us": 500_000,
                             "long_task_over_50ms_count": 0,
+                            "layout_measurement_scope": "mounted_route_after_double_raf",
+                            "layout_measurement_started_us_after_transition": 1,
+                            "layout_shift_entry_count": 0,
                             "largest_motion_layout_shift_ppm": 0,
                             "clipped_count": 0,
                             "offscreen_count": 0,

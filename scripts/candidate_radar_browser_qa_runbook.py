@@ -77,7 +77,8 @@ def build_runbook() -> dict[str, Any]:
     candidate_source = _read(CANDIDATE_ROUTE)
     runner_available = (
         RUNNER_SCRIPT.exists()
-        and "command_center_3_motion_browser_qa_result.v7" in runner
+        and "command_center_3_motion_browser_qa_result.v8" in runner
+        and "mounted_route_after_double_raf" in runner
         and "explicit_local_browser_visual_performance_run" in runner
         and "chromium.launch" in runner
         and "page.goto" in runner

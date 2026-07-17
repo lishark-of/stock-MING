@@ -243,6 +243,7 @@ export default function CommandCenterHome() {
     let cancelled = false;
     let secondaryPending = 0;
     let secondaryStarted = false;
+    let gateTimer: number | undefined;
     let secondaryTimer: number | undefined;
     const recordRequestFailure = (label: string, err: unknown) => {
       if (cancelled) return;
@@ -251,13 +252,19 @@ export default function CommandCenterHome() {
     const track = <T extends { ok?: boolean; error?: string | null }>(
       label: string,
       promise: Promise<T>,
-      onReady: (res: T) => void
+      onReady: (res: T) => void,
+      options: { allowCacheMissing?: boolean } = {}
     ) => {
       secondaryPending += 1;
       void promise.then((res) => {
         if (cancelled) return;
         onReady(res);
-        if (res.ok === false) setError((current) => current || `${label}: ${res.error ?? "request_not_ok"}`);
+        const allowedOptionalCacheMiss = label === "home_margin_etf_receipt"
+          && options.allowCacheMissing === true
+          && res.error?.startsWith("cache_missing:") === true;
+        if (res.ok === false && !allowedOptionalCacheMiss) {
+          setError((current) => current || `${label}: ${res.error ?? "request_not_ok"}`);
+        }
       }).catch((err) => recordRequestFailure(label, err)).finally(() => {
         secondaryPending -= 1;
       });
@@ -278,7 +285,12 @@ export default function CommandCenterHome() {
       secondaryStarted = true;
       track("home_etf_packet", getPacket("command_center_etf_packet"), (res) => setHomeEtfPacket(res.data));
       track("home_margin_packet", getPacket("command_center_margin_packet"), (res) => setHomeMarginPacket(res.data));
-      track("home_margin_etf_receipt", getPacket("command_center_margin_etf_refresh_receipt"), (res) => setHomeMarginEtfReceipt(res.data));
+      track(
+        "home_margin_etf_receipt",
+        getPacket("command_center_margin_etf_refresh_receipt"),
+        (res) => setHomeMarginEtfReceipt(res.data),
+        { allowCacheMissing: true }
+      );
       track("factor", getFactorQuantCache(), (res) => {
         setFactorEnvelopeLedger(res.call_ledger ?? []);
         setFactorEnvelopeWarnings(res.warnings ?? []);
@@ -295,6 +307,20 @@ export default function CommandCenterHome() {
       track("data_health", getDataHealthCache(), (res) => setDataHealth(res.data));
     };
 
+    const startNonBlockingGateReadback = () => {
+      track("bootstrap", getBootstrapStatus(), (res) => {
+        setBootstrapStatus(res.data);
+        setBootstrapEnvelopeLedger(res.call_ledger ?? []);
+        setBootstrapEnvelopeWarnings(res.warnings ?? []);
+      });
+      track("desktop_preflight", getDesktopPreflightCache(), (res) => setDesktopPreflight(res.data));
+      track("tasks", getTasks(), (res) => {
+        setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
+        setTaskIndex(res.data);
+        setTasks(res.data.tasks ?? []);
+      });
+    };
+
     setLoading(true);
     setError("");
     const p0Jobs = [
@@ -303,27 +329,17 @@ export default function CommandCenterHome() {
         setHealthEnvelopeLedger(res.call_ledger ?? []);
         setHealthEnvelopeWarnings(res.warnings ?? []);
       }),
-      trackP0("bootstrap", getBootstrapStatus(), (res) => {
-        setBootstrapStatus(res.data);
-        setBootstrapEnvelopeLedger(res.call_ledger ?? []);
-        setBootstrapEnvelopeWarnings(res.warnings ?? []);
-      }),
-      trackP0("desktop_preflight", getDesktopPreflightCache(), (res) => setDesktopPreflight(res.data)),
-      trackP0("tasks", getTasks(), (res) => {
-        setTaskIndexEnvelopeLedger(res.call_ledger ?? []);
-        setTaskIndex(res.data);
-        setTasks(res.data.tasks ?? []);
-      }),
-      trackP0("audit_user_route_qa", getAuditUserRouteQa(), (res) => setAuditUserRouteQa(res.data)),
     ];
     void Promise.allSettled(p0Jobs).then(() => {
       if (cancelled) return;
       setLoading(false);
-      secondaryTimer = window.setTimeout(startOrdinaryReadback, 150);
+      gateTimer = window.setTimeout(startNonBlockingGateReadback, 520);
+      secondaryTimer = window.setTimeout(startOrdinaryReadback, 650);
     });
 
     return () => {
       cancelled = true;
+      if (gateTimer !== undefined) window.clearTimeout(gateTimer);
       if (secondaryTimer !== undefined) window.clearTimeout(secondaryTimer);
     };
   }, []);

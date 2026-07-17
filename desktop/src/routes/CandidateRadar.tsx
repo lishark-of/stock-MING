@@ -241,7 +241,7 @@ export default function CandidateRadar() {
   const [initialLayoutLoading, setInitialLayoutLoading] = useState(true);
   const [initialLayoutSettled, setInitialLayoutSettled] = useState(false);
   const [error, setError] = useState("");
-  const initialLayoutReady = !initialLayoutLoading && !error;
+  const initialLayoutReady = initialLayoutSettled && !initialLayoutLoading && !error;
   const quantProjectionP1ConfirmPayloadContract = {
     schema_version: "candidate_radar_p1_confirm_button_contract.v1",
     source: "candidate_radar_confirm_button",
@@ -469,10 +469,12 @@ export default function CandidateRadar() {
 
   useEffect(() => {
     let cancelled = false;
+    let revealFrameOne: number | undefined;
+    let revealFrameTwo: number | undefined;
     setInitialLayoutLoading(true);
     setInitialLayoutSettled(false);
-    const coreCache = refreshCache();
     void Promise.allSettled([
+      refreshCache(),
       refreshBootstrapStatus(),
       refreshDesktopPreflight(),
       refreshTaskIndex(),
@@ -485,11 +487,17 @@ export default function CandidateRadar() {
         setError((current) => current || (failed.reason instanceof Error ? failed.reason.message : String(failed.reason)));
       }
       setInitialLayoutSettled(true);
+      revealFrameOne = window.requestAnimationFrame(() => {
+        revealFrameTwo = window.requestAnimationFrame(() => {
+          if (!cancelled) setInitialLayoutLoading(false);
+        });
+      });
     });
-    void coreCache.finally(() => {
-      if (!cancelled) setInitialLayoutLoading(false);
-    });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (revealFrameOne !== undefined) window.cancelAnimationFrame(revealFrameOne);
+      if (revealFrameTwo !== undefined) window.cancelAnimationFrame(revealFrameTwo);
+    };
   }, []);
   useEffect(() => {
     const anchor = candidateRadarRouteAnchorFromHash();

@@ -21442,7 +21442,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("httpx.", script)
         self.assertNotIn("subprocess", script)
         self.assertNotIn("openai", script.lower())
-        self.assertIn("command_center_3_motion_browser_qa_result.v7", runner)
+        self.assertIn("command_center_3_motion_browser_qa_result.v8", runner)
         self.assertIn("explicit_local_browser_visual_performance_run", runner)
         self.assertIn("chromium.launch", runner)
         self.assertIn("page.goto", runner)

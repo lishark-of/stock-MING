@@ -19,8 +19,8 @@ import { inflateSync } from "node:zlib";
 
 const require = createRequire(import.meta.url);
 
-const SCHEMA_VERSION = "command_center_3_motion_browser_qa_result.v7";
-const TRACE_SCHEMA_VERSION = "command_center_3_motion_browser_performance_trace.v6";
+const SCHEMA_VERSION = "command_center_3_motion_browser_qa_result.v8";
+const TRACE_SCHEMA_VERSION = "command_center_3_motion_browser_performance_trace.v7";
 const STATE_SCHEMA_VERSION = "command_center_3_motion_runner_attestation_state.v3";
 const EVENT_SCHEMA_VERSION = "command_center_3_motion_runner_attestation_event.v3";
 const ANCHOR_SCHEMA_VERSION = "command_center_3_motion_runner_high_water_anchor.v2";
@@ -44,6 +44,7 @@ const ALLOWED_LOCAL_PORTS = new Set(["4173", "8710"]);
 const ALLOWED_READ_METHODS = new Set(["GET"]);
 const NETWORK_IDLE_TIMEOUT_MS = 20000;
 const NETWORK_QUIET_WINDOW_MS = 250;
+const ROUTE_MOTION_BASELINE_TIMEOUT_MS = 20000;
 const CANONICAL_TEST_VECTOR = { a: [0, 1, 500000, 100000], b: { enabled: true, name: "动效" }, z: null };
 const CANONICAL_TEST_JSON = "{\"a\":[0,1,500000,100000],\"b\":{\"enabled\":true,\"name\":\"动效\"},\"z\":null}";
 const CANONICAL_TEST_SHA256 = "d2f24c1ce9fd8f27a693ba2e09f7291c2535eb30f5e037e2627c1a928e3ddb1b";
@@ -1938,8 +1939,8 @@ function makePlan(args) {
   };
 }
 
-async function inspectPage(page, route, transitionStartedUs) {
-  return page.evaluate(({ expected, startedUs }) => {
+async function inspectPage(page, route, transitionStartedUs, motionAuditStartedUs) {
+  return page.evaluate(({ expected, transitionStartedUs: transitionUs, motionAuditStartedUs: motionUs }) => {
     const selectors = [
       "h1",
       "h2",
@@ -2150,8 +2151,8 @@ async function inspectPage(page, route, transitionStartedUs) {
       ? routeCacheShell?.getAttribute("data-route-cache-degraded") !== "true"
       : true;
     const perf = window.__commandCenterMotionQaPerformance || { longTasks: [], layoutShifts: [] };
-    const longTasks = perf.longTasks.filter((entry) => entry.start_us >= startedUs && entry.duration_us > 50000);
-    const layoutShifts = perf.layoutShifts.filter((entry) => entry.start_us >= startedUs && entry.had_recent_input === false);
+    const longTasks = perf.longTasks.filter((entry) => entry.start_us >= transitionUs && entry.duration_us > 50000);
+    const layoutShifts = perf.layoutShifts.filter((entry) => entry.start_us >= motionUs && entry.had_recent_input === false);
     const largestLayoutShiftPpm = layoutShifts.reduce((largest, entry) => Math.max(largest, entry.value_ppm), 0);
     const headingText = document.querySelector(".route-stage h1")?.textContent?.trim() || "";
     return {
@@ -2189,9 +2190,10 @@ async function inspectPage(page, route, transitionStartedUs) {
       long_task_observer_ready: perf.longTaskObserver === true,
       layout_shift_observer_ready: perf.layoutShiftObserver === true,
       long_task_over_50ms_count: longTasks.length,
+      layout_shift_entry_count: layoutShifts.length,
       largest_motion_layout_shift_ppm: largestLayoutShiftPpm
     };
-  }, { expected: route, startedUs: transitionStartedUs });
+  }, { expected: route, transitionStartedUs, motionAuditStartedUs });
 }
 
 async function runQa(args) {
@@ -2559,17 +2561,71 @@ async function runQa(args) {
       for (const route of routes) {
         const activeRequestLedger = [];
         activeSession = createSession("route", route.route, activeRequestLedger);
-        const motionAuditStartedUs = await page.evaluate(hash => {
+        const transitionStartedUs = await page.evaluate(expected => {
           const startedUs = Math.round(performance.now() * 1000);
-          window.location.hash = hash;
+          const previous = window.__commandCenterMotionQaRouteBaseline;
+          previous?.observer?.disconnect();
+          let resolveMotionAuditStartedUs;
+          const motionAuditStartedUsPromise = new Promise(resolve => { resolveMotionAuditStartedUs = resolve; });
+          const state = {
+            observer: null,
+            scheduled: false,
+            cacheLoadingObserved: false,
+            motionAuditStartedUs: 0,
+            motionAuditStartedUsPromise
+          };
+          const scheduleMountedRouteBaseline = () => {
+            if (state.scheduled) return;
+            const headingReady = document.querySelector(".route-stage h1")?.textContent?.trim() === expected.heading;
+            const anchorReady = Boolean(document.querySelector(expected.anchor));
+            const shellRequired = ["#home", "#next-session-chart", "#candidates", "#tasks"].includes(expected.route);
+            const routeShell = document.querySelector(".route-cache-loading-shell");
+            const shellReady = !shellRequired || Boolean(routeShell);
+            if (!headingReady || !anchorReady || !shellReady) return;
+            state.scheduled = true;
+            state.cacheLoadingObserved = !shellRequired || routeShell?.getAttribute("data-route-cache-loading") === "true";
+            state.observer?.disconnect();
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              state.motionAuditStartedUs = Math.round(performance.now() * 1000);
+              resolveMotionAuditStartedUs({
+                motionAuditStartedUs: state.motionAuditStartedUs,
+                cacheLoadingObserved: state.cacheLoadingObserved
+              });
+            }));
+          };
+          state.observer = new MutationObserver(scheduleMountedRouteBaseline);
+          state.observer.observe(document.body, { childList: true, subtree: true });
+          window.__commandCenterMotionQaRouteBaseline = state;
+          window.location.hash = expected.hash;
+          scheduleMountedRouteBaseline();
           return startedUs;
-        }, route.navigation_hash || route.route);
-        const transitionStartedUs = motionAuditStartedUs;
+        }, { ...route, hash: route.navigation_hash || route.route });
         await page.waitForFunction(
           expected => document.querySelector(".route-stage h1")?.textContent?.trim() === expected.heading && Boolean(document.querySelector(expected.anchor)),
           route,
           { timeout: 20000 }
         );
+        const motionBaseline = await page.evaluate(timeoutMs => {
+          const state = window.__commandCenterMotionQaRouteBaseline;
+          if (!state?.motionAuditStartedUsPromise) throw new Error("route_motion_baseline_missing");
+          return new Promise((resolve, reject) => {
+            const timeout = window.setTimeout(() => reject(new Error("route_motion_baseline_timeout")), timeoutMs);
+            state.motionAuditStartedUsPromise.then(
+              value => {
+                window.clearTimeout(timeout);
+                resolve(value);
+              },
+              error => {
+                window.clearTimeout(timeout);
+                reject(error);
+              }
+            );
+          });
+        }, ROUTE_MOTION_BASELINE_TIMEOUT_MS);
+        if (motionBaseline.cacheLoadingObserved !== true) {
+          throw new Error(`Motion layout window missed the route loading boundary: ${route.route}`);
+        }
+        const motionAuditStartedUs = motionBaseline.motionAuditStartedUs;
         const routeBudgetUs = route.route === "#candidates" ? PERFORMANCE_BUDGETS.candidate_radar_first_stable_us : PERFORMANCE_BUDGETS.route_transition_observed_us;
         const animationObservation = await page.evaluate(async budgetUs => {
           const stage = document.querySelector(".route-stage");
@@ -2608,7 +2664,7 @@ async function runQa(args) {
         const visualSettleWaitMs = args.reducedMotion ? 80 : 500;
         await page.waitForTimeout(visualSettleWaitMs);
         await waitForSessionIdle(activeSession, `pre-inspect:${viewport.name}:${route.route}`);
-        const inspected = await inspectPage(page, route, motionAuditStartedUs);
+        const inspected = await inspectPage(page, route, transitionStartedUs, motionAuditStartedUs);
         const currentUrl = exactLocalUrl(page.url());
         const screenshotPath = resolve(outputDir, viewport.name, `${route.route.replace("#", "") || "home"}.png`);
         const viewportDir = resolve(outputDir, viewport.name);
@@ -2664,6 +2720,9 @@ async function runQa(args) {
           navigation_animation_count: animationObservation.count,
           navigation_animation_wait_completed: animationObservation.completed,
           long_task_over_50ms_count: inspected.long_task_over_50ms_count,
+          layout_measurement_scope: "mounted_route_after_double_raf",
+          layout_measurement_started_us_after_transition: motionAuditStartedUs - transitionStartedUs,
+          layout_shift_entry_count: inspected.layout_shift_entry_count,
           largest_motion_layout_shift_ppm: inspected.largest_motion_layout_shift_ppm,
           visible_element_count: inspected.visible_element_count,
           audited_first_viewport_element_count: inspected.audited_first_viewport_element_count,

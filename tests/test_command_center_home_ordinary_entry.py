@@ -1185,7 +1185,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("userRouteQaCoveredRoutes", source)
         self.assertIn("userRouteQaCoveredViewports", source)
         self.assertIn("getAuditUserRouteQa", source)
-        self.assertIn('trackP0("audit_user_route_qa", getAuditUserRouteQa()', source)
+        self.assertNotIn('trackP0("audit_user_route_qa", getAuditUserRouteQa()', source)
         self.assertIn('trackAudit("audit_user_route_qa", getAuditUserRouteQa()', source)
         self.assertIn("userRouteQaEvidenceSource", source)
         self.assertIn("Object.keys(auditUserRouteQa).length ? auditUserRouteQa : audit", source)
@@ -1569,8 +1569,11 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         source = self.source
 
         secondary_start = source.index("const startOrdinaryReadback = () => {")
-        secondary_end = source.index("\n\n    setLoading(true);", secondary_start)
+        gate_start = source.index("const startNonBlockingGateReadback = () => {", secondary_start)
+        secondary_end = gate_start
         secondary_slice = source[secondary_start:secondary_end]
+        gate_end = source.index("\n\n    setLoading(true);", gate_start)
+        gate_slice = source[gate_start:gate_end]
         p0_start = source.index("const p0Jobs = [", secondary_end)
         p0_end = source.index("void Promise.allSettled(p0Jobs).then", p0_start)
         p0_slice = source[p0_start:p0_end]
@@ -1581,13 +1584,21 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn('track("tasks", getTasks()', secondary_slice)
         self.assertNotIn("setLoading(true);", secondary_slice)
         self.assertIn('trackP0("health", getHealth()', p0_slice)
-        self.assertIn('trackP0("bootstrap", getBootstrapStatus()', p0_slice)
-        self.assertIn('trackP0("desktop_preflight", getDesktopPreflightCache()', p0_slice)
-        self.assertIn('trackP0("tasks", getTasks()', p0_slice)
-        self.assertIn("setTaskIndex(res.data)", p0_slice)
-        self.assertIn("setTasks(res.data.tasks ?? [])", p0_slice)
+        self.assertNotIn('trackP0("bootstrap", getBootstrapStatus()', p0_slice)
+        self.assertNotIn('trackP0("desktop_preflight", getDesktopPreflightCache()', p0_slice)
+        self.assertNotIn('trackP0("tasks", getTasks()', p0_slice)
+        self.assertIn('track("bootstrap", getBootstrapStatus()', gate_slice)
+        self.assertIn('track("desktop_preflight", getDesktopPreflightCache()', gate_slice)
+        self.assertIn('track("tasks", getTasks()', gate_slice)
+        self.assertIn("setTaskIndex(res.data)", gate_slice)
+        self.assertIn("setTasks(res.data.tasks ?? [])", gate_slice)
+        self.assertNotIn("startNonBlockingGateReadback();", source[gate_end:p0_start])
         self.assertIn("setLoading(false);", source[p0_end:source.index("return () => {", p0_end)])
-        self.assertIn("secondaryTimer = window.setTimeout(startOrdinaryReadback, 150);", source)
+        post_p0 = source[p0_end:source.index("return () => {", p0_end)]
+        self.assertIn("gateTimer = window.setTimeout(startNonBlockingGateReadback, 520);", post_p0)
+        self.assertIn("secondaryTimer = window.setTimeout(startOrdinaryReadback, 650);", post_p0)
+        self.assertIn("window.clearTimeout(gateTimer)", source)
+        self.assertIn("window.clearTimeout(secondaryTimer)", source)
         self.assertIn("/api/bootstrap/status 必须返回 runtime-mode packet", source)
         self.assertIn("/api/desktop/preflight-cache 必须返回一键启动 packet", source)
         self.assertIn("React/Vite 必须返回 Command Center 3.0 前端 HTML", source)

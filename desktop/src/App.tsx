@@ -181,6 +181,8 @@ export default function App() {
     let retryTimers: number[] = [];
     let anchorRetryScheduled = false;
     let stabilityWindowElapsed = false;
+    let stopped = false;
+    let settledScrollScheduled = false;
     const stopRetryTimers = () => {
       retryTimers.forEach((timer) => window.clearTimeout(timer));
       retryTimers = [];
@@ -190,6 +192,7 @@ export default function App() {
       }
     };
     const stopAnchorRetries = () => {
+      stopped = true;
       observer?.disconnect();
       stopRetryTimers();
       if (hardStopTimer !== null) {
@@ -213,14 +216,40 @@ export default function App() {
       }, Math.max(...ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS) + 200);
     };
     const scrollToAnchor = () => {
-      if (cancelled) return false;
+      if (cancelled || stopped) return false;
       const target = document.getElementById(anchor);
       if (!target) return false;
       if (target.closest('[data-route-cache-loading="true"]')) return false;
-      target.scrollIntoView({ block: "start" });
       const routeShell = target.closest("[data-route-cache-loading]");
       const routeSettled = routeShell?.getAttribute("data-route-cache-settled");
-      if (!routeShell || (stabilityWindowElapsed && routeSettled !== "false")) {
+      if (routeShell && routeSettled === "true") {
+        const runningAnimations = document.getAnimations().filter((animation) => {
+          const animationTarget = animation.effect instanceof KeyframeEffect
+            ? animation.effect.target
+            : null;
+          return animation.playState !== "finished"
+            && animationTarget instanceof Element
+            && (animationTarget === routeShell || routeShell.contains(animationTarget));
+        });
+        if (runningAnimations.length && !settledScrollScheduled) {
+          settledScrollScheduled = true;
+          observer?.disconnect();
+          stopRetryTimers();
+          void Promise.allSettled(runningAnimations.map((animation) => animation.finished)).then(() => {
+            if (cancelled || stopped) return;
+            document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+            stopAnchorRetries();
+          });
+          return true;
+        }
+        if (settledScrollScheduled) return true;
+      }
+      target.scrollIntoView({ block: "start" });
+      if (
+        !routeShell ||
+        routeSettled === "true" ||
+        (stabilityWindowElapsed && routeSettled !== "false")
+      ) {
         stopAnchorRetries();
       } else {
         scheduleAnchorStabilityRetries();

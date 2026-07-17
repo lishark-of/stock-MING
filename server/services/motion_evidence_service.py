@@ -26,8 +26,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 
-REPORT_SCHEMA = "command_center_3_motion_browser_qa_result.v7"
-TRACE_SCHEMA = "command_center_3_motion_browser_performance_trace.v6"
+REPORT_SCHEMA = "command_center_3_motion_browser_qa_result.v8"
+TRACE_SCHEMA = "command_center_3_motion_browser_performance_trace.v7"
 STATE_SCHEMA = "command_center_3_motion_runner_attestation_state.v3"
 EVENT_SCHEMA = "command_center_3_motion_runner_attestation_event.v3"
 ANCHOR_SCHEMA = "command_center_3_motion_runner_high_water_anchor.v2"
@@ -131,6 +131,8 @@ _ROW_KEYS = {
     "route_transition_observed_us", "visual_settle_wait_ms",
     "route_transition_budget_us", "navigation_animation_count",
     "navigation_animation_wait_completed", "long_task_over_50ms_count",
+    "layout_measurement_scope", "layout_measurement_started_us_after_transition",
+    "layout_shift_entry_count",
     "largest_motion_layout_shift_ppm", "visible_element_count",
     "audited_first_viewport_element_count", "clipped_count", "offscreen_count",
     "clipped_rows", "offscreen_rows", "horizontal_overflow_px", "overlap_count",
@@ -1128,6 +1130,22 @@ def _row_recomputed_pass(row: Any) -> tuple[bool, list[str]]:
             reasons.append(f"{key}_type_invalid")
     if type(row.get("visual_settle_wait_ms")) is not int or row.get("visual_settle_wait_ms") not in {80, 500}:
         reasons.append("visual_settle_wait_ms_invalid")
+    if row.get("layout_measurement_scope") != "mounted_route_after_double_raf":
+        reasons.append("layout_measurement_scope_invalid")
+    layout_offset = row.get("layout_measurement_started_us_after_transition")
+    route_transition_value = row.get("route_transition_observed_us")
+    if (
+        type(layout_offset) is not int
+        or type(route_transition_value) is not int
+        or not 0 < layout_offset <= route_transition_value
+    ):
+        reasons.append("layout_measurement_started_us_after_transition_invalid")
+    layout_shift_entry_count = row.get("layout_shift_entry_count")
+    largest_layout_shift = row.get("largest_motion_layout_shift_ppm")
+    if type(layout_shift_entry_count) is not int or layout_shift_entry_count < 0:
+        reasons.append("layout_shift_entry_count_invalid")
+    elif type(largest_layout_shift) is int and ((layout_shift_entry_count == 0) != (largest_layout_shift == 0)):
+        reasons.append("layout_shift_entry_summary_inconsistent")
     expected_budget = _PERFORMANCE_BUDGETS["candidate_radar_first_stable_us"] if route == "#candidates" else _PERFORMANCE_BUDGETS["route_transition_observed_us"]
     integer_limits = {
         "route_transition_observed_us": (0, expected_budget),
@@ -1751,6 +1769,9 @@ def validate_current_motion_evidence(
                         "route_transition_observed_us": row.get("route_transition_observed_us"),
                         "route_transition_budget_us": row.get("route_transition_budget_us"),
                         "long_task_over_50ms_count": row.get("long_task_over_50ms_count"),
+                        "layout_measurement_scope": row.get("layout_measurement_scope"),
+                        "layout_measurement_started_us_after_transition": row.get("layout_measurement_started_us_after_transition"),
+                        "layout_shift_entry_count": row.get("layout_shift_entry_count"),
                         "largest_motion_layout_shift_ppm": row.get("largest_motion_layout_shift_ppm"),
                         "clipped_count": row.get("clipped_count"),
                         "offscreen_count": row.get("offscreen_count"),

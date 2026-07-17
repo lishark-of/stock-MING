@@ -6627,7 +6627,8 @@ def _candidate_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[
     ]
     runner_available = (
         MOTION_BROWSER_QA_RUNNER_PATH.exists()
-        and "command_center_3_motion_browser_qa_result.v7" in runner_source
+        and "command_center_3_motion_browser_qa_result.v8" in runner_source
+        and "mounted_route_after_double_raf" in runner_source
         and "explicit_local_browser_visual_performance_run" in runner_source
         and "chromium.launch" in runner_source
         and "page.goto" in runner_source

@@ -47,7 +47,7 @@ VISUAL_ACCEPTANCE_CRITERIA = [
 
 PERFORMANCE_BUDGETS = [
     {"metric": "route_transition_observed_us", "budget": 500_000, "scope": "same-page hash route change after cache is loaded"},
-    {"metric": "largest_motion_layout_shift_ppm", "budget": 100_000, "scope": "PerformanceObserver layout-shift entries"},
+    {"metric": "largest_motion_layout_shift_ppm", "budget": 100_000, "scope": "PerformanceObserver entries after mounted-route double-rAF baseline"},
     {"metric": "long_task_over_50ms_count", "budget": 0, "scope": "route change, chart update, candidate radar render"},
     {"metric": "candidate_radar_first_stable_us", "budget": 1_200_000, "scope": "cache already local; no provider refresh"},
 ]
@@ -79,11 +79,13 @@ def build_runbook() -> dict[str, Any]:
     runner_source = _read_text(RUNNER_SCRIPT)
     runner_available = (
         RUNNER_SCRIPT.exists()
-        and "command_center_3_motion_browser_qa_result.v7" in runner_source
+        and "command_center_3_motion_browser_qa_result.v8" in runner_source
+        and "mounted_route_after_double_raf" in runner_source
+        and "layout_shift_entry_count" in runner_source
         and "explicit_local_browser_visual_performance_run" in runner_source
         and "chromium.launch" in runner_source
         and "page.goto" in runner_source
-        and "window.location.hash = hash" in runner_source
+        and "window.location.hash = expected.hash" in runner_source
         and "PerformanceObserver" in runner_source
         and ".stock_ming_3/motion_qa" in runner_source
         and "starts_no_servers" in runner_source
