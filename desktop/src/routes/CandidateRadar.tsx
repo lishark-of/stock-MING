@@ -5898,20 +5898,6 @@ export default function CandidateRadar() {
         <StatusBadge label={candidateRadarStatusLabel} tone={candidateRadarCacheGetReadable ? "good" : "neutral"} />
       </div>
 
-      <div id="candidate-pool" className="candidate-pool-compact-anchor">
-        <PacketCard title="候选池速读" subtitle="Top / Watch / Excluded 本地结果先读；完整审计明细继续下沉" status={candidateRadarStatusLabel}>
-          <p className="ordinary-status-note" aria-label="candidate pool compact anchor conclusion" aria-live="polite">{candidatePoolPlainConclusionText}</p>
-          <MetricGrid items={candidatePoolPlainConclusionItems} />
-          <div className="actions" aria-label="candidate pool compact anchor actions">
-            <a href="#candidates/candidate-pool-details" title="查看候选池完整本地明细；只读 cache，不创建任务" aria-label="open candidate pool full details from compact anchor">完整明细</a>
-            <a href="#candidates/candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from candidate pool compact anchor">解释单票</a>
-            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from candidate pool compact anchor">量化推演</a>
-            <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from candidate pool compact anchor">次日图谱</a>
-          </div>
-          <p className="risk-note">这张速读只回放当前本地候选结论；不会自动调用 provider/model/worker，不创建任务，不交易，不修改 strategy action。</p>
-        </PacketCard>
-      </div>
-
       <PacketCard title="下一票雷达操作台" subtitle={candidateRadarCompactOperatorSubtitle} status={candidateRadarStatusLabel}>
         <p className="ordinary-status-note" aria-label="candidate radar operator input confirm first sentence">输入确认速读：输入只做本地校验；确认后看最近结果、候选池、量化推演、次日图谱和 ETF/融资风险。</p>
         <div className="actions" aria-label="candidate radar compact operator actions">
@@ -6031,6 +6017,20 @@ export default function CandidateRadar() {
         <p className="risk-note">退旧雷达前还缺什么：{ordinaryRetirementReadinessMainGaps}；页面检查：{ordinaryBrowserQaStatusLabel}。</p>
         <p className="risk-note">{ordinaryCandidateGroupBoundary} 页面打开、输入、GET cache 和 React render 都不会自动外联。</p>
       </PacketCard>
+
+      <div id="candidate-pool" className="candidate-pool-compact-anchor">
+        <PacketCard title="候选池速读" subtitle="Top / Watch / Excluded 本地结果先读；完整审计明细继续下沉" status={candidateRadarStatusLabel}>
+          <p className="ordinary-status-note" aria-label="candidate pool compact anchor conclusion" aria-live="polite">{candidatePoolPlainConclusionText}</p>
+          <MetricGrid items={candidatePoolPlainConclusionItems} />
+          <div className="actions" aria-label="candidate pool compact anchor actions">
+            <a href="#candidates/candidate-pool-details" title="查看候选池完整本地明细；只读 cache，不创建任务" aria-label="open candidate pool full details from compact anchor">完整明细</a>
+            <a href="#candidates/candidate-radar-search-quant-projection" title="回到确认输入区；输入静默，确认按钮才创建本地任务" aria-label="open confirm input from candidate pool compact anchor">解释单票</a>
+            <a href="#factor/factor-score" title="切换到股票量化推演支持/压制摘要；只读本地结果" aria-label="open factor from candidate pool compact anchor">量化推演</a>
+            <a href="#next/next-session-chart" title={quantProjectionReplayBoundary} aria-label="open next session from candidate pool compact anchor">次日图谱</a>
+          </div>
+          <p className="risk-note">这张速读只回放当前本地候选结论；不会自动调用 provider/model/worker，不创建任务，不交易，不修改 strategy action。</p>
+        </PacketCard>
+      </div>
 
       <PacketCard title="普通用户雷达摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={candidateRadarStatusLabel}>
         <div aria-label="candidate radar ordinary user first summary">
