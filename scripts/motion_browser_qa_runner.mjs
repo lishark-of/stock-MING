@@ -73,8 +73,7 @@ const FASTAPI_CACHE_CONTRACTS = new Map([
   ["/api/next-session/cache", { schema: "next_session_projection.v1", packet: "command_center_next_session_projection_packet", allowCacheMissing: true, includeMissingData: true, strictCurrentRead: true, ledgerApis: ["local_next_session_cache"] }],
   ["/api/position/cache", { schema: "position_context_cache.v1", packet: "command_center_3_position_context_cache", ledgerApis: ["local_position_context_cache"] }],
   ["/api/candidate-radar/cache", { schema: "candidate_radar_cache.v1", packet: "command_center_3_candidate_radar_cache", ledgerApis: [
-    "local_candidate_radar_cache", "local_candidate_radar_quick_scan",
-    "local_candidate_radar_legacy_parity_acceptance_receipt",
+    "local_candidate_radar_cache", "local_candidate_radar_legacy_parity_acceptance_receipt",
     "local_candidate_radar_production_activation_receipt", "local_candidate_radar_quant_projection_execution_request",
     "local_candidate_radar_provider_parity_execution_request", "local_candidate_radar_worker_execution_recipe",
     "local_candidate_radar_worker_execution_request", "local_candidate_radar_full_pool_worker_fallback_preview",
@@ -978,11 +977,10 @@ function selfTestFastApiValidator() {
   safeCandidate.data.packet_key = "command_center_3_candidate_radar_cache";
   safeCandidate.call_ledger = [
     { ...safeLedger(), api: "local_candidate_radar_cache" },
-    { ...safeLedger(), api: "local_candidate_radar_quick_scan" },
     { ...safeLedger(), api: "local_candidate_radar_durable_evidence_recipe" }
   ];
   assert(analyze(safeCandidate, "/api/candidate-radar/cache").valid,
-    "candidate_local_quick_scan_provenance_allowlisted_in_order");
+    "candidate_current_get_and_derived_evidence_allowlisted_in_order");
   const duplicateCandidateAttachment = structuredClone(safeCandidate);
   duplicateCandidateAttachment.call_ledger.splice(2, 0,
     { ...safeLedger(), api: "local_candidate_radar_durable_evidence_recipe" });

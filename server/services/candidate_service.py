@@ -15655,12 +15655,15 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     )
     view["data_freshness"] = _candidate_data_freshness_contract(view["freshness_state"])
     view = _restore_candidate_v05_last_good_state(view)
-    existing_ledger = _as_list(view.get("call_ledger"))
     view["loaded_at"] = _now_iso()
     view["cache_only"] = True
     view["read_only"] = True
     view["cache_source"] = "sqlite_meta"
-    view["call_ledger"] = [cache_row] + [row for row in existing_ledger if isinstance(row, dict)]
+    # The top-level GET ledger describes this read and the derived contracts
+    # recomputed below. Historical task ledgers remain in task/receipt payloads;
+    # replaying the last POST ledger here would make this GET depend on which
+    # local button happened to run most recently.
+    view["call_ledger"] = [cache_row]
     if not isinstance(view.get("legacy_parity_acceptance_receipt"), dict):
         parity_receipt, parity_acceptance_rows = _legacy_parity_acceptance_receipt(
             parity_inventory=_as_dict(view.get("legacy_parity_inventory")),

@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -1193,8 +1194,21 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
                 self.assertNotIn("runner_event_mac_invalid", joined)
 
     def test_endpoint_and_ledger_contract_surfaces_are_exact_and_drift_closed(self) -> None:
-        self.assertEqual(len(motion_evidence_service._FASTAPI_CACHE_CONTRACTS), 20)
+        self.assertEqual(len(motion_evidence_service._FASTAPI_CACHE_CONTRACTS), 21)
         self.assertEqual(set(motion_evidence_service._FASTAPI_CACHE_CONTRACTS), set(motion_evidence_service._FASTAPI_LEDGER_APIS))
+        runner_source = (Path(__file__).resolve().parents[1] / "scripts" / "motion_browser_qa_runner.mjs").read_text(
+            encoding="utf-8"
+        )
+        contract_source = runner_source.split("const FASTAPI_CACHE_CONTRACTS = new Map([", 1)[1].split(
+            "]);\n\nconst QA_ROUTES", 1
+        )[0]
+        runner_endpoints = re.findall(r'^\s*\["(/api/[^\"]+)"', contract_source, flags=re.MULTILINE)
+        self.assertEqual(len(runner_endpoints), len(set(runner_endpoints)))
+        self.assertEqual(set(runner_endpoints), set(motion_evidence_service._FASTAPI_CACHE_CONTRACTS))
+        self.assertNotIn(
+            "local_candidate_radar_quick_scan",
+            motion_evidence_service._FASTAPI_LEDGER_APIS["/api/candidate-radar/cache"],
+        )
         summary = _fastapi_semantic_summary(
             path="/api/audit/cache",
             body_sha256="a" * 64,

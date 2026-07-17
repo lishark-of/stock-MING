@@ -344,6 +344,33 @@ class CandidateCacheReadSafetyTests(unittest.TestCase):
         self.assertEqual(apis[0], "local_candidate_radar_cache")
         self.assertEqual(apis.count("local_candidate_radar_durable_evidence_recipe"), 1)
 
+    def test_persisted_quick_scan_history_does_not_replace_current_get_ledger(self) -> None:
+        persisted = {
+            "packet_key": candidate_service.PACKET_KEY,
+            "schema_version": candidate_service.SCHEMA_VERSION,
+            "status": "ready",
+            "scan_mode": "quick_cache_scan",
+            "candidate_rows": [],
+            "call_ledger": [
+                candidate_service._candidate_call_ledger_row(
+                    api="local_candidate_radar_quick_scan",
+                    source_snapshot="command_center_latest.json",
+                    row_count=0,
+                    call_status="quick_scan_completed",
+                )
+            ],
+            "counts": {},
+            "policy": {},
+            "warnings": [],
+        }
+
+        view = candidate_service._cache_view_from_persisted(persisted)
+        apis = [row.get("api") for row in view["call_ledger"]]
+
+        self.assertEqual(apis[0], "local_candidate_radar_cache")
+        self.assertNotIn("local_candidate_radar_quick_scan", apis)
+        self.assertEqual(len(apis), len(set(apis)))
+
 
 if __name__ == "__main__":
     unittest.main()
