@@ -98,6 +98,45 @@ print(safe[:180])
 PY
 }
 
+normalize_api_base_origin() {
+  local url="$1"
+  "$PYTHON_BIN" - "$url" <<'PY'
+import sys
+from urllib.parse import urlsplit, urlunsplit
+
+try:
+    parsed = urlsplit(sys.argv[1])
+    scheme = parsed.scheme.lower()
+    host = parsed.hostname or ""
+    port = parsed.port
+except Exception:
+    sys.exit(1)
+
+if scheme not in {"http", "https"} or not host:
+    sys.exit(1)
+if port is not None and not 1 <= port <= 65535:
+    sys.exit(1)
+
+safe_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+netloc = f"{safe_host}:{port}" if port else safe_host
+print(urlunsplit((scheme, netloc, "", "", "")))
+PY
+}
+
+api_base_has_non_root_path() {
+  local url="$1"
+  "$PYTHON_BIN" - "$url" <<'PY' >/dev/null 2>&1
+import sys
+from urllib.parse import urlsplit
+
+try:
+    path = urlsplit(sys.argv[1]).path
+except Exception:
+    sys.exit(1)
+sys.exit(0 if path not in {"", "/"} else 1)
+PY
+}
+
 url_is_local() {
   local url="$1"
   "$PYTHON_BIN" - "$url" <<'PY' >/dev/null 2>&1
@@ -499,6 +538,19 @@ if [ ! -x "$PYTHON_BIN" ]; then
   exit 1
 fi
 
+CONFIGURED_API_BASE="$API_BASE"
+CONFIGURED_API_BASE_DISPLAY="$(safe_display_url "$CONFIGURED_API_BASE")"
+API_BASE_ORIGIN="$(normalize_api_base_origin "$API_BASE")" || {
+  echo "Command Center 3.0 启动失败：FastAPI API base 不是有效的 HTTP(S) origin：[invalid URL redacted]"
+  echo "请使用类似 http://127.0.0.1:8710 的本机 origin；启动器不会把 /api 路径再次拼进 /health。"
+  exit 1
+}
+API_BASE_PATH_NORMALIZED_TO_ORIGIN=0
+if api_base_has_non_root_path "$CONFIGURED_API_BASE"; then
+  API_BASE_PATH_NORMALIZED_TO_ORIGIN=1
+fi
+API_BASE="$API_BASE_ORIGIN"
+
 API_BASE_DISPLAY="$(safe_display_url "$API_BASE")"
 VITE_URL_DISPLAY="$(safe_display_url "$VITE_URL")"
 APP_OPEN_URL="$(safe_display_open_url "$APP_URL")"
@@ -511,8 +563,8 @@ API_BIND_HOST="$(api_bind_host "$API_BASE")"
 API_BIND_PORT="$(api_bind_port "$API_BASE")"
 VITE_BIND_PORT="$(api_bind_port "$VITE_URL")"
 
-if ! url_is_local "$API_BASE"; then
-  echo "Command Center 3.0 启动失败：FastAPI API base 必须是本机地址：${API_BASE_DISPLAY}"
+if ! url_is_local "$CONFIGURED_API_BASE"; then
+  echo "Command Center 3.0 启动失败：FastAPI API base 必须是本机地址：${CONFIGURED_API_BASE_DISPLAY}"
   echo "边界：一键启动器不会探测非本机 API base，不打印 query/hash/username/password，不调用外部服务。"
   exit 1
 fi
@@ -535,6 +587,7 @@ echo "Command Center 3.0 local launcher"
 echo "Project: ${PROJECT_ROOT}"
 echo "Python: ${PYTHON_BIN}"
 echo "FastAPI: ${API_BASE_DISPLAY}"
+echo "FastAPI API base path normalized to origin: ${API_BASE_PATH_NORMALIZED_TO_ORIGIN}"
 echo "React/Vite: ${VITE_URL_DISPLAY}"
 echo "Open route: ${APP_URL_DISPLAY}"
 echo "Logs: ${LOG_DIR}"

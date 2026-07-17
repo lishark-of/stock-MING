@@ -21524,7 +21524,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn('APP_OPEN_URL="$(safe_display_open_url "$APP_URL")', launcher)
         self.assertIn('APP_URL_DISPLAY="$APP_OPEN_URL"', launcher)
         self.assertIn("url_is_local", launcher)
-        self.assertIn('if ! url_is_local "$API_BASE"; then', launcher)
+        self.assertIn('if ! url_is_local "$CONFIGURED_API_BASE"; then', launcher)
         self.assertIn('open "$APP_OPEN_URL"', launcher)
         self.assertNotIn('open "$APP_URL"', launcher)
         self.assertIn("displayed and opened launcher URLs are sanitized", launcher)
@@ -21533,11 +21533,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("日志定位：FastAPI=${FASTAPI_LOG}；React/Vite=${VITE_LOG}。", launcher)
         self.assertIn("安全边界：失败诊断不会自动重试、不会创建 POST task、不会调用 Tushare/DeepSeek/GitHub，也不会读取 token/key。", launcher)
         self.assertLess(
-            launcher.index('if ! url_is_local "$API_BASE"; then'),
+            launcher.index('if ! url_is_local "$CONFIGURED_API_BASE"; then'),
             launcher.index('if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then'),
         )
         self.assertLess(
-            launcher.index('if ! url_is_local "$API_BASE"; then'),
+            launcher.index('if ! url_is_local "$CONFIGURED_API_BASE"; then'),
             launcher.index('mkdir -p "$LOG_DIR"'),
         )
 
@@ -21591,7 +21591,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         local_output = f"{local_result.stdout}\n{local_result.stderr}"
 
         self.assertEqual(local_result.returncode, 0, local_output)
-        self.assertIn("FastAPI: http://127.0.0.1:8710/api", local_output)
+        self.assertIn("FastAPI: http://127.0.0.1:8710", local_output)
+        self.assertIn("FastAPI API base path normalized to origin: 1", local_output)
+        self.assertIn("health=http://127.0.0.1:8710/health", local_output)
+        self.assertIn("bootstrap=http://127.0.0.1:8710/api/bootstrap/status", local_output)
+        self.assertNotIn("/api/health", local_output)
+        self.assertNotIn("/api/api/", local_output)
         self.assertIn("React/Vite: http://localhost:5173", local_output)
         self.assertIn("Open route: http://localhost:5173/", local_output)
         self.assertIn("open_route=http://localhost:5173/", local_output)

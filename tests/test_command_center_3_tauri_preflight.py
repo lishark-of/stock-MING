@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -383,6 +384,87 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertNotIn("Starting FastAPI...", output)
         self.assertNotIn("Starting React/Vite...", output)
         self.assertNotIn("Command Center 3.0 入口已启动", output)
+
+    def test_command_center_3_launcher_normalizes_local_api_path_to_origin(self):
+        env = {
+            **os.environ,
+            "STOCK_MING_PYTHON": sys.executable,
+            "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY": "1",
+            "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN": "1",
+            "VITE_API_BASE_URL": "http://user:SHOULD_DROP@127.0.0.1:8710/api?token=SHOULD_DROP#secret",
+        }
+        result = subprocess.run(
+            ["bash", str(LAUNCHER)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=10,
+        )
+        output = result.stdout
+
+        self.assertIn("FastAPI: http://127.0.0.1:8710", output)
+        self.assertIn("FastAPI API base path normalized to origin: 1", output)
+        self.assertIn("health=http://127.0.0.1:8710/health", output)
+        self.assertIn("bootstrap=http://127.0.0.1:8710/api/bootstrap/status", output)
+        self.assertIn("desktop_preflight=http://127.0.0.1:8710/api/desktop/preflight-cache", output)
+        self.assertNotIn("/api/health", output)
+        self.assertNotIn("/api/api/", output)
+        self.assertNotIn("SHOULD_DROP", output)
+
+    def test_command_center_3_launcher_redacts_invalid_api_base_and_rejects_port_zero(self):
+        invalid_values = (
+            ("malformed", "not-a-url-user-SHOULD_DROP?token=SHOULD_DROP"),
+            ("missing_host", "http:///api?token=SHOULD_DROP#secret"),
+            ("bad_ipv6", "http://user:SHOULD_DROP@[::1/api?token=SHOULD_DROP"),
+            ("port_zero", "http://user:SHOULD_DROP@127.0.0.1:0/api?token=SHOULD_DROP#secret"),
+        )
+        for case_name, invalid_value in invalid_values:
+            with self.subTest(case_name=case_name):
+                env = {
+                    **os.environ,
+                    "STOCK_MING_PYTHON": sys.executable,
+                    "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY": "1",
+                    "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN": "1",
+                    "VITE_API_BASE_URL": invalid_value,
+                }
+                result = subprocess.run(
+                    ["bash", str(LAUNCHER)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=10,
+                )
+                output = f"{result.stdout}\n{result.stderr}"
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("[invalid URL redacted]", output)
+                self.assertNotIn("SHOULD_DROP", output)
+                self.assertNotIn("token=", output)
+                self.assertNotIn("Starting FastAPI", output)
+                self.assertNotIn("Starting React/Vite", output)
+
+    def test_command_center_3_launcher_does_not_report_sanitization_as_path_normalization(self):
+        env = {
+            **os.environ,
+            "STOCK_MING_PYTHON": sys.executable,
+            "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY": "1",
+            "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN": "1",
+            "VITE_API_BASE_URL": "HTTP://user:SHOULD_DROP@127.0.0.1:8710/?token=SHOULD_DROP#secret",
+        }
+        result = subprocess.run(
+            ["bash", str(LAUNCHER)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=10,
+        )
+        output = result.stdout
+
+        self.assertIn("FastAPI API base path normalized to origin: 0", output)
+        self.assertNotIn("SHOULD_DROP", output)
 
     def test_command_center_3_launcher_check_only_redacts_open_url_query(self):
         env = {
