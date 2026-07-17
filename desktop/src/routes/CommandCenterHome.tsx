@@ -9,6 +9,17 @@ import RouteCacheLoadingOverlay from "../components/RouteCacheLoadingBoundary";
 import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
+import {
+  hasUnconfirmedHomeSymbolEdit,
+  makeStrictHomeConfirmedChain,
+  makeStrictHomeResultBinding,
+  sameOrdinaryHomeResultBinding,
+  selectMatchingHomeConfirmedChain,
+  selectMatchingHomeResultBinding,
+  strictHomeIdentity,
+  strictHomeResultDate,
+  type OrdinaryHomeResultBinding,
+} from "./commandCenterHomeResultBinding.js";
 
 const LIVE_BOOTSTRAP_SESSION_KEY = "command_center_3_live_bootstrap_session_key";
 const DATA_CAPABILITY_HREF = "#dataCapability";
@@ -19,31 +30,6 @@ const ORDINARY_HOME_CURRENT_FRESHNESS_STATES = new Set([
   "today",
   "validated_current",
 ]);
-
-type OrdinaryHomeResultBinding = {
-  source: "candidate" | "storage";
-  symbol: string;
-  taskId: string;
-  resultVersion: string;
-  dataDate: string;
-  freshness: string;
-};
-
-function normalizedHomeResultDate(value: unknown): string {
-  const digits = String(value ?? "").replace(/[^0-9]/g, "");
-  return digits.length === 8 ? digits : "";
-}
-
-function normalizedHomeResultFreshness(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-}
-
-function sameOrdinaryHomeResultBinding(left: OrdinaryHomeResultBinding, right: OrdinaryHomeResultBinding): boolean {
-  return left.symbol === right.symbol &&
-    left.taskId === right.taskId &&
-    left.resultVersion === right.resultVersion &&
-    left.dataDate === right.dataDate;
-}
 
 function readLiveBootstrapSessionKey(): string {
   try {
@@ -1160,21 +1146,41 @@ export default function CommandCenterHome() {
       candidateQuantInterpretation.ordinary_result_boundary ??
       "可解释结果只从本地 cache / ledger / packet 回放；不会从结果回放卡创建 task、调用模型或生成交易动作。"
   );
-  const taskIndexLatestConfirmedSymbol =
-    taskIndex?.latest_confirmed_symbol_readback_external_calls_triggered === true ||
-    taskIndex?.latest_confirmed_symbol_creates_task_from_readback === true
-      ? ""
-      : homeText(taskIndex?.latest_confirmed_symbol, "");
-  const dailyCommandConfirmedSymbol =
-    [
-      candidates.search_quant_projection_latest_confirmed_symbol,
-      candidateQuantReceipt.symbol,
-      candidateQuantSmallDataWriteback.symbol,
-      candidateQuantInterpretation.symbol,
-      taskIndexLatestConfirmedSymbol
-    ]
-      .map((value) => homeText(value, ""))
-      .find(Boolean) ?? "";
+  const taskIndexConfirmedChainSafe =
+    taskIndex?.latest_confirmed_symbol_readback_external_calls_triggered !== true &&
+    taskIndex?.latest_confirmed_symbol_creates_task_from_readback !== true;
+  const dailyCommandConfirmedChainResolution = selectMatchingHomeConfirmedChain([
+    makeStrictHomeConfirmedChain(
+      candidateQuantP1ShortestPathCheckpoint,
+      { symbol: "symbol", taskId: "task_id" },
+      "candidate_p1_checkpoint",
+    ),
+    makeStrictHomeConfirmedChain(
+      candidateQuantSmallDataWriteback,
+      { symbol: "symbol", taskId: "latest_task_id" },
+      "candidate_small_data_writeback",
+    ),
+    makeStrictHomeConfirmedChain(
+      candidateQuantReceipt,
+      { symbol: "symbol", taskId: "task_id" },
+      "candidate_receipt",
+    ),
+    makeStrictHomeConfirmedChain(
+      candidateQuantInterpretation,
+      { symbol: "symbol", taskId: "source_task_id" },
+      "candidate_interpretation",
+    ),
+    taskIndexConfirmedChainSafe && taskIndex
+      ? makeStrictHomeConfirmedChain(
+          taskIndex as unknown as Record<string, unknown>,
+          { symbol: "latest_confirmed_symbol", taskId: "latest_confirmed_task_id" },
+          "task_index",
+        )
+      : null,
+  ]);
+  const dailyCommandConfirmedChainConflict = dailyCommandConfirmedChainResolution.conflict;
+  const dailyCommandConfirmedSymbol = dailyCommandConfirmedChainResolution.chain?.symbol ?? "";
+  const dailyCommandConfirmedSourceTaskId = dailyCommandConfirmedChainResolution.chain?.taskId ?? "";
   useEffect(() => {
     if (homeQuantSymbolTouched) return;
     if (homeQuantSymbol.trim()) return;
@@ -1319,14 +1325,6 @@ export default function CommandCenterHome() {
       tone: "good"
     }
   ];
-  const dailyCommandConfirmedSourceTaskId = homeText(
-    candidateQuantResultCheckpoint.source_task_id ??
-      candidateQuantInterpretation.source_task_id ??
-      candidateQuantSmallDataWriteback.latest_task_id ??
-      candidateQuantReceipt.latest_task_id ??
-      candidateQuantReceipt.task_id,
-    ""
-  );
   const dailyCommandConfirmedSourceTaskLabel = dailyCommandConfirmedSourceTaskId || "等待下一票雷达确认回执";
   const dailyCommandP3OneGlanceReadable =
     candidates.search_quant_projection_p3_readable_result_ready === true ||
@@ -2411,23 +2409,22 @@ export default function CommandCenterHome() {
     { label: "边界", value: "首屏快照只读已有 cache / ledger / packet；不会创建 task、不会补调 Tushare/DeepSeek；不会读取 token/key、不会交易或修改 strategy action", tone: "good" }
   ];
   const ordinaryHomeStorageCurrentResult = (storageCurrentResult.result as Record<string, unknown> | undefined) ?? {};
-  const ordinaryHomeStorageCurrentStatus = String(storageCurrentResult.status ?? "");
-  const ordinaryHomeStorageCurrentSymbol = String(ordinaryHomeStorageCurrentResult.symbol ?? "").trim().toUpperCase();
-  const ordinaryHomeStorageCurrentVersion = String(
-    storageCurrentResult.selected_version_id ??
-      ordinaryHomeStorageCurrentResult.result_version ??
-      ""
-  ).trim();
-  const ordinaryHomeStorageCurrentDataDate = String(
-    storageCurrentResult.data_date ??
-      ordinaryHomeStorageCurrentResult.data_date ??
-      ""
-  ).trim();
-  const ordinaryHomeStorageCurrentFreshness = String(
-    storageCurrentResult.freshness_state ??
-      ordinaryHomeStorageCurrentResult.freshness_state ??
-      ""
-  ).trim();
+  const ordinaryHomeStorageCurrentStatus = strictHomeIdentity(storageCurrentResult.status, 120);
+  const ordinaryHomeStorageBinding = makeStrictHomeResultBinding(
+    storageCurrentResult,
+    {
+      symbol: "symbol",
+      taskId: "source_result_task_id",
+      resultVersion: "result_version",
+      dataDate: "data_date",
+      freshness: "freshness_state",
+    },
+    "storage",
+  );
+  const ordinaryHomeStorageCurrentSymbol = ordinaryHomeStorageBinding?.symbol ?? "";
+  const ordinaryHomeStorageCurrentVersion = ordinaryHomeStorageBinding?.resultVersion ?? "";
+  const ordinaryHomeStorageCurrentDataDate = ordinaryHomeStorageBinding?.dataDate ?? "";
+  const ordinaryHomeStorageCurrentFreshness = ordinaryHomeStorageBinding?.freshness ?? "";
   const ordinaryHomeStorageCurrentFreshnessLabel =
     `${ordinaryHomeStorageCurrentDataDate || "等待 data_date"} / ${ordinaryHomeStorageCurrentFreshness || "等待 freshness"}`;
   const ordinaryHomeCanonicalResultDataDate = homeText(
@@ -2454,8 +2451,7 @@ export default function CommandCenterHome() {
       : "";
   const ordinaryHomeStorageCurrentReadable = Boolean(
     ordinaryHomeStorageCurrentStatus === "storage_current_result_cache_ready_current" &&
-    ordinaryHomeStorageCurrentSymbol &&
-    ordinaryHomeStorageCurrentVersion &&
+    ordinaryHomeStorageBinding &&
     storageCurrentResult.duckdb_readback_verified === true &&
     storageCurrentResult.cache_get_creates_task === false &&
     storageCurrentResult.cache_get_writes_files === false &&
@@ -2494,97 +2490,90 @@ export default function CommandCenterHome() {
         ? `${dailyCommandConfirmedSymbolLabel} 已有本地回放线索；${homeQuantP1P2P3CheckpointLabel}；需要更新时再手动点击确认按钮。`
         : "本地联通已 ready；先在首页输入股票代码并点击确认，输入本身保持静默。"
       : "P0 本地联通还没全部 ready；先看一键启动预检，等 FastAPI、bootstrap、desktop preflight 和 React 变绿。";
-  const ordinaryHomeCurrentSymbol = homeQuantSymbolValidation.valid
-    ? homeQuantSymbolValidation.normalized
-    : dailyCommandConfirmedSymbol || ordinaryHomeStorageCurrentSymbol || "待输入";
-  const ordinaryHomeConfirmedSymbolNormalized = (dailyCommandConfirmedSymbol || ordinaryHomeStorageCurrentSymbol).trim().toUpperCase();
-  const ordinaryHomeUserEditedNewSymbol =
-    homeQuantSymbolTouched &&
-    Boolean(homeQuantSymbol.trim()) &&
-    (!homeQuantSymbolValidation.valid ||
-      homeQuantSymbolValidation.normalized !== ordinaryHomeConfirmedSymbolNormalized);
-  const ordinaryHomeExpectedTradeDateNormalized = normalizedHomeResultDate(ordinaryHomeExpectedTradeDate);
-  const ordinaryHomeConfirmedSymbolForBinding = dailyCommandConfirmedSymbol.trim().toUpperCase();
-  const ordinaryHomeCandidateCurrentBinding: OrdinaryHomeResultBinding = {
-    source: "candidate",
-    symbol: homeText(
-      candidateQuantResultVersionSummary.current_result_symbol ?? candidateQuantCurrentResultLineage.symbol,
-      ""
-    ).toUpperCase(),
-    taskId: homeText(
-      candidateQuantResultVersionSummary.current_result_task_id ?? candidateQuantCurrentResultLineage.task_id,
-      ""
-    ),
-    resultVersion: homeText(
-      candidateQuantResultVersionSummary.current_result_version ?? candidateQuantCurrentResultLineage.result_version,
-      ""
-    ),
-    dataDate: normalizedHomeResultDate(
-      candidateQuantResultVersionSummary.current_result_data_date ?? candidateQuantCurrentResultLineage.data_date
-    ),
-    freshness: normalizedHomeResultFreshness(
-      candidateQuantResultVersionSummary.current_result_freshness_state ?? candidateQuantCurrentResultLineage.freshness_state
-    ),
-  };
-  const ordinaryHomeCandidateCanonicalBinding: OrdinaryHomeResultBinding = {
-    source: "candidate",
-    symbol: homeText(
-      candidateQuantResultVersionSummary.canonical_symbol ?? candidateQuantResultLineage.symbol,
-      ""
-    ).toUpperCase(),
-    taskId: homeText(
-      candidateQuantResultVersionSummary.canonical_task_id ??
-        candidateQuantResultLineage.canonical_result_task_id ??
-        candidateQuantResultLineage.task_id,
-      ""
-    ),
-    resultVersion: homeText(
-      candidateQuantResultVersionSummary.canonical_result_version ?? candidateQuantResultLineage.result_version,
-      ""
-    ),
-    dataDate: normalizedHomeResultDate(
-      candidateQuantResultVersionSummary.canonical_data_date ?? candidateQuantResultLineage.data_date
-    ),
-    freshness: normalizedHomeResultFreshness(
-      candidateQuantResultVersionSummary.canonical_freshness_state ?? candidateQuantResultLineage.freshness_state
-    ),
-  };
-  const ordinaryHomeCandidateCurrentBindingComplete = Boolean(
-    ordinaryHomeCandidateCurrentBinding.symbol &&
-    ordinaryHomeCandidateCurrentBinding.taskId &&
-    ordinaryHomeCandidateCurrentBinding.resultVersion &&
-    ordinaryHomeCandidateCurrentBinding.dataDate &&
-    ordinaryHomeCandidateCurrentBinding.freshness
+  const ordinaryHomeConfirmedSymbolNormalized = dailyCommandConfirmedSymbol;
+  const ordinaryHomeUserEditedNewSymbol = hasUnconfirmedHomeSymbolEdit({
+    touched: homeQuantSymbolTouched,
+    raw: homeQuantSymbol,
+    valid: homeQuantSymbolValidation.valid,
+    normalized: homeQuantSymbolValidation.normalized,
+    confirmedSymbol: ordinaryHomeConfirmedSymbolNormalized,
+  });
+  const ordinaryHomeCurrentSymbol = ordinaryHomeUserEditedNewSymbol
+    ? homeQuantSymbolValidation.normalized || homeQuantSymbol.trim().toUpperCase() || "待输入"
+    : homeQuantSymbolValidation.valid
+      ? homeQuantSymbolValidation.normalized
+      : dailyCommandConfirmedSymbol || ordinaryHomeStorageCurrentSymbol || "待输入";
+  const ordinaryHomeExpectedTradeDateNormalized = strictHomeResultDate(
+    ordinaryHomeExpectedTradeDate,
+    { allowIsoDate: true },
   );
-  const ordinaryHomeCandidateCanonicalBindingComplete = Boolean(
-    ordinaryHomeCandidateCanonicalBinding.symbol &&
-    ordinaryHomeCandidateCanonicalBinding.taskId &&
-    ordinaryHomeCandidateCanonicalBinding.resultVersion &&
-    ordinaryHomeCandidateCanonicalBinding.dataDate &&
-    ordinaryHomeCandidateCanonicalBinding.freshness
+  const ordinaryHomeConfirmedSymbolForBinding = dailyCommandConfirmedSymbol;
+  const ordinaryHomeCandidateCurrentSummaryBinding = makeStrictHomeResultBinding(
+    candidateQuantResultVersionSummary,
+    {
+      symbol: "current_result_symbol",
+      taskId: "current_result_task_id",
+      resultVersion: "current_result_version",
+      dataDate: "current_result_data_date",
+      freshness: "current_result_freshness_state",
+    },
+    "candidate",
   );
-  const ordinaryHomeCandidateBinding = ordinaryHomeCandidateCurrentBindingComplete
-    ? ordinaryHomeCandidateCurrentBinding
-    : ordinaryHomeCandidateCanonicalBindingComplete
-      ? ordinaryHomeCandidateCanonicalBinding
-      : null;
-  const ordinaryHomeStorageBinding: OrdinaryHomeResultBinding = {
-    source: "storage",
-    symbol: ordinaryHomeStorageCurrentSymbol,
-    taskId: homeText(storageCurrentResult.source_result_task_id, ""),
-    resultVersion: ordinaryHomeStorageCurrentVersion,
-    dataDate: normalizedHomeResultDate(ordinaryHomeStorageCurrentDataDate),
-    freshness: normalizedHomeResultFreshness(ordinaryHomeStorageCurrentFreshness),
-  };
-  const ordinaryHomeStorageBindingComplete = Boolean(
-    ordinaryHomeStorageBinding.symbol &&
-    ordinaryHomeStorageBinding.taskId &&
-    ordinaryHomeStorageBinding.resultVersion &&
-    ordinaryHomeStorageBinding.dataDate &&
-    ordinaryHomeStorageBinding.freshness
+  const ordinaryHomeCandidateCurrentLineageBinding = makeStrictHomeResultBinding(
+    candidateQuantCurrentResultLineage,
+    {
+      symbol: "symbol",
+      taskId: "task_id",
+      resultVersion: "result_version",
+      dataDate: "data_date",
+      freshness: "freshness_state",
+    },
+    "candidate",
   );
+  const ordinaryHomeCandidateCurrentResolution = selectMatchingHomeResultBinding([
+    ordinaryHomeCandidateCurrentSummaryBinding,
+    ordinaryHomeCandidateCurrentLineageBinding,
+  ]);
+  const ordinaryHomeCandidateCanonicalSummaryBinding = makeStrictHomeResultBinding(
+    candidateQuantResultVersionSummary,
+    {
+      symbol: "canonical_symbol",
+      taskId: "canonical_result_task_id",
+      resultVersion: "canonical_result_version",
+      dataDate: "canonical_data_date",
+      freshness: "canonical_freshness_state",
+    },
+    "candidate",
+  );
+  const ordinaryHomeCandidateCanonicalLineageBinding = makeStrictHomeResultBinding(
+    candidateQuantResultLineage,
+    {
+      symbol: "symbol",
+      taskId: "canonical_result_task_id",
+      resultVersion: "result_version",
+      dataDate: "data_date",
+      freshness: "freshness_state",
+    },
+    "candidate",
+  );
+  const ordinaryHomeCandidateCanonicalResolution = selectMatchingHomeResultBinding([
+    ordinaryHomeCandidateCanonicalSummaryBinding,
+    ordinaryHomeCandidateCanonicalLineageBinding,
+  ]);
+  const ordinaryHomeCandidateResolution = selectMatchingHomeResultBinding([
+    ordinaryHomeCandidateCurrentResolution.binding,
+    ordinaryHomeCandidateCanonicalResolution.binding,
+  ]);
+  const ordinaryHomeCandidateIdentityConflict =
+    ordinaryHomeCandidateCurrentResolution.conflict ||
+    ordinaryHomeCandidateCanonicalResolution.conflict ||
+    ordinaryHomeCandidateResolution.conflict;
+  const ordinaryHomeCandidateBinding = ordinaryHomeCandidateIdentityConflict
+    ? null
+    : ordinaryHomeCandidateResolution.binding;
   const ordinaryHomeBindingMatchesConfirmedChain = (binding: OrdinaryHomeResultBinding) =>
     Boolean(
+      !dailyCommandConfirmedChainConflict &&
       ordinaryHomeConfirmedSymbolForBinding &&
       dailyCommandConfirmedSourceTaskId &&
       binding.symbol === ordinaryHomeConfirmedSymbolForBinding &&
@@ -2606,19 +2595,22 @@ export default function CommandCenterHome() {
   );
   const ordinaryHomeStorageBindingReady = Boolean(
     ordinaryHomeStorageCurrentReadable &&
-    ordinaryHomeStorageBindingComplete &&
+    ordinaryHomeStorageBinding &&
     ordinaryHomeBindingMatchesConfirmedChain(ordinaryHomeStorageBinding) &&
     ordinaryHomeBindingIsCurrent(ordinaryHomeStorageBinding)
   );
   const ordinaryHomeCandidateStorageConflict = Boolean(
-    dailyCommandP3OneGlanceReadable &&
     ordinaryHomeCandidateBinding &&
     ordinaryHomeStorageCurrentReadable &&
-    ordinaryHomeStorageBindingComplete &&
+    ordinaryHomeStorageBinding &&
     !sameOrdinaryHomeResultBinding(ordinaryHomeCandidateBinding, ordinaryHomeStorageBinding)
   );
+  const ordinaryHomeResultIdentityConflict =
+    dailyCommandConfirmedChainConflict ||
+    ordinaryHomeCandidateIdentityConflict ||
+    ordinaryHomeCandidateStorageConflict;
   const ordinaryHomeAuthoritativeResultBinding: OrdinaryHomeResultBinding | null =
-    ordinaryHomeCandidateStorageConflict
+    ordinaryHomeResultIdentityConflict
       ? null
       : ordinaryHomeCandidateBindingReady && ordinaryHomeCandidateBinding
         ? ordinaryHomeCandidateBinding
@@ -2839,21 +2831,6 @@ export default function CommandCenterHome() {
       : ordinaryHomeNextLabel;
   const ordinaryHomeRecoveryAuditNote =
     "一键启动排障补充：失败时先运行 scripts/check_command_center_3.command 做 check-only 安全自检，不启动服务、不外联。";
-  const ordinaryHomeConfirmStatusLine = homeQuantSubmitting
-    ? "确认中：正在启动本地数据链，稍后自动回读结果。"
-    : homeQuantSubmitError
-      ? "确认失败：请先检查本地连接，再重新确认。"
-    : ordinaryHomeReadableResultReady
-      ? "已有结果：可以直接查看股票量化推演和次日图谱。"
-    : homeQuantTaskId || homeQuantVisibleTaskId
-      ? "已确认：本地数据正在回读，稍后刷新结果。"
-    : dailyCommandP2ThreeSurfaceReady
-      ? "本地数据已齐：等待可解释结论刷新。"
-    : dailyCommandP0LocalReadinessReady
-      ? "准备就绪：输入股票代码后点击确认。"
-      : dailyCommandHealthOk
-        ? "只读可用：可以查看本地缓存、最近结果和入口；确认按钮仍等待 P0 四段证据。"
-        : "待恢复：先把本地连接接上。";
   const ordinaryHomeStatusBadge = dailyCommandHealthOk
     ? "本地已接上"
     : dailyCommandP0ReadbackPending
@@ -4531,8 +4508,8 @@ export default function CommandCenterHome() {
         ? `${ordinaryHomeEditedSymbolLabel} 尚未确认；旧标的结果不会套用到新输入。`
         : !ordinaryHomeFreshnessIsFresh
         ? `${ordinaryHomeCurrentSymbol === "待输入" ? "当前标的" : ordinaryHomeCurrentSymbol} 的交易日历或数据日期未通过新鲜度验证，本轮不按今日数据展示。`
-        : ordinaryHomeCandidateStorageConflict
-          ? "Candidate 与 Storage 的结果身份不一致；本轮不展示结论，请刷新本地结果。"
+        : ordinaryHomeResultIdentityConflict
+          ? "本地结果与确认链的身份不一致；本轮不展示结论，请刷新本地结果。"
         : ordinaryHomeFirstScreenResultReady
           ? `${ordinaryHomeFirstScreenBinding?.symbol ?? "当前标的"} 已有同标的、同任务、同版本且日期已验证的最近投研结果；先看来源和缺口，再看量化推演与次日图谱。`
           : `${ordinaryHomeCurrentSymbol === "待输入" ? "当前标的" : ordinaryHomeCurrentSymbol} 暂无可验证的最近结论；先确认股票或等待本地结果回放。`;
@@ -4544,7 +4521,7 @@ export default function CommandCenterHome() {
         ? "等待确认新标的"
         : !ordinaryHomeFreshnessIsFresh
         ? "数据未验证"
-        : ordinaryHomeCandidateStorageConflict
+        : ordinaryHomeResultIdentityConflict
           ? "结果身份不一致"
         : ordinaryHomeFirstScreenResultReady
           ? "最近结论可读"
@@ -4559,7 +4536,7 @@ export default function CommandCenterHome() {
           ? "freshness"
           : ordinaryHomeFirstScreenResultReady
             ? "result"
-            : homeQuantTaskId || homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady || ordinaryHomeCandidateStorageConflict
+            : homeQuantTaskId || homeQuantVisibleTaskId || dailyCommandP2ThreeSurfaceReady || ordinaryHomeResultIdentityConflict
               ? "refresh"
               : "confirm";
   const ordinaryHomeFirstScreenActionText = ordinaryHomeFirstScreenActionKind === "wait"
@@ -4594,6 +4571,29 @@ export default function CommandCenterHome() {
   const ordinaryHomeFirstScreenActionDisabled = ordinaryHomeFirstScreenActionKind === "wait" ||
     (ordinaryHomeFirstScreenActionKind === "refresh" ? homeQuantReadbackRefreshing :
       ordinaryHomeFirstScreenActionKind === "confirm" ? !homeQuantCanSubmit : false);
+  const ordinaryHomeConfirmStatusLine = homeQuantSubmitting
+    ? "确认中：正在启动本地数据链，稍后自动回读结果。"
+    : homeQuantSubmitError
+      ? "确认失败：请先检查本地连接，再重新确认。"
+      : ordinaryHomeUserEditedNewSymbol
+        ? homeQuantSymbolValidation.valid
+          ? `${ordinaryHomeEditedSymbolLabel} 尚未确认；确认前不显示旧标的结果。`
+          : "等待有效股票代码；当前输入未确认，旧标的结果保持退出。"
+        : !ordinaryHomeFreshnessIsFresh
+          ? "数据日期尚未验证；本轮不提供结果入口。"
+          : ordinaryHomeResultIdentityConflict
+            ? "结果身份不一致；刷新并重新核对本地结果。"
+            : ordinaryHomeFirstScreenResultReady
+              ? `${ordinaryHomeFirstScreenBinding?.symbol ?? "当前标的"} 的同源结果已验证，可以查看量化推演和次日图谱。`
+              : homeQuantTaskId || homeQuantVisibleTaskId
+                ? "已确认：本地数据正在回读，稍后刷新结果。"
+                : dailyCommandP2ThreeSurfaceReady
+                  ? "本地数据已齐：等待同源结论验证。"
+                  : dailyCommandP0LocalReadinessReady
+                    ? "准备就绪：输入股票代码后点击确认。"
+                    : dailyCommandHealthOk
+                      ? "只读入口可用；先确认股票，再等待同源结果。"
+                      : "待恢复：先把本地连接接上。";
 
   return (
     <div className="route-cache-loading-shell" data-route-cache-loading={loading ? "true" : "false"} data-route-cache-ready={initialLayoutReady ? "true" : "false"} data-route-cache-degraded={Boolean(error) ? "true" : "false"} aria-busy={loading} data-ltg10-component-id="CommandCenterHome">
