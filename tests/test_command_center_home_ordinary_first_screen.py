@@ -43,8 +43,49 @@ class CommandCenterHomeOrdinaryFirstScreenTests(unittest.TestCase):
     def test_stale_or_unverified_data_fails_closed(self) -> None:
         self.assertIn("!ordinaryHomeFreshnessIsFresh", self.source)
         self.assertIn("本轮不按今日数据展示", self.source)
-        self.assertIn('ordinaryHomeFirstScreenActionHref = !dailyCommandNeedsStartupRecovery && !ordinaryHomeFreshnessIsFresh', self.source)
+        self.assertIn('ordinaryHomeFirstScreenActionKind === "freshness"', self.source)
         self.assertIn('"#dataHealth"', self.source)
+
+    def test_result_binding_is_single_source_current_and_fail_closed(self) -> None:
+        binding_start = self.source.index("const ordinaryHomeCandidateCurrentBinding")
+        binding_end = self.source.index("const ordinaryHomeLocalDataSourceContract", binding_start)
+        binding = self.source[binding_start:binding_end]
+
+        for field in (
+            "current_result_symbol",
+            "current_result_task_id",
+            "current_result_version",
+            "current_result_data_date",
+            "current_result_freshness_state",
+            "source_result_task_id",
+            "ordinaryHomeExpectedTradeDateNormalized",
+            "ordinaryHomeCalendarValidated",
+            "dailyCommandConfirmedSourceTaskId",
+            "ordinaryHomeCandidateStorageConflict",
+            "sameOrdinaryHomeResultBinding",
+        ):
+            self.assertIn(field, binding)
+        self.assertIn("ORDINARY_HOME_CURRENT_FRESHNESS_STATES.has(binding.freshness)", binding)
+        self.assertIn("binding.symbol === ordinaryHomeConfirmedSymbolForBinding", binding)
+        self.assertIn("binding.taskId === dailyCommandConfirmedSourceTaskId", binding)
+        self.assertIn("binding.dataDate === ordinaryHomeExpectedTradeDateNormalized", binding)
+        self.assertNotIn(
+            "dailyCommandP3OneGlanceReadable || ordinaryHomeStorageCurrentReadable",
+            binding,
+        )
+
+    def test_new_unconfirmed_symbol_cannot_inherit_an_old_result(self) -> None:
+        first_screen_start = self.source.index("const ordinaryHomeFirstScreenBinding")
+        first_screen_end = self.source.index("return (", first_screen_start)
+        first_screen = self.source[first_screen_start:first_screen_end]
+
+        self.assertIn("ordinaryHomeUserEditedNewSymbol\n    ? null", first_screen)
+        self.assertIn("!homeQuantSymbolValidation.valid", self.source)
+        self.assertIn("尚未确认；旧标的结果不会套用到新输入", first_screen)
+        self.assertNotIn("ordinaryHomePlainConclusionText", first_screen)
+        self.assertIn("ordinaryHomeFirstScreenBinding?.symbol", first_screen)
+        self.assertIn('ordinaryHomeFirstScreenActionKind === "result"', first_screen)
+        self.assertIn('ordinaryHomeFirstScreenActionKind === "refresh"', first_screen)
 
     def test_input_is_silent_and_only_primary_action_reuses_existing_handlers(self) -> None:
         self.assertIn('id="home-p1-symbol-confirm"', self.visible)
