@@ -2290,9 +2290,9 @@ async function runQa(args) {
           throw new Error(`${stage}: attempted to close a stale or already closed network session`);
         }
         await waitForSessionIdle(session, stage);
-        closedSessions.add(session.session_id);
         await page.waitForTimeout(50);
-        await assertNetworkBoundary(`${stage}:sealed`, session);
+        await waitForSessionIdle(session, `${stage}:sealed`);
+        closedSessions.add(session.session_id);
       };
       if (typeof context.routeWebSocket !== "function") throw new Error("Playwright WebSocket routing is required for fail-closed motion QA");
       await context.routeWebSocket("**/*", socketRoute => {
