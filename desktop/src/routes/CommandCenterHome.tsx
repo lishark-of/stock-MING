@@ -9,6 +9,7 @@ import RouteCacheLoadingOverlay from "../components/RouteCacheLoadingBoundary";
 import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
+import "./CommandCenterHome.css";
 
 const LIVE_BOOTSTRAP_SESSION_KEY = "command_center_3_live_bootstrap_session_key";
 const DATA_CAPABILITY_HREF = "#dataCapability";
@@ -4361,6 +4362,51 @@ export default function CommandCenterHome() {
     });
   };
 
+  const ordinaryHomeFirstScreenResultReady = ordinaryHomeFreshnessIsFresh && ordinaryHomeReadableResultReady;
+  const ordinaryHomeFirstScreenConclusion = loading
+    ? "正在读取本地市场与数据状态，暂不生成结论。"
+    : !dailyCommandHealthOk
+      ? "本地连接尚未就绪，暂不展示投研结论。"
+      : !ordinaryHomeFreshnessIsFresh
+        ? `${ordinaryHomeCurrentSymbol === "待输入" ? "当前标的" : ordinaryHomeCurrentSymbol} 的交易日历或数据日期未通过新鲜度验证，本轮不按今日数据展示。`
+        : ordinaryHomeFirstScreenResultReady
+          ? ordinaryHomePlainConclusionText
+          : `${ordinaryHomeCurrentSymbol === "待输入" ? "当前标的" : ordinaryHomeCurrentSymbol} 暂无可验证的最近结论；先确认股票或等待本地结果回放。`;
+  const ordinaryHomeFirstScreenConclusionState = loading
+    ? "本地读取中"
+    : !dailyCommandHealthOk
+      ? "本地未就绪"
+      : !ordinaryHomeFreshnessIsFresh
+        ? "数据未验证"
+        : ordinaryHomeFirstScreenResultReady
+          ? "最近结论可读"
+          : "等待确认或结果";
+  const ordinaryHomeFirstScreenActionKind = loading
+    ? "wait"
+    : dailyCommandNeedsStartupRecovery
+      ? "link"
+      : ordinaryHomeUserEditedNewSymbol
+        ? "confirm"
+        : !ordinaryHomeFreshnessIsFresh
+          ? "link"
+          : ordinaryHomePrimaryActionKind;
+  const ordinaryHomeFirstScreenActionText = ordinaryHomeFirstScreenActionKind === "wait"
+    ? "读取本地状态..."
+    : ordinaryHomeFirstScreenActionKind === "link" && !dailyCommandNeedsStartupRecovery && !ordinaryHomeFreshnessIsFresh
+      ? "查看数据健康"
+      : ordinaryHomePrimaryActionText;
+  const ordinaryHomeFirstScreenActionHref = !dailyCommandNeedsStartupRecovery && !ordinaryHomeFreshnessIsFresh
+    ? "#dataHealth"
+    : ordinaryHomeNextHref;
+  const ordinaryHomeFirstScreenActionTitle = ordinaryHomeFirstScreenActionKind === "wait"
+    ? "等待本地只读状态完成"
+    : !dailyCommandNeedsStartupRecovery && !ordinaryHomeFreshnessIsFresh
+      ? "查看数据日期、交易日历与新鲜度；只读本地缓存"
+      : ordinaryHomePrimaryActionTitle;
+  const ordinaryHomeFirstScreenActionDisabled = ordinaryHomeFirstScreenActionKind === "wait" ||
+    (ordinaryHomeFirstScreenActionKind === "refresh" ? homeQuantReadbackRefreshing :
+      ordinaryHomeFirstScreenActionKind === "confirm" ? !homeQuantCanSubmit : false);
+
   return (
     <div className="route-cache-loading-shell" data-route-cache-loading={loading ? "true" : "false"} data-route-cache-ready={initialLayoutReady ? "true" : "false"} data-route-cache-degraded={Boolean(error) ? "true" : "false"} aria-busy={loading} data-ltg10-component-id="CommandCenterHome">
       <RouteCacheLoadingOverlay loading={loading} />
@@ -4371,6 +4417,97 @@ export default function CommandCenterHome() {
         </div>
         <StatusBadge label={dailyCommandStatusLabel} tone={dailyCommandHealthOk ? "good" : "warn"} />
       </div>
+      <section className="home-ordinary-dashboard" aria-label="今日作战台普通用户首屏">
+        <div className="home-ordinary-hero">
+          <div className="home-ordinary-hero-meta">
+            <span className="home-ordinary-kicker">TODAY'S RESEARCH DESK</span>
+            <span className={`home-ordinary-state ${ordinaryHomeFirstScreenResultReady ? "is-ready" : "is-guarded"}`}>
+              {ordinaryHomeFirstScreenConclusionState}
+            </span>
+          </div>
+          <div className="home-ordinary-context" aria-label="当前标的与市场日期">
+            <div>
+              <small>当前标的</small>
+              <strong>{ordinaryHomeCurrentSymbol}</strong>
+            </div>
+            <div>
+              <small>数据日期</small>
+              <strong>{ordinaryHomeDataDate || "待确认"}</strong>
+            </div>
+            <div>
+              <small>AS-OF</small>
+              <strong>{ordinaryHomeAsOfDate || ordinaryHomeExpectedTradeDate || "待确认"}</strong>
+            </div>
+          </div>
+          <div className="home-ordinary-conclusion" aria-live="polite">
+            <small>当前结论</small>
+            <p>{ordinaryHomeFirstScreenConclusion}</p>
+          </div>
+        </div>
+
+        <div className="home-ordinary-controls">
+          <div className="home-ordinary-input-block">
+            <label htmlFor="home-ordinary-symbol-input">确认研究标的</label>
+            <div className="home-ordinary-input-row" id="home-p1-symbol-confirm">
+              <input
+                id="home-ordinary-symbol-input"
+                value={homeQuantSymbol}
+                onChange={(event) => {
+                  setHomeQuantSymbolTouched(true);
+                  setHomeQuantSymbol(event.target.value);
+                  setHomeQuantSubmitError("");
+                }}
+                placeholder="002008.SZ 或 002008"
+                aria-label="ordinary home stock symbol"
+                title="输入只做本地校验"
+              />
+              {ordinaryHomeFirstScreenActionKind === "link" ? (
+                <a
+                  className="home-ordinary-primary-action"
+                  href={ordinaryHomeFirstScreenActionHref}
+                  title={ordinaryHomeFirstScreenActionTitle}
+                  aria-label="open ordinary home next action"
+                >{ordinaryHomeFirstScreenActionText}</a>
+              ) : (
+                <button
+                  className="home-ordinary-primary-action"
+                  disabled={ordinaryHomeFirstScreenActionDisabled}
+                  onClick={ordinaryHomeFirstScreenActionKind === "refresh" ? refreshHomeResearchReadback : launchHomeQuantProjection}
+                  title={ordinaryHomeFirstScreenActionTitle}
+                  aria-label="run ordinary home next action"
+                >{ordinaryHomeFirstScreenActionText}</button>
+              )}
+            </div>
+            <p className="home-ordinary-input-note" aria-live="polite">
+              {homeQuantSubmitError ? "确认失败：请检查本地连接后重试。" : ordinaryHomeConfirmStatusLine}
+            </p>
+          </div>
+
+          <div className="home-ordinary-freshness" data-freshness={ordinaryHomeFreshnessLabel}>
+            <div>
+              <small>市场与新鲜度</small>
+              <strong>{ordinaryHomeFreshnessIsFresh ? "日期已验证" : "暂不按今日数据展示"}</strong>
+            </div>
+            <p>{ordinaryHomeFreshnessExplanation}</p>
+            <span>交易日历 {ordinaryHomeCalendarValidated ? "已验证" : "未验证"} · 缓存年龄 {ordinaryHomeFreshnessAgeDays ? `${ordinaryHomeFreshnessAgeDays} 天` : "待确认"}</span>
+          </div>
+        </div>
+
+        <div className="home-ordinary-safety" role="note">
+          <span aria-hidden="true" />
+          页面打开、输入与切换页面只读取本地状态；只有明确点击确认按钮才进入既有数据链。仅作研究辅助，不下单、不改交易策略。
+        </div>
+      </section>
+
+      <details
+        className="home-research-technical-details developer-audit-details"
+        aria-label="daily command research assist audit details"
+        onToggle={(event) => {
+          if (event.currentTarget.open) setAuditReadbackRequested(true);
+        }}
+      >
+        <summary>研究与技术详情</summary>
+        <p className="risk-note">数据血缘、任务回执、P0–P6、LTG、工程矩阵和完整审计默认收起；普通使用只需查看上方五类信息。</p>
       <PacketCard title="今日可用" subtitle="普通首页只看能不能用、看哪只票、有没有结果、下一步点哪里" status={ordinaryHomeStatusBadge}>
         <div className="home-primary-status-stability-frame">
           <div className="home-status-metrics-stability-slot">
@@ -4388,7 +4525,7 @@ export default function CommandCenterHome() {
           </div>
         </div>
         <p className="ordinary-status-note" aria-label="ordinary home input confirm first sentence">输入确认速读：输入只做本地校验；确认后看最近结果、候选池、ETF/融资、股票量化推演和次日图谱。</p>
-        <div id="home-p1-symbol-confirm" className="actions" aria-label="daily command ordinary home primary controls">
+        <div id="home-p1-symbol-confirm-technical-copy" className="actions" aria-label="daily command ordinary home primary controls">
           <input
             value={homeQuantSymbol}
             onChange={(event) => {
@@ -4578,17 +4715,9 @@ export default function CommandCenterHome() {
         </div>
         </details>
       </PacketCard>
-      <details
-        className="developer-audit-details"
-        aria-label="daily command research assist audit details"
-        onToggle={(event) => {
-          if (event.currentTarget.open) setAuditReadbackRequested(true);
-        }}
-      >
-        <summary>研究辅助 / 审计详情</summary>
-        {/* Regression guard: 先看下一步、数据来源、缺少证据和仅供研究边界。 */}
-        <p className="risk-note">这里保留任务编号、数据凭证、结果包、边界说明和模型治理状态；普通使用先看上方“今日可用”。</p>
-        <p className="risk-note">{ordinaryHomeRecoveryAuditNote}</p>
+      {/* Regression guard: 先看下一步、数据来源、缺少证据和仅供研究边界。 */}
+      <p className="risk-note">这里保留任务编号、数据凭证、结果包、边界说明和模型治理状态；普通使用先看上方首屏。</p>
+      <p className="risk-note">{ordinaryHomeRecoveryAuditNote}</p>
       <PageStateBanner
         loading={loading}
         error={error}
@@ -5272,7 +5401,6 @@ export default function CommandCenterHome() {
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate、runtime mode 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
       </details>
-      </details>
       <details className="developer-audit-details">
         <summary>开发 / 审计详情</summary>
         <p>详细验收记录、开发表格和排障明细默认收起；普通用户先看上方 P0 联通、P1 确认、P2 三面、P3 可解释结果和最近确认进度。</p>
@@ -5522,6 +5650,7 @@ export default function CommandCenterHome() {
           <p>redis pinged: {String(workerRuntime.redis_pinged ?? false)}</p>
         </PacketCard>
       </div>
+      </details>
       </details>
     </div>
   );

@@ -461,7 +461,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         visible_start = source.index('aria-label="ordinary home app visible now summary"', card_start)
         controls_start = source.index('aria-label="daily command ordinary home primary controls"', card_start)
         recent_start = source.index('aria-label="ordinary home first screen recent result read"', card_start)
-        audit_start = source.index('aria-label="daily command research assist audit details"')
+        audit_start = source.index("</PacketCard>", card_start)
         controls_slice = source[controls_start:visible_start]
         visible_slice = source[visible_start:recent_start]
         source_before_audit = source[:audit_start]
@@ -959,7 +959,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
     def test_ordinary_home_first_card_shows_result_routes_without_task_trigger(self):
         source = self.source
         card_start = source.index('title="今日可用"')
-        card_end = source.index('aria-label="daily command research assist audit details"', card_start)
+        card_end = source.index("</PacketCard>", card_start)
         card = source[card_start:card_end]
         recent_result_start = card.index('aria-label="ordinary home first screen recent result read"')
         tushare_data_card_start = card.index('aria-label="ordinary home first screen tushare data card"', recent_result_start)
@@ -1172,7 +1172,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
     def test_ordinary_home_user_route_qa_quick_read_is_visible_and_read_only(self):
         source = self.source
         card_start = source.index('title="今日可用"')
-        card_end = source.index('aria-label="daily command research assist audit details"', card_start)
+        card_end = source.index("</PacketCard>", card_start)
         card = source[card_start:card_end]
         route_map_start = card.index('aria-label="ordinary home first screen research route map"')
         qa_start = card.index('aria-label="ordinary home user route qa quick read"', route_map_start)
@@ -1243,7 +1243,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
     def test_ordinary_home_first_card_shows_post_confirm_status_without_second_task(self):
         source = self.source
         card_start = source.index('title="今日可用"')
-        card_end = source.index('aria-label="daily command research assist audit details"', card_start)
+        card_end = source.index("</PacketCard>", card_start)
         card = source[card_start:card_end]
         status_start = card.index('aria-label="ordinary home first screen post confirm status"')
         route_start = card.index('aria-label="ordinary home first screen result route"')
