@@ -26,9 +26,15 @@ function displayText(value: unknown, fallback = "--") {
   return String(value);
 }
 
-function candidateFreshnessPresentation(value: unknown, localDataReadable: boolean) {
+function candidateFreshnessPresentation(
+  value: unknown,
+  localDataReadable: boolean,
+  calendarValidated: boolean,
+  dataDate: unknown,
+  expectedTradeDate: unknown
+) {
   const normalized = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  const currentStates = new Set(["fresh", "today", "current", "ready", "up_to_date", "validated_current"]);
+  const currentStates = new Set(["fresh", "today", "current"]);
   const staleStates = new Set(["stale", "expired", "old", "outdated"]);
   const waitingStates = new Set([
     "not_ready",
@@ -41,11 +47,23 @@ function candidateFreshnessPresentation(value: unknown, localDataReadable: boole
     "unknown"
   ]);
 
-  if (currentStates.has(normalized)) return { label: "数据已更新", tone: "good" };
+  const normalizedDataDate = String(dataDate ?? "").replace(/[^0-9]/g, "");
+  const normalizedExpectedDate = String(expectedTradeDate ?? "").replace(/[^0-9]/g, "");
+  const dateMatchesExpected = Boolean(normalizedDataDate && normalizedExpectedDate) &&
+    normalizedDataDate === normalizedExpectedDate;
+
+  if (currentStates.has(normalized) && calendarValidated && dateMatchesExpected) {
+    return { label: "数据已更新", tone: "good" };
+  }
   if (staleStates.has(normalized) || normalized.startsWith("stale_") || normalized.startsWith("expired_")) {
     return { label: "数据偏旧", tone: "warn" };
   }
-  if (waitingStates.has(normalized) || normalized.includes("not_ready") || normalized.endsWith("_blocked")) {
+  if (
+    currentStates.has(normalized) ||
+    waitingStates.has(normalized) ||
+    normalized.includes("not_ready") ||
+    normalized.endsWith("_blocked")
+  ) {
     return { label: localDataReadable ? "数据状态待确认" : "等待数据", tone: "warn" };
   }
   return { label: localDataReadable ? "本地数据可读" : "等待数据", tone: "neutral" };
@@ -5887,7 +5905,7 @@ export default function CandidateRadar() {
     deepScanPlan.status === "deep_scan_plan_ready" ? "深研清单已准备" : "等待整理深研清单";
   const empty = !loading && !error && !Object.keys(cache).length;
   const quantProjectionRecentResultActionTitle = `查看 ${quantProjectionSymbolValidation.normalized || "当前标的"} 最近结果；不创建新任务、不调用 Tushare/DeepSeek、不交易`;
-  const renderQuantProjectionPrimaryAction = (describedBy: string) =>
+  const renderQuantProjectionPrimaryAction = (describedBy: string, includeStorageReplay = true) =>
     quantProjectionUseRecentResultInsteadOfSubmit ? (
       <>
         <a
@@ -5896,12 +5914,14 @@ export default function CandidateRadar() {
           aria-label={quantProjectionRecentResultActionTitle}
           aria-describedby={describedBy}
         >查看最近结果</a>
-        <a
-          href="#storage"
-          title="查看本地 current/last-good 版本化回放；只读 storage current-result，不创建新任务"
-          aria-label="open storage current last good from candidate recent result primary action"
-          aria-describedby={describedBy}
-        >current/last-good</a>
+        {includeStorageReplay ? (
+          <a
+            href="#storage"
+            title="查看本地 current/last-good 版本化回放；只读 storage current-result，不创建新任务"
+            aria-label="open storage current last good from candidate recent result primary action"
+            aria-describedby={describedBy}
+          >current/last-good</a>
+        ) : null}
       </>
     ) : (
       <button
@@ -5917,7 +5937,10 @@ export default function CandidateRadar() {
   );
   const candidateFocusFreshness = candidateFreshnessPresentation(
     candidateFocusFreshnessRaw,
-    candidateRadarCacheGetReadable
+    candidateRadarCacheGetReadable,
+    freshnessState.expected_trade_date_calendar_validated === true || freshnessState.calendar_validated === true,
+    freshnessState.data_date ?? freshnessState.as_of_date ?? cache.data_date,
+    freshnessState.expected_trade_date
   );
   const candidateFocusFreshnessLabel = candidateFocusFreshness.label;
   const candidateFocusFreshnessTone = candidateFocusFreshness.tone;
@@ -5978,7 +6001,7 @@ export default function CandidateRadar() {
               inputMode="text"
             />
             <div className="candidate-focus-dashboard__primary-action">
-              {renderQuantProjectionPrimaryAction("candidate-focus-symbol-help")}
+              {renderQuantProjectionPrimaryAction("candidate-focus-symbol-help", false)}
             </div>
           </div>
           <p id="candidate-focus-symbol-help">

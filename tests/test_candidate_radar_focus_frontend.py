@@ -47,7 +47,8 @@ class CandidateRadarFocusFrontendTests(unittest.TestCase):
         focus_start = self.page.index('aria-label="下一票雷达简洁工作台"')
         details_start = self.page.index('aria-label="下一票雷达研究与审计详情"')
         focus = self.page[focus_start:details_start]
-        self.assertIn('renderQuantProjectionPrimaryAction("candidate-focus-symbol-help")', focus)
+        self.assertIn('renderQuantProjectionPrimaryAction("candidate-focus-symbol-help", false)', focus)
+        self.assertNotIn("current/last-good", focus)
         self.assertIn("输入只做本地校验，不会自动刷新外部数据", focus)
         self.assertNotIn("postCandidateRadar", focus)
         self.assertNotIn("launchQuickScan", focus)
@@ -61,6 +62,10 @@ class CandidateRadarFocusFrontendTests(unittest.TestCase):
         self.assertNotIn("\n:root {", self.styles)
         self.assertNotIn("overflow-wrap: anywhere", self.styles)
         self.assertIn("word-break: keep-all", self.styles)
+        self.assertIn("caret-color: #101828", self.styles)
+        self.assertIn("color: #101828 !important", self.styles)
+        self.assertIn("input::placeholder", self.styles)
+        self.assertIn("-webkit-text-fill-color: #7b8497", self.styles)
 
     def test_freshness_uses_exact_states_and_never_promotes_not_ready(self) -> None:
         helper_start = self.page.index("function candidateFreshnessPresentation")
@@ -73,6 +78,11 @@ class CandidateRadarFocusFrontendTests(unittest.TestCase):
         self.assertIn('"unready"', helper)
         self.assertIn('normalized.includes("not_ready")', helper)
         self.assertIn('"数据状态待确认"', helper)
+        self.assertIn('const currentStates = new Set(["fresh", "today", "current"]);', helper)
+        self.assertIn("calendarValidated && dateMatchesExpected", helper)
+        self.assertIn("normalizedDataDate === normalizedExpectedDate", helper)
+        self.assertNotIn('"ready"', helper)
+        self.assertNotIn('"up_to_date"', helper)
         self.assertNotIn("/(fresh|today|current|ready)/", self.page)
         self.assertIn("candidateFreshnessPresentation(", self.page)
 
