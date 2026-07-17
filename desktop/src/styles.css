@@ -26,6 +26,14 @@ body {
   margin: 0;
 }
 
+.content [id] {
+  scroll-margin-top: 12px;
+}
+
+.candidate-pool-compact-anchor {
+  min-height: 300px;
+}
+
 button {
   border: 1px solid #cbd5e1;
   background: #fff;
@@ -1749,6 +1757,10 @@ pre {
 
   .content [id] {
     scroll-margin-top: 237px;
+  }
+
+  .candidate-pool-compact-anchor {
+    min-height: 520px;
   }
 
   .page-head,
