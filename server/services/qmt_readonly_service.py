@@ -109,6 +109,9 @@ _CANONICAL_HIGH_RISK_PREFIXES = (
 )
 _CANONICAL_NESTED_EXECUTION_PREFIXES = (
     "external_",
+    "provider_",
+    "model_",
+    "worker_",
     "qmt_",
     "broker_",
     "account_",

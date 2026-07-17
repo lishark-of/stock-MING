@@ -1155,19 +1155,25 @@ class QmtReadonlyReplayTests(unittest.TestCase):
 
     def test_canonical_boundary_recurses_into_nested_business_evidence(self):
         self._use_real_canonical_validation()
-        self._seed_canonical_source()
         store = service.SQLiteMetaStore(self.db_path)
-        candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
-        candidate["business_evidence"] = {
-            "broker_audit": {
-                "status": "claimed_safe",
-                "broker_called": True,
-            }
+        nested_claims = {
+            "broker": {"broker_audit": {"status": "claimed_safe", "broker_called": True}},
+            "provider": {"provider_audit": {"provider_execution_enabled": True}},
+            "model": {"model_audit": {"model_execution_enabled": True}},
+            "worker": {"worker_audit": {"worker_execution_enabled": True}},
         }
-        store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
+        for label, business_evidence in nested_claims.items():
+            with self.subTest(label=label):
+                self._seed_canonical_source()
+                candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
+                candidate["business_evidence"] = business_evidence
+                store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
 
-        blocked = service.run_qmt_readonly_local_replay(_payload())
-        self.assertEqual(blocked["error_message_safe"], "canonical_candidate_packet_boundary_invalid")
+                blocked = service.run_qmt_readonly_local_replay(_payload())
+                self.assertEqual(
+                    blocked["error_message_safe"],
+                    "canonical_candidate_packet_boundary_invalid",
+                )
 
     def test_canonical_pool_runtime_chart_and_ledger_bindings_fail_closed(self):
         self._use_real_canonical_validation()
