@@ -196,9 +196,7 @@ export default function App() {
       if (target.closest('[data-route-cache-loading="true"]')) return false;
       target.scrollIntoView({ block: "start" });
       const routeShell = target.closest("[data-route-cache-loading]");
-      if (routeShell?.getAttribute("data-route-cache-settled") === "false") {
-        stopRetryTimers();
-      } else {
+      if (routeShell?.getAttribute("data-route-cache-settled") !== "false") {
         stopAnchorRetries();
       }
       return true;

@@ -20,7 +20,11 @@ class RouteCacheLoadingBoundaryTests(unittest.TestCase):
         self.assertIn('attributeFilter: ["data-route-cache-loading", "data-route-cache-settled"]', source)
         self.assertIn("attributes: true", source)
         self.assertIn("observerTimer = window.setTimeout(stopRetryTimers", source)
-        self.assertIn('routeShell?.getAttribute("data-route-cache-settled") === "false"', source)
+        self.assertIn('routeShell?.getAttribute("data-route-cache-settled") !== "false"', source)
+        self.assertNotIn(
+            'routeShell?.getAttribute("data-route-cache-settled") === "false") {\n        stopRetryTimers()',
+            source,
+        )
 
     def test_four_cache_routes_expose_fail_closed_ready_state(self) -> None:
         routes = {
