@@ -122,7 +122,8 @@ const TRUSTED_REACHABLE_SOURCE_PATHS = [
   "desktop/src/routes/CandidateRadar.css",
   "desktop/src/routes/FactorQuantHub.css",
   "desktop/src/routes/NextSessionMap.css",
-  "desktop/src/routes/nextSessionOrdinaryGate.ts"
+  "desktop/src/routes/nextSessionOrdinaryGate.ts",
+  "desktop/src/routes/MarginEtf.css"
 ];
 const FORBIDDEN_ORDINARY_URL_PATTERN = /(?:tauri:\/\/(?:localhost)?\/?#legacy|https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):8501(?:\/|$))/i;
 const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {

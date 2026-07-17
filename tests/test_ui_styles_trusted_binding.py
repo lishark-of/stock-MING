@@ -29,6 +29,8 @@ class UiStylesTrustedBindingTests(unittest.TestCase):
         self.assertNotIn('import "./FactorQuantHub.css";', factor)
         next_session = (ROOT / "desktop/src/routes/NextSessionMap.tsx").read_text(encoding="utf-8")
         self.assertNotIn('import "./NextSessionMap.css";', next_session)
+        margin_etf = (ROOT / "desktop/src/routes/MarginEtf.tsx").read_text(encoding="utf-8")
+        self.assertNotIn('import "./MarginEtf.css";', margin_etf)
 
     def test_all_product_styles_are_bound_by_both_trust_layers(self) -> None:
         for relative in (
@@ -41,6 +43,7 @@ class UiStylesTrustedBindingTests(unittest.TestCase):
             "desktop/src/routes/FactorQuantHub.css",
             "desktop/src/routes/NextSessionMap.css",
             "desktop/src/routes/nextSessionOrdinaryGate.ts",
+            "desktop/src/routes/MarginEtf.css",
         ):
             self.assertIn(f'"{relative}"', self.runner)
             self.assertIn(f'Path("{relative}")', self.service)

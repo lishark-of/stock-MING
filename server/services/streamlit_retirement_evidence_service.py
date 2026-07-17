@@ -78,6 +78,7 @@ TRUSTED_SOURCE_RELATIVES = (
     Path("desktop/src/routes/NextSessionMap.tsx"),
     Path("desktop/src/routes/nextSessionOrdinaryGate.ts"),
     Path("desktop/src/routes/MarginEtf.tsx"),
+    Path("desktop/src/routes/MarginEtf.css"),
     Path("desktop/src/routes/QmtReplayLab.tsx"),
     Path("desktop/src/routes/LegacyTools.tsx"),
     Path("desktop/src-tauri/Cargo.lock"),
