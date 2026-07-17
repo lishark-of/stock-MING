@@ -100,7 +100,7 @@ const FASTAPI_CACHE_CONTRACTS = new Map([
 
 const QA_ROUTES = [
   { route: "#home", navigation_hash: "#home/home-p1-symbol-confirm", label: "Command Center", heading: "今日作战台", anchor: "#home-p1-symbol-confirm", marker: "state_rail", marker_minimum: 1, risk_focus: "page staging and status summary clarity" },
-  { route: "#next-session-chart", label: "Next Session Map", heading: "次日图谱", anchor: "#next-session-chart", marker: "route_stage", marker_minimum: 1, risk_focus: "chart update clarity and reduced-motion chart updates" },
+  { route: "#next-session-chart", navigation_hash: "#next/next-session-chart", label: "Next Session Map", heading: "次日图谱", anchor: "#next-session-chart", marker: "route_stage", marker_minimum: 1, risk_focus: "chart update clarity and reduced-motion chart updates" },
   { route: "#candidates", navigation_hash: "#candidates/candidate-pool", label: "Candidate Radar", heading: "下一票雷达", anchor: "#candidate-pool", marker: "radar_cluster", marker_minimum: 1, risk_focus: "radar result cluster and runtime-budget visibility" },
   { route: "#worker", label: "Worker Runtime", heading: "Worker 运行时", anchor: ".route-stage", marker: "route_stage", marker_minimum: 1, risk_focus: "runtime evidence visibility and production-blocker readability" },
   { route: "#tasks", label: "Task Monitor", heading: "Task Monitor / 任务监控", anchor: ".route-stage", marker: "route_stage", marker_minimum: 1, risk_focus: "task phase confirmation and progress readability" },

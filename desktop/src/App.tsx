@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState, type ComponentType, type LazyExoticComponent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState, type ComponentType, type LazyExoticComponent } from "react";
 import Layout, { type RouteKey } from "./components/Layout";
 
 const AShareEvidenceRadar = lazy(() => import("./routes/AShareEvidenceRadar"));
@@ -161,16 +161,16 @@ export default function App() {
   const [hashScrollVersion, setHashScrollVersion] = useState(0);
   const ActiveRoute = ROUTE_COMPONENTS[route];
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     persistRoute(route);
   }, [route]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const anchor = routeAnchorFromHash();
     if (!anchor) window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [route, hashScrollVersion]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const anchor = routeAnchorFromHash();
     if (!anchor) return;
     let cancelled = false;

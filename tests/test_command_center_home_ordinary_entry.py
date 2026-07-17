@@ -654,6 +654,11 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
         self.assertIn("routeAnchorFromHash", app_source)
         self.assertIn("ROUTE_ANCHOR_SCROLL_RETRY_DELAYS_MS", app_source)
+        self.assertIn("useLayoutEffect", app_source)
+        self.assertLess(
+            app_source.index("useLayoutEffect(() => {\n    persistRoute(route);"),
+            app_source.index("useLayoutEffect(() => {\n    const anchor = routeAnchorFromHash();"),
+        )
         self.assertIn("const target = document.getElementById(anchor)", app_source)
         self.assertIn('target.scrollIntoView({ block: "start" })', app_source)
         self.assertIn('window.scrollTo({ top: 0, left: 0, behavior: "auto" })', app_source)

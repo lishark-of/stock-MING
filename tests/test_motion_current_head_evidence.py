@@ -735,6 +735,7 @@ class MotionCurrentHeadEvidenceTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] / "scripts" / "motion_browser_qa_runner.mjs").read_text(encoding="utf-8")
         self.assertEqual(source.count("page.goto("), 1)
         self.assertIn("window.location.hash = hash", source)
+        self.assertIn('navigation_hash: "#next/next-session-chart"', source)
         self.assertIn('observer.observe({ type: "layout-shift", buffered: true })', source)
         self.assertIn('observer.observe({ type: "longtask", buffered: true })', source)
         self.assertIn("document.getAnimations()", source)
