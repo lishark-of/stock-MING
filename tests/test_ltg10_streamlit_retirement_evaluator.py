@@ -95,6 +95,7 @@ def _copy_source_contract(root: Path) -> None:
         Path("desktop/src/components/NextSessionChart.tsx"),
         Path("desktop/src/components/PacketCard.tsx"),
         Path("desktop/src/components/PageStateBanner.tsx"),
+        Path("desktop/src/components/RouteCacheLoadingBoundary.tsx"),
         Path("desktop/src/components/StateClarityRail.tsx"),
         Path("desktop/src/components/StatusBadge.tsx"),
         Path("desktop/src/components/TaskBoundarySummary.tsx"),
@@ -1124,6 +1125,11 @@ process.stdout.write(JSON.stringify(payload));
         self.assertEqual(
             result["ordinary_component_import_manifest_digest"],
             retirement.EXPECTED_IMPORT_MANIFEST_DIGEST,
+        )
+        route_cache_relative = "desktop/src/components/RouteCacheLoadingBoundary.tsx"
+        self.assertEqual(
+            result["trusted_reachable_source_sha256"][route_cache_relative],
+            hashlib.sha256((ROOT / route_cache_relative).read_bytes()).hexdigest(),
         )
         self.assertEqual(set(result["ordinary_component_import_manifest"]), set(result["ordinary_routes"]))
         self.assertEqual(result["legacy_component_root_id"], "LegacyTools")

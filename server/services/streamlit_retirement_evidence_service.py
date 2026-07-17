@@ -58,6 +58,7 @@ TRUSTED_SOURCE_RELATIVES = (
     Path("desktop/src/components/NextSessionChart.tsx"),
     Path("desktop/src/components/PacketCard.tsx"),
     Path("desktop/src/components/PageStateBanner.tsx"),
+    Path("desktop/src/components/RouteCacheLoadingBoundary.tsx"),
     Path("desktop/src/components/StateClarityRail.tsx"),
     Path("desktop/src/components/StatusBadge.tsx"),
     Path("desktop/src/components/TaskBoundarySummary.tsx"),
@@ -125,7 +126,7 @@ TRUSTED_RUNNER_SAFE_FAILURE_CODES = frozenset(
         "unknown",
     }
 )
-EXPECTED_IMPORT_MANIFEST_DIGEST = "1810d7793af84f69b05e31861e2500a7a851f5e53172afae739c2d4af1bf3dd2"
+EXPECTED_IMPORT_MANIFEST_DIGEST = "2136c935ff75b56ca26fc8ad48285afdcb3846d7cf8659f6e3feb9c6bb8e0df8"
 EXPECTED_ROUTES = (
     ("#home", "CommandCenterHome"),
     ("#candidates", "CandidateRadar"),

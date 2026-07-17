@@ -108,6 +108,7 @@ const TRUSTED_REACHABLE_SOURCE_PATHS = [
   "desktop/src/components/NextSessionChart.tsx",
   "desktop/src/components/PacketCard.tsx",
   "desktop/src/components/PageStateBanner.tsx",
+  "desktop/src/components/RouteCacheLoadingBoundary.tsx",
   "desktop/src/components/StateClarityRail.tsx",
   "desktop/src/components/StatusBadge.tsx",
   "desktop/src/components/TaskBoundarySummary.tsx",
@@ -124,6 +125,7 @@ const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {
     "../components/MetricGrid",
     "../components/PacketCard",
     "../components/PageStateBanner",
+    "../components/RouteCacheLoadingBoundary",
     "../components/StatusBadge",
     "../components/TaskLaunchReceipt",
     "../components/TaskStatusPanel"
@@ -136,6 +138,7 @@ const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {
     "../components/MetricGrid",
     "../components/PacketCard",
     "../components/PageStateBanner",
+    "../components/RouteCacheLoadingBoundary",
     "../components/StateClarityRail",
     "../components/StatusBadge",
     "../components/TaskLaunchReceipt",
@@ -163,6 +166,7 @@ const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {
     "../components/MetricGrid",
     "../components/NextSessionChart",
     "../components/PacketCard",
+    "../components/RouteCacheLoadingBoundary",
     "../components/StateClarityRail",
     "../components/TaskLaunchReceipt",
     "../components/TaskStatusPanel"
@@ -192,7 +196,7 @@ const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 820 },
   { name: "mobile", width: 390, height: 844 }
 ];
-const EXPECTED_IMPORT_MANIFEST_DIGEST = "1810d7793af84f69b05e31861e2500a7a851f5e53172afae739c2d4af1bf3dd2";
+const EXPECTED_IMPORT_MANIFEST_DIGEST = "2136c935ff75b56ca26fc8ad48285afdcb3846d7cf8659f6e3feb9c6bb8e0df8";
 
 function sha256(data) {
   return createHash("sha256").update(data).digest("hex");
