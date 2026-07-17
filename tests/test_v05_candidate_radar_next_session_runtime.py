@@ -172,6 +172,19 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         )
         runtime = packet["candidate_radar_v05_runtime"]
         self.assertEqual(runtime["status"], "worker_v04_local_batch_runtime_success")
+        self.assertEqual(len(runtime["manifest_file_sha256"]), 64)
+        self.assertEqual(len(runtime["event_log_file_sha256"]), 64)
+        persisted_candidate = SQLiteMetaStore(self.meta_path, read_only=True).read_packet(
+            candidate_service.PACKET_KEY
+        )
+        self.assertEqual(
+            persisted_candidate["call_ledger"][0]["runtime_manifest_file_sha256"],
+            runtime["manifest_file_sha256"],
+        )
+        self.assertEqual(
+            persisted_candidate["call_ledger"][0]["runtime_event_log_file_sha256"],
+            runtime["event_log_file_sha256"],
+        )
         self.assertTrue(all(row["append_only_write_done"] for row in runtime["stage_rows"]))
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])

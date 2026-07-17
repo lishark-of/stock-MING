@@ -107,6 +107,16 @@ _CANONICAL_HIGH_RISK_PREFIXES = (
     "real_trade_",
     "secret_",
 )
+_CANONICAL_NESTED_EXECUTION_PREFIXES = (
+    "external_",
+    "qmt_",
+    "broker_",
+    "account_",
+    "order_",
+    "trade_",
+    "real_order_",
+    "real_trade_",
+)
 
 ALLOWED_SCENARIOS = {"baseline", "stress", "recovery"}
 ALLOWED_MAX_FRAMES = {12, 24, 48}
@@ -850,6 +860,162 @@ def _read_persisted_source_task_no_init(task_id: str) -> Mapping[str, Any] | Non
     return task if isinstance(task, Mapping) else None
 
 
+def _read_source_task_history_rows_no_init(task_id: str) -> list[dict[str, Any]]:
+    if not SQLITE_META_PATH.exists():
+        return []
+    connection: sqlite3.Connection | None = None
+    try:
+        uri = f"file:{SQLITE_META_PATH.resolve().as_posix()}?mode=ro"
+        connection = sqlite3.connect(uri, uri=True)
+        rows = connection.execute(
+            """
+            SELECT history_id, task_id, task_type, payload_json, updated_at, payload_digest
+            FROM task_status_history
+            WHERE task_id = ?
+            ORDER BY history_id ASC
+            """,
+            (task_id,),
+        ).fetchall()
+    except Exception:
+        return []
+    finally:
+        if connection is not None:
+            connection.close()
+    return [
+        {
+            "history_id": row[0],
+            "task_id": row[1],
+            "task_type": row[2],
+            "payload_json": row[3],
+            "updated_at": row[4],
+            "payload_digest": row[5],
+        }
+        for row in rows
+    ]
+
+
+def _parse_iso_datetime(value: Any) -> _dt.datetime:
+    try:
+        parsed = _dt.datetime.fromisoformat(str(value or ""))
+    except (TypeError, ValueError) as exc:
+        raise ReplayValidationError("canonical_source_task_history_time_invalid") from exc
+    return parsed
+
+
+def _validate_source_task_authoritative_history(
+    source_task: Mapping[str, Any],
+    persisted_projection: Mapping[str, Any],
+) -> None:
+    expected_events = (
+        ("pending", 0.0, "candidate_radar_full_pool_worker_fallback_queued"),
+        ("running", 0.2, "candidate_radar_v05_local_batch_reading_supplied_pool"),
+        ("running", 0.45, "candidate_radar_v05_local_batch_running_v04_runtime"),
+        ("success", 1.0, CANDIDATE_TASK_STEP),
+    )
+    status_history = source_task.get("status_history")
+    task_log = source_task.get("task_log")
+    if not isinstance(status_history, list) or not isinstance(task_log, list):
+        raise ReplayValidationError("canonical_source_task_history_invalid")
+    if len(status_history) != len(expected_events) or len(task_log) != len(expected_events):
+        raise ReplayValidationError("canonical_source_task_history_invalid")
+    previous_at: _dt.datetime | None = None
+    for index, (expected_status, expected_progress, expected_step) in enumerate(expected_events):
+        status_row = status_history[index]
+        log_row = task_log[index]
+        if not isinstance(status_row, Mapping) or not isinstance(log_row, Mapping):
+            raise ReplayValidationError("canonical_source_task_history_invalid")
+        if (
+            status_row.get("status") != expected_status
+            or type(status_row.get("progress")) is not float
+            or status_row.get("progress") != expected_progress
+            or status_row.get("current_step") != expected_step
+            or log_row.get("event") != ("task_created" if index == 0 else "task_status_updated")
+            or log_row.get("status") != expected_status
+            or log_row.get("current_step") != expected_step
+            or log_row.get("at") != status_row.get("at")
+            or log_row.get("external") is not False
+            or log_row.get("external_calls_triggered") is not False
+            or log_row.get("contains_secret") is not False
+            or log_row.get("stack_trace_included") is not False
+        ):
+            raise ReplayValidationError("canonical_source_task_history_invalid")
+        current_at = _parse_iso_datetime(status_row.get("at"))
+        if previous_at is not None and current_at < previous_at:
+            raise ReplayValidationError("canonical_source_task_history_time_invalid")
+        previous_at = current_at
+    if (
+        source_task.get("created_at") != status_history[0].get("at")
+        or source_task.get("started_at") != status_history[1].get("at")
+        or source_task.get("finished_at") != status_history[-1].get("at")
+    ):
+        raise ReplayValidationError("canonical_source_task_history_time_invalid")
+
+    durable_rows = _read_source_task_history_rows_no_init(str(source_task.get("task_id") or ""))
+    if len(durable_rows) < len(expected_events):
+        raise ReplayValidationError("canonical_source_task_durable_history_invalid")
+    previous_payload: Mapping[str, Any] | None = None
+    previous_history_id = 0
+    previous_updated_at: _dt.datetime | None = None
+    for durable_row in durable_rows:
+        payload_json = durable_row.get("payload_json")
+        digest = durable_row.get("payload_digest")
+        if not isinstance(payload_json, str) or hashlib.sha256(payload_json.encode("utf-8")).hexdigest() != digest:
+            raise ReplayValidationError("canonical_source_task_durable_history_digest_invalid")
+        try:
+            payload = json.loads(payload_json)
+        except Exception as exc:
+            raise ReplayValidationError("canonical_source_task_durable_history_invalid") from exc
+        if (
+            not isinstance(payload, Mapping)
+            or durable_row.get("task_id") != source_task.get("task_id")
+            or durable_row.get("task_type") != CANDIDATE_TASK_TYPE
+            or payload.get("task_id") != source_task.get("task_id")
+            or payload.get("task_type") != CANDIDATE_TASK_TYPE
+            or type(durable_row.get("history_id")) is not int
+            or durable_row.get("history_id") <= previous_history_id
+        ):
+            raise ReplayValidationError("canonical_source_task_durable_history_invalid")
+        durable_time = _parse_iso_datetime(durable_row.get("updated_at"))
+        if previous_updated_at is not None and durable_time < previous_updated_at:
+            raise ReplayValidationError("canonical_source_task_history_time_invalid")
+        embedded_history = payload.get("status_history")
+        embedded_log = payload.get("task_log")
+        if not isinstance(embedded_history, list) or not isinstance(embedded_log, list):
+            raise ReplayValidationError("canonical_source_task_durable_history_invalid")
+        if previous_payload is not None:
+            previous_status = previous_payload.get("status_history")
+            previous_log = previous_payload.get("task_log")
+            if (
+                not isinstance(previous_status, list)
+                or not isinstance(previous_log, list)
+                or embedded_history[: len(previous_status)] != previous_status
+                or embedded_log[: len(previous_log)] != previous_log
+            ):
+                raise ReplayValidationError("canonical_source_task_durable_history_not_append_only")
+        if embedded_history:
+            latest = embedded_history[-1]
+            if (
+                not isinstance(latest, Mapping)
+                or payload.get("status") != latest.get("status")
+                or payload.get("progress") != latest.get("progress")
+                or payload.get("current_step") != latest.get("current_step")
+            ):
+                raise ReplayValidationError("canonical_source_task_durable_history_invalid")
+            latest_at = _parse_iso_datetime(latest.get("at"))
+            if abs((durable_time - latest_at).total_seconds()) > 1.0:
+                raise ReplayValidationError("canonical_source_task_history_time_invalid")
+        previous_payload = payload
+        previous_history_id = int(durable_row["history_id"])
+        previous_updated_at = durable_time
+    previous_projection = {
+        str(key): value
+        for key, value in (previous_payload or {}).items()
+        if key != "storage_source"
+    }
+    if previous_payload is None or _canonical_json(previous_projection) != _canonical_json(persisted_projection):
+        raise ReplayValidationError("canonical_source_task_durable_history_current_mismatch")
+
+
 def _validate_exact_safety_boundary(value: Mapping[str, Any], *, code: str) -> None:
     if any(value.get(field) is not False for field in CANDIDATE_TASK_FALSE_FIELDS):
         raise ReplayValidationError(code)
@@ -860,20 +1026,35 @@ def _validate_exact_safety_boundary(value: Mapping[str, Any], *, code: str) -> N
         raise ReplayValidationError(code)
     if any(value.get(field) is not True for field in CANDIDATE_TASK_TRUE_FIELDS):
         raise ReplayValidationError(code)
-    for raw_key in value:
-        key = str(raw_key or "").strip().lower()
-        if key in _CANONICAL_SAFETY_FIELDS or key in _CANONICAL_ALLOWED_HIGH_RISK_METADATA_FIELDS:
-            continue
-        raw_value = value.get(raw_key)
-        # Evidence collections may retain compatibility provider/model audit
-        # rows.  They are not executable top-level boundary claims; every
-        # executable scalar flag above remains exact and mandatory.
-        if isinstance(raw_value, (Mapping, list, tuple)):
-            continue
-        if "contains_secret" in key and raw_value is False:
-            continue
-        if key.startswith(_CANONICAL_HIGH_RISK_PREFIXES) or "secret" in key:
-            raise ReplayValidationError(code)
+    def walk(node: Any) -> None:
+        if isinstance(node, Mapping):
+            for raw_key, raw_value in node.items():
+                key = str(raw_key or "").strip().lower()
+                if key in CANDIDATE_TASK_FALSE_FIELDS and raw_value is not False:
+                    raise ReplayValidationError(code)
+                if key in CANDIDATE_TASK_ZERO_FIELDS and (
+                    type(raw_value) is not int or raw_value != 0
+                ):
+                    raise ReplayValidationError(code)
+                if key in CANDIDATE_TASK_TRUE_FIELDS and raw_value is not True:
+                    raise ReplayValidationError(code)
+                if key == "provider_backed" and raw_value is not False:
+                    raise ReplayValidationError(code)
+                if "secret" in key and key not in _CANONICAL_SAFETY_FIELDS and raw_value is not False:
+                    raise ReplayValidationError(code)
+                if key.startswith(_CANONICAL_NESTED_EXECUTION_PREFIXES) and key not in (
+                    _CANONICAL_SAFETY_FIELDS | _CANONICAL_ALLOWED_HIGH_RISK_METADATA_FIELDS
+                ):
+                    if isinstance(raw_value, bool) and raw_value is not False:
+                        raise ReplayValidationError(code)
+                    if type(raw_value) is int and raw_value != 0:
+                        raise ReplayValidationError(code)
+                walk(raw_value)
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                walk(item)
+
+    walk(value)
 
 
 def _candidate_v05_scope_hash_from_task_payload(
@@ -899,6 +1080,43 @@ def _candidate_v05_scope_hash_from_task_payload(
         [dict(row) for row in normalized_pool if isinstance(row, Mapping)],
         payload_safe,
     )
+
+
+def _canonical_runtime_artifact_path(
+    path_label: Any,
+    *,
+    scope_hash: str,
+    expected_name: str,
+) -> Path:
+    label = str(path_label or "").strip()
+    relative = Path(label)
+    expected_parts = ("v04_acceptance", scope_hash, "worker_runtime", expected_name)
+    if relative.is_absolute() or relative.parts != expected_parts:
+        raise ReplayValidationError("canonical_candidate_runtime_artifact_path_invalid")
+    root = (SQLITE_META_PATH.parent / "v04_acceptance").resolve()
+    target = (SQLITE_META_PATH.parent / relative).resolve()
+    if not target.is_relative_to(root) or not target.is_file():
+        raise ReplayValidationError("canonical_candidate_runtime_artifact_missing")
+    return target
+
+
+def _read_runtime_event_rows(path: Path) -> list[dict[str, Any]]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise ReplayValidationError("canonical_candidate_runtime_artifact_read_failed") from exc
+    rows: list[dict[str, Any]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except Exception as exc:
+            raise ReplayValidationError("canonical_candidate_runtime_event_log_invalid") from exc
+        if not isinstance(row, dict):
+            raise ReplayValidationError("canonical_candidate_runtime_event_log_invalid")
+        rows.append(row)
+    return rows
 
 
 def _canonical_fresh_lineage(packet: Any, *, lineage_key: str) -> dict[str, Any]:
@@ -1118,6 +1336,7 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
         or not str(source_task.get("finished_at") or "").strip()
     ):
         raise ReplayValidationError("canonical_source_task_status_invalid")
+    _validate_source_task_authoritative_history(source_task, persisted_projection)
     if source_task.get("output_packet_key") != CANDIDATE_PACKET_KEY:
         raise ReplayValidationError("canonical_source_task_output_invalid")
     if source_task.get("cache_replay_only") is True:
@@ -1282,6 +1501,27 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
     manifest = runtime.get("manifest")
     if not isinstance(manifest, Mapping):
         raise ReplayValidationError("canonical_candidate_runtime_manifest_invalid")
+    expected_manifest_keys = {
+        "schema_version",
+        "status",
+        "task_id",
+        "runtime_scope_hash_short",
+        "pool_count",
+        "processed_count",
+        "chunk_size",
+        "chunk_count",
+        "stage_count",
+        "failed_symbol",
+        "result_checksum",
+        "append_only_event_count",
+        "local_runtime_not_full_market_claim",
+        "local_runtime_is_not_celery_redis_production",
+        "contains_secret",
+        "external_calls_triggered",
+        "manifest_sha256",
+    }
+    if set(manifest) != expected_manifest_keys:
+        raise ReplayValidationError("canonical_candidate_runtime_manifest_invalid")
     stage_rows = runtime.get("stage_rows")
     if not isinstance(stage_rows, list) or not stage_rows or any(not isinstance(row, Mapping) for row in stage_rows):
         raise ReplayValidationError("canonical_candidate_runtime_manifest_invalid")
@@ -1331,6 +1571,90 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
         or task_ledger_row.get("runtime_manifest_sha256") != manifest_sha256
     ):
         raise ReplayValidationError("canonical_source_task_runtime_binding_invalid")
+    worker_task_id = str(manifest.get("task_id") or "")
+    if not SOURCE_TASK_ID_PATTERN.fullmatch(worker_task_id):
+        raise ReplayValidationError("canonical_candidate_runtime_manifest_invalid")
+    runtime_dir_label = f"v04_acceptance/{expected['source_scope_hash']}/worker_runtime"
+    if runtime.get("runtime_dir") != runtime_dir_label:
+        raise ReplayValidationError("canonical_candidate_runtime_artifact_path_invalid")
+    manifest_path = _canonical_runtime_artifact_path(
+        runtime.get("manifest_path"),
+        scope_hash=expected["source_scope_hash"],
+        expected_name=f"manifest_{worker_task_id}.json",
+    )
+    event_log_path = _canonical_runtime_artifact_path(
+        runtime.get("event_log_path"),
+        scope_hash=expected["source_scope_hash"],
+        expected_name="events.jsonl",
+    )
+    manifest_file_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    event_log_file_sha256 = hashlib.sha256(event_log_path.read_bytes()).hexdigest()
+    if (
+        runtime.get("manifest_file_sha256") != manifest_file_sha256
+        or runtime.get("event_log_file_sha256") != event_log_file_sha256
+        or task_ledger_row.get("runtime_manifest_file_sha256") != manifest_file_sha256
+        or task_ledger_row.get("runtime_event_log_file_sha256") != event_log_file_sha256
+    ):
+        raise ReplayValidationError("canonical_candidate_runtime_artifact_digest_invalid")
+    try:
+        disk_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ReplayValidationError("canonical_candidate_runtime_manifest_file_invalid") from exc
+    if not isinstance(disk_manifest, Mapping) or _canonical_json(disk_manifest) != _canonical_json(manifest):
+        raise ReplayValidationError("canonical_candidate_runtime_manifest_file_mismatch")
+    event_rows = _read_runtime_event_rows(event_log_path)
+    if len(event_rows) < len(stage_rows):
+        raise ReplayValidationError("canonical_candidate_runtime_event_log_invalid")
+    current_event_rows = event_rows[-len(stage_rows) :]
+    for stage_row, event_row in zip(stage_rows, current_event_rows, strict=True):
+        expected_event_keys = {
+            "schema_version",
+            "task_id",
+            "chunk_index",
+            "chunk_size",
+            "processed_count",
+            "stage_status",
+            "failed_symbol",
+            "runtime_scope_hash_short",
+            "contains_secret",
+            "external_calls_triggered",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+            "redis_pinged",
+            "celery_started",
+            "does_not_execute_trades",
+            "does_not_modify_strategy_action",
+            "event_sha256",
+        }
+        event_hash_material = {
+            str(key): value
+            for key, value in event_row.items()
+            if key != "event_sha256"
+        }
+        if (
+            set(event_row) != expected_event_keys
+            or event_row.get("schema_version") != "worker_v04_local_batch_event.v1"
+            or event_row.get("task_id") != worker_task_id
+            or event_row.get("chunk_index") != stage_row.get("chunk_index")
+            or event_row.get("chunk_size") != stage_row.get("chunk_size")
+            or event_row.get("processed_count") != stage_row.get("processed_count")
+            or event_row.get("stage_status") != stage_row.get("status")
+            or event_row.get("failed_symbol") != ""
+            or event_row.get("runtime_scope_hash_short") != expected["source_scope_hash"][:12]
+            or event_row.get("event_sha256") != stage_row.get("event_sha256")
+            or _sha256(event_hash_material) != event_row.get("event_sha256")
+            or event_row.get("contains_secret") is not False
+            or event_row.get("external_calls_triggered") is not False
+            or event_row.get("tushare_called") is not False
+            or event_row.get("deepseek_called") is not False
+            or event_row.get("github_called") is not False
+            or event_row.get("redis_pinged") is not False
+            or event_row.get("celery_started") is not False
+            or event_row.get("does_not_execute_trades") is not True
+            or event_row.get("does_not_modify_strategy_action") is not True
+        ):
+            raise ReplayValidationError("canonical_candidate_runtime_event_log_mismatch")
     candidate_ledger = candidate.get("call_ledger")
     if not isinstance(candidate_ledger, list) or len(candidate_ledger) != 1 or not isinstance(candidate_ledger[0], Mapping):
         raise ReplayValidationError("canonical_candidate_ledger_invalid")

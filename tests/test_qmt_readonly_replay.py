@@ -109,6 +109,12 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             self.canonical_patch_active = False
 
     def _seed_canonical_source(self, *, task_status: str = "success") -> None:
+        service.SQLiteMetaStore(self.db_path)
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute("DELETE FROM task_status WHERE task_id = ?", (SOURCE_TASK_ID,))
+            connection.execute("DELETE FROM task_status_history WHERE task_id = ?", (SOURCE_TASK_ID,))
+            connection.commit()
+        task_service._TASKS.pop(SOURCE_TASK_ID, None)
         boundary = {
             **{field: False for field in service.CANDIDATE_TASK_FALSE_FIELDS},
             **{field: 0 for field in service.CANDIDATE_TASK_ZERO_FIELDS},
@@ -133,6 +139,10 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             "next_session_task_status": "success",
             "next_session_lineage_status": "same_packet_lineage_ready",
         }
+        runtime_dir = self.db_path.parent / "v04_acceptance" / SOURCE_HASH / "worker_runtime"
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        manifest_label = f"v04_acceptance/{SOURCE_HASH}/worker_runtime/manifest_local-worker-123.json"
+        event_log_label = f"v04_acceptance/{SOURCE_HASH}/worker_runtime/events.jsonl"
         ledger_common = {
             "api": "local_candidate_radar_v05_local_batch",
             "source_snapshot": "payload.full_pool_candidates",
@@ -141,8 +151,8 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             "local_fetched_at": "2026-07-10T15:00:00+08:00",
             "call_status": "candidate_radar_v05_local_batch_success",
             "error_message_safe": "",
-            "runtime_manifest_path": "v04_acceptance/source/worker_runtime/manifest_local-worker-123.json",
-            "runtime_event_log_path": "v04_acceptance/source/worker_runtime/events.jsonl",
+            "runtime_manifest_path": manifest_label,
+            "runtime_event_log_path": event_log_label,
             **{field: False for field in service.CANDIDATE_LEDGER_FALSE_FIELDS},
             **{field: 0 for field in service.CANDIDATE_LEDGER_ZERO_FIELDS},
             **{field: True for field in service.CANDIDATE_LEDGER_TRUE_FIELDS},
@@ -168,7 +178,39 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         manifest["manifest_sha256"] = service._sha256(
             {key: value for key, value in manifest.items() if key != "status"}
         )
+        event_row = {
+            "schema_version": "worker_v04_local_batch_event.v1",
+            "task_id": "local-worker-123",
+            "chunk_index": 0,
+            "chunk_size": 1,
+            "processed_count": SOURCE_PROCESSED_COUNT,
+            "stage_status": "success",
+            "failed_symbol": "",
+            "runtime_scope_hash_short": SOURCE_HASH[:12],
+            "contains_secret": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        event_row["event_sha256"] = service._sha256(event_row)
+        manifest_path = runtime_dir / "manifest_local-worker-123.json"
+        event_log_path = runtime_dir / "events.jsonl"
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2, default=str),
+            encoding="utf-8",
+        )
+        event_log_path.write_text(
+            json.dumps(event_row, ensure_ascii=False, sort_keys=True, default=str) + "\n",
+            encoding="utf-8",
+        )
         ledger_common["runtime_manifest_sha256"] = manifest["manifest_sha256"]
+        ledger_common["runtime_manifest_file_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        ledger_common["runtime_event_log_file_sha256"] = hashlib.sha256(event_log_path.read_bytes()).hexdigest()
         task = task_service.build_task_record(
             service.CANDIDATE_TASK_TYPE,
             task_id=SOURCE_TASK_ID,
@@ -181,13 +223,41 @@ class QmtReadonlyReplayTests(unittest.TestCase):
                 "data_date": SOURCE_DATA_DATE,
                 "full_pool_candidates": copy.deepcopy(SOURCE_POOL),
             },
-            status=task_status,
-            progress=1.0,
-            current_step=service.CANDIDATE_TASK_STEP if task_status == "success" else "candidate_source_failed",
-            call_ledger=[{**ledger_common, "request_params_safe": task_request}],
+            status="pending",
+            progress=0.0,
+            current_step="candidate_radar_full_pool_worker_fallback_queued",
+            call_ledger=[],
         )
         task.update(boundary)
         task_service._persist_task(task)
+        task_service.update_task_status(
+            SOURCE_TASK_ID,
+            status="running",
+            progress=0.2,
+            current_step="candidate_radar_v05_local_batch_reading_supplied_pool",
+        )
+        task_service.update_task_status(
+            SOURCE_TASK_ID,
+            status="running",
+            progress=0.45,
+            current_step="candidate_radar_v05_local_batch_running_v04_runtime",
+        )
+        task = task_service.update_task_status(
+            SOURCE_TASK_ID,
+            status="success",
+            progress=1.0,
+            current_step=service.CANDIDATE_TASK_STEP,
+            output_packet_key=service.CANDIDATE_PACKET_KEY,
+            call_ledger=[{**ledger_common, "request_params_safe": task_request}],
+        ) or task
+        if task_status != "success":
+            task = task_service.update_task_status(
+                SOURCE_TASK_ID,
+                status=task_status,
+                progress=1.0,
+                current_step="candidate_source_failed",
+                error_message_safe="candidate_source_failed",
+            ) or task
         lineage = {
             "schema_version": "candidate_radar_v05_next_session_lineage.v1",
             "status": "same_packet_lineage_ready",
@@ -250,18 +320,21 @@ class QmtReadonlyReplayTests(unittest.TestCase):
                 },
                 "candidate_radar_v05_runtime": {
                     "status": "worker_v04_local_batch_runtime_success",
+                    "runtime_dir": f"v04_acceptance/{SOURCE_HASH}/worker_runtime",
                     "pool_count": SOURCE_PROCESSED_COUNT,
                     "processed_count": SOURCE_PROCESSED_COUNT,
                     "chunk_count": 1,
                     "append_only_event_count": 1,
                     "manifest_path": ledger_common["runtime_manifest_path"],
                     "event_log_path": ledger_common["runtime_event_log_path"],
+                    "manifest_file_sha256": ledger_common["runtime_manifest_file_sha256"],
+                    "event_log_file_sha256": ledger_common["runtime_event_log_file_sha256"],
                     "stage_rows": [{
                         "chunk_index": 0,
                         "status": "success",
                         "chunk_size": 1,
                         "processed_count": SOURCE_PROCESSED_COUNT,
-                        "event_sha256": "c" * 64,
+                        "event_sha256": event_row["event_sha256"],
                         "append_only_write_done": True,
                     }],
                     "manifest": manifest,
@@ -841,7 +914,7 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             (
                 service.CANDIDATE_PACKET_KEY,
                 lambda packet: packet["candidate_radar_v05_next_session_lineage"].update(broker_called=True),
-                "canonical_source_lineage_boundary_invalid",
+                "canonical_candidate_packet_boundary_invalid",
             ),
         ):
             self._seed_canonical_source()
@@ -878,6 +951,86 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
         blocked = service.run_qmt_readonly_local_replay(_payload())
         self.assertEqual(blocked["error_message_safe"], "canonical_source_top_freshness_mismatch")
+
+    def test_canonical_source_requires_full_durable_history_and_valid_digest(self):
+        self._use_real_canonical_validation()
+        store = service.SQLiteMetaStore(self.db_path)
+        self._seed_canonical_source()
+        source_task = task_service._TASKS[SOURCE_TASK_ID]
+        source_task["status_history"] = [copy.deepcopy(source_task["status_history"][-1])]
+        source_task["task_log"] = [copy.deepcopy(source_task["task_log"][-1])]
+        terminal_at = source_task["status_history"][0]["at"]
+        source_task["created_at"] = terminal_at
+        source_task["started_at"] = terminal_at
+        source_task["finished_at"] = terminal_at
+        store.write_task_status(source_task)
+
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_source_task_history_invalid")
+
+        self._seed_canonical_source()
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                """
+                UPDATE task_status_history
+                SET payload_digest = ?
+                WHERE history_id = (
+                    SELECT MAX(history_id) FROM task_status_history WHERE task_id = ?
+                )
+                """,
+                ("0" * 64, SOURCE_TASK_ID),
+            )
+            connection.commit()
+        blocked_digest = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(
+            blocked_digest["error_message_safe"],
+            "canonical_source_task_durable_history_digest_invalid",
+        )
+
+    def test_canonical_runtime_rejects_self_consistent_embedded_and_disk_replacement(self):
+        self._use_real_canonical_validation()
+        self._seed_canonical_source()
+        store = service.SQLiteMetaStore(self.db_path)
+        candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
+        runtime = candidate["candidate_radar_v05_runtime"]
+        manifest = runtime["manifest"]
+        manifest["attacker_note"] = "self_consistent_replacement"
+        manifest["manifest_sha256"] = service._sha256(
+            {key: value for key, value in manifest.items() if key not in {"status", "manifest_sha256"}}
+        )
+        manifest_path = self.db_path.parent / runtime["manifest_path"]
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2, default=str),
+            encoding="utf-8",
+        )
+        manifest_file_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        runtime["manifest_file_sha256"] = manifest_file_sha
+        candidate["call_ledger"][0]["runtime_manifest_sha256"] = manifest["manifest_sha256"]
+        candidate["call_ledger"][0]["runtime_manifest_file_sha256"] = manifest_file_sha
+        store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
+        source_task = task_service._TASKS[SOURCE_TASK_ID]
+        source_task["call_ledger"][0]["runtime_manifest_sha256"] = manifest["manifest_sha256"]
+        source_task["call_ledger"][0]["runtime_manifest_file_sha256"] = manifest_file_sha
+        store.write_task_status(source_task)
+
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_candidate_runtime_manifest_invalid")
+
+    def test_canonical_boundary_recurses_into_nested_business_evidence(self):
+        self._use_real_canonical_validation()
+        self._seed_canonical_source()
+        store = service.SQLiteMetaStore(self.db_path)
+        candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
+        candidate["business_evidence"] = {
+            "broker_audit": {
+                "status": "claimed_safe",
+                "broker_called": True,
+            }
+        }
+        store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
+
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_candidate_packet_boundary_invalid")
 
     def test_canonical_pool_runtime_chart_and_ledger_bindings_fail_closed(self):
         self._use_real_canonical_validation()
@@ -940,7 +1093,7 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         next_session["call_ledger"][0]["broker_called"] = True
         store.write_packet(service.NEXT_SESSION_PACKET_KEY, next_session)
         blocked = service.run_qmt_readonly_local_replay(_payload())
-        self.assertEqual(blocked["error_message_safe"], "canonical_next_session_ledger_boundary_invalid")
+        self.assertEqual(blocked["error_message_safe"], "canonical_next_session_packet_boundary_invalid")
 
     def test_canonical_source_task_top_level_boundary_is_exact(self):
         self._use_real_canonical_validation()
@@ -984,7 +1137,7 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         task["call_ledger"][0]["broker_session_opened"] = True
         store.write_task_status(task)
         unsafe_ledger = service.run_qmt_readonly_local_replay(_payload())
-        self.assertEqual(unsafe_ledger["error_message_safe"], "canonical_source_task_ledger_boundary_invalid")
+        self.assertEqual(unsafe_ledger["error_message_safe"], "canonical_source_task_boundary_invalid")
 
         task["call_ledger"][0]["broker_session_opened"] = False
         store.write_task_status(task)

@@ -4893,6 +4893,22 @@ def _candidate_v05_task_safety_boundary() -> dict[str, Any]:
     }
 
 
+def _candidate_v05_runtime_artifact_sha256(path_label: Any) -> str:
+    label = _safe_text(path_label or "", limit=512)
+    relative = Path(label)
+    if relative.is_absolute() or not relative.parts or relative.parts[0] != "v04_acceptance":
+        return ""
+    target = worker_service.WORKER_V04_RUNTIME_ROOT.joinpath(*relative.parts[1:])
+    try:
+        resolved = target.resolve(strict=True)
+        root = worker_service.WORKER_V04_RUNTIME_ROOT.resolve(strict=True)
+        if not resolved.is_relative_to(root) or not resolved.is_file():
+            return ""
+        return hashlib.sha256(resolved.read_bytes()).hexdigest()
+    except (OSError, ValueError):
+        return ""
+
+
 def _candidate_v05_scope_hash(candidates: list[dict[str, Any]], payload_safe: Mapping[str, Any]) -> str:
     data_date = _safe_text(payload_safe.get("data_date") or payload_safe.get("trade_date") or "", limit=32)
     payload = {
@@ -5208,6 +5224,27 @@ def _run_candidate_v05_local_batch_task(
             warning="candidate_radar_v05_local_batch_failure_did_not_overwrite_current_or_last_good",
         ) or task
 
+    runtime_manifest_file_sha256 = _candidate_v05_runtime_artifact_sha256(runtime_result.get("manifest_path"))
+    runtime_event_log_file_sha256 = _candidate_v05_runtime_artifact_sha256(runtime_result.get("event_log_path"))
+    if not runtime_manifest_file_sha256 or not runtime_event_log_file_sha256:
+        ledger = _candidate_call_ledger_row(
+            api="local_candidate_radar_v05_local_batch",
+            source_snapshot=str(local_pool_audit.get("input_source") or "local_universe_payload_or_cache"),
+            row_count=int(runtime_result.get("processed_count") or 0),
+            call_status="candidate_radar_v05_runtime_artifact_read_failed_safe",
+            request_params_safe={"runtime_mode": "v05_candidate_local_batch"},
+        )
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_v05_runtime_artifact_read_failed_safe",
+            error_message_safe="candidate_radar_v05_runtime_artifact_read_failed_safe",
+            call_ledger=[ledger],
+        ) or task
+    runtime_result["manifest_file_sha256"] = runtime_manifest_file_sha256
+    runtime_result["event_log_file_sha256"] = runtime_event_log_file_sha256
+
     plan = _build_full_pool_scan_plan(scan_snapshot, payload_safe, now=now)
     request_params_safe = {
         "scan_mode": "v05_candidate_local_batch",
@@ -5291,6 +5328,8 @@ def _run_candidate_v05_local_batch_task(
     ledger["runtime_manifest_path"] = runtime_result.get("manifest_path")
     ledger["runtime_event_log_path"] = runtime_result.get("event_log_path")
     ledger["runtime_manifest_sha256"] = _as_dict(runtime_result.get("manifest")).get("manifest_sha256")
+    ledger["runtime_manifest_file_sha256"] = runtime_manifest_file_sha256
+    ledger["runtime_event_log_file_sha256"] = runtime_event_log_file_sha256
     packet["task_id"] = task["task_id"]
     packet["scan_mode"] = "v05_candidate_local_batch"
     packet["status"] = "candidate_radar_v05_local_batch_ready"
