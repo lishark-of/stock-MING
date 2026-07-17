@@ -118,6 +118,7 @@ const TRUSTED_REACHABLE_SOURCE_PATHS = [
   "desktop/src/components/TaskLaunchReceipt.tsx",
   "desktop/src/components/TaskStatusPanel.tsx",
   "desktop/src/routes/CommandCenterHome.css",
+  "desktop/src/routes/commandCenterHomeResultBinding.js",
   "desktop/src/routes/CandidateRadar.css",
   "desktop/src/routes/FactorQuantHub.css",
   "desktop/src/routes/NextSessionMap.css",
@@ -136,7 +137,8 @@ const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {
     "../components/RouteCacheLoadingBoundary",
     "../components/StatusBadge",
     "../components/TaskLaunchReceipt",
-    "../components/TaskStatusPanel"
+    "../components/TaskStatusPanel",
+    "./commandCenterHomeResultBinding.js"
   ]),
   CandidateRadar: new Set([
     "react",
@@ -205,7 +207,7 @@ const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 820 },
   { name: "mobile", width: 390, height: 844 }
 ];
-const EXPECTED_IMPORT_MANIFEST_DIGEST = "263413a6fcd407dcfd6dcb8974ecb1e946ca6b1f220e3cdb8bf2d455ab9b42b4";
+const EXPECTED_IMPORT_MANIFEST_DIGEST = "7f81a5c67a504e43225d105072e172460dfdb359be9dec3383cfdbb00502e14d";
 
 function sha256(data) {
   return createHash("sha256").update(data).digest("hex");
@@ -913,7 +915,8 @@ function importContract(ts, sourceFile, expectedComponent) {
     manifest.push(declaration);
     if (/react-dom|(?:^|\/)(?:legacy|admin|system)(?:\/|$)/i.test(source)) unsafe = true;
     const exactTrustedRouteHelper =
-      expectedComponent === "NextSessionMap" && source === "./nextSessionOrdinaryGate";
+      (expectedComponent === "CommandCenterHome" && source === "./commandCenterHomeResultBinding.js") ||
+      (expectedComponent === "NextSessionMap" && source === "./nextSessionOrdinaryGate");
     if (
       source.startsWith(".") &&
       !source.startsWith("../api/") &&

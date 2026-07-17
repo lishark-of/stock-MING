@@ -36,6 +36,7 @@ class UiStylesTrustedBindingTests(unittest.TestCase):
             "desktop/src/styles.css",
             "desktop/src/components/ProductSurface.css",
             "desktop/src/routes/CommandCenterHome.css",
+            "desktop/src/routes/commandCenterHomeResultBinding.js",
             "desktop/src/routes/CandidateRadar.css",
             "desktop/src/routes/FactorQuantHub.css",
             "desktop/src/routes/NextSessionMap.css",

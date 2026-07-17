@@ -69,6 +69,7 @@ TRUSTED_SOURCE_RELATIVES = (
     Path("desktop/src/components/TaskStatusPanel.tsx"),
     Path("desktop/src/routes/CommandCenterHome.tsx"),
     Path("desktop/src/routes/CommandCenterHome.css"),
+    Path("desktop/src/routes/commandCenterHomeResultBinding.js"),
     Path("desktop/src/routes/CandidateRadar.tsx"),
     Path("desktop/src/routes/CandidateRadar.css"),
     Path("desktop/src/routes/FactorQuantHub.tsx"),
