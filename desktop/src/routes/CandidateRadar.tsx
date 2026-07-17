@@ -11,6 +11,7 @@ import StateClarityRail from "../components/StateClarityRail";
 import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
+import "./CandidateRadar.css";
 
 function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
@@ -5886,6 +5887,35 @@ export default function CandidateRadar() {
         aria-describedby={describedBy}
       >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
     );
+  const candidateFocusFreshnessRaw = String(
+    freshnessState.state ?? freshnessState.freshness_state ?? cache.freshness ?? ""
+  ).toLowerCase();
+  const candidateFocusFreshnessLabel = /(fresh|today|current|ready)/.test(candidateFocusFreshnessRaw)
+    ? "数据已更新"
+    : /(stale|expired|old)/.test(candidateFocusFreshnessRaw)
+      ? "数据偏旧"
+      : candidateRadarCacheGetReadable
+        ? "本地数据可读"
+        : "等待数据";
+  const candidateFocusFreshnessTone = /(stale|expired|old)/.test(candidateFocusFreshnessRaw)
+    ? "warn"
+    : candidateRadarCacheGetReadable
+      ? "good"
+      : "neutral";
+  const candidateFocusDataDate = displayText(
+    freshnessState.data_date ?? freshnessState.as_of_date ?? cache.data_date,
+    "日期待回放"
+  );
+  const candidateFocusLeadReason = ordinaryCandidateTopCount
+    ? ordinaryUserText(candidatePoolLeadCandidateReason, "理由待补").replace(/candidate_rows/gi, "候选记录")
+    : "当前没有可复核候选；可以输入一只股票，或稍后刷新本地结果。";
+  const candidateFocusNextStep = quantProjectionCanSubmit
+    ? `确认 ${quantProjectionSymbolValidation.normalized}，再看量化推演与次日图谱`
+    : ordinaryCandidateTopCount
+      ? `先复核 ${candidatePoolLeadCandidateDisplay}，需要解释时再输入代码确认`
+      : candidateRadarP0Blocked
+        ? "先恢复本地连接，再读取候选"
+        : "输入一只 A 股代码，或等待下一次本地候选回放";
 
   return (
     <div className="route-cache-loading-shell" data-route-cache-loading={initialLayoutLoading ? "true" : "false"} data-route-cache-ready={initialLayoutReady ? "true" : "false"} data-route-cache-settled={initialLayoutSettled ? "true" : "false"} aria-busy={initialLayoutLoading} data-ltg10-component-id="CandidateRadar">
@@ -5897,6 +5927,114 @@ export default function CandidateRadar() {
         </div>
         <StatusBadge label={candidateRadarStatusLabel} tone={candidateRadarCacheGetReadable ? "good" : "neutral"} />
       </div>
+
+      <section className="candidate-focus-dashboard" aria-label="下一票雷达简洁工作台">
+        <div className="candidate-focus-dashboard__halo" aria-hidden="true" />
+        <header className="candidate-focus-dashboard__header">
+          <div>
+            <p className="candidate-focus-dashboard__eyebrow">NEXT TICKET RADAR</p>
+            <h2>找到下一只值得研究的股票</h2>
+            <p>先看候选，再决定是否深入。页面不会自动取数或交易。</p>
+          </div>
+          <span className={`candidate-focus-dashboard__freshness candidate-focus-dashboard__freshness--${candidateFocusFreshnessTone}`}>
+            <span aria-hidden="true" />
+            {candidateFocusFreshnessLabel}
+          </span>
+        </header>
+
+        <div className="candidate-focus-dashboard__search" id="candidate-radar-search-quant-projection">
+          <label htmlFor="candidate-focus-symbol">输入股票代码</label>
+          <div className="candidate-focus-dashboard__search-row">
+            <input
+              id="candidate-focus-symbol"
+              value={searchSymbol}
+              onChange={(event) => {
+                updateSearchSymbolInput(event.target.value);
+                setQuantProjectionSubmitError("");
+              }}
+              placeholder="例如 002008 或 002008.SZ"
+              aria-describedby="candidate-focus-symbol-help"
+              title={quantProjectionInputBoundaryLabel}
+              autoComplete="off"
+              inputMode="text"
+            />
+            <div className="candidate-focus-dashboard__primary-action">
+              {renderQuantProjectionPrimaryAction("candidate-focus-symbol-help")}
+            </div>
+          </div>
+          <p id="candidate-focus-symbol-help">
+            {quantProjectionSymbolReady
+              ? `${quantProjectionSymbolValidation.normalized} 格式已通过，确认后才会启动本地研究流程。`
+              : searchSymbol.trim()
+                ? "代码格式需要调整，请输入 6 位数字或带交易所后缀的代码。"
+                : "输入只做本地校验，不会自动刷新外部数据。"}
+          </p>
+        </div>
+
+        <div className="candidate-focus-dashboard__spotlight" aria-label="当前候选摘要">
+          <div className="candidate-focus-dashboard__spotlight-copy">
+            <span>当前候选</span>
+            <strong>{candidatePoolLeadCandidateDisplay}</strong>
+            <p>{candidateFocusLeadReason}</p>
+          </div>
+          <dl>
+            <div>
+              <dt>分组</dt>
+              <dd>{ordinaryUserText(candidatePoolLeadCandidateGroup)}</dd>
+            </div>
+            <div>
+              <dt>评分</dt>
+              <dd>{ordinaryUserText(candidatePoolLeadCandidateScore)}</dd>
+            </div>
+            <div>
+              <dt>来源</dt>
+              <dd>{ordinaryUserText(coarseFineSourceLabel)}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="candidate-focus-dashboard__groups" aria-label="候选分组摘要">
+          <article className="candidate-focus-group candidate-focus-group--top">
+            <div><span>TOP</span><strong>{ordinaryCandidateTopCount}</strong></div>
+            <h3>优先复核</h3>
+            <p>{ordinaryCandidateTopCount ? `先看 ${candidatePoolLeadCandidateDisplay} 的理由与缺口。` : "暂无优先候选，先输入一只股票。"}</p>
+          </article>
+          <article className="candidate-focus-group candidate-focus-group--watch">
+            <div><span>WATCH</span><strong>{ordinaryCandidateWatchCount}</strong></div>
+            <h3>持续观察</h3>
+            <p>{ordinaryCandidateWatchCount ? "等待触发条件，不追涨、不加仓。" : "当前没有需要持续观察的候选。"}</p>
+          </article>
+          <article className="candidate-focus-group candidate-focus-group--excluded">
+            <div><span>EXCLUDED</span><strong>{ordinaryCandidateExcludedCount}</strong></div>
+            <h3>暂不考虑</h3>
+            <p>{ordinaryCandidateExcludedCount ? "先看排除原因，保留研究记录。" : "当前没有被排除的候选。"}</p>
+          </article>
+        </div>
+
+        <footer className="candidate-focus-dashboard__footer">
+          <div>
+            <span>数据新鲜度</span>
+            <strong>{candidateFocusFreshnessLabel}</strong>
+            <small>{candidateFocusDataDate}</small>
+          </div>
+          <div className="candidate-focus-dashboard__next">
+            <span>下一步</span>
+            <strong>{candidateFocusNextStep}</strong>
+          </div>
+          <nav aria-label="下一票雷达结果入口">
+            <a href="#factor/factor-score">量化推演</a>
+            <a href="#next/next-session-chart">次日图谱</a>
+            <a href="#marginEtf">ETF / 融资风险</a>
+          </nav>
+        </footer>
+      </section>
+
+      <details className="candidate-research-details" aria-label="下一票雷达研究与审计详情">
+        <summary>
+          <span>研究与审计详情</span>
+          <small>数据记录、任务进度、完整候选表与开发诊断</small>
+        </summary>
+        <div className="candidate-research-details__body">
 
       <PacketCard title="下一票雷达操作台" subtitle={candidateRadarCompactOperatorSubtitle} status={candidateRadarStatusLabel}>
         <p className="ordinary-status-note" aria-label="candidate radar operator input confirm first sentence">输入确认速读：输入只做本地校验；确认后看最近结果、候选池、量化推演、次日图谱和 ETF/融资风险。</p>
@@ -6509,7 +6647,7 @@ export default function CandidateRadar() {
             ]}
           />
         </details>
-        <div id="candidate-radar-search-quant-projection" aria-label="candidate radar first screen quant projection confirmation">
+        <div id="candidate-radar-search-quant-projection-detail" aria-label="candidate radar first screen quant projection confirmation">
           <h3>P1 搜票确认</h3>
           <div className="actions" aria-label="candidate radar first screen quant projection actions">
             <input
@@ -8140,6 +8278,8 @@ export default function CandidateRadar() {
         <PacketCard title="原始 candidate radar cache payload" subtitle="调试用 JSON；不含敏感凭据或错误堆栈" status="safe">
           <JsonDetails title="candidate radar cache raw" data={cache} />
         </PacketCard>
+      </details>
+        </div>
       </details>
     </div>
   );
