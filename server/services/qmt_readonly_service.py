@@ -126,6 +126,7 @@ SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(SH|SZ|BJ)$")
 SOURCE_HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
 SOURCE_TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
+TASK_TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}$")
 MONEY_QUANTUM = Decimal("0.01")
 PRICE_QUANTUM = Decimal("0.0001")
 BPS_DENOMINATOR = Decimal("10000")
@@ -165,6 +166,15 @@ def _now_iso() -> str:
 
 def _canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _parse_task_timestamp(value: Any) -> _dt.datetime:
+    if not isinstance(value, str) or not TASK_TIMESTAMP_PATTERN.fullmatch(value):
+        raise ValueError("invalid_task_timestamp_shape")
+    parsed = _dt.datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%f")
+    if parsed.tzinfo is not None:
+        raise ValueError("task_timestamp_must_be_naive")
+    return parsed
 
 
 def _sha256(value: Any) -> str:
@@ -2142,12 +2152,13 @@ def _result_task_binding(packet: Any) -> tuple[bool, str]:
             )
         ):
             return False, "result_task_log_invalid"
-    lifecycle_times = [str(row.get("at")) for row in status_history]
+    lifecycle_times = [row.get("at") for row in status_history]
     try:
-        parsed_times = [_dt.datetime.fromisoformat(value) for value in lifecycle_times]
-    except (TypeError, ValueError):
+        parsed_times = [_parse_task_timestamp(value) for value in lifecycle_times]
+        strictly_increasing = parsed_times[0] < parsed_times[1] < parsed_times[2]
+    except Exception:
         return False, "result_task_lifecycle_time_invalid"
-    if parsed_times != sorted(parsed_times):
+    if not strictly_increasing:
         return False, "result_task_lifecycle_time_invalid"
     if any(
         (

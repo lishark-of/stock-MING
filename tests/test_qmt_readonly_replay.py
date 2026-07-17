@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import datetime as dt
 import hashlib
 import inspect
 import json
@@ -747,6 +748,48 @@ class QmtReadonlyReplayTests(unittest.TestCase):
 
         self.assertEqual(bad_time["status"], "latest_attempt_blocked")
         self.assertEqual(bad_time["result_task_binding_status"], "result_task_lifecycle_time_invalid")
+
+    def test_cache_get_rejects_mixed_date_only_equal_and_non_monotonic_task_times(self):
+        def mixed_naive_aware(task: dict) -> None:
+            aware = task["status_history"][1]["at"] + "+08:00"
+            task["status_history"][1]["at"] = aware
+            task["task_log"][1]["at"] = aware
+            task["started_at"] = aware
+
+        def date_only(task: dict) -> None:
+            value = "2026-07-18"
+            task["status_history"][0]["at"] = value
+            task["task_log"][0]["at"] = value
+            task["created_at"] = value
+
+        def equal_times(task: dict) -> None:
+            value = task["status_history"][0]["at"]
+            task["status_history"][1]["at"] = value
+            task["task_log"][1]["at"] = value
+            task["started_at"] = value
+
+        def non_monotonic(task: dict) -> None:
+            created = dt.datetime.strptime(task["status_history"][0]["at"], "%Y-%m-%dT%H:%M:%S.%f")
+            value = (created - dt.timedelta(microseconds=1)).isoformat(timespec="microseconds")
+            task["status_history"][1]["at"] = value
+            task["task_log"][1]["at"] = value
+            task["started_at"] = value
+
+        for mutate in (mixed_naive_aware, date_only, equal_times, non_monotonic):
+            with self.subTest(mutate=mutate.__name__):
+                written = service.run_qmt_readonly_local_replay(_payload())
+                task = task_service._TASKS[str(written["task_id"])]
+                mutate(task)
+                task_service._persist_task(task)
+
+                cached = service.read_qmt_replay_cache()
+
+                self.assertEqual(cached["status"], "latest_attempt_blocked")
+                self.assertEqual(
+                    cached["result_task_binding_status"],
+                    "result_task_lifecycle_time_invalid",
+                )
+                task_service._TASKS.clear()
 
     def test_missing_current_with_invalid_last_good_is_explicitly_blocked(self):
         written = service.run_qmt_readonly_local_replay(_payload())
