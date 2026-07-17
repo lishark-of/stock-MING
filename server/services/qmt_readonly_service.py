@@ -876,6 +876,31 @@ def _validate_exact_safety_boundary(value: Mapping[str, Any], *, code: str) -> N
             raise ReplayValidationError(code)
 
 
+def _candidate_v05_scope_hash_from_task_payload(
+    source_pool: list[Any],
+    payload_safe: Mapping[str, Any],
+) -> str:
+    if any(not isinstance(row, Mapping) for row in source_pool):
+        raise ReplayValidationError("canonical_source_task_pool_invalid")
+    # Reuse the producer's pure normalization and scope projection.  Replaying
+    # only the raw rows would omit producer-added rank and data-gap fields and
+    # would therefore reject every legitimate persisted v0.5 task.
+    from . import candidate_service
+
+    scan_snapshot, _, _ = candidate_service._snapshot_with_local_candidate_pool(
+        {},
+        payload_safe,
+        "full_pool_local_scan",
+    )
+    normalized_pool = scan_snapshot.get("next_ticket_candidates")
+    if not isinstance(normalized_pool, list) or not normalized_pool:
+        raise ReplayValidationError("canonical_source_task_pool_invalid")
+    return candidate_service._candidate_v05_scope_hash(
+        [dict(row) for row in normalized_pool if isinstance(row, Mapping)],
+        payload_safe,
+    )
+
+
 def _canonical_fresh_lineage(packet: Any, *, lineage_key: str) -> dict[str, Any]:
     if not isinstance(packet, Mapping):
         raise ReplayValidationError("canonical_source_packet_missing")
@@ -1132,6 +1157,9 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
     source_pool = payload_safe.get("full_pool_candidates")
     if not isinstance(source_pool, list):
         raise ReplayValidationError("canonical_source_task_pool_invalid")
+    if _candidate_v05_scope_hash_from_task_payload(source_pool, payload_safe) != expected["source_scope_hash"]:
+        raise ReplayValidationError("canonical_source_task_scope_not_derived")
+    raw_pool_count = len(source_pool)
     source_pool_symbols: list[str] = []
     for row in source_pool:
         if not isinstance(row, Mapping):
@@ -1185,7 +1213,7 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
         "operator_approved": True,
         "candidate_scope_hash_short": expected["source_scope_hash"][:12],
         "scope_hash_matches": True,
-        "input_candidate_count": processed_count,
+        "input_candidate_count": raw_pool_count,
         "normalized_candidate_count": processed_count,
         "processed_candidate_count": processed_count,
         "external_sources_allowed": False,
@@ -1202,18 +1230,15 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
         raise ReplayValidationError("canonical_candidate_pool_audit_invalid")
     if (
         local_pool_audit.get("input_source") != task_ledger_row.get("source_snapshot")
-        or local_pool_audit.get("input_candidate_count") != processed_count
+        or local_pool_audit.get("input_candidate_count") != raw_pool_count
         or local_pool_audit.get("normalized_candidate_count") != processed_count
-        or any(
-            local_pool_audit.get(field) != 0
-            for field in (
-                "disabled_candidate_count",
-                "invalid_candidate_count",
-                "duplicate_candidate_count",
-                "truncated_candidate_count",
-                "skipped_candidate_count",
-            )
-        )
+        or local_pool_audit.get("duplicate_candidate_count") != raw_pool_count - processed_count
+        or any(local_pool_audit.get(field) != 0 for field in (
+            "disabled_candidate_count",
+            "invalid_candidate_count",
+            "truncated_candidate_count",
+            "skipped_candidate_count",
+        ))
     ):
         raise ReplayValidationError("canonical_candidate_pool_audit_invalid")
     bucket_counts = candidate.get("candidate_radar_v05_bucket_counts")

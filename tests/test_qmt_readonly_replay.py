@@ -18,11 +18,15 @@ from server.services import qmt_readonly_service as service
 from server.services import task_service
 
 
-SOURCE_HASH = "a" * 64
 SOURCE_TASK_ID = "local-source-task-123"
 SOURCE_DATA_DATE = "20260710"
 SOURCE_SYMBOL = "600519.SH"
 SOURCE_PROCESSED_COUNT = 1
+SOURCE_POOL = [{"ticker": SOURCE_SYMBOL}]
+SOURCE_HASH = service._candidate_v05_scope_hash_from_task_payload(
+    SOURCE_POOL,
+    {"data_date": SOURCE_DATA_DATE, "full_pool_candidates": SOURCE_POOL},
+)
 SOURCE_RESULT_VERSION = "candidate-v05-" + hashlib.sha256(
     json.dumps(
         {"scope_hash": SOURCE_HASH, "task_id": SOURCE_TASK_ID, "processed": SOURCE_PROCESSED_COUNT},
@@ -175,7 +179,7 @@ class QmtReadonlyReplayTests(unittest.TestCase):
                 "candidate_scope_hash": SOURCE_HASH,
                 "confirm_scope_hash": SOURCE_HASH,
                 "data_date": SOURCE_DATA_DATE,
-                "full_pool_candidates": [{"ticker": SOURCE_SYMBOL}],
+                "full_pool_candidates": copy.deepcopy(SOURCE_POOL),
             },
             status=task_status,
             progress=1.0,
@@ -882,6 +886,12 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         self._seed_canonical_source()
         source_task = task_service._TASKS[SOURCE_TASK_ID]
         source_task["payload_safe"]["full_pool_candidates"].append({"ticker": "000001.SZ"})
+        resealed_scope = service._candidate_v05_scope_hash_from_task_payload(
+            source_task["payload_safe"]["full_pool_candidates"],
+            source_task["payload_safe"],
+        )
+        source_task["payload_safe"]["candidate_scope_hash"] = resealed_scope
+        source_task["payload_safe"]["confirm_scope_hash"] = resealed_scope
         source_task["input_hash"] = hashlib.sha256(
             json.dumps(
                 {"task_type": service.CANDIDATE_TASK_TYPE, "payload_safe": source_task["payload_safe"]},
@@ -891,7 +901,19 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             ).encode("utf-8")
         ).hexdigest()[:16]
         store.write_task_status(source_task)
-        blocked = service.run_qmt_readonly_local_replay(_payload())
+        candidate = store.read_packet(service.CANDIDATE_PACKET_KEY)
+        candidate["candidate_radar_v05_scope_hash"] = resealed_scope
+        candidate["candidate_radar_v05_next_session_lineage"]["candidate_scope_hash"] = resealed_scope
+        store.write_packet(service.CANDIDATE_PACKET_KEY, candidate)
+        next_session = store.read_packet(service.NEXT_SESSION_PACKET_KEY)
+        next_session["candidate_scope_hash"] = resealed_scope
+        next_session["candidate_radar_v05_lineage"]["candidate_scope_hash"] = resealed_scope
+        next_session["chart_payload"]["candidate_scope_hash"] = resealed_scope
+        next_session["call_ledger"][0]["request_params_safe"]["candidate_scope_hash"] = resealed_scope
+        store.write_packet(service.NEXT_SESSION_PACKET_KEY, next_session)
+        resealed_payload = _payload()
+        resealed_payload["source_scope_hash"] = resealed_scope
+        blocked = service.run_qmt_readonly_local_replay(resealed_payload)
         self.assertEqual(blocked["error_message_safe"], "canonical_source_processed_count_mismatch")
 
         self._seed_canonical_source()
