@@ -8,6 +8,24 @@ from command_center_legacy_packet_contract import build_legacy_packet_decision_c
 
 
 MAX_RISK_NOTES = 6
+LOCAL_READ_FALSE_SAFETY_FIELDS = (
+    "external",
+    "external_calls_triggered",
+    "provider_or_model_calls",
+    "provider_called",
+    "model_called",
+    "worker_called",
+    "tushare_called",
+    "deepseek_called",
+    "github_called",
+    "trade_called",
+    "trading_called",
+    "broker_called",
+    "order_called",
+    "real_trading_enabled",
+    "contains_secret",
+)
+LOCAL_READ_TRUE_SAFETY_FIELDS = ("does_not_execute_trades", "does_not_modify_strategy_action")
 
 
 def as_mapping(value: Any) -> dict:
@@ -351,6 +369,10 @@ def build_command_center_margin_packet(
         "trade_date": _first_text(payload.get("date"), payload.get("trade_date"), payload.get("latest_date")),
         "target": _first_text(target, existing_target),
         "ticker": _first_text(payload.get("ticker"), payload.get("ts_code"), target),
+        "source_task_id": payload.get("source_task_id"),
+        "source_scope_hash": payload.get("source_scope_hash"),
+        "source_identity": payload.get("source_identity"),
+        "source_result_version": payload.get("source_result_version"),
         "financing_balance_yi": financing_balance_yi,
         "financing_buy_yi": financing_buy_yi,
         "margin_balance_yi": margin_balance_yi,
@@ -397,4 +419,9 @@ def build_command_center_margin_packet(
             capability_state=capability_state,
         )
     )
+    packet["warnings"] = payload.get("warnings", [])
+    for field in LOCAL_READ_FALSE_SAFETY_FIELDS:
+        packet[field] = False if field == "deepseek_called" else payload.get(field) if field in payload else False
+    for field in LOCAL_READ_TRUE_SAFETY_FIELDS:
+        packet[field] = payload.get(field) if field in payload else True
     return packet

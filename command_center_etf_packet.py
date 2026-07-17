@@ -15,6 +15,24 @@ ACTIONABLE_ETF_LABELS = {"可配置", "可小额配置", "可用现金配置", "
 WATCH_ETF_LABELS = {"观察", "等回踩", "等量能确认", "只观察不追"}
 AVOID_ETF_LABELS = {"不追高", "过热", "重叠过高", "流动性不足", "融资风险不支持"}
 EXCLUDED_ETF_LABELS = {"数据不足", "暂不纳入", "无法评分", "接口失败", "权限失败", "不可判断"}
+LOCAL_READ_FALSE_SAFETY_FIELDS = (
+    "external",
+    "external_calls_triggered",
+    "provider_or_model_calls",
+    "provider_called",
+    "model_called",
+    "worker_called",
+    "tushare_called",
+    "deepseek_called",
+    "github_called",
+    "trade_called",
+    "trading_called",
+    "broker_called",
+    "order_called",
+    "real_trading_enabled",
+    "contains_secret",
+)
+LOCAL_READ_TRUE_SAFETY_FIELDS = ("does_not_execute_trades", "does_not_modify_strategy_action")
 
 
 def as_mapping(value: Any) -> dict:
@@ -480,6 +498,12 @@ def _packet_decision_guardrail(status: str, etfs: Any = None) -> str:
 
 def _apply_etf_packet_contract(packet: Any = None) -> dict:
     payload = as_mapping(packet)
+    explicit_safety = {
+        field: payload.get(field)
+        for field in (*LOCAL_READ_FALSE_SAFETY_FIELDS, *LOCAL_READ_TRUE_SAFETY_FIELDS)
+        if field in payload
+    }
+    explicit_warnings = payload.get("warnings") if "warnings" in payload else []
     etfs = as_list(payload.get("recommended_etfs"))
     status = to_text(payload.get("status"), "waiting")
     data_status = to_text(payload.get("data_status") or payload.get("cache_state"), "missing")
@@ -529,6 +553,11 @@ def _apply_etf_packet_contract(packet: Any = None) -> dict:
             capability_state=payload.get("capability_state"),
         )
     )
+    payload["warnings"] = explicit_warnings
+    for field in LOCAL_READ_FALSE_SAFETY_FIELDS:
+        payload[field] = False if field == "deepseek_called" else explicit_safety.get(field, False)
+    for field in LOCAL_READ_TRUE_SAFETY_FIELDS:
+        payload[field] = explicit_safety.get(field, True)
     return payload
 
 

@@ -71,6 +71,43 @@ function numeric(value: unknown, fallback = 0) {
   return Number.isFinite(result) ? result : fallback;
 }
 
+// MARGIN_ETF_FOCUS_VALIDATOR_START
+const MARGIN_ETF_FOCUS_SCHEMA_VERSION = "margin_etf_focus_binding.v2";
+const MARGIN_ETF_FOCUS_PROJECTION_SCHEMA_VERSION = "margin_etf_focus_projection.v2";
+const MARGIN_ETF_FOCUS_PRODUCER = "command_center_home_snapshot.margin_etf_focus_binding";
+const MARGIN_ETF_FOCUS_FALSE_SAFETY_FIELDS = [
+  "external",
+  "external_calls_triggered",
+  "provider_or_model_calls",
+  "provider_called",
+  "model_called",
+  "worker_called",
+  "tushare_called",
+  "deepseek_called",
+  "github_called",
+  "trade_called",
+  "trading_called",
+  "broker_called",
+  "order_called",
+  "real_trading_enabled",
+  "contains_secret"
+] as const;
+const MARGIN_ETF_FOCUS_TRUE_SAFETY_FIELDS = [
+  "does_not_execute_trades",
+  "does_not_modify_strategy_action"
+] as const;
+
+type MarginEtfFocusCandidate = { code: string; name: string; reason: string };
+export type MarginEtfFocusView = {
+  dataDate: string;
+  availableCash: number;
+  recommendedCashRatio: number;
+  currentMarginRatio: number;
+  recommendedMarginRatio: number;
+  allowNewMargin: boolean;
+  coreEtfs: MarginEtfFocusCandidate[];
+};
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -93,16 +130,185 @@ function strictYyyyMmDd(value: unknown) {
     : "";
 }
 
-function cashText(value: unknown) {
-  if (value === undefined || value === null || value === "") return "--";
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return "--";
+function strictHash(value: unknown) {
+  const candidate = strictString(value);
+  return /^[0-9a-f]{64}$/.test(candidate) ? candidate : "";
+}
+
+function strictNumber(value: unknown, minimum: number, maximum: number): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum
+    ? value
+    : null;
+}
+
+function strictOptionalNumber(value: unknown, minimum: number, maximum: number): number | null | undefined {
+  if (value === null) return null;
+  const parsed = strictNumber(value, minimum, maximum);
+  return parsed === null ? undefined : parsed;
+}
+
+function exactKeys(value: Record<string, unknown>, expected: readonly string[]) {
+  const observed = Object.keys(value).sort();
+  const canonical = [...expected].sort();
+  return observed.length === canonical.length && observed.every((key, index) => key === canonical[index]);
+}
+
+function strictTimestamp(value: unknown) {
+  const candidate = strictString(value);
+  if (!candidate.includes("T")) return "";
+  const milliseconds = Date.parse(candidate);
+  return Number.isFinite(milliseconds) ? candidate : "";
+}
+
+function strictIdentity(value: unknown) {
+  const candidate = strictString(value);
+  return candidate && candidate.length <= 160 && /^[A-Za-z0-9._:/-]+$/.test(candidate) ? candidate : "";
+}
+
+function strictTarget(value: unknown) {
+  const candidate = strictString(value);
+  return /^\d{6}\.(?:SH|SZ|BJ)$/.test(candidate) ? candidate : "";
+}
+
+function strictCandidate(value: unknown): MarginEtfFocusCandidate | null {
+  const candidate = record(value);
+  if (!exactKeys(candidate, ["code", "name", "reason"])) return null;
+  const code = strictString(candidate.code);
+  const name = strictString(candidate.name);
+  const reason = strictString(candidate.reason);
+  if (!/^\d{6}\.(?:SH|SZ)$/.test(code) || !name || name.length > 120 || !reason || reason.length > 500) return null;
+  return { code, name, reason };
+}
+
+const BINDING_KEYS = [
+  "schema_version", "producer", "producer_run_id", "result_version", "binding_sha256", "projection_sha256",
+  "source_identity", "etf_packet_key", "margin_packet_key", "data_date", "expected_trade_date",
+  "freshness_state", "calendar_validated", "same_margin_etf_packet_date_bound", "usable_for_risk_budget",
+  ...MARGIN_ETF_FOCUS_FALSE_SAFETY_FIELDS, ...MARGIN_ETF_FOCUS_TRUE_SAFETY_FIELDS, "projection"
+] as const;
+const PROJECTION_KEYS = [
+  "schema_version", "source_identity", "data_date", "expected_trade_date", "freshness_state", "calendar_validated",
+  "packet_updated_at", "source_labels", "etf", "margin"
+] as const;
+const IDENTITY_KEYS = ["task_id", "scope_hash", "target", "source", "result_version"] as const;
+const ETF_PROJECTION_KEYS = [
+  "status", "data_status", "verification_status", "available_cash", "recommended_cash_ratio",
+  "current_margin_ratio", "recommended_margin_ratio", "allow_new_margin", "core_etfs"
+] as const;
+const MARGIN_PROJECTION_KEYS = [
+  "status", "data_status", "verification_status", "financing_balance_yi", "financing_buy_yi", "margin_balance_yi"
+] as const;
+
+export function parseMarginEtfFocusBinding(input: {
+  etfBinding: unknown;
+  marginBinding: unknown;
+  etfPacketKey: unknown;
+  marginPacketKey: unknown;
+  loading: boolean;
+  error: unknown;
+}): MarginEtfFocusView | null {
+  if (input.loading || Boolean(input.error)) return null;
+  const etfBinding = record(input.etfBinding);
+  const marginBinding = record(input.marginBinding);
+  if (!exactKeys(etfBinding, BINDING_KEYS) || !exactKeys(marginBinding, BINDING_KEYS)) return null;
+  if (JSON.stringify(etfBinding) !== JSON.stringify(marginBinding)) return null;
+  if (
+    etfBinding.schema_version !== MARGIN_ETF_FOCUS_SCHEMA_VERSION ||
+    etfBinding.producer !== MARGIN_ETF_FOCUS_PRODUCER ||
+    etfBinding.etf_packet_key !== "command_center_etf_packet" ||
+    etfBinding.margin_packet_key !== "command_center_margin_packet" ||
+    input.etfPacketKey !== "command_center_etf_packet" ||
+    input.marginPacketKey !== "command_center_margin_packet" ||
+    etfBinding.freshness_state !== "fresh" ||
+    etfBinding.calendar_validated !== true ||
+    etfBinding.same_margin_etf_packet_date_bound !== true ||
+    etfBinding.usable_for_risk_budget !== true
+  ) return null;
+  if (MARGIN_ETF_FOCUS_FALSE_SAFETY_FIELDS.some((field) => etfBinding[field] !== false)) return null;
+  if (MARGIN_ETF_FOCUS_TRUE_SAFETY_FIELDS.some((field) => etfBinding[field] !== true)) return null;
+
+  const bindingHash = strictHash(etfBinding.binding_sha256);
+  const projectionHash = strictHash(etfBinding.projection_sha256);
+  if (
+    !bindingHash || !projectionHash ||
+    etfBinding.producer_run_id !== `home-snapshot:${bindingHash}` ||
+    etfBinding.result_version !== `margin-etf:${bindingHash}`
+  ) return null;
+
+  const sourceIdentity = record(etfBinding.source_identity);
+  if (!exactKeys(sourceIdentity, IDENTITY_KEYS)) return null;
+  if (
+    !strictIdentity(sourceIdentity.task_id) ||
+    !strictHash(sourceIdentity.scope_hash) ||
+    !strictTarget(sourceIdentity.target) ||
+    !strictIdentity(sourceIdentity.source) ||
+    !strictIdentity(sourceIdentity.result_version)
+  ) return null;
+
+  const projection = record(etfBinding.projection);
+  if (!exactKeys(projection, PROJECTION_KEYS) || projection.schema_version !== MARGIN_ETF_FOCUS_PROJECTION_SCHEMA_VERSION) return null;
+  if (JSON.stringify(projection.source_identity) !== JSON.stringify(sourceIdentity)) return null;
+  const dataDate = strictYyyyMmDd(projection.data_date);
+  const expectedTradeDate = strictYyyyMmDd(projection.expected_trade_date);
+  if (
+    !dataDate || dataDate !== expectedTradeDate ||
+    etfBinding.data_date !== dataDate || etfBinding.expected_trade_date !== dataDate ||
+    projection.freshness_state !== "fresh" || projection.calendar_validated !== true
+  ) return null;
+
+  const timestamps = record(projection.packet_updated_at);
+  const sourceLabels = record(projection.source_labels);
+  if (!exactKeys(timestamps, ["etf", "margin", "snapshot"]) || !exactKeys(sourceLabels, ["etf", "margin"])) return null;
+  const etfUpdated = strictTimestamp(timestamps.etf);
+  const marginUpdated = strictTimestamp(timestamps.margin);
+  const snapshotUpdated = strictTimestamp(timestamps.snapshot);
+  if (!etfUpdated || !marginUpdated || !snapshotUpdated || !strictString(sourceLabels.etf) || !strictString(sourceLabels.margin)) return null;
+  const compactDate = (value: string) => value.slice(0, 10).replace(/-/g, "");
+  if (
+    compactDate(etfUpdated) < dataDate || compactDate(marginUpdated) < dataDate ||
+    compactDate(etfUpdated) > compactDate(snapshotUpdated) || compactDate(marginUpdated) > compactDate(snapshotUpdated)
+  ) return null;
+
+  const etf = record(projection.etf);
+  const margin = record(projection.margin);
+  if (!exactKeys(etf, ETF_PROJECTION_KEYS) || !exactKeys(margin, MARGIN_PROJECTION_KEYS)) return null;
+  if (
+    etf.status !== "ready" || etf.data_status !== "ready" || etf.verification_status !== "已验证" ||
+    margin.status !== "ready" || margin.data_status !== "ready" || margin.verification_status !== "已验证" ||
+    typeof etf.allow_new_margin !== "boolean"
+  ) return null;
+  const availableCash = strictNumber(etf.available_cash, 0, 1_000_000_000_000_000);
+  const recommendedCashRatio = strictNumber(etf.recommended_cash_ratio, 0, 100);
+  const currentMarginRatio = strictNumber(etf.current_margin_ratio, 0, 100);
+  const recommendedMarginRatio = strictNumber(etf.recommended_margin_ratio, 0, 100);
+  if (availableCash === null || recommendedCashRatio === null || currentMarginRatio === null || recommendedMarginRatio === null) return null;
+  if (
+    strictOptionalNumber(margin.financing_balance_yi, 0, 1_000_000_000) === undefined ||
+    strictOptionalNumber(margin.financing_buy_yi, -1_000_000_000, 1_000_000_000) === undefined ||
+    strictOptionalNumber(margin.margin_balance_yi, 0, 1_000_000_000) === undefined
+  ) return null;
+  if (!Array.isArray(etf.core_etfs) || etf.core_etfs.length < 1 || etf.core_etfs.length > 3) return null;
+  const coreEtfs = etf.core_etfs.map(strictCandidate);
+  if (coreEtfs.some((candidate) => candidate === null)) return null;
+  return {
+    dataDate,
+    availableCash,
+    recommendedCashRatio,
+    currentMarginRatio,
+    recommendedMarginRatio,
+    allowNewMargin: etf.allow_new_margin,
+    coreEtfs: coreEtfs as MarginEtfFocusCandidate[]
+  };
+}
+
+function cashText(amount: number) {
   return new Intl.NumberFormat("zh-CN", {
     style: "currency",
     currency: "CNY",
     maximumFractionDigits: 0
   }).format(amount);
 }
+// MARGIN_ETF_FOCUS_VALIDATOR_END
 
 const runtimeModeLabels: Record<string, string> = {
   cache_only: "cache_only（只读缓存，不外联）",
@@ -1060,73 +1266,25 @@ export default function MarginEtf() {
     { label: "安全边界", value: "不自动补外部数据、不调用模型、不交易、不加融资" }
   ];
 
-  const marginEtfEtfBinding = record(etfPacket.margin_etf_focus_binding ?? etfPacket.result_binding);
-  const marginEtfMarginBinding = record(marginPacket.margin_etf_focus_binding ?? marginPacket.result_binding);
-  const marginEtfFocusBinding = marginEtfEtfBinding;
-  const marginEtfFocusDataDate = strictYyyyMmDd(marginEtfFocusBinding.data_date);
-  const marginEtfFocusExpectedTradeDate = strictYyyyMmDd(marginEtfFocusBinding.expected_trade_date);
-  const marginEtfMarginDataDate = strictYyyyMmDd(marginEtfMarginBinding.data_date);
-  const marginEtfMarginExpectedTradeDate = strictYyyyMmDd(marginEtfMarginBinding.expected_trade_date);
-  const marginEtfFocusFreshnessState = strictString(
-    marginEtfFocusBinding.freshness_state ?? marginEtfFocusBinding.data_freshness_state,
-  ).toLowerCase();
-  const marginEtfFocusSamePacketBound =
-    (marginEtfFocusBinding.same_margin_etf_packet_date_bound === true ||
-      marginEtfFocusBinding.same_packet_date_bound === true) &&
-    (marginEtfMarginBinding.same_margin_etf_packet_date_bound === true ||
-      marginEtfMarginBinding.same_packet_date_bound === true);
-  const marginEtfFocusBindingsMatch =
-    strictString(marginEtfFocusBinding.etf_packet_key) === strictString(marginEtfMarginBinding.etf_packet_key) &&
-    strictString(marginEtfFocusBinding.margin_packet_key) === strictString(marginEtfMarginBinding.margin_packet_key) &&
-    strictString(marginEtfFocusBinding.producer_run_id) === strictString(marginEtfMarginBinding.producer_run_id) &&
-    strictString(marginEtfFocusBinding.result_version) === strictString(marginEtfMarginBinding.result_version) &&
-    marginEtfFocusDataDate === marginEtfMarginDataDate &&
-    marginEtfFocusExpectedTradeDate === marginEtfMarginExpectedTradeDate &&
-    marginEtfFocusFreshnessState === strictString(
-      marginEtfMarginBinding.freshness_state ?? marginEtfMarginBinding.data_freshness_state,
-    ).toLowerCase();
-  const marginEtfFocusBindingComplete =
-    marginEtfFocusSamePacketBound &&
-    marginEtfFocusBindingsMatch &&
-    strictString(marginEtfFocusBinding.etf_packet_key) === strictString(etfPacket.packet_key) &&
-    strictString(marginEtfFocusBinding.margin_packet_key) === strictString(marginPacket.packet_key) &&
-    strictString(marginEtfFocusBinding.etf_packet_key) === "command_center_etf_packet" &&
-    strictString(marginEtfFocusBinding.margin_packet_key) === "command_center_margin_packet" &&
-    Boolean(strictString(marginEtfFocusBinding.producer_run_id)) &&
-    Boolean(strictString(marginEtfFocusBinding.result_version)) &&
-    Boolean(marginEtfFocusDataDate) &&
-    Boolean(marginEtfFocusExpectedTradeDate);
-  const marginEtfFocusCurrentEvidenceUsable =
-    !loading &&
-    !error &&
-    marginEtfFocusBindingComplete &&
-    marginEtfFocusBinding.usable_for_risk_budget === true &&
-    marginEtfMarginBinding.usable_for_risk_budget === true &&
-    ["fresh", "current", "today"].includes(marginEtfFocusFreshnessState) &&
-    marginEtfFocusBinding.calendar_validated === true &&
-    marginEtfMarginBinding.calendar_validated === true &&
-    marginEtfFocusDataDate === marginEtfFocusExpectedTradeDate;
-  const marginEtfFocusEtfs = marginEtfFocusCurrentEvidenceUsable
-    ? (recommendedEtfs.length
-        ? recommendedEtfs
-        : actionableEtfs.length
-          ? actionableEtfs
-          : watchEtfs
-      ).slice(0, 3)
-    : [];
-  const marginEtfFocusCash = marginEtfFocusCurrentEvidenceUsable
-    ? cashText(marginEtfFocusBinding.available_cash)
-    : "--";
-  const marginEtfFocusCashBuffer = marginEtfFocusCurrentEvidenceUsable
-    ? percent(recommendedCashRatio)
-    : "--";
-  const marginEtfFocusMarginState = marginEtfFocusCurrentEvidenceUsable
-    ? allowNewMargin
+  const marginEtfFocusView = parseMarginEtfFocusBinding({
+    etfBinding: etfPacket.margin_etf_focus_binding,
+    marginBinding: marginPacket.margin_etf_focus_binding,
+    etfPacketKey: etfPacket.packet_key,
+    marginPacketKey: marginPacket.packet_key,
+    loading,
+    error
+  });
+  const marginEtfFocusCurrentEvidenceUsable = marginEtfFocusView !== null;
+  const marginEtfFocusEtfs = marginEtfFocusView?.coreEtfs ?? [];
+  const marginEtfFocusCash = marginEtfFocusView ? cashText(marginEtfFocusView.availableCash) : "--";
+  const marginEtfFocusCashBuffer = marginEtfFocusView ? percent(marginEtfFocusView.recommendedCashRatio) : "--";
+  const marginEtfFocusMarginState = marginEtfFocusView
+    ? marginEtfFocusView.allowNewMargin
       ? "风险预算允许继续人工复核"
       : "当前风险预算不开放新增融资"
     : "数据待确认；不开放融资判断";
-  const marginEtfFocusFreshnessLabel = marginEtfFocusCurrentEvidenceUsable
-    ? `数据日期 ${marginEtfFocusDataDate} · 交易日历已验证`
+  const marginEtfFocusFreshnessLabel = marginEtfFocusView
+    ? `数据日期 ${marginEtfFocusView.dataDate} · 交易日历已验证`
     : "等待 ETF 与融资同包日期绑定";
 
   return (
@@ -1176,10 +1334,10 @@ export default function MarginEtf() {
             </div>
             <div className="margin-etf-focus__etf-list">
               {marginEtfFocusEtfs.length ? marginEtfFocusEtfs.map((item, index) => (
-                <article key={`${etfLabel(item)}-${index}`} className="margin-etf-focus__etf-card">
+                <article key={`${item.code}-${index}`} className="margin-etf-focus__etf-card">
                   <span>研究候选 {String(index + 1).padStart(2, "0")}</span>
-                  <strong>{etfLabel(item)}</strong>
-                  <p>{text(item.reason ?? item.evidence_chain_summary ?? item.risk_note, "等待人工复核研究理由")}</p>
+                  <strong>{item.name} ({item.code})</strong>
+                  <p>{item.reason}</p>
                 </article>
               )) : (
                 <article className="margin-etf-focus__etf-card is-empty">
