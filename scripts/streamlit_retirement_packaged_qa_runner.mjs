@@ -96,7 +96,10 @@ const FORBIDDEN_COMPUTED_NATIVE_PROPERTIES = new Set([
   "Reflect"
 ]);
 const TRUSTED_REACHABLE_SOURCE_PATHS = [
+  "desktop/src/main.tsx",
+  "desktop/src/styles.css",
   "desktop/src/api/client.ts",
+  "desktop/src/components/ProductSurface.css",
   "desktop/src/components/BackendOfflineNotice.tsx",
   "desktop/src/components/ChartSafetyStrip.tsx",
   "desktop/src/components/DataLineageTable.tsx",
@@ -113,7 +116,9 @@ const TRUSTED_REACHABLE_SOURCE_PATHS = [
   "desktop/src/components/StatusBadge.tsx",
   "desktop/src/components/TaskBoundarySummary.tsx",
   "desktop/src/components/TaskLaunchReceipt.tsx",
-  "desktop/src/components/TaskStatusPanel.tsx"
+  "desktop/src/components/TaskStatusPanel.tsx",
+  "desktop/src/routes/CommandCenterHome.css",
+  "desktop/src/routes/CandidateRadar.css"
 ];
 const FORBIDDEN_ORDINARY_URL_PATTERN = /(?:tauri:\/\/(?:localhost)?\/?#legacy|https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):8501(?:\/|$))/i;
 const ORDINARY_COMPONENT_IMPORT_ALLOWLIST = {

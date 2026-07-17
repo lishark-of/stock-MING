@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import "./ProductSurface.css";
 
 type StatusTone = "good" | "warn" | "bad" | "neutral";
 

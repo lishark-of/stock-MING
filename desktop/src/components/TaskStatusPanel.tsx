@@ -6,7 +6,6 @@ import MetricGrid, { type MetricItem } from "./MetricGrid";
 import StateClarityRail from "./StateClarityRail";
 import StatusBadge from "./StatusBadge";
 import TaskBoundarySummary from "./TaskBoundarySummary";
-import "./ProductSurface.css";
 
 const CANDIDATE_CONFIRM_HREF = "#candidates/candidate-radar-search-quant-projection";
 

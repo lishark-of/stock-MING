@@ -1,5 +1,4 @@
 import type { CSSProperties } from "react";
-import "./ProductSurface.css";
 
 export type MetricItem = {
   label: string;

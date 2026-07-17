@@ -1,5 +1,3 @@
-import "./ProductSurface.css";
-
 function formatCellValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "object") {

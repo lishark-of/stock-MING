@@ -9,7 +9,6 @@ import RouteCacheLoadingOverlay from "../components/RouteCacheLoadingBoundary";
 import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
-import "./CommandCenterHome.css";
 
 const LIVE_BOOTSTRAP_SESSION_KEY = "command_center_3_live_bootstrap_session_key";
 const DATA_CAPABILITY_HREF = "#dataCapability";

@@ -45,7 +45,10 @@ PACKAGED_APP_EXECUTABLE_RELATIVE = Path(
 )
 TRUSTED_SOURCE_RELATIVES = (
     Path("app.py"),
+    Path("desktop/src/main.tsx"),
+    Path("desktop/src/styles.css"),
     Path("desktop/src/App.tsx"),
+    Path("desktop/src/components/ProductSurface.css"),
     Path("desktop/src/components/Layout.tsx"),
     Path("desktop/src/api/client.ts"),
     Path("desktop/src/components/BackendOfflineNotice.tsx"),
@@ -65,7 +68,9 @@ TRUSTED_SOURCE_RELATIVES = (
     Path("desktop/src/components/TaskLaunchReceipt.tsx"),
     Path("desktop/src/components/TaskStatusPanel.tsx"),
     Path("desktop/src/routes/CommandCenterHome.tsx"),
+    Path("desktop/src/routes/CommandCenterHome.css"),
     Path("desktop/src/routes/CandidateRadar.tsx"),
+    Path("desktop/src/routes/CandidateRadar.css"),
     Path("desktop/src/routes/FactorQuantHub.tsx"),
     Path("desktop/src/routes/NextSessionMap.tsx"),
     Path("desktop/src/routes/MarginEtf.tsx"),

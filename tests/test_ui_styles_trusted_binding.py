@@ -1,0 +1,40 @@
+from pathlib import Path
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class UiStylesTrustedBindingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.main = (ROOT / "desktop/src/main.tsx").read_text(encoding="utf-8")
+        cls.home = (ROOT / "desktop/src/routes/CommandCenterHome.tsx").read_text(encoding="utf-8")
+        cls.candidate = (ROOT / "desktop/src/routes/CandidateRadar.tsx").read_text(encoding="utf-8")
+        cls.runner = (ROOT / "scripts/streamlit_retirement_packaged_qa_runner.mjs").read_text(encoding="utf-8")
+        cls.service = (ROOT / "server/services/streamlit_retirement_evidence_service.py").read_text(encoding="utf-8")
+
+    def test_route_css_is_loaded_once_outside_ordinary_route_import_contract(self) -> None:
+        for relative in (
+            "./components/ProductSurface.css",
+            "./routes/CommandCenterHome.css",
+            "./routes/CandidateRadar.css",
+        ):
+            self.assertEqual(self.main.count(f'import "{relative}";'), 1)
+        self.assertNotIn('import "./CommandCenterHome.css";', self.home)
+        self.assertNotIn('import "./CandidateRadar.css";', self.candidate)
+
+    def test_all_product_styles_are_bound_by_both_trust_layers(self) -> None:
+        for relative in (
+            "desktop/src/main.tsx",
+            "desktop/src/styles.css",
+            "desktop/src/components/ProductSurface.css",
+            "desktop/src/routes/CommandCenterHome.css",
+            "desktop/src/routes/CandidateRadar.css",
+        ):
+            self.assertIn(f'"{relative}"', self.runner)
+            self.assertIn(f'Path("{relative}")', self.service)
+
+
+if __name__ == "__main__":
+    unittest.main()
