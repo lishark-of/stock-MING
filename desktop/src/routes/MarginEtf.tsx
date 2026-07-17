@@ -5,6 +5,7 @@ import MetricGrid, { type MetricItem } from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
+import "./MarginEtf.css";
 
 function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
@@ -68,6 +69,27 @@ function percent(value: unknown) {
 function numeric(value: unknown, fallback = 0) {
   const result = Number(value);
   return Number.isFinite(result) ? result : fallback;
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function normalizedDate(value: unknown) {
+  return text(value, "").replace(/[^0-9]/g, "");
+}
+
+function cashText(value: unknown) {
+  if (value === undefined || value === null || value === "") return "--";
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "--";
+  return new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency: "CNY",
+    maximumFractionDigits: 0
+  }).format(amount);
 }
 
 const runtimeModeLabels: Record<string, string> = {
@@ -1026,6 +1048,75 @@ export default function MarginEtf() {
     { label: "安全边界", value: "不自动补外部数据、不调用模型、不交易、不加融资" }
   ];
 
+  const marginEtfEtfBinding = record(etfPacket.margin_etf_focus_binding ?? etfPacket.result_binding);
+  const marginEtfMarginBinding = record(marginPacket.margin_etf_focus_binding ?? marginPacket.result_binding);
+  const marginEtfFocusBinding = marginEtfEtfBinding;
+  const marginEtfFocusDataDate = normalizedDate(marginEtfFocusBinding.data_date);
+  const marginEtfFocusExpectedTradeDate = normalizedDate(marginEtfFocusBinding.expected_trade_date);
+  const marginEtfMarginDataDate = normalizedDate(marginEtfMarginBinding.data_date);
+  const marginEtfMarginExpectedTradeDate = normalizedDate(marginEtfMarginBinding.expected_trade_date);
+  const marginEtfFocusFreshnessState = text(
+    marginEtfFocusBinding.freshness_state ?? marginEtfFocusBinding.data_freshness_state,
+    ""
+  ).toLowerCase();
+  const marginEtfFocusSamePacketBound =
+    (marginEtfFocusBinding.same_margin_etf_packet_date_bound === true ||
+      marginEtfFocusBinding.same_packet_date_bound === true) &&
+    (marginEtfMarginBinding.same_margin_etf_packet_date_bound === true ||
+      marginEtfMarginBinding.same_packet_date_bound === true);
+  const marginEtfFocusBindingsMatch =
+    text(marginEtfFocusBinding.etf_packet_key, "") === text(marginEtfMarginBinding.etf_packet_key, "") &&
+    text(marginEtfFocusBinding.margin_packet_key, "") === text(marginEtfMarginBinding.margin_packet_key, "") &&
+    text(marginEtfFocusBinding.task_id, "") === text(marginEtfMarginBinding.task_id, "") &&
+    text(marginEtfFocusBinding.result_version, "") === text(marginEtfMarginBinding.result_version, "") &&
+    marginEtfFocusDataDate === marginEtfMarginDataDate &&
+    marginEtfFocusExpectedTradeDate === marginEtfMarginExpectedTradeDate &&
+    marginEtfFocusFreshnessState === text(
+      marginEtfMarginBinding.freshness_state ?? marginEtfMarginBinding.data_freshness_state,
+      ""
+    ).toLowerCase();
+  const marginEtfFocusBindingComplete =
+    marginEtfFocusSamePacketBound &&
+    marginEtfFocusBindingsMatch &&
+    text(marginEtfFocusBinding.etf_packet_key, "") === text(etfPacket.packet_key, "") &&
+    text(marginEtfFocusBinding.margin_packet_key, "") === text(marginPacket.packet_key, "") &&
+    text(marginEtfFocusBinding.etf_packet_key, "") === "command_center_etf_packet" &&
+    text(marginEtfFocusBinding.margin_packet_key, "") === "command_center_margin_packet" &&
+    Boolean(text(marginEtfFocusBinding.task_id, "")) &&
+    Boolean(text(marginEtfFocusBinding.result_version, "")) &&
+    Boolean(marginEtfFocusDataDate) &&
+    Boolean(marginEtfFocusExpectedTradeDate);
+  const marginEtfFocusCurrentEvidenceUsable =
+    marginEtfFocusBindingComplete &&
+    marginEtfFocusBinding.usable_for_risk_budget === true &&
+    marginEtfMarginBinding.usable_for_risk_budget === true &&
+    ["fresh", "current", "today"].includes(marginEtfFocusFreshnessState) &&
+    marginEtfFocusBinding.calendar_validated === true &&
+    marginEtfMarginBinding.calendar_validated === true &&
+    marginEtfFocusDataDate === marginEtfFocusExpectedTradeDate;
+  const marginEtfFocusEtfs = marginEtfFocusCurrentEvidenceUsable
+    ? (recommendedEtfs.length
+        ? recommendedEtfs
+        : actionableEtfs.length
+          ? actionableEtfs
+          : watchEtfs
+      ).slice(0, 3)
+    : [];
+  const marginEtfFocusCash = marginEtfFocusCurrentEvidenceUsable
+    ? cashText(marginEtfFocusBinding.available_cash)
+    : "--";
+  const marginEtfFocusCashBuffer = marginEtfFocusCurrentEvidenceUsable
+    ? percent(recommendedCashRatio)
+    : "--";
+  const marginEtfFocusMarginState = marginEtfFocusCurrentEvidenceUsable
+    ? allowNewMargin
+      ? "风险预算允许继续人工复核"
+      : "当前风险预算不开放新增融资"
+    : "数据待确认；不开放融资判断";
+  const marginEtfFocusFreshnessLabel = marginEtfFocusCurrentEvidenceUsable
+    ? `数据日期 ${marginEtfFocusDataDate} · 交易日历已验证`
+    : "等待 ETF 与融资同包日期绑定";
+
   return (
     <div data-ltg10-component-id="MarginEtf">
       <div className="page-head">
@@ -1034,6 +1125,91 @@ export default function MarginEtf() {
           <p>先看 ETF 候选、融资现金线、风险提示和下一步。</p>
         </div>
       </div>
+
+      <main className="margin-etf-focus" aria-label="ETF 融资普通用户摘要">
+        <header className="margin-etf-focus__hero">
+          <div>
+            <span className="margin-etf-focus__eyebrow">RISK BUDGET · LOCAL READBACK</span>
+            <h2>先守住现金，再看 ETF</h2>
+            <p>只呈现同一任务、同一结果版本和同一交易日期可验证的研究快照。证据不完整时保持空白，不推断融资空间。</p>
+          </div>
+          <span className={`margin-etf-focus__state ${marginEtfFocusCurrentEvidenceUsable ? "is-current" : "is-pending"}`}>
+            {marginEtfFocusCurrentEvidenceUsable ? "当前数据可复核" : "等待同包数据"}
+          </span>
+        </header>
+
+        <div className="margin-etf-focus__grid">
+          <section className="margin-etf-focus__cash" data-focus-category="cash-risk" aria-labelledby="margin-etf-cash-title">
+            <div className="margin-etf-focus__section-heading">
+              <span>01</span>
+              <h3 id="margin-etf-cash-title">现金与融资风险</h3>
+            </div>
+            <div className="margin-etf-focus__cash-values">
+              <div>
+                <small>可用现金</small>
+                <strong>{marginEtfFocusCash}</strong>
+              </div>
+              <div>
+                <small>现金缓冲</small>
+                <strong>{marginEtfFocusCashBuffer}</strong>
+              </div>
+            </div>
+            <p>{marginEtfFocusMarginState}</p>
+          </section>
+
+          <section className="margin-etf-focus__etfs" data-focus-category="core-etfs" aria-labelledby="margin-etf-core-title">
+            <div className="margin-etf-focus__section-heading">
+              <span>02</span>
+              <h3 id="margin-etf-core-title">核心 ETF 研究卡</h3>
+            </div>
+            <div className="margin-etf-focus__etf-list">
+              {marginEtfFocusEtfs.length ? marginEtfFocusEtfs.map((item, index) => (
+                <article key={`${etfLabel(item)}-${index}`} className="margin-etf-focus__etf-card">
+                  <span>研究候选 {String(index + 1).padStart(2, "0")}</span>
+                  <strong>{etfLabel(item)}</strong>
+                  <p>{text(item.reason ?? item.evidence_chain_summary ?? item.risk_note, "等待人工复核研究理由")}</p>
+                </article>
+              )) : (
+                <article className="margin-etf-focus__etf-card is-empty">
+                  <span>研究候选</span>
+                  <strong>等待同包证据</strong>
+                  <p>当前不展示历史 ETF 名单，也不据此生成买入或融资动作。</p>
+                </article>
+              )}
+            </div>
+          </section>
+
+          <section className="margin-etf-focus__guardrail" data-focus-category="guardrails" aria-labelledby="margin-etf-guardrail-title">
+            <div className="margin-etf-focus__section-heading">
+              <span>03</span>
+              <h3 id="margin-etf-guardrail-title">融资约束</h3>
+            </div>
+            <strong>研究结论不等于执行许可</strong>
+            <p>不能把 ETF 候选、比例或强弱描述转换成买入、加仓、融资、下单或策略动作。</p>
+          </section>
+
+          <section className="margin-etf-focus__freshness" data-focus-category="freshness" aria-labelledby="margin-etf-freshness-title">
+            <div className="margin-etf-focus__section-heading">
+              <span>04</span>
+              <h3 id="margin-etf-freshness-title">来源与新鲜度</h3>
+            </div>
+            <strong>本地同包快照</strong>
+            <p>{marginEtfFocusFreshnessLabel}</p>
+          </section>
+
+          <section className="margin-etf-focus__next" data-focus-category="next-step" aria-labelledby="margin-etf-next-title">
+            <div>
+              <span>05 · 唯一下一步</span>
+              <h3 id="margin-etf-next-title">先确认数据，再决定是否继续研究</h3>
+            </div>
+            <a href={DATA_CAPABILITY_HREF} aria-label="复核 ETF 融资数据状态">复核数据状态 <span aria-hidden="true">↗</span></a>
+          </section>
+        </div>
+      </main>
+
+      <details className="margin-etf-technical-details developer-audit-details" aria-label="ETF 融资研究与技术详情">
+        <summary>研究辅助与技术详情</summary>
+        <p className="risk-note">完整候选表、回放操作、记录和审计信息默认收起；仅在排查本地证据时展开。</p>
 
       <PacketCard title="ETF / 融资操作台" subtitle="普通用户先看这里" status={ordinaryStatus}>
         {snapshotIssueVisible ? (
@@ -1251,6 +1427,7 @@ export default function MarginEtf() {
         <p className="risk-note">这里仅用于排查本地快照来源、warning 和读取记录；不展示 token/key，不触发外部刷新。</p>
         <DataLineageTable rows={warnings.map((warning, index) => ({ 序号: index + 1, warning }))} />
         <DataLineageTable rows={callLedger} />
+      </details>
       </details>
     </div>
   );
