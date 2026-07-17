@@ -115,6 +115,12 @@ const PRIMARY_ROUTE_INDEX: Partial<Record<RouteKey, string>> = {
   "qmt-replay": "06"
 };
 
+function normalizeResearchProgress(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  const percentage = value >= 0 && value <= 1 ? value * 100 : value;
+  return Math.max(0, Math.min(100, Math.round(percentage)));
+}
+
 export default function Layout({
   active,
   onNavigate,
@@ -202,7 +208,7 @@ export default function Layout({
     : researchActivityStatus === "offline"
       ? "等待本地连接"
       : researchActivityStatus === "pending" || researchActivityStatus === "running"
-        ? `${latestConfirmedSymbol || "当前标的"} · 研究处理中${latestConfirmedTask ? ` ${Math.max(0, Math.min(100, Math.round(latestConfirmedTask.progress)))}%` : ""}`
+        ? `${latestConfirmedSymbol || "当前标的"} · 研究处理中${latestConfirmedTask ? ` ${normalizeResearchProgress(latestConfirmedTask.progress)}%` : ""}`
         : researchActivityStatus === "success"
           ? `${latestConfirmedSymbol || "当前标的"} · 最近结果已完成`
           : researchActivityStatus === "failed" || researchActivityStatus === "cancelled"
@@ -352,7 +358,7 @@ export default function Layout({
           </span>
           <span className="workspace-boundary" role="status">
             <span className="workspace-boundary-dot" aria-hidden="true" />
-            只读研究 · 无下单路径
+            研究模式 · 无下单路径
           </span>
         </header>
         <div className="content-canvas">{children}</div>

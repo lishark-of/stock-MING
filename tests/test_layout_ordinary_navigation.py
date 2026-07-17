@@ -70,6 +70,20 @@ class LayoutOrdinaryNavigationTests(unittest.TestCase):
         self.assertIn(".content [id]", styles)
         self.assertIn("scroll-margin-top: 237px", styles)
 
+    def test_recent_research_progress_accepts_fraction_or_percent_contracts(self):
+        source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("function normalizeResearchProgress(value: unknown): number", source)
+        self.assertIn('value >= 0 && value <= 1 ? value * 100 : value', source)
+        self.assertIn("normalizeResearchProgress(latestConfirmedTask.progress)", source)
+        self.assertNotIn("Math.round(latestConfirmedTask.progress)", source)
+
+    def test_workspace_boundary_describes_research_without_claiming_read_only(self):
+        source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("研究模式 · 无下单路径", source)
+        self.assertNotIn("只读研究 · 无下单路径", source)
+
 
 if __name__ == "__main__":
     unittest.main()
