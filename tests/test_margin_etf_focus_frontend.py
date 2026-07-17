@@ -39,6 +39,8 @@ class MarginEtfFocusFrontendTests(unittest.TestCase):
         for required in (
             "canonicalSha256(sourceProjection)",
             "sourceIdentity.source_projection_sha256",
+            "producerReceipt.state_continuity_verified !== true",
+            "Date.parse(receiptIssuedAt) > Date.now() + MAX_FUTURE_SKEW_MS",
             "sourceIdentity.result_version !== `margin-etf-source:${sourceProjectionHash}`",
             "scopeHash !== sourceIdentity.scope_hash",
             "canonicalSha256(projection)",
@@ -47,8 +49,9 @@ class MarginEtfFocusFrontendTests(unittest.TestCase):
             "computedBindingHash !== bindingHash",
             'sourceIdentity.task_type !== "refresh_margin_etf_local_packets"',
             'sourceIdentity.source !== "margin_etf_local_packet_replay.v1"',
-            "Math.max(Date.parse(etfUpdated), Date.parse(marginUpdated)) > Date.parse(ledgerUpdated)",
-            "Date.parse(ledgerUpdated) > Date.parse(snapshotUpdated)",
+            "Math.max(Date.parse(etfUpdated), Date.parse(marginUpdated)) > Date.parse(snapshotUpdated)",
+            "Date.parse(snapshotUpdated) > Date.parse(ledgerUpdated)",
+            "Date.parse(ledgerUpdated) > Date.parse(receiptIssuedAt)",
             "strictDecimal",
         ):
             self.assertIn(required, self.page)
@@ -85,11 +88,12 @@ class MarginEtfFocusFrontendTests(unittest.TestCase):
             const sha = async value => Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical(value)))).toString('hex');
             const build = async (times={}) => {
               const target = '002008.SZ';
-              const dataDate = '20260717';
+              const dataDate = times.dataDate ?? '20260717';
               const etfUpdated = times.etf ?? '2026-07-17T10:00:00+08:00';
               const marginUpdated = times.margin ?? '2026-07-17T10:00:01+08:00';
-              const ledgerUpdated = times.ledger ?? '2026-07-17T10:01:00+08:00';
-              const snapshotUpdated = times.snapshot ?? '2026-07-17T10:02:00+08:00';
+              const snapshotUpdated = times.snapshot ?? '2026-07-17T10:01:00+08:00';
+              const ledgerUpdated = times.ledger ?? '2026-07-17T10:02:00+08:00';
+              const receiptUpdated = times.receipt ?? '2026-07-17T10:03:00+08:00';
               const core = [{code:'510300.SH',name:'沪深300ETF',reason:'宽基研究样本'}];
               const sourceProjection = {
                 schema_version:'margin_etf_source_projection.v1',target,packet_keys:['command_center_etf_packet','command_center_margin_packet'],
@@ -117,11 +121,15 @@ class MarginEtfFocusFrontendTests(unittest.TestCase):
               const projectionHash = await sha(projection);
               const bindingHash = await sha({schema_version:'margin_etf_focus_binding.v2',producer:'command_center_home_snapshot.margin_etf_focus_binding',
                 source_identity:identity,safety,projection,projection_sha256:projectionHash});
+              const receipt = {schema_version:'margin_etf_trusted_producer_receipt.v1',event_id:'2'.repeat(64),sequence_no:1,
+                issued_at:receiptUpdated,semantic_digest:'3'.repeat(64),event_mac:'4'.repeat(64),task_sha256:'5'.repeat(64),
+                scope_sha256:scopeHash,ledger_sha256:identity.ledger_sha256,source_projection_sha256:sourceHash,
+                projection_sha256:projectionHash,binding_sha256:bindingHash,verified:true,state_continuity_verified:true};
               return {schema_version:'margin_etf_focus_binding.v2',producer:'command_center_home_snapshot.margin_etf_focus_binding',
                 producer_run_id:`home-snapshot:${bindingHash}`,result_version:`margin-etf:${bindingHash}`,binding_sha256:bindingHash,projection_sha256:projectionHash,
                 source_identity:identity,etf_packet_key:'command_center_etf_packet',margin_packet_key:'command_center_margin_packet',data_date:dataDate,
                 expected_trade_date:dataDate,freshness_state:'fresh',calendar_validated:true,same_margin_etf_packet_date_bound:true,usable_for_risk_budget:true,
-                ...safety,projection};
+                ...safety,projection,producer_receipt:receipt};
             };
             const clone = value => structuredClone(value);
             const parse = async (left,right,overrides={}) => Boolean(await validator.parseMarginEtfFocusBinding({etfBinding:left,marginBinding:right,
@@ -134,6 +142,9 @@ class MarginEtfFocusFrontendTests(unittest.TestCase):
               synchronized_source_mutation: (l,r)=>{l.source_identity.scope_hash='b'.repeat(64);r.source_identity.scope_hash='b'.repeat(64);l.projection.source_identity.scope_hash='b'.repeat(64);r.projection.source_identity.scope_hash='b'.repeat(64);return[l,r]},
               deepseek_true: (l,r)=>{l.deepseek_called=true;r.deepseek_called=true;return[l,r]},
               number_instead_of_canonical_decimal: (l,r)=>{l.projection.etf.available_cash=128000;r.projection.etf.available_cash=128000;return[l,r]},
+              missing_receipt: (l,r)=>{delete l.producer_receipt;delete r.producer_receipt;return[l,r]},
+              receipt_not_verified: (l,r)=>{l.producer_receipt.verified=false;r.producer_receipt.verified=false;return[l,r]},
+              receipt_state_invalid: (l,r)=>{l.producer_receipt.state_continuity_verified=false;r.producer_receipt.state_continuity_verified=false;return[l,r]},
               one_side_only: (l,r)=>{r.projection_sha256='c'.repeat(64);return[l,r]}
             };
             for (const [name,mutate] of Object.entries(cases)) {
@@ -142,6 +153,8 @@ class MarginEtfFocusFrontendTests(unittest.TestCase):
             }
             const rollover = await build({etf:'2026-07-17T23:59:00+08:00',margin:'2026-07-17T23:59:10+08:00',ledger:'2026-07-17T23:59:30+08:00',snapshot:'2026-07-18T00:00:00+08:00'});
             results.rollover=await parse(rollover,clone(rollover));
+            const future = await build({dataDate:'20990717',etf:'2099-07-17T23:55:00+08:00',margin:'2099-07-17T23:55:01+08:00',snapshot:'2099-07-17T23:56:00+08:00',ledger:'2099-07-17T23:57:00+08:00',receipt:'2099-07-17T23:58:00+08:00'});
+            results.future=await parse(future,clone(future));
             results.loading=await parse(binding,clone(binding),{loading:true});
             process.stdout.write(JSON.stringify(results));
             """

@@ -1337,19 +1337,20 @@ def _margin_etf_task_provenance(
     *,
     etf_packet: Mapping[str, Any],
     margin_packet: Mapping[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any]]:
+    now: _dt.datetime | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     from server.services import margin_etf_focus_provenance, task_service
 
     task = task_service.read_latest_task_status_by_type(margin_etf_focus_provenance.TASK_TYPE)
     if not isinstance(task, Mapping):
-        return {}, {}
+        return {}, {}, {}
     payload = task.get("payload_safe")
     ledger_rows = task.get("call_ledger")
     if not isinstance(payload, Mapping) or not isinstance(ledger_rows, list) or len(ledger_rows) != 1:
-        return {}, {}
+        return {}, {}, {}
     ledger = ledger_rows[0]
     if not isinstance(ledger, Mapping):
-        return {}, {}
+        return {}, {}, {}
     target = margin_etf_focus_provenance.strict_target(payload.get("target"))
     source_projection = margin_etf_focus_provenance.build_source_projection(
         etf_packet,
@@ -1357,7 +1358,7 @@ def _margin_etf_task_provenance(
         target=target,
     )
     if source_projection is None:
-        return {}, {}
+        return {}, {}, {}
     source_projection_sha256 = margin_etf_focus_provenance.canonical_digest(source_projection)
     source_result_version = f"margin-etf-source:{source_projection_sha256}"
     scope_material = margin_etf_focus_provenance.build_source_scope_material(
@@ -1419,6 +1420,7 @@ def _margin_etf_task_provenance(
         and ledger_without_time == expected_ledger
         and ledger_keys_exact
         and ledger_fetched_at
+        and margin_etf_focus_provenance.timestamp_not_future(ledger_fetched_at, now=now)
         and task.get("external_calls_triggered") is False
         and task.get("tushare_called") is False
         and task.get("deepseek_called") is False
@@ -1427,7 +1429,7 @@ def _margin_etf_task_provenance(
         and task.get("does_not_modify_strategy_action") is True
     )
     if not task_ready:
-        return {}, {}
+        return {}, {}, {}
     ledger_projection = {**expected_ledger, "local_fetched_at": ledger_fetched_at}
     source_identity = {
         "task_id": task_id,
@@ -1440,24 +1442,45 @@ def _margin_etf_task_provenance(
         "ledger_sha256": margin_etf_focus_provenance.canonical_digest(ledger_projection),
         "ledger_fetched_at": ledger_fetched_at,
     }
-    return source_identity, source_projection
+    task_projection = {
+        "task_id": task_id,
+        "task_type": margin_etf_focus_provenance.TASK_TYPE,
+        "status": "success",
+        "progress": 1.0,
+        "current_step": "margin_etf_local_packet_replay_ready_no_external_call",
+        "output_packet_key": margin_etf_focus_provenance.TASK_OUTPUT_PACKET_KEY,
+        "payload_safe": expected_payload,
+        "call_ledger": [ledger_projection],
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    return source_identity, source_projection, task_projection
 
 
-def _attach_margin_etf_focus_binding(
+def _build_margin_etf_focus_binding(
     etf_packet: Any,
     margin_packet: Any,
     data_freshness: Any,
-) -> tuple[dict, dict]:
+    *,
+    now: _dt.datetime | None = None,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Build an unsigned candidate; trusted receipt validation happens separately."""
+
     etf = _as_mapping(etf_packet)
     margin = _as_mapping(margin_packet)
     freshness = _as_mapping(data_freshness)
     expected_date = _canonical_expected_yyyymmdd(freshness.get("expected_trade_date"))
-    source_identity, source_projection = _margin_etf_task_provenance(
+    source_identity, source_projection, task_projection = _margin_etf_task_provenance(
         etf_packet=etf,
         margin_packet=margin,
+        now=now,
     )
-    if not source_identity or not source_projection:
-        return dict(etf), dict(margin)
+    if not source_identity or not source_projection or not task_projection:
+        return {}, {}
     from server.services import margin_etf_focus_provenance
 
     etf_source = source_projection["etf"]
@@ -1469,15 +1492,25 @@ def _attach_margin_etf_focus_binding(
     ledger_fetched = margin_etf_focus_provenance.strict_timestamp_shanghai(source_identity["ledger_fetched_at"])
     snapshot_updated = margin_etf_focus_provenance.strict_timestamp_shanghai(freshness.get("last_updated"))
     canonical_snapshot_updated = margin_etf_focus_provenance.canonical_timestamp_shanghai(freshness.get("last_updated"))
+    observed_timestamps = (
+        etf_source["updated_at"],
+        margin_source["updated_at"],
+        source_identity["ledger_fetched_at"],
+        canonical_snapshot_updated,
+    )
     timestamp_order_ready = bool(
         etf_updated
         and margin_updated
         and ledger_fetched
         and snapshot_updated
-        and max(etf_updated, margin_updated) <= ledger_fetched <= snapshot_updated
+        and max(etf_updated, margin_updated) <= snapshot_updated <= ledger_fetched
         and all(
             value.strftime("%Y%m%d") == expected_date
             for value in (etf_updated, margin_updated, ledger_fetched, snapshot_updated)
+        )
+        and all(
+            margin_etf_focus_provenance.timestamp_not_future(value, now=now)
+            for value in observed_timestamps
         )
     )
     current_ready = bool(
@@ -1491,7 +1524,7 @@ def _attach_margin_etf_focus_binding(
         and canonical_snapshot_updated
     )
     if not current_ready:
-        return dict(etf), dict(margin)
+        return {}, {}
 
     projection = {
         "schema_version": MARGIN_ETF_FOCUS_PROJECTION_SCHEMA_VERSION,
@@ -1560,6 +1593,50 @@ def _attach_margin_etf_focus_binding(
         **safety,
         "projection": projection,
     }
+    evidence_digests = {
+        "task_sha256": margin_etf_focus_provenance.canonical_digest(task_projection),
+        "scope_sha256": source_identity["scope_hash"],
+        "ledger_sha256": source_identity["ledger_sha256"],
+        "source_projection_sha256": source_identity["source_projection_sha256"],
+        "projection_sha256": projection_digest,
+        "binding_sha256": result_digest,
+    }
+    return binding, evidence_digests
+
+
+def _attach_margin_etf_focus_binding(
+    etf_packet: Any,
+    margin_packet: Any,
+    data_freshness: Any,
+    *,
+    now: _dt.datetime | None = None,
+    evidence_root: Path | None = None,
+) -> tuple[dict, dict]:
+    etf = _as_mapping(etf_packet)
+    margin = _as_mapping(margin_packet)
+    binding, evidence_digests = _build_margin_etf_focus_binding(
+        etf,
+        margin,
+        data_freshness,
+        now=now,
+    )
+    if not binding or not evidence_digests:
+        return dict(etf), dict(margin)
+    from server.services import margin_etf_focus_provenance
+    receipt = margin_etf_focus_provenance.read_verified_producer_receipt(
+        evidence_digests,
+        evidence_root=evidence_root,
+        now=now,
+    )
+    receipt_issued = margin_etf_focus_provenance.strict_timestamp_shanghai(
+        receipt.get("issued_at") if receipt else None
+    )
+    ledger_fetched = margin_etf_focus_provenance.strict_timestamp_shanghai(
+        binding.get("source_identity", {}).get("ledger_fetched_at")
+    )
+    if not receipt or receipt_issued is None or ledger_fetched is None or receipt_issued < ledger_fetched:
+        return dict(etf), dict(margin)
+    binding = {**binding, "producer_receipt": receipt}
     return (
         {**etf, "margin_etf_focus_binding": dict(binding)},
         {**margin, "margin_etf_focus_binding": dict(binding)},

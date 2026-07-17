@@ -135,6 +135,10 @@ function strictHash(value: unknown) {
   return /^[0-9a-f]{64}$/.test(candidate) ? candidate : "";
 }
 
+function strictPositiveInteger(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : null;
+}
+
 function strictDecimal(value: unknown, minimum: number, maximum: number): number | null {
   const candidate = strictString(value);
   if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(candidate) || candidate === "-0") return null;
@@ -199,7 +203,7 @@ const BINDING_KEYS = [
   "schema_version", "producer", "producer_run_id", "result_version", "binding_sha256", "projection_sha256",
   "source_identity", "etf_packet_key", "margin_packet_key", "data_date", "expected_trade_date",
   "freshness_state", "calendar_validated", "same_margin_etf_packet_date_bound", "usable_for_risk_budget",
-  ...MARGIN_ETF_FOCUS_FALSE_SAFETY_FIELDS, ...MARGIN_ETF_FOCUS_TRUE_SAFETY_FIELDS, "projection"
+  ...MARGIN_ETF_FOCUS_FALSE_SAFETY_FIELDS, ...MARGIN_ETF_FOCUS_TRUE_SAFETY_FIELDS, "projection", "producer_receipt"
 ] as const;
 const PROJECTION_KEYS = [
   "schema_version", "source_identity", "data_date", "expected_trade_date", "freshness_state", "calendar_validated",
@@ -216,6 +220,12 @@ const ETF_PROJECTION_KEYS = [
 const MARGIN_PROJECTION_KEYS = [
   "status", "data_status", "verification_status", "financing_balance_yi", "financing_buy_yi", "margin_balance_yi"
 ] as const;
+const PRODUCER_RECEIPT_KEYS = [
+  "schema_version", "event_id", "sequence_no", "issued_at", "semantic_digest", "event_mac", "task_sha256",
+  "scope_sha256", "ledger_sha256", "source_projection_sha256", "projection_sha256", "binding_sha256",
+  "verified", "state_continuity_verified"
+] as const;
+const MAX_FUTURE_SKEW_MS = 120_000;
 
 export async function parseMarginEtfFocusBinding(input: {
   etfBinding: unknown;
@@ -251,6 +261,24 @@ export async function parseMarginEtfFocusBinding(input: {
     !bindingHash || !projectionHash ||
     etfBinding.producer_run_id !== `home-snapshot:${bindingHash}` ||
     etfBinding.result_version !== `margin-etf:${bindingHash}`
+  ) return null;
+
+  const producerReceipt = record(etfBinding.producer_receipt);
+  const receiptIssuedAt = strictTimestamp(producerReceipt.issued_at);
+  if (
+    !exactKeys(producerReceipt, PRODUCER_RECEIPT_KEYS) ||
+    producerReceipt.schema_version !== "margin_etf_trusted_producer_receipt.v1" ||
+    producerReceipt.verified !== true ||
+    producerReceipt.state_continuity_verified !== true ||
+    strictPositiveInteger(producerReceipt.sequence_no) === null ||
+    !strictHash(producerReceipt.event_id) ||
+    !strictHash(producerReceipt.semantic_digest) ||
+    !strictHash(producerReceipt.event_mac) ||
+    !strictHash(producerReceipt.task_sha256) ||
+    !receiptIssuedAt ||
+    Date.parse(receiptIssuedAt) > Date.now() + MAX_FUTURE_SKEW_MS ||
+    producerReceipt.projection_sha256 !== projectionHash ||
+    producerReceipt.binding_sha256 !== bindingHash
   ) return null;
 
   const sourceIdentity = record(etfBinding.source_identity);
@@ -294,8 +322,12 @@ export async function parseMarginEtfFocusBinding(input: {
   const compactDate = (value: string) => value.slice(0, 10).replace(/-/g, "");
   if (
     [etfUpdated, marginUpdated, ledgerUpdated, snapshotUpdated].some((value) => compactDate(value) !== dataDate) ||
-    Math.max(Date.parse(etfUpdated), Date.parse(marginUpdated)) > Date.parse(ledgerUpdated) ||
-    Date.parse(ledgerUpdated) > Date.parse(snapshotUpdated)
+    [etfUpdated, marginUpdated, ledgerUpdated, snapshotUpdated].some(
+      (value) => Date.parse(value) > Date.now() + MAX_FUTURE_SKEW_MS
+    ) ||
+    Math.max(Date.parse(etfUpdated), Date.parse(marginUpdated)) > Date.parse(snapshotUpdated) ||
+    Date.parse(snapshotUpdated) > Date.parse(ledgerUpdated) ||
+    Date.parse(ledgerUpdated) > Date.parse(receiptIssuedAt)
   ) return null;
 
   const etf = record(projection.etf);
@@ -360,6 +392,11 @@ export async function parseMarginEtfFocusBinding(input: {
   const sourceProjectionHash = await canonicalSha256(sourceProjection);
   if (!sourceProjectionHash || sourceProjectionHash !== sourceIdentity.source_projection_sha256) return null;
   if (sourceIdentity.result_version !== `margin-etf-source:${sourceProjectionHash}`) return null;
+  if (
+    producerReceipt.source_projection_sha256 !== sourceProjectionHash ||
+    producerReceipt.ledger_sha256 !== sourceIdentity.ledger_sha256 ||
+    producerReceipt.scope_sha256 !== sourceIdentity.scope_hash
+  ) return null;
   const scopeHash = await canonicalSha256({
     route: "POST /api/market/margin-etf-local-refresh",
     mode: "local_packet_replay",

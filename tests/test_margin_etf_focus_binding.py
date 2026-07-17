@@ -1,12 +1,17 @@
 import copy
+import datetime as dt
+import json
+import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import command_center_etf_packet
 import command_center_home_snapshot as snapshot
 import command_center_margin_packet
 from server.services import margin_etf_focus_provenance as provenance
-from server.services import packet_service
+from server.services import market_service, packet_service
 
 
 class MarginEtfFocusBindingTests(unittest.TestCase):
@@ -15,6 +20,14 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
         **{field: True for field in provenance.TRUE_SAFETY_FIELDS},
         "warnings": [],
     }
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.evidence_root = Path(self.temporary.name)
+        self.now = dt.datetime(2026, 7, 17, 10, 5, 0, tzinfo=provenance.SHANGHAI)
+
+    def tearDown(self):
+        self.temporary.cleanup()
 
     def _packets(self, date_text="20260717"):
         etf = {
@@ -52,11 +65,11 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
             "freshness_state": "fresh",
             "expected_trade_date": date_text,
             "expected_trade_date_calendar_validated": True,
-            "last_updated": "2026-07-17T10:02:00+08:00",
+            "last_updated": "2026-07-17T10:01:00+08:00",
         }
         return etf, margin, freshness
 
-    def _task(self, etf, margin, *, target="002008.SZ", fetched_at="2026-07-17T10:01:00+08:00"):
+    def _task(self, etf, margin, *, target="002008.SZ", fetched_at="2026-07-17T10:02:00+08:00"):
         source_projection = provenance.build_source_projection(etf, margin, target=target)
         self.assertIsNotNone(source_projection)
         source_sha = provenance.canonical_digest(source_projection)
@@ -121,10 +134,33 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
             "does_not_modify_strategy_action": True,
         }
 
-    def _attach(self, etf, margin, freshness, task=None):
-        task = self._task(etf, margin) if task is None else task
+    def _record(self, etf, margin, freshness, task, *, issued_at="2026-07-17T10:03:00+08:00"):
         with patch("server.services.task_service.read_latest_task_status_by_type", return_value=task):
-            return snapshot._attach_margin_etf_focus_binding(etf, margin, freshness)
+            binding, digests = snapshot._build_margin_etf_focus_binding(
+                etf, margin, freshness, now=self.now
+            )
+        self.assertTrue(binding)
+        receipt = provenance.record_trusted_producer_receipt(
+            digests,
+            issued_at=issued_at,
+            evidence_root=self.evidence_root,
+            now=self.now,
+        )
+        self.assertIsNotNone(receipt)
+        return receipt
+
+    def _attach(self, etf, margin, freshness, task=None, *, record=True):
+        task = self._task(etf, margin) if task is None else task
+        if record:
+            self._record(etf, margin, freshness, task)
+        with patch("server.services.task_service.read_latest_task_status_by_type", return_value=task):
+            return snapshot._attach_margin_etf_focus_binding(
+                etf,
+                margin,
+                freshness,
+                now=self.now,
+                evidence_root=self.evidence_root,
+            )
 
     def test_canonical_persisted_task_receives_identical_reachable_binding(self):
         etf, margin, freshness = self._packets()
@@ -134,9 +170,37 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
         self.assertEqual(binding, bound_margin["margin_etf_focus_binding"])
         self.assertEqual(binding["projection"]["etf"]["available_cash"], "128000")
         self.assertEqual(binding["source_identity"]["task_type"], provenance.TASK_TYPE)
-        self.assertEqual(binding["source_identity"]["ledger_fetched_at"], "2026-07-17T10:01:00+08:00")
+        self.assertEqual(binding["source_identity"]["ledger_fetched_at"], "2026-07-17T10:02:00+08:00")
+        self.assertTrue(binding["producer_receipt"]["verified"])
+        self.assertTrue(binding["producer_receipt"]["state_continuity_verified"])
         self.assertTrue(binding["usable_for_risk_budget"])
         self.assertFalse(binding["external_calls_triggered"])
+
+    def test_explicit_post_signer_records_then_get_only_verifies(self):
+        etf, margin, freshness = self._packets()
+        task = self._task(etf, margin)
+        with (
+            patch.object(provenance, "EVIDENCE_ROOT", self.evidence_root),
+            patch("server.services.packet_service._read_packet_without_margin_etf_binding", side_effect=[etf, margin]),
+            patch("server.services.packet_service.load_snapshot_cache", return_value={"data_freshness": freshness}),
+            patch("server.services.task_service.read_latest_task_status_by_type", return_value=task),
+            patch.object(provenance, "now_shanghai", return_value=self.now),
+        ):
+            receipt = market_service._record_margin_etf_trusted_receipt(
+                issued_at="2026-07-17T10:03:00+08:00"
+            )
+        self.assertIsNotNone(receipt)
+        self.assertEqual(set(receipt), set(provenance._RECEIPT_FIELDS))
+        self.assertFalse(any("key" in field.lower() for field in receipt))
+        with patch("server.services.task_service.read_latest_task_status_by_type", return_value=task):
+            bound, _ = snapshot._attach_margin_etf_focus_binding(
+                etf,
+                margin,
+                freshness,
+                now=self.now,
+                evidence_root=self.evidence_root,
+            )
+        self.assertTrue(bound["margin_etf_focus_binding"]["producer_receipt"]["verified"])
 
     def test_hand_json_missing_safety_and_explicit_deepseek_true_fail_closed(self):
         etf, margin, freshness = self._packets()
@@ -152,7 +216,7 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
             self.assertNotIn("warnings", adapted)
             self.assertNotIn("deepseek_called", adapted)
         etf["deepseek_called"] = True
-        self.assertNotIn("margin_etf_focus_binding", self._attach(etf, margin, freshness, task={})[0])
+        self.assertNotIn("margin_etf_focus_binding", self._attach(etf, margin, freshness, task={}, record=False)[0])
 
         etf, margin, _ = self._packets()
         etf.pop("deepseek_called")
@@ -190,8 +254,9 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
             with self.subTest(name=name):
                 etf, margin, freshness = self._packets()
                 task = self._task(etf, margin)
+                self._record(etf, margin, freshness, task)
                 mutate(etf, margin, freshness, task)
-                bound_etf, bound_margin = self._attach(etf, margin, freshness, task=task)
+                bound_etf, bound_margin = self._attach(etf, margin, freshness, task=task, record=False)
                 self.assertNotIn("margin_etf_focus_binding", bound_etf)
                 self.assertNotIn("margin_etf_focus_binding", bound_margin)
 
@@ -201,7 +266,7 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
         margin["updated_at"] = "2026-07-17T23:59:10+08:00"
         task = self._task(etf, margin, fetched_at="2026-07-17T23:59:30+08:00")
         freshness["last_updated"] = "2026-07-18T00:00:00+08:00"
-        bound_etf, _ = self._attach(etf, margin, freshness, task=task)
+        bound_etf, _ = self._attach(etf, margin, freshness, task=task, record=False)
         self.assertNotIn("margin_etf_focus_binding", bound_etf)
 
     def test_every_display_value_requires_a_new_real_task_binding(self):
@@ -209,11 +274,129 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
         baseline = self._attach(etf, margin, freshness)[0]["margin_etf_focus_binding"]
         changed_etf = copy.deepcopy(etf)
         changed_etf["available_cash"] = 999999
-        stale_task_result = self._attach(changed_etf, margin, freshness, task=self._task(etf, margin))[0]
+        stale_task_result = self._attach(
+            changed_etf, margin, freshness, task=self._task(etf, margin), record=False
+        )[0]
         self.assertNotIn("margin_etf_focus_binding", stale_task_result)
         rebound = self._attach(changed_etf, margin, freshness)[0]["margin_etf_focus_binding"]
         self.assertNotEqual(rebound["result_version"], baseline["result_version"])
         self.assertNotEqual(rebound["source_identity"]["source_projection_sha256"], baseline["source_identity"]["source_projection_sha256"])
+
+    def test_coherent_public_hash_self_seal_cannot_replace_trusted_event(self):
+        etf, margin, freshness = self._packets()
+        task = self._task(etf, margin)
+        self._record(etf, margin, freshness, task)
+        changed = copy.deepcopy(etf)
+        changed["available_cash"] = 999999
+        changed_task = self._task(changed, margin)
+        with patch("server.services.task_service.read_latest_task_status_by_type", return_value=changed_task):
+            _, digests = snapshot._build_margin_etf_focus_binding(
+                changed, margin, freshness, now=self.now
+            )
+        journal = provenance._journal_path(self.evidence_root)
+        with sqlite3.connect(journal) as connection:
+            previous = connection.execute(
+                f"SELECT event_mac FROM {provenance._EVENT_TABLE} WHERE sequence_no = 1"
+            ).fetchone()[0]
+            unsigned = {
+                "sequence_no": 2,
+                "schema_version": provenance.PRODUCER_EVENT_SCHEMA_VERSION,
+                "semantic_digest": provenance.canonical_digest(digests),
+                "issued_at": "2026-07-17T10:04:00+08:00",
+                **digests,
+                "previous_event_mac": previous,
+            }
+            event_id = provenance.canonical_digest(unsigned)
+            fake_event = {**unsigned, "event_id": event_id, "event_mac": "f" * 64}
+            connection.execute(
+                f"INSERT INTO {provenance._EVENT_TABLE} ({', '.join(provenance._EVENT_FIELDS)}) "
+                f"VALUES ({', '.join('?' for _ in provenance._EVENT_FIELDS)})",
+                tuple(fake_event[field] for field in provenance._EVENT_FIELDS),
+            )
+            connection.commit()
+        _, _, state_path = provenance._trust_paths(self.evidence_root)
+        fake_state = {
+            "schema_version": provenance.PRODUCER_STATE_SCHEMA_VERSION,
+            "sequence_no": 2,
+            "event_id": event_id,
+            "event_mac": "f" * 64,
+            "semantic_digest": provenance.canonical_digest(digests),
+            "state_mac": "e" * 64,
+        }
+        state_path.write_text(json.dumps(fake_state), encoding="utf-8")
+        state_path.chmod(0o600)
+        bound, _ = self._attach(changed, margin, freshness, task=changed_task, record=False)
+        self.assertNotIn("margin_etf_focus_binding", bound)
+
+    def test_missing_state_bad_mac_and_journal_rollback_fail_closed(self):
+        etf, margin, freshness = self._packets()
+        task = self._task(etf, margin)
+        self._record(etf, margin, freshness, task)
+        _, _, state_path = provenance._trust_paths(self.evidence_root)
+        state_bytes = state_path.read_bytes()
+        state_path.unlink()
+        self.assertNotIn(
+            "margin_etf_focus_binding",
+            self._attach(etf, margin, freshness, task=task, record=False)[0],
+        )
+        state_path.write_bytes(state_bytes)
+        state_path.chmod(0o600)
+
+        journal = provenance._journal_path(self.evidence_root)
+        with sqlite3.connect(journal) as connection:
+            connection.execute(f"DROP TRIGGER {provenance._EVENT_TABLE}_no_update")
+            connection.execute(
+                f"UPDATE {provenance._EVENT_TABLE} SET event_mac = ? WHERE sequence_no = 1",
+                ("a" * 64,),
+            )
+            connection.commit()
+        self.assertNotIn(
+            "margin_etf_focus_binding",
+            self._attach(etf, margin, freshness, task=task, record=False)[0],
+        )
+
+        self.temporary.cleanup()
+        self.temporary = tempfile.TemporaryDirectory()
+        self.evidence_root = Path(self.temporary.name)
+        self._record(etf, margin, freshness, task)
+        changed = copy.deepcopy(etf)
+        changed["available_cash"] = 999999
+        changed_task = self._task(changed, margin)
+        self._record(changed, margin, freshness, changed_task, issued_at="2026-07-17T10:04:00+08:00")
+        journal = provenance._journal_path(self.evidence_root)
+        with sqlite3.connect(journal) as connection:
+            connection.execute(f"DROP TRIGGER {provenance._EVENT_TABLE}_no_delete")
+            connection.execute(f"DELETE FROM {provenance._EVENT_TABLE} WHERE sequence_no = 2")
+            connection.commit()
+        self.assertNotIn(
+            "margin_etf_focus_binding",
+            self._attach(changed, margin, freshness, task=changed_task, record=False)[0],
+        )
+
+    def test_same_day_future_chain_and_future_receipt_fail_closed(self):
+        etf, margin, freshness = self._packets()
+        etf["updated_at"] = "2026-07-17T23:55:00+08:00"
+        margin["updated_at"] = "2026-07-17T23:55:01+08:00"
+        freshness["last_updated"] = "2026-07-17T23:56:00+08:00"
+        task = self._task(etf, margin, fetched_at="2026-07-17T23:57:00+08:00")
+        with patch("server.services.task_service.read_latest_task_status_by_type", return_value=task):
+            binding, digests = snapshot._build_margin_etf_focus_binding(
+                etf, margin, freshness, now=self.now
+            )
+        self.assertEqual(binding, {})
+        self.assertEqual(digests, {})
+
+        etf, margin, freshness = self._packets()
+        task = self._task(etf, margin)
+        with patch("server.services.task_service.read_latest_task_status_by_type", return_value=task):
+            _, digests = snapshot._build_margin_etf_focus_binding(etf, margin, freshness, now=self.now)
+        receipt = provenance.record_trusted_producer_receipt(
+            digests,
+            issued_at="2026-07-17T23:59:00+08:00",
+            evidence_root=self.evidence_root,
+            now=self.now,
+        )
+        self.assertIsNone(receipt)
 
 
 if __name__ == "__main__":

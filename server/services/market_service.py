@@ -314,6 +314,27 @@ def _packet_status(packet: Mapping[str, Any]) -> str:
     return str(packet.get("status") or packet.get("data_status") or packet.get("cache_state") or "").lower()
 
 
+def _record_margin_etf_trusted_receipt(*, issued_at: str) -> dict[str, Any] | None:
+    """Explicit-POST-only signer; GET packet reads never call this helper."""
+
+    import command_center_home_snapshot as home_snapshot
+
+    etf_packet = packet_service._read_packet_without_margin_etf_binding("command_center_etf_packet")
+    margin_packet = packet_service._read_packet_without_margin_etf_binding("command_center_margin_packet")
+    freshness = packet_service.load_snapshot_cache().get("data_freshness")
+    binding, evidence_digests = home_snapshot._build_margin_etf_focus_binding(
+        etf_packet,
+        margin_packet,
+        freshness,
+    )
+    if not binding or not evidence_digests:
+        return None
+    return margin_etf_focus_provenance.record_trusted_producer_receipt(
+        evidence_digests,
+        issued_at=issued_at,
+    )
+
+
 def run_margin_etf_local_refresh_task(payload: Any = None) -> dict[str, Any]:
     payload_safe = _safe_value(payload)
     payload_map = payload_safe if isinstance(payload_safe, dict) else {}
@@ -371,9 +392,10 @@ def run_margin_etf_local_refresh_task(payload: Any = None) -> dict[str, Any]:
         ],
     )
     if task.get("dedupe_reused_existing"):
+        _record_margin_etf_trusted_receipt(issued_at=margin_etf_focus_provenance.now_shanghai_iso())
         return task
 
-    now = _now_iso()
+    now = margin_etf_focus_provenance.now_shanghai_iso()
     ledger = [
         {
             "api": "local_margin_etf_packet_refresh",
@@ -427,4 +449,6 @@ def run_margin_etf_local_refresh_task(payload: Any = None) -> dict[str, Any]:
         warning="margin_etf_local_packet_replay_completed_no_external_call",
     ) or task
     updated["payload_safe"] = task_payload
+    if call_status == "local_packet_replay_ready":
+        _record_margin_etf_trusted_receipt(issued_at=now)
     return updated
