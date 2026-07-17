@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import hmac
 import json
 import re
+import secrets
 import sqlite3
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -39,7 +41,7 @@ ALLOWED_MAX_FRAMES = {12, 24, 48}
 ALLOWED_EVENT_TYPES = {"market_mark", "virtual_intent"}
 ALLOWED_SIDES = {"BUY", "SELL"}
 SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(SH|SZ|BJ)$")
-SOURCE_HASH_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
+SOURCE_HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
 SOURCE_TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
 MONEY_QUANTUM = Decimal("0.01")
@@ -87,6 +89,42 @@ def _sha256(value: Any) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def _result_integrity_key_path() -> Path:
+    return SQLITE_META_PATH.with_name("qmt_replay_result_integrity.key")
+
+
+def _read_result_integrity_key() -> bytes | None:
+    path = _result_integrity_key_path()
+    try:
+        value = path.read_bytes()
+    except OSError:
+        return None
+    return value if len(value) == 32 else None
+
+
+def _load_or_create_result_integrity_key() -> bytes:
+    existing = _read_result_integrity_key()
+    if existing is not None:
+        return existing
+    path = _result_integrity_key_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    candidate = secrets.token_bytes(32)
+    try:
+        with path.open("xb") as handle:
+            handle.write(candidate)
+        path.chmod(0o600)
+        return candidate
+    except FileExistsError:
+        concurrent = _read_result_integrity_key()
+        if concurrent is None:
+            raise RuntimeError("qmt_replay_result_integrity_key_invalid")
+        return concurrent
+
+
+def _result_mac(key: bytes, material: Mapping[str, Any]) -> str:
+    return hmac.new(key, _canonical_json(material).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def _boundary_flags() -> dict[str, Any]:
     return {
         "external_calls_triggered": False,
@@ -111,6 +149,9 @@ def _boundary_flags() -> dict[str, Any]:
         "tushare_called": False,
         "deepseek_called": False,
         "github_called": False,
+        "provider_called": False,
+        "model_called": False,
+        "provider_or_model_calls": False,
         "worker_dispatched": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
@@ -212,6 +253,20 @@ def _normalize_as_of(value: Any) -> str:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ReplayValidationError("snapshot_as_of_timezone_required")
     return parsed.isoformat(timespec="seconds")
+
+
+def _normalize_source_data_date(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ReplayValidationError("source_data_date_required")
+    text = _required_text(value, code="source_data_date_required", limit=10)
+    match = re.fullmatch(r"(\d{4})-?(\d{2})-?(\d{2})", text)
+    if not match:
+        raise ReplayValidationError("invalid_source_data_date")
+    try:
+        parsed = _dt.date(*(int(part) for part in match.groups()))
+    except ValueError:
+        raise ReplayValidationError("invalid_source_data_date") from None
+    return parsed.strftime("%Y%m%d")
 
 
 def _normalize_positions(value: Any) -> list[dict[str, Any]]:
@@ -327,11 +382,14 @@ def _normalize_request(payload: Any) -> dict[str, Any]:
     )
     if not SOURCE_HASH_PATTERN.fullmatch(source_scope_hash):
         raise ReplayValidationError("invalid_source_scope_hash")
-    source_symbol = None
-    if payload.get("source_symbol") not in (None, ""):
-        source_symbol = _normalize_symbol(payload.get("source_symbol"))
-    source_task_id = str(payload.get("source_task_id") or "").strip()
-    if source_task_id and not SOURCE_TASK_ID_PATTERN.fullmatch(source_task_id):
+    source_data_date = _normalize_source_data_date(payload.get("source_data_date"))
+    source_symbol = _normalize_symbol(payload.get("source_symbol"))
+    source_task_id = _required_text(
+        payload.get("source_task_id"),
+        code="source_task_id_required",
+        limit=80,
+    )
+    if not SOURCE_TASK_ID_PATTERN.fullmatch(source_task_id):
         raise ReplayValidationError("invalid_source_task_id")
 
     snapshot_raw = payload.get("snapshot")
@@ -366,8 +424,9 @@ def _normalize_request(payload: Any) -> dict[str, Any]:
         "max_frames": max_frames,
         "source_result_version": source_result_version,
         "source_scope_hash": source_scope_hash,
+        "source_data_date": source_data_date,
         "source_symbol": source_symbol,
-        "source_task_id": source_task_id or None,
+        "source_task_id": source_task_id,
         "snapshot": snapshot,
         "events": events,
         "simulation": {
@@ -612,6 +671,7 @@ def _scope_payload(normalized: Mapping[str, Any]) -> dict[str, Any]:
         "max_frames": normalized.get("max_frames"),
         "source_result_version": normalized.get("source_result_version"),
         "source_scope_hash": normalized.get("source_scope_hash"),
+        "source_data_date": normalized.get("source_data_date"),
         "source_symbol": normalized.get("source_symbol"),
         "source_task_id": normalized.get("source_task_id"),
         "snapshot": normalized.get("snapshot"),
@@ -631,6 +691,7 @@ def _deterministic_core(normalized: Mapping[str, Any]) -> dict[str, Any]:
         "source_task_id": normalized.get("source_task_id"),
         "source_result_version": normalized.get("source_result_version"),
         "source_scope_hash": normalized.get("source_scope_hash"),
+        "source_data_date": normalized.get("source_data_date"),
     }
     safety_boundary = _boundary_flags()
     core = {
@@ -643,6 +704,7 @@ def _deterministic_core(normalized: Mapping[str, Any]) -> dict[str, Any]:
         "max_frames": normalized.get("max_frames"),
         "source_result_version": normalized.get("source_result_version"),
         "source_scope_hash": normalized.get("source_scope_hash"),
+        "source_data_date": normalized.get("source_data_date"),
         "source_lineage": source_lineage,
         "scope_hash": scope_hash,
         "replay": replay,
@@ -663,13 +725,17 @@ def _deterministic_core(normalized: Mapping[str, Any]) -> dict[str, Any]:
 def _packet_summary(packet: Any) -> dict[str, Any] | None:
     if not isinstance(packet, Mapping):
         return None
+    virtual_fill_count = packet.get("virtual_fill_count")
+    if isinstance(virtual_fill_count, bool) or not isinstance(virtual_fill_count, int) or virtual_fill_count < 0:
+        virtual_fill_count = 0
     return {
         "status": packet.get("status"),
         "scope_hash": packet.get("scope_hash"),
         "result_hash": packet.get("result_hash"),
+        "result_mac": packet.get("result_mac"),
         "task_id": packet.get("task_id"),
         "generated_at": packet.get("generated_at"),
-        "virtual_fill_count": int(packet.get("virtual_fill_count") or 0),
+        "virtual_fill_count": virtual_fill_count,
     }
 
 
@@ -696,6 +762,182 @@ def _read_packet_no_init(packet_key: str) -> tuple[Any, str]:
     except Exception:
         return None, "packet_decode_failed"
     return parsed, "packet_present"
+
+
+_RESULT_HASH_FIELDS = (
+    "schema_version",
+    "status",
+    "mode",
+    "scenario",
+    "max_frames",
+    "source_result_version",
+    "source_scope_hash",
+    "source_data_date",
+    "source_lineage",
+    "scope_hash",
+    "replay",
+    "virtual_fill_count",
+    "research_event_count",
+    "virtual_research_events",
+    "allowed_research_events",
+    "caller_supplied_export_compatibility_verified",
+    "external_qmt_integration_verified",
+    "paper_trading_sandbox_ready",
+    "safety_boundary",
+    *_boundary_flags().keys(),
+)
+
+
+def _result_hash_material(packet: Mapping[str, Any]) -> dict[str, Any]:
+    return {field: packet.get(field) for field in _RESULT_HASH_FIELDS}
+
+
+def _result_mac_material(packet: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "result": _result_hash_material(packet),
+        "packet_key": packet.get("packet_key"),
+        "generated_at": packet.get("generated_at"),
+        "task_id": packet.get("task_id"),
+        "task_status": packet.get("task_status"),
+        "call_ledger": packet.get("call_ledger"),
+        "warnings": packet.get("warnings"),
+        "notices": packet.get("notices"),
+    }
+
+
+def _result_call_ledger_integrity(packet: Mapping[str, Any]) -> bool:
+    ledger = packet.get("call_ledger")
+    if not isinstance(ledger, list) or len(ledger) != 1 or not isinstance(ledger[0], Mapping):
+        return False
+    row = ledger[0]
+    expected_keys = {
+        "api",
+        "source",
+        "request_params_safe",
+        "row_count",
+        "task_id",
+        "local_fetched_at",
+        "call_status",
+        "error_message_safe",
+        "external",
+        *_boundary_flags().keys(),
+    }
+    replay = packet.get("replay")
+    return set(row) == expected_keys and row.get("api") == "local_qmt_readonly_decimal_replay" and row.get(
+        "source"
+    ) == "caller_supplied_sanitized_export_or_bound_local_lineage" and row.get("request_params_safe") == {
+        "scope_hash": packet.get("scope_hash"),
+        "caller_supplied_export_only": True,
+        "external_qmt_connection_allowed": False,
+    } and row.get("row_count") == (replay.get("event_count") if isinstance(replay, Mapping) else None) and row.get(
+        "task_id"
+    ) == packet.get("task_id") and isinstance(row.get("local_fetched_at"), str) and bool(
+        str(row.get("local_fetched_at")).strip()
+    ) and row.get("call_status") == "local_decimal_replay_completed" and row.get(
+        "error_message_safe"
+    ) == "" and row.get("external") is False and all(
+        row.get(key) == value for key, value in _boundary_flags().items()
+    )
+
+
+def _result_packet_integrity(packet: Any) -> tuple[bool, str]:
+    if not isinstance(packet, Mapping):
+        return False, "result_packet_missing"
+    if packet.get("packet_key") != CURRENT_PACKET_KEY:
+        return False, "result_packet_key_invalid"
+    task_id = packet.get("task_id")
+    if not isinstance(task_id, str) or not SOURCE_TASK_ID_PATTERN.fullmatch(task_id):
+        return False, "result_task_id_invalid"
+    if packet.get("task_status") != "success":
+        return False, "result_task_status_invalid"
+    if not isinstance(packet.get("generated_at"), str):
+        return False, "result_generated_at_invalid"
+    if packet.get("schema_version") != RESULT_SCHEMA_VERSION:
+        return False, "result_schema_invalid"
+    if packet.get("status") not in {
+        "local_export_contract_and_replay_verified",
+        "local_scope_replay_verified_export_pending",
+    }:
+        return False, "result_status_invalid"
+    if packet.get("mode") != "local_research_replay":
+        return False, "result_mode_invalid"
+    if packet.get("scenario") not in ALLOWED_SCENARIOS or packet.get("max_frames") not in ALLOWED_MAX_FRAMES:
+        return False, "result_scope_invalid"
+    if not isinstance(packet.get("source_result_version"), str) or not SOURCE_VERSION_PATTERN.fullmatch(
+        str(packet.get("source_result_version"))
+    ):
+        return False, "result_version_invalid"
+    if not isinstance(packet.get("source_scope_hash"), str) or not SOURCE_HASH_PATTERN.fullmatch(
+        str(packet.get("source_scope_hash"))
+    ):
+        return False, "result_source_scope_invalid"
+    if not isinstance(packet.get("scope_hash"), str) or not SOURCE_HASH_PATTERN.fullmatch(str(packet.get("scope_hash"))):
+        return False, "result_scope_hash_invalid"
+    try:
+        source_data_date = _normalize_source_data_date(packet.get("source_data_date"))
+        source_symbol = _normalize_symbol(packet.get("source_lineage", {}).get("source_symbol"))
+    except (ReplayValidationError, AttributeError):
+        return False, "result_lineage_invalid"
+    lineage = packet.get("source_lineage")
+    if not isinstance(lineage, Mapping):
+        return False, "result_lineage_invalid"
+    source_task_id = lineage.get("source_task_id")
+    if not isinstance(source_task_id, str) or not SOURCE_TASK_ID_PATTERN.fullmatch(source_task_id):
+        return False, "result_lineage_task_invalid"
+    expected_lineage = {
+        "source_symbol": source_symbol,
+        "source_task_id": source_task_id,
+        "source_result_version": packet.get("source_result_version"),
+        "source_scope_hash": packet.get("source_scope_hash"),
+        "source_data_date": source_data_date,
+    }
+    if dict(lineage) != expected_lineage:
+        return False, "result_lineage_mismatch"
+    if packet.get("source_data_date") != source_data_date:
+        return False, "result_data_date_not_canonical"
+    boundary = _boundary_flags()
+    if packet.get("safety_boundary") != boundary or any(packet.get(key) != value for key, value in boundary.items()):
+        return False, "result_boundary_invalid"
+    replay = packet.get("replay")
+    events = packet.get("virtual_research_events")
+    if not isinstance(replay, Mapping) or not isinstance(events, list):
+        return False, "result_events_invalid"
+    if replay.get("research_events") != events or replay.get("virtual_research_events") != events:
+        return False, "result_events_mismatch"
+    if packet.get("research_event_count") != len(events) or len(events) > int(packet.get("max_frames") or 0):
+        return False, "result_event_count_invalid"
+    if not all(isinstance(event, Mapping) for event in events):
+        return False, "result_event_row_invalid"
+    expected_sequences = [0] if len(events) == 1 and events[0].get("seq") == 0 else list(range(1, len(events) + 1))
+    for index, event in enumerate(events):
+        if event.get("seq") != expected_sequences[index] or event.get("event") not in {"observe", "watch", "excluded"}:
+            return False, "result_event_contract_invalid"
+        symbol = event.get("symbol")
+        if symbol is not None and (not isinstance(symbol, str) or not SYMBOL_PATTERN.fullmatch(symbol)):
+            return False, "result_event_symbol_invalid"
+        if not isinstance(event.get("reason"), str) or not str(event.get("reason")).strip():
+            return False, "result_event_reason_invalid"
+    if packet.get("allowed_research_events") != ["observe", "watch", "excluded"]:
+        return False, "result_allowed_events_invalid"
+    if packet.get("warnings") != [] or not isinstance(packet.get("notices"), list):
+        return False, "result_message_contract_invalid"
+    if not _result_call_ledger_integrity(packet):
+        return False, "result_call_ledger_invalid"
+    result_hash = packet.get("result_hash")
+    if not isinstance(result_hash, str) or not SOURCE_HASH_PATTERN.fullmatch(result_hash):
+        return False, "result_hash_invalid"
+    if _sha256(_result_hash_material(packet)) != result_hash:
+        return False, "result_hash_mismatch"
+    integrity_key = _read_result_integrity_key()
+    if integrity_key is None:
+        return False, "result_integrity_key_missing_or_invalid"
+    result_mac = packet.get("result_mac")
+    if not isinstance(result_mac, str) or not SOURCE_HASH_PATTERN.fullmatch(result_mac):
+        return False, "result_mac_invalid"
+    expected_mac = _result_mac(integrity_key, _result_mac_material(packet))
+    if not hmac.compare_digest(result_mac, expected_mac):
+        return False, "result_mac_mismatch"
+    return True, "result_integrity_validated"
 
 
 def _persist_success_packets(packet: Mapping[str, Any]) -> None:
@@ -745,6 +987,7 @@ def _failed_packet(
             "source_task_id": None,
             "source_result_version": None,
             "source_scope_hash": None,
+            "source_data_date": None,
         },
         "virtual_research_events": [],
         "external_qmt_integration_verified": False,
@@ -815,6 +1058,7 @@ def run_qmt_readonly_local_replay(payload: Any = None) -> dict[str, Any]:
         "max_frames": normalized["max_frames"],
         "source_result_version": normalized["source_result_version"],
         "source_scope_hash": normalized["source_scope_hash"],
+        "source_data_date": normalized["source_data_date"],
         "source_symbol": normalized["source_symbol"],
         "source_task_id": normalized["source_task_id"],
         "scope_hash": scope_hash,
@@ -841,6 +1085,7 @@ def run_qmt_readonly_local_replay(payload: Any = None) -> dict[str, Any]:
     )
 
     try:
+        integrity_key = _load_or_create_result_integrity_key()
         core = _deterministic_core(normalized)
         ledger = _local_call_ledger(
             call_status="local_decimal_replay_completed",
@@ -855,11 +1100,13 @@ def run_qmt_readonly_local_replay(payload: Any = None) -> dict[str, Any]:
             "task_id": task_id,
             "task_status": "success",
             "call_ledger": ledger,
-            "warnings": [
+            "warnings": [],
+            "notices": [
                 "virtual_fill 仅为 Decimal 本地算术证据，不是委托、成交、持仓变更或 QMT 外部集成证据。",
                 "外部 QMT read-only 连接、broker/session/account query 和真实交易均未实现。",
             ],
         }
+        packet["result_mac"] = _result_mac(integrity_key, _result_mac_material(packet))
         _persist_success_packets(packet)
     except Exception:
         error_code = "local_replay_or_persistence_failed_safe"
@@ -899,19 +1146,17 @@ def run_qmt_readonly_local_replay(payload: Any = None) -> dict[str, Any]:
 def read_qmt_replay_cache() -> dict[str, Any]:
     current, current_source = _read_packet_no_init(CURRENT_PACKET_KEY)
     last_good, last_good_source = _read_packet_no_init(LAST_GOOD_PACKET_KEY)
-    success_statuses = {
-        "local_export_contract_and_replay_verified",
-        "local_scope_replay_verified_export_pending",
-    }
-    current_ok = isinstance(current, Mapping) and current.get("status") in success_statuses
-    last_good_ok = isinstance(last_good, Mapping) and last_good.get("status") in success_statuses
-    selected = current if current_ok else last_good if last_good_ok else current if isinstance(current, Mapping) else None
+    current_ok, current_integrity = _result_packet_integrity(current)
+    last_good_ok, last_good_integrity = _result_packet_integrity(last_good)
+    current_present = current_source == "packet_present"
+    selected = current if current_ok else last_good if not current_present and last_good_ok else None
     ledger = _local_call_ledger(call_status="cache_read_no_external_call")
     if not isinstance(selected, Mapping):
+        invalid_current = current_present and not current_ok
         return {
             "packet_key": CACHE_PACKET_KEY,
             "schema_version": CACHE_SCHEMA_VERSION,
-            "status": "cache_missing",
+            "status": "latest_attempt_blocked" if invalid_current else "cache_missing",
             "mode": "cache_only",
             "cache_only": True,
             "read_only": True,
@@ -929,14 +1174,23 @@ def read_qmt_replay_cache() -> dict[str, Any]:
                 "source_task_id": None,
                 "source_result_version": None,
                 "source_scope_hash": None,
+                "source_data_date": None,
             },
             "virtual_research_events": [],
+            "result_integrity_validated": False,
+            "result_integrity_status": current_integrity if invalid_current else "result_packet_missing",
+            "lineage_validation": {
+                "schema_version": "qmt_readonly_source_lineage_validation.v1",
+                "status": "blocked_invalid_result" if invalid_current else "waiting_for_first_result",
+                "passed": False,
+            },
             "external_qmt_integration_verified": False,
             "paper_trading_sandbox_ready": False,
             "safety_boundary": _boundary_flags(),
             **_boundary_flags(),
             "call_ledger": ledger,
-            "warnings": ["尚无本地 QMT replay 缓存；GET 未创建目录、数据库、任务或外部连接。"],
+            "warnings": [f"qmt_replay_current_result_integrity_blocked:{current_integrity}"] if invalid_current else [],
+            "notices": ["尚无本地 QMT replay 缓存；GET 未创建目录、数据库、任务或外部连接。"],
         }
 
     packet = dict(selected)
@@ -955,9 +1209,17 @@ def read_qmt_replay_cache() -> dict[str, Any]:
             "last_good_packet_source": last_good_source,
             "current_result_summary": _packet_summary(current),
             "last_good_result_summary": _packet_summary(last_good),
+            "result_integrity_validated": True,
+            "result_integrity_status": current_integrity if current_ok else last_good_integrity,
+            "lineage_validation": {
+                "schema_version": "qmt_readonly_source_lineage_validation.v1",
+                "status": "source_result_integrity_validated",
+                "passed": True,
+            },
             **_boundary_flags(),
             "call_ledger": ledger,
-            "warnings": [
+            "warnings": [],
+            "notices": [
                 "GET 仅回放 SQLite 中的本地 current/last-good 结果，不创建任务、不连接 QMT、不执行真实交易。"
             ],
         }

@@ -97,6 +97,7 @@ export type QmtLocalReplayRequest = {
   source_task_id: string;
   source_result_version: string;
   source_scope_hash: string;
+  source_data_date: string;
   demo_label?: string;
 };
 

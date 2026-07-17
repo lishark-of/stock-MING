@@ -9,6 +9,7 @@ DESKTOP = ROOT / "desktop"
 class QmtReplayOrdinaryEntryTests(unittest.TestCase):
     def setUp(self):
         self.page = (DESKTOP / "src" / "routes" / "QmtReplayLab.tsx").read_text(encoding="utf-8")
+        self.gate = (DESKTOP / "src" / "routes" / "qmtReplayOrdinaryGate.ts").read_text(encoding="utf-8")
         self.client = (DESKTOP / "src" / "api" / "client.ts").read_text(encoding="utf-8")
         self.app = (DESKTOP / "src" / "App.tsx").read_text(encoding="utf-8")
         self.layout = (DESKTOP / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
@@ -34,9 +35,10 @@ class QmtReplayOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(page_head, safety)
         self.assertLess(safety, source)
         self.assertLess(safety, operator)
-        self.assertIn("QMT未连接｜券商未连接｜无账户绑定｜无订单接口｜不会下单｜仅本地研究回放", self.page)
-        self.assertIn("不会探测 QMT 进程、端口或账户", self.page)
-        self.assertIn("不会连接券商、创建订单、修改持仓或改写 strategy action", self.page)
+        self.assertIn("QMT未调用｜券商未调用｜无账户查询｜无真实订单｜仅本地研究回放", self.page)
+        self.assertIn("检测到安全边界异常｜已停止本地回放", self.page)
+        self.assertIn("连接与交易隔离证据不完整｜已停止本地回放", self.page)
+        self.assertIn("缺失或未知不会被解释成安全", self.page)
         self.assertIn('role="status"', self.page[safety - 240:safety + 240])
 
     def test_get_render_and_inputs_do_not_launch_tasks(self):
@@ -71,32 +73,35 @@ class QmtReplayOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("source_task_id: candidateTaskId", launch)
         self.assertIn("source_result_version: candidateResultVersion", launch)
         self.assertIn("source_scope_hash: candidateScopeHash", launch)
-        self.assertIn("approved && lineageReady && !unsafeBoundary && !submitting", self.page)
+        self.assertIn("source_data_date: candidateDataDate", launch)
+        self.assertIn("approved && qmtGate.launchReady && !submitting", self.page)
         self.assertIn("运行本地研究回放（不连接 QMT）", self.page)
         self.assertIn('method: "POST"', self.client[self.client.index("export function postQmtLocalReplay"):])
         self.assertIn('"/api/qmt-replay/local-simulate"', self.client)
 
     def test_lineage_requires_candidate_and_next_session_to_match(self):
         for token in (
-            "candidate_radar_v05_result_version",
-            "candidate_radar_v05_scope_hash",
             "candidate_radar_v05_next_session_lineage",
             "candidate_radar_v05_lineage",
             "symbolMatches",
             "taskMatches",
             "resultVersionMatches",
             "scopeMatches",
-            "qmtSourceMatches",
-            "backendLineageBlocked",
+            "qmtGate.lineageReady",
         ):
             self.assertIn(token, self.page)
-        self.assertIn("标的、任务、结果版本和范围全部同源", self.page)
+        for token in (
+            'schema_version === "candidate_radar_v05_next_session_lineage.v1"',
+            'candidate_packet_key === "command_center_3_candidate_radar_cache"',
+            "candidateLineage.dataDate === nextLineage.dataDate",
+            "qmtResultIntegrityReady",
+            "qmtPayloadLedgerSafe",
+        ):
+            self.assertIn(token, self.gate)
+        self.assertIn("标的、任务、结果版本、范围、交易日历和数据日期全部同源", self.page)
         self.assertIn("缺口不会被解释成安全", self.page)
         self.assertIn("失败不得覆盖 last-good", self.page)
-        self.assertIn(
-            "firstText(candidateV05Lineage.candidate_task_id, candidateCache.latest_confirmed_task_id)",
-            self.page,
-        )
+        self.assertNotIn("candidateCache.latest_confirmed_task_id", self.page)
         self.assertIn("qmtCache.current_result_summary", self.page)
         self.assertIn("qmtCache.last_good_result_summary", self.page)
 
@@ -112,8 +117,8 @@ class QmtReplayOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("不是订单、成交或持仓动作", self.page)
         self.assertIn("replaySummary.research_events", self.page)
         self.assertIn("event.research_state ?? event.event ?? event.state", self.page)
-        self.assertIn("qmtCache.source_result_version", self.page)
-        self.assertIn("qmtCache.source_scope_hash", self.page)
+        self.assertIn("qmtSourceLineage.source_result_version", self.page)
+        self.assertIn("qmtSourceLineage.source_scope_hash", self.page)
         self.assertIn('event: "observe"', self.runner)
         self.assertIn('research_events: events', self.runner)
         self.assertNotIn('research_state: "buy"', self.page)

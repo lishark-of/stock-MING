@@ -156,6 +156,10 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["candidate_is_not_buy_instruction"])
+        self.assertEqual(packet["warnings"], [])
+        self.assertTrue(
+            any(str(item).startswith("GET /api/candidate-radar/cache 只读展示") for item in packet["notices"])
+        )
 
         next_packet = next_session_service.read_next_session_cache()
         lineage = next_packet["candidate_radar_v05_lineage"]
@@ -176,6 +180,12 @@ class CandidateRadarV05RuntimeTests(unittest.TestCase):
         self.assertFalse(next_packet["deepseek_called"])
         self.assertTrue(next_packet["does_not_modify_strategy_action"])
         self.assertTrue(next_packet["does_not_modify_operation_zones"])
+        self.assertTrue(
+            any(str(item).startswith("GET /api/next-session/cache 只读取") for item in next_packet["notices"])
+        )
+        self.assertFalse(
+            any(str(item).startswith("GET /api/next-session/cache 只读取") for item in next_packet["warnings"])
+        )
         self.assertEqual(SQLiteMetaStore(self.meta_path).read_packet(worker_packet_key), worker_packet_sentinel)
 
         # Compatibility P3 summaries may still contain an older result.  They must

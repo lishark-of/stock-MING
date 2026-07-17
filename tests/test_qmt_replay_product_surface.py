@@ -65,10 +65,46 @@ class QmtReplayProductSurfaceTests(unittest.TestCase):
         self.assertIn("not_ready|not_available", self.page)
         self.assertIn('new Set(["ready", "success", "succeeded", "passed", "match", "preserved", "fresh"])', self.page)
         self.assertNotIn("/ready|success|passed|match/i", self.page)
+        self.assertIn('new Set(["fresh", "today", "current"])', self.page)
+        self.assertIn("candidateCalendarValidated", self.page)
+        self.assertIn("normalizedDate(candidateDataDate) === normalizedDate(candidateExpectedTradeDate)", self.page)
+        self.assertIn("normalizedDate(candidateDataDate) === normalizedDate(nextDataDate)", self.page)
+        self.assertNotIn("/fresh|today/i", self.page)
 
     def test_unexpected_external_activity_blocks_the_local_replay_boundary(self):
         self.assertIn("const externalCallsTriggered =", self.page)
-        self.assertIn("ordersCreated > 0 || externalCallsTriggered || executesTrades", self.page)
+        self.assertIn("const boundaryExplicitSafe = isolationEvidenceIsExplicitSafe", self.page)
+        self.assertIn("const ledgerExplicitSafe = ledgerRows.length > 0", self.page)
+        self.assertIn("localTransportLedgerIsExplicitSafe(row)", self.page)
+        self.assertIn('row.api === "frontend_fastapi_request"', self.page)
+        self.assertIn("row.provider_or_model_calls === false", self.page)
+        self.assertIn("const safetyUnknown = !unsafeBoundary && !safetyExplicitSafe", self.page)
+        self.assertIn("qmt_external_connection_attempted", self.page)
+        self.assertIn("broker_session_opened", self.page)
+        self.assertIn("account_query_executed", self.page)
+        self.assertIn("real_order_submitted", self.page)
+        self.assertIn("real_trade_executed", self.page)
+        self.assertIn("real_holdings_modified", self.page)
+        self.assertIn("approved && lineageReady && safetyExplicitSafe", self.page)
+
+    def test_unknown_isolation_never_claims_disconnected_or_allows_launch(self):
+        self.assertIn("连接与交易隔离证据不完整｜已停止本地回放", self.page)
+        self.assertIn("缺失或未知不会被解释成安全", self.page)
+        self.assertIn('safetyUnknown ? "安全证据待确认"', self.page)
+        self.assertNotIn("QMT未连接｜券商未连接", self.page)
+
+    def test_historical_replay_requires_exact_current_lineage(self):
+        self.assertIn("const qmtLineageBound = qmtSourceMatches && candidateDateReady && safetyExplicitSafe", self.page)
+        self.assertIn('const qmtCurrentResultReady = qmtCacheStatusNormalized === "ready_cache_replay"', self.page)
+        self.assertIn("const qmtResultBound = qmtLineageBound && qmtCurrentResultReady && !loading && !cacheError", self.page)
+        self.assertIn("const rawVirtualEvents = qmtResultBound ? rawVirtualEventsUnbound : []", self.page)
+        for token in (
+            "qmtSourceSymbol === candidateSymbol",
+            "qmtSourceTaskId === candidateTaskId",
+            "qmtSourceResultVersion === candidateResultVersion",
+            "qmtSourceScopeHash === candidateScopeHash",
+        ):
+            self.assertIn(token, self.page)
 
     def test_route_css_has_mobile_and_reduced_motion_contracts(self):
         self.assertIn("@media (max-width: 420px)", self.styles)

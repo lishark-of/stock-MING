@@ -15911,6 +15911,38 @@ def _read_candidate_radar_cache_uncached() -> dict[str, Any]:
     )
 
 
+_QMT_SOURCE_NOTICE_PREFIXES = (
+    "GET /api/candidate-radar/cache 只读展示",
+    "POST /api/candidate-radar/scan-quick 只扫描本地缓存",
+    "候选不是买入指令",
+    "本页不调用 Tushare、DeepSeek 或 GitHub",
+    "provider 阻断、stale 输入、缺失 provider 数据和降级模式会作为 coverage gap 展示",
+    "Candidate Radar v0.5 processed the full supplied pool",
+    "Candidate Radar durable evidence recipe 只固定",
+    "Candidate Radar production stage-scope manifest 只列出",
+    "Candidate Radar production replacement review 只审查",
+    "Candidate Radar production promotion dry-run 只绑定",
+    "Candidate Radar legacy retirement review 只审查",
+    "Candidate Radar production promotion review 只审查",
+)
+
+
+def _move_qmt_source_fixed_warnings_to_notices(packet: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = dict(packet)
+    warnings: list[str] = []
+    notices = [str(item) for item in _as_list(packet.get("notices"))]
+    for item in _as_list(packet.get("warnings")):
+        text = str(item)
+        if any(text.startswith(prefix) for prefix in _QMT_SOURCE_NOTICE_PREFIXES):
+            if text not in notices:
+                notices.append(text)
+        else:
+            warnings.append(text)
+    normalized["warnings"] = warnings
+    normalized["notices"] = notices
+    return normalized
+
+
 @memoize_request_local_read("candidate_radar_cache")
 def read_candidate_radar_cache() -> dict[str, Any]:
     # Candidate packets depend on mutable evidence outside the canonical
@@ -15920,7 +15952,7 @@ def read_candidate_radar_cache() -> dict[str, Any]:
     # cross-generation packet.  The decorator deliberately reuses this read
     # only inside one request-local build; independent requests always rebuild
     # from current local evidence.
-    return _read_candidate_radar_cache_uncached()
+    return _move_qmt_source_fixed_warnings_to_notices(_read_candidate_radar_cache_uncached())
 
 
 def run_candidate_quick_scan_task(payload: Any = None) -> dict[str, Any]:

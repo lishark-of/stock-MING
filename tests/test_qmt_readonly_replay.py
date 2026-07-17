@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import inspect
 import json
 import tempfile
@@ -26,6 +27,7 @@ def _payload(*, scenario: str = "baseline") -> dict:
         "max_frames": 12,
         "source_result_version": "candidate-next.v1",
         "source_scope_hash": SOURCE_HASH,
+        "source_data_date": "20260710",
         "source_symbol": "600519.SH",
         "source_task_id": "local-source-task-123",
         "snapshot": {
@@ -106,6 +108,7 @@ class QmtReadonlyReplayTests(unittest.TestCase):
                 "source_task_id": "local-source-task-123",
                 "source_result_version": "candidate-next.v1",
                 "source_scope_hash": SOURCE_HASH,
+                "source_data_date": "20260710",
             },
         )
         self.assertEqual(first["safety_boundary"]["real_order_count"], 0)
@@ -130,6 +133,9 @@ class QmtReadonlyReplayTests(unittest.TestCase):
             "max_frames": 24,
             "source_result_version": "candidate-next.v1",
             "source_scope_hash": SOURCE_HASH,
+            "source_data_date": "20260710",
+            "source_symbol": "600519.SH",
+            "source_task_id": "local-source-task-123",
         }
 
         packet = service.run_qmt_readonly_local_replay(payload)
@@ -239,7 +245,7 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         self.assertEqual(blocked_task["error_message_safe"], "invalid_source_task_id")
         self.assertNotIn("unsafe task id", json.dumps(blocked_task, ensure_ascii=False))
 
-    def test_persistence_failure_keeps_last_good_and_surfaces_degraded_cache(self):
+    def test_persistence_failure_keeps_last_good_but_blocks_latest_cache(self):
         good = service.run_qmt_readonly_local_replay(_payload())
         changed = _payload(scenario="recovery")
 
@@ -249,10 +255,85 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         cached = service.read_qmt_replay_cache()
         self.assertEqual(failed["status"], "local_replay_blocked_safe")
         self.assertEqual(failed["error_message_safe"], "local_replay_or_persistence_failed_safe")
-        self.assertEqual(cached["status"], "degraded_last_good_replay")
-        self.assertEqual(cached["result_hash"], good["result_hash"])
-        self.assertEqual(cached["last_good_result_summary"]["result_hash"], good["result_hash"])
-        self.assertEqual(cached["current_result_summary"]["status"], "local_replay_blocked_safe")
+        self.assertEqual(cached["status"], "latest_attempt_blocked")
+        self.assertEqual(cached["result_hash"], "")
+        self.assertFalse(cached["result_integrity_validated"])
+        self.assertIn("result_task_status_invalid", cached["warnings"][0])
+        persisted_last_good, persisted_status = service._read_packet_no_init(service.LAST_GOOD_PACKET_KEY)
+        self.assertEqual(persisted_status, "packet_present")
+        self.assertEqual(persisted_last_good["result_hash"], good["result_hash"])
+
+    def test_result_integrity_rejects_manual_status_event_and_hash_self_seal(self):
+        packet = service.run_qmt_readonly_local_replay(_payload())
+        valid, status = service._result_packet_integrity(packet)
+        self.assertTrue(valid)
+        self.assertEqual(status, "result_integrity_validated")
+
+        for mutate, expected in (
+            (lambda row: row.update(status="ready_cache_replay"), "result_status_invalid"),
+            (lambda row: row["virtual_research_events"][0].update(event="buy"), "result_event_contract_invalid"),
+            (lambda row: row["source_lineage"].update(source_data_date="20260709"), "result_lineage_mismatch"),
+            (lambda row: row.update(result_hash="b" * 64), "result_hash_mismatch"),
+        ):
+            forged = copy.deepcopy(packet)
+            mutate(forged)
+            self.assertEqual(service._result_packet_integrity(forged), (False, expected))
+
+        forged = copy.deepcopy(packet)
+        forged["virtual_research_events"][0]["event"] = "buy"
+        forged["replay"]["research_events"][0]["event"] = "buy"
+        forged["replay"]["virtual_research_events"][0]["event"] = "buy"
+        forged["result_hash"] = service._sha256(service._result_hash_material(forged))
+        valid, reason = service._result_packet_integrity(forged)
+        self.assertFalse(valid)
+        self.assertEqual(reason, "result_event_contract_invalid")
+
+        self_sealed = copy.deepcopy(packet)
+        self_sealed["virtual_research_events"][0]["reason"] = "manually_rewritten_but_schema_valid"
+        self_sealed["replay"]["research_events"][0]["reason"] = "manually_rewritten_but_schema_valid"
+        self_sealed["replay"]["virtual_research_events"][0]["reason"] = "manually_rewritten_but_schema_valid"
+        self_sealed["result_hash"] = service._sha256(service._result_hash_material(self_sealed))
+        valid, reason = service._result_packet_integrity(self_sealed)
+        self.assertFalse(valid)
+        self.assertEqual(reason, "result_mac_mismatch")
+
+        forged_ledger = copy.deepcopy(packet)
+        forged_ledger["call_ledger"][0]["provider_called"] = True
+        valid, reason = service._result_packet_integrity(forged_ledger)
+        self.assertFalse(valid)
+        self.assertEqual(reason, "result_call_ledger_invalid")
+
+        service._persist_current_packet(forged)
+        cached = service.read_qmt_replay_cache()
+        self.assertEqual(cached["status"], "latest_attempt_blocked")
+        self.assertFalse(cached["result_integrity_validated"])
+        self.assertEqual(cached["virtual_research_events"], [])
+
+    def test_missing_install_local_integrity_key_blocks_cache_readback(self):
+        service.run_qmt_readonly_local_replay(_payload())
+        key_path = service._result_integrity_key_path()
+        self.assertTrue(key_path.exists())
+        key_path.unlink()
+
+        cached = service.read_qmt_replay_cache()
+
+        self.assertEqual(cached["status"], "latest_attempt_blocked")
+        self.assertEqual(cached["result_integrity_status"], "result_integrity_key_missing_or_invalid")
+        self.assertFalse(cached["result_integrity_validated"])
+
+    def test_source_data_date_is_required_real_and_canonical(self):
+        for value in (None, "2026-02-30", "x20260710", 20260710):
+            payload = _payload()
+            payload["source_data_date"] = value
+            blocked = service.run_qmt_readonly_local_replay(payload)
+            self.assertEqual(blocked["status"], "local_replay_blocked_safe")
+            self.assertIn(blocked["error_message_safe"], {"source_data_date_required", "invalid_source_data_date"})
+
+        payload = _payload()
+        payload["source_data_date"] = "2026-07-10"
+        accepted = service.run_qmt_readonly_local_replay(payload)
+        self.assertEqual(accepted["source_data_date"], "20260710")
+        self.assertEqual(accepted["source_lineage"]["source_data_date"], "20260710")
 
     def test_api_routes_and_task_catalog_expose_one_button_gated_post(self):
         client = TestClient(app)

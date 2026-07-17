@@ -18,7 +18,7 @@ const { chromium } = desktopRequire("playwright");
 const SCHEMA_VERSION = "command_center_3_qmt_replay_browser_qa.v1";
 const DEFAULT_BASE_URL = "http://127.0.0.1:5173";
 const DEFAULT_OUTPUT_ROOT = ".stock_ming_3/qmt_replay_qa";
-const SAFETY_TEXT = "QMT未连接｜券商未连接｜无账户绑定｜无订单接口｜不会下单｜仅本地研究回放";
+const SAFETY_TEXT = "QMT未调用｜券商未调用｜无账户查询｜无真实订单｜仅本地研究回放";
 const API_PATTERN = /^http:\/\/(?:127\.0\.0\.1|localhost):8710\//;
 const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 900 },
@@ -46,8 +46,8 @@ function parseArgs(argv) {
   return args;
 }
 
-function envelope(data, warnings = []) {
-  return { ok: true, data, error: null, call_ledger: [], warnings };
+function envelope(data, warnings = [], callLedger = []) {
+  return { ok: true, data, error: null, call_ledger: callLedger, warnings };
 }
 
 function localLedger(api, callStatus, rowCount = 0) {
@@ -60,10 +60,32 @@ function localLedger(api, callStatus, rowCount = 0) {
     tushare_called: false,
     deepseek_called: false,
     github_called: false,
+    provider_called: false,
+    model_called: false,
+    provider_or_model_calls: false,
     qmt_called: false,
+    qmt_connection_count: 0,
+    qmt_external_connection_attempted: false,
+    qmt_process_discovered: false,
+    qmt_client_imported: false,
+    xtquant_imported: false,
     broker_called: false,
+    broker_session_opened: false,
+    broker_session_count: 0,
+    account_query_executed: false,
+    real_order_submitted: false,
+    real_order_count: 0,
+    real_order_cancelled: false,
+    real_trade_executed: false,
+    real_trade_count: 0,
+    real_holdings_modified: false,
+    real_trading_enabled: false,
+    worker_dispatched: false,
+    external_call_count: 0,
     does_not_execute_trades: true,
-    does_not_modify_strategy_action: true
+    does_not_modify_strategy_action: true,
+    does_not_modify_holdings: true,
+    contains_secret: false
   };
 }
 
@@ -101,21 +123,40 @@ function createApiState() {
     source_symbol: "600519.SH",
     source_task_id: "local-candidate-v05-browser-qa",
     source_result_version: "candidate-v05-browser-qa",
-    source_scope_hash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    source_scope_hash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    source_data_date: "20260710"
   };
   const candidateLineage = {
     schema_version: "candidate_radar_v05_next_session_lineage.v1",
     status: "same_packet_lineage_ready",
+    candidate_packet_key: "command_center_3_candidate_radar_cache",
     symbol: source.source_symbol,
     candidate_task_id: source.source_task_id,
     candidate_result_version: source.source_result_version,
     candidate_scope_hash: source.source_scope_hash,
     data_date: "2026-07-10",
+    freshness_state: {
+      state: "fresh",
+      freshness_state: "fresh",
+      data_date: "2026-07-10",
+      expected_trade_date: "2026-07-10",
+      expected_trade_date_calendar_validated: true,
+      calendar_validated: true
+    },
     research_only: true,
+    no_buy: true,
     no_action: true,
-    no_trade: true
+    no_trade: true,
+    external_calls_triggered: false,
+    tushare_called: false,
+    deepseek_called: false,
+    github_called: false,
+    does_not_modify_strategy_action: true,
+    does_not_modify_operation_zones: true,
+    contains_secret: false
   };
   const safety = {
+    ...localLedger("local_qmt_replay_boundary", "verified", 0),
     qmt_connection_attempted: false,
     qmt_connected: false,
     broker_connected: false,
@@ -129,7 +170,12 @@ function createApiState() {
   return {
     source,
     candidate: {
+      packet_key: "command_center_3_candidate_radar_cache",
+      schema_version: "candidate_radar_cache.v1",
       status: "candidate_radar_v05_local_batch_ready",
+      mode: "v05_candidate_local_batch",
+      cache_only: true,
+      read_only: true,
       latest_confirmed_symbol: source.source_symbol,
       latest_confirmed_task_id: source.source_task_id,
       candidate_radar_v05_result_version: source.source_result_version,
@@ -137,37 +183,67 @@ function createApiState() {
       candidate_radar_v05_top_rows: [{ symbol: source.source_symbol, candidate_bucket: "Top", runtime_score: 0.82 }],
       candidate_radar_v05_next_session_lineage: candidateLineage,
       data_date: "2026-07-10",
-      freshness_state: { state: "fresh", data_date: "2026-07-10" },
+      freshness_state: {
+        state: "fresh",
+        freshness_state: "fresh",
+        data_date: "2026-07-10",
+        expected_trade_date: "2026-07-10",
+        expected_trade_date_calendar_validated: true,
+        calendar_validated: true
+      },
       external_calls_triggered: false,
       does_not_execute_trades: true,
-      does_not_modify_strategy_action: true
+      does_not_modify_strategy_action: true,
+      warnings: []
     },
     nextSession: {
+      packet_key: "command_center_next_session_projection_packet",
+      schema_version: "next_session_projection.v1",
       status: "ready_cache_replay",
+      mode: "cache_only",
+      cache_only: true,
+      read_only: true,
       latest_confirmed_symbol: source.source_symbol,
       source_task_id: source.source_task_id,
       result_version: source.source_result_version,
       candidate_scope_hash: source.source_scope_hash,
+      data_date: "2026-07-10",
       candidate_radar_v05_lineage: candidateLineage,
       external_calls_triggered: false,
       does_not_execute_trades: true,
-      does_not_modify_strategy_action: true
+      does_not_modify_strategy_action: true,
+      warnings: []
     },
     qmt: {
-      status: "qmt_read_only_disconnected_local_replay_ready",
-      mode: "qmt_read_only_disconnected_local_replay",
+      packet_key: "command_center_3_qmt_replay_cache",
+      schema_version: "qmt_readonly_local_replay_cache.v1",
+      status: "cache_missing",
+      mode: "cache_only",
+      cache_only: true,
+      read_only: true,
       safety_boundary: safety,
-      source_lineage: source,
-      lineage_validation: { status: "same_source_lineage_ready", passed: true },
+      source_lineage: {},
+      result_integrity_validated: false,
+      result_integrity_status: "result_packet_missing",
+      lineage_validation: {
+        schema_version: "qmt_readonly_source_lineage_validation.v1",
+        status: "waiting_for_first_result",
+        passed: false
+      },
       replay: { status: "waiting_for_explicit_local_replay", virtual_research_events: [] },
       current_result: {},
       last_good_result: {},
       virtual_research_events: [],
-      call_ledger: [localLedger("local_qmt_replay_cache", "cache_read", 0)],
+      call_ledger: [{ ...safety, api: "local_qmt_readonly_decimal_replay" }],
       external_calls_triggered: false,
       does_not_execute_trades: true,
       does_not_modify_strategy_action: true,
-      warnings: ["QMT is not connected; this cache is local research replay only."]
+      warnings: []
+    },
+    ledgers: {
+      candidate: [localLedger("local_candidate_radar_cache", "cache_read")],
+      next: [localLedger("local_next_session_cache", "cache_read")],
+      qmt: [localLedger("local_qmt_replay_cache", "cache_read")]
     },
     task: null,
     observedRequests: [],
@@ -198,9 +274,9 @@ async function installApiStubs(page, state) {
 
     if (method === "OPTIONS") return respond({}, 204);
     if (method === "GET" && url.pathname === "/health") return respond(envelope({ status: "ok" }));
-    if (method === "GET" && url.pathname === "/api/candidate-radar/cache") return respond(envelope(state.candidate));
-    if (method === "GET" && url.pathname === "/api/next-session/cache") return respond(envelope(state.nextSession));
-    if (method === "GET" && url.pathname === "/api/qmt-replay/cache") return respond(envelope(state.qmt, state.qmt.warnings));
+    if (method === "GET" && url.pathname === "/api/candidate-radar/cache") return respond(envelope(state.candidate, [], state.ledgers.candidate));
+    if (method === "GET" && url.pathname === "/api/next-session/cache") return respond(envelope(state.nextSession, [], state.ledgers.next));
+    if (method === "GET" && url.pathname === "/api/qmt-replay/cache") return respond(envelope(state.qmt, [], state.ledgers.qmt));
     if (method === "GET" && url.pathname === "/api/tasks") {
       const tasks = state.task ? [state.task] : [];
       return respond(envelope({
@@ -225,12 +301,26 @@ async function installApiStubs(page, state) {
       state.task = taskRecord(payload);
       state.qmt = {
         ...state.qmt,
-        status: "qmt_local_research_replay_ready",
+        status: "ready_cache_replay",
+        source_lineage: {
+          source_symbol: payload.source_symbol,
+          source_task_id: payload.source_task_id,
+          source_result_version: payload.source_result_version,
+          source_scope_hash: payload.source_scope_hash,
+          source_data_date: payload.source_data_date
+        },
+        result_integrity_validated: true,
+        result_integrity_status: "result_integrity_validated",
+        lineage_validation: {
+          schema_version: "qmt_readonly_source_lineage_validation.v1",
+          status: "source_result_integrity_validated",
+          passed: true
+        },
         replay: { status: "qmt_local_research_replay_ready", scenario: payload.scenario, frame_count: events.length, research_events: events },
         current_result: { status: "qmt_local_research_replay_ready", scenario: payload.scenario, frame_count: events.length },
         last_good_result: { status: "preserved", source_result_version: payload.source_result_version, frame_count: events.length },
         virtual_research_events: [],
-        call_ledger: [localLedger("local_qmt_research_replay", "success", events.length)]
+        call_ledger: [{ ...state.qmt.safety_boundary, api: "local_qmt_readonly_decimal_replay", row_count: events.length }]
       };
       return respond(envelope({ task_id: state.task.task_id, task: state.task }));
     }
@@ -394,7 +484,8 @@ async function runCase(browser, args, viewport, motionMode, outputDir) {
     payload.source_symbol === state.source.source_symbol &&
     payload.source_task_id === state.source.source_task_id &&
     payload.source_result_version === state.source.source_result_version &&
-    payload.source_scope_hash === state.source.source_scope_hash;
+    payload.source_scope_hash === state.source.source_scope_hash &&
+    payload.source_data_date === state.source.source_data_date;
   const reducedMotionReady = motionMode.name === "normal" || (inspected.reduced_motion_query && inspected.route_animation_ms <= 1.1);
   const passed = postsAfterRender === 0 &&
     postsAfterInput === 0 &&

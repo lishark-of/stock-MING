@@ -14,6 +14,13 @@ import PageStateBanner from "../components/PageStateBanner";
 import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
+import {
+  evaluateQmtReplayOrdinaryGate,
+  strictQmtDate,
+  strictQmtId,
+  strictQmtScope,
+  strictQmtSymbol,
+} from "./qmtReplayOrdinaryGate";
 import "./QmtReplayLab.css";
 
 type Row = Record<string, unknown>;
@@ -45,10 +52,6 @@ function firstText(...values: unknown[]): string {
   return "";
 }
 
-function firstBoolean(...values: unknown[]): boolean | undefined {
-  return values.find((value): value is boolean => typeof value === "boolean");
-}
-
 function safeDemoLabel(value: string): string {
   return value.replace(/[^\p{L}\p{N}\s._-]/gu, "").trim().slice(0, 32);
 }
@@ -76,8 +79,12 @@ export default function QmtReplayLab() {
   const [qmtCache, setQmtCache] = useState<Row>({});
   const [candidateCache, setCandidateCache] = useState<Row>({});
   const [nextSessionCache, setNextSessionCache] = useState<Row>({});
-  const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Row[]>([]);
-  const [cacheWarnings, setCacheWarnings] = useState<string[]>([]);
+  const [candidateEnvelopeLedger, setCandidateEnvelopeLedger] = useState<Row[]>([]);
+  const [nextEnvelopeLedger, setNextEnvelopeLedger] = useState<Row[]>([]);
+  const [qmtEnvelopeLedger, setQmtEnvelopeLedger] = useState<Row[]>([]);
+  const [candidateWarnings, setCandidateWarnings] = useState<string[]>([]);
+  const [nextWarnings, setNextWarnings] = useState<string[]>([]);
+  const [qmtWarnings, setQmtWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [cacheError, setCacheError] = useState("");
   const [scenario, setScenario] = useState<QmtReplayScenario>("baseline");
@@ -97,13 +104,15 @@ export default function QmtReplayLab() {
         setQmtCache(qmtResult.data ?? {});
         setCandidateCache(candidateResult.data ?? {});
         setNextSessionCache(nextSessionResult.data ?? {});
-        setCacheEnvelopeLedger(qmtResult.call_ledger ?? []);
-        setCacheWarnings([
-          ...(qmtResult.warnings ?? []),
-          ...(candidateResult.warnings ?? []),
-          ...(nextSessionResult.warnings ?? [])
-        ]);
+        setCandidateEnvelopeLedger(candidateResult.call_ledger ?? []);
+        setNextEnvelopeLedger(nextSessionResult.call_ledger ?? []);
+        setQmtEnvelopeLedger(qmtResult.call_ledger ?? []);
+        setCandidateWarnings(candidateResult.warnings ?? []);
+        setNextWarnings(nextSessionResult.warnings ?? []);
+        setQmtWarnings(qmtResult.warnings ?? []);
         if (!qmtResult.ok) setCacheError(qmtResult.error ?? "qmt_replay_cache_not_ready");
+        else if (!candidateResult.ok) setCacheError(candidateResult.error ?? "candidate_cache_not_ready");
+        else if (!nextSessionResult.ok) setCacheError(nextSessionResult.error ?? "next_session_cache_not_ready");
       })
       .catch((error) => setCacheError(error instanceof Error ? error.message : String(error)))
       .finally(() => setLoading(false));
@@ -113,12 +122,9 @@ export default function QmtReplayLab() {
     refreshCache();
   }, [refreshCache]);
 
-  const candidateTopRows = asRows(candidateCache.candidate_radar_v05_top_rows);
   const candidateV05Lineage = asObject(candidateCache.candidate_radar_v05_next_session_lineage);
   const nextSessionV05Lineage = asObject(nextSessionCache.candidate_radar_v05_lineage);
-  const resolvedNextLineage = Object.keys(nextSessionV05Lineage).length ? nextSessionV05Lineage : candidateV05Lineage;
   const qmtSourceLineage = asObject(qmtCache.source_lineage);
-  const qmtLineageValidation = asObject(qmtCache.lineage_validation);
   const safetyBoundary = asObject(qmtCache.safety_boundary);
   const replaySummary = asObject(qmtCache.replay);
   const payloadCallLedger = asRows(qmtCache.call_ledger);
@@ -129,84 +135,70 @@ export default function QmtReplayLab() {
     ? asObject(qmtCache.last_good_result)
     : asObject(qmtCache.last_good_result_summary);
 
-  const candidateSymbol = firstText(
-    candidateV05Lineage.symbol,
-    candidateCache.latest_confirmed_symbol,
-    candidateTopRows[0]?.symbol,
-    candidateTopRows[0]?.ticker
-  ).toUpperCase();
-  const candidateTaskId = firstText(candidateV05Lineage.candidate_task_id, candidateCache.latest_confirmed_task_id);
-  const candidateResultVersion = firstText(
-    candidateCache.candidate_radar_v05_result_version,
-    candidateV05Lineage.candidate_result_version
-  );
-  const candidateScopeHash = firstText(
-    candidateCache.candidate_radar_v05_scope_hash,
-    candidateV05Lineage.candidate_scope_hash
-  );
-  const candidateDataDate = firstText(
-    candidateCache.data_date,
-    candidateCache.trade_date,
-    candidateV05Lineage.data_date,
-    asObject(candidateCache.freshness_state).data_date
-  );
-  const candidateFreshness = firstText(
-    asObject(candidateCache.freshness_state).state,
-    asObject(candidateCache.data_freshness).state,
-    "unknown"
-  );
+  const qmtGate = evaluateQmtReplayOrdinaryGate({
+    loading,
+    error: cacheError,
+    candidate: candidateCache,
+    candidateWarnings,
+    candidateLedger: candidateEnvelopeLedger,
+    nextSession: nextSessionCache,
+    nextWarnings,
+    nextLedger: nextEnvelopeLedger,
+    qmt: qmtCache,
+    qmtWarnings,
+    qmtLedger: qmtEnvelopeLedger,
+  });
+  const candidateSymbol = qmtGate.symbol;
+  const candidateTaskId = qmtGate.taskId;
+  const candidateResultVersion = qmtGate.resultVersion;
+  const candidateScopeHash = qmtGate.scopeHash;
+  const candidateDataDate = qmtGate.dataDate;
+  const candidateFreshnessState = asObject(candidateV05Lineage.freshness_state);
+  const candidateFreshness = typeof candidateFreshnessState.state === "string"
+    ? candidateFreshnessState.state
+    : "unknown";
+  const candidateExpectedTradeDate = strictQmtDate(candidateFreshnessState.expected_trade_date);
+  const candidateDateReady = qmtGate.lineageReady;
+  const nextSymbol = strictQmtSymbol(nextSessionV05Lineage.symbol);
+  const nextTaskId = strictQmtId(nextSessionV05Lineage.candidate_task_id);
+  const nextResultVersion = strictQmtId(nextSessionV05Lineage.candidate_result_version);
+  const nextScopeHash = strictQmtScope(nextSessionV05Lineage.candidate_scope_hash);
+  const nextDataDate = strictQmtDate(nextSessionV05Lineage.data_date);
+  const qmtSourceSymbol = strictQmtSymbol(qmtSourceLineage.source_symbol);
+  const qmtSourceTaskId = strictQmtId(qmtSourceLineage.source_task_id);
+  const qmtSourceResultVersion = strictQmtId(qmtSourceLineage.source_result_version);
+  const qmtSourceScopeHash = strictQmtScope(qmtSourceLineage.source_scope_hash);
+  const symbolMatches = Boolean(candidateSymbol && candidateSymbol === nextSymbol);
+  const taskMatches = Boolean(candidateTaskId && candidateTaskId === nextTaskId);
+  const resultVersionMatches = Boolean(candidateResultVersion && candidateResultVersion === nextResultVersion);
+  const scopeMatches = Boolean(candidateScopeHash && candidateScopeHash === nextScopeHash);
+  const dataDateMatches = Boolean(candidateDataDate && candidateDataDate === nextDataDate);
 
-  const nextSymbol = firstText(resolvedNextLineage.symbol, nextSessionCache.latest_confirmed_symbol).toUpperCase();
-  const nextTaskId = firstText(resolvedNextLineage.candidate_task_id, nextSessionCache.source_task_id);
-  const nextResultVersion = firstText(resolvedNextLineage.candidate_result_version, nextSessionCache.result_version);
-  const nextScopeHash = firstText(resolvedNextLineage.candidate_scope_hash, nextSessionCache.candidate_scope_hash);
-  const qmtSourceSymbol = firstText(qmtSourceLineage.source_symbol, qmtSourceLineage.symbol, qmtCache.source_symbol).toUpperCase();
-  const qmtSourceTaskId = firstText(qmtSourceLineage.source_task_id, qmtSourceLineage.task_id, qmtCache.source_task_id);
-  const qmtSourceResultVersion = firstText(
-    qmtSourceLineage.source_result_version,
-    qmtSourceLineage.result_version,
-    qmtCache.source_result_version
-  );
-  const qmtSourceScopeHash = firstText(
-    qmtSourceLineage.source_scope_hash,
-    qmtSourceLineage.scope_hash,
-    qmtCache.source_scope_hash
-  );
+  const qmtConnected = ["qmt_called", "qmt_external_connection_attempted", "qmt_process_discovered", "qmt_client_imported", "xtquant_imported"]
+    .some((field) => safetyBoundary[field] === true);
+  const brokerConnected = safetyBoundary.broker_called === true || safetyBoundary.broker_session_opened === true;
+  const accountBound = safetyBoundary.account_query_executed === true;
+  const orderEndpointPresent = safetyBoundary.real_order_submitted === true || safetyBoundary.real_order_cancelled === true;
+  const ordersCreated = typeof safetyBoundary.real_order_count === "number" ? safetyBoundary.real_order_count : Number.NaN;
+  const externalCallsTriggered = safetyBoundary.external_calls_triggered === true || safetyBoundary.external_call_count !== 0;
+  const executesTrades = safetyBoundary.does_not_execute_trades === false || safetyBoundary.real_trade_executed === true;
+  const modifiesStrategyAction = safetyBoundary.does_not_modify_strategy_action === false;
+  const unsafeBoundary = qmtConnected || brokerConnected || accountBound || orderEndpointPresent ||
+    (Number.isFinite(ordersCreated) && ordersCreated > 0) || externalCallsTriggered || executesTrades || modifiesStrategyAction ||
+    safetyBoundary.provider_called === true || safetyBoundary.model_called === true || safetyBoundary.worker_dispatched === true;
+  const safetyExplicitSafe = qmtGate.safetyReady && qmtGate.ledgersReady && !unsafeBoundary;
+  const safetyUnknown = !unsafeBoundary && !safetyExplicitSafe;
+  const lineageReady = qmtGate.lineageReady;
+  const qmtResultBound = qmtGate.resultReady;
 
-  const symbolMatches = Boolean(candidateSymbol && nextSymbol && candidateSymbol === nextSymbol);
-  const taskMatches = Boolean(candidateTaskId && nextTaskId && candidateTaskId === nextTaskId);
-  const resultVersionMatches = Boolean(candidateResultVersion && nextResultVersion && candidateResultVersion === nextResultVersion);
-  const scopeMatches = Boolean(candidateScopeHash && nextScopeHash && candidateScopeHash === nextScopeHash);
-  const qmtSourceMatches = Boolean(
-    !qmtSourceResultVersion ||
-      (qmtSourceResultVersion === candidateResultVersion &&
-        (!qmtSourceSymbol || qmtSourceSymbol === candidateSymbol) &&
-        (!qmtSourceTaskId || qmtSourceTaskId === candidateTaskId) &&
-        (!qmtSourceScopeHash || qmtSourceScopeHash === candidateScopeHash))
-  );
-  const backendLineageBlocked = /blocked|failed|mismatch|unsafe/i.test(String(qmtLineageValidation.status ?? ""));
-  const lineageReady = symbolMatches && taskMatches && resultVersionMatches && scopeMatches && qmtSourceMatches && !backendLineageBlocked;
-
-  const qmtConnected = firstBoolean(safetyBoundary.qmt_connected, qmtCache.qmt_connected) === true;
-  const brokerConnected = firstBoolean(safetyBoundary.broker_connected, qmtCache.broker_connected) === true;
-  const accountBound = firstBoolean(safetyBoundary.account_bound, qmtCache.account_bound) === true;
-  const orderEndpointPresent = firstBoolean(safetyBoundary.order_endpoint_present, qmtCache.order_endpoint_present) === true;
-  const ordersCreated = Number(safetyBoundary.orders_created ?? qmtCache.orders_created ?? 0);
-  const externalCallsTriggered = qmtCache.external_calls_triggered === true || [...cacheEnvelopeLedger, ...payloadCallLedger].some((row) => row.external === true || row.external_calls_triggered === true);
-  const executesTrades = firstBoolean(safetyBoundary.does_not_execute_trades, qmtCache.does_not_execute_trades) === false;
-  const modifiesStrategyAction = firstBoolean(
-    safetyBoundary.does_not_modify_strategy_action,
-    qmtCache.does_not_modify_strategy_action
-  ) === false;
-  const unsafeBoundary = qmtConnected || brokerConnected || accountBound || orderEndpointPresent || ordersCreated > 0 || externalCallsTriggered || executesTrades || modifiesStrategyAction;
-
-  const rawVirtualEvents = asRows(qmtCache.virtual_research_events).length
+  const rawVirtualEventsUnbound = asRows(qmtCache.virtual_research_events).length
     ? asRows(qmtCache.virtual_research_events)
     : asRows(currentResult.virtual_research_events).length
       ? asRows(currentResult.virtual_research_events)
       : asRows(replaySummary.virtual_research_events).length
         ? asRows(replaySummary.virtual_research_events)
         : asRows(replaySummary.research_events);
+  const rawVirtualEvents = qmtResultBound ? rawVirtualEventsUnbound : [];
   const virtualResearchEvents = useMemo(
     () =>
       rawVirtualEvents.slice(0, 120).map((event, index) => ({
@@ -248,15 +240,33 @@ export default function QmtReplayLab() {
       next_session: nextScopeHash ? nextScopeHash.slice(0, 12) : "待 Next Session lineage",
       qmt_cache: qmtSourceScopeHash ? qmtSourceScopeHash.slice(0, 12) : "首次回放前可为空",
       status: scopeMatches && (!qmtSourceScopeHash || qmtSourceScopeHash === candidateScopeHash) ? "match" : "blocked"
+    },
+    {
+      check: "数据日期",
+      candidate: candidateDataDate || "待 Candidate data_date",
+      next_session: nextDataDate || "待 Next Session data_date",
+      qmt_cache: candidateExpectedTradeDate || "待交易日历",
+      status: dataDateMatches && candidateDateReady ? "match" : "blocked"
     }
   ];
 
   const scenarioDetail = REPLAY_SCENARIOS.find((item) => item.value === scenario)?.detail ?? "本地研究回放";
-  const launchAllowed = approved && lineageReady && !unsafeBoundary && !submitting;
+  const launchAllowed = approved && qmtGate.launchReady && !submitting;
+  const gateBlocker: Record<string, string> = {
+    loading_or_error: loading ? "正在读取本地证据，请稍候。" : "本地证据读取失败，已停止生成。",
+    warning_present: "本地来源仍有真实警告，已停止生成；固定说明不会计入警告。",
+    ledger_invalid: "读取审计不完整，无法证明三个来源都保持本地只读。",
+    source_contract_invalid: "Candidate 或 Next Session 来源合同不完整，已停止生成。",
+    lineage_mismatch: "Candidate 与 Next Session 不是同一份来源结果，已停止生成。",
+    qmt_packet_invalid: "QMT 本地缓存合同不完整，已停止生成。",
+    qmt_safety_invalid: "安全边界字段不完整或存在异常，已停止生成。",
+  };
   const launchBlocker = unsafeBoundary
     ? "安全边界异常：检测到连接、账户、订单接口或交易动作声明。"
-    : !lineageReady
-      ? "等待 Candidate v0.5 与 Next Session 的标的、任务、结果版本和范围哈希同源。"
+    : safetyUnknown
+      ? "安全证据不完整：必须明确证明无外部连接、无账户、无订单和无交易动作。"
+    : !qmtGate.launchReady
+      ? gateBlocker[qmtGate.reasonKey] ?? "等待三份本地来源完成严格核对。"
       : !approved
         ? "请先确认本次仅运行本地研究回放。"
         : "";
@@ -275,6 +285,7 @@ export default function QmtReplayLab() {
       source_task_id: candidateTaskId,
       source_result_version: candidateResultVersion,
       source_scope_hash: candidateScopeHash,
+      source_data_date: candidateDataDate,
       ...(normalizedDemoLabel ? { demo_label: normalizedDemoLabel } : {})
     })
       .then((result) => {
@@ -290,8 +301,14 @@ export default function QmtReplayLab() {
       .finally(() => setSubmitting(false));
   };
 
-  const displayLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
-  const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
+  const displayLedger = [
+    ...candidateEnvelopeLedger,
+    ...nextEnvelopeLedger,
+    ...qmtEnvelopeLedger,
+    ...payloadCallLedger,
+  ];
+  const warningRows = [...candidateWarnings, ...nextWarnings, ...qmtWarnings]
+    .map((warning, index) => ({ index: index + 1, warning }));
   const cacheStatus = firstText(qmtCache.status, "cache_missing");
   const visibleResearchEvents = virtualResearchEvents.slice(0, 8);
   const sourceVersionLabel = candidateResultVersion
@@ -307,11 +324,17 @@ export default function QmtReplayLab() {
         ? "本地演示已接收"
         : virtualResearchEvents.length
           ? "已有本地回放"
+          : rawVirtualEventsUnbound.length
+            ? "历史回放已隔离"
           : "等待生成";
   const nextStep = unsafeBoundary
     ? "已停止：安全隔离异常，请先查看技术详情。"
-    : !lineageReady
-      ? "先回到下一票雷达，生成同一标的、同一版本的本地结果。"
+    : safetyUnknown
+      ? "已停止：安全证据不完整，不能把未知状态解释成未连接。"
+    : !qmtGate.launchReady
+      ? gateBlocker[qmtGate.reasonKey] ?? "先回到下一票雷达，生成同一标的、同一版本的本地结果。"
+      : rawVirtualEventsUnbound.length && !qmtResultBound
+        ? "旧回放与当前来源不完全一致，已从普通视图隔离；可在确认边界后生成同源演示。"
       : virtualResearchEvents.length
         ? "按时间线复核观察、关注与排除理由；它们不是交易指令。"
         : "选择场景和帧数，确认本地边界后生成一份研究演示。";
@@ -324,8 +347,8 @@ export default function QmtReplayLab() {
           <h1 data-ltg10-route-heading="qmt-replay">QMT 本地回放</h1>
           <p className="qmt-product-lede">把一次本地研究判断按时间展开，复核来源、状态变化与下一步；全程不触达交易系统。</p>
         </div>
-        <span className={`qmt-product-state ${unsafeBoundary ? "is-blocked" : lineageReady ? "is-ready" : "is-waiting"}`}>
-          {unsafeBoundary ? "安全停止" : lineageReady ? "本地来源已核对" : "等待同源数据"}
+        <span className={`qmt-product-state ${unsafeBoundary || safetyUnknown ? "is-blocked" : lineageReady ? "is-ready" : "is-waiting"}`}>
+          {unsafeBoundary ? "安全停止" : safetyUnknown ? "安全证据待确认" : lineageReady ? "本地来源已核对" : "等待同源数据"}
         </span>
       </div>
 
@@ -339,8 +362,18 @@ export default function QmtReplayLab() {
       >
         <span className="qmt-safety-mark" aria-hidden="true">LOCAL</span>
         <div>
-          <strong>QMT未连接｜券商未连接｜无账户绑定｜无订单接口｜不会下单｜仅本地研究回放</strong>
-          <p>此页面不会探测 QMT 进程、端口或账户；不会连接券商、创建订单、修改持仓或改写 strategy action。</p>
+          <strong>
+            {unsafeBoundary
+              ? "检测到安全边界异常｜已停止本地回放"
+              : safetyUnknown
+                ? "连接与交易隔离证据不完整｜已停止本地回放"
+                : "QMT未调用｜券商未调用｜无账户查询｜无真实订单｜仅本地研究回放"}
+          </strong>
+          <p>
+            {safetyExplicitSafe
+              ? "当前证据明确表明：未探测或调用 QMT、券商与账户，未创建真实订单、交易或持仓变更。"
+              : "只有隔离字段和本地审计记录全部明确安全时才会启用；缺失或未知不会被解释成安全。"}
+          </p>
         </div>
       </section>
 
@@ -359,15 +392,15 @@ export default function QmtReplayLab() {
             <h2>{candidateSymbol || "等待下一票雷达结果"}</h2>
           </div>
           <span className={lineageReady ? "qmt-source-check is-ready" : "qmt-source-check"}>
-            {lineageReady ? "同源已核对" : "等待同源"}
+            {lineageReady ? "同源与日期已核对" : "等待同源"}
           </span>
         </div>
         <div className="qmt-source-facts" aria-label="本地回放来源与版本">
           <div><span>结果版本</span><strong>{sourceVersionLabel}</strong></div>
           <div><span>数据日期</span><strong>{candidateDataDate || "待本地数据"}</strong></div>
-          <div><span>数据状态</span><strong>{/fresh|today/i.test(candidateFreshness) ? "日期可用" : "需要复核"}</strong></div>
+          <div><span>数据状态</span><strong>{candidateDateReady ? "日期已验证" : "需要复核"}</strong></div>
         </div>
-        <p className="qmt-source-note">只在标的、任务、结果版本和范围全部同源时启用本地回放；缺口不会被解释成安全。</p>
+        <p className="qmt-source-note">只在标的、任务、结果版本、范围、交易日历和数据日期全部同源时启用本地回放；缺口不会被解释成安全。</p>
         <div className="qmt-local-links" aria-label="QMT replay local read only source links">
           <a href="#candidates" aria-label="打开下一票雷达本地来源">查看来源</a>
           <a href="#next/next-session-chart" aria-label="打开次日图谱本地血缘">查看次日图谱</a>
@@ -503,21 +536,22 @@ export default function QmtReplayLab() {
           {cacheError || submitError ? <DataLineageTable rows={[{ cache_error: cacheError || "--", submit_error: submitError || "--" }]} /> : null}
           <MetricGrid
             items={[
-              { label: "QMT", value: qmtConnected ? "检测到连接" : "未连接", tone: qmtConnected ? "bad" : "good" },
-              { label: "券商", value: brokerConnected ? "检测到连接" : "未连接", tone: brokerConnected ? "bad" : "good" },
-              { label: "账户绑定", value: accountBound ? "存在" : "无", tone: accountBound ? "bad" : "good" },
-              { label: "订单接口", value: orderEndpointPresent ? "存在" : "无", tone: orderEndpointPresent ? "bad" : "good" },
-              { label: "订单创建数", value: ordersCreated, tone: ordersCreated > 0 ? "bad" : "good" },
+              { label: "隔离证据", value: unsafeBoundary ? "异常" : safetyUnknown ? "未知" : "明确安全", tone: unsafeBoundary ? "bad" : safetyUnknown ? "warn" : "good" },
+              { label: "QMT", value: qmtConnected ? "检测到调用或连接" : safetyExplicitSafe ? "明确未调用" : "未知", tone: qmtConnected ? "bad" : safetyExplicitSafe ? "good" : "warn" },
+              { label: "券商", value: brokerConnected ? "检测到调用或会话" : safetyExplicitSafe ? "明确未调用" : "未知", tone: brokerConnected ? "bad" : safetyExplicitSafe ? "good" : "warn" },
+              { label: "账户查询", value: accountBound ? "存在" : safetyExplicitSafe ? "明确无" : "未知", tone: accountBound ? "bad" : safetyExplicitSafe ? "good" : "warn" },
+              { label: "真实订单", value: orderEndpointPresent ? "存在" : safetyExplicitSafe ? "明确无" : "未知", tone: orderEndpointPresent ? "bad" : safetyExplicitSafe ? "good" : "warn" },
+              { label: "真实订单数", value: Number.isFinite(ordersCreated) ? ordersCreated : "未知", tone: Number.isFinite(ordersCreated) ? ordersCreated > 0 ? "bad" : "good" : "warn" },
               { label: "血缘校验", value: lineageReady ? "同源" : "阻断", tone: lineageReady ? "good" : "bad" },
               { label: "当前标的", value: candidateSymbol || "--" },
               { label: "数据日期", value: candidateDataDate || "--" },
-              { label: "freshness", value: candidateFreshness, tone: /fresh|today/i.test(candidateFreshness) ? "good" : "warn" },
+              { label: "freshness", value: candidateFreshness, tone: candidateDateReady ? "good" : "warn" },
               { label: "研究帧", value: virtualResearchEvents.length },
-              { label: "外部调用", value: externalCallsTriggered ? "存在" : "无", tone: externalCallsTriggered ? "bad" : "good" },
-              { label: "真实交易", value: executesTrades ? "边界异常" : "禁止", tone: executesTrades ? "bad" : "good" }
+              { label: "外部调用", value: externalCallsTriggered ? "存在" : safetyExplicitSafe ? "明确无" : "未知", tone: externalCallsTriggered ? "bad" : safetyExplicitSafe ? "good" : "warn" },
+              { label: "真实交易", value: executesTrades ? "边界异常" : safetyExplicitSafe ? "明确禁止" : "未知", tone: executesTrades ? "bad" : safetyExplicitSafe ? "good" : "warn" }
             ]}
           />
-          <PacketCard title="同源校验" subtitle="四项全部一致才允许生成；首次回放前专属 cache 可为空" status={lineageReady ? "passed" : "blocked"}>
+          <PacketCard title="同源校验" subtitle="Candidate 与 Next 四项同源且日期验证后才允许生成；历史回放还须四项严格绑定" status={lineageReady ? "passed" : "blocked"}>
             <DataLineageTable rows={lineageRows} />
           </PacketCard>
           <TaskLaunchReceipt receipt={taskReceipt} />
@@ -534,7 +568,7 @@ export default function QmtReplayLab() {
             </PacketCard>
           </div>
           <PacketCard title="本地读取审计" subtitle="call ledger / warnings / raw status" status={cacheStatus}>
-            <StatusBadge label={unsafeBoundary ? "safety_blocked" : cacheStatus} tone={unsafeBoundary ? "bad" : statusTone(cacheStatus)} />
+            <StatusBadge label={unsafeBoundary ? "safety_blocked" : safetyUnknown ? "safety_unknown" : cacheStatus} tone={unsafeBoundary ? "bad" : safetyUnknown ? "warn" : statusTone(cacheStatus)} />
             <DataLineageTable rows={displayLedger} />
             <DataLineageTable rows={warningRows} />
           </PacketCard>

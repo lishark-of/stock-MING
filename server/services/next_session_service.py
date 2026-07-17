@@ -3517,6 +3517,7 @@ def read_next_session_cache() -> dict[str, Any]:
     )
     packet.setdefault("cache_only", True)
     packet.setdefault("read_only", True)
+    packet.setdefault("mode", "cache_only")
     packet["external_calls_triggered"] = False
     packet["tushare_called"] = False
     packet["deepseek_called"] = False
