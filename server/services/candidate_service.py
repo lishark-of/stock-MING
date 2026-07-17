@@ -1528,7 +1528,7 @@ def _next_session_local_map_readback(symbol: str) -> dict[str, Any]:
     if not SQLITE_META_PATH.exists():
         return {}
     try:
-        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(NEXT_SESSION_PACKET_KEY)
+        packet = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_packet(NEXT_SESSION_PACKET_KEY)
     except Exception:
         return {}
     if not isinstance(packet, Mapping):
@@ -1601,7 +1601,7 @@ def _search_quant_projection_cross_module_alignment_readback(
         if not SQLITE_META_PATH.exists():
             return {}, "missing"
         try:
-            packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(packet_key)
+            packet = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_packet(packet_key)
         except Exception:
             return {}, "read_failed"
         if not isinstance(packet, Mapping):
@@ -4934,7 +4934,9 @@ def _candidate_v05_attach_next_session_lineage(
     freshness_state: Mapping[str, Any],
 ) -> dict[str, Any]:
     try:
-        next_packet = SQLiteMetaStore(next_session_service.SQLITE_META_PATH).read_packet(NEXT_SESSION_PACKET_KEY)
+        next_packet = SQLiteMetaStore(next_session_service.SQLITE_META_PATH, read_only=True).read_packet(
+            NEXT_SESSION_PACKET_KEY
+        )
     except Exception:
         return {"status": "next_session_v05_read_failed_safe"}
     if not isinstance(next_packet, dict):
@@ -9695,7 +9697,9 @@ def _read_candidate_worker_runtime_qa_execution_receipt() -> tuple[dict[str, Any
     if not SQLITE_META_PATH.exists():
         return {}, "packet_missing"
     try:
-        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(WORKER_RUNTIME_QA_EXECUTION_PACKET_KEY)
+        packet = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_packet(
+            WORKER_RUNTIME_QA_EXECUTION_PACKET_KEY
+        )
     except Exception:
         return {}, "packet_read_failed"
     if not isinstance(packet, dict):
@@ -15529,10 +15533,16 @@ def _read_persisted_packet() -> dict[str, Any] | None:
     if not SQLITE_META_PATH.exists():
         return None
     try:
-        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(PACKET_KEY)
+        packet = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_packet(PACKET_KEY)
     except Exception:
         return None
-    return packet if isinstance(packet, dict) else None
+    if not isinstance(packet, dict):
+        return None
+    if packet.get("schema_version") != SCHEMA_VERSION:
+        return None
+    if packet.get("packet_key") not in (None, PACKET_KEY):
+        return None
+    return packet
 
 
 _CANDIDATE_V05_PERSISTED_KEYS = (
@@ -15561,7 +15571,9 @@ def _restore_candidate_v05_last_good_state(view: Mapping[str, Any]) -> dict[str,
     if restored.get("candidate_radar_v05_result_version"):
         return restored
     try:
-        last_good = SQLiteMetaStore(SQLITE_META_PATH).read_packet(CANDIDATE_V05_LAST_GOOD_PACKET_KEY)
+        last_good = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_packet(
+            CANDIDATE_V05_LAST_GOOD_PACKET_KEY
+        )
     except Exception:
         return restored
     if not isinstance(last_good, dict) or not last_good.get("candidate_radar_v05_result_version"):

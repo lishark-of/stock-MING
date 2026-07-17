@@ -70,11 +70,12 @@ PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_ROUTE = (
 PRODUCER_CACHE_REFRESH_SCHEMA_VERSION = "data_health_current_evidence_producer_cache_refresh.v1"
 PRODUCER_CACHE_REFRESH_TASK_TYPE = "run_current_evidence_producer_cache_refresh"
 PRODUCER_CACHE_REFRESH_ROUTE = "POST /api/data-health/producer-cache-refresh"
+CANDIDATE_RADAR_FRESHNESS_PACKET_KEY = "command_center_3_candidate_radar_freshness_cache"
 PRODUCER_CACHE_REFRESH_PACKET_SPECS: tuple[dict[str, str], ...] = (
     {
         "producer": "candidate_radar",
         "snapshot_key": "radar_packet",
-        "packet_key": "command_center_3_candidate_radar_cache",
+        "packet_key": CANDIDATE_RADAR_FRESHNESS_PACKET_KEY,
     },
     {
         "producer": "a_share_evidence_radar",
@@ -1110,6 +1111,9 @@ CURRENT_EVIDENCE_PRODUCER_SPECS: tuple[dict[str, Any], ...] = (
     {
         "producer": "candidate_radar",
         "path_options": (
+            (CANDIDATE_RADAR_FRESHNESS_PACKET_KEY, "data_freshness"),
+            (CANDIDATE_RADAR_FRESHNESS_PACKET_KEY, "freshness_state"),
+            (CANDIDATE_RADAR_FRESHNESS_PACKET_KEY,),
             ("command_center_3_candidate_radar_cache", "data_freshness"),
             ("command_center_3_candidate_radar_cache", "freshness_state"),
             ("command_center_3_candidate_radar_cache",),

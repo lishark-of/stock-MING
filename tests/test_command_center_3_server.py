@@ -29686,7 +29686,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(
             set(receipt["written_packet_keys"]),
             {
-                "command_center_3_candidate_radar_cache",
+                "command_center_3_candidate_radar_freshness_cache",
                 "command_center_evidence_radar_packet",
                 "market_packet",
             },

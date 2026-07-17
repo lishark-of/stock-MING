@@ -4397,7 +4397,13 @@ def _candidate_cache_replay_packet() -> dict[str, Any] | None:
             )
         except Exception:
             packet = None
-    if isinstance(packet, dict):
+    if packet is not None:
+        if not isinstance(packet, dict):
+            return None
+        if packet.get("packet_key") != "command_center_3_candidate_radar_cache":
+            return None
+        if packet.get("schema_version") != "candidate_radar_cache.v1":
+            return None
         return packet
 
     try:
@@ -4409,26 +4415,15 @@ def _candidate_cache_replay_packet() -> dict[str, Any] | None:
         if task_meta_is_default or snapshot_is_isolated:
             snapshot = packet_service.load_snapshot_cache()
             packet = snapshot.get("command_center_3_candidate_radar_cache") if isinstance(snapshot, dict) else None
-            if isinstance(packet, dict):
+            if (
+                isinstance(packet, dict)
+                and packet.get("packet_key") == "command_center_3_candidate_radar_cache"
+                and packet.get("schema_version") == "candidate_radar_cache.v1"
+            ):
                 return packet
     except Exception:
         pass
-
-    if not _same_path(Path(SQLITE_META_PATH), DEFAULT_SQLITE_META_PATH):
-        return None
-
-    try:
-        from . import candidate_service
-
-        packet = candidate_service.read_candidate_radar_cache()
-    except Exception:
-        try:
-            from . import packet_service
-
-            packet = packet_service.read_packet("command_center_3_candidate_radar_cache")
-        except Exception:
-            return None
-    return packet if isinstance(packet, dict) else None
+    return None
 
 
 def _candidate_cache_replay_task(task_id: str | None = None) -> dict[str, Any] | None:
