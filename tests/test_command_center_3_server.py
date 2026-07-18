@@ -59735,6 +59735,21 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(remote_receipt["external_calls_triggered"])
         self.assertTrue(remote_receipt["does_not_execute_trades"])
 
+        data_health = data_health_service.read_data_health_timeline_cache()
+        freshness_recipe = data_health["freshness_durable_evidence_recipe"]
+        freshness_rows = {
+            row["evidence_key"]: row for row in data_health["freshness_durable_evidence_rows"]
+        }
+        self.assertTrue(freshness_recipe["remote_actions_status_known"])
+        self.assertFalse(freshness_recipe["latest_remote_run_verified_green"])
+        self.assertFalse(freshness_recipe["production_freshness_gate_complete"])
+        self.assertTrue(
+            freshness_rows["production_promotion_review"]["remote_actions_status_known"]
+        )
+        self.assertFalse(
+            freshness_rows["production_promotion_review"]["latest_remote_run_verified_green"]
+        )
+
         migration = migration_status_service.build_migration_status()
         release_split = migration["release_gate_remote_review_split_summary"]
         release_handoff = migration["ltg11_release_gate_remote_review_handoff_summary"]

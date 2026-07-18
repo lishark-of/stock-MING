@@ -6860,6 +6860,7 @@ def _freshness_durable_evidence_recipe(
         for item in _as_list(local_release_gate_evidence.get("freshness_blockers"))
         if str(item)
     ]
+    remote_actions_status_known = local_release_gate_evidence.get("remote_actions_status_known") is True
     remote_ci_reviewed_green = local_release_gate_evidence.get("latest_remote_run_verified_green") is True
     local_promotion_review_visible = bool(
         latest_promotion_review.get("latest_task_found") is True
@@ -7339,7 +7340,7 @@ def _freshness_durable_evidence_recipe(
                 "required_local_gate_checks_present": local_release_gate_required_checks_present,
                 "local_push_gate_receipt_freshness_blockers": local_release_gate_blockers,
                 "remote_ci_review_required": True,
-                "remote_actions_status_known": remote_ci_reviewed_green,
+                "remote_actions_status_known": remote_actions_status_known,
                 "latest_remote_run_verified_green": remote_ci_reviewed_green,
                 "release_review_complete": local_release_review_complete,
                 "local_gate_pass_is_not_ci_status": True,
@@ -7419,7 +7420,7 @@ def _freshness_durable_evidence_recipe(
         "required_local_gate_checks_present": local_release_gate_required_checks_present,
         "local_push_gate_receipt_freshness_blockers": local_release_gate_blockers,
         "remote_ci_review_required": True,
-        "remote_actions_status_known": remote_ci_reviewed_green,
+        "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": remote_ci_reviewed_green,
         "release_review_complete": local_release_review_complete,
         "production_promotion_review_visible": production_promotion_review_visible,

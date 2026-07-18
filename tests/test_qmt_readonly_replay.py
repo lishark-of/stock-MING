@@ -1288,6 +1288,38 @@ class QmtReadonlyReplayTests(unittest.TestCase):
         missing = service.run_qmt_readonly_local_replay(_payload())
         self.assertEqual(missing["error_message_safe"], "canonical_source_task_boundary_invalid")
 
+    def test_canonical_source_task_boundary_precedes_history_timestamp_diagnostics(self):
+        self._use_real_canonical_validation()
+        self._seed_canonical_source()
+        source_task = task_service._TASKS[SOURCE_TASK_ID]
+        source_task["external_call_count"] = 1
+        service.SQLiteMetaStore(self.db_path).write_task_status(source_task)
+        embedded_latest_at = dt.datetime.fromisoformat(source_task["status_history"][-1]["at"])
+        shifted_history_at = (embedded_latest_at + dt.timedelta(days=1)).isoformat()
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                """
+                UPDATE task_status_history
+                SET updated_at = ?
+                WHERE history_id = (
+                    SELECT MAX(history_id) FROM task_status_history WHERE task_id = ?
+                )
+                """,
+                (shifted_history_at, SOURCE_TASK_ID),
+            )
+            connection.commit()
+
+        blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(blocked["error_message_safe"], "canonical_source_task_boundary_invalid")
+
+        source_task["external_call_count"] = 0
+        service.SQLiteMetaStore(self.db_path).write_task_status(source_task)
+        history_blocked = service.run_qmt_readonly_local_replay(_payload())
+        self.assertEqual(
+            history_blocked["error_message_safe"],
+            "canonical_source_task_history_time_invalid",
+        )
+
     def test_canonical_source_rejects_task_ledger_and_result_self_sealing(self):
         self._use_real_canonical_validation()
         self._seed_canonical_source()

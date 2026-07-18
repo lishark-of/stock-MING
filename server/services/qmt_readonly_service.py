@@ -1350,12 +1350,18 @@ def _validate_canonical_source_binding(normalized: Mapping[str, Any]) -> dict[st
         or not str(source_task.get("finished_at") or "").strip()
     ):
         raise ReplayValidationError("canonical_source_task_status_invalid")
+    # Reject an unsafe task projection before validating its timestamped
+    # history.  Re-persisting a forged safety field can move the SQLite
+    # ``updated_at`` value far enough from the embedded history timestamp to
+    # trigger the secondary history-time error first.  The immutable safety
+    # boundary is the primary failure and must remain deterministic across
+    # fast local runs and slower clean CI runners.
+    _validate_exact_safety_boundary(source_task, code="canonical_source_task_boundary_invalid")
     _validate_source_task_authoritative_history(source_task, persisted_projection)
     if source_task.get("output_packet_key") != CANDIDATE_PACKET_KEY:
         raise ReplayValidationError("canonical_source_task_output_invalid")
     if source_task.get("cache_replay_only") is True:
         raise ReplayValidationError("canonical_source_task_not_durable")
-    _validate_exact_safety_boundary(source_task, code="canonical_source_task_boundary_invalid")
     payload_safe = source_task.get("payload_safe")
     if not isinstance(payload_safe, Mapping):
         raise ReplayValidationError("canonical_source_task_payload_invalid")
